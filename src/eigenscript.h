@@ -607,6 +607,10 @@ typedef struct {
     int string_count;
     int string_capacity;
     int mark_string_count;
+    Value **lists;          /* arena lists whose heap children need releasing */
+    int list_count;
+    int list_capacity;
+    int mark_list_count;
     char **fallbacks;       /* heap allocations from arena overflow */
     int fallback_count;
     int fallback_capacity;
@@ -1523,6 +1527,7 @@ void arena_init(void);
 void arena_destroy(void);
 void* arena_alloc(size_t size);
 void arena_track_string(char *s);
+void arena_track_list(Value *list);
 void arena_mark_pos(void);
 void arena_reset_to_mark(void);
 void free_weight_val(Value *v);

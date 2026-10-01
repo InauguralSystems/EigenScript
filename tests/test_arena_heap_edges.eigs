@@ -1,0 +1,22 @@
+# Regression #1184: an arena list owns counted references to heap values.
+# Repeated concat creates an arena result list which retains every prior
+# promoted string; resetting the arena must drop those otherwise-invisible
+# edges before reclaiming the list nodes.
+
+load_file of "lib/test.eigs"
+
+escaped is []
+i is 0
+arena_mark of null
+loop while i < 200:
+    # substr makes a fresh, fixed-size string on every iteration. Assignment
+    # promotes it to the heap; concat then puts counted refs in arena lists.
+    local value is substr of ["arena-escape-val" + (str of i), 0, 16]
+    escaped is concat of [escaped, [value]]
+    i is i + 1
+arena_reset of null
+
+assert_eq of [len of escaped, 200, "#1184 all escaped strings survive reset"]
+assert_eq of [escaped[0], "arena-escape-val", "#1184 first escaped string intact"]
+assert_eq of [escaped[199], "arena-escape-val", "#1184 last escaped string intact"]
+test_summary of null

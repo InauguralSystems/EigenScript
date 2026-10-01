@@ -1309,6 +1309,9 @@ check "AO4 num_copy new local survives reset" "$AO4_C" "99.5"
 check_eigs_suite "arena escape containment (#873 — list deep-promote at every store seam)" \
     "test_arena_escape.eigs" "All tests passed" 18
 
+check_eigs_suite "arena list releases heap children on reset (#1184)" \
+    "test_arena_heap_edges.eigs" "All tests passed" 3
+
 check_eigs_suite "reduction builtins dot/sum/norm (vs explicit loop + edge cases)" \
     "test_dot.eigs" "DOT_OK" 1
 echo ""

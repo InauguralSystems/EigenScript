@@ -137,6 +137,10 @@ void arena_init(void) {
     g_arena.string_count = 0;
     g_arena.string_capacity = 0;
     g_arena.mark_string_count = 0;
+    g_arena.lists = NULL;
+    g_arena.list_count = 0;
+    g_arena.list_capacity = 0;
+    g_arena.mark_list_count = 0;
     g_arena.fallbacks = NULL;
     g_arena.fallback_count = 0;
     g_arena.fallback_capacity = 0;
@@ -188,15 +192,37 @@ void arena_track_string(char *s) {
     g_arena.strings[g_arena.string_count++] = s;
 }
 
+void arena_track_list(Value *list) {
+    if (g_arena.list_count >= g_arena.list_capacity) {
+        int new_cap = g_arena.list_capacity < 1024 ? 1024 : g_arena.list_capacity * 2;
+        g_arena.lists = xrealloc_array(g_arena.lists, new_cap, sizeof(Value *));
+        g_arena.list_capacity = new_cap;
+    }
+    g_arena.lists[g_arena.list_count++] = list;
+}
+
 void arena_mark_pos(void) {
     g_arena.mark_block = g_arena.current_block;
     g_arena.mark_offset = g_arena.offset;
     g_arena.mark_string_count = g_arena.string_count;
+    g_arena.mark_list_count = g_arena.list_count;
     g_arena.mark_fallback_count = g_arena.fallback_count;
     g_arena.active = 1;
 }
 
 void arena_reset_to_mark(void) {
+    /* Arena lists do not run free_value when their bump storage is reset.
+     * They can nevertheless own counted references to heap values (concat is
+     * the common case), so release those edges while the list nodes and item
+     * arrays are still addressable. Arena children are harmless: val_decref
+     * is deliberately a no-op for them. */
+    for (int i = g_arena.mark_list_count; i < g_arena.list_count; i++) {
+        Value *list = g_arena.lists[i];
+        for (int j = 0; j < list->data.list.count; j++)
+            val_decref(list->data.list.items[j]);
+    }
+    g_arena.list_count = g_arena.mark_list_count;
+
     for (int i = g_arena.mark_string_count; i < g_arena.string_count; i++)
         free(g_arena.strings[i]);
     g_arena.string_count = g_arena.mark_string_count;
@@ -228,6 +254,12 @@ void arena_reset_to_mark(void) {
 }
 
 void arena_destroy(void) {
+    for (int i = 0; i < g_arena.list_count; i++) {
+        Value *list = g_arena.lists[i];
+        for (int j = 0; j < list->data.list.count; j++)
+            val_decref(list->data.list.items[j]);
+    }
+    free(g_arena.lists);
     for (int i = 0; i < g_arena.string_count; i++)
         free(g_arena.strings[i]);
     free(g_arena.strings);

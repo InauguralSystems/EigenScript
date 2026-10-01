@@ -1929,6 +1929,7 @@ Value* make_list(int capacity) {
     v->data.list.count = 0;
     v->refcount = 1;
     v->arena = from_arena;
+    if (from_arena) arena_track_list(v);
     return v;
 }
 

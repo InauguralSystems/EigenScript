@@ -1,0 +1,1 @@
+- Release heap values retained by arena-backed lists when the arena resets, fixing a leak from repeated list concatenation inside an arena window.
