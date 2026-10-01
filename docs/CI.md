@@ -357,9 +357,9 @@ SECTION_TIME: [99u] 41.20
 and `tests/section_weights.txt` is those numbers.
 
 **Measure them on the RUNNER, not on another machine.** The first table used
-measurements from a different machine and they did not transfer:
-per-section ratios reach 35× in
-*both* directions (`[0a]` 0.75 s dev → 26.12 CI; `[126]` 0.97 → 28.61; `[88]`
+measurements from the worst-case target (2-core Celeron N3350, 4 GB, ASUS
+X540NA), and they did not transfer: per-section ratios reach 35× in *both*
+directions (`[0a]` 0.75 s target → 26.12 CI; `[126]` 0.97 → 28.61; `[88]`
 1.56 → 30.24; but `[124]` 94.87 → 13.30 and `[99o]` 21.79 → 2.41), and shards
 predicted at 590/590/590 s actually took 411/249/196. A local run is a
 bootstrap for the very first split; the table itself comes from CI.
