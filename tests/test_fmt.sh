@@ -97,6 +97,18 @@ MULTILINE_WANT=$(printf 'value is "start\n  a+b  \n\n#not a comment\nx==y\nend"\
 ACTUAL=$(fmt_str "$MULTILINE_INPUT")
 check "multiline string bytes preserved" "$ACTUAL" "$MULTILINE_WANT"
 
+# Literal lines that resemble top-level declarations remain string data; they
+# must not participate in the formatter's blank-line insertion state.
+ACTUAL=$(fmt_str "$(printf 'value is \"start\ndefine a\ndefine b\nend\"\n')")
+EXPECTED=$(printf 'value is "start\ndefine a\ndefine b\nend"\n')
+check "define-like multiline string content preserved" "$ACTUAL" "$EXPECTED"
+
+# A CR immediately before an embedded newline belongs to an open literal,
+# unlike the CR in the CRLF ending after the closing quote.
+ACTUAL=$(fmt_str "$(printf 'value is \"a\r\nb\"\r\n')")
+EXPECTED=$(printf 'value is "a\r\nb"\n')
+check "carriage return in multiline string preserved" "$ACTUAL" "$EXPECTED"
+
 # --fmt --write uses the same format_source_string path as the LSP provider;
 # exercise persistence separately so a future CLI-path split cannot regress it.
 TMPFILE=$(mktemp /tmp/fmt_multiline_XXXXXX.eigs)

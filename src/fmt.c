@@ -248,19 +248,22 @@ static void fix_spacing(const char *line, int starts_in_string, strbuf *out) {
  * lines too.  A comment ends at the physical newline. */
 static int string_state_after_line(const char *line, int in_string) {
     int in_comment = 0;
-    for (int i = 0; line[i]; i++) {
+    const char *p = line;
+    while (*p) {
         if (in_comment) break;
         if (in_string) {
-            if (line[i] == '\\' && line[i + 1]) {
-                i++;
-            } else if (line[i] == '"') {
+            if (*p == '\\' && p[1]) {
+                p += 2;
+                continue;
+            } else if (*p == '"') {
                 in_string = 0;
             }
-        } else if (line[i] == '#') {
+        } else if (*p == '#') {
             in_comment = 1;
-        } else if (line[i] == '"') {
+        } else if (*p == '"') {
             in_string = 1;
         }
+        p++;
     }
     return in_string;
 }
@@ -318,15 +321,17 @@ char* format_source_string(const char *source) {
             memcpy(line, start, llen);
             line[llen] = '\0';
 
-            /* Strip \r */
-            if (llen > 0 && line[llen - 1] == '\r') {
-                line[llen - 1] = '\0';
-                llen--;
-            }
-
             starts_in_string[actual_lines] = in_string;
             ends_in_string[actual_lines] = string_state_after_line(line, in_string);
             in_string = ends_in_string[actual_lines];
+
+            /* Normalize a CRLF line ending only when its CR is outside a
+             * multiline literal.  While the string remains open, that byte
+             * is literal data immediately before the embedded newline. */
+            if (!ends_in_string[actual_lines] && llen > 0 && line[llen - 1] == '\r') {
+                line[llen - 1] = '\0';
+                llen--;
+            }
             indents[actual_lines] = starts_in_string[actual_lines] ? 0 : measure_indent(line);
 
             /* Indentation within a multiline literal is data, not layout. */
@@ -385,7 +390,8 @@ char* format_source_string(const char *source) {
         int level = indents[i] / min_indent;
 
         /* Insert blank line between top-level define blocks */
-        if (level == 0 && strncmp(trimmed, "define ", 7) == 0 && prev_was_toplevel_define) {
+        if (!starts_in_string[i] && level == 0 &&
+            strncmp(trimmed, "define ", 7) == 0 && prev_was_toplevel_define) {
             /* Ensure blank line separator */
             if (output.len > 0 && output.data[output.len - 1] != '\n') {
                 strbuf_append_char(&output, '\n');
@@ -413,9 +419,9 @@ char* format_source_string(const char *source) {
         strbuf_free(&fixed_line);
 
         /* Track top-level define for blank line insertion */
-        if (level == 0 && strncmp(trimmed, "define ", 7) == 0) {
+        if (!starts_in_string[i] && level == 0 && strncmp(trimmed, "define ", 7) == 0) {
             prev_was_toplevel_define = 1;
-        } else if (level == 0 && trimmed[0] != '#') {
+        } else if (!starts_in_string[i] && level == 0 && trimmed[0] != '#') {
             prev_was_toplevel_define = 0;
         }
     }
