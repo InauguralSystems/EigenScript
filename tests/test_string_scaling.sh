@@ -26,17 +26,12 @@
 # timed loop. A change that makes every operation uniformly 10x slower passes
 # here; the fleet bench and bench_perf judge absolute cost.
 #
-# `len of` IS NOT COVERED, and cannot be by this gate. The header used to
-# claim it while the probe hoisted the call out of the loop, and a blind
-# critic proved the consequence: reverting ONLY `builtin_len`'s
-# `val_str_len(arg)` to `strlen(arg->data.strv.ptr)` -- half of the #1183
-# regression, one line -- left this gate GREEN at 2.01. Putting the call in
-# the loop condition does catch it (that build then reads 3.68 / 3.36), and
-# was tried. It cannot stay: under EIGS_STR_LEN_CHECK `len of` is O(n) BY
-# DESIGN, so the asan lanes went 2.56-2.98 against this 2.90 threshold --
-# 2 false reds in 5 under load -- while the lowest unhealthy reading is 3.36.
-# There is no threshold separating those, so the coverage and the sanitizer
-# lanes cannot both be had here. Tracked as #1192, with the measurements.
+# `len of` has its own deterministic instruction-count gate:
+# tests/test_string_len_complexity.sh repeats the operation on two string
+# lengths under cachegrind and rejects growth in Ir.  It runs only in CI's
+# release-only bench lane because EIGS_STR_LEN_CHECK sanitizer/poison builds
+# intentionally re-derive the cached length with strlen(3).  Its timings are
+# not blended with the indexing ratios below.
 #
 # Concat is excluded too: building the string is quadratic on its own and
 # would swamp the signal (see the note at build time).
