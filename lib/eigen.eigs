@@ -40,6 +40,11 @@
 
 load_file of "lib/math.eigs"
 
+# #1386: Internal helpers must not resolve the public `len` binding at call
+# time.  Capture it before defining the tokenizer, parser, and evaluator so a
+# host program can safely rebind `len` after loading this file.
+_eigen_len is len
+
 # ============================================================
 # Tokenizer
 # ============================================================
@@ -66,9 +71,9 @@ define _is_alnum(c) as:
 # interpolation ends, at every nesting level. String literals, `#` comments
 # (to end of line) and nested f-strings all hide braces.
 # _fstr_interp_end: pos is just past the `{`; returns the index of the
-# matching `}`, or len of source when unterminated.
+# matching `}`, or _eigen_len of source when unterminated.
 define _fstr_interp_end(source, pos) as:
-    local n is len of source
+    local n is _eigen_len of source
     local start is pos
     local depth is 1
     local c is ""
@@ -101,7 +106,7 @@ define _fstr_interp_end(source, pos) as:
 
 # pos at the `f` of f"...": returns the index just past the closing quote.
 define _fstr_skip_fstring(source, pos) as:
-    local n is len of source
+    local n is _eigen_len of source
     local c is ""
     pos is pos + 2
     loop while (pos < n) and ((char_at of [source, pos]) != "\""):
@@ -139,37 +144,37 @@ _predicates is ["converged", "stable", "improving", "oscillating", "diverging", 
 _reserved_forms is ["report", "report_value"]
 
 define _is_keyword(word) as:
-    for i in range of (len of _keywords):
+    for i in range of (_eigen_len of _keywords):
         if word == _keywords[i]:
             return 1
     return 0
 
 define _is_interrogative(word) as:
-    for i in range of (len of _interrogatives):
+    for i in range of (_eigen_len of _interrogatives):
         if word == _interrogatives[i]:
             return 1
     return 0
 
 define _is_predicate(word) as:
-    for i in range of (len of _predicates):
+    for i in range of (_eigen_len of _predicates):
         if word == _predicates[i]:
             return 1
     return 0
 
 define _is_reserved_form(word) as:
-    for i in range of (len of _reserved_forms):
+    for i in range of (_eigen_len of _reserved_forms):
         if word == _reserved_forms[i]:
             return 1
     return 0
 
 define _predicate_index(word) as:
-    for i in range of (len of _predicates):
+    for i in range of (_eigen_len of _predicates):
         if word == _predicates[i]:
             return i
     return 0
 
 define _interrogative_index(word) as:
-    for i in range of (len of _interrogatives):
+    for i in range of (_eigen_len of _interrogatives):
         if word == _interrogatives[i]:
             return i
     return 0
@@ -185,7 +190,7 @@ define eigen_tokenize(source) as:
 define _eigen_tokenize_at(source, line) as:
     tokens is []
     pos is 0
-    src_len is len of source
+    src_len is _eigen_len of source
     indent_stack is [0]
     at_line_start is 1
     bracket_depth is 0
@@ -229,15 +234,15 @@ define _eigen_tokenize_at(source, line) as:
                     blank_line is 1
                 if blank_line == 0:
                     # Emit indent/dedent
-                    current_indent is indent_stack[(len of indent_stack) - 1]
+                    current_indent is indent_stack[(_eigen_len of indent_stack) - 1]
                     if spaces > current_indent:
                         append of [indent_stack, spaces]
                         append of [tokens, ["indent", null, line]]
                     else:
-                        loop while spaces < (indent_stack[(len of indent_stack) - 1]):
+                        loop while spaces < (indent_stack[(_eigen_len of indent_stack) - 1]):
                             # pop
                             new_stack is []
-                            for si in range of ((len of indent_stack) - 1):
+                            for si in range of ((_eigen_len of indent_stack) - 1):
                                 append of [new_stack, indent_stack[si]]
                             indent_stack is new_stack
                             append of [tokens, ["dedent", null, line]]
@@ -262,8 +267,8 @@ define _eigen_tokenize_at(source, line) as:
             # Newlines
             if (handled == 0) and (c == "\n"):
                 if bracket_depth == 0:
-                    if (len of tokens) > 0:
-                        last is tokens[(len of tokens) - 1]
+                    if (_eigen_len of tokens) > 0:
+                        last is tokens[(_eigen_len of tokens) - 1]
                         if last[0] != "newline":
                             if last[0] != "indent":
                                 if last[0] != "dedent":
@@ -308,7 +313,7 @@ define _eigen_tokenize_at(source, line) as:
                                 pos is pos + 1
                         elif fc == "{":
                             # Emit accumulated literal
-                            if ((len of buf) > 0) or (has_segments == 0):
+                            if ((_eigen_len of buf) > 0) or (has_segments == 0):
                                 if has_segments == 1:
                                     append of [tokens, ["op", "+", line]]
                                 append of [tokens, ["str", buf, line]]
@@ -337,10 +342,10 @@ define _eigen_tokenize_at(source, line) as:
                             pos is iend + 1
                             # Recursively tokenize the inner expression
                             inner_tokens is _eigen_tokenize_at of [expr_buf, line]
-                            for eci in range of (len of expr_buf):
+                            for eci in range of (_eigen_len of expr_buf):
                                 if (char_at of [expr_buf, eci]) == "\n":
                                     line is line + 1
-                            for iti in range of (len of inner_tokens):
+                            for iti in range of (_eigen_len of inner_tokens):
                                 itok is inner_tokens[iti]
                                 # Layout tokens are meaningless inside a
                                 # spliced expression (C parity, #334)
@@ -357,7 +362,7 @@ define _eigen_tokenize_at(source, line) as:
                     if reading_fstr == 1:
                         throw of f"parse error line {fstr_line}: unterminated f-string"
                     # Emit trailing literal
-                    if (len of buf) > 0:
+                    if (_eigen_len of buf) > 0:
                         if has_segments == 1:
                             append of [tokens, ["op", "+", line]]
                         append of [tokens, ["str", buf, line]]
@@ -535,9 +540,9 @@ define _eigen_tokenize_at(source, line) as:
                         throw of f"tokenize error: unknown character '{c}' at line {line}"
 
     # Emit remaining dedents
-    loop while (len of indent_stack) > 1:
+    loop while (_eigen_len of indent_stack) > 1:
         new_stack is []
-        for si in range of ((len of indent_stack) - 1):
+        for si in range of ((_eigen_len of indent_stack) - 1):
             append of [new_stack, indent_stack[si]]
         indent_stack is new_stack
         append of [tokens, ["dedent", null, line]]
@@ -589,7 +594,7 @@ define _p_pos(p) as:
     return p[1]
 
 define _p_cur(p) as:
-    if p[1] >= (len of p[0]):
+    if p[1] >= (_eigen_len of p[0]):
         return ["eof", null, 0]
     return p[0][p[1]]
 
@@ -606,7 +611,7 @@ define _p_peek_val(p) as:
 
 define _p_peek_at(p, offset) as:
     idx is p[1] + offset
-    if idx >= (len of p[0]):
+    if idx >= (_eigen_len of p[0]):
         return ["eof", null, 0]
     return p[0][idx]
 
@@ -711,9 +716,9 @@ define _p_parse_statement(p) as:
                 loop while (_p_peek_type of p) == "ident":
                     append of [params, (_p_cur of p)[1]]
                     _p_advance of p
-                    _p_param_sep of [p, (_p_cur of p), params[(len of params) - 1]]
+                    _p_param_sep of [p, (_p_cur of p), params[(_eigen_len of params) - 1]]
                 _p_expect of [p, "rparen"]
-            if (len of params) == 0:
+            if (_eigen_len of params) == 0:
                 params is ["n"]
             # as:
             if (_p_peek_type of p) == "kw":
@@ -1119,7 +1124,7 @@ define _p_parse_primary(p) as:
         scan_pos is p[1]
         scan_ok is 1
         loop while scan_ok == 1:
-            if scan_pos >= (len of p[0]):
+            if scan_pos >= (_eigen_len of p[0]):
                 scan_ok is 0
             else:
                 stok is p[0][scan_pos]
@@ -1127,7 +1132,7 @@ define _p_parse_primary(p) as:
                     scan_pos is scan_pos + 1
                 elif stok[0] == "rparen":
                     # Check if next is arrow
-                    if (scan_pos + 1) < (len of p[0]):
+                    if (scan_pos + 1) < (_eigen_len of p[0]):
                         if p[0][scan_pos + 1][0] == "arrow":
                             is_lambda is 1
                     scan_ok is 0
@@ -1138,8 +1143,8 @@ define _p_parse_primary(p) as:
             loop while (_p_peek_type of p) == "ident":
                 append of [params, (_p_cur of p)[1]]
                 _p_advance of p
-                _p_param_sep of [p, (_p_cur of p), params[(len of params) - 1]]
-            if (len of params) == 0:
+                _p_param_sep of [p, (_p_cur of p), params[(_eigen_len of params) - 1]]
+            if (_eigen_len of params) == 0:
                 params is ["n"]
             _p_expect of [p, "rparen"]
             _p_expect of [p, "arrow"]
@@ -1236,11 +1241,11 @@ define eigen_parse(tokens) as:
 define _ns_env_for(target_node, key, target) as:
     if (type of target_node) != "list":
         return null
-    if (len of target_node) < 2:
+    if (_eigen_len of target_node) < 2:
         return null
     if target_node[0] != "ident":
         return null
-    if (len of key) > 0:
+    if (_eigen_len of key) > 0:
         if (char_at of [key, 0]) == "_":
             return null
     mod_name is target_node[1]
@@ -1255,7 +1260,7 @@ define _env_new(parent) as:
 
 define _env_get(env, name) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             return bindings[i][1]
     if env[1] != null:
@@ -1267,7 +1272,7 @@ define _env_get(env, name) as:
 # (matching the C VM) without confusing it with a name bound to null.
 define _env_has(env, name) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             return 1
     if env[1] != null:
@@ -1276,7 +1281,7 @@ define _env_has(env, name) as:
 
 define _env_set(env, name, val) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             set_at of [bindings, i, [name, val]]
             return null
@@ -1291,7 +1296,7 @@ define _env_set(env, name, val) as:
 
 define _env_set_local(env, name, val) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             set_at of [bindings, i, [name, val]]
             return null
@@ -1302,14 +1307,14 @@ define _env_set_local(env, name, val) as:
 # binder saves and restores exactly the scope it binds into.
 define _env_has_local(env, name) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             return 1
     return 0
 
 define _env_unset_local(env, name) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             list_remove_at of [bindings, i]
             return null
@@ -1334,7 +1339,7 @@ define _eigen_module_path(name) as:
     cands is ["lib/" + name + ".eigs", name + ".eigs",
         exedir + "/../lib/" + name + ".eigs",
         exedir + "/../lib/eigenscript/" + name + ".eigs"]
-    for ci in range of (len of cands):
+    for ci in range of (_eigen_len of cands):
         if (file_exists of cands[ci]) == 1:
             return cands[ci]
     return null
@@ -1392,18 +1397,18 @@ define _compute_entropy(val) as:
             return 0
         return 0 - (p * (log2 of p) + (1 - p) * (log2 of (1 - p)))
     if t == "str":
-        slen is len of val
+        slen is _eigen_len of val
         if slen == 0:
             return 0
         return log2 of (slen + 1)
     if t == "list":
-        llen is len of val
+        llen is _eigen_len of val
         if llen == 0:
             return 0
         return log2 of (llen + 1)
     if t == "dict":
         dk is keys of val
-        dlen is len of dk
+        dlen is _eigen_len of dk
         if dlen == 0:
             return 0
         return log2 of (dlen + 1)
@@ -1553,7 +1558,7 @@ define eigen_eval(node, env) as:
         arg is eigen_eval of [node[2], env]
         # Check for eigen function (meta-interpreter defined)
         if (type of fn) == "list":
-            if (len of fn) >= 4:
+            if (_eigen_len of fn) >= 4:
                 if fn[0] == "__eigen_fn__":
                     # fn is [__eigen_fn__, name, params, body]
                     params is fn[2]
@@ -1571,8 +1576,8 @@ define eigen_eval(node, env) as:
                     # the call-site AST, so we check the arg NODE
                     # (node[2]), not the runtime value.
                     if node[2][0] == "list":
-                        argc is len of arg
-                        if (len of params) == 1:
+                        argc is _eigen_len of arg
+                        if (_eigen_len of params) == 1:
                             if argc == 1:
                                 _env_set_local of [call_env, params[0], arg[0]]
                             else:
@@ -1581,7 +1586,7 @@ define eigen_eval(node, env) as:
                                 else:
                                     _env_set_local of [call_env, params[0], arg]
                         else:
-                            for pi in range of (len of params):
+                            for pi in range of (_eigen_len of params):
                                 if pi < argc:
                                     _env_set_local of [call_env, params[pi], arg[pi]]
                                 else:
@@ -1589,7 +1594,7 @@ define eigen_eval(node, env) as:
                     else:
                         _env_set_local of [call_env, params[0], arg]
                         fill is 1
-                        loop while fill < (len of params):
+                        loop while fill < (_eigen_len of params):
                             _env_set_local of [call_env, params[fill], null]
                             fill is fill + 1
                     _eigen_returning is 0
@@ -1609,14 +1614,14 @@ define eigen_eval(node, env) as:
     if ntype == "list":
         elems is node[1]
         result is []
-        for i in range of (len of elems):
+        for i in range of (_eigen_len of elems):
             append of [result, eigen_eval of [elems[i], env]]
         return result
 
     if ntype == "dict":
         pairs is node[1]
         result is {}
-        for i in range of (len of pairs):
+        for i in range of (_eigen_len of pairs):
             pair is pairs[i]
             k is eigen_eval of [pair[0], env]
             v is eigen_eval of [pair[1], env]
@@ -1636,7 +1641,7 @@ define eigen_eval(node, env) as:
             ns_env is _ns_env_for of [node[1], key, target]
             if ns_env != null:
                 mbind is ns_env[0]
-                for mi in range of (len of mbind):
+                for mi in range of (_eigen_len of mbind):
                     if mbind[mi][0] == key:
                         return mbind[mi][1]
             if (has_key of [target, key]) == 1:
@@ -1720,7 +1725,7 @@ define eigen_eval(node, env) as:
         prior_val is null
         if had_prior == 1:
             prior_val is _env_get of [env, var_name]
-        for i in range of (len of iter):
+        for i in range of (_eigen_len of iter):
             _env_set_local of [env, var_name, iter[i]]
             result is _eval_block of [node[3], env]
             if _eigen_returning == 1:
@@ -1780,7 +1785,7 @@ define eigen_eval(node, env) as:
     if ntype == "match":
         val is eigen_eval of [node[1], env]
         cases is node[2]
-        for ci in range of (len of cases):
+        for ci in range of (_eigen_len of cases):
             case_pair is cases[ci]
             pattern is case_pair[0]
             case_body is case_pair[1]
@@ -1806,11 +1811,11 @@ define eigen_eval(node, env) as:
         # Collect bindings into a dict
         mod_dict is {}
         mod_bindings is mod_env[0]
-        for mi in range of (len of mod_bindings):
+        for mi in range of (_eigen_len of mod_bindings):
             bname is mod_bindings[mi][0]
             bval is mod_bindings[mi][1]
             # Skip private names starting with _
-            if (len of bname) > 0:
+            if (_eigen_len of bname) > 0:
                 first_char is char_at of [bname, 0]
                 if first_char != "_":
                     dict_set of [mod_dict, bname, bval]
@@ -1828,7 +1833,7 @@ define eigen_eval(node, env) as:
         iter is eigen_eval of [node[3], env]
         filter_node is node[4]
         result is []
-        for i in range of (len of iter):
+        for i in range of (_eigen_len of iter):
             comp_env is _env_new of env
             _env_set_local of [comp_env, var_name, iter[i]]
             if filter_node != null:
@@ -1854,9 +1859,9 @@ define eigen_eval(node, env) as:
             if (type of target) == "num":
                 return target
             if (type of target) == "str":
-                return len of target
+                return _eigen_len of target
             if (type of target) == "list":
-                return len of target
+                return _eigen_len of target
             return 0
         if kind == 1:
             # who: name / type
@@ -1946,11 +1951,11 @@ define eigen_eval(node, env) as:
 
 define _eval_block(stmts, env) as:
     result is null
-    for i in range of (len of stmts):
+    for i in range of (_eigen_len of stmts):
         stmt is stmts[i]
         # Unwrap _line wrapper to extract line number
         if (type of stmt) == "list":
-            if (len of stmt) >= 3:
+            if (_eigen_len of stmt) >= 3:
                 if stmt[0] == "_line":
                     _eigen_current_line is stmt[1]
                     stmt is stmt[2]
@@ -1998,7 +2003,7 @@ _default_env_set_local is _env_set_local
 _default_print is print
 _default_write is write
 _default_flush is flush
-_default_len is len
+_default_len is _eigen_len
 _default_str is _pristine_str
 _default_num is num
 _default_append is append

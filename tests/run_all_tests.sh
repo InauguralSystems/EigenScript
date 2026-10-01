@@ -1703,6 +1703,7 @@ fi
 echo "[107] Meta-Interpreter Parity (#306, #1111, #1057)"
 check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0, report/report_value reservation #1111, module namespaces + import resolution #1057)" test_meta_parity.eigs "All tests passed" 1
 check_eigs_suite "eigen_run f-strings ignore a host rebinding of str (#1322)" test_meta_fstr_host_str.eigs "All tests passed" 1
+check_eigs_suite "eigen_run internals ignore a host rebinding of len (#1386)" test_meta_host_len.eigs "All tests passed" 1
 
 # [108] sandbox_run allocation budget (#292). The size-controlled allocators
 # (zeros/fill/buffer/range) charge a per-run byte budget so untrusted generated
