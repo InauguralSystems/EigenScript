@@ -5787,6 +5787,19 @@ check_eigs_suite "soft keyword idents" test_soft_keyword_idents.eigs "soft keywo
 check_eigs_suite "split empty" test_split_empty.eigs "split empty: all passed" 1
 check_eigs_suite "split hard" test_split_hard.eigs "split hard: all passed" 1
 check_eigs_suite "tensor overflow guard" test_tensor_overflow.eigs "PASS: tensor overflow guard" 1
+echo "[105d] Tensor file limit and writer/reader symmetry (#1393)"
+TIL_OUTPUT=$(EIGENSCRIPT=./eigenscript bash "$TESTS_DIR/test_tensor_io_limit.sh" 2>&1); TIL_RC=$?
+TIL_N=$(derive_count "$TIL_OUTPUT" 7 "[105d] Tensor file limit")
+TOTAL=$((TOTAL + TIL_N))
+if rc_ok "$TIL_RC" "$TIL_OUTPUT" && echo "$TIL_OUTPUT" | grep -q "All tests passed"; then
+    PASS=$((PASS + TIL_N))
+    echo "  PASS: all $TIL_N tensor file limit checks"
+else
+    FAIL=$((FAIL + TIL_N))
+    echo "  FAIL: tensor file limit checks (rc=$TIL_RC)"
+    echo "$TIL_OUTPUT" | tail -20
+fi
+echo ""
 check_eigs_suite "flat-buffer tensors" test_flat_buffer_tensor.eigs "PASS: flat-buffer tensors" 1
 # #745: tiled matmul (k > 32) and multi-row softmax kernel coverage.
 # #932: a 65x65 by 65x67 matmul so the i and j tile bounds run multi-tile with

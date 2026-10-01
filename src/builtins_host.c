@@ -260,6 +260,15 @@ Value* builtin_stream_open(Value *arg) {
     Value *count_val = arg->data.list.items[1];
     ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM,
               "stream_open", "[a string path, a number count]", make_num(0));
+    if (count_val->data.num < 1 ||
+        count_val->data.num > EIGS_TENSOR_MAX_ELEMENTS ||
+        count_val->data.num != floor(count_val->data.num)) {
+        rt_error(EK_LIMIT, 0,
+                 "stream_open: '%s' count %.17g is outside the 1..%d element cap",
+                 path_val->data.str, count_val->data.num,
+                 EIGS_TENSOR_MAX_ELEMENTS);
+        return make_num(0);
+    }
     if (g_stream_file) { fclose(g_stream_file); g_stream_file = NULL; }
     g_stream_file = xfopen_write(path_val->data.str, "wb");
     /* fs:ANSWER the arguments were already validated by the two guards above;
@@ -502,7 +511,7 @@ Value* builtin_build_corpus(Value *arg) {
     int idents_cap = 0;
 
     int *file_tok_counts = xcalloc(n_files, sizeof(int));
-    int total_tokens = 0;
+    int64_t total_tokens = 0;
     int files_found = 0;
 
     for (int fi = 0; fi < n_files; fi++) {
@@ -631,7 +640,19 @@ Value* builtin_build_corpus(Value *arg) {
     }
 
     /* ---- Pass 3: re-tokenize and write binary stream ---- */
-    int stream_size = total_tokens + files_found * 2; /* +2 EOF per file */
+    int64_t stream_size = total_tokens + (int64_t)files_found * 2; /* +2 EOF per file */
+
+    if (stream_size > EIGS_TENSOR_MAX_ELEMENTS) {
+        rt_error(EK_LIMIT, 0,
+                 "build_corpus: '%s' has %lld tokens, over the %d-element cap",
+                 stream_path_val->data.str, (long long)stream_size,
+                 EIGS_TENSOR_MAX_ELEMENTS);
+        free(file_tok_counts); free(top_names); free(top_ids);
+        free(slot_names); free(slot_used);
+        for (int i = 0; i < n_idents; i++) free(idents[i].name);
+        free(idents);
+        return make_null();
+    }
 
     FILE *stream_file = xfopen_write(stream_path_val->data.str, "wb");
     if (!stream_file) {

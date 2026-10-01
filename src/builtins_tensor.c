@@ -2037,6 +2037,13 @@ Value* builtin_tensor_save(Value *arg) {
      * or 2D tensor, which is a shape/type mistake in the tensor argument and
      * not an I/O failure (no file has been opened yet at this point). */
     ARG_GUARD(ndim == 0, "tensor_save", "a non-empty 1D or 2D tensor", make_num(0));
+    if ((int64_t)rows * (int64_t)cols > EIGS_TENSOR_MAX_ELEMENTS) {
+        rt_error(EK_LIMIT, 0,
+                 "tensor_save: '%s' has %lld elements, over the %d-element cap",
+                 path_val->data.str, (long long)rows * cols,
+                 EIGS_TENSOR_MAX_ELEMENTS);
+        return make_num(0);
+    }
 
     FILE *f = xfopen_write(path_val->data.str, "wb");
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
@@ -2094,9 +2101,9 @@ Value* builtin_tensor_load(Value *arg) {
     uint32_t header[4];
     if (fread(header, sizeof(uint32_t), 4, f) != 4) { fclose(f); return make_null(); }
 
-    int ndim = (int)header[0];
-    int rows = (int)header[1];
-    int cols = (int)header[2];
+    uint32_t ndim_raw = header[0];
+    uint32_t rows_raw = header[1];
+    uint32_t cols_raw = header[2];
     uint32_t flags = header[3];
 
     /* Detect old format: flags would be a huge number if it's actually data */
@@ -2108,17 +2115,34 @@ Value* builtin_tensor_load(Value *arg) {
         fseek(f, 0, SEEK_SET);
         uint32_t old_header[3];
         if (fread(old_header, sizeof(uint32_t), 3, f) != 3) { fclose(f); return make_null(); }
-        ndim = (int)old_header[0];
-        rows = (int)old_header[1];
-        cols = (int)old_header[2];
+        ndim_raw = old_header[0];
+        rows_raw = old_header[1];
+        cols_raw = old_header[2];
         has_observer = 0;
     }
 
-    if (rows <= 0 || cols <= 0 || rows > 1000000 || cols > 1000000) { fclose(f); return make_null(); }
+    if (ndim_raw != 1 && ndim_raw != 2) { fclose(f); return make_null(); }
+    if (rows_raw == 0 || cols_raw == 0) { fclose(f); return make_null(); }
 
-    /* Guard against int overflow: rows*cols may exceed INT_MAX under the 100k cap. */
-    if ((size_t)rows * (size_t)cols > (size_t)INT_MAX) { fclose(f); return make_null(); }
-    int total = rows * cols;
+    uint64_t total64 = (uint64_t)rows_raw * (uint64_t)cols_raw;
+    if (total64 > EIGS_TENSOR_MAX_ELEMENTS) {
+        const char *dimension = rows_raw > EIGS_TENSOR_MAX_ELEMENTS ? "rows" :
+                                cols_raw > EIGS_TENSOR_MAX_ELEMENTS ? "columns" :
+                                "elements";
+        unsigned long long offending = rows_raw > EIGS_TENSOR_MAX_ELEMENTS ? rows_raw :
+                                       cols_raw > EIGS_TENSOR_MAX_ELEMENTS ? cols_raw : total64;
+        fclose(f);
+        rt_error(EK_LIMIT, 0,
+                 "tensor_load: '%s' has %s=%llu, over the %d-element cap",
+                 arg->data.str, dimension, offending,
+                 EIGS_TENSOR_MAX_ELEMENTS);
+        return make_null();
+    }
+
+    int ndim = (int)ndim_raw;
+    int rows = (int)rows_raw;
+    int cols = (int)cols_raw;
+    int total = (int)total64;
 
     /* Read numeric data */
     double *data = xmalloc_array((size_t)total, sizeof(double));
