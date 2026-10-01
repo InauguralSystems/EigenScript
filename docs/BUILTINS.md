@@ -764,16 +764,15 @@ flag off the answer is byte-identical to before: the drawing calls still
 answer `null`, the generators still answer an empty list, the device calls
 still answer `0` or the device id they already answered.
 
-Two shapes are deliberately **not** covered, so the claim above is not read
-wider than it is. A builtin that takes **no** argument (`gfx_poll`,
-`gfx_present`, `gfx_ticks`, `gfx_close`, `audio_close`, `audio_clear`,
-`audio_capture_close`, `audio_capture_read`, `audio_stream_close`,
-`audio_stream_clear`, `audio_stream_queued`, `audio_queue_size`,
-`audio_music_stop`) ignores one entirely, and a **surplus trailing** argument
-to a fixed-arity builtin is dropped (measured: `gfx_rect of` a 9-element
-list draws the rectangle and ignores the 9th). Both are the general
-over-arity question for builtins, tracked in #1398; #989 closed only the
-user-callee half. `tools/strict_differential.sh`
+Builtins that take **no** argument (`gfx_poll`, `gfx_present`, `gfx_ticks`,
+`gfx_close`, `audio_close`, `audio_clear`, `audio_capture_close`,
+`audio_capture_read`, `audio_stream_close`, `audio_stream_clear`,
+`audio_stream_queued`, `audio_queue_size`, `audio_music_stop`) still ignore an
+argument. Fixed-shape list builtins do not ignore surplus trailing elements:
+the strict default raises a catchable error naming the builtin and maximum
+shape, while `EIGS_STRICT=0` retains the legacy prefix-consuming behaviour.
+`tools/strict_differential.sh` derives that population from the runtime's
+`STRICT_LIST_MAX` guards and executes a surplus row for every shape. It also
 crosses every guarded builtin in the extension with the wrong-container
 shapes and requires each pair to raise or to carry a reason in its allowlist,
 so this paragraph is checked against the binary rather than asserted.

@@ -216,6 +216,7 @@ Value* builtin_screen_render(Value *arg) {
 /* join of [list, separator] — concatenate list elements into a string.
  * C-backed for performance — single allocation instead of O(n²) concat. */
 Value* builtin_join(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "join");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "join", "[list, separator]", make_str(""));
     Value *list = arg->data.list.items[0];
     Value *sep_val = arg->data.list.items[1];
@@ -908,6 +909,7 @@ Value* builtin_values(Value *arg) {
 }
 
 Value* builtin_has_key(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "has_key");
     ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2, "has_key", "[dict, key]", make_num(0));
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
@@ -1685,6 +1687,7 @@ Value* builtin_str_lower(Value *arg) {
  * idiom folded them to "" — and an empty needle/prefix/suffix matches
  * everything, so `contains of [[1,2,3], 2]` reported a spurious hit. */
 Value* builtin_contains(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "contains");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "contains", "[haystack, needle]", make_num(0));
     Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
     ARG_GUARD(!h || h->type != VAL_STR || !n || n->type != VAL_STR, "contains", "two strings", make_num(0));
@@ -1692,6 +1695,7 @@ Value* builtin_contains(Value *arg) {
 }
 
 Value* builtin_starts_with(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "starts_with");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "starts_with", "[string, prefix]", make_num(0));
     Value *s = arg->data.list.items[0], *p = arg->data.list.items[1];
     ARG_GUARD(!s || s->type != VAL_STR || !p || p->type != VAL_STR, "starts_with", "two strings", make_num(0));
@@ -1699,6 +1703,7 @@ Value* builtin_starts_with(Value *arg) {
 }
 
 Value* builtin_split(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "split");
     const char *str = "", *delim = " ";
     /* #971 Phase D: a non-string subject coerced to "" (so `split of 42` was
      * [""], a plausible one-part answer) and a non-string delimiter fell
@@ -2061,6 +2066,7 @@ Value* builtin_trim(Value *arg) {
 #define STR_REPLACE_MAX ((size_t)256 * 1024 * 1024)
 
 Value* builtin_str_replace(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "str_replace");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3, "str_replace", "[string, old, new]", make_str(""));
     const char *str = "", *old_s = "", *new_s = "";
     /* Coercion, not a guard: a non-string element silently stays "" and the
@@ -2132,6 +2138,7 @@ Value* builtin_str_upper(Value *arg) {
 /* char_at of [string, index] → single character as string, or "" if out of range.
  * Negative indices count from the end, matching the [] operator (#312). */
 Value* builtin_char_at(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "char_at");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "char_at", "[string, index]", make_str(""));
     Value *str_val = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
@@ -2150,6 +2157,7 @@ Value* builtin_char_at(Value *arg) {
 
 /* ==== BUILTIN: ends_with ==== */
 Value* builtin_ends_with(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "ends_with");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "ends_with", "[string, suffix]", make_num(0));
     Value *sv = arg->data.list.items[0], *xv = arg->data.list.items[1];
     ARG_GUARD(!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR, "ends_with", "two strings", make_num(0));
@@ -2164,6 +2172,7 @@ Value* builtin_ends_with(Value *arg) {
 /* ==== BUILTIN: substr ==== */
 /* substr of [string, start, length] → substring */
 Value* builtin_substr(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "substr");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3, "substr", "[string, start, length]", make_str(""));
     Value *str_val = arg->data.list.items[0];
     Value *start_val = arg->data.list.items[1];
@@ -2201,6 +2210,7 @@ Value* builtin_substr(Value *arg) {
 /* index_of of [haystack, needle] → first index, or -1. Non-string operands
  * are a miss (-1), never a fold-to-"" false positive at index 0 (#316). */
 Value* builtin_index_of(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "index_of");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "index_of", "[haystack, needle]", make_num(-1));
     Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
@@ -2271,6 +2281,7 @@ Value* builtin_atan(Value *arg) {
 }
 
 Value* builtin_atan2(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "atan2");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "atan2", "[y, x]", make_num(0));
     Value *y = arg->data.list.items[0];
     Value *x = arg->data.list.items[1];
@@ -2449,6 +2460,7 @@ Value* builtin_args(Value *arg) {
 
 /* path_join of [a, b] → "a/b" */
 Value* builtin_path_join(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "path_join");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "path_join", "[a, b]", make_str(""));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
@@ -2549,6 +2561,7 @@ static Value* json_obj_get(Value *obj, const char *key) {
 #endif
 
 Value* builtin_json_path(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "json_path");
     /* json_path of [json_string, "dot.path"] -> value as string, or "" */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "json_path", "[json_string, path]", make_str(""));
     const char *json_str = "", *path = "";
@@ -2910,6 +2923,7 @@ Value* builtin_state_at(Value *arg) {
  * via timing. (Length is not treated as secret — it is folded in but the
  * loop runs over the longer operand.) */
 Value* builtin_secure_equals(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "secure_equals");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "secure_equals", "[string, string]", make_num(0));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
@@ -5255,6 +5269,7 @@ Value* builtin_task_join(Value *arg) {
  * an error — Akka dead-letters / Erlang cast. Returns 1 if delivered, 0 if
  * dropped. Never blocks (the mailbox is unbounded in v1). */
 Value* builtin_task_send(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "task_send");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "task_send", "[id, value]", make_num(0));
     Value *idv = arg->data.list.items[0];
     /* The type guard precedes the scheduler-state check deliberately. With the
@@ -5831,6 +5846,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
 /* sign_extend of [val, bits] — sign-extend val from given bit width.
  * E.g. sign_extend of [0xFF, 8] → -1 */
 Value* builtin_sign_extend(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "sign_extend");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "sign_extend", "[val, bits]", make_num(0));
     /* The ELEMENT type check below is new, and it is the one place in this
      * change where the non-strict result is not byte-identical to before.
@@ -5953,6 +5969,7 @@ Value* builtin_list_insert_at(Value *arg) {
  * "no raise mechanism in the builtin layer"; ARG_GUARD is one, and #1008
  * wired these guards into it — the -1 still stands with the flag off.) */
 Value* builtin_list_index_of(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "list_index_of");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "list_index_of", "[list, value]", make_num(-1));
     Value *list = arg->data.list.items[0];
@@ -5972,6 +5989,7 @@ Value* builtin_list_index_of(Value *arg) {
  * value (same values_equal scan as list_index_of), else 0. Bad args give 0,
  * mirroring contains. */
 Value* builtin_list_contains(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "list_contains");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "list_contains", "[list, value]", make_num(0));
     Value *list = arg->data.list.items[0];
     Value *needle = arg->data.list.items[1];
@@ -6193,6 +6211,7 @@ Value* builtin_dispatch(Value *arg) {
  * accumulation instead. no-NaN/Inf is preserved (num_guard at each step), so
  * the result still respects EigenScript's no-NaN/Inf invariant. */
 static Value* builtin_dot(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "dot");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "dot", "[a, b]", make_num(0));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];

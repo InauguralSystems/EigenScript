@@ -2022,6 +2022,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
 }
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_tensor_save(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "tensor_save");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "tensor_save", "[tensor, path]", make_num(0));
     Value *tensor = arg->data.list.items[0];

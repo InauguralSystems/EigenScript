@@ -1292,6 +1292,20 @@ extern __thread EigsThread *eigs_current;
  * does catch it is `leak_clean` in tests/test_strict_math.sh, which reads the
  * LeakSanitizer text out of the output it already captures — so every strict
  * raise needs a row there, and a new guard without one is unguarded. */
+/* A fixed-shape list may keep its legacy prefix-consuming behaviour with
+ * EIGS_STRICT=0, but the strict default rejects trailing elements.  Keeping
+ * this as a named guard gives strict_differential.sh one derived population
+ * instead of a hand-maintained builtin list. */
+#define STRICT_LIST_MAX(arg, max_count, who)                                  \
+    do {                                                                      \
+        if (g_strict && (arg) && (arg)->type == VAL_LIST                      \
+            && (arg)->data.list.count > (max_count)) {                        \
+            rt_error(EK_TYPE, 0, "%s: expected a fixed-shape list with at "   \
+                     "most %d elements", (who), (max_count));                 \
+            return make_null();                                               \
+        }                                                                     \
+    } while (0)
+
 #define STRICT_REQUIRE(cond, who, want)                                       \
     do {                                                                      \
         if (g_strict && (cond)) {                                             \

@@ -385,7 +385,7 @@ clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
 
 extract_guard_names() {
     awk '
-    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named)\(/ { acc = ""; collecting = 1 }
+    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_LIST_MAX|STRICT_DOMAIN|num_guard_named)\(/ { acc = ""; collecting = 1 }
     collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
         collecting = 0
         n = split(acc, parts, "\"")
@@ -557,6 +557,38 @@ if [ "$NO_BASELINE" = 1 ]; then
     echo "  NOTE: identical-when-off was NOT measured (no baseline binary)."
 fi
 
+# ------------------------------------------------ fixed-shape surplus sweep (#1398)
+# The source annotations are the population: adding/removing a
+# STRICT_LIST_MAX site automatically adds/removes its executable row.
+FIXED_SHAPES=$(sed -n 's/.*STRICT_LIST_MAX(arg, \([0-9][0-9]*\), "\([a-z0-9_]*\)").*/\2|\1/p' src/*.c | sort -u)
+n_fixed=0; n_fixed_raise=0; n_fixed_soft=0; fixed_bad=""
+while IFS='|' read -r who max; do
+    [ -z "${who:-}" ] && continue
+    probe_builtin_present "$who" || continue
+    n_fixed=$((n_fixed + 1))
+    vals=""; i=1
+    while [ "$i" -le $((max + 1)) ]; do
+        [ -n "$vals" ] && vals="$vals, "
+        vals="${vals}1"; i=$((i + 1))
+    done
+    printf 'ignore is %s of [%s]\n' "$who" "$vals" > "$TMP/surplus.eigs"
+    off="$(run_capture "$NEW" 0 "$TMP/surplus.eigs")"
+    strict="$(run_capture "$NEW" 1 "$TMP/surplus.eigs")"
+    unset="$(run_capture "$NEW" - "$TMP/surplus.eigs")"
+    expected="$who: expected a fixed-shape list with at most $max elements"
+    if [ "${off%%$'\n'*}" = 0 ]; then n_fixed_soft=$((n_fixed_soft + 1))
+    else fixed_bad="$fixed_bad
+    $who — EIGS_STRICT=0 did not preserve the prefix-consuming answer: $(clip "$off" 90)"; fi
+    if [ "${strict%%$'\n'*}" != 0 ] && str_has "$strict" "$expected" && [ "$unset" = "$strict" ]; then
+        n_fixed_raise=$((n_fixed_raise + 1))
+    else fixed_bad="$fixed_bad
+    $who — surplus did not raise the named max-$max error under strict/default: $(clip "$strict" 90)"; fi
+done <<<"$FIXED_SHAPES"
+echo "== fixed-shape surplus differential =="
+echo "  derived-shapes=$n_fixed strict/default-raises=$n_fixed_raise non-strict-preserved=$n_fixed_soft"
+if [ -n "$fixed_bad" ]; then echo "  FIXED-SHAPE FAILURES:$fixed_bad"; rc=1; fi
+if [ "$n_fixed" -lt 25 ]; then echo "  VACUOUS: derived fixed shapes=$n_fixed — below floor"; rc=1; fi
+
 # ------------------------------------------------ gfx capability
 printf 'print of (gfx_text_width of ["m", 1])\n' > "$TMP/gfxprobe.eigs"
 gfx_probe_out="$("$NEW" "$TMP/gfxprobe.eigs" 2>&1 || true)"
@@ -571,12 +603,10 @@ if [ "$gfx_on" = 1 ]; then
 # name|shape-id|reason. A pair that raises is stale; a pair nothing probes is dead.
 ALLOW=$(cat <<'EOF'
 gfx_text_height|scalar|the scale slot is documented as `gfx_text_height of 2`, a bare number
-gfx_text_height|list2|[scale] with a numeric first slot is the documented list form; the surplus slot is #989
 gfx_text_width|string|`gfx_text_width of "hello"` is the documented one-argument form
 audio_pause|scalar|`audio_pause of 1` is the documented flag form
 audio_stop|scalar|`audio_stop of 1` is the documented channel form
 audio_music_volume|scalar|`audio_music_volume of 96` is the documented form
-audio_music_volume|list2|[volume] with a numeric first slot is the documented list form; the surplus slot is #989
 gfx_delay|scalar|`gfx_delay of 16` is the documented one-argument form
 gfx_title|string|`gfx_title of "name"` is the documented one-argument form
 audio_play|list2|a 2-element numeric list IS a sample list -- the valid call

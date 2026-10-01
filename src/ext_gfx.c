@@ -442,6 +442,7 @@ static int gfx_bad_samples(Value *v) {
 
 /* gfx_open of [width, height, title] */
 Value* builtin_gfx_open(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "gfx_open");
     /* #1007: the arg-list SHAPE, converted out of its #971 deferral marker. A wrong
      * arity used to answer the same 0 the missing-libSDL2 path answers,
      * so "you called it wrong" and "this machine has no SDL" were the
@@ -506,6 +507,7 @@ Value* builtin_gfx_close(Value *arg) {
 
 /* gfx_clear of [r, g, b] */
 Value* builtin_gfx_clear(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "gfx_clear");
     /* #1007: argument shape BEFORE the renderer check, the [135] rule. The
      * stand-in is the same null the no-window path answers, so a guard
      * placed after it would be unreachable in exactly the environment
@@ -537,6 +539,7 @@ Value* builtin_gfx_clear(Value *arg) {
 
 /* gfx_rect of [x, y, w, h, r, g, b] or [x, y, w, h, r, g, b, a] */
 Value* builtin_gfx_rect(Value *arg) {
+    STRICT_LIST_MAX(arg, 8, "gfx_rect");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 7
               || !gfx_nums(arg, 0, 8),
               "gfx_rect",
@@ -559,6 +562,7 @@ Value* builtin_gfx_rect(Value *arg) {
 
 /* gfx_line of [x1, y1, x2, y2, r, g, b] */
 Value* builtin_gfx_line(Value *arg) {
+    STRICT_LIST_MAX(arg, 7, "gfx_line");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 7
               || !gfx_nums(arg, 0, 7),
               "gfx_line",
@@ -579,6 +583,7 @@ Value* builtin_gfx_line(Value *arg) {
 
 /* gfx_point of [x, y, r, g, b] */
 Value* builtin_gfx_point(Value *arg) {
+    STRICT_LIST_MAX(arg, 5, "gfx_point");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5
               || !gfx_nums(arg, 0, 5),
               "gfx_point", "[number x, number y, number r, number g, number b]",
@@ -596,6 +601,7 @@ Value* builtin_gfx_point(Value *arg) {
 
 /* gfx_circle of [cx, cy, radius, r, g, b] — filled circle via midpoint */
 Value* builtin_gfx_circle(Value *arg) {
+    STRICT_LIST_MAX(arg, 7, "gfx_circle");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 6
               || !gfx_nums(arg, 0, 7),
               "gfx_circle",
@@ -622,6 +628,7 @@ Value* builtin_gfx_circle(Value *arg) {
 /* gfx_rrect of [x, y, w, h, radius, r, g, b] or [..., a]
  * Filled rounded rectangle. Draws corner arcs via scanlines + rects for body. */
 Value* builtin_gfx_rrect(Value *arg) {
+    STRICT_LIST_MAX(arg, 9, "gfx_rrect");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 8
               || !gfx_nums(arg, 0, 9),
               "gfx_rrect",
@@ -667,6 +674,7 @@ Value* builtin_gfx_rrect(Value *arg) {
 /* gfx_clip of [x, y, w, h] — set render clip rectangle.
  * gfx_clip of null — clear clip rectangle. */
 Value* builtin_gfx_clip(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "gfx_clip");
     /* `gfx_clip of null` CLEARS the clip and is the documented second call
      * shape, so only a non-null argument is required to be a 4-number
      * rectangle. */
@@ -699,6 +707,7 @@ Value* builtin_gfx_clip(Value *arg) {
  * this takes the TAKE/RECORD tape pair like audio_stream_queued.
  * Returns null with no window, no SDL symbol, or a failed read. */
 Value* builtin_gfx_read(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "gfx_read");
     /* ABOVE the tape seam, exactly as audio_capture_open's guard is (#1018).
      * An argument's TYPE is deterministic, so a rejected call is not a
      * nondeterministic input and must not touch the tape: placed below
@@ -964,6 +973,7 @@ static const unsigned char font5x7[95][7] = {
  * (#593); the 5x7 bitmap path below is the exact pre-#593 behavior and
  * runs whenever any part of the TTF path is missing or fails. */
 Value* builtin_gfx_text(Value *arg) {
+    STRICT_LIST_MAX(arg, 7, "gfx_text");
     /* The text element was ALREADY type-checked here — and coerced to ""
      * when it failed, so a number label drew nothing and said nothing —
      * while the five numbers beside it were read unchecked. Same next-line
@@ -1054,6 +1064,7 @@ Value* builtin_gfx_text(Value *arg) {
  * routes through this so proportional text doesn't break centering (#593).
  * Works without an open window (layout can be computed before gfx_open). */
 Value* builtin_gfx_text_width(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "gfx_text_width");
     const char *text = NULL;
     int scale = 1;
     int bad_scale = 0;
@@ -1091,6 +1102,7 @@ Value* builtin_gfx_text_width(Value *arg) {
  * height under the ACTIVE text renderer: TTF font height when active,
  * the bitmap glyph height (7 * scale) otherwise. */
 Value* builtin_gfx_text_height(Value *arg) {
+    STRICT_LIST_MAX(arg, 1, "gfx_text_height");
     int scale = 1;
     /* #1007, the COERCION shape: a wrong-typed scale silently fell back to
      * 1 and the caller was told the height it did not ask for. There is no
@@ -1679,6 +1691,7 @@ Value* builtin_audio_stream_close(Value *arg) {
  * any current track. Returns 1 on success, 0 on failure (missing mixer lib,
  * unreadable/undecodable file, no audio device). */
 Value* builtin_audio_music_play(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "audio_music_play");
     /* #1007: both #971 deferral markers converted. Above load_sdl2(), the [135] rule. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1
               || arg->data.list.items[0]->type != VAL_STR,
@@ -1722,6 +1735,7 @@ Value* builtin_audio_music_play(Value *arg) {
 
 /* audio_music_volume of v — music volume 0..128 */
 Value* builtin_audio_music_volume(Value *arg) {
+    STRICT_LIST_MAX(arg, 1, "audio_music_volume");
     /* #1007, COERCION shape: a wrong-typed volume fell through to v = 0 and
      * MUTED the music. Above the mixer-state check, the [135] rule. */
     STRICT_REQUIRE(!(arg && arg->type == VAL_NUM)
@@ -1773,6 +1787,7 @@ Value* builtin_audio_play(Value *arg) {
  * no memory multiplication — Tidepool GAP-002). Returns the channel id,
  * or 0 on a bad arg / closed device. */
 Value* builtin_audio_play_loop(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "audio_play_loop");
     /* #1007: the mixed condition split, exactly as its #971 deferral marker asked. The
      * arg-shape half is loud; `!g_audio_device` is device state and stays
      * soft, and it moves BELOW the guard so the guard is reachable on a
@@ -1812,6 +1827,7 @@ Value* builtin_audio_play_loop(Value *arg) {
 /* audio_volume of [channel, vol] — live per-channel volume, 0.0..4.0
  * (Tidepool GAP-003). Returns 1, or 0 on a bad channel/arg. */
 Value* builtin_audio_volume(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "audio_volume");
     /* #1007: the mixed condition split, as its #971 deferral marker asked. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
               || !arg->data.list.items[0] || arg->data.list.items[0]->type != VAL_NUM
@@ -1877,6 +1893,7 @@ Value* builtin_audio_clear(Value *arg) {
 
 /* audio_sine of [freq, duration, amplitude] — generate sine wave samples */
 Value* builtin_audio_sine(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "audio_sine");
     /* #1007 round 2. The ARITY/SHAPE half of the same laundering: a short or
      * non-list argument was answered with an empty sample list, which is
      * indistinguishable from a legitimately empty generation (`n <= 0`
@@ -1919,6 +1936,7 @@ Value* builtin_audio_sine(Value *arg) {
 
 /* audio_saw of [freq, duration, amplitude] — sawtooth wave */
 Value* builtin_audio_saw(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "audio_saw");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
               "audio_saw", "[number freq, number duration, number amplitude]", make_list(0));
@@ -1953,6 +1971,7 @@ Value* builtin_audio_saw(Value *arg) {
 
 /* audio_square of [freq, duration, amplitude] — square wave */
 Value* builtin_audio_square(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "audio_square");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
               "audio_square", "[number freq, number duration, number amplitude]", make_list(0));
@@ -1988,6 +2007,7 @@ Value* builtin_audio_square(Value *arg) {
 /* audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]
    waveform: 0=sine, 1=sawtooth.  Continuous phase sweep. */
 Value* builtin_audio_sweep(Value *arg) {
+    STRICT_LIST_MAX(arg, 5, "audio_sweep");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5,
               "audio_sweep", "[number freq_start, number freq_end, number duration, number amplitude, number waveform]", make_list(0));
@@ -2034,6 +2054,7 @@ Value* builtin_audio_sweep(Value *arg) {
 
 /* audio_noise of [duration, amplitude] — white noise */
 Value* builtin_audio_noise(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "audio_noise");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "audio_noise", "[number duration, number amplitude]", make_list(0));
@@ -2065,6 +2086,7 @@ Value* builtin_audio_noise(Value *arg) {
 
 /* audio_mix of [samples_a, samples_b] — add and clamp */
 Value* builtin_audio_mix(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "audio_mix");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "audio_mix", "[list samples_a, list samples_b]", make_list(0));
@@ -2095,6 +2117,7 @@ Value* builtin_audio_mix(Value *arg) {
 
 /* audio_gain of [samples, volume] — scale and clamp */
 Value* builtin_audio_gain(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "audio_gain");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "audio_gain", "[list samples, number volume]", make_list(0));
@@ -2131,6 +2154,7 @@ Value* builtin_audio_gain(Value *arg) {
 
 /* audio_envelope of [samples, attack, decay, sustain_level, release] — ADSR */
 Value* builtin_audio_envelope(Value *arg) {
+    STRICT_LIST_MAX(arg, 5, "audio_envelope");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 5,
               "audio_envelope", "[list samples, number attack, number decay, number sustain, number release]", make_list(0));
@@ -2201,6 +2225,7 @@ Value* builtin_audio_envelope(Value *arg) {
  * renderer as a scaled texture.  One C call replaces width*height draw calls.
  * Palette: 0 → white (0xFF), 1 → light (0xAA), 2 → dark (0x55), 3 → black (0x00). */
 Value* builtin_gfx_fb(Value *arg) {
+    STRICT_LIST_MAX(arg, 6, "gfx_fb");
     /* Argument shape BEFORE the renderer/symbol check, the [135] rule: the
      * five geometry elements were read unchecked while the buffer beside
      * them was type-checked one line down. */
@@ -2273,6 +2298,7 @@ Value* builtin_gfx_fb(Value *arg) {
  * Reads LCDC, scroll, palette, VRAM, OAM registers directly from mem_buf.
  * ================================================================ */
 Value* builtin_ppu_render_frame(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "ppu_render_frame");
     /* #1007: a wrong-typed or undersized buffer used to answer null and
      * render nothing, which in an emulator presents as a black screen with
      * no diagnostic anywhere. */

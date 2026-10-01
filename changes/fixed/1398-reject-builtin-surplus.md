@@ -1,0 +1,1 @@
+Fixed-shape list builtins now reject surplus trailing elements under the strict default instead of silently ignoring them; `EIGS_STRICT=0` preserves the legacy behaviour.

@@ -254,6 +254,7 @@ Value* builtin_regex_replace(Value *arg) {
 
 
 Value* builtin_stream_open(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "stream_open");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "stream_open", "[path, count]", make_num(0));
     Value *path_val = arg->data.list.items[0];
@@ -1007,6 +1008,7 @@ Value* builtin_is_file(Value *arg) {
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
  * a temp file, then atomically swap it in). Returns 1 on success, 0 on failure. */
 Value* builtin_rename(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "rename");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "rename", "[old_path, new_path]", make_num(0));
     Value *from = arg->data.list.items[0];
@@ -1214,6 +1216,7 @@ Value* builtin_read_line(Value *arg) {
 /* ==== BUILTIN: write_text ==== */
 /* write_text of ["path", text] → 1 on success, 0 on failure. */
 Value* builtin_write_text(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "write_text");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "write_text", "[path, text]", make_num(0));
     Value *path_val = arg->data.list.items[0];
@@ -1516,6 +1519,7 @@ Value* builtin_proc_spawn(Value *arg) {
 }
 
 Value* builtin_proc_write(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "proc_write");
     /* fs:CHANNEL replay refuses the write; the refusal is the replay layer's
      * to report, and -1 is proc_write's documented "wrote nothing". Not an
      * argument verdict — the same call is fine outside replay. */
@@ -1723,6 +1727,7 @@ Value* builtin_random_hex(Value *arg) {
  * so it can carry CBOR / arbitrary binary. Surfaced by tidelog's append-only
  * log (write_text is truncate-mode and NUL-truncating). */
 Value* builtin_write_bytes(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "write_bytes");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "write_bytes", "[path, data] (optionally [path, data, append])", make_num(0));
     Value *path_val = arg->data.list.items[0];
