@@ -86,6 +86,14 @@ int main(void) {
     Value *escaped = NULL;
     char key[64];
 
+    /* Possible-root pins are state-wide while sandbox budgets are per run.
+     * A sandbox boundary must therefore drain even a candidate parked below
+     * an adaptively enlarged collection threshold. */
+    Value *cycle = make_list(1);
+    list_append(cycle, cycle);
+    val_decref(cycle);
+    assert(g_gc_val_count > 0);
+
     for (int i = 0; i < 128; i++) {
         snprintf(key, sizeof key, "sandbox-only-key-%d", i);
         Value *out = sandbox_call(i);
@@ -94,6 +102,7 @@ int main(void) {
         assert(ok && ok->type == VAL_NUM && ok->data.num == 1.0);
         Value *result = dict_get(out, "result");
         assert(result && result->type == VAL_DICT);
+        assert(g_gc_val_count == 0);
         if (i == 0) {
             val_incref(result);
             escaped = result;

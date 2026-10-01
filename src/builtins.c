@@ -3943,6 +3943,11 @@ Value* builtin_sandbox_run(Value *arg) {
     if (result) { dict_set(out, "result", result); val_decref(result); }
     chunk_free(chunk);
     env_decref(sbox);
+    /* A sandbox invocation has its own allocation budget, but possible-root
+     * pins live on the state.  Do not let cyclic garbage created by one
+     * untrusted invocation accumulate outside that budget until an adaptive
+     * GC threshold inherited from an earlier, large heap is reached. */
+    gc_collect_cycles();
     env_intern_scope_end(intern_scope, saved_intern_scope);
     g_sandbox_error_latched = saved_sb_error_latched;
     g_sandbox_refusal      = saved_sb_refusal;
