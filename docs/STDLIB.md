@@ -310,9 +310,12 @@ shaped buffers (#973). A **tape** (Wengert list) records every op as a
 node; `ag_backward` seeds the loss with 1 and sweeps the tape in reverse
 applying each op's vector-Jacobian product, so a training step is one
 forward plus one backward — not `numerical_grad`'s one forward per
-parameter. It replaces the two hand-rolled backprops it was promoted from
-(Tidepool's DQN in `train.eigs`, iLambdaAi's transformer rules in
-`model_train.c`); `numerical_grad` stays as the gradient-check **oracle**
+parameter. It can express dense networks and causal self-attention blocks,
+including transpose, causal-masked softmax, layer normalization and GELU.
+It is a library-level alternative for new EigenScript trainers, **not** a
+drop-in replacement for iLambdaAi's C trainer: `model_train.c` remains a
+separate native implementation and consumers must migrate explicitly.
+`numerical_grad` stays as the gradient-check **oracle**
 (`tests/test_autograd.eigs` pins every rule below against it to 1e-4
 relative). Leaf values are the caller's own buffers — `ag_sgd_step` updates
 them in place. Build a fresh tape per step. Names carry the `ag_` prefix so
@@ -329,6 +332,10 @@ them in place. Build a fresh tape per step. Names carry the `ag_` prefix so
 | `ag_mul` | `ag_mul of [t, a, b]` | Elementwise product, same broadcast rule as `ag_add` |
 | `ag_scale` | `ag_scale of [t, a, k]` | Multiply by a number; a tensor `k` throws (use `ag_mul` with a node) |
 | `ag_relu` / `ag_leaky_relu` | `ag_relu of [t, a]` | Mask by pre-activation sign (0.01 on the negative side for leaky) |
+| `ag_gelu` | `ag_gelu of [t, a]` | Elementwise GELU (standard tanh approximation) and analytic vjp |
+| `ag_transpose` | `ag_transpose of [t, a]` | Transpose a 2-D node; vjp transposes the incoming gradient |
+| `ag_causal_softmax` | `ag_causal_softmax of [t, a]` | Row-wise softmax over columns at or before the row index; masked entries and gradients are zero |
+| `ag_layernorm` | `ag_layernorm of [t, a, eps]` | Normalize each row over its columns, with an analytic vjp |
 | `ag_softmax` / `ag_log_softmax` | `ag_softmax of [t, a]` | Row-wise; vjp `p·(dY − Σ dY·p)` / `dY − p·Σ dY` |
 | `ag_gather` | `ag_gather of [t, a, idx]` | `out[i] = a[i][idx[i]]` (1-D); vjp `scatter_add` |
 | `ag_norm` / `ag_sum` / `ag_mean` | `ag_norm of [t, a]` | Reductions to a scalar node (value is a num) |
