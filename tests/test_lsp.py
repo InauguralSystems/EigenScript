@@ -573,6 +573,14 @@ def main():
           isinstance(res, list) and res and "x + y" in res[0]["newText"]
           and "f(x, y)" in res[0]["newText"])
 
+    unequal_indent = "if 1:\n    if 1:\n      print of 7\nprint of 9\n"
+    r = converse([INIT, did_open(unequal_indent), fmt, SHUTDOWN, EXIT])
+    res = (by_id(r, 8) or {}).get("result")
+    check("formatting preserves unequal indentation depths (#1246)",
+          isinstance(res, list) and len(res) == 1
+          and res[0].get("newText") ==
+          "if 1:\n    if 1:\n        print of 7\nprint of 9\n")
+
     # --- rename: validate the APPLIED result, not just newText. This is the
     #     regression guard for the column-0 corruption (renaming 'count' must
     #     not touch 'print', and must hit the RHS use). ---

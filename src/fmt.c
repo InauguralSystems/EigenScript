@@ -261,9 +261,11 @@ char* format_source_string(const char *source) {
     strbuf_init(&output);
 
     /*
-     * Phase 1: collect all lines with their original indent levels.
-     * Then determine the indent "unit" used in the source (minimum non-zero indent).
-     * Normalize all indentation to 4-space units.
+     * Phase 1: collect all lines with their original indentation widths.
+     * Phase 2 follows the same push/pop shape as the lexer's indentation
+     * stack.  EigenScript requires a line in a child block to be indented
+     * more than its parent, but does not require every block to use the same
+     * width.  Dividing widths by one global unit therefore loses structure.
      */
 
     /* First pass: count lines */
@@ -320,16 +322,29 @@ char* format_source_string(const char *source) {
         }
     }
 
-    /* Find the minimum non-zero indent level to determine the "unit" */
-    int min_indent = 0;
+    /* Convert indentation widths to structural depths.  Blank and comment-only
+     * lines do not affect the lexer indentation stack, so neither may they
+     * create a formatter depth. */
+    int *levels = xcalloc_array(line_count + 1, sizeof(int));
+    int *indent_stack = xcalloc_array(line_count + 1, sizeof(int));
+    int indent_top = 0;
+    indent_stack[0] = 0;
     for (int i = 0; i < actual_lines; i++) {
-        if (indents[i] > 0 && lines[i][0] != '\0') {
-            if (min_indent == 0 || indents[i] < min_indent) {
-                min_indent = indents[i];
-            }
+        if (lines[i][0] == '\0' || lines[i][0] == '#') {
+            levels[i] = indent_top;
+            continue;
         }
+        if (indents[i] > indent_stack[indent_top]) {
+            indent_stack[++indent_top] = indents[i];
+        } else {
+            while (indent_top > 0 && indents[i] < indent_stack[indent_top]) {
+                indent_top--;
+            }
+            /* A non-matching dedent is already invalid source.  Keep it at
+             * the nearest surviving depth rather than inventing a new block. */
+        }
+        levels[i] = indent_top;
     }
-    if (min_indent == 0) min_indent = 4; /* default */
 
     /* Now emit formatted output */
     int prev_blank = 0;
@@ -349,8 +364,7 @@ char* format_source_string(const char *source) {
         }
         prev_blank = 0;
 
-        /* Calculate normalized indent level */
-        int level = indents[i] / min_indent;
+        int level = levels[i];
 
         /* Insert blank line between top-level define blocks */
         if (level == 0 && strncmp(trimmed, "define ", 7) == 0 && prev_was_toplevel_define) {
@@ -401,6 +415,8 @@ char* format_source_string(const char *source) {
     for (int i = 0; i < actual_lines; i++) free(lines[i]);
     free(lines);
     free(indents);
+    free(levels);
+    free(indent_stack);
     return strbuf_finish(&output);  /* transfer ownership to caller */
 }
 

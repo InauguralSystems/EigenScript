@@ -1,0 +1,1 @@
+- Preserve the nesting of valid blocks that use unequal indentation increments when formatting source through the CLI, `--fmt --write`, or the language server.

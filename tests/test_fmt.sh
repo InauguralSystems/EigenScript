@@ -39,6 +39,39 @@ ACTUAL=$(fmt_str "$(printf 'define foo(x) as:\n  return x\n')")
 EXPECTED=$(printf 'define foo(x) as:\n    return x\n')
 check "indent normalization (2->4)" "$ACTUAL" "$EXPECTED"
 
+# --- Structural indentation preservation (#1246) ---
+# A legal block may choose any indentation greater than its parent; indentation
+# increments need not be uniform.  Compare execution (including exact stdout),
+# not just formatter idempotence, because the old formatter emitted a stable
+# but unparseable result for the 4-then-6-space case.
+check_format_execution() {
+    local test_name="$1"
+    local source="$2"
+    local dir original_rc formatted_rc format_rc write_rc written_rc
+    local original_out formatted_out written_out
+    dir=$(mktemp -d /tmp/fmt_indent_XXXXXX)
+    printf '%s' "$source" > "$dir/original.eigs"
+    original_out=$($EIGS "$dir/original.eigs" 2>"$dir/original.err"); original_rc=$?
+    $EIGS --fmt "$dir/original.eigs" > "$dir/formatted.eigs" 2>"$dir/format.err"; format_rc=$?
+    formatted_out=$($EIGS "$dir/formatted.eigs" 2>"$dir/formatted.err"); formatted_rc=$?
+    cp "$dir/original.eigs" "$dir/written.eigs"
+    $EIGS --fmt --write "$dir/written.eigs" 2>"$dir/write.err"; write_rc=$?
+    written_out=$($EIGS "$dir/written.eigs" 2>"$dir/written.err"); written_rc=$?
+    check "$test_name" \
+          "original_rc=$original_rc format_rc=$format_rc formatted_rc=$formatted_rc write_rc=$write_rc written_rc=$written_rc original=$original_out formatted=$formatted_out written=$written_out errors=$(cat "$dir/original.err" "$dir/format.err" "$dir/formatted.err" "$dir/write.err" "$dir/written.err")" \
+          "original_rc=0 format_rc=0 formatted_rc=0 write_rc=0 written_rc=0 original=$original_out formatted=$original_out written=$original_out errors="
+    rm -rf "$dir"
+}
+
+check_format_execution "unequal indentation increments preserve execution" \
+    "$(printf 'if 1:\n    if 1:\n      print of 7\nprint of 9\n')"
+check_format_execution "unequal sibling blocks and dedents preserve execution" \
+    "$(printf 'if 1:\n   if 1:\n          print of 1\n   if 1:\n     print of 2\nprint of 3\n')"
+check_format_execution "ordinary 2-space indentation preserves execution" \
+    "$(printf 'if 1:\n  if 1:\n    print of 2\nprint of 0\n')"
+check_format_execution "ordinary 4-space indentation preserves execution" \
+    "$(printf 'if 1:\n    if 1:\n        print of 4\nprint of 0\n')"
+
 # --- Trailing whitespace removal ---
 ACTUAL=$(fmt_str "$(printf 'x is 42   \ny is 10  \n')")
 EXPECTED=$(printf 'x is 42\ny is 10\n')
