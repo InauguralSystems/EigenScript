@@ -285,13 +285,19 @@ parity of ["rebinding the name drops the module keys",
 
 # The cwd gate. Run the same import from a directory that has no `lib/`: both
 # evaluators must still answer the stdlib module beside the binary. Done in a
-# temp cwd and restored immediately, so a failure below cannot leave the rest
-# of the file running somewhere else.
+# private, freshly-created temp cwd and restored immediately.  A fixed shared
+# directory such as /tmp would let another user plant log.eigs before this
+# trusted test imports it.
 _mp_cwd is getcwd of null
-chdir of "/tmp"
+_mp_tmp_result is exec_capture of ["mktemp", "-d"]
+if _mp_tmp_result[0] != 0:
+    throw of "could not create private temporary directory"
+_mp_tmp_cwd is trim of _mp_tmp_result[1]
+chdir of _mp_tmp_cwd
 _mp_meta_elsewhere is meta_probe of "import log\nhas_key of [log, \"log_info\"]"
 _mp_vm_elsewhere is vm_probe of "import log\nhas_key of [log, \"log_info\"]"
 chdir of _mp_cwd
+exec_capture of ["rm", "-rf", _mp_tmp_cwd]
 check of ["meta: import resolves from a cwd with no lib/", _mp_meta_elsewhere, ["ok", 1]]
 check of ["VM: import resolves from a cwd with no lib/", _mp_vm_elsewhere, ["ok", 1]]
 
