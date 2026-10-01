@@ -595,7 +595,7 @@ jobs:
         run: make lsp CC=clang
 
       - name: Require compiler guard activity
-        if: always()
+        if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report
 
   # Build the http+model variant and run the suite against it: the suite's
