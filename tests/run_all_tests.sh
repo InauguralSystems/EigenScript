@@ -5227,6 +5227,12 @@ echo ""
 echo "[102] Parallel Shared-Chunk Execution (#297)"
 check_eigs_suite "concurrent workers, same chunks, exact results" test_spawn_parallel.eigs "All tests passed" 1
 
+# [102a] #1439: the MT safety gate must not leave main-thread temporal
+# assignments stamped with the last pre-spawn line. The worker stays parked
+# until both writes and the query have completed; TSan covers the same case.
+echo "[102a] Main-thread temporal lines while a worker is live (#1439)"
+check_eigs_suite "live worker preserves main-thread temporal assignment lines" test_spawn_temporal.eigs "All tests passed" 1
+
 # [103] Exit must not hang on a channel-blocked worker (#303). handle_table_drain
 # closes+wakes channels before joining; a recv-blocked worker on a never-closed
 # channel must wake and let the program exit (this test times out if it regresses).

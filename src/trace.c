@@ -582,7 +582,8 @@ static int occ_index_of(const PrevEntry *e, long long ordinal) {
     return (int)idx;
 }
 
-static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
+static void prev_record_assign(const char *name, EigsSlot value, int filtered,
+                               int source_line) {
     if (!eigs_current || !name) return;
     /* #1072 (via #873): the history table is a HEAP structure that outlives
      * any arena window, so an arena-allocated value must be PROMOTED before
@@ -637,8 +638,11 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     e->current = value;
     e->has_current = 1;
 
-    /* Stamp with the current VM line as cached by trace_line. */
-    int line = trace_current_line_load();
+    /* VM callers pass their per-thread current line. Other producers (AOT
+     * and embedders) use the process-wide trace stamp. Keeping the VM line
+     * explicit matters while spawn has the multithreaded gate raised: OP_LINE
+     * deliberately does not write the shared stamp then (#297). */
+    int line = source_line >= 0 ? source_line : trace_current_line_load();
     lc_bump(e, line);
 
     /* #868: the occurrence ring runs alongside the line history, not inside
@@ -2072,7 +2076,8 @@ static void write_slot(EigsSlot s) {
     tp_puts("<unknown>");
 }
 
-static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int record_prev) {
+static void trace_assign_ex(const char *name, EigsSlot value, int filtered,
+                            int record_prev, int source_line) {
     /* Prev-map update runs regardless of EIGS_TRACE — `prev of x` is a
      * language feature, not a tape feature. The tape write below is
      * still gated on a tape (file or sink) being open. record_prev == 0 is
@@ -2081,7 +2086,7 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int 
      * records; test_dap's breakpoint inside `double` is one) but must not
      * enter the name-keyed prev table, where a callee's same-named local
      * would rewrite the caller's `prev`. */
-    if (record_prev) prev_record_assign(name, value, filtered);
+    if (record_prev) prev_record_assign(name, value, filtered, source_line);
 
     if (!tape_emit_begin()) return;
     obs_cfg_sync();
@@ -2109,12 +2114,16 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int 
  * chunk) reaches the history through here and needs no arming ritual it has
  * no way to perform. */
 void trace_assign(const char *name, EigsSlot value) {
-    trace_assign_ex(name, value, 0, 1);
+    trace_assign_ex(name, value, 0, 1, -1);
+}
+
+void trace_assign_at_line(const char *name, EigsSlot value, int line) {
+    trace_assign_ex(name, value, 0, 1, line);
 }
 
 /* #1063: tape record only -- see trace_assign_ex. */
 void trace_assign_tape_only(const char *name, EigsSlot value) {
-    trace_assign_ex(name, value, 1, 0);
+    trace_assign_ex(name, value, 1, 0, -1);
 }
 
 /* The narrowed twin, for callers running a chunk the bytecode compiler
@@ -2123,7 +2132,11 @@ void trace_assign_tape_only(const char *name, EigsSlot value) {
  * it. Retention is bounded by the suffix-minima pruning either way — this is
  * an optimization, never a safety property. */
 void trace_assign_filtered(const char *name, EigsSlot value) {
-    trace_assign_ex(name, value, 1, 1);
+    trace_assign_ex(name, value, 1, 1, -1);
+}
+
+void trace_assign_filtered_at_line(const char *name, EigsSlot value, int line) {
+    trace_assign_ex(name, value, 1, 1, line);
 }
 
 /* ----- Full-fidelity writer for nondet records.
