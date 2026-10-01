@@ -657,24 +657,16 @@ else
 fi
 echo ""
 
-echo "[0d] Host frame line in traces from a builtin-run chunk"
+echo "[0d] sandbox_run policy errors stay contained (#1426)"
 check_binary_fingerprint
-HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>&1); HFL_RC=$?
-TOTAL=$((TOTAL + 2))
-# The second sandbox_run sits on line 12, the first on line 8. Planted (pre-fix
-# vm.c) both traces printed the same stale line (14, past the end of the file),
-# so both rows below went red; test_vm_run_bytecode showed the previous call's
-# line instead -- the stale value is whatever the frame's ip happened to hold.
-if [ "$HFL_RC" -eq 0 ] && echo "$HFL_OUT" | grep -q "at <module> (line 12)"; then
-    PASS=$((PASS + 1)); echo "  PASS: host frame line is the call's own line"
+HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>"$TMPDIR/eigs-host-frame.err"); HFL_RC=$?
+HFL_ERR=$(cat "$TMPDIR/eigs-host-frame.err")
+TOTAL=$((TOTAL + 1))
+if [ "$HFL_RC" -eq 0 ] && [ "$HFL_OUT" = "0" ] && [ -z "$HFL_ERR" ]; then
+    PASS=$((PASS + 1)); echo "  PASS: sandbox policy errors return ok=0 without stderr"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: host frame line (rc=$HFL_RC): $(echo "$HFL_OUT" | grep 'at <module>' | tr '\n' ' ')"
-fi
-HFL_N=$(echo "$HFL_OUT" | grep -c "at <module> (line 8)")
-if [ "$HFL_N" -eq 1 ]; then
-    PASS=$((PASS + 1)); echo "  PASS: the first call's line appears once, not for both traces"
-else
-    FAIL=$((FAIL + 1)); echo "  FAIL: line 8 appeared $HFL_N times (want 1)"
+    FAIL=$((FAIL + 1)); echo "  FAIL: sandbox policy error containment (rc=$HFL_RC, stdout=$HFL_OUT)"
+    [ -n "$HFL_ERR" ] && echo "$HFL_ERR"
 fi
 echo ""
 
@@ -1736,6 +1728,21 @@ check_eigs_suite "eigen_run f-strings ignore a host rebinding of str (#1322)" te
 # x_oom/abort(); exceeding it returns {ok:0}. Includes the cumulative (F2) case.
 echo "[108] Sandbox Allocation Budget (#292)"
 check_eigs_suite "budget rejects bombs ({ok:0}), allows small, cumulative, per-run reset" test_sandbox_budget.eigs "All tests passed" 1
+
+# [108a] sandbox_run is a C-level error boundary: failures belong exclusively
+# in its structured return value and must not emit an "uncaught" diagnostic.
+echo "[108a] sandbox_run Error Containment (#1426)"
+check_binary_fingerprint
+SB1426_OUT=$($EIGS_TMO ./eigenscript ../tests/test_sandbox_error_silence.eigs </dev/null 2>"$TMPDIR/eigs-sandbox-1426.err"); SB1426_RC=$?
+SB1426_ERR=$(cat "$TMPDIR/eigs-sandbox-1426.err")
+TOTAL=$((TOTAL + 1))
+if [ "$SB1426_RC" -eq 0 ] && echo "$SB1426_OUT" | grep -q "All tests passed" && [ -z "$SB1426_ERR" ]; then
+    PASS=$((PASS + 1)); echo "  PASS: structured sandbox error returned with empty stderr"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: sandbox error containment (rc=$SB1426_RC)"
+    [ -n "$SB1426_OUT" ] && echo "$SB1426_OUT"
+    [ -n "$SB1426_ERR" ] && echo "$SB1426_ERR"
+fi
 
 # [109] throw propagation across call frames (#322). A throw out of a called
 # function must unwind to the nearest enclosing try — NOT keep running the
