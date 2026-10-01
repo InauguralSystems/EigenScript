@@ -1942,6 +1942,13 @@ static void handle_semantic_tokens(int id, const char *params) {
     strbuf_init(&sb);
     strbuf_append(&sb, "{\"data\":[");
     int prev_line = 0, prev_col = 0, first = 1;
+    /* Tokens arrive in source order, so keep the start of the current source
+     * line rather than walking from the beginning for every token.  Besides
+     * avoiding quadratic work, bounding every search by source_end keeps a
+     * malformed span from reading beyond the document buffer. */
+    const char *source_line_start = doc->text;
+    const char *source_end = doc->text ? doc->text + doc->text_len : NULL;
+    int source_line = 0;
     for (int i = 0; i < doc->tokens.count; i++) {
         Token *t = &doc->tokens.tokens[i];
         if (t->synth) continue;  /* f-string lowering: no source span (#1244) */
@@ -1951,8 +1958,7 @@ static void handle_semantic_tokens(int id, const char *params) {
         if (line0 < 0) continue;
         int col = t->col;
         int len = t->len > 0 ? t->len : 1;
-        if (g_multiline_token_support || !doc->text ||
-            !memchr(doc->text, '\n', (size_t)doc->text_len)) {
+        if (g_multiline_token_support || !doc->text) {
             append_semantic_token(&sb, line0, col, len, stype,
                                   &prev_line, &prev_col, &first);
             continue;
@@ -1961,11 +1967,19 @@ static void handle_semantic_tokens(int id, const char *params) {
         /* Locate this source span and emit one legal, single-line token for
          * each non-empty piece. Token lengths are byte lengths, matching the
          * server's advertised utf-8 position encoding. */
-        const char *p = doc->text;
-        for (int line = 0; line < line0 && *p; p++)
-            if (*p == '\n') line++;
-        p += col;
-        int remaining = len;
+        while (source_line < line0 && source_line_start < source_end) {
+            const char *nl = memchr(source_line_start, '\n',
+                                    (size_t)(source_end - source_line_start));
+            if (!nl) break;
+            source_line_start = nl + 1;
+            source_line++;
+        }
+        if (source_line != line0 || col < 0 ||
+            col > source_end - source_line_start)
+            continue;
+        const char *p = source_line_start + col;
+        int available = (int)(source_end - p);
+        int remaining = len < available ? len : available;
         int piece_line = line0, piece_col = col;
         while (remaining > 0) {
             const char *nl = memchr(p, '\n', (size_t)remaining);
