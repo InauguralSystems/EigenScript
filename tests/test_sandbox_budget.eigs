@@ -18,6 +18,27 @@ POP is 35
 CALL is 39
 RETURN is 40
 
+# Arena promotion must treat lists as a graph. Verified bytecode can make an
+# arena list contain itself entirely on the operand stack, then SET_NAME makes
+# it escape. This used to recurse in C until stack overflow while allocating
+# uncharged heap lists; a tiny byte budget must now reject it structurally.
+NUM_ZERO is 2
+NULL_OP is 1
+DUP2 is 37
+INDEX_SET is 45
+SET_NAME is 26
+arena_cycle_desc is [ABI,
+    [NUM_ZERO, NULL_OP, 42,1,0, DUP2, INDEX_SET,
+     SET_NAME,0,0, RETURN],
+    ["cycle"]]
+arena_mark of null
+arena_cycle_result is sandbox_run of [arena_cycle_desc, 1, 64]
+arena_reset of null
+assert_eq of [arena_cycle_result["ok"], 0,
+              "arena promotion: cyclic graph terminates within sandbox budget"]
+assert_eq of [arena_cycle_result["error"]["kind"], "sandbox",
+              "arena promotion: heap copy is charged to sandbox budget"]
+
 # --- #965 (root redesign): ONE verification context for the WHOLE graph -----
 # The pool bound added in fix7 is shared across ONE chunk's constants — but
 # every NESTED function chunk re-entered the descriptor builder and declared a

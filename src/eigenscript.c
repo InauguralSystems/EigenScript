@@ -1757,10 +1757,65 @@ Value* slot_to_value(EigsSlot s) {
     return &g_null_singleton;
 }
 
+/* Promotion is a graph operation, not a tree walk.  In particular, bytecode
+ * can build list cycles without putting either list through a binding first.
+ * Keep one entry per arena list so cycles terminate and shared subgraphs stay
+ * shared.  The iterative fill also puts a hard bound on native stack use. */
+#define PROMOTE_MAX_LISTS 100000
+
+typedef struct {
+    Value **src;
+    Value **dst;
+    int count;
+    int capacity;
+    int refused;
+} PromoteGraph;
+
+static Value *promote_graph_list(PromoteGraph *g, Value *v) {
+    for (int i = 0; i < g->count; i++)
+        if (g->src[i] == v) return g->dst[i];
+
+    /* Once the sandbox budget refuses growth, only close edges to copies
+     * already made. Do not turn one refusal into more attacker-controlled
+     * native work before sandbox_run reaches its error boundary. */
+    if (g->refused) return NULL;
+
+    if (g->count >= PROMOTE_MAX_LISTS) {
+        rt_error(eigs_current && g_sandbox_active ? EK_SANDBOX : EK_LIMIT, 0,
+                 "arena promotion exceeds %d lists", PROMOTE_MAX_LISTS);
+        return NULL;
+    }
+    if (g->count == g->capacity) {
+        int old_cap = g->capacity;
+        int new_cap = old_cap ? old_cap * 2 : 16;
+        if (new_cap > PROMOTE_MAX_LISTS) new_cap = PROMOTE_MAX_LISTS;
+        /* This bookkeeping is attacker-controlled during sandbox execution,
+         * so it belongs to the same budget as the graph copy itself. */
+        if (!sandbox_charge((size_t)(new_cap - old_cap) *
+                            2 * sizeof(Value *))) g->refused = 1;
+        g->src = xrealloc_array(g->src, (size_t)new_cap, sizeof(Value *));
+        g->dst = xrealloc_array(g->dst, (size_t)new_cap, sizeof(Value *));
+        g->capacity = new_cap;
+    }
+
+    int cap = v->data.list.count < 8 ? 8 : v->data.list.count;
+    if (!sandbox_charge(sizeof(Value) + (size_t)cap * sizeof(Value *))) {
+        /* sandbox_run records the refusal, but completing this bounded copy
+         * keeps all existing store callers' non-NULL ownership contract. */
+        g->refused = 1;
+    }
+    Value *h = make_list_heap(v->data.list.count);
+    g->src[g->count] = v;
+    g->dst[g->count] = h;
+    g->count++;
+    return h;
+}
+
 Value* promote_if_arena(Value *v) {
     if (!v || !v->arena) return v;
     if (v->type == VAL_NUM) {
         /* #262 Step E: no observer fields to carry across the promotion. */
+        if (!sandbox_charge(sizeof(Value))) { /* refusal is sticky */ }
         return make_num_permanent(v->data.num);
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
@@ -1768,6 +1823,7 @@ Value* promote_if_arena(Value *v) {
         h->type = v->type;
         /* #1183: the source already knows its length — copy it, don't re-scan. */
         size_t n = val_str_len(v);
+        if (!sandbox_charge(sizeof(Value) + n + 1)) { /* refusal is sticky */ }
         char *copy = xmalloc(n + 1);
         memcpy(copy, v->data.str ? v->data.str : "", n);
         copy[n] = '\0';
@@ -1786,25 +1842,34 @@ Value* promote_if_arena(Value *v) {
          * outlives arena_reset as a dangling reference — silent wrong
          * values, type confusion, even free() aborts when a decref
          * walks the stale pointer. Deep-promote instead: a fresh heap
-         * list; arena children promote recursively (fresh rc=1,
-         * adopted), heap children are shared (incref'd). Arena lists
-         * are acyclic at promotion time — building a cycle requires
-         * mutating through a binding, and binding stores promote — so
-         * the recursion terminates. Aliasing between two references to
-         * the same UNBOUND arena temporary is not preserved (each
-         * promotes to its own copy); observing that would require a
-         * binding, which promotes. Lists are the only arena-capable
+         * list; arena children are copied and heap children are shared.
+         * The source-to-copy table preserves aliases and closes cycles made
+         * directly by verified bytecode before any binding store. Lists are
+         * the only arena-capable
          * container: make_dict/make_fn/buffers/text builders are
          * heap-only constructors and never carry v->arena. */
-        Value *h = make_list_heap(v->data.list.count);
-        for (int i = 0; i < v->data.list.count; i++) {
-            Value *c = v->data.list.items[i];
-            Value *pc = promote_if_arena(c);
-            if (pc == c) val_incref(pc);
-            h->data.list.items[i] = pc;
+        PromoteGraph g = {0};
+        Value *root = promote_graph_list(&g, v);
+        for (int n = 0; n < g.count; n++) {
+            Value *src = g.src[n];
+            Value *dst = g.dst[n];
+            for (int i = 0; i < src->data.list.count; i++) {
+                Value *c = src->data.list.items[i];
+                Value *pc;
+                if (c && c->arena && c->type == VAL_LIST)
+                    pc = promote_graph_list(&g, c);
+                else
+                    pc = promote_if_arena(c);
+                if (!pc) pc = make_null();
+                if (pc == c || (c && c->arena && c->type == VAL_LIST))
+                    val_incref(pc);
+                dst->data.list.items[i] = pc;
+            }
+            dst->data.list.count = src->data.list.count;
         }
-        h->data.list.count = v->data.list.count;
-        return h;
+        free(g.src);
+        free(g.dst);
+        return root;
     }
     /* Remaining types (dict/fn/builtin/buffer/text builder) are
      * heap-only at construction; an arena flag on one is unreachable. */
