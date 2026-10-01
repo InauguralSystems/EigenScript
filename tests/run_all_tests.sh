@@ -3002,6 +3002,26 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
+    echo "[47g/47] native_train_step max-sequence refusal (#1401)"
+    MS_OUTPUT=$(bash "$TESTS_DIR/test_native_train_max_seq.sh" 2>&1); MS_RC=$?
+    MS_PASS=$(echo "$MS_OUTPUT" | grep -c "PASS:" || true)
+    MS_FAIL=$(echo "$MS_OUTPUT" | grep -c "FAIL:" || true)
+    if [ "$MS_RC" -ne 0 ] && [ "$MS_FAIL" -eq 0 ]; then
+        MS_FAIL=1
+        MS_OUTPUT="$MS_OUTPUT
+  FAIL: max-sequence child exited without a verdict (rc=$MS_RC)"
+    fi
+    TOTAL=$((TOTAL + MS_PASS + MS_FAIL))
+    PASS=$((PASS + MS_PASS))
+    FAIL=$((FAIL + MS_FAIL))
+    if [ "$MS_FAIL" -gt 0 ]; then
+        echo "  FAIL: $MS_FAIL native_train_step max-sequence check(s) failed"
+        echo "$MS_OUTPUT" | grep "FAIL:" | head -4
+    else
+        echo "  PASS: over-long training windows are refused before cache writes"
+    fi
+    echo ""
+
     echo "[47f/47] eigen_eval_loss held-out cross-entropy"
     EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
     EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)

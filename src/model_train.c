@@ -1614,6 +1614,13 @@ Value* builtin_native_train_step(Value *arg) {
 
     int input_len = in_list->data.list.count;
     int output_len = out_list->data.list.count;
+    long long full_len = (long long)input_len + output_len;
+    if (full_len > g_model.config.max_seq_len) {
+        rt_error(EK_VALUE, 0,
+            "native_train_step: sequence length %lld exceeds model max_seq_len %d",
+            full_len, g_model.config.max_seq_len);
+        return make_null();
+    }
     int *input_ids = xcalloc(input_len > 0 ? input_len : 1, sizeof(int));
     int *output_ids = xcalloc(output_len > 0 ? output_len : 1, sizeof(int));
     for (int i = 0; i < input_len; i++) {
