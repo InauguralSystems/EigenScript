@@ -30,6 +30,30 @@ counted=$(grep -niE '^[[:space:]]*echo "\[[^]"]+\][^"]*[(, ][0-9]+( [a-z][a-z0-9
 if [ -n "$counted" ]; then
   printf 'FAIL: section label carries a hand-typed count (#1372):\n%s\n' "$counted"; exit 1
 fi
+# #1430: counts outside the original check/test/case vocabulary drift in the
+# same way, as do weights in the tally and the fallback argument to
+# check_eigs_suite.  Sections are tally units: their internal assertion count
+# belongs to the self-checking child, not to this runner.  Refuse all three
+# spellings so adding a new hand-maintained count makes this gate red.
+counted=$(grep -niE '^[[:space:]]*echo "\[[^]"]+\][^"]*[(, ][0-9]+( [a-z][a-z0-9-]*){0,3} (states?|issues?|docs?|files?|modes?|variants?|forms?|paths?|entries?|operations?|builtins?|functions?|samples?|programs?|commands?|targets?|sections?|fixtures?|assertions?|rows?|rules?|classes?|documents?|populations?|workers?|backends?|features?|examples?|expressions?|calls?|types?|values?|names?|fields?|opcodes?|nodes?|methods?|rounds?|phases?|steps?|runs?|probes?)([^a-z]|$)' "$RUNNER")
+if [ -n "$counted" ]; then
+  printf 'FAIL: section label carries a hand-typed count (#1430):\n%s\n' "$counted"; exit 1
+fi
+
+tally_counted=$(grep -nE '(TOTAL|PASS|FAIL)=\$\(\((TOTAL|PASS|FAIL) \+ ([2-9]|[1-9][0-9]+)\)\)' "$RUNNER")
+if [ -n "$tally_counted" ]; then
+  printf 'FAIL: suite tally carries a hand-typed count (#1430):\n%s\n' "$tally_counted"; exit 1
+fi
+
+declared_counted=$(awk '
+  /check_eigs_suite|derive_count/ { in_call = 1 }
+  in_call && /[[:space:]]([2-9]|[1-9][0-9]+)[[:space:]]*$/ { print NR ":" $0; bad = 1 }
+  in_call && $0 !~ /\\[[:space:]]*$/ { in_call = 0 }
+  END { exit bad ? 0 : 1 }
+' "$RUNNER")
+if [ -n "$declared_counted" ]; then
+  printf 'FAIL: suite helper carries a hand-typed count (#1430):\n%s\n' "$declared_counted"; exit 1
+fi
 grep -nE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER" \
   | sed -E 's/^([0-9]+):[[:space:]]*echo "\[([^]"]+)\](.*)$/\2\t\1\t\3/' \
   | sort -t$'\t' -k1,1 -k2,2n \
@@ -44,5 +68,5 @@ grep -nE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER" \
       { prev = $1; first = $2 }
       END { exit bad ? 1 : 0 }'
 rc=$?
-[ $rc -eq 0 ] && echo "PASS: $n labelled echo lines, no two sections share a label"
+[ $rc -eq 0 ] && echo "PASS: $n labelled echo lines; labels and tallies carry no hand-typed counts; no two sections share a label"
 exit $rc
