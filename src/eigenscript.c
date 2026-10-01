@@ -1815,7 +1815,8 @@ Value* promote_if_arena(Value *v) {
     if (!v || !v->arena) return v;
     if (v->type == VAL_NUM) {
         /* #262 Step E: no observer fields to carry across the promotion. */
-        if (!sandbox_charge(sizeof(Value))) { /* refusal is sticky */ }
+        /* A refusal is sticky and is reported at the sandbox boundary. */
+        (void)sandbox_charge(sizeof(Value));
         return make_num_permanent(v->data.num);
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
@@ -1823,7 +1824,8 @@ Value* promote_if_arena(Value *v) {
         h->type = v->type;
         /* #1183: the source already knows its length — copy it, don't re-scan. */
         size_t n = val_str_len(v);
-        if (!sandbox_charge(sizeof(Value) + n + 1)) { /* refusal is sticky */ }
+        /* A refusal is sticky and is reported at the sandbox boundary. */
+        (void)sandbox_charge(sizeof(Value) + n + 1);
         char *copy = xmalloc(n + 1);
         memcpy(copy, v->data.str ? v->data.str : "", n);
         copy[n] = '\0';

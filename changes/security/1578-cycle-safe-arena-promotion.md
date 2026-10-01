@@ -1,0 +1,1 @@
+- Make arena-backed value promotion cycle-safe and charge its allocations to the sandbox budget.
