@@ -41,6 +41,13 @@ typedef union {
     Uint8 padding[64];
 } SDL_Event;
 
+/* Keep the hand-declared event ABI honest.  In particular, #599 omitted
+ * `state`, moving x/y four bytes left while every stubbed UI test stayed
+ * green.  The real-input gate below also checks values after SDL_PushEvent. */
+_Static_assert(offsetof(SDL_MouseMotionEvent, x) == 20,
+               "SDL_MouseMotionEvent ABI: state must precede x");
+_Static_assert(sizeof(SDL_Event) >= 56, "SDL_Event ABI must hold SDL2 events");
+
 typedef void SDL_Window;
 typedef void SDL_Renderer;
 
@@ -752,12 +759,8 @@ static int poll_mod_state(void) {
  * {"type": "keydown", "key": "up"} / {"type": "quit"} /
  * {"type": "mousemove", "x": 100, "y": 200} / etc.
  * Key, mouse, and wheel events all carry shift/ctrl/alt (0/1). */
-Value* builtin_gfx_poll(Value *arg) {
-    (void)arg;
-    if (!g_window) return make_null(); /* fs:ANSWER no window open means no event queue, which is the same "no event" null this builtin answers for an empty queue */
-    SDL_Event ev;
-    if (!p_SDL_PollEvent(&ev)) return make_null(); /* fs:ANSWER SDL_PollEvent found nothing: "no event pending" is gfx_poll's documented answer */
-
+Value* eigs_gfx_decode_sdl_event(const void *raw_event) {
+    const SDL_Event ev = *(const SDL_Event *)raw_event;
     Value *d = make_dict(4);
     switch (ev.type) {
         case MY_SDL_QUIT_EVENT:
@@ -833,6 +836,14 @@ Value* builtin_gfx_poll(Value *arg) {
             return make_null();  /* fs:ANSWER an event type this builtin does not decode is "no event", the same null it answers for an empty queue */
     }
     return d;
+}
+
+Value* builtin_gfx_poll(Value *arg) {
+    (void)arg;
+    if (!g_window) return make_null(); /* fs:ANSWER no window open means no event queue, which is the same "no event" null this builtin answers for an empty queue */
+    SDL_Event ev;
+    if (!p_SDL_PollEvent(&ev)) return make_null(); /* fs:ANSWER SDL_PollEvent found nothing: "no event pending" is gfx_poll's documented answer */
+    return eigs_gfx_decode_sdl_event(&ev);
 }
 
 /* gfx_ticks of null — milliseconds since SDL_Init */

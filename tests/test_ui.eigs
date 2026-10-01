@@ -85,6 +85,16 @@ load_file of "lib/ui.eigs"
 
 print of "=== UI Toolkit Tests ==="
 
+# Public-surface enrolment (#1263). Behavioural assertions below exercise the
+# bulk of these exports; this binding check makes an accidental rename/removal
+# of even a less commonly used constructor a named failure rather than silently
+# shrinking the supported UI surface.
+_surface_exports is [color_dot, badge, progress_bar, spinbox, find_by_id,
+    stack_vertical, stack_horizontal, show_toast, show_menu, show_dialog,
+    statusbar, theme_dark, theme_high_contrast, property_editor,
+    file_dialog_refresh, tween, cancel_tweens, toggle_button, meter, radio_group]
+assert_eq of [len of _surface_exports, 20, "#1263 all previously uncovered public UI exports are bound"]
+
 # ============================================================
 # 1. Constructor tests
 # ============================================================

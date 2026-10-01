@@ -74,7 +74,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-http nativefn-test arming-mt-test embed-roads print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx ui-sdl-input-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-http nativefn-test arming-mt-test embed-roads print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -421,6 +421,11 @@ embed-smoke-gfx: gfx
 		$(filter-out build/gfx/main.o,$(wildcard build/gfx/*.o)) \
 		-lm -lpthread $(LIBS_gfx)
 	/tmp/embed_smoke_gfx
+
+ui-sdl-input-gfx: gfx
+	$(CC) $(FLAGS_gfx) -I$(SRC_DIR) -o /tmp/ui_sdl_input_gfx tests/ui_sdl_input.c \
+		$(filter-out build/gfx/main.o,$(wildcard build/gfx/*.o)) -lm -lpthread $(LIBS_gfx)
+	SDL_VIDEODRIVER=dummy /tmp/ui_sdl_input_gfx
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that

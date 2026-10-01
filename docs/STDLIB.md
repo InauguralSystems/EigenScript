@@ -893,6 +893,11 @@ Mouse and wheel events from `gfx_poll` carry `shift`/`ctrl`/`alt`
 (0/1) like key events; headless tests synthesize event dicts, where
 absent keys read null.
 
+The remaining public state helpers are `unregister_hotkey`,
+`hex_set_cursor`, `hex_view_metrics`, and `hex_view_addr_at`; these remove a
+registered shortcut and expose the hex viewer's cursor and coordinate
+conversion seams, respectively.
+
 ### lib/invariant.eigs — Runtime Invariant Checks
 
 Declare-and-check invariants inside programs; see the module header

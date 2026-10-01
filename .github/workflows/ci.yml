@@ -795,6 +795,10 @@ jobs:
         run: make gfx
 
       - if: needs.scope.outputs.code == 'true'
+        name: UI surface real SDL input
+        run: bash tools/ui_surface_check.sh --gfx-input
+
+      - if: needs.scope.outputs.code == 'true'
         name: Run full suite against gfx build
         run: cd tests && bash run_all_tests.sh
 
