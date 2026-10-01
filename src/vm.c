@@ -3069,21 +3069,6 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_SLICE_GET] = &&lbl_SLICE_GET,
     };
     #define CHECK_ERROR() do { \
-        /* Keep the state-wide stop probe in the dispatch hot path, but do \
-         * not pay an out-of-line function call on every opcode.  The acquire \
-         * load is the complete fast path; only a published request needs the \
-         * helper to copy its associated status code. */ \
-        if (__builtin_expect(!g_exit_requested && \
-                __atomic_load_n(&eigs_current->state->exit_latched, \
-                                __ATOMIC_ACQUIRE), 0)) { \
-            int _state_exit_code; \
-            if (eigs_state_exit_requested(eigs_current->state, \
-                                          &_state_exit_code)) { \
-                g_exit_code = _state_exit_code; \
-                g_exit_requested = 1; \
-                g_has_error = 1; \
-            } \
-        } \
         while (__builtin_expect(g_has_error, 0)) { \
             vm_error_flush_pending(chunk, ip);   /* #407: uncaught print + caret */ \
             if (frame->try_count > 0 && !g_exit_requested) { \
@@ -3123,6 +3108,19 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
                 frame = &g_vm.frames[g_vm.frame_count - 1]; \
                 ip = frame->ip; \
                 chunk = frame->chunk; \
+            } \
+        } \
+    } while(0)
+    #define POLL_STATE_EXIT() do { \
+        if (__builtin_expect(!g_exit_requested && \
+                __atomic_load_n(&eigs_current->state->exit_latched, \
+                                __ATOMIC_ACQUIRE), 0)) { \
+            int _state_exit_code; \
+            if (eigs_state_exit_requested(eigs_current->state, \
+                                          &_state_exit_code)) { \
+                g_exit_code = _state_exit_code; \
+                g_exit_requested = 1; \
+                g_has_error = 1; \
             } \
         } \
     } while(0)
@@ -3778,6 +3776,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(JUMP_BACK): {
         uint16_t offset = read_u16(ip); ip += 2;
         ip -= offset;
+        /* A worker's state-wide exit must stop CPU-bound peers, but polling
+         * it from CHECK_ERROR made every opcode pay for an atomic acquire
+         * load. Every unbounded bytecode path crosses a back edge, so use the
+         * existing loop safepoint instead; blocking builtins are woken by the
+         * request itself. This keeps straight-line dispatch at its former
+         * cost while retaining prompt interruption of busy loops. */
+        if (__builtin_expect(g_vm_multithreaded, 0)) POLL_STATE_EXIT();
+        if (__builtin_expect(g_exit_requested, 0)) DISPATCH();
         /* Async abort: poll the embedder's registered flag on the one
          * opcode every loop crosses. Consume the flag (edge, not level)
          * so the abort kills exactly one eval. #410: the pointer is
@@ -4070,6 +4076,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push(result);
 
             /* Check for errors from builtins */
+            POLL_STATE_EXIT();
             CHECK_ERROR();
             /* #408: a suspending builtin (task_yield/task_join) sets the
              * request flag and leaves its placeholder result on the stack.
@@ -6317,6 +6324,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!consumes_arg && result != arg) val_decref(arg);
             slot_decref(table_s);
             vm_push(result);
+            /* A blocking builtin can return because a peer requested exit. */
+            POLL_STATE_EXIT();
             CHECK_ERROR();
             DISPATCH();
         }
