@@ -427,7 +427,11 @@ so **any** `ci.yml` job that can fail there colours it, required or not.
 The fix copies Rust (tiers plus a merge queue), CPython and Go:
 
 - **Tier 1** — the checks listed in `.github/required-checks.txt`. They block
-  a merge, and they are evaluated **in the merge queue**.
+  a merge, and they are evaluated **in the merge queue**. On `pull_request`,
+  the cheap tier runs the build, gcc release suite, gate self-tests and
+  contributor precheck, warning/LSP compile checks, and documentation gates.
+  Required heavy names still report success, but their only PR step says
+  `deferred to merge queue`; a missing required check would hang the PR.
 - **The merge queue.** A PR that passed the fast PR lane joins GitHub's merge
   queue. The queue builds a candidate commit (current `main` + the PRs queued
   ahead of it + this PR) and runs the **full main lane** on it (the
@@ -438,6 +442,13 @@ The fix copies Rust (tiers plus a merge queue), CPython and Go:
   `pages.yml`) triggers on `merge_group`, and every main-lane-only step is
   gated `github.event_name != 'pull_request'` (true on push *and* in the
   queue), never `== 'push'`.
+- **Heavy required lanes** — ASan/UBSan shards, both TSan variants, every
+  extension suite (HTTP/model, gfx, zlib, net, and database), macOS, valgrind,
+  and the instruction-count benchmark run in the merge queue and on pushes to
+  `main`, not on PRs. Aggregated workers are skipped before runner allocation;
+  the always-running required aggregator prints the PR deferral and requires
+  every worker to succeed in the queue. The macOS required name is reported
+  by an Ubuntu aggregator on PRs, so deferral consumes no macOS runner.
 - **The post-merge push run** re-tests the commit the queue already tested. It
   stays: the README badge reads it, it publishes the rolling `ci-main` dev
   image that fork PRs run in, and `pages.yml` deploys the site only on push
@@ -469,10 +480,10 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
 - `[event-condition]` — on a required path (a required job, the jobs it
   transitively needs, and the `ci.yml` workers), a condition could run work on
   push that the queue skips. A job-level `if:` may not mention the event at
-  all: a job **skipped** by its `if:` reports a *satisfied* required check, so a
-  job-level event filter lets a merge through untested. A step `if:` may
-  mention the event only as `github.event_name ==/!= 'pull_request'`, or via
-  the PR payload `github.event.pull_request.*` (empty on push and in the
+  all except on the enumerated heavy workers behind required aggregators;
+  those must use exactly `github.event_name != 'pull_request'`. A step `if:`
+  may mention the event only as `github.event_name ==/!= 'pull_request'`, or
+  via the PR payload `github.event.pull_request.*` (empty on push and in the
   queue alike). Dot and bracket syntax are both read. The same rule covers
   indirection: an `env`, job `outputs`, workflow `env` or matrix value on a
   required path may not read the event (outside those two forms), and an
@@ -481,6 +492,11 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   Two reviewed step outputs are waived by a hash of their step (`scope`/`detect`
   for docs-only classification and `gate-selftests`/`select` for changed-gate
   selection); a waiver that matches nothing is red.
+- `[heavy-deferral]` / `[heavy-on-pr]` / `[heavy-no-merge-work]` — every
+  enumerated heavy required job has exactly one PR step printing `deferred to
+  merge queue`, every other step excludes PRs, and real work remains for the
+  merge queue and push. The self-test plants a push-only heavy suite which
+  also defers in the queue and requires that mutation to go red.
 - `[continue-on-error]` — a job or step on a required path sets it, so its
   failure would not fail the check.
 - `[uncovered]` — a `ci.yml` job is neither required nor the worker of exactly
@@ -488,9 +504,9 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   stop the queue, yet it colours the badge: the `macos-15-intel` shape.
 
 Whether an aggregator's script really fails on every non-success worker
-result is a code-review question, not this gate's. The gate's other accepted
-limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
-`schedule:` triggers) are listed in #1278.
+result remains a code-review question. The gate's other accepted limits
+(matrix `include`/`exclude`, expressions inside `run:` scripts, `schedule:`
+triggers) are listed in #1278.
 
 ### Every `ci.yml` job, classified
 
@@ -500,9 +516,9 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 | `build dev/ci image` | 1 | the image every `container:` job (the Linux legs, the extension/ASan workers, db, the audits, the differentials, freestanding) runs inside; required because required jobs `needs` it, and a failed prerequisite *skips* them — added by #1264 |
 | `werror flags ([99i])` | 1 | gate |
 | `gate self-tests (changed rows)` | 1 | gate |
-| `linux / gcc` | 1 | full suite on every code event |
-| `linux / clang` | 1 | clang `-Werror` build and full suite on every code event |
-| `macos / macos-latest` | 1 | the one macOS leg; full suite with [99i] on the main lane |
+| `linux / gcc` | 1 | release suite on every code event |
+| `linux / clang` | 1 | clang `-Werror` build and PR LSP compile check; full suite in the queue/main lane |
+| `macos / macos-latest` | 1 | required aggregator; PR deferral on Ubuntu, native full-suite worker in the queue/main lane |
 | `extensions (http+model+gfx suite; embed/lsp/jit-smoke)` | 1 | **aggregator** |
 | `extensions / http+model and ancillary checks`, `/ gfx suite`, `/ zlib suite`, `/ net suite` | 1, via the aggregator | workers |
 | `asan + ubsan (full suite)` | 1 | **aggregator**; also re-derives shard coverage and sums the leak tally |
@@ -519,8 +535,9 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 | `nightly / gate self-tests` | **2** (`nightly.yml`) | calibrates every checker |
 | `nightly / valgrind (full corpus, JIT off)` | **2** (`nightly.yml`) | slow; the PR and main lanes run the smoke spread |
 
-No `ci.yml` job moved to nightly in #1264 beyond `macos-15-intel` (#1265):
-every other job already runs on pull requests, so each was made tier 1.
+No required check is absent on pull requests: heavy checks report the
+canonical successful deferral, then run their real suites on the candidate
+commit in the merge queue before it can land.
 
 ### Checks from other workflows
 

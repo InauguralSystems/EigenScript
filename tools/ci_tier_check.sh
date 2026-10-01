@@ -105,6 +105,15 @@ for r in req:
     if not triggers(W[wf][0], "merge_group"): V("not-in-queue", f"required {r!r}: {wf} does not trigger on merge_group — it never reports in the queue")
     closure(wf, jid, path)
 ci = W["ci.yml"][1]
+# These are deliberately expensive main-lane checks.  Their required jobs must
+# report a real, successful check on a PR, but may do no more than print the
+# canonical deferral.  Workers behind aggregators are skipped before runner
+# allocation on PRs; the aggregator is what owns the required check name.
+HEAVY = {"build-and-test-macos", "extensions", "database", "sanitizers",
+         "valgrind", "tsan", "tsan-http", "bench"}
+HEAVY_WORKERS = {"build-and-test-macos-worker", "extensions-http",
+                 "extensions-gfx", "extensions-zlib", "extensions-net",
+                 "database-worker", "sanitizers-core"}
 if len(ci) != int(os.environ["CT_AWK"]) or not ci:
     V("vacuous", f"ci.yml: the loader sees {len(ci)} jobs, awk sees {os.environ['CT_AWK']}")
 counts = {"required": 0, "worker": 0}
@@ -115,7 +124,13 @@ for jid, j in ci.items():
         counts["worker"] += 1; closure("ci.yml", jid, path); continue
     V("uncovered", f"ci.yml:{jid} {NAMES[('ci.yml', jid)]} is not required and not the worker of ONE required `if: always()` job — it can colour main without blocking the queue")
 for wf, jid in sorted(path):
-    j = W[wf][1][jid]; why = bad_expr(cond(j.get("if", "")), wf, jid, False)
+    j = W[wf][1][jid]
+    jc = cond(j.get("if", ""))
+    # Heavy workers are the one safe job-level exception: their sole required
+    # consumer is an always() aggregator which prints the PR deferral and, on
+    # merge_group/push, rejects any result other than worker success.
+    worker_defer = wf == "ci.yml" and jid in HEAVY_WORKERS and jc == "github.event_name != 'pull_request'"
+    why = None if worker_defer else bad_expr(jc, wf, jid, False)
     if why: V("event-condition", f"{wf}:{jid}: job-level `if:` — {why}; a job skipped in the queue or on a PR is a satisfied check")
     vals = [(k, v) for d in (j.get("env"), j.get("outputs"), W[wf][2]) if isinstance(d, dict) for k, v in d.items()]
     vals += [("strategy", yaml.safe_dump(j.get("strategy") or {}))] + [(k, v) for st in j.get("steps") or []
@@ -130,6 +145,32 @@ for wf, jid in sorted(path):
         why = bad_expr(cond(st.get("if", "")), wf, jid, True)
         if why: V("event-condition", f"{wf}:{jid} step {i} ({st.get('name', st.get('uses', '?'))}): `if:` — {why}; only `github.event_name ==/!= 'pull_request'` may select the lane")
         if st.get("continue-on-error") not in (None, False): V("continue-on-error", f"{wf}:{jid} step {i} ({st.get('name', '?')}) sets continue-on-error")
+for jid in sorted(HEAVY):
+    if jid not in ci:
+        V("heavy-missing", f"ci.yml:{jid}: declared heavy required job is missing")
+        continue
+    steps = [s for s in ci[jid].get("steps") or [] if isinstance(s, dict)]
+    deferred = [s for s in steps if cond(s.get("if", "")) == "github.event_name == 'pull_request'"
+                and "deferred to merge queue" in str(s.get("run", ""))]
+    if len(deferred) != 1:
+        V("heavy-deferral", f"ci.yml:{jid}: expected exactly one pull_request step printing 'deferred to merge queue', found {len(deferred)}")
+    merge_work = 0
+    for i, st in enumerate(steps):
+        if st in deferred: continue
+        c = cond(st.get("if", ""))
+        # An unguarded checkout/setup silently makes the PR lane expensive;
+        # a push-only condition is already rejected by bad_expr above.
+        if not PR_ATOM.search(c) or "!=" not in c:
+            V("heavy-on-pr", f"ci.yml:{jid} step {i} ({st.get('name', st.get('uses', '?'))}) is not excluded from pull_request")
+        else:
+            merge_work += 1
+    if merge_work == 0:
+        V("heavy-no-merge-work", f"ci.yml:{jid}: defers but has no work selected for merge_group/push")
+for jid in sorted(HEAVY_WORKERS):
+    if jid not in ci:
+        V("heavy-missing", f"ci.yml:{jid}: declared heavy worker is missing")
+    elif cond(ci[jid].get("if", "")) != "github.event_name != 'pull_request'":
+        V("heavy-worker", f"ci.yml:{jid}: worker must skip only pull_request (and therefore run on merge_group and push)")
 if set(WAIVE) - used: V("event-condition", f"waiver(s) {sorted(set(WAIVE) - used)} matched nothing — stale; remove or re-pin")
 if bad: print(f"ci-tier: FAIL — {len(bad)} violation(s): {' '.join(sorted(set(bad)))}"); sys.exit(1)
 print(f"ci-tier: OK — ci.yml jobs={len(ci)} (awk={os.environ['CT_AWK']}) required={counts['required']} worker={counts['worker']}; "
@@ -146,4 +187,36 @@ live() {
     [ -z "$d" ] && { echo "ci-tier --live: OK — the ruleset requires exactly the $(grep -c . <<<"$want") checks in the file"; return 0; }
     echo "$d"; echo "ci-tier --live: DRIFT — sync the ruleset from required-checks.txt"; return 1
 }
-case "${1:-}" in "") check ;; --live) live ;; *) echo "usage: $0 [--live]" >&2; exit 2 ;; esac
+plant_merge_deferral() {
+    local tmp out rc
+    tmp=$(mktemp -d); out="$tmp/out"
+    trap 'rm -rf "$tmp"' RETURN
+    cp -R "$WF_DIR" "$tmp/workflows"
+    # Plant the exact regression this gate exists to prevent: the database
+    # required check says "deferred" on PR *and merge_group*, while its suite
+    # runs on push only.  The mutated copy must be rejected.
+    python3 - "$tmp/workflows/ci.yml" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+a = s.index("  database:\n")
+b = s.index("\n  sanitizers:\n", a)
+job = s[a:b]
+job = job.replace("github.event_name == 'pull_request'", "github.event_name != 'push'")
+job = job.replace("github.event_name != 'pull_request'", "github.event_name == 'push'")
+open(p, "w", encoding="utf-8").write(s[:a] + job + s[b:])
+PY
+    rc=0
+    CI_TIER_PLANT=1 CI_TIER_WF_DIR="$tmp/workflows" bash "$0" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -ne 1 ] || ! grep -q 'heavy-deferral' "$out" || ! grep -q 'event-condition' "$out"; then
+        cat "$out"
+        echo "ci-tier: SELFTEST FAIL — merge_group deferral plant was not rejected as heavy-deferral + event-condition"
+        return 1
+    fi
+    echo "ci-tier: SELFTEST OK — a heavy suite deferred on merge_group/push-only work is rejected"
+}
+case "${1:-}" in
+    "") check && { [ "${CI_TIER_PLANT:-0}" = 1 ] || plant_merge_deferral; } ;;
+    --live) live ;;
+    *) echo "usage: $0 [--live]" >&2; exit 2 ;;
+esac
