@@ -55,6 +55,7 @@ class BenchmarkTest(unittest.TestCase):
                     if value is None: os.environ.pop(key,None)
                     else: os.environ[key]=value
             self.assertEqual(subprocess.check_output(["git","rev-list","--count","HEAD"],cwd=source,text=True).strip(),"1")
+            self.assertFalse((source/".git"/"hooks"/"post-commit").exists())
 
     def test_eigenscript_validation_is_public_contract_in_order(self):
         task=json.loads((ROOT/"bench/ai_contribution/tasks/eigenscript-1236.json").read_text())

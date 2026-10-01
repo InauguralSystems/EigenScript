@@ -28,15 +28,24 @@ def clean(repo):
                        text=True, capture_output=True, check=True)
     return not p.stdout
 
+def isolated_git_env():
+    """Return an environment that cannot inject host Git configuration."""
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("GIT_CONFIG_")}
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    return env
+
 def snapshot(repo, revision, work):
     archive = subprocess.Popen(["git", "archive", revision], cwd=repo, stdout=subprocess.PIPE)
     subprocess.run(["tar", "-x", "-C", work], stdin=archive.stdout, check=True)
     archive.stdout.close()
     if archive.wait(): raise RuntimeError("git archive failed")
-    subprocess.run(["git", "init", "-q"], cwd=work, check=True)
-    subprocess.run(["git", "config", "user.email", "benchmark@example.invalid"], cwd=work, check=True)
-    subprocess.run(["git", "config", "user.name", "AI benchmark"], cwd=work, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=work, check=True)
+    git_env = isolated_git_env()
+    subprocess.run(["git", "init", "-q"], cwd=work, check=True, env=git_env)
+    subprocess.run(["git", "config", "user.email", "benchmark@example.invalid"], cwd=work, check=True, env=git_env)
+    subprocess.run(["git", "config", "user.name", "AI benchmark"], cwd=work, check=True, env=git_env)
+    subprocess.run(["git", "add", "-A"], cwd=work, check=True, env=git_env)
     # A benchmark fixture must not inherit signing or hook policy from the
     # machine running it.  Besides making the snapshot host-dependent, a
     # global core.hooksPath can execute arbitrary checkout-external code.
@@ -47,9 +56,11 @@ def snapshot(repo, revision, work):
     hooks.mkdir()
     subprocess.run(["git", "-c", f"core.hooksPath={hooks}", "commit",
                     "--no-verify", "--no-gpg-sign", "-q", "-m", "benchmark fixture"],
-                   cwd=work, check=True)
-    subprocess.run(["git", "remote", "add", "origin", str(work / ".stub-origin")], cwd=work, check=True)
-    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=work, check=True)
+                   cwd=work, check=True, env=git_env)
+    subprocess.run(["git", "remote", "add", "origin", str(work / ".stub-origin")],
+                   cwd=work, check=True, env=git_env)
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+                   cwd=work, check=True, env=git_env)
 
 def normalize(adapter, raw):
     data = json.loads(raw)
