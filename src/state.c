@@ -130,6 +130,14 @@ int eigs_state_exit_requested(EigsState *st, int *code) {
     return 1;
 }
 
+void eigs_state_clear_exit(EigsState *st) {
+    if (!st) return;
+    pthread_mutex_lock(&st->exit_mutex);
+    st->exit_latch_code = 0;
+    __atomic_store_n(&st->exit_latched, 0, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&st->exit_mutex);
+}
+
 void eigs_state_destroy(EigsState *st) {
     state_destroy_body(st, 0);
 }

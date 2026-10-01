@@ -631,6 +631,14 @@ int main(void) {
     if (r) eigs_value_release(r);
     eigs_clear_error();
 
+    /* The state-wide worker latch is evaluation-scoped too. A stale latch
+     * used to be imported by the next eval's first loop back-edge even though
+     * eval_source had cleared the thread-local exit flag. */
+    r = eigs_eval_string("i is 0\nloop while i < 2:\n    i is i + 1\ni");
+    CHECK(r != NULL && eigs_value_as_num(r) == 2.0,
+          "loops still run after a script called exit (#1149)");
+    if (r) eigs_value_release(r);
+
     r = eigs_eval_string(catcher);
     CHECK(r != NULL && eigs_value_as_string(r) &&
           strcmp(eigs_value_as_string(r), "CAUGHT") == 0,

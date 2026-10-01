@@ -2646,6 +2646,16 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     }
     if (!consumes_arg && result != arg) val_decref(arg);
     vm_push(result);
+    /* A builtin such as spawn can turn a formerly single-threaded state into
+     * a multithreaded one while this thunk is already executing. Import a
+     * worker's exit before allowing native execution to continue. */
+    if (__builtin_expect(eigs_state_exit_requested(eigs_current->state,
+                                                   &g_exit_code), 0)) {
+        g_exit_requested = 1;
+        g_has_error = 1;
+        g_vm.frames[g_vm.frame_count - 1].ip = caller_chunk->code + resume_off;
+        return 2;
+    }
     if (__builtin_expect(g_arena.active, 0)) {
         /* #873: the builtin just opened an arena window (arena_mark).
          * The caller thunk's inline stores don't arena-promote, so hand
@@ -2751,6 +2761,7 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_vm_owner                 = (int)offsetof(VM, owner);
     out->off_thread_state             = (int)offsetof(EigsThread, state);   /* #972 */
     out->off_state_obs_needed         = (int)offsetof(EigsState, obs_needed);
+    out->off_state_exit_latched       = (int)offsetof(EigsState, exit_latched);
     out->off_sp              = (int)offsetof(VM, sp);
     out->off_stack           = (int)offsetof(VM, stack);
     out->off_frame_count     = (int)offsetof(VM, frame_count);

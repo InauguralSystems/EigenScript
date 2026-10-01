@@ -2162,6 +2162,7 @@ void   handle_release(int id, uint32_t gen);
 /* State-wide `exit`: first request wins and is visible to every VM thread. */
 void   eigs_state_request_exit(struct EigsState *st, int code);
 int    eigs_state_exit_requested(struct EigsState *st, int *code);
+void   eigs_state_clear_exit(struct EigsState *st);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);

@@ -135,6 +135,7 @@ typedef struct {
      * VM.owner -> EigsThread.state. */
     int  off_thread_state;            /* offsetof(EigsThread, state) */
     int  off_state_obs_needed;        /* offsetof(EigsState, obs_needed) */
+    int  off_state_exit_latched;      /* offsetof(EigsState, exit_latched) */
     int  off_sp;
     int  off_stack;
     int  off_frame_count;

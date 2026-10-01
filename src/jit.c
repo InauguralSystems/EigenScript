@@ -3662,7 +3662,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * end of body emission. */
             if (pending_count + 1 > (int)(sizeof pending /
                                           sizeof pending[0]) ||
-                bail_count + 1 > (int)(sizeof bail_patches /
+                bail_count + (op == OP_JUMP_BACK ? 2 : 1) >
+                                  (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3671,6 +3672,20 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             int target = (op == OP_JUMP) ? (i + 3 + (int)off)
                                          : (i + 3 - (int)off);
             if (op == OP_JUMP_BACK) {
+                /* #1149: a thunk may have called spawn after passing the
+                 * entry-time single-threaded gate. Poll the state exit latch
+                 * at native back-edges and bail at this opcode; the
+                 * interpreter re-runs it and imports the exit code through
+                 * POLL_STATE_EXIT. This is a plain acquire-equivalent load on
+                 * x86 and only adds work to native loop back-edges. */
+                w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
+                w = emit_mov_disp32_rax_to_rax(w, g_layout.off_thread_state);
+                w = emit_cmpl_imm32_disp32_rax(w,
+                                               g_layout.off_state_exit_latched,
+                                               0);
+                w = emit_jne_rel32(w, &bail_patches[bail_count]);
+                bail_count++;
+
                 /* #410: poll the async abort flag on every native
                  * back-edge, mirroring CASE(JUMP_BACK). The pointer is
                  * never NULL (sentinel), so: load the registered pointer,

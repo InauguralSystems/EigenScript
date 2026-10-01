@@ -122,4 +122,15 @@ loop while i < 1000000000:
     i is i + 1
 print of "MARK_END"' ""
 
+# The loop starts single-threaded and enters an OSR thunk before spawn turns
+# multithreading on. Native back-edges must notice the worker's exit too.
+check_worker_exit "worker exit interrupts an already-running JIT loop" 'define quitter() as:
+    exit of 5
+i is 0
+loop while i < 1000000000:
+    i is i + 1
+    if i == 10000:
+        spawn of quitter
+print of "MARK_END"' ""
+
 echo ""
