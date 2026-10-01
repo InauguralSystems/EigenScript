@@ -826,9 +826,7 @@ void observer_slot_update_num(Env *e, int idx, double num) {
  * NON-numeric binding) therefore remain elision-sensitive; PREDICATES.md
  * says so. Gated by the same #915 observer gate as the full update: a
  * program nothing in which reads the observer still pays nothing. */
-void observer_slot_sample_num(Env *e, int idx, double num) {
-    eigs_obs_count_call();   /* #972 */
-    if (!eigs_obs_gate_open()) return;
+void observer_slot_sample_num_gated(Env *e, int idx, double num) {
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
     ObserverSlot *s = env_obs_slot(e, idx);
@@ -837,17 +835,27 @@ void observer_slot_sample_num(Env *e, int idx, double num) {
     s->used = 1;
 }
 
-void observer_slot_sample(Env *e, int idx, Value *newval) {
-    eigs_obs_count_call();   /* #972 */
-    if (!eigs_obs_gate_open()) return;
+void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
     if (newval && newval->type == VAL_NUM) {
-        observer_slot_sample_num(e, idx, newval->data.num);
+        observer_slot_sample_num_gated(e, idx, newval->data.num);
         return;
     }
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
     ObserverSlot *s = env_obs_slot(e, idx);
     if (s) s->v_last = 0;   /* #861 route bit only — no walk, no `used` */
+}
+
+void observer_slot_sample_num(Env *e, int idx, double num) {
+    eigs_obs_count_call();   /* #972 */
+    if (!eigs_obs_gate_open()) return;
+    observer_slot_sample_num_gated(e, idx, num);
+}
+
+void observer_slot_sample(Env *e, int idx, Value *newval) {
+    eigs_obs_count_call();   /* #972 */
+    if (!eigs_obs_gate_open()) return;
+    observer_slot_sample_gated(e, idx, newval);
 }
 
 /* #1044: per-binding window override. Only the OVERRIDE is written — the
