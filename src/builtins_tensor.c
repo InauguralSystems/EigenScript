@@ -2104,7 +2104,7 @@ Value* builtin_tensor_save(Value *arg) {
     int total = rows * cols;
 
     /* Write numeric data */
-    fwrite(flat, sizeof(double), total, f);
+    if (total > 0) fwrite(flat, sizeof(double), total, f);
     free(flat);
 
     /* #262 Step E: tensor elements are list items, not bindings, so they never
