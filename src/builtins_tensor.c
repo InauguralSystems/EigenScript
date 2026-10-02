@@ -245,9 +245,35 @@ static int tensor_dims(Value *v, int *rows, int *cols) {
     return 0;
 }
 
-/* --- Tensor helper: flatten nested list to double* (caller must free) --- */
-static double* tensor_to_flat(Value *v, int *rows, int *cols) {
+/* --- Tensor helper: flatten nested list to double* (caller must free) ---
+ * #1416 callers (kept explicit so strict_differential can enumerate them):
+ * matmul (two operands), matmul_at (two), matmul_bt (two), softmax,
+ * log_softmax, relu, leaky_relu, and tensor_save. */
+static double* tensor_to_flat(Value *v, int *rows, int *cols,
+                              const char *who) {
     int ndim = tensor_dims(v, rows, cols);
+    /* Historically every non-number slot became 0.0 below. Strict mode is
+     * the default, so reject that lossy conversion before allocating; the
+     * explicit EIGS_STRICT=0 path deliberately retains the old stand-in.
+     * Check even when the first element or row gives no usable shape. */
+    if (g_strict && v && v->type == VAL_LIST) {
+        int bad = 0;
+        if (ndim == 1) {
+            for (int i = 0; i < v->data.list.count; i++)
+                if (v->data.list.items[i]->type != VAL_NUM) { bad = 1; break; }
+        } else {
+            for (int r = 0; r < v->data.list.count && !bad; r++) {
+                Value *row = v->data.list.items[r];
+                if (row->type != VAL_LIST) { bad = 1; break; }
+                for (int c = 0; c < row->data.list.count; c++)
+                    if (row->data.list.items[c]->type != VAL_NUM) { bad = 1; break; }
+            }
+        }
+        if (bad) {
+            rt_error(EK_TYPE, 0, "%s: expected a tensor containing only numbers", who);
+            return NULL;
+        }
+    }
     if (ndim == 0 || *rows <= 0 || *cols <= 0) return NULL;
     size_t total = safe_size_mul((size_t)*rows, (size_t)*cols);
     if (total > 10000000) {
@@ -697,12 +723,13 @@ Value* builtin_tensor_matmul(Value *arg) {
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac);
-    double *bf = tensor_to_flat(b, &br, &bc);
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul");
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul");
     if (!af || !bf) {
         free(af); free(bf);
-        rt_error(EK_TYPE, 0, "matmul: expected matrices (got %s, %s)",
-                 val_type_name(a->type), val_type_name(b->type));
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "matmul: expected matrices (got %s, %s)",
+                     val_type_name(a->type), val_type_name(b->type));
         return make_null();
     }
     if (ac != br) {
@@ -767,12 +794,13 @@ Value* builtin_tensor_matmul_at(Value *arg) {
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac);
-    double *bf = tensor_to_flat(b, &br, &bc);
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul_at");
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul_at");
     if (!af || !bf) {
         free(af); free(bf);
-        rt_error(EK_TYPE, 0, "matmul_at: expected matrices (got %s, %s)",
-                 val_type_name(a->type), val_type_name(b->type));
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "matmul_at: expected matrices (got %s, %s)",
+                     val_type_name(a->type), val_type_name(b->type));
         return make_null();
     }
     if (ar != br) {
@@ -822,12 +850,13 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac);
-    double *bf = tensor_to_flat(b, &br, &bc);
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul_bt");
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul_bt");
     if (!af || !bf) {
         free(af); free(bf);
-        rt_error(EK_TYPE, 0, "matmul_bt: expected matrices (got %s, %s)",
-                 val_type_name(a->type), val_type_name(b->type));
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "matmul_bt: expected matrices (got %s, %s)",
+                     val_type_name(a->type), val_type_name(b->type));
         return make_null();
     }
     if (ac != bc) {
@@ -977,7 +1006,7 @@ Value* builtin_tensor_softmax(Value *arg) {
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols);
+    double *flat = tensor_to_flat(arg, &rows, &cols, "softmax");
     if (!flat) return make_null();
     ne_softmax_buf(flat, rows, cols);
     Value *result = flat_to_like(arg, flat, rows, cols);   /* #1093 */
@@ -1020,7 +1049,7 @@ Value* builtin_tensor_log_softmax(Value *arg) {
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(tensor, &rows, &cols);
+    double *flat = tensor_to_flat(tensor, &rows, &cols, "log_softmax");
     if (!flat) return make_null();
     ne_softmax_buf(flat, rows, cols);
     for (int i = 0; i < rows * cols; i++) {
@@ -1043,7 +1072,7 @@ Value* builtin_tensor_relu(Value *arg) {
     /* #1093: buffers go through the same flatten path and come back as
      * buffers via flat_to_like — one implementation, not two. */
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols);
+    double *flat = tensor_to_flat(arg, &rows, &cols, "relu");
     if (!flat) return make_null();
     for (int i = 0; i < rows * cols; i++)
         if (flat[i] < 0.0) flat[i] = 0.0;
@@ -1071,7 +1100,7 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols);
+    double *flat = tensor_to_flat(arg, &rows, &cols, "leaky_relu");
     if (!flat) return make_null();
     for (int i = 0; i < rows * cols; i++)
         if (flat[i] < 0.0) flat[i] *= 0.01;
@@ -2051,11 +2080,23 @@ Value* builtin_tensor_save(Value *arg) {
      * not an I/O failure (no file has been opened yet at this point). */
     ARG_GUARD(ndim == 0, "tensor_save", "a non-empty 1D or 2D tensor", make_num(0));
 
+    /* Flatten before opening the file: a strict #1416 rejection must not
+     * leave a partial file behind, and a direct C helper raise does not
+     * unwind this builtin by itself. */
+    double *flat = tensor_to_flat(tensor, &rows, &cols, "tensor_save");
+    /* A 2-D tensor may legitimately have zero columns. tensor_to_flat has
+     * still performed strict element validation above, but has no allocation
+     * to return for that shape. Preserve the historical save format: write
+     * its header and the empty data/observer sections. A NULL for any other
+     * shape remains a conversion failure. */
+    if (!flat && cols != 0) return make_num(0);
+    if (!flat && g_has_error) return make_num(0);
+
     FILE *f = xfopen_write(path_val->data.str, "wb");
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
      * is xfopen_write failing, and 0 is this builtin's failure bit (the success
      * path ends in make_num(1)). */
-    if (!f) return make_num(0);
+    if (!f) { free(flat); return make_num(0); }
 
     uint32_t header[4] = { (uint32_t)ndim, (uint32_t)rows, (uint32_t)cols, 1 /* flags: has observer */ };
     fwrite(header, sizeof(uint32_t), 4, f);
@@ -2063,11 +2104,8 @@ Value* builtin_tensor_save(Value *arg) {
     int total = rows * cols;
 
     /* Write numeric data */
-    double *flat = tensor_to_flat(tensor, &rows, &cols);
-    if (flat) {
-        fwrite(flat, sizeof(double), total, f);
-        free(flat);
-    }
+    if (total > 0) fwrite(flat, sizeof(double), total, f);
+    free(flat);
 
     /* #262 Step E: tensor elements are list items, not bindings, so they never
      * carry observer state under the slot model. Keep the on-disk format (5
