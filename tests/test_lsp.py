@@ -67,6 +67,9 @@ def converse(messages):
                        text=True, timeout=15, env=lsp_env())
     if p.stderr and any(mk in p.stderr for mk in SANITIZER_MARKERS):
         SANITIZER_HITS.append(p.stderr)
+    if p.returncode != 0:
+        raise RuntimeError("eigenlsp exited with status %d:\n%s" %
+                           (p.returncode, p.stderr))
     out = p.stdout
     dec = json.JSONDecoder()
     responses = []
@@ -899,6 +902,34 @@ def main():
                         "newName": "nope"}}
     r = converse([INIT, did_open(rename_doc), rn_kw, SHUTDOWN, EXIT])
     check("rename refuses a non-user symbol (print)", (by_id(r, 13) or {}).get("result") is None)
+
+    # Adversarially many unique locals make the per-scope duplicate checks
+    # quadratic.  Rename must explicitly refuse work beyond its fixed budget.
+    large_locals = ("x is 0\ndefine f as:\n" +
+                    "".join("    local v%d is %d\n" % (i, i) for i in range(1000)) +
+                    "print of x\n")
+    rnb = {"jsonrpc": "2.0", "id": 45, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI},
+                      "position": {"line": 0, "character": 0}, "newName": "y"}}
+    r = converse([INIT, did_open(large_locals), rnb, SHUTDOWN, EXIT])
+    budget_response = by_id(r, 45)
+    check("rename refuses analysis that exceeds its work budget",
+          isinstance(budget_response, dict) and
+          "error" not in budget_response and
+          "result" in budget_response and
+          budget_response["result"] is None)
+
+    # Name traversal is bounded too; this catches an unbudgeted strlen/strcmp
+    # and verifies exhaustion is terminal across overlapping scans.
+    huge_name = "v" * 250001
+    huge_binding_doc = "x is 0\ndefine f(%s) as:\n    print of x\n" % huge_name
+    r = converse([INIT, did_open(huge_binding_doc), rnb, SHUTDOWN, EXIT])
+    huge_name_response = by_id(r, 45)
+    check("rename bounds oversized binding-name traversal",
+          isinstance(huge_name_response, dict) and
+          "error" not in huge_name_response and
+          "result" in huge_name_response and
+          huge_name_response["result"] is None)
 
     # --- lint warnings surface as coded diagnostics (severity 2) ---
     r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), SHUTDOWN, EXIT])
