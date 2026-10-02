@@ -879,6 +879,10 @@ define app_loop(root, on_key, on_tick) as:
     # Build initial focus list
     _ui.focus_list is []
     _build_focus_list of root
+    # Section [97] uses this opt-in marker to distinguish arrival here from a
+    # hang during example setup. Normal applications do not set the variable.
+    if env_get of "EIGS_GFX_READY" == "1":
+        print of "EIGS_GFX_READY"
     loop while _running == 1 and _ui.quit_requested == 0:
         ev is gfx_poll of null
         loop while ev != null:

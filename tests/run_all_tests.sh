@@ -6627,12 +6627,12 @@ echo ""
 # the dummy video driver otherwise. The net demos still need `make net` and a
 # free port, so they stay content-skipped.
 #
-# A gfx demo ends in `ui.app_loop`, which is an interactive event loop: under
-# the dummy driver no quit event ever arrives, so reaching it means timing out.
-# That is the PASS signal here — rc 124 means the program got through parse,
-# module load, widget construction and layout without erroring, which is the
-# failure class this section exists to catch. It deliberately does NOT verify
-# loop behavior; [132] and the lib/ui sections own that.
+# A gfx demo emits EIGS_GFX_READY immediately before entering its interactive
+# event loop when the harness opts in with the same-named environment variable.
+# Under the dummy driver no quit event ever arrives, so a timeout is expected,
+# but it is a pass only when the readiness marker proves setup reached the loop.
+# This section deliberately does NOT verify loop behavior; [132] and the lib/ui
+# sections own that.
 #
 # Every gfx run is memory-capped: an unbounded UI run can take the whole box.
 # Each runs from its own directory (so relative paths resolve) with stdin
@@ -6655,16 +6655,17 @@ for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
     if grep -q 'net_listen' "$f"; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
     if grep -q 'gfx_' "$f"; then
         if [ "$EX_HAS_GFX" != "1" ]; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
-        # #886: reaching the event loop (rc 124) is the pass; any other
-        # nonzero rc is a real setup failure. Memory-capped — an unbounded
-        # UI run can take the whole machine.
+        # #886: require the explicit pre-loop marker: rc 124 alone could also
+        # mean setup hung. Memory-capped — an unbounded UI run can take the
+        # whole machine.
         EX_OUT=$( cd "$(dirname "$f")" && ulimit -v 2000000 2>/dev/null; \
-                  cd "$(dirname "$f")" && SDL_VIDEODRIVER=dummy timeout 3 \
+                  cd "$(dirname "$f")" && EIGS_GFX_READY=1 SDL_VIDEODRIVER=dummy timeout 3 \
                   "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
-        if [ "$EX_RC" = "124" ] || [ "$EX_RC" = "0" ]; then
+        if { [ "$EX_RC" = "124" ] || [ "$EX_RC" = "0" ]; } && \
+           printf '%s\n' "$EX_OUT" | grep -qx "EIGS_GFX_READY"; then
             EX_PASS=$((EX_PASS + 1))
         else
-            echo "  FAIL($EX_RC): $f (gfx demo errored before its event loop)"
+            echo "  FAIL($EX_RC): $f (gfx demo did not reach its event loop)"
             printf '%s\n' "$EX_OUT" | tail -2 | sed 's/^/      /'
             EX_FAIL=$((EX_FAIL + 1))
         fi
