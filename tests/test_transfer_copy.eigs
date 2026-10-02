@@ -49,6 +49,25 @@ text_builder_append of [join_t, "+AFTER"]
 check of [buffer_value of join_got["buffer"], 1.5, "thread_join copies buffer"]
 check of [builder_value of join_got["builder"], "before", "thread_join copies builder"]
 
+# Direct thread_join results also copy each mutable flat value.
+join_buf is buffer of 1
+buf_set of [join_buf, 0, 11]
+define return_buf() as:
+    return join_buf
+hb is spawn of return_buf
+joined_buf is thread_join of hb
+buf_set of [join_buf, 0, 22]
+check of [buffer_value of joined_buf, 11, "thread_join copies direct buffer result"]
+
+join_tb is text_builder_new of null
+text_builder_append of [join_tb, "worker"]
+define return_builder() as:
+    return join_tb
+ht is spawn of return_builder
+joined_tb is thread_join of ht
+text_builder_append of [join_tb, "+parent"]
+check of [builder_value of joined_tb, "worker", "thread_join copies direct builder result"]
+
 # Cooperative task arguments and results use the same copy chokepoint.
 define echo(value) as:
     return value
