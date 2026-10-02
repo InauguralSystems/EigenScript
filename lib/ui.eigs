@@ -216,7 +216,11 @@ define render(widget, ox, oy) as:
             entry.render of [widget, ax, ay]
         else:
             ui_clip_push of [ax, ay, widget.w, widget.h]
-            entry.render of [widget, ax, ay]
+            try:
+                entry.render of [widget, ax, ay]
+            catch render_err:
+                ui_clip_pop of null
+                throw of render_err
             ui_clip_pop of null
     # Disabled overlay
     if widget.enabled != null and widget.enabled == 0:

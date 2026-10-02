@@ -2677,6 +2677,24 @@ for c8i in range of (len of _gfx_log):
         clip823_last is _gfx_log[c8i][1]
 assert_eq of [clip823_last, null, "#823 render() restores a clear clip after the widget"]
 
+# A renderer error must restore the clip before it propagates. Applications
+# may catch a paint error and continue drawing; leaving this frame on the
+# module-level stack would crop every later widget to the failed canvas.
+define _p823_throw(w, x, y) as:
+    throw of {"kind": "paint823"}
+cc823e is canvas of ["cc823e", 20, 30, 100, 80, _p823_throw, null]
+clip823_err is null
+_gfx_log is []
+_gfx_rec is 1
+try:
+    render of [cc823e, 0, 0]
+catch e823:
+    clip823_err is e823
+_gfx_rec is 0
+assert_eq of [clip823_err.kind, "paint823", "#823 render() rethrows the original renderer error"]
+assert_eq of [_clip.depth, 0, "#823 a renderer error unwinds its widget clip"]
+assert_eq of [_gfx_log[(len of _gfx_log) - 1][1], null, "#823 renderer-error cleanup clears the backend clip"]
+
 # ---- nesting: a child crops at its parent's edge ----
 pn823 is panel of ["pn823", 10, 10, 100, 100]
 cc823b is canvas of ["cc823b", 50, 50, 100, 80, _p823_paint, null]
