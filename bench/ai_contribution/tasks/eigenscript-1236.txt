@@ -1,0 +1,17 @@
+EigenScript #1236: args.parse_args fails after import args.
+
+Use the history-free fixture pinned by task.json. In lib/args.eigs,
+parse_args calls `args of null`. Loading the module with `import args`
+installs the public module namespace under args, shadowing the CLI builtin;
+the call therefore tries to call a dict instead of obtaining CLI arguments.
+Preserve the builtin before the import namespace is installed and use that
+binding in parse_args. Preserve the load_file API and keep the private builtin capture out of the
+public imported namespace.
+
+Acceptance: add fresh-process regression coverage for import args followed
+by args.parse_args with no CLI arguments, positional arguments, --name=value,
+and a boolean flag. Assert parsed values and clean stderr. Also verify the
+load_file path retains its behavior and the private capture is not exported. Use repository
+documentation for syntax and suite enrollment. Commit the fix and regression.
+Run make precheck followed by make test-changed BASE=origin/main;
+do not run make test locally. Remote CI is outside this local driver stage.

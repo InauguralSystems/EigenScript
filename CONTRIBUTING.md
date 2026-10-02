@@ -28,6 +28,11 @@ provides these contributor prerequisites.
 
 ## Making Changes
 
+AI agents should start with [`docs/llms.txt`](docs/llms.txt), follow the same
+`make precheck` then `make test-changed` path below, and make every issue's
+Done-when checklist executable. Periodic agent measurements use the
+[documented benchmark protocol](bench/ai_contribution/README.md), never a merge gate.
+
 1. Fork the repository
 2. Create a branch from `main`
 3. Make your changes

@@ -1,0 +1,1 @@
+Fix a one-line Python standard-library bug and add its focused regression test. The exact CPython issue and pinned revision are intentionally not selected yet; record them before conducting the comparison.
