@@ -54,7 +54,11 @@ arena_nested_desc is [ABI,
      SET_NAME,0,0, POP, RETURN],
     ["nested"]]
 arena_mark of null
-arena_nested_result is sandbox_run of [arena_nested_desc, 1, 2000]
+# Tracing records the VM operations that construct this witness and therefore
+# consumes some of the same sandbox byte budget.  Keep this ownership check
+# comfortably above that instrumentation overhead: budget refusal is covered
+# independently by arena_cycle_tight above.
+arena_nested_result is sandbox_run of [arena_nested_desc, 1, 10000]
 arena_reset of null
 assert_eq of [arena_nested_result["ok"], 1,
               "arena promotion: nested child birth reference is released"]
