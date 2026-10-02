@@ -100,11 +100,11 @@ awk -F '[|]' '$0 !~ /^#/ {
 }' tools/selftests.txt >> "$EDGES"
 REACHED=$(awk -F'\t' '{ adj[$1] = adj[$1] " " $2 }
     END { q[1] = "tests/run_all_tests.sh"; n = 1
-          for (f in adj) if (f ~ /^tests\/sections\/[^/]+\.sh$/) q[++n] = f
+          for (f in adj) if (f ~ /^tests\/sections\/[^\/]+\.sh$/) q[++n] = f
           for (f in adj) if (f ~ /^\.github\//) q[++n] = f
           for (h = 1; h <= n; h++) { m = split(adj[q[h]], t, " ")
               for (j = 1; j <= m; j++) if (!(t[j] in seen)) { seen[t[j]] = 1; q[++n] = t[j]; print t[j] } } }' \
-    "$EDGES")
+    "$EDGES") || { echo "test-enrolment: ABORTED: reachability scan failed"; exit 2; }
 
 rc=0; ok=0; ex=0; total=0
 EXEMPTED=$(grep -v '^[[:space:]]*\(#\|$\)' "$EXEMPT" 2>/dev/null || true)
