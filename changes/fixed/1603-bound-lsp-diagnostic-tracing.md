@@ -1,0 +1,1 @@
+- Prevent LSP diagnostics from retaining trace arming state or stalling quadratically on documents with many temporal queries.
