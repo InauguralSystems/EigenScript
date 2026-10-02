@@ -67,15 +67,15 @@ echo "$OUT" | grep -q "steps, .* assigns" && echo "$OUT" | grep -q "^step 1/" \
     || fail "loads tape and shows first stop" "$(echo "$OUT" | head -2)"
 
 # ---- 2. forward stepping walks the L records and shows source + events
-OUT=$(drive s s q)
-echo "$OUT" | grep -q "step 3/.*line 2" \
+OUT=$(drive s q)
+echo "$OUT" | grep -q "step 2/.*line 2" \
     && echo "$OUT" | grep -q "| conv is 1024" \
     && echo "$OUT" | grep -q "A conv=1024" \
     && ok "forward step shows line, source text, assignment events" \
     || fail "forward step shows line, source text, assignment events"
 
 # ---- 3. nondet events surface at their step
-OUT=$(drive "s 4" q)
+OUT=$(drive "s 3" q)
 echo "$OUT" | grep -q "N random=" \
     && ok "nondet record shown at its step" \
     || fail "nondet record shown at its step"
@@ -209,12 +209,12 @@ echo "$OUT" | grep -q "^i = 3 .*(3 assigns)" \
     || fail "module-level i folds only its own stream" \
             "$(echo "$OUT" | grep '^i =' | head -1)"
 
-# inside the second work frame (step 13 = its 'i is i + 1' line; #556
+# inside the second work frame (step 12 = its 'i is i + 1' line; #556
 # moved the define statement's tape record to the define's own line, and
 # #1381 files `r1 is work of 2` under its own line 6 with one more `L`
 # after the call): the frame-local i (31, 2 assigns, {in work}) shadows the
 # module i
-OUT=$(printf 's 12\np\nt i\nq\n' | "$EIGS" --step "$SCOPE_TAPE" "$SCOPE_FIX" 2>&1)
+OUT=$(printf 's 11\np\nt i\nq\n' | "$EIGS" --step "$SCOPE_TAPE" "$SCOPE_FIX" 2>&1)
 echo "$OUT" | grep -q "^i = 31 .*{in work}" \
     && ok "frame-local i shadows module i inside the frame" \
     || fail "frame-local i shadows module i inside the frame" \
@@ -226,6 +226,52 @@ echo "$OUT" | grep -q "(i in work, frame #" \
 echo "$OUT" | grep -q "^i = 2 " \
     && fail "shadowed module i leaks into frame bindings" \
     || ok "shadowed module i stays hidden inside the frame"
+
+# ---- 13. #1441: a native producer runs between two interpreted callbacks.
+# Its explicit serial-0 transition puts the assignment in module scope, so
+# after continuing into the later callback `t` resolves it through that
+# callback's parent instead of looking in the now-dead first frame.
+NATIVE_TAPE="$TMPDIR/native-scope.tape"
+{
+    head -1 "$TAPE"
+    cat <<'EOF'
+S first_callback 0 41
+L 1
+A callback_local=1
+S <native> 0 0
+A native_after_callback=1441
+S later_callback 0 42
+L 2
+A later_local=2
+EOF
+} > "$NATIVE_TAPE"
+OUT=$(printf 'c\nt native_after_callback\nq\n' | "$EIGS" --step "$NATIVE_TAPE" 2>&1)
+echo "$OUT" | grep -q '^native_after_callback: 1 assign' \
+    && ok "trajectory finds a native assignment after continuing" \
+    || fail "trajectory finds a native assignment after continuing" \
+            "$(echo "$OUT" | grep -E "native_after_callback|no binding" | head -1)"
+
+# The native stop itself must also select serial 0.  In particular, a native
+# assignment with the same name as a dead callback local must win; scanning
+# backward for a nonzero record scope used to resurrect frame 41 here.
+NATIVE_SHADOW_TAPE="$TMPDIR/native-shadow-scope.tape"
+{
+    head -1 "$TAPE"
+    cat <<'EOF'
+S first_callback 0 41
+L 1
+A shared_name=1
+S <native> 0 0
+A shared_name=1441
+L 2
+EOF
+} > "$NATIVE_SHADOW_TAPE"
+OUT=$(printf 'c\nt shared_name\nq\n' | "$EIGS" --step "$NATIVE_SHADOW_TAPE" 2>&1)
+echo "$OUT" | grep -q '^shared_name: 1 assign' \
+    && echo "$OUT" | grep -q '^  #1 .* 1441 ' \
+    && ok "native assignment shadows a dead callback binding" \
+    || fail "native assignment shadows a dead callback binding" \
+            "$(echo "$OUT" | grep -E "shared_name|no binding|^[[:space:]]+[0-9]" | head -2)"
 
 echo "STEP: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

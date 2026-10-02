@@ -1,0 +1,1 @@
+- Fix shell injection in test-changed BASE handling (#1453).

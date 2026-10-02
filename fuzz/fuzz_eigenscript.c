@@ -104,6 +104,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 chunk_free(chunk);
             }
             env_decref(eval_env);
+            /* A fuzz input can spawn workers that outlive vm_execute(). Join
+             * them before touching the unguarded module cache, and restore
+             * single-threaded mode so the cycle collector can run. */
+            handle_table_drain(eigs_current_state());
+            /* The process stays attached across inputs, unlike the CLI.  Drop
+             * the cooperative scheduler here just as thread detach would;
+             * otherwise its current task id can refer to a task the handle
+             * drain above has reclaimed. */
+            task_sched_thread_free();
             /* The CLI frees env<->closure CYCLES only at exit
              * (gc_collect_at_exit in main.c); a fuzzer never exits, so
              * without a per-input collection every input that builds a
