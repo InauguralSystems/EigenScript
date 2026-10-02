@@ -215,8 +215,17 @@ define render(widget, ox, oy) as:
         if entry.clip != null and entry.clip == 0:
             entry.render of [widget, ax, ay]
         else:
+            clip_depth is _clip.depth
             ui_clip_push of [ax, ay, widget.w, widget.h]
-            entry.render of [widget, ax, ay]
+            try:
+                entry.render of [widget, ax, ay]
+            catch render_err:
+                # A container renderer may have pushed its own clip before
+                # one of its descendants failed. Restore every frame added
+                # during this render, not merely the innermost one.
+                loop while _clip.depth > clip_depth:
+                    ui_clip_pop of null
+                throw of render_err
             ui_clip_pop of null
     # Disabled overlay
     if widget.enabled != null and widget.enabled == 0:
