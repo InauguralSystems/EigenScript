@@ -301,6 +301,10 @@ division by zero
 
 ## Before hand-rolling a helper
 
+Cooperative task IDs are opaque numeric handles. Do not perform arithmetic on
+them: a packed generation prevents an ID retained past `task_detach` from
+naming a later task that reuses the same slot.
+
 The runtime publishes its builtin index with `eigenscript --api`, and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
 `str_upper`/`char_at`/`index_of`/`hex of [n, nibbles]`/`sort_by` are builtins
 (there is no bare `lower` — it's `str_lower`; `sort_by of [items, key_fn]` is

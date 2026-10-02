@@ -361,6 +361,8 @@ One difference in failure: a Python thread's uncaught exception is printed
 and the process still exits 0. A `spawn`ed EigenScript worker that dies of
 an uncaught error fails the whole run (exit status 1), joined or not — the
 same rule as its cooperative tasks (see SPEC.md "Concurrency").
+Cooperative task IDs are opaque numeric handles: their packed generation
+prevents a detached task's recycled slot from naming a later task.
 
 ## Convergence loops: boilerplate you stop writing
 

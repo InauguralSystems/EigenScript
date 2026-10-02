@@ -575,13 +575,12 @@ typedef enum {
 
 typedef struct Task {
     int        id;                 /* == handle-table id; 1-based */
-    /* #1146: the handle-table GENERATION this task's slot was handed out at.
+    /* The handle-table GENERATION this task's slot was handed out at.
      * task_reap releases the slot, and handle_release is generation-checked,
      * so the reap must present the generation it was given or it would either
      * no-op (leaking the slot) or free a slot a LATER task_spawn now owns.
-     * Task ids are plain numbers with nowhere to carry a generation, so
-     * task_join/task_alive resolve by raw slot (handle_lookup_slot) — the one
-     * declared exception in the handle population; see docs/CONCURRENCY.md. */
+     * Public task ids pack this generation with the slot; scheduler queues
+     * retain the raw slot because they never outlive the registered Task. */
     uint32_t   hgen;
     TaskState  state;
     int        started;            /* 0 until first scheduled (1b) */
@@ -605,6 +604,7 @@ typedef struct Task {
      * task_join builtin left on the stack top — a builtin can't return a
      * value it doesn't know yet — or re-raises the joinee's error. */
     int        join_target;
+    uint32_t   join_target_gen; /* generation captured before the join suspended */
     /* Inc 2: unbounded FIFO mailbox of deep-copied messages (share-nothing,
      * Erlang-style — bounded/backpressure is a cheap later add). Circular
      * buffer; grows on demand. recv_blocked is 1 while this task is suspended
@@ -655,7 +655,7 @@ void task_free(Task *t);
  * other threads' CALL sites into a suspend they never asked for. */
 void task_sched_on_spawn(int id);    /* enqueue a freshly spawned task, arm the scheduler */
 void task_request_yield(void);       /* current task → tail of the ready queue */
-int  task_request_join(int target);  /* current task blocks on `target`; 0 = bad target */
+int  task_request_join(int target, uint32_t gen); /* current task blocks on this exact handle */
 void task_sched_thread_free(void);   /* release the scheduler at thread detach */
 int  task_any_unobserved_error(void);/* #493: any worker died of an uncaught error and was never joined? */
 /* Inc 2 mailbox interface (builtins.c task_send/task_recv/task_try_recv/task_kill). */
@@ -668,7 +668,9 @@ int   task_do_detach(int tid);       /* #530: mark fire-and-forget (reap at fini
 /* Inc 3 virtual time (builtins.c task_sleep/task_now). */
 void   task_request_sleep(double ticks); /* current task sleeps until virtual now + ticks */
 double task_virtual_now(void);           /* current virtual-clock value (0 with no scheduler) */
-int    task_current_id(void);            /* running task id; 0 = main (incl. no scheduler) — task_self (#526) */
+double task_current_id(void);            /* public running task id; 0 = main — task_self (#526) */
+double task_handle_pack(int id, uint32_t gen); /* exact numeric public id */
+int    task_handle_unpack(double packed, int *id, uint32_t *gen);
 /* #846 scheduler trace (builtins.c task_sched_trace). The trace is a PURE
  * READER of the schedule: recording never touches the ready queue, the
  * seeded PRNG, or the clock, and its entries are derived from the

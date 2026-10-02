@@ -300,15 +300,14 @@ thread_join of fresh     # "FRESH"
 
 Before the generation, that program joined the STALE handle and got `"FRESH"`,
 then joined the FRESH handle and got `null`, at exit status 0. Channel and
-store handles carry the same generation (`_channel_gen`, `_store_gen`) and
-socket handles pack it into their numeric id. **Cooperative task ids are the
-one declared exception** — a task id is a plain number with nowhere to carry a
-generation, so `task_join`/`task_alive` resolve by raw slot; a detached task's
-slot is recycled, so an id kept past `task_detach` can name a later task
-(tracked as #1173). A task that is simply *joined* never releases its slot, on
-this version or any earlier one — 255 spawn/join cycles exhaust the table and
-raise `task_spawn: too many live tasks` — so `task_detach` is the only way to
-reach that ABA at all.
+store handles carry the same generation (`_channel_gen`, `_store_gen`), while
+socket handles and cooperative task handles pack it into their numeric id. A
+task id kept past `task_detach` therefore raises a catchable `stale task
+handle` error if its slot has been recycled, rather than letting `task_alive`,
+`task_join`, or `task_kill` operate on the replacement task. A task that is
+simply *joined* never releases its slot — 255 spawn/join cycles exhaust the
+table and raise `task_spawn: too many live tasks` — so `task_detach` is the
+path that makes task-slot recycling reachable.
 
 **Which kinds can actually recycle.** Threads and stores release their slot
 (`thread_join`, `store_close`), so a real ABA is reachable for both and both
