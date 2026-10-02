@@ -56,8 +56,11 @@ The complete suite (`make test`) takes much longer than that and is not a
 required local step: CI runs it on every PR and again in the merge queue.
 
 
-Adding a test is the test file plus its section in `tests/run_all_tests.sh` —
-no counts to bump, no documentation numbers to edit.
+Adding a test is the test file plus one new, uniquely named `*.sh` file in
+`tests/sections/` — do not edit `tests/run_all_tests.sh` or another shared
+section file. The runner sources those files in byte-sorted pathname order,
+and all runner-analysis gates expand the same list. There are no counts to
+bump and no documentation numbers to edit.
 
 Two gates worth knowing before you push:
 

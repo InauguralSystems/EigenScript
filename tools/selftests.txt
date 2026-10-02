@@ -36,6 +36,7 @@ tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools
 tools/performance_observer_docs.py docs/PERFORMANCE.md bench/observer_callgrind.txt bench/baseline.txt bench/observed_loop.eigs bench/unobserved_loop.eigs bench/conservative_observed_loop.eigs bench/conservative_unobserved_loop.eigs | timeout 30 python3 tools/performance_observer_docs.py --selftest
 tools/replay_diff.sh | timeout 30 bash tools/replay_diff.sh --selftest | [{"pattern":"  selftest ok:","count":11},{"pattern":"^SELFTEST: all planted faults caught","count":1}]
 tools/section_plan.sh tests/suite_plan.sh .github/workflows/ci.yml | timeout 1860 bash tools/section_plan.sh --selftest
+tools/section_fragments_check.sh tools/runner_text.sh tools/section_plan.sh tools/suite_label_check.sh tools/enrolment_check.sh tools/child_exit_check.sh tests/run_all_tests.sh tests/sections/* | timeout 60 bash tools/section_fragments_check.sh --selftest
 tools/stop_gate.sh | timeout 30 bash tools/stop_gate.sh --selftest | [{"pattern":"^stop_gate selftest: committed-fragment PASS; no-fragment BLOCK$","count":1}]
 tools/stdlib_index_check.sh | timeout 30 bash tools/stdlib_index_check.sh --selftest
 tools/vm_operand_width_check.sh | timeout 30 bash tools/vm_operand_width_check.sh --selftest
