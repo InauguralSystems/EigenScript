@@ -1,0 +1,9 @@
+# Regression for #1383: once this loop enters an OSR thunk, every OP_LINE
+# must still reach the trace tape exactly as it does in the interpreter.
+define g(n) as:
+    t is 0
+    for k in range of n:
+        t is t + k
+    return t
+
+print of (g of 100)

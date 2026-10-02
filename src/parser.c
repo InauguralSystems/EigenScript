@@ -843,8 +843,11 @@ static ASTNode* parse_primary(Parser *p) {
                 if (param_count >= MAX_PARAMS) {
                     /* #354: one loud diagnostic, then drain (see match). */
                     if (!lambda_cap_reported) {
+                        char msg[96];
+                        snprintf(msg, sizeof(msg), "lambda exceeds %d parameters", MAX_PARAMS);
                         fprintf(stderr, "Parse error line %d: lambda exceeds %d parameters\n",
                                 p_cur(p)->line, MAX_PARAMS);
+                        p_record_tok_error(p_cur(p), "E002", msg);
                         g_parse_errors++;
                         lambda_cap_reported = 1;
                     }
@@ -935,7 +938,10 @@ static ASTNode* parse_primary(Parser *p) {
             p_advance(p);
             if (p_cur(p)->type == TOK_RBRACKET) break;
             if (count >= MAX_LIST) {
+                char msg[96];
+                snprintf(msg, sizeof(msg), "list literal exceeds %d elements", MAX_LIST);
                 fprintf(stderr, "Parse error line %d: list literal exceeds %d elements\n", p_cur(p)->line, MAX_LIST);
+                p_record_tok_error(p_cur(p), "E002", msg);
                 g_parse_errors++;
                 break;
             }
@@ -969,7 +975,10 @@ static ASTNode* parse_primary(Parser *p) {
                 p_advance(p);
                 if (p_cur(p)->type == TOK_RBRACE) break;
                 if (count >= MAX_LIST) {
+                    char msg[96];
+                    snprintf(msg, sizeof(msg), "dict literal exceeds %d entries", MAX_LIST);
                     fprintf(stderr, "Parse error line %d: dict literal exceeds %d entries\n", p_cur(p)->line, MAX_LIST);
+                    p_record_tok_error(p_cur(p), "E002", msg);
                     g_parse_errors++;
                     break;
                 }
@@ -1024,7 +1033,7 @@ static ASTNode* parse_primary(Parser *p) {
             char m[160];
             snprintf(m, sizeof(m), "unexpected %s in expression",
                      tok_type_name(t->type));
-            eigs_record_first_error(t->line, m);
+            p_record_tok_error(t, "E002", m);
         }
         g_parse_errors++;
         p_advance(p);
@@ -1356,8 +1365,11 @@ static ASTNode* parse_statement_inner(Parser *p) {
                 if (param_count >= MAX_PARAMS) {
                     /* #354: one loud diagnostic, then drain (see match). */
                     if (!param_cap_reported) {
+                        char msg[96];
+                        snprintf(msg, sizeof(msg), "function exceeds %d parameters", MAX_PARAMS);
                         fprintf(stderr, "Parse error line %d: function exceeds %d parameters\n",
                                 p_cur(p)->line, MAX_PARAMS);
+                        p_record_tok_error(p_cur(p), "E002", msg);
                         g_parse_errors++;
                         param_cap_reported = 1;
                     }
@@ -1470,8 +1482,11 @@ static ASTNode* parse_statement_inner(Parser *p) {
                  * the diagnostic stands alone instead of the stray-token
                  * error cascade that never mentioned the cap. */
                 if (!match_cap_reported) {
+                    char msg[96];
+                    snprintf(msg, sizeof(msg), "match exceeds %d cases", MAX_MATCH_CASES);
                     fprintf(stderr, "Parse error line %d: match exceeds %d cases\n",
                             p_cur(p)->line, MAX_MATCH_CASES);
+                    p_record_tok_error(p_cur(p), "E002", msg);
                     g_parse_errors++;
                     match_cap_reported = 1;
                 }
@@ -1563,7 +1578,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             p_skip_newlines(p);
             else_body = parse_block(p, &else_count);
         }
-        ASTNode *n = make_node(AST_IF, p_cur(p)->line);
+        ASTNode *n = make_node(AST_IF, t->line);
         n->data.cond.cond = cond;
         n->data.cond.if_body = if_body;
         n->data.cond.if_count = if_count;
@@ -1580,7 +1595,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
         p_skip_newlines(p);
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
-        ASTNode *n = make_node(AST_LOOP, p_cur(p)->line);
+        ASTNode *n = make_node(AST_LOOP, t->line);
         n->data.loop.cond = cond;
         n->data.loop.body = body;
         n->data.loop.body_count = body_count;
@@ -1609,11 +1624,10 @@ static ASTNode* parse_statement_inner(Parser *p) {
         p_skip_newlines(p);
         int body_count;
         ASTNode **body = parse_block(p, &body_count);
-        ASTNode *n = make_node(AST_FOR, p_cur(p)->line);
+        ASTNode *n = make_node(AST_FOR, t->line);
         n->data.forloop.var = xstrdup((var_tok && var_tok->str_val) ? var_tok->str_val : "");
         /* The `for` keyword's line: the loop variable's stores are filed
-         * under it (#1381). The node's own line is still the next token's
-         * (#1382). */
+         * under it (#1381). */
         n->data.forloop.header_line = t->line;
         set_name_hash(n, n->data.forloop.var);
         n->data.forloop.iter = iter;
@@ -1637,7 +1651,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             expr = parse_expression(p);
         }
         p_end_statement(p);
-        ASTNode *n = make_node(AST_RETURN, p_cur(p)->line);
+        ASTNode *n = make_node(AST_RETURN, t->line);
         n->data.ret.expr = expr;
         return n;
     }
@@ -1712,9 +1726,11 @@ static ASTNode* parse_statement_inner(Parser *p) {
                     return make_node(AST_NULL, line);
                 }
                 if (n >= 64) {
+                    const char *msg = "destructuring pattern exceeds 64 names";
                     fprintf(stderr,
                         "Parse error line %d: destructuring pattern exceeds "
                         "64 names\n", p_cur(p)->line);
+                    p_record_tok_error(p_cur(p), "E002", msg);
                     g_parse_errors++;
                     for (int k = 0; k < n; k++) free(names_tmp[k]);
                     while (p_cur(p)->type != TOK_NEWLINE &&

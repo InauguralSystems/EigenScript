@@ -46,6 +46,9 @@ benchmarks:
   - name: "unobserved_loop"
     id: unobserved-loop
     exec: ./src/eigenscript bench/unobserved_loop.eigs
+  - name: "unobserved armed loop"
+    id: unobserved-armed-loop
+    exec: ./src/eigenscript bench/unobserved_armed_loop.eigs
 
   # --- the JIT's own shapes (tests/) ---
   - name: "bench_perf"
