@@ -1,0 +1,1 @@
+- Align parse- and runtime-error carets after multi-byte UTF-8 characters in source excerpts.

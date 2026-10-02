@@ -757,6 +757,29 @@ else
 fi
 echo ""
 
+# #1319 measurement phase: the opt-in accounting path reports requested-byte
+# cumulative/live/peak counters, while the default path remains silent.  This
+# is deliberately not a heap-cap test: the owner left enforcement open until
+# the corpus-and-consumer measurements select cumulative or live accounting.
+echo "[0h] Non-enforcing allocation-accounting instrument (#1319)"
+check_binary_fingerprint
+ALLOC_STATS_OUT=$(EIGS_ALLOC_STATS=1 ./eigenscript -e 'print of len of range of 1000' 2>&1)
+ALLOC_STATS_RC=$?
+ALLOC_STATS_LINE=$(printf '%s\n' "$ALLOC_STATS_OUT" | sed -n 's/^eigs-alloc-stats: //p')
+ALLOC_CUM=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*cumulative=\([0-9][0-9]*\).*/\1/p')
+ALLOC_LIVE=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*live=\([0-9][0-9]*\).*/\1/p')
+ALLOC_PEAK=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*peak=\([0-9][0-9]*\).*/\1/p')
+ALLOC_OFF_OUT=$(EIGS_ALLOC_STATS=0 ./eigenscript -e 'print of 1' 2>&1)
+TOTAL=$((TOTAL + 1))
+if [ "$ALLOC_STATS_RC" -eq 0 ] && [ -n "$ALLOC_CUM" ] && [ -n "$ALLOC_LIVE" ] && [ -n "$ALLOC_PEAK" ] && \
+   [ "$ALLOC_CUM" -ge "$ALLOC_PEAK" ] && [ "$ALLOC_PEAK" -ge "$ALLOC_LIVE" ] && \
+   ! grep -q '^eigs-alloc-stats:' <<< "$ALLOC_OFF_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: opt-in counters report cumulative >= peak >= live; disabled path is silent"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: allocation-accounting output (rc=$ALLOC_STATS_RC): $ALLOC_STATS_LINE"
+fi
+echo ""
+
 
 
 # #1060: a native function registered with a name reports as a user fn.
@@ -4349,7 +4372,7 @@ check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1
 # (exhausted and break paths), so the contract's "does not leak" holds inside
 # functions too. A binder with no prior binding is loop-scoped as well since
 # #1105 (next block).
-check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 9
+check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 11
 # [70j1] #1384 -- the hidden save and restore used by that slot path are
 # compiler bookkeeping: neither is an assignment-history/tape event. This
 # also keeps temporal answers equal to module scope's loop-env tier.
@@ -7564,6 +7587,22 @@ else
         echo "  FAIL: a pipefail script decides a verdict with a pipeline (audit exit $pfv_audit_rc):"
         printf '%s\n' "$pfv_audit_out" | sed 's/^/      /'
     fi
+fi
+echo ""
+
+# [99ac] PERFORMANCE.md's observer figures are generated from the checked-in
+# Callgrind n=5-per-arm results for both ordinary and conservative gates (#1206),
+# rather than a second hand-maintained
+# copy. The self-test changes both a raw measurement and the local regression
+# baseline independently and proves the checker goes red for either drift.
+echo "[99ac] generated observer performance documentation (#1206)"
+TOTAL=$((TOTAL + 1))
+perf_docs_out=$(python3 "$TESTS_DIR/../tools/performance_observer_docs.py" --selftest 2>&1); perf_docs_rc=$?
+if [ "$perf_docs_rc" -eq 0 ]; then
+    PASS=$((PASS + 1)); printf '%s\n' "$perf_docs_out" | sed 's/^/  /'
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: generated observer performance documentation (rc=$perf_docs_rc)"
+    printf '%s\n' "$perf_docs_out" | sed 's/^/      /'
 fi
 echo ""
 

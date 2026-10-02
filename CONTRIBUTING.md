@@ -11,8 +11,20 @@ cd EigenScript
 cd tests && bash run_all_tests.sh
 ```
 
-Building needs only `gcc`. Running the test suite also needs `python3` with PyYAML
-(`apt install python3-yaml`, or `python3 -m pip install --user pyyaml`).
+The minimal runtime build has no third-party library dependencies. Building it
+from source requires a C build toolchain (including a C compiler such as GCC or
+Clang) and Make.
+
+Contributors running the checks need Bash, the C build toolchain, Make, Python 3
+with PyYAML (`apt install python3-yaml`, or
+`python3 -m pip install --user pyyaml`), Git, and standard Unix shell and build
+utilities. Those utilities must include a SHA-256 implementation: either
+`sha256sum` or `shasum`. The suite must run from a Git checkout because its
+change selection and several gates inspect repository history and tracked
+files. Basic Markdown and command-line familiarity are sufficient.
+
+The repository's [prepared devcontainer and Codespaces environment](.devcontainer/)
+provides these contributor prerequisites.
 
 ## Making Changes
 

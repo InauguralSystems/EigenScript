@@ -910,6 +910,10 @@ struct EigsThread {
     int          parse_errors;
     int          has_error;
     int          try_depth;
+    /* Source-line stamp used by native/AOT callers and temporal history when
+     * no VM frame supplies a line. Per-thread so a spawned worker cannot
+     * replace its parent's fallback error line (#1435). */
+    int          trace_current_line;
     /* #739: `exit of N` request. Sits with has_error/try_depth because
      * CHECK_ERROR reads all three together — an exit unwind is uncatchable.
      * Cleared at host eval entry (eigs_eval_string) so a second eval on this
@@ -1487,6 +1491,26 @@ void* xmalloc(size_t size);
 void* xcalloc(size_t nmemb, size_t size);
 void* xrealloc(void *p, size_t size);
 char* xstrdup(const char *s);
+/* Measurement-only allocation accounting for #1319.  Defining free this way
+ * lets the candidate checked-allocation chokepoint observe matching releases;
+ * untracked pointers are passed through unchanged.  Keep the overwhelmingly
+ * common disabled path at the call site so it can call libc directly instead
+ * of paying for another out-of-line function call on every release.  No limit
+ * is enforced. */
+extern int eigs_alloc_stats_enabled __attribute__((weak));
+void eigs_alloc_stats_free(void *p) __attribute__((weak));
+static inline __attribute__((always_inline))
+void eigs_alloc_stats_maybe_free(void *p) {
+    /* Small standalone tools (notably `make jit-smoke`) intentionally link
+     * no allocator runtime.  Weak references preserve ordinary libc free in
+     * that configuration instead of imposing two unresolved symbols. */
+    if (!eigs_alloc_stats_free || !&eigs_alloc_stats_enabled ||
+        __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED) == 0)
+        free(p);
+    else
+        eigs_alloc_stats_free(p);
+}
+#define free(p) eigs_alloc_stats_maybe_free(p)
 size_t safe_size_mul(size_t a, size_t b);
 void* xmalloc_array(size_t nmemb, size_t size);
 void* xcalloc_array(size_t nmemb, size_t size);

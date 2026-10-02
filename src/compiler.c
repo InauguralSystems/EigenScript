@@ -30,6 +30,8 @@ typedef struct {
     int      depth;     /* scope depth (0 = function-level) */
     int      slot;
     int      captured;
+    int      hidden;    /* compiler-only slot; never participates in source
+                         * name resolution (its name is diagnostic only) */
     int      retired;   /* #1105: a fresh `for` binder's slot after its loop.
                          * Still owned by the frame (the slot index stays
                          * allocated) but invisible to name resolution, so a
@@ -586,7 +588,7 @@ static int add_num_constant(Compiler *c, double num) {
 
 static int resolve_local(Compiler *c, const char *name, uint32_t hash) {
     for (int i = c->local_count - 1; i >= 0; i--) {
-        if (c->locals[i].retired) continue;   /* #1105 */
+        if (c->locals[i].retired || c->locals[i].hidden) continue;
         if (c->locals[i].hash == hash && strcmp(c->locals[i].name, name) == 0)
             return c->locals[i].slot;
     }
@@ -618,8 +620,15 @@ static int add_local(Compiler *c, const char *name, uint32_t hash) {
     c->locals[slot].depth = c->scope_depth;
     c->locals[slot].slot = slot;
     c->locals[slot].captured = 0;
+    c->locals[slot].hidden = 0;
     c->locals[slot].retired = 0;
     c->local_count++;
+    return slot;
+}
+
+static int add_hidden_local(Compiler *c, const char *diagnostic_name) {
+    int slot = add_local(c, diagnostic_name, env_hash_name(diagnostic_name));
+    if (slot >= 0) c->locals[slot].hidden = 1;
     return slot;
 }
 
@@ -1811,7 +1820,8 @@ static int scan_dispatch_rebind_block(ASTNode **stmts, int count) {
 static int name_in_enclosing(Compiler *c, const char *name) {
     for (Compiler *e = c->enclosing; e && e->enclosing; e = e->enclosing) {
         for (int i = 0; i < e->local_count; i++)
-            if (!e->locals[i].retired && strcmp(e->locals[i].name, name) == 0) return 1;
+            if (!e->locals[i].retired && !e->locals[i].hidden &&
+                strcmp(e->locals[i].name, name) == 0) return 1;
         if (name_set_has(&e->captured, name)) return 1;
         if (name_set_has(&e->interrogated, name)) return 1;
     }
@@ -2338,7 +2348,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                          * NO prior binding gets a fresh slot that is
                          * retired at the loop exit (#1105, below). */
                         prior_slot = loop_var_slot;
-                        save_slot = add_local(c, "__for_save", env_hash_name("__for_save"));
+                        save_slot = add_hidden_local(c, "<for-save>");
                     } else
                         loop_var_slot = add_local(c, loop_var, loop_var_hash);
                     if (loop_var_slot >= 0) can_skip_env = 1;

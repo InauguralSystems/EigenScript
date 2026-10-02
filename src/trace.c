@@ -55,7 +55,13 @@ int g_trace_enabled_storage = 0;
 int g_replay_enabled_storage = 0;
 int g_trace_obs_hist_storage = 0;
 int g_trace_hist_storage = 0;
-int g_trace_current_line = 0;
+/* Calls without an attached state are limited to standalone tooling. Runtime
+ * and linked native/AOT callers use their attached EigsThread field. */
+static int g_trace_current_line_unattached = 0;
+int *trace_current_line_addr(void) {
+    return eigs_current ? &eigs_current->trace_current_line
+                        : &g_trace_current_line_unattached;
+}
 
 /* ----- Phase 3.0a: prev-value table.
  *
@@ -464,7 +470,7 @@ void trace_history_disable(void) {
  * (eigenscript.h), reached only with a thread attached. Every read path below
  * that can run during teardown or from atexit guards on `eigs_current` first. */
 
-/* g_trace_current_line (exported, see trace.h) replaces the old static
+/* g_trace_current_line (per-thread, see trace.h) replaces the old static
  * line cache: OP_LINE stores it directly instead of paying a call. */
 
 #define PREV_INIT_CAP 16
