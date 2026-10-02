@@ -3904,7 +3904,19 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
              * memo or budget anyway). Otherwise resolve through
              * eigs_import_resolve -- THE resolver the OP_IMPORT handler calls,
              * project-first then stdlib -- so what is scanned is what runs. */
+            /* A provider is host code and may synchronously start and join a
+             * worker that attaches an interpreter thread.  Attachments wait
+             * for this reservation, so never retain it across the callback:
+             * the provider would otherwise wait for a worker which waits for
+             * us.  Nothing process-global is temporarily modified here; take
+             * the reservation again before resuming the eager scan. */
+            eigs_process_single_thread_end();
+            single_thread_reserved = 0;
             if (eigs_source_lookup(L.paths[i])) { eigs_obs_enable_runtime(); break; }
+            if (g_vm_multithreaded || !eigs_process_single_thread_begin()) {
+                eigs_obs_enable_runtime(); break;
+            }
+            single_thread_reserved = 1;
             resolved_ok = eigs_import_resolve(L.bases[i], L.paths[i], resolved, 8192, NULL, 0);
         } else {
             resolved_ok = resolve_eigenscript_file_from(L.bases[i], L.paths[i], resolved, 8192);
