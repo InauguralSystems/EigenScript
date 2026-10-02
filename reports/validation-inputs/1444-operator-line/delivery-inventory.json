@@ -7,8 +7,18 @@
     },
     {
       "path": "README.md",
-      "bytes": 2662,
-      "sha256": "930a8d88e31faf224e380b6c4645ca18832e76875a63b5a26e8b902cb49a03e8"
+      "bytes": 4124,
+      "sha256": "3fa999b99c45cb8b988f18b0e2e4a658fabaf768ad911a93c96ec5b0b66a672f"
+    },
+    {
+      "path": "calibrate.py",
+      "bytes": 7173,
+      "sha256": "34120ccff2690892dc2b06f9b224b0a363c907bdda343c27000b91693b90a240"
+    },
+    {
+      "path": "calibration-plan.json",
+      "bytes": 983,
+      "sha256": "d3857ed7537ea2e01d7c0382195f4aa3a2131111349d17b0074edb80ccdad1cc"
     },
     {
       "path": "candidate.patch",
@@ -32,8 +42,8 @@
     },
     {
       "path": "input-apply-verification.json",
-      "bytes": 781,
-      "sha256": "8850ccfff266edd3ac3b078f93d31975bc7540c90ece2075c9af6b13f9b1270b"
+      "bytes": 793,
+      "sha256": "3fbdd654e7ca6dee3986a557c1bffaf88e08c36388e4795802d52a9c7d023b28"
     },
     {
       "path": "local-focused/01-release-build.exit",
@@ -156,6 +166,16 @@
       "sha256": "152f20d9ce13cba14dea1e3d0f804d1d0d5189aa68b5fffe627b700f3a121f47"
     },
     {
+      "path": "local-focused/09-release-identity.json",
+      "bytes": 468,
+      "sha256": "9f7e66f2dd58d52067e9a59f2a36605fb711582a094214524e3a61bd9f4531b5"
+    },
+    {
+      "path": "local-focused/09-release-identity.log",
+      "bytes": 11569,
+      "sha256": "fa0c7435d079b37ca27b35a16dba765fe31a9afc638611ba759feceb3407c3f1"
+    },
+    {
       "path": "local-focused/build-command-provenance.json",
       "bytes": 501,
       "sha256": "284c97d2de2852c31f420cf7e0791c2e17d24b5e66c11f8bbfa16e7d69d193c0"
@@ -182,8 +202,8 @@
     },
     {
       "path": "prepare-inputs.sh",
-      "bytes": 1206,
-      "sha256": "23816e6aa2ca3e5e8690e84db3479a78f7f4ea7f879b3b3ab52457edad1f6be9"
+      "bytes": 1209,
+      "sha256": "79c6e93d4c350d52ccbdb93108015fa7c56338ad1eed3b1f8c873ae0e26a7766"
     },
     {
       "path": "receipt-calibration.json",
@@ -217,15 +237,15 @@
     },
     {
       "path": "validate.py",
-      "bytes": 10484,
-      "sha256": "dc47966b8b2eec278ebb4d7fadaaab8364694e9f67fd36d126429113931c299c"
+      "bytes": 12135,
+      "sha256": "02fec47d29011d64c54f928a68b616e5a7041909e2480250db5b76ed8c1752c3"
     },
     {
       "path": "validation-brief.txt",
-      "bytes": 5070,
-      "sha256": "ecc98071d66a2aec2d1d8d406a169f4d9ae5465c7792fb23d94a29060506b123"
+      "bytes": 6532,
+      "sha256": "a01c5aef90fb3eec188c1f3d45a0e9c1647d7498b1dc24aee90df42909904b89"
     }
   ],
   "helper_directory": "../1452-post1460",
-  "note": "SHA256SUMS includes this inventory plus pinned reused helpers; production source is patch data only."
+  "note": "SHA256SUMS includes this inventory and pinned reused helpers. Raw .log files explicitly enrolled despite repository ignore rules."
 }

@@ -1,0 +1,10 @@
+gcc -Wall -Wextra -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -o /tmp/jit_smoke src/jit.c src/jit_smoke.c -lm
+/tmp/jit_smoke
+ok  const_return(42) = 42  [11 bytes emitted]
+ok  const_return(-1) = -1  [11 bytes emitted]
+ok  const_return(81985529216486895) = 81985529216486895  [11 bytes emitted]
+ok  const_return(-9223372036854775808) = -9223372036854775808  [11 bytes emitted]
+ok  const_return(9223372036854775807) = 9223372036854775807  [11 bytes emitted]
+JIT native_store: rows=16 native=6 helpers=10 assertions=246 status=PASS
+
+JIT smoke: all cases passed.

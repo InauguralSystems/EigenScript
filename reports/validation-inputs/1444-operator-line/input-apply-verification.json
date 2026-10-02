@@ -6,7 +6,7 @@
       "branch": "validation-1444-candidate",
       "tree": "3a8582ff4b54d4a70cc72f9943fb02b9a66d2696",
       "unstaged": "",
-      "git_dir": "/home/jon/src/wt/1444-operator-line-input-check-20261002/candidate.git"
+      "git_dir": "/home/jon/src/wt/1444-operator-line-input-check-20261002-r2/candidate-gitdir"
     },
     {
       "arm": "baseline",
@@ -14,7 +14,7 @@
       "branch": "validation-1444-baseline",
       "tree": "4100f6320ef61469d267793fa7a6b44f813410a1",
       "unstaged": "",
-      "git_dir": "/home/jon/src/wt/1444-operator-line-input-check-20261002/baseline.git"
+      "git_dir": "/home/jon/src/wt/1444-operator-line-input-check-20261002-r2/baseline-gitdir"
     }
   ],
   "patch_apply_check_exit": 0,

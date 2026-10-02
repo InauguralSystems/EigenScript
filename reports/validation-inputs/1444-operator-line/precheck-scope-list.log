@@ -1,0 +1,6 @@
+selftests: enrolment 37/37; product-triggered rows 7 (bound <= 60s each); 5 self-tests selected
+timeout 30 python3 tests/test_doc_examples.py --selftest
+timeout 30 python3 tests/test_doc_examples_markers.py --selftest
+timeout 30 bash tests/test_trace_mt.sh --selftest
+timeout 60 bash tools/section_fragments_check.sh --selftest
+timeout 60 bash tests/test_lsan_classify.sh --selftest

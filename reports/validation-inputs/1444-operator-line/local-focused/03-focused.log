@@ -1,0 +1,70 @@
+  selected: [0] [0b] [0g] [0h] [0h] 
+============================================
+  EigenScript Gen 0 Compliance Test Suite
+============================================
+
+@@EIGS-CHUNK 530@@
+[0] Opcode ABI Guard
+  PASS: opcode numeric ABI unchanged
+@@EIGS-CHUNK 580@@
+SECTION_TIME: [0] 0.17
+[0b] Error line fallback outside a VM frame (#1082, #1434)
+  PASS: tape stepper and live history file the store under line 80 (JIT)
+  PASS: all 15 error-line fallback checks (JIT)
+  PASS: tape stepper and live history file the store under line 80 (EIGS_JIT_OFF=1)
+  PASS: all 15 error-line fallback checks (EIGS_JIT_OFF=1)
+  PASS: tape stepper and live history file the store under line 80 (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: all 15 error-line fallback checks (EIGS_JIT_OSR_THRESHOLD=1)
+
+@@EIGS-CHUNK 651@@
+SECTION_TIME: [0b] 63.57
+[0g] After a call returns, a raise reports the caller's line (#1424)
+  PASS: e.line after a return (JIT)
+  PASS: uncaught header + traceback lines, line_after_return_module.eigs (JIT)
+  PASS: uncaught header + traceback lines, line_after_return_fn.eigs (JIT)
+  PASS: uncaught header + traceback lines, line_after_return_null.eigs (JIT)
+  PASS: uncaught header + traceback lines, line_after_callback_halt.eigs (JIT)
+  PASS: tape stop after the callbacks is the statement's line 15 (JIT)
+  PASS: e.line after a return (EIGS_JIT_OFF=1)
+  PASS: uncaught header + traceback lines, line_after_return_module.eigs (EIGS_JIT_OFF=1)
+  PASS: uncaught header + traceback lines, line_after_return_fn.eigs (EIGS_JIT_OFF=1)
+  PASS: uncaught header + traceback lines, line_after_return_null.eigs (EIGS_JIT_OFF=1)
+  PASS: uncaught header + traceback lines, line_after_callback_halt.eigs (EIGS_JIT_OFF=1)
+  PASS: tape stop after the callbacks is the statement's line 15 (EIGS_JIT_OFF=1)
+  PASS: e.line after a return (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: uncaught header + traceback lines, line_after_return_module.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: uncaught header + traceback lines, line_after_return_fn.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: uncaught header + traceback lines, line_after_return_null.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: uncaught header + traceback lines, line_after_callback_halt.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: tape stop after the callbacks is the statement's line 15 (EIGS_JIT_OSR_THRESHOLD=1)
+
+@@EIGS-CHUNK 741@@
+SECTION_TIME: [0g] 1.25
+[0h] Non-enforcing allocation-accounting instrument (#1319)
+  PASS: opt-in counters report cumulative >= peak >= live; disabled path is silent
+
+@@EIGS-CHUNK 7642@@
+SECTION_TIME: [0h] 0.06
+[0h] Multiline binary errors report the operator's line (#1425)
+  PASS: e.line, test_operator_line.eigs (JIT)
+  PASS: e.line, test_operator_line_parent.eigs (JIT)
+  PASS: header, excerpt, caret and traceback, operator_line_module.eigs (JIT)
+  PASS: header, excerpt, caret and traceback, operator_line_fn.eigs (JIT)
+  PASS: header, excerpt, caret and traceback, operator_line_compound.eigs (JIT)
+  PASS: e.line, test_operator_line.eigs (EIGS_JIT_OFF=1)
+  PASS: e.line, test_operator_line_parent.eigs (EIGS_JIT_OFF=1)
+  PASS: header, excerpt, caret and traceback, operator_line_module.eigs (EIGS_JIT_OFF=1)
+  PASS: header, excerpt, caret and traceback, operator_line_fn.eigs (EIGS_JIT_OFF=1)
+  PASS: header, excerpt, caret and traceback, operator_line_compound.eigs (EIGS_JIT_OFF=1)
+  PASS: e.line, test_operator_line.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: e.line, test_operator_line_parent.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: header, excerpt, caret and traceback, operator_line_module.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: header, excerpt, caret and traceback, operator_line_fn.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+  PASS: header, excerpt, caret and traceback, operator_line_compound.eigs (EIGS_JIT_OSR_THRESHOLD=1)
+
+SECTION_TIME: [0h] 1.00
+============================================
+  RESULTS: 86/86 passed, 0 failed, 0 skipped
+============================================
+CHUNK WITNESS: chunks=5 bearing=5
+  SECTION PLAN: PLAN: sections=0,0b,0g,0h bearing=5 chunks=5

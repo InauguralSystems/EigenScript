@@ -10,7 +10,7 @@ case "$workspace" in /*) ;; *) echo 'workspace must be absolute' >&2; exit 2;; e
 git -C "$carrier" cat-file -e "$base^{commit}"
 mkdir "$workspace"
 for arm in candidate baseline; do
-    git clone --shared --no-checkout --separate-git-dir "$workspace/$arm.git" "$carrier" "$workspace/$arm"
+    git clone --shared --no-checkout --separate-git-dir "$workspace/$arm-gitdir" "$carrier" "$workspace/$arm"
     git -C "$workspace/$arm" checkout -b "validation-1444-$arm" "$base"
 done
 git -C "$workspace/candidate" apply --check --index "$pkg/candidate.patch"

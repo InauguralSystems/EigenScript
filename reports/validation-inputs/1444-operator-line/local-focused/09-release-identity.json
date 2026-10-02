@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "objdump",
+    "-T",
+    "/home/jon/src/wt/queue-1444-operator-line-20261002/src/eigenscript"
+  ],
+  "exit": 0,
+  "variant": "release",
+  "src_binary_sha256": "d20274c8a3d70ba8eaa13a05bb479a9985a3e67d24800e9aa681c520057140d4",
+  "variant_binary_sha256": "d20274c8a3d70ba8eaa13a05bb479a9985a3e67d24800e9aa681c520057140d4",
+  "alias_is_same_inode": true,
+  "asan_init_symbol": false,
+  "source_index_tree": "3a8582ff4b54d4a70cc72f9943fb02b9a66d2696"
+}

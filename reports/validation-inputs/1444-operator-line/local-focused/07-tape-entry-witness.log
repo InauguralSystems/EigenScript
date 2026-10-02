@@ -1,0 +1,10 @@
+4880
+[jit] scanned=1 compiled=1 cache_used=17370 cache_full_rejects=0
+
+=== Hot chunks (top 2 of 2) ===
+total chunk entries: 81
+chunk                                exec  jit     pct    adv   len   nat%  bked  osr  oadv  oent  stop
+scoped                                 80  yes    98.8%     44    85  51.8%     0  ?        0     0  RETURN
+<module>                                1  ?       1.2%      0   129   0.0%    80  ?        0     0  <end>
+native-byte share (top 2 hot): 20.4%   (all 2 chunks): 20.4%
+  bytes native: 3520 / total: 17249

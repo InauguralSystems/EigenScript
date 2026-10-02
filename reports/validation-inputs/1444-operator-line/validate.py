@@ -44,7 +44,7 @@ def main():
     for k in removed: env.pop(k, None)
     env.update(SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy')
     (evidence/'selection-state.json').write_text(json.dumps(dict(removed_override_names=removed,full_suites_unfiltered=True),indent=2)+'\n')
-    names = ['dependency-preflight','release-build','focused-plan','focused-suite','tape-differential','tape-entry-witness','tape-osr-witness','release-suite','asan-build','asan-suite','restore-release','native-build-plan','native-smoke','jit-differential','replay-differential','baseline-build','strict-differential','selftest-scope','precheck','test-changed','suite-label','final-source-identities']
+    names = ['dependency-preflight','release-build','release-identity','focused-plan','focused-suite','tape-differential','tape-entry-witness','tape-osr-witness','fault-calibrations','release-suite','asan-build','asan-identity','asan-suite','restore-release','restored-release-identity','native-build-plan','native-smoke','jit-differential','replay-differential','baseline-build','baseline-identity','strict-differential','selftest-scope','precheck','test-changed','suite-label','final-source-identities']
     phases = {n:dict(status='NOT_RUN') for n in names}
     for name in ['source-manifest.json','gate-populations.json','candidate.patch','source-inventory.json','reused-helpers.json']:
         (evidence/name).write_bytes((PKG/name).read_bytes())
@@ -73,8 +73,20 @@ def main():
             row['status']='PASS'; save()
         except Exception as error:
             row.update(status='BLOCKED_SETUP' if name=='dependency-preflight' else 'FAIL',blocker=str(error)); save(); raise
-    def hardlink(root):
-        require(os.path.samefile(root/'src/eigenscript',root/'build/release/eigenscript'),'release binary must remain the in-tree hardlink')
+    def identity(name,root,variant):
+        def audit(log,rc):
+            binary=root/'src/eigenscript'; built=root/'build'/variant/'eigenscript'
+            require(binary.is_file() and not binary.is_symlink() and os.path.samefile(binary,built),'incorrect in-tree variant hardlink alias')
+            instrumented=bool(re.search(r'\b__asan_init\b',log))
+            require(instrumented==(variant=='asan'),'ASan instrumentation does not match selected variant')
+            return dict(variant=variant,src_binary_sha256=sha(binary),variant_binary_sha256=sha(built),alias_is_same_inode=True,asan_init_symbol=instrumented,source_index_tree=accepted.git(root,'write-tree'))
+        phase(name,['objdump','-T',str(root/'src/eigenscript')],cwd=root,audit=audit)
+    def calibration_audit(log,rc):
+        require(log.splitlines().count('CALIBRATION: faults=2 red=2 restored_green=2 initial_green=2 exact_restores=2')==1,'fault calibration verdict missing')
+        rows=json.loads((evidence/'calibration/phase-ledger.json').read_text())
+        require(len(rows)==16 and all(row['status']=='PASS' for row in rows.values()),'calibration phases incomplete')
+        require(rows['trace-red']['exit']==rows['caret-red']['exit']==1,'RED process exits not observed')
+        return dict(faults=2,red=2,restored_green=2,initial_green=2,exact_restores=2)
     def suite(name,runner,additions=None):
         capture=evidence/(name+'-final-counters.txt')
         phase(name,['bash',str(OLD/'capture-exit.sh'),str(runner),str(capture)],cwd=candidate/'tests',additions=additions,audit=lambda log,rc:suite_receipt(name,log,capture,rc))
@@ -102,22 +114,23 @@ def main():
     try:
         phase('dependency-preflight',['bash',str(OLD/'dependency-setup.sh'),str(candidate),str(evidence)])
         env['PATH']=(evidence/'setup/selected-path.txt').read_text().rstrip('\n')
-        phase('release-build',['make']); hardlink(candidate)
+        phase('release-build',['make']); identity('release-identity',candidate,'release')
         plan=evidence/'focused-plan.sh'
         phase('focused-plan',['bash','tools/section_plan.sh','--emit-sections','0 0b 0g 0h',str(plan)])
         suite('focused-suite',plan)
         phase('tape-differential',['bash','tools/jit_tape_diff.sh'],audit=tape)
         for name,extra in [('tape-entry-witness',{}),('tape-osr-witness',{'EIGS_JIT_OSR_THRESHOLD':'1'})]:
             phase(name,[str(candidate/'src/eigenscript'),str(candidate/'tests/jit_tape/binary_scope.eigs')],additions={'EIGS_JIT_STATS':'1','EIGS_JIT_HOT':'1',**extra},audit=lambda log,rc,extra=extra:witness(log,rc,bool(extra)))
+        phase('fault-calibrations',['python3','-B',str(PKG/'calibrate.py'),'--candidate',str(candidate),'--scratch',str(evidence.parent/'calibration-source'),'--evidence',str(evidence/'calibration')],audit=calibration_audit)
         suite('release-suite',candidate/'tests/run_all_tests.sh')
-        phase('asan-build',['make','asan'])
+        phase('asan-build',['make','asan']); identity('asan-identity',candidate,'asan')
         suite('asan-suite',candidate/'tests/run_all_tests.sh',{'ASAN_OPTIONS':'detect_leaks=1'})
-        phase('restore-release',['make']); hardlink(candidate)
+        phase('restore-release',['make']); identity('restored-release-identity',candidate,'release')
         phase('native-build-plan',['make','-n','jit-smoke'])
         phase('native-smoke',['make','jit-smoke'],audit=lambda log,rc:accepted.native(log))
         phase('jit-differential',['bash','tools/jit_diff.sh'],audit=lambda log,rc:accepted.jit_audit(log,pop['jit_replay']))
         phase('replay-differential',['bash','tools/replay_diff.sh'],audit=lambda log,rc:accepted.replay_audit(log,pop['jit_replay']))
-        phase('baseline-build',['make'],cwd=baseline); hardlink(baseline)
+        phase('baseline-build',['make'],cwd=baseline); identity('baseline-identity',baseline,'release')
         phase('strict-differential',['bash','tools/strict_differential.sh',str(baseline/'src/eigenscript')],audit=lambda log,rc:accepted.strict(log,pop['strict']))
         # Both HEADs equal the baseline. Only staged candidate paths drive changed checks (#1605).
         phase('selftest-scope',['bash','tools/selftests.sh','--list','--changed',manifest['baseline']])

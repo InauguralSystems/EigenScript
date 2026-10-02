@@ -1,0 +1,25 @@
+{
+  "status": "PLANNED_OFF_BOX_NOT_EXECUTED_LOCALLY",
+  "faults": [
+    {
+      "name": "omit-native-scope-end-trace",
+      "path": "src/jit.c",
+      "source_sha256": "154020a816cbf687cb9d004bee9f4ecb8f2162b6c963bb7f375edb710acc3968",
+      "fault_sha256": "24017c02b0cc837fef31d1914097c526c5f2db5aad5582e2b5f360bbe76cdb6d",
+      "expected_red_exit": 1,
+      "oracle": "jit_tape_diff: FAIL: binary_scope jit tape differs from interpreter"
+    },
+    {
+      "name": "old-compound-column",
+      "path": "src/parser.c",
+      "source_sha256": "0b38dbe49727ceb711f31e7348cf0591eb23f9942bacc2ade43a0c7d108f2d75",
+      "fault_sha256": "911eec6f400e6be732bc35be37eea832d5947dbde9c5fb7b38dc9320e8e8bc5d",
+      "expected_red_exit": 1,
+      "oracle": "3 compound caret rows fail; PASS=13 TOTAL=16 FAIL=3 SKIPPED=0 LEAKED=0"
+    }
+  ],
+  "initial_green_required": 2,
+  "restored_green_required": 2,
+  "exact_restores_required": 2,
+  "source_mutations_only_in_isolated_scratch": true
+}
