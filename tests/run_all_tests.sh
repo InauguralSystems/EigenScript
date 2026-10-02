@@ -7459,7 +7459,8 @@ echo ""
 
 # [99ac] PERFORMANCE.md's observer figures are generated from the checked-in
 # Callgrind n=5-per-arm results (#1206), rather than a second hand-maintained
-# copy. The self-test changes one measurement and proves the checker goes red.
+# copy. The self-test changes both a raw measurement and the local regression
+# baseline independently and proves the checker goes red for either drift.
 echo "[99ac] generated observer performance documentation (#1206)"
 TOTAL=$((TOTAL + 1))
 perf_docs_out=$(python3 "$TESTS_DIR/../tools/performance_observer_docs.py" --selftest 2>&1); perf_docs_rc=$?
