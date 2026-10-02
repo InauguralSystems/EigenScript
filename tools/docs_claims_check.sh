@@ -86,8 +86,19 @@ def derived_counts():
 
 
 def strict_default_wording():
-    """Keep the complete graphics/audio contract strict-by-default (#1428)."""
+    """Keep builtin error rows and graphics/audio strict-by-default."""
     text = Path('docs/BUILTINS.md').read_text(encoding='utf-8')
+    conditional = re.compile(
+        r'\braises?\s+under\s+(?:strict\b|`EIGS_STRICT=1`)|'
+        r'\bunder\s+`EIGS_STRICT=1`\s+(?:(?:it|both|they)\s+)?raises?\b', re.I)
+    lines = text.splitlines()
+    for lineno, line in enumerate(lines, 1):
+        if conditional.search(line):
+            red(f'docs/BUILTINS.md:{lineno}: describes strict errors as conditional; '
+                'state the default first and the EIGS_STRICT=0 fallback second (#1396)')
+    print(f'  STRICT DEFAULT ROWS: examined {len(lines)} line(s)')
+    if not lines:
+        red('STRICT DEFAULT ROWS examined 0 lines')
     headings = ('Optional: Graphics (SDL2) Extension', 'Audio (additional)')
     sections = collections.defaultdict(list)
     for match in re.finditer(r'^## ([^\n]+)\n(.*?)(?=^## |\Z)', text, re.M | re.S):
@@ -455,6 +466,10 @@ def selftest():
                  '**Text rendering and fonts (#593).** With `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
                 ('strict-audio', '## Audio (additional)',
                  '## Audio (additional)\nUnder `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                ('strict-core-row', '## Core Language',
+                 '## Core Language\nA bad argument answers `0`; under `EIGS_STRICT=1` it raises.', 'describes strict errors as conditional'),
+                ('strict-audio-short', 'A **short or non-list** argument also raises by default;',
+                 'A **short or non-list** argument also raises under strict;', 'describes strict errors as conditional'),
                 ('strict-section-missing', '## Audio (additional)',
                  '## Removed audio heading', "strict-default section 'Audio (additional)' must exist exactly once"),
             ]:
@@ -465,6 +480,14 @@ def selftest():
                 passed += ok
                 print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
                 p.write_text(original)
+            p.write_text(original + '\nAn explicit `EIGS_STRICT=1` setting keeps the default strict mode.\n')
+            result = gate()
+            ok = result.returncode == 0
+            passed += ok
+            print(f'SELFTEST: strict-explicit-setting: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                print(result.stdout)
+            p.write_text(original)
             p = tree / 'tests/test_doc_examples.py'
             original = p.read_text()
             p.write_text(original.replace('"README.md":', '# "README.md":', 1))
@@ -485,8 +508,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 13 case(s) run, {passed} passed, {13-passed} failed')
-            return 0 if passed == 13 else 1
+            print(f'SELFTEST: 16 case(s) run, {passed} passed, {16-passed} failed')
+            return 0 if passed == 16 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
