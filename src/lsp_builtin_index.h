@@ -304,7 +304,7 @@ static const char *builtin_docs[][2] = {
     {"str_replace", "str_replace — builtin; see docs/BUILTINS.md"},
     {"str_upper", "str_upper — builtin; see docs/BUILTINS.md"},
     {"stream_close", "stream_close of null            → closes the stream file, returns 1"},
-    {"stream_open", "stream_open of [\"path\", count]  → opens file, writes header with count, returns 1"},
+    {"stream_open", "stream_open of [\"path\", count] — integral count 1..10000000; outside that range raises limit even with EIGS_STRICT=0; returns 1 on success, 0 on I/O failure"},
     {"stream_write", "stream_write of value           → writes one float64, returns 1"},
     {"substr", "substr of [string, start, length] → substring"},
     {"subtract", "subtract — builtin; see docs/BUILTINS.md"},

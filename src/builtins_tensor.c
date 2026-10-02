@@ -2079,6 +2079,13 @@ Value* builtin_tensor_save(Value *arg) {
      * or 2D tensor, which is a shape/type mistake in the tensor argument and
      * not an I/O failure (no file has been opened yet at this point). */
     ARG_GUARD(ndim == 0, "tensor_save", "a non-empty 1D or 2D tensor", make_num(0));
+    if ((int64_t)rows * (int64_t)cols > EIGS_TENSOR_MAX_ELEMENTS) {
+        rt_error(EK_LIMIT, 0,
+                 "tensor_save: '%s' has %lld elements, over the %d-element cap",
+                 path_val->data.str, (long long)rows * cols,
+                 EIGS_TENSOR_MAX_ELEMENTS);
+        return make_num(0);
+    }
 
     /* Flatten before opening the file: a strict #1416 rejection must not
      * leave a partial file behind, and a direct C helper raise does not
@@ -2135,19 +2142,70 @@ static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int c
 /* tensor_load of path — load 1D or 2D tensor from binary file.
  * Restores observer state if present in the file. */
 #if !EIGENSCRIPT_FREESTANDING
+static void tensor_load_limit_raise(const char *path, uint32_t rows,
+                                    uint32_t cols) {
+    uint64_t total = (uint64_t)rows * (uint64_t)cols;
+    const char *dimension = rows > EIGS_TENSOR_MAX_ELEMENTS ? "rows" :
+                            cols > EIGS_TENSOR_MAX_ELEMENTS ? "columns" :
+                            "elements";
+    unsigned long long offending = rows > EIGS_TENSOR_MAX_ELEMENTS ? rows :
+                                   cols > EIGS_TENSOR_MAX_ELEMENTS ? cols : total;
+    rt_error(EK_LIMIT, 0,
+             "tensor_load: '%s' has %s=%llu, over the %d-element cap",
+             path, dimension, offending, EIGS_TENSOR_MAX_ELEMENTS);
+}
+
+/* tensor_load predates the tape and successful tensors can be much larger
+ * than an N record.  Record one small verdict for every valid call instead:
+ * null means the live loader continues, while [rows, cols] reconstructs the
+ * new filesystem-dependent over-cap raise without reopening the file. */
+static void tensor_load_record_verdict(uint32_t rows, uint32_t cols) {
+    if (!__builtin_expect(g_trace_enabled, 0)) return;
+    Value *verdict;
+    if (rows || cols) {
+        verdict = make_list(2);
+        list_append_owned(verdict, make_num((double)rows));
+        list_append_owned(verdict, make_num((double)cols));
+    } else verdict = make_null();
+    trace_nondet_value("tensor_load", verdict);
+    val_decref(verdict);
+}
+
 Value* builtin_tensor_load(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_null();
 
+    int replayed_verdict = 0;
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *verdict;
+        if (trace_replay_refuse_off_owner("tensor_load")) return make_null();
+        if (trace_replay_take("tensor_load", &verdict)) {
+            replayed_verdict = 1;
+            if (verdict && verdict->type == VAL_LIST &&
+                verdict->data.list.count == 2 &&
+                verdict->data.list.items[0]->type == VAL_NUM &&
+                verdict->data.list.items[1]->type == VAL_NUM) {
+                uint32_t rows = (uint32_t)verdict->data.list.items[0]->data.num;
+                uint32_t cols = (uint32_t)verdict->data.list.items[1]->data.num;
+                val_decref(verdict);
+                tensor_load_limit_raise(arg->data.str, rows, cols);
+                return make_null();
+            }
+            val_decref(verdict);
+        }
+    }
+
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) return make_null();
+    if (!f) { tensor_load_record_verdict(0, 0); return make_null(); }
 
     /* Try new format (4-word header with flags) */
     uint32_t header[4];
-    if (fread(header, sizeof(uint32_t), 4, f) != 4) { fclose(f); return make_null(); }
+    if (fread(header, sizeof(uint32_t), 4, f) != 4) {
+        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
 
-    int ndim = (int)header[0];
-    int rows = (int)header[1];
-    int cols = (int)header[2];
+    uint32_t ndim_raw = header[0];
+    uint32_t rows_raw = header[1];
+    uint32_t cols_raw = header[2];
     uint32_t flags = header[3];
 
     /* Detect old format: flags would be a huge number if it's actually data */
@@ -2158,23 +2216,47 @@ Value* builtin_tensor_load(Value *arg) {
         /* Old 3-word header — rewind and re-read */
         fseek(f, 0, SEEK_SET);
         uint32_t old_header[3];
-        if (fread(old_header, sizeof(uint32_t), 3, f) != 3) { fclose(f); return make_null(); }
-        ndim = (int)old_header[0];
-        rows = (int)old_header[1];
-        cols = (int)old_header[2];
+        if (fread(old_header, sizeof(uint32_t), 3, f) != 3) {
+            fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        }
+        ndim_raw = old_header[0];
+        rows_raw = old_header[1];
+        cols_raw = old_header[2];
         has_observer = 0;
     }
 
-    if (rows <= 0 || cols <= 0 || rows > 1000000 || cols > 1000000) { fclose(f); return make_null(); }
+    if (ndim_raw != 1 && ndim_raw != 2) {
+        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
+    if (rows_raw == 0 || cols_raw == 0) {
+        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
 
-    /* Guard against int overflow: rows*cols may exceed INT_MAX under the 100k cap. */
-    if ((size_t)rows * (size_t)cols > (size_t)INT_MAX) { fclose(f); return make_null(); }
-    int total = rows * cols;
+    uint64_t total64 = (uint64_t)rows_raw * (uint64_t)cols_raw;
+    if (total64 > EIGS_TENSOR_MAX_ELEMENTS) {
+        fclose(f);
+        /* A recorded non-cap decision still uses the historical live payload
+         * path. If that file has since grown beyond the cap, reject it with
+         * the old null stand-in rather than inventing a new catch branch. */
+        if (replayed_verdict) return make_null();
+        tensor_load_record_verdict(rows_raw, cols_raw);
+        tensor_load_limit_raise(arg->data.str, rows_raw, cols_raw);
+        return make_null();
+    }
+
+    int ndim = (int)ndim_raw;
+    int rows = (int)rows_raw;
+    int cols = (int)cols_raw;
+    int total = (int)total64;
 
     /* Read numeric data */
     double *data = xmalloc_array((size_t)total, sizeof(double));
-    if (!data) { fclose(f); return make_null(); }
-    if ((int)fread(data, sizeof(double), total, f) != total) { free(data); fclose(f); return make_null(); }
+    if (!data) {
+        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
+    if ((int)fread(data, sizeof(double), total, f) != total) {
+        free(data); fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
     /* #971: the file is untrusted bytes, so a NaN pattern is reachable
      * here. flat_to_tensor_* would collapse it through make_num anyway
      * (same 0 + EIGS_MATH_INVALID); guarding first lets the strict raise
@@ -2213,6 +2295,7 @@ Value* builtin_tensor_load(Value *arg) {
         free(obs_data);
     }
 
+    tensor_load_record_verdict(0, 0);
     return result;
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */

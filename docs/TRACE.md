@@ -132,6 +132,15 @@ perspective lands on the tape as an `N` record:
   success records a `VAL_BUFFER`, open-failure records null) and the
   identical `io` error is re-derived from it under `EIGS_REPLAY`, so an
   over-cap failure replays byte-identically with no live fs access
+- **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
+  records one compact observation: `[rows, cols]` for an over-cap header,
+  otherwise `null`. Replay reconstructs a recorded `limit` error before
+  filesystem access, preserving its catch branch and diagnostic after file
+  removal or replacement. A recorded non-cap decision keeps the historical
+  null stand-in if the live file has since grown beyond the cap. Successful
+  tensor payloads remain live and untaped; this observation does not guarantee
+  their replay after file changes. Invalid path argument types consume no
+  observation. The following nondeterministic call retains its own record.
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)

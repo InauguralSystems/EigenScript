@@ -208,6 +208,12 @@ sqrt(2) = 1.414213562373095
   `softmax`, `relu`, `sum`/`mean`/`norm`, `gather`, `zeros_like`) takes either
   container and returns a buffer iff every tensor operand was one.
 
+Binary tensor I/O: tensor_load and tensor_save cap files at 10,000,000
+elements and raise catchable limit errors above it. stream_open requires
+an integral count from 1 through that cap; build_corpus includes file
+separators in its capped token count. These limits also raise with
+EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
+
 ## Threads: VALUES copy through a channel, HANDLES share
 
 - `spawn of [fn, arg]` / `channel of n` / `send` / `recv` / `thread_join`.

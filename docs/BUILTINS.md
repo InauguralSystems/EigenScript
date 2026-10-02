@@ -369,11 +369,12 @@ Boolean keywords that check the most recently observed value:
 ### Streaming Tensor I/O
 
 Single-handle streaming writer for the tensor binary format. Use when
-producing tensors too large to materialise in memory.
+producing tensors without materialising all values in memory; the file still
+has the shared 10,000,000-element limit.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `stream_open` | `stream_open of ["path", count]` | Open file, write header for `count` float64 values. 1 on success, 0 on failure. One stream per **thread**: opening a second closes the first, and an unclosed stream is flushed and closed when the thread ends (#739) |
+| `stream_open` | `stream_open of ["path", count]` | Open file, write header for an integral `count` from 1 through 10,000,000 float64 values. Counts outside that range or fractional counts raise a catchable `limit` error naming the path and cap, including under `EIGS_STRICT=0`. Returns 1 on success, 0 on an I/O failure. One stream per **thread**: opening a second closes the first, and an unclosed stream is flushed and closed when the thread ends (#739) |
 | `stream_write` | `stream_write of value` | Append one float64 to the open stream. 1 on success, 0 on failure |
 | `stream_close` | `stream_close of null` | Close the stream. 1 on success, 0 on failure |
 
@@ -555,8 +556,8 @@ either way, so the numbers are byte-identical.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor to a binary file (preserves observer state) |
-| `tensor_load` | `tensor_load of "path"` | Load tensor from binary file (restores observer state). `NaN` bytes in the file raise a `value` error naming `tensor_load` by default; under `EIGS_STRICT=0` they collapse to `0` and set `math_flags.invalid` (#971). |
+| `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor of at most 10,000,000 elements to a binary file (preserves observer state). An over-cap tensor raises a catchable `limit` error before opening the file, including under `EIGS_STRICT=0` |
+| `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file (restores observer state). An over-cap header raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file raise a `value` error naming `tensor_load` by default; under `EIGS_STRICT=0` they collapse to `0` and set `math_flags.invalid` (#971). |
 
 ### Gradients & SGD
 
@@ -591,7 +592,7 @@ either way, so the numbers are byte-identical.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `build_corpus` | `build_corpus of [files, top_n, stream_path, vocab_path]` | Three-pass C-backed corpus builder: tokenise `files`, emit top-`n` vocabulary and stream-format token IDs |
+| `build_corpus` | `build_corpus of [files, top_n, stream_path, vocab_path]` | Three-pass C-backed corpus builder: tokenise `files`, emit top-`n` vocabulary and stream-format token IDs. The token stream, including file separators, is capped at 10,000,000 elements; exceeding it raises a catchable `limit` error naming the stream path and cap, including under `EIGS_STRICT=0`, before opening the stream file |
 
 ## Optional: Network Extension (TCP sockets)
 

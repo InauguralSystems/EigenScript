@@ -2321,6 +2321,12 @@ buffer). Mixing a buffer with a list yields a list. The reductions
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
 
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
+
 ```eigenscript
 l is [1.0, 4.0, 9.0]
 b is buf_from_list of l

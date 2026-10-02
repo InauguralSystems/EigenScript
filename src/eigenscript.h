@@ -1623,6 +1623,10 @@ void free_value(Value *v);
  * a bare literal in all three; one macro so they cannot drift apart. */
 #define EIGS_NUM_MAX 1e308
 
+/* Binary tensor files share the same aggregate element ceiling as tensor
+ * construction.  Keep readers and every writer on this one policy. */
+#define EIGS_TENSOR_MAX_ELEMENTS 10000000
+
 /* Numeric invariant: EigenScript has no NaN or Infinity.
  * All numeric operations route through this guard.
  * NaN -> 0; values escaping the finite number line saturate at
