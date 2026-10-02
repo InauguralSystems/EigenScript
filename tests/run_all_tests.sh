@@ -4181,6 +4181,7 @@ if ! echo "$NET_PROBE_OUT" | grep -q "ndefined variable"; then
         FAIL=$((FAIL + 1))
         echo "  FAIL: record run broke (rc=$NET_REC_RC)"
     fi
+    TOTAL=$((TOTAL + 1))
     if [ "$NET_REP_RC" = "0" ] && [ "$NET_REP" = "$NET_REC" ]; then
         PASS=$((PASS + 1))
         echo "  PASS: replay is byte-identical with no network"
@@ -4189,6 +4190,7 @@ if ! echo "$NET_PROBE_OUT" | grep -q "ndefined variable"; then
         echo "  FAIL: replay diverged from record (rc=$NET_REP_RC)"
         diff <(printf '%s\n' "$NET_REC") <(printf '%s\n' "$NET_REP") | head -5
     fi
+    TOTAL=$((TOTAL + 1))
     if [ "$NET_NREC" = "17" ]; then
         PASS=$((PASS + 1))
         echo "  PASS: tape carries the pinned 17 net N records"
