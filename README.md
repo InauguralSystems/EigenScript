@@ -304,6 +304,11 @@ argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
 `asin`/`acos` clamp their inputs.
 
+The optional model extension raises a catchable `value` error when
+`eigen_generate` or `eigen_eval_loss` receives a prompt longer than the loaded
+model's `max_seq_len`. Training applies the same limit to the combined input
+and output lengths; callers must choose their context window explicitly.
+
 ### Arena Memory
 
 ```eigenscript fragment

@@ -383,7 +383,7 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
     int max_seq_len = model->config.max_seq_len;
 
     int *token_ids = xcalloc_array(safe_size_mul(max_seq_len, 4), sizeof(int));
-    int num_tokens = prompt_len < max_seq_len ? prompt_len : max_seq_len;
+    int num_tokens = prompt_len;
     for (int i = 0; i < num_tokens; i++) {
         int tid = prompt_ids[i];
         if (tid < 0) tid = 0;
@@ -529,13 +529,23 @@ Value* builtin_eigen_generate(Value *arg) {
      * #960: sampling makes this a nondeterministic return, so it rides the
      * tape like random/random_int. ONE record per call carries the emitted
      * token list -- the draws are an implementation detail of the decoding
-     * policy, the list is what the script observes. The TAKE is the first
-     * statement, so replay serves the tokens before the model is consulted:
-     * no checkpoint load, no RNG draw (the net_* contract). Every return
-     * records exactly one value, argument-error paths included, or a program
-     * that hits one desyncs the stream. Unconditional in temperature: the tape
-     * cannot show which branch ran, and replay may not load a model. */
-    TRACE_NONDET_TAKE("eigen_generate");
+     * policy. #1405 adds a string outcome for context refusal; every normal
+     * return is still a list, including soft argument errors. Replay takes
+     * either outcome before consulting the model, which may be absent or
+     * replaced. Refusal messages carry the recorded lengths, not live config.
+     * The existing list/string value encodings are unchanged. */
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *recorded;
+        if (trace_replay_refuse_off_owner("eigen_generate")) return make_null();
+        if (trace_replay_take("eigen_generate", &recorded)) {
+            if (recorded->type == VAL_STR) {
+                rt_error(EK_VALUE, 0, "%s", recorded->data.str);
+                val_decref(recorded);
+                return make_null();
+            }
+            return recorded;
+        }
+    }
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
@@ -564,6 +574,19 @@ Value* builtin_eigen_generate(Value *arg) {
     if (prompt_len <= 0) {
         fprintf(stderr, "eigen_generate: prompt must be non-empty\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
+    }
+    if (prompt_len > g_model.config.max_seq_len) {
+        char message[128];
+        snprintf(message, sizeof(message),
+            "eigen_generate: prompt length %d exceeds model max_seq_len %d",
+            prompt_len, g_model.config.max_seq_len);
+        if (__builtin_expect(g_trace_enabled, 0)) {
+            Value *refusal = make_str(message);
+            trace_nondet_value("eigen_generate", refusal);
+            val_decref(refusal);
+        }
+        rt_error(EK_VALUE, 0, "%s", message);
+        return make_null();
     }
     #define EIGS_MAX_GENERATE_TOKENS 4096
     if (max_tokens <= 0 || max_tokens > EIGS_MAX_GENERATE_TOKENS) {
@@ -648,6 +671,12 @@ Value* builtin_eigen_eval_loss(Value *arg) {
         /* fs:EMPTY an empty prompt has no logits to score, so there is no
          * loss; the list's TYPE was already accepted above. */
         return make_num(-1.0);
+    }
+    if (prompt_len > g_model.config.max_seq_len) {
+        rt_error(EK_VALUE, 0,
+            "eigen_eval_loss: prompt length %d exceeds model max_seq_len %d",
+            prompt_len, g_model.config.max_seq_len);
+        return make_null();
     }
 
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));

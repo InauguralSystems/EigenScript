@@ -173,13 +173,22 @@ perspective lands on the tape as an `N` record:
   replayed at all. **One record per call carries the whole token list**, not
   one per sampled position: the draws are an implementation detail of the
   decoding policy (top-k and top-p consume different numbers of them), the
-  list is what the script observes. TAKE/RECORD-wrapped, so `EIGS_REPLAY`
+  list is what the script observes. The early replay take means `EIGS_REPLAY`
   serves the tokens *before the model is consulted* — a recorded generation
   replays with no checkpoint on disk and without advancing the RNG. Every
   return is recorded, argument errors and the no-model-loaded empty list
   included, so a program that hits one cannot desync the stream. Greedy
   (`temperature < 0.01`) calls ride the same path: the tape cannot show
   which branch ran, and replay may not load a model to re-derive it.
+  A context-limit refusal (#1405) also records one outcome: a string containing
+  the error message. Successful generations and soft empty-list returns keep
+  their existing list payloads; strings are distinguishable because generation
+  never returns a string. Replay reconstructs the catchable `value` error from
+  that string before consulting the model, using the recorded prompt length
+  and limit even if the checkpoint was deleted or replaced. This uses the
+  existing N-record string encoding without changing the tape format. Existing
+  generation list records remain readable; the usual format/runtime-version
+  checks still apply.
 - **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
   depends on the font rasteriser, the driver and the backend, so the pixel
   a render-decode oracle reads back is a device input and takes the

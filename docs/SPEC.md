@@ -2402,6 +2402,18 @@ use with `eigs_set_eval_observer_isolated`. Missing history then raises
 conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
 
+### Model context limits
+
+With a model loaded, `eigen_generate` and `eigen_eval_loss` accept nonempty
+prompts up to and including the model's `max_seq_len`. Longer prompts raise
+a catchable `value` error; neither builtin truncates the supplied prompt.
+`native_train_step_builtin` applies the same refusal rule to the combined
+input and output lengths. These limits apply with `EIGS_STRICT=0` too.
+Generation records either its token list or its context refusal on the trace
+tape. Replay reproduces that outcome before consulting the model, even when
+the checkpoint is missing or has a different context limit, and preserves the
+following call's record.
+
 ### HTTP startup and response attribution
 
 With the HTTP extension, `http_early_bind of port` (or `of null`) listens

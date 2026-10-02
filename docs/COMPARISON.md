@@ -305,6 +305,12 @@ caught: boom
 caught: type_mismatch at line 7
 ```
 
+The optional model extension also uses catchable `value` errors for context
+limits: `eigen_generate` and `eigen_eval_loss` reject prompts longer than the
+loaded model's `max_seq_len`, while `native_train_step_builtin` checks the
+combined input and output length. This refusal applies even with
+`EIGS_STRICT=0`; context truncation is the caller's explicit choice.
+
 ## Pipes (vs Lisp threading / shell pipes)
 
 Clojure:

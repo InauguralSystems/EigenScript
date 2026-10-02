@@ -330,6 +330,12 @@ See docs/BUILTINS.md and docs/STDLIB.md before writing your own — or resolve
 a name mechanically: `eigenscript --api --json` dumps every builtin,
 extension (by group), and lib function with its parameter list in one call.
 
+The optional model builtins `eigen_generate` and `eigen_eval_loss` raise a
+catchable `value` error for prompts longer than the loaded model's
+`max_seq_len`, including with `EIGS_STRICT=0`. Choose any context truncation
+explicitly before calling them. `native_train_step_builtin` uses the same
+limit for the combined input and output lengths.
+
 ## The generation-validation ladder (always run what you generate)
 
 EigenScript is a low-training-data language: a generated program that "looks
