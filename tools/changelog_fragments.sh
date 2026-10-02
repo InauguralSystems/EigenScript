@@ -14,7 +14,16 @@ die() { echo "changelog: ABORTED: $*" >&2; exit 2; }
 heading() { case $1 in breaking) echo "Breaking changes";; added) echo Added;; changed) echo Changed;;
     deprecated) echo Deprecated;; removed) echo Removed;; fixed) echo Fixed;; security) echo Security;;
     documentation) echo Documentation;; esac; }
-shape() { [ "$(head -c2 "$1")" = "- " ] && [ -z "$(tail -c1 "$1")" ]; }   # an entry starts "- " and ends in a newline
+shape() {   # a regular file whose non-whitespace entry starts "- " and ends in a newline
+    [ -f "$1" ] && [ ! -L "$1" ] && [ "$(head -c2 "$1")" = "- " ] \
+        && [ -z "$(tail -c1 "$1")" ] && sed '1s/^- //' "$1" | grep -q '[^[:space:]]'
+}
+fragment_path() {   # validate a path without reading it (release cuts delete their fragments)
+    local p=$1 c f
+    c=${p#changes/}; c=${c%%/*}; f=${p##*/}
+    [[ $p =~ ^changes/[a-z]+/[^/]+$ && $f =~ $NAME ]] \
+        && case " $CATS internal " in *" $c "*) true;; *) false;; esac
+}
 
 assemble() {   # <root> <version> <date>: the whole cut, on <root> (the real tree, or a base checkout to reproduce it)
     local r=$1 v=$2 d=$3 sec e c f names
@@ -74,7 +83,7 @@ reproduces() {   # <merge-base>: is the working CHANGELOG.md exactly what the cu
 }
 
 check() {
-    local base=${1:-origin/main} mb t st p c f left n=0 extra=0 src=0 add=0 chlog=0 ver=0 cut=0 bad=0
+    local base=${1:-origin/main} mb t st p c f left n=0 extra=0 src=0 add=0 deleted=0 chlog=0 ver=0 cut=0 bad=0
     mb=$(git merge-base "$base" HEAD) || die "no merge-base with $base (git fetch origin main)"
     t=$(mktemp -d) || die "mktemp"; trap "rm -rf '$t'" EXIT
     git diff -z --no-renames --name-status "$mb" > "$t/l" || die "git diff $mb failed"
@@ -82,17 +91,20 @@ check() {
     git ls-files -z --others --exclude-standard -- changes src lib | while IFS= read -r -d '' p; do printf 'A\0%s\0' "$p"; done >> "$t/l"
     while IFS= read -r -d '' st && IFS= read -r -d '' p; do
         n=$((n + 1))
-        case $p in CHANGELOG.md|VERSION) ;; changes/*) [ "$st" = D ] || extra=$((extra + 1)) ;; *) extra=$((extra + 1)) ;; esac   # what a cut PR may not carry
+        case $p in
+            CHANGELOG.md|VERSION) ;;
+            changes/*) [ "$st" = D ] && fragment_path "$p" || extra=$((extra + 1)) ;;
+            *) extra=$((extra + 1)) ;;
+        esac   # what a cut PR may not carry
         case $p in
             CHANGELOG.md) chlog=1 ;;
             VERSION) ver=1 ;;
             src/*|lib/*) src=1 ;;
             changes/README.md) ;;
             changes/*)
-                [ "$st" = D ] && continue
+                if [ "$st" = D ]; then fragment_path "$p" && deleted=$((deleted + 1)); continue; fi
                 c=${p#changes/}; c=${c%%/*}; f=${p##*/}
-                if [[ $p =~ ^changes/[a-z]+/[^/]+$ && $f =~ $NAME ]] && shape "$p" \
-                    && case " $CATS internal " in *" $c "*) true;; *) false;; esac
+                if fragment_path "$p" && shape "$p"
                 then [ "$st" = A ] && add=$((add + 1))
                 else echo "FAIL $p: a fragment is changes/<category>/<issue>-<slug>.md, category one of: $CATS internal; it starts '- ' and ends in a newline"; bad=1
                 fi ;;
@@ -107,6 +119,10 @@ check() {
         fi
     elif [ $chlog = 1 ]; then
         echo "FAIL CHANGELOG.md is edited directly. Add changes/<category>/<issue>-<slug>.md instead (see changes/README.md); only the release cut (tools/changelog_fragments.sh cut <version> <date>, which also bumps VERSION) may write it"; bad=1
+    fi
+    if [ "$deleted" -gt 0 ] && [ "$cut" = 0 ]; then
+        echo "FAIL $deleted existing changelog fragment(s) deleted; only a release cut may delete fragments"
+        bad=1
     fi
     if [ $src = 1 ] && [ $add = 0 ] && [ $cut = 0 ]; then
         echo "FAIL src/ or lib/ changed without a changelog fragment. Add changes/<category>/<issue>-<slug>.md holding the entry text (category: $CATS), or changes/internal/<issue>-<slug>.md ('- why no entry') if the change needs none"; bad=1

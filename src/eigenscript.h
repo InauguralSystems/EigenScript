@@ -504,6 +504,9 @@ void observer_slot_update_num(struct Env *e, int idx, double num);
  * exported so the AOT runtime can call the same thing instead of skipping. */
 void observer_slot_sample(struct Env *e, int idx, Value *newval);
 void observer_slot_sample_num(struct Env *e, int idx, double num);
+/* Fast forms for observe opcodes which already proved the observer gate open. */
+void observer_slot_sample_gated(struct Env *e, int idx, Value *newval);
+void observer_slot_sample_num_gated(struct Env *e, int idx, double num);
 void observer_slot_reset(struct Env *e);
 /* Observed-loop halting on an explicit env (no VM-frame dependency): one
  * iteration of OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK. Returns 1 when the loop
@@ -628,6 +631,16 @@ typedef struct {
  * functions only, so the field layout can still evolve. */
 typedef struct EigsState  EigsState;
 typedef struct EigsThread EigsThread;
+
+/* A stop request is immutable after publication. State, attached threads and
+ * not-yet-started workers each retain their evaluation scope, so a new host
+ * eval cannot erase an older worker's request or reuse its status storage. */
+typedef struct EigsExitScope {
+    int refs;
+    int latched_storage;
+    int code;
+} EigsExitScope;
+struct EigsThreadHandle;
 struct VM;
 struct EigsJitCache;
 struct EigsChunk;
@@ -795,6 +808,9 @@ struct EigsState {
     EigsHandleSlot  handle_table[HANDLE_TABLE_SIZE];
     pthread_mutex_t handle_mutex;
     int             handle_next;
+    /* Claimed joins interrupted by exit remain owned until the normal drain.
+     * They still contribute to live_workers; their original slots may recycle. */
+    struct EigsThreadHandle *deferred_threads;
     /* Set to 1 by builtin_spawn before pthread_create; cleared by
      * spawn_mt_maybe_clear (builtins.c) when the last live worker is joined
      * and the joiner is the state's only attached thread (#1147), and by
@@ -811,15 +827,12 @@ struct EigsState {
      * but was never joined still counts, so `multithreaded` stays set until
      * someone joins it; that errs toward the MT (safe) side. */
     int             live_workers;
-    /* #739: process-exit request, LATCHED at the state. The per-thread flag
-     * above drives CHECK_ERROR's uncatchable unwind and is cleared at host
-     * eval entry; this latch is what `main` reports as the process exit code,
-     * so `exit of N` inside a spawned worker stops every VM thread and still
-     * supplies the process status — the per-thread flag alone could do neither. */
-    int             exit_latched;
-    int             exit_latch_code;
-    /* State-wide exit wakeup. The latch is published atomically; this condvar
-     * interrupts sleeps without polling when any attached thread calls exit. */
+    /* The state's default exit scope is replaced at a host eval boundary,
+     * under exit_mutex. Each thread retains the scope it executes in; spawned
+     * workers inherit that thread's scope before pthread_create. */
+    EigsExitScope  *exit_scope;
+    /* Completion and exit wakeup share this condition. Scope flags publish
+     * atomically and are never reset while any reader can retain the scope. */
     pthread_mutex_t exit_mutex;
     pthread_cond_t  exit_cond;
     /* #1112: number of spawn()ed OS-thread workers that died of an UNCAUGHT
@@ -890,6 +903,8 @@ typedef struct EigsJitHotRow {
 
 struct EigsThread {
     EigsState  *state;
+    EigsExitScope *exit_scope;        /* owning, changed only by this thread */
+    int         is_spawn_worker;    /* host evals inside workers inherit scope */
     Arena       arena;
     /* #739: temporal prev-table (`prev of x`, `at <line>`, `state_at`).
      * Per-THREAD because it is keyed by interned name pointer and the
@@ -911,6 +926,10 @@ struct EigsThread {
     int          parse_errors;
     int          has_error;
     int          try_depth;
+    /* Source-line stamp used by native/AOT callers and temporal history when
+     * no VM frame supplies a line. Per-thread so a spawned worker cannot
+     * replace its parent's fallback error line (#1435). */
+    int          trace_current_line;
     /* #739: `exit of N` request. Sits with has_error/try_depth because
      * CHECK_ERROR reads all three together — an exit unwind is uncatchable.
      * Cleared at host eval entry (eigs_eval_string) so a second eval on this
@@ -1337,8 +1356,7 @@ extern __thread EigsThread *eigs_current;
 #define g_compile_import_toplevel (eigs_current->compile_import_toplevel)
 #define g_import_resolve_dir  (eigs_current->import_resolve_dir)
 #define g_vm_multithreaded    (eigs_current->state->multithreaded)
-#define g_exit_latched        (eigs_current->state->exit_latched)
-#define g_exit_latch_code     (eigs_current->state->exit_latch_code)
+#define g_exit_latched        __atomic_load_n(&eigs_current->exit_scope->latched_storage, __ATOMIC_ACQUIRE)
 #define g_gc_envs             (eigs_current->state->gc_envs)
 #define g_gc_captured_live    (eigs_current->state->gc_captured_live)
 #define g_gc_val_buf          (eigs_current->state->gc_val_buf)
@@ -1427,6 +1445,12 @@ void eigs_obs_enable(void);
  * "this process has one thread" — a per-state multithreaded flag cannot see a
  * sibling state, and ext_http runs one state per connection per thread. */
 int  eigs_process_thread_count(void);
+/* Reserve the process-wide single-attached-thread state for an operation that
+ * mutates process-global compiler resources.  A successful begin blocks new
+ * thread attachments until the matching end without holding the lifecycle
+ * mutex across the reserved operation or any host callback it invokes. */
+int  eigs_process_single_thread_begin(void);
+void eigs_process_single_thread_end(void);
 /* #1142/#1143: a bare snapshot of the live EigsState count. NOT usable as a
  * close decision — see eigs_process_state_release below. trace_shutdown is
  * its only caller. */
@@ -1488,6 +1512,26 @@ void* xmalloc(size_t size);
 void* xcalloc(size_t nmemb, size_t size);
 void* xrealloc(void *p, size_t size);
 char* xstrdup(const char *s);
+/* Measurement-only allocation accounting for #1319.  Defining free this way
+ * lets the candidate checked-allocation chokepoint observe matching releases;
+ * untracked pointers are passed through unchanged.  Keep the overwhelmingly
+ * common disabled path at the call site so it can call libc directly instead
+ * of paying for another out-of-line function call on every release.  No limit
+ * is enforced. */
+extern int eigs_alloc_stats_enabled __attribute__((weak));
+void eigs_alloc_stats_free(void *p) __attribute__((weak));
+static inline __attribute__((always_inline))
+void eigs_alloc_stats_maybe_free(void *p) {
+    /* Small standalone tools (notably `make jit-smoke`) intentionally link
+     * no allocator runtime.  Weak references preserve ordinary libc free in
+     * that configuration instead of imposing two unresolved symbols. */
+    if (!eigs_alloc_stats_free || !&eigs_alloc_stats_enabled ||
+        __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED) == 0)
+        free(p);
+    else
+        eigs_alloc_stats_free(p);
+}
+#define free(p) eigs_alloc_stats_maybe_free(p)
 size_t safe_size_mul(size_t a, size_t b);
 void* xmalloc_array(size_t nmemb, size_t size);
 void* xcalloc_array(size_t nmemb, size_t size);
@@ -1593,6 +1637,10 @@ void free_value(Value *v);
  * comparison (jit.c), and observer_slot_saturated (eigenscript.c). It was
  * a bare literal in all three; one macro so they cannot drift apart. */
 #define EIGS_NUM_MAX 1e308
+
+/* Binary tensor files share the same aggregate element ceiling as tensor
+ * construction.  Keep readers and every writer on this one policy. */
+#define EIGS_TENSOR_MAX_ELEMENTS 10000000
 
 /* Numeric invariant: EigenScript has no NaN or Infinity.
  * All numeric operations route through this guard.
@@ -1869,6 +1917,9 @@ void env_mark_captured(Env *env);
  * doesn't prove a subgraph dead it leaks instead of freeing. No-op when
  * multithreaded. */
 void gc_collect_cycles(void);
+/* Drain buffered LIST/DICT possible roots without seeding the traversal from
+ * the unrelated captured-environment registry. */
+void gc_collect_value_candidates(void);
 /* Exit-time teardown of the global scope: drops every global binding,
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */
@@ -1903,6 +1954,9 @@ extern int g_compile_module_slots;
 /* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
+/* Measure leading spaces/tabs using the language's four-column tab stops.
+ * byte_count, when non-NULL, receives the number of source bytes consumed. */
+int eigs_measure_indent(const char *line, int *byte_count);
 void free_tokenlist(TokenList *tl);
 void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 
@@ -1940,10 +1994,10 @@ void eigs_num_text(char *buf, size_t nbuf, double n);
 void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
 /* #880: decode a JSON string body (s[*pos] = first byte after the opening
- * quote) into `out`, leaving *pos past the closing quote. One decoder for
- * json_decode, the LSP, and the DAP — they used to disagree on which escapes
- * exist. */
-void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
+ * quote) into `out`, leaving *pos past the closing quote. Returns whether
+ * every input scalar was preserved; lenient U+FFFD repair returns false.
+ * One decoder serves json_decode, the LSP, and the DAP. */
+int eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
 
 /* ---- Registration ---- */
 
@@ -2153,16 +2207,23 @@ void*  handle_claim(int id, uint32_t gen, HandleType type, int *why);
  * ("joined" for a thread, "closed" for a channel or store). */
 void   handle_raise_unresolved(const char *who, const char *kind, int id,
                                int why, const char *gone_verb);
-/* Deterministic teardown of channel + thread handles (builtins.c): joins
- * outstanding workers, then frees remaining channels. Call once execution is
- * done and the value world is still alive (before env/thread teardown). */
+/* Deterministic teardown of every resource in the handle table (builtins.c):
+ * HANDLE_THREAD, HANDLE_CHANNEL, HANDLE_NET, HANDLE_STORE, and HANDLE_TASK.
+ * Call once execution is done and the value world is still alive (before
+ * env/thread teardown). */
+Value *builtin_spawn(Value *arg);
+Value *builtin_thread_join(Value *arg);
 void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
 
-/* State-wide `exit`: first request wins and is visible to every VM thread. */
+/* `exit`: first request wins within the caller's evaluation scope. Workers
+ * retain the scope captured at spawn, including across later host evals. */
 void   eigs_state_request_exit(struct EigsState *st, int code);
 int    eigs_state_exit_requested(struct EigsState *st, int *code);
-void   eigs_state_clear_exit(struct EigsState *st);
+void   eigs_state_begin_eval(struct EigsState *st);
+void   eigs_exit_scope_retain(EigsExitScope *scope);
+void   eigs_exit_scope_release(EigsExitScope *scope);
+void   eigs_thread_set_exit_scope(EigsExitScope *scope);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
@@ -2200,6 +2261,9 @@ typedef struct {
  * directive take effect. Used by the LSP to publish diagnostics. */
 int lint_collect(ASTNode *ast, const char *path, const char *source,
                  LintDiag *out, int max);
+/* Allocate and return every diagnostic. The caller owns the returned array. */
+LintDiag *lint_collect_alloc(ASTNode *ast, const char *path,
+                             const char *source, int *count);
 /* 1 if the source carries a file-wide `# lint: allow-file <code>` directive
  * for `code` (or `all`). Callers of lint_collect apply it themselves (the
  * CLI and the LSP both do) — suppression filters lint_collect's OUTPUT;
@@ -2219,5 +2283,9 @@ int eigs_api_dump(FILE *out, int json);
  * pinned from script at all (found via iLambdaAi's eval-determinism probe,
  * 2026-08-17). */
 void eigs_ensure_random_seeded(void);
+/* The libc drand48 family owns one process-global state.  These are the only
+ * entry points runtime code may use, so seeding and draws share one lock. */
+double eigs_random_double(void);
+long eigs_random_long(void);
 
 #endif /* EIGENSCRIPT_H */

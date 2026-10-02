@@ -133,4 +133,37 @@ catch e:
     c_walk is 1
 assert_eq of [c_walk, 1, "N872 walking through a dict miss raises"]
 
+# The compiler fuses reads from parameters/locals into LOCAL_* opcodes.  Null
+# must raise there too rather than changing behavior when the optimization is
+# selected (the JIT uses matching helpers for the same opcodes).
+define local_field872(x) as:
+    return x.foo
+
+define local_index872(x) as:
+    return x[0]
+
+define local_index_field872(x) as:
+    return x[0].foo
+
+c_local_field is 0
+try:
+    bad5 is local_field872 of null
+catch e:
+    c_local_field is 1
+assert_eq of [c_local_field, 1, "N872 null local field access raises"]
+
+c_local_index is 0
+try:
+    bad6 is local_index872 of null
+catch e:
+    c_local_index is 1
+assert_eq of [c_local_index, 1, "N872 null local index access raises"]
+
+c_local_index_field is 0
+try:
+    bad7 is local_index_field872 of [null]
+catch e:
+    c_local_index_field is 1
+assert_eq of [c_local_index_field, 1, "N872 null local list element field access raises"]
+
 test_summary of null

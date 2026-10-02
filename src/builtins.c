@@ -824,7 +824,7 @@ Value* builtin_get_observer_scale(Value *arg) {
  * it is consulted with — as a process global nothing ever reset it, so one
  * script's `exit` disabled try/catch for every later eval in the PROCESS, in
  * any state. The exit CODE is additionally latched at the EigsState, so `exit`
- * inside a spawned worker stops the state and decides the process's status. */
+ * inside a spawned worker stops its evaluation and decides the CLI status. */
 Value* builtin_exit(Value *arg) {
     int code = 0;
     if (arg && arg->type == VAL_NUM) {
@@ -1325,7 +1325,8 @@ static int eigs_json_read_hex4(const char *s, int *pos, unsigned int *out) {
  * document unusable — JSON requires a CR to be escaped, so a Windows client's
  * text arrived with literal backslash-r in it and produced a bogus syntax
  * error and zero real diagnostics. */
-void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
+int eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
+    int lossless = 1;
     while (s[*pos] && s[*pos] != '"') {
         if (s[*pos] == '\\') {
             (*pos)++;
@@ -1357,6 +1358,7 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
                          * decode raises; lenient callers get U+FFFD and the
                          * offending text is parsed normally from here. */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                         break;
                     }
@@ -1381,16 +1383,19 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
                             eigs_json_append_cp(out, cp);
                         } else {
                             g_json_parse_recoverable = 1;
+                            lossless = 0;
                             eigs_json_append_cp(out, 0xFFFD);
                         }
                     } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
                         /* #724: lone low surrogate — strict raise + U+FFFD */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                     } else if (cp == 0) {
                         /* #724: NUL cannot live in a C-terminated string
                          * (EMBEDDING.md) — strict raise + lenient U+FFFD. */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                     } else {
                         eigs_json_append_cp(out, cp);
@@ -1405,7 +1410,11 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
         (*pos)++;
     }
     if (s[*pos] == '"') (*pos)++;
-    else g_json_parse_err = 1;   /* #495: unterminated string (hit EOF) */
+    else {
+        g_json_parse_err = 1;   /* #495: unterminated string (hit EOF) */
+        lossless = 0;
+    }
+    return lossless;
 }
 
 static Value* eigs_json_parse_string(const char *s, int *pos) {
@@ -2357,9 +2366,15 @@ Value* builtin_pi(Value *arg) {
 
 static int g_random_seeded = 0;
 static pthread_once_t g_random_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t g_random_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void random_seed_once(void) {
     if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
+    pthread_mutex_lock(&g_random_lock);
+    if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) {
+        pthread_mutex_unlock(&g_random_lock);
+        return;
+    }
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
 #if EIGENSCRIPT_FREESTANDING
@@ -2368,11 +2383,28 @@ static void random_seed_once(void) {
     srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
 #endif
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
 }
 
 void eigs_ensure_random_seeded(void) {
     if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
     pthread_once(&g_random_once, random_seed_once);
+}
+
+double eigs_random_double(void) {
+    eigs_ensure_random_seeded();
+    pthread_mutex_lock(&g_random_lock);
+    double result = drand48();
+    pthread_mutex_unlock(&g_random_lock);
+    return result;
+}
+
+long eigs_random_long(void) {
+    eigs_ensure_random_seeded();
+    pthread_mutex_lock(&g_random_lock);
+    long result = lrand48();
+    pthread_mutex_unlock(&g_random_lock);
+    return result;
 }
 
 /* random of null → float in [0, 1) */
@@ -2381,7 +2413,7 @@ Value* builtin_random(Value *arg) {
     /* Seed is part of the live source so a replay take / fail-loud raise
      * does not race g_random_seeded (#1142 TSan on two workers under
      * EIGS_REPLAY). */
-    TRACE_NONDET_RET("random", (eigs_ensure_random_seeded(), make_num(drand48())));
+    TRACE_NONDET_RET("random", make_num(eigs_random_double()));
 }
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
@@ -2394,7 +2426,6 @@ Value* builtin_random_int(Value *arg) {
     Value *hi = arg->data.list.items[1];
     ARG_GUARD_TAPED(!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM,
                     "random_int", "numeric bounds", make_num(0));
-    eigs_ensure_random_seeded();
     /* Range-check as doubles before any integer cast — a double outside the
      * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
      * same cast-before-range-check class in value_to_string). */
@@ -2421,14 +2452,16 @@ Value* builtin_random_int(Value *arg) {
                  (unsigned long long)span);
         return make_null();
     }
-    TRACE_NONDET_RET("random_int", make_num(lo_i + (lrand48() % (int64_t)span)));
+    TRACE_NONDET_RET("random_int", make_num(lo_i + (eigs_random_long() % (int64_t)span)));
 }
 
 /* seed_random of n → seeds the RNG, returns 1 */
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_num(0));
+    pthread_mutex_lock(&g_random_lock);
     srand48((long)arg->data.num);
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
     return make_num(1);
 }
 
@@ -2781,7 +2814,7 @@ Value* builtin_arena_stats(Value *arg) {
 Value* builtin_heap_inuse(Value *arg) {
     (void)arg;
 #if defined(__GLIBC__) && !EIGENSCRIPT_FREESTANDING
-    return make_num((double)mallinfo2().uordblks);
+    TRACE_NONDET_RET("heap_inuse", make_num((double)mallinfo2().uordblks));
 #else
     return make_null();
 #endif
@@ -3583,8 +3616,10 @@ static const char *SANDBOX_ALLOW[] = {
     /* type / value utilities */
     "type", "coalesce", "num_copy", "secure_equals",
     /* observer READS — touch only the sandbox's own values, never globals
-     * (set_observer_thresholds / record_history are intentionally NOT here) */
-    "observe", "report", "get_observer_thresholds", "state_at", "classify",
+     * (set_observer_thresholds / record_history are intentionally NOT here).
+     * state_at is also excluded: temporal history belongs to the host thread,
+     * not the sealed sandbox environment. */
+    "observe", "report", "get_observer_thresholds", "classify",
     /* tokenizer / parser introspection (pure over strings) */
     "tokenize_ids", "tokenize_with_names", "token_name", "scan_ints",
     "scan_int_tokens", "scan_tokens", "try_parse",
@@ -3668,6 +3703,14 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     return 0;
 }
 
+static Value *sandbox_finish_run(Value *out) {
+    /* Validation and execution can both park state-wide possible-root pins.
+     * Every descriptor outcome reaches this boundary; candidate-only GC
+     * avoids a full captured-environment scan for each small sandbox run. */
+    gc_collect_value_candidates();
+    return out;
+}
+
 /* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
  * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
@@ -3709,6 +3752,11 @@ Value* builtin_sandbox_run(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
     EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
+    if (chunk && chunk_reads_shared_temporal(chunk)) {
+        chunk_free(chunk);
+        chunk = NULL;
+        abi_err = "sandbox descriptors cannot access temporal history";
+    }
     if (chunk) eigs_obs_enable_runtime();     /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
     if (!chunk) {
@@ -3728,12 +3776,8 @@ Value* builtin_sandbox_run(Value *arg) {
                        make_str(abi_err ? abi_err : "invalid chunk descriptor"));
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
-        return out;
+        return sandbox_finish_run(out);
     }
-    /* #831: same as vm_run_bytecode — the temporal opcodes in an assembled
-     * chunk must arm recording themselves; the compiler never scanned it. */
-    chunk_arm_temporal(chunk);
-
     /* SEALED restricted env. The parent link is NULL, not g_global_env: the
      * sandbox env is a root, and the allowed builtins are COPIED into it.
      *
@@ -3975,7 +4019,7 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_refusal_line = saved_sb_refusal_line;
     memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
            sizeof saved_sb_refusal_msg);
-    return out;
+    return sandbox_finish_run(out);
 }
 
 /* record_history of flag — enable (nonzero) or disable (0) per-assignment
@@ -4464,15 +4508,21 @@ Value* builtin_get_at(Value *arg) {
  * CONCURRENCY: spawn/join/channel builtins
  * ================================================================ */
 
-typedef struct {
+typedef struct EigsThreadHandle {
     Value *fn;
     Value **fn_args;       /* arg_count Value* — owned (incref'd by spawn) */
     int fn_arg_count;
     Env *parent_env;
     EigsState *parent_state;  /* state the spawning thread is attached to */
+    EigsExitScope *exit_scope; /* owned snapshot BEFORE pthread_create */
+    struct EigsThreadHandle *deferred_next;
     Value *result;
     volatile int done;
     pthread_t tid;
+    /* A spawned function is still part of the evaluation that created it.
+     * In particular, a sandbox/fuzz loop cap must not be escaped merely by
+     * moving the loop onto a worker thread. */
+    int sandbox_loop_max;
 } ThreadHandle;
 
 static void *thread_entry(void *arg) {
@@ -4481,8 +4531,20 @@ static void *thread_entry(void *arg) {
      * runs arena_init internally, so the legacy arena_init call site
      * has moved into the lifecycle. */
     eigs_thread_attach(h->parent_state);
+    eigs_thread_set_exit_scope(h->exit_scope);
+    eigs_current->is_spawn_worker = 1;
+    g_sandbox_loop_max = h->sandbox_loop_max;
+    g_sandbox_cap_hit = 0;
+    g_loop_iterations = 0;
+    g_loop_backedge_count = 0;
     Value *fn = h->fn;
-    if (fn->type == VAL_FN) {
+    /* A worker may first get CPU after its eval has already exited and a
+     * newer eval has begun. Do not invoke even one builtin/body in that case. */
+    if (eigs_state_exit_requested(h->parent_state, &g_exit_code)) {
+        g_exit_requested = 1;
+        g_has_error = 1;
+        h->result = make_null();
+    } else if (fn->type == VAL_FN) {
         Env *call_env = env_new(fn->data.fn.closure);
         int bind_n = h->fn_arg_count;
         if (bind_n > fn->data.fn.param_count) bind_n = fn->data.fn.param_count;
@@ -4587,13 +4649,28 @@ static void *thread_entry(void *arg) {
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();
-    h->done = 1;
     /* Detach from the state — runs arena_destroy and clears TLS. The
      * cycle collector resumes when the last worker is JOINED and the joiner
      * is the only attached thread (spawn_mt_maybe_clear, #1147), or at the
      * exit drain. */
     eigs_thread_detach();
+    /* Completion has the same wakeup lock as exit. Publish only after detach,
+     * so a joiner reaching pthread_join has no remaining runtime/I/O work to
+     * wait for. The owning join/drain keeps h and the state alive throughout. */
+    pthread_mutex_lock(&h->parent_state->exit_mutex);
+    __atomic_store_n(&h->done, 1, __ATOMIC_RELEASE);
+    pthread_cond_broadcast(&h->parent_state->exit_cond);
+    pthread_mutex_unlock(&h->parent_state->exit_mutex);
     return NULL;
+}
+
+static void thread_handle_free(ThreadHandle *h) {
+    if (h->result) val_decref(h->result);
+    val_decref(h->fn);
+    for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
+    free(h->fn_args);
+    eigs_exit_scope_release(h->exit_scope);
+    free(h);
 }
 
 /* #1147: return the state to single-threaded mode once the last worker is
@@ -4678,17 +4755,16 @@ Value* builtin_spawn(Value *arg) {
     h->fn_arg_count = fn_arg_count;
     h->parent_env = g_global_env;
     h->parent_state = eigs_current_state();
+    h->exit_scope = eigs_current->exit_scope;
+    eigs_exit_scope_retain(h->exit_scope);
+    h->deferred_next = NULL;
     h->result = NULL;
     h->done = 0;
+    h->sandbox_loop_max = g_sandbox_loop_max;
     uint32_t hgen = 0;
     int hid = handle_register(h, HANDLE_THREAD, &hgen);
     if (hid < 0) {
-        val_decref(fn);
-        if (fn_args) {
-            for (int i = 0; i < fn_arg_count; i++) val_decref(fn_args[i]);
-            free(fn_args);
-        }
-        free(h);
+        thread_handle_free(h);
         /* #1146 (3): RAISE. This used to return make_null() with only a line
          * on stderr from handle_register, and `thread_join of null` then
          * returned null — so 300 unjoined spawns reported
@@ -4739,12 +4815,7 @@ Value* builtin_spawn(Value *arg) {
          * the new thread's stack allocation failed with EAGAIN/ENOMEM.
          * thread_entry never ran, so unwind this thread's setup fully. */
         handle_release(hid, hgen);
-        val_decref(h->fn);
-        if (h->fn_args) {
-            for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
-            free(h->fn_args);
-        }
-        free(h);
+        thread_handle_free(h);
         /* #1147: this spawn set multithreaded above and no worker exists, so
          * leave MT mode now, as a join would; otherwise a caught spawn failure
          * keeps the collector and JIT off for the rest of the run. */
@@ -4799,15 +4870,28 @@ Value* builtin_thread_join(Value *arg) {
         handle_raise_unresolved("thread_join", "thread", hid, why, "joined");
         return make_null();
     }
+    EigsState *st = eigs_current_state();
+    pthread_mutex_lock(&st->exit_mutex);
+    while (!__atomic_load_n(&h->done, __ATOMIC_ACQUIRE) &&
+           !eigs_state_exit_requested(st, NULL))
+        pthread_cond_wait(&st->exit_cond, &st->exit_mutex);
+    int done = __atomic_load_n(&h->done, __ATOMIC_ACQUIRE);
+    pthread_mutex_unlock(&st->exit_mutex);
+    if (!done) {
+        /* The generation-checked claim already consumed the public handle;
+         * its slot may now name another resource. Transfer ownership to the
+         * drain instead of restoring that slot or detaching/leaking a worker.
+         * live_workers is unchanged until the eventual pthread_join. */
+        pthread_mutex_lock(&st->handle_mutex);
+        h->deferred_next = st->deferred_threads;
+        st->deferred_threads = h;
+        pthread_mutex_unlock(&st->handle_mutex);
+        return make_null();
+    }
     pthread_join(h->tid, NULL);
     Value *result = h->result ? h->result : make_null();
-    val_decref(h->fn);
-    if (h->fn_args) {
-        for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
-        free(h->fn_args);
-    }
-    free(h);
-    EigsState *st = eigs_current_state();
+    h->result = NULL; /* transfer the worker's owned result to the caller */
+    thread_handle_free(h);
     __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);   /* #1147 */
     spawn_mt_maybe_clear(st);
     return result;
@@ -4933,9 +5017,9 @@ Value* builtin_channel(Value *arg) {
 /* Thread safety: values sent through channels are deep-copied (#293) so the
  * received value is self-contained — independent of the sender thread's
  * lifetime (its dict keys are interned per-thread and freed at detach) and of
- * its arena. Data types (num/str/list/dict, nested) are copied; fn/builtin/
- * buffer/text_builder are still shared by refcount. The copy also removes the
- * old shared-mutable-container hazard for the copied types. */
+ * its arena. Data types (num/str/list/dict/buffer/text_builder, nested) are
+ * copied; fn/builtin are shared by refcount. The copy also removes the old
+ * shared-mutable-value hazard for the copied types. */
 Value* builtin_send(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "send requires [channel, value]");
@@ -5211,7 +5295,24 @@ Value* builtin_task_spawn(Value *arg) {
     t->id = id;
     t->hgen = tgen;
     task_sched_on_spawn(id);   /* enqueue + arm the scheduler */
-    return make_num((double)id);
+    return make_num(task_handle_pack(id, tgen));
+}
+
+/* Resolve an EigenScript-visible packed task id to the scheduler's raw slot.
+ * Empty/invalid ids retain the historical "unknown task" result.  A live
+ * slot owned by another generation is different: it is the observable ABA
+ * and must raise rather than operating on the replacement task. */
+static Task *task_handle_resolve(Value *arg, const char *who, int *out_id) {
+    int id = 0;
+    uint32_t gen = 0;
+    if (!arg || arg->type != VAL_NUM ||
+        !task_handle_unpack(arg->data.num, &id, &gen)) return NULL;
+    int why = HANDLE_CLAIM_GONE;
+    Task *t = (Task *)handle_lookup(id, gen, HANDLE_TASK, &why);
+    if (!t && (why == HANDLE_CLAIM_STALE || why == HANDLE_CLAIM_TYPE))
+        handle_raise_unresolved(who, "task", id, why, "reaped");
+    if (t && out_id) *out_id = id;
+    return t;
 }
 
 /* #488: a `must_not_yield` region asserts atomicity. A critical section under
@@ -5269,8 +5370,8 @@ Value* builtin_task_yield(Value *arg) {
  * returns null. Same arena/nesting restriction as task_yield. */
 Value* builtin_task_join(Value *arg) {
     if (!arg || arg->type != VAL_NUM || !g_task_sched) return make_null();
-    int target = (int)arg->data.num;
-    Task *t = (Task*)handle_lookup_slot(target, HANDLE_TASK);
+    int target = 0;
+    Task *t = task_handle_resolve(arg, "task_join", &target);
     if (!t) return make_null();
     if (t->state == TASK_DONE || t->state == TASK_DEAD) {
         /* Already finished: deliver its result / error now, no suspend. */
@@ -5296,7 +5397,7 @@ Value* builtin_task_join(Value *arg) {
         return make_null();
     }
     if (no_yield_forbidden("blocking task_join")) return make_null();   /* #488 */
-    if (!task_request_join(target)) return make_null();
+    if (!task_request_join(target, t->hgen)) return make_null();
     return make_null();   /* placeholder: the scheduler fills it with the result on resume */
 }
 
@@ -5319,8 +5420,13 @@ Value* builtin_task_send(Value *arg) {
      * the dead-letter drop this function's contract documents ("0 if
      * dropped") — split out of the arity guard above, which is a mistake. */
     if (!g_task_sched) return make_num(0);
+    int target = 0;
+    /* Main is the reserved public id 0 and has no handle-table generation,
+     * but it does have a scheduler mailbox (reply-to-supervisor pattern). */
+    if (idv->data.num != 0 &&
+        !task_handle_resolve(idv, "task_send", &target)) return make_num(0);
     Value *copy = val_clone_for_send(arg->data.list.items[1]);   /* share-nothing */
-    int sent = task_deliver((int)idv->data.num, copy);
+    int sent = task_deliver(target, copy);
     if (!sent) val_decref(copy);   /* dropped to a dead task — release the copy */
     return make_num(sent ? 1 : 0);
 }
@@ -5362,14 +5468,16 @@ Value* builtin_task_kill(Value *arg) {
     /* fs:ANSWER no scheduler means no such target; 0 is the documented
      * "bad/self/finished target" answer, split from the type guard above. */
     if (!g_task_sched) return make_num(0);
-    return make_num(task_do_kill((int)arg->data.num) ? 1 : 0);
+    int target = 0;
+    if (!task_handle_resolve(arg, "task_kill", &target)) return make_num(0);
+    return make_num(task_do_kill(target) ? 1 : 0);
 }
 
 /* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
  * (DONE, DEAD, or an unknown id). */
 Value* builtin_task_alive(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "task_alive", "a task id (number)", make_num(0));
-    Task *t = (Task*)handle_lookup_slot((int)arg->data.num, HANDLE_TASK);
+    Task *t = task_handle_resolve(arg, "task_alive", NULL);
     /* fs:ANSWER an unknown id is NOT alive; 0 is this function's documented
      * answer. Four lines above, an identical `return make_num(0)` is a type
      * guard that DID convert — the pair Phase A pinned as the reason this
@@ -5440,7 +5548,7 @@ Value* builtin_task_now(Value *arg) {
  * state, so it records no tape nondet. */
 Value* builtin_task_self(Value *arg) {
     (void)arg;
-    return make_num((double)task_current_id());
+    return make_num(task_current_id());
 }
 
 /* task_detach of id -> 1 (0 for main/unknown). Marks the task fire-and-forget
@@ -5456,7 +5564,9 @@ Value* builtin_task_detach(Value *arg) {
         rt_error(EK_TYPE, 0, "task_detach requires a task id (a number)");
         return make_null();
     }
-    return make_num((double)task_do_detach((int)arg->data.num));
+    int target = 0;
+    if (!task_handle_resolve(arg, "task_detach", &target)) return make_num(0);
+    return make_num((double)task_do_detach(target));
 }
 
 /* task_sched_seed of n — install a scheduling seed. By default tasks run FIFO
@@ -5506,13 +5616,13 @@ Value* builtin_task_sched_trace(Value *arg) {
  * the GC — `close_channel` only flips a flag, and an unjoined worker leaves its
  * ThreadHandle behind. Reclaim them here so a program that spawns/uses channels
  * is leak-clean at exit:
- *   pass 1 — join every still-registered (i.e. not explicitly thread_join'd)
- *            worker (spawn uses a joinable pthread); afterwards no thread is
- *            live to touch a channel;
+ *   pass 1 — claim registered/deferred workers and join them, closing
+ *            channels while each runs and rescanning for nested spawns;
  *   pass 2 — free each remaining channel: drain + decref buffered messages,
  *            destroy the mutex/conds, free the struct.
  * builtin_thread_join already releases+frees joined threads, so the table holds
- * only the un-joined remainder — no double-join. Idempotent (slots are nulled),
+ * only the un-joined remainder (including interrupted claims) — no double-join.
+ * Idempotent (slots and the deferred list are nulled),
  * so a later eigs_state_destroy sees an empty table. */
 void handle_table_drain(EigsState *st) {
     if (!st) return;
@@ -5522,29 +5632,50 @@ void handle_table_drain(EigsState *st) {
      * the pthread_join below would hang forever at exit. recv returns null on a
      * closed-empty channel and send skips the enqueue when closed, so a woken
      * worker runs to completion and becomes joinable. */
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        if (st->handle_table[i].type != HANDLE_CHANNEL) continue;
-        Channel *ch = (Channel*)st->handle_table[i].ptr;
-        if (!ch) continue;
-        pthread_mutex_lock(&ch->mutex);
-        ch->closed = 1;
-        pthread_cond_broadcast(&ch->not_empty);
-        pthread_cond_broadcast(&ch->not_full);
-        pthread_mutex_unlock(&ch->mutex);
-    }
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        if (st->handle_table[i].type != HANDLE_THREAD) continue;
-        ThreadHandle *h = (ThreadHandle*)st->handle_table[i].ptr;
-        if (!h) continue;
-        pthread_join(h->tid, NULL);
-        if (h->result) val_decref(h->result);
-        val_decref(h->fn);
-        if (h->fn_args) {
-            for (int j = 0; j < h->fn_arg_count; j++) val_decref(h->fn_args[j]);
-            free(h->fn_args);
+    while (__atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0) {
+        ThreadHandle *h = NULL;
+        pthread_mutex_lock(&st->handle_mutex);
+        if (st->deferred_threads) {
+            h = st->deferred_threads;
+            st->deferred_threads = h->deferred_next;
         }
-        free(h);
-        st->handle_table[i].ptr = NULL;
+        for (int i = 1; !h && i < HANDLE_TABLE_SIZE; i++) {
+            EigsHandleSlot *slot = &st->handle_table[i];
+            if (slot->type == HANDLE_THREAD && slot->ptr) {
+                h = (ThreadHandle *)slot->ptr;
+                /* The drain and thread_join use the same ownership rule:
+                 * detach under handle_mutex before pthread_join. */
+                slot->ptr = NULL;
+                break;
+            }
+        }
+        pthread_mutex_unlock(&st->handle_mutex);
+
+        /* A worker may create a channel after teardown began, or may itself
+         * be waiting for a child worker. Keep waking all channels while the
+         * claimed worker runs; then rescan for children registered behind the
+         * table cursor. */
+        if (!h) {
+            usleep(1000);
+            continue;
+        }
+        while (!__atomic_load_n(&h->done, __ATOMIC_ACQUIRE)) {
+            pthread_mutex_lock(&st->handle_mutex);
+            for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+                if (st->handle_table[i].type != HANDLE_CHANNEL ||
+                    !st->handle_table[i].ptr) continue;
+                Channel *ch = (Channel *)st->handle_table[i].ptr;
+                pthread_mutex_lock(&ch->mutex);
+                ch->closed = 1;
+                pthread_cond_broadcast(&ch->not_empty);
+                pthread_cond_broadcast(&ch->not_full);
+                pthread_mutex_unlock(&ch->mutex);
+            }
+            pthread_mutex_unlock(&st->handle_mutex);
+            usleep(1000);
+        }
+        pthread_join(h->tid, NULL);
+        thread_handle_free(h);
         __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);   /* #1147 */
     }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {

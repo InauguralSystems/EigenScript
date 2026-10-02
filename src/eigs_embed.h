@@ -57,6 +57,12 @@ EigsState  *eigs_state_new(void);
 void        eigs_state_destroy(EigsState *st);
 EigsThread *eigs_thread_attach(EigsState *st);
 
+/* Override this state's creation-time EIGS_STRICT setting: zero selects
+ * finite stand-ins and every nonzero value selects strict errors. NULL is a
+ * no-op. Call after eigs_state_new or eigs_open, but before the state's first
+ * eval, and never concurrently with evaluation of that state. */
+void        eigs_state_set_strict(EigsState *st, int enabled);
+
 /* Single-thread multi-state switching: park the calling thread's current
  * attachment (nothing is torn down) and activate its attachment to `st`,
  * creating one on first use. Returns the (possibly new) EigsThread, or

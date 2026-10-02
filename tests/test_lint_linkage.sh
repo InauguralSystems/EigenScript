@@ -2,8 +2,8 @@
 WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
 . "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # The lint split must not leak a generic helper symbol into an embedding
-# archive.  A host can legitimately have its own json_escape helper; the
-# archive link must remain collision-free.
+# archive. A host can legitimately use the former lint-internal names (or
+# json_escape); the archive link must remain collision-free.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,6 +16,14 @@ cat > "$WORK/collision.c" <<'EOF'
 void json_escape(const char *s, char *out, size_t outsz) {
     (void)s; (void)out; (void)outsz;
 }
+void lint_hint(void) {}
+void lint_error_at(void) {}
+void is_builtin_name(void) {}
+void builtin_name_env_free(void) {}
+void check_undefined_names(void) {}
+void check_stdlib_shadow(void) {}
+void lint_run_checks(void) {}
+void lint_suppressed(void) {}
 EOF
 # The probe must reference BOTH lint TUs (#922). An archive member is pulled
 # only when it resolves an undefined symbol, so a probe that touches lint.c
@@ -48,8 +56,8 @@ fi
 ar rcs "$WORK/liblint.a" "$WORK/lint.o" "$WORK/lint_host.o"
 
 if "$CC" -r -o "$WORK/linked.o" "$WORK/probe.o" "$WORK/collision.o" "$WORK/liblint.a"; then
-    echo "PASS: lint archive keeps json escaping internal"
+    echo "PASS: lint archive keeps generic helper names internal"
 else
-    echo "FAIL: lint archive exports a colliding json_escape symbol"
+    echo "FAIL: lint archive exports a colliding generic helper symbol"
     exit 1
 fi

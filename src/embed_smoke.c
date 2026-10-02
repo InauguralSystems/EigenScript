@@ -13,6 +13,8 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <poll.h>
+#include <errno.h>
 
 #include "eigs_embed.h"
 /* #830: the trace seam an ALTERNATIVE PRODUCER uses. The AOT (sibling
@@ -44,6 +46,193 @@ static void arm_abort_timer_ms(long ms) {
         failures++;                                                        \
     }                                                                      \
 } while (0)
+
+/* #1149: host I/O deliberately outlives an exited eval. One byte releases
+ * it; the five-second poll is a failure bound, never the success oracle.
+ * All worker-owned state stays live until eigs_close has joined it. */
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    int pipefd[2], entered, released, io_done, timed_out;
+    int scope_case, seen_code, late_code, nested_calls, nested_refused, continued;
+    EigsState *state;
+    int handle_id, requested;
+    uint32_t handle_gen;
+} ExitFixture;
+static ExitFixture *exit_fixture;
+
+static EigsValue *exit_nested(EigsValue *arg) {
+    (void)arg;
+    __atomic_add_fetch(&exit_fixture->nested_calls, 1, __ATOMIC_RELAXED);
+    return make_null();
+}
+
+static EigsValue *exit_io(EigsValue *arg) {
+    (void)arg;
+    ExitFixture *f = exit_fixture;
+    pthread_mutex_lock(&f->mutex);
+    f->entered = 1;
+    pthread_cond_broadcast(&f->cond);
+    pthread_mutex_unlock(&f->mutex);
+    struct pollfd pfd = {.fd = f->pipefd[0], .events = POLLIN};
+    char byte = 0;
+    int ready = poll(&pfd, 1, 5000);
+    if (ready != 1 || read(f->pipefd[0], &byte, 1) != 1 || byte != 'x')
+        __atomic_store_n(&f->timed_out, 1, __ATOMIC_RELAXED);
+    if (f->scope_case) {
+        /* This callback was spawned directly, so it has no VM frame. Its
+         * nested eval must still inherit the worker's stopped scope. */
+        EigsValue *nested = eigs_eval_string("host_nested of null");
+        f->nested_refused = nested == NULL && g_exit_requested;
+        eigs_value_release(nested);
+        f->seen_code = -1;
+        (void)eigs_state_exit_requested(f->state, &f->seen_code);
+        /* This nested spawn happens AFTER the next eval started. It must
+         * inherit this worker's stopped scope, and never call exit_nested. */
+        Value *fn = make_builtin(exit_nested);
+        Value *child = builtin_spawn(fn);
+        val_decref(fn);
+        Value *result = builtin_thread_join(child);
+        val_decref(result);
+        val_decref(child);
+        eigs_state_request_exit(f->state, 99);
+        f->late_code = -1;
+        (void)eigs_state_exit_requested(f->state, &f->late_code);
+    }
+    __atomic_store_n(&f->io_done, 1, __ATOMIC_RELEASE);
+    return make_null();
+}
+
+static EigsValue *exit_entered(EigsValue *arg) {
+    (void)arg;
+    ExitFixture *f = exit_fixture;
+    struct timespec until;
+    clock_gettime(CLOCK_REALTIME, &until);
+    until.tv_sec += 5;
+    pthread_mutex_lock(&f->mutex);
+    while (!f->entered) {
+        if (pthread_cond_timedwait(&f->cond, &f->mutex, &until) == ETIMEDOUT) {
+            __atomic_store_n(&f->timed_out, 1, __ATOMIC_RELAXED);
+            break;
+        }
+    }
+    pthread_mutex_unlock(&f->mutex);
+    return make_null();
+}
+
+static EigsValue *exit_release(EigsValue *arg) {
+    (void)arg;
+    exit_fixture->released = 1;
+    CHECK(write(exit_fixture->pipefd[1], "x", 1) == 1, "exit fixture releases one byte");
+    return make_null();
+}
+
+static EigsValue *exit_continued(EigsValue *arg) {
+    (void)arg;
+    __atomic_add_fetch(&exit_fixture->continued, 1, __ATOMIC_RELAXED);
+    return make_null();
+}
+
+/* Drive the stop only AFTER the real generation-checked join claimed its
+ * target. A worker exiting immediately after spawn could stop main before it
+ * reaches thread_join, which would not test interruptibility of that wait. */
+static void *exit_after_join_claim(void *arg) {
+    ExitFixture *f = arg;
+    for (int i = 0; i < 5000; i++) {
+        pthread_mutex_lock(&f->state->handle_mutex);
+        EigsHandleSlot *slot = &f->state->handle_table[f->handle_id];
+        int claimed = slot->gen == f->handle_gen && slot->ptr == NULL;
+        pthread_mutex_unlock(&f->state->handle_mutex);
+        if (claimed) {
+            eigs_state_request_exit(f->state, 5);
+            f->requested = 1;
+            return NULL;
+        }
+        usleep(1000);
+    }
+    return NULL;
+}
+
+static void test_worker_exit_lifecycle(void) {
+    for (int scope_case = 0; scope_case < 2; scope_case++) {
+        ExitFixture f = {.mutex = PTHREAD_MUTEX_INITIALIZER,
+                         .cond = PTHREAD_COND_INITIALIZER,
+                         .scope_case = scope_case};
+        if (pipe(f.pipefd) != 0) { CHECK(0, "exit fixture pipe"); return; }
+        exit_fixture = &f;
+        f.state = eigs_open();
+        CHECK(f.state != NULL, "exit fixture opens state");
+        if (!f.state) { close(f.pipefd[0]); close(f.pipefd[1]); return; }
+        eigs_register_function("host_io", exit_io);
+        eigs_register_function("host_entered", exit_entered);
+        eigs_register_function("host_release", exit_release);
+        eigs_register_function("host_continued", exit_continued);
+        eigs_register_function("host_nested", exit_nested);
+        char source[320];
+        snprintf(source, sizeof source,
+            "define old_worker() as:\n"
+            "    host_io of null\n"
+            "    host_continued of null\n"
+            "worker is spawn of %s\n"
+            "host_entered of null\n%s", scope_case ? "host_io" : "old_worker",
+            scope_case ? "exit of 5" : "0");
+        EigsValue *r = eigs_eval_string(source);
+        CHECK(f.entered && (scope_case ? r == NULL && g_exit_requested : r != NULL),
+              "exit fixture target entered native I/O before eval returned");
+        eigs_value_release(r);
+        if (scope_case) {
+            eigs_clear_error();
+            r = eigs_eval_string(
+                "host_release of null\nthread_join of worker\n"
+                "i is 0\nloop while i < 2:\n    i is i + 1\n"
+                "try:\n    throw of 7\ncatch e:\n    i + 40");
+            CHECK(r != NULL && eigs_value_as_num(r) == 42,
+                  "new eval runs while old worker retains its stop");
+            eigs_value_release(r);
+        } else {
+            EigsValue *handle = eigs_get_global("worker");
+            CHECK(handle && handle->type == VAL_DICT, "exit fixture owns join handle");
+            if (handle && handle->type == VAL_DICT) {
+                f.handle_id = (int)dict_get(handle, "_handle_id")->data.num;
+                f.handle_gen = (uint32_t)dict_get(handle, "_handle_gen")->data.num;
+                pthread_t requester;
+                int made = pthread_create(&requester, NULL, exit_after_join_claim, &f) == 0;
+                CHECK(made, "exit fixture starts request coordinator");
+                if (made) {
+                    r = builtin_thread_join(handle);
+                    eigs_value_release(r);
+                    pthread_join(requester, NULL);
+                    CHECK(f.requested && !__atomic_load_n(&f.io_done, __ATOMIC_ACQUIRE),
+                          "thread_join returns on exit before target I/O completes");
+                    CHECK(f.state->deferred_threads != NULL &&
+                          __atomic_load_n(&f.state->live_workers, __ATOMIC_ACQUIRE) == 1,
+                          "interrupted join keeps one worker owned for deferred reaping");
+                    r = eigs_eval_string("6 * 7");
+                    CHECK(r && eigs_value_as_num(r) == 42,
+                          "new eval runs with old joined target still in native I/O");
+                    eigs_value_release(r);
+                }
+            }
+            eigs_value_release(handle);
+            r = exit_release(NULL);
+            eigs_value_release(r);
+        }
+        eigs_close(f.state); /* reap normal and interrupted claims before free */
+        CHECK(f.entered && f.released && f.io_done && !f.timed_out,
+              "exit lifecycle fixture completed every I/O handshake without timeout");
+        CHECK(f.continued == 0, "stopped old worker executes no later script statement");
+        if (scope_case) {
+            CHECK(f.seen_code == 5 && f.late_code == 5,
+                  "old worker retains immutable first-exit status across new eval");
+            CHECK(f.nested_refused && f.nested_calls == 0,
+                  "nested eval and late nested spawn inherit stopped old scope");
+        }
+        close(f.pipefd[0]); close(f.pipefd[1]);
+        pthread_cond_destroy(&f.cond);
+        pthread_mutex_destroy(&f.mutex);
+        exit_fixture = NULL;
+    }
+}
 
 /* Source provider for the M7.5 module seam: serves one module. */
 static const char *smoke_provider(const char *name, void *ud) {
@@ -151,6 +340,42 @@ int main(void) {
         g_trace_current_line = line_save;
     }
 
+    /* #1394: strictness is state-local embedder configuration. Reuse the
+     * one-shot state already keeping the process alive, then create a staged
+     * sibling. Closing that sibling must not perform process-wide trace
+     * shutdown and accidentally arm all history names. */
+    {
+        eigs_state_set_strict(NULL, 1); /* lifecycle setters are NULL-safe */
+        eigs_state_set_strict(st, 0);
+
+        EigsState *strict = eigs_state_new();
+        CHECK(strict != NULL, "#1394 create staged strict state");
+        eigs_state_set_strict(strict, -1); /* every nonzero value enables */
+        CHECK(eigs_thread_switch(strict) != NULL, "#1394 switch to strict state");
+        CHECK(eigs_state_init_runtime(strict) == 0, "#1394 init staged strict state");
+        EigsValue *strict_result = eigs_eval_string("abs of \"x\"");
+        CHECK(strict_result == NULL && eigs_has_error(),
+              "#1394 strict state rejects abs(string)");
+        eigs_value_release(strict_result);
+        eigs_clear_error();
+
+        CHECK(eigs_thread_switch(st) != NULL, "#1394 switch to non-strict state");
+        EigsValue *soft_result = eigs_eval_string("abs of \"x\"");
+        CHECK(soft_result != NULL && eigs_value_type(soft_result) == EIGS_TYPE_NUM &&
+                  eigs_value_as_num(soft_result) == 0.0 && !eigs_has_error(),
+              "#1394 non-strict state returns the finite stand-in");
+        eigs_value_release(soft_result);
+
+        CHECK(eigs_thread_switch(strict) != NULL, "#1394 switch back to strict state");
+        eigs_close(strict);
+        CHECK(eigs_thread_switch(st) != NULL, "#1394 restore non-strict state");
+        soft_result = eigs_eval_string("abs of \"x\"");
+        CHECK(soft_result != NULL && eigs_value_as_num(soft_result) == 0.0 &&
+                  !eigs_has_error(),
+              "#1394 non-strict state remains non-strict after switching");
+        eigs_value_release(soft_result);
+    }
+
     /* --- Eval a script that defines a global. ------------------------ */
     EigsValue *r = eigs_eval_string("x is 5\ny is x * 7\ny");
     CHECK(r != NULL, "eval returns a value");
@@ -252,6 +477,19 @@ int main(void) {
     CHECK(r && eigs_value_type(r) == EIGS_TYPE_NUM, "FFI result is num");
     CHECK(r && eigs_value_as_num(r) == 7.0, "host_add(3,4) == 7");
     eigs_value_release(r);
+
+    /* --- #1387: embed API errors do not inherit an eval's last line. -- */
+    {
+        r = eigs_eval_string("a is 1\nb is 2\nc is 3\nd is 4\ne is 5\n");
+        if (r) eigs_value_release(r);
+        eigs_clear_error();
+        EigsValue *one = eigs_value_new_num(1.0);
+        eigs_set_global("_#fstr", one);
+        CHECK(eigs_has_error() && eigs_last_error_line() == 0,
+              "#1387 set_global after an eval has no stale source line");
+        eigs_value_release(one);
+        eigs_clear_error();
+    }
 
     /* --- #1322: the embed API refuses reserved runtime names. -------- */
     /* `_#fstr` is the f-string conversion binding; binding it would hijack
@@ -386,6 +624,19 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 100101.0,
           "live sensor reads 100 then 101");
     if (r) eigs_value_release(r);
+
+    /* #1441: once the interpreted callback above has returned, a native
+     * producer has no VM frame.  Its assignment belongs to module/native
+     * scope, not to the callback frame named by the tape's preceding S. */
+    {
+        static const char *const NM = "native_after_callback";
+        EigsSlot s;
+        s.d = 1441.0;
+        trace_assign(NM, s);
+        g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
+        CHECK(strstr(g_tape, "S <native> 0 0\nA native_after_callback=1441\n") != NULL,
+              "native assignment after callback carries native scope");
+    }
     eigs_set_trace_sink(NULL, NULL);
     CHECK(g_tape_len > 0, "sink captured tape bytes");
     g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
@@ -692,6 +943,7 @@ int main(void) {
     eigs_value_release(r);
 
     eigs_close(st);
+    test_worker_exit_lifecycle();
 
     if (failures == 0) {
         printf("embed_smoke: OK\n");

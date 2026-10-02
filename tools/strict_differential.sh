@@ -188,6 +188,23 @@ pow|print of (pow of [0 - 8, 0.5])|pow: result is not a number
 num|print of (num of "nan")|num: result is not a number
 f64_from_bytes|print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))|f64_from_bytes: result is not a number
 matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 0 - 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0])|matmul: result is not a number
+matmul|print of (matmul of [[[1, "x"]], [[1], [1]]])|matmul: expected a tensor containing only numbers
+matmul_at|print of (matmul_at of [[[1, "x"]], [[1, 2]]])|matmul_at: expected a tensor containing only numbers
+matmul_bt|print of (matmul_bt of [[[1, "x"]], [[1, 2]]])|matmul_bt: expected a tensor containing only numbers
+softmax|print of (softmax of [1, "x"])|softmax: expected a tensor containing only numbers
+log_softmax|print of (log_softmax of [1, "x"])|log_softmax: expected a tensor containing only numbers
+relu|print of (relu of [1, "x", -2])|relu: expected a tensor containing only numbers
+leaky_relu|print of (leaky_relu of [1, "x", -2])|leaky_relu: expected a tensor containing only numbers
+tensor_save|print of (tensor_save of [[1, "x"], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
+softmax|print of (softmax of ["x", 1])|softmax: expected a tensor containing only numbers
+log_softmax|print of (log_softmax of ["x", 1])|log_softmax: expected a tensor containing only numbers
+relu|print of (relu of ["x", 1])|relu: expected a tensor containing only numbers
+leaky_relu|print of (leaky_relu of ["x", 1])|leaky_relu: expected a tensor containing only numbers
+softmax|print of (softmax of [[], ["x"]])|softmax: expected a tensor containing only numbers
+log_softmax|print of (log_softmax of [[], ["x"]])|log_softmax: expected a tensor containing only numbers
+relu|print of (relu of [[], ["x"]])|relu: expected a tensor containing only numbers
+leaky_relu|print of (leaky_relu of [[], ["x"]])|leaky_relu: expected a tensor containing only numbers
+tensor_save|print of (tensor_save of [[[], ["x"]], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
 tensor_load|write_bytes of ["@TMP@/nan.tensor", [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 127, 0, 0, 0, 0, 0, 0, 4, 64]]\nprint of (tensor_load of "@TMP@/nan.tensor")|tensor_load: result is not a number
 numerical_grad|define bad(_) as:\n    return "bad"\np is [1.0]\nprint of (numerical_grad of [bad, p, 0.001])|numerical_grad: expected loss function to return a number
 numerical_grad_rows|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_rows of [bad, m, [0], 0.001])|numerical_grad_rows: expected loss function to return a number
@@ -266,8 +283,10 @@ token_name of an unknown id is "?"|print of (token_name of 9999)
 channel_closed of a reclaimed/unknown channel is 1|print of (channel_closed of ({"_channel_id": 99999}))
 json_build of null is the empty object|print of (json_build of null)
 random_hex of 0 is ""|print of f"[{random_hex of 0}]"
+tensor_save preserves a zero-column tensor|assert of [(tensor_save of [[[], []], "@TMP@/zero-cols.tensor"]) == 1, "zero-column tensor_save"]
 EOF
 )
+PINS="${PINS//@TMP@/$TMP}"
 
 # programs run on both binaries in both modes when a baseline is given
 VALID=$(cat <<'EOF'
@@ -356,8 +375,10 @@ print of (audio_stream_open of [44100, 1])
 print of (audio_play of null)
 print of (audio_stream_push of null)
 print of (audio_play of [0.1, 0.2])
+print of (tensor_save of [[[], []], "@TMP@/zero-cols.tensor"])
 EOF
 )
+VALID="${VALID//@TMP@/$TMP}"
 
 sig_name() {
     case "$1" in
@@ -388,7 +409,7 @@ clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
 
 extract_guard_names() {
     awk '
-    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named|numerical_loss)\(/ { acc = ""; collecting = 1 }
+    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named|numerical_loss)\(/ || /tensor_to_flat\(.*"/ { acc = ""; collecting = 1 }
     collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
         collecting = 0
         n = split(acc, parts, "\"")

@@ -55,7 +55,7 @@ case "${1:-}" in
         a=$(ir_of "$EIGS" "$f")
         b=$(ir_of "$ref" "$f")
         inc=$(( (a - b) * 100 / b ))
-        if [ "$inc" -gt "$THRESHOLD_PCT" ]; then
+        if [ $(( (a - b) * 100 )) -gt $(( THRESHOLD_PCT * b )) ]; then
             echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
         else
             echo "  ok: $name  Ir ${a}  (${inc}% vs ref)"
@@ -83,9 +83,9 @@ while read -r name base; do
     f="$DIR/$name.eigs"; [ -f "$f" ] || continue
     cur=$(ir_of "$EIGS" "$f")
     inc=$(( (cur - base) * 100 / base ))
-    if [ "$inc" -gt "$THRESHOLD_PCT" ]; then
+    if [ $(( (cur - base) * 100 )) -gt $(( THRESHOLD_PCT * base )) ]; then
         echo "  REGRESSION: $name  Ir ${base} -> ${cur}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
-    elif [ "$inc" -lt "-$THRESHOLD_PCT" ]; then
+    elif [ $(( (cur - base) * 100 )) -lt $(( -THRESHOLD_PCT * base )) ]; then
         echo "  STALE BASELINE: $name  Ir ${base} -> ${cur}  (${inc}%, gate would be measuring less)"; stale=1
     else
         echo "  ok: $name  Ir ${cur}  (${inc}% vs baseline)"

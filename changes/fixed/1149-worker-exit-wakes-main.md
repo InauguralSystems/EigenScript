@@ -1,1 +1,1 @@
-- Make `exit of N` from a spawned worker stop all VM threads and wake main-thread concurrency waits, instead of leaving the process hung in `recv` or another blocker.
+- Make `exit of N` from a spawned worker stop all VM threads and wake main-thread concurrency waits, instead of leaving main hung in a runtime wait. Interrupted joins retain their workers for teardown, which still waits for native I/O. Embedded evaluations keep separate exit scopes so an old worker cannot revive or stop a later eval.

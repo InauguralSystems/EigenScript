@@ -830,9 +830,7 @@ void observer_slot_update_num(Env *e, int idx, double num) {
  * NON-numeric binding) therefore remain elision-sensitive; PREDICATES.md
  * says so. Gated by the same #915 observer gate as the full update: a
  * program nothing in which reads the observer still pays nothing. */
-void observer_slot_sample_num(Env *e, int idx, double num) {
-    eigs_obs_count_call();   /* #972 */
-    if (!eigs_obs_gate_open()) return;
+void observer_slot_sample_num_gated(Env *e, int idx, double num) {
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
     ObserverSlot *s = env_obs_slot(e, idx);
@@ -841,17 +839,27 @@ void observer_slot_sample_num(Env *e, int idx, double num) {
     s->used = 1;
 }
 
-void observer_slot_sample(Env *e, int idx, Value *newval) {
-    eigs_obs_count_call();   /* #972 */
-    if (!eigs_obs_gate_open()) return;
+void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
     if (newval && newval->type == VAL_NUM) {
-        observer_slot_sample_num(e, idx, newval->data.num);
+        observer_slot_sample_num_gated(e, idx, newval->data.num);
         return;
     }
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
     ObserverSlot *s = env_obs_slot(e, idx);
     if (s) s->v_last = 0;   /* #861 route bit only — no walk, no `used` */
+}
+
+void observer_slot_sample_num(Env *e, int idx, double num) {
+    eigs_obs_count_call();   /* #972 */
+    if (!eigs_obs_gate_open()) return;
+    observer_slot_sample_num_gated(e, idx, num);
+}
+
+void observer_slot_sample(Env *e, int idx, Value *newval) {
+    eigs_obs_count_call();   /* #972 */
+    if (!eigs_obs_gate_open()) return;
+    observer_slot_sample_gated(e, idx, newval);
 }
 
 /* #1044: per-binding window override. Only the OVERRIDE is written — the
@@ -2530,9 +2538,10 @@ void dict_set_owned(Value *dict, const char *key, Value *val) {
  * only the interned KEYS need rehoming. We deep-copy the value on send and
  * re-intern its dict keys into the process-global table above. Copying
  * also removes the old shared-by-reference concurrent-mutation footgun for the
- * data types it covers. Non-container types (fn/builtin/buffer/text_builder/
- * json) are still shared by refcount; sending a closure from a thread that then
- * exits remains unsupported (its interned params would dangle). */
+ * data types it covers. Buffers and text builders are mutable values, so they
+ * are copied too. Functions, builtins, and raw JSON remain shared by refcount;
+ * sending a closure from a thread that then exits remains unsupported (its
+ * interned params would dangle). */
 
 #define CHAN_CLONE_MAX_DEPTH 64
 static Value *chan_clone_rec(Value *v, int depth) {
@@ -2575,13 +2584,42 @@ static Value *chan_clone_rec(Value *v, int depth) {
                 out->data.dict.keys[i] = (char *)shared_intern_key(out->data.dict.keys[i]);
             return out;
         }
+        case VAL_BUFFER: {
+            int n = v->data.buffer.count;
+            Value *out = xcalloc(1, sizeof(Value));
+            out->type = VAL_BUFFER;
+            out->data.buffer.count = n;
+            out->data.buffer.rows = v->data.buffer.rows;
+            out->data.buffer.cols = v->data.buffer.cols;
+            out->data.buffer.data = xcalloc(n > 0 ? (size_t)n : 1,
+                                            sizeof(double));
+            if (n > 0)
+                memcpy(out->data.buffer.data, v->data.buffer.data,
+                       (size_t)n * sizeof(double));
+            out->refcount = 1;
+            return out;
+        }
+        case VAL_TEXT_BUILDER: {
+            size_t cap = v->data.text_builder.cap;
+            Value *out = xcalloc(1, sizeof(Value));
+            out->type = VAL_TEXT_BUILDER;
+            out->data.text_builder.cap = cap;
+            out->data.text_builder.data = xmalloc(cap > 0 ? cap : 1);
+            out->data.text_builder.len = v->data.text_builder.len;
+            out->data.text_builder.parts = v->data.text_builder.parts;
+            if (v->data.text_builder.data)
+                memcpy(out->data.text_builder.data, v->data.text_builder.data,
+                       v->data.text_builder.len + 1);
+            else
+                out->data.text_builder.data[0] = '\0';
+            out->refcount = 1;
+            return out;
+        }
         /* Shared by refcount, not cloned. Enumerated rather than covered by a
          * `default:` so that -Werror=switch (Makefile CFLAGS) forces a new
          * ValType to choose clone-vs-share here. */
         case VAL_FN:
         case VAL_BUILTIN:
-        case VAL_BUFFER:
-        case VAL_TEXT_BUILDER:
         case VAL_JSON_RAW:
             val_incref(v);
             return v;
@@ -3308,10 +3346,14 @@ char *env_intern_name(const char *name) {
     int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
     for (EnvNameIntern *it = g_env_name_interns[bucket]; it; it = it->next) {
         /* A nested sandbox must not borrow an outer run's temporary node:
-         * the inner result may outlive that outer binding and promote it. */
+         * the inner result may outlive that outer binding and promote it.
+         * The same rule applies after a run restores scope zero but before
+         * scope_end releases its nodes: host wrapper keys must resolve to the
+         * global pool, not briefly alias the run-owned equal spelling. */
         if (it->hash == h && strcmp(it->name, name) == 0 &&
-            (g_sandbox_intern_scope == 0 || it->sandbox_scope == 0 ||
-             it->sandbox_scope == g_sandbox_intern_scope))
+            (it->sandbox_scope == 0 ||
+             (g_sandbox_intern_scope != 0 &&
+              it->sandbox_scope == g_sandbox_intern_scope)))
             return it->name;
     }
     EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
@@ -4196,6 +4238,23 @@ static int gc_env_is_node(Env *e) {
         GC_EDGE_TABLE(GC_EDGE_WALK, CHILD_OBJ, CHILD_KIND, BODY)              \
     } while (0)
 
+/* Traversal work includes the node and every slot the walker tests, even
+ * leaves and duplicate references. Derive it from the ownership table so
+ * budgeting cannot drift from traversal. No extra child walk is needed. */
+#define GC_EDGE_WORK(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR,         \
+                     _x1, _x2, _x3)                                         \
+    if (GUARD) work += (uint64_t)(COUNT);
+
+static uint64_t gc_node_work(void *obj, int kind) {
+    int _k = kind;
+    Env *_e = (Env *)obj;
+    EigsChunk *_c = (EigsChunk *)obj;
+    Value *_v = (Value *)obj;
+    uint64_t work = 1;
+    GC_EDGE_TABLE(GC_EDGE_WORK, 0, 0, 0)
+    return work;
+}
+
 /* Clear every outgoing edge of a garbage node (exactly the edges
  * GC_EDGE_TABLE lists, leaf refs included) so the cycle is broken; the
  * node itself stays allocated (pinned) until the unpin pass. */
@@ -4234,16 +4293,16 @@ static void gc_clear_node(void *obj, int kind) {
  * to grow by a fraction of the last universe before the next collection
  * makes the amortised scan cost O(1) per capture event; when the heap is
  * mostly captured envs (last universe ~ live) this is the old 2x rule. */
-/* #1096, the possible-root side: a collection seeded by N buffered candidates
- * walks everything reachable from them (the AOT compiler: 990 collections in
- * a 6-second compile, each over ~2800 objects, live captured envs 0). A fixed
- * GC_VAL_THRESHOLD made the cadence proportional to allocations while the
- * walk grew with the heap. Require the candidate count to reach a fraction of
- * the last universe before collecting again (as many candidates as objects the
- * last walk touched, so the amortised walk cost per candidate is O(1); garbage
- * cycles wait for at most that many registrations). */
-static int gc_val_next_threshold(int last_universe) {
-    long t = last_universe;   /* one candidate per object the last walk touched: O(1) amortised */
+/* #1096/#1442, the possible-root side: budget surviving traversal WORK,
+ * not just nodes. A dense live graph has many slots per node; a node-only
+ * budget repeatedly rescans its edges during short-lived task churn. Count
+ * one unit per surviving node plus each owned slot tested by its walker
+ * (including leaves). Garbage contributes nothing to the next walk's cost,
+ * so garbage-heavy collections return to the floor rather than accumulating
+ * ~8200 candidates when only ~5 nodes survive. The floor amortises setup;
+ * the cap bounds the candidate buffer. Use wide arithmetic before clamping. */
+static int gc_val_next_threshold(uint64_t work) {
+    uint64_t t = work;
     if (t < GC_VAL_THRESHOLD) t = GC_VAL_THRESHOLD;
     if (t > 100000000L) t = 100000000L;
     return (int)t;
@@ -4257,10 +4316,11 @@ static int gc_next_threshold(int live, int last_universe) {
     return (int)t;
 }
 
-static void gc_collect_impl(Value **seeds, int seed_count) {
+static void gc_collect_impl(Value **seeds, int seed_count,
+                            int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
-    if (!g_gc_envs && seed_count == 0) {
-        g_gc_threshold = GC_THRESHOLD_MIN;
+    if ((!include_captured_envs || !g_gc_envs) && seed_count == 0) {
+        if (include_captured_envs) g_gc_threshold = GC_THRESHOLD_MIN;
         return;
     }
     g_in_gc = 1;
@@ -4275,8 +4335,10 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
      * edge counts, including duplicate edges and self references. The graph
      * stays unchanged until clearing, so discovery also records which nodes
      * have no node children; marking need not scan their leaf slots again. */
-    for (Env *e = g_gc_envs; e; e = e->gc_next)
-        gcu_add(&u, e, GC_KIND_ENV);
+    if (include_captured_envs) {
+        for (Env *e = g_gc_envs; e; e = e->gc_next)
+            gcu_add(&u, e, GC_KIND_ENV);
+    }
     for (int s = 0; s < seed_count; s++) {
         gcu_add(&u, seeds[s], GC_KIND_VAL);
         u.pinned[gcu_find(&u, seeds[s])]++;
@@ -4311,19 +4373,27 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     if (bad) {
         if (eigs_env_flag("EIGS_GC_DEBUG"))
             fprintf(stderr, "[gc] accounting mismatch — collection aborted\n");
+        /* The graph is unchanged: recover its discovery work only on abort,
+         * so successful collections never budget garbage they will discard. */
+        uint64_t discovery_work = 0;
+        for (int n = 0; n < u.count; n++)
+            discovery_work += gc_node_work(u.objs[n], u.kind[n]);
         free(stack);
         free(u.table); free(u.objs); free(u.kind);
         free(u.internal); free(u.pinned); free(u.mark);
         free(u.has_node_children);
-        g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
-        g_gc_val_threshold = gc_val_next_threshold(u.count);
+        if (include_captured_envs)
+            g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
+        g_gc_val_threshold = gc_val_next_threshold(discovery_work);
         g_in_gc = 0;
         return;
     }
 
     /* 4. Mark everything reachable from the roots within U. */
+    uint64_t survivor_work = 0;
     while (sp > 0) {
         int n = stack[--sp];
+        survivor_work += gc_node_work(u.objs[n], u.kind[n]);
         if (!u.has_node_children[n]) continue;
         GC_FOR_EACH_CHILD(&u, n, child, child_kind, {
             (void)child_kind;
@@ -4363,8 +4433,9 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     free(u.table); free(u.objs); free(u.kind);
     free(u.internal); free(u.pinned); free(u.mark);
     free(u.has_node_children);
-    g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
-    g_gc_val_threshold = gc_val_next_threshold(u.count);
+    if (include_captured_envs)
+        g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
+    g_gc_val_threshold = gc_val_next_threshold(survivor_work);
     g_in_gc = 0;
 }
 
@@ -4396,12 +4467,12 @@ void gc_note_possible_root(Value *v) {
         gc_collect_cycles();
 }
 
-void gc_collect_cycles(void) {
+static void gc_drain_value_candidates(int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
     /* Feed the value-candidate buffer in as pinned seeds (each holds exactly
-     * one buffer pin, accounted like the exit snapshot's), alongside the
-     * captured-env registry. */
-    gc_collect_impl(g_gc_val_buf, g_gc_val_count);
+     * one buffer pin, accounted like the exit snapshot's), optionally
+     * alongside the captured-env registry. */
+    gc_collect_impl(g_gc_val_buf, g_gc_val_count, include_captured_envs);
     /* Drain the buffer: clear the buffered flags, then drop each pin. The
      * collection has already broken any garbage cycle's internal edges, so the
      * final pin drop frees the garbage; live candidates keep their other refs.
@@ -4415,6 +4486,18 @@ void gc_collect_cycles(void) {
         for (int i = 0; i < n; i++) val_decref(g_gc_val_buf[i]);
         g_in_gc = 0;
     }
+}
+
+void gc_collect_cycles(void) {
+    gc_drain_value_candidates(1);
+}
+
+void gc_collect_value_candidates(void) {
+    /* Sandbox budgets end at each invocation, so their state-wide candidate
+     * pins must end there too. Seed only from those candidates: captured envs
+     * reached from a candidate are still traversed, but unrelated captured
+     * graphs and their adaptive threshold are left alone. */
+    gc_drain_value_candidates(0);
 }
 
 /* ---- Module cache (Phase 0a) ----------------------------------------
@@ -4604,7 +4687,7 @@ void gc_collect_at_exit(Env *global) {
         }
     }
     if (global) env_clear(global);
-    gc_collect_impl(seeds, seed_count);
+    gc_collect_impl(seeds, seed_count, 1);
     for (int i = 0; i < seed_count; i++)
         val_decref(seeds[i]);
     free(seeds);

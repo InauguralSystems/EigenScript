@@ -1,0 +1,12 @@
+# Per-program environment shared by the suite and differential runners.
+# Format: test basename, followed by environment assignments understood by
+# suite_program_run.  Keep policy here rather than in either caller.
+test_file_io.eigs EIGS_STRICT=0
+test_numeric_guard.eigs EIGS_STRICT=0
+test_stdlib_fixes.eigs EIGS_STRICT=0
+test_stream_io.eigs EIGS_STRICT=0
+test_builtin_contracts.eigs EIGS_STRICT=0
+test_builtin_indirect.eigs EIGS_STRICT=0
+test_file_rename.eigs EIGS_STRICT=0
+test_json_hard.eigs EIGS_STRICT=0
+test_tensor_buffer_ops.eigs EIGS_STRICT=0

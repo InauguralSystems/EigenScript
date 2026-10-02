@@ -17,17 +17,18 @@
 # EigenScript
 
 A complete, standalone programming language with native observer semantics,
-OS-thread concurrency (`spawn`/`channel`/`thread_join`, with a documented
-memory model in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) — *values* copy
-through a channel, while closures and `buffer`/`text_builder` HANDLES are
-shared by reference, the last of which is the open defect
-[#1148](https://github.com/InauguralSystems/EigenScript/issues/1148) under
-[#1153](https://github.com/InauguralSystems/EigenScript/issues/1153)),
+OS-thread concurrency (`spawn`/`channel`/`thread_join`), a cooperative task
+layer whose numeric task IDs are opaque generation-checked handles, and a
+memory model documented in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) —
+*values* copy through a channel, including mutable buffers and text builders,
+while closure environments and resource handles stay shared by reference,
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 
 `exit of N` is state-wide even when a spawned worker calls it: VM threads stop,
-blocked concurrency calls wake, and the process exits with status `N`.
+blocked concurrency calls wake, and the process exits with status `N` after
+worker teardown. Native I/O must return before teardown completes. Embedded
+evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
 
 ## Try it in your browser
 
@@ -291,6 +292,12 @@ Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
 
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](docs/BUILTINS.md) for the I/O contracts.
+
 Each of them takes a nested list, a flat list, or a flat numeric **`buffer`**,
 and returns a buffer when every tensor operand was one. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
@@ -302,6 +309,11 @@ out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
 `asin`/`acos` clamp their inputs.
+
+The optional model extension raises a catchable `value` error when
+`eigen_generate` or `eigen_eval_loss` receives a prompt longer than the loaded
+model's `max_seq_len`. Training applies the same limit to the combined input
+and output lengths; callers must choose their context window explicitly.
 
 ### Arena Memory
 

@@ -122,9 +122,10 @@ loop while i < 1000000000:
     i is i + 1
 print of "MARK_END"' ""
 
-# The loop starts single-threaded and enters an OSR thunk before spawn turns
-# multithreading on. Native back-edges must notice the worker's exit too.
-check_worker_exit "worker exit interrupts an already-running JIT loop" 'define quitter() as:
+# The loop begins before spawn enables multithreading. This integration row
+# also runs in interpreter-only lanes; src/jit_smoke.c separately invokes real
+# entry/OSR thunks and pins the native back-edge poll with a finite loop.
+check_worker_exit "worker exit interrupts a loop that starts before spawn" 'define quitter() as:
     exit of 5
 i is 0
 loop while i < 1000000000:
