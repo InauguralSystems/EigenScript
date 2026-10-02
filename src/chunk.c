@@ -735,6 +735,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
  * the production callers, which only need the verdict. */
 static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
     #define WHY(...) do { if (why) snprintf(why, whyn, __VA_ARGS__); } while (0)
+    if (why && whyn) why[0] = '\0';
     if (!chunk || chunk->code_len <= 0) { WHY("empty code"); return 0; }
     int n = chunk->code_len;
     const uint8_t *code = chunk->code;
@@ -748,28 +749,49 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
      * stash jump targets (validated in pass 2 once is_start[] is complete). */
     while (i < n) {
         uint8_t op = code[i];
-        if (op >= OP_COUNT) { ok = 0; break; }
+        if (op >= OP_COUNT) {
+            WHY("unknown opcode %u at offset %d", (unsigned)op, i);
+            ok = 0; break;
+        }
         is_start[i] = 1;
         last_op = op;
         /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
          * role machinery below. No index to validate; just skip 4 bytes. */
         if (op == OP_LINE) {
             int end = i + 1 + 4;
-            if (end > n) { ok = 0; break; }
+            if (end > n) {
+                WHY("truncated LINE operand at offset %d", i);
+                ok = 0; break;
+            }
             i = end;
             continue;
         }
         VerifyRole roles[3];
         int nops = op_verify_operands(op, roles);
         int end = i + 1 + 2 * nops;
-        if (end > n) { ok = 0; break; }   /* truncated operand */
+        if (end > n) {
+            WHY("truncated operand for opcode %u at offset %d", (unsigned)op, i);
+            ok = 0; break;
+        }
         for (int k = 0; k < nops && ok; k++) {
             int pos = i + 1 + 2 * k;
             int operand = code[pos] | (code[pos + 1] << 8);
             switch (roles[k]) {
-            case VR_CONST: if (operand >= chunk->const_count) ok = 0; break;
-            case VR_NAME:  if (operand >= chunk->const_count ||
-                               chunk->constants[operand]->type != VAL_STR) ok = 0;
+            case VR_CONST:
+                if (operand >= chunk->const_count) {
+                    WHY("constant index %d out of range at offset %d", operand, i);
+                    ok = 0;
+                }
+                break;
+            case VR_NAME:  if (operand >= chunk->const_count) {
+                               WHY("name constant index %d out of range at offset %d",
+                                   operand, i);
+                               ok = 0;
+                           } else if (chunk->constants[operand]->type != VAL_STR) {
+                               WHY("name constant index %d is not a string at offset %d",
+                                   operand, i);
+                               ok = 0;
+                           }
                            /* #1322: source cannot spell the f-string
                             * conversion name; assembled bytecode must not
                             * bind it either (SET_NAME writes outward, into
@@ -777,9 +799,17 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
                            else if ((op == OP_SET_NAME || op == OP_SET_NAME_LOCAL ||
                                      op == OP_SET_FN_NAME_LOCAL) &&
                                     eigs_name_is_reserved(
-                                        chunk->constants[operand]->data.str)) ok = 0;
+                                    chunk->constants[operand]->data.str)) {
+                               WHY("reserved name cannot be assigned at offset %d", i);
+                               ok = 0;
+                           }
                            break;
-            case VR_FN:    if (operand >= chunk->fn_count)    ok = 0; break;
+            case VR_FN:    if (operand >= chunk->fn_count) {
+                               WHY("function index %d out of range at offset %d",
+                                   operand, i);
+                               ok = 0;
+                           }
+                           break;
             case VR_JFWD:  targets[ntargets++] = end + operand; break;
             case VR_JBACK: targets[ntargets++] = end - operand; break;
             default: break;
@@ -792,7 +822,10 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
     /* Pass 2: every jump must land on an in-range instruction boundary. */
     for (int t = 0; ok && t < ntargets; t++) {
         int tgt = targets[t];
-        if (tgt < 0 || tgt >= n || !is_start[tgt]) ok = 0;
+        if (tgt < 0 || tgt >= n || !is_start[tgt]) {
+            WHY("jump target %d is not an instruction boundary", tgt);
+            ok = 0;
+        }
     }
 
     /* Pass 3: execution must not be able to run off the end. Pass 2 pins every
@@ -808,8 +841,9 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
      * infinite loop is stall-capped by the VM, not a memory-safety fault). */
     if (ok && last_op != OP_RETURN && last_op != OP_RETURN_NULL &&
         last_op != OP_JUMP && last_op != OP_JUMP_BACK)
-        ok = 0;
-    if (!ok) WHY("malformed code, opcode/operand/jump/terminator (passes 1-3)");
+        { WHY("code has no terminating return or jump"); ok = 0; }
+    if (!ok && (!why || why[0] == '\0'))
+        WHY("malformed code, opcode/operand/jump/terminator (passes 1-3)");
 
     /* Pass 4: the operand stack must not underflow along any path. Abstract
      * interpretation over the CFG passes 1-2 just validated: walk from entry
@@ -905,6 +939,10 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
 
 int chunk_verify(EigsChunk *chunk) {
     return chunk_verify_impl(chunk, NULL, 0);
+}
+
+int chunk_verify_reason(EigsChunk *chunk, char *why, size_t whyn) {
+    return chunk_verify_impl(chunk, why, whyn);
 }
 
 /* Self-check gate (EIGS_VERIFY_SELF=1): hold the C compiler's OWN output to the

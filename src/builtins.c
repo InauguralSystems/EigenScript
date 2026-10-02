@@ -3339,7 +3339,11 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
 }
 
 static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode,
-                                          DescVerify *ctx);
+                                          DescVerify *ctx, char *why, size_t whyn);
+
+static void vm_desc_error(char *why, size_t whyn, const char *message) {
+    if (why && whyn && why[0] == '\0') snprintf(why, whyn, "%s", message);
+}
 
 /* Build an EigsChunk from a descriptor list, recursively for nested functions.
  * `off` skips the leading ABI-revision stamp: 1 at the top level (where
@@ -3363,17 +3367,24 @@ static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode
  * In sandbox mode every arm below spends the ONE DescVerify allowance and
  * every constant is isolated from the host; see DescVerify above. */
 static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mode,
-                                           DescVerify *ctx) {
-    if (!desc || desc->type != VAL_LIST || desc->data.list.count < off + 2)
+                                           DescVerify *ctx, char *why, size_t whyn) {
+    if (!desc || desc->type != VAL_LIST || desc->data.list.count < off + 2) {
+        vm_desc_error(why, whyn, "descriptor must contain code and constants lists");
         return NULL;
+    }
     Value **d = desc->data.list.items + off;
     int n = desc->data.list.count - off;
     Value *code = d[0], *consts = d[1];
-    if (!code || code->type != VAL_LIST || !consts || consts->type != VAL_LIST)
+    if (!code || code->type != VAL_LIST || !consts || consts->type != VAL_LIST) {
+        vm_desc_error(why, whyn, "descriptor code and constants must be lists");
         return NULL;
+    }
     /* This chunk plus its code stream: charged BEFORE anything is allocated,
      * so an over-wide code list is refused rather than emitted first. */
-    if (!desc_spend(ctx, 1 + (long)code->data.list.count)) return NULL;
+    if (!desc_spend(ctx, 1 + (long)code->data.list.count)) {
+        vm_desc_error(why, whyn, "descriptor exceeds verification work limit");
+        return NULL;
+    }
 
     const char *name = (n >= 5 && d[4] && d[4]->type == VAL_STR) ? d[4]->data.str
                                                                  : "<bootstrap>";
@@ -3393,10 +3404,16 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
      * to the host, and nothing the host does mid-run is visible to it. */
     for (int i = 0; i < consts->data.list.count; i++) {
         Value *item = consts->data.list.items[i];
-        if (!item) { chunk_free(chunk); return NULL; }
+        if (!item) {
+            vm_desc_error(why, whyn, "constant pool contains an empty entry");
+            chunk_free(chunk); return NULL;
+        }
         if (sandbox_mode) {
             Value *iso = desc_isolate_const(ctx, item);
-            if (!iso) { chunk_free(chunk); return NULL; }
+            if (!iso) {
+                vm_desc_error(why, whyn, "constant pool contains unsafe or over-limit data");
+                chunk_free(chunk); return NULL;
+            }
             chunk_add_constant_positional(chunk, iso);
             val_decref(iso);            /* the pool holds its own ref */
         } else {
@@ -3416,7 +3433,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         }
         for (int i = 0; i < d[2]->data.list.count; i++) {
             EigsChunk *fn = vm_build_chunk_desc_ctx(d[2]->data.list.items[i], 0,
-                                                    sandbox_mode, ctx);
+                                                    sandbox_mode, ctx, why, whyn);
             if (!fn) { chunk_free(chunk); return NULL; }
             chunk_add_function(chunk, fn);
         }
@@ -3448,7 +3465,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
 
     /* Reject untrusted bytecode with out-of-range constant/function/jump
      * operands before it reaches the VM (which trusts operand indices). */
-    if (!chunk_verify(chunk)) { chunk_free(chunk); return NULL; }
+    if (!chunk_verify_reason(chunk, why, whyn)) { chunk_free(chunk); return NULL; }
     return chunk;
 }
 
@@ -3457,9 +3474,13 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
  * is refused instead of running the C stack out. Wrapping the body keeps the
  * enter/leave pairing off every one of its early returns. */
 static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode,
-                                          DescVerify *ctx) {
-    if (!desc_enter(ctx, desc)) return NULL;
-    EigsChunk *chunk = vm_build_chunk_desc_body(desc, off, sandbox_mode, ctx);
+                                          DescVerify *ctx, char *why, size_t whyn) {
+    if (!desc_enter(ctx, desc)) {
+        vm_desc_error(why, whyn, "descriptor is cyclic or nested too deeply");
+        return NULL;
+    }
+    EigsChunk *chunk = vm_build_chunk_desc_body(desc, off, sandbox_mode, ctx,
+                                                why, whyn);
     desc_leave(ctx);
     return chunk;
 }
@@ -3467,12 +3488,15 @@ static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode
 /* The one verification context is created HERE — once per sandbox descriptor
  * build — and threaded through every recursive builder and walker arm below
  * it. The trusted (non-sandbox) build runs with no context at all. */
-static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode) {
-    if (!sandbox_mode) return vm_build_chunk_desc_ctx(desc, off, 0, NULL);
+static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode,
+                                      char *why, size_t whyn) {
+    if (why && whyn) why[0] = '\0';
+    if (!sandbox_mode)
+        return vm_build_chunk_desc_ctx(desc, off, 0, NULL, why, whyn);
     DescVerify ctx;
     ctx.work  = SANDBOX_DESC_MAX_WORK;
     ctx.depth = 0;
-    return vm_build_chunk_desc_ctx(desc, off, 1, &ctx);
+    return vm_build_chunk_desc_ctx(desc, off, 1, &ctx, why, whyn);
 }
 
 /* vm_run_bytecode of <chunk-descriptor> — assemble a chunk (and its nested
@@ -3510,8 +3534,13 @@ Value* builtin_vm_run_bytecode(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(arg, abibuf, sizeof abibuf);
     if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
-    EigsChunk *chunk = vm_build_chunk_desc(arg, 1, 0);
-    if (!chunk) return make_null();
+    char why[192];
+    EigsChunk *chunk = vm_build_chunk_desc(arg, 1, 0, why, sizeof why);
+    if (!chunk) {
+        rt_error(EK_VALUE, 0, "invalid chunk descriptor: %s",
+                 why[0] ? why : "verification failed");
+        return make_null();
+    }
     /* #915: ARM the observer for what this descriptor itself does, exactly as
      * chunk_arm_temporal two lines below arms the temporal channel (#831: "a
      * descriptor must turn recording ON itself" — nothing scanned this chunk).
@@ -3752,7 +3781,7 @@ Value* builtin_sandbox_run(Value *arg) {
      * producer is stale" from "your bytecode is malformed" without re-running. */
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
-    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
+    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1, NULL, 0);
     if (chunk && chunk_reads_shared_temporal(chunk)) {
         chunk_free(chunk);
         chunk = NULL;

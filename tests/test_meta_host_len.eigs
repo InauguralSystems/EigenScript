@@ -1,0 +1,13 @@
+# #1386: A later host len rebinding must affect neither the meta-interpreter's
+# tokenizer/parser/evaluator nor its captured meta-level builtin.
+load_file of "lib/eigen.eigs"
+load_file of "lib/test.eigs"
+
+len is (x) => 0
+
+assert_eq of [eigen_run of "42", 42, "literal tokenizes after host len rebinding"]
+assert_eq of [eigen_run of "len of [1, 2, 3]", 3, "meta len remains captured"]
+
+assert_eq of [eigen_run of "define f(x) as:\n    y is x + 1\n    return y\nf of 41", 42, "indented source uses captured length in layout checks"]
+
+test_summary of null
