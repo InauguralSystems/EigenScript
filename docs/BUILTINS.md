@@ -777,7 +777,7 @@ user-callee half. `tools/strict_differential.sh`
 crosses every guarded builtin in the extension with the wrong-container
 shapes and requires each pair to raise or to carry a reason in its allowlist,
 so this paragraph is checked against the binary rather than asserted.
-What changed with the flag OFF is the *read*, not the answer. `Value`'s union
+What changed under `EIGS_STRICT=0` is the *read*, not the answer. `Value`'s union
 overlaps `double num` with `char *str`, so `gfx_rect of [0, 0, 32, 32, "255",
 0, 0]` used to reinterpret a `char *` as a `double`, `(int)`-cast it, and
 draw a **black** rectangle where red was asked for — silently, in both modes.
