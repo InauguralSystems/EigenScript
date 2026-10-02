@@ -45,7 +45,7 @@ define binder_reads(p) as:
 r is binder_reads of 1
 assert_true of [(seen[0] == 7) and (seen[1] == 8), "body reads the binder, not the argument"]
 assert_true of [seen[2] == 1, "the binder does not leak past the loop: the argument is back (#1064)"]
-assert_true of [r == 8, "prev after the loop: the restore is the latest write, so prev is the last iteration (#1064)"]
+assert_true of [r == 7, "prev after the loop: the internal restore writes no history (#1384)"]
 
 # The twin here is the NON-interrogated local binder, which takes the same
 # slot path a parameter does: body sees 7, 8 and the binder persists (8).

@@ -9,11 +9,27 @@
  * now lives on EigsThread (Phase 8); the identifier is a bridge macro. */
 #define MAX_TOKENIZE_DEPTH 64
 
+int eigs_measure_indent(const char *line, int *byte_count) {
+    int width = 0;
+    int bytes = 0;
+    while (line[bytes] == ' ' || line[bytes] == '\t') {
+        if (line[bytes] == '\t') width = (width / 4 + 1) * 4;
+        else width++;
+        bytes++;
+    }
+    if (byte_count) *byte_count = bytes;
+    return width;
+}
+
 /* A lexer error always updates both the LSP's first diagnostic and the
- * parser's error tally. Keep those effects inseparable at every call site. */
-static void lexer_error_at(int line, int col, const char *message) {
+ * parser's error tally, then shows the same source context as a parser error.
+ * `caret_source` is the outer source even during recursive f-string lexing:
+ * nested token positions are already expressed in that source's coordinates. */
+static void lexer_error_at(const char *caret_source, int line, int col,
+                           const char *message) {
     eigs_record_lexer_error_at(line, col, 1, message);
     g_parse_errors++;
+    eigs_print_caret_src(stderr, caret_source, line, col);
 }
 
 static void tok_add(TokenList *tl, TokType type, double num, const char *str, int line, int col) {
@@ -389,7 +405,7 @@ const char* tok_base_string(TokType t) {
  * text is an expression, never a block, so its newlines are plain whitespace
  * and its continuation lines carry no indentation meaning (#1337). */
 static TokenList tokenize_at_line(const char *source, int initial_line, int initial_col,
-                                  int layout) {
+                                  int layout, const char *caret_source) {
     TokenList tl;
     tl.capacity = MAX_TOKENS;
     tl.tokens = xmalloc_array(tl.capacity, sizeof(Token));
@@ -413,7 +429,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
         char msg[64];
         snprintf(msg, sizeof(msg), "f-string nesting too deep (max %d levels)",
                  MAX_TOKENIZE_DEPTH);
-        lexer_error_at(initial_line, initial_col, msg);
+        lexer_error_at(caret_source, initial_line, initial_col, msg);
         tok_add(&tl, TOK_EOF, 0, NULL, initial_line, initial_col);
         return tl;
     }
@@ -431,15 +447,13 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
 
     while (*p) {
         if (at_line_start && bracket_depth == 0 && layout) {
-            int spaces = 0;
-            while (*p == ' ') { spaces++; p++; col++; }
-            /* #1343: `spaces` is indentation WIDTH (a tab counts 4); `col` is
-             * the token's BYTE offset, which the LSP (utf-8 positions), the
-             * caret printer and --lint --json all read. One byte, one col. */
-            if (*p == '\t') {
-                while (*p == '\t') { spaces += 4; p++; col++; }
-                while (*p == ' ') { spaces++; p++; col++; }
-            }
+            int indent_bytes = 0;
+            int spaces = eigs_measure_indent(p, &indent_bytes);
+            /* #1343: `spaces` is indentation WIDTH; `col` is the token's BYTE
+             * offset, which the LSP (utf-8 positions), the caret printer and
+             * --lint --json all read. One byte, one col. */
+            p += indent_bytes;
+            col += indent_bytes;
             if (*p == '#') {
                 while (*p && *p != '\n') { p++; col++; }
                 if (*p == '\n') { p++; line++; col = 0; }
@@ -461,7 +475,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     char msg[64];
                     snprintf(msg, sizeof(msg), "indent too deep (max %d levels)",
                              MAX_INDENT);
-                    lexer_error_at(line, col, msg);
+                    lexer_error_at(caret_source, line, col, msg);
                 } else {
                     indent_top++;
                     indent_stack[indent_top] = spaces;
@@ -474,7 +488,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 }
                 if (spaces != indent_stack[indent_top]) {
                     fprintf(stderr, "Syntax error line %d: indentation does not match any outer level\n", line);
-                    lexer_error_at(line, col,
+                    lexer_error_at(caret_source, line, col,
                                    "indentation does not match any outer level");
                 }
             }
@@ -591,7 +605,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                                  "f-string nesting too deep (max %d levels)",
                                  MAX_TOKENIZE_DEPTH);
                         fprintf(stderr, "Error: %s\n", msg);
-                        lexer_error_at(tok_line, tok_col, msg);
+                        lexer_error_at(caret_source, tok_line, tok_col, msg);
                         strbuf_free(&expr_buf);
                         p = expr_end;
                         break;
@@ -604,12 +618,13 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     if (*p == '}') { p++; col++; }
                     else {
                         fprintf(stderr, "Syntax error line %d: unterminated f-string expression\n", tok_line);
-                        lexer_error_at(tok_line, tok_col,
+                        lexer_error_at(caret_source, tok_line, tok_col,
                                        "unterminated f-string expression");
                     }
 
                     /* Tokenize the inner expression and splice tokens in */
-                    TokenList inner = tokenize_at_line(expr_buf.data, expr_line, expr_col, 0);
+                    TokenList inner = tokenize_at_line(expr_buf.data, expr_line, expr_col, 0,
+                                                       caret_source);
                     strbuf_free(&expr_buf);
                     for (int ti = 0; ti < inner.count; ti++) {
                         if (inner.tokens[ti].type == TOK_EOF) break;
@@ -651,7 +666,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             if (*p == '"') { p++; col++; }
             else if (!fstr_scan_too_deep) {
                 fprintf(stderr, "Syntax error line %d: unterminated f-string\n", tok_line);
-                lexer_error_at(tok_line, tok_col, "unterminated f-string");
+                lexer_error_at(caret_source, tok_line, tok_col, "unterminated f-string");
             }
             strbuf_free(&buf);
             continue;
@@ -687,7 +702,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             if (*p == '"') { p++; col++; }
             else {
                 fprintf(stderr, "Syntax error line %d: unterminated string\n", tok_line);
-                lexer_error_at(tok_line, tok_col, "unterminated string");
+                lexer_error_at(caret_source, tok_line, tok_col, "unterminated string");
             }
             tok_add(&tl, TOK_STR, 0, buf.data, tok_line, tok_col);
             tl.tokens[tl.count - 1].len = (int)(p - str_start);  /* true source span */
@@ -785,7 +800,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             case '>': tok_add(&tl, TOK_GT, 0, NULL, line, tok_col); p++; col++; break;
             case '!':
                 fprintf(stderr, "Syntax error line %d: expected '!=' after '!'\n", line);
-                lexer_error_at(line, tok_col, "expected '!=' after '!'");
+                lexer_error_at(caret_source, line, tok_col, "expected '!=' after '!'");
                 p++; col++;
                 break;
             case '=': tok_add(&tl, TOK_ASSIGN, 0, NULL, line, tok_col); p++; col++; break;
@@ -810,8 +825,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                     }
                     char m[64];
                     snprintf(m, sizeof(m), "unexpected character '%s'", shown);
-                    lexer_error_at(line, tok_col, m);
                     fprintf(stderr, "Syntax error line %d: unexpected character '%s'\n", line, shown);
+                    lexer_error_at(caret_source, line, tok_col, m);
                 }
                 p++; col++;
                 break;
@@ -833,5 +848,5 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
 }
 
 TokenList tokenize(const char *source) {
-    return tokenize_at_line(source, 1, 0, 1);
+    return tokenize_at_line(source, 1, 0, 1, source);
 }

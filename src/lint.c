@@ -32,7 +32,12 @@ size_t lint_utf8_prefix(const char *s, size_t max) {
 static void lint_vdiag(LintContext *ctx, int line, int col, int len,
                        const char *level,
                        const char *code, const char *fmt, va_list ap) {
-    if (ctx->warning_count >= MAX_LINT_WARNINGS) return;
+    if (ctx->warning_count == ctx->warning_capacity) {
+        int capacity = ctx->warning_capacity ? ctx->warning_capacity * 2 : 64;
+        ctx->warnings = xrealloc(ctx->warnings,
+                                 (size_t)capacity * sizeof *ctx->warnings);
+        ctx->warning_capacity = capacity;
+    }
     LintWarning *w = &ctx->warnings[ctx->warning_count++];
     w->line = line;
     w->col  = col;
@@ -1052,8 +1057,8 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
             if (strcmp(param, "n") == 0) continue;
 
             /* Build a temporary ref context for this function body. On the
-             * HEAP, not the stack: LintContext is ~85 KiB (warnings[256] plus
-             * four 512-entry arrays) and check_unused_params recurses into
+             * HEAP, not the stack: LintContext contains four 512-entry arrays
+             * and check_unused_params recurses into
              * nested AST_FUNCs below, so a by-value local here costs that much
              * C stack per nesting level — exactly the pattern the CLAUDE.md
              * "no big by-value structs in recursive functions" rule names
@@ -3635,8 +3640,32 @@ int lint_collect(ASTNode *ast, const char *path, const char *source,
          * buffers stop being the same size (#1048). */
         eigs_utf8_sanitize(out[i].message, sizeof(out[i].message), ctx.warnings[i].message);
     }
+    free(ctx.warnings);
     builtin_name_env_free();
     return n;
+}
+
+LintDiag *lint_collect_alloc(ASTNode *ast, const char *path,
+                             const char *source, int *count) {
+    if (count) *count = 0;
+    if (!ast || !count) return NULL;
+    LintContext ctx = {0};
+    lint_run_checks(ast, path, source, &ctx);
+    LintDiag *out = ctx.warning_count
+        ? xmalloc((size_t)ctx.warning_count * sizeof *out) : NULL;
+    for (int i = 0; i < ctx.warning_count; i++) {
+        out[i].line = ctx.warnings[i].line;
+        out[i].col = ctx.warnings[i].col;
+        out[i].len = ctx.warnings[i].len;
+        snprintf(out[i].code, sizeof(out[i].code), "%s", ctx.warnings[i].code);
+        snprintf(out[i].severity, sizeof(out[i].severity), "%s", ctx.warnings[i].level);
+        eigs_utf8_sanitize(out[i].message, sizeof(out[i].message),
+                           ctx.warnings[i].message);
+    }
+    *count = ctx.warning_count;
+    free(ctx.warnings);
+    builtin_name_env_free();
+    return out;
 }
 
 /* ---- Main lint entry ---- */

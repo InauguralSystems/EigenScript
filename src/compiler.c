@@ -328,7 +328,7 @@ static int op_stack_effect(uint8_t op8) {
     case OP_INTERROGATE:
         return 0;
     /* SET: peek, no change */
-    case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
+    case OP_SET_LOCAL: case OP_SET_LOCAL_INTERNAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_OBSERVE_NAME_POST:   /* #262 Phase-3: peeks TOS, no stack change */
@@ -2349,7 +2349,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: save */
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)prior_slot, node->line);
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)save_slot, node->line);
+            emit_op_u16(c, OP_SET_LOCAL_INTERNAL, (uint16_t)save_slot, node->line);
             emit(c, OP_POP, node->line);
         }
 
@@ -2478,13 +2478,13 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         if (can_persist_env) emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, OP_POP, node->line); /* pop iterator state */
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: restore */
-            /* #1381: the restore writes the outer binding's history, so it
-             * is filed under the `for` line like the loop-variable stores.
-             * Normal exit and `break` both arrive here, after the body or the
-             * break left the stamp elsewhere. */
-            restamp_line(c, for_line);
+            /* #1384: save/restore are compiler bookkeeping, not user
+             * assignments. Keep both out of assignment history and the
+             * trace tape; exposing the save leaked __for_save, while tracing
+             * only the function-tier restore made temporal answers depend on
+             * the compiler's slot-vs-loop-env optimisation. */
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)save_slot, node->line);
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)prior_slot, node->line);
+            emit_op_u16(c, OP_SET_LOCAL_INTERNAL, (uint16_t)prior_slot, node->line);
             emit(c, OP_POP, node->line);
         } else if (can_skip_env && prior_slot < 0) {
             /* #1105: a binder with NO prior binding is loop-scoped here

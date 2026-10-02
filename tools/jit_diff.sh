@@ -18,10 +18,12 @@
 #   bash tools/jit_diff.sh --record   # rewrite data rows; keep '#' lines
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT/src"
+export EIGS_TEST_DIR="$ROOT/tests"
+. "$ROOT/tests/suite_program_env.sh" || exit 1
 EIG="${EIGS_BIN:-./eigenscript}"
 BASE="$ROOT/tests/jit_diff_expected.txt"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; adjudicated=0
+got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_suite_env=0; adjudicated=0
 # Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
 norm() { sed -E 's/0x[0-9a-f]{8,}/0xADDR/g' "$1"; }
 # Flags are on when non-empty and not "0". GNU env takes -u BEFORE assignments.
@@ -31,7 +33,14 @@ OSR=(-u EIGS_JIT_OFF -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_JIT_OSR_THRES
 OBS=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_GATE_STATS EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1)
 run() { # $1 out-file, $2 seconds, rest = env args (options first)
   local out="$1" sec="$2"; shift 2
-  env "$@" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1; echo "rc=$?" >> "$out"
+  local setting
+  setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog" >&2; exit 1; }
+  case "$setting" in
+    "") env "$@" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
+    EIGS_STRICT=0) env "$@" EIGS_STRICT=0 timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
+    *) echo "jit_diff: FAIL: unsupported suite environment for $prog: $setting" >&2; exit 1 ;;
+  esac
+  echo "rc=$?" >> "$out"
 }
 arm_env() { case "$1" in
   jit) AE=("${JIT[@]}") ;; osr) AE=("${OSR[@]}") ;; obs) AE=("${OBS[@]}") ;; esac; }
@@ -83,9 +92,18 @@ consider() {
 for f in "$ROOT"/tests/test_*.eigs; do
   n=$((n + 1)); row=$(basename "$f"); prog="$f"
   run "$T/ref" 180 "${REF[@]}"
+  suite_setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog"; exit 1; }
+  if [ -n "$suite_setting" ]; then
+    n_suite_env=$((n_suite_env + 1))
+    [ "$(tail -n 1 "$T/ref")" = "rc=0" ] || {
+      echo "jit_diff: FAIL: $row did not complete in REF under its suite environment"; tail -n 8 "$T/ref"; exit 1; }
+  fi
   for arm in jit osr; do
     arm_env "$arm"
     run "$T/arm" 180 "${AE[@]}"
+    if [ -n "$suite_setting" ] && [ "$(tail -n 1 "$T/arm")" != "rc=0" ]; then
+      echo "jit_diff: FAIL: $row did not complete in $arm under its suite environment"; tail -n 8 "$T/arm"; exit 1
+    fi
     consider "$arm" 180
   done
 done
@@ -112,6 +130,7 @@ $obs_files
 EOF
 sort -o "$got" "$got"
 [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
+[ "$n_suite_env" -eq 9 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=9"; exit 1; }
 [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
 echo "jit_diff: OBS examined=$n_obs denied=$n_deny"
 if [ "${1:-}" = "--record" ]; then
@@ -123,7 +142,7 @@ fi
 [ -f "$BASE" ] || { echo "jit_diff: no baseline at $BASE (run with --record)"; cat "$got"; exit 1; }
 nled=$(ledger_count "$BASE")
 if diff <(ledger_data "$BASE") "$got" > "$T/d"; then
-  echo "jit_diff: OK ($n programs x {jit, osr} vs the interpreter; OBS examined=$n_obs denied=$n_deny; $adjudicated arms adjudicated; $nled ledgered)"; exit 0
+  echo "jit_diff: OK ($n programs x {jit, osr} vs the interpreter; suite-env completed=$n_suite_env; OBS examined=$n_obs denied=$n_deny; $adjudicated arms adjudicated; $nled ledgered)"; exit 0
 fi
 echo "jit_diff: LEDGER CHANGED (JIT $n, OBS examined=$n_obs denied=$n_deny)"
 echo "  '<' = ledgered and now identical (improvement -- remove it)"

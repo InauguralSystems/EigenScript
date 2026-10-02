@@ -1,1 +1,0 @@
-- Distinguish the minimal runtime's dependencies from the complete build and test prerequisites in the contribution guide.
