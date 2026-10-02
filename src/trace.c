@@ -245,6 +245,7 @@ static int      g_arm_cap   = 0;
  * takes it INSIDE g_tape_mu; because no path holds g_arm_mu across a tape
  * lock, that is not a cycle. Keep it that way. */
 static pthread_mutex_t g_arm_mu = PTHREAD_MUTEX_INITIALIZER;
+static __thread unsigned g_arm_suppress_depth = 0;
 static inline void arm_lock(void)   { pthread_mutex_lock(&g_arm_mu); }
 static inline void arm_unlock(void) { pthread_mutex_unlock(&g_arm_mu); }
 
@@ -338,6 +339,7 @@ static int occ_set_has(const char *name) {
 }
 
 void trace_arm_occurrences_all(void) {
+    if (g_arm_suppress_depth) return;
     if (g_occ_all) return;
     occ_all_store(1);
     occ_gen_bump();
@@ -345,6 +347,7 @@ void trace_arm_occurrences_all(void) {
 }
 
 void trace_arm_occurrences_name(const char *name) {
+    if (g_arm_suppress_depth) return;
     if (!name || g_occ_all) return;
     /* The ring is fed from prev_record_assign, which only runs when the
      * line-history is armed for this name — so arm that too. */
@@ -367,58 +370,19 @@ void trace_arm_occurrences_name(const char *name) {
     arm_unlock();
 }
 
-/* Widen to the wildcard WITHOUT enabling recording. Separate from
- * trace_arm_history_all because `spawn` calls it: a program with no temporal
- * query must not start recording just because it made a thread. */
-/* #915: snapshot/restore the compile-time ARMING state.
- *
- * The observer gate's eager pre-pass runs the REAL compiler over a module's
- * source purely to decide whether that module reads observer state. compile_node
- * arms this channel as a side effect — trace_arm_history_name/_all,
- * trace_arm_occurrences_name, g_trace_hist, g_trace_obs_hist — so a module that
- * is only SCANNED used to switch per-assignment history recording on in the
- * PARENT, and change the parent's temporal answers.
- *
- * Executed consequence: with `x is 1.0 / 2.0 / 3.0` then a literal
- * `load_file of "mod.eigs"` where mod.eigs holds `prev of x`, the parent printed
- * `2`; spelling the same path as `"mod" + ".eigs"` printed `null`, which is what
- * the pre-#915 baseline prints. The SPELLING of a path had become semantically
- * load-bearing. Worse, it was non-monotone: adding an unrelated `report of z`
- * opened the gate, which skipped the eager pass, which un-armed the name — a
- * program that asked the observer MORE got LESS history.
- *
- * The pre-pass already seals its other output channel (it mutes fd 2, because
- * "a pre-pass that speaks is a pre-pass that changes the program's output").
- * This is the same rule applied to the channel that was left open.
- *
- * The name sets are append-only, so a count is a sufficient snapshot; the
- * generation counter is bumped on restore so cached per-entry decisions
- * recheck. */
-void trace_arm_snapshot(TraceArmState *out) {
-    if (!out) return;
-    out->trace_hist   = g_trace_hist;
-    out->obs_hist     = g_trace_obs_hist;
-    out->arm_all      = g_arm_all;
-    out->occ_all      = g_occ_all;
-    arm_lock();                       /* #1145 */
-    out->arm_count    = g_arm_count;
-    out->occ_count    = g_occ_count;
-    arm_unlock();
+/* Diagnostic compilers run on attached threads, so TLS gives them a private
+ * side-effect barrier without holding g_arm_mu across the whole compilation.
+ * Holding that leaf mutex would deadlock when the compiler calls an arming
+ * function; restoring a snapshot afterward could instead erase a concurrent
+ * compiler's legitimate process-global additions. */
+void trace_arm_suppress_begin(void) { g_arm_suppress_depth++; }
+void trace_arm_suppress_end(void) {
+    if (g_arm_suppress_depth) g_arm_suppress_depth--;
 }
 
-void trace_arm_restore(const TraceArmState *in) {
-    if (!in) return;
-    arm_lock();                       /* #1145: the one SHRINKING writer */
-    for (int i = in->arm_count; i < g_arm_count; i++) free(g_arm_names[i]);
-    g_arm_count = in->arm_count;
-    for (int i = in->occ_count; i < g_occ_count; i++) free(g_occ_names[i]);
-    g_occ_count = in->occ_count;
-    arm_unlock();
-    trace_flag_store(g_trace_hist_storage, in->trace_hist);
-    trace_flag_store(g_trace_obs_hist_storage, in->obs_hist);
-    arm_all_store(in->arm_all);
-    occ_all_store(in->occ_all);
-    arm_gen_bump();                    /* invalidate cached per-entry decisions */
+void trace_arm_observer_history(void) {
+    if (!g_arm_suppress_depth)
+        trace_flag_store(g_trace_obs_hist_storage, 1);
 }
 
 void trace_arm_history_all_mt(void) {
@@ -428,11 +392,13 @@ void trace_arm_history_all_mt(void) {
 }
 
 void trace_arm_history_all(void) {
+    if (g_arm_suppress_depth) return;
     trace_flag_store(g_trace_hist_storage, 1);
     trace_arm_history_all_mt();
 }
 
 void trace_arm_history_name(const char *name) {
+    if (g_arm_suppress_depth) return;
     trace_flag_store(g_trace_hist_storage, 1);
     if (!name || g_arm_all) return;
     arm_lock();                      /* #1145: check + grow + append is ONE step */

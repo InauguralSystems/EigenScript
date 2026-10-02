@@ -825,10 +825,9 @@ static void send_diagnostics(Document *doc) {
         /* The diagnostics chunk is discarded without execution.  Preserve
          * the host's temporal arming state so merely editing a document that
          * mentions state_at/prev cannot affect later in-process execution. */
-        TraceArmState arm_saved;
-        trace_arm_snapshot(&arm_saved);
+        trace_arm_suppress_begin();
         EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text);
-        trace_arm_restore(&arm_saved);
+        trace_arm_suppress_end();
         g_obs_gate_scan_enabled = obs_saved;
             g_compile_module_slots = 0;
             compile_errors = g_parse_errors - errors_before;
