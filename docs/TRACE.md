@@ -301,6 +301,11 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   configuration. Clamping was rejected: a clamped window is a configuration
   the recording run never had, so the label would still be a confident lie,
   just a different one.
+- **Observer replay has an aggregate work limit.** Each binding's trajectory
+  folds the configuration records from the start of the tape. A tape whose
+  number of bindings multiplied by its number of `O` records exceeds
+  1,000,000 is therefore refused with exit 3, rather than allowing one
+  unfiltered stepper display or DAP locals request to monopolize the reader.
 
 **Replay is unaffected**, and deliberately so: `EIGS_REPLAY` re-executes the
 program, so the program's own knob calls run again in the same order. The
@@ -354,11 +359,20 @@ that the original tape neither captured nor re-creates:
   Channel ordering depends on the live scheduler — replay against a
   tape with a different interleaving would deadlock or silently
   diverge.
+- **EigenStore:** the entire `store_*` family. A store handle represents a
+  live file and its mutable catalog, so recording the numeric handle cannot
+  reconstruct either its lifetime or its contents. Replay refuses
+  `store_open` before opening or creating a database; it likewise refuses
+  every query, write, close, and catalog operation after validating an
+  already-live handle but before any file or catalog access (relevant to embedders that enable replay mid-state).
+  Consequently a database may be changed or absent during replay without
+  being read, recreated, or modified.
 
 These builtins raise a catchable runtime error under
 `EIGS_REPLAY`, with the message format
-`"<fn>: not replayable under EIGS_REPLAY (subprocess/concurrency
-boundary; see docs/TRACE.md)"`. Programs that need to be replay-safe
+`"<fn>: not replayable under EIGS_REPLAY (<boundary> boundary; see
+docs/TRACE.md)"`, where `<boundary>` is `subprocess/concurrency` or `store`.
+Programs that need to be replay-safe
 must guard these call sites or avoid them entirely.
 
 A boundary refusal is a **clean exit, never a signal**: uncaught, it ends

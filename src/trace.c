@@ -55,7 +55,13 @@ int g_trace_enabled_storage = 0;
 int g_replay_enabled_storage = 0;
 int g_trace_obs_hist_storage = 0;
 int g_trace_hist_storage = 0;
-int g_trace_current_line = 0;
+/* Calls without an attached state are limited to standalone tooling. Runtime
+ * and linked native/AOT callers use their attached EigsThread field. */
+static int g_trace_current_line_unattached = 0;
+int *trace_current_line_addr(void) {
+    return eigs_current ? &eigs_current->trace_current_line
+                        : &g_trace_current_line_unattached;
+}
 
 /* ----- Phase 3.0a: prev-value table.
  *
@@ -464,7 +470,7 @@ void trace_history_disable(void) {
  * (eigenscript.h), reached only with a thread attached. Every read path below
  * that can run during teardown or from atexit guards on `eigs_current` first. */
 
-/* g_trace_current_line (exported, see trace.h) replaces the old static
+/* g_trace_current_line (per-thread, see trace.h) replaces the old static
  * line cache: OP_LINE stores it directly instead of paying a call. */
 
 #define PREV_INIT_CAP 16
@@ -1148,6 +1154,7 @@ static void tp_printf(const char *fmt, ...) {
  * at every tape open so each session's first A record is preceded by its
  * scope. */
 static uint32_t g_last_scope_serial = 0;
+static int g_last_scope_native = 0;
 
 /* Stamp `S <fn> <depth> <serial>` when the innermost frame differs from the
  * one the last S record named (by frame-instance serial, so two invocations
@@ -1161,10 +1168,23 @@ static uint32_t g_last_scope_serial = 0;
  * when the call widens a parameter's window before the body writes it, so the
  * transition cannot be left to the next A). */
 static void emit_scope_transition(void) {
-    if (!eigs_current || !eigs_current->vm || g_vm.frame_count == 0) return;
+    if (!eigs_current || !eigs_current->vm || g_vm.frame_count == 0) {
+        /* A producer can write through trace_assign after an interpreted
+         * callback has returned (embedders and AOT code both do).  Without
+         * an explicit transition, the reader leaves cur_scope on that
+         * callback's last frame and files this module-level assignment as a
+         * dead local.  Serial 0 is the reader's module scope; name it so the
+         * transition remains visible and reviewable on the tape. */
+        if (g_last_scope_native) return;
+        g_last_scope_serial = 0;
+        g_last_scope_native = 1;
+        tp_puts("S <native> 0 0\n");
+        return;
+    }
     CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
-    if (f->call_serial == g_last_scope_serial) return;
+    if (!g_last_scope_native && f->call_serial == g_last_scope_serial) return;
     g_last_scope_serial = f->call_serial;
+    g_last_scope_native = 0;
     /* The name is variable-length: write it with tp_puts, never through
      * tp_printf's 128-byte staging, which truncated a name of 121+ chars
      * together with the record's newline and glued the next record on (#1157). */
@@ -1268,6 +1288,7 @@ static void emit_header(void) {
     tp_printf("V %d %s\n", TRACE_FORMAT_VERSION, EIGENSCRIPT_VERSION);
     sink_flush();
     g_last_scope_serial = 0;
+    g_last_scope_native = 0;
     /* A session starts from the defaults on the tape: obs_cfg_sync emits an
      * `O cfg` for whatever the state already carries before the first L/A. */
     obs_cfg_reset();

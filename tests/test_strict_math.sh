@@ -308,6 +308,37 @@ run "SM57 strict NaN raise is catchable as value"  1 0 "caught value" \
     x is pow of [0 - 8, 0.5]
 catch e:
     print of f"caught {e.kind}"'
+
+# --- #1438: finite-difference losses must be scalar numbers -----------------
+BAD_LOSS='define bad(_) as:
+    return "bad"'
+run "T1438a opt-out numerical_grad keeps zero stand-in" 0 0 "[0]" \
+"$BAD_LOSS
+p is [1.0]
+print of (numerical_grad of [bad, p, 0.001])"
+run "T1438b opt-out numerical_grad_rows keeps zero stand-in" 0 0 "[[0]]" \
+"$BAD_LOSS
+m is [[1.0]]
+print of (numerical_grad_rows of [bad, m, [0], 0.001])"
+run "T1438c opt-out numerical_grad_cols keeps zero stand-in" 0 0 "[[0]]" \
+"$BAD_LOSS
+m is [[1.0]]
+print of (numerical_grad_cols of [bad, m, [0], 0.001])"
+run "T1438d strict numerical_grad names non-number loss" 1 1 \
+    "numerical_grad: expected loss function to return a number" \
+"$BAD_LOSS
+p is [1.0]
+print of (numerical_grad of [bad, p, 0.001])"
+run "T1438e strict numerical_grad_rows names non-number loss" 1 1 \
+    "numerical_grad_rows: expected loss function to return a number" \
+"$BAD_LOSS
+m is [[1.0]]
+print of (numerical_grad_rows of [bad, m, [0], 0.001])"
+run "T1438f strict numerical_grad_cols names non-number loss" 1 1 \
+    "numerical_grad_cols: expected loss function to return a number" \
+"$BAD_LOSS
+m is [[1.0]]
+print of (numerical_grad_cols of [bad, m, [0], 0.001])"
 run "SM58 strict: num(\"inf\") still saturates (overflow, not NaN)" 1 0 "1e+308" 'print of (num of "inf")'
 run "SM59 strict: pow with an integer exponent is defined"      1 0 "-8"     'print of (pow of [0 - 2, 3])'
 run "SM60 strict: tensor_load of NaN bytes raises, named" 1 1 "tensor_load: result is not a number" \

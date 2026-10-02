@@ -31,11 +31,62 @@ static void check(int ok, const char *what) {
     if (!ok) fail = 1;
 }
 
+typedef struct {
+    EigsState *state;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    int phase;
+} LineRaceProbe;
+
+static void *line_race_worker(void *opaque) {
+    LineRaceProbe *p = opaque;
+    if (!eigs_thread_attach(p->state)) return NULL;
+    pthread_mutex_lock(&p->mutex);
+    while (p->phase < 1) pthread_cond_wait(&p->cond, &p->mutex);
+    /* Deterministically stand in for the tight OP_LINE loop from #1435: the
+     * main thread has stamped its raise site before this worker stamps 99. */
+    g_trace_current_line = 99;
+    p->phase = 2;
+    pthread_cond_broadcast(&p->cond);
+    while (p->phase < 3) pthread_cond_wait(&p->cond, &p->mutex);
+    pthread_mutex_unlock(&p->mutex);
+    eigs_thread_detach();
+    return NULL;
+}
+
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("FAIL: eigs_open\n"); return 1; }
     trace_init();                         /* EIGS_TRACE, as a native binary opens it */
     g_try_depth = 1;                      /* record only, as the AOT runs */
+
+    /* #1435: a native caller has no VM frame, so its line-0 raise falls back
+     * to this stamp. A worker stamping its own statements must not replace it. */
+    LineRaceProbe probe = {st, PTHREAD_MUTEX_INITIALIZER,
+                           PTHREAD_COND_INITIALIZER, 0};
+    pthread_t worker;
+    int worker_started = pthread_create(&worker, NULL, line_race_worker, &probe) == 0;
+    check(worker_started,
+          "#1435 starts the competing line-stamp worker");
+    if (worker_started) {
+        g_trace_current_line = 1435;
+        pthread_mutex_lock(&probe.mutex);
+        probe.phase = 1;
+        pthread_cond_broadcast(&probe.cond);
+        while (probe.phase < 2) pthread_cond_wait(&probe.cond, &probe.mutex);
+        pthread_mutex_unlock(&probe.mutex);
+        g_has_error = 0;
+        rt_error(EK_VALUE, 0, "two-thread line probe");
+        check(g_error_line == 1435,
+              "#1435 a worker cannot replace the main thread's fallback line");
+        pthread_mutex_lock(&probe.mutex);
+        probe.phase = 3;
+        pthread_cond_broadcast(&probe.cond);
+        pthread_mutex_unlock(&probe.mutex);
+        pthread_join(worker, NULL);
+    }
+    pthread_cond_destroy(&probe.cond);
+    pthread_mutex_destroy(&probe.mutex);
 
     g_trace_current_line = 42;
     g_has_error = 0;

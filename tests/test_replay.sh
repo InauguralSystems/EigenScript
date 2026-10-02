@@ -371,17 +371,17 @@ else
     fail "file_exists replay (#585)" "rec='$FE_REC' rep='$FE_REP'"
 fi
 
-# ls: record two entries, delete them, replay must serve the recorded count.
+# ls: record two entries, delete them, replay must serve the sorted listing.
 mkdir -p "$TMPDIR/ls585"
-touch "$TMPDIR/ls585/a" "$TMPDIR/ls585/b"
+touch "$TMPDIR/ls585/b" "$TMPDIR/ls585/a"
 cat > "$TMPDIR/p_ls.eigs" <<EOF
-print of (len of (ls of "$TMPDIR/ls585"))
+print of (ls of "$TMPDIR/ls585")
 EOF
 LS_REC=$(EIGS_TRACE="$TMPDIR/ls.tape" "$EIGS" "$TMPDIR/p_ls.eigs" 2>&1)
 rm -f "$TMPDIR/ls585/a" "$TMPDIR/ls585/b"
 LS_REP=$(EIGS_REPLAY="$TMPDIR/ls.tape" "$EIGS" "$TMPDIR/p_ls.eigs" 2>&1)
-if [ "$LS_REC" = "2" ] && [ "$LS_REP" = "2" ]; then
-    ok "ls replay: recorded listing wins after the entries are deleted (#585)"
+if [ "$LS_REC" = '["a", "b"]' ] && [ "$LS_REP" = '["a", "b"]' ]; then
+    ok "ls replay: recorded sorted listing wins after the entries are deleted (#585, #1407)"
 else
     fail "ls replay (#585)" "rec='$LS_REC' rep='$LS_REP'"
 fi
@@ -475,6 +475,13 @@ EOF
     fi
 else
     echo "  SKIP: capture replay (no gfx build / no capture device)"
+fi
+
+# EigenStore's live file/handle family is an explicit replay boundary (#1242).
+if bash "$TESTS_DIR/test_store_replay.sh" "$EIGS"; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
 fi
 
 echo
