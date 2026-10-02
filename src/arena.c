@@ -66,6 +66,9 @@ int eigs_alloc_stats_enabled = -1;
 static AllocStatSlot *g_alloc_stats_tab;
 static size_t g_alloc_stats_cap;
 static size_t g_alloc_stats_count;
+/* Includes tombstones.  Growing on occupied slots, rather than only live
+ * entries, guarantees every unsuccessful probe eventually reaches NULL. */
+static size_t g_alloc_stats_occupied;
 static uint64_t g_alloc_stats_cumulative;
 static uint64_t g_alloc_stats_live;
 static uint64_t g_alloc_stats_peak;
@@ -106,7 +109,7 @@ static size_t alloc_stats_find(void *ptr, int *found) {
     size_t mask = g_alloc_stats_cap - 1;
     size_t pos = alloc_stats_hash(ptr) & mask;
     size_t tomb = SIZE_MAX;
-    for (;;) {
+    for (size_t probes = 0; probes < g_alloc_stats_cap; probes++) {
         void *key = g_alloc_stats_tab[pos].ptr;
         if (!key) {
             *found = 0;
@@ -119,6 +122,12 @@ static size_t alloc_stats_find(void *ptr, int *found) {
         if (key == ALLOC_STATS_TOMB && tomb == SIZE_MAX) tomb = pos;
         pos = (pos + 1) & mask;
     }
+    /* A table containing only live entries and tombstones has no empty
+     * sentinel.  Insertions reuse the first tombstone; absent removals merely
+     * report not found.  The occupied-load growth check normally prevents
+     * this fallback, but keeping the probe bounded makes the invariant local. */
+    *found = 0;
+    return tomb;
 }
 
 static void alloc_stats_grow(void) {
@@ -134,22 +143,26 @@ static void alloc_stats_grow(void) {
             g_alloc_stats_tab[pos] = old[i];
         }
     }
+    g_alloc_stats_occupied = g_alloc_stats_count;
     free(old);
 }
 
 static void alloc_stats_add_enabled(void *ptr, size_t size, size_t cumulative) {
-    int enabled = __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED);
-    if (enabled < 0) {
-        pthread_once(&g_alloc_stats_once, alloc_stats_init);
-        if (!__atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return;
-    }
+    /* Always rendezvous with initialization on this slow path.  A caller can
+     * observe -1 just before another thread publishes disabled (0); reloading
+     * 0 here and skipping pthread_once used to enter an uninitialized table. */
+    pthread_once(&g_alloc_stats_once, alloc_stats_init);
+    if (!__atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return;
     pthread_mutex_lock(&g_alloc_stats_lock);
-    if ((g_alloc_stats_count + 1) * 10 >= g_alloc_stats_cap * 7)
+    if ((g_alloc_stats_occupied + 1) * 10 >= g_alloc_stats_cap * 7)
         alloc_stats_grow();
     int found;
     size_t pos = alloc_stats_find(ptr, &found);
     if (found) g_alloc_stats_live -= g_alloc_stats_tab[pos].size;
-    else g_alloc_stats_count++;
+    else {
+        if (!g_alloc_stats_tab[pos].ptr) g_alloc_stats_occupied++;
+        g_alloc_stats_count++;
+    }
     g_alloc_stats_tab[pos].ptr = ptr;
     g_alloc_stats_tab[pos].size = size;
     g_alloc_stats_live += size;
@@ -167,11 +180,8 @@ void alloc_stats_add(void *ptr, size_t size, size_t cumulative) {
 }
 
 static size_t alloc_stats_remove_enabled(void *ptr) {
-    int enabled = __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED);
-    if (enabled < 0) {
-        pthread_once(&g_alloc_stats_once, alloc_stats_init);
-        if (!__atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return 0;
-    }
+    pthread_once(&g_alloc_stats_once, alloc_stats_init);
+    if (!__atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_ACQUIRE)) return 0;
     pthread_mutex_lock(&g_alloc_stats_lock);
     int found;
     size_t pos = alloc_stats_find(ptr, &found);
@@ -361,11 +371,11 @@ void arena_mark_pos(void) {
 
 void arena_reset_to_mark(void) {
     for (int i = g_arena.mark_string_count; i < g_arena.string_count; i++)
-        free(g_arena.strings[i]);
+        eigs_alloc_stats_free(g_arena.strings[i]);
     g_arena.string_count = g_arena.mark_string_count;
 
     for (int i = g_arena.mark_fallback_count; i < g_arena.fallback_count; i++)
-        free(g_arena.fallbacks[i]);
+        eigs_alloc_stats_free(g_arena.fallbacks[i]);
     g_arena.fallback_count = g_arena.mark_fallback_count;
 
     /* Poison everything allocated since the mark as NOACCESS so a read of an
@@ -392,13 +402,13 @@ void arena_reset_to_mark(void) {
 
 void arena_destroy(void) {
     for (int i = 0; i < g_arena.string_count; i++)
-        free(g_arena.strings[i]);
-    free(g_arena.strings);
+        eigs_alloc_stats_free(g_arena.strings[i]);
+    eigs_alloc_stats_free(g_arena.strings);
     for (int i = 0; i < g_arena.fallback_count; i++)
-        free(g_arena.fallbacks[i]);
-    free(g_arena.fallbacks);
+        eigs_alloc_stats_free(g_arena.fallbacks[i]);
+    eigs_alloc_stats_free(g_arena.fallbacks);
     for (int i = 0; i < g_arena.block_count; i++)
-        free(g_arena.blocks[i]);
+        eigs_alloc_stats_free(g_arena.blocks[i]);
     memset(&g_arena, 0, sizeof(g_arena));
 }
 
@@ -409,5 +419,5 @@ void free_weight_val(Value *v) {
         char *block_end = block_start + ARENA_BLOCK_SIZE;
         if ((char*)v >= block_start && (char*)v < block_end) return;
     }
-    free(v);
+    eigs_alloc_stats_free(v);
 }

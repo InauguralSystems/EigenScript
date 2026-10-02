@@ -1493,11 +1493,15 @@ char* xstrdup(const char *s);
  * common disabled path at the call site so it can call libc directly instead
  * of paying for another out-of-line function call on every release.  No limit
  * is enforced. */
-extern int eigs_alloc_stats_enabled;
-void eigs_alloc_stats_free(void *p);
+extern int eigs_alloc_stats_enabled __attribute__((weak));
+void eigs_alloc_stats_free(void *p) __attribute__((weak));
 static inline __attribute__((always_inline))
 void eigs_alloc_stats_maybe_free(void *p) {
-    if (__atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED) == 0)
+    /* Small standalone tools (notably `make jit-smoke`) intentionally link
+     * no allocator runtime.  Weak references preserve ordinary libc free in
+     * that configuration instead of imposing two unresolved symbols. */
+    if (!eigs_alloc_stats_free || !&eigs_alloc_stats_enabled ||
+        __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED) == 0)
         free(p);
     else
         eigs_alloc_stats_free(p);
