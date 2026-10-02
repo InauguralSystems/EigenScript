@@ -5877,7 +5877,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
         <<< "$JHOT_OSR_OUTPUT")
     JHOT_OSR_EXPECTED_SHARE=$(LC_ALL=C awk 'NF == 2 && $2 > 0 { printf "%.1f%%", 100 * $1 / $2 }' \
         <<< "$JHOT_OSR_EXPECTED")
-    if [ "$JHOT_OSR_RC" -eq 0 ] && [ -n "$JHOT_OSR_EXPECTED" ] &&
+    if [ "$JHOT_OSR_RC" -eq 0 ] && rc_ok "$JHOT_OSR_RC" "$JHOT_OSR_OUTPUT" && [ -n "$JHOT_OSR_EXPECTED" ] &&
        [ "$JHOT_OSR_ACTUAL" = "$JHOT_OSR_EXPECTED" ] &&
        [ "$JHOT_OSR_SHARE" = "$JHOT_OSR_EXPECTED_SHARE" ]; then
         PASS=$((PASS + 1))
