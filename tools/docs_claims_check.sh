@@ -300,6 +300,23 @@ def builtin_families(docs, api):
     print(f'  BUILTIN FAMILIES: examined {examined}')
 
 
+def stale_concurrency_claims():
+    """Keep shipped cooperative-task scheduling documented as available."""
+    file = 'docs/BUILTINS.md'
+    in_concurrency = False
+    examined = 0
+    for lineno, line in enumerate(Path(file).read_text().splitlines(), 1):
+        if line == '## Concurrency':
+            in_concurrency = True
+            continue
+        if in_concurrency and line.startswith('## '):
+            break
+        if in_concurrency and 'later increment' in line:
+            examined += 1
+            red(f'{file}:{lineno} describes shipped task scheduling as a later increment')
+    print(f'  STALE CONCURRENCY CLAIMS: examined {examined} suspect line(s)')
+
+
 def enrolment():
     table = Path('tests/test_doc_examples.py').read_text()
     population = re.search(r'^POPULATION = \{(.*?)^\}', table, re.M | re.S)
@@ -413,10 +430,17 @@ def selftest():
                 ('name', 'README.md', '\n`no_such_1275 of null`\n', 'no_such_1275'),
                 ('count', 'docs/ARCHITECTURE.md', '\nThe 77\n`lib/` modules and a 47-widget toolkit.\n',
                  'hand-typed count "77 `lib/` modules"'),
+                ('stale-concurrency', 'docs/BUILTINS.md',
+                 '\n## Concurrency\nScheduling lands in a later increment.\n## End selftest\n',
+                 'describes shipped task scheduling as a later increment'),
             ]:
                 p = tree / file
                 original = p.read_text()
-                p.write_text(original + plant)
+                if label == 'stale-concurrency':
+                    p.write_text(original.replace('## Concurrency\n',
+                                                  '## Concurrency\n' + plant, 1))
+                else:
+                    p.write_text(original + plant)
                 result = gate()
                 ok = result.returncode != 0 and witness in result.stdout
                 passed += ok
@@ -461,8 +485,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 12 case(s) run, {passed} passed, {12-passed} failed')
-            return 0 if passed == 12 else 1
+            print(f'SELFTEST: 13 case(s) run, {passed} passed, {13-passed} failed')
+            return 0 if passed == 13 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -486,6 +510,7 @@ def main():
     api = run(binary, '--api')
     names(docs, api)
     builtin_families(docs, api)
+    stale_concurrency_claims()
     enrolment()
     stdlib_headings()
     changelog_version()

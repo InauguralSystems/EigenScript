@@ -2607,6 +2607,17 @@ OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "#1343 runtime caret under the token on a TAB-indented line" "$OUTPUT" "^       | ${TAB}               ^\$"
 rm -f "$TMPFILE"
 
+# --- #1373: byte columns remain the machine-facing contract, but a terminal
+# caret needs one padding cell per UTF-8 character rather than per byte. ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'x is ["éé", 2)\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1373 parse caret after multi-byte characters" "$OUTPUT" "^       |              ^\$"
+printf 's is "éé" + nope\n' > "$TMPFILE"
+OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "#1373 runtime caret after multi-byte characters" "$OUTPUT" "^       |             ^\$"
+rm -f "$TMPFILE"
+
 # --- #1371: lexer diagnostics carry the same source excerpt and caret as
 # parser diagnostics. Pin both indentation forms because the caret prefix must
 # preserve a tab byte rather than expanding it to spaces.
