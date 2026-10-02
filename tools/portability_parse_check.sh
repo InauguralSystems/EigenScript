@@ -43,7 +43,15 @@ if [ -z "$OLD" ]; then
 fi
 ver=$("$OLD" --version 2>/dev/null | head -1)
 bad=0; checked=0
-err="${TMPDIR:-/tmp}/portability_parse_err.$$"
+err=""; log=""
+cleanup() { [ -z "$err" ] || rm -f "$err"; [ -z "$log" ] || rm -f "$log"; }
+trap cleanup EXIT
+trap 'exit 2' HUP INT TERM
+umask 077
+err=$(mktemp "${TMPDIR:-/tmp}/portability_parse_err.XXXXXX") || {
+    echo "portability-parse: ABORTED: cannot create diagnostic file" >&2; exit 1; }
+log=$(mktemp "${TMPDIR:-/tmp}/portability_run.XXXXXX") || {
+    echo "portability-parse: ABORTED: cannot create run log" >&2; exit 1; }
 for f in $files; do
     checked=$((checked + 1))
     if ! "$OLD" -n "$f" 2>"$err"; then
@@ -52,7 +60,6 @@ for f in $files; do
         sed 's/^/    | /' "$err" | head -4
     fi
 done
-rm -f "$err"
 if [ "$checked" -ne "$n" ]; then
     echo "portability-parse: FAIL: examined $checked of $n files — the walk dropped some"
     exit 1
@@ -62,7 +69,6 @@ echo "portability-parse: oracle-major=$MAJOR"
 if [ "$bad" -eq 0 ]; then echo "portability-parse: OK: files=$n checked=$checked failures=0"
 else echo "portability-parse: FAIL: files=$n checked=$checked failures=$bad"; fi
 run_done=0; run_bad=0
-log="${TMPDIR:-/tmp}/portability_run.$$"
 for tgt in $RUN_TARGETS; do
     if [ ! -f "$tgt" ]; then
         echo "portability-run: FAIL: $tgt is in the run list and is not a file — the list names a gate this tree does not have"
@@ -80,7 +86,6 @@ for tgt in $RUN_TARGETS; do
         sed 's/^/    | /' "$log"
     fi
 done
-rm -f "$log"
 if [ "$run_done" -ne "$RUN_N" ]; then
     echo "portability-run: FAIL: executed $run_done gate(s), $RUN_N declared — the run list shrank"
     exit 1

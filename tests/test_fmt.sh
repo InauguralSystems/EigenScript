@@ -39,6 +39,26 @@ ACTUAL=$(fmt_str "$(printf 'define foo(x) as:\n  return x\n')")
 EXPECTED=$(printf 'define foo(x) as:\n    return x\n')
 check "indent normalization (2->4)" "$ACTUAL" "$EXPECTED"
 
+# --- #1370: lexer and formatter agree on mixed whitespace tab stops ---
+# Each pair of body lines has the same visual width.  Run the original and the
+# formatted result: matching pretty text alone would not prove that the lexer
+# assigned both lines to the same block before formatting.
+MIXED_DIR=$(mktemp -d /tmp/fmt_mixed_indent_XXXXXX)
+printf 'if 1 == 1:\n\t \tprint of "tab-space-tab"\n\t    print of "tab-spaces"\n' > "$MIXED_DIR/tabs.eigs"
+printf 'if 1 == 1:\n  \tprint of "spaces-tab"\n    print of "spaces"\n' > "$MIXED_DIR/spaces.eigs"
+for mixed in tabs spaces; do
+    $EIGS "$MIXED_DIR/$mixed.eigs" > "$MIXED_DIR/$mixed.before" 2>&1
+    BEFORE_RC=$?
+    $EIGS --fmt "$MIXED_DIR/$mixed.eigs" > "$MIXED_DIR/$mixed.formatted" 2>/dev/null
+    FMT_RC=$?
+    $EIGS "$MIXED_DIR/$mixed.formatted" > "$MIXED_DIR/$mixed.after" 2>&1
+    AFTER_RC=$?
+    check "mixed-indent $mixed keeps one block before and after --fmt" \
+          "before_rc=$BEFORE_RC fmt_rc=$FMT_RC after_rc=$AFTER_RC same=$(cmp -s "$MIXED_DIR/$mixed.before" "$MIXED_DIR/$mixed.after" && echo yes || echo no)" \
+          "before_rc=0 fmt_rc=0 after_rc=0 same=yes"
+done
+rm -rf "$MIXED_DIR"
+
 # --- Trailing whitespace removal ---
 ACTUAL=$(fmt_str "$(printf 'x is 42   \ny is 10  \n')")
 EXPECTED=$(printf 'x is 42\ny is 10\n')

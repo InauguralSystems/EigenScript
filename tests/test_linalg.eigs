@@ -234,6 +234,9 @@ assert_near of [cc[1], 2, 1e-12, "charpoly companion c2"]
 
 # Non-square and empty are refused, not indexed off the end of a row.
 assert_true of [(linalg.charpoly of [[1, 2, 3], [4, 5, 6]]) == null, "charpoly refuses non-square"]
+assert_true of [(linalg.charpoly of [[1, 2], [3]]) == null, "charpoly refuses a short ragged row"]
+assert_true of [(linalg.charpoly of [[1, 2], [3, 4, 5]]) == null, "charpoly refuses a long ragged row"]
+assert_true of [(linalg.charpoly of [[1, 2], 3]) == null, "charpoly refuses a non-list row"]
 assert_true of [(linalg.charpoly of []) == null, "charpoly refuses empty"]
 
 # Real spectrum, recovered as complex pairs with zero imaginary part.

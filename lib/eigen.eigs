@@ -175,14 +175,14 @@ define _interrogative_index(word) as:
     return 0
 
 define eigen_tokenize(source) as:
-    return _eigen_tokenize_at of [source, 1]
+    return _eigen_tokenize_at of [source, 1, 1]
 
 # `line` is the physical line `source` starts on: an f-string interpolation is
 # sub-lexed from the line of its `{`, and a newline inside a string or an
-# interpolation advances it (#1251). No layout switch is needed for #1337:
-# this tokenizer never rejects an inconsistent dedent, and the splice drops
-# layout tokens, so a continuation line's indentation is already inert here.
-define _eigen_tokenize_at(source, line) as:
+# interpolation advances it (#1251). The splice drops layout tokens, so a
+# continuation line's indentation is inert there; ordinary source still has
+# its dedents checked against the indentation stack (#1378).
+define _eigen_tokenize_at(source, line, check_layout) as:
     tokens is []
     pos is 0
     src_len is len of source
@@ -241,6 +241,8 @@ define _eigen_tokenize_at(source, line) as:
                                 append of [new_stack, indent_stack[si]]
                             indent_stack is new_stack
                             append of [tokens, ["dedent", null, line]]
+                        if (check_layout == 1) and (spaces != indent_stack[(len of indent_stack) - 1]):
+                            throw of f"parse error line {line}: indentation does not match any outer level"
         # Now handle non-indent characters
         if (at_line_start == 0) and (pos < src_len):
             c is char_at of [source, pos]
@@ -336,7 +338,7 @@ define _eigen_tokenize_at(source, line) as:
                             expr_buf is source[pos:iend]
                             pos is iend + 1
                             # Recursively tokenize the inner expression
-                            inner_tokens is _eigen_tokenize_at of [expr_buf, line]
+                            inner_tokens is _eigen_tokenize_at of [expr_buf, line, 0]
                             for eci in range of (len of expr_buf):
                                 if (char_at of [expr_buf, eci]) == "\n":
                                     line is line + 1
@@ -396,6 +398,8 @@ define _eigen_tokenize_at(source, line) as:
                         pos is pos + 1
                         if ch == "\n":
                             line is line + 1
+                if reading_str == 1:
+                    throw of f"parse error line {str_line}: unterminated string"
                 append of [tokens, ["str", buf, str_line]]
                 handled is 1
             # Numbers
@@ -1720,16 +1724,23 @@ define eigen_eval(node, env) as:
         prior_val is null
         if had_prior == 1:
             prior_val is _env_get of [env, var_name]
-        for i in range of (len of iter):
-            _env_set_local of [env, var_name, iter[i]]
-            result is _eval_block of [node[3], env]
-            if _eigen_returning == 1:
-                break
-            if _eigen_breaking == 1:
-                _eigen_breaking is 0
-                break
-            if _eigen_continuing == 1:
-                _eigen_continuing is 0
+        try:
+            for i in range of (len of iter):
+                _env_set_local of [env, var_name, iter[i]]
+                result is _eval_block of [node[3], env]
+                if _eigen_returning == 1:
+                    break
+                if _eigen_breaking == 1:
+                    _eigen_breaking is 0
+                    break
+                if _eigen_continuing == 1:
+                    _eigen_continuing is 0
+        catch _for_error:
+            if had_prior == 1:
+                _env_set_local of [env, var_name, prior_val]
+            else:
+                _env_unset_local of [env, var_name]
+            throw of _for_error
         if had_prior == 1:
             _env_set_local of [env, var_name, prior_val]
         else:
