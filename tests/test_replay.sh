@@ -430,6 +430,30 @@ else
     fail "clock_unix replay" "rec='$REC_CU' rep='$REP_CU'"
 fi
 
+# ---- heap_inuse is a taped nondeterminism source ----
+# Allocator usage varies with process state. Replace its recorded value with a
+# sentinel so replay can prove it consumes the tape rather than sampling the
+# replay process's live allocator.
+cat > "$TMPDIR/p_heap_inuse.eigs" <<'EOF'
+print of (heap_inuse of null)
+EOF
+
+TAPE_HI="$TMPDIR/heap_inuse.tape"
+REC_HI=$(EIGS_TRACE="$TAPE_HI" "$EIGS" "$TMPDIR/p_heap_inuse.eigs" 2>&1)
+if [ "$REC_HI" = "null" ]; then
+    echo "  SKIP: heap_inuse replay (mallinfo2 unavailable)"
+elif grep -q '^N heap_inuse=' "$TAPE_HI"; then
+    sed -i 's/^N heap_inuse=.*/N heap_inuse=424242/' "$TAPE_HI"
+    REP_HI=$(EIGS_REPLAY="$TAPE_HI" "$EIGS" "$TMPDIR/p_heap_inuse.eigs" 2>&1)
+    if [ "$REP_HI" = "424242" ]; then
+        ok "heap_inuse replay: recorded allocator usage wins on replay"
+    else
+        fail "heap_inuse replay" "rec='$REC_HI' rep='$REP_HI'"
+    fi
+else
+    fail "heap_inuse trace" "missing N record (value='$REC_HI')"
+fi
+
 # ---- #579: audio capture is a taped nondeterminism source ----
 # Gated: needs a gfx build AND a working capture device (the dummy SDL
 # driver provides a silent one; the CI dev image has no libSDL2, so this
