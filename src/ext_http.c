@@ -15,6 +15,7 @@
 #include "ext_names.h"
 #include "state.h"
 #include "trace.h"
+#include "fsutil.h"
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -622,7 +623,6 @@ Value* builtin_http_early_bind(Value *arg) {
     g_server.early_bind_fd = server_fd;
     g_server.liveness_path = live_path ? xstrdup(live_path) : NULL;
     __atomic_store_n(&g_server.init_stop, 0, __ATOMIC_RELEASE);
-    signal(SIGPIPE, SIG_IGN);
     http_prime_config_caches();
     if (pthread_create(&g_server.init_tid, NULL, init_responder, eigs_http_active) != 0) {
         close(server_fd);
@@ -1110,9 +1110,8 @@ static int write_all(int fd, const char *data, size_t len) {
      * the single responder thread. Partial / EAGAIN is failure: the caller
      * closes. Serving-path writes stay blocking. */
     while (len) {
-        ssize_t n = tls_write_nowait
-            ? send(fd, data, len, MSG_DONTWAIT)
-            : write(fd, data, len);
+        ssize_t n = eigs_send_no_sigpipe(fd, data, len,
+                                       tls_write_nowait ? MSG_DONTWAIT : 0);
         if (n < 0 && errno == EINTR) continue;
         if (n <= 0) return 0;
         data += n;
@@ -1829,8 +1828,6 @@ void http_serve_blocking(int port) {
         printf("EigenScript HTTP server listening on 0.0.0.0:%d\n", port);
     }
     fflush(stdout);
-
-    signal(SIGPIPE, SIG_IGN);
 
     pthread_attr_t worker_attr;
     pthread_attr_init(&worker_attr);

@@ -1,0 +1,1 @@
+- Preserve a host application's SIGPIPE disposition across subprocess and HTTP operations, while reporting failed `print` output instead of silently succeeding.

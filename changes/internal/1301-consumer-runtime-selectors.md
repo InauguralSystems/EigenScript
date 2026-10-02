@@ -1,0 +1,1 @@
+- Harden the consumer-acceptance harness against inherited runtime-selector variables so every consumer invocation is routed through a counted candidate shim.

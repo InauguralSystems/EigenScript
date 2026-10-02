@@ -1,0 +1,1 @@
+- Serialize the shared random-number stream so concurrent workers cannot race or receive duplicate draws.

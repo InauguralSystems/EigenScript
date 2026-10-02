@@ -88,12 +88,44 @@ static void direct(void) {
 }
 
 #ifndef EIGS_OBS_BASELINE_ONLY
+static void eval_num(const char *source, double want, const char *name);
 static void *arm_from_worker(void *arg) {
     EigsState *st = arg;
     if (!eigs_thread_attach(st)) return NULL;
     for (int i = 0; i < 10000; i++) eigs_obs_enable();
     eigs_thread_detach();
     return st;
+}
+static void *provider_open_worker(void *arg) {
+    (void)arg;
+    EigsState *st = eigs_open();
+    if (!st) return NULL;
+    eigs_close(st);
+    return (void *)1;
+}
+static const char *joining_source_provider(const char *name, void *userdata) {
+    int *joined = userdata;
+    if (strcmp(name, "joining_provider_module") != 0) return NULL;
+    pthread_t worker;
+    void *result = NULL;
+    if (pthread_create(&worker, NULL, provider_open_worker, NULL) == 0 &&
+        pthread_join(worker, &result) == 0 && result) {
+        (*joined)++;
+    }
+    return "provided_value is 42\n";
+}
+static void provider_can_join_attaching_worker(void) {
+    EigsState *st = eigs_open();
+    if (!st) { check(0, "source provider: open parent state"); return; }
+    int joined = 0;
+    eigs_set_source_provider(joining_source_provider, &joined);
+    eigs_set_eval_observer_isolated(1);
+    eval_num("import joining_provider_module\njoining_provider_module.provided_value\n",
+             42, "source provider: callback can join an attaching worker");
+    check(joined >= 2,
+          "source provider: eager scan and runtime lookup both completed");
+    eigs_set_source_provider(NULL, NULL);
+    eigs_close(st);
 }
 /* The first compile is serialized BEFORE a worker can arm. Atomic flag
  * accesses then allow concurrent arming/readers; they do not make a whole
@@ -315,6 +347,7 @@ int main(int argc, char **argv) {
     if (isolated_only) { isolated_host(); isolated_gap_truth(); }
     else if (!raw_only && !direct_only) {
         raw_compile_then_arm();
+        provider_can_join_attaching_worker();
         eval_contract();
         isolated_host();
         isolated_gap_truth();

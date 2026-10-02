@@ -44,6 +44,8 @@ e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check
 2b1cec4b6df93886|(c) sub-check: [70d] relays the child rows verbatim, one of which SKIPs when GNU time -f is absent; the section still asserts its other two checks
 cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT section asserts its fast-path checks on every host
 00fd233b835a1ddb|(c) sub-check: the EIGS_JIT_HOT gate on a non-x86_64 host; same section, same reason
+4158c9982233a440|(c) sub-check: the EIGS_JIT_HOT OSR weighting gate on a non-x86_64 host; the JIT section still asserts all portable fast-path checks
+a9f637bc88ca3e2c|(c) sub-check: the cache-full diagnostic gate needs an x86-64 JIT; the JIT section still asserts its language-level fast-path checks elsewhere
 1d4789fa9df25921|(c) sub-check: --api --json validation needs python3; the --api section asserts its other rows without it
 4fd0c1454b26ae7a|(b) an examples-section PASS line that reports how many demos were skipped for want of a gfx build
 62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
@@ -741,7 +743,7 @@ sp_lib_closure() {
 # the WORKING TREE plus untracked files against the merge base, because an
 # uncommitted fix is exactly what this gate is run on.
 build_changed_plan() {
-    local base="$1" mb p tok d lines dlines
+    local base="$1" mb p tok d lines dlines seam_start seam_end seam_delta
     SP_WORK=$(sp_workdir changed)
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     verify_partition "$RUNNER" "$SP_WORK/chunks"
@@ -756,9 +758,20 @@ build_changed_plan() {
     : > "$SP_WORK/lines"; : > "$SP_WORK/unmatched"; : > "$SP_WORK/sourced"; : > "$SP_WORK/runtime"; SP_CHANGED_FULL=''
     # Runner hunks select the chunk each changed line lands in (new-side
     # numbering; a pure deletion selects the chunk holding the line before it).
+    seam_start=$(grep -nFx '# EIGS_SECTION_FRAGMENTS' "$RUNNER_SOURCE" | cut -d: -f1)
+    seam_end=$(grep -nFx '# EIGS_SECTION_FRAGMENTS_END' "$RUNNER_SOURCE" | cut -d: -f1)
+    seam_delta=$(($(wc -l < "$RUNNER") - $(wc -l < "$RUNNER_SOURCE")))
     git -C "$SP_ROOT" diff -U0 "$mb" -- tests/run_all_tests.sh \
         | sed -n 's/^@@ -[0-9,]* +\([0-9][0-9]*\)\(,\([0-9][0-9]*\)\)\{0,1\} @@.*/\1 \3/p' \
-        | awk '{ n = ($2 == "") ? 1 : $2; if (n == 0) n = 1; for (i = 0; i < n; i++) print $1 + i }' > "$SP_WORK/hunks"
+        | awk -v ss="$seam_start" -v se="$seam_end" -v delta="$seam_delta" -v seam="$SP_WORK/seam-changed" '
+            {
+                n = ($2 == "") ? 1 : $2; if (n == 0) n = 1
+                for (i = 0; i < n; i++) {
+                    line = $1 + i
+                    if (line >= ss && line <= se) { print "yes" > seam; next }
+                    print line + (line > se ? delta : 0)
+                }
+            }' > "$SP_WORK/hunks"
     cat "$SP_WORK/hunks" >> "$SP_WORK/lines"
     # Every other changed file selects the chunks that reference it: by its
     # basename when that is unique in the tree (a test is named by basename),
@@ -769,6 +782,20 @@ build_changed_plan() {
     git -C "$SP_ROOT" ls-files | sed 's#.*/##' | sort | uniq -d > "$SP_WORK/dupnames"
     while read -r p; do
         [ -n "$p" ] && [ "$p" != tests/run_all_tests.sh ] || continue
+        case "$p" in
+            tests/sections/*.sh)
+                # A fragment is itself a section definition. Select every
+                # header it contributes in the expanded runner; treating its
+                # own line numbers as main-runner lines would select nonsense.
+                fragment="$SP_ROOT/$p"
+                [ -f "$fragment" ] || fragment="$SP_WORK/old-fragment"
+                if [ ! -f "$SP_ROOT/$p" ]; then git -C "$SP_ROOT" show "$mb:$p" > "$fragment" 2>/dev/null || :; fi
+                while IFS= read -r label; do
+                    [ -n "$label" ] || continue
+                    sp_refs "$RUNNER" "$label" >> "$SP_WORK/lines"
+                done < <(sed -n 's/^[[:space:]]*echo "\(\[[^]"]*\]\).*$/\1/p' "$fragment")
+                continue ;;
+        esac
         # The hop also reads the tools/ gates the runner calls (docs_claims
         # checks README.md for [99za]); a src/ file is reported as runtime
         # anyway, and tools/ naming it (consumer_acceptance) only adds cost.
@@ -830,6 +857,7 @@ $(sp_select "$(basename "$d")")" ;;
     # every section: run them all.
     SP_CHANGED_FULL=$(awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" \
         '$1 <= pre || $1 >= epi { print "yes"; exit }' "$SP_WORK/hunks")
+    [ ! -s "$SP_WORK/seam-changed" ] || SP_CHANGED_FULL=yes
     [ ! -s "$SP_WORK/sourced" ] || SP_CHANGED_FULL=yes
     # line -> chunk, then widen to each chunk's dependency group, plus the floor.
     awk -v full="$SP_CHANGED_FULL" -v floor_re="$CHANGED_FLOOR_RE" '
@@ -898,7 +926,7 @@ emit_plan() {   # emit_plan <out> <plan builder> <args...>
     # tests/run_all_tests.sh with a plan. OUT may be absent, empty (the mktemp
     # suite_plan.sh hands in) or an earlier plan (line 2 is our GENERATED
     # header); any other existing file is someone's, with or without git.
-    [ ! "$out" -ef "$RUNNER" ] ||   # -ef: same file through symlinks and hard links; no GNU realpath -m
+    [ ! "$out" -ef "$RUNNER_SOURCE" ] ||   # -ef: same file through symlinks and hard links; no GNU realpath -m
         die "refusing to write the plan over the runner it reads: $out"
     [ ! -s "$out" ] || sed -n 2p -- "$out" | grep -q '^# GENERATED by tools/section_plan.sh; ' ||
         die "refusing to write the plan over an existing file that is not a plan: $out"
@@ -1003,20 +1031,34 @@ selftest() {
     # Changed-sections plan (#1347): a throwaway clone, one uncommitted edit
     # per selection rule, each read back from the plan's own report.
     expect_plan() {
+        local plan_match
         label="$1" want="$2"; shift 2
-        out=$("$0" --root "$dir/cl" --changed HEAD 2>&1)
-        case "$out" in
-            *"$want"*) echo "  PASS: $label"; pass=$((pass + 1)) ;;
-            *) echo "  FAIL: $label (want '$want')"; printf '%s\n' "$out" | tail -4; fail=$((fail + 1)) ;;
-        esac
+        if out=$("$0" --root "$dir/cl" --changed HEAD 2>&1) &&
+           grep -q '^PLAN: changed=HEAD ' <<< "$out"; then
+            # Labels must come from a successful selection report. An error
+            # quoting the edited header is not evidence that its chunk ran.
+            case "$want" in
+                \[*) plan_match=$(sed -n '/^  selected: /p' <<< "$out") ;;
+                *) plan_match="$out" ;;
+            esac
+            case "$plan_match" in
+                *"$want"*) echo "  PASS: $label"; pass=$((pass + 1)) ;;
+                *) echo "  FAIL: $label (want '$want')"; printf '%s\n' "$out" | tail -4; fail=$((fail + 1)) ;;
+            esac
+        else
+            echo "  FAIL: $label (changed plan failed)"
+            printf '%s\n' "$out" | tail -4; fail=$((fail + 1))
+        fi
         git -C "$dir/cl" checkout -q -- . && git -C "$dir/cl" clean -qfd
     }
     git clone -q --shared "$SP_ROOT" "$dir/cl" || { echo '  FAIL: clone for the changed plan'; fail=$((fail + 1)); }
     expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 runtime=0 full=no '
     printf '\n' >> "$dir/cl/tests/test_trace_mt.sh"
     expect_plan 'changed: an edited test script selects its section' '[42h]'
-    sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)$/\1 # edited/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a runner hunk selects the chunk it lands in' '[17/17]'
+    sed -i.bak 's/^\(echo "\[99p\] Child-script exit-status ledger.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a runner hunk after the fragment seam keeps its expanded chunk' '[99p]'
     sed -i.bak '1s/$/ /' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
     : > "$dir/cl/zz_named_by_nothing.txt"
@@ -1049,9 +1091,11 @@ selftest() {
     # is top-level; a test-only echo override hides all but three at runtime.
     local stub="$dir/stub" i
     mkdir -p "$stub/tests" "$stub/tools" "$stub/src" "$stub/.github/workflows"
-    cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/read_werror_flags.sh" \
+    cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/runner_text.sh" \
+       "$SP_ROOT/tools/read_werror_flags.sh" \
        "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
-    cp "$SP_ROOT/tests/failure_output.sh" "$SP_ROOT/tests/suite_plan.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
+    cp "$SP_ROOT/tests/failure_output.sh" "$SP_ROOT/tests/suite_plan.sh" \
+       "$SP_ROOT/tests/suite_program_env.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
     printf '#!/bin/sh\nexit 0\n' > "$stub/src/eigenscript"
     chmod +x "$stub/src/eigenscript"
@@ -1132,6 +1176,9 @@ done
 [ -n "$MODE" ] || { [ -n "$SP_SHARDS" ] && [ -n "$SP_SHARD_K" ] && MODE='--shard-plan'; }
 [ -n "$MODE" ] || die 'no mode given (see header)'
 [ -f "$RUNNER" ] || die "runner not found: $RUNNER"
+RUNNER_SOURCE=$RUNNER
+RUNNER=$SP_TMPROOT/expanded-runner.sh
+bash "$SP_ROOT/tools/runner_text.sh" "$RUNNER_SOURCE" "$SP_ROOT/tests/sections" > "$RUNNER" || die "cannot expand section fragments"
 case "$MODE" in
     --chunks)
         W=$(sp_workdir chunks); derive_chunks "$RUNNER" > "$W/chunks"

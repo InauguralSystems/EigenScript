@@ -136,6 +136,27 @@ case "$TOUT" in
     *) fail "truncated bundle names the cause" "out=$TOUT" ;;
 esac
 
+# The head alone must be enough to identify a damaged bundle: truncation may
+# happen before even the first entry header is complete.
+head -c $((OFF + 24)) "$APP/out" > "$APP/head-only"
+chmod +x "$APP/head-only"
+(cd / && "$APP/head-only" < /dev/null > /dev/null 2>&1); RC=$?
+[ "$RC" -eq 3 ] \
+    && ok "bundle truncated immediately after its head refuses with exit 3" \
+    || fail "bundle truncated immediately after its head refuses with exit 3" "rc=$RC"
+
+# Bundle paths are raw bytes, not printable ASCII. A valid non-ASCII basename
+# must not hide the genuine archive head when the trailer is later lost.
+printf 'print of "unicode-ok"\n' > "$APP/café.eigs"
+"$EIGS" --bundle "$APP/café.eigs" "$APP/unicode" > /dev/null 2>&1
+USZ=$(wc -c < "$APP/unicode" | tr -d ' ')
+head -c $((USZ - 24)) "$APP/unicode" > "$APP/unicode-trunc"
+chmod +x "$APP/unicode-trunc"
+(cd / && "$APP/unicode-trunc" < /dev/null > /dev/null 2>&1); RC=$?
+[ "$RC" -eq 3 ] \
+    && ok "truncated bundle with a non-ASCII script name refuses with exit 3" \
+    || fail "truncated bundle with a non-ASCII script name refuses with exit 3" "rc=$RC"
+
 # ---- 9. a bundle whose trailer survived but was corrupted in place
 cp "$APP/out" "$APP/zeroed"
 SZ=$(wc -c < "$APP/zeroed" | tr -d ' ')

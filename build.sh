@@ -33,11 +33,9 @@ fi
 # JIT_FLAGS=-DEIGENSCRIPT_JIT_FORCE_OFF=1`).
 JIT_FLAGS=""
 
-# The Makefile's objdir engine (#740) leaves src/eigenscript as a hard link
-# to build/<variant>/eigenscript. Remove the name before compiling so
-# build.sh writes a fresh file instead of truncating the shared inode under
-# that variant's binary.
-rm -f eigenscript
+# The objdir engine may leave a hard link here. Unlink before compiling so
+# build.sh never truncates an existing per-variant artifact.
+if [ "$1" != "lsp" ]; then rm -f eigenscript; fi
 
 if [ "$1" = "lsp" ]; then
     # Language server (src/eigenlsp) — the editor-intelligence half of the
@@ -61,10 +59,10 @@ if [ "$1" = "lsp" ]; then
     echo "EigenScript LSP $VERSION built. Binary: $(du -sh eigenlsp | cut -f1)"
 elif [ "$1" = "server-db" ] || [ "$1" = "full" ]; then
     # Server + PostgreSQL profile. "full" is the compatibility spelling.
-    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c ext_db.c \
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c ext_db.c model_io.c model_infer.c model_train.c \
         -I/usr/include/postgresql \
         -DEIGENSCRIPT_EXT_HTTP=1 \
-        -DEIGENSCRIPT_EXT_MODEL=0 \
+        -DEIGENSCRIPT_EXT_MODEL=1 \
         -DEIGENSCRIPT_EXT_DB=1 \
         -DEIGENSCRIPT_EXT_NET=1 \
         -DEIGENSCRIPT_EXT_GFX=1 \
@@ -74,9 +72,9 @@ elif [ "$1" = "server-db" ] || [ "$1" = "full" ]; then
     echo "EigenScript $VERSION (server-db) built. Binary: $(du -sh eigenscript | cut -f1)"
 elif [ "$1" = "server" ] || [ "$1" = "http" ] || [ "$1" = "net" ]; then
     # Network server profile. "http" and "net" are compatibility spellings.
-    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c \
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c model_io.c model_infer.c model_train.c \
         -DEIGENSCRIPT_EXT_HTTP=1 \
-        -DEIGENSCRIPT_EXT_MODEL=0 \
+        -DEIGENSCRIPT_EXT_MODEL=1 \
         -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_EXT_NET=1 \
         -DEIGENSCRIPT_EXT_GFX=1 \

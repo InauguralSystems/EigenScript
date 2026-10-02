@@ -560,13 +560,14 @@ const Assign *tape_latest_at(const NameHist *h, int pos) {
 }
 
 /* The frame instance current at a stop position = the scope of the
- * last record in that step's window (A records carry their exact
- * scope; an assign-free stretch inherits the last transition). */
+ * last record in that step's window (every stored record carries the
+ * scope in force when it was parsed, so an assign-free stretch inherits
+ * the last transition).  Do not search for a nonzero scope here: serial 0
+ * is also an explicit scope, used when native code resumes after an
+ * interpreted callback.  Skipping it resurrects the callback's dead frame. */
 uint32_t tape_scope_at(const Tape *t, int pos) {
     int bound = (pos + 1 < t->nsteps) ? t->steps[pos + 1] : t->nrecs;
-    for (int i = bound - 1; i >= 0; i--)
-        if (t->recs[i].scope) return t->recs[i].scope;
-    return 0;
+    return bound > 0 ? t->recs[bound - 1].scope : 0;
 }
 
 const NameHist *tape_resolve_at(const Tape *t, int pos, const char *name) {

@@ -4,7 +4,7 @@
 #   eigenscript      - hosted release (language + stdlib + lazy gfx)
 #
 # Optional:
-#   ./install.sh server installs eigenscript-server with HTTP + net.
+#   ./install.sh server installs eigenscript-server with HTTP + net + model.
 #   ./install.sh server-db also installs eigenscript-server-db (requires libpq).
 set -e
 
@@ -48,8 +48,8 @@ if [ "${1:-}" = "server" ] || [ "${1:-}" = "server-db" ] || [ "${1:-}" = "full" 
     echo ""
     echo "Installed:"
     echo "  $INSTALL_PREFIX/bin/eigenscript         (v$VERSION, release)"
-    echo "  $INSTALL_PREFIX/bin/eigenscript-server  (v$VERSION, HTTP + net)"
-    [ ! -x "$INSTALL_PREFIX/bin/eigenscript-server-db" ] || echo "  $INSTALL_PREFIX/bin/eigenscript-server-db (v$VERSION, HTTP + net + db)"
+    echo "  $INSTALL_PREFIX/bin/eigenscript-server  (v$VERSION, HTTP + net + model)"
+    [ ! -x "$INSTALL_PREFIX/bin/eigenscript-server-db" ] || echo "  $INSTALL_PREFIX/bin/eigenscript-server-db (v$VERSION, HTTP + net + model + db)"
 else
     echo ""
     echo "Installed: $INSTALL_PREFIX/bin/eigenscript (v$VERSION, release)"

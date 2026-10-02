@@ -25,6 +25,10 @@
 #                           row is compared with the flag off; a flag-off
 #                           canvas change is a difference, with no waiver.
 #   binary-held-still       cksum+size+mtime of the subject (and baseline)
+# --common-capabilities <baseline> explicitly permits a baseline without a
+# newly implemented extension, or with unbound names replaced by unavailable
+# stubs. Such rows are checked separately and NEVER counted as byte-identical.
+# Losing an implementation or an existing unavailable binding still fails.
 # A build without gfx builtins prints one line, "SKIP: not a gfx build",
 # and does not treat the gfx halves as a pass.
 #
@@ -36,6 +40,11 @@ cd "$(cd "$(dirname "$0")/.." && pwd)"
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 BASE="${1:-}"
 NO_BASELINE=0
+COMMON_CAPABILITIES=0
+if [ "$BASE" = "--common-capabilities" ]; then
+    COMMON_CAPABILITIES=1; BASE="${2:-}"
+    [ -n "$BASE" ] && [ "$#" = 2 ] && [[ "$BASE" != --* ]] || { echo 'usage: strict_differential.sh --common-capabilities <baseline>'; exit 2; }
+fi
 if [ "$BASE" = "--no-baseline" ]; then NO_BASELINE=1; BASE=""; fi
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
@@ -188,6 +197,23 @@ pow|print of (pow of [0 - 8, 0.5])|pow: result is not a number
 num|print of (num of "nan")|num: result is not a number
 f64_from_bytes|print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))|f64_from_bytes: result is not a number
 matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 0 - 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0])|matmul: result is not a number
+matmul|print of (matmul of [[[1, "x"]], [[1], [1]]])|matmul: expected a tensor containing only numbers
+matmul_at|print of (matmul_at of [[[1, "x"]], [[1, 2]]])|matmul_at: expected a tensor containing only numbers
+matmul_bt|print of (matmul_bt of [[[1, "x"]], [[1, 2]]])|matmul_bt: expected a tensor containing only numbers
+softmax|print of (softmax of [1, "x"])|softmax: expected a tensor containing only numbers
+log_softmax|print of (log_softmax of [1, "x"])|log_softmax: expected a tensor containing only numbers
+relu|print of (relu of [1, "x", -2])|relu: expected a tensor containing only numbers
+leaky_relu|print of (leaky_relu of [1, "x", -2])|leaky_relu: expected a tensor containing only numbers
+tensor_save|print of (tensor_save of [[1, "x"], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
+softmax|print of (softmax of ["x", 1])|softmax: expected a tensor containing only numbers
+log_softmax|print of (log_softmax of ["x", 1])|log_softmax: expected a tensor containing only numbers
+relu|print of (relu of ["x", 1])|relu: expected a tensor containing only numbers
+leaky_relu|print of (leaky_relu of ["x", 1])|leaky_relu: expected a tensor containing only numbers
+softmax|print of (softmax of [[], ["x"]])|softmax: expected a tensor containing only numbers
+log_softmax|print of (log_softmax of [[], ["x"]])|log_softmax: expected a tensor containing only numbers
+relu|print of (relu of [[], ["x"]])|relu: expected a tensor containing only numbers
+leaky_relu|print of (leaky_relu of [[], ["x"]])|leaky_relu: expected a tensor containing only numbers
+tensor_save|print of (tensor_save of [[[], ["x"]], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
 tensor_load|write_bytes of ["@TMP@/nan.tensor", [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 127, 0, 0, 0, 0, 0, 0, 4, 64]]\nprint of (tensor_load of "@TMP@/nan.tensor")|tensor_load: result is not a number
 numerical_grad|define bad(_) as:\n    return "bad"\np is [1.0]\nprint of (numerical_grad of [bad, p, 0.001])|numerical_grad: expected loss function to return a number
 numerical_grad_rows|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_rows of [bad, m, [0], 0.001])|numerical_grad_rows: expected loss function to return a number
@@ -266,8 +292,10 @@ token_name of an unknown id is "?"|print of (token_name of 9999)
 channel_closed of a reclaimed/unknown channel is 1|print of (channel_closed of ({"_channel_id": 99999}))
 json_build of null is the empty object|print of (json_build of null)
 random_hex of 0 is ""|print of f"[{random_hex of 0}]"
+tensor_save preserves a zero-column tensor|assert of [(tensor_save of [[[], []], "@TMP@/zero-cols.tensor"]) == 1, "zero-column tensor_save"]
 EOF
 )
+PINS="${PINS//@TMP@/$TMP}"
 
 # programs run on both binaries in both modes when a baseline is given
 VALID=$(cat <<'EOF'
@@ -356,8 +384,10 @@ print of (audio_stream_open of [44100, 1])
 print of (audio_play of null)
 print of (audio_stream_push of null)
 print of (audio_play of [0.1, 0.2])
+print of (tensor_save of [[[], []], "@TMP@/zero-cols.tensor"])
 EOF
 )
+VALID="${VALID//@TMP@/$TMP}"
 
 sig_name() {
     case "$1" in
@@ -388,7 +418,7 @@ clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
 
 extract_guard_names() {
     awk '
-    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named|numerical_loss)\(/ { acc = ""; collecting = 1 }
+    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named|numerical_loss)\(/ || /tensor_to_flat\(.*"/ { acc = ""; collecting = 1 }
     collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
         collecting = 0
         n = split(acc, parts, "\"")
@@ -397,17 +427,152 @@ extract_guard_names() {
     ' "$@"
 }
 
+# Extension membership comes from the registrar's shared name lists, not a
+# prefix guess (HTTP request names include shared_*; GFX includes ppu_*).
+CAP_NAMES="$(awk '
+    /^#define EIGS_.*_BUILTINS\(X\)/ {
+        cap = $2
+        sub(/^EIGS_/, "", cap); sub(/_BUILTINS\(X\)$/, "", cap)
+        if (cap == "HTTP_REQUEST") cap = "HTTP"
+        cap = tolower(cap)
+        next
+    }
+    /^[ \t]*X\(/ {
+        name = $0; sub(/^[ \t]*X\(/, "", name); sub(/,.*/, "", name)
+        print cap "|" name
+    }
+' src/ext_names.h)"
+[ -n "$CAP_NAMES" ] || { echo 'FAIL: no extension names extracted'; exit 1; }
+cap_for_name() {
+    local name="${1%%/*}"
+    printf '%s\n' "$CAP_NAMES" | awk -F'|' -v n="$name" '$2 == n {print $1; exit}'
+}
+name_for_program() {
+    printf '%s\n' "$CAP_NAMES" | awk -F'|' -v p="$1" '
+        p ~ ("(^|[^[:alnum:]_])" $2 "[[:space:]]+of([[:space:]]|$)") {print $2; exit}'
+}
+cap_message() {
+    case "$1" in
+        http) echo 'HTTP capability unavailable; use the server profile' ;;
+        net) echo 'network capability unavailable; use the server profile' ;;
+        db) echo 'database capability unavailable; use the server-db profile' ;;
+        model) echo 'model capability unavailable; use the server profile' ;;
+        gfx) echo '' ;;
+    esac
+}
+cap_contract() {
+    local cap="$1" op name answer message
+    case "$cap" in
+        http) name=http_route; op='http_route of ["GET", "/strict-capability-probe", "ok"]'; answer='result == "route registered"' ;;
+        net) name=net_close; op='net_close of -1'; answer='result == null' ;;
+        db) name=db_connect; op='db_connect of null'; answer='(json_path of [result, "status"]) == "no_database"' ;;
+        model) name=eigen_model_loaded; op='eigen_model_loaded of null'; answer='result == 0' ;;
+        gfx) name=gfx_text_width; op='gfx_text_width of ["m", 1]'; answer='(type of result) == "num" and result > 0' ;;
+    esac
+    message="$(cap_message "$cap")"
+    cat <<EOF
+try:
+    result is $op
+    assert of [$answer, "capability operation returned the wrong answer"]
+    print of "implemented"
+catch capability_error:
+    if capability_error.kind == "undefined_name" and capability_error.message == "undefined variable '$name'":
+        print of "undefined"
+    elif capability_error.kind == "value" and capability_error.message == "$message" and "$message" != "":
+        print of "unavailable"
+    else:
+        assert of [0, "unexpected capability error"]
+EOF
+}
+cap_state() { # exact ordinary-operation observation in all strict modes
+    local bin="$1" cap="$2" got state="" mode
+    cap_contract "$cap" > "$TMP/cap-$cap.eigs"
+    # DB's no-database answer must not depend on the caller's live service.
+    local DATABASE_URL=""
+    for mode in - 0 1; do
+        got="$(run_capture "$bin" "$mode" "$TMP/cap-$cap.eigs")"
+        case "$got" in
+            $'0\nimplemented') got=implemented ;;
+            $'0\nundefined') got=undefined ;;
+            $'0\nunavailable') got=unavailable ;;
+            *) echo "invalid: $(clip "$got" 120)"; return ;;
+        esac
+        if [ -n "$state" ] && [ "$state" != "$got" ]; then
+            echo "invalid: strict modes disagree ($state/$got)"; return
+        fi
+        state="$got"
+    done
+    echo "$state"
+}
+state_for() {
+    local states="$NEW_CAPS"
+    [ "$1" = baseline ] && states="$BASE_CAPS"
+    printf '%s\n' "$states" | awk -F'|' -v c="$2" '$1 == c {print $2; exit}'
+}
+check_absent_call() { # each omitted row must reach its exact error contract
+    local bin="$1" state="$2" cap="$3" name="$4" file="$5" mode got want kind
+    if [ "$state" = unavailable ]; then want="$(cap_message "$cap")"; kind=value
+    else want="undefined variable '$name'"; kind=undefined_name; fi
+    # Observe kind/message through the real catch path: uncaught diagnostics
+    # also contain source excerpts/carets, which are not capability verdicts.
+    {
+        echo 'try:'
+        sed 's/^/    /' "$file"
+        echo '    assert of [0, "an absent implementation returned normally"]'
+        echo 'catch absent_error:'
+        printf '    assert of [absent_error.kind == "%s" and absent_error.message == "%s", "wrong absent-call error"]\n' "$kind" "$want"
+        printf '    print of "absent:%s"\n' "$name"
+    } > "$TMP/absent-call.eigs"
+    for mode in - 0 1; do
+        got="$(run_capture "$bin" "$mode" "$TMP/absent-call.eigs")"
+        if [ "$got" != $'0\n'"absent:$name" ]; then
+            echo "  ABSENT CONTRACT FAILED: $name [strict=$mode, $state]: $(clip "$got" 120)"
+            return 1
+        fi
+    done
+}
+
 rc=0
 n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
+NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
+for cap in http net db model gfx; do
+    ns="$(cap_state "$NEW" "$cap")"
+    NEW_CAPS="$NEW_CAPS
+$cap|$ns"
+    case "$ns" in
+        implemented|unavailable) ;;
+        undefined) [ "$cap" = gfx ] || { echo "  CAPABILITY BINDING MISSING: $cap"; rc=1; } ;;
+        *) echo "  CAPABILITY DID NOT MEASURE: $cap — $ns"; rc=1 ;;
+    esac
+    [ -n "$BASE" ] || continue
+    bs="$(cap_state "$BASE" "$cap")"
+    BASE_CAPS="$BASE_CAPS
+$cap|$bs"
+    case "$bs" in implemented|unavailable|undefined) ;; *) echo "  BASELINE CAPABILITY DID NOT MEASURE: $cap — $bs"; rc=1 ;; esac
+    if [ "$bs" != "$ns" ]; then
+        profile_transitions="$profile_transitions
+    $cap: baseline=$bs subject=$ns"
+        # Common-capability mode allows expansion, never removal of a prior
+        # implementation or replacement of an unavailable binding by a typo.
+        if [ "$COMMON_CAPABILITIES" != 1 ] || [ "$bs" = implemented ] || { [ "$bs" = unavailable ] && [ "$ns" = undefined ]; }; then
+            echo "  PROFILE CONTRACT DIFFERS: $cap ($bs -> $ns)"; rc=1
+        fi
+    fi
+done
 
 release_srcs="$(make --no-print-directory print-SRC_V_release 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u)"
 absent_here=""
+for cap in http net db model gfx; do
+    [ "$(state_for subject "$cap")" = implemented ] && continue
+    absent_here="$absent_here $(printf '%s\n' "$CAP_NAMES" | awk -F'|' -v c="$cap" '$1 == c {print $2}' | tr '\n' ' ')"
+done
 if [ -n "$release_srcs" ]; then
     for f in src/*.c; do
         str_has_line "$release_srcs" "$f" && continue
-        f_names="$(extract_guard_names "$f" | sed 's,/.*,,' | sed '/^$/d' | sort -u)"
+        f_names="$(extract_guard_names "$f" | sed 's,/.*,,' | sed '/^$/d' | sort -u \
+            | grep -vxF -f <(printf '%s\n' "$CAP_NAMES" | cut -d'|' -f2) || true)"
         [ -z "$f_names" ] && continue
         rep="$(printf '%s\n' "$f_names" | head -1)"
         printf 'print of "eigs-probe-ran"\nprint of %s\n' "$rep" > "$TMP/present.eigs"
@@ -438,23 +603,35 @@ probe_builtin_present() {
 while IFS='|' read -r who prog expect; do
     [ -z "${who:-}" ] && continue
     expect="${expect:-$who: expected}"
+    printf '%b\n' "$prog" > "$TMP/p.eigs"
+    cap="$(cap_for_name "$who")"
     if ! probe_builtin_present "$who"; then
         n_skipped=$((n_skipped + 1))
         skipped_list="$skipped_list $who"
+        if [ -n "$cap" ]; then
+            check_absent_call "$NEW" "$(state_for subject "$cap")" "$cap" "${who%%/*}" "$TMP/p.eigs" || rc=1
+            if [ -n "$BASE" ] && [ "$(state_for baseline "$cap")" != implemented ]; then
+                check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "${who%%/*}" "$TMP/p.eigs" || rc=1
+            fi
+        fi
         continue
     fi
     n_probe=$((n_probe + 1))
-    printf '%b\n' "$prog" > "$TMP/p.eigs"
     if [ -n "$BASE" ]; then
-        a="$(run_capture "$BASE" 0 "$TMP/p.eigs")"
-        b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
-        if [ "$a" = "$b" ]; then n_ident=$((n_ident + 1))
+        if [ -n "$cap" ] && [ "$(state_for baseline "$cap")" != implemented ]; then
+            n_profile_rows=$((n_profile_rows + 1))
+            check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "${who%%/*}" "$TMP/p.eigs" || rc=1
         else
-            n_differ=$((n_differ + 1))
-            differ_list="$differ_list
+            a="$(run_capture "$BASE" 0 "$TMP/p.eigs")"
+            b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
+            if [ "$a" = "$b" ]; then n_ident=$((n_ident + 1))
+            else
+                n_differ=$((n_differ + 1))
+                differ_list="$differ_list
     $who
       baseline: $(clip "$a" 90)
       new     : $(clip "$b" 90)"
+            fi
         fi
     fi
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
@@ -502,12 +679,42 @@ while IFS='|' read -r label prog; do
     fi
 done <<<"$PINS"
 
-n_valid=0; n_valid_bad=0; valid_list=""
+n_valid=0; n_valid_bad=0; valid_list=""; n_valid_expanded=0; n_valid_expanded_bad=0; n_valid_absent=0
 if [ -n "$BASE" ]; then
     while IFS= read -r prog; do
         [ -z "$prog" ] && continue
-        n_valid=$((n_valid + 1))
         printf '%b\n' "$prog" > "$TMP/v.eigs"
+        who="$(name_for_program "$prog")"; cap="$(cap_for_name "$who")"
+        if [ -n "$cap" ] && [ "$(state_for subject "$cap")" != implemented ]; then
+            n_valid_absent=$((n_valid_absent + 1))
+            check_absent_call "$NEW" "$(state_for subject "$cap")" "$cap" "$who" "$TMP/v.eigs" || rc=1
+            if [ "$(state_for baseline "$cap")" != implemented ]; then
+                check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "$who" "$TMP/v.eigs" || rc=1
+            fi
+            continue
+        fi
+        if [ -n "$cap" ] && [ "$(state_for baseline "$cap")" != implemented ]; then
+            n_valid_expanded=$((n_valid_expanded + 1))
+            check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "$who" "$TMP/v.eigs" || rc=1
+            expanded_reference=""; expanded_good=1
+            for mode in - 0 1; do
+                b="$(run_capture "$NEW" "$mode" "$TMP/v.eigs")"
+                if [ "${b%%$'\n'*}" != 0 ]; then
+                    echo "  EXPANDED VALID INPUT FAILED: $who [strict=$mode]: $(clip "$b" 120)"; rc=1; expanded_good=0
+                fi
+                if [ "$mode" = - ]; then
+                    expanded_reference="$b"
+                elif [ "$b" != "$expanded_reference" ]; then
+                    echo "  EXPANDED VALID OUTPUT DIFFERS: $prog [unset vs strict=$mode]"
+                    echo "    unset: $(clip "$expanded_reference" 120)"
+                    echo "    =$mode: $(clip "$b" 120)"
+                    rc=1; expanded_good=0
+                fi
+            done
+            [ "$expanded_good" = 1 ] || n_valid_expanded_bad=$((n_valid_expanded_bad + 1))
+            continue
+        fi
+        n_valid=$((n_valid + 1))
         for mode in - 0 1; do
             a="$(run_capture "$BASE" "$mode" "$TMP/v.eigs")"
             b="$(run_capture "$NEW" "$mode" "$TMP/v.eigs")"
@@ -532,7 +739,12 @@ stale="$(comm -13 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed"))"
 echo "== strict differential =="
 echo "  probes=$n_probe pins=$n_pin guarded-names=$n_guarded"
 if [ "$n_skipped" -gt 0 ]; then
-    echo "  probes skipped (builtin not in this build): $n_skipped —$skipped_list"
+    echo "  implementation guards omitted (exact absent-call contracts checked for registered extensions): $n_skipped —$skipped_list"
+fi
+echo "  capability states (ordinary operations, unset/0/1):$NEW_CAPS"
+if [ -n "$profile_transitions" ]; then
+    echo "  PROFILE TRANSITIONS (not byte-identical):$profile_transitions"
+    echo "  expanded guard rows checked only on subject: $n_profile_rows"
 fi
 if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_differ"
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
@@ -542,6 +754,8 @@ echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_mi
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"
 if [ -n "$BASE" ]; then
     echo "  valid-input rows unchanged in all three modes: $((n_valid * 3 - n_valid_bad)) / $((n_valid * 3))"
+    echo "  expanded valid rows mode-identical (subject rc=0, unset=0=1; baseline absence verified): $((n_valid_expanded - n_valid_expanded_bad)) / $n_valid_expanded"
+    echo "  absent valid rows (exact absence verified; NOT valid successes): $n_valid_absent"
 fi
 [ -n "$unset_list" ] && { echo "  UNSET DIFFERS FROM EIGS_STRICT=1 (the default is not strict):$unset_list"; rc=1; }
 [ -n "$differ_list" ] && { echo "  DIFFERING (the EIGS_STRICT=0 path was NOT preserved):$differ_list"; rc=1; }
@@ -561,13 +775,12 @@ if [ "$NO_BASELINE" = 1 ]; then
 fi
 
 # ------------------------------------------------ gfx capability
-printf 'print of (gfx_text_width of ["m", 1])\n' > "$TMP/gfxprobe.eigs"
-gfx_probe_out="$("$NEW" "$TMP/gfxprobe.eigs" 2>&1 || true)"
-case "$gfx_probe_out" in
-    *"undefined variable"*)
+case "$(state_for subject gfx)" in
+    undefined)
         echo "SKIP: not a gfx build"
         gfx_on=0 ;;
-    *) gfx_on=1 ;;
+    implemented) gfx_on=1 ;;
+    *) echo 'FAIL: GFX capability was not measured'; gfx_on=0; rc=1 ;;
 esac
 
 if [ "$gfx_on" = 1 ]; then
@@ -812,6 +1025,7 @@ if [ "$NO_RENDERER" = 0 ]; then
 fi
 PIXBASE="$BASE"
 [ "$NO_RENDERER" = 1 ] && PIXBASE=""
+[ -n "$BASE" ] && [ "$(state_for baseline gfx)" != implemented ] && PIXBASE=""
 while IFS='|' read -r label who slot prog; do
     [ -z "${label:-}" ] && continue
     n_prow=$((n_prow + 1))
@@ -896,6 +1110,8 @@ if [ -n "$PIXBASE" ]; then
     echo "  identical-when-off: $n_pident   differing: $n_pdiffer"
 elif [ "$NO_RENDERER" = 1 ]; then
     echo "  identical-when-off: SKIPPED (no renderer)"
+elif [ -n "$BASE" ]; then
+    echo "  identical-when-off: NOT COMPARABLE (baseline GFX absent; subject strict/valid/pixel coverage still checked)"
 else
     echo "  identical-when-off: SKIPPED (--no-baseline)"
 fi

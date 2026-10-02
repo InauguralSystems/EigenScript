@@ -25,6 +25,7 @@ endif
 SRC_DIR := src
 SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
 HOSTED_SOURCES := $(SOURCES) $(SRC_DIR)/ext_gfx.c
+MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
 BINARY  := $(SRC_DIR)/eigenscript
 
 # CLI-only translation units: linked into the binary, never into the
@@ -33,7 +34,7 @@ BINARY  := $(SRC_DIR)/eigenscript
 # --step tape-stepper, stdio+isatty, same footing).
 CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c
 
-SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c
+SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c $(MODEL_SRC)
 SERVER_DB_SOURCES := $(SERVER_SOURCES) $(SRC_DIR)/ext_db.c
 
 PREFIX  := $(HOME)/.local
@@ -43,6 +44,7 @@ PREFIX  := $(HOME)/.local
 # the runtime grows (it had, silently — nothing built this target in CI).
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(CLI_ONLY),$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
+LSP_ASAN_BINARY := build/asan/lsp/eigenlsp
 
 # The DAP server (#539 v3): the tape model TU plus the runtime it needs
 # (observer_slot classification, trace_name_is_internal). Same link
@@ -75,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-%
+.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -92,7 +94,6 @@ endef
 # at the next section seam.
 VERDEF   := -DEIGENSCRIPT_VERSION='"$(VERSION)"'
 DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
-MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
 # EIGS_STR_LEN_CHECK (#1183): re-derive every cached VAL_STR length at every
 # read and abort on a mismatch. A wrong cached length is a silent
 # out-of-bounds read, strictly worse than the strlen it replaced, so the
@@ -106,11 +107,11 @@ FLAGS_release := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_release  := $(LDFLAGS) -ldl
 
 SRC_V_server := $(SERVER_SOURCES)
-FLAGS_server := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_server := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_server  := $(LDFLAGS) -ldl
 
 SRC_V_server-db := $(SERVER_DB_SOURCES)
-FLAGS_server-db := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_server-db := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_server-db  := $(LDFLAGS) -ldl -lpq
 
 SRC_V_zlib := $(HOSTED_SOURCES)
@@ -127,7 +128,7 @@ FLAGS_asan-gfx := $(FLAGS_asan)
 LIBS_asan-gfx := $(LIBS_asan)
 
 SRC_V_asan-server := $(SERVER_SOURCES)
-FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_asan-server  := -lm -lpthread -ldl
 
 SRC_V_tsan := $(SOURCES)
@@ -135,7 +136,7 @@ FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 $(DEFS_OFF) $(VERDEF)
 LIBS_tsan  := -lm -lpthread
 
 SRC_V_tsan-server := $(SERVER_SOURCES)
-FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_tsan-server  := -lm -lpthread -ldl
 
 SRC_V_valgrind := $(HOSTED_SOURCES)
@@ -233,6 +234,26 @@ build/$(ARMING_MT_VARIANT)/test_arming_two_states: tests/test_arming_two_states.
 arming-mt-test: build/$(ARMING_MT_VARIANT)/test_arming_two_states
 	@echo "Arming two-state test built: build/$(ARMING_MT_VARIANT)/test_arming_two_states"
 
+# #1151: host signal dispositions survive proc and HTTP entry points. Build
+# against the selected runtime variant without repointing the CLI alias.
+SIGPIPE_VARIANT ?= release
+SIGPIPE_OBJ := $(filter-out build/$(SIGPIPE_VARIANT)/main.o,$(OBJ_$(SIGPIPE_VARIANT)))
+build/$(SIGPIPE_VARIANT)/test_sigpipe_contract: tests/test_sigpipe_contract.c $(SIGPIPE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(SIGPIPE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(SIGPIPE_OBJ) $(LIBS_$(SIGPIPE_VARIANT))
+sigpipe-contract-test: build/$(SIGPIPE_VARIANT)/test_sigpipe_contract
+	@echo "SIGPIPE contract test built: $<"
+
+# Exercise the real helper with a finite partial-write observation. Only this
+# test object's write call is renamed; production objects have no test hook.
+SIGPIPE_PARTIAL_FSUTIL := build/$(SIGPIPE_VARIANT)/test_sigpipe_partial_fsutil.o
+SIGPIPE_PARTIAL_OBJ := $(filter-out build/$(SIGPIPE_VARIANT)/main.o build/$(SIGPIPE_VARIANT)/fsutil.o,$(OBJ_$(SIGPIPE_VARIANT)))
+$(SIGPIPE_PARTIAL_FSUTIL): $(SRC_DIR)/fsutil.c $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt | build/$(SIGPIPE_VARIANT)
+	$(CC) $(FLAGS_$(SIGPIPE_VARIANT)) -I$(SRC_DIR) -Dwrite=eigs_sigpipe_test_write -MMD -MP -c $< -o $@
+build/$(SIGPIPE_VARIANT)/test_sigpipe_partial: tests/test_sigpipe_partial.c $(SIGPIPE_PARTIAL_FSUTIL) $(SIGPIPE_PARTIAL_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
+	$(CC) $(FLAGS_$(SIGPIPE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(SIGPIPE_PARTIAL_FSUTIL) $(SIGPIPE_PARTIAL_OBJ) $(LIBS_$(SIGPIPE_VARIANT))
+sigpipe-partial-test: build/$(SIGPIPE_VARIANT)/test_sigpipe_partial
+	@echo "SIGPIPE partial test built: $<"
+
 # #1038/#1028: same runtime variant as the suite; never repoint the CLI alias.
 EMBED_OBSERVER_VARIANT ?= release
 EMBED_OBSERVER_OBJ := $(filter-out build/$(EMBED_OBSERVER_VARIANT)/main.o,$(OBJ_$(EMBED_OBSERVER_VARIANT)))
@@ -252,11 +273,11 @@ embed-roads: build/$(ROAD_VARIANT)/embed_roads
 
 server-db: build/server-db/eigenscript
 	$(call RELINK,server-db)
-	@echo "EigenScript $(VERSION) (server+db) built. Binary: $$(du -sh build/server-db/eigenscript | cut -f1)"
+	@echo "EigenScript $(VERSION) (server: http+net+model+db) built. Binary: $$(du -sh build/server-db/eigenscript | cut -f1)"
 
 server: build/server/eigenscript
 	$(call RELINK,server)
-	@echo "EigenScript $(VERSION) (server: http+net) built. Binary: $$(du -sh build/server/eigenscript | cut -f1)"
+	@echo "EigenScript $(VERSION) (server: http+net+model) built. Binary: $$(du -sh build/server/eigenscript | cut -f1)"
 
 # Compatibility target names; release artifacts are now release/server/server-db.
 full: server-db
@@ -289,10 +310,11 @@ test: build sandbox-intern-test
 # Contributor fast local gate (#1347): only the suite sections the diff against
 # BASE touches (working tree + untracked). CI still runs the whole suite.
 BASE ?= origin/main
+test-changed: export EIGS_SUITE_CHANGED := $(value BASE)
 test-changed: build
 	$(AUX_REFRESH)
 	bash tools/suite_label_check.sh
-	cd tests && EIGS_SUITE_CHANGED=$(BASE) bash run_all_tests.sh
+	cd tests && bash run_all_tests.sh
 
 # Contributor precheck (#1264): the repo's static gates in well under a minute,
 # one line per gate. Needs no build (gates that need a binary SKIP without one).
@@ -314,7 +336,6 @@ install: build lsp dap
 	@echo "Installed: $(PREFIX)/bin/eigenlsp (v$(VERSION))"
 	@echo "Installed: $(PREFIX)/bin/eigsdap (v$(VERSION))"
 	@echo "Stdlib:    $(PREFIX)/lib/eigenscript/"
-
 
 # Generated stdlib index for the LSP (#590): public define/signature-comment
 # table scraped from lib/*.eigs. A build artifact, not committed (the build/
@@ -345,6 +366,32 @@ $(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_built
 	@echo "EigenScript LSP $(VERSION) built. Binary: $$(du -sh $(LSP_BINARY) | cut -f1)"
 
 lsp: $(LSP_BINARY)
+
+# Keep the sanitizer LSP separate from src/eigenlsp. CFLAGS is not a make
+# dependency, so rebuilding that shared path with an override can silently run
+# a newer release binary instead (#1365), and a real rebuild leaves local
+# release tests pointing at the instrumented executable.
+LSP_ASAN_RUNTIME_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/asan/%.o,$(CLI_ONLY)),$(OBJ_asan))
+build/asan/lsp/eigenlsp.o: $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt | build/asan/lsp
+	$(CC) $(FLAGS_asan) -MMD -MP -c $< -o $@
+build/asan/lsp:
+	@mkdir -p $@
+-include build/asan/lsp/eigenlsp.d
+
+$(LSP_ASAN_BINARY): build/asan/lsp/eigenlsp.o $(LSP_ASAN_RUNTIME_OBJ)
+	$(CC) $(FLAGS_asan) -o $@ $^ $(LIBS_asan)
+	@echo "EigenScript LSP $(VERSION) (ASan+UBSan) built. Binary: $$(du -sh $@ | cut -f1)"
+
+lsp-asan: $(LSP_ASAN_BINARY)
+
+# Bounded diagnostic-state witness: compile the actual LSP/trace sources in
+# the test TU, against the requested runtime variant, without production hooks.
+LSP_ARMING_VARIANT ?= release
+LSP_ARMING_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/$(LSP_ARMING_VARIANT)/%.o,$(CLI_ONLY)) build/$(LSP_ARMING_VARIANT)/trace.o,$(OBJ_$(LSP_ARMING_VARIANT)))
+build/$(LSP_ARMING_VARIANT)/test_lsp_arming: tests/test_lsp_arming.c $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/trace.c $(LSP_ARMING_OBJ) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(LSP_ARMING_VARIANT)) -I$(SRC_DIR) -o $@ $< $(LSP_ARMING_OBJ) $(LIBS_$(LSP_ARMING_VARIANT))
+.PHONY: lsp-arming-test
+lsp-arming-test: build/$(LSP_ARMING_VARIANT)/test_lsp_arming
 
 $(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \
@@ -406,7 +453,7 @@ embed-smoke: amalgamation
 # needs no SDL init, so this runs headless.
 embed-smoke-gfx: build
 	$(CC) $(FLAGS_release) -o /tmp/embed_smoke_gfx $(SRC_DIR)/embed_smoke.c \
-		$(filter-out build/release/main.o,$(wildcard build/release/*.o)) \
+		$(filter-out build/release/main.o,$(OBJ_release)) \
 		-lm -lpthread $(LIBS_release)
 	/tmp/embed_smoke_gfx
 
