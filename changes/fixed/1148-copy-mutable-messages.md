@@ -1,2 +1,3 @@
-- Copy buffers and text builders sent through channels or returned by
-  `thread_join`, preventing post-transfer mutation and cross-thread data races.
+- Add regression coverage for direct buffer and text-builder `thread_join`
+  results, plus a TSan buffer-transfer fixture that sends while its reader
+  worker is already live.

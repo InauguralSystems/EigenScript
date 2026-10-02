@@ -59,9 +59,9 @@ fi
 echo "=== concurrency slice must be race-free ==="
 SLICE="test_concurrent test_spawn_parallel test_chan_dict_xthread test_spawn_gc \
        test_channel_nb test_spawn_channel_exit test_spawn_args \
-       tsan_message_buffer_copy \
        test_spawn_arena_return test_spawn_jit test_spawn_jit_warm test_obs_mt_race \
-       tsan_no_yield_race tsan_sandbox_snapshot_race tsan_mt_clear_respawn"
+       tsan_no_yield_race tsan_sandbox_snapshot_race tsan_mt_clear_respawn \
+       tsan_transfer_buffer_race tsan_message_buffer_copy"
 for t in $SLICE; do
     f="$TESTS_DIR/$t.eigs"
     [ -f "$f" ] || continue
@@ -77,6 +77,22 @@ for t in $SLICE; do
     else
         echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"
         timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        FAIL=$((FAIL + 1))
+    fi
+done
+
+echo "=== concurrent random streams have no races or duplicate draws (#1150) ==="
+RANDOM_MT="$TESTS_DIR/random_mt_no_duplicates.eigs"
+for run in 1 2 3; do
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$RANDOM_MT" 2>&1)
+    LAST_RC=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
+    case "$out" in *"All tests passed."*) summary_ok=1 ;; *) summary_ok=0 ;; esac
+    if [ "$LAST_RC" -eq 0 ] && [ "$w" -eq 0 ] && [ "$summary_ok" -eq 1 ]; then
+        echo "  PASS: random workers run $run: 0 duplicates, TSan-clean"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: random workers run $run: rc=$LAST_RC warnings=$w output='$out'"
         FAIL=$((FAIL + 1))
     fi
 done

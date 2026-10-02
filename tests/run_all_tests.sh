@@ -12,6 +12,7 @@ export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 . "$TESTS_DIR/../tools/read_werror_flags.sh" || exit 1
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
+. "$TESTS_DIR/suite_program_env.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 
 # Shard and changed-sections modes (EIGS_SUITE_SHARD / EIGS_SUITE_CHANGED).
@@ -359,9 +360,9 @@ trap 'rm -f "${CHILD_LEDGER:-}"' EXIT
 # must not fire on them. Each is a waiver and states why; an entry that stops
 # being needed is a review event, and tools/child_exit_check.sh pins the list
 # against the tree so it cannot silently grow.
-#   test_lsp.sh / test_lsp_asan.sh — thin wrappers that exec python drivers
-#   (test_lsp.py) which report their own tally in a different format.
-CHILD_NO_MARKERS=" test_lsp.sh test_lsp_asan.sh "
+#   test_lsp.sh — thin wrapper that execs test_lsp.py, whose tally uses a
+#   different format. test_lsp_asan.sh has its own instrumentation FAIL gate.
+CHILD_NO_MARKERS=" test_lsp.sh "
 bash() {
     # Resolve the script path first: it decides whether this invocation is
     # accounted for at all, and whether its output must be captured.
@@ -753,6 +754,29 @@ if [ "$AR_RC" -eq 0 ] && echo "$AR_OUT" | grep -q "All tests passed"; then
     PASS=$((PASS + 1)); echo "  PASS: test_arena_escape records a tape and exits 0"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: test_arena_escape under EIGS_TRACE (rc=$AR_RC): $(echo "$AR_OUT" | tail -1 | cut -c1-100)"
+fi
+echo ""
+
+# #1319 measurement phase: the opt-in accounting path reports requested-byte
+# cumulative/live/peak counters, while the default path remains silent.  This
+# is deliberately not a heap-cap test: the owner left enforcement open until
+# the corpus-and-consumer measurements select cumulative or live accounting.
+echo "[0h] Non-enforcing allocation-accounting instrument (#1319)"
+check_binary_fingerprint
+ALLOC_STATS_OUT=$(EIGS_ALLOC_STATS=1 ./eigenscript -e 'print of len of range of 1000' 2>&1)
+ALLOC_STATS_RC=$?
+ALLOC_STATS_LINE=$(printf '%s\n' "$ALLOC_STATS_OUT" | sed -n 's/^eigs-alloc-stats: //p')
+ALLOC_CUM=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*cumulative=\([0-9][0-9]*\).*/\1/p')
+ALLOC_LIVE=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*live=\([0-9][0-9]*\).*/\1/p')
+ALLOC_PEAK=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*peak=\([0-9][0-9]*\).*/\1/p')
+ALLOC_OFF_OUT=$(EIGS_ALLOC_STATS=0 ./eigenscript -e 'print of 1' 2>&1)
+TOTAL=$((TOTAL + 1))
+if [ "$ALLOC_STATS_RC" -eq 0 ] && [ -n "$ALLOC_CUM" ] && [ -n "$ALLOC_LIVE" ] && [ -n "$ALLOC_PEAK" ] && \
+   [ "$ALLOC_CUM" -ge "$ALLOC_PEAK" ] && [ "$ALLOC_PEAK" -ge "$ALLOC_LIVE" ] && \
+   ! grep -q '^eigs-alloc-stats:' <<< "$ALLOC_OFF_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: opt-in counters report cumulative >= peak >= live; disabled path is silent"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: allocation-accounting output (rc=$ALLOC_STATS_RC): $ALLOC_STATS_LINE"
 fi
 echo ""
 
@@ -1586,7 +1610,7 @@ fi
 echo "[18/18] File I/O Builtins"
 check_binary_fingerprint
 # #1361 EIGS_STRICT=0: pins the wrong-type stand-ins read_text(42)="", write_text(bad)=0, exec_capture(bad)=[-1,""] (RT3/WT3/EC3/EC4).
-FIO_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_file_io.eigs 2>&1)
+FIO_OUTPUT=$(suite_program_run test_file_io.eigs ./eigenscript ../tests/test_file_io.eigs 2>&1)
 
 if echo "$FIO_OUTPUT" | grep -q "All file_io tests passed"; then
     # All asserts passed — count individual checks
@@ -1636,15 +1660,15 @@ echo ""
 # [20] System builtins (random, args, paths, filesystem)
 echo "[20/21] System Builtins"
 check_binary_fingerprint
-SYS_OUTPUT=$(./eigenscript ../tests/test_system.eigs 2>&1)
+SYS_OUTPUT=$(./eigenscript ../tests/test_system.eigs 2>&1); SYS_RC=$?
 
-if echo "$SYS_OUTPUT" | grep -q "All system tests passed"; then
-    TOTAL=$((TOTAL + 22))
-    PASS=$((PASS + 22))
-    echo "  PASS: all 22 system checks"
+if rc_ok "$SYS_RC" "$SYS_OUTPUT" && echo "$SYS_OUTPUT" | grep -q "All tests passed"; then
+    TOTAL=$((TOTAL + 23))
+    PASS=$((PASS + 23))
+    echo "  PASS: all 23 system checks"
 else
-    TOTAL=$((TOTAL + 22))
-    FAIL=$((FAIL + 22))
+    TOTAL=$((TOTAL + 23))
+    FAIL=$((FAIL + 23))
     echo "  FAIL: system tests (assert failed)"
     echo "$SYS_OUTPUT" | grep -i "assert\|error" | head -5
 fi
@@ -1688,6 +1712,51 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: value-cycle checks (rc=$VC_OUTPUT_RC — must be leak-clean)"
     echo "$VC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|assert|error" | head -5
+fi
+
+# #1442: the possible-root buffer must re-arm from survivors. The measured
+# issue shape makes about 1036 collections under v0.42.0, but only 133 under
+# the walked-universe rule. Count collections, never elapsed time; the wide
+# band allows unrelated GC changes while refusing that ~8x collapse. This row
+# checks the hot-list cadence; the AOT compile measurement checks #1096's
+# separate large-live-graph cost-aware behavior.
+TOTAL=$((TOTAL + 1))
+GCT_OUTPUT=$($EIGS_TMO env EIGS_GC_DEBUG=1 ./eigenscript ../tests/test_gc_trigger.eigs </dev/null 2>&1); GCT_RC=$?
+GCT_COUNT=$(awk '/^\[gc\] universe [0-9][0-9]*, freed [0-9][0-9]*, live captured [0-9][0-9]*$/ {n++} END {print n+0}' <<< "$GCT_OUTPUT")
+GCT_GC_LINES=$(awk '/^\[gc\]/ {n++} END {print n+0}' <<< "$GCT_OUTPUT")
+lsan_classify "$GCT_OUTPUT"; GCT_CLASS=$?
+if [ "$GCT_RC" = "0" ] && [ "$GCT_CLASS" = "2" ] &&
+   [ "$GCT_GC_LINES" = "$GCT_COUNT" ] &&
+   [ "$GCT_COUNT" -ge 700 ] && [ "$GCT_COUNT" -le 1500 ] &&
+   grep -Fxq '5000' <<< "$GCT_OUTPUT" && grep -Fxq 'GC_TRIGGER_OK' <<< "$GCT_OUTPUT"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: hot-list possible-root cadence ($GCT_COUNT collections)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: possible-root cadence ($GCT_COUNT/$GCT_GC_LINES collection/debug lines, rc=$GCT_RC, sanitizer=$GCT_CLASS; expected 700..1500 and clean exit)"
+    printf '%s\n' "$GCT_OUTPUT" | tail -8
+fi
+
+# #1442 round 2: 4,000 retained cyclic rows with 32 references each, then
+# 100,000 short-lived task records. A node-only survivor budget rescans the
+# dense graph 30 times (base: 11). Allow at most 18 collections so this real
+# regression goes red; require debug coverage, correct output and clean exit.
+# Together with the hot-list row this bounds both sides of the cadence.
+TOTAL=$((TOTAL + 1))
+GCD_OUTPUT=$($EIGS_TMO env EIGS_GC_DEBUG=1 ./eigenscript ../tests/test_gc_dense_trigger.eigs </dev/null 2>&1); GCD_RC=$?
+GCD_COUNT=$(awk '/^\[gc\] universe [0-9][0-9]*, freed [0-9][0-9]*, live captured [0-9][0-9]*$/ {n++} END {print n+0}' <<< "$GCD_OUTPUT")
+GCD_GC_LINES=$(awk '/^\[gc\]/ {n++} END {print n+0}' <<< "$GCD_OUTPUT")
+lsan_classify "$GCD_OUTPUT"; GCD_CLASS=$?
+if [ "$GCD_RC" = "0" ] && [ "$GCD_CLASS" = "2" ] &&
+   [ "$GCD_GC_LINES" = "$GCD_COUNT" ] &&
+   [ "$GCD_COUNT" -ge 2 ] && [ "$GCD_COUNT" -le 18 ] &&
+   grep -Fxq '4001' <<< "$GCD_OUTPUT" && grep -Fxq 'GC_DENSE_OK' <<< "$GCD_OUTPUT"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: dense-survivor possible-root cadence ($GCD_COUNT collections)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: dense-survivor cadence ($GCD_COUNT/$GCD_GC_LINES collection/debug lines, rc=$GCD_RC, sanitizer=$GCD_CLASS; expected 2..18 and clean exit)"
+    printf '%s\n' "$GCD_OUTPUT" | tail -8
 fi
 
 # [107] Meta-interpreter parity (#306). lib/eigen.eigs (the meta-circular
@@ -2624,7 +2693,7 @@ echo ""
 # [42c] General finite-number guard (scalar, tensor, literals, conversions)
 echo "[42c/47] Numeric Guard"
 # #1361 EIGS_STRICT=0: pins the finite-by-construction domain stand-ins (sqrt/asin/acos/log clamps, num "nan" -> 0 + math_flags.invalid).
-NG_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
+NG_OUTPUT=$(suite_program_run test_numeric_guard.eigs ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
 if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
     TOTAL=$((TOTAL + 19))
     PASS=$((PASS + 19))
@@ -2640,7 +2709,7 @@ echo ""
 # [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
 echo "[42d/47] Stdlib Fixes"
 # #1361 EIGS_STRICT=0: pins math.log10/log2 of x <= 0 taking the log floor stand-in (SF101/SF102).
-SF_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
+SF_OUTPUT=$(suite_program_run test_stdlib_fixes.eigs ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
 if rc_ok "$SF_OUTPUT_RC" "$SF_OUTPUT" && echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
     TOTAL=$((TOTAL + 48))
     PASS=$((PASS + 48))
@@ -3022,6 +3091,26 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
+    echo "[47h/47] Model vocabulary independence (#1406)"
+    MVC_OUTPUT=$(bash "$TESTS_DIR/test_model_vocab_coupling.sh" 2>&1); MVC_RC=$?
+    MVC_PASS=$(echo "$MVC_OUTPUT" | grep -c "PASS:" || true)
+    MVC_FAIL=$(echo "$MVC_OUTPUT" | grep -c "FAIL:" || true)
+    if [ "$MVC_RC" -ne 0 ] && [ "$MVC_FAIL" -eq 0 ]; then
+        MVC_FAIL=1
+        MVC_OUTPUT="$MVC_OUTPUT
+  FAIL: model vocabulary check exited without a verdict (rc=$MVC_RC)"
+    fi
+    TOTAL=$((TOTAL + MVC_PASS + MVC_FAIL))
+    PASS=$((PASS + MVC_PASS))
+    FAIL=$((FAIL + MVC_FAIL))
+    if [ "$MVC_FAIL" -gt 0 ]; then
+        echo "  FAIL: model runtime contains consumer-specific vocabulary diagnostics"
+        echo "$MVC_OUTPUT"
+    else
+        echo "  PASS: model training is independent of consumer vocabulary IDs"
+    fi
+    echo ""
+
     echo "[47f/47] eigen_eval_loss held-out cross-entropy"
     EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
     EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)
@@ -3271,7 +3360,7 @@ echo ""
 # [52] Stream I/O
 echo "[52] Stream Tensor I/O"
 # #1361 EIGS_STRICT=0: pins stream_open of wrong-typed args answering 0.
-SI_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?
+SI_OUTPUT=$(suite_program_run test_stream_io.eigs ./eigenscript ../tests/test_stream_io.eigs 2>&1); SI_OUTPUT_RC=$?
 SI_OUTPUT_N=$(derive_count "$SI_OUTPUT" 12 "[52] Stream Tensor I/O")
 if rc_ok "$SI_OUTPUT_RC" "$SI_OUTPUT" && echo "$SI_OUTPUT" | grep -q "All tests passed"; then
     TOTAL=$((TOTAL + SI_OUTPUT_N))
@@ -3337,6 +3426,12 @@ else
     echo "  FAIL: concurrency tests ($CC_FAIL failed)"
     echo "$CC_OUTPUT" | grep "FAIL:" | head -5
 fi
+echo ""
+
+# [55a] Mutable values copy across every concurrency transfer (#1148/#1153)
+echo "[55a] Concurrency Mutable-Value Copies"
+check_eigs_suite "buffer/text-builder copies: channel, nested, join, cooperative task" \
+    test_transfer_copy.eigs "PASS: concurrency mutable values copy" 1
 echo ""
 
 # [56] EigenStore embedded database
@@ -4277,7 +4372,20 @@ check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1
 # (exhausted and break paths), so the contract's "does not leak" holds inside
 # functions too. A binder with no prior binding is loop-scoped as well since
 # #1105 (next block).
-check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 9
+check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 11
+# [70j1] #1384 -- the hidden save and restore used by that slot path are
+# compiler bookkeeping: neither is an assignment-history/tape event. This
+# also keeps temporal answers equal to module scope's loop-env tier.
+echo "[70j1] For-binder internal stores stay off history/tape (#1384)"
+FBI_OUTPUT=$(bash "$TESTS_DIR/test_for_binder_internal_store.sh" 2>&1); FBI_RC=$?
+FBI_PASS=$(echo "$FBI_OUTPUT" | grep -c "  PASS:" || true)
+FBI_FAIL=$(echo "$FBI_OUTPUT" | grep -c "  FAIL:" || true)
+if [ "$FBI_RC" -eq 0 ] && [ "$FBI_PASS" -eq 4 ] && [ "$FBI_FAIL" -eq 0 ]; then
+    PASS=$((PASS + 1)); echo "  PASS: all $FBI_PASS internal-store checks"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: for-binder internal stores (rc=$FBI_RC, $FBI_PASS passed, $FBI_FAIL failed)"
+    echo "$FBI_OUTPUT" | tail -20 | sed 's/^/    /'
+fi
 # [70j2] #1105 -- a `for` binder with NO prior binding is loop-scoped inside a
 # function exactly as at module scope: the env-skip fast path's fresh frame
 # slot is retired at the loop exit, so a post-loop read raises
@@ -4346,12 +4454,6 @@ else
     echo "  FAIL: cross-thread dict-key tests"
     echo "$XCD_OUTPUT" | grep -iE "MISMATCH|FAIL|error" | head -5
 fi
-echo ""
-
-# [98a] Mutable channel/join values are independent snapshots (#1148).
-echo "[98a] Mutable Message Snapshots"
-check_eigs_suite "buffer and text_builder message snapshots (#1148)" \
-    test_message_mutable_copies.eigs "All tests passed" 5
 echo ""
 
 # [99] Value-signal observer channel — report_value (#294). Pins that the value
@@ -5253,6 +5355,12 @@ echo ""
 echo "[102] Parallel Shared-Chunk Execution (#297)"
 check_eigs_suite "concurrent workers, same chunks, exact results" test_spawn_parallel.eigs "All tests passed" 1
 
+# [102aa] libc's drand48 family has process-global state.  Two simultaneous
+# 100,000-draw workers must have no exact overlap; the TSan gate repeats this
+# three times while also rejecting sanitizer reports (#1150).
+echo "[102aa] Concurrent Random Stream Serialization (#1150)"
+check_eigs_suite "parallel random streams have no duplicate draws" random_mt_no_duplicates.eigs "All tests passed" 1
+
 # [102a] #1439: the MT safety gate must not leave main-thread temporal
 # assignments stamped with the last pre-spawn line. The worker stays parked
 # until both writes and the query have completed; TSan covers the same case.
@@ -5425,7 +5533,7 @@ fi
 # fatal-OOM SIGABRT (ftell on a directory reports LONG_MAX).
 echo "[105b] Builtin Contracts (#312/#314/#316/#317)"
 # #1361 EIGS_STRICT=0: pins max(["a",5])=0 and index_of/contains/starts_with/ends_with non-string misses (-1/0).
-EIGS_STRICT=0 check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed" 1
+suite_program_run test_builtin_contracts.eigs check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed" 1
 TOTAL=$((TOTAL + 1))
 DIR_OUT=$(./eigenscript ../tests 2>&1); DIR_RC=$?
 if [ "$DIR_RC" -eq 1 ] && echo "$DIR_OUT" | grep -q "cannot read file"; then
@@ -5751,7 +5859,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
     JHOT_OUTPUT=$(EIGS_JIT_HOT=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
     JHOT_BYTES=$(echo "$JHOT_OUTPUT" | sed -n 's/.*bytes native: [0-9]* \/ total: \([0-9]*\).*/\1/p' | head -1)
     if echo "$JHOT_OUTPUT" | grep -q "=== Hot chunks" &&
-       echo "$JHOT_OUTPUT" | grep -qE '[0-9]+  (yes|no |\?  ) +[0-9.]+%' &&
+       echo "$JHOT_OUTPUT" | grep -qE '[0-9]+  (yes |no  |full|\?   ) +[0-9.]+%' &&
        [ -n "$JHOT_BYTES" ] && [ "$JHOT_BYTES" -gt 0 ]; then
         PASS=$((PASS + 1))
         echo "  PASS: EIGS_JIT_HOT dumped hot-chunk rows (total bytes=$JHOT_BYTES)"
@@ -5762,6 +5870,36 @@ if [ "$(uname -m)" = "x86_64" ]; then
 else
     PASS=$((PASS + 1))
     echo "  SKIP: EIGS_JIT_HOT gate (JIT not built or not supported on this platform)"
+fi
+TOTAL=$((TOTAL + 1))
+# A one-page cache deterministically exhausts on this corpus.  Space rejection
+# is not an unsupported-bytecode verdict: every rejected hot row must say
+# "full", and those rows must not enter the stop-opcode histogram.
+if [ "$(uname -m)" = "x86_64" ]; then
+    JFULL_OUTPUT=$(EIGS_JIT_CACHE_PAGES=1 EIGS_JIT_STATS=1 EIGS_JIT_STOPS=1 EIGS_JIT_HOT=1 \
+        ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
+    JFULL_SCANNED=$(sed -n 's/.*scanned=\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
+    JFULL_REJECTS=$(sed -n 's/.*cache_full_rejects=\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
+    JFULL_COMPILED=$(sed -n 's/^compiled: *\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
+    JFULL_BAILOUTS=$(sed -n 's/^total bailouts: *\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
+    JFULL_ROWS=$(awk '
+        $3 == "full" { n++ }
+        $9 == "full" { n++ }
+        END { print n + 0 }
+    ' <<< "$JFULL_OUTPUT")
+    if [ -n "$JFULL_SCANNED" ] && [ -n "$JFULL_REJECTS" ] &&
+       [ -n "$JFULL_COMPILED" ] && [ -n "$JFULL_BAILOUTS" ] &&
+       [ "$JFULL_REJECTS" -gt 0 ] && [ "$JFULL_ROWS" -eq "$JFULL_REJECTS" ] &&
+       [ $((JFULL_COMPILED + JFULL_BAILOUTS)) -eq $((JFULL_SCANNED - JFULL_REJECTS)) ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: cache-full chunks are distinct and absent from stop histogram (rejected=$JFULL_REJECTS)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: cache-full JIT diagnostics disagree (scanned=${JFULL_SCANNED:-?} rejected=${JFULL_REJECTS:-?} full_rows=${JFULL_ROWS:-?} histogram=$((${JFULL_COMPILED:-0} + ${JFULL_BAILOUTS:-0})))"
+    fi
+else
+    PASS=$((PASS + 1))
+    echo "  SKIP: cache-full JIT diagnostic gate (JIT not built or not supported on this platform)"
 fi
 echo ""
 
@@ -5776,7 +5914,7 @@ check_eigs_suite "all 27 walker-matrix capture checks" test_walker_matrix.eigs "
 # asserts the C fallback agrees with the lowered opcode.
 echo "[84] Builtin Direct-vs-Indirect"
 # #1361 EIGS_STRICT=0: pins buf_len of a non-buffer answering 0 (row "buf_len on non-buffer").
-EIGS_STRICT=0 check_eigs_suite "all 40 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 40
+suite_program_run test_builtin_indirect.eigs check_eigs_suite "all 40 builtin direct/indirect checks" test_builtin_indirect.eigs "All tests passed" 40
 
 # [85] Reinstated suites — these .eigs files existed but were never
 # referenced by this runner, so editing them did nothing. Each runs as
@@ -5791,7 +5929,7 @@ check_eigs_suite "handle forge" test_handle_forge.eigs "PASS: handle table" 1
 check_eigs_suite "byte<->value builtins (str_from_bytes / f64 bytes)" test_byte_value_builtins.eigs "All tests passed" 19
 check_eigs_suite "write_bytes (binary append/truncate)" test_write_bytes.eigs "All tests passed" 10
 # #1361 EIGS_STRICT=0: pins is_dir/is_file of a non-string answering 0.
-EIGS_STRICT=0 check_eigs_suite "rename / remove_file / is_dir / is_file (atomic swap, delete, dir + regular-file probes)" test_file_rename.eigs "All tests passed" 23
+suite_program_run test_file_rename.eigs check_eigs_suite "rename / remove_file / is_dir / is_file (atomic swap, delete, dir + regular-file probes)" test_file_rename.eigs "All tests passed" 23
 
 # #1061 -- the last fail-soft numeric context: a non-number stored into a
 # buffer element was silently DROPPED (old element kept, rc 0). Now it raises
@@ -5831,7 +5969,7 @@ check_eigs_suite "sandbox back-edge loop cap (assembled bare JUMP_BACK)" test_sa
 check_eigs_suite "sandbox fail-closed allowlist (no host-global escape)" test_sandbox_allow.eigs "SANDBOX_ALLOW_OK" 1
 check_eigs_suite "JIT and/or heap-operand decref (no per-iteration leak)" test_jit_andor_leak.eigs "jit-and-or-ok" 1
 # #1361 EIGS_STRICT=0: pins json_path walking a malformed document leniently (JH rows, e.g. JH81).
-EIGS_STRICT=0 check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
+suite_program_run test_json_hard.eigs check_eigs_suite "json hard" test_json_hard.eigs "json hard: all passed" 1
 check_eigs_suite "json roundtrip" test_json_roundtrip.eigs "json roundtrip: all passed" 1
 check_eigs_suite "json.json_merge flat object merge (#1248)" test_json_merge.eigs "JSON_MERGE_ALL_PASS" 10
 check_eigs_suite "json.json_pretty leaves string tokens intact (#1249)" test_json_pretty.eigs "JSON_PRETTY_ALL_PASS" 17
@@ -5852,13 +5990,12 @@ check_eigs_suite "tiled tensor kernels (#745, #932)" test_tensor_kernel_tiling.e
 # list loop (and gather's dual), the buffer elementwise/softmax/leaky_relu/mean
 # paths vs the list path, numerical_grad on a buffer parameter; loud raises.
 # #1361 EIGS_STRICT=0: pins elementwise divide-by-zero folding to 0 and multiply(buf,"x") answering 0.0.
-EIGS_STRICT=0 check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
+suite_program_run test_tensor_buffer_ops.eigs check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
     test_tensor_buffer_ops.eigs "All tests passed." 78
-# #973: lib/autograd.eigs — every vjp rule vs the numerical_grad oracle (1e-4
-# relative + 1e-6 absolute), a 2-layer softmax-CE MLP trained by the tape, and
-# the Tidepool DQN shape (433->64->32->6, batch 32) through one backward.
-check_eigs_suite "lib/autograd: vjp rules vs numerical_grad, MLP trains, DQN shape backward (#973)" \
-    test_autograd.eigs "All tests passed." 101
+# #973/#1408: every vjp rule vs numerical_grad (1e-4 relative + 1e-6
+# absolute), MLP and causal self-attention training, and the Tidepool DQN shape.
+check_eigs_suite "lib/autograd: vjp gradchecks, MLP and causal attention train, DQN shape (#973, #1408)" \
+    test_autograd.eigs "All tests passed." 200
 # #597: vectorized buffer kernels (buf_mix/buf_scale_range/buf_fill/buf_peak/
 # buf_dot + buf_copy loud bounds) — correctness, raise-on-bad-window, and the
 # differential leg (builtin exactly equals the interpreted per-sample loop on
@@ -6599,6 +6736,19 @@ fi
 
 echo ""
 
+# [99zb0] Precheck reads the same strict receipt that the suite reads (#1355).
+echo "[99zb0] Precheck row-classification self-test"
+TOTAL=$((TOTAL + 1))
+PRECHECK_CLASS_OUTPUT=$(bash "$TESTS_DIR/../tools/precheck.sh" --selftest 2>&1)
+PRECHECK_CLASS_RC=$?
+if [ "$PRECHECK_CLASS_RC" -eq 0 ] && printf '%s\n' "$PRECHECK_CLASS_OUTPUT" | grep -q '^precheck-selftest: 10/10 passed, 0 failed$'; then
+    PASS=$((PASS + 1)); echo "  PASS: run-gate pass/fail/skip/no-verdict/identity/platform/no-binary cases"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: precheck row classifier self-test (rc=$PRECHECK_CLASS_RC)"
+    print_captured "precheck classifier, VERBATIM" "$PRECHECK_CLASS_OUTPUT"
+fi
+echo ""
+
 # [99zb] Portability audit — every tracked *.sh PARSED by the OLDEST bash on
 # the machine, AND this repo's shell gates RUN under it.
 #
@@ -6616,72 +6766,18 @@ TOTAL=$((TOTAL + 1))
 PORT_OUTPUT=$(bash "$TESTS_DIR/../tools/portability_parse_check.sh" 2>&1)
 PORT_RC=$?
 printf '%s\n' "$PORT_OUTPUT" | grep -E "^portability(-parse|-run)?: (oracle|OK|ok|SKIPPED|NO OLD BASH|and |looked for|rejected by|every candidate|this machine|this run proves|tools/portability)" | head -14
-# THE ORACLE'S IDENTITY IS PART OF THE VERDICT. Bought 2026-09-21 (round-5
-# blind critics, Astra and Fable, converging). Removing ONE line from the
-# gate's candidate selection — the `<= 3` guard — makes it pick the system
-# bash 5, do all the work honestly, and print a receipt that SAYS bash 5; this
-# caller then read rc 0 and the `portability: OK:` prefix and passed it. The
-# gate's own version guard was the only thing standing between "the macOS
-# shell was modelled" and "a modern shell was exercised twice", and a caller
-# that cannot see through its gate's selection is not an independent check.
-# So the caller holds its OWN literal maximum and parses the identity line.
-# ROUND 7 — THE IDENTITY IS A FACT THE GATE REPORTS, NOT A BANNER THIS CALLER
-# PARSES. Bought 2026-09-21 (round-6 blind critic, Fable, item 2): round 6 read
-# the major version out of `--version`'s GNU banner, so an interpreter whose
-# banner does not begin "GNU bash, version" — a vendor build, a wrapper, a
-# rebuild with a changed RELEASE string — yielded NO number and this caller
-# failed a perfectly good bash 3.2 by name (measured with a wrapper printing
-# `Custom Bash 3.2.0` around the real 3.2 oracle). The gate now prints
-# `portability-parse: oracle-major=N` from the SELECTED candidate's own
-# `BASH_VERSINFO[0]`; this caller parses that and keeps its own `<= 3` literal.
-# The banner is display only.
-PORT_OLD_MAJOR_MAX=3
-# port_identity_verdict <gate output>
-#   Sets PORT_IDENTITY_VERDICT: empty when the receipt is acceptable, else the
-#   named reason. The gate prints oracle-major from BASH_VERSINFO; this holds <= 3.
-port_identity_verdict() {
-    local out="$1" major measured
-    measured=0
-    printf '%s\n' "$out" | grep -q "^portability: OK:" && measured=1
-    major=$(printf '%s\n' "$out" | sed -n 's/^portability-parse: oracle-major=\([0-9][0-9]*\)$/\1/p' | head -1)
-    PORT_IDENTITY_VERDICT=""
-    if [ "$measured" -eq 1 ] && [ -z "$major" ]; then
-        PORT_IDENTITY_VERDICT="the portability gate claimed a completed audit and never printed a 'portability-parse: oracle-major=N' line — nothing here says which shell it measured under, and a version banner is prose, not a version"
-    elif [ "$measured" -eq 1 ] && [ "$major" -gt "$PORT_OLD_MAJOR_MAX" ]; then
-        PORT_IDENTITY_VERDICT="the portability gate measured under bash $major — that is not the old shell it exists to model"
-    fi
-}
-port_identity_verdict "$PORT_OUTPUT"
+. "$TESTS_DIR/../tools/portability_verdict.sh"
+portability_verdict "$PORT_RC" "$PORT_OUTPUT"
+# Receipt classification is shared with contributor precheck so the local and
+# suite gates cannot disagree about identity, skips, or missing verdicts (#1355).
 # rc 0 is not enough: a verdict line must be PRESENT. A tool that died after
 # printing nothing also exits 0 if its last command did (mechanical-gates §121,
 # applied to the section rather than the tool).
-if [ "$PORT_RC" -eq 0 ] \
-   && ! printf '%s\n' "$PORT_OUTPUT" | grep -qE "^portability: OK:|^portability-parse: SKIPPED"; then
+if [ "$PORT_VERDICT" = FAIL ]; then
     FAIL=$((FAIL + 1))
-    echo "  FAIL: the portability audit exited 0 without printing a verdict line — it measured nothing"
+    echo "  FAIL: $PORT_VERDICT_REASON"
     print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
-elif [ "$PORT_RC" -eq 0 ] && [ -n "$PORT_IDENTITY_VERDICT" ]; then
-    # A NAMED SKIP is still a counted skip: no `portability: OK:` line, so
-    # this arm never fires on the "no old bash here" path.
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: $PORT_IDENTITY_VERDICT"
-    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
-elif [ "$PORT_RC" -eq 0 ] \
-     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED" \
-     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability: OK:"; then
-    # Both verdicts at once is a tool that cannot say what it did.
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: the portability audit printed BOTH a skip and a completed-audit verdict"
-    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
-elif [ "$PORT_RC" -eq 0 ] && [ "$(uname -s)" = "Darwin" ] \
-     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED"; then
-    # macOS ships bash 3.2 as /bin/bash, so this lane is always provisioned;
-    # a skip here is a broken candidate walk, never a missing shell.
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: the portability audit skipped on macOS, whose /bin/bash IS the old shell it exists to model"
-    print_captured "portability audit, VERBATIM" "$PORT_OUTPUT"
-elif [ "$PORT_RC" -eq 0 ] \
-     && printf '%s\n' "$PORT_OUTPUT" | grep -q "^portability-parse: SKIPPED"; then
+elif [ "$PORT_VERDICT" = SKIP ]; then
     # #1326: no old bash here, so nothing was parsed or run under one. That
     # used to count as a PASS, indistinguishable from a lane that ran the
     # audit; it is a section-level skip and is tallied as one.
@@ -6823,6 +6919,21 @@ if [ "$EF_FAIL" -gt 0 ]; then
     echo "$EF_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $EF_PASS env-flag checks"
+fi
+echo ""
+
+# [99yc] jit_diff inherits each program's suite environment (#1395), rather
+# than stopping fail-soft tests at the first strict-mode raise.
+echo "[99yc] JIT differential suite environment (#1395)"
+JDE_OUTPUT=$(bash "$TESTS_DIR/test_jit_diff_env.sh" 2>&1); JDE_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$JDE_RC" -eq 0 ] && echo "$JDE_OUTPUT" | grep -q '^PASS:'; then
+    PASS=$((PASS + 1))
+    echo "  PASS: jit_diff consumes the suite's per-program environment"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: jit_diff per-program environment check failed (rc=$JDE_RC)"
+    print_captured "jit_diff environment check, VERBATIM" "$JDE_OUTPUT"
 fi
 echo ""
 
@@ -7317,6 +7428,22 @@ fi
 rm -rf "$CR_DIR"
 echo ""
 
+# [99n2] handle_table_drain declaration-comment drift gate (#1400). The body
+# owns the list: derive its HANDLE_* passes and require the public declaration
+# comment to name exactly that population.
+echo "[99n2] handle-table drain comment drift gate (#1400)"
+TOTAL=$((TOTAL + 1))
+HD_OUT=$(python3 "$TESTS_DIR/test_handle_drain_comment.py" 2>&1); HD_RC=$?
+if [ "$HD_RC" -eq 0 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: handle-table drain comment matches the implementation"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: handle-table drain comment drifted (exit $HD_RC)"
+    echo "$HD_OUT" | sed -n '1,8p'
+fi
+echo ""
+
 # [99n] VM operand-width comment drift gate (#958).  The checker derives each
 # `kind` width from vm.c's uintN_t/read_uN decoder and confirms chunk.c's shared
 # VR_RAW verifier table carries the same operand.  Its self-test plants a third
@@ -7463,20 +7590,33 @@ else
 fi
 echo ""
 
-# [99ab] Test enrolment (#1264): a tests/*.sh or tests/*.py that no section,
-# workflow step or enrolled script invokes is red, by name. PR #1260's test sat
-# unrun until a maintainer noticed. Self-test case count pinned ([99o] lesson).
-echo "[99ab] test enrolment (#1264)"
+# [99ac] PERFORMANCE.md's observer figures are generated from the checked-in
+# Callgrind n=5-per-arm results for both ordinary and conservative gates (#1206),
+# rather than a second hand-maintained
+# copy. The self-test changes both a raw measurement and the local regression
+# baseline independently and proves the checker goes red for either drift.
+echo "[99ac] generated observer performance documentation (#1206)"
 TOTAL=$((TOTAL + 1))
-enrol_out=$(bash "$TESTS_DIR/../tools/enrolment_check.sh" 2>&1); enrol_rc=$?
-if [ "$enrol_rc" -eq 0 ]; then
-    PASS=$((PASS + 1)); echo "  $enrol_out"
+perf_docs_out=$(python3 "$TESTS_DIR/../tools/performance_observer_docs.py" --selftest 2>&1); perf_docs_rc=$?
+if [ "$perf_docs_rc" -eq 0 ]; then
+    PASS=$((PASS + 1)); printf '%s\n' "$perf_docs_out" | sed 's/^/  /'
 else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: test enrolment (rc=$enrol_rc)"
-    printf '%s\n' "$enrol_out" | grep -E 'FAIL|ABORT' | head -8 | sed 's/^/      /'
+    FAIL=$((FAIL + 1)); echo "  FAIL: generated observer performance documentation (rc=$perf_docs_rc)"
+    printf '%s\n' "$perf_docs_out" | sed 's/^/      /'
 fi
 echo ""
+
+# Section fragments are sourced by byte-sorted pathname. This marker is also
+# expanded by tools/runner_text.sh so static gates inspect exactly what runs.
+# EIGS_SECTION_FRAGMENTS
+__eigs_old_lc_all=${LC_ALL-}; LC_ALL=C
+for __eigs_section_file in "$TESTS_DIR"/sections/*.sh; do
+    [ -f "$__eigs_section_file" ] || continue
+    . "$__eigs_section_file" || exit 1
+done
+if [ -n "$__eigs_old_lc_all" ]; then LC_ALL=$__eigs_old_lc_all; else unset LC_ALL; fi
+unset __eigs_old_lc_all __eigs_section_file
+# EIGS_SECTION_FRAGMENTS_END
 
 # [99p] Child-script exit-status ledger (#988). The synthetic FAIL: markers
 # emitted by the `bash` wrapper already fail each affected section; this is the

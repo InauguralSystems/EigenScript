@@ -340,9 +340,10 @@ print of (recv of ch)
 42
 ```
 
-Messages and joined results are copied snapshots, including mutable buffers
-and text builders. Closures (and their captured state) and resource handles
-remain shared by reference; docs/CONCURRENCY.md gives the measured kind table.
+Channel messages and joined/task results deep-copy ordinary values, including
+buffers and text builders. Closures keep their captured environment by
+reference, and resource handles still name shared process state; the executable
+kind table and graph-depth limits are in `docs/CONCURRENCY.md`.
 
 One difference in failure: a Python thread's uncaught exception is printed
 and the process still exits 0. A `spawn`ed EigenScript worker that dies of

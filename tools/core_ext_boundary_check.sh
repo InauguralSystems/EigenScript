@@ -32,20 +32,43 @@ for e in $EXEMPT; do
 done
 [ "$rc" = 0 ] && echo "leg A: $n_scanned core TUs scanned, $n_hits ext-private include(s), all pinned"
 poison=$(mktemp -d)
+work="$poison/results"
+mkdir "$work"
 printf '%s\n' '#error "core TU reached <libpq-fe.h> (#744): the core must not include ext_db_internal.h"' > "$poison/libpq-fe.h"
-n=0; brc=0
+jobs=${CORE_EXT_JOBS:-2}
+case "$jobs" in *[!0-9]*|'') echo "FAIL[B]: CORE_EXT_JOBS must be a positive integer" >&2; rm -rf "$poison"; exit 2 ;; esac
+[ "$jobs" -gt 0 ] || { echo "FAIL[B]: CORE_EXT_JOBS must be a positive integer" >&2; rm -rf "$poison"; exit 2; }
+cc=${CC:-gcc}
+compile_tu() {
+    _n=$1 _tu=$2
+    "$cc" -c -o /dev/null -I"$poison" -Isrc -Wall $WERROR_FLAGS -Werror=implicit-function-declaration \
+        -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 \
+        -DEIGENSCRIPT_VERSION='"gate"' "src/$_tu" > "$work/$_n.out" 2>&1
+    echo "$?" > "$work/$_n.status"
+}
+n=0; running=0; pids=""
 for tu in $tus; do
     [ -f "src/$tu" ] || continue
     n=$((n + 1))
-    out=$(gcc -c -o /dev/null -I"$poison" -Isrc -Wall $WERROR_FLAGS -Werror=implicit-function-declaration \
-        -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 \
-        -DEIGENSCRIPT_VERSION='"gate"' "src/$tu" 2>&1)
-    st=$?
+    printf '%s\n' "$tu" > "$work/$n.tu"
+    compile_tu "$n" "$tu" & pids="$pids $!"; running=$((running + 1))
+    if [ "$running" -eq "$jobs" ]; then
+        for pid in $pids; do wait "$pid"; done
+        running=0; pids=""
+    fi
+done
+for pid in $pids; do wait "$pid"; done
+
+brc=0; i=1
+while [ "$i" -le "$n" ]; do
+    tu=$(cat "$work/$i.tu")
+    st=$(cat "$work/$i.status")
     if [ "$st" != 0 ]; then
         echo "FAIL[B]: src/$tu does not compile with every extension ON and libpq poisoned" >&2
-        printf '%s\n' "$out" | head -6 >&2
+        head -6 "$work/$i.out" >&2
         brc=1
     fi
+    i=$((i + 1))
 done
 rm -rf "$poison"
 if [ "$n" -lt 10 ]; then echo "FAIL[B]: only $n core TUs probed (matcher broke)" >&2; brc=1; fi

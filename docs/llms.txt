@@ -211,12 +211,11 @@ sqrt(2) = 1.414213562373095
 ## Threads: VALUES copy through a channel, HANDLES share
 
 - `spawn of [fn, arg]` / `channel of n` / `send` / `recv` / `thread_join`.
-- **A number, string, list, dict, `buffer`, or `text_builder` sent through a
+- **A number, string, list, dict, buffer, or text builder sent through a
   channel is DEEP-COPIED**; the receiver cannot see a later mutation by the
-  sender. The same snapshot rule applies to `thread_join` results.
-- **A closure or channel/store/thread handle is SHARED BY REFERENCE**. A
-  closure's captured state is shared too. See docs/CONCURRENCY.md for the
-  aliasing and maximum-depth limits of the deep copy.
+  sender. The same boundary applies to thread results and cooperative tasks.
+- **A closure or channel/store/thread handle is SHARED BY REFERENCE** — a
+  closure's captured environment and a handle's resource remain shared.
 
 ```eigenscript
 c is channel of 1

@@ -19,8 +19,8 @@
 A complete, standalone programming language with native observer semantics,
 OS-thread concurrency (`spawn`/`channel`/`thread_join`, with a documented
 memory model in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) — *values* copy
-through a channel, including mutable buffers and text builders, while closures
-and resource handles share by reference),
+through a channel, including mutable buffers and text builders, while closure
+environments and resource handles stay shared by reference),
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 
