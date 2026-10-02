@@ -56,6 +56,12 @@ cases = [
     ("embedded-hash-substitution", 'echo tag#part "$(jq .)"', base, False, "run command 'jq'"),
     ("comment-apostrophe-inert", "# don't require $(jq .)\ntrue", base, True, "workflow-container: OK"),
     ("comment-substitution-inert", "# $(jq .)\ntrue", base, True, "workflow-container: OK"),
+    ("word-hash-then-command", "echo tag#part; jq .", base, False, "run command 'jq'"),
+    ("word-hash-then-exec", "echo tag#part; exec jq .", base, False, "run command 'jq'"),
+    ("doublequoted-hash-then-exec", 'echo "# quoted"; exec jq .', base, False, "run command 'jq'"),
+    ("escaped-hash-then-exec", 'echo \\#; exec jq .', base, False, "run command 'jq'"),
+    ("word-hash-real-comment", "echo tag#part # jq .\ntrue", base, True, "workflow-container: OK"),
+    ("escaped-space-word-hash", 'echo tag\\ #part; jq .', base, False, "run command 'jq'"),
 ]
 for name, command, docker, green, marker in cases:
     row = scratch / name; (row / "workflows").mkdir(parents=True)
@@ -78,7 +84,7 @@ if ! command -v python3 >/dev/null 2>&1 || ! python3 -c 'import yaml' >/dev/null
     exit 1
 fi
 out=$(WF_DIR="$WF_DIR" DEV_DOCKERFILE="$DEV_DOCKERFILE" python3 - 2>&1 <<'PY'
-import glob, io, os, re, shlex, sys, yaml
+import glob, os, re, shlex, sys, yaml
 d = os.environ["WF_DIR"]
 files = sorted(set(glob.glob(os.path.join(d, "*.yml")) + glob.glob(os.path.join(d, "*.yaml"))))
 sys.stdout.write("EXAMINED %d\n" % len(files))
@@ -142,15 +148,27 @@ for package in packages:
     available.update(PACKAGE_COMMANDS.get(package, "").split())
 CONTAINER_STEPS = 0
 
-class ShellCommentStream(io.StringIO):
-    # shlex drops the rest of a comment with readline(), including its newline.
-    # Keep that newline pending so it still separates executable positions.
-    # Quoted hashes remain data because shlex never calls readline() for them.
-    def readline(self, *args):
-        line = super().readline(*args)
-        if line.endswith("\n"):
-            self.seek(self.tell() - 1)
-        return line
+def strip_shell_comments(script):
+    """One comment interpretation for substitutions and command tokenization."""
+    kept, quote, i, word_start = [], None, 0, True
+    while i < len(script):
+        char = script[i]
+        if char == "\\" and quote != "'":
+            kept.append(script[i:i + 2])
+            if script[i + 1:i + 2] != "\n": word_start = False
+            i += 2; continue
+        if char == "#" and quote is None and word_start:
+            newline = script.find("\n", i)
+            if newline < 0: break
+            i = newline; continue
+        kept.append(char)
+        if char == "'" and quote != '"':
+            quote = None if quote == "'" else "'"
+        elif char == '"' and quote != "'":
+            quote = None if quote == '"' else '"'
+        word_start = quote is None and char in " \t\r\n;|&()"
+        i += 1
+    return "".join(kept)
 
 def commands(script, known_functions=None):
     """Return executable words from shell lists, pipelines, and substitutions."""
@@ -167,7 +185,7 @@ def commands(script, known_functions=None):
         shell_lines.append(raw)
         heredoc = re.search(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?", raw)
         if heredoc: heredoc_end = heredoc.group(1)
-    script = "\n".join(shell_lines)
+    script = strip_shell_comments("\n".join(shell_lines))
     functions = set(known_functions or ())
     functions.update(re.findall(r"(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\)\s*\{", script))
     # shlex correctly keeps a quoted $(...) inside one argument, so walk the
@@ -177,14 +195,9 @@ def commands(script, known_functions=None):
     i = 0
     while i + 1 < len(script):
         char = script[i]
-        # Comments cannot change quote state or contain executable substitutions.
-        # A quoted, escaped or word-internal hash remains shell data.
+        # Comments were removed once above; preserve escaped quote/dollar data.
         if char == "\\" and quote != "'":
             i += 2; continue
-        if char == "#" and quote is None and (i == 0 or script[i - 1] in " \t\r\n;|&()"):
-            newline = script.find("\n", i)
-            if newline < 0: break
-            i = newline + 1; continue
         if char == "'" and quote != '"':
             quote = None if quote == "'" else "'"
         elif char == '"' and quote != "'":
@@ -202,10 +215,10 @@ def commands(script, known_functions=None):
     try:
         # Treat newlines as shell punctuation instead of whitespace so they
         # start commands, while newlines inside quoted arguments remain data.
-        lexer = shlex.shlex(ShellCommentStream(script), posix=True, punctuation_chars="();|&\n")
+        lexer = shlex.shlex(script, posix=True, punctuation_chars="();|&\n")
         lexer.whitespace_split = True
         lexer.whitespace = " \t\r"
-        lexer.commenters = "#"
+        lexer.commenters = ""  # Shared stripping above owns comment semantics.
         words = list(lexer)
     except ValueError:
         words = re.sub(r"(&&|\|\||[;|()\n])", r" \1 ", script).split()
