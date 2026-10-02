@@ -11,6 +11,18 @@ cat > "$plant" <<'EOF'
 #!/usr/bin/env bash
 echo 'PASS: fragment enrolment plant'
 EOF
+# Measure the real gate before enrolment, then require the planted site to
+# increase its reported population exactly once. Its aggregate floor alone
+# can stay green when fragment expansion disappears.
+child_sites() {
+    local output sites
+    output=$(bash tools/child_exit_check.sh) || return 1
+    sites=$(sed -n 's/^PASS: child-exit accounting present; \([0-9][0-9]*\) child-script sites .*$/\1/p' <<< "$output")
+    case "$sites" in ''|*[!0-9]*) echo 'child_exit_check did not report one site count' >&2; return 1 ;; esac
+    [ "$sites" -gt 0 ] || return 1
+    printf '%s\n' "$sites"
+}
+child_baseline=$(child_sites) || exit 2
 cat > "$fragment" <<'EOF'
 echo "[zz1487] section fragment selftest plant"
 bash "$TESTS_DIR/test_zz_1487_plant.sh"
@@ -20,13 +32,22 @@ bad=0; checks=0
 check() { checks=$((checks + 1)); if "$@"; then echo "  PASS: $name"; else echo "  FAIL: $name"; bad=1; fi; }
 
 name='runner_text sees the planted label'
-check bash -c 'bash tools/runner_text.sh | grep -qF '\''echo "[zz1487] section fragment selftest plant"'\'''
+check bash -o pipefail -c 'bash tools/runner_text.sh | grep -F '\''echo "[zz1487] section fragment selftest plant"'\'' >/dev/null'
 name='section_plan can select the planted label'
-check bash -c 'bash tools/section_plan.sh --sections zz1487 --quiet | grep -q "bearing=1"'
+check bash -o pipefail -c 'bash tools/section_plan.sh --sections zz1487 --quiet | grep -q "bearing=1"'
 name='suite_label_check counts the planted label'
 check bash tools/suite_label_check.sh
+child_fragment_count() {
+    local sites
+    sites=$(child_sites) || return 1
+    [ "$sites" -eq "$((child_baseline + 1))" ] || {
+        echo "child sites: baseline=$child_baseline planted=$sites expected=$((child_baseline + 1))" >&2
+        return 1
+    }
+    echo "child sites: baseline=$child_baseline planted=$sites"
+}
 name='child_exit_check counts the planted child invocation'
-check bash tools/child_exit_check.sh
+check child_fragment_count
 name='enrolment_check reaches a test invoked only by the fragment'
 check bash tools/enrolment_check.sh
 

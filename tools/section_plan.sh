@@ -1030,21 +1030,33 @@ selftest() {
     # Changed-sections plan (#1347): a throwaway clone, one uncommitted edit
     # per selection rule, each read back from the plan's own report.
     expect_plan() {
+        local plan_match
         label="$1" want="$2"; shift 2
-        out=$("$0" --root "$dir/cl" --changed HEAD 2>&1)
-        case "$out" in
-            *"$want"*) echo "  PASS: $label"; pass=$((pass + 1)) ;;
-            *) echo "  FAIL: $label (want '$want')"; printf '%s\n' "$out" | tail -4; fail=$((fail + 1)) ;;
-        esac
+        if out=$("$0" --root "$dir/cl" --changed HEAD 2>&1) &&
+           grep -q '^PLAN: changed=HEAD ' <<< "$out"; then
+            # Labels must come from a successful selection report. An error
+            # quoting the edited header is not evidence that its chunk ran.
+            case "$want" in
+                \[*) plan_match=$(sed -n '/^  selected: /p' <<< "$out") ;;
+                *) plan_match="$out" ;;
+            esac
+            case "$plan_match" in
+                *"$want"*) echo "  PASS: $label"; pass=$((pass + 1)) ;;
+                *) echo "  FAIL: $label (want '$want')"; printf '%s\n' "$out" | tail -4; fail=$((fail + 1)) ;;
+            esac
+        else
+            echo "  FAIL: $label (changed plan failed)"
+            printf '%s\n' "$out" | tail -4; fail=$((fail + 1))
+        fi
         git -C "$dir/cl" checkout -q -- . && git -C "$dir/cl" clean -qfd
     }
     git clone -q --shared "$SP_ROOT" "$dir/cl" || { echo '  FAIL: clone for the changed plan'; fail=$((fail + 1)); }
     expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 runtime=0 full=no '
     printf '\n' >> "$dir/cl/tests/test_trace_mt.sh"
     expect_plan 'changed: an edited test script selects its section' '[42h]'
-    sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)$/\1 # edited/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a runner hunk selects the chunk it lands in' '[17/17]'
-    sed -i.bak 's/^\(echo "\[99p\] Child-script exit-status ledger.*\)$/\1 # edited/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    sed -i.bak 's/^\(echo "\[99p\] Child-script exit-status ledger.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a runner hunk after the fragment seam keeps its expanded chunk' '[99p]'
     sed -i.bak '1s/$/ /' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
