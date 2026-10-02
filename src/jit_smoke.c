@@ -40,8 +40,11 @@ void gc_note_possible_root(Value *v) { (void)v; }
  * inline trace gate. Lives in trace.c in the real binary. */
 int g_trace_hist_storage = 0;
 int g_trace_obs_hist_storage = 0;   /* #972: emit_obs_gate_test bakes its address */
-/* OP_LINE bakes &g_trace_current_line to stamp the history line. trace.c. */
-int g_trace_current_line = 0;
+/* OP_LINE asks trace.c for the current thread's flat stamp address. */
+static int g_trace_current_line_smoke = 0;
+int *trace_current_line_addr(void) { return &g_trace_current_line_smoke; }
+int g_trace_enabled_storage = 0;
+void trace_line(int line) { (void)line; }
 /* #410: the back-edge abort poll bakes &g_vm_abort_flag (vm.c). Never NULL
  * there; the smoke stub mirrors the sentinel shape. */
 static volatile int g_smoke_abort_never = 0;

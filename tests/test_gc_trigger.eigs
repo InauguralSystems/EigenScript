@@ -1,0 +1,24 @@
+# #1442: a live list graph precedes a hot loop of short-lived lists.
+# The suite counts EIGS_GC_DEBUG collections for this exact workload.
+keep is []
+k is 0
+loop while k < 5000:
+    append of [keep, [k, k + 1, k + 2]]
+    k is k + 1
+define step(s) as:
+    local a is [s[0] * 0.99, s[1] * 0.98, s[2] + 0.01, s[3]]
+    local b is [a[0] + s[0], a[1] + s[1], a[2] + s[2], a[3] + s[3]]
+    return [b[0] * 0.5, b[1] * 0.5, b[2] * 0.5, b[3] * 0.5]
+define run(frames) as:
+    local fleet is [[1.0, 2.0, 3.0, 4.0], [1.5, 2.5, 3.5, 4.5]]
+    local f is 0
+    loop while f < frames:
+        local nf is []
+        for s in fleet:
+            append of [nf, step of (s)]
+        fleet is nf
+        f is f + 1
+    return fleet[0][0]
+print of (run of (150000))
+print of (len of keep)
+print of "GC_TRIGGER_OK"

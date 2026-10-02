@@ -1,0 +1,1 @@
+- Keep native/AOT fallback error-line stamps per thread, so a spawned worker cannot make another thread report the worker's source line.
