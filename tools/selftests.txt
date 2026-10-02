@@ -46,3 +46,4 @@ tools/ci_scope.sh | timeout 30 bash tools/ci_scope.sh --selftest | [{"pattern":"
 tools/asan_receipts_check.sh .github/workflows/ci.yml | timeout 30 bash tools/asan_receipts_check.sh --selftest | [{"pattern":"^asan_receipts selftest: 3/3 passed$","count":1}]
 # precheck's row classifier is its own fast witness (#1355).
 tools/precheck.sh tools/portability_verdict.sh | timeout 10 bash tools/precheck.sh --selftest
+tools/workflow_yaml_check.sh tests/sections/99zd-container-commands.sh | timeout 30 bash tools/workflow_yaml_check.sh --selftest | [{"pattern":"^workflow-yaml selftest: 46/46 passed$","count":1}]
