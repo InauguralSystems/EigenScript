@@ -356,8 +356,3 @@ check first — this is the same parse→compile→sandbox ladder iLambdaAi uses
 
 Full executable spec: docs/SPEC.md. Language-vs-Python/JS: docs/COMPARISON.md.
 Observer model: docs/OBSERVER.md + docs/PREDICATES.md.
-
-PROCESS HEAP CAP: Set EIGS_MAX_HEAP=<positive decimal bytes> before startup to
-cap live requested bytes allocated through EigenScript's checked allocator.
-Crossing it raises the catchable error kind heap_limit; uncaught, the CLI exits
-1 rather than aborting. It does not count reserved thread-stack/address space.

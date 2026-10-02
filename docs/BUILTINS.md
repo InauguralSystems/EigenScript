@@ -998,10 +998,3 @@ receiver.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `__borrow_guard_selftest` | `__borrow_guard_selftest of [args...]` | **Not a user builtin.** A planted fault validating the #548 borrow-scan guard: registered only in ASan builds when `EIGS_BORROW_GUARD_SELFTEST` is set, it deliberately returns a borrowed direct child past `VM_BORROW_SCAN_CAP` so the suite can prove the guard aborts loudly (naming the builtin) instead of letting a missed compensating incref become a silent use-after-free. Absent from release builds and from sanitizer builds without the opt-in env var (fuzzers must never reach a deliberate abort). |
-
-### Process heap ceiling
-
-`EIGS_MAX_HEAP=<bytes>` complements `sandbox_run`'s scoped `max_bytes` budget by
-covering checked allocations across the whole process. It accounts live
-requested bytes net of frees and raises the catchable `heap_limit` error at a
-crossing. An uncaught crossing exits 1 rather than aborting.

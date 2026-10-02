@@ -2303,14 +2303,6 @@ row — that is the shape reading, not the index one — and a wrong-typed
 argument raises in strict mode, the default, and answers `0.0` only under
 `EIGS_STRICT=0`.
 
-### Process heap limit
-
-`EIGS_MAX_HEAP=<bytes>` bounds live requested bytes allocated through the
-runtime's checked allocation API. A crossing raises a catchable error whose
-kind is `heap_limit`; if it is not caught, the process exits with status 1 (not
-an allocator abort). The limit deliberately excludes reserved address space,
-including thread stacks, so it is not an alias for `RLIMIT_AS`.
-
 Every tensor builtin that accepts a flat numeric list accepts a buffer in the
 same position, and returns a buffer when **every** tensor operand was a buffer:
 `add`/`subtract`/`multiply`/`divide`/`pow`, `sqrt`/`exp`/`log`/`negative`,

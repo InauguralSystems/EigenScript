@@ -1,19 +1,10 @@
-# Heap-cap accounting and decision record (#1319)
+# Heap-cap measurement plan (#1319)
 
-The production cap uses **live requested bytes**, net of releases. This follows
-the project's bounded-by-default principle without treating long-running,
-bounded allocation churn as a leak. The measurements and original decision
-criteria are retained below for reproducibility.
+This document records the experiment **before** the measurements are run.  It
+does not specify a production cap.  The owner decision requires the evidence
+below before choosing cumulative or live requested-byte accounting.
 
-Set `EIGS_MAX_HEAP=<bytes>` before starting the process. Crossing the ceiling
-raises the catchable `heap_limit` error; uncaught, it exits normally with status
-1 rather than aborting with status 134. The cap counts allocations routed
-through the checked allocation API and does not count reserved thread stacks,
-libc allocator arenas, memory mappings, dependency allocations, or the small
-accounting table itself. The variable must be a positive base-10 byte count;
-unset, zero, malformed, and overflowing values leave the cap disabled.
-
-## Diagnostic instrument
+## Candidate instrument
 
 Set `EIGS_ALLOC_STATS=1` to print one non-enforcing line at process exit:
 
@@ -24,9 +15,7 @@ requests.  Cumulative counts initial requested bytes plus positive requested
 growth from reallocations.  Live subtracts the recorded requested size when a
 translation unit including `eigenscript.h` calls `free`; peak is the maximum
 live value.  The counters are process-wide and mutex-protected for this
-measurement phase. `EIGS_ALLOC_STATS` itself does not enforce a limit; setting
-`EIGS_MAX_HEAP` enables the same accounting and changes cap crossings into the
-error described above.
+measurement phase.  They neither enforce a limit nor change error semantics.
 
 Known bypasses are direct `malloc`, `calloc`, `realloc`, and `strdup` calls;
 allocations made inside libc or dependencies; memory mappings; thread stacks;

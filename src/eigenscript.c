@@ -128,7 +128,6 @@ const char* err_kind_name(ErrKind k) {
         case EK_IO:             return "io";
         case EK_LIMIT:          return "limit";
         case EK_SANDBOX:        return "sandbox";
-        case EK_HEAP_LIMIT:     return "heap_limit";
         case EK_INTERRUPT:      return "interrupt";
         case EK_ASSERT:         return "assert";
         case EK_DEADLOCK:       return "deadlock";

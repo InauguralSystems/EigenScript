@@ -2005,7 +2005,6 @@ typedef enum {
     EK_IO,                /* the outside world failed: files, stores, sockets, threads */
     EK_LIMIT,             /* engine resource cap: stack overflow, size caps, table full */
     EK_SANDBOX,           /* sandbox policy denial or budget exhaustion */
-    EK_HEAP_LIMIT,        /* EIGS_MAX_HEAP live requested-byte ceiling */
     EK_INTERRUPT,         /* host-requested abort (eigs_abort) */
     EK_ASSERT,            /* assert builtin failure */
     EK_DEADLOCK,          /* #408 all cooperative tasks blocked, none runnable */
