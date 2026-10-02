@@ -5656,12 +5656,12 @@ echo ""
 # disables the JIT must not let this section pass interpreted.
 echo "[82] JIT Fast Paths (checks + thunk gate + hot-dump gate)"
 JPATH_OUTPUT=$(EIGS_JIT_STATS=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1); JPATH_RC=$?
-TOTAL=$((TOTAL + 23))
+TOTAL=$((TOTAL + 26))
 if rc_ok "$JPATH_RC" "$JPATH_OUTPUT" && echo "$JPATH_OUTPUT" | grep -q "All tests passed"; then
-    PASS=$((PASS + 23))
-    echo "  PASS: all 23 JIT fast-path checks"
+    PASS=$((PASS + 26))
+    echo "  PASS: all 26 JIT fast-path checks"
 else
-    FAIL=$((FAIL + 23))
+    FAIL=$((FAIL + 26))
     echo "  FAIL: JIT fast-path tests (rc=$JPATH_RC)"
     echo "$JPATH_OUTPUT" | grep -iE "FAIL|error" | head -5
 fi
