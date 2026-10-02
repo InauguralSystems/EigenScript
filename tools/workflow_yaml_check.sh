@@ -34,6 +34,18 @@ cases = [
     ("no-install", "true", "FROM debian:stable\n", False, "no apt-get install"),
     ("unprovided-sysctl", "sysctl -w x=0", base, False, "run command 'sysctl'"),
     ("installed-procps", "sysctl -w x=0", base + "RUN apt-get install -y procps\n", True, "workflow-container: OK"),
+    # Only image-provisioned commands count; script text cannot widen it.
+    ("late-install", "jq .; apt-get install -y jq", base, False, "run command 'jq'"),
+    ("early-install", "apt-get install -y jq; jq .", base, False, "run command 'jq'"),
+    ("commented-install", "true # apt-get install -y jq\njq .", base, False, "run command 'jq'"),
+    ("quoted-install", "echo 'apt-get install -y jq'; jq .", base, False, "run command 'jq'"),
+    ("command-v", "command -v valgrind; timeout 1 true", base, True, "workflow-container: OK"),
+    ("command-V", "command -V jq", base, True, "workflow-container: OK"),
+    ("query-then-call", "command -v jq; command jq .", base, False, "run command 'jq'"),
+    ("command-call", "command jq .", base, False, "run command 'jq'"),
+    ("exec-call", "exec jq .", base, False, "run command 'jq'"),
+    ("query-substitution", 'command -v "$(jq .)"', base, False, "run command 'jq'"),
+    ("quoted-hash-then-call", "echo '# quoted data'; jq .", base, False, "run command 'jq'"),
 ]
 for name, command, docker, green, marker in cases:
     row = scratch / name; (row / "workflows").mkdir(parents=True)
@@ -56,7 +68,7 @@ if ! command -v python3 >/dev/null 2>&1 || ! python3 -c 'import yaml' >/dev/null
     exit 1
 fi
 out=$(WF_DIR="$WF_DIR" DEV_DOCKERFILE="$DEV_DOCKERFILE" python3 - 2>&1 <<'PY'
-import glob, os, re, shlex, sys, yaml
+import glob, io, os, re, shlex, sys, yaml
 d = os.environ["WF_DIR"]
 files = sorted(set(glob.glob(os.path.join(d, "*.yml")) + glob.glob(os.path.join(d, "*.yaml"))))
 sys.stdout.write("EXAMINED %d\n" % len(files))
@@ -120,6 +132,16 @@ for package in packages:
     available.update(PACKAGE_COMMANDS.get(package, "").split())
 CONTAINER_STEPS = 0
 
+class ShellCommentStream(io.StringIO):
+    # shlex drops the rest of a comment with readline(), including its newline.
+    # Keep that newline pending so it still separates executable positions.
+    # Quoted hashes remain data because shlex never calls readline() for them.
+    def readline(self, *args):
+        line = super().readline(*args)
+        if line.endswith("\n"):
+            self.seek(self.tell() - 1)
+        return line
+
 def commands(script, known_functions=None):
     """Return executable words from shell lists, pipelines, and substitutions."""
     found = []
@@ -138,10 +160,6 @@ def commands(script, known_functions=None):
     script = "\n".join(shell_lines)
     functions = set(known_functions or ())
     functions.update(re.findall(r"(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\)\s*\{", script))
-    runtime_commands = set()
-    for install in re.findall(r"\bapt-get\s+install\b([^;&\n]*)", script):
-        for package in re.findall(r"[A-Za-z0-9][A-Za-z0-9+.-]*", install):
-            runtime_commands.update(PACKAGE_COMMANDS.get(package, "").split())
     # shlex correctly keeps a quoted $(...) inside one argument, so walk the
     # source as well and recursively audit every balanced command substitution.
     # Single quotes suppress substitution; double quotes intentionally do not.
@@ -166,7 +184,7 @@ def commands(script, known_functions=None):
     try:
         # Treat newlines as shell punctuation instead of whitespace so they
         # start commands, while newlines inside quoted arguments remain data.
-        lexer = shlex.shlex(script, posix=True, punctuation_chars="();|&\n")
+        lexer = shlex.shlex(ShellCommentStream(script), posix=True, punctuation_chars="();|&\n")
         lexer.whitespace_split = True
         lexer.whitespace = " \t\r"
         lexer.commenters = "#"
@@ -204,6 +222,11 @@ def commands(script, known_functions=None):
             cases.append("expression"); continue
         if option_value:
             option_value = False; continue
+        # command -v/-V query availability; their operands do not execute.
+        # Substitutions were already audited above, and a separator resumes
+        # command positions so a later command/exec/env/timeout still counts.
+        if wrapper == "command" and word in ("-v", "-V"):
+            command_position = False; wrapper = None; continue
         if wrapper and word.startswith("-"):
             option_value = word in {"-u", "--unset", "-s", "--signal", "-k", "--kill-after", "-n", "--max-args", "-P", "--max-procs", "-I", "--replace", "-i", "-o", "-e"}
             continue
@@ -223,7 +246,7 @@ def commands(script, known_functions=None):
             continue
         if word.startswith(("/bin/", "/usr/bin/", "/sbin/", "/usr/sbin/")):
             word = os.path.basename(word)
-        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_+-]*", word) and word not in functions and word not in runtime_commands:
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_+-]*", word) and word not in functions:
             found.append(word)
             command_position = word in wrappers
             wrapper = word if command_position else None
