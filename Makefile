@@ -377,6 +377,15 @@ $(LSP_ASAN_BINARY): build/asan/lsp/eigenlsp.o $(LSP_ASAN_RUNTIME_OBJ)
 
 lsp-asan: $(LSP_ASAN_BINARY)
 
+# Bounded diagnostic-state witness: compile the actual LSP/trace sources in
+# the test TU, against the requested runtime variant, without production hooks.
+LSP_ARMING_VARIANT ?= release
+LSP_ARMING_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/$(LSP_ARMING_VARIANT)/%.o,$(CLI_ONLY)) build/$(LSP_ARMING_VARIANT)/trace.o,$(OBJ_$(LSP_ARMING_VARIANT)))
+build/$(LSP_ARMING_VARIANT)/test_lsp_arming: tests/test_lsp_arming.c $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/trace.c $(LSP_ARMING_OBJ) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(LSP_ARMING_VARIANT)) -I$(SRC_DIR) -o $@ $< $(LSP_ARMING_OBJ) $(LIBS_$(LSP_ARMING_VARIANT))
+.PHONY: lsp-arming-test
+lsp-arming-test: build/$(LSP_ARMING_VARIANT)/test_lsp_arming
+
 $(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \

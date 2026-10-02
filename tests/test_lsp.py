@@ -192,6 +192,17 @@ EXIT = {"jsonrpc": "2.0", "method": "exit"}
 
 
 def main():
+    arming = os.environ.get("EIGENLSP_ARMING", os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "build", "release",
+        "test_lsp_arming"))
+    p = subprocess.run([arming], capture_output=True, text=True,
+                       timeout=15, env=lsp_env())
+    if any(mk in p.stderr for mk in SANITIZER_MARKERS):
+        SANITIZER_HITS.append(p.stderr)
+    check("bounded diagnostic arming state contract",
+          p.returncode == 0 and "lsp arming: 58 passed, 0 failed" in p.stderr)
+    if p.returncode != 0:
+        print(p.stderr)
     print("=== LSP Behavioral Tests ===")
 
     # --- initialize: capabilities + serverInfo ---
@@ -1090,6 +1101,21 @@ def main():
     d = diagnostics(r)
     check("#935 clean compile publishes no spurious E004",
           not any(x.get("code") == "E004" for x in (d or [])))
+
+    # Bounded temporal-query documents exercise the real JSON-RPC path;
+    # test_lsp_arming.c separately witnesses arming at the compile boundary.
+    temporal_doc = "x is 1\nq is what is x when 1\nprint of q\n"
+    r = converse([INIT, did_open(temporal_doc), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("temporal diagnostic compile publishes diagnostics", d is not None)
+    check("temporal diagnostic compile has no E004",
+          d is not None and not any(x.get("code") == "E004" for x in d))
+    r = converse([INIT, did_open(temporal_doc + "break\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("temporal diagnostic compile retains compile errors",
+          any(x.get("code") == "E004" and
+              "'break' outside a loop" in x.get("message", "")
+              for x in (d or [])))
 
     # --- codeAction offers a quickfix for the W001 diagnostic ---
     ca = {"jsonrpc": "2.0", "id": 11, "method": "textDocument/codeAction",

@@ -16,7 +16,7 @@ fi
 
 LSP="$ROOT/build/asan/lsp/eigenlsp"
 echo "Building eigenlsp with -fsanitize=address,undefined ..."
-make -C "$ROOT" lsp-asan >/dev/null
+make -C "$ROOT" lsp-asan lsp-arming-test LSP_ARMING_VARIANT=asan >/dev/null
 
 # Do not accept a behavioral pass from an accidentally reused release binary.
 # This assertion is deliberately independent of make's freshness decision: a
@@ -29,7 +29,7 @@ fi
 export ASAN_OPTIONS=detect_leaks=1
 export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
 set +e
-EIGENLSP="$LSP" python3 "$DIR/test_lsp.py"
+EIGENLSP="$LSP" EIGENLSP_ARMING="$ROOT/build/asan/test_lsp_arming" python3 "$DIR/test_lsp.py"
 rc=$?
 set -e
 
