@@ -667,92 +667,6 @@ static FILE *g_train_dump_fp = NULL;
 static int   g_train_dump_init = 0;
 static int   g_train_dump_inhibit = 0;
 
-/* Per-class loss dump (EIGS_CLASS_LOSS_DUMP=path) — bucketed CE loss per step
- * by target-token class. Used to diagnose whether rare-class tokens (DEDENT)
- * are being unlearned by mass-weighted cross-entropy. Class IDs are hardcoded
- * to match data/identifier_vocab.json under top_n=256:
- *   NEWLINE=79, INDENT=80, DEDENT=81, IDENT_FB=2, FIRST_IDENT_ID=83.
- * If the vocab build changes these IDs, update CLS_* below. */
-#define CLS_ID_NEWLINE       79
-#define CLS_ID_INDENT        80
-#define CLS_ID_DEDENT        81
-#define CLS_ID_IDENT_FB       2
-#define CLS_FIRST_IDENT_ID   83
-#define CLS_N                 6  /* NL, IND, DED, FB, ext_ident, other */
-static FILE *g_class_loss_fp = NULL;
-static int   g_class_loss_init = 0;
-static int   g_class_loss_inhibit = 0;
-
-/* Per-step depth-bucketed loss for DEDENT targets. Tests the hypothesis that
- * the model fails on DEDENT because it can't track indent depth across the
- * 31-token context window. If shallow-depth DEDENTs (d=1) have low loss but
- * deep-depth (d>=4) have high loss, depth-tracking is the bottleneck.
- * EIGS_DEPTH_LOSS_DUMP=path. */
-#define DEPTH_BUCKETS 5  /* 0, 1, 2, 3, 4+ */
-static FILE *g_depth_loss_fp = NULL;
-static int   g_depth_loss_init = 0;
-static int   g_depth_loss_inhibit = 0;
-
-static int classify_target(int tid) {
-    if (tid == CLS_ID_NEWLINE)  return 0;
-    if (tid == CLS_ID_INDENT)   return 1;
-    if (tid == CLS_ID_DEDENT)   return 2;
-    if (tid == CLS_ID_IDENT_FB) return 3;
-    if (tid >= CLS_FIRST_IDENT_ID) return 4;
-    return 5;
-}
-
-static void class_loss_open_if_needed(void) {
-    if (g_class_loss_init || g_class_loss_inhibit) return;
-    const char *path = getenv("EIGS_CLASS_LOSS_DUMP");
-    if (!path || !*path) { g_class_loss_inhibit = 1; return; }
-    g_class_loss_fp = xfopen_write(path, "w");
-    if (!g_class_loss_fp) {
-        fprintf(stderr, "[class-loss-dump] failed to open %s\n", path);
-        g_class_loss_inhibit = 1;
-        return;
-    }
-    g_class_loss_init = 1;
-    fprintf(g_class_loss_fp,
-        "step,nl_n,nl_loss,ind_n,ind_loss,ded_n,ded_loss,fb_n,fb_loss,ext_n,ext_loss,oth_n,oth_loss\n");
-    fflush(g_class_loss_fp);
-}
-
-static void depth_loss_open_if_needed(void) {
-    if (g_depth_loss_init || g_depth_loss_inhibit) return;
-    const char *path = getenv("EIGS_DEPTH_LOSS_DUMP");
-    if (!path || !*path) { g_depth_loss_inhibit = 1; return; }
-    g_depth_loss_fp = xfopen_write(path, "w");
-    if (!g_depth_loss_fp) {
-        fprintf(stderr, "[depth-loss-dump] failed to open %s\n", path);
-        g_depth_loss_inhibit = 1;
-        return;
-    }
-    g_depth_loss_init = 1;
-    fprintf(g_depth_loss_fp,
-        "step,d0_n,d0_loss,d1_n,d1_loss,d2_n,d2_loss,d3_n,d3_loss,d4plus_n,d4plus_loss\n");
-    fflush(g_depth_loss_fp);
-}
-
-/* Per-class loss/gradient weight for DEDENT targets. EIGS_DEDENT_LOSS_WEIGHT.
- * Default 1.0. Scales both the reported loss and dL/dlogits identically — the
- * gradient stays consistent with the (weighted) objective. Tests whether the
- * frequency-suppression we measured (DEDENT loss 6.73 > uniform 5.83) is fixable
- * by counteracting DEDENT's mass-weight handicap. */
-static float dedent_loss_weight(void) {
-    static int   inited = 0;
-    static float w = 1.0f;
-    if (!inited) {
-        const char *s = getenv("EIGS_DEDENT_LOSS_WEIGHT");
-        if (s && *s) {
-            float v = (float)atof(s);
-            if (v > 0.0f) w = v;
-        }
-        inited = 1;
-    }
-    return w;
-}
-
 static float l2_norm_f(const float *a, int64_t n) {
     double s = 0.0;
     for (int64_t i = 0; i < n; i++) s += (double)a[i] * (double)a[i];
@@ -901,15 +815,6 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
     float total_loss = 0.0f;
     int num_tokens = 0;
     float final_step_entropy = 0.0f;
-    /* Per-class loss accumulators (reset per train step). See classify_target. */
-    double cls_loss_sum[CLS_N] = {0};
-    int    cls_count[CLS_N]    = {0};
-    /* DEDENT loss bucketed by indent depth observed in the window so far.
-     * Tests the depth-tracking-bottleneck hypothesis. */
-    double ded_depth_loss[DEPTH_BUCKETS] = {0};
-    int    ded_depth_count[DEPTH_BUCKETS] = {0};
-    int    depth_at_predict = 0;
-
     int use_tern = (g_model.weight_format == WEIGHT_FORMAT_TERNARY);
 
     int max_ctx = max_seq_len < full_len ? max_seq_len : full_len;
@@ -951,29 +856,8 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
 
         float *probs = xcalloc(vocab_size, sizeof(float));
         float loss = cross_entropy_loss(logits, target_id, vocab_size, probs);
-        float loss_w = (target_id == CLS_ID_DEDENT) ? dedent_loss_weight() : 1.0f;
-        loss *= loss_w;
         total_loss += loss;
         num_tokens++;
-        {
-            int cls = classify_target(target_id);
-            cls_loss_sum[cls] += (double)loss;
-            cls_count[cls]    += 1;
-            /* Update depth based on the token we just incorporated into context.
-             * The model's context for predicting token_ids[t+1] is token_ids[0..t],
-             * so we account for token_ids[t] BEFORE bucketing the target's loss.
-             * (For t=0, depth_at_predict=0 still — first input wasn't IND/DED yet
-             * unless it happens to be one, handled below.) */
-            if (t >= 0 && token_ids[t] == CLS_ID_INDENT) depth_at_predict++;
-            else if (t >= 0 && token_ids[t] == CLS_ID_DEDENT) depth_at_predict--;
-            if (target_id == CLS_ID_DEDENT) {
-                int d = depth_at_predict;
-                if (d < 0) d = 0;
-                if (d >= DEPTH_BUCKETS) d = DEPTH_BUCKETS - 1;
-                ded_depth_loss[d]  += (double)loss;
-                ded_depth_count[d] += 1;
-            }
-        }
         free(logits);
 
         /* Capture last-step entropy for the diagnostic dump — head-collapse signal */
@@ -989,9 +873,6 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
         float *d_logits = xcalloc(vocab_size, sizeof(float));
         memcpy(d_logits, probs, vocab_size * sizeof(float));
         d_logits[target_id] -= 1.0f;
-        if (loss_w != 1.0f) {
-            for (int j = 0; j < vocab_size; j++) d_logits[j] *= loss_w;
-        }
         free(probs);
 
         float *last_hidden = cache.final_x + (ctx_len - 1) * d_model;
@@ -1130,24 +1011,8 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
             }
             float *probs = xcalloc(vocab_size, sizeof(float));
             float loss = cross_entropy_loss(logits, target_id, vocab_size, probs);
-            float loss_w = (target_id == CLS_ID_DEDENT) ? dedent_loss_weight() : 1.0f;
-            loss *= loss_w;
             total_loss += loss;
             num_tokens++;
-            {
-                int cls = classify_target(target_id);
-                cls_loss_sum[cls] += (double)loss;
-                cls_count[cls]    += 1;
-                if (t >= 0 && token_ids[t] == CLS_ID_INDENT) depth_at_predict++;
-                else if (t >= 0 && token_ids[t] == CLS_ID_DEDENT) depth_at_predict--;
-                if (target_id == CLS_ID_DEDENT) {
-                    int d = depth_at_predict;
-                    if (d < 0) d = 0;
-                    if (d >= DEPTH_BUCKETS) d = DEPTH_BUCKETS - 1;
-                    ded_depth_loss[d]  += (double)loss;
-                    ded_depth_count[d] += 1;
-                }
-            }
             free(logits);
 
             if (t == full_len - 2) {
@@ -1162,8 +1027,6 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
             float *d_logits = xcalloc(vocab_size, sizeof(float));
             memcpy(d_logits, probs, vocab_size * sizeof(float));
             d_logits[target_id] -= 1.0f;
-            if (loss_w != 1.0f)
-                for (int j = 0; j < vocab_size; j++) d_logits[j] *= loss_w;
             free(probs);
 
             for (int k = 0; k < d_model; k++)
@@ -1497,30 +1360,6 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
         fflush(g_train_dump_fp);
     }
 
-    /* ---- Per-class CE-loss dump (EIGS_CLASS_LOSS_DUMP) ----
-     * One row per training step: count + sum-of-loss in each target-token
-     * bucket. Post-process: mean = loss_sum / count when count > 0. */
-    class_loss_open_if_needed();
-    if (g_class_loss_fp) {
-        fprintf(g_class_loss_fp, "%d", g_training_samples);
-        for (int c = 0; c < CLS_N; c++)
-            fprintf(g_class_loss_fp, ",%d,%.6f", cls_count[c], cls_loss_sum[c]);
-        fprintf(g_class_loss_fp, "\n");
-        fflush(g_class_loss_fp);
-    }
-
-    /* ---- Per-depth DEDENT-loss dump (EIGS_DEPTH_LOSS_DUMP) ----
-     * Buckets DEDENT-target CE loss by indent depth at predict-time.
-     * If loss rises with depth, the model can't track deep nesting. */
-    depth_loss_open_if_needed();
-    if (g_depth_loss_fp) {
-        fprintf(g_depth_loss_fp, "%d", g_training_samples);
-        for (int d = 0; d < DEPTH_BUCKETS; d++)
-            fprintf(g_depth_loss_fp, ",%d,%.6f", ded_depth_count[d], ded_depth_loss[d]);
-        fprintf(g_depth_loss_fp, "\n");
-        fflush(g_depth_loss_fp);
-    }
-
     free(obs_scales);
 
     /* Update observer state from weight deltas */
@@ -1614,6 +1453,13 @@ Value* builtin_native_train_step(Value *arg) {
 
     int input_len = in_list->data.list.count;
     int output_len = out_list->data.list.count;
+    long long full_len = (long long)input_len + output_len;
+    if (full_len > g_model.config.max_seq_len) {
+        rt_error(EK_VALUE, 0,
+            "native_train_step: sequence length %lld exceeds model max_seq_len %d",
+            full_len, g_model.config.max_seq_len);
+        return make_null();
+    }
     int *input_ids = xcalloc(input_len > 0 ? input_len : 1, sizeof(int));
     int *output_ids = xcalloc(output_len > 0 ? output_len : 1, sizeof(int));
     for (int i = 0; i < input_len; i++) {

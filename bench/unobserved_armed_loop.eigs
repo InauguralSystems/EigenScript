@@ -1,0 +1,12 @@
+# An armed program must keep numeric windows complete inside `unobserved:`,
+# without restoring the full observer cost to the block (#1443).
+define run(n) as:
+    local x is 1.0
+    unobserved:
+        local i is 0
+        loop while i < n:
+            x is x * 0.999999 + 0.000001
+            i is i + 1
+    return x
+x is run of (600000)
+print of (converged of x)
