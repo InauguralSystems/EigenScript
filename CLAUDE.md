@@ -57,6 +57,10 @@ bash tools/consumer_acceptance.sh run src/eigenscript   # run them serially agai
 - The suite must pass **both** release and ASan with leaks on:
   `make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh`
   (CI enforces `detect_leaks=1`).
+- Add a suite section as its own uniquely named `tests/sections/*.sh` file;
+  never edit `tests/run_all_tests.sh` or an existing fragment merely to enrol
+  it. Fragments are sourced in byte-sorted pathname order and are visible to
+  the section-planning and mechanical gates.
 - **Leak tally is the gate.** The env↔fn closure cycle is reclaimed by the
   cycle collector (docs/CLOSURE_CYCLE_GC.md); section **[87]**
   (`test_closure_cycles.eigs`) is gated **strictly** leak-clean — a

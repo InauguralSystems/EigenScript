@@ -116,11 +116,6 @@ fi
 run_corpus() {
     local classifier="$1"
     (
-        # Mutants deliberately delete or rewrite pieces of the classifier.
-        # Keep a resulting unset expansion inside the mutant from aborting
-        # this calibration harness before it can classify the mutation as
-        # BROKEN (rather than CAUGHT).
-        set +u
         # shellcheck disable=SC1090
         if ! . "$classifier" 2>/dev/null; then echo "SOURCE-ERROR"; exit 3; fi
         # The mutant must actually provide the entry point. A sed that deletes

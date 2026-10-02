@@ -340,7 +340,7 @@ const char *op_name(uint8_t op) {
     N(OP_BAND) N(OP_BOR) N(OP_BXOR) N(OP_SHL) N(OP_SHR)
     N(OP_NEG) N(OP_NOT) N(OP_BNOT)
     N(OP_EQ) N(OP_NE) N(OP_LT) N(OP_GT) N(OP_LE) N(OP_GE)
-    N(OP_GET_LOCAL) N(OP_SET_LOCAL) N(OP_GET_NAME) N(OP_SET_NAME)
+    N(OP_GET_LOCAL) N(OP_SET_LOCAL) N(OP_SET_LOCAL_INTERNAL) N(OP_GET_NAME) N(OP_SET_NAME)
     N(OP_SET_NAME_LOCAL) N(OP_SET_FN_NAME_LOCAL)
     N(OP_JUMP) N(OP_JUMP_BACK) N(OP_JUMP_IF_FALSE) N(OP_JUMP_IF_TRUE)
     N(OP_JUMP_IF_FALSE_PEEK) N(OP_JUMP_IF_TRUE_PEEK)
@@ -480,7 +480,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
         roles[0] = VR_JFWD; return 1;
     case OP_JUMP_BACK:
         roles[0] = VR_JBACK; return 1;
-    case OP_GET_LOCAL: case OP_SET_LOCAL: case OP_CALL:
+    case OP_GET_LOCAL: case OP_SET_LOCAL: case OP_SET_LOCAL_INTERNAL: case OP_CALL:
     case OP_LIST: case OP_DICT:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
@@ -628,7 +628,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
      * assigned value as the expression's result). Every one of these takes an
      * unguarded g_vm.stack[sp - 1] — in the observer cases through
      * vm_trace_assign / the slot-observe helpers, which index it the same way. */
-    case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
+    case OP_SET_LOCAL: case OP_SET_LOCAL_INTERNAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL: case OP_LOCAL_DOT_SET: case OP_LOCAL_IDX_DOT_SET:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL: case OP_OBSERVE_NAME_POST:
         return EFF(1, 0, 0);
@@ -981,6 +981,36 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
     }
     for (int f = 0; f < chunk->fn_count; f++)
         chunk_arm_temporal(chunk->functions[f]);
+}
+
+/* The history queried by these instructions belongs to the attached host
+ * thread, not to an Env.  A sealed sandbox environment therefore does not
+ * isolate it.  Keep this scan beside chunk_arm_temporal so the two walks cannot
+ * silently disagree about which descriptor instructions access history. */
+int chunk_reads_shared_temporal(const EigsChunk *chunk) {
+    const uint8_t *code = chunk->code;
+    int n = chunk->code_len, i = 0;
+    while (i < n) {
+        uint8_t op = code[i];
+        if (op == OP_LINE) { i += 1 + 4; continue; }
+        VerifyRole roles[3];
+        int nops = op_verify_operands(op, roles);
+        if (op == OP_INTERROGATE_NAMED_AT ||
+            op == OP_INTERROGATE_NAMED_WHEN)
+            return 1;
+        if (op == OP_INTERROGATE_NAMED) {
+            int kind = code[i + 1] | (code[i + 2] << 8);
+            if (kind == 6) return 1; /* prev */
+        } else if (op == OP_GET_NAME) {
+            int name_idx = code[i + 1] | (code[i + 2] << 8);
+            if (strcmp(chunk->constants[name_idx]->data.str, "state_at") == 0)
+                return 1;
+        }
+        i += 1 + 2 * nops;
+    }
+    for (int f = 0; f < chunk->fn_count; f++)
+        if (chunk_reads_shared_temporal(chunk->functions[f])) return 1;
+    return 0;
 }
 
 /* ---- #366: leaf-accessor scan ----

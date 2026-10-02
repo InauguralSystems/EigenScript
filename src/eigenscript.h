@@ -504,6 +504,9 @@ void observer_slot_update_num(struct Env *e, int idx, double num);
  * exported so the AOT runtime can call the same thing instead of skipping. */
 void observer_slot_sample(struct Env *e, int idx, Value *newval);
 void observer_slot_sample_num(struct Env *e, int idx, double num);
+/* Fast forms for observe opcodes which already proved the observer gate open. */
+void observer_slot_sample_gated(struct Env *e, int idx, Value *newval);
+void observer_slot_sample_num_gated(struct Env *e, int idx, double num);
 void observer_slot_reset(struct Env *e);
 /* Observed-loop halting on an explicit env (no VM-frame dependency): one
  * iteration of OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK. Returns 1 when the loop
@@ -907,6 +910,10 @@ struct EigsThread {
     int          parse_errors;
     int          has_error;
     int          try_depth;
+    /* Source-line stamp used by native/AOT callers and temporal history when
+     * no VM frame supplies a line. Per-thread so a spawned worker cannot
+     * replace its parent's fallback error line (#1435). */
+    int          trace_current_line;
     /* #739: `exit of N` request. Sits with has_error/try_depth because
      * CHECK_ERROR reads all three together — an exit unwind is uncatchable.
      * Cleared at host eval entry (eigs_eval_string) so a second eval on this
@@ -1484,6 +1491,26 @@ void* xmalloc(size_t size);
 void* xcalloc(size_t nmemb, size_t size);
 void* xrealloc(void *p, size_t size);
 char* xstrdup(const char *s);
+/* Measurement-only allocation accounting for #1319.  Defining free this way
+ * lets the candidate checked-allocation chokepoint observe matching releases;
+ * untracked pointers are passed through unchanged.  Keep the overwhelmingly
+ * common disabled path at the call site so it can call libc directly instead
+ * of paying for another out-of-line function call on every release.  No limit
+ * is enforced. */
+extern int eigs_alloc_stats_enabled __attribute__((weak));
+void eigs_alloc_stats_free(void *p) __attribute__((weak));
+static inline __attribute__((always_inline))
+void eigs_alloc_stats_maybe_free(void *p) {
+    /* Small standalone tools (notably `make jit-smoke`) intentionally link
+     * no allocator runtime.  Weak references preserve ordinary libc free in
+     * that configuration instead of imposing two unresolved symbols. */
+    if (!eigs_alloc_stats_free || !&eigs_alloc_stats_enabled ||
+        __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED) == 0)
+        free(p);
+    else
+        eigs_alloc_stats_free(p);
+}
+#define free(p) eigs_alloc_stats_maybe_free(p)
 size_t safe_size_mul(size_t a, size_t b);
 void* xmalloc_array(size_t nmemb, size_t size);
 void* xcalloc_array(size_t nmemb, size_t size);
@@ -1865,6 +1892,9 @@ void env_mark_captured(Env *env);
  * doesn't prove a subgraph dead it leaks instead of freeing. No-op when
  * multithreaded. */
 void gc_collect_cycles(void);
+/* Drain buffered LIST/DICT possible roots without seeding the traversal from
+ * the unrelated captured-environment registry. */
+void gc_collect_value_candidates(void);
 /* Exit-time teardown of the global scope: drops every global binding,
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */
@@ -1899,6 +1929,9 @@ extern int g_compile_module_slots;
 /* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
+/* Measure leading spaces/tabs using the language's four-column tab stops.
+ * byte_count, when non-NULL, receives the number of source bytes consumed. */
+int eigs_measure_indent(const char *line, int *byte_count);
 void free_tokenlist(TokenList *tl);
 void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 
@@ -1936,10 +1969,10 @@ void eigs_num_text(char *buf, size_t nbuf, double n);
 void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
 /* #880: decode a JSON string body (s[*pos] = first byte after the opening
- * quote) into `out`, leaving *pos past the closing quote. One decoder for
- * json_decode, the LSP, and the DAP — they used to disagree on which escapes
- * exist. */
-void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
+ * quote) into `out`, leaving *pos past the closing quote. Returns whether
+ * every input scalar was preserved; lenient U+FFFD repair returns false.
+ * One decoder serves json_decode, the LSP, and the DAP. */
+int eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
 
 /* ---- Registration ---- */
 
@@ -2149,9 +2182,10 @@ void*  handle_claim(int id, uint32_t gen, HandleType type, int *why);
  * ("joined" for a thread, "closed" for a channel or store). */
 void   handle_raise_unresolved(const char *who, const char *kind, int id,
                                int why, const char *gone_verb);
-/* Deterministic teardown of channel + thread handles (builtins.c): joins
- * outstanding workers, then frees remaining channels. Call once execution is
- * done and the value world is still alive (before env/thread teardown). */
+/* Deterministic teardown of every resource in the handle table (builtins.c):
+ * HANDLE_THREAD, HANDLE_CHANNEL, HANDLE_NET, HANDLE_STORE, and HANDLE_TASK.
+ * Call once execution is done and the value world is still alive (before
+ * env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
 
@@ -2191,6 +2225,9 @@ typedef struct {
  * directive take effect. Used by the LSP to publish diagnostics. */
 int lint_collect(ASTNode *ast, const char *path, const char *source,
                  LintDiag *out, int max);
+/* Allocate and return every diagnostic. The caller owns the returned array. */
+LintDiag *lint_collect_alloc(ASTNode *ast, const char *path,
+                             const char *source, int *count);
 /* 1 if the source carries a file-wide `# lint: allow-file <code>` directive
  * for `code` (or `all`). Callers of lint_collect apply it themselves (the
  * CLI and the LSP both do) — suppression filters lint_collect's OUTPUT;
@@ -2210,5 +2247,9 @@ int eigs_api_dump(FILE *out, int json);
  * pinned from script at all (found via iLambdaAi's eval-determinism probe,
  * 2026-08-17). */
 void eigs_ensure_random_seeded(void);
+/* The libc drand48 family owns one process-global state.  These are the only
+ * entry points runtime code may use, so seeding and draws share one lock. */
+double eigs_random_double(void);
+long eigs_random_long(void);
 
 #endif /* EIGENSCRIPT_H */
