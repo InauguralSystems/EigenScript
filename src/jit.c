@@ -2873,7 +2873,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_cmp_esi_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             if (op == OP_SET_NAME) {
-                /* target = walk_depth ? start->parent : start */
+                /* target = walk_depth ? start->parent : start.  GET_NAME
+                 * shares this IC and may have cached the sealed builtin
+                 * parent, so reject that one target without sending every
+                 * ordinary parent store through the helper. */
                 w = emit_cmpb_imm8_disp32_rax(w, (int32_t)offsetof(EnvIC, walk_depth), 0);
                 uint8_t *depth0_p;
                 w = emit_je_rel8(w, &depth0_p);
@@ -2881,8 +2884,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 w = emit_mov_disp32_rdx_to_rdx(w, (int32_t)offsetof(Env, parent));
                 w = emit_test_rdx_rdx(w);
                 w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
-                *depth0_p = (uint8_t)(w - depth0_after);
+                w = emit_movabs_rsi(w, (uint64_t)(uintptr_t)g_builtin_env);
+                w = emit_cmp_rsi_rdx(w);
+                w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
                 w = emit_mov_disp32_rdx_to_esi(w, (int32_t)offsetof(Env, binding_version));
+                *depth0_p = (uint8_t)(w - depth0_after);
             } else {
                 /* LOCAL variants pin walk_depth == 0; target == start and
                  * %esi still holds start->binding_version. */
