@@ -147,6 +147,19 @@ int eigs_process_thread_count(void) {
     return g_attached_threads_load();
 }
 
+int eigs_process_single_thread_begin(void) {
+    pthread_mutex_lock(&g_attached_lock);
+    if (g_attached_threads_load() != 1) {
+        pthread_mutex_unlock(&g_attached_lock);
+        return 0;
+    }
+    return 1;
+}
+
+void eigs_process_single_thread_end(void) {
+    pthread_mutex_unlock(&g_attached_lock);
+}
+
 /* A bare snapshot of the live-state count. NOT a close decision: by the time
  * a closer asks, its own state is already released and a sibling may close
  * between the read and any action taken on it. trace_shutdown is its ONE

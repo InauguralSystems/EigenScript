@@ -1423,6 +1423,11 @@ void eigs_obs_enable(void);
  * "this process has one thread" — a per-state multithreaded flag cannot see a
  * sibling state, and ext_http runs one state per connection per thread. */
 int  eigs_process_thread_count(void);
+/* Reserve the process-wide single-attached-thread state for an operation that
+ * mutates process-global compiler resources.  A successful begin keeps thread
+ * attachment/detachment blocked until the matching end. */
+int  eigs_process_single_thread_begin(void);
+void eigs_process_single_thread_end(void);
 /* #1142/#1143: a bare snapshot of the live EigsState count. NOT usable as a
  * close decision — see eigs_process_state_release below. trace_shutdown is
  * its only caller. */
