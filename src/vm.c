@@ -707,6 +707,14 @@ static inline Value *vm_local_lift(Env *e, uint16_t slot) {
     return v;
 }
 
+/* vm_local_lift uses C NULL for both an immediate EigenScript null and an
+ * invalid slot.  LOCAL_* reads are compiler-generated with valid slots, but
+ * their error paths still need to distinguish the language value from the
+ * defensive out-of-range case. */
+static inline int vm_local_is_null(Env *e, uint16_t slot) {
+    return (int)slot < e->count && slot_is_null(e->values[slot]);
+}
+
 /* ---- VM helpers ---- */
 
 static void vm_init(void) {
@@ -1367,6 +1375,8 @@ void jit_helper_local_idx_get(int slot, int idx) {
             rt_error(EK_TYPE, g_vm.current_line,
                 "cannot index %s", val_type_name(target->type));
         }
+    } else if (vm_local_is_null(e, (uint16_t)slot)) {
+        rt_error(EK_TYPE, g_vm.current_line, "cannot index null");
     }
     vm_push_slot(slot_null());
 }
@@ -1405,6 +1415,10 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot access field '%s' on %s",
             key, val_type_name(target->type));
+    } else if (vm_local_is_null(e, (uint16_t)slot)) {
+        const char *key = chunk->const_interns[name_idx];
+        rt_error(EK_TYPE, g_vm.current_line,
+            "cannot access field '%s' on null", key);
     }
     vm_push_slot(slot_null());
 }
@@ -1460,6 +1474,8 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
     } else if (target) {
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
+    } else if (vm_local_is_null(e, (uint16_t)slot)) {
+        rt_error(EK_TYPE, g_vm.current_line, "cannot index null");
     }
     vm_push_slot(slot_null());
 }
@@ -4697,6 +4713,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 key, val_type_name(target->type));
             vm_push_slot(slot_null());
         } else {
+            const char *key = chunk->const_interns[name_idx];
+            if (vm_local_is_null(e, slot))
+                rt_error(EK_TYPE, current_line,
+                    "cannot access field '%s' on null", key);
             vm_push_slot(slot_null());
         }
         DISPATCH();
@@ -4778,6 +4798,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 DISPATCH();
             }
             rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
+        } else if (vm_local_is_null(e, slot)) {
+            rt_error(EK_TYPE, current_line, "cannot index null");
         }
         vm_push_slot(slot_null());
         DISPATCH();
@@ -4822,6 +4844,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
         } else if (target) {
             rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
+        } else if (vm_local_is_null(e, slot)) {
+            rt_error(EK_TYPE, current_line, "cannot index null");
         }
         vm_push_slot(slot_null());
         DISPATCH();
