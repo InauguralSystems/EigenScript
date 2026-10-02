@@ -8,9 +8,10 @@
 #include "eigenscript.h"
 #include <inttypes.h>
 
-/* The public header routes runtime frees through the measurement hook.  This
- * implementation needs the underlying libc operation for its metadata table. */
-#undef free
+/* The public header routes runtime frees through the measurement hook.  Keep
+ * that macro active: in the generated amalgamation it must also cover source
+ * files emitted after this one.  The two allocator-internal libc releases use
+ * (free)(p), which deliberately avoids expansion of the function-like macro. */
 
 #if defined(EIGS_POISON) && defined(__GLIBC__)
 #include <malloc.h>   /* malloc_usable_size, for xrealloc tail poisoning */
@@ -144,7 +145,7 @@ static void alloc_stats_grow(void) {
         }
     }
     g_alloc_stats_occupied = g_alloc_stats_count;
-    free(old);
+    (free)(old);
 }
 
 static void alloc_stats_add_enabled(void *ptr, size_t size, size_t cumulative) {
@@ -251,7 +252,7 @@ char* xstrdup(const char *s) {
 
 void eigs_alloc_stats_free(void *p) {
     alloc_stats_remove(p);
-    free(p);
+    (free)(p);
 }
 
 #if !EIGENSCRIPT_FREESTANDING
