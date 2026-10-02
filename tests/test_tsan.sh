@@ -156,52 +156,27 @@ echo "=== embed-concurrent under TSan: ANY report fails (#1334) ==="
 ROOT="$TESTS_DIR/.."
 TSAN_OBJS=$(ls "$ROOT"/build/tsan/*.o 2>/dev/null | grep -v '/main.o$' || true)
 EC_BIN="$ROOT/build/tsan/embed_concurrent"
-EC_SUPP="$TESTS_DIR/tsan_embed_concurrent.supp"
-if [ -n "$TSAN_OBJS" ] && [ -f "$EC_SUPP" ]; then
+if [ -n "$TSAN_OBJS" ]; then
     gcc $WERROR_FLAGS -fsanitize=thread -g -O1 -o "$EC_BIN" \
         "$ROOT/src/embed_concurrent.c" $TSAN_OBJS -lm -lpthread \
         -I"$ROOT/src" -I"$ROOT/build"
     # Until #1334 this row counted only reports whose stack was in
     # src/trace.c, so a race anywhere else in the runtime passed. Now every
-    # report fails it. The one deliberate race (the harness's own control) is
-    # suppressed in $EC_SUPP with its reason, and the suppression must MATCH:
-    # an unused one means that case stopped running.
-    TSAN_OPTIONS="halt_on_error=0 exitcode=66 suppressions=$EC_SUPP print_suppressions=1" \
+    # report fails it. The harness control uses atomic accesses, so this run
+    # needs no suppressions: every TSan report is a failure.
+    TSAN_OPTIONS="halt_on_error=0 exitcode=66" \
         timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EC_BIN" \
         >"$ROOT/build/tsan_embed_concurrent.out" 2>"$ROOT/build/tsan_embed_concurrent.err"
     LAST_RC=$?
     EC_W=$(grep -c 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" 2>/dev/null || true)
-    # Every entry in the file must appear in TSan's "Matched" block (it lists
-    # only the templates that matched), so an entry nothing hits is a FAIL.
-    # Entries are normalised the way TSan's parser does (CR and surrounding
-    # blanks trimmed), and a last line without a newline still counts. The
-    # entry reaches awk through the environment so no escape processing
-    # rewrites it.
-    EC_ENTRIES=0; EC_UNUSED=""; EC_SEEN=""
-    while IFS= read -r ent || [ -n "$ent" ]; do
-        ent=${ent%$'\r'}
-        ent=${ent#"${ent%%[![:blank:]]*}"}
-        ent=${ent%"${ent##*[![:blank:]]}"}
-        case "$ent" in ''|'#'*) continue ;; esac
-        EC_ENTRIES=$((EC_ENTRIES + 1))
-        # TSan prints one Matched line per template, so a second copy of an
-        # entry would read as used while matching nothing: refuse duplicates.
-        if printf '%s\n' "${EC_SEEN:-}" | grep -qxF -- "$ent"; then
-            EC_UNUSED="$EC_UNUSED '$ent'(duplicate)"; continue
-        fi
-        EC_SEEN="${EC_SEEN:-}$ent
-"
-        EC_ENT="$ent" awk '$1 ~ /^[0-9]+$/ && substr($0, length($1) + 2) == ENVIRON["EC_ENT"] { f = 1 } END { exit !f }' \
-            "$ROOT/build/tsan_embed_concurrent.err" || EC_UNUSED="$EC_UNUSED '$ent'"
-    done < "$EC_SUPP"
     if [ "$LAST_RC" -eq 124 ]; then
         echo "  FAIL: embed-concurrent HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
-    elif [ "$LAST_RC" -eq 0 ] && [ "${EC_W:-0}" -eq 0 ] && [ "$EC_ENTRIES" -gt 0 ] && [ -z "$EC_UNUSED" ] \
+    elif [ "$LAST_RC" -eq 0 ] && [ "${EC_W:-0}" -eq 0 ] \
          && grep -q 'EMBED_CONCURRENT_OK' "$ROOT/build/tsan_embed_concurrent.out"; then
-        echo "  PASS: embed-concurrent TSan-clean (0 reports; all $EC_ENTRIES suppression(s) matched)"
+        echo "  PASS: embed-concurrent TSan-clean (0 reports; no suppressions)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: embed-concurrent rc=$LAST_RC reports=${EC_W:-0} suppressions=$EC_ENTRIES unused:${EC_UNUSED:- none} (want rc 0, 0 reports, every suppression matched)"
+        echo "  FAIL: embed-concurrent rc=$LAST_RC reports=${EC_W:-0} (want rc 0, 0 reports)"
         FAIL=$((FAIL + 1))
         grep -A3 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" | head -16
         grep -v '^[[:space:]]*PASS:' "$ROOT/build/tsan_embed_concurrent.out" | tail -5
