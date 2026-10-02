@@ -1,0 +1,87 @@
+{
+  "finalized": true,
+  "main": "4a5b1503bd6e142da851d4328e3a41e000947caf",
+  "pending_counter_head": "140aeb7e30a689c966c554a4786102aedfb5bb41",
+  "baseline": "837959cb2b351a6e649066825887d32027b94f43",
+  "preview_baseline_tree": "0031c871a4a0b3aef167953a81e9a3c283c2a1e2",
+  "candidate_tree": "8e808bae971e8a25421275642d7390e6cc2e6fed",
+  "patch_sha256": "1a0072129957814cfa44ab21d2c5258d43b7d9f55baa8ede216b1d91e1886c92",
+  "frozen_six_file_patch_sha256": "d5d8f9bd803ee500957ec97e448e0c8206ae95821ec106d974eb99e13753b6be",
+  "files": [
+    {
+      "path": "changes/security/1452-seal-builtin-layer-against-shared-name-cache-sto.md",
+      "baseline_blob": null,
+      "candidate_blob": "3b14b0c0b378438bda643fc5e548446be65ff6a1",
+      "baseline_sha256": null,
+      "candidate_sha256": "7216bf27c786977f32b02fb1111c41d2122b68315375e9a073385a3ece8c2160",
+      "changed": true,
+      "frozen_candidate_byte_identity": true
+    },
+    {
+      "path": "src/jit.c",
+      "baseline_blob": "f74c2e1f541ac82bf1cb084e15d11dd8fe66558a",
+      "candidate_blob": "1c940e40ab2b6cff77de52015f73752155517a93",
+      "baseline_sha256": "b9b90fc328732a9f508d2d858705aa4632106b0347f6418d84a2e4624851d345",
+      "candidate_sha256": "d7eacfe149dcd8e4990b6443ec64e65cc5d23f7009c619c31212e74527c224c4",
+      "changed": true,
+      "frozen_candidate_byte_identity": true
+    },
+    {
+      "path": "src/jit_smoke.c",
+      "baseline_blob": "4d5173d0060e21dfc683f28c3435a4ff0bed54c2",
+      "candidate_blob": "68decc58f090d060d73accb459f85db0e06aafe7",
+      "baseline_sha256": "fdbee9b8386fc4501cadcd8ca5590dc68e4b38c8d1e68ab1a6e2af43bab058ec",
+      "candidate_sha256": "968e2adfa9c81f8e60f6f93590f48c247e75394aadac876ee7c9a2ec47ed7e25",
+      "changed": true,
+      "frozen_candidate_byte_identity": true
+    },
+    {
+      "path": "src/vm.c",
+      "baseline_blob": "063bbdc5328798cbbefff3fe4a30f6bf3a877908",
+      "candidate_blob": "7f45d6326bb813a8da46c84f91c9c73d61e50f6a",
+      "baseline_sha256": "dd7d6087c5103b42e6fb90bcc6d9f5b254cdc40adbf4dd4956fc95c5a5bf5562",
+      "candidate_sha256": "3e6e15cc56d0d98bf2aee8c17172b81b65a8491de3d1ea435d64071c1ee52719",
+      "changed": true,
+      "frozen_candidate_byte_identity": true
+    },
+    {
+      "path": "tests/run_all_tests.sh",
+      "baseline_blob": "0657d8ef20dcc9ac7668718dff81736316d61280",
+      "candidate_blob": "0657d8ef20dcc9ac7668718dff81736316d61280",
+      "baseline_sha256": "184e30164e1c248ac0bb3739126dc4f728c073ddad1f13fe7e3c7f0fdc07a5d2",
+      "candidate_sha256": "184e30164e1c248ac0bb3739126dc4f728c073ddad1f13fe7e3c7f0fdc07a5d2",
+      "changed": false,
+      "frozen_candidate_byte_identity": false
+    },
+    {
+      "path": "tests/test_module_builtin_isolation.eigs",
+      "baseline_blob": "880b79331876f25111e6071be274bc2d1382c045",
+      "candidate_blob": "4a59cdabd340062a58ecc1162de7b20b8537c1e4",
+      "baseline_sha256": "b1364d46641b325bbe8ae283db379134d829a9b435de7b4f3ac0aee8a866b6ba",
+      "candidate_sha256": "d41d2a5baa0f748cb542c46746d2a5f9f1d2ce39c113f21fc13f2fcc64d548f0",
+      "changed": true,
+      "frozen_candidate_byte_identity": true
+    }
+  ],
+  "bench_workloads": [
+    "dict_ops.eigs",
+    "observed_loop.eigs",
+    "scalar_loop.eigs",
+    "string_build.eigs",
+    "unobserved_armed_loop.eigs",
+    "unobserved_loop.eigs"
+  ],
+  "conflicts": [
+    {
+      "path": "tests/run_all_tests.sh",
+      "resolution": "retain pending #1460 runner byte-for-byte; obsolete literal assertion-count update is retired by suite-level counting; repaired child program unchanged"
+    }
+  ],
+  "pending_merge_conflicts": 0,
+  "repair_apply_conflicts": 1,
+  "unresolved_conflicts": 0,
+  "baseline_tree": "79f49f8207e47b3265bc87b66a3524a64c50cff2",
+  "checkout": "/home/jon/src/wt/1452-final-base837959-20261002",
+  "counter_merge": "60b7db67286960dca5baebaf18c2378e4bf393a9",
+  "consumer_merge": "837959cb2b351a6e649066825887d32027b94f43"
+}

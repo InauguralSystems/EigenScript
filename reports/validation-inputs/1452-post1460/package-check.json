@@ -1,0 +1,58 @@
+{
+  "ast_parse": true,
+  "bash_syntax_files": 2,
+  "source_diff_check": true,
+  "counter_acceptance_controls": [
+    {
+      "case": "pass",
+      "accepted": true,
+      "wanted": true,
+      "ok": true
+    },
+    {
+      "case": "failure",
+      "accepted": false,
+      "wanted": false,
+      "ok": true
+    },
+    {
+      "case": "overcount",
+      "accepted": false,
+      "wanted": false,
+      "ok": true
+    },
+    {
+      "case": "undercount",
+      "accepted": false,
+      "wanted": false,
+      "ok": true
+    },
+    {
+      "case": "vacuous",
+      "accepted": false,
+      "wanted": false,
+      "ok": true
+    },
+    {
+      "case": "positive-leak-counter",
+      "accepted": false,
+      "wanted": false,
+      "ok": true
+    }
+  ],
+  "accepted": 1,
+  "rejected": 5,
+  "counter_controls": 6,
+  "counter_controls_green": 6,
+  "heavy_jobs_run": 0,
+  "acceptance_phases_run": 0,
+  "input_verification_only": true,
+  "exact_capture_copy": true,
+  "input_check_exit": 0,
+  "input_check_receipt": {
+    "status": "INPUTS_VERIFIED_ONLY",
+    "baseline": "837959cb2b351a6e649066825887d32027b94f43",
+    "candidate_tree": "8e808bae971e8a25421275642d7390e6cc2e6fed"
+  },
+  "final_ast_and_bash_syntax_checked": true
+}

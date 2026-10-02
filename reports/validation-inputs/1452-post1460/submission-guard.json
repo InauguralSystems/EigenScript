@@ -1,0 +1,16 @@
+{
+  "status": "NOT_SUBMITTED",
+  "root_review_required": true,
+  "artifact_commit": "REPLACE_IN_SUBMITTED_PROMPT_AFTER_DATA_ONLY_PUBLICATION_READBACK",
+  "artifact_path": "reports/validation-inputs/1452-post1460/",
+  "baseline": "837959cb2b351a6e649066825887d32027b94f43",
+  "baseline_tree": "79f49f8207e47b3265bc87b66a3524a64c50cff2",
+  "candidate_tree": "8e808bae971e8a25421275642d7390e6cc2e6fed",
+  "patch_sha256": "1a0072129957814cfa44ab21d2c5258d43b7d9f55baa8ede216b1d91e1886c92",
+  "production_source_commit": null,
+  "heavy_local_jobs": 0,
+  "cloud_create_calls": 0,
+  "source_ready": true,
+  "acceptance_evidence": "NOT_RUN; fresh off-box validation required",
+  "required_counter_wrapper_sha256": "aa68ab0ffda6cc66844d4c001482a4b6847eaa6536e4a76c3ea99fd837e03b53"
+}
