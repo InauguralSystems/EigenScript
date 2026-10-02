@@ -1,0 +1,1 @@
+- Classify documentation-named symlinks as code changes in CI scope detection, preventing links to runtime files from skipping the test suite.

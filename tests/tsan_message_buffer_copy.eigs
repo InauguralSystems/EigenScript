@@ -1,0 +1,21 @@
+# If send shares b, the worker's reads race with the main thread's writes.
+c is channel of 1
+ready is channel of 1
+b is buffer of 1
+buf_set of [b, 0, 1]
+
+define reader() as:
+    received is recv of c
+    send of [ready, 1]
+    total is 0
+    for i in range of 200000:
+        total is total + (buf_get of [received, 0])
+    return total
+
+h is spawn of reader
+send of [c, b]
+recv of ready
+for i in range of 200000:
+    buf_set of [b, 0, i]
+thread_join of h
+print of "TSAN message buffer copy done"
