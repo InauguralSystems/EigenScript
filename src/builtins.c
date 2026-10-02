@@ -4498,6 +4498,10 @@ typedef struct {
     Value *result;
     volatile int done;
     pthread_t tid;
+    /* A spawned function is still part of the evaluation that created it.
+     * In particular, a sandbox/fuzz loop cap must not be escaped merely by
+     * moving the loop onto a worker thread. */
+    int sandbox_loop_max;
 } ThreadHandle;
 
 static void *thread_entry(void *arg) {
@@ -4506,6 +4510,10 @@ static void *thread_entry(void *arg) {
      * runs arena_init internally, so the legacy arena_init call site
      * has moved into the lifecycle. */
     eigs_thread_attach(h->parent_state);
+    g_sandbox_loop_max = h->sandbox_loop_max;
+    g_sandbox_cap_hit = 0;
+    g_loop_iterations = 0;
+    g_loop_backedge_count = 0;
     Value *fn = h->fn;
     if (fn->type == VAL_FN) {
         Env *call_env = env_new(fn->data.fn.closure);
@@ -4612,7 +4620,7 @@ static void *thread_entry(void *arg) {
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();
-    h->done = 1;
+    __atomic_store_n(&h->done, 1, __ATOMIC_RELEASE);
     /* Detach from the state — runs arena_destroy and clears TLS. The
      * cycle collector resumes when the last worker is JOINED and the joiner
      * is the only attached thread (spawn_mt_maybe_clear, #1147), or at the
@@ -4705,6 +4713,7 @@ Value* builtin_spawn(Value *arg) {
     h->parent_state = eigs_current_state();
     h->result = NULL;
     h->done = 0;
+    h->sandbox_loop_max = g_sandbox_loop_max;
     uint32_t hgen = 0;
     int hid = handle_register(h, HANDLE_THREAD, &hgen);
     if (hid < 0) {
@@ -5505,9 +5514,8 @@ Value* builtin_task_sched_trace(Value *arg) {
  * the GC — `close_channel` only flips a flag, and an unjoined worker leaves its
  * ThreadHandle behind. Reclaim them here so a program that spawns/uses channels
  * is leak-clean at exit:
- *   pass 1 — join every still-registered (i.e. not explicitly thread_join'd)
- *            worker (spawn uses a joinable pthread); afterwards no thread is
- *            live to touch a channel;
+ *   pass 1 — atomically claim and join every still-registered worker, closing
+ *            channels while each runs and rescanning for nested spawns;
  *   pass 2 — free each remaining channel: drain + decref buffered messages,
  *            destroy the mutex/conds, free the struct.
  * builtin_thread_join already releases+frees joined threads, so the table holds
@@ -5521,20 +5529,44 @@ void handle_table_drain(EigsState *st) {
      * the pthread_join below would hang forever at exit. recv returns null on a
      * closed-empty channel and send skips the enqueue when closed, so a woken
      * worker runs to completion and becomes joinable. */
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        if (st->handle_table[i].type != HANDLE_CHANNEL) continue;
-        Channel *ch = (Channel*)st->handle_table[i].ptr;
-        if (!ch) continue;
-        pthread_mutex_lock(&ch->mutex);
-        ch->closed = 1;
-        pthread_cond_broadcast(&ch->not_empty);
-        pthread_cond_broadcast(&ch->not_full);
-        pthread_mutex_unlock(&ch->mutex);
-    }
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        if (st->handle_table[i].type != HANDLE_THREAD) continue;
-        ThreadHandle *h = (ThreadHandle*)st->handle_table[i].ptr;
-        if (!h) continue;
+    while (__atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0) {
+        ThreadHandle *h = NULL;
+        pthread_mutex_lock(&st->handle_mutex);
+        for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+            EigsHandleSlot *slot = &st->handle_table[i];
+            if (slot->type == HANDLE_THREAD && slot->ptr) {
+                h = (ThreadHandle *)slot->ptr;
+                /* The drain and thread_join use the same ownership rule:
+                 * detach under handle_mutex before pthread_join. */
+                slot->ptr = NULL;
+                break;
+            }
+        }
+        pthread_mutex_unlock(&st->handle_mutex);
+
+        /* A worker may create a channel after teardown began, or may itself
+         * be waiting for a child worker. Keep waking all channels while the
+         * claimed worker runs; then rescan for children registered behind the
+         * table cursor. */
+        if (!h) {
+            usleep(1000);
+            continue;
+        }
+        while (!__atomic_load_n(&h->done, __ATOMIC_ACQUIRE)) {
+            pthread_mutex_lock(&st->handle_mutex);
+            for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+                if (st->handle_table[i].type != HANDLE_CHANNEL ||
+                    !st->handle_table[i].ptr) continue;
+                Channel *ch = (Channel *)st->handle_table[i].ptr;
+                pthread_mutex_lock(&ch->mutex);
+                ch->closed = 1;
+                pthread_cond_broadcast(&ch->not_empty);
+                pthread_cond_broadcast(&ch->not_full);
+                pthread_mutex_unlock(&ch->mutex);
+            }
+            pthread_mutex_unlock(&st->handle_mutex);
+            usleep(1000);
+        }
         pthread_join(h->tid, NULL);
         if (h->result) val_decref(h->result);
         val_decref(h->fn);
@@ -5543,7 +5575,6 @@ void handle_table_drain(EigsState *st) {
             free(h->fn_args);
         }
         free(h);
-        st->handle_table[i].ptr = NULL;
         __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);   /* #1147 */
     }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
