@@ -130,7 +130,7 @@ $obs_files
 EOF
 sort -o "$got" "$got"
 [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
-[ "$n_suite_env" -eq 9 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=9"; exit 1; }
+[ "$n_suite_env" -eq 10 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=10"; exit 1; }
 [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
 echo "jit_diff: OBS examined=$n_obs denied=$n_deny"
 if [ "${1:-}" = "--record" ]; then

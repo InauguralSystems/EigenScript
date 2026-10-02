@@ -6,7 +6,8 @@ TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/suite_program_env.sh" || exit 1
 
-expected='test_builtin_contracts.eigs
+expected='test_buffer_nonfinite_read.eigs
+test_builtin_contracts.eigs
 test_builtin_indirect.eigs
 test_file_io.eigs
 test_file_rename.eigs
@@ -32,4 +33,4 @@ grep -q 'suite-env completed=\$n_suite_env' "$TESTS_DIR/../tools/jit_diff.sh" ||
     echo "FAIL: jit_diff does not report the suite-environment completion population"
     exit 1
 }
-echo "PASS: jit_diff and the suite share 9 per-program environments; fail-soft program reached its final marker"
+echo "PASS: jit_diff and the suite share 10 per-program environments; fail-soft program reached its final marker"
