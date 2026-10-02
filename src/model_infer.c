@@ -493,8 +493,7 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
              * time(NULL), which made temp>0 sampling unpinnable from script --
              * an eval ranking checkpoints on sampled parse rate was promoting
              * on run-to-run noise (iLambdaAi, 2026-08-17). */
-            eigs_ensure_random_seeded();
-            float r = (float)drand48();
+            float r = (float)eigs_random_double();
             float cumsum = 0.0f;
             next_token = vocab_size - 1;
             for (int i = 0; i < vocab_size; i++) {
@@ -530,29 +529,23 @@ Value* builtin_eigen_generate(Value *arg) {
      * #960: sampling makes this a nondeterministic return, so it rides the
      * tape like random/random_int. ONE record per call carries the emitted
      * token list -- the draws are an implementation detail of the decoding
-     * policy, the list is what the script observes. After deterministic
-     * value-domain validation, TAKE serves recorded tokens before generation:
-     * no RNG draw. Every returning path records exactly one value, including
-     * soft argument-error paths; raising paths record none and must remain
-     * before TAKE to preserve stream alignment. Unconditional in temperature:
-     * the tape cannot show which branch ran. */
-    /* Value-domain failures must happen before replay consumes an N record.
-     * Unlike the soft argument fallbacks below, an overlong prompt raises and
-     * therefore records no return value on a live trace.  Taking first would
-     * steal the following successful generation's record during replay and
-     * turn this rejected call into that generation. */
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3 &&
-        arg->data.list.items[0]->type == VAL_LIST && g_model.loaded) {
-        int replay_safe_prompt_len = arg->data.list.items[0]->data.list.count;
-        if (replay_safe_prompt_len > g_model.config.max_seq_len) {
-            rt_error(EK_VALUE, 0,
-                "eigen_generate: prompt length %d exceeds model max_seq_len %d",
-                replay_safe_prompt_len, g_model.config.max_seq_len);
-            return make_null();
+     * policy. #1405 adds a string outcome for context refusal; every normal
+     * return is still a list, including soft argument errors. Replay takes
+     * either outcome before consulting the model, which may be absent or
+     * replaced. Refusal messages carry the recorded lengths, not live config.
+     * The existing list/string value encodings are unchanged. */
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *recorded;
+        if (trace_replay_refuse_off_owner("eigen_generate")) return make_null();
+        if (trace_replay_take("eigen_generate", &recorded)) {
+            if (recorded->type == VAL_STR) {
+                rt_error(EK_VALUE, 0, "%s", recorded->data.str);
+                val_decref(recorded);
+                return make_null();
+            }
+            return recorded;
         }
     }
-
-    TRACE_NONDET_TAKE("eigen_generate");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
@@ -581,6 +574,19 @@ Value* builtin_eigen_generate(Value *arg) {
     if (prompt_len <= 0) {
         fprintf(stderr, "eigen_generate: prompt must be non-empty\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
+    }
+    if (prompt_len > g_model.config.max_seq_len) {
+        char message[128];
+        snprintf(message, sizeof(message),
+            "eigen_generate: prompt length %d exceeds model max_seq_len %d",
+            prompt_len, g_model.config.max_seq_len);
+        if (__builtin_expect(g_trace_enabled, 0)) {
+            Value *refusal = make_str(message);
+            trace_nondet_value("eigen_generate", refusal);
+            val_decref(refusal);
+        }
+        rt_error(EK_VALUE, 0, "%s", message);
+        return make_null();
     }
     #define EIGS_MAX_GENERATE_TOKENS 4096
     if (max_tokens <= 0 || max_tokens > EIGS_MAX_GENERATE_TOKENS) {

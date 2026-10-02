@@ -541,6 +541,38 @@ check_contains "parse error json has error severity" "$JSON" '"severity":"error"
 check_contains "parse error json carries a column (#407)" "$JSON" '"column":'
 rm -f "$TMPFILE"
 
+# --- #1360: collection-size errors are the primary structured diagnostic ---
+# These guards historically printed their useful error only to stderr.  The
+# first-error recorder therefore exposed the later recovery error ("expected
+# ']', got number" / "expected '}', got string") to JSON and the LSP.
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+python3 - "$TMPFILE" << 'PY'
+import pathlib
+import sys
+
+pathlib.Path(sys.argv[1]).write_text(
+    "x is [" + ", ".join(map(str, range(1025))) + "]\n",
+    encoding="utf-8",
+)
+PY
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+JSON_OK=$(python3 -c 'import json,sys; d=json.load(sys.stdin); r=d[0]; print("ok" if len(d)==1 and r.get("code")=="E002" and r.get("line")==1 and r.get("column")==5041 and r.get("message")=="list literal exceeds 1024 elements" else "bad")' <<< "$JSON")
+check_contains "#1360 over-limit list records the size error in JSON" "$JSON_OK" "^ok$"
+
+python3 - "$TMPFILE" << 'PY'
+import pathlib
+import sys
+
+pathlib.Path(sys.argv[1]).write_text(
+    "x is {" + ", ".join(f'"k{i}": {i}' for i in range(1025)) + "}\n",
+    encoding="utf-8",
+)
+PY
+JSON=$($EIGS --lint --json "$TMPFILE" 2>/dev/null || true)
+JSON_OK=$(python3 -c 'import json,sys; d=json.load(sys.stdin); r=d[0]; print("ok" if len(d)==1 and r.get("code")=="E002" and r.get("line")==1 and r.get("column")==13147 and r.get("message")=="dict literal exceeds 1024 entries" else "bad")' <<< "$JSON")
+check_contains "#1360 over-limit dict records the size error in JSON" "$JSON_OK" "^ok$"
+rm -f "$TMPFILE"
+
 # --- #407: parse errors carry line:col in human output ---
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 printf 'value is 1 extra\n' > "$TMPFILE"   # two statements -> error at 'extra' (col 12)
@@ -2573,6 +2605,31 @@ check_contains "#1343 parse caret under the token on a TAB-indented line" "$OUTP
 printf 'x is 1\nif x:\n\ty is x + "a" * nope\n' > "$TMPFILE"
 OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "#1343 runtime caret under the token on a TAB-indented line" "$OUTPUT" "^       | ${TAB}               ^\$"
+rm -f "$TMPFILE"
+
+# --- #1373: byte columns remain the machine-facing contract, but a terminal
+# caret needs one padding cell per UTF-8 character rather than per byte. ---
+TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+printf 'x is ["éé", 2)\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1373 parse caret after multi-byte characters" "$OUTPUT" "^       |              ^\$"
+printf 's is "éé" + nope\n' > "$TMPFILE"
+OUTPUT=$($EIGS "$TMPFILE" 2>&1 || true)
+check_contains "#1373 runtime caret after multi-byte characters" "$OUTPUT" "^       |             ^\$"
+rm -f "$TMPFILE"
+
+# --- #1371: lexer diagnostics carry the same source excerpt and caret as
+# parser diagnostics. Pin both indentation forms because the caret prefix must
+# preserve a tab byte rather than expanding it to spaces.
+TMPFILE=$(mktemp /tmp/lint_1371_XXXXXX.eigs)
+printf 'if 1 > 0:\n    x is @\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1371 lexer excerpt on a space-indented line" "$OUTPUT" "^     2 |     x is @\$"
+check_contains "#1371 lexer caret on a space-indented line" "$OUTPUT" "^       |          ^\$"
+printf 'if 1 > 0:\n\tx is @\n' > "$TMPFILE"
+OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
+check_contains "#1371 lexer excerpt on a TAB-indented line" "$OUTPUT" "^     2 | ${TAB}x is @\$"
+check_contains "#1371 lexer caret on a TAB-indented line" "$OUTPUT" "^       | ${TAB}     ^\$"
 rm -f "$TMPFILE"
 
 # --- #1251 round 2: a literal node carries its OWN first line, not the line of

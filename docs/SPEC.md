@@ -1881,6 +1881,13 @@ handle; `thread_join of handle` waits and returns its result. Channels
 (`channel of null`, `send`, `recv`, `try_recv`, `recv_timeout`)
 communicate between threads.
 
+Values crossing a channel, `thread_join`, or cooperative-task boundary are
+copied recursively. This includes buffers (payload and shape) and text builders
+(bytes and builder metadata). Closures retain their captured environment by
+reference, resource handles remain shared, repeated aliases split into separate
+copies, and objects below the depth-64 recursion guard remain shared. The
+executable kind-by-kind contract is in `docs/CONCURRENCY.md`.
+
 ```eigenscript
 ch is channel of null
 spawn of [(v) => send of [ch, v * 2], 21]
@@ -2388,6 +2395,18 @@ cross-unit history by default; hosts may explicitly promise isolated observer
 use with `eigs_set_eval_observer_isolated`. Missing history then raises
 conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
+
+### Model context limits
+
+With a model loaded, `eigen_generate` and `eigen_eval_loss` accept nonempty
+prompts up to and including the model's `max_seq_len`. Longer prompts raise
+a catchable `value` error; neither builtin truncates the supplied prompt.
+`native_train_step_builtin` applies the same refusal rule to the combined
+input and output lengths. These limits apply with `EIGS_STRICT=0` too.
+Generation records either its token list or its context refusal on the trace
+tape. Replay reproduces that outcome before consulting the model, even when
+the checkpoint is missing or has a different context limit, and preserves the
+following call's record.
 
 ### HTTP startup and response attribution
 

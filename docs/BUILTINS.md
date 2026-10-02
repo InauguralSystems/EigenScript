@@ -357,7 +357,7 @@ Boolean keywords that check the most recently observed value:
 | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` raises by default; under `EIGS_STRICT=0` it answers `""` (#971). |
 | `try_parse` | `try_parse of code_string` | 1 if string is valid EigenScript syntax, 0 otherwise |
 | `mkdir` | `mkdir of "path"` | Create directory (and parents). 1 on success, 0 on failure. Trace-recorded: replay serves the recorded bit and does not re-create the directory (#585) |
-| `ls` | `ls of "path"` | List directory contents as list of strings. Trace-recorded, so replay is deterministic (#585) |
+| `ls` | `ls of "path"` | List non-hidden directory entries as bytewise-sorted strings (the order of `LC_ALL=C ls -1`). Trace-recorded, so replay is deterministic (#585) |
 | `getcwd` | `getcwd of null` | Current working directory as string. Trace-recorded, so replay is deterministic (#585) |
 | `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH. Trace-recorded, so replay is deterministic (#585) |
 | `chdir` | `chdir of "path"` | Change working directory. 1 on success, 0 on failure |
@@ -777,7 +777,7 @@ user-callee half. `tools/strict_differential.sh`
 crosses every guarded builtin in the extension with the wrong-container
 shapes and requires each pair to raise or to carry a reason in its allowlist,
 so this paragraph is checked against the binary rather than asserted.
-What changed with the flag OFF is the *read*, not the answer. `Value`'s union
+What changed under `EIGS_STRICT=0` is the *read*, not the answer. `Value`'s union
 overlaps `double num` with `char *str`, so `gfx_rect of [0, 0, 32, 32, "255",
 0, 0]` used to reinterpret a `char *` as a `double`, `(int)`-cast it, and
 draw a **black** rectangle where red was asked for — silently, in both modes.
@@ -806,8 +806,8 @@ is a *coercion*: under `EIGS_STRICT=0` they still measure at scale 1.
 wrong-typed scale refuses the call and draws nothing. By default,
 all three raise. Layout code that sizes a box with `gfx_text_width` and then
 draws with `gfx_text` therefore sees a box with no text in it if it passes a
-stringy scale, which is the loudest signal available under `EIGS_STRICT=0`; run
-strict to get the error.
+stringy scale, which is the loudest signal available under `EIGS_STRICT=0`; leave
+strict mode at its default to get the error.
 
 A few values are deliberately left quiet because they are the *answer*, not a
 rejected argument: a drawing call with no window open answers `null` (that is
@@ -979,7 +979,7 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` raise by default and answer `0` under `EIGS_STRICT=0` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). A **short or non-list** argument also raises under strict (#1007 — it used to skip the check entirely, open at the defaults and hand back a real device id, so `audio_open of [44100]` was indistinguishable from a well-formed call). `of null` is still the defaults. |
+| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` raise by default and answer `0` under `EIGS_STRICT=0` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). A **short or non-list** argument also raises by default; with `EIGS_STRICT=0`, it opens at the defaults and returns the device id or `0` if unavailable (#1007). `of null` is still the defaults. |
 | `audio_sweep` | `audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]` | Generate a frequency sweep with continuous phase. `waveform`: 0=sine, 1=sawtooth. Returns sample list. |
 | `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device. A non-numeric element in `samples` raises a `type_mismatch` error (#1007 — it used to be coerced to 0, so a wrong-typed list played silence on a real channel id), and so does a `samples` that is not a list or buffer at all (#1007 — `audio_play of 42` answered the documented "nothing to play" `0`, indistinguishable from an empty clip). `of null` still plays nothing. |
 | `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. `loops` must be a number equal to `-1` or in `1..10000`; anything else raises by default and answers `0` under `EIGS_STRICT=0` (#1007), and so does a `samples` slot that is not a list or buffer. |

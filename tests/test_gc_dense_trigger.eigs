@@ -1,0 +1,19 @@
+define run(count) as:
+    local graph is []
+    append of [graph, graph]
+    local i is 0
+    loop while i < 4000:
+        local row is []
+        local j is 0
+        loop while j < 32:
+            append of [row, graph[(i + j) % (i + 1)]]
+            j is j + 1
+        append of [graph, row]
+        i is i + 1
+    i is 0
+    loop while i < count:
+        local task is [graph, i]
+        i is task[1] + 1
+    return len of graph
+print of (run of 100000)
+print of "GC_DENSE_OK"

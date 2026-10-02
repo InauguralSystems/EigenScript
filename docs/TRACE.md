@@ -164,13 +164,22 @@ perspective lands on the tape as an `N` record:
   replayed at all. **One record per call carries the whole token list**, not
   one per sampled position: the draws are an implementation detail of the
   decoding policy (top-k and top-p consume different numbers of them), the
-  list is what the script observes. TAKE/RECORD-wrapped, so `EIGS_REPLAY`
+  list is what the script observes. The early replay take means `EIGS_REPLAY`
   serves the tokens *before the model is consulted* — a recorded generation
   replays with no checkpoint on disk and without advancing the RNG. Every
   return is recorded, argument errors and the no-model-loaded empty list
   included, so a program that hits one cannot desync the stream. Greedy
   (`temperature < 0.01`) calls ride the same path: the tape cannot show
   which branch ran, and replay may not load a model to re-derive it.
+  A context-limit refusal (#1405) also records one outcome: a string containing
+  the error message. Successful generations and soft empty-list returns keep
+  their existing list payloads; strings are distinguishable because generation
+  never returns a string. Replay reconstructs the catchable `value` error from
+  that string before consulting the model, using the recorded prompt length
+  and limit even if the checkpoint was deleted or replaced. This uses the
+  existing N-record string encoding without changing the tape format. Existing
+  generation list records remain readable; the usual format/runtime-version
+  checks still apply.
 - **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
   depends on the font rasteriser, the driver and the backend, so the pixel
   a render-decode oracle reads back is a device input and takes the
@@ -359,11 +368,20 @@ that the original tape neither captured nor re-creates:
   Channel ordering depends on the live scheduler — replay against a
   tape with a different interleaving would deadlock or silently
   diverge.
+- **EigenStore:** the entire `store_*` family. A store handle represents a
+  live file and its mutable catalog, so recording the numeric handle cannot
+  reconstruct either its lifetime or its contents. Replay refuses
+  `store_open` before opening or creating a database; it likewise refuses
+  every query, write, close, and catalog operation after validating an
+  already-live handle but before any file or catalog access (relevant to embedders that enable replay mid-state).
+  Consequently a database may be changed or absent during replay without
+  being read, recreated, or modified.
 
 These builtins raise a catchable runtime error under
 `EIGS_REPLAY`, with the message format
-`"<fn>: not replayable under EIGS_REPLAY (subprocess/concurrency
-boundary; see docs/TRACE.md)"`. Programs that need to be replay-safe
+`"<fn>: not replayable under EIGS_REPLAY (<boundary> boundary; see
+docs/TRACE.md)"`, where `<boundary>` is `subprocess/concurrency` or `store`.
+Programs that need to be replay-safe
 must guard these call sites or avoid them entirely.
 
 A boundary refusal is a **clean exit, never a signal**: uncaught, it ends

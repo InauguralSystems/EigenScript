@@ -1,100 +1,153 @@
 #!/bin/bash
-# Model inference must reject prompts beyond max_seq_len (#1405).
-
+# Ordinary tiny-model context boundaries and replay alignment (#1405).
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-EIGS="$TESTS_DIR/../src/eigenscript"
+EIGS="${EIGS_BIN:-$TESTS_DIR/../src/eigenscript}"
+. "$TESTS_DIR/lsan_classify.sh"
 
 PASS=0
 FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
+summary() { echo "MODEL CONTEXT WINDOW: $PASS passed, $FAIL failed"; }
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs_context_window.XXXXXX") || exit 1
+trap 'rm -rf "$WORK"' EXIT
 
-MODEL=/tmp/eigs_context_window_model.json
-HARNESS=/tmp/eigs_context_window_harness.eigs
-cleanup() { rm -f "$MODEL" "$HARNESS" /tmp/eigs_context_window_*.log /tmp/eigs_context_window.tape; }
-trap cleanup EXIT
+# Every runtime invocation uses this path, including fixture generation and
+# replay. Sanitizer diagnostics are failures even when the process exits zero.
+run_clean() {
+    local name="$1" expected_err="$2" rc out err classification
+    shift 2
+    "$@" >"$WORK/$name.out" 2>"$WORK/$name.err"; rc=$?
+    out=$(cat "$WORK/$name.out")
+    err=$(cat "$WORK/$name.err")
+    classification=$(lsan_classify_name "$out
+$err")
+    if [ "$rc" -ne 0 ] || [ "$classification" != none ] || [ "$err" != "$expected_err" ]; then
+        fail "$name clean runtime exit" "rc=$rc; sanitizer=$classification; stdout='$out'; stderr='$err'"
+        return 1
+    fi
+    ok "$name clean runtime exit"
+}
 
-if ! "$EIGS" "$TESTS_DIR/gen_tiny_model.eigs" > "$MODEL" 2>/tmp/eigs_context_window_gen.log; then
-    fail "CW00 generate tiny model" "see /tmp/eigs_context_window_gen.log"
-    echo "MODEL CONTEXT WINDOW: 0 passed, 1 failed"
+if ! run_clean CW00 '' "$EIGS" "$TESTS_DIR/gen_tiny_model.eigs"; then
+    summary
     exit 1
 fi
+MODEL="$WORK/model.json"
+mv "$WORK/CW00.out" "$MODEL"
+HARNESS="$WORK/context.eigs"
+EXPECTED_ERR="[model-load] No live weights, using locked baseline: $MODEL"
 
 cat > "$HARNESS" <<EIGS
 eigen_model_load of "$MODEL"
-long is range of 20
+assert of [(eigen_model_loaded of null) == 1, "tiny model loaded"]
+for n in [15, 16]:
+    prompt is [i % 8 for i in range of n]
+    generated is eigen_generate of [prompt, 0, 4]
+    assert of [(len of generated) > 0 and (len of generated) <= 4, "generation at boundary"]
+    assert of [(eigen_eval_loss of [prompt, 3]) >= 0, "eval at boundary"]
+    print of f"accepted {n}"
+long is [i % 8 for i in range of 17]
 try:
     eigen_generate of [long, 0, 4]
     print of "generation accepted"
 catch e:
-    print of e.message
+    print of f"{e.kind}: {e.message}"
 try:
     eigen_eval_loss of [long, 3]
     print of "eval accepted"
 catch e:
-    print of e.message
+    print of f"{e.kind}: {e.message}"
+try:
+    native_train_step_builtin of [range of 16, [1], 0.01]
+    print of "training accepted"
+catch e:
+    print of f"{e.kind}: {e.message}"
 EIGS
+MODEL_BYTES=$(wc -c < "$MODEL" | tr -d ' ')
+cat > "$WORK/expected.out" <<EXPECTED
+Loading model from: $MODEL
+Model file loaded: $MODEL_BYTES bytes
+Config: vocab=8 d_model=4 n_layers=1 d_ff=8
+Model loaded successfully: v2 (ternary-weight-only), 1 layers, d_model=4
+accepted 15
+accepted 16
+value: eigen_generate: prompt length 17 exceeds model max_seq_len 16
+value: eigen_eval_loss: prompt length 17 exceeds model max_seq_len 16
+value: native_train_step: sequence length 17 exceeds model max_seq_len 16
+EXPECTED
 
-OUT_FILE=/tmp/eigs_context_window_stdout.log
-ERR_FILE=/tmp/eigs_context_window_stderr.log
-"$EIGS" "$HARNESS" >"$OUT_FILE" 2>"$ERR_FILE"
-RC=$?
-OUT=$(cat "$OUT_FILE")
-ERR=$(cat "$ERR_FILE")
-
-if [ "$RC" -eq 0 ]; then
-    ok "CW01 inference overflow harness exits cleanly"
-else
-    fail "CW01 inference overflow harness exits cleanly" "rc=$RC, stderr='$ERR'"
-fi
-
-EXPECTED_ERR="[model-load] No live weights, using locked baseline: $MODEL"
-if [ "$ERR" = "$EXPECTED_ERR" ]; then
-    ok "CW02 inference overflow harness has only the expected model-load diagnostic"
-else
-    fail "CW02 inference overflow harness has only the expected model-load diagnostic" "stderr='$ERR'"
-fi
-
-CHECK=3
-for expected in \
-    "eigen_generate: prompt length 20 exceeds model max_seq_len 16" \
-    "eigen_eval_loss: prompt length 20 exceeds model max_seq_len 16"
-do
-    if [ "$(printf '%s\n' "$OUT" | grep -Fxc "$expected" || true)" -eq 1 ]; then
-        ok "CW0$CHECK $expected"
+for strict in 0 1; do
+    run_clean "CW-strict-$strict" "$EXPECTED_ERR" env EIGS_STRICT="$strict" "$EIGS" "$HARNESS"
+    if cmp -s "$WORK/expected.out" "$WORK/CW-strict-$strict.out"; then
+        ok "CW-strict-$strict inference boundaries and training refusal agree"
     else
-        fail "CW0$CHECK overlong inference prompt is rejected" "expected '$expected'; stdout='$OUT'; stderr='$ERR'"
+        fail "CW-strict-$strict context contract"
+        diff -u "$WORK/expected.out" "$WORK/CW-strict-$strict.out"
     fi
-    CHECK=$((CHECK+1))
 done
 
-# A raising nondeterministic call has no N record. Replay must validate it
-# before taking the next record, or it will consume the valid call's tokens and
-# silently bypass the exception.
-cat > "$HARNESS" <<EIGS
-eigen_model_load of "$MODEL"
-long is range of 20
+# Generation outcomes must survive changes to the external model. Compare
+# the raw generation transcript after the loader's informational banner.
+cp "$MODEL" "$WORK/original.json"
+sed 's/"max_seq_len":16/"max_seq_len":24/' "$MODEL" > "$WORK/larger.json"
+sed 's/"max_seq_len":16/"max_seq_len":8/' "$MODEL" > "$WORK/smaller.json"
+cat > "$WORK/generation.eigs" <<'EIGS'
+print of "CW transcript"
+long is [i % 8 for i in range of 17]
 try:
     eigen_generate of [long, 0, 4]
     print of "generation accepted"
 catch e:
-    print of e.message
-print of (eigen_generate of [[1, 2, 3], 0, 4])
+    print of f"{e.kind}: {e.message}"
+for prompt in [[i % 8 for i in range of 16], [1, 2, 3]]:
+    generated is eigen_generate of [prompt, 0, 4]
+    assert of [(len of generated) == 4, "valid generation follows refusal"]
+    print of generated
+print of (random_int of [11, 19])
 EIGS
+printf 'eigen_model_load of "%s"\n' "$MODEL" > "$HARNESS"
+cat "$WORK/generation.eigs" >> "$HARNESS"
+for jit_off in 0 1; do
+    cp "$WORK/original.json" "$MODEL"
+    tape="$WORK/replay-$jit_off.tape"
+    trace_name="CW-trace-$jit_off"
+    run_clean "$trace_name" "$EXPECTED_ERR" env EIGS_JIT_OFF="$jit_off" EIGS_TRACE="$tape" "$EIGS" "$HARNESS"
+    sed -n '/^CW transcript$/,$p' "$WORK/$trace_name.out" > "$WORK/recorded.out"
+    nrec=$(grep -c '^N eigen_generate=' "$tape")
+    nlists=$(grep -c '^N eigen_generate=\[' "$tape")
+    nrefusals=$(grep -Fxc 'N eigen_generate="eigen_generate: prompt length 17 exceeds model max_seq_len 16"' "$tape")
+    nrandom=$(grep -c '^N random_int=' "$tape")
+    if [ "$nrec" = 3 ] && [ "$nlists" = 2 ] && [ "$nrefusals" = 1 ] && [ "$nrandom" = 1 ]; then
+        ok "CW-trace-$jit_off one outcome per call, successful lists unchanged"
+    else
+        fail "CW-trace-$jit_off outcome records" "generation=$nrec; lists=$nlists; refusals=$nrefusals; random=$nrandom"
+    fi
+    for model_state in unchanged missing larger smaller; do
+        replay_name="CW-replay-$jit_off-$model_state"
+        replay_script="$HARNESS"
+        replay_err="$EXPECTED_ERR"
+        if [ "$model_state" = missing ]; then
+            rm "$MODEL"
+            replay_script="$WORK/generation.eigs"
+            replay_err=''
+        elif [ "$model_state" = unchanged ]; then
+            cp "$WORK/original.json" "$MODEL"
+        else
+            cp "$WORK/$model_state.json" "$MODEL"
+        fi
+        run_clean "$replay_name" "$replay_err" env EIGS_JIT_OFF="$jit_off" EIGS_REPLAY="$tape" EIGS_REPLAY_STRICT=1 "$EIGS" "$replay_script"
+        sed -n '/^CW transcript$/,$p' "$WORK/$replay_name.out" > "$WORK/replayed.out"
+        refusals=$(grep -Fxc 'value: eigen_generate: prompt length 17 exceeds model max_seq_len 16' "$WORK/replayed.out")
+        if [ "$refusals" = 1 ] && cmp -s "$WORK/recorded.out" "$WORK/replayed.out"; then
+            ok "$replay_name preserves refusal, successes, and following random draw"
+        else
+            fail "$replay_name tape alignment" "refusals=$refusals"
+            diff -u "$WORK/recorded.out" "$WORK/replayed.out"
+        fi
+    done
+done
 
-TAPE=/tmp/eigs_context_window.tape
-TRACE_OUT=$(EIGS_TRACE="$TAPE" "$EIGS" "$HARNESS" 2>/dev/null)
-REPLAY_OUT=$(EIGS_REPLAY="$TAPE" "$EIGS" "$HARNESS" 2>/dev/null)
-NREC=$(grep -c '^N eigen_generate=' "$TAPE" 2>/dev/null || true)
-REPLAY_ERRORS=$(printf '%s\n' "$REPLAY_OUT" |
-    grep -Fxc 'eigen_generate: prompt length 20 exceeds model max_seq_len 16' || true)
-if [ "$NREC" -eq 1 ] && [ "$REPLAY_OUT" = "$TRACE_OUT" ] && [ "$REPLAY_ERRORS" -eq 1 ]; then
-    ok "CW05 rejected generation preserves replay tape alignment"
-else
-    fail "CW05 rejected generation preserves replay tape alignment" \
-        "records=$NREC; trace='$TRACE_OUT'; replay='$REPLAY_OUT'"
-fi
-
-echo "MODEL CONTEXT WINDOW: $PASS passed, $FAIL failed"
+summary
 [ "$FAIL" -eq 0 ]

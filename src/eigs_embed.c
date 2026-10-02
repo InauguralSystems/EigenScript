@@ -43,6 +43,10 @@ EigsState *eigs_open(void) {
     return st;
 }
 
+void eigs_state_set_strict(EigsState *st, int enabled) {
+    if (st) st->strict = enabled != 0;
+}
+
 void eigs_close(EigsState *st) {
     if (!st) return;
     /* Mirror main.c's teardown order. #301: drain the handle table FIRST — reap
