@@ -741,7 +741,7 @@ sp_lib_closure() {
 # the WORKING TREE plus untracked files against the merge base, because an
 # uncommitted fix is exactly what this gate is run on.
 build_changed_plan() {
-    local base="$1" mb p tok d lines dlines
+    local base="$1" mb p tok d lines dlines seam_start seam_end seam_delta
     SP_WORK=$(sp_workdir changed)
     derive_chunks "$RUNNER" > "$SP_WORK/chunks"
     verify_partition "$RUNNER" "$SP_WORK/chunks"
@@ -756,9 +756,20 @@ build_changed_plan() {
     : > "$SP_WORK/lines"; : > "$SP_WORK/unmatched"; : > "$SP_WORK/sourced"; : > "$SP_WORK/runtime"; SP_CHANGED_FULL=''
     # Runner hunks select the chunk each changed line lands in (new-side
     # numbering; a pure deletion selects the chunk holding the line before it).
+    seam_start=$(grep -nFx '# EIGS_SECTION_FRAGMENTS' "$RUNNER_SOURCE" | cut -d: -f1)
+    seam_end=$(grep -nFx '# EIGS_SECTION_FRAGMENTS_END' "$RUNNER_SOURCE" | cut -d: -f1)
+    seam_delta=$(($(wc -l < "$RUNNER") - $(wc -l < "$RUNNER_SOURCE")))
     git -C "$SP_ROOT" diff -U0 "$mb" -- tests/run_all_tests.sh \
         | sed -n 's/^@@ -[0-9,]* +\([0-9][0-9]*\)\(,\([0-9][0-9]*\)\)\{0,1\} @@.*/\1 \3/p' \
-        | awk '{ n = ($2 == "") ? 1 : $2; if (n == 0) n = 1; for (i = 0; i < n; i++) print $1 + i }' > "$SP_WORK/hunks"
+        | awk -v ss="$seam_start" -v se="$seam_end" -v delta="$seam_delta" -v seam="$SP_WORK/seam-changed" '
+            {
+                n = ($2 == "") ? 1 : $2; if (n == 0) n = 1
+                for (i = 0; i < n; i++) {
+                    line = $1 + i
+                    if (line >= ss && line <= se) { print "yes" > seam; next }
+                    print line + (line > se ? delta : 0)
+                }
+            }' > "$SP_WORK/hunks"
     cat "$SP_WORK/hunks" >> "$SP_WORK/lines"
     # Every other changed file selects the chunks that reference it: by its
     # basename when that is unique in the tree (a test is named by basename),
@@ -844,6 +855,7 @@ $(sp_select "$(basename "$d")")" ;;
     # every section: run them all.
     SP_CHANGED_FULL=$(awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" \
         '$1 <= pre || $1 >= epi { print "yes"; exit }' "$SP_WORK/hunks")
+    [ ! -s "$SP_WORK/seam-changed" ] || SP_CHANGED_FULL=yes
     [ ! -s "$SP_WORK/sourced" ] || SP_CHANGED_FULL=yes
     # line -> chunk, then widen to each chunk's dependency group, plus the floor.
     awk -v full="$SP_CHANGED_FULL" -v floor_re="$CHANGED_FLOOR_RE" '
@@ -1031,6 +1043,8 @@ selftest() {
     expect_plan 'changed: an edited test script selects its section' '[42h]'
     sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)$/\1 # edited/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a runner hunk selects the chunk it lands in' '[17/17]'
+    sed -i.bak 's/^\(echo "\[99p\] Child-script exit-status ledger.*\)$/\1 # edited/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a runner hunk after the fragment seam keeps its expanded chunk' '[99p]'
     sed -i.bak '1s/$/ /' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
     : > "$dir/cl/zz_named_by_nothing.txt"

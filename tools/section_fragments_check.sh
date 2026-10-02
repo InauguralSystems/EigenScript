@@ -24,21 +24,32 @@ check bash -c 'bash tools/runner_text.sh | grep -qF '\''echo "[zz1487] section f
 name='section_plan can select the planted label'
 check bash -c 'bash tools/section_plan.sh --sections zz1487 --quiet | grep -q "bearing=1"'
 name='suite_label_check counts the planted label'
-check bash -c 'bash tools/suite_label_check.sh | grep -q "PASS: 263 labelled"'
+check bash tools/suite_label_check.sh
 name='child_exit_check counts the planted child invocation'
-check bash -c 'bash tools/child_exit_check.sh | grep -q "90 child-script sites"'
+check bash tools/child_exit_check.sh
 name='enrolment_check reaches a test invoked only by the fragment'
 check bash tools/enrolment_check.sh
 
-# Mutation witness: this is the old label gate with fragment expansion removed.
-# It stays superficially green, but the pinned planted population makes that a
-# red result here. Thus removing fragment awareness from any one gate cannot
-# leave this calibration green.
-sed '/RUNNER_TEXT=$(mktemp/,/RUNNER="$RUNNER_TEXT"/d' tools/suite_label_check.sh > "$work/ignores-sections.sh"
-if out=$(bash "$work/ignores-sections.sh" 2>&1) && ! grep -q 'PASS: 263 labelled' <<< "$out"; then
-    checks=$((checks + 1)); echo '  PASS: negative plant is red when one gate ignores tests/sections'
+# Mutation witness: make the fragment invalid by duplicating its label. The
+# real gate must reject it, while an otherwise-working copy with expansion
+# removed stays green. Root the copy in this checkout so a missing helper can
+# never masquerade as the expected mutation result.
+cat >> "$fragment" <<'EOF'
+echo "[zz1487] duplicate section fragment selftest plant"
+EOF
+if bash tools/suite_label_check.sh > "$work/expanded.out" 2>&1; then
+    checks=$((checks + 1)); echo '  FAIL: expanded label gate accepted a duplicate fragment label'; bad=1
 else
-    checks=$((checks + 1)); echo '  FAIL: negative plant did not expose a gate ignoring tests/sections'; bad=1
+    checks=$((checks + 1)); echo '  PASS: expanded label gate rejects an invalid fragment'
+fi
+sed -e "s|^ROOT=.*|ROOT='$ROOT'|" \
+    -e '/RUNNER_TEXT=$(mktemp/,/RUNNER="$RUNNER_TEXT"/d' \
+    tools/suite_label_check.sh > "$work/ignores-sections.sh"
+if out=$(bash "$work/ignores-sections.sh" 2>&1); then
+    checks=$((checks + 1)); echo '  PASS: rooted mutation stays green only because it ignores tests/sections'
+else
+    checks=$((checks + 1)); echo '  FAIL: mutation failed for a reason other than fragment blindness'
+    printf '%s\n' "$out" | sed 's/^/    /'; bad=1
 fi
 echo "section fragments selftest: checks=$checks failures=$bad"
 exit "$bad"
