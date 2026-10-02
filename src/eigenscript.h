@@ -1868,6 +1868,9 @@ void env_mark_captured(Env *env);
  * doesn't prove a subgraph dead it leaks instead of freeing. No-op when
  * multithreaded. */
 void gc_collect_cycles(void);
+/* Drain buffered LIST/DICT possible roots without seeding the traversal from
+ * the unrelated captured-environment registry. */
+void gc_collect_value_candidates(void);
 /* Exit-time teardown of the global scope: drops every global binding,
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */

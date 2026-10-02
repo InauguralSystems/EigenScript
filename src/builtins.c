@@ -3684,6 +3684,14 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     return 0;
 }
 
+static Value *sandbox_finish_run(Value *out) {
+    /* Validation and execution can both park state-wide possible-root pins.
+     * Every descriptor outcome reaches this boundary; candidate-only GC
+     * avoids a full captured-environment scan for each small sandbox run. */
+    gc_collect_value_candidates();
+    return out;
+}
+
 /* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
  * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
@@ -3749,7 +3757,7 @@ Value* builtin_sandbox_run(Value *arg) {
                        make_str(abi_err ? abi_err : "invalid chunk descriptor"));
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
-        return out;
+        return sandbox_finish_run(out);
     }
     /* SEALED restricted env. The parent link is NULL, not g_global_env: the
      * sandbox env is a root, and the allowed builtins are COPIED into it.
@@ -3992,7 +4000,7 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_refusal_line = saved_sb_refusal_line;
     memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
            sizeof saved_sb_refusal_msg);
-    return out;
+    return sandbox_finish_run(out);
 }
 
 /* record_history of flag — enable (nonzero) or disable (0) per-assignment

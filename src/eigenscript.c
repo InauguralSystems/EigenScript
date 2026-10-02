@@ -4312,10 +4312,11 @@ static int gc_next_threshold(int live, int last_universe) {
     return (int)t;
 }
 
-static void gc_collect_impl(Value **seeds, int seed_count) {
+static void gc_collect_impl(Value **seeds, int seed_count,
+                            int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
-    if (!g_gc_envs && seed_count == 0) {
-        g_gc_threshold = GC_THRESHOLD_MIN;
+    if ((!include_captured_envs || !g_gc_envs) && seed_count == 0) {
+        if (include_captured_envs) g_gc_threshold = GC_THRESHOLD_MIN;
         return;
     }
     g_in_gc = 1;
@@ -4330,8 +4331,10 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
      * edge counts, including duplicate edges and self references. The graph
      * stays unchanged until clearing, so discovery also records which nodes
      * have no node children; marking need not scan their leaf slots again. */
-    for (Env *e = g_gc_envs; e; e = e->gc_next)
-        gcu_add(&u, e, GC_KIND_ENV);
+    if (include_captured_envs) {
+        for (Env *e = g_gc_envs; e; e = e->gc_next)
+            gcu_add(&u, e, GC_KIND_ENV);
+    }
     for (int s = 0; s < seed_count; s++) {
         gcu_add(&u, seeds[s], GC_KIND_VAL);
         u.pinned[gcu_find(&u, seeds[s])]++;
@@ -4375,7 +4378,8 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
         free(u.table); free(u.objs); free(u.kind);
         free(u.internal); free(u.pinned); free(u.mark);
         free(u.has_node_children);
-        g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
+        if (include_captured_envs)
+            g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
         g_gc_val_threshold = gc_val_next_threshold(discovery_work);
         g_in_gc = 0;
         return;
@@ -4425,7 +4429,8 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     free(u.table); free(u.objs); free(u.kind);
     free(u.internal); free(u.pinned); free(u.mark);
     free(u.has_node_children);
-    g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
+    if (include_captured_envs)
+        g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
     g_gc_val_threshold = gc_val_next_threshold(survivor_work);
     g_in_gc = 0;
 }
@@ -4458,12 +4463,12 @@ void gc_note_possible_root(Value *v) {
         gc_collect_cycles();
 }
 
-void gc_collect_cycles(void) {
+static void gc_drain_value_candidates(int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
     /* Feed the value-candidate buffer in as pinned seeds (each holds exactly
-     * one buffer pin, accounted like the exit snapshot's), alongside the
-     * captured-env registry. */
-    gc_collect_impl(g_gc_val_buf, g_gc_val_count);
+     * one buffer pin, accounted like the exit snapshot's), optionally
+     * alongside the captured-env registry. */
+    gc_collect_impl(g_gc_val_buf, g_gc_val_count, include_captured_envs);
     /* Drain the buffer: clear the buffered flags, then drop each pin. The
      * collection has already broken any garbage cycle's internal edges, so the
      * final pin drop frees the garbage; live candidates keep their other refs.
@@ -4477,6 +4482,18 @@ void gc_collect_cycles(void) {
         for (int i = 0; i < n; i++) val_decref(g_gc_val_buf[i]);
         g_in_gc = 0;
     }
+}
+
+void gc_collect_cycles(void) {
+    gc_drain_value_candidates(1);
+}
+
+void gc_collect_value_candidates(void) {
+    /* Sandbox budgets end at each invocation, so their state-wide candidate
+     * pins must end there too. Seed only from those candidates: captured envs
+     * reached from a candidate are still traversed, but unrelated captured
+     * graphs and their adaptive threshold are left alone. */
+    gc_drain_value_candidates(0);
 }
 
 /* ---- Module cache (Phase 0a) ----------------------------------------
@@ -4666,7 +4683,7 @@ void gc_collect_at_exit(Env *global) {
         }
     }
     if (global) env_clear(global);
-    gc_collect_impl(seeds, seed_count);
+    gc_collect_impl(seeds, seed_count, 1);
     for (int i = 0; i < seed_count; i++)
         val_decref(seeds[i]);
     free(seeds);
