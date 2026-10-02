@@ -1,6 +1,6 @@
-# #1417 byte-for-byte VM/AOT oracle. Keep this program and its .out sibling
-# consumable as a standalone fixture by ouroboros: it pins every operator from
-# the issue plus the scalar accessor paths, without relying on assertions.
+# #1417 opt-out boxed-accessor exact-output fixture for an optional AOT mirror.
+# The five infinity operators use buf_get-boxed operands, not the original
+# issue's direct indexed operands; direct AOT parity remains pending.
 big is buffer of 4
 big[0] is 1e300
 big[1] is 1e300
@@ -8,9 +8,9 @@ big[2] is 1e300
 big[3] is 1e300
 matrix is reshape of [big, 2, 2]
 infs is matmul of [matrix, matrix]
-# Keep the arithmetic operands boxed at the AOT boundary: the purpose of this
-# cross-engine fixture is to exercise the shared runtime scalar-read contract,
-# not ouroboros's separate unboxed-number optimizer.
+# These operands exercise the shared runtime scalar-read accessor contract.
+# They do not establish direct indexed-operator or strict diagnostic/flag
+# parity with ouroboros's separate unboxed-number optimizer.
 print of ((buf_get of [infs, 0]) > 1e308)
 print of ((buf_get of [infs, 0]) / (buf_get of [infs, 1]))
 print of ((buf_get of [infs, 0]) % 3)

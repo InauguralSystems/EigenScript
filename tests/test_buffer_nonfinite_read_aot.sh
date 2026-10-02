@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# #1417 VM/AOT differential.  Ouroboros is a sibling repository rather than
-# an EigenScript dependency, so the ordinary standalone checkout skips this
-# mirror; consumer/parity CI supplies OUROBOROS_DIR and makes it mandatory.
+# #1417 optional opt-out boxed-accessor VM/AOT mirror. Ouroboros is a
+# sibling repository; an unavailable checkout is reported as SKIP. No current
+# EigenScript workflow makes this mirror mandatory.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -25,4 +25,4 @@ EIGS_STRICT=0 "$TMP/aot-bin" > "$TMP/aot.out"
 
 diff -u "$EXPECTED" "$TMP/vm.out"
 diff -u "$TMP/vm.out" "$TMP/aot.out"
-echo "PASS: #1417 VM and ouroboros AOT output are byte-identical"
+echo "PASS: #1417 optional opt-out boxed-accessor VM/AOT mirror matches"

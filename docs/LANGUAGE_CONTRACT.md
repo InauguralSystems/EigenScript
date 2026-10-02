@@ -169,7 +169,7 @@ examples (executed by the suite).
   `matmul` reaching `inf - inf`, and `tensor_load` of a file carrying
   NaN bytes collapse the same way. A buffer may retain the raw kernel value
   internally, but every scalar read applies this same collapse (or raises in
-  strict mode). Both bits are sticky until
+  strict mode), including structural equality and scalar reductions. Both bits are sticky until
   `clear_math_flags`, so bracket a computation the way you would on an
   FPU. In strict mode, the default, every one of those out-of-domain
   calls and NaN sources raises a catchable `value` error naming the

@@ -149,6 +149,9 @@ guard is buffer of [3, 4]
 raises of ["scatter_add column out of range", (nul) => scatter_add of [guard, [1, 4, 1], [1.0, 2.0, 3.0]], "index_range"]
 assert_eq of [sum of guard, 0.0, "scatter_add: a raise leaves dst untouched (no partial row 0 write)"]
 raises of ["scatter_add flat out of range", (nul) => scatter_add of [(buffer of 3), [3], 1.0], "index_range"]
+raises of ["scatter_add huge list index", (nul) => scatter_add of [(buffer of 3), [1e300], 1.0], "index_range"]
+raises of ["scatter_add fractional buffer index", (nul) => scatter_add of [(buffer of 3), (vec_buf of [[1.5]]), 1.0], "index_range"]
+raises of ["scatter_add fractional index", (nul) => scatter_add of [(buffer of 3), [1.5], 1.0], "index_range"]
 raises of ["scatter_add non-buffer dst", (nul) => scatter_add of [[0.0, 0.0], [0], 1.0], "type_mismatch"]
 # length mismatches are LOUD, not truncated — a dropped gradient entry is a
 # silent wrong number, the same reason an out-of-range index raises

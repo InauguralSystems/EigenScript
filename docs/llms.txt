@@ -194,7 +194,11 @@ sqrt(2) = 1.414213562373095
   opt-out that brings the finite stand-ins back (`NaN` collapses to `0`,
   `sqrt of -1` is `0`, `abs of "x"` is `0`).
   Raw non-finite tensor results receive the same guard whenever an element is
-  read from a buffer, independent of the consuming operator.
+  read from a buffer, independent of the consuming operator. Structural buffer
+  equality, scalar reductions, mixed buffer/list materialization and numeric
+  byte/sample/device conversions normalize their buffer inputs too and stop at
+  the first raised read. Numeric bytes truncate and wrap modulo 256 afterward;
+  raw copies, serialization and buffer-only work areas preserve representation.
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`. Each `{…}` converts with the builtin `str`, even if you rebind `str`.
@@ -210,16 +214,24 @@ sqrt(2) = 1.414213562373095
   `softmax`, `relu`, `sum`/`mean`/`norm`, `gather`, `zeros_like`) takes either
   container and returns a buffer iff every tensor operand was one.
 
+Binary tensor I/O: tensor_load and tensor_save cap files at 10,000,000
+elements and raise catchable limit errors above it. stream_open requires
+an integral count from 1 through that cap; build_corpus includes file
+separators in its capped token count. These limits also raise with
+EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
+
 ## Threads: VALUES copy through a channel, HANDLES share
 
 - `spawn of [fn, arg]` / `channel of n` / `send` / `recv` / `thread_join`.
-- **A number, string, list or dict sent through a channel is DEEP-COPIED**;
-  the receiver cannot see a later mutation by the sender.
-- **A `buffer`, a `text_builder`, a closure, or another channel/store/thread
-  handle is SHARED BY REFERENCE** — the receiver DOES see the sender's later
-  mutations. That asymmetry is open defect #1148; do not assume send-is-copy
-  for a buffer. Send a snapshot (copy into a fresh `buffer of n` with
-  `buf_copy`, or `text_builder_to_string`) when you need share-nothing.
+- `exit of N` in any spawned worker stops the whole state: blocked concurrency
+  calls wake, all VM threads unwind, and the process exits with N after worker
+  teardown. Native I/O must return before teardown completes. Embedded outer
+  evals have separate stop scopes; workers retain their spawning eval's scope.
+- **A number, string, list, dict, buffer, or text builder sent through a
+  channel is DEEP-COPIED**; the receiver cannot see a later mutation by the
+  sender. The same boundary applies to thread results and cooperative tasks.
+- **A closure or channel/store/thread handle is SHARED BY REFERENCE** — a
+  closure's captured environment and a handle's resource remain shared.
 
 ```eigenscript
 c is channel of 1
@@ -231,11 +243,11 @@ send of [c, b]
 set_at of [xs, 0, 99]
 buf_set of [b, 0, 99]
 print of (recv of c)                      # the LIST copied
-print of (buf_get of [(recv of c), 0])    # the BUFFER shared
+print of (buf_get of [(recv of c), 0])    # the BUFFER copied
 ```
 ```output
 [1, 2]
-99
+1
 ```
 
 - The measured kind-by-kind table lives in docs/CONCURRENCY.md and is itself an
@@ -299,6 +311,10 @@ division by zero
 
 ## Before hand-rolling a helper
 
+Cooperative task IDs are opaque numeric handles. Do not perform arithmetic on
+them: a packed generation prevents an ID retained past `task_detach` from
+naming a later task that reuses the same slot.
+
 The runtime publishes its builtin index with `eigenscript --api`, and `lib/` covers a lot. `ord`/`chr`/`str_lower`/
 `str_upper`/`char_at`/`index_of`/`hex of [n, nibbles]`/`sort_by` are builtins
 (there is no bare `lower` — it's `str_lower`; `sort_by of [items, key_fn]` is
@@ -327,6 +343,12 @@ importer's globals.
 See docs/BUILTINS.md and docs/STDLIB.md before writing your own — or resolve
 a name mechanically: `eigenscript --api --json` dumps every builtin,
 extension (by group), and lib function with its parameter list in one call.
+
+The optional model builtins `eigen_generate` and `eigen_eval_loss` raise a
+catchable `value` error for prompts longer than the loaded model's
+`max_seq_len`, including with `EIGS_STRICT=0`. Choose any context truncation
+explicitly before calling them. `native_train_step_builtin` uses the same
+limit for the combined input and output lengths.
 
 ## The generation-validation ladder (always run what you generate)
 

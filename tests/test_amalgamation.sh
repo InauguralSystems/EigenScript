@@ -48,6 +48,16 @@ OUT=$("$WORK/host" 2>&1 || true)
 if echo "$OUT" | grep -qx "42"; then pass "embedded eval runs (6 * 7 = 42)"; else fail "eval output wrong: $OUT"; fi
 if echo "$OUT" | grep -q "host ok"; then pass "host completes cleanly"; else fail "host did not complete"; fi
 
+# arena.c is emitted before several runtime units.  Its implementation must
+# not leave the header's free-accounting macro undefined for those later files,
+# or eigs_close() releases bypass the tracker in the single translation unit.
+STATS_OUT=$(EIGS_ALLOC_STATS=1 "$WORK/host" 2>&1 || true)
+if echo "$STATS_OUT" | grep -Eq '^eigs-alloc-stats: cumulative=[0-9]+ live=0 peak=[0-9]+ tracked=0$'; then
+    pass "amalgamation teardown accounts for all tracked releases"
+else
+    fail "amalgamation allocation accounting did not return to zero: $STATS_OUT"
+fi
+
 rm -rf "$WORK"
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

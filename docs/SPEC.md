@@ -1880,6 +1880,13 @@ handle; `thread_join of handle` waits and returns its result. Channels
 (`channel of null`, `send`, `recv`, `try_recv`, `recv_timeout`)
 communicate between threads.
 
+Values crossing a channel, `thread_join`, or cooperative-task boundary are
+copied recursively. This includes buffers (payload and shape) and text builders
+(bytes and builder metadata). Closures retain their captured environment by
+reference, resource handles remain shared, repeated aliases split into separate
+copies, and objects below the depth-64 recursion guard remain shared. The
+executable kind-by-kind contract is in `docs/CONCURRENCY.md`.
+
 ```eigenscript
 ch is channel of null
 spawn of [(v) => send of [ch, v * 2], 21]
@@ -1924,9 +1931,17 @@ A worker that **dies of an uncaught error** prints its trace and the
 fire-and-forget thread's failure is never swallowed into a success exit.
 This covers a builtin spawned directly (`spawn of [recv, 5]` raises
 "invalid channel" on the worker) as well as a function body. An error
-`catch`-ed inside the worker recovers normally (exit 0), and a worker's
-`exit of N` still decides the status (#739). The failure is always a
-clean exit, never a signal (#1112).
+`catch`-ed inside the worker recovers normally (exit 0). A worker's
+`exit of N` is instead a state-wide, uncatchable stop request: the first
+request decides the process status. VM threads observe it at loop back edges
+and builtin returns, and main-thread waits in `recv`, `recv_timeout`,
+`thread_join`, or `usleep` are woken so teardown can begin. Once a thread
+observes the request, its later script statements do not run (#1149). Native I/O outside these runtime waits is not asynchronously
+cancelled: teardown still waits for those workers to return before freeing
+state. An interrupted join consumes its handle and defers reaping; it does not
+return the target's result. Embedded outer evals have separate stop scopes;
+workers retain the scope of their spawning eval (see `docs/EMBEDDING.md`).
+The failure is always a clean exit, never a signal (#1112).
 
 ## Cooperative tasks
 
@@ -2130,12 +2145,12 @@ for e in task_sched_trace of null:
     print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"
 ```
 ```output
-0 t=0 task=1 spawn
-1 t=0 task=2 spawn
-2 t=0 task=1 yield
-3 t=0 task=2 yield
-4 t=10 task=1 sleep-wake
-5 t=10 task=2 sleep-wake
+0 t=0 task=257 spawn
+1 t=0 task=258 spawn
+2 t=0 task=257 yield
+3 t=0 task=258 yield
+4 t=10 task=257 sleep-wake
+5 t=10 task=258 sleep-wake
 6 t=10 task=0 join-release
 ```
 
@@ -2256,7 +2271,15 @@ match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
 Every element crossing the buffer/scalar boundary uses the numeric guard:
 infinity saturates at ±`1e308`, while a `NaN` raises in strict mode or becomes
-`0` and sets `math_flags.invalid` under `EIGS_STRICT=0`.
+`0` and sets `math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer
+equality and scalar reductions normalize each input before comparison or
+arithmetic. A strict read that raises inside a function retains that
+function's source location and call frame. Buffer-to-list tensor materialization
+and numeric byte/sample/device conversions apply the same read rule, stopping
+at the first raised read. Numeric bytes truncate and wrap modulo 256 after
+normalization; audio samples then clamp to their documented sample range.
+Raw buffer copies, typed serialization and internal buffer-only kernel work
+areas retain their stored representation.
 
 The tensor builtins operate directly on the flat data — no per-call conversion.
 `matmul of [a, b]` multiplies two shaped buffers (a 1-D buffer is a row vector,
@@ -2315,6 +2338,12 @@ buffer). Mixing a buffer with a list yields a list. The reductions
 (`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
+
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
 
 ```eigenscript
 l is [1.0, 4.0, 9.0]
@@ -2390,6 +2419,18 @@ cross-unit history by default; hosts may explicitly promise isolated observer
 use with `eigs_set_eval_observer_isolated`. Missing history then raises
 conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
+
+### Model context limits
+
+With a model loaded, `eigen_generate` and `eigen_eval_loss` accept nonempty
+prompts up to and including the model's `max_seq_len`. Longer prompts raise
+a catchable `value` error; neither builtin truncates the supplied prompt.
+`native_train_step_builtin` applies the same refusal rule to the combined
+input and output lengths. These limits apply with `EIGS_STRICT=0` too.
+Generation records either its token list or its context refusal on the trace
+tape. Replay reproduces that outcome before consulting the model, even when
+the checkpoint is missing or has a different context limit, and preserves the
+following call's record.
 
 ### HTTP startup and response attribution
 

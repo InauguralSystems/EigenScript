@@ -80,14 +80,18 @@ milestone when an issue is filed against them.
   the taint.
   ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
 
-- **Resolved (#1417): non-finite buffer elements have one scalar-read rule.**
+- **Decided (#1417): normalize non-finite buffer elements on scalar reads.**
   Kernels and persistence may retain raw IEEE infinity or NaN in the unboxed
-  work area, but every language-visible scalar read now crosses
+  work area. The VM/runtime and native JIT implementation makes each scalar read cross
   `buffer_read_num`: infinity saturates at ±`1e308`; NaN raises in strict mode
   or collapses to `0` and sets `math_flags.invalid` under `EIGS_STRICT=0`.
-  `tests/test_buffer_nonfinite_read.eigs` and its exact-output sibling are the
-  shared VM/AOT oracle for the comparison, arithmetic, index, `buf_get`,
-  `get_at`, and `gather` paths.
+  The [owner decision](https://github.com/InauguralSystems/EigenScript/issues/1417#issuecomment-5955582205)
+  includes structural equality and scalar reductions. Direct indexed-operator
+  parity with ouroboros AOT remains unresolved and requires its own mirror,
+  runtime pin migration and validation. `tests/test_buffer_nonfinite_read.eigs`
+  and its exact-output sibling cover boxed `buf_get` operands and scalar
+  accessor/index paths under `EIGS_STRICT=0`; the optional AOT mirror does not
+  establish the original direct indexed operators or strict diagnostics/flags.
   ([#1417](https://github.com/InauguralSystems/EigenScript/issues/1417))
 
 - **Flip `EIGS_STRICT` to the default?** — **DECIDED 2026-09-28: flipped

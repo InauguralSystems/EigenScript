@@ -15,6 +15,7 @@
  * The suite runs this file under the JIT, EIGS_JIT_OFF=1 and forced OSR. */
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "eigs_embed.h"
 #include "eigenscript.h"
@@ -31,11 +32,62 @@ static void check(int ok, const char *what) {
     if (!ok) fail = 1;
 }
 
+typedef struct {
+    EigsState *state;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    int phase;
+} LineRaceProbe;
+
+static void *line_race_worker(void *opaque) {
+    LineRaceProbe *p = opaque;
+    if (!eigs_thread_attach(p->state)) return NULL;
+    pthread_mutex_lock(&p->mutex);
+    while (p->phase < 1) pthread_cond_wait(&p->cond, &p->mutex);
+    /* Deterministically stand in for the tight OP_LINE loop from #1435: the
+     * main thread has stamped its raise site before this worker stamps 99. */
+    g_trace_current_line = 99;
+    p->phase = 2;
+    pthread_cond_broadcast(&p->cond);
+    while (p->phase < 3) pthread_cond_wait(&p->cond, &p->mutex);
+    pthread_mutex_unlock(&p->mutex);
+    eigs_thread_detach();
+    return NULL;
+}
+
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("FAIL: eigs_open\n"); return 1; }
     trace_init();                         /* EIGS_TRACE, as a native binary opens it */
     g_try_depth = 1;                      /* record only, as the AOT runs */
+
+    /* #1435: a native caller has no VM frame, so its line-0 raise falls back
+     * to this stamp. A worker stamping its own statements must not replace it. */
+    LineRaceProbe probe = {st, PTHREAD_MUTEX_INITIALIZER,
+                           PTHREAD_COND_INITIALIZER, 0};
+    pthread_t worker;
+    int worker_started = pthread_create(&worker, NULL, line_race_worker, &probe) == 0;
+    check(worker_started,
+          "#1435 starts the competing line-stamp worker");
+    if (worker_started) {
+        g_trace_current_line = 1435;
+        pthread_mutex_lock(&probe.mutex);
+        probe.phase = 1;
+        pthread_cond_broadcast(&probe.cond);
+        while (probe.phase < 2) pthread_cond_wait(&probe.cond, &probe.mutex);
+        pthread_mutex_unlock(&probe.mutex);
+        g_has_error = 0;
+        rt_error(EK_VALUE, 0, "two-thread line probe");
+        check(g_error_line == 1435,
+              "#1435 a worker cannot replace the main thread's fallback line");
+        pthread_mutex_lock(&probe.mutex);
+        probe.phase = 3;
+        pthread_cond_broadcast(&probe.cond);
+        pthread_mutex_unlock(&probe.mutex);
+        pthread_join(worker, NULL);
+    }
+    pthread_cond_destroy(&probe.cond);
+    pthread_mutex_destroy(&probe.mutex);
 
     g_trace_current_line = 42;
     g_has_error = 0;
@@ -156,6 +208,79 @@ int main(void) {
     rt_error(EK_VALUE, 0, "probe %d", 7);
     check(strncmp(g_error_msg, "Error line 110: probe 7", 23) == 0,
           "#1434 a raise after an eval whose task ran in the scheduler reports the stamp (110)");
-    trace_shutdown();
+
+    /* #1417: the second iterator read follows a body on a different line.
+     * It must raise at the owning header before another binding/body write.
+     * Two ordinary host-buffer elements exercise both successful iteration
+     * and the later strict NaN read without manufacturing bytecode. */
+    int nf_saved_strict = g_strict;
+    unsigned nf_saved_flags = g_math_flags;
+    eigs_clear_error();
+    eigs_state_set_strict(st, 1);
+    EigsValue *nf_input = eigs_value_new_buffer(2);
+    EigsValue *nf_output = eigs_value_new_buffer(2);
+    eigs_value_buffer_set(nf_input, 0, 3.0);
+    eigs_value_buffer_set(nf_input, 1, 4.0);
+    eigs_set_global("nf_header_input", nf_input);
+    eigs_set_global("nf_header_output", nf_output);
+    ev = eigs_eval_string(
+        "define nf_header_for(x, out) as:\n"
+        "    for value in x:\n"
+        "        out[0] is value\n"
+        "        out[1] += 1\n"
+        "    return out[1]\n");
+    check(ev && !eigs_has_error(), "#1417 defines the ordinary for header control");
+    eigs_value_release(ev);
+    ev = eigs_eval_string("nf_header_for of [nf_header_input, nf_header_output]\n");
+    check(ev && !eigs_has_error() && eigs_value_as_num(ev) == 2.0 &&
+          eigs_value_buffer_get(nf_output, 0) == 4.0 &&
+          eigs_value_buffer_get(nf_output, 1) == 2.0,
+          "#1417 finite for iteration completes both body writes");
+    eigs_value_release(ev);
+    eigs_value_buffer_set(nf_input, 1, NAN);
+    eigs_value_buffer_set(nf_output, 0, 99.0);
+    eigs_value_buffer_set(nf_output, 1, 0.0);
+    g_math_flags = 0;
+    ev = eigs_eval_string("nf_header_for of [nf_header_input, nf_header_output]\n");
+    check(!ev && eigs_has_error() && eigs_last_error_line() == 2,
+          "#1417 later for-buffer read raises at header line 2, not body line 4");
+    check(eigs_last_error_kind() && !strcmp(eigs_last_error_kind(), "value") &&
+          eigs_last_error_message() && strstr(eigs_last_error_message(), "not a number") &&
+          g_math_flags == EIGS_MATH_INVALID,
+          "#1417 for iteration retains the first strict NaN diagnostic");
+    check(eigs_value_buffer_get(nf_output, 0) == 3.0 &&
+          eigs_value_buffer_get(nf_output, 1) == 1.0,
+          "#1417 failed for read does not execute another body write");
+    eigs_value_release(ev);
+    eigs_clear_error();
+
+    ev = eigs_eval_string(
+        "define nf_header_comp(x) as:\n"
+        "    return [\n"
+        "        value + 0\n"
+        "        for value in x]\n");
+    check(ev && !eigs_has_error(), "#1417 defines the ordinary comprehension header control");
+    eigs_value_release(ev);
+    eigs_value_buffer_set(nf_input, 1, 4.0);
+    ev = eigs_eval_string("nf_header_comp of nf_header_input\n");
+    check(ev && !eigs_has_error() && eigs_value_list_len(ev) == 2,
+          "#1417 finite comprehension collects both elements");
+    eigs_value_release(ev);
+    eigs_value_buffer_set(nf_input, 1, NAN);
+    g_math_flags = 0;
+    ev = eigs_eval_string("nf_header_comp of nf_header_input\n");
+    check(!ev && eigs_has_error() && eigs_last_error_line() == 2,
+          "#1417 later comprehension read raises at header line 2, not element line 3");
+    check(eigs_last_error_kind() && !strcmp(eigs_last_error_kind(), "value") &&
+          eigs_last_error_message() && strstr(eigs_last_error_message(), "not a number") &&
+          g_math_flags == EIGS_MATH_INVALID,
+          "#1417 comprehension retains the first strict NaN diagnostic");
+    eigs_value_release(ev);
+    eigs_clear_error();
+    eigs_value_release(nf_input);
+    eigs_value_release(nf_output);
+    eigs_state_set_strict(st, nf_saved_strict);
+    g_math_flags = nf_saved_flags;
+    eigs_close(st);
     return fail;
 }

@@ -284,7 +284,8 @@ int main(int argc, char **argv) {
          * (state latch, reached through eigs_current), so eigs_thread_detach
          * below leaves nothing to read it through — the script path at the
          * bottom of main already captures it first, for the same reason. */
-        int repl_exit_code = g_exit_latched ? g_exit_latch_code : 0;
+        int repl_exit_code = 0;
+        (void)eigs_state_exit_requested(eigs_st, &repl_exit_code);
         trace_shutdown();
         /* Drop the global scope's bindings (closures defined at top level
          * die here), then collect the env<->fn cycles those closures left
@@ -398,12 +399,12 @@ int main(int argc, char **argv) {
     /* `exit of N` requests a specific code (and unwound via g_has_error); it
      * takes precedence over the generic uncaught-error code. Clear the unwind
      * flag so the teardown below sees a clean state. */
-    /* #739: the CODE comes from the state latch, so `exit of N` inside a
-     * spawned worker still decides the process's exit status; the unwind flag
-     * is cleared off THIS thread's request, so a worker's exit never erases a
-     * genuine main-thread error. */
-    int exit_code = g_exit_latched ? g_exit_latch_code
-                    : ((g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0);
+    /* #739/#1149: the CODE comes from the state latch, so `exit of N` inside
+     * a worker stops main and decides the process status. The unwind flag is
+     * cleared only for an exit request observed on THIS thread. */
+    int exit_code = 0;
+    if (!eigs_state_exit_requested(eigs_st, &exit_code))
+        exit_code = (g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0;
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release
      * it so exit is leak-clean. */

@@ -106,6 +106,15 @@ assert_eq of [bi.bytes[3], 255, "buffer keeps 0xFF (invalid UTF-8)"]
 assert_eq of [bi.bytes[4], 254, "buffer keeps 0xFE (invalid UTF-8)"]
 assert_eq of [bi.name, "raw", "sibling field survives next to a buffer"]
 
+#1418: the old buffer tag is also valid user data.  Store that exact dict next
+# to a real buffer; neither value may steal the other's type on decode.
+tag_dict is {"_eigs_buffer": ["nan", 1, 2, 3], "_eigs_shape": [0, 0]}
+tk is store_put of [db2, "blobs", {"user": tag_dict, "real": bz}]
+ti is store_get of [db2, "blobs", tk]
+assert_eq of [type of ti.user, "dict", "#1418: buffer-shaped user dict stays a dict"]
+assert_eq of [type of ti.real, "buffer", "#1418: real buffer beside tag dict stays a buffer"]
+assert_eq of [ti.user._eigs_buffer[1], 1, "#1418: escaped user dict keeps its contents"]
+
 # Non-integral elements round-trip bit-exactly (the element encoder uses the
 # 17-significant-digit form, as trace.c's buffer tape encoding does).
 fb is buffer of 2

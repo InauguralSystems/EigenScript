@@ -225,6 +225,8 @@ typedef enum {
                                 * iteration but the last is unaddressable. Ordinals are
                                 * injective and edit-stable. Appended, not mid-list. */
 
+    OP_SET_LOCAL_INTERNAL, /*obs:NONE*/ /* [slot:16] internal TOS store; no history/tape.
+                           * Appended to preserve the public bytecode ABI. */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
@@ -380,7 +382,8 @@ typedef struct EigsChunk {
     int      max_stack;         /* computed max stack depth */
 
     /* JIT — populated lazily on first frame push.
-     * jit_state: 0 = untried, 1 = failed/unsupported, 2 = compiled.
+     * jit_state: 0 = untried, 1 = failed/unsupported, 2 = compiled,
+     * 3 = supported but rejected because the code cache was full.
      * jit_code: callable native thunk (signature void(void)) when
      * jit_state == 2. The thunk runs a prefix of opcodes against g_vm
      * thread-local state and returns; the caller advances frame->ip by
@@ -540,6 +543,9 @@ typedef struct VM {
     int        sp;
     CallFrame  frames[VM_FRAMES_MAX];
     int        frame_count;
+    /* Native callers can nest vm_execute while no bytecode frame is live
+     * (for example a builtin task entry invoking a user callback). */
+    int        execute_depth;
     int        current_line;
     /* Back-pointer to the owning EigsThread, set in vm_init. Lets the
      * JIT reach EigsThread fields (e.g. unobserved_depth) via a single
@@ -569,13 +575,12 @@ typedef enum {
 
 typedef struct Task {
     int        id;                 /* == handle-table id; 1-based */
-    /* #1146: the handle-table GENERATION this task's slot was handed out at.
+    /* The handle-table GENERATION this task's slot was handed out at.
      * task_reap releases the slot, and handle_release is generation-checked,
      * so the reap must present the generation it was given or it would either
      * no-op (leaking the slot) or free a slot a LATER task_spawn now owns.
-     * Task ids are plain numbers with nowhere to carry a generation, so
-     * task_join/task_alive resolve by raw slot (handle_lookup_slot) — the one
-     * declared exception in the handle population; see docs/CONCURRENCY.md. */
+     * Public task ids pack this generation with the slot; scheduler queues
+     * retain the raw slot because they never outlive the registered Task. */
     uint32_t   hgen;
     TaskState  state;
     int        started;            /* 0 until first scheduled (1b) */
@@ -599,6 +604,7 @@ typedef struct Task {
      * task_join builtin left on the stack top — a builtin can't return a
      * value it doesn't know yet — or re-raises the joinee's error. */
     int        join_target;
+    uint32_t   join_target_gen; /* generation captured before the join suspended */
     /* Inc 2: unbounded FIFO mailbox of deep-copied messages (share-nothing,
      * Erlang-style — bounded/backpressure is a cheap later add). Circular
      * buffer; grows on demand. recv_blocked is 1 while this task is suspended
@@ -649,7 +655,7 @@ void task_free(Task *t);
  * other threads' CALL sites into a suspend they never asked for. */
 void task_sched_on_spawn(int id);    /* enqueue a freshly spawned task, arm the scheduler */
 void task_request_yield(void);       /* current task → tail of the ready queue */
-int  task_request_join(int target);  /* current task blocks on `target`; 0 = bad target */
+int  task_request_join(int target, uint32_t gen); /* current task blocks on this exact handle */
 void task_sched_thread_free(void);   /* release the scheduler at thread detach */
 int  task_any_unobserved_error(void);/* #493: any worker died of an uncaught error and was never joined? */
 /* Inc 2 mailbox interface (builtins.c task_send/task_recv/task_try_recv/task_kill). */
@@ -662,7 +668,9 @@ int   task_do_detach(int tid);       /* #530: mark fire-and-forget (reap at fini
 /* Inc 3 virtual time (builtins.c task_sleep/task_now). */
 void   task_request_sleep(double ticks); /* current task sleeps until virtual now + ticks */
 double task_virtual_now(void);           /* current virtual-clock value (0 with no scheduler) */
-int    task_current_id(void);            /* running task id; 0 = main (incl. no scheduler) — task_self (#526) */
+double task_current_id(void);            /* public running task id; 0 = main — task_self (#526) */
+double task_handle_pack(int id, uint32_t gen); /* exact numeric public id */
+int    task_handle_unpack(double packed, int *id, uint32_t *gen);
 /* #846 scheduler trace (builtins.c task_sched_trace). The trace is a PURE
  * READER of the schedule: recording never touches the ready queue, the
  * seeded PRNG, or the clock, and its entries are derived from the
@@ -731,6 +739,9 @@ void       chunk_verify_self_check(EigsChunk *chunk, const char *unit);
  * contains (the compiler's source scan, replayed over verified bytecode).
  * Only call on a chunk tree chunk_verify accepted. */
 void       chunk_arm_temporal(const EigsChunk *chunk);
+/* True when a verified chunk tree can read the thread-wide temporal history.
+ * Sandboxes reject such chunks until history storage is sandbox-local. */
+int        chunk_reads_shared_temporal(const EigsChunk *chunk);
 
 /* Compiler */
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src);
