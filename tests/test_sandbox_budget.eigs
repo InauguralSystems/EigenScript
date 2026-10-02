@@ -18,6 +18,47 @@ POP is 35
 CALL is 39
 RETURN is 40
 
+# --- #1585: arena promotion is a budgeted graph operation --------------------
+# Verified bytecode can make an arena list contain itself entirely on the VM
+# stack. SET_NAME then promotes it. The former recursive tree copy exhausted the
+# native stack and made uncharged heap copies. A roomy run proves promotion is
+# reached; a tight run proves its heap work is charged and refused safely.
+NUM_ZERO is 2
+NULL_OP is 1
+LIST_OP is 42
+DUP is 36
+DUP2 is 37
+INDEX_SET is 45
+SET_NAME is 26
+arena_cycle_desc is [ABI,
+    [NUM_ZERO, NULL_OP, LIST_OP,1,0, DUP2, INDEX_SET,
+     SET_NAME,0,0, RETURN],
+    ["cycle"]]
+arena_mark of null
+arena_cycle_ok is sandbox_run of [arena_cycle_desc, 1, 2000]
+assert_eq of [arena_cycle_ok["error"]["message"],
+              "sandbox result too large to scan for callables (exceeds the result node/depth budget); refusing to cross the boundary",
+              "arena promotion: cyclic graph reaches boundary scanning"]
+arena_cycle_tight is sandbox_run of [arena_cycle_desc, 1, 400]
+arena_reset of null
+assert_eq of [arena_cycle_tight["ok"], 0,
+              "arena promotion: cyclic graph terminates within byte budget"]
+assert_eq of [arena_cycle_tight["error"]["kind"], "sandbox",
+              "arena promotion: copied graph is charged to sandbox budget"]
+
+# Exercise non-root ownership while the arena is genuinely active. ASan+LSan
+# catches a stranded constructor reference here; the explicit second mark also
+# prevents this from degenerating into an ordinary heap-list test.
+arena_nested_desc is [ABI,
+    [NUM_ZERO, NULL_OP, LIST_OP,1,0, DUP, LIST_OP,1,0,
+     SET_NAME,0,0, POP, RETURN],
+    ["nested"]]
+arena_mark of null
+arena_nested_result is sandbox_run of [arena_nested_desc, 1, 2000]
+arena_reset of null
+assert_eq of [arena_nested_result["ok"], 1,
+              "arena promotion: nested child birth reference is released"]
+
 # --- #965 (root redesign): ONE verification context for the WHOLE graph -----
 # The pool bound added in fix7 is shared across ONE chunk's constants — but
 # every NESTED function chunk re-entered the descriptor builder and declared a

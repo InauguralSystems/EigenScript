@@ -1765,23 +1765,50 @@ Value* slot_to_value(EigsSlot s) {
     return &g_null_singleton;
 }
 
-Value* promote_if_arena(Value *v) {
-    if (!v || !v->arena) return v;
+/* One entry for each arena list temporarily marked during promotion.  The
+ * source list itself is the memo table: count == -1 means that items points
+ * at its heap copy.  Keeping the original fields here lets us restore the
+ * arena graph before returning.  This makes lookup O(1), including for
+ * attacker-chosen cyclic graphs, rather than turning every edge into a scan
+ * of a growing side table. */
+typedef struct {
+    Value *src;
+    Value *dst;
+    Value **items;
+    int count;
+    int capacity;
+} PromoteEntry;
+
+#define PROMOTE_MAX_LISTS 100000
+
+static Value *promote_arena_scalar(Value *v) {
     if (v->type == VAL_NUM) {
-        /* #262 Step E: no observer fields to carry across the promotion. */
+        if (!sandbox_charge(sizeof(Value))) return NULL;
         return make_num_permanent(v->data.num);
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
+        size_t n = val_str_len(v);
+        if (!sandbox_charge(sizeof(Value) + n + 1)) return NULL;
         Value *h = xcalloc(1, sizeof(Value));
         h->type = v->type;
-        /* #1183: the source already knows its length — copy it, don't re-scan. */
-        size_t n = val_str_len(v);
         char *copy = xmalloc(n + 1);
         memcpy(copy, v->data.str ? v->data.str : "", n);
         copy[n] = '\0';
         val_str_set(h, copy, n);
         h->refcount = 1;
         return h;
+    }
+    return v;
+}
+
+Value* promote_if_arena(Value *v) {
+    if (!v || !v->arena) return v;
+    if (v->type == VAL_NUM || v->type == VAL_STR || v->type == VAL_JSON_RAW) {
+        Value *h = promote_arena_scalar(v);
+        /* A sandbox refusal is sticky and unwinds at the next dispatch.  The
+         * original is safe until then; returning it also preserves every
+         * store caller's non-NULL contract without allocating after refusal. */
+        return h ? h : v;
     }
     if (v->type == VAL_NULL) {
         /* VAL_NULL has a single immortal singleton (g_null_singleton, arena=1).
@@ -1790,29 +1817,112 @@ Value* promote_if_arena(Value *v) {
         return v;
     }
     if (v->type == VAL_LIST) {
-        /* #873: an arena list stored into a binding or heap container
-         * outlives arena_reset as a dangling reference — silent wrong
-         * values, type confusion, even free() aborts when a decref
-         * walks the stale pointer. Deep-promote instead: a fresh heap
-         * list; arena children promote recursively (fresh rc=1,
-         * adopted), heap children are shared (incref'd). Arena lists
-         * are acyclic at promotion time — building a cycle requires
-         * mutating through a binding, and binding stores promote — so
-         * the recursion terminates. Aliasing between two references to
-         * the same UNBOUND arena temporary is not preserved (each
-         * promotes to its own copy); observing that would require a
-         * binding, which promotes. Lists are the only arena-capable
-         * container: make_dict/make_fn/buffers/text builders are
-         * heap-only constructors and never carry v->arena. */
-        Value *h = make_list_heap(v->data.list.count);
-        for (int i = 0; i < v->data.list.count; i++) {
-            Value *c = v->data.list.items[i];
-            Value *pc = promote_if_arena(c);
-            if (pc == c) val_incref(pc);
-            h->data.list.items[i] = pc;
+        PromoteEntry *work = NULL;
+        int work_count = 0;
+        int work_capacity = 0;
+        int refused = 0;
+
+        /* Discover and fill iteratively: native stack use is constant. */
+        Value *pending = v;
+        int wi = 0;
+        for (;;) {
+            if (pending) {
+                if (work_count == PROMOTE_MAX_LISTS) {
+                    rt_error(eigs_current && g_sandbox_active ? EK_SANDBOX : EK_LIMIT,
+                             0, "arena promotion exceeds %d lists",
+                             PROMOTE_MAX_LISTS);
+                    refused = 1;
+                    break;
+                }
+                if (work_count == work_capacity) {
+                    int old = work_capacity;
+                    int next = old ? old * 2 : 16;
+                    if (next > PROMOTE_MAX_LISTS) next = PROMOTE_MAX_LISTS;
+                    if (!sandbox_charge((size_t)(next - old) *
+                                        sizeof(PromoteEntry))) {
+                        refused = 1;
+                        break;
+                    }
+                    work = xrealloc_array(work, (size_t)next,
+                                          sizeof(PromoteEntry));
+                    work_capacity = next;
+                }
+                int cap = pending->data.list.count < 8
+                              ? 8 : pending->data.list.count;
+                if (!sandbox_charge(sizeof(Value) +
+                                    (size_t)cap * sizeof(Value *))) {
+                    refused = 1;
+                    break;
+                }
+                PromoteEntry *e = &work[work_count++];
+                e->src = pending;
+                e->items = pending->data.list.items;
+                e->count = pending->data.list.count;
+                e->capacity = pending->data.list.capacity;
+                e->dst = make_list_heap(e->count);
+                /* Intrusive memo marker; restored on every exit below. */
+                pending->data.list.items = (Value **)e->dst;
+                pending->data.list.count = -1;
+                pending = NULL;
+            }
+
+            /* Breadth-first fill: wi only advances, so every edge costs O(1)
+             * native bookkeeping in addition to its charged copy work. */
+            while (wi < work_count &&
+                   work[wi].dst->data.list.count == work[wi].count)
+                wi++;
+            if (wi == work_count) break;
+
+            PromoteEntry *e = &work[wi];
+            int edge = e->dst->data.list.count;
+            Value *child = e->items[edge];
+            Value *copy;
+            int copy_is_fresh_scalar = 0;
+            if (child && child->arena && child->type == VAL_LIST) {
+                if (child->data.list.count == -1) {
+                    copy = (Value *)child->data.list.items;
+                } else {
+                    pending = child;
+                    continue;
+                }
+            } else if (child && child->arena) {
+                copy = promote_arena_scalar(child);
+                copy_is_fresh_scalar = 1;
+                if (!copy) {
+                    refused = 1;
+                    break;
+                }
+            } else {
+                copy = child;
+            }
+            if (!copy_is_fresh_scalar) val_incref(copy);
+            e->dst->data.list.items[e->dst->data.list.count++] = copy;
         }
-        h->data.list.count = v->data.list.count;
-        return h;
+
+        Value *root = work_count ? work[0].dst : NULL;
+        /* Restore the arena graph before any decref can invoke collection. */
+        for (int i = 0; i < work_count; i++) {
+            work[i].src->data.list.items = work[i].items;
+            work[i].src->data.list.count = work[i].count;
+            work[i].src->data.list.capacity = work[i].capacity;
+        }
+        if (refused) {
+            /* Break copied edges first, then release every constructor ref;
+             * this also cleans partially closed cycles deterministically. */
+            for (int i = 0; i < work_count; i++) {
+                Value *dst = work[i].dst;
+                for (int j = 0; j < dst->data.list.count; j++)
+                    val_decref(dst->data.list.items[j]);
+                dst->data.list.count = 0;
+            }
+            for (int i = 0; i < work_count; i++) val_decref(work[i].dst);
+            root = v;
+        } else {
+            /* Edges own refs; the caller owns only the root constructor ref. */
+            for (int i = 1; i < work_count; i++) val_decref(work[i].dst);
+        }
+        free(work);
+        return root;
     }
     /* Remaining types (dict/fn/builtin/buffer/text builder) are
      * heap-only at construction; an arena flag on one is unreachable. */

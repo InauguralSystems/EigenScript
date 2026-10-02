@@ -1,0 +1,1 @@
+- Make arena-backed list promotion preserve cycles and aliases with bounded native work, and charge all promotion allocations to sandbox budgets.
