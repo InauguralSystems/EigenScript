@@ -11,6 +11,7 @@
 #include "ext_names.h"
 #include "fsutil.h"
 #include "lint_internal.h"
+#include "trace.h"
 #include "vm.h"   /* #927: lint compiles the unit and discards the chunk */
 
 #ifndef EIGENSCRIPT_VERSION
@@ -1373,7 +1374,13 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
          * target, and the LSP runs this on every didChange. */
         int obs_saved = g_obs_gate_scan_enabled;
         g_obs_gate_scan_enabled = 0;
+        /* Compilation normally arms temporal-history recording for the chunk
+         * it produces.  This chunk is diagnostic-only and never runs, so do
+         * not let an untrusted lint input change the embedding process's
+         * later history (or the values visible to sandbox state_at calls). */
+        trace_arm_suppress_begin();
         EigsChunk *chunk = compile_ast(ast, cenv, source);
+        trace_arm_suppress_end();
         g_obs_gate_scan_enabled = obs_saved;
         g_compile_module_slots = 0;
         compile_errors = g_parse_errors;
