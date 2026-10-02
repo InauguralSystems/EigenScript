@@ -295,10 +295,11 @@ test: build sandbox-intern-test
 # Contributor fast local gate (#1347): only the suite sections the diff against
 # BASE touches (working tree + untracked). CI still runs the whole suite.
 BASE ?= origin/main
+test-changed: export EIGS_SUITE_CHANGED := $(value BASE)
 test-changed: build
 	$(AUX_REFRESH)
 	bash tools/suite_label_check.sh
-	cd tests && EIGS_SUITE_CHANGED=$(BASE) bash run_all_tests.sh
+	cd tests && bash run_all_tests.sh
 
 # Contributor precheck (#1264): the repo's static gates in well under a minute,
 # one line per gate. Needs no build (gates that need a binary SKIP without one).
