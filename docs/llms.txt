@@ -217,6 +217,10 @@ EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
 ## Threads: VALUES copy through a channel, HANDLES share
 
 - `spawn of [fn, arg]` / `channel of n` / `send` / `recv` / `thread_join`.
+- `exit of N` in any spawned worker stops the whole state: blocked concurrency
+  calls wake, all VM threads unwind, and the process exits with N after worker
+  teardown. Native I/O must return before teardown completes. Embedded outer
+  evals have separate stop scopes; workers retain their spawning eval's scope.
 - **A number, string, list, dict, buffer, or text builder sent through a
   channel is DEEP-COPIED**; the receiver cannot see a later mutation by the
   sender. The same boundary applies to thread results and cooperative tasks.

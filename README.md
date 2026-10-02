@@ -25,6 +25,11 @@ while closure environments and resource handles stay shared by reference,
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 
+`exit of N` is state-wide even when a spawned worker calls it: VM threads stop,
+blocked concurrency calls wake, and the process exits with status `N` after
+worker teardown. Native I/O must return before teardown completes. Embedded
+evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
+
 ## Try it in your browser
 
 **[inauguralsystems.github.io/EigenScript/playground](https://inauguralsystems.github.io/EigenScript/playground/)** —

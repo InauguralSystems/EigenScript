@@ -631,6 +631,16 @@ typedef struct {
  * functions only, so the field layout can still evolve. */
 typedef struct EigsState  EigsState;
 typedef struct EigsThread EigsThread;
+
+/* A stop request is immutable after publication. State, attached threads and
+ * not-yet-started workers each retain their evaluation scope, so a new host
+ * eval cannot erase an older worker's request or reuse its status storage. */
+typedef struct EigsExitScope {
+    int refs;
+    int latched_storage;
+    int code;
+} EigsExitScope;
+struct EigsThreadHandle;
 struct VM;
 struct EigsJitCache;
 struct EigsChunk;
@@ -798,6 +808,9 @@ struct EigsState {
     EigsHandleSlot  handle_table[HANDLE_TABLE_SIZE];
     pthread_mutex_t handle_mutex;
     int             handle_next;
+    /* Claimed joins interrupted by exit remain owned until the normal drain.
+     * They still contribute to live_workers; their original slots may recycle. */
+    struct EigsThreadHandle *deferred_threads;
     /* Set to 1 by builtin_spawn before pthread_create; cleared by
      * spawn_mt_maybe_clear (builtins.c) when the last live worker is joined
      * and the joiner is the state's only attached thread (#1147), and by
@@ -814,13 +827,14 @@ struct EigsState {
      * but was never joined still counts, so `multithreaded` stays set until
      * someone joins it; that errs toward the MT (safe) side. */
     int             live_workers;
-    /* #739: process-exit request, LATCHED at the state. The per-thread flag
-     * above drives CHECK_ERROR's uncatchable unwind and is cleared at host
-     * eval entry; this latch is what `main` reports as the process exit code,
-     * so `exit of N` inside a spawned worker still sets it — the per-thread
-     * flag alone would have silently dropped a worker's exit code to 0. */
-    int             exit_latched;
-    int             exit_latch_code;
+    /* The state's default exit scope is replaced at a host eval boundary,
+     * under exit_mutex. Each thread retains the scope it executes in; spawned
+     * workers inherit that thread's scope before pthread_create. */
+    EigsExitScope  *exit_scope;
+    /* Completion and exit wakeup share this condition. Scope flags publish
+     * atomically and are never reset while any reader can retain the scope. */
+    pthread_mutex_t exit_mutex;
+    pthread_cond_t  exit_cond;
     /* #1112: number of spawn()ed OS-thread workers that died of an UNCAUGHT
      * runtime error (the #493 rule for cooperative tasks, applied to
      * threads: a fire-and-forget worker's death must not green the run).
@@ -889,6 +903,8 @@ typedef struct EigsJitHotRow {
 
 struct EigsThread {
     EigsState  *state;
+    EigsExitScope *exit_scope;        /* owning, changed only by this thread */
+    int         is_spawn_worker;    /* host evals inside workers inherit scope */
     Arena       arena;
     /* #739: temporal prev-table (`prev of x`, `at <line>`, `state_at`).
      * Per-THREAD because it is keyed by interned name pointer and the
@@ -1340,8 +1356,7 @@ extern __thread EigsThread *eigs_current;
 #define g_compile_import_toplevel (eigs_current->compile_import_toplevel)
 #define g_import_resolve_dir  (eigs_current->import_resolve_dir)
 #define g_vm_multithreaded    (eigs_current->state->multithreaded)
-#define g_exit_latched        (eigs_current->state->exit_latched)
-#define g_exit_latch_code     (eigs_current->state->exit_latch_code)
+#define g_exit_latched        __atomic_load_n(&eigs_current->exit_scope->latched_storage, __ATOMIC_ACQUIRE)
 #define g_gc_envs             (eigs_current->state->gc_envs)
 #define g_gc_captured_live    (eigs_current->state->gc_captured_live)
 #define g_gc_val_buf          (eigs_current->state->gc_val_buf)
@@ -2192,12 +2207,23 @@ void*  handle_claim(int id, uint32_t gen, HandleType type, int *why);
  * ("joined" for a thread, "closed" for a channel or store). */
 void   handle_raise_unresolved(const char *who, const char *kind, int id,
                                int why, const char *gone_verb);
+Value *builtin_spawn(Value *arg);
+Value *builtin_thread_join(Value *arg);
 /* Deterministic teardown of every resource in the handle table (builtins.c):
  * HANDLE_THREAD, HANDLE_CHANNEL, HANDLE_NET, HANDLE_STORE, and HANDLE_TASK.
  * Call once execution is done and the value world is still alive (before
  * env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
+
+/* `exit`: first request wins within the caller's evaluation scope. Workers
+ * retain the scope captured at spawn, including across later host evals. */
+void   eigs_state_request_exit(struct EigsState *st, int code);
+int    eigs_state_exit_requested(struct EigsState *st, int *code);
+void   eigs_state_begin_eval(struct EigsState *st);
+void   eigs_exit_scope_retain(EigsExitScope *scope);
+void   eigs_exit_scope_release(EigsExitScope *scope);
+void   eigs_thread_set_exit_scope(EigsExitScope *scope);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);

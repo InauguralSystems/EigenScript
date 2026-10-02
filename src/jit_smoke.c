@@ -26,6 +26,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_vm_owner = offsetof(VM, owner);
     out->off_thread_state = offsetof(EigsThread, state);
     out->off_state_obs_needed = offsetof(EigsState, obs_needed);
+    out->off_thread_exit_scope = offsetof(EigsThread, exit_scope);
+    out->off_exit_scope_latched = offsetof(EigsExitScope, latched_storage);
     out->off_sp = offsetof(VM, sp);
     out->off_stack = offsetof(VM, stack);
     out->off_frame_count = offsetof(VM, frame_count);
@@ -432,6 +434,88 @@ static int run_index_bail_cases(void) {
 #endif
 }
 
+/* A four-iteration stack-only loop executes the real production emitter in
+ * both entry and OSR mode. A stopped scope must bail at the FIRST back-edge;
+ * removing that poll still terminates after four iterations and fails the
+ * value/advance assertions, without a timing race or an unbounded loop. The
+ * state's default and the executing thread's scope deliberately disagree.
+ * The OSR entry includes NULL/POP before the tested INNER loop header: the
+ * scanner hands a back-edge targeting the OSR entry to the interpreter, so
+ * testing that boundary would not exercise an emitted back-edge at all. */
+static int run_exit_cases(void) {
+    int rc = 0, rows = 0, bailed = 0, completed = 0;
+    EigsState *state = calloc(1, sizeof *state);
+    EigsThread *thread = calloc(1, sizeof *thread);
+    VM *vm = calloc(1, sizeof *vm);
+    if (!state || !thread || !vm) {
+        free(state); free(thread); free(vm);
+        fprintf(stderr, "FAIL native_exit allocation\n");
+        return 1;
+    }
+    EigsExitScope open = {.refs = 1}, stopped = {.refs = 1, .latched_storage = 1, .code = 5};
+    thread->state = state;
+    thread->vm = vm;
+    vm->owner = thread;
+    eigs_current = thread;
+    state->jit_entry_threshold = state->jit_iter_threshold = 1;
+    Value limit = {.type = VAL_NUM};
+    limit.data.num = 4;
+    Value *constants[] = {&limit};
+    uint8_t code[] = {OP_NULL, OP_POP, OP_NULL, OP_POP,
+                      OP_NUM_ONE, OP_ADD, OP_DUP, OP_CONST, 0, 0,
+                      OP_LT, OP_JUMP_IF_FALSE, 3, 0, OP_JUMP_BACK, 13, 0};
+    EigsChunk chunk = {0};
+    chunk.constants = constants;
+    chunk.const_count = 1;
+    chunk.exec_count = 1;
+    for (int osr = 0; osr < 2; osr++) {
+        chunk.code = code + (osr ? 0 : 4);
+        chunk.code_len = osr ? sizeof code : sizeof code - 4;
+        int entry = osr ? 2 : 0;
+        if (osr) jit_try_compile_chunk_osr(&chunk, entry, 0);
+        else jit_try_compile_chunk(&chunk);
+        void *thunk = osr ? chunk.jit_osr[0].code : chunk.jit_code;
+        if (!thunk || (osr ? chunk.jit_osr[0].state : chunk.jit_state) != 2) {
+            fprintf(stderr, "FAIL native_exit %s did not compile\n", osr ? "osr" : "entry");
+            rc = 1;
+            continue;
+        }
+        for (int row = 0; row < 3; row++) {
+            int stop = row == 1;
+            thread->exit_scope = stop ? &stopped : &open;
+            state->exit_scope = row == 2 ? &stopped : &open;
+            vm->sp = vm->frame_count = 1;
+            vm->stack[0] = slot_from_num(0);
+            vm->frames[0].chunk = &chunk;
+            vm->frames[0].ip = chunk.code + entry;
+            chunk.jit_advance = chunk.jit_osr[0].advance = -99;
+            ((JitChunkFn)thunk)();
+            rows++;
+            int advance = osr ? chunk.jit_osr[0].advance : chunk.jit_advance;
+            int other = osr ? chunk.jit_advance : chunk.jit_osr[0].advance;
+            int want_advance = (stop ? 10 : 13) + (osr ? 2 : 0);
+            int ok = vm->sp == 1 && vm->stack[0].d == (stop ? 1 : 4) &&
+                     advance == want_advance && other == -99 &&
+                     vm->frames[0].ip == chunk.code + entry;
+            if (!ok) {
+                fprintf(stderr, "FAIL native_exit %s row=%d sp=%d value=%g advance=%d other=%d\n",
+                        osr ? "osr" : "entry", row, vm->sp, vm->stack[0].d, advance, other);
+                rc = 1;
+            }
+            if (ok && stop) bailed++;
+            if (ok && !stop) completed++;
+        }
+    }
+    if (rows != 6 || bailed != 2 || completed != 4) rc = 1;
+    printf("JIT native_exit: rows=%d backedge=%d completed=%d status=%s\n",
+           rows, bailed, completed, rc ? "FAIL" : "PASS");
+    jit_unregister_chunk(&chunk);
+    jit_thread_destroy(thread);
+    eigs_current = NULL;
+    free(vm); free(thread); free(state);
+    return rc;
+}
+
 int main(void) {
     int rc = 0;
     rc |= run_case(42);
@@ -441,6 +525,7 @@ int main(void) {
     rc |= run_case(INT64_MAX);
     rc |= run_store_cases();
     rc |= run_index_bail_cases();
+    rc |= run_exit_cases();
     if (rc == 0) printf("\nJIT smoke: all cases passed.\n");
     return rc;
 }

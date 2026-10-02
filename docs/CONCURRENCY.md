@@ -623,8 +623,17 @@ and the process exits 1 (#1112 — it died by SIGSEGV before, because a worker
 that runs a builtin directly has no VM and the uncaught-error printer read
 it). The general rule behind that status: a `spawn`ed worker that dies of an
 uncaught error fails the run, joined or not, exactly as a cooperative task
-does (#493); an error caught inside the worker, or a worker's `exit of N`,
-decides its own status.
+does (#493); an error caught inside the worker recovers normally. A worker's
+`exit of N` instead requests an uncatchable stop of the whole state. The first
+request supplies the process status. VM threads observe it at loop back edges
+and builtin returns; blocked `recv`, `recv_timeout`, `thread_join`, and
+`usleep` calls wake promptly. Once main observes it, main unwinds instead of
+continuing with later script statements (#1149). Interrupting `thread_join`
+consumes the handle and leaves the target owned for teardown to reap. Arbitrary
+native I/O and host callbacks are not asynchronously cancelled: teardown waits
+for them before freeing worker resources. Embedded outer evals use separate
+stop scopes; a worker and its nested spawns retain their original scope, so a
+late exit cannot stop a newer eval (see `docs/EMBEDDING.md`).
 
 ## The race gate
 

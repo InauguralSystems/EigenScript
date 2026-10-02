@@ -2706,6 +2706,16 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     }
     if (!consumes_arg && result != arg) val_decref(arg);
     vm_push(result);
+    /* A builtin such as spawn can turn a formerly single-threaded state into
+     * a multithreaded one while this thunk is already executing. Import a
+     * worker's exit before allowing native execution to continue. */
+    if (__builtin_expect(eigs_state_exit_requested(eigs_current->state,
+                                                   &g_exit_code), 0)) {
+        g_exit_requested = 1;
+        g_has_error = 1;
+        g_vm.frames[g_vm.frame_count - 1].ip = caller_chunk->code + resume_off;
+        return 2;
+    }
     if (__builtin_expect(g_arena.active, 0)) {
         /* #873: the builtin just opened an arena window (arena_mark).
          * The caller thunk's inline stores don't arena-promote, so hand
@@ -2811,6 +2821,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_vm_owner                 = (int)offsetof(VM, owner);
     out->off_thread_state             = (int)offsetof(EigsThread, state);   /* #972 */
     out->off_state_obs_needed         = (int)offsetof(EigsState, obs_needed);
+    out->off_thread_exit_scope        = (int)offsetof(EigsThread, exit_scope);
+    out->off_exit_scope_latched       = (int)offsetof(EigsExitScope, latched_storage);
     out->off_sp              = (int)offsetof(VM, sp);
     out->off_stack           = (int)offsetof(VM, stack);
     out->off_frame_count     = (int)offsetof(VM, frame_count);
@@ -3172,6 +3184,18 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
             } \
         } \
     } while(0)
+    #define POLL_STATE_EXIT() do { \
+        if (__builtin_expect(!g_exit_requested && \
+                g_exit_latched, 0)) { \
+            int _state_exit_code; \
+            if (eigs_state_exit_requested(eigs_current->state, \
+                                          &_state_exit_code)) { \
+                g_exit_code = _state_exit_code; \
+                g_exit_requested = 1; \
+                g_has_error = 1; \
+            } \
+        } \
+    } while(0)
     #define DISPATCH() do { CHECK_ERROR(); goto *dispatch_table[*ip++]; } while(0)
     #define CASE(op) lbl_##op
 #else
@@ -3182,6 +3206,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
 #endif
 
 vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above */
+    POLL_STATE_EXIT();
     DISPATCH();
 
     /* ---- Constants ---- */
@@ -3839,6 +3864,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(JUMP_BACK): {
         uint16_t offset = read_u16(ip); ip += 2;
         ip -= offset;
+        /* A worker's state-wide exit must stop CPU-bound peers, but polling
+         * it from CHECK_ERROR made every opcode pay for an atomic acquire
+         * load. Every unbounded bytecode path crosses a back edge, so use the
+         * existing loop safepoint instead; blocking builtins are woken by the
+         * request itself. This keeps straight-line dispatch at its former
+         * cost while retaining prompt interruption of busy loops. */
+        if (__builtin_expect(g_vm_multithreaded, 0)) POLL_STATE_EXIT();
+        if (__builtin_expect(g_exit_requested, 0)) DISPATCH();
         /* Async abort: poll the embedder's registered flag on the one
          * opcode every loop crosses. Consume the flag (edge, not level)
          * so the abort kills exactly one eval. #410: the pointer is
@@ -4131,6 +4164,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push(result);
 
             /* Check for errors from builtins */
+            POLL_STATE_EXIT();
             CHECK_ERROR();
             /* #408: a suspending builtin (task_yield/task_join) sets the
              * request flag and leaves its placeholder result on the stack.
@@ -6388,6 +6422,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!consumes_arg && result != arg) val_decref(arg);
             slot_decref(table_s);
             vm_push(result);
+            /* A blocking builtin can return because a peer requested exit. */
+            POLL_STATE_EXIT();
             CHECK_ERROR();
             DISPATCH();
         }
