@@ -30,7 +30,7 @@ tools/docs_claims_check.sh | timeout 14 bash tools/docs_claims_check.sh --selfte
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
-tools/performance_observer_docs.py docs/PERFORMANCE.md bench/observer_callgrind.txt bench/baseline.txt | timeout 30 python3 tools/performance_observer_docs.py --selftest
+tools/performance_observer_docs.py docs/PERFORMANCE.md bench/observer_callgrind.txt bench/baseline.txt bench/observed_loop.eigs bench/unobserved_loop.eigs bench/conservative_observed_loop.eigs bench/conservative_unobserved_loop.eigs | timeout 30 python3 tools/performance_observer_docs.py --selftest
 tools/replay_diff.sh | timeout 30 bash tools/replay_diff.sh --selftest | [{"pattern":"  selftest ok:","count":11},{"pattern":"^SELFTEST: all planted faults caught","count":1}]
 tools/section_plan.sh tests/suite_plan.sh .github/workflows/ci.yml | timeout 1860 bash tools/section_plan.sh --selftest
 tools/stop_gate.sh | timeout 30 bash tools/stop_gate.sh --selftest | [{"pattern":"^stop_gate selftest: committed-fragment PASS; no-fragment BLOCK$","count":1}]

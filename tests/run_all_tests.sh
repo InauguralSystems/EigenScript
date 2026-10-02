@@ -7458,7 +7458,8 @@ fi
 echo ""
 
 # [99ac] PERFORMANCE.md's observer figures are generated from the checked-in
-# Callgrind n=5-per-arm results (#1206), rather than a second hand-maintained
+# Callgrind n=5-per-arm results for both ordinary and conservative gates (#1206),
+# rather than a second hand-maintained
 # copy. The self-test changes both a raw measurement and the local regression
 # baseline independently and proves the checker goes red for either drift.
 echo "[99ac] generated observer performance documentation (#1206)"

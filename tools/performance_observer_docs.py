@@ -14,19 +14,25 @@ START = "<!-- observer-ir:start -->"
 END = "<!-- observer-ir:end -->"
 
 
-def measurement_counts(path: pathlib.Path) -> tuple[int, int]:
+MEASUREMENT_ARMS = (
+    "observed_loop",
+    "unobserved_loop",
+    "conservative_observed_loop",
+    "conservative_unobserved_loop",
+)
+
+
+def measurement_counts(path: pathlib.Path) -> dict[str, int]:
     rows: dict[str, list[int]] = {}
     for line in path.read_text().splitlines():
         name, value = line.split()
         rows.setdefault(name, []).append(int(value))
-    try:
-        observed = rows["observed_loop"]
-        unobserved = rows["unobserved_loop"]
-    except KeyError as exc:
-        raise SystemExit(f"PERFORMANCE DOCS RED: missing measurement arm {exc.args[0]}") from exc
-    if len(observed) != 5 or len(unobserved) != 5:
+    missing = [name for name in MEASUREMENT_ARMS if name not in rows]
+    if missing:
+        raise SystemExit(f"PERFORMANCE DOCS RED: missing measurement arm {missing[0]}")
+    if any(len(rows[name]) != 5 for name in MEASUREMENT_ARMS):
         raise SystemExit("PERFORMANCE DOCS RED: observer measurements must be n=5 per arm")
-    return sorted(observed)[2], sorted(unobserved)[2]
+    return {name: sorted(rows[name])[2] for name in MEASUREMENT_ARMS}
 
 
 def baseline_counts(path: pathlib.Path) -> tuple[int, int]:
@@ -41,17 +47,40 @@ def baseline_counts(path: pathlib.Path) -> tuple[int, int]:
 
 
 def generated(measurements: pathlib.Path, baseline: pathlib.Path) -> str:
-    observed, unobserved = measurement_counts(measurements)
+    counts = measurement_counts(measurements)
+    observed = counts["observed_loop"]
+    unobserved = counts["unobserved_loop"]
+    conservative_observed = counts["conservative_observed_loop"]
+    conservative_unobserved = counts["conservative_unobserved_loop"]
     baseline_observed, baseline_unobserved = baseline_counts(baseline)
     delta = (observed - unobserved) * 100 / unobserved
+    conservative_delta = (
+        (conservative_observed - conservative_unobserved) * 100 / conservative_observed
+    )
     return "\n".join(
         [
             START,
+            "| workload | Callgrind median `Ir` (n=5) |",
+            "|---|---:|",
             f"| `observed_loop` | {observed:,} |",
             f"| `unobserved_loop` | {unobserved:,} |",
             f"| observed overhead | {delta:+.2f}% |",
             "<!-- observer-cachegrind-baseline: "
             f"observed_loop={baseline_observed} unobserved_loop={baseline_unobserved} -->",
+            "",
+            "There remains one narrow use for `unobserved:`. The gate deliberately stays",
+            "open when static analysis cannot resolve a computed `load_file` path. In a",
+            "constructed conservative case using the same 60,000-iteration loop, the",
+            "Callgrind n=5 medians are:",
+            "",
+            "| workload | Callgrind median `Ir` (n=5) |",
+            "|---|---:|",
+            f"| `conservative_observed_loop` | {conservative_observed:,} |",
+            f"| `conservative_unobserved_loop` | {conservative_unobserved:,} |",
+            f"| instruction reduction | {conservative_delta:.1f}% |",
+            "",
+            "Use the keyword only when profiling identifies observer bookkeeping in such a",
+            "conservatively gated program; it is not a default hot-loop optimization.",
             END,
         ]
     )
@@ -86,15 +115,16 @@ def selftest(doc: pathlib.Path, measurements: pathlib.Path, baseline: pathlib.Pa
         shutil.copyfile(doc, planted_doc)
         shutil.copyfile(measurements, planted_measurements)
         shutil.copyfile(baseline, planted_baseline)
-        observed, _ = measurement_counts(planted_measurements)
-        text = planted_measurements.read_text().replace(
-            f"observed_loop {observed}", f"observed_loop {observed + 1}"
-        )
-        planted_measurements.write_text(text)
-        if check(planted_doc, planted_measurements, planted_baseline):
-            print("PERFORMANCE DOCS SELFTEST RED: changed measurement passed")
-            return False
-        shutil.copyfile(measurements, planted_measurements)
+        for arm in ("observed_loop", "conservative_observed_loop"):
+            count = measurement_counts(planted_measurements)[arm]
+            text = planted_measurements.read_text().replace(
+                f"{arm} {count}", f"{arm} {count + 1}"
+            )
+            planted_measurements.write_text(text)
+            if check(planted_doc, planted_measurements, planted_baseline):
+                print(f"PERFORMANCE DOCS SELFTEST RED: changed {arm} measurement passed")
+                return False
+            shutil.copyfile(measurements, planted_measurements)
         baseline_observed, _ = baseline_counts(planted_baseline)
         text = planted_baseline.read_text().replace(
             f"observed_loop {baseline_observed}", f"observed_loop {baseline_observed + 1}", 1
@@ -103,7 +133,7 @@ def selftest(doc: pathlib.Path, measurements: pathlib.Path, baseline: pathlib.Pa
         if check(planted_doc, planted_measurements, planted_baseline):
             print("PERFORMANCE DOCS SELFTEST RED: changed baseline figure passed")
             return False
-    print("PERFORMANCE DOCS SELFTEST OK: changed measurement and baseline are rejected")
+    print("PERFORMANCE DOCS SELFTEST OK: ordinary, conservative, and baseline drift rejected")
     return True
 
 

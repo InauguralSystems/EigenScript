@@ -183,31 +183,37 @@ does not read observer state and skips the calls in both arms.
 `unobserved:` therefore buys nothing on this ordinary hot loop (the small
 negative difference is fixed instruction-layout noise, not observer cost).
 
+<!-- observer-ir:start -->
 | workload | Callgrind median `Ir` (n=5) |
 |---|---:|
-<!-- observer-ir:start -->
 | `observed_loop` | 60,459,942 |
 | `unobserved_loop` | 60,465,939 |
 | observed overhead | -0.01% |
 <!-- observer-cachegrind-baseline: observed_loop=59530737 unobserved_loop=59536974 -->
-<!-- observer-ir:end -->
-
-The table is generated from the ten raw results in
-`bench/observer_callgrind.txt`; run
-`python3 tools/performance_observer_docs.py --update` after deliberately
-re-measuring both arms. The suite requires exactly five measurements per arm,
-checks the generated medians, and also records the two corresponding values
-from the local Cachegrind regression baseline in the generated block's metadata.
-Its self-test independently changes a Callgrind measurement and a
-`bench/baseline.txt` observer figure to prove either kind of drift is rejected.
 
 There remains one narrow use for `unobserved:`. The gate deliberately stays
 open when static analysis cannot resolve a computed `load_file` path. In a
-constructed conservative case using the same 60,000-iteration loop, n=5
-cachegrind runs were stable at 101,243,088 `Ir` normally and 88,048,182 `Ir`
-with the loop wrapped in `unobserved:`: a 13.0% reduction. Use the keyword only
-when profiling identifies observer bookkeeping in such a conservatively gated
-program; it is not a default hot-loop optimization.
+constructed conservative case using the same 60,000-iteration loop, the
+Callgrind n=5 medians are:
+
+| workload | Callgrind median `Ir` (n=5) |
+|---|---:|
+| `conservative_observed_loop` | 101,455,371 |
+| `conservative_unobserved_loop` | 88,260,898 |
+| instruction reduction | 13.0% |
+
+Use the keyword only when profiling identifies observer bookkeeping in such a
+conservatively gated program; it is not a default hot-loop optimization.
+<!-- observer-ir:end -->
+
+Both tables are generated from the twenty raw results in
+`bench/observer_callgrind.txt`; run
+`python3 tools/performance_observer_docs.py --update` after deliberately
+re-measuring all four arms. The suite requires exactly five measurements per
+arm, checks the generated medians, and also records the two corresponding values
+from the local Cachegrind regression baseline in the generated block's metadata.
+Its self-test independently changes a Callgrind measurement and a
+`bench/baseline.txt` observer figure to prove either kind of drift is rejected.
 
 ## Concurrency
 
