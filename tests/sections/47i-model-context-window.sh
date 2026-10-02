@@ -3,7 +3,12 @@ CW_PROBE_PATH=$(mktemp "${TMPDIR:-/tmp}/eigs_context_probe.XXXXXX")
 printf '%s\n' 'print of (eigen_model_loaded of null)' > "$CW_PROBE_PATH"
 CW_PROBE_OUT=$(./eigenscript "$CW_PROBE_PATH" 2>&1); CW_PROBE_RC=$?
 rm -f "$CW_PROBE_PATH"
-if grep -q "undefined variable 'eigen_model_loaded'" <<< "$CW_PROBE_OUT"; then
+# Only an ordinary missing-capability diagnostic may skip this section.
+CW_PROBE_ERROR=${CW_PROBE_OUT%%$'\n'*}
+if [ "$CW_PROBE_RC" -eq 1 ] &&
+    [ "$(lsan_classify_name "$CW_PROBE_OUT")" = none ] &&
+    { [ "$CW_PROBE_ERROR" = "Error line 1: undefined variable 'eigen_model_loaded'" ] ||
+      [ "$CW_PROBE_ERROR" = "Error line 1: model capability unavailable; use the server profile" ]; }; then
     section_skip "binary built without EIGENSCRIPT_EXT_MODEL"
 else
     TOTAL=$((TOTAL + 1))
