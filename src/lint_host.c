@@ -46,14 +46,14 @@ static Env *g_builtin_name_env = NULL;
 /* Freed at the end of every eigenscript_lint run: LeakSanitizer cannot trace
  * through the env's tagged EigsSlot pointers, so a kept-for-the-process env
  * reads as a direct leak and fails the detect_leaks=1 gate. */
-void builtin_name_env_free(void) {
+void eigs_lint_builtin_name_env_free(void) {
     if (g_builtin_name_env) {
         env_decref(g_builtin_name_env);
         g_builtin_name_env = NULL;
     }
 }
 
-int is_builtin_name(const char *name) {
+int eigs_lint_is_builtin_name(const char *name) {
     if (!g_builtin_name_env) {
         Env *e = env_new(NULL);
         register_builtins(e);   /* store/gfx-when-built ride inside (#742) */
@@ -487,7 +487,7 @@ int eigs_api_dump(FILE *out, int json) {
     for (int i = 0; i < mc; i++) free(mods[i]);
     free(mods);
     /* LeakSanitizer cannot trace the env's tagged slots — free explicitly
-     * (same rule as builtin_name_env_free above). */
+     * (same rule as eigs_lint_builtin_name_env_free above). */
     env_decref(core);
     return 0;
 }
@@ -583,16 +583,16 @@ static void w021_walk(ASTNode *node, LintContext *ctx, const W021Imports *im,
         int fi = w021_func_find(name);
         /* W012/W013 own the builtin overlap (e.g. `mean`, `sum` are both a
          * builtin and a lib/stats.eigs public) — never double-report. */
-        if (fi >= 0 && !is_builtin_name(name)) {
+        if (fi >= 0 && !eigs_lint_is_builtin_name(name)) {
             W021Module *m = &g_w021_mods[g_w021_funcs[fi].mod];
             /* Not when the module is imported (then it's deliberate), and
              * not when the linted file IS the module that ships the name. */
             if (!w021_imported(im, m->module) &&
                 (!self_real[0] || strcmp(self_real, m->path) != 0)) {
-                lint_hint(ctx, node->line, "W021",
-                          "define '%s' shadows lib/%s.eigs '%s' "
-                          "(import %s to use it)",
-                          name, m->module, name, m->module);
+                eigs_lint_hint(ctx, node->line, "W021",
+                               "define '%s' shadows lib/%s.eigs '%s' "
+                               "(import %s to use it)",
+                               name, m->module, name, m->module);
             }
         }
     }
@@ -661,8 +661,8 @@ static void w021_walk(ASTNode *node, LintContext *ctx, const W021Imports *im,
     }
 }
 
-void check_stdlib_shadow(ASTNode *ast, const char *path,
-                         LintContext *ctx) {
+void eigs_lint_check_stdlib_shadow(ASTNode *ast, const char *path,
+                                   LintContext *ctx) {
     /* Anchor the lib-dir search at the linted file's directory — the same
      * base E003 gives load_file resolution. */
     char base[4096] = ".";
@@ -906,13 +906,13 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
                 const char *near = e003_suggest(e->scope, n->data.ident.name);
                 int nlen = (int)strlen(n->data.ident.name);
                 if (near)
-                    lint_error_at(ctx, n->line, n->col, nlen, "E003",
-                               "undefined name '%s' — no binding on any path (did you mean '%s'?)",
-                               n->data.ident.name, near);
+                    eigs_lint_error_at(ctx, n->line, n->col, nlen, "E003",
+                                       "undefined name '%s' — no binding on any path (did you mean '%s'?)",
+                                       n->data.ident.name, near);
                 else
-                    lint_error_at(ctx, n->line, n->col, nlen, "E003",
-                               "undefined name '%s' — no binding on any path",
-                               n->data.ident.name);
+                    eigs_lint_error_at(ctx, n->line, n->col, nlen, "E003",
+                                       "undefined name '%s' — no binding on any path",
+                                       n->data.ident.name);
             }
             break;
         case AST_RELATION: {
@@ -1099,8 +1099,8 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
     }
 }
 
-void check_undefined_names(ASTNode *ast, const char *path,
-                           const char *source, LintContext *ctx) {
+void eigs_lint_check_undefined_names(ASTNode *ast, const char *path,
+                                     const char *source, LintContext *ctx) {
     E003 e;
     memset(&e, 0, sizeof(e));
     e.bind = env_new(NULL);
@@ -1323,7 +1323,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     }
 
     LintContext ctx = {0};
-    lint_run_checks(ast, path, source, &ctx);
+    eigs_lint_run_checks(ast, path, source, &ctx);
 
     /* #399 inline suppression: drop warnings silenced by a `# lint: allow`
      * comment on their line (or the line above), a `# lint: allow-file`, or
@@ -1335,7 +1335,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
         for (int w = 0; w < ctx.warning_count; w++) {
             if (!lint_file_allows(source, ctx.warnings[w].code) &&
                 !eigs_json_allows(ej_allow, ctx.warnings[w].code) &&
-                !lint_suppressed(source, ctx.warnings[w].line, ctx.warnings[w].code))
+                !eigs_lint_suppressed(source, ctx.warnings[w].line, ctx.warnings[w].code))
                 ctx.warnings[kept++] = ctx.warnings[w];
         }
         ctx.warning_count = kept;
@@ -1422,7 +1422,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
     free_ast(ast);
     free_tokenlist(&tl);
     free(source);
-    builtin_name_env_free();
+    eigs_lint_builtin_name_env_free();
 
     /* Exit code (#399): --lint-level warning (default) fails on any surviving
      * warning; --lint-level error makes warnings advisory (exit 0) and fails
@@ -1446,19 +1446,19 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
 
 #else /* EIGENSCRIPT_FREESTANDING */
 
-int is_builtin_name(const char *name) {
+int eigs_lint_is_builtin_name(const char *name) {
     (void)name;
     return 0;
 }
 
-void builtin_name_env_free(void) {}
+void eigs_lint_builtin_name_env_free(void) {}
 
-void check_undefined_names(ASTNode *ast, const char *path,
-                           const char *source, LintContext *ctx) {
+void eigs_lint_check_undefined_names(ASTNode *ast, const char *path,
+                                     const char *source, LintContext *ctx) {
     (void)ast; (void)path; (void)source; (void)ctx;
 }
 
-void check_stdlib_shadow(ASTNode *ast, const char *path, LintContext *ctx) {
+void eigs_lint_check_stdlib_shadow(ASTNode *ast, const char *path, LintContext *ctx) {
     (void)ast; (void)path; (void)ctx;
 }
 

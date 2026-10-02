@@ -41,18 +41,19 @@ typedef struct {
 size_t lint_utf8_prefix(const char *s, size_t max);
 
 /* Diagnostic helpers shared by lint.c and the host-only walkers. */
-void lint_hint(LintContext *ctx, int line, const char *code,
-               const char *fmt, ...);
-void lint_error_at(LintContext *ctx, int line, int col, int len,
-                   const char *code, const char *fmt, ...);
+void eigs_lint_hint(LintContext *ctx, int line, const char *code,
+                    const char *fmt, ...);
+void eigs_lint_error_at(LintContext *ctx, int line, int col, int len,
+                        const char *code, const char *fmt, ...);
 /* Driver/check entry points crossing the TU boundary. */
-int is_builtin_name(const char *name);
-void builtin_name_env_free(void);
-void check_undefined_names(ASTNode *ast, const char *path,
-                           const char *source, LintContext *ctx);
-void check_stdlib_shadow(ASTNode *ast, const char *path, LintContext *ctx);
-void lint_run_checks(ASTNode *ast, const char *path, const char *source,
-                     LintContext *ctx);
-int lint_suppressed(const char *source, int warn_line, const char *code);
+int eigs_lint_is_builtin_name(const char *name);
+void eigs_lint_builtin_name_env_free(void);
+void eigs_lint_check_undefined_names(ASTNode *ast, const char *path,
+                                     const char *source, LintContext *ctx);
+void eigs_lint_check_stdlib_shadow(ASTNode *ast, const char *path,
+                                   LintContext *ctx);
+void eigs_lint_run_checks(ASTNode *ast, const char *path, const char *source,
+                          LintContext *ctx);
+int eigs_lint_suppressed(const char *source, int warn_line, const char *code);
 
 #endif /* EIGENSCRIPT_LINT_INTERNAL_H */
