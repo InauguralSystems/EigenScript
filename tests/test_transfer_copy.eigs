@@ -1,0 +1,66 @@
+# #1148/#1153: mutable flat values copy at every concurrency boundary.
+define check(actual, expected, label) as:
+    assert of [actual == expected, label]
+
+define buffer_value(b) as:
+    return buf_get of [b, 0]
+
+define builder_value(t) as:
+    return text_builder_to_string of t
+
+# Channel: direct buffer/builder plus the same types nested in a dict.
+b is reshape of [(buffer of 1), 1, 1]
+buf_set of [b, 0, 1.5]
+t is text_builder_new of null
+text_builder_append of [t, "before"]
+nested_b is buffer of 1
+buf_set of [nested_b, 0, 1.5]
+nested_t is text_builder_new of null
+text_builder_append of [nested_t, "before"]
+c is channel of 4
+send of [c, b]
+send of [c, t]
+send of [c, {"buffer": nested_b, "builder": nested_t}]
+buf_set of [b, 0, 99]
+text_builder_append of [t, "+AFTER"]
+buf_set of [nested_b, 0, 99]
+text_builder_append of [nested_t, "+AFTER"]
+got_b is recv of c
+got_t is recv of c
+got_nested is recv of c
+check of [buffer_value of got_b, 1.5, "channel copies buffer payload"]
+check of [shape of got_b, [1, 1], "channel copies buffer shape"]
+check of [builder_value of got_t, "before", "channel copies builder bytes"]
+check of [text_builder_part_count of got_t, 1, "channel copies builder part count"]
+check of [buffer_value of got_nested["buffer"], 1.5, "channel copies nested buffer"]
+check of [builder_value of got_nested["builder"], "before", "channel copies nested builder"]
+
+# thread_join: clone the returned values, then mutate the shared originals.
+join_b is buffer of 1
+buf_set of [join_b, 0, 1.5]
+join_t is text_builder_new of null
+text_builder_append of [join_t, "before"]
+define return_join_values() as:
+    return {"buffer": join_b, "builder": join_t}
+join_h is spawn of return_join_values
+join_got is thread_join of join_h
+buf_set of [join_b, 0, 99]
+text_builder_append of [join_t, "+AFTER"]
+check of [buffer_value of join_got["buffer"], 1.5, "thread_join copies buffer"]
+check of [builder_value of join_got["builder"], "before", "thread_join copies builder"]
+
+# Cooperative task arguments and results use the same copy chokepoint.
+define echo(value) as:
+    return value
+task_b is buffer of 1
+buf_set of [task_b, 0, 1.5]
+task_t is text_builder_new of null
+text_builder_append of [task_t, "before"]
+task_id is task_spawn of [echo, {"buffer": task_b, "builder": task_t}]
+buf_set of [task_b, 0, 99]
+text_builder_append of [task_t, "+AFTER"]
+task_got is task_join of task_id
+check of [buffer_value of task_got["buffer"], 1.5, "task transfer copies buffer"]
+check of [builder_value of task_got["builder"], "before", "task transfer copies builder"]
+
+print of "PASS: concurrency mutable values copy"

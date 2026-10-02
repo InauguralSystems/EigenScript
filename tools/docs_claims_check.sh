@@ -86,24 +86,31 @@ def derived_counts():
 
 
 def strict_default_wording():
-    """Keep the gfx argument-contract prose aligned with strict-by-default."""
+    """Keep the complete graphics/audio contract strict-by-default (#1428)."""
     text = Path('docs/BUILTINS.md').read_text(encoding='utf-8')
-    start = text.find('**Wrong-typed and wrong-arity arguments (#1007).**')
-    end = text.find('\nTwo shapes are deliberately', start)
-    section = text[start:end if end != -1 else len(text)]
-    if start == -1:
-        red('docs/BUILTINS.md: gfx wrong-argument paragraph is missing')
-        return
-    stale = ('under `EIGS_STRICT=1`', 'with `EIGS_STRICT=1`',
-             'with the flag off', 'Under `EIGS_STRICT=1`')
-    found_stale = [phrase for phrase in stale if phrase in section]
-    if found_stale:
-        red('docs/BUILTINS.md: gfx paragraph describes strict as opt-in: '
-            + ', '.join(found_stale))
-    if 'By default' not in section or '`EIGS_STRICT=0`' not in section:
-        red('docs/BUILTINS.md: gfx paragraph must name the strict default and '
-            'EIGS_STRICT=0 compatibility mode (#1428)')
-    print('  STRICT DEFAULT: examined the gfx wrong-argument paragraph')
+    headings = ('Optional: Graphics (SDL2) Extension', 'Audio (additional)')
+    sections = collections.defaultdict(list)
+    for match in re.finditer(r'^## ([^\n]+)\n(.*?)(?=^## |\Z)', text, re.M | re.S):
+        if match[1] in headings:
+            sections[match[1]].append(match[2])
+    examined = 0
+    for heading in headings:
+        if len(sections[heading]) != 1:
+            red(f'docs/BUILTINS.md: strict-default section {heading!r} must exist exactly once')
+            continue
+        examined += 1
+        section = sections[heading][0]
+        stale = re.findall(r'(?:under|with)\s+`EIGS_STRICT=1`|with the flag off', section, re.I)
+        if stale:
+            red(f'docs/BUILTINS.md: {heading} describes strict as opt-in: ' + ', '.join(stale))
+        if heading == headings[0]:
+            paragraph = re.search(r'\*\*Wrong-typed and wrong-arity arguments \(#1007\)\.\*\*(.*?)(?=\nTwo shapes are deliberately|\Z)', section, re.S)
+            if not paragraph:
+                red('docs/BUILTINS.md: gfx wrong-argument paragraph is missing')
+            elif not re.search(r'\bby default\b', paragraph[1], re.I) or '`EIGS_STRICT=0`' not in paragraph[1]:
+                red('docs/BUILTINS.md: gfx paragraph must name the strict default and '
+                    'EIGS_STRICT=0 compatibility mode (#1428)')
+    print(f'  STRICT DEFAULT: examined {examined} section(s), declared {len(headings)}')
 
 
 def check_floors():
@@ -415,6 +422,25 @@ def selftest():
                 passed += ok
                 print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
                 p.write_text(original)
+            p = tree / 'docs/BUILTINS.md'
+            original = p.read_text()
+            for label, anchor, replacement, witness in [
+                ('strict-intro', '**Wrong-typed and wrong-arity arguments (#1007).**',
+                 '**Wrong-typed and wrong-arity arguments (#1007).** Under `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                ('strict-later-gfx', '**Text rendering and fonts (#593).**',
+                 '**Text rendering and fonts (#593).** With `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                ('strict-audio', '## Audio (additional)',
+                 '## Audio (additional)\nUnder `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                ('strict-section-missing', '## Audio (additional)',
+                 '## Removed audio heading', "strict-default section 'Audio (additional)' must exist exactly once"),
+            ]:
+                assert original.count(anchor) == 1, (label, anchor)
+                p.write_text(original.replace(anchor, replacement, 1))
+                result = gate()
+                ok = result.returncode != 0 and witness in result.stdout
+                passed += ok
+                print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
+                p.write_text(original)
             p = tree / 'tests/test_doc_examples.py'
             original = p.read_text()
             p.write_text(original.replace('"README.md":', '# "README.md":', 1))
@@ -435,8 +461,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 8 case(s) run, {passed} passed, {8-passed} failed')
-            return 0 if passed == 8 else 1
+            print(f'SELFTEST: 12 case(s) run, {passed} passed, {12-passed} failed')
+            return 0 if passed == 12 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 

@@ -1,0 +1,1 @@
+- Reject ragged matrices in charpoly (#1483).
