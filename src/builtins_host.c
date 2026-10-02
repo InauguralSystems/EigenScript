@@ -1351,9 +1351,9 @@ Value* builtin_exec_capture(Value *arg) {
 
     if (pid == 0) {
         /* Child: redirect stdout to pipe, stdin to /dev/null.
-         * Reset SIGPIPE to SIG_DFL — proc_spawn installs a process-wide
-         * SIG_IGN once, and that disposition survives fork; without an
-         * explicit reset here the captured child silently no-ops on
+         * Reset SIGPIPE to SIG_DFL — a host may ignore it, and that
+         * disposition survives exec; without an explicit reset here the
+         * captured child silently no-ops on
          * broken-pipe writes instead of dying (issue #150). */
         signal(SIGPIPE, SIG_DFL);
         close(pipefd[0]);
@@ -1462,14 +1462,8 @@ Value* builtin_exec_capture(Value *arg) {
  * Children using stdio block-buffer their own stdout when not on a tty —
  * wrap unbuffered programs with stdbuf -oL / -o0 if you need line streaming.
  *
- * SIGPIPE is set to SIG_IGN once on first spawn so a writing parent gets
- * EPIPE instead of dying when the child exits. */
-
-static pthread_once_t g_proc_sigpipe_once = PTHREAD_ONCE_INIT;
-
-static void proc_install_sigpipe_ignore(void) {
-    signal(SIGPIPE, SIG_IGN);
-}
+ * proc_write suppresses SIGPIPE around only its own write, leaving the host's
+ * process-wide disposition untouched. */
 
 static Value* proc_spawn_fail(void) {
     Value *r = make_list(3);
@@ -1495,14 +1489,12 @@ Value* builtin_proc_spawn(Value *arg) {
     }
     argv[total] = NULL;
 
-    pthread_once(&g_proc_sigpipe_once, proc_install_sigpipe_ignore);
-
     /* FD_CLOEXEC on both ends of both pipes so subsequent proc_spawn /
      * exec_capture children don't inherit the parent's open pipes (#149).
      * The child re-dup2s these into stdin/stdout, which clears FD_CLOEXEC
      * on the destination, so the child's own stdin/stdout survives exec. */
     int in_pipe[2], out_pipe[2];
-    if (pipe(in_pipe) != 0)  { free(argv); return proc_spawn_fail(); }
+    if (eigs_pipe_no_sigpipe(in_pipe) != 0) { free(argv); return proc_spawn_fail(); }
     if (pipe(out_pipe) != 0) { close(in_pipe[0]); close(in_pipe[1]);
                                free(argv); return proc_spawn_fail(); }
     (void)fcntl(in_pipe[0],  F_SETFD, FD_CLOEXEC);
@@ -1520,8 +1512,8 @@ Value* builtin_proc_spawn(Value *arg) {
 
     if (pid == 0) {
         /* Child: stdin from in_pipe read end, stdout to out_pipe write end.
-         * Reset SIGPIPE to SIG_DFL — parent ignores SIGPIPE so it sees EPIPE
-         * on write, but the child should die silently on broken pipe like
+         * Reset SIGPIPE to SIG_DFL — a host may ignore it, but the child
+         * should die silently on broken pipe like
          * a conventional Unix process. */
         signal(SIGPIPE, SIG_DFL);
         dup2(in_pipe[0],  STDIN_FILENO);
@@ -1566,7 +1558,7 @@ Value* builtin_proc_write(Value *arg) {
     size_t total = strlen(buf);
     size_t off = 0;
     while (off < total) {
-        ssize_t n = write(fd, buf + off, total - off);
+        ssize_t n = eigs_write_no_sigpipe(fd, buf + off, total - off);
         if (n < 0) {
             if (errno == EINTR) continue;
             /* #159: return partial bytes-written instead of -1 so a
