@@ -4349,7 +4349,7 @@ check_eigs_suite "for binder in a loop env: body write lands in the loop env (#1
 # (exhausted and break paths), so the contract's "does not leak" holds inside
 # functions too. A binder with no prior binding is loop-scoped as well since
 # #1105 (next block).
-check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 9
+check_eigs_suite "for binder over an existing slot is restored after the loop (#1064)" test_for_binder_scoped_in_function.eigs "All tests passed" 11
 # [70j1] #1384 -- the hidden save and restore used by that slot path are
 # compiler bookkeeping: neither is an assignment-history/tape event. This
 # also keeps temporal answers equal to module scope's loop-env tier.
