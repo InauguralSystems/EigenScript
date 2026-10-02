@@ -92,12 +92,28 @@ void eigs_print_caret_src(FILE *out, const char *src, int line, int col) {
         len = o;
     }
     fprintf(out, "  %4d | %.*s\n", line, (int)len, shown);
-    /* pad buffer, not fputc: the freestanding mini-libc has fprintf but no
-     * fputc (the symbol gate rejects it). col <= len <= 200 by the guards. */
+    /* Columns are byte offsets (#881), but terminal cells are not: emit one
+     * space per UTF-8 character before the token.  Preserve whitespace bytes
+     * themselves so tabs (and the less common source whitespace accepted by
+     * the lexer) expand exactly as they do in the excerpt above.  Treat each
+     * malformed byte as one displayed character, matching shown[]'s '?'.
+     * Use a buffer, not fputc: the freestanding mini-libc has fprintf but no
+     * fputc (the symbol gate rejects it). */
     char pad[201];
-    for (int i = 0; i < col; i++)
-        pad[i] = (s[i] == '\t') ? '\t' : ' ';
-    pad[col] = '\0';
+    size_t po = 0;
+    for (size_t i = 0; i < (size_t)col;) {
+        unsigned char c = (unsigned char)s[i];
+        if (isspace(c)) {
+            pad[po++] = (char)c;
+            i++;
+            continue;
+        }
+        int step = eigs_utf8_step((const unsigned char *)s + i,
+                                  (size_t)col - i);
+        pad[po++] = ' ';
+        i += step > 0 ? (size_t)step : 1;
+    }
+    pad[po] = '\0';
     fprintf(out, "       | %s^\n", pad);
 }
 
