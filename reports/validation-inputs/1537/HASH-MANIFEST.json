@@ -1,0 +1,36 @@
+{
+  "repository": "InauguralSystems/EigenScript",
+  "environment": "InauguralSystems/EigenScript",
+  "purpose": "validation only, exact frozen #1537 repair",
+  "main_sha": "097db5081167fa74308f9be475718ff5eaaff7b5",
+  "original_pr_head": "ae3db06d3ff41d733c106fc20fe81207726801d2",
+  "old_pending_main": "4eaae4185f84536effa60eed4fdd7e82f8721e0c",
+  "integrated_index_tree": "c19d49588246562e7461020291584f28e04c13b0",
+  "patch_sha256": "79039a17a6221446cac9560ebe76e7e90f3fb18973cd43643a11d31839ca0d4a",
+  "patch_bytes": 18359,
+  "paths": [
+    "changes/internal/1409-native-train-gradcheck.md",
+    "tests/native_train_gradcheck.py",
+    "tests/run_all_tests.sh",
+    "tests/test_native_train_gradcheck.sh"
+  ],
+  "hashes": {
+    "changes/internal/1409-native-train-gradcheck.md": "fa7005ee52305c36d7e12ded5e8016400937a4eae8285817e90fb509ef233f74",
+    "tests/native_train_gradcheck.py": "796255a1f7226224fc7686cbf9e0f163e08d82b7209002b5d44df021ce36a9b8",
+    "tests/run_all_tests.sh": "e29fcd537c8bdfcacbe53ed1f0b6046a3932a9a52b42e2e81c83fad536c328fe",
+    "tests/test_native_train_gradcheck.sh": "7d6811a9d34992dddd3035d481a226b73dc24c150ae3fadf0adc1cb803107657",
+    "tests/lsan_classify.sh": "61ec65a87167285ec87f540ec15bcf9a82658226ee231bd45a1cd5343268f070",
+    "tests/gen_tiny_model.eigs": "34d4f861342aa3280403106eb2e256e711de2504f06e8980a184f25f67cb8ea8",
+    "src/model_train.c": "6d8b2135f644d748d0026576e10e47b99755baba45361b26f0f8f6f820ecdc86",
+    "src/model_infer.c": "ffa1423db2df275dff664f129bfb017f52b1d2e59799cf896a7e39ff33308722",
+    "src/model_io.c": "6f8d203a4c81e3966814a7dffa485aeab523ae528328a5b764ddcf9136745af4",
+    "Makefile": "f014ba28ff35e633f27f540bfc530109b10f2a5ee785d8f7854bda6880e77626",
+    ".claude/rules/test-suite.md": "e00bb33e79e02b3a05e3618a924c0b1027c0497e964ae6ab86d4c38f7c86d1fe",
+    "CLAUDE.md": "0897713f63cccfe50ebc5210950bb873c457a12e2e15129094bdf5913a699585"
+  },
+  "previous_cloud_task": "task_e_6abf0356f400832d867448f2040c2234",
+  "withdrawn_old_aggregate_counts": [
+    "5993/5992",
+    "5984/5983"
+  ]
+}

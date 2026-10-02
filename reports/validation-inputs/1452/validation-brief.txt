@@ -1,0 +1,96 @@
+Validate the exact unchanged #1452 candidate on the pinned baseline. This is ONE controlled off-box validation retry after task_e_6abf3db84ee8832d867fd83f53b6a657 returned READY with valid frozen source identities but BLOCKED validation: release build exit 0; complete suite exit 1 with raw RESULTS: 5713/5714 passed, 2 failed, 14 skipped. [99zd] could not import PyYAML and [99p] recorded that child failure. All later independent acceptance gates were NOT RUN. Preserve that historical failure; do not use it as current green evidence.
+
+This is verification, not source repair or publication. No production/fixture/test/gate/threshold edits, commits, pushes, PRs, external comments, tags or releases. Read CLAUDE.md plus JIT, mechanical-gates and perf-attribution guidance. Use only the supplied existing harmless synthetic native Env fixture and receipt-only helper. Do not execute operational vulnerability reproductions, introduce security payloads, or mutate real protected builtin storage.
+
+Immutable source bar: baseline d9d6a5d27b472f911c341655b042fb29edc644df, baseline tree 0caeb10fe6d16adb880a0d274633c913c93750c8; candidate six-file patch SHA256 d5d8f9bd803ee500957ec97e448e0c8206ae95821ec106d974eb99e13753b6be; candidate tree 0eace620a71fe1707ced67cfb2a1315e91d6a68c. Record initial HEAD before doing anything. Fetch the exact baseline if needed, never substitute latest main. Check patch SHA256 and all baseline/candidate blobs and SHA256s against the appended manifest. Candidate tree must match BEFORE writing artifacts. Keep artifacts in a separate directory or ensure they never enter the source index/tree. Preserve trace_current_line_addr and #1482 count 11. Any source identity divergence is BLOCKED-SOURCE and stops; do not resolve it by editing or silently rebasing.
+
+EXPLICIT AUTHORIZATION FOR DEPENDENCY RECOVERY: provision missing declared build/test dependencies using bounded noninteractive package/venv routes below. This is environment setup, and is permitted before gates or after a proven dependency-only failure. Do not stop merely because the first installation/import attempt failed; try the stated supported fallback, preserve all attempts, and verify the actual child process interpreter. Do not request escalation. A genuine functional/assertion/sanitizer/performance failure is FAIL and must never be retried into green or repaired. A failure solely caused by missing declared prerequisites may be repaired once and the COMPLETE affected gate rerun from the start, with fresh logs; retain the failed run separately. If any functional failure also occurred, retain FAIL and stop. Do not classify errors from status alone: cite the exact diagnostic.
+
+Dependency preflight is a mandatory phase BEFORE the first build or full suite. Use this same exported environment for every subsequent gate and both reference/candidate builds. All output and exact exits go into a new validation-1452-r3/logs directory. Keep every setup failure; do not overwrite earlier attempts.
+
+1. Record uname -a, uname -m, bash --version, id -u, command -v python3/gcc/make/git/objdump/timeout/valgrind, python3 executable/version, compiler version, and /usr/bin/time --version. Do not dump the full environment or credentials. Native entry/OSR coverage requires Linux x86_64 with executable mmap; a fallback JIT pass does not meet the native bar.
+2. Required packages for this lane: build-essential (gcc/make/binutils), git, ca-certificates, python3, python3-yaml, valgrind (Cachegrind), time (GNU /usr/bin/time). These are the relevant union of .devcontainer/Dockerfile, CONTRIBUTING.md, ci.yml and bench/check_regression.sh. clang/libpq-dev/zlib1g-dev/postgresql-client/gdb/curl are declared in the full dev image but are not required to build these release/asan variants. Do not mistake the top-level runtime Dockerfile for the dev/test image.
+3. Probe the ACTUAL python3 used by shell children: python3 -c 'import sys, yaml; print(sys.executable); print(yaml.__version__); print(yaml.__file__)'. An unrelated Python interpreter having yaml is insufficient.
+4. If required tools/imports are missing, explicitly provision them before any heavy gate. On Debian/Ubuntu, use apt-get directly as uid 0, or sudo -n apt-get if available. Try a bounded install from the existing index, then refresh and retry once (timeout 180 apt-get install -y --no-install-recommends build-essential git ca-certificates python3 python3-yaml valgrind time; if that fails, timeout 120 apt-get update followed by the bounded install). Capture both attempts separately. Never request escalation or wait for an interactive sudo password. Package-manager success must be followed by actual import/tool probes.
+5. If the gate's python3 still cannot import yaml (for example /usr/local python3 shadows distro Python), use a task-owned venv OUTSIDE the source tree: python3 -m venv <artifact-root>/dependency-venv, then <venv>/bin/python -m pip install --require-hashes -r .github/requirements-release.txt, and export PATH=<absolute-venv>/bin:$PATH. The frozen repository lock declares PyYAML==6.0.3 with hashes. If venv is unavailable, install python3-venv using the same bounded noninteractive package route and retry creation once; if /usr/local python3 still lacks venv support, explicitly use /usr/bin/python3 -m venv when that distro interpreter is available, then export that venv PATH and verify the shell child python3 again. If pip is unavailable inside a successfully created venv, use python -m ensurepip there. Do not alter the requirements or use a different unverified requirements file. Preserve failures and final package/version receipt. Do not modify tracked source or global interpreter aliases.
+6. Re-run python3 import probe after PATH export, then run bash tools/workflow_yaml_check.sh on the actual pinned candidate. Require exit 0 and exactly one final workflow-yaml: OK (examined=N file(s), loader=pyyaml) with N>0; independently inventory .github/workflows/*.yml and *.yaml and compare N. A YAML content error is a real gate failure; only the missing-import setup failure is eligible for dependency repair.
+7. Verify valgrind --version, valgrind --tool=cachegrind --help, and /usr/bin/time -f '%M' true. Verify gcc, make and objdump execute. A missing/unusable Cachegrind or GNU time must be corrected now; do not discover it after the sanitizer suite. An instrument probe is not a workload pass.
+8. Inventory optional coverage: bash <=3 via tools/portability_parse_check.sh; Vim and TextMate modules via tests/test_editor_grammars.sh declarations. They may retain explicit platform/dependency SKIPs allowed by the unchanged acceptance bar. Record reasons; do not present these as passes. Extension-disabled release/asan sections are named variant skips, not missing-dependency excuses. No new extension matrix is required by this retry.
+
+Only after steps 1-7 actually pass may release-suite validation start. If required setup cannot be provisioned by these bounded routes, report BLOCKED-SETUP with exact command, exit, stderr and unresolved probe. Do not launch a heavy job with known missing prerequisites. Source coordinate divergence always stops immediately.
+
+Run all following heavy jobs SERIALLY, one at a time. No parallel make, no suite while switching src/eigenscript's hard-link alias, no runtime binary copies. Never substitute partial suites or embedded sections for separately requested independent gates. Remove inherited EIGS_SUITE_SECTIONS/EIGS_SUITE_SHARD/EIGS_SUITE_CHANGED or other test selection before both COMPLETE suites; record selection state only, without dumping secrets. Keep the same successful dependency PATH for the entire run.
+
+Acceptance sequence, unchanged in substance:
+A. make; then cd tests && bash run_all_tests.sh. Save complete release build and suite logs, real exit codes, pass/total/fail/skip counts and each real skip reason. Do not reinterpret the runner's counts.
+B. make asan; then cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh. Save complete ASan+UBSan suite output, summary, exit, every sanitizer diagnostic, and exact tolerated leak tally. Require zero leaks, including the absence of LeakSanitizer reports; exit 0 alone is insufficient. Release/ASan use the same required PyYAML import preflight. Restore release with make after this suite completes.
+C. make jit-smoke and the binary it builds (discover the exact Makefile invocation). Require five constant cases, actual synthetic native population 16 rows / 6 native stores / 10 helper visits / 246 assertions, and actual entry plus OSR execution. Preserve named assertion failures. Do not invent/execute real builtin overwrite tests. Run bash tools/jit_diff.sh and bash tools/replay_diff.sh independently, with raw summaries, populations, exits and skip/expected-boundary ledgers.
+D. Build the exact baseline separately in a sibling checkout, serially, using the same compiler/flags/environment and make release; record baseline HEAD/tree and build log. Runtime binaries must stay in their own src directory for executable-relative stdlib lookup. Run bash tools/strict_differential.sh <absolute-baseline-src/eigenscript> on the candidate release binary to complete the baseline half; --no-baseline is incomplete for this retry. Record non-GFX variant skips explicitly. Run PRECHECK_BASE=d9d6a5d27b472f911c341655b042fb29edc644df make precheck, then make test-changed BASE=d9d6a5d27b472f911c341655b042fb29edc644df, recording actual row/section counts, exits, skips and NOT RUN LOCALLY list. Precheck's own two static lanes are the repository's normal invocation; do not add external concurrent heavy jobs. Explicitly run bash tools/suite_label_check.sh. Inventory other gates required by this pinned repo/instructions: tools/failsoft_classify_check is absent at this frozen baseline, so record absent-at-pin rather than inventing a substitute or claiming it green. No acceptance command may silently vanish.
+E. On RELEASE binaries only, run existing bench/check_regression.sh --vs <absolute-baseline-src/eigenscript> with its UNCHANGED 5% Ir threshold. Independently enumerate bench/*.eigs and assert exactly these SIX workloads: dict_ops.eigs, observed_loop.eigs, scalar_loop.eigs, string_build.eigs, unobserved_armed_loop.eigs, unobserved_loop.eigs. Because successful --vs rows omit the reference Ir, also retain direct Cachegrind raw output/exit for candidate AND baseline on each identical candidate workload to make all twelve raw Ir values reviewable. Do not infer process success from the Ir grep pipeline; record runtime/valgrind exit separately. Require each Ir value present and >0, actual workload success and six complete rows; failed programs or empty measurements are FAIL/BLOCKED, never a zero-cost pass. Record baseline Ir, candidate Ir, exact computed percent for every row plus gate exit. No sanitizer measurements, workload/corpus/matcher/threshold/baseline changes, --update, or dropping unobserved_armed_loop.
+
+Evidence and verdict rules: write REPORT.md and source-manifest.json incrementally, with a status for every acceptance item (PASS, FAIL, BLOCKED or NOT RUN) and raw-log paths. Save every command/exit immediately. If a setup-only failure is recovered, report both FAILED-SETUP attempt and the independently completed retry; the old failure remains visible. If an actual gate fails, report its exact section/assertion/coordinate and stop; later gates remain NOT RUN. If a required dependency is still unavailable after the bounded setup routes, report BLOCKED-SETUP. Explicit permitted platform/extension skips remain skips, not passes. Never report complete validation unless all required independent gates completed, exact leak tally is 0, native counts match, all six workloads have valid raw Ir rows, source hashes remain exact, and every required command exit is acceptable.
+
+Final deliverables: REPORT.md, source-manifest.json, dependency/setup receipts with actual interpreter/versions, unchanged supplied candidate.patch, complete raw logs for every executed attempt, release and ASan totals/leak tally, native population, differential/precheck/scoped summaries, and the six-row Ir table. Recheck candidate identities after gates. Do not commit artifacts. Subsequent-main merge-group CI remains separate; this pinned validation does not assert future-main integration success.
+
+SOURCE MANIFEST
+{
+  "baseline": "d9d6a5d27b472f911c341655b042fb29edc644df",
+  "candidate_tree": "0eace620a71fe1707ced67cfb2a1315e91d6a68c",
+  "original_patch_sha256": "5f046e95dbe9f8bf2444462c8797247ef325a5e52772915b5da030aed9afeeed",
+  "rebased_patch_sha256": "d5d8f9bd803ee500957ec97e448e0c8206ae95821ec106d974eb99e13753b6be",
+  "files": [
+    {
+      "path": "changes/security/1452-seal-builtin-layer-against-shared-name-cache-sto.md",
+      "baseline_blob": null,
+      "candidate_blob": "3b14b0c0b378438bda643fc5e548446be65ff6a1",
+      "baseline_sha256": null,
+      "candidate_sha256": "7216bf27c786977f32b02fb1111c41d2122b68315375e9a073385a3ece8c2160"
+    },
+    {
+      "path": "src/jit.c",
+      "baseline_blob": "f74c2e1f541ac82bf1cb084e15d11dd8fe66558a",
+      "candidate_blob": "1c940e40ab2b6cff77de52015f73752155517a93",
+      "baseline_sha256": "b9b90fc328732a9f508d2d858705aa4632106b0347f6418d84a2e4624851d345",
+      "candidate_sha256": "d7eacfe149dcd8e4990b6443ec64e65cc5d23f7009c619c31212e74527c224c4"
+    },
+    {
+      "path": "src/jit_smoke.c",
+      "baseline_blob": "4d5173d0060e21dfc683f28c3435a4ff0bed54c2",
+      "candidate_blob": "68decc58f090d060d73accb459f85db0e06aafe7",
+      "baseline_sha256": "fdbee9b8386fc4501cadcd8ca5590dc68e4b38c8d1e68ab1a6e2af43bab058ec",
+      "candidate_sha256": "968e2adfa9c81f8e60f6f93590f48c247e75394aadac876ee7c9a2ec47ed7e25"
+    },
+    {
+      "path": "src/vm.c",
+      "baseline_blob": "063bbdc5328798cbbefff3fe4a30f6bf3a877908",
+      "candidate_blob": "7f45d6326bb813a8da46c84f91c9c73d61e50f6a",
+      "baseline_sha256": "dd7d6087c5103b42e6fb90bcc6d9f5b254cdc40adbf4dd4956fc95c5a5bf5562",
+      "candidate_sha256": "3e6e15cc56d0d98bf2aee8c17172b81b65a8491de3d1ea435d64071c1ee52719"
+    },
+    {
+      "path": "tests/run_all_tests.sh",
+      "baseline_blob": "2de09e9a51d4b89c863710617cb16a7a980cf07f",
+      "candidate_blob": "ae251efd0b625e997c5f388eb5e3227a75f4d8eb",
+      "baseline_sha256": "9c171c75b5ef65cbb211ef5eea4119a1b9a85f189d96c8023730dc391d28d826",
+      "candidate_sha256": "cca97a45dadf551c8017551d2360c48d24d0af0faa67adb09038f5fe45a1426b"
+    },
+    {
+      "path": "tests/test_module_builtin_isolation.eigs",
+      "baseline_blob": "880b79331876f25111e6071be274bc2d1382c045",
+      "candidate_blob": "4a59cdabd340062a58ecc1162de7b20b8537c1e4",
+      "baseline_sha256": "b1364d46641b325bbe8ae283db379134d829a9b435de7b4f3ac0aee8a866b6ba",
+      "candidate_sha256": "d41d2a5baa0f748cb542c46746d2a5f9f1d2ce39c113f21fc13f2fcc64d548f0"
+    }
+  ],
+  "bench_workloads": [
+    "dict_ops.eigs",
+    "observed_loop.eigs",
+    "scalar_loop.eigs",
+    "string_build.eigs",
+    "unobserved_armed_loop.eigs",
+    "unobserved_loop.eigs"
+  ],
+  "conflicts": 0
+}
+
+PATCH FOLLOWS

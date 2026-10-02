@@ -1,0 +1,8 @@
+{
+  "current-main-source.patch": "79039a17a6221446cac9560ebe76e7e90f3fb18973cd43643a11d31839ca0d4a",
+  "HASH-MANIFEST.json": "7e2e22943ebab85bb600a4bb7eefd6db91873d7391d909c2feb28913e58e78c5",
+  "receipt_probe.py": "c7c3ceb28b47bbd6d5cc9bfaf011fad6a180739a17791fb3cff13749cebc284d",
+  "old_native_train_gradcheck.py": "605f25eb0aaaf9024aeaa9cef6ad8b90522089deead3cbd07644e14b3311e5f8",
+  "generator_probe.py": "01406455e562d19cbc625c80e18c584c02cb6d6c907ce78d4c5b7d9f86f04150",
+  "calibrate_frozen.py": "7b433616eef983e963bcd9fa045bc0d6ad40589add79ecd2d6775cde79addf9b"
+}

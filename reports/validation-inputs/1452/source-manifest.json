@@ -1,0 +1,59 @@
+{
+  "baseline": "d9d6a5d27b472f911c341655b042fb29edc644df",
+  "candidate_tree": "0eace620a71fe1707ced67cfb2a1315e91d6a68c",
+  "original_patch_sha256": "5f046e95dbe9f8bf2444462c8797247ef325a5e52772915b5da030aed9afeeed",
+  "rebased_patch_sha256": "d5d8f9bd803ee500957ec97e448e0c8206ae95821ec106d974eb99e13753b6be",
+  "files": [
+    {
+      "path": "changes/security/1452-seal-builtin-layer-against-shared-name-cache-sto.md",
+      "baseline_blob": null,
+      "candidate_blob": "3b14b0c0b378438bda643fc5e548446be65ff6a1",
+      "baseline_sha256": null,
+      "candidate_sha256": "7216bf27c786977f32b02fb1111c41d2122b68315375e9a073385a3ece8c2160"
+    },
+    {
+      "path": "src/jit.c",
+      "baseline_blob": "f74c2e1f541ac82bf1cb084e15d11dd8fe66558a",
+      "candidate_blob": "1c940e40ab2b6cff77de52015f73752155517a93",
+      "baseline_sha256": "b9b90fc328732a9f508d2d858705aa4632106b0347f6418d84a2e4624851d345",
+      "candidate_sha256": "d7eacfe149dcd8e4990b6443ec64e65cc5d23f7009c619c31212e74527c224c4"
+    },
+    {
+      "path": "src/jit_smoke.c",
+      "baseline_blob": "4d5173d0060e21dfc683f28c3435a4ff0bed54c2",
+      "candidate_blob": "68decc58f090d060d73accb459f85db0e06aafe7",
+      "baseline_sha256": "fdbee9b8386fc4501cadcd8ca5590dc68e4b38c8d1e68ab1a6e2af43bab058ec",
+      "candidate_sha256": "968e2adfa9c81f8e60f6f93590f48c247e75394aadac876ee7c9a2ec47ed7e25"
+    },
+    {
+      "path": "src/vm.c",
+      "baseline_blob": "063bbdc5328798cbbefff3fe4a30f6bf3a877908",
+      "candidate_blob": "7f45d6326bb813a8da46c84f91c9c73d61e50f6a",
+      "baseline_sha256": "dd7d6087c5103b42e6fb90bcc6d9f5b254cdc40adbf4dd4956fc95c5a5bf5562",
+      "candidate_sha256": "3e6e15cc56d0d98bf2aee8c17172b81b65a8491de3d1ea435d64071c1ee52719"
+    },
+    {
+      "path": "tests/run_all_tests.sh",
+      "baseline_blob": "2de09e9a51d4b89c863710617cb16a7a980cf07f",
+      "candidate_blob": "ae251efd0b625e997c5f388eb5e3227a75f4d8eb",
+      "baseline_sha256": "9c171c75b5ef65cbb211ef5eea4119a1b9a85f189d96c8023730dc391d28d826",
+      "candidate_sha256": "cca97a45dadf551c8017551d2360c48d24d0af0faa67adb09038f5fe45a1426b"
+    },
+    {
+      "path": "tests/test_module_builtin_isolation.eigs",
+      "baseline_blob": "880b79331876f25111e6071be274bc2d1382c045",
+      "candidate_blob": "4a59cdabd340062a58ecc1162de7b20b8537c1e4",
+      "baseline_sha256": "b1364d46641b325bbe8ae283db379134d829a9b435de7b4f3ac0aee8a866b6ba",
+      "candidate_sha256": "d41d2a5baa0f748cb542c46746d2a5f9f1d2ce39c113f21fc13f2fcc64d548f0"
+    }
+  ],
+  "bench_workloads": [
+    "dict_ops.eigs",
+    "observed_loop.eigs",
+    "scalar_loop.eigs",
+    "string_build.eigs",
+    "unobserved_armed_loop.eigs",
+    "unobserved_loop.eigs"
+  ],
+  "conflicts": 0
+}
