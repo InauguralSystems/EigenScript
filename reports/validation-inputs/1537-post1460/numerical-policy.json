@@ -1,0 +1,17 @@
+{
+  "mode": "actual AST-extracted constants/group/sample selection only; no native process/model generation/calibration execution",
+  "groups": 22,
+  "scalars": 352,
+  "nominal_probes": 44,
+  "unique_positions": 43,
+  "loss_receipts_per_objective": 31,
+  "layer0_w_k_1_2": true,
+  "constants": {
+    "H_FINE": 0.02,
+    "H_COARSE": 0.04,
+    "REL_TOL": 0.01,
+    "CONVERGENCE_TOL": 0.01,
+    "MIN_GRAD": 0.0001
+  },
+  "oracle_sha256": "796255a1f7226224fc7686cbf9e0f163e08d82b7209002b5d44df021ce36a9b8"
+}

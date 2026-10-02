@@ -1,0 +1,95 @@
+{
+  "ast_files": 6,
+  "bash_syntax_files": 4,
+  "diff_check_exit": 0,
+  "input_check_exit": 0,
+  "input_check_receipt": {
+    "status": "INPUTS_VERIFIED_ONLY",
+    "baseline": "159d24ff3eec0b73bf950ec2fc83e5d8159fdbff",
+    "candidate_tree": "959ef9f96646f304e5270d2b14c3dbd5c8e5831d",
+    "numerical_inventory": {
+      "groups": 22,
+      "scalars": 352,
+      "nominal_probes": 44,
+      "unique_positions": 43,
+      "loss_receipts": 31,
+      "constants": {
+        "H_FINE": 0.02,
+        "H_COARSE": 0.04,
+        "REL_TOL": 0.01,
+        "CONVERGENCE_TOL": 0.01,
+        "MIN_GRAD": 0.0001
+      },
+      "mode": "pure source inventory only; no native execution"
+    }
+  },
+  "counter_acceptance_controls": [
+    {
+      "case": "pass",
+      "accepted": true,
+      "ok": true
+    },
+    {
+      "case": "failure",
+      "accepted": false,
+      "ok": true
+    },
+    {
+      "case": "overcount",
+      "accepted": false,
+      "ok": true
+    },
+    {
+      "case": "undercount",
+      "accepted": false,
+      "ok": true
+    },
+    {
+      "case": "vacuous",
+      "accepted": false,
+      "ok": true
+    },
+    {
+      "case": "positive-leak-counter",
+      "accepted": false,
+      "ok": true
+    }
+  ],
+  "counter_controls": 6,
+  "counter_controls_passed": 6,
+  "numerical_inventory_controls": [
+    {
+      "case": "clean",
+      "accepted": true,
+      "ok": true
+    },
+    {
+      "case": "wrong-fine-step",
+      "accepted": false,
+      "ok": true
+    },
+    {
+      "case": "dropped-group",
+      "accepted": false,
+      "ok": true
+    },
+    {
+      "case": "collapsed-sample",
+      "accepted": false,
+      "ok": true
+    },
+    {
+      "case": "lost-loss-receipt",
+      "accepted": false,
+      "ok": true
+    }
+  ],
+  "numerical_inventory_controls_passed": 5,
+  "frozen_probe_assets_exact": true,
+  "wrapper_exact_original_tested_copy": true,
+  "heavy_jobs_run": 0,
+  "calibration_executions": 0,
+  "native_executions": 0,
+  "source_commit": null,
+  "cloud_create_calls": 0
+}

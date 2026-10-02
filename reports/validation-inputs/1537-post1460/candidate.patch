@@ -1,0 +1,430 @@
+diff --git a/changes/internal/1409-native-train-gradcheck.md b/changes/internal/1409-native-train-gradcheck.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..66ba4a33b91ff4604b0ae7bb945e95f6e0bba581
+--- /dev/null
++++ b/changes/internal/1409-native-train-gradcheck.md
+@@ -0,0 +1 @@
++- Add an independent finite-difference gate for every native-training parameter group.
+diff --git a/tests/native_train_gradcheck.py b/tests/native_train_gradcheck.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..f7e0e22a1b96a46220042e0650711829639d06b7
+--- /dev/null
++++ b/tests/native_train_gradcheck.py
+@@ -0,0 +1,258 @@
++#!/usr/bin/env python3
++"""Finite-difference oracle for every native-training parameter group."""
++
++import copy
++import json
++import math
++import os
++import struct
++import subprocess
++import sys
++
++
++EIGS, BASE_PATH, WORK = sys.argv[1:]
++# The model loads weights as binary32.  At 1e-2 the loss numerator for the
++# smallest retained gradients is only a few float-rounding quanta.
++# Use two larger steps and require their secants to converge before comparing
++# the 4h result with backward.
++H_FINE = 2.0e-2
++H_COARSE = 4.0e-2
++REL_TOL = 1.0e-2
++CONVERGENCE_TOL = 1.0e-2
++MIN_GRAD = 1.0e-4
++# A 32-token window gives the 31 prefix/next-token losses accumulated by the
++# backward pass.  Repeated, asymmetric IDs keep the tiny model deterministic.
++TOKENS = [1, 4, 2, 7, 3, 6, 5, 2, 1, 7, 4, 6, 3, 5, 1, 2,
++          6, 4, 7, 3, 2, 5, 6, 1, 4, 3, 7, 5, 2, 6, 4, 1]
++
++
++def check_native_diagnostics(result, name):
++    output = result.stdout + "\n" + result.stderr
++    if "Sanitizer" not in output and "runtime error: " not in output:
++        return
++    # Keep the suite's canonical hard-vs-leak decision, including rc=0
++    # recoverable diagnostics, rather than copying its regexes into Python.
++    classifier = os.path.join(os.path.dirname(__file__), "lsan_classify.sh")
++    child = subprocess.Popen(
++        ["bash", "-c", '. "$1"; lsan_classify "$2"',
++         "native-gradcheck", classifier, output],
++        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++    try:
++        unused, errors = child.communicate(timeout=10)
++    except subprocess.TimeoutExpired:
++        child.kill()
++        child.communicate()
++        raise
++    if child.returncode == 1:
++        raise RuntimeError("%s hard sanitizer diagnostic: %s" %
++                           (name, output[-500:]))
++    if child.returncode == 0:
++        # This focused checker rejects nonzero leak exits too; do not hide
++        # a recognized report merely because the native child recovered.
++        raise RuntimeError("%s leak sanitizer diagnostic: %s" %
++                           (name, output[-500:]))
++    if child.returncode not in (0, 2):
++        raise RuntimeError("%s sanitizer classifier failed rc=%d: %s" %
++                           (name, child.returncode, errors[-500:]))
++
++
++def eigs_string(value):
++    return value.replace("\\", "\\\\").replace('"', '\\"')
++
++
++def run_script(source, name):
++    path = os.path.join(WORK, name + ".eigs")
++    with open(path, "w", encoding="utf-8") as out:
++        out.write(source)
++    result = subprocess.run(
++        [EIGS, path], text=True, capture_output=True, check=False)
++    check_native_diagnostics(result, name)
++    if result.returncode != 0:
++        raise RuntimeError(
++            "%s exited %d: %s" % (name, result.returncode, result.stderr[-500:]))
++    return result.stdout
++
++
++def write_model(model, name):
++    path = os.path.join(WORK, name + ".json")
++    with open(path, "w", encoding="utf-8") as out:
++        json.dump(model, out, separators=(",", ":"))
++    return path
++
++
++def objective(model, name):
++    path = write_model(model, name)
++    lines = ['r is eigen_model_load of "%s"' % eigs_string(path), "loss is 0"]
++    for pos in range(len(TOKENS) - 1):
++        prompt = json.dumps(TOKENS[:pos + 1], separators=(",", ":"))
++        lines.append("item_loss is eigen_eval_loss of [%s, %d]" %
++                     (prompt, TOKENS[pos + 1]))
++        lines.append('print of ("LOSS_ITEM " + (json_encode of item_loss))')
++        lines.append("loss is loss + item_loss")
++    lines.append('print of ("LOSS " + (json_encode of loss))')
++    stdout = run_script("\n".join(lines) + "\n", name + "_eval")
++    values = [line[5:] for line in stdout.splitlines() if line.startswith("LOSS ")]
++    if len(values) != 1:
++        raise RuntimeError("%s produced no unique LOSS line: %r" % (name, stdout))
++    loss = float(values[0])
++    items = [float(line[10:]) for line in stdout.splitlines()
++             if line.startswith("LOSS_ITEM ")]
++    if len(items) != len(TOKENS) - 1:
++        raise RuntimeError("%s produced %d objective losses, expected %d" %
++                           (name, len(items), len(TOKENS) - 1))
++    for pos, item in enumerate(items):
++        if not math.isfinite(item) or item < 0:
++            raise RuntimeError("%s invalid objective loss at position %d: %r" %
++                               (name, pos, item))
++    if not math.isfinite(loss) or loss < 0:
++        raise RuntimeError("%s invalid total objective loss: %r" % (name, loss))
++    return loss
++
++
++def get_at(model, path):
++    value = model
++    for key in path:
++        value = value[key]
++    return value
++
++
++def set_at(model, path, value):
++    target = model
++    for key in path[:-1]:
++        target = target[key]
++    target[path[-1]] = value
++
++
++def f32(value):
++    """Return the exact value that model_io.c stores after JSON loading."""
++    return struct.unpack("f", struct.pack("f", value))[0]
++
++
++def validate_numerical_rule():
++    """Check the binary32 secant rule against an independent known answer."""
++    x = f32(0.375)
++    plus = f32(x + H_COARSE)
++    minus = f32(x - H_COARSE)
++    numeric = (plus ** 3 - minus ** 3) / (plus - minus)
++    exact = 3.0 * x * x
++    if abs(numeric - exact) / exact > REL_TOL:
++        raise RuntimeError("binary32 finite-difference known answer failed")
++
++
++def central_difference(model, path, step, name):
++    # Perturb the loaded baseline, and divide by the actual distance between
++    # the two binary32 endpoints rather than the nominal Python-double 2h.
++    baseline = f32(get_at(model, path))
++    plus_value = f32(baseline + step)
++    minus_value = f32(baseline - step)
++    plus = copy.deepcopy(model)
++    minus = copy.deepcopy(model)
++    set_at(plus, path, plus_value)
++    set_at(minus, path, minus_value)
++    return ((objective(plus, name + "p") - objective(minus, name + "m")) /
++            (plus_value - minus_value))
++
++
++with open(BASE_PATH, encoding="utf-8") as source:
++    base = json.load(source)
++validate_numerical_rule()
++
++# Two deterministic samples per group make an accidental near-zero derivative
++# unlikely while retaining the issue recipe's short runtime.
++groups = [("token_embeddings", ["token_embeddings"]),
++          ("output_proj", ["output_proj"])]
++for layer in range(2):
++    for key in ("w_q", "w_k", "w_v", "w_o", "w_ff1", "w_ff2",
++                "ln1_gamma", "ln1_beta", "ln2_gamma", "ln2_beta"):
++        groups.append(("layer%d.%s" % (layer, key), ["layers", layer, key]))
++
++samples = []
++for group_index, (name, root) in enumerate(groups):
++    values = get_at(base, root)
++    if isinstance(values[0], list):
++        rows, cols = len(values), len(values[0])
++        flat_indices = [(group_index * 7 + 1) % (rows * cols),
++                        (group_index * 13 + 5) % (rows * cols)]
++        if name == "layer1.w_k":
++            flat_indices = [0, 5]
++        paths = [root + [index // cols, index % cols] for index in flat_indices]
++    else:
++        paths = [root + [(group_index + 1) % len(values)],
++                 root + [(group_index + 3) % len(values)]]
++    samples.extend((name, path) for path in paths)
++
++# At age zero effective_lr = 1.  Observer scaling is disabled by the caller;
++# head delta is the gradient and body delta is 0.1 times the gradient.
++trained_path = os.path.join(WORK, "trained.json")
++train_source = """r is eigen_model_load of \"%s\"
++res is native_train_step_builtin of [%s, [%d], 1]
++s is model_save_weights of \"%s\"
++print of res
++""" % (eigs_string(BASE_PATH),
++       json.dumps(TOKENS[:-1], separators=(",", ":")), TOKENS[-1],
++       eigs_string(trained_path))
++
++try:
++    env = os.environ.copy()
++    env["EIGS_OBS_SCALE_OFF"] = "1"
++    script_path = os.path.join(WORK, "train.eigs")
++    with open(script_path, "w", encoding="utf-8") as out:
++        out.write(train_source)
++    result = subprocess.run([EIGS, script_path], text=True, capture_output=True,
++                            check=False, env=env)
++    check_native_diagnostics(result, "training")
++    if result.returncode != 0 or not os.path.exists(trained_path):
++        raise RuntimeError("training failed rc=%d: %s" %
++                           (result.returncode, result.stderr[-500:]))
++    with open(trained_path, encoding="utf-8") as source:
++        trained = json.load(source)
++
++    checked = 0
++    skipped = 0
++    failures = []
++    checked_groups = set()
++    for sample_index, (group, path) in enumerate(samples):
++        scale = 1.0 if len(path) == 3 and path[0] != "layers" else 0.1
++        analytic = (f32(get_at(base, path)) - get_at(trained, path)) / scale
++        analytic *= float(os.environ.get("EIGS_GRADCHECK_FAULT_SCALE", "1"))
++        fine = central_difference(base, path, H_FINE, "f%02d" % sample_index)
++        numeric = central_difference(base, path, H_COARSE,
++                                     "c%02d" % sample_index)
++        if not math.isfinite(fine) or not math.isfinite(numeric):
++            raise RuntimeError("%s path=%s nonfinite finite difference "
++                               "(h=.02 %r, h=.04 %r)" %
++                               (group, path, fine, numeric))
++        if abs(numeric) < MIN_GRAD:
++            skipped += 1
++            continue
++        convergence = abs(fine - numeric) / max(abs(fine), abs(numeric))
++        if not math.isfinite(convergence) or convergence > CONVERGENCE_TOL:
++            failures.append("%s path=%s finite differences did not converge "
++                            "(h=.02 %.8g, h=.04 %.8g, rel=%.3g)" %
++                            (group, path, fine, numeric, convergence))
++            continue
++        rel = abs(analytic - numeric) / max(abs(analytic), abs(numeric))
++        checked += 1
++        if not math.isfinite(rel) or rel > REL_TOL:
++            failures.append("%s path=%s analytic=%.8g numeric=%.8g rel=%.3g" %
++                            (group, path, analytic, numeric, rel))
++        else:
++            checked_groups.add(group)
++
++    missing = sorted(set(name for name, unused in groups) - checked_groups)
++    if failures or missing:
++        for detail in failures:
++            print("  FAIL: NG01 " + detail)
++        if missing:
++            print("  FAIL: NG02 no nontrivial sampled gradient for groups: " +
++                  ", ".join(missing))
++        count = len(failures) + (1 if missing else 0)
++        print("NATIVE_GRADCHECK: 0 passed, %d failed" % count)
++        sys.exit(1)
++    print("  PASS: NG01 %d finite-difference gradients across all 22 groups "
++          "agree within 1%% (%d near-zero samples skipped)" % (checked, skipped))
++    print("NATIVE_GRADCHECK: 1 passed, 0 failed")
++except Exception as error:  # A child/tool failure is always a visible red.
++    print("  FAIL: NG00 finite-difference harness (%s)" % error)
++    print("NATIVE_GRADCHECK: 0 passed, 1 failed")
++    sys.exit(1)
+diff --git a/tests/run_all_tests.sh b/tests/run_all_tests.sh
+index 0657d8ef20dcc9ac7668718dff81736316d61280..58a3cb40b3ca67e2333b3f0c3645b37565cc86dc 100755
+--- a/tests/run_all_tests.sh
++++ b/tests/run_all_tests.sh
+@@ -3035,10 +3035,16 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
+     fi
+     echo ""
+ 
+-    echo "[47c/47] native_train_step gradient-check (batched vs per-position)"
++    echo "[47c/47] native_train_step finite-difference gradient check"
+     GC_OUTPUT=$(bash "$TESTS_DIR/test_native_train_gradcheck.sh" 2>&1)
++    GC_RC=$?
+     GC_PASS=$(echo "$GC_OUTPUT" | grep -c "PASS:" || true)
+     GC_FAIL=$(echo "$GC_OUTPUT" | grep -c "FAIL:" || true)
++    if [ "$GC_RC" -ne 0 ] && [ "$GC_FAIL" -eq 0 ]; then
++        GC_FAIL=1
++        GC_OUTPUT="$GC_OUTPUT
++  FAIL: gradient-check child exited $GC_RC without a verdict"
++    fi
+     TOTAL=$((TOTAL + GC_PASS + GC_FAIL))
+     PASS=$((PASS + GC_PASS))
+     FAIL=$((FAIL + GC_FAIL))
+@@ -3046,7 +3052,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
+         echo "  FAIL: $GC_FAIL native_train_step gradient-check(s) failed"
+         echo "$GC_OUTPUT" | grep "FAIL:" | head -4
+     else
+-        echo "  PASS: batched training path is gradient-identical to the per-position oracle"
++        echo "  PASS: native training gradients match an independent finite-difference oracle"
+     fi
+     echo ""
+ 
+diff --git a/tests/test_native_train_gradcheck.sh b/tests/test_native_train_gradcheck.sh
+index bc149f6902c614a428b856b82a6dc955ced4a91c..69a1a9bd8b0fc09e022b1d20e2dd13090089d852 100755
+--- a/tests/test_native_train_gradcheck.sh
++++ b/tests/test_native_train_gradcheck.sh
+@@ -1,80 +1,57 @@
+ #!/bin/bash
+-# native_train_step gradient-check: the batched causal-mask path must produce
+-# the SAME training as the per-position oracle. A causal transformer trained
+-# per-position (one forward+backward per target) is mathematically identical to
+-# one causal-masked pass with a loss at every position — the batched path is
+-# ~10x faster and must not change the gradients. Any drift would diverge the
+-# two loss sequences within a few steps (gradient errors compound), so matching
+-# loss sequences from a common start prove equivalence.
+-#
+-# Runs only when the binary is built with EIGENSCRIPT_EXT_MODEL=1 (gated by the
+-# caller). EIGS_TRAIN_PERPOS=1 selects the oracle; default selects batched.
++# Independent finite-difference check for native_train_step's shared backward.
++# Runs only when EIGENSCRIPT_EXT_MODEL=1 (the suite capability-gates it).
+ 
+ set -u
+ TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+ EIGS="$TESTS_DIR/../src/eigenscript"
+-
+-PASS=0
+-FAIL=0
+-ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
+-fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
+-
+-MODEL=/tmp/eigs_gc_tiny.json
+-HARNESS=/tmp/eigs_gc_harness.eigs
+-cleanup() { rm -f "$MODEL" "$HARNESS" /tmp/eigs_gc_*.log; }
+-trap cleanup EXIT
+-
+-if ! "$EIGS" "$TESTS_DIR/gen_tiny_model.eigs" > "$MODEL" 2>/tmp/eigs_gc_gen.log; then
+-    fail "GC00 generate tiny model" "see /tmp/eigs_gc_gen.log"
+-    echo "GRADCHECK: 0 passed, 1 failed"
++WORK="${TMPDIR:-/tmp}/eigs_native_gradcheck_$$"
++trap 'rm -rf "$WORK"' EXIT
++mkdir -p "$WORK"
++if ! source "$TESTS_DIR/lsan_classify.sh"; then
++    echo "  FAIL: NG00 load canonical sanitizer classifier"
++    echo "NATIVE_GRADCHECK: 0 passed, 1 failed"
+     exit 1
+ fi
+ 
+-# Fixed deterministic window (all token ids < vocab=8). Six steps is enough:
+-# a gradient bug diverges exponentially, so it would show by step 2-3.
+-cat > "$HARNESS" <<EIGS
+-r is eigen_model_load of "$MODEL"
+-inp is [1, 2, 3, 4, 5, 6, 7]
+-outp is [1]
+-lr is 0.05
+-for i in range of 6:
+-    res is native_train_step_builtin of [inp, outp, lr]
+-    lv is json_path of [res, "loss"]
+-    print of ("L " + lv)
+-EIGS
+-
+-# Extract the loss sequence from each path.
+-perpos=$(EIGS_TRAIN_PERPOS=1 "$EIGS" "$HARNESS" 2>/dev/null | sed -n 's/^L //p')
+-batched=$("$EIGS" "$HARNESS" 2>/dev/null | sed -n 's/^L //p')
+-
+-if [ -z "$perpos" ] || [ -z "$batched" ]; then
+-    fail "GC01 both paths produced a loss sequence" "perpos='$perpos' batched='$batched'"
+-    echo "GRADCHECK: $PASS passed, $((FAIL)) failed"
++BASE="$WORK/base.json"
++# Two layers exercise all 22 independently updated parameter groups.  FP32 is
++# essential: ternary projection would make a small finite difference vanish.
++sed -e 's/^n_layers is 1$/n_layers is 2/' \
++    -e 's/^max_seq is 16$/max_seq is 32/' \
++    -e 's/\\"ternary_weight_only\\"/\\"fp32_dense\\"/' \
++    "$TESTS_DIR/gen_tiny_model.eigs" > "$WORK/gen.eigs"
++if ! "$EIGS" "$WORK/gen.eigs" > "$BASE" 2>"$WORK/gen.log"; then
++    echo "  FAIL: NG00 generate two-layer fp32 model (see $WORK/gen.log)"
++    echo "NATIVE_GRADCHECK: 0 passed, 1 failed"
+     exit 1
+ fi
+-ok "GC01 both paths produced a loss sequence"
+-
+-# Compare element-wise. A real gradient difference compounds well past 1e-3
+-# within six steps; float32 accumulation-order noise stays under ~1e-4.
+-n_perpos=$(printf '%s\n' "$perpos" | wc -l)
+-n_batched=$(printf '%s\n' "$batched" | wc -l)
+-if [ "$n_perpos" != "$n_batched" ] || [ "$n_perpos" -lt 6 ]; then
+-    fail "GC02 equal-length 6-step sequences" "perpos=$n_perpos batched=$n_batched"
+-else
+-    ok "GC02 both paths ran 6 steps"
++lsan_classify "$(cat "$BASE" "$WORK/gen.log")"
++GEN_CLASS=$?
++if [ "$GEN_CLASS" -ne 2 ]; then
++    echo "  FAIL: NG00 generator sanitizer diagnostic (classifier=$GEN_CLASS)"
++    cat "$WORK/gen.log"
++    echo "NATIVE_GRADCHECK: 0 passed, 1 failed"
++    exit 1
+ fi
+ 
+-maxdiff=$(paste <(printf '%s\n' "$perpos") <(printf '%s\n' "$batched") | awk '
+-    { d = $1 - $2; if (d < 0) d = -d; if (d > m) m = d }
+-    END { printf "%.8f", m }')
+-worse=$(awk -v m="$maxdiff" 'BEGIN { print (m > 0.001) ? 1 : 0 }')
+-if [ "$worse" = "0" ]; then
+-    ok "GC03 batched loss sequence matches per-position oracle (max diff $maxdiff < 1e-3)"
+-else
+-    fail "GC03 batched vs per-position gradient divergence" "max loss diff = $maxdiff"
+-    echo "  perpos : $(printf '%s ' $perpos)"
+-    echo "  batched: $(printf '%s ' $batched)"
++if ! python3 "$TESTS_DIR/native_train_gradcheck.py" "$EIGS" "$BASE" "$WORK"; then
++    exit 1
+ fi
+ 
+-echo "GRADCHECK: $PASS passed, $FAIL failed"
+-[ "$FAIL" -eq 0 ]
++# Fault-sensitivity plant: a systematic 2% error is outside the declared 1%
++# contract and must be rejected.  Silence the expected-red child's details so
++# the parent suite counts only this plant's verdict.
++if EIGS_GRADCHECK_FAULT_SCALE=1.02 \
++        python3 "$TESTS_DIR/native_train_gradcheck.py" "$EIGS" "$BASE" "$WORK" \
++        >"$WORK/fault.log" 2>&1; then
++    echo "  FAIL: NG03 a deliberately 2%-wrong backward derivative passed"
++    echo "NATIVE_GRADCHECK: 0 passed, 1 failed"
++    exit 1
++fi
++if ! grep -q "FAIL: NG01" "$WORK/fault.log"; then
++    echo "  FAIL: NG03 fault child failed without rejecting a derivative"
++    echo "NATIVE_GRADCHECK: 0 passed, 1 failed"
++    exit 1
++fi
++echo "  PASS: NG03 deliberately 2%-wrong derivatives are rejected"

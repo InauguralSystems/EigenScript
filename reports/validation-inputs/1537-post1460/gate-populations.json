@@ -1,0 +1,68 @@
+{
+  "baseline": "159d24ff3eec0b73bf950ec2fc83e5d8159fdbff",
+  "precheck_rows": 18,
+  "generic_suite_total": "runtime-derived; positive TOTAL and PASS+FAIL=TOTAL; FAIL=0 and explicit LEAKED=0; no old6004total pin",
+  "source_provenance": {
+    "Makefile": {
+      "blob": "2d7f1940032bb151a3c6616ba0fb1fc9dad8bd02",
+      "sha256": "f014ba28ff35e633f27f540bfc530109b10f2a5ee785d8f7854bda6880e77626"
+    },
+    "tests/run_all_tests.sh": {
+      "blob": "58a3cb40b3ca67e2333b3f0c3645b37565cc86dc",
+      "sha256": "b7eef614ca4cbdc5147abb62175ae02c13fea02136e8ce7094a7b3357fe4de15"
+    },
+    "tests/lsan_classify.sh": {
+      "blob": "999833fa6308307c432a455c43c723b908e804dd",
+      "sha256": "61ec65a87167285ec87f540ec15bcf9a82658226ee231bd45a1cd5343268f070"
+    },
+    "tests/gen_tiny_model.eigs": {
+      "blob": "377c2cd733a1af69af9e8b2e1695d7a2ba7aebd5",
+      "sha256": "34d4f861342aa3280403106eb2e256e711de2504f06e8980a184f25f67cb8ea8"
+    },
+    "src/model_train.c": {
+      "blob": "2225d49a5f31fb0b53c40f7f1838ea9e7d9036f5",
+      "sha256": "6d8b2135f644d748d0026576e10e47b99755baba45361b26f0f8f6f820ecdc86"
+    },
+    "src/model_infer.c": {
+      "blob": "8f40d3a2c85d294bc11b3f56719a93c3aad28437",
+      "sha256": "ffa1423db2df275dff664f129bfb017f52b1d2e59799cf896a7e39ff33308722"
+    },
+    "src/model_io.c": {
+      "blob": "0e0a4275b62c8ec392af88d25022889f485e1c75",
+      "sha256": "6f8d203a4c81e3966814a7dffa485aeab523ae528328a5b764ddcf9136745af4"
+    },
+    "tools/precheck.sh": {
+      "blob": "4ed186cd8d1336f20dda71145f5dd1d616deb20c",
+      "sha256": "8842808c859d761a4fc40b10c3af76ad3e9f1b0fa9ac67ad7b2cbdd975a65afd"
+    },
+    "tools/suite_label_check.sh": {
+      "blob": "c46270b695d9874c6d145a5f802edc8312be727a",
+      "sha256": "ada55faeef6aef2140847880ed6be5df2ba17938ebeb7a211444f57f5a7bce30"
+    },
+    "tools/consumer_acceptance.sh": {
+      "blob": "92c35038b5c124951edea25bbf575398dc1eb959",
+      "sha256": "4078ad16dbe16ced1340f264c57843d401b831c5a6e23339a43940c1bf31cb69"
+    },
+    ".github/requirements-release.txt": {
+      "blob": "c22fb8d04514dd2eee5c1bbb09e3eadeb1558217",
+      "sha256": "548319d0e6c5564c5c1b244e115f7659ed4ac36c6b10ec17f6baf4c649a57319"
+    },
+    ".devcontainer/Dockerfile": {
+      "blob": "3da5b767bfd7a2b8377fc801289e6d1350b68fb7",
+      "sha256": "7b98fc629e526e77081e9fc33c42bd80afed03eeabf8c81c64f0c89d8e276281"
+    },
+    "tools/workflow_yaml_check.sh": {
+      "blob": "50f6a85ead10c3f498b7600bb6dd41cdbcb4ab02",
+      "sha256": "16a8254cde422c70b41abaa7dff8df6e43a08c8c282c67ee255f0966f8eb42be"
+    },
+    "tools/strict_differential.sh": {
+      "sha256": "199f5529fd890ba472369bfdd08b7fa5b7c8b529be23156459361f9205d83441"
+    }
+  },
+  "embedded_strict_population": {
+    "declared_probes": 160,
+    "pins": 32,
+    "valid_programs_declared": 86,
+    "scope": "record actual embedded variant probes/skips; embedded no-baseline behavior stays source-defined, no new independent differential bar"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "checks": 6,
+  "passed": 6,
+  "wrapper_sha256": "aa68ab0ffda6cc66844d4c001482a4b6847eaa6536e4a76c3ea99fd837e03b53",
+  "runner_sha256": "b7eef614ca4cbdc5147abb62175ae02c13fea02136e8ce7094a7b3357fe4de15",
+  "actual_epilogue_and_exit_trap_extracted": true,
+  "no_actual_suite_ran": true,
+  "results": [
+    {
+      "case": "pass",
+      "ok": true,
+      "exit": 0,
+      "counter_lines": [
+        "FINAL_COUNTERS rc=0 PASS=2 TOTAL=2 FAIL=0 SKIPPED=2 LEAKED=0"
+      ],
+      "stdout": "============================================\n  RESULTS: 2/2 passed, 0 failed, 2 skipped\n============================================\n",
+      "stderr": ""
+    },
+    {
+      "case": "failure",
+      "ok": true,
+      "exit": 1,
+      "counter_lines": [
+        "FINAL_COUNTERS rc=1 PASS=1 TOTAL=2 FAIL=1 SKIPPED=2 LEAKED=0"
+      ],
+      "stdout": "============================================\n  RESULTS: 1/2 passed, 1 failed, 2 skipped\n============================================\n",
+      "stderr": ""
+    },
+    {
+      "case": "overcount",
+      "ok": true,
+      "exit": 1,
+      "counter_lines": [
+        "FINAL_COUNTERS rc=1 PASS=2 TOTAL=1 FAIL=0 SKIPPED=2 LEAKED=0"
+      ],
+      "stdout": "  FAIL: suite result counters disagree (PASS=2 FAIL=0 TOTAL=1)\n",
+      "stderr": ""
+    },
+    {
+      "case": "undercount",
+      "ok": true,
+      "exit": 1,
+      "counter_lines": [
+        "FINAL_COUNTERS rc=1 PASS=1 TOTAL=2 FAIL=0 SKIPPED=2 LEAKED=0"
+      ],
+      "stdout": "  FAIL: suite result counters disagree (PASS=1 FAIL=0 TOTAL=2)\n",
+      "stderr": ""
+    },
+    {
+      "case": "vacuous",
+      "ok": true,
+      "exit": 1,
+      "counter_lines": [
+        "FINAL_COUNTERS rc=1 PASS=0 TOTAL=0 FAIL=0 SKIPPED=2 LEAKED=0"
+      ],
+      "stdout": "============================================\n  FAIL: this run executed ZERO assertions (TOTAL=0).\n  A suite \u2014 or a section plan \u2014 that measured nothing is a harness\n  failure, not a pass (#1160).\n============================================\n",
+      "stderr": ""
+    },
+    {
+      "case": "positive-leak-counter",
+      "ok": true,
+      "exit": 0,
+      "counter_lines": [
+        "FINAL_COUNTERS rc=0 PASS=2 TOTAL=2 FAIL=0 SKIPPED=2 LEAKED=3"
+      ],
+      "stdout": "============================================\n  RESULTS: 2/2 passed, 0 failed, 2 skipped\n  NOTE: 3 test program(s) exited nonzero on LeakSanitizer\n  reports (spawn-thread programs + known non-closure leak\n  shapes; counted as passes \u2014 closure cycles are collected).\n============================================\n",
+      "stderr": ""
+    }
+  ]
+}
