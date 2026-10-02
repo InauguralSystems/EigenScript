@@ -2877,7 +2877,7 @@ if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
     HR_PASS=$(echo "$HR_OUTPUT" | grep -c "PASS:" || true)
     HR_FAIL=$(echo "$HR_OUTPUT" | grep -c "FAIL:" || true)
     HR_SKIP=$(echo "$HR_OUTPUT" | grep -c "SKIP:" || true)
-    TOTAL=$((TOTAL + HR_PASS + HR_FAIL + HR_SKIP))
+    TOTAL=$((TOTAL + HR_PASS + HR_FAIL))
     PASS=$((PASS + HR_PASS))
     FAIL=$((FAIL + HR_FAIL))
     HR_LABEL='HTTP_READINESS'
