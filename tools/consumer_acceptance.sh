@@ -198,6 +198,7 @@ plan() {
 }
 
 WORK=""; RECORD=""; ACTIVE=""; SHIM=""; CALL_LOG=""; OVERLAY=""
+RUNTIME_SLOTS=()
 SELECTORS=""; SELECTOR_ENV=()
 stop_row_group() {
   local pid="${ACTIVE:-}"
@@ -302,11 +303,13 @@ overlay_runtime_slots() {
     [ -e "$SHIM/$base" ] || make_shim "$base" missing || return 1
     rm -f "$item" || return 1
     cp "$SHIM/$base" "$item" || return 1
+    RUNTIME_SLOTS+=("$item")
   done
 }
 build_overlay() {
   local item base name
   OVERLAY="$WORK/tree"
+  RUNTIME_SLOTS=()
   mkdir -p "$OVERLAY" || return 1
   if [ -d "$TREE/src" ]; then cp -rL "$TREE/src" "$OVERLAY/src" || return 1
   else mkdir -p "$OVERLAY/src" || return 1; fi
@@ -321,8 +324,21 @@ build_overlay() {
   overlay_runtime_slots "$OVERLAY" || return 1
   overlay_runtime_slots "$OVERLAY/lib" || return 1
   for name in eigenscript eigenscript-full eigenscript-gfx; do
-    [ -e "$OVERLAY/src/$name" ] || cp "$SHIM/$name" "$OVERLAY/src/$name" || return 1
+    if [ ! -e "$OVERLAY/src/$name" ]; then
+      cp "$SHIM/$name" "$OVERLAY/src/$name" || return 1
+      RUNTIME_SLOTS+=("$OVERLAY/src/$name")
+    fi
   done
+}
+replaced_runtime_slot() {
+  local slot base
+  for slot in "${RUNTIME_SLOTS[@]}"; do
+    base="${slot##*/}"
+    if [ ! -f "$slot" ] || ! cmp -s "$SHIM/$base" "$slot"; then
+      return 0
+    fi
+  done
+  return 1
 }
 # The source scanner considers invocation sites, not prose or Dockerfile PATH lines.
 unsupported_variant() {
@@ -374,7 +390,8 @@ row() {
       if [ "$_rc" -eq 0 ]; then ok=$((ok+1)); else fail=$((fail+1)); fi
     done < "$CALL_LOG"
     skips="$(grep -c '^SKIP' "$log" || true)"
-    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then verdict=HANG
+    if replaced_runtime_slot; then verdict=FAIL; prereq=runtime-slot-replaced
+    elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then verdict=HANG
     elif [ -n "$missing_variant" ]; then verdict=UNRUNNABLE; prereq="variant:$missing_variant"
     elif [ "$rc" -ne 0 ]; then verdict=FAIL
     elif [ "$calls" -eq 0 ]; then verdict=FAIL; prereq=UNEXERCISED
@@ -650,18 +667,18 @@ selftest() {
   if [ "$st_rc" -eq 0 ] && grep -Fq 'row|sources|v0.43.0|PASS|0|' "$st_record" && grep -Fqx 'int runtime_value(void);' "$st_root/src/eigenscript.h"; then
     echo 'plant A check=private-source-copy GREEN cc=PASS source-unchanged=yes'
   else echo 'plant A check=private-source-copy SILENT'; st_bad=1; fi
-  # (B) A consumer rebuild of its overlay cannot replace the original binary.
+  # (B) A consumer rebuild that replaces the tree-path shim is refused by name.
   printf '#!/bin/sh\ncase "$1" in regression.eigs) exit 42;; esac\nexit 0\n' > "$st_candidate"; chmod +x "$st_candidate"
   printf '#!/bin/sh\nexit 0\n' > "$st_root/rebuilt-runtime"; chmod +x "$st_root/rebuilt-runtime"
   printf 'build:\n\tcp rebuilt-runtime src/eigenscript\n' > "$st_root/Makefile"
   local before_sha after_sha
   before_sha="$(sha256sum "$st_candidate" | awk '{print $1}')"
-  st_reset; st_consumer rebuild '"$ST_CC" $WERROR_FLAGS -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && eigenscript smoke.eigs && make -C "$EIGS_DIR" build && eigenscript regression.eigs'
+  st_reset; st_consumer rebuild '"$EIGS_DIR/src/eigenscript" smoke.eigs && make -C "$EIGS_DIR" build && "$EIGS_DIR/src/eigenscript" regression.eigs'
   printf 'rebuild\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   after_sha="$(sha256sum "$st_candidate" | awk '{print $1}')"
-  if [ "$st_rc" -ne 0 ] && grep -Fq 'row|rebuild|v0.43.0|FAIL|42|' "$st_record" && [ "$before_sha" = "$after_sha" ]; then
-    echo 'plant B check=private-overlay GREEN rebuild-rc=42 candidate-sha256=unchanged'
+  if [ "$st_rc" -ne 0 ] && grep -Fq 'row|rebuild|v0.43.0|FAIL|0|' "$st_record" && grep -Fq 'prereq=runtime-slot-replaced' "$st_record" && [ "$before_sha" = "$after_sha" ]; then
+    echo 'plant B check=runtime-slot-replaced RED named-refusal=yes candidate-sha256=unchanged'
   else echo 'plant B check=private-overlay SILENT'; st_bad=1; fi
   # (C) A candidate adjacent to unrelated source cannot claim that tree.
   mkdir -p "$st_root/mismatch/src" "$st_root/mismatch/lib" "$st_root/mismatch/bin"
