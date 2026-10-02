@@ -26,7 +26,9 @@ __thread EigsThread *eigs_current = NULL;
  * (#915) keys off thread count; eigs_close (#1143) keys off state count
  * to decide whether it is shutting the last interpreter (and the tape). */
 static pthread_mutex_t g_attached_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_attached_cond = PTHREAD_COND_INITIALIZER;
 static int g_attached_threads_storage = 0;
+static int g_single_thread_reserved = 0;
 static int g_live_states = 0;
 #define g_attached_threads_load() __atomic_load_n(&g_attached_threads_storage, __ATOMIC_ACQUIRE)
 #define g_attached_threads_add(d) __atomic_fetch_add(&g_attached_threads_storage, (d), __ATOMIC_RELEASE)
@@ -149,14 +151,19 @@ int eigs_process_thread_count(void) {
 
 int eigs_process_single_thread_begin(void) {
     pthread_mutex_lock(&g_attached_lock);
-    if (g_attached_threads_load() != 1) {
+    if (g_single_thread_reserved || g_attached_threads_load() != 1) {
         pthread_mutex_unlock(&g_attached_lock);
         return 0;
     }
+    g_single_thread_reserved = 1;
+    pthread_mutex_unlock(&g_attached_lock);
     return 1;
 }
 
 void eigs_process_single_thread_end(void) {
+    pthread_mutex_lock(&g_attached_lock);
+    g_single_thread_reserved = 0;
+    pthread_cond_broadcast(&g_attached_cond);
     pthread_mutex_unlock(&g_attached_lock);
 }
 
@@ -203,7 +210,10 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
     th->intern_tbl = env_intern_table_new();   /* #1065: thread's ref */
-    pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(1); pthread_mutex_unlock(&g_attached_lock);
+    pthread_mutex_lock(&g_attached_lock);
+    while (g_single_thread_reserved) pthread_cond_wait(&g_attached_cond, &g_attached_lock);
+    g_attached_threads_add(1);
+    pthread_mutex_unlock(&g_attached_lock);
     /* #915: xcalloc zeroes, and 0 here would mean "never scan", silently
      * disabling the observer gate's eager pass on every thread. Default ON;
      * only --lint and the LSP clear it. */
