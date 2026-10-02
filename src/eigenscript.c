@@ -3346,10 +3346,14 @@ char *env_intern_name(const char *name) {
     int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
     for (EnvNameIntern *it = g_env_name_interns[bucket]; it; it = it->next) {
         /* A nested sandbox must not borrow an outer run's temporary node:
-         * the inner result may outlive that outer binding and promote it. */
+         * the inner result may outlive that outer binding and promote it.
+         * The same rule applies after a run restores scope zero but before
+         * scope_end releases its nodes: host wrapper keys must resolve to the
+         * global pool, not briefly alias the run-owned equal spelling. */
         if (it->hash == h && strcmp(it->name, name) == 0 &&
-            (g_sandbox_intern_scope == 0 || it->sandbox_scope == 0 ||
-             it->sandbox_scope == g_sandbox_intern_scope))
+            (it->sandbox_scope == 0 ||
+             (g_sandbox_intern_scope != 0 &&
+              it->sandbox_scope == g_sandbox_intern_scope)))
             return it->name;
     }
     EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
