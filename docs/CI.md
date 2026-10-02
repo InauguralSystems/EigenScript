@@ -102,7 +102,7 @@ inputs also select their separate checker calibrations.
 |---|---|---|
 | **[89]** | `tests/test_doc_examples.py` | an eigenscript fence that is not executed. Opt-OUT: paired with an `output` block (byte-compared), tagged `eigenscript fragment k=v ...` (free names declared in the tag, resolved STATICALLY through `--lint` E003 so a name hiding in a dead branch still counts, then run and required to finish clean), or tagged `eigenscript nocheck <reason>`. Anything else is red. It also refuses a **value stated in a comment** inside an executed example — that is a claim wearing a checked example's clothes. Per-file populations are pinned and cross-checked against an independent line scan. |
 | **[99za]** | `tools/docs_claims_check.sh` | dangling repo paths and Markdown links, unknown `eigenscript --flag` references, missing `make` targets, unresolved backticked calls written with `of`, missing stdlib guide headings, and executable fences without enrolment. Paths come from `git ls-files` or Makefile products; flags from the real `--help`; names from `--api` and compiler vocabulary. Each reference class has a nonempty population and per-document floors in `tools/docs_claims_populations.txt`; fence enrolment has declared rows. Derived counts belong in commands, not prose. |
-| **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit also executes the live gates listed in its `RUN_TARGETS` table under the old bash and requires rc 0, with the run count pinned. The live audit stays in the suite; it does not keep a self-test. When no old bash is present the check **announces the skip and prints both counts** AND names every candidate it looked at, so it can never read as a completed audit — and `[99zb]` tallies it as a **section SKIP** (the RESULTS line's `N skipped`), never a pass (#1326), and `make precheck` records that row as SKIP too. The Linux CI lanes carry no `bash32`, so they are expected to read SKIP there; on macOS, whose `/bin/bash` is 3.2, a skip is a FAIL, because that lane is always provisioned. The file count, the gate count and the oracle are printed by the check itself (`portability: OK: files=… checked=… parse-failures=0; gates-run=…/… run-failures=0 (oracle …)`) rather than typed here, because a number typed into a page about a count that moves is a number that rots. **The system shell is a candidate when it IS old** (round-5 blind critic, Fable): until then the candidate list was `$PORTABILITY_BASH` and the two `bash32` oracle paths and nothing else, so on the one platform this audit exists for — the macOS runner, whose default `/bin/bash` IS GNU bash 3.2.57 — it found no old bash and skipped with "NO OLD BASH ON THIS MACHINE". That reason was false; the list simply never tried `/bin/bash`. `/bin/bash` and `/usr/bin/bash` are now candidates **when their own `BASH_VERSINFO[0]` is ≤ 3**, so the macOS lane runs the real audit and a Linux runner's bash 5 is never mistaken for an oracle. **Round 6: EVERY candidate is asked its own version, including the declared ones** — `$PORTABILITY_BASH` and the two `bash32` paths were trusted BY NAME, and a file called `bash32` is not bash 3.2 (a symlink to the system shell, or a rebuild that picked up a modern source), so the gate could print a truthful `oracle=… version 5.x` receipt for an audit that models nothing; a name is a hint, `BASH_VERSINFO[0]` is the fact. The skip line names every candidate it looked at AND every one it rejected by version, and those lines now reach the CI log. **The CALLER pins the identity too, and it keys on the FACT rather than the banner**: the gate prints `portability-parse: oracle-major=N` from the SELECTED candidate's own `BASH_VERSINFO[0]`, and `[99zb]` parses THAT line while holding its own `≤ 3` literal. Round 6 read the major version out of the GNU version banner instead, so a real bash 3.2 behind a wrapper whose banner says `Custom Bash 3.2.0` yielded no number at all and was failed BY NAME (round-6 blind critic, Fable) — a banner is prose, a version is a fact. A gutted selection is still red by name (`the portability gate measured under bash 5 — that is not the old shell it exists to model`) rather than passing on rc 0 and a verdict prefix. `[99zb]` still refuses a completed audit whose `portability-parse: oracle-major` is above 3. |
+| **[99zb]** | `tools/portability_parse_check.sh` | a tracked `*.sh` that the OLDEST bash on the machine cannot parse — **or a shell gate it cannot RUN**. macOS ships **bash 3.2 (2007)**, and three CI rounds were spent guessing at what it rejects — twice wrongly. The dev box now carries a real one at **`~/.local/bin/bash32`**, built from GNU bash 3.2.0 source with `./configure --without-bash-malloc --disable-nls && make` (~4 min); `bash32 -n <file>` settles any portability question in a second, and the whole repo in under two. Parsing was never enough: bash 3.2 scans `<( … )` for its closing paren **without honouring comments**, so an apostrophe in a comment inside one opens a quote that never closes — at RUNTIME, which `bash -n` calls clean. That kept the macOS lane red for four rounds. The audit also executes the live gates listed in its `RUN_TARGETS` table under the old bash and requires rc 0, with the run count pinned. The live audit stays in the suite; its caller classification has a separate `[99zb0]` self-test. When no old bash is present the check **announces the skip and prints both counts** AND names every candidate it looked at, so it can never read as a completed audit — and `[99zb]` tallies it as a **section SKIP** (the RESULTS line's `N skipped`), never a pass (#1326), and `make precheck` records that row as SKIP too. **The suite and precheck are equal authorities here:** both source `tools/portability_verdict.sh`, which refuses missing or conflicting verdicts, a completed receipt without a valid old-shell identity, and a Darwin skip (#1355). Other precheck rows cannot be turned into whole-gate skips by a sub-check's `name: SKIPPED` line; only a row with an explicit classifier owns that convention. The Linux CI lanes carry no `bash32`, so they are expected to read SKIP there; on macOS, whose `/bin/bash` is 3.2, a skip is a FAIL, because that lane is always provisioned. The file count, the gate count and the oracle are printed by the check itself (`portability: OK: files=… checked=… parse-failures=0; gates-run=…/… run-failures=0 (oracle …)`) rather than typed here, because a number typed into a page about a count that moves is a number that rots. **The system shell is a candidate when it IS old** (round-5 blind critic, Fable): until then the candidate list was `$PORTABILITY_BASH` and the two `bash32` oracle paths and nothing else, so on the one platform this audit exists for — the macOS runner, whose default `/bin/bash` IS GNU bash 3.2.57 — it found no old bash and skipped with "NO OLD BASH ON THIS MACHINE". That reason was false; the list simply never tried `/bin/bash`. `/bin/bash` and `/usr/bin/bash` are now candidates **when their own `BASH_VERSINFO[0]` is ≤ 3**, so the macOS lane runs the real audit and a Linux runner's bash 5 is never mistaken for an oracle. **Round 6: EVERY candidate is asked its own version, including the declared ones** — `$PORTABILITY_BASH` and the two `bash32` paths were trusted BY NAME, and a file called `bash32` is not bash 3.2 (a symlink to the system shell, or a rebuild that picked up a modern source), so the gate could print a truthful `oracle=… version 5.x` receipt for an audit that models nothing; a name is a hint, `BASH_VERSINFO[0]` is the fact. The skip line names every candidate it looked at AND every one it rejected by version, and those lines now reach the CI log. **The CALLER pins the identity too, and it keys on the FACT rather than the banner**: the gate prints `portability-parse: oracle-major=N` from the SELECTED candidate's own `BASH_VERSINFO[0]`, and the shared classifier parses THAT line while holding its own `≤ 3` literal. Round 6 read the major version out of the GNU version banner instead, so a real bash 3.2 behind a wrapper whose banner says `Custom Bash 3.2.0` yielded no number at all and was failed BY NAME (round-6 blind critic, Fable) — a banner is prose, a version is a fact. A gutted selection is still red by name (`portability gate measured under bash 5, not bash <= 3`) rather than passing on rc 0 and a verdict prefix. |
 
 The reference checker reads source paths from `git ls-files`, build products
 from `make -p`, CLI flags from `eigenscript --help`, and call names from
@@ -427,7 +427,11 @@ so **any** `ci.yml` job that can fail there colours it, required or not.
 The fix copies Rust (tiers plus a merge queue), CPython and Go:
 
 - **Tier 1** — the checks listed in `.github/required-checks.txt`. They block
-  a merge, and they are evaluated **in the merge queue**.
+  a merge, and they are evaluated **in the merge queue**. On `pull_request`,
+  the cheap tier runs the build, gcc release suite, gate self-tests and
+  contributor precheck, warning/LSP compile checks, and documentation gates.
+  Required heavy names still report success, but their only PR step says
+  `deferred to merge queue`; a missing required check would hang the PR.
 - **The merge queue.** A PR that passed the fast PR lane joins GitHub's merge
   queue. The queue builds a candidate commit (current `main` + the PRs queued
   ahead of it + this PR) and runs the **full main lane** on it (the
@@ -438,6 +442,13 @@ The fix copies Rust (tiers plus a merge queue), CPython and Go:
   `pages.yml`) triggers on `merge_group`, and every main-lane-only step is
   gated `github.event_name != 'pull_request'` (true on push *and* in the
   queue), never `== 'push'`.
+- **Heavy required lanes** — ASan/UBSan shards, both TSan variants, every
+  extension suite (HTTP/model, gfx, zlib, net, and database), macOS, valgrind,
+  and the instruction-count benchmark run in the merge queue and on pushes to
+  `main`, not on PRs. Aggregated workers are skipped before runner allocation;
+  the always-running required aggregator prints the PR deferral and requires
+  every worker to succeed in the queue. The macOS required name is reported
+  by an Ubuntu aggregator on PRs, so deferral consumes no macOS runner.
 - **The post-merge push run** re-tests the commit the queue already tested. It
   stays: the README badge reads it, it publishes the rolling `ci-main` dev
   image that fork PRs run in, and `pages.yml` deploys the site only on push
@@ -469,10 +480,10 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
 - `[event-condition]` — on a required path (a required job, the jobs it
   transitively needs, and the `ci.yml` workers), a condition could run work on
   push that the queue skips. A job-level `if:` may not mention the event at
-  all: a job **skipped** by its `if:` reports a *satisfied* required check, so a
-  job-level event filter lets a merge through untested. A step `if:` may
-  mention the event only as `github.event_name ==/!= 'pull_request'`, or via
-  the PR payload `github.event.pull_request.*` (empty on push and in the
+  all except on the enumerated heavy workers behind required aggregators;
+  those must use exactly `github.event_name != 'pull_request'`. A step `if:`
+  may mention the event only as `github.event_name ==/!= 'pull_request'`, or
+  via the PR payload `github.event.pull_request.*` (empty on push and in the
   queue alike). Dot and bracket syntax are both read. The same rule covers
   indirection: an `env`, job `outputs`, workflow `env` or matrix value on a
   required path may not read the event (outside those two forms), and an
@@ -481,6 +492,11 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   Two reviewed step outputs are waived by a hash of their step (`scope`/`detect`
   for docs-only classification and `gate-selftests`/`select` for changed-gate
   selection); a waiver that matches nothing is red.
+- `[heavy-deferral]` / `[heavy-on-pr]` / `[heavy-no-merge-work]` — every
+  enumerated heavy required job has exactly one PR step printing `deferred to
+  merge queue`, every other step excludes PRs, and real work remains for the
+  merge queue and push. The self-test plants a push-only heavy suite which
+  also defers in the queue and requires that mutation to go red.
 - `[continue-on-error]` — a job or step on a required path sets it, so its
   failure would not fail the check.
 - `[uncovered]` — a `ci.yml` job is neither required nor the worker of exactly
@@ -488,9 +504,9 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   stop the queue, yet it colours the badge: the `macos-15-intel` shape.
 
 Whether an aggregator's script really fails on every non-success worker
-result is a code-review question, not this gate's. The gate's other accepted
-limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
-`schedule:` triggers) are listed in #1278.
+result remains a code-review question. The gate's other accepted limits
+(matrix `include`/`exclude`, expressions inside `run:` scripts, `schedule:`
+triggers) are listed in #1278.
 
 ### Every `ci.yml` job, classified
 
@@ -500,9 +516,9 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 | `build dev/ci image` | 1 | the image every `container:` job (the Linux legs, the extension/ASan workers, db, the audits, the differentials, freestanding) runs inside; required because required jobs `needs` it, and a failed prerequisite *skips* them — added by #1264 |
 | `werror flags ([99i])` | 1 | gate |
 | `gate self-tests (changed rows)` | 1 | gate |
-| `linux / gcc` | 1 | full suite on every code event |
-| `linux / clang` | 1 | clang `-Werror` build and full suite on every code event |
-| `macos / macos-latest` | 1 | the one macOS leg; full suite with [99i] on the main lane |
+| `linux / gcc` | 1 | release suite on every code event |
+| `linux / clang` | 1 | clang `-Werror` build and PR LSP compile check; full suite in the queue/main lane |
+| `macos / macos-latest` | 1 | required aggregator; PR deferral on Ubuntu, native full-suite worker in the queue/main lane |
 | `extensions (http+model+gfx suite; embed/lsp/jit-smoke)` | 1 | **aggregator** |
 | `extensions / http+model and ancillary checks`, `/ gfx suite`, `/ zlib suite`, `/ net suite` | 1, via the aggregator | workers |
 | `asan + ubsan (full suite)` | 1 | **aggregator**; also re-derives shard coverage and sums the leak tally |
@@ -519,8 +535,9 @@ limits (matrix `include`/`exclude`, expressions inside `run:` scripts,
 | `nightly / gate self-tests` | **2** (`nightly.yml`) | calibrates every checker |
 | `nightly / valgrind (full corpus, JIT off)` | **2** (`nightly.yml`) | slow; the PR and main lanes run the smoke spread |
 
-No `ci.yml` job moved to nightly in #1264 beyond `macos-15-intel` (#1265):
-every other job already runs on pull requests, so each was made tier 1.
+No required check is absent on pull requests: heavy checks report the
+canonical successful deferral, then run their real suites on the candidate
+commit in the merge queue before it can land.
 
 ### Checks from other workflows
 

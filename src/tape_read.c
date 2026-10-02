@@ -19,6 +19,11 @@
 #define EIGENSCRIPT_VERSION "dev"
 #endif
 
+/* Each displayed binding replays the observer records that precede it. Keep
+ * a hostile tape from turning that intentionally simple fold into unbounded
+ * multiplicative work in the stepper or the single-threaded DAP server. */
+#define TAPE_OBS_REPLAY_WORK_MAX 1000000ULL
+
 static char *read_whole_file_priv(const char *path, long *out_len) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -321,6 +326,13 @@ static int tape_parse(Tape *t, long len) {
         if (r.kind) t->recs[t->nrecs++] = r;
         p = nl ? nl + 1 : end;
     }
+    if ((unsigned long long)t->nobscfg * (unsigned long long)t->nnames >
+        TAPE_OBS_REPLAY_WORK_MAX) {
+        fprintf(stderr, "step: tape observer replay exceeds the %llu-work "
+                "limit; refusing to step (docs/TRACE.md)\n",
+                TAPE_OBS_REPLAY_WORK_MAX);
+        return 0;
+    }
     return 1;
 }
 
@@ -548,13 +560,14 @@ const Assign *tape_latest_at(const NameHist *h, int pos) {
 }
 
 /* The frame instance current at a stop position = the scope of the
- * last record in that step's window (A records carry their exact
- * scope; an assign-free stretch inherits the last transition). */
+ * last record in that step's window (every stored record carries the
+ * scope in force when it was parsed, so an assign-free stretch inherits
+ * the last transition).  Do not search for a nonzero scope here: serial 0
+ * is also an explicit scope, used when native code resumes after an
+ * interpreted callback.  Skipping it resurrects the callback's dead frame. */
 uint32_t tape_scope_at(const Tape *t, int pos) {
     int bound = (pos + 1 < t->nsteps) ? t->steps[pos + 1] : t->nrecs;
-    for (int i = bound - 1; i >= 0; i--)
-        if (t->recs[i].scope) return t->recs[i].scope;
-    return 0;
+    return bound > 0 ? t->recs[bound - 1].scope : 0;
 }
 
 const NameHist *tape_resolve_at(const Tape *t, int pos, const char *name) {

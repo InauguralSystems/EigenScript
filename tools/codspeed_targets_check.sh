@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CFG="${CODSPEED_CFG:-$ROOT/codspeed.yml}"
 WF="${CODSPEED_WF:-$ROOT/.github/workflows/codspeed.yml}"
 
-TARGET_COUNT=12                                   # the set is the claim
+TARGET_COUNT=13                                   # the set is the claim
 CONSUMER_IDS="dmg-cpu-instrs dmg-cpu-instrs-vm"   # the rows a proxy cannot replace
 CONSUMER_DIR=".codspeed-consumers/DMG"            # what the fetch step populates
 
@@ -35,6 +35,11 @@ check() {
   # ../DMG/dmg.eigs beside a sanctioned ROM path passed -- selftest plant 4.)
   if grep -E '^\s*exec:.*DMG/' "$CFG" | sed "s#$CONSUMER_DIR/##g" | grep -q 'DMG/'; then
     echo "  FAIL: an exec line reaches DMG outside $CONSUMER_DIR/ (a local checkout is not the pin)"; fail=1
+  fi
+  # A sanctioned textual prefix is not sufficient when a following `..`
+  # component can escape it during filesystem path resolution.
+  if grep -E '^\s*exec:.*DMG/' "$CFG" | grep -qE '(^|[[:space:]/])\.\.([[:space:]/]|$)'; then
+    echo "  FAIL: a DMG exec line contains a '..' path component (it can escape $CONSUMER_DIR/)"; fail=1
   fi
   grep -qE '^\s*exec:.*'"$CONSUMER_DIR"'/' "$CFG" || { echo "  FAIL: no exec line uses $CONSUMER_DIR/"; fail=1; }
   # the pin is a full SHA, never a branch or tag
@@ -65,6 +70,7 @@ if [ "${1:-}" = "--selftest" ]; then
   plant "exec points elsewhere"   sed -i 's#\.codspeed-consumers/DMG/#../DMG/#g' "$W/codspeed.yml"
   # the weaker shape that actually slipped: only the SCRIPT path moved
   plant "script path elsewhere"   sed -i 's#\.codspeed-consumers/DMG/dmg.eigs#../DMG/dmg.eigs#' "$W/codspeed.yml"
+  plant "consumer path traverses" sed -i 's#\.codspeed-consumers/DMG/dmg.eigs#.codspeed-consumers/DMG/../../tests/bench_dmg_shape.eigs#g' "$W/codspeed.yml"
   # control: the live files must pass, or every plant above is vacuous
   total=$((total+1))
   if "$0" >/dev/null 2>&1; then echo "  ok: live config passes (control)"; red=$((red+1)); else echo "  SELFTEST FAILED: live config is red"; fi

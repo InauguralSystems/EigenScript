@@ -1,0 +1,1 @@
+- Make `ls` return directory entries in deterministic bytewise order instead of filesystem-dependent `readdir` order.

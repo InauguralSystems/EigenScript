@@ -15,6 +15,10 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUNNER="${SUITE_LABEL_RUNNER:-$ROOT/tests/run_all_tests.sh}"
+RUNNER_TEXT=$(mktemp "${TMPDIR:-/tmp}/eigs_labels.XXXXXX") || exit 2
+trap 'rm -f "$RUNNER_TEXT"' EXIT
+bash "$ROOT/tools/runner_text.sh" "$RUNNER" > "$RUNNER_TEXT" || exit 2
+RUNNER="$RUNNER_TEXT"
 MIN_LABELS=200
 n=$(grep -cE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER")
 if [ "$n" -lt "$MIN_LABELS" ]; then
@@ -40,7 +44,7 @@ if [ -n "$counted" ]; then
   printf 'FAIL: section label carries a hand-typed count (#1430):\n%s\n' "$counted"; exit 1
 fi
 
-tally_counted=$(grep -nE '(TOTAL|PASS|FAIL)[[:space:]]*=\$\(\([[:space:]]*(TOTAL|PASS|FAIL)[[:space:]]*\+[[:space:]]*([2-9]|[1-9][0-9]+)[[:space:]]*\)\)' "$RUNNER")
+tally_counted=$(grep -nE '(TOTAL|PASS|FAIL)[[:space:]]*=\$\(\([[:space:]]*(TOTAL|PASS|FAIL)[[:space:]]*[+-][[:space:]]*([2-9]|[1-9][0-9]+)[[:space:]]*\)\)' "$RUNNER")
 if [ -n "$tally_counted" ]; then
   printf 'FAIL: suite tally carries a hand-typed count (#1430):\n%s\n' "$tally_counted"; exit 1
 fi
@@ -48,6 +52,7 @@ fi
 declared_counted=$(awk '
   /check_eigs_suite|derive_count/ { in_call = 1 }
   in_call && /[[:space:]][1-9][0-9]*[[:space:]]*$/ { print NR ":" $0; bad = 1 }
+  in_call && /derive_count[[:space:]]+"[^"]*"[[:space:]]+[1-9][0-9]*([[:space:]]|[)])/ { print NR ":" $0; bad = 1 }
   in_call && $0 !~ /\\[[:space:]]*$/ { in_call = 0 }
   END { exit bad ? 0 : 1 }
 ' "$RUNNER")
