@@ -77,6 +77,33 @@ static Value *sandbox_call(int key_number) {
     return out;
 }
 
+static Value *sandbox_cycle_call(void) {
+    Value *code = make_list(12);
+    append_num(code, OP_NUM_ZERO);
+    append_num(code, OP_NULL);
+    append_num(code, OP_LIST); append_num(code, 1); append_num(code, 0);
+    append_num(code, OP_DUP2);
+    append_num(code, OP_INDEX_SET);
+    append_num(code, OP_SET_NAME); append_num(code, 0); append_num(code, 0);
+    append_num(code, OP_RETURN);
+    Value *constants = make_list(1);
+    list_append_owned(constants, make_str("worker-cycle"));
+    Value *descriptor = make_list(3);
+    append_num(descriptor, 1);
+    list_append_owned(descriptor, code);
+    list_append_owned(descriptor, constants);
+    Value *arg = make_list(3);
+    list_append_owned(arg, descriptor);
+    append_num(arg, 1);
+    append_num(arg, 10000);
+    arena_mark_pos();
+    Value *out = builtin_sandbox_run(arg);
+    assert(out != NULL);
+    arena_reset_to_mark();
+    val_decref(arg);
+    return make_null();
+}
+
 int main(void) {
     EigsState *state = eigs_open();
     assert(state != NULL);
@@ -136,6 +163,18 @@ int main(void) {
     assert(sandbox_retained <= 8);
 
     val_decref(escaped);
+    /* A promoted self-cycle is dropped through the sandbox's unregistered,
+     * sealed env.  MT defers collection, but must retain a possible-root pin;
+     * otherwise repeated worker sandboxes leak outside their per-run budget. */
+    for (int i = 0; i < 32; i++) {
+        Value *cycle_out = sandbox_cycle_call();
+        assert(cycle_out != NULL);
+        val_decref(cycle_out);
+    }
+    assert(state->gc_val_count > 0);
+    g_vm_multithreaded = 0;
+    gc_collect_cycles();
+    assert(state->gc_val_count == 0);
     eigs_close(state);
     return 0;
 }

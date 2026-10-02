@@ -840,9 +840,10 @@ struct EigsState {
     pthread_mutex_t gc_lock;
     /* #307: value-candidate buffer — LIST/DICT "possible roots" parked by
      * gc_note_possible_root for the next collection (Bacon-Rajan). Per-STATE
-     * like the env registry, but only ever touched single-threaded (the hook
-     * is gated off under MT), so it needs no lock. The buffer holds one pin
-     * apiece; gc_collect_cycles feeds it in as seeds, then drains the pins. */
+     * like the env registry. The sandbox-promotion path may register under MT
+     * using gc_lock; actual collection remains deferred until the state is
+     * single-threaded. The buffer holds one pin apiece; gc_collect_cycles
+     * feeds it in as seeds, then drains the pins. */
     Value         **gc_val_buf;
     int             gc_val_count;
     int             gc_val_cap;
@@ -1685,6 +1686,9 @@ static inline double num_guard_named(double x, const char *who) {
  * cycle collection. Out-of-line (keeps val_decref/slot_decref lean) and gated
  * inside on GC-enabled / not-collecting / single-threaded. */
 void gc_note_possible_root(Value *v);
+/* Sandbox arena promotion can create cycles rooted only in its sealed env.
+ * Preserve those candidates even while collection is deferred under MT. */
+void gc_note_possible_root_deferred(Value *v);
 
 static inline void val_incref(Value *v) {
     if (v && !v->arena) {

@@ -1934,6 +1934,10 @@ Value* promote_if_arena(Value *v) {
         } else {
             /* Edges own refs; the caller owns only the root constructor ref. */
             for (int i = 1; i < work_count; i++) val_decref(work[i].dst);
+            /* A worker's sealed sandbox env is not an exit-snapshot root, and
+             * ordinary MT decrefs deliberately do not enter the candidate
+             * buffer. Preserve this promoted graph until deferred collection. */
+            if (g_vm_multithreaded) gc_note_possible_root_deferred(root);
         }
         free(work);
         return root;
@@ -4562,15 +4566,24 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
  * pin so it survives until the next collection, which decides via the same
  * edge-accounting whether it (and its cycle) is actually garbage.
  *
- * Gated exactly like env_mark_captured: off when GC is disabled, mid-collection
- * (the collector's own decrefs must not re-register), or multithreaded (the
- * buffer is single-threaded-only — MT value cycles are rare and swept at exit
- * via the global snapshot; this keeps the hot decref lock-free). */
-void gc_note_possible_root(Value *v) {
-    if (!g_gc_enabled || g_in_gc || g_vm_multithreaded || v->gc_buffered)
+ * Gated off when GC is disabled or mid-collection (the collector's own decrefs
+ * must not re-register).  In multithreaded states the state GC lock protects
+ * the shared buffer.  This matters for roots that are not reachable from the
+ * exit snapshot, notably a sandbox's sealed, short-lived environment: a worker
+ * can drop its last external reference to a promoted cycle while MT collection
+ * is deferred, and the candidate pin must survive until the last worker joins.
+ */
+static void gc_buffer_possible_root(Value *v) {
+    if (!g_gc_enabled || g_in_gc) return;
+    int mt = g_vm_multithreaded;
+    if (mt) pthread_mutex_lock(&eigs_current->state->gc_lock);
+    if (v->gc_buffered) {
+        if (mt) pthread_mutex_unlock(&eigs_current->state->gc_lock);
         return;
+    }
     v->gc_buffered = 1;
-    v->refcount++;   /* buffer pin — single-threaded here, so plain ++ */
+    if (mt) __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
+    else v->refcount++;
     if (g_gc_val_count >= g_gc_val_cap) {
         g_gc_val_cap = g_gc_val_cap ? g_gc_val_cap * 2 : 64;
         g_gc_val_buf = xrealloc_array(g_gc_val_buf, g_gc_val_cap, sizeof(Value *));
@@ -4578,8 +4591,19 @@ void gc_note_possible_root(Value *v) {
     g_gc_val_buf[g_gc_val_count++] = v;
     /* #1096: the possible-root trigger is cost-aware -- see gc_val_next_threshold. */
     if (!g_gc_val_threshold) g_gc_val_threshold = GC_VAL_THRESHOLD;
-    if (__builtin_expect(g_gc_val_count >= g_gc_val_threshold, 0))
+    int should_collect = !mt && g_gc_val_count >= g_gc_val_threshold;
+    if (mt) pthread_mutex_unlock(&eigs_current->state->gc_lock);
+    if (__builtin_expect(should_collect, 0))
         gc_collect_cycles();
+}
+
+void gc_note_possible_root(Value *v) {
+    if (g_vm_multithreaded) return;
+    gc_buffer_possible_root(v);
+}
+
+void gc_note_possible_root_deferred(Value *v) {
+    gc_buffer_possible_root(v);
 }
 
 void gc_collect_cycles(void) {
