@@ -54,19 +54,18 @@ def generated(measurements: pathlib.Path, baseline: pathlib.Path) -> str:
     conservative_unobserved = counts["conservative_unobserved_loop"]
     baseline_observed, baseline_unobserved = baseline_counts(baseline)
     delta = (observed - unobserved) * 100 / unobserved
+    baseline_delta = (baseline_observed - baseline_unobserved) * 100 / baseline_unobserved
     conservative_delta = (
         (conservative_observed - conservative_unobserved) * 100 / conservative_observed
     )
     return "\n".join(
         [
             START,
-            "| workload | Callgrind median `Ir` (n=5) |",
-            "|---|---:|",
-            f"| `observed_loop` | {observed:,} |",
-            f"| `unobserved_loop` | {unobserved:,} |",
-            f"| observed overhead | {delta:+.2f}% |",
-            "<!-- observer-cachegrind-baseline: "
-            f"observed_loop={baseline_observed} unobserved_loop={baseline_unobserved} -->",
+            "| workload | Callgrind median `Ir` (n=5) | Cachegrind baseline `Ir` |",
+            "|---|---:|---:|",
+            f"| `observed_loop` | {observed:,} | {baseline_observed:,} |",
+            f"| `unobserved_loop` | {unobserved:,} | {baseline_unobserved:,} |",
+            f"| observed overhead | {delta:+.2f}% | {baseline_delta:+.2f}% |",
             "",
             "There remains one narrow use for `unobserved:`. The gate deliberately stays",
             "open when static analysis cannot resolve a computed `load_file` path. In a",

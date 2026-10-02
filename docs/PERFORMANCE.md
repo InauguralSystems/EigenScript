@@ -184,12 +184,11 @@ does not read observer state and skips the calls in both arms.
 negative difference is fixed instruction-layout noise, not observer cost).
 
 <!-- observer-ir:start -->
-| workload | Callgrind median `Ir` (n=5) |
-|---|---:|
-| `observed_loop` | 60,459,942 |
-| `unobserved_loop` | 60,465,939 |
-| observed overhead | -0.01% |
-<!-- observer-cachegrind-baseline: observed_loop=59530737 unobserved_loop=59536974 -->
+| workload | Callgrind median `Ir` (n=5) | Cachegrind baseline `Ir` |
+|---|---:|---:|
+| `observed_loop` | 60,459,942 | 59,530,737 |
+| `unobserved_loop` | 60,465,939 | 59,536,974 |
+| observed overhead | -0.01% | -0.01% |
 
 There remains one narrow use for `unobserved:`. The gate deliberately stays
 open when static analysis cannot resolve a computed `load_file` path. In a
@@ -210,8 +209,8 @@ Both tables are generated from the twenty raw results in
 `bench/observer_callgrind.txt`; run
 `python3 tools/performance_observer_docs.py --update` after deliberately
 re-measuring all four arms. The suite requires exactly five measurements per
-arm, checks the generated medians, and also records the two corresponding values
-from the local Cachegrind regression baseline in the generated block's metadata.
+arm, checks the generated medians, and publishes the two corresponding values
+and derived overhead from the local Cachegrind regression baseline in the table.
 Its self-test independently changes a Callgrind measurement and a
 `bench/baseline.txt` observer figure to prove either kind of drift is rejected.
 
