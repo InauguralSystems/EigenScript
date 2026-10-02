@@ -172,25 +172,31 @@ differ** — regenerate with `bash bench/run_bench.sh`):
 ## The observer overhead, measured
 
 `observed_loop` and `unobserved_loop` contain the same arithmetic, with the
-second spelling the loop inside `unobserved:`. On 2026-10-01, five cachegrind
-runs of each were byte-for-byte stable at the checked-in counts below. The
-observer gate added by #915 on 2026-08-23 proves that this whole-file workload
-does not read observer state, so it omits observer bookkeeping in both cases.
+second spelling the loop inside `unobserved:`. On 2026-10-01, Callgrind n=5
+versus n=5 runs were byte-for-byte stable within each arm; the medians are
+below. The observer gate shipped in #915 on 2026-08-23, but that change alone
+did not make this workload's overhead negligible: read-free assignments still
+entered observer helpers and returned from their internal gate. Commit
+`983053c` in #972 hoisted the gate ahead of those calls in September 2026. At
+the measured revision, the completed gate proves that this whole-file workload
+does not read observer state and skips the calls in both arms.
 `unobserved:` therefore buys nothing on this ordinary hot loop (the small
 negative difference is fixed instruction-layout noise, not observer cost).
 
-| workload | cachegrind `Ir` |
+| workload | Callgrind median `Ir` (n=5) |
 |---|---:|
 <!-- observer-ir:start -->
-| `observed_loop` | 59,530,737 |
-| `unobserved_loop` | 59,536,974 |
+| `observed_loop` | 60,459,942 |
+| `unobserved_loop` | 60,465,939 |
 | observed overhead | -0.01% |
 <!-- observer-ir:end -->
 
-The table is generated from `bench/baseline.txt`; run
+The table is generated from the ten raw results in
+`bench/observer_callgrind.txt`; run
 `python3 tools/performance_observer_docs.py --update` after deliberately
-re-pinning that file. The suite checks the generated block and plants a changed
-baseline figure to prove drift is rejected.
+re-measuring both arms. The suite requires exactly five measurements per arm,
+checks the generated medians, and plants a changed figure to prove drift is
+rejected.
 
 There remains one narrow use for `unobserved:`. The gate deliberately stays
 open when static analysis cannot resolve a computed `load_file` path. In a

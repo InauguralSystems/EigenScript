@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate/check PERFORMANCE.md's observer instruction-count block."""
+"""Generate/check PERFORMANCE.md's observer Callgrind measurement block."""
 
 from __future__ import annotations
 
@@ -15,14 +15,18 @@ END = "<!-- observer-ir:end -->"
 
 
 def counts(path: pathlib.Path) -> tuple[int, int]:
-    rows = {}
+    rows: dict[str, list[int]] = {}
     for line in path.read_text().splitlines():
         name, value = line.split()
-        rows[name] = int(value)
+        rows.setdefault(name, []).append(int(value))
     try:
-        return rows["observed_loop"], rows["unobserved_loop"]
+        observed = rows["observed_loop"]
+        unobserved = rows["unobserved_loop"]
     except KeyError as exc:
-        raise SystemExit(f"PERFORMANCE DOCS RED: missing baseline row {exc.args[0]}") from exc
+        raise SystemExit(f"PERFORMANCE DOCS RED: missing measurement arm {exc.args[0]}") from exc
+    if len(observed) != 5 or len(unobserved) != 5:
+        raise SystemExit("PERFORMANCE DOCS RED: observer measurements must be n=5 per arm")
+    return sorted(observed)[2], sorted(unobserved)[2]
 
 
 def generated(baseline: pathlib.Path) -> str:
@@ -49,10 +53,10 @@ def replace(doc: pathlib.Path, block: str) -> str:
 def check(doc: pathlib.Path, baseline: pathlib.Path) -> bool:
     expected = replace(doc, generated(baseline))
     if doc.read_text() != expected:
-        print("PERFORMANCE DOCS RED: observer Ir block disagrees with bench/baseline.txt")
+        print("PERFORMANCE DOCS RED: observer Ir block disagrees with Callgrind measurements")
         print("run: python3 tools/performance_observer_docs.py --update")
         return False
-    print("PERFORMANCE DOCS OK: observer Ir block matches bench/baseline.txt")
+    print("PERFORMANCE DOCS OK: observer Ir block matches Callgrind measurements")
     return True
 
 
@@ -65,13 +69,13 @@ def selftest(doc: pathlib.Path, baseline: pathlib.Path) -> bool:
         shutil.copyfile(baseline, planted_base)
         observed, _ = counts(planted_base)
         text = planted_base.read_text().replace(
-            f"observed_loop {observed}", f"observed_loop {observed + 1}", 1
+            f"observed_loop {observed}", f"observed_loop {observed + 1}"
         )
         planted_base.write_text(text)
         if check(planted_doc, planted_base):
-            print("PERFORMANCE DOCS SELFTEST RED: changed baseline figure passed")
+            print("PERFORMANCE DOCS SELFTEST RED: changed measurement passed")
             return False
-    print("PERFORMANCE DOCS SELFTEST OK: changed baseline figure is rejected")
+    print("PERFORMANCE DOCS SELFTEST OK: changed measurement is rejected")
     return True
 
 
@@ -80,7 +84,9 @@ def main() -> int:
     parser.add_argument("--update", action="store_true")
     parser.add_argument("--selftest", action="store_true")
     parser.add_argument("--doc", type=pathlib.Path, default=ROOT / "docs/PERFORMANCE.md")
-    parser.add_argument("--baseline", type=pathlib.Path, default=ROOT / "bench/baseline.txt")
+    parser.add_argument(
+        "--baseline", type=pathlib.Path, default=ROOT / "bench/observer_callgrind.txt"
+    )
     args = parser.parse_args()
     if args.update:
         args.doc.write_text(replace(args.doc, generated(args.baseline)))
