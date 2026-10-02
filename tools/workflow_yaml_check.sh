@@ -46,6 +46,16 @@ cases = [
     ("exec-call", "exec jq .", base, False, "run command 'jq'"),
     ("query-substitution", 'command -v "$(jq .)"', base, False, "run command 'jq'"),
     ("quoted-hash-then-call", "echo '# quoted data'; jq .", base, False, "run command 'jq'"),
+    ("comment-apostrophe-query", "# don't require the optional tool\ncommand -v \"$(jq .)\"", base, False, "run command 'jq'"),
+    ("comment-apostrophe-echo", "# don't require the optional tool\necho \"$(jq .)\"", base, False, "run command 'jq'"),
+    ("comment-doublequote-query", '# "optional tool\ncommand -v "$(jq .)"', base, False, "run command 'jq'"),
+    ("comment-doublequote-inert", '# "optional tool\necho \'$(jq .)\'', base, True, "workflow-container: OK"),
+    ("doublequoted-comment-substitution", "echo \"# don't require $(jq .)\"", base, False, "run command 'jq'"),
+    ("singlequoted-comment-inert", 'echo \'# "$(jq .)\'', base, True, "workflow-container: OK"),
+    ("escaped-hash-substitution", 'echo \\# "$(jq .)"', base, False, "run command 'jq'"),
+    ("embedded-hash-substitution", 'echo tag#part "$(jq .)"', base, False, "run command 'jq'"),
+    ("comment-apostrophe-inert", "# don't require $(jq .)\ntrue", base, True, "workflow-container: OK"),
+    ("comment-substitution-inert", "# $(jq .)\ntrue", base, True, "workflow-container: OK"),
 ]
 for name, command, docker, green, marker in cases:
     row = scratch / name; (row / "workflows").mkdir(parents=True)
@@ -167,6 +177,14 @@ def commands(script, known_functions=None):
     i = 0
     while i + 1 < len(script):
         char = script[i]
+        # Comments cannot change quote state or contain executable substitutions.
+        # A quoted, escaped or word-internal hash remains shell data.
+        if char == "\\" and quote != "'":
+            i += 2; continue
+        if char == "#" and quote is None and (i == 0 or script[i - 1] in " \t\r\n;|&()"):
+            newline = script.find("\n", i)
+            if newline < 0: break
+            i = newline + 1; continue
         if char == "'" and quote != '"':
             quote = None if quote == "'" else "'"
         elif char == '"' and quote != "'":
