@@ -577,3 +577,12 @@ CHANGELOG entry. The opaque types (`EigsState`, `EigsThread`,
 `EigsValue`) intentionally hide their layout: those structs change
 between releases and the only safe way to touch them is through the
 documented accessors.
+
+## Process heap ceiling
+
+Embedders can set `EIGS_MAX_HEAP=<bytes>` before the runtime's first allocation
+to bound process-wide live requested bytes routed through the checked allocator.
+A crossing is reported through the ordinary runtime-error channel with kind
+`heap_limit`, so an EigenScript `try` can catch it and an uncaught crossing makes
+the command-line runtime exit 1 rather than abort. The setting is process-wide,
+not per `EigsState`; unset, zero, or invalid values disable it.

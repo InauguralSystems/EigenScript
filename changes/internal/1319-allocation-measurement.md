@@ -1,2 +1,1 @@
-- Add opt-in, non-enforcing requested-byte allocation counters to gather the
-  evidence required before designing a process heap cap.
+- Add live requested-byte heap-cap enforcement via `EIGS_MAX_HEAP`, raising the catchable `heap_limit` error instead of aborting, with optional allocation diagnostics.

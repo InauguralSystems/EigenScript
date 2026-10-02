@@ -72,6 +72,9 @@ static size_t g_alloc_stats_occupied;
 static uint64_t g_alloc_stats_cumulative;
 static uint64_t g_alloc_stats_live;
 static uint64_t g_alloc_stats_peak;
+static uint64_t g_alloc_heap_max;
+static int g_alloc_stats_report_enabled;
+static int g_alloc_heap_tripped;
 static char g_alloc_stats_tombstone;
 #define ALLOC_STATS_TOMB ((void *)&g_alloc_stats_tombstone)
 
@@ -95,12 +98,22 @@ static void alloc_stats_report(void) {
 
 static void alloc_stats_init(void) {
     const char *v = getenv("EIGS_ALLOC_STATS");
-    int enabled = v && *v && strcmp(v, "0") != 0;
+    const char *limit = getenv("EIGS_MAX_HEAP");
+    char *end = NULL;
+    uint64_t max = 0;
+    if (limit && *limit) {
+        errno = 0;
+        unsigned long long parsed = strtoull(limit, &end, 10);
+        if (!errno && end != limit && !*end && parsed > 0) max = parsed;
+    }
+    g_alloc_stats_report_enabled = v && *v && strcmp(v, "0") != 0;
+    g_alloc_heap_max = max;
+    int enabled = g_alloc_stats_report_enabled || g_alloc_heap_max != 0;
     if (enabled) {
         g_alloc_stats_cap = 4096;
         g_alloc_stats_tab = calloc(g_alloc_stats_cap, sizeof(*g_alloc_stats_tab));
         if (!g_alloc_stats_tab) x_oom(g_alloc_stats_cap * sizeof(*g_alloc_stats_tab));
-        atexit(alloc_stats_report);
+        if (g_alloc_stats_report_enabled) atexit(alloc_stats_report);
     }
     __atomic_store_n(&eigs_alloc_stats_enabled, enabled, __ATOMIC_RELEASE);
 }
@@ -169,7 +182,20 @@ static void alloc_stats_add_enabled(void *ptr, size_t size, size_t cumulative) {
     g_alloc_stats_cumulative += cumulative;
     if (g_alloc_stats_live > g_alloc_stats_peak)
         g_alloc_stats_peak = g_alloc_stats_live;
+    uint64_t live = g_alloc_stats_live;
+    int hit = eigs_current && g_alloc_heap_max && live > g_alloc_heap_max &&
+              !g_alloc_heap_tripped;
+    if (hit) g_alloc_heap_tripped = 1;
     pthread_mutex_unlock(&g_alloc_stats_lock);
+    /* Raise after publishing the allocation and dropping the allocator lock.
+     * The VM observes this at its next CHECK_ERROR, so `try` can catch it;
+     * the just-completed allocation keeps callers' non-NULL contract intact.
+     * Suppress recursive raises while constructing the caught error value. */
+    if (hit)
+        rt_error(EK_HEAP_LIMIT, 0,
+                 "process heap limit exceeded (live requested bytes=%" PRIu64
+                 ", limit=%" PRIu64 ")",
+                 live, g_alloc_heap_max);
 }
 
 static inline __attribute__((always_inline))
@@ -192,6 +218,7 @@ static size_t alloc_stats_remove_enabled(void *ptr) {
         g_alloc_stats_count--;
         g_alloc_stats_tab[pos].ptr = ALLOC_STATS_TOMB;
         g_alloc_stats_tab[pos].size = 0;
+        if (g_alloc_stats_live <= g_alloc_heap_max) g_alloc_heap_tripped = 0;
     }
     pthread_mutex_unlock(&g_alloc_stats_lock);
     return old_size;

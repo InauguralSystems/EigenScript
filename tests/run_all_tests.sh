@@ -756,11 +756,9 @@ else
 fi
 echo ""
 
-# #1319 measurement phase: the opt-in accounting path reports requested-byte
-# cumulative/live/peak counters, while the default path remains silent.  This
-# is deliberately not a heap-cap test: the owner left enforcement open until
-# the corpus-and-consumer measurements select cumulative or live accounting.
-echo "[0h] Non-enforcing allocation-accounting instrument (#1319)"
+# #1319: accounting remains observable, and the same live-byte chokepoint
+# enforces the process-wide cap as a catchable, named runtime error.
+echo "[0h] Allocation accounting and process heap cap (#1319)"
 check_binary_fingerprint
 ALLOC_STATS_OUT=$(EIGS_ALLOC_STATS=1 ./eigenscript -e 'print of len of range of 1000' 2>&1)
 ALLOC_STATS_RC=$?
@@ -776,6 +774,25 @@ if [ "$ALLOC_STATS_RC" -eq 0 ] && [ -n "$ALLOC_CUM" ] && [ -n "$ALLOC_LIVE" ] &&
     PASS=$((PASS + 1)); echo "  PASS: opt-in counters report cumulative >= peak >= live; disabled path is silent"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: allocation-accounting output (rc=$ALLOC_STATS_RC): $ALLOC_STATS_LINE"
+fi
+
+HEAP_CAP_OUT=$(EIGS_MAX_HEAP=20950000 ./eigenscript -e $'try:\n    x is range of 1000\ncatch e:\n    print of e["kind"]' 2>&1)
+HEAP_CAP_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$HEAP_CAP_RC" -eq 0 ] && grep -q '^heap_limit$' <<< "$HEAP_CAP_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: EIGS_MAX_HEAP raises a catchable heap_limit error"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: heap-cap catchability (rc=$HEAP_CAP_RC): $HEAP_CAP_OUT"
+fi
+
+HEAP_CAP_UNCAUGHT=$(EIGS_MAX_HEAP=20950000 ./eigenscript -e 'x is range of 1000' 2>&1)
+HEAP_CAP_UNCAUGHT_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$HEAP_CAP_UNCAUGHT_RC" -ne 0 ] && [ "$HEAP_CAP_UNCAUGHT_RC" -ne 134 ] &&
+   grep -q 'process heap limit exceeded' <<< "$HEAP_CAP_UNCAUGHT"; then
+    PASS=$((PASS + 1)); echo "  PASS: uncaught heap cap exits cleanly without abort"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: heap-cap exit (rc=$HEAP_CAP_UNCAUGHT_RC): $HEAP_CAP_UNCAUGHT"
 fi
 echo ""
 
