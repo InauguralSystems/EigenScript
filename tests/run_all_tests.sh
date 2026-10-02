@@ -5849,9 +5849,50 @@ if [ "$(uname -m)" = "x86_64" ]; then
         FAIL=$((FAIL + 1))
         echo "  FAIL: EIGS_JIT_HOT printed no hot-chunk rows -- the hotness registry is empty at dump time"
     fi
+
+    # #1179: frame entries alone are not executed-byte weight.  This fixture
+    # enters its sole chunk once and executes its loop through an OSR thunk.
+    # Derive the oracle from the row using the documented weighting rule:
+    # entries*advance + back_edges*osr_advance, over
+    # (entries+back_edges)*code_len.  Restoring exec_count-only weighting
+    # makes the reported byte totals disagree and turns this row red.
+    TOTAL=$((TOTAL + 1))
+    JHOT_OSR_OUTPUT=$(EIGS_JIT_HOT=1 ./eigenscript ../tests/test_jit_hot_osr.eigs </dev/null 2>&1 >/dev/null)
+    JHOT_OSR_RC=$?
+    JHOT_OSR_EXPECTED=$(LC_ALL=C awk '
+        $1 == "<module>" {
+            n++
+            if ($2 != 1 || $8 <= 0 || $9 != "yes" || $10 <= 0 || $6 <= 0) bad=1
+            native = ($2 * ($5 == "RET" ? $6 : $5)) + ($8 * $10)
+            total = ($2 + $8) * $6
+        }
+        END {
+            if (n == 1 && !bad) printf "%.0f %.0f\n", native, total
+        }' <<< "$JHOT_OSR_OUTPUT")
+    JHOT_OSR_ACTUAL=$(sed -n \
+        's/.*bytes native: \([0-9]*\) \/ total: \([0-9]*\).*/\1 \2/p' \
+        <<< "$JHOT_OSR_OUTPUT")
+    JHOT_OSR_SHARE=$(sed -n \
+        's/.*(all [0-9][0-9]* chunks): \([0-9][0-9]*\.[0-9]%\).*/\1/p' \
+        <<< "$JHOT_OSR_OUTPUT")
+    JHOT_OSR_EXPECTED_SHARE=$(LC_ALL=C awk 'NF == 2 && $2 > 0 { printf "%.1f%%", 100 * $1 / $2 }' \
+        <<< "$JHOT_OSR_EXPECTED")
+    if [ "$JHOT_OSR_RC" -eq 0 ] && rc_ok "$JHOT_OSR_RC" "$JHOT_OSR_OUTPUT" && [ -n "$JHOT_OSR_EXPECTED" ] &&
+       [ "$JHOT_OSR_ACTUAL" = "$JHOT_OSR_EXPECTED" ] &&
+       [ "$JHOT_OSR_SHARE" = "$JHOT_OSR_EXPECTED_SHARE" ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: EIGS_JIT_HOT weights OSR back-edges ($JHOT_OSR_ACTUAL bytes, $JHOT_OSR_SHARE native)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: EIGS_JIT_HOT OSR weighting (rc=$JHOT_OSR_RC): expected '$JHOT_OSR_EXPECTED' and '$JHOT_OSR_EXPECTED_SHARE', reported '$JHOT_OSR_ACTUAL' and '$JHOT_OSR_SHARE'"
+        echo "$JHOT_OSR_OUTPUT"
+    fi
 else
+    TOTAL=$((TOTAL + 1))
     PASS=$((PASS + 1))
     echo "  SKIP: EIGS_JIT_HOT gate (JIT not built or not supported on this platform)"
+    PASS=$((PASS + 1))
+    echo "  SKIP: EIGS_JIT_HOT OSR weighting gate (JIT not built or not supported on this platform)"
 fi
 TOTAL=$((TOTAL + 1))
 # A one-page cache deterministically exhausts on this corpus.  Space rejection

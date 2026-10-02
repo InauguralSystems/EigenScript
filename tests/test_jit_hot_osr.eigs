@@ -1,0 +1,7 @@
+# One frame entry with enough loop back-edges to enter an OSR thunk.  The
+# EIGS_JIT_HOT suite row derives the expected aggregate from this chunk's row.
+i is 0
+total is 0
+loop while i < 20000:
+    total is total + i
+    i is i + 1
