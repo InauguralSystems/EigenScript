@@ -32,7 +32,12 @@ size_t lint_utf8_prefix(const char *s, size_t max) {
 static void lint_vdiag(LintContext *ctx, int line, int col, int len,
                        const char *level,
                        const char *code, const char *fmt, va_list ap) {
-    if (ctx->warning_count >= MAX_LINT_WARNINGS) return;
+    if (ctx->warning_count == ctx->warning_capacity) {
+        int capacity = ctx->warning_capacity ? ctx->warning_capacity * 2 : 64;
+        ctx->warnings = xrealloc(ctx->warnings,
+                                 (size_t)capacity * sizeof *ctx->warnings);
+        ctx->warning_capacity = capacity;
+    }
     LintWarning *w = &ctx->warnings[ctx->warning_count++];
     w->line = line;
     w->col  = col;
@@ -1052,8 +1057,8 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
             if (strcmp(param, "n") == 0) continue;
 
             /* Build a temporary ref context for this function body. On the
-             * HEAP, not the stack: LintContext is ~85 KiB (warnings[256] plus
-             * four 512-entry arrays) and check_unused_params recurses into
+             * HEAP, not the stack: LintContext contains four 512-entry arrays
+             * and check_unused_params recurses into
              * nested AST_FUNCs below, so a by-value local here costs that much
              * C stack per nesting level — exactly the pattern the CLAUDE.md
              * "no big by-value structs in recursive functions" rule names
@@ -1350,6 +1355,7 @@ static void check_outer_mutation(ASTNode *ast, LintContext *ctx) {
  * environment binding.  Model that runtime walk with dominating binders and
  * fail safe to silence; an enclosing binder (including catch) is a deliberate false negative. */
 #define W023_MAX_FUNCTION_DEPTH 64
+#define W023_MAX_CANDIDATES 64
 enum { W023_MODULE, W023_SPECIAL, W023_FUNCTIONS, W023_NAME_SCAN };
 enum { W023_CAPTURED = 1, W023_INTERROGATED = 2, W023_ENV_BOUND = 4, W023_DEFINE = 8 };
 typedef struct { char **names; int count, capacity, unknown; } W023Names;
@@ -1391,7 +1397,7 @@ static int w023_names_copy(W023Names *dst, const W023Names *src) {
 }
 static void w023_names_free(W023Names *set) { free(set->names); set->names = NULL; set->count = set->capacity = 0; }
 static void w023_analyse_function(ASTNode *, ASTNode **, int, W023Names *, LintContext *);
-static void w023_scan_sequence(ASTNode **, int, W023Names *, ASTNode *, ASTNode **, int, W023Names *, LintContext *);
+static void w023_scan_sequence(ASTNode **, int, W023Names *, ASTNode *, ASTNode **, int, W023Names *, LintContext *, int *);
 
 static int w023_body_has_name(ASTNode **body, int count, const char *name);
 
@@ -1642,7 +1648,7 @@ static void w023_proof_failure(W023Names *module, ASTNode ****branches, int **co
 
 static void w023_check_if(ASTNode *if_node, ASTNode *fn, W023Names *bound,
                           ASTNode **ancestors, int depth, W023Names *module,
-                          LintContext *ctx) {
+                          LintContext *ctx, int *candidates) {
     ASTNode ***branches = NULL; int *counts = NULL; size_t capacity = 0, nb = 0; ASTNode *cur = if_node;
     while (cur) {
         if (nb == capacity && !w023_grow_branch_vectors(&branches, &counts, &capacity)) {
@@ -1659,6 +1665,12 @@ static void w023_check_if(ASTNode *if_node, ASTNode *fn, W023Names *bound,
     }
     for (size_t i = 0; i < nb; i++) for (int j = 0; j < counts[i]; j++) { ASTNode *bare = branches[i][j];
         if (!bare || bare->type != AST_ASSIGN || bare->data.assign.local_only || !bare->data.assign.name) continue;
+        /* Every candidate below can trigger sibling, prefix, and whole-function
+         * scans.  Bound those scans per function so hostile editor input cannot
+         * turn this advisory diagnostic into quadratic LSP work.  Exhaustion is
+         * deliberately fail-safe: W023 may omit a warning, never invent one. */
+        if (!*candidates) { free(branches); free(counts); return; }
+        (*candidates)--;
         int sibling = 0;
         for (size_t k = 0; k < nb && !sibling; k++) if (k != i) for (int l = 0; l < counts[k]; l++) { ASTNode *local = branches[k][l]; if (local && local->type == AST_ASSIGN && local->data.assign.local_only && local->data.assign.name && strcmp(local->data.assign.name, bare->data.assign.name) == 0) { sibling = 1; break; } }
         int prefix = sibling ? w023_prefix_binds(branches[i], j, bare->data.assign.name) : 0;
@@ -1671,41 +1683,41 @@ static void w023_check_if(ASTNode *if_node, ASTNode *fn, W023Names *bound,
 }
 static void w023_scan_sequence(ASTNode **stmts, int count, W023Names *bound,
                                ASTNode *fn, ASTNode **ancestors, int depth,
-                               W023Names *module, LintContext *ctx) {
+                               W023Names *module, LintContext *ctx, int *candidates) {
     for (int i = 0; i < count; i++) { ASTNode *n = stmts[i]; if (!n) continue;
-        if (module->unknown || bound->unknown) return;
+        if (module->unknown || bound->unknown || !*candidates) return;
         switch (n->type) {
         case AST_ASSIGN: if (n->data.assign.local_only) w023_name_add(n->data.assign.name, bound); break;
         case AST_FUNC: w023_name_add(n->data.func.name, bound); break;
-        case AST_FOR: w023_name_add(n->data.forloop.var, bound); w023_scan_sequence(n->data.forloop.body, n->data.forloop.body_count, bound, fn, ancestors, depth, module, ctx); break;
+        case AST_FOR: w023_name_add(n->data.forloop.var, bound); w023_scan_sequence(n->data.forloop.body, n->data.forloop.body_count, bound, fn, ancestors, depth, module, ctx, candidates); break;
         case AST_LIST_PATTERN_ASSIGN: for (int j = 0; j < n->data.list_pattern_assign.name_count; j++) w023_name_add(n->data.list_pattern_assign.names[j], bound); break;
         case AST_BLOCK: case AST_UNOBSERVED:
-            w023_scan_sequence(n->data.block.stmts, n->data.block.count, bound, fn, ancestors, depth, module, ctx); break;
+            w023_scan_sequence(n->data.block.stmts, n->data.block.count, bound, fn, ancestors, depth, module, ctx, candidates); break;
         case AST_TRY:
-            w023_scan_sequence(n->data.trycatch.try_body, n->data.trycatch.try_count, bound, fn, ancestors, depth, module, ctx);
+            w023_scan_sequence(n->data.trycatch.try_body, n->data.trycatch.try_count, bound, fn, ancestors, depth, module, ctx, candidates);
             w023_name_add(n->data.trycatch.err_name, bound);
-            w023_scan_sequence(n->data.trycatch.catch_body, n->data.trycatch.catch_count, bound, fn, ancestors, depth, module, ctx); break;
+            w023_scan_sequence(n->data.trycatch.catch_body, n->data.trycatch.catch_count, bound, fn, ancestors, depth, module, ctx, candidates); break;
         case AST_IF: {
             W023Names branch;
-            w023_check_if(n, fn, bound, ancestors, depth, module, ctx);
+            w023_check_if(n, fn, bound, ancestors, depth, module, ctx, candidates);
             if (module->unknown || w023_names_copy(&branch, bound) < 0) { w023_names_unknown(module); return; }
-            w023_scan_sequence(n->data.cond.if_body, n->data.cond.if_count, &branch, fn, ancestors, depth, module, ctx);
+            w023_scan_sequence(n->data.cond.if_body, n->data.cond.if_count, &branch, fn, ancestors, depth, module, ctx, candidates);
             w023_names_free(&branch);
             if (module->unknown || w023_names_copy(&branch, bound) < 0) { w023_names_unknown(module); return; }
-            w023_scan_sequence(n->data.cond.else_body, n->data.cond.else_count, &branch, fn, ancestors, depth, module, ctx);
+            w023_scan_sequence(n->data.cond.else_body, n->data.cond.else_count, &branch, fn, ancestors, depth, module, ctx, candidates);
             w023_names_free(&branch);
         } break;
         case AST_LOOP: {
             W023Names body;
             if (w023_names_copy(&body, bound) < 0) { w023_names_unknown(module); return; }
-            w023_scan_sequence(n->data.loop.body, n->data.loop.body_count, &body, fn, ancestors, depth, module, ctx);
+            w023_scan_sequence(n->data.loop.body, n->data.loop.body_count, &body, fn, ancestors, depth, module, ctx, candidates);
             w023_names_free(&body);
         } break;
         case AST_MATCH:
             for (int c = 0; c < n->data.match.case_count; c++) {
                 W023Names body;
                 if (w023_names_copy(&body, bound) < 0) { w023_names_unknown(module); return; }
-                w023_scan_sequence(n->data.match.bodies[c], n->data.match.body_counts[c], &body, fn, ancestors, depth, module, ctx);
+                w023_scan_sequence(n->data.match.bodies[c], n->data.match.body_counts[c], &body, fn, ancestors, depth, module, ctx, candidates);
                 w023_names_free(&body);
                 if (module->unknown) return;
             }
@@ -1716,7 +1728,8 @@ static void w023_scan_sequence(ASTNode **stmts, int count, W023Names *bound,
     }
 }
 static void w023_analyse_function(ASTNode *fn, ASTNode **ancestors, int depth, W023Names *module, LintContext *ctx) {
-    W023Names bound = {0}; w023_scan_sequence(fn->data.func.body, fn->data.func.body_count, &bound, fn, ancestors, depth, module, ctx); w023_names_free(&bound);
+    int candidates = W023_MAX_CANDIDATES;
+    W023Names bound = {0}; w023_scan_sequence(fn->data.func.body, fn->data.func.body_count, &bound, fn, ancestors, depth, module, ctx, &candidates); w023_names_free(&bound);
 }
 static void check_sibling_outer_mutation(ASTNode *ast, LintContext *ctx) {
     if (!ast || ast->type != AST_PROGRAM) return;
@@ -3627,8 +3640,32 @@ int lint_collect(ASTNode *ast, const char *path, const char *source,
          * buffers stop being the same size (#1048). */
         eigs_utf8_sanitize(out[i].message, sizeof(out[i].message), ctx.warnings[i].message);
     }
+    free(ctx.warnings);
     eigs_lint_builtin_name_env_free();
     return n;
+}
+
+LintDiag *lint_collect_alloc(ASTNode *ast, const char *path,
+                             const char *source, int *count) {
+    if (count) *count = 0;
+    if (!ast || !count) return NULL;
+    LintContext ctx = {0};
+    eigs_lint_run_checks(ast, path, source, &ctx);
+    LintDiag *out = ctx.warning_count
+        ? xmalloc((size_t)ctx.warning_count * sizeof *out) : NULL;
+    for (int i = 0; i < ctx.warning_count; i++) {
+        out[i].line = ctx.warnings[i].line;
+        out[i].col = ctx.warnings[i].col;
+        out[i].len = ctx.warnings[i].len;
+        snprintf(out[i].code, sizeof(out[i].code), "%s", ctx.warnings[i].code);
+        snprintf(out[i].severity, sizeof(out[i].severity), "%s", ctx.warnings[i].level);
+        eigs_utf8_sanitize(out[i].message, sizeof(out[i].message),
+                           ctx.warnings[i].message);
+    }
+    *count = ctx.warning_count;
+    free(ctx.warnings);
+    eigs_lint_builtin_name_env_free();
+    return out;
 }
 
 /* ---- Main lint entry ---- */

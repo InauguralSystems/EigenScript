@@ -687,15 +687,17 @@ define _render_chart(widget, ax, ay) as:
     # Per-point mapping is inlined SCALAR in this loop (#828): _chart_map
     # returns a fresh 2-element list, and one list per plotted point per
     # frame was ~37% of the frame at 4,000 points (and an amplifier for
-    # #827 pinning under armed history). The view factors are hoisted so
+    # #827 pinning under armed history). The view spans are hoisted so
     # the loop body is pure scalar arithmetic; every other _chart_map
     # site is cold (ticks, markers, hover) and keeps the readable form.
     local mx0 is v.x0
     local my0 is v.y0
-    local mxk is v.pw / (v.x1 - v.x0)
-    local myk is v.ph / (v.y1 - v.y0)
+    local mxspan is v.x1 - v.x0
+    local myspan is v.y1 - v.y0
     local mpx is v.px
-    local mpyh is v.py + v.ph
+    local mpw is v.pw
+    local mph is v.ph
+    local mpyh is v.py + mph
     for si in range of (len of widget.series):
         local s is widget.series[si]
         local c is _chart_series_color of [widget, si]
@@ -715,8 +717,11 @@ define _render_chart(widget, ax, ay) as:
             local vx is di
             if xs != null:
                 vx is xs[di]
-            local psx is mpx + (vx - mx0) * mxk
-            local psy is mpyh - (sd[di] - my0) * myk
+            # Normalize before scaling, matching _chart_map. Hoisting the
+            # reciprocal can saturate for narrow spans even when the final
+            # pixel coordinate is representable.
+            local psx is mpx + (vx - mx0) / mxspan * mpw
+            local psy is mpyh - (sd[di] - my0) / myspan * mph
             if have == 1:
                 if style != "points":
                     _chart_line of [lastx, lasty, psx, psy, r, c]

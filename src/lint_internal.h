@@ -5,8 +5,6 @@
 
 #include "eigenscript.h"
 
-#define MAX_LINT_WARNINGS 256
-
 typedef struct {
     int line;
     int col;          /* 0-based column of the offending token (0 = unknown) */
@@ -17,8 +15,9 @@ typedef struct {
 } LintWarning;
 
 typedef struct {
-    LintWarning warnings[MAX_LINT_WARNINGS];
+    LintWarning *warnings;
     int warning_count;
+    int warning_capacity;
     /* Variable tracking */
     char *assigns[MAX_VARS];
     int assign_lines[MAX_VARS];
