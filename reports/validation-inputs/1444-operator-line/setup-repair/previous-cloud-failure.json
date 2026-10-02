@@ -1,0 +1,14 @@
+{
+  "task": "task_e_6abfadc7b028832d943eea91e954c06f",
+  "verdict": "BLOCKED_SETUP",
+  "carrier": "2c4aebd19f7204ac3bfd04663ed82bf956763f1a",
+  "evidence_path": "/home/jon/src/wt/1444-operator-line-cloud-audit-20261002/extracted/reports/validation/1444-r1",
+  "retained_sha256": {
+    "REPORT.md": "18c7ea77364e4f73760f4646f8d2f3f8d589c1d81914167eaff592b485ba99ab",
+    "commands.json": "8341386591a1c614c843328f8619ebe2f13dd0586eb4790bb76a13c826cff355",
+    "phase-ledger.json": "00e5b83c03c422ea7819a01995a622a0b460d9559e559b1cdee87343078c25df",
+    "calibration/phase-ledger.json": "e196fafae1cd306bb42c5b639c4d23ca45077fb6d5db8076919cf752ee07d90d"
+  },
+  "validation_phases_not_run": 27,
+  "calibration_phases_not_run": 16
+}

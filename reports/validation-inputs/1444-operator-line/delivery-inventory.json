@@ -2,13 +2,13 @@
   "files": [
     {
       "path": "DISTILL.md",
-      "bytes": 1030,
-      "sha256": "cec04ad76ffa2f38f3dfbb34ae582cbf24e41c23686e76be49e366c01909c646"
+      "bytes": 1499,
+      "sha256": "3f7ba10f17ad31feff428b0ee6a462cc0dc913012354e98d21a7a50b0368b55b"
     },
     {
       "path": "README.md",
-      "bytes": 4124,
-      "sha256": "3fa999b99c45cb8b988f18b0e2e4a658fabaf768ad911a93c96ec5b0b66a672f"
+      "bytes": 5080,
+      "sha256": "16418a12a111db0b94f055a9b74658d9b836d6d9e02ea810c133c2c4e3477848"
     },
     {
       "path": "calibrate.py",
@@ -32,8 +32,8 @@
     },
     {
       "path": "cloud-prompt-template.txt",
-      "bytes": 625,
-      "sha256": "6f293aeade664dc838f8f537bec1b61a88e3dcc7a85e2c80e6e0f6aa7f55a7c9"
+      "bytes": 1145,
+      "sha256": "f0720dde5a5530b0a87e3ad6d96a8e341c0775d11f339e26c68206cb0b694a35"
     },
     {
       "path": "gate-populations.json",
@@ -202,8 +202,8 @@
     },
     {
       "path": "prepare-inputs.sh",
-      "bytes": 1209,
-      "sha256": "79c6e93d4c350d52ccbdb93108015fa7c56338ad1eed3b1f8c873ae0e26a7766"
+      "bytes": 2092,
+      "sha256": "96e884cfe89983a72dbf97cfb5ed3fb085aadcc9c4db8b96ba0a0625d41d819b"
     },
     {
       "path": "receipt-calibration.json",
@@ -214,6 +214,101 @@
       "path": "reused-helpers.json",
       "bytes": 661,
       "sha256": "8b3cff08f404708b7e5c40eca644b3be1ee4490ecc9d959c990d3d891170c62e"
+    },
+    {
+      "path": "setup-repair/REPORT.md",
+      "bytes": 1370,
+      "sha256": "0b95cbee9f7088dfe687bd046087f0559818ea5aec2ce2042bc1e8231f1e652b"
+    },
+    {
+      "path": "setup-repair/first-proof-failed/commands.json",
+      "bytes": 2319,
+      "sha256": "e8cbdb937630780f3360d85d946200650999b082f98eb44c6997e01f006124d9"
+    },
+    {
+      "path": "setup-repair/first-proof-failed/commit-snapshot.log",
+      "bytes": 5338,
+      "sha256": "2d37f8b725541d9c9ee35ad46868f4174ba1640ed3e178f3ec236b92a15a0176"
+    },
+    {
+      "path": "setup-repair/first-proof-failed/initialize.log",
+      "bytes": 104,
+      "sha256": "46255f2f02d5f6906f40e9c760d3cad13d6595378bec4b65c43fc7bf20ba7c73"
+    },
+    {
+      "path": "setup-repair/first-proof-failed/missing-baseline-before.log",
+      "bytes": 81,
+      "sha256": "7c491a2f3124381d651e240c42008f632839529cf7036a911f3f892888eb005e"
+    },
+    {
+      "path": "setup-repair/first-proof-failed/no-remotes-before.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "setup-repair/first-proof-failed/prepare-no-origin.log",
+      "bytes": 287,
+      "sha256": "4eefc7f27e229ce15c50a13cf78c0e78a0bdbb00dda9e8cafcf0fd1910b57282"
+    },
+    {
+      "path": "setup-repair/first-proof-failed/stage-snapshot.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/commands.json",
+      "bytes": 2665,
+      "sha256": "a6c95c3a0924e01bca9eab614cf341161b75c68a512c3ffe5b2b8d6caa1615ca"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/commit-snapshot.log",
+      "bytes": 5338,
+      "sha256": "dbe05b10bb41afc5948558655b853b8d3d1dbb6422b09c18092ab238d820c4a3"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/initialize.log",
+      "bytes": 107,
+      "sha256": "0a8aec559f0c5ca0a56db242cb20872802863f3b1a4908ae5ae7ef41d90af568"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/missing-baseline-before.log",
+      "bytes": 81,
+      "sha256": "7c491a2f3124381d651e240c42008f632839529cf7036a911f3f892888eb005e"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/no-remotes-after.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/no-remotes-before.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/prepare-no-origin.log",
+      "bytes": 1195,
+      "sha256": "476529f5fdcb31fd4be839b8a1f04b90bf3d20e6acdeb0790c2683cb6b002530"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/reconstruction-proof.json",
+      "bytes": 1116,
+      "sha256": "83fded405ecf9afe7075ffa8fb41d1182b4e19e84e13b0579acdac0e26688082"
+    },
+    {
+      "path": "setup-repair/no-origin-proof/stage-snapshot.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "setup-repair/previous-cloud-failure.json",
+      "bytes": 729,
+      "sha256": "837dce6767b22306377382e6ae894378f0226fa8582f445bae1544c4245b2d26"
+    },
+    {
+      "path": "setup-repair/public-repository.json",
+      "bytes": 149,
+      "sha256": "ffdf38a8f4db96d9e42739ec45c862db3901294d3a5e66dbbeb56658ffd3b23e"
     },
     {
       "path": "source-inventory.json",
@@ -232,8 +327,8 @@
     },
     {
       "path": "submission-guard.json",
-      "bytes": 299,
-      "sha256": "835ec6a9367caf6223b7cdd909a5a15cdb88cb8173470dcebaafa0770aea8161"
+      "bytes": 502,
+      "sha256": "5c0cbec1e5fd1a88f63e25103c2a38984ab77c3e625c7a4c7022c1d71e2e937a"
     },
     {
       "path": "validate.py",
@@ -242,10 +337,10 @@
     },
     {
       "path": "validation-brief.txt",
-      "bytes": 6532,
-      "sha256": "a01c5aef90fb3eec188c1f3d45a0e9c1647d7498b1dc24aee90df42909904b89"
+      "bytes": 7098,
+      "sha256": "a8c400ddff0b4a0943709a854835ca80d38fcdbe5eb00b5482981d8b3710870d"
     }
   ],
   "helper_directory": "../1452-post1460",
-  "note": "SHA256SUMS includes this inventory and pinned reused helpers. Raw .log files explicitly enrolled despite repository ignore rules."
+  "note": "SHA256SUMS includes this inventory and pinned reused helpers. Raw .log files explicitly enrolled. Setup-only repair preserves the prior failed Cloud run and exact source pins."
 }

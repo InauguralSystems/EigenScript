@@ -1,9 +1,13 @@
 {
-  "status": "PREPARED_LOCAL_NOT_SUBMITTED",
+  "status": "SETUP_REPAIR_PREPARED_LOCAL_NOT_SUBMITTED",
   "source_critic": "CLEAN",
   "source_tree": "3a8582ff4b54d4a70cc72f9943fb02b9a66d2696",
   "root_review_required": true,
   "push_authorized_for_worker": false,
   "cloud_submission_authorized_for_worker": false,
-  "carrier_data_only_never_merge": true
+  "carrier_data_only_never_merge": true,
+  "previous_task": "task_e_6abfadc7b028832d943eea91e954c06f",
+  "previous_verdict": "BLOCKED_SETUP",
+  "previous_validation_phases_not_run": 27,
+  "previous_calibration_phases_not_run": 16
 }

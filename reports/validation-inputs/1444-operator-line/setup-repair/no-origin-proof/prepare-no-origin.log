@@ -1,0 +1,13 @@
+From https://github.com/InauguralSystems/EigenScript
+ * branch            5cb91de8354d49340976ba085e6e6ddd3fe6b927 -> FETCH_HEAD
+Cloning into '/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/run/candidate'...
+From /home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot
+ * branch            5cb91de8354d49340976ba085e6e6ddd3fe6b927 -> FETCH_HEAD
+Switched to a new branch 'validation-1444-candidate'
+Cloning into '/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/run/baseline'...
+From /home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot
+ * branch            5cb91de8354d49340976ba085e6e6ddd3fe6b927 -> FETCH_HEAD
+Switched to a new branch 'validation-1444-baseline'
+INPUTS_VERIFIED_ONLY: 3a8582ff4b54d4a70cc72f9943fb02b9a66d2696
+Prepared source inputs only; execute exactly:
+python3 -B /home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot/reports/validation-inputs/1444-operator-line/validate.py --candidate /home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/run/candidate --baseline /home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/run/baseline --evidence /home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/run/evidence --execute

@@ -1,0 +1,4 @@
+From https://github.com/InauguralSystems/EigenScript
+ * branch            5cb91de8354d49340976ba085e6e6ddd3fe6b927 -> FETCH_HEAD
+Cloning into '/home/jon/src/wt/1444-no-origin-setup-proof-20261002/run/candidate'...
+fatal: reference is not a tree: 5cb91de8354d49340976ba085e6e6ddd3fe6b927

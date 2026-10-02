@@ -1,0 +1,95 @@
+[
+  {
+    "name": "initialize",
+    "argv": [
+      "git",
+      "init",
+      "-b",
+      "snapshot-proof"
+    ],
+    "cwd": "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot",
+    "exit": 0,
+    "expected_exit": 0,
+    "log": "initialize.log",
+    "sha256": "0a8aec559f0c5ca0a56db242cb20872802863f3b1a4908ae5ae7ef41d90af568"
+  },
+  {
+    "name": "stage-snapshot",
+    "argv": [
+      "git",
+      "add",
+      "-f",
+      "reports"
+    ],
+    "cwd": "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot",
+    "exit": 0,
+    "expected_exit": 0,
+    "log": "stage-snapshot.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "commit-snapshot",
+    "argv": [
+      "git",
+      "commit",
+      "-m",
+      "data: no-origin carrier snapshot setup proof"
+    ],
+    "cwd": "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot",
+    "exit": 0,
+    "expected_exit": 0,
+    "log": "commit-snapshot.log",
+    "sha256": "dbe05b10bb41afc5948558655b853b8d3d1dbb6422b09c18092ab238d820c4a3"
+  },
+  {
+    "name": "no-remotes-before",
+    "argv": [
+      "git",
+      "remote"
+    ],
+    "cwd": "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot",
+    "exit": 0,
+    "expected_exit": 0,
+    "log": "no-remotes-before.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "missing-baseline-before",
+    "argv": [
+      "git",
+      "cat-file",
+      "-e",
+      "5cb91de8354d49340976ba085e6e6ddd3fe6b927^{commit}"
+    ],
+    "cwd": "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot",
+    "exit": 128,
+    "expected_exit": 128,
+    "log": "missing-baseline-before.log",
+    "sha256": "7c491a2f3124381d651e240c42008f632839529cf7036a911f3f892888eb005e"
+  },
+  {
+    "name": "prepare-no-origin",
+    "argv": [
+      "bash",
+      "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot/reports/validation-inputs/1444-operator-line/prepare-inputs.sh",
+      "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/run"
+    ],
+    "cwd": "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot",
+    "exit": 0,
+    "expected_exit": 0,
+    "log": "prepare-no-origin.log",
+    "sha256": "476529f5fdcb31fd4be839b8a1f04b90bf3d20e6acdeb0790c2683cb6b002530"
+  },
+  {
+    "name": "no-remotes-after",
+    "argv": [
+      "git",
+      "remote"
+    ],
+    "cwd": "/home/jon/src/wt/1444-no-origin-setup-proof-20261002-r2/snapshot",
+    "exit": 0,
+    "expected_exit": 0,
+    "log": "no-remotes-after.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]
