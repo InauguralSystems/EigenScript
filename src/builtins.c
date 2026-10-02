@@ -1306,7 +1306,8 @@ static int eigs_json_read_hex4(const char *s, int *pos, unsigned int *out) {
  * document unusable — JSON requires a CR to be escaped, so a Windows client's
  * text arrived with literal backslash-r in it and produced a bogus syntax
  * error and zero real diagnostics. */
-void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
+int eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
+    int lossless = 1;
     while (s[*pos] && s[*pos] != '"') {
         if (s[*pos] == '\\') {
             (*pos)++;
@@ -1338,6 +1339,7 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
                          * decode raises; lenient callers get U+FFFD and the
                          * offending text is parsed normally from here. */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                         break;
                     }
@@ -1362,16 +1364,19 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
                             eigs_json_append_cp(out, cp);
                         } else {
                             g_json_parse_recoverable = 1;
+                            lossless = 0;
                             eigs_json_append_cp(out, 0xFFFD);
                         }
                     } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
                         /* #724: lone low surrogate — strict raise + U+FFFD */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                     } else if (cp == 0) {
                         /* #724: NUL cannot live in a C-terminated string
                          * (EMBEDDING.md) — strict raise + lenient U+FFFD. */
                         g_json_parse_recoverable = 1;
+                        lossless = 0;
                         eigs_json_append_cp(out, 0xFFFD);
                     } else {
                         eigs_json_append_cp(out, cp);
@@ -1386,7 +1391,11 @@ void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out) {
         (*pos)++;
     }
     if (s[*pos] == '"') (*pos)++;
-    else g_json_parse_err = 1;   /* #495: unterminated string (hit EOF) */
+    else {
+        g_json_parse_err = 1;   /* #495: unterminated string (hit EOF) */
+        lossless = 0;
+    }
+    return lossless;
 }
 
 static Value* eigs_json_parse_string(const char *s, int *pos) {
@@ -2338,9 +2347,15 @@ Value* builtin_pi(Value *arg) {
 
 static int g_random_seeded = 0;
 static pthread_once_t g_random_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t g_random_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void random_seed_once(void) {
     if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
+    pthread_mutex_lock(&g_random_lock);
+    if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) {
+        pthread_mutex_unlock(&g_random_lock);
+        return;
+    }
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
 #if EIGENSCRIPT_FREESTANDING
@@ -2349,11 +2364,28 @@ static void random_seed_once(void) {
     srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
 #endif
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
 }
 
 void eigs_ensure_random_seeded(void) {
     if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
     pthread_once(&g_random_once, random_seed_once);
+}
+
+double eigs_random_double(void) {
+    eigs_ensure_random_seeded();
+    pthread_mutex_lock(&g_random_lock);
+    double result = drand48();
+    pthread_mutex_unlock(&g_random_lock);
+    return result;
+}
+
+long eigs_random_long(void) {
+    eigs_ensure_random_seeded();
+    pthread_mutex_lock(&g_random_lock);
+    long result = lrand48();
+    pthread_mutex_unlock(&g_random_lock);
+    return result;
 }
 
 /* random of null → float in [0, 1) */
@@ -2362,7 +2394,7 @@ Value* builtin_random(Value *arg) {
     /* Seed is part of the live source so a replay take / fail-loud raise
      * does not race g_random_seeded (#1142 TSan on two workers under
      * EIGS_REPLAY). */
-    TRACE_NONDET_RET("random", (eigs_ensure_random_seeded(), make_num(drand48())));
+    TRACE_NONDET_RET("random", make_num(eigs_random_double()));
 }
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
@@ -2375,7 +2407,6 @@ Value* builtin_random_int(Value *arg) {
     Value *hi = arg->data.list.items[1];
     ARG_GUARD_TAPED(!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM,
                     "random_int", "numeric bounds", make_num(0));
-    eigs_ensure_random_seeded();
     /* Range-check as doubles before any integer cast — a double outside the
      * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
      * same cast-before-range-check class in value_to_string). */
@@ -2402,14 +2433,16 @@ Value* builtin_random_int(Value *arg) {
                  (unsigned long long)span);
         return make_null();
     }
-    TRACE_NONDET_RET("random_int", make_num(lo_i + (lrand48() % (int64_t)span)));
+    TRACE_NONDET_RET("random_int", make_num(lo_i + (eigs_random_long() % (int64_t)span)));
 }
 
 /* seed_random of n → seeds the RNG, returns 1 */
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_num(0));
+    pthread_mutex_lock(&g_random_lock);
     srand48((long)arg->data.num);
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
     return make_num(1);
 }
 
@@ -3564,8 +3597,10 @@ static const char *SANDBOX_ALLOW[] = {
     /* type / value utilities */
     "type", "coalesce", "num_copy", "secure_equals",
     /* observer READS — touch only the sandbox's own values, never globals
-     * (set_observer_thresholds / record_history are intentionally NOT here) */
-    "observe", "report", "get_observer_thresholds", "state_at", "classify",
+     * (set_observer_thresholds / record_history are intentionally NOT here).
+     * state_at is also excluded: temporal history belongs to the host thread,
+     * not the sealed sandbox environment. */
+    "observe", "report", "get_observer_thresholds", "classify",
     /* tokenizer / parser introspection (pure over strings) */
     "tokenize_ids", "tokenize_with_names", "token_name", "scan_ints",
     "scan_int_tokens", "scan_tokens", "try_parse",
@@ -3649,6 +3684,14 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     return 0;
 }
 
+static Value *sandbox_finish_run(Value *out) {
+    /* Validation and execution can both park state-wide possible-root pins.
+     * Every descriptor outcome reaches this boundary; candidate-only GC
+     * avoids a full captured-environment scan for each small sandbox run. */
+    gc_collect_value_candidates();
+    return out;
+}
+
 /* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
  * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
@@ -3690,6 +3733,11 @@ Value* builtin_sandbox_run(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
     EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1);
+    if (chunk && chunk_reads_shared_temporal(chunk)) {
+        chunk_free(chunk);
+        chunk = NULL;
+        abi_err = "sandbox descriptors cannot access temporal history";
+    }
     if (chunk) eigs_obs_enable_runtime();     /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
     if (!chunk) {
@@ -3709,12 +3757,8 @@ Value* builtin_sandbox_run(Value *arg) {
                        make_str(abi_err ? abi_err : "invalid chunk descriptor"));
         dict_set_owned(ev, "line", make_num(0));
         dict_set_owned(out, "error", ev);
-        return out;
+        return sandbox_finish_run(out);
     }
-    /* #831: same as vm_run_bytecode — the temporal opcodes in an assembled
-     * chunk must arm recording themselves; the compiler never scanned it. */
-    chunk_arm_temporal(chunk);
-
     /* SEALED restricted env. The parent link is NULL, not g_global_env: the
      * sandbox env is a root, and the allowed builtins are COPIED into it.
      *
@@ -3821,9 +3865,14 @@ Value* builtin_sandbox_run(Value *arg) {
      * ramping host value told apart from inside the sealed env. Clear the
      * tracker for the run (the descriptor's own observations set it afresh)
      * and restore the host's afterwards, so the host's next bare predicate
-     * still reads the host's last observation. */
+     * still reads the host's last observation. The saved tracker must own a
+     * reference while it is unpublished: untrusted closure creation can run
+     * cycle collection, and vm_obs_slot_dropped cannot invalidate a pointer
+     * hidden in this local. Restore it before dropping the reference so that
+     * destruction can invalidate the published tracker normally. */
     Env *saved_last_obs_env = g_last_obs_slot_env;
     int  saved_last_obs_idx = g_last_obs_slot_idx;
+    if (saved_last_obs_env) env_incref(saved_last_obs_env);
     g_last_obs_slot_env = NULL;
     g_last_obs_slot_idx = -1;
 
@@ -3831,6 +3880,7 @@ Value* builtin_sandbox_run(Value *arg) {
 
     g_last_obs_slot_env = saved_last_obs_env;
     g_last_obs_slot_idx = saved_last_obs_idx;
+    if (saved_last_obs_env) env_decref(saved_last_obs_env);
 
     /* #965 (fix5): the run fails on the sticky policy-refusal record too, not
      * only on the catch-clearable g_has_error — a byte-budget refusal the
@@ -3950,7 +4000,7 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_refusal_line = saved_sb_refusal_line;
     memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
            sizeof saved_sb_refusal_msg);
-    return out;
+    return sandbox_finish_run(out);
 }
 
 /* record_history of flag — enable (nonzero) or disable (0) per-assignment
@@ -4890,9 +4940,9 @@ Value* builtin_channel(Value *arg) {
 /* Thread safety: values sent through channels are deep-copied (#293) so the
  * received value is self-contained — independent of the sender thread's
  * lifetime (its dict keys are interned per-thread and freed at detach) and of
- * its arena. Data types (num/str/list/dict, nested) are copied; fn/builtin/
- * buffer/text_builder are still shared by refcount. The copy also removes the
- * old shared-mutable-container hazard for the copied types. */
+ * its arena. Data types (num/str/list/dict/buffer/text_builder, nested) are
+ * copied; fn/builtin are shared by refcount. The copy also removes the old
+ * shared-mutable-value hazard for the copied types. */
 Value* builtin_send(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "send requires [channel, value]");

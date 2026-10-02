@@ -36,6 +36,10 @@ extern int g_trace_hist_storage;
  * unconditionally — the line prev_record_assign records into history — so the
  * JIT must too, or temporal at/when/state_at freeze at the OSR point. */
 extern int g_trace_current_line;
+/* OP_LINE also emits the tape's L record when a trace sink is open.  Keep the
+ * flag test in native code so an ordinary (untraced) run pays no helper call. */
+extern int g_trace_enabled_storage;
+extern void trace_line(int line);
 /* #410: async abort seam (vm.c). NEVER NULL — unregistered points at an
  * always-zero sentinel — so the back-edge poll is movabs + two derefs +
  * cmpl, mirroring the interpreter's CASE(JUMP_BACK) check. Declared here
@@ -163,8 +167,9 @@ JitConstFn jit_emit_const_return(EigsJitCache *jc, int64_t value) {
  * registry, scan counters, and stop-opcode histogram — all live on
  * `eigs_current` (EigsThread). The `g_*` identifiers below are
  * bridge macros (eigenscript.h) so call-site code stays unchanged.
- * Stop-opcode histogram rules in jit_try_compile_chunk: every bail
- * bumps g_jit_stop_counts[stop_op]; if prefix==0 we also bump
+ * Stop-opcode histogram rules in jit_try_compile_chunk: every scanner result
+ * that reaches a verdict bumps g_jit_stop_counts[stop_op]; if prefix==0 it
+ * also bumps
  * g_jit_stop_at_zero. Compiled chunks bump g_jit_compiled_count and
  * ALSO record their trailing stop_op (the op that would unlock
  * further extension). */
@@ -418,10 +423,12 @@ void jit_thread_destroy(EigsThread *th) {
             for (int a = 0; a < top; a++) {
                 EigsJitHotRow *r = &rows[a];
                 if (r->exec_count == 0) break;
-                const char *jstate =
-                    r->jit_state == 2 ? "yes" : r->jit_state == 1 ? "no " : "?  ";
-                const char *ostate =
-                    r->osr_state == 2 ? "yes" : r->osr_state == 1 ? "no " : "?  ";
+                const char *jstate = r->jit_state == 2 ? "yes " :
+                    r->jit_state == 1 ? "no  " :
+                    r->jit_state == 3 ? "full" : "?   ";
+                const char *ostate = r->osr_state == 2 ? "yes " :
+                    r->osr_state == 1 ? "no  " :
+                    r->osr_state == 3 ? "full" : "?   ";
                 double pct = total_exec
                     ? (100.0 * (double)r->exec_count / (double)total_exec) : 0.0;
                 double nat = r->code_len
@@ -440,6 +447,7 @@ void jit_thread_destroy(EigsThread *th) {
                         r->name ? r->name : "<anon>",
                         r->exec_count, jstate, pct, adv_buf, r->code_len, nat,
                         r->back_edge_count, ostate, r->osr_advance, r->osr_entry,
+                        r->jit_state == 3 ? "<cache-full>" :
                         r->stop_op == OP_COUNT ? "<end>" : op_name(r->stop_op));
                 bytes_native_top += r->exec_count * (uint64_t)r->advance;
                 bytes_total_top  += r->exec_count * (uint64_t)r->code_len;
@@ -2503,7 +2511,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     uint8_t *code = jit_cache_alloc(g_jit_cache, size);
     if (!code) {
         g_jit_cache_full_rejects++;
-        *out_state = 1;
+        /* The prefix scanner succeeded, but no code was emitted. This is
+         * neither an unsupported-bytecode verdict nor a stop-opcode sample:
+         * cache capacity, not stop_op, decided the outcome. */
+        g_jit_stop_counts[stop_op]--;
+        *out_state = 3;
         *out_code = NULL;
         jit_cache_seal(g_jit_cache);
         return;
@@ -4097,6 +4109,20 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * the line where the thunk took over. %rax is scratch between ops. */
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_current_line);
             w = emit_movl_imm_at_rax(w, (int32_t)line);
+            /* Mirror CASE(LINE)'s tape hook.  On x86 the plain load supplies
+             * the acquire semantics used by g_trace_enabled; trace_line owns
+             * deduplication and tape locking.  %ecx is the cached VM sp and
+             * must survive the ABI call. */
+            uint8_t *no_tape;
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_enabled_storage);
+            w = emit_cmpl_0_mem_rax(w);
+            w = emit_je_rel32(w, &no_tape);
+            w = emit_mov_imm32_edi(w, line);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_line);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            patch_rel32(no_tape, w);
             i += 5;   /* #630: [op][line:32] */
         }
         /* Update last_imm in lockstep with the scanner's last_push_immediate.

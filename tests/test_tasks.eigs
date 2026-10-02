@@ -526,4 +526,17 @@ assert_eq of [thread_join of _susp_w1, 400000,
 assert_eq of [thread_join of _susp_w2, 400000,
               "second worker also unaffected by a foreign suspend request"]
 
+# #1437: a builtin task entry has no bytecode frame of its own. Its nested
+# user callback must not mistake that empty frame stack for an outer VM entry
+# and re-enter the scheduler (which deadlocked after the first key call).
+_cb_seen is []
+define _task_sort_key(x) as:
+    append of [_cb_seen, x]
+    return x
+_task_sort_id is task_spawn of [sort_by, [[3, 1, 2], _task_sort_key]]
+assert_eq of [task_join of _task_sort_id, [1, 2, 3],
+              "builtin task can run a user callback (#1437)"]
+assert_eq of [_cb_seen, [3, 1, 2],
+              "builtin task callback receives every real argument (#1437)"]
+
 test_summary of null

@@ -206,6 +206,28 @@ grep -q '^O ' "$TMPDIR/plain.tape" \
     && fail "a knobless program records no O records" \
     || ok "a knobless program records no O records"
 
+# A classification starts its observer-record fold at the beginning of the
+# tape. Refuse a crafted tape whose binding x configuration-record product
+# would make one unfiltered `p`/DAP locals request consume disproportionate
+# CPU. This is an aggregate-work limit, not merely a file-size limit.
+WORK_TAPE="$TMPDIR/observer-work-limit.tape"
+head -1 "$TMPDIR/plain.tape" > "$WORK_TAPE"
+for _ in $(seq 1 1000); do
+    echo 'O cfg 0.001 0.01 0.1 10 0.001' >> "$WORK_TAPE"
+done
+echo 'L 1' >> "$WORK_TAPE"
+for i in $(seq 1 1001); do
+    echo "A x$i=1" >> "$WORK_TAPE"
+done
+echo q | "$EIGS" --step "$WORK_TAPE" "$TMPDIR/plain.eigs" \
+    >/dev/null 2>"$TMPDIR/work-limit.err"
+RC=$?
+[ "$RC" -eq 3 ] && grep -q 'observer replay exceeds the .*work limit' \
+        "$TMPDIR/work-limit.err" \
+    && ok "multiplicative observer replay work is refused with exit 3" \
+    || fail "multiplicative observer replay work is refused with exit 3" \
+            "rc=$RC $(head -1 "$TMPDIR/work-limit.err")"
+
 # ---- 7. #411 version/compat path. The `O` records are an ENCODING change,
 # so TRACE_FORMAT_VERSION went 2 -> 3 and the rule is the standing one:
 # version-and-reject, never migrate. A v2 tape — one recorded by any earlier

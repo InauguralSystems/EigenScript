@@ -1,0 +1,26 @@
+# #1150: libc's drand48 state is process-global.  Unlocked concurrent draws
+# returned exact values in both workers (37/65/58 overlaps in the red run).
+load_file of "lib/test.eigs"
+
+define draws(n) as:
+    local xs is []
+    local i is 0
+    loop while i < n:
+        append of [xs, random of null]
+        i is i + 1
+    return xs
+
+seed_random of 1150
+h1 is spawn of [draws, 100000]
+h2 is spawn of [draws, 100000]
+a is thread_join of h1
+b is thread_join of h2
+seen is {}
+for x in a:
+    seen[str of x] is 1
+duplicates is 0
+for x in b:
+    if has_key of [seen, str of x]:
+        duplicates is duplicates + 1
+assert_eq of [duplicates, 0, "parallel random streams do not overlap"]
+test_summary of null

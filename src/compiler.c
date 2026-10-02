@@ -330,7 +330,7 @@ static int op_stack_effect(uint8_t op8) {
     case OP_INTERROGATE:
         return 0;
     /* SET: peek, no change */
-    case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
+    case OP_SET_LOCAL: case OP_SET_LOCAL_INTERNAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_OBSERVE_NAME_POST:   /* #262 Phase-3: peeks TOS, no stack change */
@@ -2060,7 +2060,10 @@ static void compile_node(Compiler *c, ASTNode *node) {
 static void compile_node_inner(Compiler *c, ASTNode *node) {
     if (!node) { emit(c, OP_NULL, 0); return; }
 
-    emit_line(c, node->line);
+    /* AST_PROGRAM is a synthetic container stamped at the parser's EOF.
+     * Let its first real child emit the first line instead of beginning every
+     * tape with a line that never executed (#1382). */
+    if (node->type != AST_PROGRAM) emit_line(c, node->line);
 
     switch (node->type) {
 
@@ -2356,7 +2359,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: save */
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)prior_slot, node->line);
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)save_slot, node->line);
+            emit_op_u16(c, OP_SET_LOCAL_INTERNAL, (uint16_t)save_slot, node->line);
             emit(c, OP_POP, node->line);
         }
 
@@ -2485,13 +2488,13 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         if (can_persist_env) emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, OP_POP, node->line); /* pop iterator state */
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: restore */
-            /* #1381: the restore writes the outer binding's history, so it
-             * is filed under the `for` line like the loop-variable stores.
-             * Normal exit and `break` both arrive here, after the body or the
-             * break left the stamp elsewhere. */
-            restamp_line(c, for_line);
+            /* #1384: save/restore are compiler bookkeeping, not user
+             * assignments. Keep both out of assignment history and the
+             * trace tape; exposing the save leaked __for_save, while tracing
+             * only the function-tier restore made temporal answers depend on
+             * the compiler's slot-vs-loop-env optimisation. */
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)save_slot, node->line);
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)prior_slot, node->line);
+            emit_op_u16(c, OP_SET_LOCAL_INTERNAL, (uint16_t)prior_slot, node->line);
             emit(c, OP_POP, node->line);
         } else if (can_skip_env && prior_slot < 0) {
             /* #1105: a binder with NO prior binding is loop-scoped here
@@ -2960,6 +2963,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         } else {
             compile_node(c, node->data.index_assign.expr);
         }
+        /* The target/index/RHS may each span lines or call a function.  The
+         * mutation belongs to the assignment statement's first line, just as
+         * a plain binding assignment does (#1382). */
+        restamp_line(c, node->line);
         emit(c, OP_INDEX_SET, node->line);
         break;
     }
@@ -3029,6 +3036,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                                 (uint16_t)slot, (uint16_t)iv, (uint16_t)name_idx, node->line);
                         compile_node(c, node->data.dot_assign.expr);
                         if (cop[0]) emit(c, binop_to_opcode(cop), node->line);
+                        restamp_line(c, node->line);
                         emit_op_u16_u16_u16(c, OP_LOCAL_IDX_DOT_SET,
                             (uint16_t)slot, (uint16_t)iv, (uint16_t)name_idx, node->line);
                         break;
@@ -3048,6 +3056,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                     emit_op_u16_u16(c, OP_LOCAL_DOT_GET, (uint16_t)slot, (uint16_t)idx, node->line);
                 compile_node(c, node->data.dot_assign.expr);
                 if (cop[0]) emit(c, binop_to_opcode(cop), node->line);
+                restamp_line(c, node->line);
                 emit_op_u16_u16(c, OP_LOCAL_DOT_SET, (uint16_t)slot, (uint16_t)idx, node->line);
                 break;
             }
@@ -3063,6 +3072,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         } else {
             compile_node(c, node->data.dot_assign.expr);
         }
+        restamp_line(c, node->line);
         emit_op_u16(c, OP_DOT_SET, (uint16_t)idx, node->line);
         break;
     }

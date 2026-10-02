@@ -268,6 +268,10 @@ void trace_obs_window_binding(const char *name, int n);
  * When in doubt, call trace_assign. */
 void trace_assign(const char *name, EigsSlot value);
 void trace_assign_filtered(const char *name, EigsSlot value);
+/* Interpreter-only twins: use the executing thread's VM line instead of the
+ * process-wide AOT/embed trace stamp. */
+void trace_assign_at_line(const char *name, EigsSlot value, int line);
+void trace_assign_filtered_at_line(const char *name, EigsSlot value, int line);
 /* #1063: A record on the tape, NO prev-table entry -- for a slot write whose
  * name the owning chunk does not interrogate (EigsChunk.local_traced). */
 void trace_assign_tape_only(const char *name, EigsSlot value);

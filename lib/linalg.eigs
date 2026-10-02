@@ -502,8 +502,11 @@ define charpoly(A) as:
     local n is len of A
     if n == 0:
         return null
-    if (len of A[0]) != n:
-        return null
+    for i in range of n:
+        if (type of A[i]) != "list":
+            return null
+        if (len of A[i]) != n:
+            return null
     local M is mat_identity of n
     local coeffs is []
     local k is 1
