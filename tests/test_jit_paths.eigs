@@ -415,12 +415,16 @@ define null_index_field_bail(x) as:
     null_read_side_effects.count is null_read_side_effects.count + 1
     return value
 
-n is 0
-loop while n < 60:
-    null_field_bail of {"foo": 1}
-    null_index_bail of [[1]]
-    null_index_field_bail of [[{"foo": 1}]]
-    n is n + 1
+# Keep this short warmup's back-edge count separate from the module's
+# earlier OSR loops; the cache diagnostic displays one OSR slot per chunk.
+define warm_null_reads(dummy) as:
+    local warm_i is 0
+    loop while warm_i < 60:
+        null_field_bail of {"foo": 1}
+        null_index_bail of [[1]]
+        null_index_field_bail of [[{"foo": 1}]]
+        warm_i is warm_i + 1
+warm_null_reads of null
 
 before_null_errors is null_read_side_effects.count
 null_errors_caught is 0

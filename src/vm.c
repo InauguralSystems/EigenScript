@@ -26,8 +26,13 @@
  * nothing. */
 static inline void vm_trace_assign(const EigsChunk *chunk, const char *name,
                                    EigsSlot value) {
-    if (chunk->compiler_scanned) trace_assign_filtered(name, value);
-    else                         trace_assign(name, value);
+    /* g_vm.current_line is per-thread. The process-wide trace stamp is not
+     * updated while workers are live (#297), so consulting it here filed
+     * main-thread stores under the stale pre-spawn line (#1439). */
+    if (chunk->compiler_scanned)
+        trace_assign_filtered_at_line(name, value, g_vm.current_line);
+    else
+        trace_assign_at_line(name, value, g_vm.current_line);
 }
 
 /* #262 slot-keyed observer shadow. Off unless EIGS_OBS_SHADOW is set;
@@ -875,17 +880,25 @@ static inline uint32_t read_u32(uint8_t *ip) {
  * per process (an import statement re-resolves on every execution, and a
  * collided name imported from several files would otherwise repeat the
  * same line). Process-lifetime by design: still-reachable at exit, which
- * LeakSanitizer does not report. Main-thread only, like the module cache. */
+ * LeakSanitizer does not report. HTTP code routes can import concurrently,
+ * so the process-wide cache is protected across lookup, growth and insert. */
 static int import_collision_first_report(const char *name) {
     static char **warned = NULL;
     static size_t warned_n = 0, warned_cap = 0;
-    for (size_t i = 0; i < warned_n; i++)
-        if (strcmp(warned[i], name) == 0) return 0;
+    static pthread_mutex_t warned_lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&warned_lock);
+    for (size_t i = 0; i < warned_n; i++) {
+        if (strcmp(warned[i], name) == 0) {
+            pthread_mutex_unlock(&warned_lock);
+            return 0;
+        }
+    }
     if (warned_n == warned_cap) {
         warned_cap = warned_cap ? warned_cap * 2 : 8;
         warned = xrealloc_array(warned, warned_cap, sizeof(char *));
     }
     warned[warned_n++] = xstrdup(name);
+    pthread_mutex_unlock(&warned_lock);
     return 1;
 }
 #endif
@@ -1199,7 +1212,11 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
     if (__builtin_expect(ic->starting_env == start &&
                          ic->starting_ver == start->binding_version, 1)) {
         Env *target = ic->walk_depth ? start->parent : start;
-        if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
+        /* GET_NAME and SET_NAME share this per-name IC.  A preceding load can
+         * therefore leave a valid cache entry for the sealed builtin layer;
+         * never let a store consume that entry. */
+        if (__builtin_expect(target && target != g_builtin_env &&
+                             target->binding_version == ic->target_ver, 1)) {
             env_store_slot(target, ic->slot_idx, s);
             if (target->assign_counts)
                 target->assign_counts[ic->slot_idx]++;
@@ -1622,6 +1639,35 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
     (void)chunk; (void)name_idx;
 }
 
+/* Numeric `unobserved:` assignments are deliberately common in simulation
+ * loops.  Keep the already-allocated ring fast path in this translation unit
+ * so the JIT helper does not bounce through two more out-of-line functions on
+ * every assignment.  The public routine owns allocation/window-growth and is
+ * still the cold fallback. */
+static inline void jit_sample_num_gated(Env *e, int slot, double v) {
+    ObserverSlot *s = env_obs_slot(e, slot);
+    int n = s && s->win_override ? s->win_override : g_obs_window;
+    if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {
+        observer_slot_sample_num_gated(e, slot, v);
+        return;
+    }
+    if (s->v_used) {
+        double raw = v - s->last_value;
+        double scale = fabs(v);
+        double prev_scale = fabs(s->last_value);
+        if (prev_scale > scale) scale = prev_scale;
+        if (g_obs_scale > scale) scale = g_obs_scale;
+        s->v_window[s->v_window_head] = raw / scale;
+        s->vr_window[s->v_window_head] = raw;
+        if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
+        if (s->v_window_count < s->v_cap) s->v_window_count++;
+    }
+    s->last_value = v;
+    s->v_used = 1;
+    s->v_last = 1;
+    s->used = 1;
+}
+
 void jit_helper_observe_assign_local(int slot) {
     eigs_obs_count_call();   /* #972: entered — the emitter's inline gate test
                               * is what keeps this at 0 for a read-free program */
@@ -1638,8 +1684,8 @@ void jit_helper_observe_assign_local(int slot) {
     Env *e = frame->fn_env;
     if (g_unobserved_depth != 0) {
         /* #1049: elided — value-window sample only (mirrors the CASE body). */
-        if (slot_is_num(s))      observer_slot_sample_num(e, slot, s.d);
-        else if (slot_is_ptr(s)) observer_slot_sample(e, slot, slot_as_ptr(s));
+        if (slot_is_num(s))      jit_sample_num_gated(e, slot, s.d);
+        else if (slot_is_ptr(s)) observer_slot_sample_gated(e, slot, slot_as_ptr(s));
         return;
     }
     if (slot_is_num(s)) {
@@ -1698,8 +1744,8 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     int oidx = -1, odepth = 0;
     Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
     if (oe && oidx >= 0 && g_unobserved_depth != 0) {
-        if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
-        else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+        if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
+        else                observer_slot_sample_gated(oe, oidx, slot_as_ptr(s));
         return;
     }
     if (oe && oidx >= 0) {
@@ -3027,6 +3073,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_LT] = &&lbl_LT, [OP_GT] = &&lbl_GT,
         [OP_LE] = &&lbl_LE, [OP_GE] = &&lbl_GE,
         [OP_GET_LOCAL] = &&lbl_GET_LOCAL, [OP_SET_LOCAL] = &&lbl_SET_LOCAL,
+        [OP_SET_LOCAL_INTERNAL] = &&lbl_SET_LOCAL_INTERNAL,
         [OP_GET_NAME] = &&lbl_GET_NAME, [OP_SET_NAME] = &&lbl_SET_NAME,
         [OP_SET_NAME_LOCAL] = &&lbl_SET_NAME_LOCAL,
         [OP_SET_FN_NAME_LOCAL] = &&lbl_SET_FN_NAME_LOCAL,
@@ -3592,6 +3639,19 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH();
     }
 
+    CASE(SET_LOCAL_INTERNAL): {
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        if ((int)slot < e->count) {
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+        } else {
+            rt_error(EK_INTERNAL, current_line,
+                     "SET_LOCAL_INTERNAL slot %d out of range (env has %d slots)",
+                     (int)slot, e->count);
+        }
+        DISPATCH();
+    }
+
     CASE(GET_NAME): {
         uint16_t idx = read_u16(ip); ip += 2;
         EnvIC *ic = &chunk->env_ic[idx];
@@ -3653,7 +3713,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (__builtin_expect(ic->starting_env == start &&
                              ic->starting_ver == start->binding_version, 1)) {
             Env *target = ic->walk_depth ? start->parent : start;
-            if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
+            /* A GET_NAME cache may target the sealed builtin layer. */
+            if (__builtin_expect(target && target != g_builtin_env &&
+                                 target->binding_version == ic->target_ver, 1)) {
                 env_store_slot(target, ic->slot_idx, s);
                 if (target->assign_counts)
                     target->assign_counts[ic->slot_idx]++;
@@ -5131,8 +5193,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * observer_slot_sample_num (eigenscript.c). */
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             Env *e = frame->fn_env;
-            if (slot_is_num(s))      observer_slot_sample_num(e, (int)slot, s.d);
-            else if (slot_is_ptr(s)) observer_slot_sample(e, (int)slot, slot_as_ptr(s));
+            eigs_obs_count_call();
+            if (slot_is_num(s))      observer_slot_sample_num_gated(e, (int)slot, s.d);
+            else if (slot_is_ptr(s)) observer_slot_sample_gated(e, (int)slot, slot_as_ptr(s));
         }
         DISPATCH();
     }
@@ -5368,8 +5431,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 int oidx = -1, odepth = 0;
                 Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
                 if (oe && oidx >= 0 && g_unobserved_depth != 0) {
-                    if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
-                    else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+                    eigs_obs_count_call();
+                    if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
+                    else                observer_slot_sample_gated(oe, oidx, slot_as_ptr(s));
                 } else if (oe && oidx >= 0) {
                     if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
                     else observer_slot_update(oe, oidx, slot_as_ptr(s));
@@ -6584,9 +6648,13 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
     vm_init();
     /* Only the OUTERMOST vm_execute drives the scheduler; a nested call
      * (eval/dispatch/import/comparator) runs to completion on the C stack and
-     * may not suspend (enforced at CASE(CALL) via base_frame). frame_count==0
-     * identifies the outermost. */
-    int outermost = (g_vm.frame_count == 0);
+     * may not suspend (enforced at CASE(CALL) via base_frame). Do not infer
+     * this from frame_count: a task whose entry is a builtin has no bytecode
+     * frame while that builtin invokes a user callback. In that shape the
+     * callback used to re-enter the scheduler and deadlock its own task
+     * (#1437). execute_depth follows the native vm_execute boundary itself. */
+    int outermost = (g_vm.execute_depth == 0);
+    g_vm.execute_depth++;
     /* #1434: native code that runs interpreted code (a builtin's callback,
      * an embedder's eval, the AOT) gets back the line it entered with, on
      * every exit. The callee's OP_LINEs overwrite both the VM line and the
@@ -6611,6 +6679,7 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
      * place the VM hands control to them; with no scheduler armed it returns
      * `r` unchanged, so a program that never spawns pays one call. */
     if (outermost) r = task_sched_after_outermost(r);
+    g_vm.execute_depth--;
     g_vm.current_line = entry_vm_line;
     if (!g_vm_multithreaded) {
         trace_current_line_store(entry_trace_line);

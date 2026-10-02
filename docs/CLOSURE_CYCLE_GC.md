@@ -90,11 +90,12 @@ as a force-destroy escape hatch (no current callers in main).
   `in_gc_list` on `Env`), lock-guarded by `state->gc_lock` while
   multithreaded. `g_global_env` is never registered. The env
   destructor and `env_destroy_final` unlink.
-- **Trigger.** Registration is the only way the candidate universe
-  grows, so the threshold check lives there — zero cost on the
-  dispatch/call hot paths. Threshold: collect when the registry reaches
-  `max(64, 2 × live-after-last-collect)`. One more collection runs at
-  exit (below).
+- **Trigger.** Registration checks the captured-env threshold without adding
+  work to dispatch/call hot paths. After a collection it re-arms at
+  `max(64, live captured envs + max(live captured envs, walked universe / 16))`
+  (#1096). A large reachable heap therefore requires more captures before
+  another full walk. Exit also flushes candidates and runs the global snapshot
+  collection (below).
 - **Universe.** Everything reachable from registered envs over **owned
   edges only**: env value slots, `env->parent`, `fn->closure`,
   `fn->chunk` (the OP_CLOSURE ref), `chunk->functions[]`,
@@ -134,7 +135,18 @@ as a force-destroy escape hatch (no current callers in main).
   `rc > internal + pinned`); afterward it clears the flags and drops the pins
   (the final pin drop frees the now-edge-cleared garbage; live candidates keep
   their other refs). The buffer drains on the env-registry threshold trigger,
-  on its own `GC_VAL_THRESHOLD` trigger, and at exit. The hook is off when
+  on its own adaptive threshold, and at exit. After a successful collection
+  that threshold is `min(100000000, max(1024, surviving traversal work))`
+  (#1096, #1442). Work is one unit per marked node plus one per owned child
+  slot its walker tests, including leaf slots and duplicate references;
+  the counts come from `GC_EDGE_TABLE`, without an additional edge walk.
+  A dense surviving graph therefore buys a longer interval before the next
+  scan than a sparse graph with the same node count. Garbage contributes no
+  work to the successful re-arm, so garbage-heavy collections return to the
+  floor. This trades a larger pending-candidate buffer for amortising the
+  surviving graph's scan; the cap bounds that budget. An accounting-aborted
+  collection uses the entire discovery work because it has no trustworthy
+  survivor classification. The hook is off when
   GC-disabled, mid-collection, or multithreaded, so the hot decref stays
   lock-free and single-threaded-only. (This is *not* identical to
   `env_mark_captured`, whose registration continues under `gc_lock` while
@@ -186,6 +198,13 @@ inline-cache writes / trace-line are gated off under MT, and name hashes are
 precomputed at compile time. ThreadSanitizer here needs `setarch -R` to
 disable ASLR.
 
+Keep GUI virtual-memory limits scoped to GUI executions. Headless sanitizer
+runs need address space for shadow memory; `tests/handles_full.eigs` also
+retains 255 worker stack mappings until join. A 1,500,000 KiB address-space
+limit makes that witness refuse spawns before the handle table fills, and
+can create an observer differential even on the baseline runtime. Compare
+the baseline under the same limits before attributing such a row to the GC.
+
 ### Maintainer invariants (violations are UAF or silent leaks)
 
 - **Every owning edge into an `Env` must go through
@@ -217,7 +236,11 @@ disable ASLR.
   `tests/test_value_cycles.eigs` (section [106]) are both gated **strictly** by
   run_all_tests.sh: any LeakSanitizer exit there fails the suite (rc_ok's leak
   tolerance does not apply). [87] guards closure cycles; [106] guards local
-  value cycles. Keep it that way.
+  value cycles. Its cadence rows also guard the #1442 hot-list recovery and
+  the dense cyclic graph's scan budget (4,000 rows × 32 references, then
+  100,000 temporary task records). The latter caught a 41% instruction
+  regression missed by the hot-list row: survivor node count alone did not
+  budget the survivor edges. Keep both shapes; neither is a wall-time gate.
 
 ## What still leaks (known, tolerated)
 

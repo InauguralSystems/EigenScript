@@ -1,0 +1,1 @@
+- Restore widget clip state when a renderer raises an error.

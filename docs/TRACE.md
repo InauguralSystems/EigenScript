@@ -62,12 +62,11 @@ variable, a parameter default spanning lines, a `catch` binding (after the
 faulting line), an `import` binding (after the module's own code), and the
 restore of a function-scope `for` binder's outer value (after the body or a
 `break`). Under the interpreter, a `for` loop therefore writes one extra
-`L <for line>` record per interpreted iteration. Once OSR has compiled a loop,
-its iterations write no `L` records today, before or after this change
-(#1383), so a JIT run's tape carries fewer `L` records than an
-`EIGS_JIT_OFF=1` run of the same program. Temporal answers
-(`what is x at N`) agree across the interpreter, the JIT and OSR, because the
-JIT still updates the current line that history files under.
+`L <for line>` record per interpreted iteration. Execution tier does not alter
+this stream: the interpreter, the JIT, and an OSR-entered loop emit identical
+`L` records for the same execution (#1383). This is an exact tape guarantee,
+not only a guarantee that temporal answers agree; stepping and other consumers
+of line events therefore see the same program in every tier.
 
 The change moves only `L` stamps. It never moves which values a tape records
 or the order of `N` records, so a tape recorded before the change replays
@@ -133,6 +132,15 @@ perspective lands on the tape as an `N` record:
   success records a `VAL_BUFFER`, open-failure records null) and the
   identical `io` error is re-derived from it under `EIGS_REPLAY`, so an
   over-cap failure replays byte-identically with no live fs access
+- **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
+  records one compact observation: `[rows, cols]` for an over-cap header,
+  otherwise `null`. Replay reconstructs a recorded `limit` error before
+  filesystem access, preserving its catch branch and diagnostic after file
+  removal or replacement. A recorded non-cap decision keeps the historical
+  null stand-in if the live file has since grown beyond the cap. Successful
+  tensor payloads remain live and untaped; this observation does not guarantee
+  their replay after file changes. Invalid path argument types consume no
+  observation. The following nondeterministic call retains its own record.
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)
@@ -165,13 +173,22 @@ perspective lands on the tape as an `N` record:
   replayed at all. **One record per call carries the whole token list**, not
   one per sampled position: the draws are an implementation detail of the
   decoding policy (top-k and top-p consume different numbers of them), the
-  list is what the script observes. TAKE/RECORD-wrapped, so `EIGS_REPLAY`
+  list is what the script observes. The early replay take means `EIGS_REPLAY`
   serves the tokens *before the model is consulted* — a recorded generation
   replays with no checkpoint on disk and without advancing the RNG. Every
   return is recorded, argument errors and the no-model-loaded empty list
   included, so a program that hits one cannot desync the stream. Greedy
   (`temperature < 0.01`) calls ride the same path: the tape cannot show
   which branch ran, and replay may not load a model to re-derive it.
+  A context-limit refusal (#1405) also records one outcome: a string containing
+  the error message. Successful generations and soft empty-list returns keep
+  their existing list payloads; strings are distinguishable because generation
+  never returns a string. Replay reconstructs the catchable `value` error from
+  that string before consulting the model, using the recorded prompt length
+  and limit even if the checkpoint was deleted or replaced. This uses the
+  existing N-record string encoding without changing the tape format. Existing
+  generation list records remain readable; the usual format/runtime-version
+  checks still apply.
 - **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
   depends on the font rasteriser, the driver and the backend, so the pixel
   a render-decode oracle reads back is a device input and takes the
@@ -302,6 +319,11 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   configuration. Clamping was rejected: a clamped window is a configuration
   the recording run never had, so the label would still be a confident lie,
   just a different one.
+- **Observer replay has an aggregate work limit.** Each binding's trajectory
+  folds the configuration records from the start of the tape. A tape whose
+  number of bindings multiplied by its number of `O` records exceeds
+  1,000,000 is therefore refused with exit 3, rather than allowing one
+  unfiltered stepper display or DAP locals request to monopolize the reader.
 
 **Replay is unaffected**, and deliberately so: `EIGS_REPLAY` re-executes the
 program, so the program's own knob calls run again in the same order. The
@@ -355,11 +377,20 @@ that the original tape neither captured nor re-creates:
   Channel ordering depends on the live scheduler — replay against a
   tape with a different interleaving would deadlock or silently
   diverge.
+- **EigenStore:** the entire `store_*` family. A store handle represents a
+  live file and its mutable catalog, so recording the numeric handle cannot
+  reconstruct either its lifetime or its contents. Replay refuses
+  `store_open` before opening or creating a database; it likewise refuses
+  every query, write, close, and catalog operation after validating an
+  already-live handle but before any file or catalog access (relevant to embedders that enable replay mid-state).
+  Consequently a database may be changed or absent during replay without
+  being read, recreated, or modified.
 
 These builtins raise a catchable runtime error under
 `EIGS_REPLAY`, with the message format
-`"<fn>: not replayable under EIGS_REPLAY (subprocess/concurrency
-boundary; see docs/TRACE.md)"`. Programs that need to be replay-safe
+`"<fn>: not replayable under EIGS_REPLAY (<boundary> boundary; see
+docs/TRACE.md)"`, where `<boundary>` is `subprocess/concurrency` or `store`.
+Programs that need to be replay-safe
 must guard these call sites or avoid them entirely.
 
 A boundary refusal is a **clean exit, never a signal**: uncaught, it ends

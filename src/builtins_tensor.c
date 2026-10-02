@@ -245,9 +245,35 @@ static int tensor_dims(Value *v, int *rows, int *cols) {
     return 0;
 }
 
-/* --- Tensor helper: flatten nested list to double* (caller must free) --- */
-static double* tensor_to_flat(Value *v, int *rows, int *cols) {
+/* --- Tensor helper: flatten nested list to double* (caller must free) ---
+ * #1416 callers (kept explicit so strict_differential can enumerate them):
+ * matmul (two operands), matmul_at (two), matmul_bt (two), softmax,
+ * log_softmax, relu, leaky_relu, and tensor_save. */
+static double* tensor_to_flat(Value *v, int *rows, int *cols,
+                              const char *who) {
     int ndim = tensor_dims(v, rows, cols);
+    /* Historically every non-number slot became 0.0 below. Strict mode is
+     * the default, so reject that lossy conversion before allocating; the
+     * explicit EIGS_STRICT=0 path deliberately retains the old stand-in.
+     * Check even when the first element or row gives no usable shape. */
+    if (g_strict && v && v->type == VAL_LIST) {
+        int bad = 0;
+        if (ndim == 1) {
+            for (int i = 0; i < v->data.list.count; i++)
+                if (v->data.list.items[i]->type != VAL_NUM) { bad = 1; break; }
+        } else {
+            for (int r = 0; r < v->data.list.count && !bad; r++) {
+                Value *row = v->data.list.items[r];
+                if (row->type != VAL_LIST) { bad = 1; break; }
+                for (int c = 0; c < row->data.list.count; c++)
+                    if (row->data.list.items[c]->type != VAL_NUM) { bad = 1; break; }
+            }
+        }
+        if (bad) {
+            rt_error(EK_TYPE, 0, "%s: expected a tensor containing only numbers", who);
+            return NULL;
+        }
+    }
     if (ndim == 0 || *rows <= 0 || *cols <= 0) return NULL;
     size_t total = safe_size_mul((size_t)*rows, (size_t)*cols);
     if (total > 10000000) {
@@ -697,12 +723,13 @@ Value* builtin_tensor_matmul(Value *arg) {
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac);
-    double *bf = tensor_to_flat(b, &br, &bc);
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul");
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul");
     if (!af || !bf) {
         free(af); free(bf);
-        rt_error(EK_TYPE, 0, "matmul: expected matrices (got %s, %s)",
-                 val_type_name(a->type), val_type_name(b->type));
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "matmul: expected matrices (got %s, %s)",
+                     val_type_name(a->type), val_type_name(b->type));
         return make_null();
     }
     if (ac != br) {
@@ -767,12 +794,13 @@ Value* builtin_tensor_matmul_at(Value *arg) {
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac);
-    double *bf = tensor_to_flat(b, &br, &bc);
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul_at");
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul_at");
     if (!af || !bf) {
         free(af); free(bf);
-        rt_error(EK_TYPE, 0, "matmul_at: expected matrices (got %s, %s)",
-                 val_type_name(a->type), val_type_name(b->type));
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "matmul_at: expected matrices (got %s, %s)",
+                     val_type_name(a->type), val_type_name(b->type));
         return make_null();
     }
     if (ar != br) {
@@ -822,12 +850,13 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac);
-    double *bf = tensor_to_flat(b, &br, &bc);
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul_bt");
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul_bt");
     if (!af || !bf) {
         free(af); free(bf);
-        rt_error(EK_TYPE, 0, "matmul_bt: expected matrices (got %s, %s)",
-                 val_type_name(a->type), val_type_name(b->type));
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "matmul_bt: expected matrices (got %s, %s)",
+                     val_type_name(a->type), val_type_name(b->type));
         return make_null();
     }
     if (ac != bc) {
@@ -925,21 +954,35 @@ Value* builtin_tensor_scatter_add(Value *arg) {
             } else {
                 v = values->data.num;
             }
-            int idx = (int)di;
-            if (per_row) {
-                if (idx < 0 || idx >= cols) {
-                    rt_error(EK_INDEX, 0, "scatter_add: column index %d out of range for row %d (cols %d)", idx, i, cols);
-                    return make_null();
+            /* Check the double before converting it to int.  In particular,
+             * an out-of-range floating-to-integer conversion is undefined C
+             * behavior, and indices can come from sandboxed bytecode. */
+            int index_limit = per_row ? cols : dst->data.buffer.count;
+            int valid_index = isfinite(di) && di >= 0.0 && di < (double)index_limit;
+            int idx = 0;
+            if (valid_index) {
+                /* The range check makes this conversion representable.  Check
+                 * both directions instead of calling trunc(), which is not
+                 * part of the freestanding runtime's mini-libm surface. */
+                idx = (int)di;
+                valid_index = di >= (double)idx && di <= (double)idx;
+            }
+            if (!valid_index) {
+                if (per_row) {
+                    rt_error(EK_INDEX, 0, "scatter_add: column index %.17g out of range for row %d (cols %d)",
+                             di, i, cols);
+                } else {
+                    rt_error(EK_INDEX, 0, "scatter_add: index %.17g out of range (length %d)",
+                             di, index_limit);
                 }
+                return make_null();
+            }
+            if (per_row) {
                 if (pass) {
                     int64_t at = (int64_t)i * cols + idx;
                     d[at] = num_guard(d[at] + v);
                 }
             } else {
-                if (idx < 0 || idx >= dst->data.buffer.count) {
-                    rt_error(EK_INDEX, 0, "scatter_add: index %d out of range (length %d)", idx, dst->data.buffer.count);
-                    return make_null();
-                }
                 if (pass) d[idx] = num_guard(d[idx] + v);
             }
         }
@@ -963,7 +1006,7 @@ Value* builtin_tensor_softmax(Value *arg) {
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols);
+    double *flat = tensor_to_flat(arg, &rows, &cols, "softmax");
     if (!flat) return make_null();
     ne_softmax_buf(flat, rows, cols);
     Value *result = flat_to_like(arg, flat, rows, cols);   /* #1093 */
@@ -1006,7 +1049,7 @@ Value* builtin_tensor_log_softmax(Value *arg) {
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(tensor, &rows, &cols);
+    double *flat = tensor_to_flat(tensor, &rows, &cols, "log_softmax");
     if (!flat) return make_null();
     ne_softmax_buf(flat, rows, cols);
     for (int i = 0; i < rows * cols; i++) {
@@ -1029,7 +1072,7 @@ Value* builtin_tensor_relu(Value *arg) {
     /* #1093: buffers go through the same flatten path and come back as
      * buffers via flat_to_like — one implementation, not two. */
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols);
+    double *flat = tensor_to_flat(arg, &rows, &cols, "relu");
     if (!flat) return make_null();
     for (int i = 0; i < rows * cols; i++)
         if (flat[i] < 0.0) flat[i] = 0.0;
@@ -1057,7 +1100,7 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols);
+    double *flat = tensor_to_flat(arg, &rows, &cols, "leaky_relu");
     if (!flat) return make_null();
     for (int i = 0; i < rows * cols; i++)
         if (flat[i] < 0.0) flat[i] *= 0.01;
@@ -1497,7 +1540,6 @@ Value* builtin_random_normal(Value *arg) {
      * libc rand() (seeded only by main()'s srand(time(NULL)), so a
      * randn-initialised tensor was unreproducible from script). After the TAKE
      * above: a replayed call serves its record without touching the stream. */
-    eigs_ensure_random_seeded();
     int argc = arg->data.list.count;
     if (argc == 3) {
         /* 2D: [rows, cols, scale] */
@@ -1510,8 +1552,8 @@ Value* builtin_random_normal(Value *arg) {
             for (int c = 0; c < cols; c++) {
                 /* Box-Muller. 1 - drand48() lands in (0, 1]: drand48 can
                  * return exactly 0, and log(0) is an infinity. */
-                double u1 = 1.0 - drand48();
-                double u2 = drand48();
+                double u1 = 1.0 - eigs_random_double();
+                double u2 = eigs_random_double();
                 double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
                 list_append_owned(row, make_num(z * scale));
             }
@@ -1525,8 +1567,8 @@ Value* builtin_random_normal(Value *arg) {
         double scale = arg->data.list.items[1]->data.num;
         Value *out = make_list(len);
         for (int i = 0; i < len; i++) {
-            double u1 = 1.0 - drand48();   /* (0, 1] — see the 2D branch */
-            double u2 = drand48();
+            double u1 = 1.0 - eigs_random_double(); /* (0, 1] — see the 2D branch */
+            double u2 = eigs_random_double();
             double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
             list_append_owned(out, make_num(z * scale));
         }
@@ -1576,6 +1618,24 @@ Value* builtin_tensor_shape(Value *arg) {
 }
 
 /* ==== BUILTIN: numerical_grad ==== */
+static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
+                             int *loss_valid) {
+    if (!*loss_valid) return 0.0;
+    Value *loss = call_eigs_fn(loss_fn, arg);
+    if (loss && loss->type == VAL_NUM) {
+        double result = loss->data.num;
+        val_decref(loss);
+        return result;
+    }
+    if (loss) val_decref(loss);
+    if (g_strict) {
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "%s: expected loss function to return a number", who);
+        *loss_valid = 0;
+    }
+    return 0.0;
+}
+
 /* numerical_grad of [loss_fn, param, eps]
  * Computes central finite-difference gradient for every element of param.
  * loss_fn is a VAL_FN that takes null and returns a scalar loss.
@@ -1587,6 +1647,7 @@ Value* builtin_numerical_grad(Value *arg) {
     Value *param = arg->data.list.items[1];
     double eps = (arg->data.list.items[2]->type == VAL_NUM) ? arg->data.list.items[2]->data.num : 0.001;
     if (eps <= 0) eps = 0.001;
+    int loss_valid = 1;
 
     /* #1093: a buffer param is a flat numeric tensor — perturb the doubles in
      * place and return a gradient buffer of the same shape. */
@@ -1597,17 +1658,14 @@ Value* builtin_numerical_grad(Value *arg) {
         for (int i = 0; i < param->data.buffer.count; i++) {
             double old_val = param->data.buffer.data[i];
             param->data.buffer.data[i] = old_val + eps;
-            Value *lp = call_eigs_fn(loss_fn, bnul);
-            double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
-            if (lp) val_decref(lp);
+            double loss_plus = numerical_loss(loss_fn, bnul, "numerical_grad", &loss_valid);
             param->data.buffer.data[i] = old_val - eps;
-            Value *lm = call_eigs_fn(loss_fn, bnul);
-            double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
-            if (lm) val_decref(lm);
+            double loss_minus = numerical_loss(loss_fn, bnul, "numerical_grad", &loss_valid);
             param->data.buffer.data[i] = old_val;
             grad->data.buffer.data[i] = (loss_plus - loss_minus) / (2.0 * eps);
         }
         val_decref(bnul);
+        if (!loss_valid) { val_decref(grad); return make_null(); }
         return grad;
     }
     if (param->type != VAL_LIST) return make_null();
@@ -1626,15 +1684,11 @@ Value* builtin_numerical_grad(Value *arg) {
             val_incref(orig);   /* guard while displaced from its slot */
             Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
             param->data.list.items[i] = pp;
-            Value *loss_plus = call_eigs_fn(loss_fn, nul);
-            double lp = (loss_plus && loss_plus->type == VAL_NUM) ? loss_plus->data.num : 0.0;
-            if (loss_plus) val_decref(loss_plus);
+            double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
             Value *pm = make_num(old_val - eps);
             param->data.list.items[i] = pm;
             val_decref(pp);
-            Value *loss_minus = call_eigs_fn(loss_fn, nul);
-            double lm = (loss_minus && loss_minus->type == VAL_NUM) ? loss_minus->data.num : 0.0;
-            if (loss_minus) val_decref(loss_minus);
+            double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
             param->data.list.items[i] = orig;
             val_decref(orig);   /* drop the guard */
             val_decref(pm);
@@ -1642,6 +1696,7 @@ Value* builtin_numerical_grad(Value *arg) {
             list_append_owned(grad, make_num((lp - lm) / (2.0 * eps)));
         }
         val_decref(nul);
+        if (!loss_valid) { val_decref(grad); return make_null(); }
         return grad;
     }
 
@@ -1659,15 +1714,11 @@ Value* builtin_numerical_grad(Value *arg) {
             val_incref(orig);   /* guard while displaced from its slot */
             Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
             row->data.list.items[c] = pp;
-            Value *loss_plus = call_eigs_fn(loss_fn, nul);
-            double lp = (loss_plus && loss_plus->type == VAL_NUM) ? loss_plus->data.num : 0.0;
-            if (loss_plus) val_decref(loss_plus);
+            double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
             Value *pm = make_num(old_val - eps);
             row->data.list.items[c] = pm;
             val_decref(pp);
-            Value *loss_minus = call_eigs_fn(loss_fn, nul);
-            double lm = (loss_minus && loss_minus->type == VAL_NUM) ? loss_minus->data.num : 0.0;
-            if (loss_minus) val_decref(loss_minus);
+            double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
             row->data.list.items[c] = orig;
             val_decref(orig);   /* drop the guard */
             val_decref(pm);
@@ -1676,6 +1727,7 @@ Value* builtin_numerical_grad(Value *arg) {
         list_append_owned(grad, grad_row);
     }
     val_decref(nul);
+    if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
 }
 
@@ -1744,6 +1796,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     Value *row_indices = arg->data.list.items[2];
     double eps = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.001;
     if (eps <= 0) eps = 0.001;
+    int loss_valid = 1;
 
     /* #1093: a shaped buffer is the flat 2-D matrix and the index vector may
      * be a list or a buffer. The gradient comes back in the same container,
@@ -1762,18 +1815,15 @@ Value* builtin_numerical_grad_rows(Value *arg) {
                 int64_t k = (int64_t)r * bcols + c;
                 double old_val = matrix->data.buffer.data[k];
                 matrix->data.buffer.data[k] = old_val + eps;
-                Value *lp = call_eigs_fn(loss_fn, bnul);
-                double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
-                if (lp) val_decref(lp);
+                double loss_plus = numerical_loss(loss_fn, bnul, "numerical_grad_rows", &loss_valid);
                 matrix->data.buffer.data[k] = old_val - eps;
-                Value *lm = call_eigs_fn(loss_fn, bnul);
-                double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
-                if (lm) val_decref(lm);
+                double loss_minus = numerical_loss(loss_fn, bnul, "numerical_grad_rows", &loss_valid);
                 matrix->data.buffer.data[k] = old_val;
                 bgrad->data.buffer.data[k] = (loss_plus - loss_minus) / (2.0 * eps);
             }
         }
         val_decref(bnul);
+        if (!loss_valid) { val_decref(bgrad); return make_null(); }
         return bgrad;
     }
     if (matrix->type != VAL_LIST || !flat_is_vector(row_indices)) return make_null();
@@ -1805,13 +1855,9 @@ Value* builtin_numerical_grad_rows(Value *arg) {
             Value *cell = row->data.list.items[c];
             double old_val = (cell->type == VAL_NUM) ? cell->data.num : 0.0;
             cell->data.num = old_val + eps;
-            Value *lp = call_eigs_fn(loss_fn, nul);
-            double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
-            if (lp) val_decref(lp);
+            double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
             cell->data.num = old_val - eps;
-            Value *lm = call_eigs_fn(loss_fn, nul);
-            double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
-            if (lm) val_decref(lm);
+            double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
             cell->data.num = old_val;
             /* gradient — release the zero placeholder this slot held */
             val_decref(grad_row->data.list.items[c]);
@@ -1819,6 +1865,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
         }
     }
     val_decref(nul);
+    if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
 }
 
@@ -1885,6 +1932,7 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     Value *col_indices = arg->data.list.items[2];
     double eps = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.001;
     if (eps <= 0) eps = 0.001;
+    int loss_valid = 1;
 
     /* #1093: shaped-buffer matrix, list-or-buffer index vector. */
     if (matrix->type == VAL_BUFFER && matrix->data.buffer.rows > 0
@@ -1901,18 +1949,15 @@ Value* builtin_numerical_grad_cols(Value *arg) {
                 int64_t k = (int64_t)r * bcols + col;
                 double old_val = matrix->data.buffer.data[k];
                 matrix->data.buffer.data[k] = old_val + eps;
-                Value *lp = call_eigs_fn(loss_fn, bnul);
-                double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
-                if (lp) val_decref(lp);
+                double loss_plus = numerical_loss(loss_fn, bnul, "numerical_grad_cols", &loss_valid);
                 matrix->data.buffer.data[k] = old_val - eps;
-                Value *lm = call_eigs_fn(loss_fn, bnul);
-                double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
-                if (lm) val_decref(lm);
+                double loss_minus = numerical_loss(loss_fn, bnul, "numerical_grad_cols", &loss_valid);
                 matrix->data.buffer.data[k] = old_val;
                 bgrad->data.buffer.data[k] = (loss_plus - loss_minus) / (2.0 * eps);
             }
         }
         val_decref(bnul);
+        if (!loss_valid) { val_decref(bgrad); return make_null(); }
         return bgrad;
     }
     if (matrix->type != VAL_LIST || !flat_is_vector(col_indices)) return make_null();
@@ -1946,16 +1991,12 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             /* +eps */
             Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
             row->data.list.items[col] = pp;
-            Value *lp = call_eigs_fn(loss_fn, nul);
-            double loss_plus = (lp && lp->type == VAL_NUM) ? lp->data.num : 0.0;
-            if (lp) val_decref(lp);
+            double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
             /* -eps */
             Value *pm = make_num(old_val - eps);
             row->data.list.items[col] = pm;
             val_decref(pp);
-            Value *lm = call_eigs_fn(loss_fn, nul);
-            double loss_minus = (lm && lm->type == VAL_NUM) ? lm->data.num : 0.0;
-            if (lm) val_decref(lm);
+            double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
             /* restore */
             row->data.list.items[col] = orig;
             val_decref(orig);   /* drop the guard */
@@ -1966,6 +2007,7 @@ Value* builtin_numerical_grad_cols(Value *arg) {
         }
     }
     val_decref(nul);
+    if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
 }
 
@@ -2037,12 +2079,31 @@ Value* builtin_tensor_save(Value *arg) {
      * or 2D tensor, which is a shape/type mistake in the tensor argument and
      * not an I/O failure (no file has been opened yet at this point). */
     ARG_GUARD(ndim == 0, "tensor_save", "a non-empty 1D or 2D tensor", make_num(0));
+    if ((int64_t)rows * (int64_t)cols > EIGS_TENSOR_MAX_ELEMENTS) {
+        rt_error(EK_LIMIT, 0,
+                 "tensor_save: '%s' has %lld elements, over the %d-element cap",
+                 path_val->data.str, (long long)rows * cols,
+                 EIGS_TENSOR_MAX_ELEMENTS);
+        return make_num(0);
+    }
+
+    /* Flatten before opening the file: a strict #1416 rejection must not
+     * leave a partial file behind, and a direct C helper raise does not
+     * unwind this builtin by itself. */
+    double *flat = tensor_to_flat(tensor, &rows, &cols, "tensor_save");
+    /* A 2-D tensor may legitimately have zero columns. tensor_to_flat has
+     * still performed strict element validation above, but has no allocation
+     * to return for that shape. Preserve the historical save format: write
+     * its header and the empty data/observer sections. A NULL for any other
+     * shape remains a conversion failure. */
+    if (!flat && cols != 0) return make_num(0);
+    if (!flat && g_has_error) return make_num(0);
 
     FILE *f = xfopen_write(path_val->data.str, "wb");
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
      * is xfopen_write failing, and 0 is this builtin's failure bit (the success
      * path ends in make_num(1)). */
-    if (!f) return make_num(0);
+    if (!f) { free(flat); return make_num(0); }
 
     uint32_t header[4] = { (uint32_t)ndim, (uint32_t)rows, (uint32_t)cols, 1 /* flags: has observer */ };
     fwrite(header, sizeof(uint32_t), 4, f);
@@ -2050,11 +2111,8 @@ Value* builtin_tensor_save(Value *arg) {
     int total = rows * cols;
 
     /* Write numeric data */
-    double *flat = tensor_to_flat(tensor, &rows, &cols);
-    if (flat) {
-        fwrite(flat, sizeof(double), total, f);
-        free(flat);
-    }
+    if (total > 0) fwrite(flat, sizeof(double), total, f);
+    free(flat);
 
     /* #262 Step E: tensor elements are list items, not bindings, so they never
      * carry observer state under the slot model. Keep the on-disk format (5
@@ -2084,19 +2142,70 @@ static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int c
 /* tensor_load of path — load 1D or 2D tensor from binary file.
  * Restores observer state if present in the file. */
 #if !EIGENSCRIPT_FREESTANDING
+static void tensor_load_limit_raise(const char *path, uint32_t rows,
+                                    uint32_t cols) {
+    uint64_t total = (uint64_t)rows * (uint64_t)cols;
+    const char *dimension = rows > EIGS_TENSOR_MAX_ELEMENTS ? "rows" :
+                            cols > EIGS_TENSOR_MAX_ELEMENTS ? "columns" :
+                            "elements";
+    unsigned long long offending = rows > EIGS_TENSOR_MAX_ELEMENTS ? rows :
+                                   cols > EIGS_TENSOR_MAX_ELEMENTS ? cols : total;
+    rt_error(EK_LIMIT, 0,
+             "tensor_load: '%s' has %s=%llu, over the %d-element cap",
+             path, dimension, offending, EIGS_TENSOR_MAX_ELEMENTS);
+}
+
+/* tensor_load predates the tape and successful tensors can be much larger
+ * than an N record.  Record one small verdict for every valid call instead:
+ * null means the live loader continues, while [rows, cols] reconstructs the
+ * new filesystem-dependent over-cap raise without reopening the file. */
+static void tensor_load_record_verdict(uint32_t rows, uint32_t cols) {
+    if (!__builtin_expect(g_trace_enabled, 0)) return;
+    Value *verdict;
+    if (rows || cols) {
+        verdict = make_list(2);
+        list_append_owned(verdict, make_num((double)rows));
+        list_append_owned(verdict, make_num((double)cols));
+    } else verdict = make_null();
+    trace_nondet_value("tensor_load", verdict);
+    val_decref(verdict);
+}
+
 Value* builtin_tensor_load(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_null();
 
+    int replayed_verdict = 0;
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *verdict;
+        if (trace_replay_refuse_off_owner("tensor_load")) return make_null();
+        if (trace_replay_take("tensor_load", &verdict)) {
+            replayed_verdict = 1;
+            if (verdict && verdict->type == VAL_LIST &&
+                verdict->data.list.count == 2 &&
+                verdict->data.list.items[0]->type == VAL_NUM &&
+                verdict->data.list.items[1]->type == VAL_NUM) {
+                uint32_t rows = (uint32_t)verdict->data.list.items[0]->data.num;
+                uint32_t cols = (uint32_t)verdict->data.list.items[1]->data.num;
+                val_decref(verdict);
+                tensor_load_limit_raise(arg->data.str, rows, cols);
+                return make_null();
+            }
+            val_decref(verdict);
+        }
+    }
+
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) return make_null();
+    if (!f) { tensor_load_record_verdict(0, 0); return make_null(); }
 
     /* Try new format (4-word header with flags) */
     uint32_t header[4];
-    if (fread(header, sizeof(uint32_t), 4, f) != 4) { fclose(f); return make_null(); }
+    if (fread(header, sizeof(uint32_t), 4, f) != 4) {
+        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
 
-    int ndim = (int)header[0];
-    int rows = (int)header[1];
-    int cols = (int)header[2];
+    uint32_t ndim_raw = header[0];
+    uint32_t rows_raw = header[1];
+    uint32_t cols_raw = header[2];
     uint32_t flags = header[3];
 
     /* Detect old format: flags would be a huge number if it's actually data */
@@ -2107,23 +2216,47 @@ Value* builtin_tensor_load(Value *arg) {
         /* Old 3-word header — rewind and re-read */
         fseek(f, 0, SEEK_SET);
         uint32_t old_header[3];
-        if (fread(old_header, sizeof(uint32_t), 3, f) != 3) { fclose(f); return make_null(); }
-        ndim = (int)old_header[0];
-        rows = (int)old_header[1];
-        cols = (int)old_header[2];
+        if (fread(old_header, sizeof(uint32_t), 3, f) != 3) {
+            fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        }
+        ndim_raw = old_header[0];
+        rows_raw = old_header[1];
+        cols_raw = old_header[2];
         has_observer = 0;
     }
 
-    if (rows <= 0 || cols <= 0 || rows > 1000000 || cols > 1000000) { fclose(f); return make_null(); }
+    if (ndim_raw != 1 && ndim_raw != 2) {
+        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
+    if (rows_raw == 0 || cols_raw == 0) {
+        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
 
-    /* Guard against int overflow: rows*cols may exceed INT_MAX under the 100k cap. */
-    if ((size_t)rows * (size_t)cols > (size_t)INT_MAX) { fclose(f); return make_null(); }
-    int total = rows * cols;
+    uint64_t total64 = (uint64_t)rows_raw * (uint64_t)cols_raw;
+    if (total64 > EIGS_TENSOR_MAX_ELEMENTS) {
+        fclose(f);
+        /* A recorded non-cap decision still uses the historical live payload
+         * path. If that file has since grown beyond the cap, reject it with
+         * the old null stand-in rather than inventing a new catch branch. */
+        if (replayed_verdict) return make_null();
+        tensor_load_record_verdict(rows_raw, cols_raw);
+        tensor_load_limit_raise(arg->data.str, rows_raw, cols_raw);
+        return make_null();
+    }
+
+    int ndim = (int)ndim_raw;
+    int rows = (int)rows_raw;
+    int cols = (int)cols_raw;
+    int total = (int)total64;
 
     /* Read numeric data */
     double *data = xmalloc_array((size_t)total, sizeof(double));
-    if (!data) { fclose(f); return make_null(); }
-    if ((int)fread(data, sizeof(double), total, f) != total) { free(data); fclose(f); return make_null(); }
+    if (!data) {
+        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
+    if ((int)fread(data, sizeof(double), total, f) != total) {
+        free(data); fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+    }
     /* #971: the file is untrusted bytes, so a NaN pattern is reachable
      * here. flat_to_tensor_* would collapse it through make_num anyway
      * (same 0 + EIGS_MATH_INVALID); guarding first lets the strict raise
@@ -2162,6 +2295,7 @@ Value* builtin_tensor_load(Value *arg) {
         free(obs_data);
     }
 
+    tensor_load_record_verdict(0, 0);
     return result;
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */

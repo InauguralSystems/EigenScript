@@ -1,0 +1,1 @@
+- eigenlsp: bound scope and binding analysis for rename requests, refusing an edit when adversarial document structure exhausts the per-request work budget (#1583).

@@ -35,7 +35,11 @@ extern int g_trace_hist_storage;
  * immediate so OP_LINE can stamp it. The interpreter CASE(LINE) writes it
  * unconditionally — the line prev_record_assign records into history — so the
  * JIT must too, or temporal at/when/state_at freeze at the OSR point. */
-extern int g_trace_current_line;
+extern int *trace_current_line_addr(void);
+/* OP_LINE also emits the tape's L record when a trace sink is open.  Keep the
+ * flag test in native code so an ordinary (untraced) run pays no helper call. */
+extern int g_trace_enabled_storage;
+extern void trace_line(int line);
 /* #410: async abort seam (vm.c). NEVER NULL — unregistered points at an
  * always-zero sentinel — so the back-edge poll is movabs + two derefs +
  * cmpl, mirroring the interpreter's CASE(JUMP_BACK) check. Declared here
@@ -163,8 +167,9 @@ JitConstFn jit_emit_const_return(EigsJitCache *jc, int64_t value) {
  * registry, scan counters, and stop-opcode histogram — all live on
  * `eigs_current` (EigsThread). The `g_*` identifiers below are
  * bridge macros (eigenscript.h) so call-site code stays unchanged.
- * Stop-opcode histogram rules in jit_try_compile_chunk: every bail
- * bumps g_jit_stop_counts[stop_op]; if prefix==0 we also bump
+ * Stop-opcode histogram rules in jit_try_compile_chunk: every scanner result
+ * that reaches a verdict bumps g_jit_stop_counts[stop_op]; if prefix==0 it
+ * also bumps
  * g_jit_stop_at_zero. Compiled chunks bump g_jit_compiled_count and
  * ALSO record their trailing stop_op (the op that would unlock
  * further extension). */
@@ -230,10 +235,14 @@ static void jit_hot_row_fill(EigsJitHotRow *r, const struct EigsChunk *c,
     r->jit_state       = c->jit_state;
     r->raw_advance     = c->jit_advance;
     r->advance         = c->jit_state == 2
-        ? (c->jit_advance == -1 ? c->code_len : c->jit_advance) : 0;
+        ? (c->jit_advance == -1 ? c->code_len
+           : c->jit_advance >= 0 ? c->jit_advance : 0) : 0;
     r->osr_state       = c->jit_osr[0].state;
+    /* In either entry mode, -2 records a deep bailout, not a byte count.
+     * Unlike -1 (a completed return), it gives no reliable coverage length. */
     r->osr_advance     = c->jit_osr[0].state == 2
-        ? (c->jit_osr[0].advance == -1 ? c->code_len : c->jit_osr[0].advance) : 0;
+        ? (c->jit_osr[0].advance == -1 ? c->code_len
+           : c->jit_osr[0].advance >= 0 ? c->jit_osr[0].advance : 0) : 0;
     r->osr_entry       = c->jit_osr[0].state != 0 ? c->jit_osr[0].entry_offset : 0;
     r->stop_op         = c->jit_stop_op;
 }
@@ -393,12 +402,13 @@ void jit_thread_destroy(EigsThread *th) {
             }
             uint64_t total_exec = 0;
             for (int i = 0; i < nrows; i++) total_exec += rows[i].exec_count;
-            /* Static native-byte coverage diagnostic: each chunk entry
-             * executes some prefix of its bytecode natively (if compiled)
-             * and the remainder interpreted. Aggregating exec_count *
-             * advance vs exec_count * code_len tells us roughly what
-             * fraction of executed bytecode bytes are native -- and thus
-             * whether extending the JIT prefix further would still pay. */
+            /* Estimated native-byte coverage diagnostic. Frame entries
+             * account for one trip through the chunk; interpreter back-edges
+             * account for another trip through its bytecode. A compiled OSR
+             * thunk contributes its covered bytes on each such trip. The
+             * chunk length is deliberately the denominator for a back-edge:
+             * the counter does not retain individual loop spans, so this is
+             * a conservative estimate rather than silently ignoring loops. */
             uint64_t bytes_native = 0, bytes_total = 0;
             uint64_t bytes_native_top = 0, bytes_total_top = 0;
             fprintf(stderr, "\n=== Hot chunks (top %d of %d) ===\n",
@@ -418,10 +428,12 @@ void jit_thread_destroy(EigsThread *th) {
             for (int a = 0; a < top; a++) {
                 EigsJitHotRow *r = &rows[a];
                 if (r->exec_count == 0) break;
-                const char *jstate =
-                    r->jit_state == 2 ? "yes" : r->jit_state == 1 ? "no " : "?  ";
-                const char *ostate =
-                    r->osr_state == 2 ? "yes" : r->osr_state == 1 ? "no " : "?  ";
+                const char *jstate = r->jit_state == 2 ? "yes " :
+                    r->jit_state == 1 ? "no  " :
+                    r->jit_state == 3 ? "full" : "?   ";
+                const char *ostate = r->osr_state == 2 ? "yes " :
+                    r->osr_state == 1 ? "no  " :
+                    r->osr_state == 3 ? "full" : "?   ";
                 double pct = total_exec
                     ? (100.0 * (double)r->exec_count / (double)total_exec) : 0.0;
                 double nat = r->code_len
@@ -440,13 +452,18 @@ void jit_thread_destroy(EigsThread *th) {
                         r->name ? r->name : "<anon>",
                         r->exec_count, jstate, pct, adv_buf, r->code_len, nat,
                         r->back_edge_count, ostate, r->osr_advance, r->osr_entry,
+                        r->jit_state == 3 ? "<cache-full>" :
                         r->stop_op == OP_COUNT ? "<end>" : op_name(r->stop_op));
-                bytes_native_top += r->exec_count * (uint64_t)r->advance;
-                bytes_total_top  += r->exec_count * (uint64_t)r->code_len;
+                bytes_native_top += r->exec_count * (uint64_t)r->advance
+                    + r->back_edge_count * (uint64_t)r->osr_advance;
+                bytes_total_top  += (r->exec_count + r->back_edge_count)
+                    * (uint64_t)r->code_len;
             }
             for (int i = 0; i < nrows; i++) {
-                bytes_native += rows[i].exec_count * (uint64_t)rows[i].advance;
-                bytes_total  += rows[i].exec_count * (uint64_t)rows[i].code_len;
+                bytes_native += rows[i].exec_count * (uint64_t)rows[i].advance
+                    + rows[i].back_edge_count * (uint64_t)rows[i].osr_advance;
+                bytes_total  += (rows[i].exec_count + rows[i].back_edge_count)
+                    * (uint64_t)rows[i].code_len;
             }
             double nat_share_top = bytes_total_top
                 ? 100.0 * (double)bytes_native_top / (double)bytes_total_top : 0.0;
@@ -619,11 +636,12 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *needs_frame_cache = 1;   /* Stage 5b inline IC fast path */
         } else if (op == OP_LOCAL_IDX_GET) {
             /* 5-byte op: [op][slot:16][idx:16]. Helper handles VAL_BUFFER/
-             * VAL_LIST/VAL_STR dispatch; on error it pushes null and
-             * sets g_vm.had_error so the interpreter CHECK_ERROR fires
-             * once execution resumes after the JIT thunk. */
+             * VAL_LIST/VAL_STR dispatch and reports a latched error.
+             * Its bailout writes r13d, so even an index-only prefix needs
+             * the saved advance registers and epilogue writeback. */
             if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 5; ops++; non_line_ops++;
+            *has_bail_op = 1;
         } else if (op == OP_LOCAL_DOT_GET) {
             /* Stage 4m: 5-byte op [op][slot:16][name_idx:16]. Helper needs
              * chunk pointer for const_interns/const_hashes lookup — same
@@ -2503,7 +2521,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     uint8_t *code = jit_cache_alloc(g_jit_cache, size);
     if (!code) {
         g_jit_cache_full_rejects++;
-        *out_state = 1;
+        /* The prefix scanner succeeded, but no code was emitted. This is
+         * neither an unsupported-bytecode verdict nor a stop-opcode sample:
+         * cache capacity, not stop_op, decided the outcome. */
+        g_jit_stop_counts[stop_op]--;
+        *out_state = 3;
         *out_code = NULL;
         jit_cache_seal(g_jit_cache);
         return;
@@ -2861,7 +2883,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_cmp_esi_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             if (op == OP_SET_NAME) {
-                /* target = walk_depth ? start->parent : start */
+                /* target = walk_depth ? start->parent : start.  GET_NAME
+                 * shares this IC and may have cached the sealed builtin
+                 * parent, so reject that one target without sending every
+                 * ordinary parent store through the helper. */
                 w = emit_cmpb_imm8_disp32_rax(w, (int32_t)offsetof(EnvIC, walk_depth), 0);
                 uint8_t *depth0_p;
                 w = emit_je_rel8(w, &depth0_p);
@@ -2869,8 +2894,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 w = emit_mov_disp32_rdx_to_rdx(w, (int32_t)offsetof(Env, parent));
                 w = emit_test_rdx_rdx(w);
                 w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
-                *depth0_p = (uint8_t)(w - depth0_after);
+                w = emit_movabs_rsi(w, (uint64_t)(uintptr_t)g_builtin_env);
+                w = emit_cmp_rsi_rdx(w);
+                w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
                 w = emit_mov_disp32_rdx_to_esi(w, (int32_t)offsetof(Env, binding_version));
+                *depth0_p = (uint8_t)(w - depth0_after);
             } else {
                 /* LOCAL variants pin walk_depth == 0; target == start and
                  * %esi still holds start->binding_version. */
@@ -4122,11 +4150,31 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                             (int32_t)line);
             /* Also stamp g_trace_current_line (the line prev_record_assign
              * writes into the history tape), mirroring the interpreter's
-             * CASE(LINE). Without this, temporal `at`/`when`/`state_at` and
-             * named interrogatives are silently wrong under JIT/OSR — frozen at
-             * the line where the thunk took over. %rax is scratch between ops. */
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_current_line);
+             * CASE(LINE). Resolve its per-attached-thread address when the
+             * thunk RUNS, not while it is compiled: chunks and their native
+             * code can be shared by serialized evals on another attached
+             * thread. %ecx is the cached VM sp and must survive the ABI call;
+             * trace_current_line_addr returns the destination in %rax. */
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w,
+                (uint64_t)(uintptr_t)&trace_current_line_addr);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
             w = emit_movl_imm_at_rax(w, (int32_t)line);
+            /* Mirror CASE(LINE)'s tape hook.  On x86 the plain load supplies
+             * the acquire semantics used by g_trace_enabled; trace_line owns
+             * deduplication and tape locking.  %ecx is the cached VM sp and
+             * must survive the ABI call. */
+            uint8_t *no_tape;
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_enabled_storage);
+            w = emit_cmpl_0_mem_rax(w);
+            w = emit_je_rel32(w, &no_tape);
+            w = emit_mov_imm32_edi(w, line);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_line);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            patch_rel32(no_tape, w);
             i += 5;   /* #630: [op][line:32] */
         }
         /* Update last_imm in lockstep with the scanner's last_push_immediate.

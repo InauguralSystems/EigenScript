@@ -540,6 +540,8 @@ define _handle_key(ev) as:
 # ---- Main loop ------------------------------------------------------------
 _dbg_full_render of null
 
+if env_get of "EIGS_GFX_READY" == "1":
+    print of "EIGS_GFX_READY"
 loop while _dbg_quit == 0:
     ev is gfx_poll of null
     loop while ev != null:

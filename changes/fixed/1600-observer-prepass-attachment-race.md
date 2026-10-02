@@ -1,0 +1,1 @@
+- Prevent concurrent thread attachment from racing the observer pre-pass without holding the lifecycle mutex across source-provider callbacks.

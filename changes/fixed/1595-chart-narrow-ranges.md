@@ -1,0 +1,1 @@
+- Fixed chart rendering for narrow numeric ranges whose reciprocal exceeds the runtime numeric guard, preventing plotted points from collapsing at the plot edges.

@@ -38,6 +38,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                           3, measured on CI job 106492225359).
 #   gdb              -> the JIT debugging workflow (see CLAUDE.md)
 #   curl             -> exercising the http extension by hand
+#   procps           -> sysctl in CI setup steps
 # SDL2 is deliberately absent: `make gfx` dlopen's it at runtime and compiles
 # against typedefs only, so no -dev headers are needed to build it.
 RUN apt-get update \
@@ -53,6 +54,7 @@ RUN apt-get update \
         python3-yaml \
         gdb \
         curl \
+        procps \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspaces/EigenScript
