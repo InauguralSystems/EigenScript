@@ -1,3 +1,3 @@
-- Made `tensor_load` accept tensors up to the runtime's 10,000,000-element
-  construction limit and raise a descriptive, catchable error above it;
-  tensor file writers now enforce the same limit.
+- Align binary tensor loading and writing with the 10,000,000-element cap;
+  report over-cap files with catchable limit errors, and document the shared
+  stream count constraints.

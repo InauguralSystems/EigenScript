@@ -29,6 +29,12 @@ asking the running program about its own state and history.
 | errors | exceptions | exceptions | `Result` | conditions | `try`/`catch` |
 | self-inspection | none | none | none | macros | interrogatives + observer |
 
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
+
 ## Variables and arithmetic
 
 Python:
@@ -339,6 +345,11 @@ print of (recv of ch)
 ```output
 42
 ```
+
+Channel messages and joined/task results deep-copy ordinary values, including
+buffers and text builders. Closures keep their captured environment by
+reference, and resource handles still name shared process state; the executable
+kind table and graph-depth limits are in `docs/CONCURRENCY.md`.
 
 One difference in failure: a Python thread's uncaught exception is printed
 and the process still exits 0. A `spawn`ed EigenScript worker that dies of

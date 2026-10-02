@@ -1,0 +1,1 @@
+- Meta evaluator restores loop binders after exceptions (#1476).

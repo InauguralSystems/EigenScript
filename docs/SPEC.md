@@ -1881,6 +1881,13 @@ handle; `thread_join of handle` waits and returns its result. Channels
 (`channel of null`, `send`, `recv`, `try_recv`, `recv_timeout`)
 communicate between threads.
 
+Values crossing a channel, `thread_join`, or cooperative-task boundary are
+copied recursively. This includes buffers (payload and shape) and text builders
+(bytes and builder metadata). Closures retain their captured environment by
+reference, resource handles remain shared, repeated aliases split into separate
+copies, and objects below the depth-64 recursion guard remain shared. The
+executable kind-by-kind contract is in `docs/CONCURRENCY.md`.
+
 ```eigenscript
 ch is channel of null
 spawn of [(v) => send of [ch, v * 2], 21]
@@ -2313,6 +2320,12 @@ buffer). Mixing a buffer with a list yields a list. The reductions
 (`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
+
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
 
 ```eigenscript
 l is [1.0, 4.0, 9.0]

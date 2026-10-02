@@ -240,7 +240,7 @@ Value* builtin_regex_replace(Value *arg) {
 /* ================================================================
  * STREAMING BINARY WRITER — write tensor-format data incrementally
  * ================================================================
- * stream_open of ["path", count]  → opens file, writes header with count, returns 1
+ * stream_open of ["path", count] — integral count 1..10000000; outside that range raises limit even with EIGS_STRICT=0; returns 1 on success, 0 on I/O failure
  * stream_write of value           → writes one float64, returns 1
  * stream_close of null            → closes the stream file, returns 1
  *
@@ -352,8 +352,15 @@ Value* builtin_mkdir(Value *arg) {
         make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
 }
 
-/* ls of "path" → list of filenames in directory, or [] on failure.
- * Matches `ls -1` default behavior: hidden entries (starting with '.') are excluded. */
+static int ls_entry_cmp(const void *a, const void *b) {
+    const Value *va = *(Value *const *)a;
+    const Value *vb = *(Value *const *)b;
+    return strcmp(va->data.str, vb->data.str);
+}
+
+/* ls of "path" → bytewise-sorted filenames, or [] on failure.
+ * Matches `LC_ALL=C ls -1` default behavior: hidden entries (starting with '.')
+ * are excluded and names are sorted bytewise. */
 Value* builtin_ls(Value *arg) {
     ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "ls", "a string path", make_list(0));
     /* #585: builds its return (a list) via readdir, so under EIGS_REPLAY the
@@ -369,6 +376,8 @@ Value* builtin_ls(Value *arg) {
         list_append_owned(list, make_str(entry->d_name));
     }
     closedir(d);
+    qsort(list->data.list.items, list->data.list.count, sizeof(Value*),
+          ls_entry_cmp);
     TRACE_NONDET_RECORD("ls", list);
 }
 
