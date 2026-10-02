@@ -9,32 +9,44 @@ DEV_DOCKERFILE="${WORKFLOW_CHECK_DOCKERFILE:-$ROOT/.devcontainer/Dockerfile}"
 if [ "${1:-}" = --selftest ]; then
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/workflow_yaml_selftest.XXXXXX") || exit 2
     trap 'rm -rf "$tmp"' EXIT
-    mkdir -p "$tmp/workflows"
-    cat > "$tmp/Dockerfile" <<'EOF'
-FROM debian:stable
-RUN apt-get update && apt-get install -y python3 && rm -rf /var/lib/apt/lists/*
-EOF
-    cat > "$tmp/workflows/ci.yml" <<'EOF'
-name: fixture
-jobs:
-  check:
-    container: {image: dev-image}
-    steps:
-      - run: timeout 1 true
-      - run: echo ok && jq -r .x "$GITHUB_EVENT_PATH"
-      - run: echo "$(jq -r .x "$GITHUB_EVENT_PATH")"
-      - run: env jq -r .x "$GITHUB_EVENT_PATH"
-EOF
-    if WORKFLOW_CHECK_DIR="$tmp/workflows" WORKFLOW_CHECK_DOCKERFILE="$tmp/Dockerfile" bash "$0" > "$tmp/red" 2>&1; then
-        echo "FAIL: unprovisioned jq plant passed"; cat "$tmp/red"; exit 1
-    fi
-    grep -q 'run command.*jq' "$tmp/red" || { echo "FAIL: jq plant died without naming jq"; cat "$tmp/red"; exit 1; }
-    [ "$(grep -c 'run command.*jq' "$tmp/red")" -eq 3 ] || { echo "FAIL: not every jq invocation was rejected"; cat "$tmp/red"; exit 1; }
-    sed '/jq -r/d' "$tmp/workflows/ci.yml" > "$tmp/clean.yml" && mv "$tmp/clean.yml" "$tmp/workflows/ci.yml"
-    printf '%s\n' '      - run: echo "$(printf ok)"' >> "$tmp/workflows/ci.yml"
-    WORKFLOW_CHECK_DIR="$tmp/workflows" WORKFLOW_CHECK_DOCKERFILE="$tmp/Dockerfile" bash "$0" > "$tmp/green" 2>&1 \
-        || { echo "FAIL: clean fixture failed"; cat "$tmp/green"; exit 1; }
-    echo "workflow-yaml selftest: 2/2 passed"
+    python3 - "$0" "$tmp" <<'PY_SELFTEST'
+import json, os, pathlib, subprocess, sys
+checker, scratch = sys.argv[1], pathlib.Path(sys.argv[2])
+base = "FROM debian:stable\nRUN apt-get install -y python3\n"
+# These strings are only parsed as workflow data; no planted command executes.
+cases = [
+    ("bare", "jq .", base, False, "run command 'jq'"),
+    ("pipeline", "printf ok | jq .", base, False, "run command 'jq'"),
+    ("substitution", 'echo "$(jq .)"', base, False, "run command 'jq'"),
+    ("env", "env MODE=test jq .", base, False, "run command 'jq'"),
+    ("timeout", "timeout 1 jq .", base, False, "run command 'jq'"),
+    ("timeout-options", "timeout -s TERM -k 2 1 jq .", base, False, "run command 'jq'"),
+    ("subshell", "(jq)", base, False, "run command 'jq'"),
+    ("absolute", "/usr/bin/jq .", base, False, "run command 'jq'"),
+    ("case-body", "case x in x) jq . ;; esac", base, False, "run command 'jq'"),
+    ("clean", 'echo "$(printf ok)"; timeout 1 true; (true)', base, True, "workflow-container: OK"),
+    ("case-pattern", "case x in jq) true ;; x) printf ok ;; esac", base, True, "workflow-container: OK"),
+    ("installed-jq", "timeout 1 jq .", base + "RUN apt-get install -y jq\n", True, "workflow-container: OK"),
+    ("comment-is-data", "jq .", base + "# apt-get install jq\n", False, "run command 'jq'"),
+    ("continued-comment-data", "jq .", "FROM debian:stable\nRUN apt-get install -y python3 \\\n    # jq unavailable\n    && true\n", False, "run command 'jq'"),
+    ("continued-after-comment", "jq .", "FROM debian:stable\nRUN apt-get install -y python3 \\\n    # not a package\n    jq\n", True, "workflow-container: OK"),
+    ("missing-dockerfile", "true", None, False, "Dockerfile cannot be read"),
+    ("no-install", "true", "FROM debian:stable\n", False, "no apt-get install"),
+    ("unprovided-sysctl", "sysctl -w x=0", base, False, "run command 'sysctl'"),
+    ("installed-procps", "sysctl -w x=0", base + "RUN apt-get install -y procps\n", True, "workflow-container: OK"),
+]
+for name, command, docker, green, marker in cases:
+    row = scratch / name; (row / "workflows").mkdir(parents=True)
+    (row / "workflows/ci.yml").write_text("name: fixture\njobs:\n  check:\n    container: {image: dev-image}\n    steps:\n      - run: " + json.dumps(command) + "\n")
+    if docker is not None: (row / "Dockerfile").write_text(docker)
+    env = dict(os.environ, WORKFLOW_CHECK_DIR=str(row / "workflows"), WORKFLOW_CHECK_DOCKERFILE=str(row / "Dockerfile"))
+    result = subprocess.run(["bash", checker], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if (result.returncode == 0) != green or marker not in result.stdout:
+        print("FAIL: " + name + " (rc=%d)\n" % result.returncode + result.stdout); sys.exit(1)
+print("workflow-yaml selftest: %d/%d passed" % (len(cases), len(cases)))
+PY_SELFTEST
+    selftest_rc=$?
+    [ "$selftest_rc" -eq 0 ] || exit "$selftest_rc"
     exit 0
 fi
 [ -z "${1:-}" ] || { echo "usage: $0 [--selftest]" >&2; exit 2; }
@@ -43,7 +55,7 @@ if ! command -v python3 >/dev/null 2>&1 || ! python3 -c 'import yaml' >/dev/null
     echo "workflow-yaml: RED: PyYAML is not importable, so nothing in $WF_DIR was loaded. This is not a pass. Install it: apt install python3-yaml, or python3 -m pip install --user pyyaml."
     exit 1
 fi
-out=$(WF_DIR="$WF_DIR" DEV_DOCKERFILE="$DEV_DOCKERFILE" python3 - <<'PY'
+out=$(WF_DIR="$WF_DIR" DEV_DOCKERFILE="$DEV_DOCKERFILE" python3 - 2>&1 <<'PY'
 import glob, os, re, shlex, sys, yaml
 d = os.environ["WF_DIR"]
 files = sorted(set(glob.glob(os.path.join(d, "*.yml")) + glob.glob(os.path.join(d, "*.yaml"))))
@@ -61,7 +73,7 @@ def violation(f, path, value):
 # do not need an explicit dev-image package. Package-specific commands do. Keep
 # this table deliberately narrower than a host PATH: the Dockerfile is the
 # contract being checked, not whatever happens to be installed on this runner.
-BASE = set("apt-get awk bash cmp find grep kill lscpu sed sh sysctl xargs [ : .".split())
+BASE = set("apt-get awk bash cmp find grep kill lscpu sed sh xargs [ : .".split())
 # GNU coreutils installed in the Debian base image.  Keep the complete command
 # set here rather than a sample: workflows are allowed to use coreutils without
 # the Dockerfile redundantly installing the package.
@@ -78,6 +90,8 @@ PACKAGE_COMMANDS = {
     "build-essential": "ar as c++ cc cpp g++ gcc ld make nm objcopy objdump ranlib readelf size strings strip",
     "clang": "clang clang++",
     "git": "git",
+    "jq": "jq",
+    "procps": "sysctl ps",
     "curl": "curl",
     "gdb": "gdb",
     "postgresql-client": "psql pg_dump pg_restore",
@@ -87,16 +101,19 @@ PACKAGE_COMMANDS = {
     "time": "time",
 }
 def docker_packages(path):
+    global bad
     try: text = open(path, encoding="utf-8").read()
     except OSError as exc:
-        sys.stdout.write("RED: dev image Dockerfile cannot be read: %s\n" % exc); return set()
+        sys.stdout.write("RED: dev image Dockerfile cannot be read: %s\n" % exc); bad += 1; return set()
     # The package list is the continuation containing apt-get install. Options
     # are discarded; package names are the remaining words up to &&.
+    text = re.sub(r"(?m)^[ \t]*#.*(?:\n|$)", "", text)
+    text = re.sub(r"(?m)(^|[ \t]+)#.*$", "", text)
     flat = re.sub(r"\\\n", " ", text)
-    m = re.search(r"\bapt-get\s+install\b(.*?)(?:&&|;|\n\s*RUN\b)", flat, re.S)
-    if not m:
-        sys.stdout.write("RED: dev image Dockerfile has no apt-get install package list\n"); return set()
-    return {w for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9+.-]*", m.group(1)) if not w.startswith("-") and w not in ("y", "no-install-recommends")}
+    installs = re.findall(r"\bapt-get\s+install\b([^;&\n]*)", flat)
+    if not installs:
+        sys.stdout.write("RED: dev image Dockerfile has no apt-get install package list\n"); bad += 1; return set()
+    return {w for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9+.-]*", " ".join(installs)) if not w.startswith("-") and w not in ("y", "no-install-recommends")}
 packages = docker_packages(os.environ["DEV_DOCKERFILE"])
 available = BASE | BUILTINS
 for package in packages:
@@ -157,15 +174,41 @@ def commands(script, known_functions=None):
     except ValueError:
         words = re.sub(r"(&&|\|\||[;|()\n])", r" \1 ", script).split()
     command_position = True
-    wrappers = {"command", "exec", "env", "xargs"}
+    wrappers = {"command", "exec", "env", "xargs", "timeout", "stdbuf"}
+    wrapper = None
+    option_value = False
+    timeout_duration = False
+    cases = []
     controls = {"if", "then", "elif", "else", "while", "until", "do", "!"}
     endings = {"fi", "done", "case", "esac", "for", "select", "function", "{" , "}"}
     for index, word in enumerate(words):
+        # Case patterns are data only inside a real case/in ... esac arm.
+        # A subshell such as (jq) must still audit jq before its closing ).
+        if word == "esac" and cases:
+            cases.pop(); command_position = False; continue
+        if cases and cases[-1] == "expression":
+            if word == "in": cases[-1] = "pattern"
+            continue
+        if cases and cases[-1] == "pattern":
+            if ")" in word: cases[-1] = "body"; command_position = True
+            continue
+        if cases and word in (";;", ";&", ";;&"):
+            cases[-1] = "pattern"; command_position = True; continue
         if re.fullmatch(r"[;|&()\n]+", word):
             command_position = True
+            wrapper = None; option_value = False; timeout_duration = False
             continue
         if not command_position:
             continue
+        if word == "case":
+            cases.append("expression"); continue
+        if option_value:
+            option_value = False; continue
+        if wrapper and word.startswith("-"):
+            option_value = word in {"-u", "--unset", "-s", "--signal", "-k", "--kill-after", "-n", "--max-args", "-P", "--max-procs", "-I", "--replace", "-i", "-o", "-e"}
+            continue
+        if timeout_duration:
+            timeout_duration = False; continue
         if word in controls:
             continue
         if word == "for":
@@ -173,18 +216,18 @@ def commands(script, known_functions=None):
             continue
         if word in endings or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word):
             continue
-        # A word immediately before `)` is a case pattern, not a command.
-        if index + 1 < len(words) and words[index + 1] == ")":
-            command_position = False
-            continue
         # Wrapper options precede the executable operand.  Keeping command
         # position true after a wrapper makes both wrapper and target get
         # audited (env assignments are handled by the branch above).
         if word.startswith("-"):
             continue
+        if word.startswith(("/bin/", "/usr/bin/", "/sbin/", "/usr/sbin/")):
+            word = os.path.basename(word)
         if re.fullmatch(r"[A-Za-z][A-Za-z0-9_+-]*", word) and word not in functions and word not in runtime_commands:
             found.append(word)
             command_position = word in wrappers
+            wrapper = word if command_position else None
+            timeout_duration = word == "timeout"
         else:
             command_position = False
     return found
@@ -221,6 +264,7 @@ examined=$(printf '%s\n' "$out" | sed -n 's/^EXAMINED //p' | head -1); examined=
 container_steps=$(printf '%s\n' "$out" | sed -n 's/^CONTAINER_STEPS //p' | head -1); container_steps=${container_steps:-0}
 printf '%s\n' "$out" | grep '^RED:' || true
 if [ "$pyrc" -ne 0 ] && ! printf '%s\n' "$out" | grep -q '^RED:'; then
+    printf '%s\n' "$out"
     echo "workflow-yaml: RED: the YAML loader failed on $WF_DIR"; exit 1
 fi
 if [ "$examined" -eq 0 ]; then
@@ -230,5 +274,6 @@ if [ "$pyrc" -ne 0 ]; then
     echo "workflow-yaml: FAIL (examined=$examined file(s), loader=pyyaml, problems=$(printf '%s\n' "$out" | grep -c '^RED:'))"
     exit 1
 fi
-echo "workflow-yaml: OK (examined=$examined file(s), container-run-steps=$container_steps, loader=pyyaml)"
+echo "workflow-yaml: OK (examined=$examined file(s), loader=pyyaml)"
+echo "workflow-container: OK (run-steps=$container_steps, image=dev-image)"
 exit 0

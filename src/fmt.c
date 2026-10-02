@@ -11,17 +11,6 @@
 
 /* ---- helpers ---- */
 
-/* Measure leading whitespace in columns (tabs count as 4 spaces) */
-static int measure_indent(const char *line) {
-    int col = 0;
-    while (*line == ' ' || *line == '\t') {
-        if (*line == '\t') col = (col / 4 + 1) * 4;
-        else col++;
-        line++;
-    }
-    return col;
-}
-
 /* True if s[i] (a '+' or '-') is the sign of a numeric literal's exponent, as
  * in 1.5e+10, where treating it as an operator would corrupt the literal.
  *
@@ -299,7 +288,7 @@ char* format_source_string(const char *source) {
                 llen--;
             }
 
-            indents[actual_lines] = measure_indent(line);
+            indents[actual_lines] = eigs_measure_indent(line, NULL);
 
             /* Store the stripped (no leading whitespace) version */
             const char *stripped = line;

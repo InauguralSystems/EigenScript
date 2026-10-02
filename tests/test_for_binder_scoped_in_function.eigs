@@ -78,6 +78,19 @@ define f_range(n) as:
     return s * 1000 + i
 assert_true of [(f_range of 4) == 6099, "hot for-range loop over an existing local: sum right, local restored"]
 
+define f_save_name_write(p) as:
+    for p in [7, 8]:
+        __for_save is 99
+    return p
+assert_true of [(f_save_name_write of 1) == 1, "source name cannot overwrite the compiler's save slot"]
+
+define f_save_name_local(p) as:
+    local __for_save is 55
+    for p in [7, 8]:
+        p is p + 10
+    return [p, __for_save]
+assert_true of [(str of (f_save_name_local of 1)) == "[1, 55]", "compiler save slot cannot shadow a source local"]
+
 p is 1
 for p in [7, 8]:
     p is p + 10
