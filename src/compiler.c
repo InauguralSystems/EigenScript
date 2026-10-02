@@ -3846,6 +3846,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     char *slots[OBS_GATE_MAX_LOADS];
     char *resolved = NULL;
     char *module_dir = NULL;
+    int single_thread_reserved = 0;
     L.paths = slots; L.count = 0; L.cap = OBS_GATE_MAX_LOADS; L.overflow = 0;
 
     /* The eager pass informs a RUNTIME decision. Entry points that compile
@@ -3881,8 +3882,11 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * threads, and showed the fd-2 mute swallowing other requests' stderr and
      * then destroying the server's real stderr permanently. See
      * eigs_process_thread_count. */
-    if (L.count > 0 && (g_vm_multithreaded || eigs_process_thread_count() > 1)) {
-        eigs_obs_enable_runtime(); goto done;
+    if (L.count > 0) {
+        if (g_vm_multithreaded || !eigs_process_single_thread_begin()) {
+            eigs_obs_enable_runtime(); goto done;
+        }
+        single_thread_reserved = 1;
     }
 
     /* HEAP, not stack. As `char resolved[8192]` inside the loop this frame
@@ -3920,7 +3924,19 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
              * memo or budget anyway). Otherwise resolve through
              * eigs_import_resolve -- THE resolver the OP_IMPORT handler calls,
              * project-first then stdlib -- so what is scanned is what runs. */
+            /* A provider is host code and may synchronously start and join a
+             * worker that attaches an interpreter thread.  Attachments wait
+             * for this reservation, so never retain it across the callback:
+             * the provider would otherwise wait for a worker which waits for
+             * us.  Nothing process-global is temporarily modified here; take
+             * the reservation again before resuming the eager scan. */
+            eigs_process_single_thread_end();
+            single_thread_reserved = 0;
             if (eigs_source_lookup(L.paths[i])) { eigs_obs_enable_runtime(); break; }
+            if (g_vm_multithreaded || !eigs_process_single_thread_begin()) {
+                eigs_obs_enable_runtime(); break;
+            }
+            single_thread_reserved = 1;
             resolved_ok = eigs_import_resolve(L.bases[i], L.paths[i], resolved, 8192, NULL, 0);
         } else {
             resolved_ok = resolve_eigenscript_file_from(L.bases[i], L.paths[i], resolved, 8192);
@@ -4034,6 +4050,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     }
 
 done:
+    if (single_thread_reserved) eigs_process_single_thread_end();
     free(module_dir);
     free(resolved);
     for (int i = 0; i < L.count; i++) {
