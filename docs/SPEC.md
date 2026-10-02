@@ -1881,6 +1881,13 @@ handle; `thread_join of handle` waits and returns its result. Channels
 (`channel of null`, `send`, `recv`, `try_recv`, `recv_timeout`)
 communicate between threads.
 
+Values crossing a channel, `thread_join`, or cooperative-task boundary are
+copied recursively. This includes buffers (payload and shape) and text builders
+(bytes and builder metadata). Closures retain their captured environment by
+reference, resource handles remain shared, repeated aliases split into separate
+copies, and objects below the depth-64 recursion guard remain shared. The
+executable kind-by-kind contract is in `docs/CONCURRENCY.md`.
+
 ```eigenscript
 ch is channel of null
 spawn of [(v) => send of [ch, v * 2], 21]

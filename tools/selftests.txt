@@ -13,6 +13,7 @@ bench/check_regression.sh bench/scalar_loop.eigs | timeout 30 bash bench/check_r
 tests/http_readiness.py tests/test_http_readiness.sh | timeout 60 python3 tests/http_readiness.py --selftest | [{"pattern":"PASS:","count":510},{"pattern":"^HTTP_READINESS_SELFTEST: 510 passed, 0 failed$","count":1},{"pattern":"FAIL:","count":0}]
 tests/test_arming_mt.sh tests/arming_mt_fixtures/* | timeout 30 bash tests/test_arming_mt.sh --selftest | [{"pattern":"  PASS:","count":5},{"pattern":"  FAIL:","count":0}]
 tests/test_child_exit.sh tests/run_all_tests.sh | timeout 30 bash tests/test_child_exit.sh --selftest
+tests/test_changelog_fragments.sh tools/changelog_fragments.sh | timeout 30 bash tests/test_changelog_fragments.sh --selftest | [{"pattern":"^  PASS:","count":4},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST: 4 case\\(s\\) run, 4 passed, 0 failed$","count":1}]
 tests/test_dict_keys_mt.sh tests/dict_keys_mt_fixtures/* | timeout 30 bash tests/test_dict_keys_mt.sh --selftest | [{"pattern":"  PASS:","count":8},{"pattern":"  FAIL:","count":0}]
 tests/test_doc_examples.py | timeout 30 python3 tests/test_doc_examples.py --selftest | [{"pattern":"  selftest ok:","count":29}]
 tests/test_doc_examples_markers.py tests/test_doc_examples.py tests/lsan_classify.sh | timeout 30 python3 tests/test_doc_examples_markers.py --selftest
@@ -20,18 +21,22 @@ tests/test_handles_mt.sh tests/handles_mt_fixtures/* | timeout 30 bash tests/tes
 tests/test_http_rss_growth.sh | timeout 30 bash tests/test_http_rss_growth.sh --selftest
 tests/test_http_slowloris.sh | timeout 90 bash tests/test_http_slowloris.sh --self-test | [{"pattern":"^  PASS: plant ","count":4},{"pattern":"^  FAIL: plant ","count":0}]
 tests/test_loader_mt.sh tests/loader_mt_fixtures/* | timeout 30 bash tests/test_loader_mt.sh --selftest | [{"pattern":"  PASS:","count":6},{"pattern":"  FAIL:","count":0}]
-tests/test_string_scaling.sh | timeout 150 bash tests/test_string_scaling.sh --selftest | [{"pattern":"^== selftest 26 run, 26 passed, 0 failed ==$","count":1}]
+tests/test_leak_guard.sh | timeout 30 bash tests/test_leak_guard.sh --selftest | [{"pattern":"^  PASS: plant:","count":2},{"pattern":"^  FAIL:","count":0},{"pattern":"^Leak Guard Selftest: 2 passed, 0 failed$","count":1}]
+tests/test_string_scaling.sh | timeout 210 bash tests/test_string_scaling.sh --selftest | [{"pattern":"^== selftest 29 run, 29 passed, 0 failed ==$","count":1}]
 tests/test_trace_mt.sh | timeout 30 bash tests/test_trace_mt.sh --selftest | [{"pattern":"  PASS:","count":6},{"pattern":"  FAIL:","count":0}]
 tools/_derive_variants.py tools/_extract_runcmd.py | timeout 30 python3 tools/_derive_variants.py --selftest
 tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftest
 tools/codspeed_targets_check.sh codspeed.yml | timeout 30 bash tools/codspeed_targets_check.sh --selftest
 tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 25 bash tools/consumer_acceptance.sh --self-test
-tools/docs_claims_check.sh | timeout 14 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 8 case\\(s\\) run, 8 passed, 0 failed$","count":1}]
+tools/core_ext_boundary_check.sh tools/core_ext_boundary_selftest.sh | timeout 120 bash tools/core_ext_boundary_selftest.sh --selftest | [{"pattern":"^PASS: core-ext boundary:","count":1}]
+tools/docs_claims_check.sh | timeout 30 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 16 case\\(s\\) run, 16 passed, 0 failed$","count":1}]
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
+tools/performance_observer_docs.py docs/PERFORMANCE.md bench/observer_callgrind.txt bench/baseline.txt bench/observed_loop.eigs bench/unobserved_loop.eigs bench/conservative_observed_loop.eigs bench/conservative_unobserved_loop.eigs | timeout 30 python3 tools/performance_observer_docs.py --selftest
 tools/replay_diff.sh | timeout 30 bash tools/replay_diff.sh --selftest | [{"pattern":"  selftest ok:","count":11},{"pattern":"^SELFTEST: all planted faults caught","count":1}]
 tools/section_plan.sh tests/suite_plan.sh .github/workflows/ci.yml | timeout 1860 bash tools/section_plan.sh --selftest
+tools/section_fragments_check.sh tools/runner_text.sh tools/section_plan.sh tools/suite_label_check.sh tools/enrolment_check.sh tools/child_exit_check.sh tests/run_all_tests.sh tests/sections/* | timeout 60 bash tools/section_fragments_check.sh --selftest
 tools/stop_gate.sh | timeout 30 bash tools/stop_gate.sh --selftest | [{"pattern":"^stop_gate selftest: committed-fragment PASS; no-fragment BLOCK$","count":1}]
 tools/stdlib_index_check.sh | timeout 30 bash tools/stdlib_index_check.sh --selftest
 tools/vm_operand_width_check.sh | timeout 30 bash tools/vm_operand_width_check.sh --selftest
@@ -39,3 +44,6 @@ tools/werror_switch_check.sh tools/cc_guard.sh tools/cc-guard-bin/cc tools/cc-gu
 tests/test_lsan_classify.sh tests/lsan_classify.sh tests/fixtures/lsan_classify/* tests/test_doc_examples.py tests/run_all_tests.sh | timeout 60 bash tests/test_lsan_classify.sh --selftest | [{"pattern":"^  PASS:","count":22},{"pattern":"^  FAIL:","count":0},{"pattern":"^  SKIP:","count":0}]
 tools/ci_scope.sh | timeout 30 bash tools/ci_scope.sh --selftest | [{"pattern":"^ci_scope selftest: 8/8 passed$","count":1}]
 tools/asan_receipts_check.sh .github/workflows/ci.yml | timeout 30 bash tools/asan_receipts_check.sh --selftest | [{"pattern":"^asan_receipts selftest: 3/3 passed$","count":1}]
+# precheck's row classifier is its own fast witness (#1355).
+tools/precheck.sh tools/portability_verdict.sh | timeout 10 bash tools/precheck.sh --selftest
+tools/workflow_yaml_check.sh tests/sections/99zd-container-commands.sh | timeout 30 bash tools/workflow_yaml_check.sh --selftest | [{"pattern":"^workflow-yaml selftest: 46/46 passed$","count":1}]

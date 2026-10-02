@@ -33,12 +33,6 @@ fi
 # JIT_FLAGS=-DEIGENSCRIPT_JIT_FORCE_OFF=1`).
 JIT_FLAGS=""
 
-# The Makefile's objdir engine (#740) leaves src/eigenscript as a hard link
-# to build/<variant>/eigenscript. Remove the name before compiling so
-# build.sh writes a fresh file instead of truncating the shared inode under
-# that variant's binary.
-rm -f eigenscript
-
 if [ "$1" = "lsp" ]; then
     # Language server (src/eigenlsp) — the editor-intelligence half of the
     # toolchain. Links eigenlsp.c against the runtime (SOURCES minus the
@@ -61,6 +55,9 @@ if [ "$1" = "lsp" ]; then
     echo "EigenScript LSP $VERSION built. Binary: $(du -sh eigenlsp | cut -f1)"
 elif [ "$1" = "full" ]; then
     # Full build: all extensions. Requires libpq-dev.
+    # The Makefile's objdir engine (#740) may leave this as a hard link.
+    # Unlink it so build.sh does not truncate the variant's binary.
+    rm -f eigenscript
     $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_http.c ext_db.c \
         model_io.c model_infer.c model_train.c \
         -I/usr/include/postgresql \
@@ -73,6 +70,9 @@ elif [ "$1" = "full" ]; then
     echo "EigenScript $VERSION (full) built. Binary: $(du -sh eigenscript | cut -f1)"
 else
     # Minimal build: language + stdlib only.
+    # The Makefile's objdir engine (#740) may leave this as a hard link.
+    # Unlink it so build.sh does not truncate the variant's binary.
+    rm -f eigenscript
     $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES \
         -DEIGENSCRIPT_EXT_HTTP=0 \
         -DEIGENSCRIPT_EXT_MODEL=0 \

@@ -9,19 +9,18 @@ type cannot answer for you.
 ## The one rule: VALUES copy, HANDLES share
 
 **A value sent through a channel, or returned through `thread_join`, is COPIED**
-(`val_clone_for_send`). Numbers, strings, lists and dicts are share-nothing:
-the receiver gets an independent deep copy, so mutating the original after you
-send it cannot be observed by the other thread.
+(`val_clone_for_send`). Numbers, strings, lists, dicts, buffers, and text
+builders are share-nothing: the receiver gets an independent deep copy, so
+mutating the original after you send it cannot be observed by the other thread.
 
 **A HANDLE is not a value and does NOT copy** — it points at state the copy
 still points at. **Do not read a list of handle kinds out of this prose: read
 the table the next section MEASURES.** An earlier revision of this page listed
 "three things"; a blind reviewer immediately found a fourth by sending a
 channel through a channel. A remembered list goes stale, so the enumeration
-here is a program's output. The handle half is open issue
-[#1148](https://github.com/InauguralSystems/EigenScript/issues/1148), tracked
-by [#1153](https://github.com/InauguralSystems/EigenScript/issues/1153); this
-page changes when the fix lands.
+here is a program's output. Closures are the deliberate exception among
+language values: their captured environment stays shared, as the executable
+table below demonstrates.
 
 ```eigenscript
 c is channel of 1
@@ -111,6 +110,32 @@ send of [cc, inner]
 got_chan is recv of cc
 send of [inner, 73]
 row of ["channel handle ", "empty", str of (recv of got_chan)]
+
+# Repeated references are cloned independently; identity is not preserved.
+alias_leaf is [0]
+alias_pair is [alias_leaf, alias_leaf]
+ca is channel of 1
+send of [ca, alias_pair]
+got_alias is recv of ca
+set_at of [got_alias[0], 0, 7]
+row of ["repeated alias ", "0", str of got_alias[1][0]]
+
+# At nesting depth 65, the depth guard starts sharing the remaining graph.
+depth_leaf is [0]
+deep is depth_leaf
+di is 0
+loop while di < 66:
+    deep is [deep]
+    di is di + 1
+cdp is channel of 1
+send of [cdp, deep]
+set_at of [depth_leaf, 0, 9]
+got_deep is recv of cdp
+di is 0
+loop while di < 66:
+    got_deep is got_deep[0]
+    di is di + 1
+row of ["depth-64 tail  ", "0", str of got_deep[0]]
 ```
 ```output
 number         copies
@@ -118,43 +143,47 @@ string         copies
 list           copies
 dict           copies
 closure        SHARES
-buffer         SHARES
-text_builder   SHARES
+buffer         copies
+text_builder   copies
 channel handle SHARES
+repeated alias copies
+depth-64 tail  SHARES
 ```
 
 **The rows the table cannot construct in three lines, and why they behave the
 way they do.** `chan_clone_rec` (src/eigenscript.c) switches on `ValType` with
 no `default:`, so `-Werror=switch` forces every new type to choose a side; the
-switch handles each type explicitly: `VAL_NUM`, `VAL_NULL`, `VAL_STR`, `VAL_LIST`,
-`VAL_DICT` are rebuilt (copy), and `VAL_FN`, `VAL_BUILTIN`, `VAL_BUFFER`,
-`VAL_TEXT_BUILDER`, `VAL_JSON_RAW` take a refcount (share).
+switch handles each type explicitly: `VAL_NUM`, `VAL_NULL`, `VAL_STR`,
+`VAL_LIST`, `VAL_DICT`, `VAL_BUFFER`, and `VAL_TEXT_BUILDER` are rebuilt
+(copy), while `VAL_FN`, `VAL_BUILTIN`, and `VAL_JSON_RAW` take a refcount
+(share).
 A new `ValType` must choose a side in the switch for the compiler to accept it.
+The copy is recursive but not an identity-preserving graph copy: two references
+to one list or dict become two independent copies. At recursion depth 65
+(`CHAN_CLONE_MAX_DEPTH` is 64), the remaining object is shared by refcount to
+bound C-stack use. The final two executable rows pin both limits explicitly.
 Two kinds are not in the table: `null` and a builtin have no mutable state, so there is nothing to observe. And a **store
 handle** and a **thread handle** behave exactly like the channel row: they are
 `VAL_NUM` ids into the process handle table (CLAUDE.md, leak tally), so the
 NUMBER copies while the resource it names is shared — which is why the channel
 row says SHARES even though a number copies.
 
-Until #1148 lands, send an explicit SNAPSHOT rather than the handle:
+Buffers and text builders now snapshot automatically at the transfer boundary;
+callers no longer need a manual `buf_copy of` workaround. A closure still captures
+its environment by reference whether or not it crosses a channel (the next
+section).
 
 ```eigenscript
 c is channel of 1
-b is buffer of 4
+b is buffer of 1
 buf_set of [b, 0, 1.5]
-snap is buffer of (buf_len of b)
-buf_copy of [b, 0, snap, 0, (buf_len of b)]   # an independent buffer
-send of [c, snap]
+send of [c, b]
 buf_set of [b, 0, 99]
 print of (buf_get of [(recv of c), 0])
 ```
 ```output
 1.5
 ```
-
-`text_builder_to_string of t` is the same move for a builder, and a closure
-captures its environment by reference whether or not it crosses a channel (the
-next section).
 
 A joined result is a copy the same way — a worker that returns a pure value
 hands the parent an independent value:

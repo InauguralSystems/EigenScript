@@ -225,6 +225,8 @@ typedef enum {
                                 * iteration but the last is unaddressable. Ordinals are
                                 * injective and edit-stable. Appended, not mid-list. */
 
+    OP_SET_LOCAL_INTERNAL, /*obs:NONE*/ /* [slot:16] internal TOS store; no history/tape.
+                           * Appended to preserve the public bytecode ABI. */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
@@ -380,7 +382,8 @@ typedef struct EigsChunk {
     int      max_stack;         /* computed max stack depth */
 
     /* JIT — populated lazily on first frame push.
-     * jit_state: 0 = untried, 1 = failed/unsupported, 2 = compiled.
+     * jit_state: 0 = untried, 1 = failed/unsupported, 2 = compiled,
+     * 3 = supported but rejected because the code cache was full.
      * jit_code: callable native thunk (signature void(void)) when
      * jit_state == 2. The thunk runs a prefix of opcodes against g_vm
      * thread-local state and returns; the caller advances frame->ip by
@@ -736,6 +739,9 @@ void       chunk_verify_self_check(EigsChunk *chunk, const char *unit);
  * contains (the compiler's source scan, replayed over verified bytecode).
  * Only call on a chunk tree chunk_verify accepted. */
 void       chunk_arm_temporal(const EigsChunk *chunk);
+/* True when a verified chunk tree can read the thread-wide temporal history.
+ * Sandboxes reject such chunks until history storage is sandbox-local. */
+int        chunk_reads_shared_temporal(const EigsChunk *chunk);
 
 /* Compiler */
 EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src);
