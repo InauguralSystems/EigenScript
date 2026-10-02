@@ -1777,6 +1777,7 @@ typedef struct {
     Value **items;
     int count;
     int capacity;
+    int copied_count;
 } PromoteEntry;
 
 #define PROMOTE_MAX_LISTS 100000
@@ -1805,10 +1806,11 @@ Value* promote_if_arena(Value *v) {
     if (!v || !v->arena) return v;
     if (v->type == VAL_NUM || v->type == VAL_STR || v->type == VAL_JSON_RAW) {
         Value *h = promote_arena_scalar(v);
-        /* A sandbox refusal is sticky and unwinds at the next dispatch.  The
-         * original is safe until then; returning it also preserves every
-         * store caller's non-NULL contract without allocating after refusal. */
-        return h ? h : v;
+        /* A sandbox refusal is sticky and unwinds at the next dispatch, but a
+         * store may retain this result in host history before that unwind.
+         * Never let the arena pointer cross that boundary: the immortal null
+         * preserves callers' non-NULL contract without another allocation. */
+        return h ? h : &g_null_singleton;
     }
     if (v->type == VAL_NULL) {
         /* VAL_NULL has a single immortal singleton (g_null_singleton, arena=1).
@@ -1859,6 +1861,7 @@ Value* promote_if_arena(Value *v) {
                 e->items = pending->data.list.items;
                 e->count = pending->data.list.count;
                 e->capacity = pending->data.list.capacity;
+                e->copied_count = 0;
                 e->dst = make_list_heap(e->count);
                 /* Intrusive memo marker; restored on every exit below. */
                 pending->data.list.items = (Value **)e->dst;
@@ -1907,16 +1910,27 @@ Value* promote_if_arena(Value *v) {
             work[i].src->data.list.capacity = work[i].capacity;
         }
         if (refused) {
-            /* Break copied edges first, then release every constructor ref;
-             * this also cleans partially closed cycles deterministically. */
+            /* Hide every copied edge from cycle collection before dropping
+             * any of its references.  A decref can collect an entire copied
+             * cycle, so leaving even a sibling list traversable would let a
+             * later cleanup step follow an already-freed child. */
             for (int i = 0; i < work_count; i++) {
                 Value *dst = work[i].dst;
-                for (int j = 0; j < dst->data.list.count; j++)
-                    val_decref(dst->data.list.items[j]);
+                work[i].copied_count = dst->data.list.count;
                 dst->data.list.count = 0;
             }
+            for (int i = 0; i < work_count; i++) {
+                Value *dst = work[i].dst;
+                for (int j = 0; j < work[i].copied_count; j++) {
+                    Value *child = dst->data.list.items[j];
+                    dst->data.list.items[j] = NULL;
+                    val_decref(child);
+                }
+            }
             for (int i = 0; i < work_count; i++) val_decref(work[i].dst);
-            root = v;
+            /* As with scalar refusal, host observers can retain the return
+             * value before the sandbox unwinds and resets its arena. */
+            root = &g_null_singleton;
         } else {
             /* Edges own refs; the caller owns only the root constructor ref. */
             for (int i = 1; i < work_count; i++) val_decref(work[i].dst);
