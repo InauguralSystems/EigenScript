@@ -3035,10 +3035,16 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
     fi
     echo ""
 
-    echo "[47c/47] native_train_step gradient-check (batched vs per-position)"
+    echo "[47c/47] native_train_step finite-difference gradient check"
     GC_OUTPUT=$(bash "$TESTS_DIR/test_native_train_gradcheck.sh" 2>&1)
+    GC_RC=$?
     GC_PASS=$(echo "$GC_OUTPUT" | grep -c "PASS:" || true)
     GC_FAIL=$(echo "$GC_OUTPUT" | grep -c "FAIL:" || true)
+    if [ "$GC_RC" -ne 0 ] && [ "$GC_FAIL" -eq 0 ]; then
+        GC_FAIL=1
+        GC_OUTPUT="$GC_OUTPUT
+  FAIL: gradient-check child exited $GC_RC without a verdict"
+    fi
     TOTAL=$((TOTAL + GC_PASS + GC_FAIL))
     PASS=$((PASS + GC_PASS))
     FAIL=$((FAIL + GC_FAIL))
@@ -3046,7 +3052,7 @@ if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
         echo "  FAIL: $GC_FAIL native_train_step gradient-check(s) failed"
         echo "$GC_OUTPUT" | grep "FAIL:" | head -4
     else
-        echo "  PASS: batched training path is gradient-identical to the per-position oracle"
+        echo "  PASS: native training gradients match an independent finite-difference oracle"
     fi
     echo ""
 
