@@ -2795,7 +2795,7 @@ Value* builtin_arena_stats(Value *arg) {
 Value* builtin_heap_inuse(Value *arg) {
     (void)arg;
 #if defined(__GLIBC__) && !EIGENSCRIPT_FREESTANDING
-    return make_num((double)mallinfo2().uordblks);
+    TRACE_NONDET_RET("heap_inuse", make_num((double)mallinfo2().uordblks));
 #else
     return make_null();
 #endif
