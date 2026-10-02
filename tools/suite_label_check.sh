@@ -15,6 +15,10 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUNNER="${SUITE_LABEL_RUNNER:-$ROOT/tests/run_all_tests.sh}"
+RUNNER_TEXT=$(mktemp "${TMPDIR:-/tmp}/eigs_labels.XXXXXX") || exit 2
+trap 'rm -f "$RUNNER_TEXT"' EXIT
+bash "$ROOT/tools/runner_text.sh" "$RUNNER" > "$RUNNER_TEXT" || exit 2
+RUNNER="$RUNNER_TEXT"
 MIN_LABELS=200
 n=$(grep -cE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER")
 if [ "$n" -lt "$MIN_LABELS" ]; then

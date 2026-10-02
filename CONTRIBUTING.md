@@ -11,8 +11,20 @@ cd EigenScript
 cd tests && bash run_all_tests.sh
 ```
 
-Building needs only `gcc`. Running the test suite also needs `python3` with PyYAML
-(`apt install python3-yaml`, or `python3 -m pip install --user pyyaml`).
+The minimal runtime build has no third-party library dependencies. Building it
+from source requires a C build toolchain (including a C compiler such as GCC or
+Clang) and Make.
+
+Contributors running the checks need Bash, the C build toolchain, Make, Python 3
+with PyYAML (`apt install python3-yaml`, or
+`python3 -m pip install --user pyyaml`), Git, and standard Unix shell and build
+utilities. Those utilities must include a SHA-256 implementation: either
+`sha256sum` or `shasum`. The suite must run from a Git checkout because its
+change selection and several gates inspect repository history and tracked
+files. Basic Markdown and command-line familiarity are sufficient.
+
+The repository's [prepared devcontainer and Codespaces environment](.devcontainer/)
+provides these contributor prerequisites.
 
 ## Making Changes
 
@@ -44,8 +56,11 @@ The complete suite (`make test`) takes much longer than that and is not a
 required local step: CI runs it on every PR and again in the merge queue.
 
 
-Adding a test is the test file plus its section in `tests/run_all_tests.sh` —
-no counts to bump, no documentation numbers to edit.
+Adding a test is the test file plus one new, uniquely named `*.sh` file in
+`tests/sections/` — do not edit `tests/run_all_tests.sh` or another shared
+section file. The runner sources those files in byte-sorted pathname order,
+and all runner-analysis gates expand the same list. There are no counts to
+bump and no documentation numbers to edit.
 
 Two gates worth knowing before you push:
 
