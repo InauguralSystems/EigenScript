@@ -196,7 +196,19 @@ log_softmax|print of (log_softmax of [1, "x"])|log_softmax: expected a tensor co
 relu|print of (relu of [1, "x", -2])|relu: expected a tensor containing only numbers
 leaky_relu|print of (leaky_relu of [1, "x", -2])|leaky_relu: expected a tensor containing only numbers
 tensor_save|print of (tensor_save of [[1, "x"], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
+softmax|print of (softmax of ["x", 1])|softmax: expected a tensor containing only numbers
+log_softmax|print of (log_softmax of ["x", 1])|log_softmax: expected a tensor containing only numbers
+relu|print of (relu of ["x", 1])|relu: expected a tensor containing only numbers
+leaky_relu|print of (leaky_relu of ["x", 1])|leaky_relu: expected a tensor containing only numbers
+softmax|print of (softmax of [[], ["x"]])|softmax: expected a tensor containing only numbers
+log_softmax|print of (log_softmax of [[], ["x"]])|log_softmax: expected a tensor containing only numbers
+relu|print of (relu of [[], ["x"]])|relu: expected a tensor containing only numbers
+leaky_relu|print of (leaky_relu of [[], ["x"]])|leaky_relu: expected a tensor containing only numbers
+tensor_save|print of (tensor_save of [[[], ["x"]], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
 tensor_load|write_bytes of ["@TMP@/nan.tensor", [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 127, 0, 0, 0, 0, 0, 0, 4, 64]]\nprint of (tensor_load of "@TMP@/nan.tensor")|tensor_load: result is not a number
+numerical_grad|define bad(_) as:\n    return "bad"\np is [1.0]\nprint of (numerical_grad of [bad, p, 0.001])|numerical_grad: expected loss function to return a number
+numerical_grad_rows|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_rows of [bad, m, [0], 0.001])|numerical_grad_rows: expected loss function to return a number
+numerical_grad_cols|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_cols of [bad, m, [0], 0.001])|numerical_grad_cols: expected loss function to return a number
 divide|print of (divide of [[1], [0]])|divide: division by zero
 split|print of (split of 42)
 scan_ints|print of (scan_ints of ({"k": 1}))
@@ -393,7 +405,7 @@ clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
 
 extract_guard_names() {
     awk '
-    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named)\(/ || /tensor_to_flat\(.*"/ { acc = ""; collecting = 1 }
+    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named|numerical_loss)\(/ || /tensor_to_flat\(.*"/ { acc = ""; collecting = 1 }
     collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
         collecting = 0
         n = split(acc, parts, "\"")

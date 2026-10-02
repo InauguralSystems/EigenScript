@@ -70,7 +70,7 @@ prereqs_of() {
   fi
 }
 probe_prereq() {
-  local name="$1" cmd="$2" binary="$3" tools t part first api src output rc
+  local name="$1" cmd="$2" binary="$3" tools t part first api src probe_dir="" output rc
   tools="$(prereqs_of "$name")"
   # Only top-level command positions can declare these tool dependencies.
   while IFS= read -r part; do
@@ -83,10 +83,15 @@ probe_prereq() {
       [ -n "${GFX:-}" ] && continue
       api="$(timeout 5 "$binary" --api --json 2>/dev/null)" || api=""
       case "$api" in *gfx_open*) ;; *) printf 'gfx-build'; return 0 ;; esac
-      src="${WORK:-${TMPDIR:-/tmp}}/ca-gfx-probe-$$.eigs"
-      printf 'print of gfx_open\n' > "$src" || { printf 'gfx-build'; return 0; }
+      if [ -n "$WORK" ]; then src="$WORK/gfx_bind.eigs"
+      else
+        probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/ca-gfx-probe.XXXXXX")" || { printf 'gfx-build'; return 0; }
+        src="$probe_dir/gfx_bind.eigs"
+      fi
+      printf 'print of gfx_open\n' > "$src" || { [ -z "$probe_dir" ] || rm -rf "$probe_dir"; printf 'gfx-build'; return 0; }
       output="$(timeout 5 "$binary" "$src" 2>&1)" && rc=0 || rc=$?
       rm -f "$src"
+      [ -z "$probe_dir" ] || rmdir "$probe_dir"
       case "$output" in *'<fn gfx_open>'*|*'<builtin>'*) [ "$rc" -eq 0 ] && continue ;; esac
       printf 'gfx-build (probe rc %s)' "$rc"; return 0
     fi
@@ -193,6 +198,8 @@ plan() {
 }
 
 WORK=""; RECORD=""; ACTIVE=""; SHIM=""; CALL_LOG=""; OVERLAY=""
+RUNTIME_SLOTS=()
+SELECTORS=""; SELECTOR_ENV=()
 stop_row_group() {
   local pid="${ACTIVE:-}"
   [ -n "$pid" ] || return 0
@@ -255,6 +262,30 @@ same_candidate_tree() {
   done
   return 1
 }
+# Derive the environment variables which consumer shell entry points use as
+# runtime selectors.  The spelling inventory belongs to the consumers, not to
+# this harness: adding another *-BIN or *-GFX selector to a checked-out consumer
+# automatically puts it under the shim boundary.  Directory variables are not
+# selectors and therefore do not match the terminal role below.
+derive_runtime_selectors() {
+  local repo f vars=""
+  for repo in "$ECO"/*/; do
+    [ -d "$repo" ] || continue
+    while IFS= read -r f; do
+      vars="$vars
+$(sed 's/#.*//' "$f" 2>/dev/null | grep -Eo '\<(EIGS|EIGENSCRIPT)(_(BIN|GFX))?\>' || true)"
+    done < <(find "$repo" -path '*/.git' -prune -o -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.zsh' -o -name Makefile -o -name makefile -o -name GNUmakefile \) -print)
+  done
+  SELECTORS="$(printf '%s\n' "$vars" | sed '/^$/d' | sort -u | paste -sd, -)"
+  SELECTOR_ENV=()
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in
+      *_GFX) SELECTOR_ENV+=("$f=$SHIM/eigenscript-gfx") ;;
+      *_BIN|EIGS|EIGENSCRIPT) SELECTOR_ENV+=("$f=$SHIM/eigenscript") ;;
+    esac
+  done < <(printf '%s\n' "$vars" | sed '/^$/d' | sort -u)
+}
 # A private, dereferenced copy lets consumer builds and writes stay in WORK.
 # The runtime executable slots alone route to the counting shims.
 overlay_runtime_slots() {
@@ -272,11 +303,13 @@ overlay_runtime_slots() {
     [ -e "$SHIM/$base" ] || make_shim "$base" missing || return 1
     rm -f "$item" || return 1
     cp "$SHIM/$base" "$item" || return 1
+    RUNTIME_SLOTS+=("$item")
   done
 }
 build_overlay() {
   local item base name
   OVERLAY="$WORK/tree"
+  RUNTIME_SLOTS=()
   mkdir -p "$OVERLAY" || return 1
   if [ -d "$TREE/src" ]; then cp -rL "$TREE/src" "$OVERLAY/src" || return 1
   else mkdir -p "$OVERLAY/src" || return 1; fi
@@ -291,8 +324,21 @@ build_overlay() {
   overlay_runtime_slots "$OVERLAY" || return 1
   overlay_runtime_slots "$OVERLAY/lib" || return 1
   for name in eigenscript eigenscript-full eigenscript-gfx; do
-    [ -e "$OVERLAY/src/$name" ] || cp "$SHIM/$name" "$OVERLAY/src/$name" || return 1
+    if [ ! -e "$OVERLAY/src/$name" ]; then
+      cp "$SHIM/$name" "$OVERLAY/src/$name" || return 1
+      RUNTIME_SLOTS+=("$OVERLAY/src/$name")
+    fi
   done
+}
+replaced_runtime_slot() {
+  local slot base
+  for slot in "${RUNTIME_SLOTS[@]}"; do
+    base="${slot##*/}"
+    if [ ! -f "$slot" ] || ! cmp -s "$SHIM/$base" "$slot"; then
+      return 0
+    fi
+  done
+  return 1
 }
 # The source scanner considers invocation sites, not prose or Dockerfile PATH lines.
 unsupported_variant() {
@@ -324,9 +370,9 @@ row() {
   elif v="$(probe_prereq "$name" "$cmd" "$candidate")" && [ -n "$v" ]; then verdict=UNRUNNABLE; prereq="$v"
   else
     start="$(date +%s)"
-    ( cd "$ECO/$name" && exec "${session[@]}" env PATH="$SHIM:$PATH" EIGS=eigenscript EIGENSCRIPT=eigenscript \
-        EIGENSCRIPT_BIN="$SHIM/eigenscript" EIGS_DIR="$OVERLAY" EIGENSCRIPT_DIR="$OVERLAY" \
-        "${GFX_ENV[@]}" timeout --kill-after=2s "$BUDGET" bash -e -o pipefail -c "$cmd" ) < /dev/null > "$log" 2>&1 &
+    ( cd "$ECO/$name" && exec "${session[@]}" env PATH="$SHIM:$PATH" \
+        "${SELECTOR_ENV[@]}" EIGS_DIR="$OVERLAY" EIGENSCRIPT_DIR="$OVERLAY" \
+        timeout --kill-after=2s "$BUDGET" bash -e -o pipefail -c "$cmd" ) < /dev/null > "$log" 2>&1 &
     ACTIVE=$!
     wait "$ACTIVE" && rc=0 || rc=$?
     stop_row_group
@@ -344,7 +390,8 @@ row() {
       if [ "$_rc" -eq 0 ]; then ok=$((ok+1)); else fail=$((fail+1)); fi
     done < "$CALL_LOG"
     skips="$(grep -c '^SKIP' "$log" || true)"
-    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then verdict=HANG
+    if replaced_runtime_slot; then verdict=FAIL; prereq=runtime-slot-replaced
+    elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then verdict=HANG
     elif [ -n "$missing_variant" ]; then verdict=UNRUNNABLE; prereq="variant:$missing_variant"
     elif [ "$rc" -ne 0 ]; then verdict=FAIL
     elif [ "$calls" -eq 0 ]; then verdict=FAIL; prereq=UNEXERCISED
@@ -366,7 +413,7 @@ row() {
     [ "$actual" = "$GFX_SHA" ] || mutated="${mutated:+$mutated,}eigenscript-gfx"
   fi
   if [ -n "$mutated" ]; then verdict=FAIL; prereq="candidate-mutated:$mutated"; fi
-  local line="row|$name|$pin|$verdict|$rc|$dur|cand_calls=$calls|cand_ok=$ok|cand_fail=$fail|consumer_skips=$skips"
+  local line="row|$name|$pin|$verdict|$rc|$dur|cand_calls=$calls|cand_ok=$ok|cand_fail=$fail|consumer_skips=$skips|selectors_overridden=${SELECTORS:-none}"
   [ -z "$prereq" ] || line="$line|prereq=$prereq"
   echo "$line" | tee -a "$BODY"
   if [ "$verdict" != PASS ] && [ -s "$log" ]; then
@@ -376,7 +423,7 @@ row() {
 }
 run() {
   local candidate="${1:-}" arg i examined=0 bad=0 rc version final_tmp
-  FULL=""; GFX=""; GFX_ENV=()
+  FULL=""; GFX=""
   [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--full binary] [--gfx binary]'; return 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -447,7 +494,7 @@ run() {
   make_shim eigenscript-full "${FULL:-missing}"
   make_shim eigenscript-gfx "${GFX:-missing}"
   build_overlay || { echo "cannot build candidate overlay: $TREE"; return 2; }
-  [ -z "$GFX" ] || GFX_ENV=("EIGENSCRIPT_GFX=$SHIM/eigenscript-gfx")
+  derive_runtime_selectors
   BODY="$WORK/record-body"; : > "$BODY"
   scan_inventory > "$WORK/inventory"
   cat "$WORK/inventory" | tee -a "$BODY"
@@ -542,7 +589,7 @@ selftest() {
   st_reset; st_consumer no_call true
   printf 'no_call\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
-  st_check c candidate-call-count 'cand_calls=0|cand_ok=0|cand_fail=0|consumer_skips=0|prereq=UNEXERCISED' "$st_record"
+  st_check c candidate-call-count 'cand_calls=0|cand_ok=0|cand_fail=0|consumer_skips=0|selectors_overridden=none|prereq=UNEXERCISED' "$st_record"
   # (d) timeout(1) terminates a hanging command and names HANG.
   st_reset; st_consumer hanging 'sleep 8'
   printf 'hanging\n' > "$st_eco/.ca_expected"
@@ -585,7 +632,7 @@ selftest() {
   st_reset; st_consumer variant 'eigenscript-gfx work.eigs'
   printf 'variant\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
-  st_check f variant-set 'row|variant|v0.43.0|UNRUNNABLE|-|0|cand_calls=0|cand_ok=0|cand_fail=0|consumer_skips=0|prereq=variant:eigenscript-gfx' "$st_record"
+  st_check f variant-set 'row|variant|v0.43.0|UNRUNNABLE|-|0|cand_calls=0|cand_ok=0|cand_fail=0|consumer_skips=0|selectors_overridden=none|prereq=variant:eigenscript-gfx' "$st_record"
   # (g) Two honest candidate calls across two pinned consumers pass.
   st_reset; st_consumer first 'eigenscript first.eigs'; st_consumer second 'eigenscript second.eigs'
   printf 'first\nsecond\n' > "$st_eco/.ca_expected"
@@ -620,18 +667,18 @@ selftest() {
   if [ "$st_rc" -eq 0 ] && grep -Fq 'row|sources|v0.43.0|PASS|0|' "$st_record" && grep -Fqx 'int runtime_value(void);' "$st_root/src/eigenscript.h"; then
     echo 'plant A check=private-source-copy GREEN cc=PASS source-unchanged=yes'
   else echo 'plant A check=private-source-copy SILENT'; st_bad=1; fi
-  # (B) A consumer rebuild of its overlay cannot replace the original binary.
+  # (B) A consumer rebuild that replaces the tree-path shim is refused by name.
   printf '#!/bin/sh\ncase "$1" in regression.eigs) exit 42;; esac\nexit 0\n' > "$st_candidate"; chmod +x "$st_candidate"
   printf '#!/bin/sh\nexit 0\n' > "$st_root/rebuilt-runtime"; chmod +x "$st_root/rebuilt-runtime"
   printf 'build:\n\tcp rebuilt-runtime src/eigenscript\n' > "$st_root/Makefile"
   local before_sha after_sha
   before_sha="$(sha256sum "$st_candidate" | awk '{print $1}')"
-  st_reset; st_consumer rebuild '"$ST_CC" $WERROR_FLAGS -c "$EIGS_DIR/src/eigenscript.c" -o runtime.o && eigenscript smoke.eigs && make -C "$EIGS_DIR" build && eigenscript regression.eigs'
+  st_reset; st_consumer rebuild '"$EIGS_DIR/src/eigenscript" smoke.eigs && make -C "$EIGS_DIR" build && "$EIGS_DIR/src/eigenscript" regression.eigs'
   printf 'rebuild\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   after_sha="$(sha256sum "$st_candidate" | awk '{print $1}')"
-  if [ "$st_rc" -ne 0 ] && grep -Fq 'row|rebuild|v0.43.0|FAIL|42|' "$st_record" && [ "$before_sha" = "$after_sha" ]; then
-    echo 'plant B check=private-overlay GREEN rebuild-rc=42 candidate-sha256=unchanged'
+  if [ "$st_rc" -ne 0 ] && grep -Fq 'row|rebuild|v0.43.0|FAIL|0|' "$st_record" && grep -Fq 'prereq=runtime-slot-replaced' "$st_record" && [ "$before_sha" = "$after_sha" ]; then
+    echo 'plant B check=runtime-slot-replaced RED named-refusal=yes candidate-sha256=unchanged'
   else echo 'plant B check=private-overlay SILENT'; st_bad=1; fi
   # (C) A candidate adjacent to unrelated source cannot claim that tree.
   mkdir -p "$st_root/mismatch/src" "$st_root/mismatch/lib" "$st_root/mismatch/bin"
@@ -682,8 +729,39 @@ selftest() {
   if [ "$st_rc" -ne 0 ] && grep -Fq 'row|mutated|v0.43.0|FAIL|0|' "$st_record" && grep -Fq 'prereq=candidate-mutated:eigenscript' "$st_record"; then
     echo "plant G check=candidate-mutation RED $(grep '^row|mutated|' "$st_record" | head -1)"
   else echo 'plant G check=candidate-mutation SILENT'; st_bad=1; fi
+  # (H) Every selector spelling found in consumer scripts is replaced by a
+  # counting shim.  In particular, an inherited graphics selector must not
+  # escape to a stale exit-zero runtime after a counted headless call.
+  printf '#!/bin/sh\ncase "$1" in *bad.eigs) exit 42;; esac\nexit 0\n' > "$st_candidate"; chmod +x "$st_candidate"
+  local selector stale_marker="$st_root/stale-ran" selector_ok=1
+  printf '#!/bin/sh\necho stale-ran >> "$CA_STALE_MARKER"\nexit 0\n' > "$st_root/stale-runtime"; chmod +x "$st_root/stale-runtime"
+  for selector in EIGENSCRIPT_GFX EIGENSCRIPT_BIN EIGS EIGENSCRIPT; do
+    st_reset; st_consumer "selector_$selector" 'eigenscript good.eigs && bash run-selector.sh'
+    printf '%s\n' '#!/bin/sh' '"${'"$selector"'}" bad.eigs' > "$st_eco/selector_$selector/run-selector.sh"
+    chmod +x "$st_eco/selector_$selector/run-selector.sh"
+    printf 'selector_%s\n' "$selector" > "$st_eco/.ca_expected"
+    rm -f "$stale_marker"; st_rc=0
+    CA_STALE_MARKER="$stale_marker" env "$selector=$st_root/stale-runtime" \
+      CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 \
+      timeout 60 bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+    if [ "$st_rc" -eq 0 ] || [ -e "$stale_marker" ] || ! grep -Fq "selectors_overridden=$selector" "$st_record"; then selector_ok=0; fi
+  done
+  if [ "$selector_ok" -eq 1 ]; then
+    echo 'plant H check=stale-runtime-selectors RED selectors=EIGENSCRIPT,EIGENSCRIPT_BIN,EIGENSCRIPT_GFX,EIGS stale=not-run'
+  else echo 'plant H check=stale-runtime-selectors SILENT'; st_bad=1; fi
+  # (I) A supplied graphics variant remains usable and its call is counted.
+  printf '#!/bin/sh\nexit 0\n' > "$st_root/eigenscript-gfx"; chmod +x "$st_root/eigenscript-gfx"
+  st_reset; st_consumer selector_gfx 'bash run-selector.sh'
+  printf '%s\n' '#!/bin/sh' '"${EIGENSCRIPT_GFX}" good.eigs' > "$st_eco/selector_gfx/run-selector.sh"; chmod +x "$st_eco/selector_gfx/run-selector.sh"
+  printf 'selector_gfx\n' > "$st_eco/.ca_expected"
+  st_rc=0
+  CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 timeout 60 \
+    bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --gfx "$st_root/eigenscript-gfx" > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'cand_calls=1|cand_ok=1' "$st_record" && grep -Fq 'selectors_overridden=EIGENSCRIPT_GFX' "$st_record"; then
+    echo 'plant I check=supplied-graphics GREEN cand_calls=1 cand_ok=1'
+  else echo 'plant I check=supplied-graphics SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 15/15 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 17/17 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 

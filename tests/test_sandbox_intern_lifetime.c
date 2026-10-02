@@ -77,10 +77,28 @@ static Value *sandbox_call(int key_number) {
     return out;
 }
 
+static Value *invalid_sandbox_call(void) {
+    Value *descriptor = make_list(1);
+    append_num(descriptor, 1); /* ABI only: missing code and constants. */
+    Value *out = builtin_sandbox_run(descriptor);
+    val_decref(descriptor);
+    return out;
+}
+
 int main(void) {
     EigsState *state = eigs_open();
     assert(state != NULL);
 
+    /* A joined worker leaves this state in atomic-refcount mode. Reproduce
+     * that persistent condition directly: sandbox keys must still remain in
+     * their run-owned scope rather than entering the process-global table. */
+    g_vm_multithreaded = 1;
+    /* Warm the fixed allowlist and diagnostic-wrapper names that legitimately
+     * acquire process lifetime in MT mode before measuring attacker keys. */
+    Value *warm = sandbox_call(-1);
+    assert(warm != NULL);
+    val_decref(warm);
+    gc_collect_cycles();
     const size_t baseline = intern_count();
     const size_t sandbox_baseline = sandbox_only_intern_count();
     Value *escaped = NULL;
@@ -126,6 +144,31 @@ int main(void) {
     assert(sandbox_retained <= 8);
 
     val_decref(escaped);
+
+    /* Candidate registration/collection is deliberately single-threaded.
+     * Finish the intern-lifetime MT simulation, then park a cycle below an
+     * inflated adaptive threshold to reproduce the cross-sandbox pin. */
+    g_vm_multithreaded = 0;
+    g_gc_threshold = 777777;
+    g_gc_val_threshold = 1000000;
+    Value *cycle = make_list(1);
+    list_append(cycle, cycle);
+    val_decref(cycle);
+    assert(g_gc_val_count > 0);
+
+    /* Descriptor rejection is still a sandbox boundary: validation has
+     * already isolated constants and may itself add more candidates. */
+    Value *invalid_out = invalid_sandbox_call();
+    assert(invalid_out != NULL);
+    Value *invalid_ok = dict_get(invalid_out, "ok");
+    assert(invalid_ok && invalid_ok->type == VAL_NUM &&
+           invalid_ok->data.num == 0.0);
+    val_decref(invalid_out);
+    assert(g_gc_val_count == 0);
+    /* Candidate-only boundary collection must not scan the unrelated captured
+     * environment registry or perturb its independently adaptive threshold. */
+    assert(g_gc_threshold == 777777);
+
     eigs_close(state);
     return 0;
 }

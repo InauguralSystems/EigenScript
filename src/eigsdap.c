@@ -107,23 +107,7 @@ static int json_get_int(const char *json, const char *key, int fallback) {
 
 static void json_escape_to(strbuf *sb, const char *s) {
     strbuf_append_char(sb, '"');
-    for (; *s; s++) {
-        switch (*s) {
-            case '"': strbuf_append(sb, "\\\""); break;
-            case '\\': strbuf_append(sb, "\\\\"); break;
-            case '\n': strbuf_append(sb, "\\n"); break;
-            case '\r': strbuf_append(sb, "\\r"); break;
-            case '\t': strbuf_append(sb, "\\t"); break;
-            default:
-                if ((unsigned char)*s < 0x20) {
-                    char esc[8];
-                    snprintf(esc, sizeof(esc), "\\u%04x", (unsigned char)*s);
-                    strbuf_append(sb, esc);
-                } else {
-                    strbuf_append_char(sb, *s);
-                }
-        }
-    }
+    eigs_json_escape_append(sb, s, SIZE_MAX);
     strbuf_append_char(sb, '"');
 }
 
@@ -135,7 +119,8 @@ static void dap_response(int request_seq, const char *command,
     strbuf_init(&sb);
     strbuf_append_fmt(&sb,
         "{\"seq\":%d,\"type\":\"response\",\"request_seq\":%d,"
-        "\"success\":true,\"command\":\"%s\"", g_seq++, request_seq, command);
+        "\"success\":true,\"command\":", g_seq++, request_seq);
+    json_escape_to(&sb, command);
     if (body_json) strbuf_append_fmt(&sb, ",\"body\":%s", body_json);
     strbuf_append_char(&sb, '}');
     dap_send(sb.data);
@@ -148,8 +133,9 @@ static void dap_error(int request_seq, const char *command,
     strbuf_init(&sb);
     strbuf_append_fmt(&sb,
         "{\"seq\":%d,\"type\":\"response\",\"request_seq\":%d,"
-        "\"success\":false,\"command\":\"%s\",\"message\":",
-        g_seq++, request_seq, command);
+        "\"success\":false,\"command\":", g_seq++, request_seq);
+    json_escape_to(&sb, command);
+    strbuf_append(&sb, ",\"message\":");
     json_escape_to(&sb, message);
     strbuf_append_char(&sb, '}');
     dap_send(sb.data);
@@ -159,8 +145,9 @@ static void dap_error(int request_seq, const char *command,
 static void dap_event(const char *event, const char *body_json) {
     strbuf sb;
     strbuf_init(&sb);
-    strbuf_append_fmt(&sb, "{\"seq\":%d,\"type\":\"event\",\"event\":\"%s\"",
-                      g_seq++, event);
+    strbuf_append_fmt(&sb, "{\"seq\":%d,\"type\":\"event\",\"event\":",
+                      g_seq++);
+    json_escape_to(&sb, event);
     if (body_json) strbuf_append_fmt(&sb, ",\"body\":%s", body_json);
     strbuf_append_char(&sb, '}');
     dap_send(sb.data);
@@ -170,8 +157,9 @@ static void dap_event(const char *event, const char *body_json) {
 static void dap_stopped(const char *reason) {
     strbuf sb;
     strbuf_init(&sb);
-    strbuf_append_fmt(&sb, "{\"reason\":\"%s\",\"threadId\":1,"
-                      "\"allThreadsStopped\":true}", reason);
+    strbuf_append(&sb, "{\"reason\":");
+    json_escape_to(&sb, reason);
+    strbuf_append(&sb, ",\"threadId\":1,\"allThreadsStopped\":true}");
     dap_event("stopped", sb.data);
     strbuf_free(&sb);
 }
