@@ -91,16 +91,21 @@ void jit_helper_get_name(struct EigsChunk *chunk, int idx) {
     (void)chunk; (void)idx;
 }
 
-/* Stage 4l: same shape — emitter takes &jit_helper_local_idx_get as an
- * immediate. Smoke binary never invokes the emit path. */
-void jit_helper_local_idx_get(int slot, int idx) {
-    (void)slot; (void)idx;
+/* Receipt-only helper: controlled statuses test the production emitter's
+ * call/bailout ABI without running a language error or changing runtime state. */
+static struct { int status, calls, bad; } index_receipt;
+int jit_helper_local_idx_get(int slot, int idx) {
+    VM *vm = eigs_current->vm;
+    index_receipt.calls++;
+    if (slot != 0 || idx != 0 || vm->sp != 0) index_receipt.bad++;
+    vm->stack[vm->sp++] = index_receipt.status ? slot_null() : slot_from_num(42);
+    return index_receipt.status;
 }
 
 /* Stage 4m: same shape — emitter takes &jit_helper_local_dot_get as an
  * immediate. Smoke binary never invokes the emit path. */
-void jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx) {
-    (void)chunk; (void)slot; (void)name_idx;
+int jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx) {
+    (void)chunk; (void)slot; (void)name_idx; return 0;
 }
 
 /* Stage 4o: same shape — emitter takes &jit_helper_observe_assign{,_local}
@@ -160,9 +165,9 @@ void jit_helper_dot_get(struct EigsChunk *chunk, int name_idx) {
 void jit_helper_dot_set(struct EigsChunk *chunk, int name_idx) {
     (void)chunk; (void)name_idx;
 }
-void jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
-                                  int list_idx, int name_idx) {
-    (void)chunk; (void)slot; (void)list_idx; (void)name_idx;
+int jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
+                                 int list_idx, int name_idx) {
+    (void)chunk; (void)slot; (void)list_idx; (void)name_idx; return 0;
 }
 
 /* Stages 4r / 4s / 4t / 5f: OP_CALL / OP_RETURN / OP_RETURN_NULL
@@ -344,6 +349,89 @@ static int run_store_cases(void) {
 }
 #undef STORE_ASSERT
 
+/* This prefix contains no other bailout opcode. Entry and OSR therefore
+ * cannot inherit r13 preservation/writeback from RETURN or arithmetic. */
+static int run_index_bail_cases(void) {
+#if EIGS_JIT_ENABLED
+    int rc = 0, rows = 0;
+    EigsState *state = calloc(1, sizeof *state);
+    EigsThread *thread = calloc(1, sizeof *thread);
+    VM *vm = calloc(1, sizeof *vm);
+    if (!state || !thread || !vm) {
+        fprintf(stderr, "FAIL: index-bail fixture allocation\n");
+        free(vm); free(thread); free(state);
+        return 1;
+    }
+    thread->state = state;
+    thread->vm = vm;
+    vm->owner = thread;
+    eigs_current = thread;
+    state->jit_entry_threshold = state->jit_iter_threshold = 1;
+    /* The balanced pair after offset 2 keeps the OSR prefix above the
+     * scanner's three-operation minimum without introducing a bailout. */
+    uint8_t code[] = {OP_NULL, OP_POP, OP_NULL, OP_POP,
+                      OP_LOCAL_IDX_GET, 0, 0, 0, 0, OP_NUM_ONE};
+    EigsChunk chunk = {0};
+    chunk.code = code;
+    chunk.code_len = sizeof code;
+    chunk.local_count = 1;
+    chunk.exec_count = 1;
+    for (int osr = 0; osr < 2; osr++) {
+        if (osr) jit_try_compile_chunk_osr(&chunk, 2, 0);
+        else jit_try_compile_chunk(&chunk);
+        void *thunk = osr ? chunk.jit_osr[0].code : chunk.jit_code;
+        int compiled = (osr ? chunk.jit_osr[0].state : chunk.jit_state) == 2;
+        if (!compiled || !thunk) {
+            fprintf(stderr, "FAIL: index-bail %s did not compile\n",
+                    osr ? "osr" : "entry");
+            rc = 1;
+            continue;
+        }
+        for (int status = 0; status < 2; status++) {
+            vm->sp = 0;
+            vm->stack[0] = vm->stack[1] = slot_null();
+            index_receipt.status = status;
+            index_receipt.calls = index_receipt.bad = 0;
+            chunk.jit_advance = chunk.jit_osr[0].advance = -99;
+            /* A live callee-saved register witnesses the callable ABI.
+             * The barriers prevent constant-folding the preservation check. */
+            register uint64_t saved_r13 __asm__("r13") = UINT64_C(0x13579bdf2468ace0);
+            __asm__ __volatile__("" : "+r"(saved_r13));
+            ((JitChunkFn)thunk)();
+            __asm__ __volatile__("" : "+r"(saved_r13));
+            int advance = osr ? chunk.jit_osr[0].advance : chunk.jit_advance;
+            int expected = (int)sizeof code - (status ? 1 : 0) - (osr ? 2 : 0);
+            int good = saved_r13 == UINT64_C(0x13579bdf2468ace0) &&
+                advance == expected && index_receipt.calls == 1 &&
+                index_receipt.bad == 0 && vm->sp == (status ? 1 : 2) &&
+                (status ? slot_is_null(vm->stack[0]) :
+                          vm->stack[0].d == 42 && vm->stack[1].d == 1);
+            rows++;
+            if (!good) {
+                fprintf(stderr, "FAIL: index-bail %s status=%d r13=%" PRIx64
+                        " advance=%d/%d sp=%d calls=%d bad=%d\n",
+                        osr ? "osr" : "entry", status, saved_r13, advance,
+                        expected, vm->sp, index_receipt.calls, index_receipt.bad);
+                rc = 1;
+            } else {
+                printf("ok  index-bail %s status=%d ABI/advance/continuation\n",
+                       osr ? "osr" : "entry", status);
+            }
+        }
+    }
+    jit_unregister_chunk(&chunk);
+    jit_thread_destroy(thread);
+    eigs_current = NULL;
+    free(vm); free(thread); free(state);
+    if (rows != 4) rc = 1;
+    if (!rc) printf("Index-bail smoke: 4/4 rows passed.\n");
+    return rc;
+#else
+    printf("Index-bail smoke: SKIP (native JIT unavailable).\n");
+    return 0;
+#endif
+}
+
 int main(void) {
     int rc = 0;
     rc |= run_case(42);
@@ -352,6 +440,7 @@ int main(void) {
     rc |= run_case(INT64_MIN);
     rc |= run_case(INT64_MAX);
     rc |= run_store_cases();
+    rc |= run_index_bail_cases();
     if (rc == 0) printf("\nJIT smoke: all cases passed.\n");
     return rc;
 }

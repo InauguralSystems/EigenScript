@@ -173,19 +173,19 @@ void jit_helper_get_name(struct EigsChunk *chunk, int idx);
 
 /* Stage 4l: out-of-line helper for OP_LOCAL_IDX_GET. Mirrors the
  * VAL_BUFFER/VAL_LIST/VAL_STR dispatch in CASE(LOCAL_IDX_GET). */
-void jit_helper_local_idx_get(int slot, int idx);
+int jit_helper_local_idx_get(int slot, int idx);
 
 /* Stage 4m: out-of-line helper for OP_LOCAL_DOT_GET. Needs chunk for
  * const_interns / const_hashes — same shape as jit_helper_get_name. */
-void jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx);
+int jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx);
 
 /* Stage 4v: out-of-line helper for OP_LOCAL_IDX_DOT_GET — the #1 DMG
  * bailout (48% of stops). Pushes one slot (local[slot][list_idx].name),
  * net sp change +1. Same sp sync/reload pattern as OP_LOCAL_DOT_GET:
  * sync %ecx → g_vm.sp before call so helper's vm_push_* sees the
  * current top; reload %ecx ← g_vm.sp after to pick up the push. */
-void jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
-                                  int list_idx, int name_idx);
+int jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
+                                 int list_idx, int name_idx);
 
 /* Stage 4q-f: out-of-line helper for OP_DOT_GET. Pops target,
  * pushes target.name — net sp change zero. Needs chunk for
