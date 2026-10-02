@@ -394,6 +394,53 @@ unobserved:
 check of ["unobserved assigns counted in JIT thunk", (when is hot908) == 20001]
 
 # ----------------------------------------------------------------
+# 10) A raising fused local-read helper must leave its native thunk
+#     immediately. Continuing in the thunk would run the counter increment
+#     before the interpreter gets a chance to dispatch to the catch handler.
+# ----------------------------------------------------------------
+null_read_side_effects is {"count": 0}
+
+define null_field_bail(x) as:
+    value is x.foo
+    null_read_side_effects.count is null_read_side_effects.count + 1
+    return value
+
+define null_index_bail(x) as:
+    value is x[0]
+    null_read_side_effects.count is null_read_side_effects.count + 1
+    return value
+
+define null_index_field_bail(x) as:
+    value is x[0].foo
+    null_read_side_effects.count is null_read_side_effects.count + 1
+    return value
+
+n is 0
+loop while n < 60:
+    null_field_bail of {"foo": 1}
+    null_index_bail of [[1]]
+    null_index_field_bail of [[{"foo": 1}]]
+    n is n + 1
+
+before_null_errors is null_read_side_effects.count
+null_errors_caught is 0
+try:
+    null_field_bail of null
+catch e:
+    null_errors_caught is null_errors_caught + 1
+try:
+    null_index_bail of null
+catch e:
+    null_errors_caught is null_errors_caught + 1
+try:
+    null_index_field_bail of null
+catch e:
+    null_errors_caught is null_errors_caught + 1
+check of ["hot null local reads remain catchable", null_errors_caught == 3]
+check of ["hot null local reads bail before side effects",
+          null_read_side_effects.count == before_null_errors]
+
+# ----------------------------------------------------------------
 print of f"jit paths: {pass_count} passed, {fail_count} failed"
 if fail_count == 0:
     print of "All tests passed"

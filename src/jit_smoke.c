@@ -68,14 +68,14 @@ void jit_helper_get_name(struct EigsChunk *chunk, int idx) {
 
 /* Stage 4l: same shape — emitter takes &jit_helper_local_idx_get as an
  * immediate. Smoke binary never invokes the emit path. */
-void jit_helper_local_idx_get(int slot, int idx) {
-    (void)slot; (void)idx;
+int jit_helper_local_idx_get(int slot, int idx) {
+    (void)slot; (void)idx; return 0;
 }
 
 /* Stage 4m: same shape — emitter takes &jit_helper_local_dot_get as an
  * immediate. Smoke binary never invokes the emit path. */
-void jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx) {
-    (void)chunk; (void)slot; (void)name_idx;
+int jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx) {
+    (void)chunk; (void)slot; (void)name_idx; return 0;
 }
 
 /* Stage 4o: same shape — emitter takes &jit_helper_observe_assign{,_local}
@@ -116,9 +116,9 @@ void jit_helper_dot_get(struct EigsChunk *chunk, int name_idx) {
 void jit_helper_dot_set(struct EigsChunk *chunk, int name_idx) {
     (void)chunk; (void)name_idx;
 }
-void jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
-                                  int list_idx, int name_idx) {
-    (void)chunk; (void)slot; (void)list_idx; (void)name_idx;
+int jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
+                                 int list_idx, int name_idx) {
+    (void)chunk; (void)slot; (void)list_idx; (void)name_idx; return 0;
 }
 
 /* Stages 4r / 4s / 4t / 5f: OP_CALL / OP_RETURN / OP_RETURN_NULL

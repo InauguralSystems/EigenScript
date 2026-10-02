@@ -1324,7 +1324,7 @@ void jit_helper_set_fn_name_local(EigsChunk *chunk, int idx) {
  * with the same error semantics so try/catch behavior is preserved.
  * No chunk pointer required (unlike GET_NAME): the slot is enough to
  * reach fn_env via g_vm.frames[]. */
-void jit_helper_local_idx_get(int slot, int idx) {
+int jit_helper_local_idx_get(int slot, int idx) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *target = vm_local_lift(e, (uint16_t)slot);
@@ -1339,7 +1339,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
                     i, target->data.buffer.count);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
         if (target->type == VAL_LIST) {
             if (i < target->data.list.count) {
@@ -1356,7 +1356,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
                     i, target->data.list.count);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
         if (target->type == VAL_STR) {
             int len = (int)val_str_len(target);
@@ -1369,7 +1369,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
                     i, len);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
         {
             rt_error(EK_TYPE, g_vm.current_line,
@@ -1379,6 +1379,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
         rt_error(EK_TYPE, g_vm.current_line, "cannot index null");
     }
     vm_push_slot(slot_null());
+    return g_has_error;
 }
 
 /* JIT Stage 4m: out-of-line helper for OP_LOCAL_DOT_GET.
@@ -1386,7 +1387,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
  * Mirrors CASE(LOCAL_DOT_GET) — looks up local[slot], dict-gets the
  * named field, pushes via immediate-num peephole when possible. Needs
  * chunk for const_interns / const_hashes (same as GET_NAME). */
-void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
+int jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *target = vm_local_lift(e, (uint16_t)slot);
@@ -1408,7 +1409,7 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
         } else {
             vm_push_slot(slot_null());
         }
-        return;
+        return g_has_error;
     }
     if (target) {
         const char *key = chunk->const_interns[name_idx];
@@ -1421,6 +1422,7 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
             "cannot access field '%s' on null", key);
     }
     vm_push_slot(slot_null());
+    return g_has_error;
 }
 
 /* JIT Stage 4v: out-of-line helper for OP_LOCAL_IDX_DOT_GET — the #1
@@ -1432,8 +1434,8 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
  * (after runtime_error for the type errors) to match interpreter
  * semantics. The JIT site does not need to sync/reload sp around the
  * call — helper drives g_vm.sp directly via vm_push_*. */
-void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
-                                  int list_idx, int name_idx) {
+int jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
+                                 int list_idx, int name_idx) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *target = vm_local_lift(e, (uint16_t)slot);
@@ -1458,7 +1460,7 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                         val_incref(v);
                         vm_push(v);
                     }
-                    return;
+                    return g_has_error;
                 }
             } else if (dict) {
                 const char *key = chunk->const_interns[name_idx];
@@ -1478,6 +1480,7 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
         rt_error(EK_TYPE, g_vm.current_line, "cannot index null");
     }
     vm_push_slot(slot_null());
+    return g_has_error;
 }
 
 /* JIT Stage 4q-f: out-of-line helper for OP_DOT_GET.
