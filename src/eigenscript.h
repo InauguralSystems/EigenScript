@@ -2207,12 +2207,12 @@ void*  handle_claim(int id, uint32_t gen, HandleType type, int *why);
  * ("joined" for a thread, "closed" for a channel or store). */
 void   handle_raise_unresolved(const char *who, const char *kind, int id,
                                int why, const char *gone_verb);
+Value *builtin_spawn(Value *arg);
+Value *builtin_thread_join(Value *arg);
 /* Deterministic teardown of every resource in the handle table (builtins.c):
  * HANDLE_THREAD, HANDLE_CHANNEL, HANDLE_NET, HANDLE_STORE, and HANDLE_TASK.
  * Call once execution is done and the value world is still alive (before
  * env/thread teardown). */
-Value *builtin_spawn(Value *arg);
-Value *builtin_thread_join(Value *arg);
 void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
 
