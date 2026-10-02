@@ -283,8 +283,10 @@ token_name of an unknown id is "?"|print of (token_name of 9999)
 channel_closed of a reclaimed/unknown channel is 1|print of (channel_closed of ({"_channel_id": 99999}))
 json_build of null is the empty object|print of (json_build of null)
 random_hex of 0 is ""|print of f"[{random_hex of 0}]"
+tensor_save preserves a zero-column tensor|assert of [(tensor_save of [[[], []], "@TMP@/zero-cols.tensor"]) == 1, "zero-column tensor_save"]
 EOF
 )
+PINS="${PINS//@TMP@/$TMP}"
 
 # programs run on both binaries in both modes when a baseline is given
 VALID=$(cat <<'EOF'
@@ -373,8 +375,10 @@ print of (audio_stream_open of [44100, 1])
 print of (audio_play of null)
 print of (audio_stream_push of null)
 print of (audio_play of [0.1, 0.2])
+print of (tensor_save of [[[], []], "@TMP@/zero-cols.tensor"])
 EOF
 )
+VALID="${VALID//@TMP@/$TMP}"
 
 sig_name() {
     case "$1" in

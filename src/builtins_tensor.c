@@ -2084,7 +2084,13 @@ Value* builtin_tensor_save(Value *arg) {
      * leave a partial file behind, and a direct C helper raise does not
      * unwind this builtin by itself. */
     double *flat = tensor_to_flat(tensor, &rows, &cols, "tensor_save");
-    if (!flat) return make_num(0);
+    /* A 2-D tensor may legitimately have zero columns. tensor_to_flat has
+     * still performed strict element validation above, but has no allocation
+     * to return for that shape. Preserve the historical save format: write
+     * its header and the empty data/observer sections. A NULL for any other
+     * shape remains a conversion failure. */
+    if (!flat && cols != 0) return make_num(0);
+    if (!flat && g_has_error) return make_num(0);
 
     FILE *f = xfopen_write(path_val->data.str, "wb");
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
