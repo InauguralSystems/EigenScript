@@ -108,31 +108,6 @@ static int own_exe_path(const char *argv0, char *out, size_t cap) {
  * interpreter start, which is interactive, so an ~800 KB read is invisible.
  * Takes the FIRST occurrence: the writer emits it immediately after the
  * runtime image, so anything matching later is inside the payload. */
-/* Does a plausible archive entry header start at `off`? The writer emits
- * [u32 path_len][path bytes, no NUL][u64 size][bytes], so a real archive head
- * is followed by a small length, a printable relative path, and a size that
- * fits in the file. Used to reject a coincidental magic match. */
-static int bundle_entry_header_plausible(FILE *f, long off) {
-    if (fseek(f, 0, SEEK_END) != 0) return 0;
-    long fsz = ftell(f);
-    if (fsz < 0 || off < 0 || off >= fsz) return 0;
-    if (fseek(f, off, SEEK_SET) != 0) return 0;
-
-    uint32_t plen;
-    if (fread(&plen, 4, 1, f) != 1) return 0;
-    if (plen == 0 || plen > 2048) return 0;
-
-    char rel[2049];
-    if (fread(rel, 1, plen, f) != plen) return 0;
-    for (uint32_t i = 0; i < plen; i++)
-        if (rel[i] < 0x20 || (unsigned char)rel[i] > 0x7e) return 0;
-
-    uint64_t size;
-    if (fread(&size, 8, 1, f) != 1) return 0;
-    if (size > (uint64_t)fsz) return 0;
-    return 1;
-}
-
 static int bundle_scan_for_head(FILE *f) {
     unsigned char want[BUNDLE_HEAD_LEN];
     bundle_head_magic(want);
@@ -148,18 +123,10 @@ static int bundle_scan_for_head(FILE *f) {
         if (have >= BUNDLE_HEAD_LEN) {
             for (size_t i = 0; i + BUNDLE_HEAD_LEN <= have; i++)
                 if (buf[i] == want[0] && memcmp(buf + i, want, BUNDLE_HEAD_LEN) == 0) {
-                    /* Belt and braces after the clang fold above: a match is
-                     * only believed if a well-formed first entry header
-                     * follows it. A stray occurrence in some future rodata
-                     * blob will not be followed by a plausible
-                     * [u32 path_len][printable path][u64 size], so it cannot
-                     * make the interpreter refuse itself. */
-                    long at = ftell(f);
-                    if (at < 0) return 0;
-                    long head_end = at - (long)(have - i) + BUNDLE_HEAD_LEN;
-                    int believable = bundle_entry_header_plausible(f, head_end);
-                    if (fseek(f, at, SEEK_SET) != 0) return 0;
-                    if (believable) return 1;
+                    /* A complete head is sufficient evidence of a damaged
+                     * bundle. Its entry header may itself be truncated, and
+                     * valid archived paths are not restricted to ASCII. */
+                    return 1;
                 }
         }
         if (got == 0) return 0;
