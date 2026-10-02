@@ -1,0 +1,22 @@
+{
+  "metadata_reconstructed_from_recorded_tool_invocations": true,
+  "commands": [
+    {
+      "argv": [
+        "make"
+      ],
+      "cwd": "/home/jon/src/wt/queue-1444-operator-line-20261002",
+      "log": "01-release-build.log",
+      "exit_file": "01-release-build.exit"
+    },
+    {
+      "argv": [
+        "make",
+        "jit-smoke"
+      ],
+      "cwd": "/home/jon/src/wt/queue-1444-operator-line-20261002",
+      "log": "02-jit-smoke.log",
+      "exit_file": "02-jit-smoke.exit"
+    }
+  ]
+}

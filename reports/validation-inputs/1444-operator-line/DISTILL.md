@@ -1,0 +1,5 @@
+# Distill handoff
+
+Source review caught two composed VM changes that a text merge missed: new binary-line opcodes must preserve the already-landed opcode ABI, and JIT line restoration must use the current per-thread trace address and emit the same tape line event as the interpreter. The fresh source review and two-fixture exact tape gate checked those interactions. Existing VM/JIT skills already require auditing every opcode consumer; no shared skill/state edit made from this worker.
+
+The accepted full-suite counter wrapper observes only its current Bash. The section dispatcher launches a new Bash, so wrapping that outer script produced unset counters even though 86 assertions passed. The package now asks the existing planner to emit the selected child, then wraps that child directly; actual receipt is PASS=35 TOTAL=35 FAIL=0 SKIPPED=0 LEAKED=0. Preserve this distinction in future external validation instructions; the immutable evidence retains the rejected outer receipt. Root owns any durable shared-skill update.

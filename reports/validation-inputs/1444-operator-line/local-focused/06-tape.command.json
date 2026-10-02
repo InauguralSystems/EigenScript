@@ -1,0 +1,8 @@
+{
+  "argv": [
+    "bash",
+    "tools/jit_tape_diff.sh"
+  ],
+  "cwd": "/home/jon/src/wt/queue-1444-operator-line-20261002",
+  "env_additions": {}
+}

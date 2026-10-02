@@ -1,0 +1,13 @@
+# #1444 frozen validation inputs — DATA ONLY, NEVER MERGE
+
+Production candidate: base `5cb91de8354d49340976ba085e6e6ddd3fe6b927`, staged tree `3a8582ff4b54d4a70cc72f9943fb02b9a66d2696`. Original PR head `97c0eb57cc4c5358ec1d06870324016a1ccb74ec`; its ancestry remains in the separate production merge checkout. This carrier is only a transport for an immutable patch and validation instructions. It must never be merged into the production branch or PR.
+
+The source manifest records all 26 changed paths with baseline/candidate blob IDs and SHA256s. The full 1,288-entry tree inventory and 831 gate/test/config source hashes independently pin the input population. `candidate.patch` SHA256 is `d439f2fd961c0d45588afe6e6628bab0072f89adc748ae90f7f3161a57ceed8c`. `source-review.md` is a source-only CLEAN review of the same tree. Runtime evidence in `local-focused/` is bounded local validation; it does not replace full Cloud lanes.
+
+The accepted #1452 carrier helpers already live at `../1452-post1460/`: their counter wrapper, dependency setup and receipt parsers are reused byte-for-byte by reference. `reused-helpers.json` pins those five files. Do not run the #1452 driver main: this package imports only its reusable functions. `capture-reuse-verification.json` proves the current runner's entire counter epilogue and EXIT trap match the accepted wrapper calibration. Prior #1452 successes are not #1444 results.
+
+Preparation creates two new attached checkouts with external Git metadata. Both HEADs equal the frozen baseline; the candidate patch is staged only in the candidate. This bounds `BASE...HEAD` to zero commits and lets staged paths select changed selftests, avoiding unrelated merged-history scope (#1605). Artifacts stay outside the source trees. The candidate production merge checkout is not used on Cloud.
+
+After root reviews this carrier and publishes its exact commit, follow `validation-brief.txt`. The driver defaults to input verification only. `--execute` runs serially, captures each actual process exit and log hash before parsing, stops on functional failure, leaves future phases NOT_RUN, and verifies identities even on failure. Full release and full ASan runs require explicit positive TOTAL, PASS+FAIL=TOTAL, FAIL=0, LEAKED=0, summary equality and no hard sanitizer diagnostic. All logs, named skips and failures must be preserved.
+
+No performance claim, new stress/fuzz corpus, GUI run, source repair, production commit, merge, or further task submission is part of this package. Root owns publication and submits once. Current state: prepared locally, not pushed, not submitted; independent package review remains required.

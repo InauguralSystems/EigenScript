@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "bash",
+    "/home/jon/src/wt/1444-operator-line-validation-carrier-20261002/reports/validation-inputs/1452-post1460/capture-exit.sh",
+    "/home/jon/src/wt/1444-operator-line-local-focused-20261002/operator-plan.sh",
+    "/home/jon/src/wt/1444-operator-line-local-focused-20261002/05-focused.counters"
+  ],
+  "cwd": "/home/jon/src/wt/queue-1444-operator-line-20261002/tests",
+  "env_additions": {}
+}

@@ -1,0 +1,44 @@
+{
+  "source_tree": "3a8582ff4b54d4a70cc72f9943fb02b9a66d2696",
+  "release_build_exit": 0,
+  "native_smoke": {
+    "constants": 5,
+    "rows": 16,
+    "native_stores": 6,
+    "helpers": 10,
+    "assertions": 246
+  },
+  "focused_dispatch": {
+    "passed": 86,
+    "total": 86,
+    "failed": 0,
+    "skipped": 0,
+    "chunks": 5,
+    "explicit_leaked_counter": "outer capture unset; not claimed"
+  },
+  "focused_direct_child": {
+    "rc": 0,
+    "passed": 35,
+    "total": 35,
+    "failed": 0,
+    "skipped": 0,
+    "leaked": 0
+  },
+  "tape": {
+    "programs": 2,
+    "arms_per_program": 2
+  },
+  "entry_witness": {
+    "compiled_scoped": true,
+    "module_osr_required": false
+  },
+  "osr_witness": {
+    "compiled_scoped": true,
+    "module_osr_required": true
+  },
+  "full_release": "NOT_RUN_LOCALLY",
+  "full_asan": "NOT_RUN_LOCALLY",
+  "long_differentials": "NOT_RUN_LOCALLY",
+  "precheck": "NOT_RUN_LOCALLY",
+  "production_unstaged_changes": []
+}

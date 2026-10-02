@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/home/jon/src/wt/queue-1444-operator-line-20261002/src/eigenscript",
+    "/home/jon/src/wt/queue-1444-operator-line-20261002/tests/jit_tape/binary_scope.eigs"
+  ],
+  "cwd": "/home/jon/src/wt/queue-1444-operator-line-20261002",
+  "env_additions": {
+    "EIGS_JIT_STATS": "1",
+    "EIGS_JIT_HOT": "1",
+    "EIGS_JIT_OSR_THRESHOLD": "1"
+  }
+}

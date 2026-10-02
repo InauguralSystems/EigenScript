@@ -1,0 +1,9 @@
+{
+  "status": "PREPARED_LOCAL_NOT_SUBMITTED",
+  "source_critic": "CLEAN",
+  "source_tree": "3a8582ff4b54d4a70cc72f9943fb02b9a66d2696",
+  "root_review_required": true,
+  "push_authorized_for_worker": false,
+  "cloud_submission_authorized_for_worker": false,
+  "carrier_data_only_never_merge": true
+}

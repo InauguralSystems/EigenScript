@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "bash",
+    "tools/selftests.sh",
+    "--list",
+    "--changed",
+    "5cb91de8354d49340976ba085e6e6ddd3fe6b927"
+  ],
+  "cwd": "/home/jon/src/wt/1444-operator-line-input-check-20261002/candidate",
+  "exit": 0,
+  "no_selftest_executed": true,
+  "head": "5cb91de8354d49340976ba085e6e6ddd3fe6b927"
+}

@@ -1,0 +1,117 @@
+{
+  "checks": 12,
+  "passed": 12,
+  "ordinary_log_controls_only": true,
+  "results": [
+    {
+      "name": "actual native smoke",
+      "accepted": true,
+      "expected": true,
+      "receipt": {
+        "constants": 5,
+        "rows": 16,
+        "native_stores": 6,
+        "helpers": 10,
+        "assertions": 246
+      },
+      "error": null
+    },
+    {
+      "name": "actual focused child counters",
+      "accepted": true,
+      "expected": true,
+      "receipt": {
+        "rc": 0,
+        "passed": 35,
+        "total": 35,
+        "failed": 0,
+        "skipped": 0,
+        "leaked": 0
+      },
+      "error": null
+    },
+    {
+      "name": "outer dispatcher capture correctly rejected",
+      "accepted": false,
+      "expected": false,
+      "receipt": null,
+      "error": "missing/noninteger final counter field"
+    },
+    {
+      "name": "actual tape population",
+      "accepted": true,
+      "expected": true,
+      "receipt": {
+        "programs": 2,
+        "arms_per_program": 2
+      },
+      "error": null
+    },
+    {
+      "name": "actual entry native witness",
+      "accepted": true,
+      "expected": true,
+      "receipt": {
+        "compiled_scoped": true,
+        "module_osr_required": false
+      },
+      "error": null
+    },
+    {
+      "name": "removed entry witness rejected",
+      "accepted": false,
+      "expected": false,
+      "receipt": null,
+      "error": "scoped function did not compile"
+    },
+    {
+      "name": "actual osr native witness",
+      "accepted": true,
+      "expected": true,
+      "receipt": {
+        "compiled_scoped": true,
+        "module_osr_required": true
+      },
+      "error": null
+    },
+    {
+      "name": "removed osr witness rejected",
+      "accepted": false,
+      "expected": false,
+      "receipt": null,
+      "error": "scoped function did not compile"
+    },
+    {
+      "name": "empty tape receipt rejected",
+      "accepted": false,
+      "expected": false,
+      "receipt": null,
+      "error": "tape corpus/verdict differs"
+    },
+    {
+      "name": "wrong tape population rejected",
+      "accepted": false,
+      "expected": false,
+      "receipt": null,
+      "error": "tape corpus/verdict differs"
+    },
+    {
+      "name": "incomplete precheck rejected",
+      "accepted": false,
+      "expected": false,
+      "receipt": null,
+      "error": "precheck population/failure"
+    },
+    {
+      "name": "complete precheck log control",
+      "accepted": true,
+      "expected": true,
+      "receipt": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 1
+      },
+      "error": null
+    }
+  ]
+}

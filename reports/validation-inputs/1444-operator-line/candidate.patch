@@ -1,0 +1,1235 @@
+diff --git a/README.md b/README.md
+index ffcf584e44477ab1cc8ecc6bc5f58a853e53fa63..2f9cfb2479e859e3903e0981126a2d064e58d2c6 100644
+--- a/README.md
++++ b/README.md
+@@ -322,6 +322,11 @@ scope are safe: anything stored into a binding or a container that
+ outlives the window is promoted to the heap at the store (#873) — the
+ arena reclaims only the unstored intermediates.
+ 
++Runtime errors from multiline binary operations report the operator's physical
++line. Successful binary operations restore the previous line attribution;
++compound field/index assignments retain their prior behavior. See
++[the error-line rule](docs/SPEC.md#error-handling) for the binary-only scope.
++
+ ## Standard Library
+ 
+ Pure EigenScript libraries under `lib/`:
+diff --git a/changes/changed/1425-operator-line.md b/changes/changed/1425-operator-line.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d90de2c63cd079036060db7ee3c416813bd42a5
+--- /dev/null
++++ b/changes/changed/1425-operator-line.md
+@@ -0,0 +1,8 @@
++- A runtime error raised by a written binary operator whose operands span lines reports the operator's
++  physical line in `e.line`, the error header, excerpt/caret and traceback (#1425). This includes plain-name
++  compound assignment (`x += rhs`) and written operators inside f-string interpolations, in the interpreter,
++  JIT and OSR. After success the compiler's temporary operator stamp restores the previous runtime line,
++  preserving attribution for an enclosing unary operation, index or call, including conditional operands.
++  Single-line code compiles to identical bytecode. Every execution tier adds a tape line record before
++  the operation and a restoring line record on success. Temporal filing remains the statement's first line. Dedicated compound
++  field/index assignments retain their prior attribution pending a separate owner decision.
+diff --git a/docs/COMPARISON.md b/docs/COMPARISON.md
+index 5c5aa408a87069e959292a5225463f5f9c69a83d..aeba39c816655f5a3820b3d12e8b8cb425a3cdf4 100644
+--- a/docs/COMPARISON.md
++++ b/docs/COMPARISON.md
+@@ -275,6 +275,12 @@ Not Found
+ 
+ ## Error handling
+ 
++A runtime error raised by a multiline binary operation reports the operator's
++physical line. Plain-name compound assignments follow their desugared binary
++operation; dedicated compound field/index assignments keep their prior line
++attribution. A successful binary operation restores the previous runtime line,
++so an enclosing unary, index or call error keeps its prior attribution.
++
+ Python:
+ 
+ ```python
+diff --git a/docs/SPEC.md b/docs/SPEC.md
+index e9cd075629eb434adf053c637fd3cb9f688328c4..68d80177bde8c15c385a2eae0e210c9c0559b805 100644
+--- a/docs/SPEC.md
++++ b/docs/SPEC.md
+@@ -1064,6 +1064,35 @@ catch e:
+ 5
+ ```
+ 
++When the faulting sub-expression is a binary operator (`+`, `-`, `*`, `/`,
++`%`, a comparison, a bitwise operator, or a plain-name compound
++assignment such as `x += rhs`) whose operands span lines, the reported line is the
++**operator's** line, not the line its right operand ends on (#1425). The `/`
++below is on line 3; its operand ends on line 4. The excerpt and caret point at
++the operator too, and so does the traceback:
++
++```eigenscript
++x is 0
++try:
++    z is 1 / (
++        x)
++catch e:
++    print of e.line
++```
++```output
++3
++```
++
++A successful binary operation restores the line attribution that preceded its
++operator stamp, so an enclosing unary operation, index or call keeps its prior
++attribution. Compound field/index assignments (`obj.key += rhs`, `xs[i] += rhs`)
++keep their prior attribution; their location policy awaits a separate owner
++decision. This rule covers binary operators only. Temporal filing is unchanged (the
++statement's first line). Other constructs that span lines (call arguments,
++indexing, and the concatenation an f-string is lowered to) are not decided by
++it; an operator written inside an f-string interpolation is a binary operator
++and follows it.
++
+ ```eigenscript
+ try:
+     throw of "custom failure"
+diff --git a/docs/TRACE.md b/docs/TRACE.md
+index 64ad3ba625bca8adb0205a7235a7fc9d301bcfca..6ade200e2d1f1be32f951efe9822d4f8855fca64 100644
+--- a/docs/TRACE.md
++++ b/docs/TRACE.md
+@@ -84,6 +84,17 @@ EIGS_REPLAY=u.tape <old>/eigenscript prog.eigs   # prints new.out
+ The only output that follows the replaying binary is output that reads line
+ identity: `what is x at N`, `e.line` and error headers.
+ 
++A written binary operator whose right operand stamped a different line temporarily
++stamps the operator's own line just before the operation (#1425), so a runtime
++error there reports the operator's line. In every execution tier, the tape
++gains an `L <operator line>` record before the operation and, on success, an
++`L <previous line>` record that
++restores the line that was active after the operand. Assignment filing then
++stamps the statement's first line as usual. Single-line expressions emit
++nothing extra. Synthesized f-string concatenation and dedicated compound
++field/index assignments keep their previous stamping; a written binary
++operator inside their operands still follows the binary rule.
++
+ ### Value serialization
+ 
+ `N` records are written with full fidelity so they can be parsed back
+diff --git a/docs/llms.txt b/docs/llms.txt
+index 4e03833f3c1fd98d4378d4132796f923b71c164d..0598222e72d91cfa989a45aa9b670bbfa93600eb 100644
+--- a/docs/llms.txt
++++ b/docs/llms.txt
+@@ -177,8 +177,13 @@ sqrt(2) = 1.414213562373095
+ - Temporal reads: `prev of x` (value before the last assignment),
+   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
+   parse error. A statement spanning several lines is filed under its FIRST
+-  line, while a runtime error inside it (`e.line`, the error header) reports
+-  the physical line of the faulting sub-expression. Wrap hot loops in `unobserved:` to skip the observer's entropy
++  line. A runtime error raised by a binary operator whose operands span lines
++  reports the operator's physical line in `e.line` and the error header,
++  including plain `x += rhs`.
++  A successful binary operation restores the previous line; enclosing unary,
++  index and call errors keep their prior attribution. Compound field/index
++  assignments keep their prior attribution pending a separate owner decision.
++  Wrap hot loops in `unobserved:` to skip the observer's entropy
+   walk (a scalar's value-window sample still lands, so numeric verdicts do not
+   change; `why`/`how` and non-numeric bindings' verdicts can).
+ 
+diff --git a/src/builtins.c b/src/builtins.c
+index 7f0f9155203ed0804369ba9fbcd7b8bd4330fb5e..f7bf019d2d9bc94e19af9fc611157d88ec7f6b29 100644
+--- a/src/builtins.c
++++ b/src/builtins.c
+@@ -3327,7 +3327,7 @@ static EigsChunk *vm_build_chunk_desc_ctx(Value *desc, int off, int sandbox_mode
+  * carry no stamp. After the offset the layout is:
+  *   [ code, constants, functions?, param_count?, name?, local_names? ]
+  *   - code        : list of byte ints (opcodes + little-endian operands; 16-bit
+- *                   except OP_LINE's, which is 32-bit since #630)
++ *                   except OP_LINE / OP_BINARY_LINE's 32-bit source lines)
+  *   - constants   : constant pool (ordinary values; sandbox mode restricts it
+  *                   recursively to data-only scalars/containers; strings double as
+  *                   GET_NAME/SET_NAME names)
+diff --git a/src/chunk.c b/src/chunk.c
+index 3dfca43baba300d388a446d0efdab64a05f98a9d..f26da133bc37e490bbaef29a9428ca023989e73e 100644
+--- a/src/chunk.c
++++ b/src/chunk.c
+@@ -147,8 +147,8 @@ void chunk_emit_u16(EigsChunk *chunk, uint16_t val, int line) {
+     chunk_emit(chunk, (uint8_t)((val >> 8) & 0xFF), line);
+ }
+ 
+-/* #630: little-endian 32-bit operand — currently only OP_LINE, whose line
+- * number legitimately exceeds 65535 in generated programs. Read by read_u32. */
++/* #630/#1425: little-endian 32-bit source-line operand (OP_LINE and
++ * OP_BINARY_LINE). Lines can exceed 65535 in generated programs. */
+ void chunk_emit_u32(EigsChunk *chunk, uint32_t val, int line) {
+     chunk_emit(chunk, (uint8_t)(val & 0xFF), line);
+     chunk_emit(chunk, (uint8_t)((val >> 8) & 0xFF), line);
+@@ -358,7 +358,7 @@ const char *op_name(uint8_t op) {
+     N(OP_LOOP_STALL_CHECK) N(OP_LOOP_CAP_CHECK)
+     N(OP_IMPORT) N(OP_MATCH)
+     N(OP_LISTCOMP_BEGIN) N(OP_LISTCOMP_APPEND)
+-    N(OP_LINE) N(OP_WIDE) N(OP_DISPATCH)
++    N(OP_LINE) N(OP_BINARY_LINE) N(OP_BINARY_LINE_END) N(OP_WIDE) N(OP_DISPATCH)
+     N(OP_LOCAL_DOT_GET) N(OP_LOCAL_DOT_SET) N(OP_LOCAL_IDX_GET)
+     N(OP_LOCAL_IDX_DOT_GET) N(OP_LOCAL_IDX_DOT_SET)
+     N(OP_INTERROGATE_NAMED) N(OP_INTERROGATE_NAMED_AT)
+@@ -401,7 +401,7 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
+         uint8_t op = chunk->code[i];
+         fprintf(stderr, "%04d [L%d] %-20s", i, line, op_name(op));
+         i++;
+-        if (op == OP_LINE && i + 3 < chunk->code_len) {
++        if ((op == OP_LINE || op == OP_BINARY_LINE) && i + 3 < chunk->code_len) {
+             /* #630: 32-bit operand. */
+             uint32_t arg = (uint32_t)chunk->code[i] |
+                            ((uint32_t)chunk->code[i + 1] << 8) |
+@@ -528,7 +528,9 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
+      * disassembler both special-case it BEFORE consulting this u16-strided
+      * table, so this arm is unreachable — listed for the exhaustiveness
+      * gate, not for behavior. */
+-    case OP_LINE:
++    case OP_LINE: case OP_BINARY_LINE:
++        return 0;
++    case OP_BINARY_LINE_END: /* no operand */
+         return 0;
+     case OP_COUNT:     /* sentinel — callers bounds-check first */
+         return 0;
+@@ -715,7 +717,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
+ 
+     /* Stack-neutral. BREAK/CONTINUE set a flag nothing reads — the compiler
+      * lowers both to jumps — so they are pure no-ops here too. */
+-    case OP_LINE: case OP_WIDE:
++    case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END: case OP_WIDE:
+     case OP_TRY_END: case OP_BREAK: case OP_CONTINUE:
+     case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
+     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+@@ -749,11 +751,23 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
+     while (i < n) {
+         uint8_t op = code[i];
+         if (op >= OP_COUNT) { ok = 0; break; }
+-        is_start[i] = 1;
++        if (!is_start[i]) is_start[i] = 1;
+         last_op = op;
++        /* #1425: one scalar save slot is sufficient only for an adjacent,
++         * non-calling binary scope. Its interior is a valid fall-through
++         * boundary (2), but not a legal jump/handler entry (1). */
++        if (op == OP_BINARY_LINE) {
++            if (i + 7 > n || code[i + 6] != OP_BINARY_LINE_END) { ok = 0; break; }
++            uint8_t bin = code[i + 5];
++            if (!((bin >= OP_ADD && bin <= OP_SHR) ||
++                  (bin >= OP_EQ && bin <= OP_GE))) { ok = 0; break; }
++            is_start[i + 5] = is_start[i + 6] = 2;
++        } else if (op == OP_BINARY_LINE_END && is_start[i] != 2) {
++            ok = 0; break;
++        }
+         /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
+          * role machinery below. No index to validate; just skip 4 bytes. */
+-        if (op == OP_LINE) {
++        if (op == OP_LINE || op == OP_BINARY_LINE) {
+             int end = i + 1 + 4;
+             if (end > n) { ok = 0; break; }
+             i = end;
+@@ -792,7 +806,7 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
+     /* Pass 2: every jump must land on an in-range instruction boundary. */
+     for (int t = 0; ok && t < ntargets; t++) {
+         int tgt = targets[t];
+-        if (tgt < 0 || tgt >= n || !is_start[tgt]) ok = 0;
++        if (tgt < 0 || tgt >= n || is_start[tgt] != 1) ok = 0;
+     }
+ 
+     /* Pass 3: execution must not be able to run off the end. Pass 2 pins every
+@@ -862,7 +876,7 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
+             int h = height[off];
+             uint8_t op = code[off];
+             int end, operand0 = 0, target = -1;
+-            if (op == OP_LINE) {
++            if (op == OP_LINE || op == OP_BINARY_LINE) {
+                 end = off + 1 + 4;
+             } else {
+                 VerifyRole roles[3];
+@@ -956,7 +970,7 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
+     int n = chunk->code_len, i = 0;
+     while (i < n) {
+         uint8_t op = code[i];
+-        if (op == OP_LINE) { i += 1 + 4; continue; }
++        if (op == OP_LINE || op == OP_BINARY_LINE) { i += 1 + 4; continue; }
+         VerifyRole roles[3];
+         int nops = op_verify_operands(op, roles);
+         if (op == OP_INTERROGATE_NAMED || op == OP_INTERROGATE_NAMED_AT ||
+@@ -992,7 +1006,7 @@ int chunk_reads_shared_temporal(const EigsChunk *chunk) {
+     int n = chunk->code_len, i = 0;
+     while (i < n) {
+         uint8_t op = code[i];
+-        if (op == OP_LINE) { i += 1 + 4; continue; }
++        if (op == OP_LINE || op == OP_BINARY_LINE) { i += 1 + 4; continue; }
+         VerifyRole roles[3];
+         int nops = op_verify_operands(op, roles);
+         if (op == OP_INTERROGATE_NAMED_AT ||
+@@ -1039,7 +1053,9 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
+     while (ip < end) {
+         uint8_t op = *ip++;
+         switch (op) {
+-        case OP_LINE:
++        case OP_BINARY_LINE_END:
++            break;
++        case OP_LINE: case OP_BINARY_LINE:
+             if (ip + 4 > end) return;   /* #630: 32-bit operand */
+             ip += 4;
+             break;
+@@ -1388,7 +1404,7 @@ int chunk_has_reader_opcode(const EigsChunk *chunk) {
+ static int chunk_step_ip(const EigsChunk *chunk, int i) {
+     uint8_t op = chunk->code[i];
+     i++;
+-    if (op == OP_LINE) {
++    if (op == OP_LINE || op == OP_BINARY_LINE) {
+         i += 4;                              /* #630: 32-bit operand */
+     } else if (op < OP_COUNT) {
+         VerifyRole roles[3];
+@@ -1399,7 +1415,7 @@ static int chunk_step_ip(const EigsChunk *chunk, int i) {
+ 
+ /* Next instruction offset at or after `i` that is not OP_LINE. */
+ static int chunk_skip_lines(const EigsChunk *chunk, int i) {
+-    while (i < chunk->code_len && chunk->code[i] == OP_LINE)
++    while (i < chunk->code_len && (chunk->code[i] == OP_LINE || chunk->code[i] == OP_BINARY_LINE || chunk->code[i] == OP_BINARY_LINE_END))
+         i = chunk_step_ip(chunk, i);
+     return i;
+ }
+@@ -1448,7 +1464,7 @@ int chunk_scan_static_loads(const EigsChunk *chunk,
+             uint8_t op = chunk->code[i];
+             int nops = 0;
+             VerifyRole roles[3];
+-            if (op != OP_LINE && op < OP_COUNT) nops = op_verify_operands(op, roles);
++            if (op != OP_LINE && op != OP_BINARY_LINE && op < OP_COUNT) nops = op_verify_operands(op, roles);
+ 
+             if (op == OP_IMPORT) {
+                 if (nops != 1 || i + 3 > chunk->code_len) return 1;
+diff --git a/src/compiler.c b/src/compiler.c
+index 30f0e93acf696912404f98301a5c8120079629c2..c819a927253194f93a5f1df9ef6bacbde95bf23c 100644
+--- a/src/compiler.c
++++ b/src/compiler.c
+@@ -10,6 +10,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <limits.h>
+ #if !EIGENSCRIPT_FREESTANDING
+ /* NB: EIGENSCRIPT_FREESTANDING is always DEFINED (eigenscript.h defaults it to
+  * 0), so this must test its VALUE. `#ifndef` here silently excluded both
+@@ -117,6 +118,9 @@ typedef struct Compiler {
+                                      * stamp the line". Reset at every basic-block boundary
+                                      * (patch_jump targets, emit_loop, loop_start capture,
+                                      * after CALL/DISPATCH/RETURN, fn entry). */
++    int               req_lo, req_hi; /* #1425: min/max line passed to emit_line (requested,
++                                     * deduped or not) since compile_operand_then_op opened
++                                     * its window; meaningful only inside that window. */
+     int               dispatch_rebound; /* #459, root-computed and copied to fn
+                                      * compilers: the unit binds `dispatch`
+                                      * somewhere (any scope) or references
+@@ -393,7 +397,7 @@ static int op_stack_effect(uint8_t op8) {
+     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+         return 0;
+     /* Line: no stack change */
+-    case OP_LINE:
++    case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
+         return 0;
+     /* Break/continue: no stack change (compiler emits as jumps) */
+     case OP_BREAK: case OP_CONTINUE:
+@@ -435,7 +439,7 @@ static void emit_op_u16(Compiler *c, uint8_t op, uint16_t arg, int line) {
+     adjust_stack(c, op_stack_effect(op));
+ }
+ 
+-/* #630: 32-bit operand form (OP_LINE only). */
++/* #630/#1425: 32-bit source-line operand (OP_LINE and OP_BINARY_LINE). */
+ static void emit_op_u32(Compiler *c, uint8_t op, uint32_t arg, int line) {
+     chunk_emit(c->chunk, op, line);
+     chunk_emit_u32(c->chunk, arg, line);
+@@ -532,6 +536,8 @@ static int capture_loop_start(Compiler *c) {
+  * parent's line). Emit only when the line changes; reset at every
+  * basic-block boundary so we never *skip* a stamp the runtime needs. */
+ static void emit_line(Compiler *c, int line) {
++    if (line < c->req_lo) c->req_lo = line;   /* #1425: see compile_operand_then_op */
++    if (line > c->req_hi) c->req_hi = line;
+     if (c->last_line == line) return;
+     emit_op_u32(c, OP_LINE, (uint32_t)line, line);   /* #630: 32-bit — was (uint16_t), wrapped past line 65535 */
+     c->last_line = line;
+@@ -547,6 +553,27 @@ static void restamp_line(Compiler *c, int line) {
+     emit_line(c, line);   /* emit_line's own dedup is exactly the test */
+ }
+ 
++/* #1425: scope the operator line to the binary instruction. Saving the
++ * runtime line, rather than guessing from last_line, preserves whichever
++ * short-circuit/conditional operand path executed. Calls also invalidate
++ * last_line. Only a differing stamp needs the scope; one-line bytecode stays
++ * identical. The markers surround one non-calling instruction, so scopes
++ * cannot nest or suspend. An error unwinds before BINARY_LINE_END and keeps
++ * the operator line for its diagnostic; success restores both line caches. */
++static void compile_operand_then_op(Compiler *c, ASTNode *rhs, uint8_t opc, int op_line) {
++    int lo = c->req_lo, hi = c->req_hi;
++    c->req_lo = INT_MAX; c->req_hi = INT_MIN;
++    compile_node(c, rhs);
++    int spans = c->req_lo != op_line || c->req_hi != op_line;
++    if (c->req_lo > lo) c->req_lo = lo;
++    if (c->req_hi < hi) c->req_hi = hi;
++    if (!opc) return;
++    int scope = spans && c->last_line != op_line;
++    if (scope) emit_op_u32(c, OP_BINARY_LINE, (uint32_t)op_line, op_line);
++    emit(c, opc, op_line);
++    if (scope) emit(c, OP_BINARY_LINE_END, op_line);
++}
++
+ /* ---- Constant helpers ---- */
+ 
+ /* u16 operand ceiling: constant indices are encoded as 16-bit operands
+@@ -2173,11 +2200,16 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
+             patch_jump(c, jump);
+             break;
+         }
+-        /* Normal binary op */
++        /* Normal binary op. An f-string's `+` (lexer-synthesized) keeps
++         * the old stamping: #1425 decided written operators only. */
+         compile_node(c, node->data.binop.left);
+-        compile_node(c, node->data.binop.right);
+         uint8_t opc = binop_to_opcode(op);
+-        if (opc) emit(c, opc, node->line);
++        if (node->data.binop.synth) {
++            compile_node(c, node->data.binop.right);
++            if (opc) emit(c, opc, node->line);
++        } else {
++            compile_operand_then_op(c, node->data.binop.right, opc, node->line);
++        }
+         break;
+     }
+ 
+diff --git a/src/eigenscript.h b/src/eigenscript.h
+index be3474f8b0ca23c2e08ef707ce07ae2fa8c32fba..d7133b4fadeeb162b5749035fa5781d620443098 100644
+--- a/src/eigenscript.h
++++ b/src/eigenscript.h
+@@ -213,7 +213,7 @@ struct ASTNode {
+         double num;
+         char *str;
+         struct { char *name; } ident;
+-        struct { char op[4]; ASTNode *left; ASTNode *right; } binop;
++        struct { char op[4]; ASTNode *left; ASTNode *right; uint8_t synth; } binop; /* synth: f-string `+` (#1425) */
+         struct { char op[4]; ASTNode *operand; } unary;
+         struct { char *name; ASTNode *expr; int local_only; } assign;
+         struct { ASTNode *left; ASTNode *right; } relation;
+diff --git a/src/jit.c b/src/jit.c
+index 6a9f4a1cfa2e9d0ebb5c6260c3878e779974fa23..ca4fa55e612aa6914ae3ad5bf1d40f0d02591a13 100644
+--- a/src/jit.c
++++ b/src/jit.c
+@@ -943,7 +943,9 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
+              * inline as 9-byte FS-prefixed inc/dec dword [disp32] — no
+              * call, no bail, no sp/env interaction. */
+             i += 1; ops++; non_line_ops++;
+-        } else if (op == OP_LINE) {
++        } else if (op == OP_BINARY_LINE_END) {
++            i += 1; ops++;
++        } else if (op == OP_LINE || op == OP_BINARY_LINE) {
+             /* #630: [op][line:32] = 5 bytes. */
+             if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+             i += 5; ops++;
+@@ -1126,6 +1128,12 @@ static uint8_t *emit_mov_disp32_rbx_to_eax(uint8_t *w, int32_t disp) {
+     return emit_u32(w, (uint32_t)disp);
+ }
+ 
++/* #1425: 32-bit stores for the scoped line caches. %eax/%rdx are scratch. */
++static uint8_t *emit_mov_eax_to_disp32_rbx(uint8_t *w, int32_t disp) {
++    *w++ = 0x89; *w++ = 0x83;
++    return emit_u32(w, (uint32_t)disp);
++}
++
+ /* dec %eax (2 bytes) */
+ static uint8_t *emit_dec_eax(uint8_t *w) { *w++ = 0xFF; *w++ = 0xC8; return w; }
+ 
+@@ -1245,6 +1253,17 @@ static uint8_t *emit_pop_rcx(uint8_t *w) { *w++ = 0x59; return w; }
+ /* call *%rax (2 bytes) */
+ static uint8_t *emit_call_rax(uint8_t *w) { *w++ = 0xFF; *w++ = 0xD0; return w; }
+ 
++/* #1425/#1435: resolve the attached thread's line cache when the thunk runs,
++ * as OP_LINE does. The call preserves the cached sp and leaves the address
++ * in %rdx; %eax is scratch and must be loaded after this helper. */
++static uint8_t *emit_trace_line_addr_rdx(uint8_t *w) {
++    w = emit_push_rcx(w);
++    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_current_line_addr);
++    w = emit_call_rax(w);
++    w = emit_pop_rcx(w);
++    return emit_mov_rax_rdx(w);
++}
++
+ /* Emit inline conditional incref of a slot held in %rax.
+  *
+  * Sequence (~32 bytes):
+@@ -4109,7 +4128,34 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
+                 }
+             }
+             i += 1;
+-        } else { /* OP_LINE */
++        } else if (op == OP_BINARY_LINE_END) {
++            w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_binary_prev_line);
++            w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_current_line);
++            w = emit_trace_line_addr_rdx(w);
++            w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_binary_prev_trace_line);
++            *w++ = 0x89; *w++ = 0x02; /* mov %eax,(%rdx) */
++            /* #1383: a successful scope restores the tape's line stream
++             * too, exactly as interpreter BINARY_LINE_END does. */
++            uint8_t *no_tape;
++            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_enabled_storage);
++            w = emit_cmpl_0_mem_rax(w);
++            w = emit_je_rel32(w, &no_tape);
++            w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_binary_prev_trace_line);
++            *w++ = 0x89; *w++ = 0xC7; /* mov %eax,%edi */
++            w = emit_push_rcx(w);
++            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_line);
++            w = emit_call_rax(w);
++            w = emit_pop_rcx(w);
++            patch_rel32(no_tape, w);
++            i += 1;
++        } else { /* OP_LINE / OP_BINARY_LINE */
++            if (op == OP_BINARY_LINE) {
++                w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_current_line);
++                w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_binary_prev_line);
++                w = emit_trace_line_addr_rdx(w);
++                *w++ = 0x8B; *w++ = 0x02; /* mov (%rdx),%eax */
++                w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_binary_prev_trace_line);
++            }
+             /* #630: 32-bit operand. */
+             uint32_t line = (uint32_t)chunk->code[i + 1] |
+                             ((uint32_t)chunk->code[i + 2] << 8) |
+@@ -4164,7 +4210,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
+             last_imm = (v && v->type == VAL_NUM);
+             break;
+         }
+-        case OP_LINE:
++        case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
+         case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
+             /* Pass-through. LINE touches no stack; the PEEK ops read the
+              * condition but leave the operand on the stack (they don't push),
+diff --git a/src/jit.h b/src/jit.h
+index 2bb78b4ae5646638e85c20e66963123ec12105fc..8be0265bff17e27b017e903415677885b51bc4b7 100644
+--- a/src/jit.h
++++ b/src/jit.h
+@@ -141,6 +141,8 @@ typedef struct {
+     int  off_frame_count;
+     int  off_frames;
+     int  off_current_line;
++    int  off_binary_prev_line;
++    int  off_binary_prev_trace_line;
+     int  off_callframe_ip;
+     int  off_callframe_fn_env;
+     int  sizeof_callframe;
+diff --git a/src/parser.c b/src/parser.c
+index e92d8438101a8a05a869c1000650e0c9e3315cad..f598c1ce333397c3c255a12d9a24da93c8cdffcb 100644
+--- a/src/parser.c
++++ b/src/parser.c
+@@ -1178,6 +1178,7 @@ static ASTNode* parse_addition(Parser *p) {
+         ASTNode *right = parse_multiply(p);
+         ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
+         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
++        n->data.binop.synth = op_tok->synth;   /* f-string `+` (#1425) */
+         n->data.binop.left = left;
+         n->data.binop.right = right;
+         left = n;
+@@ -1859,6 +1860,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
+     if ((tok_is_assign_name(t->type) && p_peek(p, 1)->type == TOK_IS) ||
+         (tok_is_ident_like(t->type) && is_compound_assign(p_peek(p, 1)->type))) {
+         Token *name_tok = p_advance(p);
++        Token *assign_tok = p_cur(p);
+         int compound = is_compound_assign(p_cur(p)->type);
+         char cop[4];
+         if (compound) compound_to_op(p_cur(p)->type, cop);
+@@ -1869,7 +1871,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
+             ASTNode *ident = make_node_col(AST_IDENT, name_tok->line, name_tok->col);
+             ident->data.ident.name = xstrdup(name_tok->str_val);
+             set_name_hash(ident, ident->data.ident.name);
+-            ASTNode *binop = make_node_col(AST_BINOP, t->line, t->col);
++            ASTNode *binop = make_node_col(AST_BINOP, assign_tok->line, assign_tok->col);
+             memcpy(binop->data.binop.op, cop, 4);
+             binop->data.binop.left = ident;
+             binop->data.binop.right = expr;
+diff --git a/src/vm.c b/src/vm.c
+index 7f45d6326bb813a8da46c84f91c9c73d61e50f6a..b9756936652e02d887c486ba341ddccd35eb9e5a 100644
+--- a/src/vm.c
++++ b/src/vm.c
+@@ -1859,7 +1859,9 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
+     uint8_t *ip = c->code;
+     for (;;) {
+         switch (*ip++) {
+-        case OP_LINE:
++        case OP_BINARY_LINE_END:
++            break;
++        case OP_LINE: case OP_BINARY_LINE:
+             ip += 4;   /* #630: 32-bit operand */
+             break;
+         case OP_CONST: {
+@@ -2797,6 +2799,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
+     out->off_frame_count     = (int)offsetof(VM, frame_count);
+     out->off_frames          = (int)offsetof(VM, frames);
+     out->off_current_line    = (int)offsetof(VM, current_line);
++    out->off_binary_prev_line = (int)offsetof(VM, binary_prev_line);
++    out->off_binary_prev_trace_line = (int)offsetof(VM, binary_prev_trace_line);
+     out->off_callframe_ip    = (int)offsetof(CallFrame, ip);
+     out->off_callframe_fn_env= (int)offsetof(CallFrame, fn_env);
+     out->sizeof_callframe    = (int)sizeof(CallFrame);
+@@ -3096,6 +3100,8 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
+         [OP_IMPORT] = &&lbl_IMPORT, [OP_MATCH] = &&lbl_MATCH,
+         [OP_LISTCOMP_BEGIN] = &&lbl_LISTCOMP_BEGIN,
+         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
++        [OP_BINARY_LINE] = &&lbl_BINARY_LINE,
++        [OP_BINARY_LINE_END] = &&lbl_BINARY_LINE_END,
+         [OP_LINE] = &&lbl_LINE, [OP_WIDE] = &&lbl_WIDE,
+         [OP_DISPATCH] = &&lbl_DISPATCH,
+         [OP_LOCAL_DOT_GET] = &&lbl_LOCAL_DOT_GET,
+@@ -6266,7 +6272,26 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
+         DISPATCH();
+     }
+ 
+-    CASE(LINE): {
++    CASE(BINARY_LINE): {
++        g_vm.binary_prev_line = current_line;
++        g_vm.binary_prev_trace_line = g_vm_multithreaded
++            ? current_line : trace_current_line_load();
++        /* Same stamp/tape behavior as LINE; only its lifetime differs. */
++        goto vm_stamp_line;
++    }
++
++    CASE(BINARY_LINE_END): {
++        current_line = g_vm.binary_prev_line;
++        g_vm.current_line = current_line;
++        if (!g_vm_multithreaded)
++            trace_current_line_store(g_vm.binary_prev_trace_line);
++        if (__builtin_expect(g_trace_enabled, 0))
++            trace_line(g_vm.binary_prev_trace_line);
++        DISPATCH();
++    }
++
++    CASE(LINE):
++    vm_stamp_line: {
+         uint32_t line = read_u32(ip); ip += 4;   /* #630: 32-bit operand */
+         current_line = (int)line;
+         g_vm.current_line = (int)line;
+diff --git a/src/vm.h b/src/vm.h
+index 54c79600efc627ada46611909b97e59d5ad166d2..b5059f24a5698c86f582dd403844017d6c3cfa70 100644
+--- a/src/vm.h
++++ b/src/vm.h
+@@ -227,6 +227,9 @@ typedef enum {
+ 
+     OP_SET_LOCAL_INTERNAL, /*obs:NONE*/ /* [slot:16] internal TOS store; no history/tape.
+                            * Appended to preserve the public bytecode ABI. */
++    OP_BINARY_LINE,     /*obs:WRITES*/ /* [line:32] save line caches and stamp one binary op */
++    OP_BINARY_LINE_END, /*obs:WRITES*/ /* restore line caches after a successful binary op */
++
+     OP_COUNT            /* sentinel — number of opcodes */
+ } OpCode;
+ 
+@@ -547,6 +550,10 @@ typedef struct VM {
+      * (for example a builtin task entry invoking a user callback). */
+     int        execute_depth;
+     int        current_line;
++    /* #1425: scratch for adjacent BINARY_LINE / binop / BINARY_LINE_END.
++     * No call, jump or suspension lies inside a compiler-emitted scope. */
++    int        binary_prev_line;
++    int        binary_prev_trace_line;
+     /* Back-pointer to the owning EigsThread, set in vm_init. Lets the
+      * JIT reach EigsThread fields (e.g. unobserved_depth) via a single
+      * `mov off_vm_owner(%rbx), %rax` instead of a TLS read at every
+diff --git a/tests/jit_tape/binary_scope.eigs b/tests/jit_tape/binary_scope.eigs
+new file mode 100644
+index 0000000000000000000000000000000000000000..f405d3499eca9c49d274fe82841d3b0b1dc60c0f
+--- /dev/null
++++ b/tests/jit_tape/binary_scope.eigs
+@@ -0,0 +1,14 @@
++# #1425 with #1383: successful multiline binaries restore the same tape line
++# in interpreted, function-entry JIT and OSR execution, including both arms.
++define scoped(k, flag) as:
++    local value is k + (
++        1)
++    local branch is value + (flag or
++        value)
++    return branch
++
++total is 0
++for k in range of 80:
++    total is total + (
++        scoped of [k, k % 2])
++print of total
+diff --git a/tests/operator_line_compound.eigs b/tests/operator_line_compound.eigs
+new file mode 100644
+index 0000000000000000000000000000000000000000..f0e3d341f20e79b062d0d7d3aaaf05f10a269666
+--- /dev/null
++++ b/tests/operator_line_compound.eigs
+@@ -0,0 +1,14 @@
++# #1425/Cloud review: plain-name compound assignment keeps the operator's
++# column in its desugared binary node, so the caret points at +=.
++# LINE-NUMBER SENSITIVE: the [0h] section checks the uncaught diagnostic.
++define compound_add(rhs) as:
++    local x is 1
++    x += (
++        rhs)
++    return x
++k is 80
++loop while k > 0:
++    r is compound_add of 1
++    k is k - 1
++
++r is compound_add of "s"
+diff --git a/tests/operator_line_fn.eigs b/tests/operator_line_fn.eigs
+new file mode 100644
+index 0000000000000000000000000000000000000000..10eda09a226f4912d70bdde0224f9bd1e407da7e
+--- /dev/null
++++ b/tests/operator_line_fn.eigs
+@@ -0,0 +1,16 @@
++# #1425 uncaught, inside a function frame, hot: `chain` is JIT-compiled after
++# 6001 calls from a module loop; on the last call the SECOND `+` (line 7)
++# raises. Pre-fix: "Error line 8", the excerpt of line 8, "at chain (line 8)".
++# LINE-NUMBER SENSITIVE (the [0h] runner section greps these numbers).
++define chain(a, b, c) as:
++    r is (a +
++        b +
++        c)
++    return r
++k is 6001
++loop while k > 0:
++    k is k - 1
++    s is k
++    if k == 0:
++        s is "s"
++    w is chain of [k, k, s]
+diff --git a/tests/operator_line_module.eigs b/tests/operator_line_module.eigs
+new file mode 100644
+index 0000000000000000000000000000000000000000..00966aff3f2ef6d972432c1e545f57fb7c8a63e0
+--- /dev/null
++++ b/tests/operator_line_module.eigs
+@@ -0,0 +1,10 @@
++# #1425 uncaught, module frame, hot: a 6001-iteration module loop (past the
++# 5000 OSR threshold); the `/` on line 8 has its right operand on line 9 and
++# raises on the last iteration. Pre-fix: "Error line 9" and no excerpt.
++# LINE-NUMBER SENSITIVE (the [0h] runner section greps these numbers).
++k is 6001
++d is 1
++loop while k > 0:
++    r is 1 / (
++        k - d)
++    k is k - 1
+diff --git a/tests/sections/0h-operator-line.sh b/tests/sections/0h-operator-line.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb9b6e51d44f3e8ca79cddfc0c35d7a9ceaf86b5
+--- /dev/null
++++ b/tests/sections/0h-operator-line.sh
+@@ -0,0 +1,60 @@
++echo "[0h] Multiline binary errors report the operator's line (#1425)"
++check_binary_fingerprint
++# Keep #1424's caller-line section unchanged. These rows own #1425's
++# diagnostics and restoration checks, with native execution witnesses.
++for OL_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
++    OL_ENV="EIGS_JIT_STATS=1 EIGS_JIT_HOT=1"; [ "$OL_TIER" = JIT ] || OL_ENV="$OL_ENV $OL_TIER"
++    for OL_PROG in test_operator_line.eigs test_operator_line_parent.eigs; do
++        OL_OUT=$($EIGS_TMO env $OL_ENV ./eigenscript "../tests/$OL_PROG" </dev/null 2>&1); OL_RC=$?
++        TOTAL=$((TOTAL + 1))
++        OL_JIT=$(lar_jit_witness "$OL_TIER" "$OL_OUT")
++        if [ "$OL_PROG" = test_operator_line_parent.eigs ] && [ "$OL_TIER" != EIGS_JIT_OFF=1 ] && [ "$(uname -m)" = x86_64 ]; then
++            # Witness each parent callee and each independent OSR loop.
++            for OL_PARENT in unary index call; do
++                grep -Eq "^parent_${OL_PARENT} +[0-9]+ +yes " <<< "$OL_OUT" || OL_JIT=missing-parent-$OL_PARENT
++                grep -Eq "^osr_parent_${OL_PARENT} .* +yes +[1-9][0-9]* +[0-9]+ " <<< "$OL_OUT" || OL_JIT=missing-osr-$OL_PARENT
++            done
++            grep -Eq "^parent_branch +[0-9]+ +yes " <<< "$OL_OUT" || OL_JIT=missing-parent-branch
++            grep -Eq "^osr_parent_branch .* +yes +[1-9][0-9]* +[0-9]+ " <<< "$OL_OUT" || OL_JIT=missing-osr-branch
++        fi
++        if [ "$OL_JIT" != ok ]; then
++            FAIL=$((FAIL + 1)); echo "  FAIL: e.line, $OL_PROG ($OL_TIER): compiled witness $OL_JIT"
++            printf '%s\n' "$OL_OUT" | eigs_failure_output
++        elif rc_ok "$OL_RC" "$OL_OUT" && grep -q "All tests passed" <<< "$OL_OUT"; then
++            PASS=$((PASS + 1)); echo "  PASS: e.line, $OL_PROG ($OL_TIER)"
++        else
++            FAIL=$((FAIL + 1)); echo "  FAIL: e.line, $OL_PROG ($OL_TIER, rc=$OL_RC)"
++            printf '%s\n' "$OL_OUT" | eigs_failure_output
++        fi
++    done
++    # Semicolons separate exact expected lines; excerpt lines contain '|'.
++    for OL_FX in "operator_line_module.eigs:Error line 8:;     8 |     r is 1 / (;       |            ^;  at <module> (line 8)" \
++                 "operator_line_fn.eigs:Error line 7:;     7 |         b +;       |           ^;  at chain (line 7);  at <module> (line 16)" \
++                 "operator_line_compound.eigs:Error line 6:;     6 |     x += (;       |       ^;  at compound_add (line 6);  at <module> (line 14)"; do
++        OL_FILE=${OL_FX%%:*}; OL_WANT=${OL_FX#*:}
++        OL_OUT=$($EIGS_TMO env $OL_ENV ./eigenscript "../tests/$OL_FILE" </dev/null 2>&1); OL_RC=$?
++        OL_SAN=$(lsan_classify_name "$OL_OUT")
++        OL_MISS=""
++        OL_REST="$OL_WANT;"
++        OL_TAIL=$(printf '%s\n' "$OL_OUT" | sed 's/: .*/:/' | awk -v h="${OL_WANT%%;*}" 'f || $0 == h { f = 1; print }')
++        while [ -n "$OL_REST" ]; do
++            OL_LINE=${OL_REST%%;*}; OL_REST=${OL_REST#*;}
++            grep -qxF -- "$OL_LINE" <<< "$OL_TAIL" || OL_MISS="$OL_MISS [$OL_LINE]"
++        done
++        TOTAL=$((TOTAL + 1))
++        OL_JIT=$(lar_jit_witness "$OL_TIER" "$OL_OUT")
++        if [ "$OL_FILE" = operator_line_compound.eigs ] && [ "$OL_TIER" != EIGS_JIT_OFF=1 ] && [ "$(uname -m)" = x86_64 ]; then
++            grep -Eq "^compound_add +[0-9]+ +yes " <<< "$OL_OUT" || OL_JIT=missing-compound-add
++        fi
++        if [ "$OL_JIT" != ok ]; then
++            FAIL=$((FAIL + 1)); echo "  FAIL: $OL_FILE ($OL_TIER): compiled witness $OL_JIT"
++            printf '%s\n' "$OL_OUT" | eigs_failure_output
++        elif [ "$OL_RC" -eq 1 ] && [ "$OL_SAN" = none ] && [ -z "$OL_MISS" ]; then
++            PASS=$((PASS + 1)); echo "  PASS: header, excerpt, caret and traceback, $OL_FILE ($OL_TIER)"
++        else
++            FAIL=$((FAIL + 1)); echo "  FAIL: $OL_FILE ($OL_TIER, rc=$OL_RC, sanitizer=$OL_SAN) missing:$OL_MISS"
++            printf '%s\n' "$OL_OUT" | eigs_failure_output
++        fi
++    done
++done
++echo ""
+diff --git a/tests/test_doc_examples.py b/tests/test_doc_examples.py
+index 917db73d270b82e2b953151aaa3ccb148d28cc02..da6e2fde2d36c9e251b82e736f55022494b34213 100644
+--- a/tests/test_doc_examples.py
++++ b/tests/test_doc_examples.py
+@@ -326,7 +326,7 @@ POPULATION = {
+     # file                       fences paired fragment nocheck value-comments
+     "README.md":                 (  8,    3,     5,      0,      0),
+     "docs/llms.txt":             (  9,    6,     2,      1,      0),
+-    "docs/SPEC.md":              ( 83,   79,     1,      3,      0),
++    "docs/SPEC.md":              ( 84,   80,     1,      3,      0),
+     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
+     "docs/CONCURRENCY.md":       (  7,    7,     0,      0,      0),
+     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
+diff --git a/tests/test_opcode_abi.c b/tests/test_opcode_abi.c
+index ae63961ad74d35bceee67adcaa81357cf2e9fc64..7e1642849bb9c02f0419980af51a8e9adf934aad 100644
+--- a/tests/test_opcode_abi.c
++++ b/tests/test_opcode_abi.c
+@@ -47,3 +47,8 @@ _Static_assert(EIGS_BYTECODE_ABI == 1,
+ int main(void) {
+     return 0;
+ }
++
++/* #1425: scope markers follow the already-published internal store. */
++ABI_ASSERT(OP_SET_LOCAL_INTERNAL, 94);
++ABI_ASSERT(OP_BINARY_LINE, 95);
++ABI_ASSERT(OP_BINARY_LINE_END, 96);
+diff --git a/tests/test_operator_line.eigs b/tests/test_operator_line.eigs
+new file mode 100644
+index 0000000000000000000000000000000000000000..547950235da63f4b23eadb024bbaf2cbab3f297d
+--- /dev/null
++++ b/tests/test_operator_line.eigs
+@@ -0,0 +1,161 @@
++# #1425: a runtime error raised by a binary operator whose operands span lines
++# reports the OPERATOR's physical line (e.line here; the uncaught header,
++# excerpt, caret and traceback in operator_line_*.eigs). Pre-fix each row
++# reported the line its right operand ENDED on. Temporal filing (#1381, the
++# statement's first line) is unchanged: the last rows pin it.
++# The runner ([0h]) runs this file under the default JIT, EIGS_JIT_OFF=1 and
++# forced OSR; the hot rows run past the JIT entry and OSR thresholds.
++# LINE-NUMBER SENSITIVE: every expected line is a literal (the line of the
++# operator in the row above it). Append new rows only after the last row.
++load_file of "lib/test.eigs"
++define zero(n) as:
++    return 0
++define hot_div(k) as:
++    r is 1 / (
++        k)
++    return r
++define hot_chain(k, s) as:
++    r is (k +
++        k +
++        s)
++    return r
++x is 0
++s is "s"
++o is {"v": 1}
++lst is [1]
++got is 0
++
++try:
++    z is 1 / (
++        x)
++catch e:
++    got is e.line
++assert_eq of [got, 29, "/ with a multi-line right operand"]
++try:
++    z is 7 % (
++        x)
++catch e:
++    got is e.line
++assert_eq of [got, 35, "% with a multi-line right operand"]
++try:
++    z is 1 + (
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 41, "+ type error"]
++try:
++    z is 1 < (
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 47, "comparison type error"]
++try:
++    z is (1 +
++        2 +
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 54, "chain a + b + c: the SECOND + faults"]
++try:
++    z is 1 / (zero of [
++        4])
++catch e:
++    got is e.line
++assert_eq of [got, 60, "right operand is a multi-line call"]
++try:
++    z is (zero of [
++        4]) / x
++catch e:
++    got is e.line
++assert_eq of [got, 67, "left operand is a multi-line call, operator after it"]
++try:
++    z is (1
++        / x)
++catch e:
++    got is e.line
++assert_eq of [got, 73, "operator on the line after its left operand"]
++try:
++    x += (
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 78, "compound += on a name"]
++try:
++    o.v += (
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 85, "compound += on a field: unchanged base line"]
++try:
++    lst[0] += (
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 91, "compound += on an index: unchanged base line"]
++
++# Hot rows: the operator runs in a JIT thunk and in an OSR-compiled loop.
++k is 6001
++got is 0
++try:
++    loop while k > 0:
++        r is 1 / (
++            k - 1)
++        k is k - 1
++catch e:
++    got is e.line
++assert_eq of [got, 101, "OSR loop: multi-line /"]
++assert_eq of [k, 1, "OSR loop raised on its last iteration"]
++k is 6001
++got is 0
++try:
++    loop while k > 0:
++        r is hot_div of (k - 1)
++        k is k - 1
++catch e:
++    got is e.line
++assert_eq of [got, 14, "compiled callee: multi-line /"]
++assert_eq of [k, 1, "compiled callee raised on its last call"]
++k is 6001
++got is 0
++try:
++    loop while k > 0:
++        k is k - 1
++        if k == 0:
++            r is hot_chain of [k, s]
++        else:
++            r is hot_chain of [k, k]
++catch e:
++    got is e.line
++assert_eq of [got, 19, "compiled callee: the second + of a chain"]
++
++# #1381 unchanged: a multi-line statement is FILED under its first line.
++y is 1
++y is (2 +
++    3)
++assert_eq of [what is y at 133, 5, "filing: first line of a multi-line +"]
++assert_eq of [what is y at 132, 1, "filing: the line before is the old value"]
++try:
++    z is 1 - (
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 138, "- type error"]
++try:
++    z is 2 * (
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 144, "* type error"]
++try:
++    z is 1 & (
++        s)
++catch e:
++    got is e.line
++assert_eq of [got, 150, "bitwise & type error"]
++try:
++    z is f"{1 / (
++        x)}"
++catch e:
++    got is e.line
++assert_eq of [got, 156, "an operator written inside an f-string interpolation"]
++test_summary of null
+diff --git a/tests/test_operator_line_parent.eigs b/tests/test_operator_line_parent.eigs
+new file mode 100644
+index 0000000000000000000000000000000000000000..2a7b1e05e8d839c4306f386551e26edacc70744c
+--- /dev/null
++++ b/tests/test_operator_line_parent.eigs
+@@ -0,0 +1,234 @@
++# #1425: a successful binary op must restore its operand's runtime line.
++# LINE-NUMBER SENSITIVE: expected lines pin ea9ee90, outside the binary-only decision.
++load_file of "lib/test.eigs"
++define parent_unary(k) as:
++    return -(k +
++        k) # @hot_unary
++
++define parent_index(k, items) as:
++    local result is items[k +
++        k] # @hot_index
++    return result
++
++define identity(n) as:
++    return n
++
++define parent_call(k) as:
++    return k of (1 +
++        2) # @hot_call
++
++define osr_parent_unary(items) as:
++    local k is 6001
++    loop while k > 0:
++        local v is k
++        if k == 1:
++            v is "s"
++        local r is -(v +
++            v) # @osr_unary
++        k is k - 1
++    return r
++
++define osr_parent_index(items) as:
++    local k is 6001
++    loop while k > 0:
++        local v is 0
++        if k == 1:
++            v is "s"
++        local r is items[v +
++            v] # @osr_index
++        k is k - 1
++    return r
++
++define osr_parent_call(items) as:
++    local k is 6001
++    loop while k > 0:
++        local v is identity
++        if k == 1:
++            v is 0
++        local r is v of (1 +
++            2) # @osr_call
++        k is k - 1
++    return r
++
++got is 0
++try:
++    r is -("a" +
++        "b") # @cold_unary
++catch e:
++    got is e.line
++assert_eq of [got, 56, "successful + then unary fails"]
++try:
++    r is [1]["a" +
++        "b"] # @cold_index
++catch e:
++    got is e.line
++assert_eq of [got, 62, "successful + then index fails"]
++try:
++    r is 0 of (1 +
++        2) # @cold_call
++catch e:
++    got is e.line
++assert_eq of [got, 68, "successful + then call fails"]
++
++# Each callee is warmed before the failing parent executes.
++k is 80
++loop while k > 0:
++    r is parent_unary of k
++    r is parent_index of [0, ([1])]
++    r is parent_call of identity
++    k is k - 1
++try:
++    r is parent_unary of "s"
++catch e:
++    got is e.line
++assert_eq of [got, 6, "compiled successful + then unary fails"]
++try:
++    r is parent_index of ["s", ([1])]
++catch e:
++    got is e.line
++assert_eq of [got, 10, "compiled successful + then index fails"]
++try:
++    r is parent_call of 0
++catch e:
++    got is e.line
++assert_eq of [got, 18, "compiled successful + then call fails"]
++
++# Each OSR parent has its own chunk; witness each loop independently.
++try:
++    r is osr_parent_unary of ([1])
++catch e:
++    got is e.line
++assert_eq of [got, 27, "OSR successful + then unary fails"]
++try:
++    r is osr_parent_index of ([1])
++catch e:
++    got is e.line
++assert_eq of [got, 38, "OSR successful + then index fails"]
++try:
++    r is osr_parent_call of ([1])
++catch e:
++    got is e.line
++assert_eq of [got, 49, "OSR successful + then call fails"]
++
++# Runtime restoration matters at a short-circuit join: the last emitted
++# line is not necessarily the last executed one.
++try:
++    r is -("a" + ("b" or # @skipped_rhs
++        "c"))
++catch e:
++    got is e.line
++assert_eq of [got, 116, "restore the executed short-circuit arm"]
++try:
++    r is -("a" + (0 or
++        "c")) # @taken_rhs
++catch e:
++    got is e.line
++assert_eq of [got, 123, "restore the taken short-circuit arm"]
++
++# Dedicated compound field/index nodes retain their pre-#1425 behavior.
++o is {"v": 1}
++lst is [1]
++try:
++    o.v += (
++        "s") # @field
++catch e:
++    got is e.line
++assert_eq of [got, 133, "compound field += keeps base attribution"]
++try:
++    lst[0] += (
++        "s") # @index
++catch e:
++    got is e.line
++assert_eq of [got, 139, "compound index += keeps base attribution"]
++try:
++    lst[
++        0] += (
++        "s") # @multiline_target
++catch e:
++    got is e.line
++assert_eq of [got, 146, "compound index target spans lines: base attribution"]
++define compound_local_field(obj) as:
++    obj.v += (
++        "s") # @local_field
++
++define compound_local_index_field(items) as:
++    items[0].v += (
++        "s") # @local_index_field
++
++try:
++    r is compound_local_field of ({"v": 1})
++catch e:
++    got is e.line
++assert_eq of [got, 152, "fused local field compound keeps base line"]
++try:
++    r is compound_local_index_field of ([{"v": 1}])
++catch e:
++    got is e.line
++assert_eq of [got, 156, "fused local index-field compound keeps base line"]
++# The runtime line at a short-circuit join must survive native execution too.
++define parent_branch(k, flag) as:
++    local result is -(k + (flag or # @branch_skip
++        k)) # @branch_take
++    return result
++
++define osr_parent_branch(mode) as:
++    local k is 6001
++    loop while k > 0:
++        local callee is identity
++        if k == 1:
++            callee is 0
++        local flag is 0
++        if mode:
++            flag is 1
++        local result is callee of (1 + (flag or # @osr_branch_skip
++            1)) # @osr_branch_take
++        k is k - 1
++    return result
++
++k is 80
++loop while k > 0:
++    r is parent_branch of [k, 0]
++    r is parent_branch of [k, k]
++    k is k - 1
++try:
++    r is parent_branch of ["s", "s"]
++catch e:
++    got is e.line
++assert_eq of [got, 170, "compiled skipped short-circuit operand restores its runtime line"]
++try:
++    r is parent_branch of ["s", 0]
++catch e:
++    got is e.line
++assert_eq of [got, 171, "compiled taken short-circuit operand restores its runtime line"]
++try:
++    r is osr_parent_branch of 1
++catch e:
++    got is e.line
++assert_eq of [got, 183, "OSR skipped short-circuit operand restores its runtime line"]
++try:
++    r is osr_parent_branch of 0
++catch e:
++    got is e.line
++assert_eq of [got, 184, "OSR taken short-circuit operand restores its runtime line"]
++
++# New opcode numbers are appended and pinned in test_opcode_abi.c.
++# A descriptor must use an adjacent stamp / binary / restore scope: no
++# call or suspension can overwrite the scalar scratch, nor may a jump enter it.
++SCOPE is 95
++END_SCOPE is 96
++scoped is sandbox_run of [[1, [0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,END_SCOPE,40], [2,3]], 1000]
++assert_eq of [scoped["ok"], 1, "adjacent binary line scope verifies"]
++assert_eq of [scoped["result"], 5, "adjacent scope computes normally"]
++restored is sandbox_run of [[1, [68,9,0,0,0, 0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,END_SCOPE,14,40], ["a","b"]], 1000]
++assert_eq of [restored["error"]["line"], 9, "assembled successful binary restores the parent's line"]
++for code in [
++    [0,0,0, 0,1,0, END_SCOPE,4,40],
++    [0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,40],
++    [0,0,0, 0,1,0, SCOPE,7,0,0,0, 14,END_SCOPE,40],
++    [0,0,0, 0,1,0, SCOPE,7,0,0,0, 39,1,0,END_SCOPE,40],
++    [0,0,0, 0,1,0, 29,5,0, SCOPE,7,0,0,0, 4,END_SCOPE,40],
++    [0,0,0, 0,1,0, 29,6,0, SCOPE,7,0,0,0, 4,END_SCOPE,40]]:
++    bad is sandbox_run of [[1, code, [2,3]], 1000]
++    assert_eq of [bad["ok"], 0, "malformed or jumped-into binary line scope is refused"]
++    assert_eq of [bad["error"]["message"], "invalid chunk descriptor", "scope is refused by verification before execution"]
++test_summary of null
+diff --git a/tests/test_trace_mt.sh b/tests/test_trace_mt.sh
+index a28e6f78a9af7edc7f56e776b4cd89cdc7747d12..d1f7b290c9f9281209f707b5d750677fa4c492b6 100755
+--- a/tests/test_trace_mt.sh
++++ b/tests/test_trace_mt.sh
+@@ -261,11 +261,12 @@ stape="$TMPDIR/single.tape"
+ EIGS_TRACE="$stape" "$EIGS" "$TESTS_DIR/trace_mt_single.eigs" >"$TMPDIR/single.out" 2>"$TMPDIR/single.err"
+ src=$?
+ read -r slines swell smal snrec socfg sexamined <<< "$(parse_tape "$stape")"
+-if [ "$src" -eq 0 ] && [ "$smal" -eq 0 ] && [ "$snrec" -eq 6000 ] && [ "$sexamined" -gt 0 ]; then
+-    ok "single-worker: N == 6000 malformed == 0 (unchanged)"
++szero=$(grep -cx 'L 0' "$stape" || true)
++if [ "$src" -eq 0 ] && [ "$smal" -eq 0 ] && [ "$snrec" -eq 6000 ] && [ "$sexamined" -gt 0 ] && [ "$szero" -eq 0 ]; then
++    ok "single-worker: N == 6000 malformed == 0, scoped binary restores a positive worker line"
+ else
+     fail "single-worker: N == 6000 malformed == 0" \
+-         "rc=$src N=$snrec malformed=$smal examined=$sexamined"
++         "rc=$src N=$snrec malformed=$smal examined=$sexamined zero-lines=$szero"
+ fi
+ 
+ echo "=== long-scope-name (S record keeps its full name and newline, #1157) ==="
+diff --git a/tests/trace_mt_single.eigs b/tests/trace_mt_single.eigs
+index da16fd196054691946701885b4ca05a1eac65f46..b1212a4dd3676e3f9f6c357f813154f82b0243f2 100644
+--- a/tests/trace_mt_single.eigs
++++ b/tests/trace_mt_single.eigs
+@@ -6,7 +6,8 @@ define worker(id) as:
+         local r is random of []
+         local t is monotonic_ns of []
+         local e is env_get of "HOME"
+-        acc is acc + r
++        acc is acc + (
++            r)
+         i is i + 1
+     return acc
+ h1 is spawn of [worker, 1]
