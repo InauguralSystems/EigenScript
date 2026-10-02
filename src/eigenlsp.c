@@ -9,6 +9,7 @@
 
 #include "eigenscript.h"
 #include "state.h"
+#include "trace.h"
 #include "vm.h"   /* #935: diagnostics compile the unit and discard the chunk */
 #include <pthread.h>
 
@@ -811,18 +812,28 @@ static void send_diagnostics(Document *doc) {
             register_builtins(cenv);
             g_compile_module_slots = 1;
             int errors_before = g_parse_errors;
+            /* Diagnostic compilation must not arm the process-global trace
+             * name sets.  Make both tiers temporarily wildcarded so the
+             * compiler's per-query arming calls are constant-time no-ops,
+             * then restore the exact live runtime state.  A snapshot alone
+             * would prevent persistent growth but would still make one file
+             * with N distinct `when` names take O(N^2) duplicate scans. */
+            TraceArmState arm_state;
+            trace_arm_snapshot(&arm_state);
+            trace_arm_occurrences_all();
             /* #915: this compile never executes, so the observer gate's eager pass
-         * must not COMPILE a file's load targets on its behalf. Note the reason
-         * is cost and surprise, not purity: lint already realpath-resolves and
-         * OPENS literal load_file targets for E003, and did so before this
-         * change — a blind critic checked, and lint_host.c's own "touches
-         * nothing but the file in front of it" comment was already inaccurate.
-         * What the eager pass would add is a full tokenize+parse+compile of each
-         * target, and the LSP runs this on every didChange. */
-        int obs_saved = g_obs_gate_scan_enabled;
-        g_obs_gate_scan_enabled = 0;
-        EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text);
-        g_obs_gate_scan_enabled = obs_saved;
+             * must not COMPILE a file's load targets on its behalf. Note the reason
+             * is cost and surprise, not purity: lint already realpath-resolves and
+             * OPENS literal load_file targets for E003, and did so before this
+             * change — a blind critic checked, and lint_host.c's own "touches
+             * nothing but the file in front of it" comment was already inaccurate.
+             * What the eager pass would add is a full tokenize+parse+compile of each
+             * target, and the LSP runs this on every didChange. */
+            int obs_saved = g_obs_gate_scan_enabled;
+            g_obs_gate_scan_enabled = 0;
+            EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text);
+            g_obs_gate_scan_enabled = obs_saved;
+            trace_arm_restore(&arm_state);
             g_compile_module_slots = 0;
             compile_errors = g_parse_errors - errors_before;
             chunk_free(chunk);

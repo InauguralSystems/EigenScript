@@ -997,6 +997,16 @@ def main():
     check("#935 clean compile publishes no spurious E004",
           not any(x.get("code") == "E004" for x in (d or [])))
 
+    # Diagnostic compilation is speculative and must not populate the
+    # process-global trace arming arrays.  Distinct `when` names used to make
+    # their linear duplicate checks quadratic (and persist across changes),
+    # stalling this single-threaded server for tens of seconds.
+    temporal_queries = "".join(
+        "q is what is x%d when 1\n" % i for i in range(65500))
+    r = converse([INIT, did_open(temporal_queries), SHUTDOWN, EXIT])
+    check("diagnostic compile bounds temporal-query arming work",
+          diagnostics(r) is not None)
+
     # --- codeAction offers a quickfix for the W001 diagnostic ---
     ca = {"jsonrpc": "2.0", "id": 11, "method": "textDocument/codeAction",
           "params": {"textDocument": {"uri": URI},
