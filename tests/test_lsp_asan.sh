@@ -14,21 +14,23 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 0
 fi
 
+LSP="$ROOT/build/asan/lsp/eigenlsp"
 echo "Building eigenlsp with -fsanitize=address,undefined ..."
-make -C "$ROOT" lsp \
-    CFLAGS="-fsanitize=address,undefined -g -O1 -Wall -Werror=implicit-function-declaration" \
-    >/dev/null
+make -C "$ROOT" lsp-asan lsp-arming-test LSP_ARMING_VARIANT=asan >/dev/null
+
+# Do not accept a behavioral pass from an accidentally reused release binary.
+# This assertion is deliberately independent of make's freshness decision: a
+# planted newer release src/eigenlsp exposed the old CFLAGS-override hole.
+if ! nm "$LSP" 2>/dev/null | grep -q '__asan_init'; then
+    echo "FAIL: $LSP is not AddressSanitizer-instrumented (__asan_init absent)"
+    exit 1
+fi
 
 export ASAN_OPTIONS=detect_leaks=1
 export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
 set +e
-EIGENLSP="$ROOT/src/eigenlsp" python3 "$DIR/test_lsp.py"
+EIGENLSP="$LSP" EIGENLSP_ARMING="$ROOT/build/asan/test_lsp_arming" python3 "$DIR/test_lsp.py"
 rc=$?
 set -e
-
-# Restore a normal (non-sanitizer) eigenlsp so a local run doesn't leave an
-# instrumented binary behind. Best-effort; CI discards the workspace anyway.
-echo "Rebuilding normal eigenlsp ..."
-make -C "$ROOT" lsp >/dev/null 2>&1 || true
 
 exit $rc

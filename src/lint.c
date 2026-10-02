@@ -32,7 +32,12 @@ size_t lint_utf8_prefix(const char *s, size_t max) {
 static void lint_vdiag(LintContext *ctx, int line, int col, int len,
                        const char *level,
                        const char *code, const char *fmt, va_list ap) {
-    if (ctx->warning_count >= MAX_LINT_WARNINGS) return;
+    if (ctx->warning_count == ctx->warning_capacity) {
+        int capacity = ctx->warning_capacity ? ctx->warning_capacity * 2 : 64;
+        ctx->warnings = xrealloc(ctx->warnings,
+                                 (size_t)capacity * sizeof *ctx->warnings);
+        ctx->warning_capacity = capacity;
+    }
     LintWarning *w = &ctx->warnings[ctx->warning_count++];
     w->line = line;
     w->col  = col;
@@ -59,8 +64,8 @@ static void lint_warn(LintContext *ctx, int line, const char *code,
  * appear in --json / LSP, severity Hint) but never fail --lint under either
  * --lint-level; the same inline / allow-file / eigs.json suppression
  * machinery applies as for every other code. */
-void lint_hint(LintContext *ctx, int line, const char *code,
-               const char *fmt, ...) {
+void eigs_lint_hint(LintContext *ctx, int line, const char *code,
+                    const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     lint_vdiag(ctx, line, 0, 0, "hint", code, fmt, ap);
@@ -70,8 +75,8 @@ void lint_hint(LintContext *ctx, int line, const char *code,
 /* Error-severity diagnostic (fails --lint even at --lint-level error)
  * carrying a token position (#407 residual): the LSP publishes
  * col..col+len as the squiggle range; pass col=0,len=0 when unknown. */
-void lint_error_at(LintContext *ctx, int line, int col, int len,
-                   const char *code, const char *fmt, ...) {
+void eigs_lint_error_at(LintContext *ctx, int line, int col, int len,
+                        const char *code, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     lint_vdiag(ctx, line, col, len, "error", code, fmt, ap);
@@ -681,11 +686,11 @@ static void check_is_in_condition(ASTNode *cond, LintContext *ctx) {
 
 static void check_builtin_shadow(ASTNode *node, LintContext *ctx) {
     if (!node) return;
-    if (node->type == AST_ASSIGN && is_builtin_name(node->data.assign.name)) {
+    if (node->type == AST_ASSIGN && eigs_lint_is_builtin_name(node->data.assign.name)) {
         lint_warn(ctx, node->line, "W012", "'%s' is a builtin — assignment shadows it",
                   node->data.assign.name);
     }
-    if (node->type == AST_FUNC && is_builtin_name(node->data.func.name)) {
+    if (node->type == AST_FUNC && eigs_lint_is_builtin_name(node->data.func.name)) {
         lint_warn(ctx, node->line, "W013", "'%s' is a builtin — function definition shadows it",
                   node->data.func.name);
     }
@@ -1052,8 +1057,8 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
             if (strcmp(param, "n") == 0) continue;
 
             /* Build a temporary ref context for this function body. On the
-             * HEAP, not the stack: LintContext is ~85 KiB (warnings[256] plus
-             * four 512-entry arrays) and check_unused_params recurses into
+             * HEAP, not the stack: LintContext contains four 512-entry arrays
+             * and check_unused_params recurses into
              * nested AST_FUNCs below, so a by-value local here costs that much
              * C stack per nesting level — exactly the pattern the CLAUDE.md
              * "no big by-value structs in recursive functions" rule names
@@ -3539,8 +3544,8 @@ static void check_container_rebind(ASTNode *ast, LintContext *ctx) {
     w024_walk(ast, 0, ctx);
 }
 
-void lint_run_checks(ASTNode *ast, const char *path,
-                     const char *source, LintContext *ctx) {
+void eigs_lint_run_checks(ASTNode *ast, const char *path,
+                          const char *source, LintContext *ctx) {
     check_outer_mutation(ast, ctx);
     check_sibling_outer_mutation(ast, ctx);
     check_bare_predicate_alias(ast, ctx);
@@ -3549,8 +3554,8 @@ void lint_run_checks(ASTNode *ast, const char *path,
     check_over_arity(ast, ctx);
     check_dead_unobserved(ast, ctx);
     check_error_kind_typo(ast, ctx);
-    check_undefined_names(ast, path, source, ctx);
-    check_stdlib_shadow(ast, path, ctx);
+    eigs_lint_check_undefined_names(ast, path, source, ctx);
+    eigs_lint_check_stdlib_shadow(ast, path, ctx);
     check_empty_blocks(ast, ctx);
     check_dup_keys(ast, ctx);
     check_builtin_shadow(ast, ctx);
@@ -3584,7 +3589,7 @@ void lint_run_checks(ASTNode *ast, const char *path,
     for (int i = 0; i < ctx->assign_count; i++) {
         const char *name = ctx->assigns[i];
         if (name[0] == '_') continue;
-        if (is_builtin_name(name)) continue;
+        if (eigs_lint_is_builtin_name(name)) continue;
         int is_func = 0;
         for (int j = 0; j < func_name_count; j++) {
             if (strcmp(func_names[j], name) == 0) { is_func = 1; break; }
@@ -3621,7 +3626,7 @@ int lint_collect(ASTNode *ast, const char *path, const char *source,
                  LintDiag *out, int max) {
     if (!ast || !out || max <= 0) return 0;
     LintContext ctx = {0};
-    lint_run_checks(ast, path, source, &ctx);
+    eigs_lint_run_checks(ast, path, source, &ctx);
     int n = ctx.warning_count < max ? ctx.warning_count : max;
     for (int i = 0; i < n; i++) {
         out[i].line = ctx.warnings[i].line;
@@ -3635,8 +3640,32 @@ int lint_collect(ASTNode *ast, const char *path, const char *source,
          * buffers stop being the same size (#1048). */
         eigs_utf8_sanitize(out[i].message, sizeof(out[i].message), ctx.warnings[i].message);
     }
-    builtin_name_env_free();
+    free(ctx.warnings);
+    eigs_lint_builtin_name_env_free();
     return n;
+}
+
+LintDiag *lint_collect_alloc(ASTNode *ast, const char *path,
+                             const char *source, int *count) {
+    if (count) *count = 0;
+    if (!ast || !count) return NULL;
+    LintContext ctx = {0};
+    eigs_lint_run_checks(ast, path, source, &ctx);
+    LintDiag *out = ctx.warning_count
+        ? xmalloc((size_t)ctx.warning_count * sizeof *out) : NULL;
+    for (int i = 0; i < ctx.warning_count; i++) {
+        out[i].line = ctx.warnings[i].line;
+        out[i].col = ctx.warnings[i].col;
+        out[i].len = ctx.warnings[i].len;
+        snprintf(out[i].code, sizeof(out[i].code), "%s", ctx.warnings[i].code);
+        snprintf(out[i].severity, sizeof(out[i].severity), "%s", ctx.warnings[i].level);
+        eigs_utf8_sanitize(out[i].message, sizeof(out[i].message),
+                           ctx.warnings[i].message);
+    }
+    *count = ctx.warning_count;
+    free(ctx.warnings);
+    eigs_lint_builtin_name_env_free();
+    return out;
 }
 
 /* ---- Main lint entry ---- */
@@ -3675,7 +3704,7 @@ int lint_file_allows(const char *source, const char *code) {
 }
 
 
-int lint_suppressed(const char *source, int warn_line, const char *code) {
+int eigs_lint_suppressed(const char *source, int warn_line, const char *code) {
     static const char MARKER[] = "# lint: allow";
     const size_t MLEN = sizeof(MARKER) - 1;
     int line = 1;

@@ -20,4 +20,5 @@ case $? in
     1) exit 1 ;;
 esac
 
-EIGENLSP="$LSP" python3 "$TESTS_DIR/test_lsp.py"
+make --no-print-directory -C "$ROOT" lsp-arming-test || exit 1
+EIGENLSP="$LSP" EIGENLSP_ARMING="$ROOT/build/release/test_lsp_arming" python3 "$TESTS_DIR/test_lsp.py"

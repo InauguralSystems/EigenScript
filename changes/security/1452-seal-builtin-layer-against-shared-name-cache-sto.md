@@ -1,0 +1,1 @@
+- Seal builtin layer against shared name cache stores (#1452).

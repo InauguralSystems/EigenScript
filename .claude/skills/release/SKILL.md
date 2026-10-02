@@ -26,7 +26,11 @@ formula by hand and do not add a cross-repository credential to this release
 workflow.
 
 After a release, look in the tap's pull requests for the automated formula
-bump and its `brew test-bot` result.  A red PR is repaired in the tap; do not
+bump and its `brew test-bot` result. GitHub may require a maintainer to approve
+the test-bot runs on a PR created with `GITHUB_TOKEN`; approve those runs on
+the generated PR before waiting for its formula checks. A manual dispatch of
+the test-bot runs only setup/syntax checks and does not replace PR formula checks.
+A red PR is repaired in the tap; do not
 paper over it by declaring the release complete here.  If no PR appears after
 the scheduled run, dispatch `bump-formula.yml` in the tap and inspect that
 workflow's log.

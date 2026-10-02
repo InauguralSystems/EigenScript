@@ -1,0 +1,1 @@
+- The ASan leak guard now skips only after an explicit compiler capability probe, and reports empty source discovery or a failed sanitizer build as named failures.

@@ -25,6 +25,7 @@
 #include "eigenscript.h"   /* EIGENSCRIPT_FREESTANDING, eigs_current_file_dir */
 
 #if !EIGENSCRIPT_FREESTANDING
+#include <sys/types.h>
 /* Whole file into a NUL-terminated heap buffer; NULL on any failure,
  * including a non-regular file (#314). Caller frees. Hosted only. */
 char* read_file_util(const char *path, long *out_size);
@@ -36,6 +37,15 @@ char *eigs_executable_path(const char *argv0);
 /* Raise EK_IO naming every root the chain tried. Hosted. */
 void eigs_file_resolve_error(const char *operation, const char *base,
                             const char *path, int line);
+/* Owned subprocess pipe: configure its write end before it is published.
+ * On macOS this prevents process-directed SIGPIPE without a signal wait. */
+int eigs_pipe_no_sigpipe(int fd[2]);
+/* fd must be the write end made above. Preserve byte/partial counts and errno
+ * without changing the process-wide disposition. Preexisting pending SIGPIPE
+ * is left alone; this is not an interface for routing arbitrary host signals. */
+ssize_t eigs_write_no_sigpipe(int fd, const void *buf, size_t count);
+/* Owned HTTP socket; suppress generation per send, retaining caller flags. */
+ssize_t eigs_send_no_sigpipe(int fd, const void *buf, size_t count, int flags);
 #endif
 
 /* One chain for import/load_file; base is the containing file's directory. */

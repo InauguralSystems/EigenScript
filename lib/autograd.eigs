@@ -44,6 +44,10 @@
 #   ag_scale of [t, a, k]         a * k for a NUMBER k (a tensor k throws — use ag_mul)
 #   ag_relu of [t, a]                                              vjp: mask by pre-activation sign
 #   ag_leaky_relu of [t, a]                                        vjp: 1 where a > 0, 0.01 elsewhere
+#   ag_gelu of [t, a]              tanh approximation               vjp: analytic elementwise derivative
+#   ag_transpose of [t, a]         transpose a 2-D tensor           vjp: transpose
+#   ag_causal_softmax of [t, a]    row softmax over columns <= row  vjp: masked softmax Jacobian
+#   ag_layernorm of [t, a, eps]    normalize each row               vjp: layer-normalization Jacobian
 #   ag_softmax of [t, a]          row-wise                         vjp: p * (dY - rowsum(dY * p))
 #   ag_log_softmax of [t, a]      row-wise                         vjp: dY - p * rowsum(dY)
 #   ag_gather of [t, a, idx]      out[i] = a[i][idx[i]] (1-D)      vjp: scatter_add
@@ -269,6 +273,65 @@ define ag_leaky_relu(t, a) as:
     local v is leaky_relu of a.value
     return _ag_push of [t, v, "leaky_relu", [a.id], null, a.track]
 
+# GELU's standard tanh approximation. EigenScript deliberately keeps this
+# implementation in the domain library; exp supplies tanh without requiring
+# another tensor primitive.
+define ag_gelu(t, a) as:
+    local v is _ag_alloc_like of a.value
+    for i in range of (len of v):
+        local x is a.value[i]
+        local z is 0.7978845608028654 * (x + 0.044715 * x * x * x)
+        local e is exp of (2.0 * z)
+        local th is (e - 1.0) / (e + 1.0)
+        v[i] is 0.5 * x * (1.0 + th)
+    return _ag_push of [t, v, "gelu", [a.id], null, a.track]
+
+define ag_transpose(t, a) as:
+    local d is _ag_dims of a.value
+    local v is buffer of [d[1], d[0]]
+    for i in range of d[0]:
+        for j in range of d[1]:
+            v[j * d[0] + i] is a.value[i * d[1] + j]
+    return _ag_push of [t, v, "transpose", [a.id], null, a.track]
+
+define ag_causal_softmax(t, a) as:
+    local d is _ag_dims of a.value
+    local v is buffer of [d[0], d[1]]
+    for i in range of d[0]:
+        local upto is i + 1
+        if upto > d[1]:
+            upto is d[1]
+        local mx is a.value[i * d[1]]
+        for j in range of upto:
+            if a.value[i * d[1] + j] > mx:
+                mx is a.value[i * d[1] + j]
+        local den is 0.0
+        for j in range of upto:
+            local p is exp of (a.value[i * d[1] + j] - mx)
+            v[i * d[1] + j] is p
+            den is den + p
+        for j in range of upto:
+            v[i * d[1] + j] is v[i * d[1] + j] / den
+    return _ag_push of [t, v, "causal_softmax", [a.id], null, a.track]
+
+define ag_layernorm(t, a, eps) as:
+    local d is _ag_dims of a.value
+    local v is buffer of [d[0], d[1]]
+    local inv is buffer of d[0]
+    for i in range of d[0]:
+        local mu is 0.0
+        for j in range of d[1]:
+            mu is mu + a.value[i * d[1] + j]
+        mu is mu / d[1]
+        local variance is 0.0
+        for j in range of d[1]:
+            local z is a.value[i * d[1] + j] - mu
+            variance is variance + z * z
+        inv[i] is 1.0 / (sqrt of (variance / d[1] + eps))
+        for j in range of d[1]:
+            v[i * d[1] + j] is (a.value[i * d[1] + j] - mu) * inv[i]
+    return _ag_push of [t, v, "layernorm", [a.id], inv, a.track]
+
 define ag_softmax(t, a) as:
     local v is softmax of a.value
     return _ag_push of [t, v, "softmax", [a.id], null, a.track]
@@ -354,6 +417,55 @@ define _ag_vjp(t, node, dy) as:
                 dx[i] is dy[i]
             else:
                 dx[i] is dy[i] * 0.01
+        _ag_accum of [t, ps[0], dx]
+    elif op == "gelu":
+        local x is t.nodes[ps[0]].value
+        local dx is _ag_alloc_like of x
+        for i in range of (len of x):
+            local xi is x[i]
+            local z is 0.7978845608028654 * (xi + 0.044715 * xi * xi * xi)
+            local e is exp of (2.0 * z)
+            local th is (e - 1.0) / (e + 1.0)
+            local sech2 is 1.0 - th * th
+            local dz is 0.7978845608028654 * (1.0 + 0.134145 * xi * xi)
+            dx[i] is dy[i] * (0.5 * (1.0 + th) + 0.5 * xi * sech2 * dz)
+        _ag_accum of [t, ps[0], dx]
+    elif op == "transpose":
+        local x is t.nodes[ps[0]].value
+        local d is _ag_dims of x
+        local dx is buffer of [d[0], d[1]]
+        for i in range of d[0]:
+            for j in range of d[1]:
+                dx[i * d[1] + j] is dy[j * d[0] + i]
+        _ag_accum of [t, ps[0], dx]
+    elif op == "causal_softmax":
+        local p is node.value
+        local d is _ag_dims of p
+        local dx is buffer of [d[0], d[1]]
+        for i in range of d[0]:
+            local upto is i + 1
+            if upto > d[1]:
+                upto is d[1]
+            local s is 0.0
+            for j in range of upto:
+                s is s + dy[i * d[1] + j] * p[i * d[1] + j]
+            for j in range of upto:
+                dx[i * d[1] + j] is p[i * d[1] + j] * (dy[i * d[1] + j] - s)
+        _ag_accum of [t, ps[0], dx]
+    elif op == "layernorm":
+        local y is node.value
+        local d is _ag_dims of y
+        local dx is buffer of [d[0], d[1]]
+        for i in range of d[0]:
+            local md is 0.0
+            local mdy is 0.0
+            for j in range of d[1]:
+                md is md + dy[i * d[1] + j]
+                mdy is mdy + dy[i * d[1] + j] * y[i * d[1] + j]
+            md is md / d[1]
+            mdy is mdy / d[1]
+            for j in range of d[1]:
+                dx[i * d[1] + j] is node.saved[i] * (dy[i * d[1] + j] - md - y[i * d[1] + j] * mdy)
         _ag_accum of [t, ps[0], dx]
     elif op == "softmax":
         local p is node.value

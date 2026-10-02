@@ -25,6 +25,9 @@ check_file() {
 }
 
 if [ "${1:-}" = --selftest ]; then
+    # Check the actual runbook before requiring an edited copy to fail.
+    # Otherwise a pre-existing omission makes the negative control vacuous.
+    check_file .claude/skills/release/SKILL.md
     scratch=$(mktemp "${TMPDIR:-/tmp}/release-skill.XXXXXX")
     trap 'rm -f "$scratch"' EXIT HUP INT TERM
     cp .claude/skills/release/SKILL.md "$scratch"

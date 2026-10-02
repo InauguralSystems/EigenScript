@@ -1,0 +1,8 @@
+# A computed load keeps the observer gate conservatively open, even though this
+# benchmark never calls the function.
+define maybe_load(path) as:
+    return load_file of path
+x is 1.0
+for i in range of 60000:
+    x is (x * 1.0000001) + 0.5
+print of (x > 0)
