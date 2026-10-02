@@ -1724,16 +1724,23 @@ define eigen_eval(node, env) as:
         prior_val is null
         if had_prior == 1:
             prior_val is _env_get of [env, var_name]
-        for i in range of (len of iter):
-            _env_set_local of [env, var_name, iter[i]]
-            result is _eval_block of [node[3], env]
-            if _eigen_returning == 1:
-                break
-            if _eigen_breaking == 1:
-                _eigen_breaking is 0
-                break
-            if _eigen_continuing == 1:
-                _eigen_continuing is 0
+        try:
+            for i in range of (len of iter):
+                _env_set_local of [env, var_name, iter[i]]
+                result is _eval_block of [node[3], env]
+                if _eigen_returning == 1:
+                    break
+                if _eigen_breaking == 1:
+                    _eigen_breaking is 0
+                    break
+                if _eigen_continuing == 1:
+                    _eigen_continuing is 0
+        catch _for_error:
+            if had_prior == 1:
+                _env_set_local of [env, var_name, prior_val]
+            else:
+                _env_unset_local of [env, var_name]
+            throw of _for_error
         if had_prior == 1:
             _env_set_local of [env, var_name, prior_val]
         else:

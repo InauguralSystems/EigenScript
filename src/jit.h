@@ -69,8 +69,9 @@ typedef void (*JitChunkFn)(void);
 
 /* Try to compile `chunk` into native code. On success, sets
  * chunk->jit_state = 2 and chunk->jit_code to a JitChunkFn pointer.
- * On any unsupported pattern, sets jit_state = 1 and leaves jit_code
- * NULL. Idempotent — subsequent calls on the same chunk return
+ * On any unsupported pattern, sets jit_state = 1; when the code cache is
+ * full, sets the distinct jit_state = 3. Both leave jit_code NULL.
+ * Idempotent — subsequent calls on the same chunk return
  * immediately if jit_state != 0. */
 void jit_try_compile_chunk(struct EigsChunk *chunk);
 
