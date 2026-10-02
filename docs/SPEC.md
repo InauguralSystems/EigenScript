@@ -1881,6 +1881,13 @@ handle; `thread_join of handle` waits and returns its result. Channels
 (`channel of null`, `send`, `recv`, `try_recv`, `recv_timeout`)
 communicate between threads.
 
+Values crossing a channel, `thread_join`, or cooperative-task boundary are
+copied recursively. This includes buffers (payload and shape) and text builders
+(bytes and builder metadata). Closures retain their captured environment by
+reference, resource handles remain shared, repeated aliases split into separate
+copies, and objects below the depth-64 recursion guard remain shared. The
+executable kind-by-kind contract is in `docs/CONCURRENCY.md`.
+
 ```eigenscript
 ch is channel of null
 spawn of [(v) => send of [ch, v * 2], 21]
@@ -2131,12 +2138,12 @@ for e in task_sched_trace of null:
     print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"
 ```
 ```output
-0 t=0 task=1 spawn
-1 t=0 task=2 spawn
-2 t=0 task=1 yield
-3 t=0 task=2 yield
-4 t=10 task=1 sleep-wake
-5 t=10 task=2 sleep-wake
+0 t=0 task=257 spawn
+1 t=0 task=258 spawn
+2 t=0 task=257 yield
+3 t=0 task=258 yield
+4 t=10 task=257 sleep-wake
+5 t=10 task=258 sleep-wake
 6 t=10 task=0 join-release
 ```
 
@@ -2314,6 +2321,12 @@ buffer). Mixing a buffer with a list yields a list. The reductions
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
 
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
+
 ```eigenscript
 l is [1.0, 4.0, 9.0]
 b is buf_from_list of l
@@ -2388,6 +2401,18 @@ cross-unit history by default; hosts may explicitly promise isolated observer
 use with `eigs_set_eval_observer_isolated`. Missing history then raises
 conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
+
+### Model context limits
+
+With a model loaded, `eigen_generate` and `eigen_eval_loss` accept nonempty
+prompts up to and including the model's `max_seq_len`. Longer prompts raise
+a catchable `value` error; neither builtin truncates the supplied prompt.
+`native_train_step_builtin` applies the same refusal rule to the combined
+input and output lengths. These limits apply with `EIGS_STRICT=0` too.
+Generation records either its token list or its context refusal on the trace
+tape. Replay reproduces that outcome before consulting the model, even when
+the checkpoint is missing or has a different context limit, and preserves the
+following call's record.
 
 ### HTTP startup and response attribution
 

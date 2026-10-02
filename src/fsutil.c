@@ -50,44 +50,63 @@ int eigs_import_resolve(const char *base, const char *name,
 #include <errno.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <fcntl.h>
+#include <time.h>
 #include <limits.h>
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
 
-static ssize_t io_no_sigpipe(int fd, const void *buf, size_t count,
-                             int use_send, int flags) {
+int eigs_pipe_no_sigpipe(int fd[2]) {
+    if (pipe(fd) != 0) return -1;
+#if defined(__APPLE__)
+    /* Darwin pipe writes generate process-directed SIGPIPE. Configure the
+     * newly owned parent write end before publishing it or forking, rather
+     * than changing shared descriptor flags around individual writes. */
+    if (fcntl(fd[1], F_SETNOSIGPIPE, 1) == -1) {
+        int saved_errno = errno;
+        close(fd[0]);
+        close(fd[1]);
+        errno = saved_errno;
+        return -1;
+    }
+#endif
+    return 0;
+}
+
+ssize_t eigs_write_no_sigpipe(int fd, const void *buf, size_t count) {
+#if defined(__APPLE__)
+    /* fd is the write end created by eigs_pipe_no_sigpipe. No signal wait
+     * or host-pending-signal consumption is needed on this platform. */
+    return write(fd, buf, count);
+#else
     sigset_t block, oldmask, pending;
     sigemptyset(&block);
     sigaddset(&block, SIGPIPE);
-    if (pthread_sigmask(SIG_BLOCK, &block, &oldmask) != 0)
-        return use_send ? send(fd, buf, count, flags) : write(fd, buf, count);
+    int mask_error = pthread_sigmask(SIG_BLOCK, &block, &oldmask);
+    if (mask_error != 0) { errno = mask_error; return -1; }
 
     int already_pending = sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE);
-    ssize_t result = use_send ? send(fd, buf, count, flags) : write(fd, buf, count);
+    ssize_t result = write(fd, buf, count);
     int saved_errno = errno;
-    if (!already_pending && sigpending(&pending) == 0 &&
-        sigismember(&pending, SIGPIPE)) {
+    if (!already_pending && ((result < 0 && saved_errno == EPIPE) ||
+                             (result > 0 && (size_t)result < count))) {
         /* A pipe write may copy some bytes before its reader disappears.  In
          * that case Linux returns the positive byte count but still queues
-         * SIGPIPE, so checking only for EPIPE would leak the signal when the
-         * caller's mask is restored.  sigwait is available on both POSIX and
-         * macOS, unlike sigtimedwait, and cannot block after the pending check
-         * because SIGPIPE remains blocked in this thread. */
-        int signal_number;
-        (void)sigwait(&block, &signal_number);
+         * SIGPIPE. Poll once with zero timeout: a process-pending signal can
+         * disappear into another host thread, so a snapshot must never justify
+         * a blocking wait. A complete successful write needs no drain. */
+        const struct timespec no_wait = {0, 0};
+        (void)sigtimedwait(&block, NULL, &no_wait);
     }
     pthread_sigmask(SIG_SETMASK, &oldmask, NULL);
     errno = saved_errno;
     return result;
-}
-
-ssize_t eigs_write_no_sigpipe(int fd, const void *buf, size_t count) {
-    return io_no_sigpipe(fd, buf, count, 0, 0);
+#endif
 }
 
 ssize_t eigs_send_no_sigpipe(int fd, const void *buf, size_t count, int flags) {
-    return io_no_sigpipe(fd, buf, count, 1, flags);
+    return send(fd, buf, count, flags | MSG_NOSIGNAL);
 }
 
 /* Resolve once at state/CLI startup. In particular dyld's answer may contain

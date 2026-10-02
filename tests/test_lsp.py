@@ -50,13 +50,26 @@ SANITIZER_MARKERS = ("AddressSanitizer", "LeakSanitizer",
 SANITIZER_HITS = []
 
 
+def lsp_env():
+    """Keep leaked allocations visible to LSan even after stale stack use."""
+    env = os.environ.copy()
+    options = env.get("LSAN_OPTIONS", "")
+    if options and not options.endswith(":"):
+        options += ":"
+    env["LSAN_OPTIONS"] = options + "use_stacks=0:use_registers=0"
+    return env
+
+
 def converse(messages):
     """Feed framed messages to a fresh server, return parsed responses."""
     stream = "".join(frame(m) for m in messages)
     p = subprocess.run([LSP], input=stream, capture_output=True,
-                       text=True, timeout=15)
+                       text=True, timeout=15, env=lsp_env())
     if p.stderr and any(mk in p.stderr for mk in SANITIZER_MARKERS):
         SANITIZER_HITS.append(p.stderr)
+    if p.returncode != 0:
+        raise RuntimeError("eigenlsp exited with status %d:\n%s" %
+                           (p.returncode, p.stderr))
     out = p.stdout
     dec = json.JSONDecoder()
     responses = []
@@ -168,11 +181,28 @@ def apply_rename_bytes(doc, result):
 
 
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+INIT_MULTILINE_TOKENS = {
+    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+    "params": {"capabilities": {"textDocument": {"semanticTokens": {
+        "multilineTokenSupport": True
+    }}}}
+}
 SHUTDOWN = {"jsonrpc": "2.0", "id": 99, "method": "shutdown"}
 EXIT = {"jsonrpc": "2.0", "method": "exit"}
 
 
 def main():
+    arming = os.environ.get("EIGENLSP_ARMING", os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "build", "release",
+        "test_lsp_arming"))
+    p = subprocess.run([arming], capture_output=True, text=True,
+                       timeout=15, env=lsp_env())
+    if any(mk in p.stderr for mk in SANITIZER_MARKERS):
+        SANITIZER_HITS.append(p.stderr)
+    check("bounded diagnostic arming state contract",
+          p.returncode == 0 and "lsp arming: 58 passed, 0 failed" in p.stderr)
+    if p.returncode != 0:
+        print(p.stderr)
     print("=== LSP Behavioral Tests ===")
 
     # --- initialize: capabilities + serverInfo ---
@@ -213,6 +243,18 @@ def main():
     # --- didOpen clean document → empty diagnostics ---
     r = converse([INIT, did_open("x is 5\nprint of x\n"), SHUTDOWN, EXIT])
     check("clean document → empty diagnostics", diagnostics(r) == [])
+
+    # #1366: these are capacity/stack invariants rather than observable LSP
+    # semantics at today's 16-parameter parser cap. Pin the shared bound and
+    # heap allocation so neither can silently regress while behavior stays green.
+    lsp_source = open(os.path.join(os.path.dirname(__file__), "..", "src",
+                                   "eigenlsp.c"), encoding="utf-8").read()
+    check("symbol params use the parser's MAX_PARAMS bound (#1366)",
+          "char params[MAX_PARAMS][64];" in lsp_source
+          and "param_count && i < 16" not in lsp_source)
+    check("document-symbol deduplication table is heap allocated (#1366)",
+          "char (*seen)[256] = xcalloc(MAX_SYMBOLS, sizeof(*seen));" in lsp_source
+          and "free(seen);" in lsp_source)
 
     # --- didOpen with a syntax error → one diagnostic at the right line ---
     r = converse([INIT, did_open("if x > 0\n    print of x\n"), SHUTDOWN, EXIT])
@@ -527,6 +569,22 @@ def main():
     res = (by_id(r, 5) or {}).get("result")
     check("references returns a list of locations",
           isinstance(res, list) and len(res) >= 1 and "range" in res[0])
+
+    # #1375: neither result stream may silently stop at its former fixed cap.
+    many_ref_doc = "target is 1\n" + "".join("print of target\n" for _ in range(520))
+    many_refs = {"jsonrpc": "2.0", "id": 5, "method": "textDocument/references",
+                 "params": {"textDocument": {"uri": URI},
+                            "position": {"line": 0, "character": 2},
+                            "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(many_ref_doc), many_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 5) or {}).get("result")
+    check("references include all 520 uses past the former 512 cap (#1375)",
+          isinstance(res, list) and len(res) == 521)
+
+    many_diag_doc = "".join("print of missing%d\n" % i for i in range(300))
+    d = diagnostics(converse([INIT, did_open(many_diag_doc), SHUTDOWN, EXIT]))
+    check("diagnostics include all 300 errors past the former 256 cap (#1375)",
+          isinstance(d, list) and len(d) == 300)
 
     # --- didClose then reference on the closed doc must not crash ---
     close = {"jsonrpc": "2.0", "method": "textDocument/didClose",
@@ -856,6 +914,34 @@ def main():
     r = converse([INIT, did_open(rename_doc), rn_kw, SHUTDOWN, EXIT])
     check("rename refuses a non-user symbol (print)", (by_id(r, 13) or {}).get("result") is None)
 
+    # Adversarially many unique locals make the per-scope duplicate checks
+    # quadratic.  Rename must explicitly refuse work beyond its fixed budget.
+    large_locals = ("x is 0\ndefine f as:\n" +
+                    "".join("    local v%d is %d\n" % (i, i) for i in range(1000)) +
+                    "print of x\n")
+    rnb = {"jsonrpc": "2.0", "id": 45, "method": "textDocument/rename",
+           "params": {"textDocument": {"uri": URI},
+                      "position": {"line": 0, "character": 0}, "newName": "y"}}
+    r = converse([INIT, did_open(large_locals), rnb, SHUTDOWN, EXIT])
+    budget_response = by_id(r, 45)
+    check("rename refuses analysis that exceeds its work budget",
+          isinstance(budget_response, dict) and
+          "error" not in budget_response and
+          "result" in budget_response and
+          budget_response["result"] is None)
+
+    # Name traversal is bounded too; this catches an unbudgeted strlen/strcmp
+    # and verifies exhaustion is terminal across overlapping scans.
+    huge_name = "v" * 250001
+    huge_binding_doc = "x is 0\ndefine f(%s) as:\n    print of x\n" % huge_name
+    r = converse([INIT, did_open(huge_binding_doc), rnb, SHUTDOWN, EXIT])
+    huge_name_response = by_id(r, 45)
+    check("rename bounds oversized binding-name traversal",
+          isinstance(huge_name_response, dict) and
+          "error" not in huge_name_response and
+          "result" in huge_name_response and
+          huge_name_response["result"] is None)
+
     # --- lint warnings surface as coded diagnostics (severity 2) ---
     r = converse([INIT, did_open("leftover is 5\nprint of \"hi\"\n"), SHUTDOWN, EXIT])
     d = diagnostics(r)
@@ -895,6 +981,14 @@ def main():
           bool(e2) and e2["range"]["start"]["character"] == 7)
     check("E002 range ends after the token (char 8)",
           bool(e2) and e2["range"]["end"]["character"] == 8)
+
+    r = converse([INIT, did_open("x is )\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    e2 = next((x for x in (d or []) if x.get("code") == "E002"), None)
+    check("unexpected ')' range starts at its token (#1380)",
+          bool(e2) and e2["range"]["start"]["character"] == 5)
+    check("unexpected ')' range ends after its token (#1380)",
+          bool(e2) and e2["range"]["end"]["character"] == 6)
 
     # --- '# lint: allow-file' silences the code in the LSP too ---
     r = converse([INIT, did_open("# lint: allow-file E003\nx is 1\nif x > 5:\n    y is totl + 1\n    print of y\n"),
@@ -1008,6 +1102,21 @@ def main():
     check("#935 clean compile publishes no spurious E004",
           not any(x.get("code") == "E004" for x in (d or [])))
 
+    # Bounded temporal-query documents exercise the real JSON-RPC path;
+    # test_lsp_arming.c separately witnesses arming at the compile boundary.
+    temporal_doc = "x is 1\nq is what is x when 1\nprint of q\n"
+    r = converse([INIT, did_open(temporal_doc), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("temporal diagnostic compile publishes diagnostics", d is not None)
+    check("temporal diagnostic compile has no E004",
+          d is not None and not any(x.get("code") == "E004" for x in d))
+    r = converse([INIT, did_open(temporal_doc + "break\n"), SHUTDOWN, EXIT])
+    d = diagnostics(r)
+    check("temporal diagnostic compile retains compile errors",
+          any(x.get("code") == "E004" and
+              "'break' outside a loop" in x.get("message", "")
+              for x in (d or [])))
+
     # --- codeAction offers a quickfix for the W001 diagnostic ---
     ca = {"jsonrpc": "2.0", "id": 11, "method": "textDocument/codeAction",
           "params": {"textDocument": {"uri": URI},
@@ -1052,6 +1161,32 @@ def main():
           any(ty == fi for (_, _, _, ty) in toks))
     check("semanticTokens carries accurate lengths (22 → len 2)",
           any(ty == ni and L == 2 for (_, _, L, ty) in toks))
+
+    # LSP clients must explicitly opt into tokens spanning line boundaries.
+    # Without that capability, split a source string at every physical line.
+    ml_doc = 'x is "a\nbc"\n'
+    r = converse([INIT, did_open(ml_doc), st, SHUTDOWN, EXIT])
+    ml_data = ((by_id(r, 13) or {}).get("result") or {}).get("data", [])
+    ml_toks, ln, ch = [], 0, 0
+    for i in range(0, len(ml_data), 5):
+        dl, dc, length, ty, _mod = ml_data[i:i + 5]
+        ln += dl
+        ch = (ch + dc) if dl == 0 else dc
+        ml_toks.append((ln, ch, length, ty))
+    si = legend.index("string") if "string" in legend else 5
+    check("semanticTokens split a multi-line string for default clients (#1380)",
+          (0, 5, 2, si) in ml_toks and (1, 0, 3, si) in ml_toks)
+
+    r = converse([INIT_MULTILINE_TOKENS, did_open(ml_doc), st, SHUTDOWN, EXIT])
+    ml_data = ((by_id(r, 13) or {}).get("result") or {}).get("data", [])
+    ml_toks, ln, ch = [], 0, 0
+    for i in range(0, len(ml_data), 5):
+        dl, dc, length, ty, _mod = ml_data[i:i + 5]
+        ln += dl
+        ch = (ch + dc) if dl == 0 else dc
+        ml_toks.append((ln, ch, length, ty))
+    check("semanticTokens preserve a multi-line token for opted-in clients (#1380)",
+          (0, 5, 6, si) in ml_toks and not any(t[0] == 1 and t[3] == si for t in ml_toks))
 
     # #1244: f-string lowering tokens are flagged synthetic and skipped, so
     # the stream stays in source order and the interpolated identifier sits
@@ -1285,6 +1420,32 @@ def main():
           (by_id(long_r, 60) or {}).get("result") == []
           and by_id(long_r, 61) is not None
           and by_id(long_r, 61).get("result") is None)
+
+    # #1376: C strings cannot represent the NUL decoded from \u0000. The
+    # shared lenient JSON decoder substitutes U+FFFD, but that must not turn a
+    # client's document key into a different URI. Refuse it visibly instead.
+    nul_open = did_open("x is )\n")
+    nul_open["params"]["textDocument"]["uri"] = "file:///a\x00tail"
+    nul_r = converse([INIT, nul_open, SHUTDOWN, EXIT])
+    nul_shown = [r["params"] for r in nul_r if r.get("method") == "window/showMessage"]
+    check("didOpen refuses a URI whose JSON decoding is lossy (#1376)",
+          len(nul_shown) == 1 and nul_shown[0].get("type") == 1
+          and "URI" in nul_shown[0].get("message", "")
+          and "NUL" in nul_shown[0].get("message", "")
+          and not any(r.get("method") == "textDocument/publishDiagnostics" for r in nul_r))
+
+    # The fixed document table is a server limit, not a reason for the 65th
+    # didOpen notification to disappear silently. Name the limit to the client.
+    many_opens = []
+    for i in range(65):
+        msg = did_open("x is 1\n")
+        msg["params"]["textDocument"]["uri"] = "file:///limit-%d.eigs" % i
+        many_opens.append(msg)
+    many_r = converse([INIT] + many_opens + [SHUTDOWN, EXIT])
+    many_shown = [r["params"] for r in many_r if r.get("method") == "window/showMessage"]
+    check("the 65th didOpen reports the 64-document limit (#1376)",
+          len(many_shown) == 1 and many_shown[0].get("type") == 1
+          and "64-document limit" in many_shown[0].get("message", ""))
 
     # #1336 calibration. With the URI refused, no text a client or a source
     # file supplies reaches a fixed eigenlsp buffer's edge: parse messages are

@@ -20,6 +20,7 @@ f_mod is (_module_test_dir + "/tmp_iso_mod.eigs")
 f_own is (_module_test_dir + "/tmp_iso_own.eigs")
 f_other is (_module_test_dir + "/tmp_iso_other.eigs")
 f_hole is (_module_test_dir + "/tmp_iso_hole.eigs")
+f_cache is (_module_test_dir + "/tmp_iso_cache.eigs")
 f_wa is (_module_test_dir + "/tmp_iso_wa.eigs")
 f_wb is (_module_test_dir + "/tmp_iso_wb.eigs")
 f_wc is (_module_test_dir + "/tmp_iso_wc.eigs")
@@ -36,6 +37,9 @@ write_text of [f_other, "define other_len(xs) as:\n    return len of xs\n"]
 # inside a module function compiles its top level in that function's env,
 # so its `len is 7` walks the same chain.
 write_text of [f_hole, "if 0:\n    len is 0\ndefine poke() as:\n    len is 5\n    return len\ndefine ev() as:\n    eval of \"len is 7\"\n    return len\ndefine after(xs) as:\n    return len of xs\n"]
+# A top-level eval reads and writes the same interned name. GET_NAME and
+# SET_NAME consequently share an IC entry, which must not bypass the seal.
+write_text of [f_cache, "eval of \"len\\nlen is 777\"\ndefine own() as:\n    return len\n"]
 
 # No builtin writes into the layer either: set_observer_window on a builtin
 # name from module code shadows in that scope, like `is` (round 2).
@@ -96,11 +100,14 @@ rec of [(tmp_iso_hole.after of ([1, 2])) == 2, "S2 after that is, the module's l
 rec of [(tmp_iso_mod.m_len of ([1, 2])) == 2, "S3 other modules' len is still the builtin"]
 rec of [(tmp_iso_hole.ev of null) == 7, "S4 eval of an is inside a module fn shadows locally"]
 rec of [(tmp_iso_hole.after of ([1, 2, 3])) == 3, "S5 after that eval, the module's len is still the builtin"]
+import tmp_iso_cache
+rec of [(tmp_iso_cache.own of null) == 777, "S6 cached top-level eval store shadows in its module"]
+rec of [(tmp_iso_mod.m_len of ([1, 2, 3, 4])) == 4, "S7 cached top-level eval store does not corrupt the builtin layer"]
 define host_fn_is() as:
     type is "fn-is"
 host_fn_is of null
-rec of [type == "fn-is", "S6 host fn's is updates the host's own binding"]
-rec of [(tmp_iso_mod.m_type of 1) == "num", "S7 and never the builtin layer"]
+rec of [type == "fn-is", "S8 host fn's is updates the host's own binding"]
+rec of [(tmp_iso_mod.m_type of 1) == "num", "S9 and never the builtin layer"]
 
 # 3b. no builtin mutates the layer: an observer-window override on `len`
 # set from one module stays in that module's scope
@@ -143,6 +150,7 @@ remove_file of f_mod
 remove_file of f_own
 remove_file of f_other
 remove_file of f_hole
+remove_file of f_cache
 remove_file of f_wa
 remove_file of f_wb
 remove_file of f_wc

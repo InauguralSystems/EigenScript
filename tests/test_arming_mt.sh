@@ -227,13 +227,13 @@ TRACE_C="$SRC_DIR/trace.c"
 #    lock" from "the file has one fewer line".
 #
 #    So: the sites are ENUMERATED BY NAME from the design (the two readers,
-#    the two insert paths, the snapshot/restore pair, and the shutdown free),
+#    the two insert paths, and the shutdown free),
 #    each must contain its own lock AND unlock, and `found == declared` in
 #    BOTH directions (§2) — a new unlisted lock site fails too, because it is
 #    a site nobody reviewed.
 ARM_LOCK_SITES="arm_set_has occ_set_has trace_arm_history_name \
-trace_arm_occurrences_name trace_arm_snapshot trace_arm_restore trace_shutdown"
-ARM_LOCK_DECLARED=7
+trace_arm_occurrences_name trace_shutdown"
+ARM_LOCK_DECLARED=5
 
 # Body of function $2 in file $1: from its opening line to the first
 # column-0 `}`. Every function checked here is written that way.
@@ -269,9 +269,10 @@ ARM_HELPER_DECLARED=6
 has_locked=$(grep -c 'arm_set_has_locked\|occ_set_has_locked' "$TRACE_C" || true)
 # Unlocks are counted PER SITE above. The total is exact too: the two insert
 # paths each release on three exits (already-present, OOM x2) plus the tail,
-# the rest release once. A lock held across a return that still balances
-# textually is caught by the row bound (rc 124 -> HUNG), not by counting.
-ARM_UNLOCK_DECLARED=13
+# and the shutdown path releases once. A lock held across a return that still
+# balances textually is caught by the row bound (rc 124 -> HUNG), not by
+# counting.
+ARM_UNLOCK_DECLARED=11
 if [ -z "$arm_bad" ] && [ "$arm_examined" -eq "$ARM_LOCK_DECLARED" ] \
    && [ "$arm_total" -eq "$ARM_LOCK_DECLARED" ] \
    && [ "$arm_unlock_total" -eq "$ARM_UNLOCK_DECLARED" ] \
@@ -295,16 +296,17 @@ else
     fail "construction_unconditional: arm_lock predicate" "body='${arm_body:-MISSING}'"
 fi
 
-# 3. Both name arrays grow in exactly one place each, and the shrinking
-#    writer (trace_arm_restore) and the freeing writer (trace_shutdown) are
-#    inside the same hold. Membership in BOTH directions (§2).
+# 3. Both name arrays grow in exactly one place each. Diagnostic suppression
+#    deliberately leaves these process-wide sets append-only: reintroducing a
+#    snapshot/restore shrinker could erase a concurrent compiler's arming.
+#    Membership in BOTH directions (§2).
 grow_arm=$(grep -c 'realloc(g_arm_names' "$TRACE_C" || true)
 grow_occ=$(grep -c 'realloc(g_occ_names' "$TRACE_C" || true)
-restore_locked=$(awk '/^void trace_arm_restore/{f=1} f{print} f&&/^\}/{exit}' "$TRACE_C" | grep -c 'arm_lock();' || true)
-if [ "$grow_arm" -eq 1 ] && [ "$grow_occ" -eq 1 ] && [ "$restore_locked" -eq 1 ]; then
-    ok "construction_writers: one grow site per tier; shrinking writer holds the lock"
+shrinkers=$(grep -c '^void trace_arm_\(snapshot\|restore\)' "$TRACE_C" || true)
+if [ "$grow_arm" -eq 1 ] && [ "$grow_occ" -eq 1 ] && [ "$shrinkers" -eq 0 ]; then
+    ok "construction_writers: one grow site per tier; no snapshot/restore shrinker"
 else
-    fail "construction_writers: writers enumerated" "arm=$grow_arm occ=$grow_occ restore=$restore_locked"
+    fail "construction_writers: writers enumerated" "arm=$grow_arm occ=$grow_occ shrinkers=$shrinkers"
 fi
 
 # 4. The occurrence tier's window is memoised LAZILY on a per-assignment

@@ -42,6 +42,7 @@ PREFIX  := $(HOME)/.local
 # the runtime grows (it had, silently — nothing built this target in CI).
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(CLI_ONLY),$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
+LSP_ASAN_BINARY := build/asan/lsp/eigenlsp
 
 # The DAP server (#539 v3): the tape model TU plus the runtime it needs
 # (observer_slot classification, trace_name_is_internal). Same link
@@ -74,7 +75,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-http nativefn-test arming-mt-test embed-roads sigpipe-contract-test print-%
+.PHONY: all build full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-http nativefn-test arming-mt-test embed-roads sigpipe-contract-test sigpipe-partial-test print-%
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -240,13 +241,24 @@ arming-mt-test: build/$(ARMING_MT_VARIANT)/test_arming_two_states
 	@echo "Arming two-state test built: build/$(ARMING_MT_VARIANT)/test_arming_two_states"
 
 # #1151: host signal dispositions survive proc and HTTP entry points. Build
-# against either release or http without repointing the CLI alias.
+# against the selected runtime variant without repointing the CLI alias.
 SIGPIPE_VARIANT ?= release
 SIGPIPE_OBJ := $(filter-out build/$(SIGPIPE_VARIANT)/main.o,$(OBJ_$(SIGPIPE_VARIANT)))
 build/$(SIGPIPE_VARIANT)/test_sigpipe_contract: tests/test_sigpipe_contract.c $(SIGPIPE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
 	$(CC) $(FLAGS_$(SIGPIPE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(SIGPIPE_OBJ) $(LIBS_$(SIGPIPE_VARIANT))
 sigpipe-contract-test: build/$(SIGPIPE_VARIANT)/test_sigpipe_contract
 	@echo "SIGPIPE contract test built: $<"
+
+# Exercise the real helper with a finite partial-write observation. Only this
+# test object's write call is renamed; production objects have no test hook.
+SIGPIPE_PARTIAL_FSUTIL := build/$(SIGPIPE_VARIANT)/test_sigpipe_partial_fsutil.o
+SIGPIPE_PARTIAL_OBJ := $(filter-out build/$(SIGPIPE_VARIANT)/main.o build/$(SIGPIPE_VARIANT)/fsutil.o,$(OBJ_$(SIGPIPE_VARIANT)))
+$(SIGPIPE_PARTIAL_FSUTIL): $(SRC_DIR)/fsutil.c $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt | build/$(SIGPIPE_VARIANT)
+	$(CC) $(FLAGS_$(SIGPIPE_VARIANT)) -I$(SRC_DIR) -Dwrite=eigs_sigpipe_test_write -MMD -MP -c $< -o $@
+build/$(SIGPIPE_VARIANT)/test_sigpipe_partial: tests/test_sigpipe_partial.c $(SIGPIPE_PARTIAL_FSUTIL) $(SIGPIPE_PARTIAL_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
+	$(CC) $(FLAGS_$(SIGPIPE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(SIGPIPE_PARTIAL_FSUTIL) $(SIGPIPE_PARTIAL_OBJ) $(LIBS_$(SIGPIPE_VARIANT))
+sigpipe-partial-test: build/$(SIGPIPE_VARIANT)/test_sigpipe_partial
+	@echo "SIGPIPE partial test built: $<"
 
 # #1038/#1028: same runtime variant as the suite; never repoint the CLI alias.
 EMBED_OBSERVER_VARIANT ?= release
@@ -303,10 +315,11 @@ test: build sandbox-intern-test
 # Contributor fast local gate (#1347): only the suite sections the diff against
 # BASE touches (working tree + untracked). CI still runs the whole suite.
 BASE ?= origin/main
+test-changed: export EIGS_SUITE_CHANGED := $(value BASE)
 test-changed: build
 	$(AUX_REFRESH)
 	bash tools/suite_label_check.sh
-	cd tests && EIGS_SUITE_CHANGED=$(BASE) bash run_all_tests.sh
+	cd tests && bash run_all_tests.sh
 
 # Contributor precheck (#1264): the repo's static gates in well under a minute,
 # one line per gate. Needs no build (gates that need a binary SKIP without one).
@@ -366,6 +379,32 @@ $(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_built
 	@echo "EigenScript LSP $(VERSION) built. Binary: $$(du -sh $(LSP_BINARY) | cut -f1)"
 
 lsp: $(LSP_BINARY)
+
+# Keep the sanitizer LSP separate from src/eigenlsp. CFLAGS is not a make
+# dependency, so rebuilding that shared path with an override can silently run
+# a newer release binary instead (#1365), and a real rebuild leaves local
+# release tests pointing at the instrumented executable.
+LSP_ASAN_RUNTIME_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/asan/%.o,$(CLI_ONLY)),$(OBJ_asan))
+build/asan/lsp/eigenlsp.o: $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt | build/asan/lsp
+	$(CC) $(FLAGS_asan) -MMD -MP -c $< -o $@
+build/asan/lsp:
+	@mkdir -p $@
+-include build/asan/lsp/eigenlsp.d
+
+$(LSP_ASAN_BINARY): build/asan/lsp/eigenlsp.o $(LSP_ASAN_RUNTIME_OBJ)
+	$(CC) $(FLAGS_asan) -o $@ $^ $(LIBS_asan)
+	@echo "EigenScript LSP $(VERSION) (ASan+UBSan) built. Binary: $$(du -sh $@ | cut -f1)"
+
+lsp-asan: $(LSP_ASAN_BINARY)
+
+# Bounded diagnostic-state witness: compile the actual LSP/trace sources in
+# the test TU, against the requested runtime variant, without production hooks.
+LSP_ARMING_VARIANT ?= release
+LSP_ARMING_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/$(LSP_ARMING_VARIANT)/%.o,$(CLI_ONLY)) build/$(LSP_ARMING_VARIANT)/trace.o,$(OBJ_$(LSP_ARMING_VARIANT)))
+build/$(LSP_ARMING_VARIANT)/test_lsp_arming: tests/test_lsp_arming.c $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/trace.c $(LSP_ARMING_OBJ) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(LSP_ARMING_VARIANT)) -I$(SRC_DIR) -o $@ $< $(LSP_ARMING_OBJ) $(LIBS_$(LSP_ARMING_VARIANT))
+.PHONY: lsp-arming-test
+lsp-arming-test: build/$(LSP_ARMING_VARIANT)/test_lsp_arming
 
 $(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \

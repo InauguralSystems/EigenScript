@@ -1110,9 +1110,8 @@ static int write_all(int fd, const char *data, size_t len) {
      * the single responder thread. Partial / EAGAIN is failure: the caller
      * closes. Serving-path writes stay blocking. */
     while (len) {
-        ssize_t n = tls_write_nowait
-            ? eigs_send_no_sigpipe(fd, data, len, MSG_DONTWAIT)
-            : eigs_write_no_sigpipe(fd, data, len);
+        ssize_t n = eigs_send_no_sigpipe(fd, data, len,
+                                       tls_write_nowait ? MSG_DONTWAIT : 0);
         if (n < 0 && errno == EINTR) continue;
         if (n <= 0) return 0;
         data += n;

@@ -37,6 +37,14 @@ for f in $SRC; do
         -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
         -c "src/$f.c" -o "$BUILD/$f.o"
 done
+# Compile and link a consumer TU under the same genuinely freestanding flags
+# EigenOS uses. This is deliberately part of the unresolved-symbol gate rather
+# than the hosted smoke harness: if the public setter is absent from either the
+# header or runtime, this compile/link leaves a forbidden root and fails CI.
+gcc -O2 -ffreestanding -fno-builtin -fno-stack-protector -U_FORTIFY_SOURCE \
+    -Werror=implicit-function-declaration $WERROR_FLAGS \
+    -DEIGENSCRIPT_FREESTANDING=1 \
+    -c tools/eigenos_consumer_check.c -o "$BUILD/eigenos_consumer_check.o"
 ld -r -o "$BUILD/all.o" "$BUILD"/*.o
 
 nm -u "$BUILD/all.o" | awk '{print $2}' | grep -v '^_GLOBAL_OFFSET_TABLE_$' \

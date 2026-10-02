@@ -2569,22 +2569,23 @@ print of "--- #828 chart scalar mapping + vline/hline ---"
 # The inlined scalar mapping must land points where _chart_map does:
 # render a 2-point series (both strictly interior, so the square dot is
 # not edge-clipped) and assert each recorded dot rect sits at
-# chart_to_pixel's answer for the same data coords. _chart_dot draws a
-# rect at (floor(sx) - pr, floor(sy) - pr) sized 2*pr+1.
+# chart_to_pixel's answer for the same data coords. The tiny ranges also
+# ensure an overflowing reciprocal cannot collapse the series at an edge.
+# _chart_dot draws a rect at (floor(sx) - pr, floor(sy) - pr) sized 2*pr+1.
 sm_ch is chart of ["sm_ch", 0, 0, 300, 200]
-sm_s is chart_series of ["s", [2.5, 7.5], [4.0, 6.0], [9, 9, 9]]
+sm_s is chart_series of ["s", [2.5e-309, 7.5e-309], [4.0e-309, 6.0e-309], [9, 9, 9]]
 sm_s.style is "points"
 chart_add_series of [sm_ch, sm_s]
 sm_ch.x_min is 0.0
-sm_ch.x_max is 10.0
+sm_ch.x_max is 1.0e-308
 sm_ch.y_min is 0.0
-sm_ch.y_max is 10.0
+sm_ch.y_max is 1.0e-308
 _gfx_log is []
 _gfx_rec is 1
 _render_chart of [sm_ch, 0, 0]
 _gfx_rec is 0
-sm_exp1 is chart_to_pixel of [sm_ch, 2.5, 4.0]
-sm_exp2 is chart_to_pixel of [sm_ch, 7.5, 6.0]
+sm_exp1 is chart_to_pixel of [sm_ch, 2.5e-309, 4.0e-309]
+sm_exp2 is chart_to_pixel of [sm_ch, 7.5e-309, 6.0e-309]
 sm_hits is 0
 for smi in range of (len of _gfx_log):
     if _gfx_log[smi][0] == "rect":
@@ -2676,6 +2677,42 @@ for c8i in range of (len of _gfx_log):
     if _gfx_log[c8i][0] == "clip":
         clip823_last is _gfx_log[c8i][1]
 assert_eq of [clip823_last, null, "#823 render() restores a clear clip after the widget"]
+
+# A renderer error must restore the clip before it propagates. Applications
+# may catch a paint error and continue drawing; leaving this frame on the
+# module-level stack would crop every later widget to the failed canvas.
+define _p823_throw(w, x, y) as:
+    throw of {"kind": "paint823"}
+cc823e is canvas of ["cc823e", 20, 30, 100, 80, _p823_throw, null]
+clip823_err is null
+_gfx_log is []
+_gfx_rec is 1
+try:
+    render of [cc823e, 0, 0]
+catch e823:
+    clip823_err is e823
+_gfx_rec is 0
+assert_eq of [clip823_err.kind, "paint823", "#823 render() rethrows the original renderer error"]
+assert_eq of [_clip.depth, 0, "#823 a renderer error unwinds its widget clip"]
+assert_eq of [_gfx_log[(len of _gfx_log) - 1][1], null, "#823 renderer-error cleanup clears the backend clip"]
+
+# A scroll panel adds a renderer-owned inner clip around its children. If a
+# child fails, render() must unwind both that inner clip and the panel's widget
+# clip so drawing performed after an application catches the error is clear.
+sp823e is scroll_panel of ["sp823e", 5, 6, 120, 90]
+add_child of [sp823e, cc823e]
+clip823_err is null
+_gfx_log is []
+_gfx_rec is 1
+try:
+    render of [sp823e, 0, 0]
+catch e823:
+    clip823_err is e823
+gfx_rect of [200, 200, 10, 10, 17, 18, 19]
+_gfx_rec is 0
+assert_eq of [clip823_err.kind, "paint823", "#823 nested render rethrows the original renderer error"]
+assert_eq of [_clip.depth, 0, "#823 nested renderer error unwinds container and widget clips"]
+assert_eq of [_clip823_at of [17, 18, 19], null, "#823 drawing after a nested renderer error is not cropped"]
 
 # ---- nesting: a child crops at its parent's edge ----
 pn823 is panel of ["pn823", 10, 10, 100, 100]

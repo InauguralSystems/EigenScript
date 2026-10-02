@@ -29,6 +29,12 @@ asking the running program about its own state and history.
 | errors | exceptions | exceptions | `Result` | conditions | `try`/`catch` |
 | self-inspection | none | none | none | macros | interrogatives + observer |
 
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
+
 ## Variables and arithmetic
 
 Python:
@@ -299,6 +305,12 @@ caught: boom
 caught: type_mismatch at line 7
 ```
 
+The optional model extension also uses catchable `value` errors for context
+limits: `eigen_generate` and `eigen_eval_loss` reject prompts longer than the
+loaded model's `max_seq_len`, while `native_train_step_builtin` checks the
+combined input and output length. This refusal applies even with
+`EIGS_STRICT=0`; context truncation is the caller's explicit choice.
+
 ## Pipes (vs Lisp threading / shell pipes)
 
 Clojure:
@@ -340,10 +352,17 @@ print of (recv of ch)
 42
 ```
 
+Channel messages and joined/task results deep-copy ordinary values, including
+buffers and text builders. Closures keep their captured environment by
+reference, and resource handles still name shared process state; the executable
+kind table and graph-depth limits are in `docs/CONCURRENCY.md`.
+
 One difference in failure: a Python thread's uncaught exception is printed
 and the process still exits 0. A `spawn`ed EigenScript worker that dies of
 an uncaught error fails the whole run (exit status 1), joined or not — the
 same rule as its cooperative tasks (see SPEC.md "Concurrency").
+Cooperative task IDs are opaque numeric handles: their packed generation
+prevents a detached task's recycled slot from naming a later task.
 
 ## Convergence loops: boilerplate you stop writing
 

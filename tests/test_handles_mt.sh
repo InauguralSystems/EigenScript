@@ -176,9 +176,11 @@ handles_reuse:handles_reuse.eigs:0 \
 handles_full:handles_full.eigs:0 \
 handles_modenv:handles_mt_modules/hm_modenv.eigs:0 \
 handles_store_stale:handles_store_stale.eigs:1 \
-handles_channel_stale:handles_channel_stale.eigs:1"
-PROBES_DECLARED=7
-STALEWORD_DECLARED=2
+handles_channel_stale:handles_channel_stale.eigs:1 \
+handles_task_stale:handles_task_stale.eigs:1 \
+handles_task_join_stale:handles_task_join_stale.eigs:1"
+PROBES_DECLARED=9
+STALEWORD_DECLARED=4
 staleword_rows=0
 EXAMINED=0
 
@@ -270,22 +272,22 @@ fi
 # 2. THE GENERATION, enumerated over the WHOLE handle population. Every resolve
 #    a program's handle value can reach presents a generation; the only
 #    exception is the raw-index scan, which is named, counted, and confined to
-#    the two task builtins plus task.c's table walks.
+#    task.c's scheduler-internal table walks.
 #    §122: the population is produced by a SECOND route — a grep for the call
 #    spellings across src/*.c — and compared against a table declared by name
 #    here. A site added in a new file is a FAIL, not a silent omission.
 GEN_SITES="builtins.c:get_channel_why \
 builtins.c:builtin_thread_join \
+builtins.c:task_handle_resolve \
+task.c:task_request_join \
+task.c:task_apply_join_result \
 ext_store.c:get_store_why \
 ext_net.c:net_unpack"
-GEN_DECLARED=4
+GEN_DECLARED=7
 # The raw-slot scans, declared by name (a count alone would not say WHICH):
-#   builtins.c  builtin_task_join, builtin_task_alive   (a task id is a plain
-#               number with nowhere to carry a generation — the ONE declared
-#               exception in this population; see docs/CONCURRENCY.md)
 #   task.c      sched_lookup, task_any_unobserved_error,
 #               sched_wake_sleepers (x2), task_do_kill, sched_finish
-SLOT_DECLARED=8
+SLOT_DECLARED=6
 gen_found=0
 slot_found=0
 for f in "$SRC_DIR"/*.c; do
@@ -485,7 +487,7 @@ fi
 #    wordings for one condition start.
 raise_def=$(grep -c '^void handle_raise_unresolved(' "$ES_C" || true)
 raise_calls=$(grep -c 'handle_raise_unresolved(' "$BI_C" "$STORE_C" 2>/dev/null | awk -F: '{n+=$2} END{print n+0}')
-RAISE_CALLS_DECLARED=3   # thread_join, channel_arg, store_arg
+RAISE_CALLS_DECLARED=4   # thread_join, task resolve, channel_arg, store_arg
 # The format STRING, not the rt_error line: the call spans several lines, so a
 # line-anchored grep for `rt_error(.*stale` counts zero and the row would pass
 # vacuously (caught here, on this row's first run).
