@@ -157,11 +157,11 @@ assert_eq of [eval of "i is 0\nz is [i for i in\n [5]]\nwhat is i at 2", 5, "com
 assert_eq of [eval of "define f(a, b is [1,\n 2]) as:\n    return (what is b at 1)\nf of 5", [1, 2], "default spanning lines: parameter at its first line"]
 assert_eq of [eval of "e is 0\ntry:\n    q is 1 / 0\ncatch e:\n    y is 1\nwhat is e at 3", 0, "catch binding is not filed under the faulting line"]
 assert_eq of [eval of "import log\nhas_key of [(what is log at 1), \"log_info\"]", 1, "import binding at the import line"]
-# the #1064 binder restore after a function-scope `for` writes the outer
-# binding's history: it is filed under the `for` line, on normal exit and on
-# `break`, not under the body's (or the break's) last line
-assert_eq of [eval of "define f(i) as:\n    for i in [1, 2, 3]:\n        x is i\n        y is 0\n    return [(what is i at 2), (what is i at 4), i]\nf of 0", [0, 0, 0], "for restore in a function: filed under the for line"]
-assert_eq of [eval of "define f(i) as:\n    for i in [1, 2, 3]:\n        if i == 2:\n            break\n        y is 0\n    return [(what is i at 2), (what is i at 4), i]\nf of 0", [0, 0, 0], "for restore after break: filed under the for line"]
+# #1384: the #1064 binder restore after a function-scope `for` is compiler
+# bookkeeping, not assignment history. Normal exit and break therefore expose
+# the same temporal history as module scope's loop-env tier.
+assert_eq of [eval of "define f(i) as:\n    for i in [1, 2, 3]:\n        x is i\n        y is 0\n    return [(what is i at 2), (what is i at 4), i]\nf of 0", [3, 3, 0], "for restore in a function: omitted from history"]
+assert_eq of [eval of "define f(i) as:\n    for i in [1, 2, 3]:\n        if i == 2:\n            break\n        y is 0\n    return [(what is i at 2), (what is i at 4), i]\nf of 0", [2, 2, 0], "for restore after break: omitted from history"]
 assert_eq of [eval of "i is 0\nfor i in [1, 2, 3]:\n    x is i\n    y is 0\n[(what is i at 2), (what is i at 4), i]", [3, 3, 0], "module-scope for: no restore is recorded (pin)"]
 # a call in the value runs the callee's own lines: a call-valued store is
 # filed under its statement's line, not the callee's return line

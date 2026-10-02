@@ -11,6 +11,7 @@
 #include "ext_names.h"
 #include "fsutil.h"
 #include "lint_internal.h"
+#include "trace.h"
 #include "vm.h"   /* #927: lint compiles the unit and discards the chunk */
 
 #ifndef EIGENSCRIPT_VERSION
@@ -1373,7 +1374,13 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
          * target, and the LSP runs this on every didChange. */
         int obs_saved = g_obs_gate_scan_enabled;
         g_obs_gate_scan_enabled = 0;
+        /* Compilation normally arms temporal-history recording for the chunk
+         * it produces.  This chunk is diagnostic-only and never runs, so do
+         * not let an untrusted lint input change the embedding process's
+         * later history (or the values visible to sandbox state_at calls). */
+        trace_arm_suppress_begin();
         EigsChunk *chunk = compile_ast(ast, cenv, source);
+        trace_arm_suppress_end();
         g_obs_gate_scan_enabled = obs_saved;
         g_compile_module_slots = 0;
         compile_errors = g_parse_errors;
@@ -1431,16 +1438,21 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
      * Hint-severity diagnostics (#591) are pure nudges: they print but never
      * fail either level. (Parse/read errors are E-codes that already
      * returned 1 above.) */
-    if (compile_errors > 0) return 1;   /* E004 is error-severity: fails at either level */
+    if (compile_errors > 0) {
+        free(ctx.warnings);
+        return 1;   /* E004 is error-severity: fails at either level */
+    }
     if (!fail_on_warning) {
         int errors = 0;
         for (int i = 0; i < ctx.warning_count; i++)
             if (strcmp(ctx.warnings[i].level, "error") == 0) errors++;
+        free(ctx.warnings);
         return errors > 0 ? 1 : 0;
     }
     int failing = 0;
     for (int i = 0; i < ctx.warning_count; i++)
         if (strcmp(ctx.warnings[i].level, "hint") != 0) failing++;
+    free(ctx.warnings);
     return failing > 0 ? 1 : 0;
 }
 

@@ -113,6 +113,23 @@ eigs_state_destroy(st);
 the state; `eigs_thread_detach` is called from the same thread before
 the state is destroyed or the thread exits.
 
+### Per-state strict mode
+
+Strict errors are enabled by default. At creation, each state independently
+snapshots `EIGS_STRICT`; exactly `EIGS_STRICT=0` selects the legacy finite
+stand-ins. An embedder can supersede that creation-time value for one state:
+
+```c
+EigsState *st = eigs_open();
+eigs_state_set_strict(st, 0); /* stand-in mode; nonzero enables strict mode */
+```
+
+`eigs_state_set_strict` is valid after either `eigs_state_new` or `eigs_open`,
+but must be called before that state's first evaluation. It is null-safe.
+Strictness is plain state-local configuration, not a synchronized runtime
+control: never call the setter concurrently with evaluation of that state.
+Changing one state does not affect any other state or the process environment.
+
 ## Source eval
 
 ```c

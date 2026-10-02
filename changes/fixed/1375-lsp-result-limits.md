@@ -1,0 +1,1 @@
+- Fixed `eigenlsp` silently truncating reference results after 512 locations and diagnostics after 256 entries.

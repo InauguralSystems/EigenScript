@@ -62,12 +62,11 @@ variable, a parameter default spanning lines, a `catch` binding (after the
 faulting line), an `import` binding (after the module's own code), and the
 restore of a function-scope `for` binder's outer value (after the body or a
 `break`). Under the interpreter, a `for` loop therefore writes one extra
-`L <for line>` record per interpreted iteration. Once OSR has compiled a loop,
-its iterations write no `L` records today, before or after this change
-(#1383), so a JIT run's tape carries fewer `L` records than an
-`EIGS_JIT_OFF=1` run of the same program. Temporal answers
-(`what is x at N`) agree across the interpreter, the JIT and OSR, because the
-JIT still updates the current line that history files under.
+`L <for line>` record per interpreted iteration. Execution tier does not alter
+this stream: the interpreter, the JIT, and an OSR-entered loop emit identical
+`L` records for the same execution (#1383). This is an exact tape guarantee,
+not only a guarantee that temporal answers agree; stepping and other consumers
+of line events therefore see the same program in every tier.
 
 The change moves only `L` stamps. It never moves which values a tape records
 or the order of `N` records, so a tape recorded before the change replays
@@ -302,6 +301,11 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   configuration. Clamping was rejected: a clamped window is a configuration
   the recording run never had, so the label would still be a confident lie,
   just a different one.
+- **Observer replay has an aggregate work limit.** Each binding's trajectory
+  folds the configuration records from the start of the tape. A tape whose
+  number of bindings multiplied by its number of `O` records exceeds
+  1,000,000 is therefore refused with exit 3, rather than allowing one
+  unfiltered stepper display or DAP locals request to monopolize the reader.
 
 **Replay is unaffected**, and deliberately so: `EIGS_REPLAY` re-executes the
 program, so the program's own knob calls run again in the same order. The
@@ -355,11 +359,20 @@ that the original tape neither captured nor re-creates:
   Channel ordering depends on the live scheduler — replay against a
   tape with a different interleaving would deadlock or silently
   diverge.
+- **EigenStore:** the entire `store_*` family. A store handle represents a
+  live file and its mutable catalog, so recording the numeric handle cannot
+  reconstruct either its lifetime or its contents. Replay refuses
+  `store_open` before opening or creating a database; it likewise refuses
+  every query, write, close, and catalog operation after validating an
+  already-live handle but before any file or catalog access (relevant to embedders that enable replay mid-state).
+  Consequently a database may be changed or absent during replay without
+  being read, recreated, or modified.
 
 These builtins raise a catchable runtime error under
 `EIGS_REPLAY`, with the message format
-`"<fn>: not replayable under EIGS_REPLAY (subprocess/concurrency
-boundary; see docs/TRACE.md)"`. Programs that need to be replay-safe
+`"<fn>: not replayable under EIGS_REPLAY (<boundary> boundary; see
+docs/TRACE.md)"`, where `<boundary>` is `subprocess/concurrency` or `store`.
+Programs that need to be replay-safe
 must guard these call sites or avoid them entirely.
 
 A boundary refusal is a **clean exit, never a signal**: uncaught, it ends

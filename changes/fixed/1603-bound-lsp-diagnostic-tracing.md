@@ -1,1 +1,1 @@
-- Prevent LSP diagnostics from retaining trace arming state or stalling quadratically on documents with many temporal queries.
+- Add bounded LSP diagnostic tests for temporary trace-arming suppression, host-state preservation and subsequent normal compilation.
