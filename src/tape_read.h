@@ -48,7 +48,7 @@ typedef struct {
     const char *value;  /* A/N: serialized value (into tape buf) */
     uint32_t scope;     /* #539 v2: frame-instance serial this record
                          * belongs to (from the preceding S record;
-                         * 0 = before any S). */
+                         * 0 = module/native scope or before any S). */
 } StepRec;
 
 typedef struct {

@@ -925,21 +925,35 @@ Value* builtin_tensor_scatter_add(Value *arg) {
             } else {
                 v = values->data.num;
             }
-            int idx = (int)di;
-            if (per_row) {
-                if (idx < 0 || idx >= cols) {
-                    rt_error(EK_INDEX, 0, "scatter_add: column index %d out of range for row %d (cols %d)", idx, i, cols);
-                    return make_null();
+            /* Check the double before converting it to int.  In particular,
+             * an out-of-range floating-to-integer conversion is undefined C
+             * behavior, and indices can come from sandboxed bytecode. */
+            int index_limit = per_row ? cols : dst->data.buffer.count;
+            int valid_index = isfinite(di) && di >= 0.0 && di < (double)index_limit;
+            int idx = 0;
+            if (valid_index) {
+                /* The range check makes this conversion representable.  Check
+                 * both directions instead of calling trunc(), which is not
+                 * part of the freestanding runtime's mini-libm surface. */
+                idx = (int)di;
+                valid_index = di >= (double)idx && di <= (double)idx;
+            }
+            if (!valid_index) {
+                if (per_row) {
+                    rt_error(EK_INDEX, 0, "scatter_add: column index %.17g out of range for row %d (cols %d)",
+                             di, i, cols);
+                } else {
+                    rt_error(EK_INDEX, 0, "scatter_add: index %.17g out of range (length %d)",
+                             di, index_limit);
                 }
+                return make_null();
+            }
+            if (per_row) {
                 if (pass) {
                     int64_t at = (int64_t)i * cols + idx;
                     d[at] = num_guard(d[at] + v);
                 }
             } else {
-                if (idx < 0 || idx >= dst->data.buffer.count) {
-                    rt_error(EK_INDEX, 0, "scatter_add: index %d out of range (length %d)", idx, dst->data.buffer.count);
-                    return make_null();
-                }
                 if (pass) d[idx] = num_guard(d[idx] + v);
             }
         }
@@ -1497,7 +1511,6 @@ Value* builtin_random_normal(Value *arg) {
      * libc rand() (seeded only by main()'s srand(time(NULL)), so a
      * randn-initialised tensor was unreproducible from script). After the TAKE
      * above: a replayed call serves its record without touching the stream. */
-    eigs_ensure_random_seeded();
     int argc = arg->data.list.count;
     if (argc == 3) {
         /* 2D: [rows, cols, scale] */
@@ -1510,8 +1523,8 @@ Value* builtin_random_normal(Value *arg) {
             for (int c = 0; c < cols; c++) {
                 /* Box-Muller. 1 - drand48() lands in (0, 1]: drand48 can
                  * return exactly 0, and log(0) is an infinity. */
-                double u1 = 1.0 - drand48();
-                double u2 = drand48();
+                double u1 = 1.0 - eigs_random_double();
+                double u2 = eigs_random_double();
                 double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
                 list_append_owned(row, make_num(z * scale));
             }
@@ -1525,8 +1538,8 @@ Value* builtin_random_normal(Value *arg) {
         double scale = arg->data.list.items[1]->data.num;
         Value *out = make_list(len);
         for (int i = 0; i < len; i++) {
-            double u1 = 1.0 - drand48();   /* (0, 1] — see the 2D branch */
-            double u2 = drand48();
+            double u1 = 1.0 - eigs_random_double(); /* (0, 1] — see the 2D branch */
+            double u2 = eigs_random_double();
             double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
             list_append_owned(out, make_num(z * scale));
         }

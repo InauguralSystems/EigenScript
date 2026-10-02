@@ -1,0 +1,1 @@
+- Parallelise the core/extension boundary compile probes to shorten contributor prechecks without reducing the checked translation-unit population.

@@ -1868,6 +1868,9 @@ void env_mark_captured(Env *env);
  * doesn't prove a subgraph dead it leaks instead of freeing. No-op when
  * multithreaded. */
 void gc_collect_cycles(void);
+/* Drain buffered LIST/DICT possible roots without seeding the traversal from
+ * the unrelated captured-environment registry. */
+void gc_collect_value_candidates(void);
 /* Exit-time teardown of the global scope: drops every global binding,
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */
@@ -1902,6 +1905,9 @@ extern int g_compile_module_slots;
 /* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
+/* Measure leading spaces/tabs using the language's four-column tab stops.
+ * byte_count, when non-NULL, receives the number of source bytes consumed. */
+int eigs_measure_indent(const char *line, int *byte_count);
 void free_tokenlist(TokenList *tl);
 void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 
@@ -1939,10 +1945,10 @@ void eigs_num_text(char *buf, size_t nbuf, double n);
 void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
 /* #880: decode a JSON string body (s[*pos] = first byte after the opening
- * quote) into `out`, leaving *pos past the closing quote. One decoder for
- * json_decode, the LSP, and the DAP — they used to disagree on which escapes
- * exist. */
-void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
+ * quote) into `out`, leaving *pos past the closing quote. Returns whether
+ * every input scalar was preserved; lenient U+FFFD repair returns false.
+ * One decoder serves json_decode, the LSP, and the DAP. */
+int eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
 
 /* ---- Registration ---- */
 
@@ -2152,9 +2158,10 @@ void*  handle_claim(int id, uint32_t gen, HandleType type, int *why);
  * ("joined" for a thread, "closed" for a channel or store). */
 void   handle_raise_unresolved(const char *who, const char *kind, int id,
                                int why, const char *gone_verb);
-/* Deterministic teardown of channel + thread handles (builtins.c): joins
- * outstanding workers, then frees remaining channels. Call once execution is
- * done and the value world is still alive (before env/thread teardown). */
+/* Deterministic teardown of every resource in the handle table (builtins.c):
+ * HANDLE_THREAD, HANDLE_CHANNEL, HANDLE_NET, HANDLE_STORE, and HANDLE_TASK.
+ * Call once execution is done and the value world is still alive (before
+ * env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
 
@@ -2194,6 +2201,9 @@ typedef struct {
  * directive take effect. Used by the LSP to publish diagnostics. */
 int lint_collect(ASTNode *ast, const char *path, const char *source,
                  LintDiag *out, int max);
+/* Allocate and return every diagnostic. The caller owns the returned array. */
+LintDiag *lint_collect_alloc(ASTNode *ast, const char *path,
+                             const char *source, int *count);
 /* 1 if the source carries a file-wide `# lint: allow-file <code>` directive
  * for `code` (or `all`). Callers of lint_collect apply it themselves (the
  * CLI and the LSP both do) — suppression filters lint_collect's OUTPUT;
@@ -2213,5 +2223,9 @@ int eigs_api_dump(FILE *out, int json);
  * pinned from script at all (found via iLambdaAi's eval-determinism probe,
  * 2026-08-17). */
 void eigs_ensure_random_seeded(void);
+/* The libc drand48 family owns one process-global state.  These are the only
+ * entry points runtime code may use, so seeding and draws share one lock. */
+double eigs_random_double(void);
+long eigs_random_long(void);
 
 #endif /* EIGENSCRIPT_H */

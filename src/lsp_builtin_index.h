@@ -174,7 +174,7 @@ static const char *builtin_docs[][2] = {
     {"load_file", "load_file — builtin; see docs/BUILTINS.md"},
     {"log", "log of 1e-15 answered ln(1e-10) with no flag, a silent plateau that a"},
     {"log_softmax", "log_softmax — builtin; see docs/BUILTINS.md"},
-    {"ls", "ls of \"path\" → list of filenames in directory, or [] on failure."},
+    {"ls", "ls of \"path\" → bytewise-sorted filenames, or [] on failure."},
     {"math_flags", "math_flags — builtin; see docs/BUILTINS.md"},
     {"matmul", "matmul — builtin; see docs/BUILTINS.md"},
     {"matmul_at", "matmul_at of [a, b] → aᵀ·b: a is (m x k), b is (m x n), result (k x n)."},

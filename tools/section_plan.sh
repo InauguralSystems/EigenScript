@@ -44,6 +44,7 @@ e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check
 2b1cec4b6df93886|(c) sub-check: [70d] relays the child rows verbatim, one of which SKIPs when GNU time -f is absent; the section still asserts its other two checks
 cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT section asserts its fast-path checks on every host
 00fd233b835a1ddb|(c) sub-check: the EIGS_JIT_HOT gate on a non-x86_64 host; same section, same reason
+a9f637bc88ca3e2c|(c) sub-check: the cache-full diagnostic gate needs an x86-64 JIT; the JIT section still asserts its language-level fast-path checks elsewhere
 1d4789fa9df25921|(c) sub-check: --api --json validation needs python3; the --api section asserts its other rows without it
 4fd0c1454b26ae7a|(b) an examples-section PASS line that reports how many demos were skipped for want of a gfx build
 62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
@@ -1080,7 +1081,8 @@ selftest() {
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/runner_text.sh" \
        "$SP_ROOT/tools/read_werror_flags.sh" \
        "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
-    cp "$SP_ROOT/tests/failure_output.sh" "$SP_ROOT/tests/suite_plan.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
+    cp "$SP_ROOT/tests/failure_output.sh" "$SP_ROOT/tests/suite_plan.sh" \
+       "$SP_ROOT/tests/suite_program_env.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
     printf '#!/bin/sh\nexit 0\n' > "$stub/src/eigenscript"
     chmod +x "$stub/src/eigenscript"
