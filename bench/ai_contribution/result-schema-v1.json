@@ -3,8 +3,58 @@
   "$id": "https://inauguralsystems.github.io/EigenScript/ai-benchmark/result-schema-v1.json",
   "title": "AI contribution benchmark result v1",
   "type": "object",
-  "required": ["schema_version", "inputs", "started_at", "local_completed_at", "remote_first_push", "environment", "adapter", "telemetry", "pricing", "computed_cost", "commands", "precheck_rounds", "changed_test_rounds", "ci_rounds", "commit", "changed_plan_receipt"],
-  "properties": {"schema_version":{"const":"1.0.0"}},
+  "required": [
+    "schema_version",
+    "inputs",
+    "started_at",
+    "local_completed_at",
+    "remote_first_push",
+    "environment",
+    "adapter",
+    "telemetry",
+    "pricing",
+    "computed_cost",
+    "commands",
+    "precheck_rounds",
+    "changed_test_rounds",
+    "ci_rounds",
+    "commit",
+    "changed_plan_receipt",
+    "local_success",
+    "driver_validation_attempts",
+    "total_rounds"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "local_success": {
+      "type": "boolean"
+    },
+    "local_completed_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "driver_validation_attempts": {
+      "type": "object",
+      "required": [
+        "precheck",
+        "test_changed"
+      ],
+      "properties": {
+        "precheck": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "test_changed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
   "additionalProperties": true,
-  "$comment": "Unavailable measurements are objects with status=unavailable, never numeric zero. Token categories retain adapter-native meanings."
+  "$comment": "Unavailable measurements are objects with status=unavailable, never numeric zero. Token categories retain adapter-native meanings. Driver validation attempts are separate from observed agent telemetry; total_rounds is unavailable unless all agent round counts are observed."
 }

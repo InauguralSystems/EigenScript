@@ -1,0 +1,39 @@
+# #1173: detached cooperative tasks recycle their handle slots.  The numeric
+# id carries the generation, so a saved id must not resolve the replacement.
+define worker() as:
+    return 7
+
+define stale_tag(fn) as:
+    local answer is "NO-RAISE"
+    try:
+        fn of null
+    catch e:
+        if (index_of of [e.message, "stale"]) >= 0:
+            answer is "ERR-stale"
+        else:
+            answer is f"ERR-other({e.message})"
+    return answer
+
+old is task_spawn of worker
+task_detach of old
+task_yield of null
+i is 0
+loop while i < 254:
+    t is task_spawn of worker
+    task_detach of t
+    task_yield of null
+    i is i + 1
+fresh is task_spawn of worker
+
+define old_alive(_) as:
+    return task_alive of old
+define old_join(_) as:
+    return task_join of old
+define old_kill(_) as:
+    return task_kill of old
+
+alive is stale_tag of old_alive
+joined is stale_tag of old_join
+killed is stale_tag of old_kill
+fresh_result is task_join of fresh
+print of f"same_slot={old % 256 == fresh % 256} alive={alive} join={joined} kill={killed} fresh={fresh_result}"

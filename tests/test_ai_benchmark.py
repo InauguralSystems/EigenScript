@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import importlib.util, json, os, subprocess, tempfile, unittest
+import importlib.util, json, os, subprocess, sys, tempfile, unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -7,6 +8,102 @@ spec=importlib.util.spec_from_file_location("ai_benchmark",ROOT/"tools/ai_benchm
 bench=importlib.util.module_from_spec(spec); spec.loader.exec_module(bench)
 
 class BenchmarkTest(unittest.TestCase):
+    def test_main_lifecycle_with_benign_agents(self):
+        # Exercise the production entrypoint, real subprocesses and real Git.
+        cases=[("missing",False), ("nonzero",False), ("noop",False),
+               ("uncommitted",False), ("committed",True), ("validation-failure",False),
+               ("retries",True), ("missing-telemetry",True), ("inspection-failure",False),
+               ("partial-tracked",False), ("partial-untracked",False), ("partial-inspection",False),
+               ("incomplete-telemetry",True)]
+        for mode, expected in cases:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as td:
+                root=Path(td); repo=root/"repo"; repo.mkdir()
+                env=dict(bench.isolated_git_env(), GIT_AUTHOR_NAME="Fixture",
+                         GIT_AUTHOR_EMAIL="fixture@example.invalid", GIT_COMMITTER_NAME="Fixture",
+                         GIT_COMMITTER_EMAIL="fixture@example.invalid")
+                def git(*args):
+                    return subprocess.check_output(["git",*args],cwd=repo,text=True,env=env).strip()
+                git("init","-q"); (repo/"tracked").write_text("before\n")
+                git("add","-A"); git("commit","--no-gpg-sign","-qm","fixture")
+                # Tiny benign fixture Makefile exercises actual driver counters and order.
+                (repo/"Makefile").write_text("precheck:\n\t@true\ntest-changed:\n\t@true\n")
+                git("add","Makefile"); git("commit","--no-gpg-sign","-qm","validation fixture")
+                revision=git("rev-parse","HEAD")
+                prompt=root/"prompt.txt"; prompt.write_text("benign fixture change")
+                task=root/"task.json"; task.write_text(json.dumps({"prompt":str(prompt),
+                    "validation":[["make","precheck","BASE={base}"],["make","test-changed","BASE={base}"]]}))
+                fake=root/"agent.py"
+                fake.write_text("""import json, os, subprocess, sys
+from pathlib import Path
+mode=sys.argv[1]
+if mode != 'noop':
+    Path('tracked').write_text('after\\n')
+    if mode == 'partial-tracked':
+        Path('Makefile').write_text('precheck:\\n\\t@test \"$$(cat tracked)\" = \"finishing correction\"\\ntest-changed:\\n\\t@true\\n')
+    if mode == 'partial-untracked':
+        Path('Makefile').write_text('precheck:\\n\\t@test -f finishing\\ntest-changed:\\n\\t@true\\n')
+    if mode != 'uncommitted':
+        env=dict(os.environ, GIT_AUTHOR_NAME='Agent', GIT_AUTHOR_EMAIL='agent@example.invalid',
+                 GIT_COMMITTER_NAME='Agent', GIT_COMMITTER_EMAIL='agent@example.invalid')
+        subprocess.run(['git','add','-A'],check=True,env=env)
+        subprocess.run(['git','-c','core.hooksPath=/dev/null','commit','--no-gpg-sign','-qm','change'],check=True,env=env)
+if mode == 'validation-failure':
+    Path('Makefile').write_text('precheck:\\n\\t@false\\ntest-changed:\\n\\t@true\\n')
+    subprocess.run(['git','add','Makefile'],check=True,env=env)
+    subprocess.run(['git','-c','core.hooksPath=/dev/null','commit','--no-gpg-sign','-qm','validation fixture'],check=True,env=env)
+if mode == 'partial-tracked':
+    Path('tracked').write_text('finishing correction\\n')
+if mode == 'partial-untracked':
+    Path('finishing').write_text('finishing correction\\n')
+if mode == 'inspection-failure':
+    import shutil
+    shutil.rmtree('.git')
+if mode == 'retries':
+    print(json.dumps({'benchmark':{'precheck_rounds':3,'changed_test_rounds':2,'ci_rounds':1}}))
+elif mode == 'incomplete-telemetry':
+    print(json.dumps({'benchmark':{'precheck_rounds':3,'changed_test_rounds':2}}))
+else:
+    print('{}')
+sys.exit(7 if mode == 'nonzero' else 0)
+""")
+                adapters=root/"adapters"; adapters.mkdir()
+                config={"command":[str(root/"absent")] if mode=="missing" else [sys.executable,str(fake),mode],
+                        "version_command":[sys.executable,"--version"],
+                        "telemetry":{k:"benchmark."+k for k in ("precheck_rounds","changed_test_rounds","ci_rounds")}}
+                (adapters/"fake.json").write_text(json.dumps(config))
+                output=root/"out"
+                real_run=bench.run
+                def inspected_run(*args, **kwargs):
+                    receipt=real_run(*args, **kwargs)
+                    # Preserve valid diff/count/head while failing one inspection receipt.
+                    if mode=="partial-inspection" and receipt["name"]=="head":
+                        receipt["exit_code"]=1
+                    return receipt
+                with patch.object(bench,"BENCH",root), patch.object(bench,"run",inspected_run):
+                    rc=bench.main(["--repository",str(repo),"--task",str(task),"--revision",revision,
+                                   "--adapter","fake","--model","fixture","--output",str(output)])
+                result=json.loads((output/"result.json").read_text())
+                self.assertEqual(rc,0 if expected else 1)
+                self.assertEqual(result["local_success"],expected)
+                self.assertEqual(result["local_completed_at"] is not None,expected)
+                self.assertTrue((output/"agent.stderr").exists())
+                self.assertTrue((output/"worktree").exists())
+                self.assertTrue((output/"transcript.json").exists())
+                if mode in ("inspection-failure","partial-inspection"):
+                    self.assertEqual(result["commit"]["status"],"unavailable")
+                    self.assertFalse(result["commit"]["created"])
+                if mode=="retries":
+                    self.assertEqual(result["total_rounds"],{"status":"available","value":6})
+                    self.assertEqual(result["precheck_rounds"]["value"],3)
+                else:
+                    self.assertEqual(result["total_rounds"],{"status":"unavailable"})
+                self.assertEqual(result["driver_validation_attempts"],{"precheck":1,"test_changed":0 if mode=="validation-failure" else 1})
+                if mode=="partial-inspection":
+                    self.assertTrue((output/"result.diff").read_text())
+                    self.assertGreater(int((output/"commit-count.stdout").read_text()),0)
+                if mode=="validation-failure":
+                    self.assertFalse((output/"validation-2.stdout").exists())
+
     def test_dirty_source_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
             repo=Path(td); subprocess.run(["git","init","-q"],cwd=repo,check=True)

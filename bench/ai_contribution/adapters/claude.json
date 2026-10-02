@@ -1,1 +1,22 @@
-{"command":["claude","-p","--model","{model}","--output-format","stream-json"],"version_command":["claude","--version"],"telemetry":{"input_tokens":"usage.input_tokens","output_tokens":"usage.output_tokens","cached_tokens":"usage.cache_read_input_tokens"}}
+{
+  "command": [
+    "claude",
+    "-p",
+    "--model",
+    "{model}",
+    "--output-format",
+    "stream-json"
+  ],
+  "version_command": [
+    "claude",
+    "--version"
+  ],
+  "telemetry": {
+    "input_tokens": "usage.input_tokens",
+    "output_tokens": "usage.output_tokens",
+    "cached_tokens": "usage.cache_read_input_tokens",
+    "precheck_rounds": "benchmark.precheck_rounds",
+    "changed_test_rounds": "benchmark.changed_test_rounds",
+    "ci_rounds": "benchmark.ci_rounds"
+  }
+}

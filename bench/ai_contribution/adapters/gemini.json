@@ -1,1 +1,21 @@
-{"command":["gemini","--model","{model}","--output-format","stream-json"],"version_command":["gemini","--version"],"telemetry":{"input_tokens":"stats.models.0.tokens.input","output_tokens":"stats.models.0.tokens.output","cached_tokens":"stats.models.0.tokens.cached"}}
+{
+  "command": [
+    "gemini",
+    "--model",
+    "{model}",
+    "--output-format",
+    "stream-json"
+  ],
+  "version_command": [
+    "gemini",
+    "--version"
+  ],
+  "telemetry": {
+    "input_tokens": "stats.models.0.tokens.input",
+    "output_tokens": "stats.models.0.tokens.output",
+    "cached_tokens": "stats.models.0.tokens.cached",
+    "precheck_rounds": "benchmark.precheck_rounds",
+    "changed_test_rounds": "benchmark.changed_test_rounds",
+    "ci_rounds": "benchmark.ci_rounds"
+  }
+}

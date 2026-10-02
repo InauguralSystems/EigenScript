@@ -26,7 +26,9 @@ __thread EigsThread *eigs_current = NULL;
  * (#915) keys off thread count; eigs_close (#1143) keys off state count
  * to decide whether it is shutting the last interpreter (and the tape). */
 static pthread_mutex_t g_attached_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_attached_cond = PTHREAD_COND_INITIALIZER;
 static int g_attached_threads_storage = 0;
+static int g_single_thread_reserved = 0;
 static int g_live_states = 0;
 #define g_attached_threads_load() __atomic_load_n(&g_attached_threads_storage, __ATOMIC_ACQUIRE)
 #define g_attached_threads_add(d) __atomic_fetch_add(&g_attached_threads_storage, (d), __ATOMIC_RELEASE)
@@ -35,9 +37,13 @@ EigsState *eigs_state_new(void) {
     EigsState *st = xcalloc(1, sizeof(*st));
     pthread_mutex_init(&st->threads_lock, NULL);
     pthread_mutex_init(&st->handle_mutex, NULL);
+    pthread_mutex_init(&st->exit_mutex, NULL);
+    pthread_cond_init(&st->exit_cond, NULL);
     pthread_mutex_init(&st->gc_lock, NULL);   /* cycle-collector registry */
     pthread_mutex_init(&st->module_lock, NULL);   /* #1144: import cache */
     st->handle_next = 1;  /* 0 reserved as invalid */
+    st->exit_scope = xcalloc(1, sizeof(*st->exit_scope));
+    st->exit_scope->refs = 1; /* state owner */
     /* #1038: absence of a compiler verdict means record, not discard. */
     st->obs_needed = 1;
     st->obs_compile_pending = 1;
@@ -100,6 +106,9 @@ static void state_destroy_body(EigsState *st, int already_released) {
     pthread_mutex_destroy(&st->module_lock);
     pthread_mutex_destroy(&st->threads_lock);
     pthread_mutex_destroy(&st->handle_mutex);
+    eigs_exit_scope_release(st->exit_scope);
+    pthread_cond_destroy(&st->exit_cond);
+    pthread_mutex_destroy(&st->exit_mutex);
     pthread_mutex_destroy(&st->gc_lock);
     if (!already_released) {
         pthread_mutex_lock(&g_attached_lock);
@@ -107,6 +116,63 @@ static void state_destroy_body(EigsState *st, int already_released) {
         pthread_mutex_unlock(&g_attached_lock);
     }
     free(st);
+}
+
+void eigs_exit_scope_retain(EigsExitScope *scope) {
+    if (scope) __atomic_add_fetch(&scope->refs, 1, __ATOMIC_RELAXED);
+}
+
+void eigs_exit_scope_release(EigsExitScope *scope) {
+    if (scope && __atomic_sub_fetch(&scope->refs, 1, __ATOMIC_ACQ_REL) == 0)
+        free(scope);
+}
+
+/* Only the attached thread replaces its own pointer. Native polling loads it
+ * from VM.owner at execution time; no worker ever borrows the state's mutable
+ * default without acquiring its own reference under exit_mutex. */
+void eigs_thread_set_exit_scope(EigsExitScope *scope) {
+    EigsExitScope *old = eigs_current->exit_scope;
+    eigs_exit_scope_retain(scope);
+    eigs_current->exit_scope = scope;
+    eigs_exit_scope_release(old);
+}
+
+void eigs_state_request_exit(EigsState *st, int code) {
+    if (!st) return;
+    pthread_mutex_lock(&st->exit_mutex);
+    EigsExitScope *scope = eigs_current && eigs_current->state == st
+                         ? eigs_current->exit_scope : st->exit_scope;
+    if (!__atomic_load_n(&scope->latched_storage, __ATOMIC_RELAXED)) {
+        scope->code = code;
+        __atomic_store_n(&scope->latched_storage, 1, __ATOMIC_RELEASE);
+    }
+    pthread_cond_broadcast(&st->exit_cond);
+    pthread_mutex_unlock(&st->exit_mutex);
+}
+
+int eigs_state_exit_requested(EigsState *st, int *code) {
+    if (!st) return 0;
+    /* All execution/wait paths own an attached scope. The fallback is for a
+     * host inspecting the state's newest scope without an attachment. */
+    int attached = eigs_current && eigs_current->state == st;
+    if (!attached) pthread_mutex_lock(&st->exit_mutex);
+    EigsExitScope *scope = attached ? eigs_current->exit_scope : st->exit_scope;
+    int requested = __atomic_load_n(&scope->latched_storage, __ATOMIC_ACQUIRE);
+    if (requested && code) *code = scope->code;
+    if (!attached) pthread_mutex_unlock(&st->exit_mutex);
+    return requested;
+}
+
+void eigs_state_begin_eval(EigsState *st) {
+    if (!st || !eigs_current || eigs_current->state != st) return;
+    EigsExitScope *scope = xcalloc(1, sizeof(*scope));
+    scope->refs = 1; /* transferred to the state */
+    pthread_mutex_lock(&st->exit_mutex);
+    EigsExitScope *old = st->exit_scope;
+    st->exit_scope = scope;
+    eigs_thread_set_exit_scope(scope);
+    pthread_mutex_unlock(&st->exit_mutex);
+    eigs_exit_scope_release(old);
 }
 
 void eigs_state_destroy(EigsState *st) {
@@ -145,6 +211,24 @@ void eigs_state_destroy_released(EigsState *st) {
 
 int eigs_process_thread_count(void) {
     return g_attached_threads_load();
+}
+
+int eigs_process_single_thread_begin(void) {
+    pthread_mutex_lock(&g_attached_lock);
+    if (g_single_thread_reserved || g_attached_threads_load() != 1) {
+        pthread_mutex_unlock(&g_attached_lock);
+        return 0;
+    }
+    g_single_thread_reserved = 1;
+    pthread_mutex_unlock(&g_attached_lock);
+    return 1;
+}
+
+void eigs_process_single_thread_end(void) {
+    pthread_mutex_lock(&g_attached_lock);
+    g_single_thread_reserved = 0;
+    pthread_cond_broadcast(&g_attached_cond);
+    pthread_mutex_unlock(&g_attached_lock);
 }
 
 /* A bare snapshot of the live-state count. NOT a close decision: by the time
@@ -189,8 +273,15 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     }
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
+    pthread_mutex_lock(&st->exit_mutex);
+    th->exit_scope = st->exit_scope;
+    eigs_exit_scope_retain(th->exit_scope);
+    pthread_mutex_unlock(&st->exit_mutex);
     th->intern_tbl = env_intern_table_new();   /* #1065: thread's ref */
-    pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(1); pthread_mutex_unlock(&g_attached_lock);
+    pthread_mutex_lock(&g_attached_lock);
+    while (g_single_thread_reserved) pthread_cond_wait(&g_attached_cond, &g_attached_lock);
+    g_attached_threads_add(1);
+    pthread_mutex_unlock(&g_attached_lock);
     /* #915: xcalloc zeroes, and 0 here would mean "never scan", silently
      * disabling the observer gate's eager pass on every thread. Default ON;
      * only --lint and the LSP clear it. */
@@ -300,6 +391,7 @@ void eigs_thread_detach(void) {
     pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(-1); pthread_mutex_unlock(&g_attached_lock);
 
     arena_destroy();
+    eigs_exit_scope_release(th->exit_scope);
     eigs_current = NULL;
 
     pthread_mutex_lock(&st->threads_lock);

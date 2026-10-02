@@ -16,5 +16,21 @@ tagging, run `bash tools/changelog_fragments.sh cut <version> <YYYY-MM-DD>`, whi
 section, bumps `VERSION` and deletes the fragments, and commit that as the cut PR (`changes/README.md`).
 Check `git tag` for published versions. The front-door docs do not carry a copied latest-version line.
 
-Homebrew tap: github.com/InauguralSystems/homebrew-eigenscript (tracks the
-latest release).
+The Homebrew tap at github.com/InauguralSystems/homebrew-eigenscript must
+track the latest release automatically.  Its `bump-formula.yml` workflow runs
+on a schedule and can also be started with `workflow_dispatch`.  It reads the latest
+EigenScript release from GitHub's public API, downloads that tag's source
+tarball, computes the formula's `sha256` from the downloaded bytes, and opens a
+formula-bump PR when the formula is behind.  Do not copy a checksum into the
+formula by hand and do not add a cross-repository credential to this release
+workflow.
+
+After a release, look in the tap's pull requests for the automated formula
+bump and its `brew test-bot` result. GitHub may require a maintainer to approve
+the test-bot runs on a PR created with `GITHUB_TOKEN`; approve those runs on
+the generated PR before waiting for its formula checks. A manual dispatch of
+the test-bot runs only setup/syntax checks and does not replace PR formula checks.
+A red PR is repaired in the tap; do not
+paper over it by declaring the release complete here.  If no PR appears after
+the scheduled run, dispatch `bump-formula.yml` in the tap and inspect that
+workflow's log.

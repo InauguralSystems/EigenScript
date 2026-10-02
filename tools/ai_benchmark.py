@@ -86,10 +86,12 @@ def main(argv=None):
     a = ap.parse_args(argv); repo=Path(a.repository).resolve(); out=Path(a.output).resolve()
     if not clean(repo): ap.error("source fixture is dirty; refusing benchmark run")
     fixture=load(Path(a.task)); adapter=load(BENCH/"adapters"/f"{a.adapter}.json")
+    if fixture.get("revision") and a.revision != fixture["revision"]: ap.error("task requires its pinned bug-present revision")
     out.mkdir(parents=True); work=out/"worktree"; work.mkdir()
     supplied=vars(a).copy(); write(out/"inputs.json", supplied)
     shutil.copy2(a.task, out/"task.json"); prompt=Path(fixture["prompt"]).read_text() if Path(fixture["prompt"]).is_absolute() else (ROOT/fixture["prompt"]).read_text()
     (out/"prompt.txt").write_text(prompt, encoding="utf-8"); snapshot(repo,a.revision,work)
+    base=subprocess.check_output(["git","rev-parse","HEAD"],cwd=work,text=True,env=isolated_git_env()).strip()
     start=now(); transcript=[]
     command=[x.format(model=a.model, prompt=str(out/"prompt.txt"), raw=str(out/"raw-result.jsonl")) for x in adapter["command"]]
     env=os.environ.copy(); env["AI_BENCH_RAW_RESULT"]=str(out/"raw-result.jsonl")
@@ -100,16 +102,33 @@ def main(argv=None):
     # Parsers consume the final JSON event while the byte-for-byte stream remains untouched.
     final=next((line for line in reversed(raw.splitlines()) if line.strip()), "{}")
     try: telemetry=normalize(a.adapter, final)
-    except (ValueError, json.JSONDecodeError): telemetry={k:dict(UNAVAILABLE) for k in ("input_tokens","output_tokens","cached_tokens")}
+    except (ValueError, json.JSONDecodeError): telemetry={k:dict(UNAVAILABLE) for k in ("input_tokens","output_tokens","cached_tokens","precheck_rounds","changed_test_rounds","ci_rounds")}
+    before_head=run(["git","rev-parse","HEAD"],work,out,"validated-head-before",env=isolated_git_env())
+    before_status=run(["git","status","--porcelain","--untracked-files=all"],work,out,"validated-status-before",env=isolated_git_env())
+    transcript.extend([before_head,before_status])
+    validated_head=(out/"validated-head-before.stdout").read_text().strip()
+    validation_input_clean=before_head["exit_code"]==0 and before_status["exit_code"]==0 and not (out/"validated-status-before.stdout").read_text()
     local=[]
     for i, cmd in enumerate(fixture["validation"]):
         expanded=[x.format(base="origin/main") for x in cmd]
         receipt=run(expanded,work,out,f"validation-{i+1}"); transcript.append(receipt); local.append(receipt)
         if receipt["exit_code"]: break
-    diff=subprocess.run(["git","diff","--binary","origin/main"],cwd=work,text=True,capture_output=True).stdout
+    # Inspect the immutable snapshot commit, never the mutable origin/main ref.
+    inspections=[]
+    for name, args in (("committed-diff", ["diff","--binary",base,"HEAD"]),
+                       ("head", ["rev-parse","HEAD"]),
+                       ("validated-status-after", ["status","--porcelain","--untracked-files=all"]),
+                       ("commit-count", ["rev-list","--count",f"{base}..HEAD"])):
+        receipt=run(["git",*args],work,out,name,env=isolated_git_env())
+        inspections.append(receipt); transcript.append(receipt)
+    diff=(out/"committed-diff.stdout").read_text()
     (out/"result.diff").write_text(diff,encoding="utf-8")
-    commit=subprocess.run(["git","rev-parse","HEAD"],cwd=work,text=True,capture_output=True)
-    commits=subprocess.run(["git","rev-list","--count","origin/main..HEAD"],cwd=work,text=True,capture_output=True)
+    inspection_ok=all(r["exit_code"]==0 for r in inspections)
+    count=(out/"commit-count.stdout").read_text().strip()
+    created=inspection_ok and count.isdigit() and int(count)>0 and bool(diff)
+    head=(out/"head.stdout").read_text().strip()
+    validated_artifact=validation_input_clean and head==validated_head and not (out/"validated-status-after.stdout").read_text()
+    success=validated_artifact and transcript[0]["exit_code"]==0 and created and bool(local) and all(r["exit_code"]==0 for r in local)
     pricing=load(Path(a.pricing)) if a.pricing else dict(UNAVAILABLE)
     version=run(adapter["version_command"],work,out,"adapter-version")
     transcript.insert(0,version)
@@ -120,14 +139,20 @@ def main(argv=None):
         rates=pricing.get("usd_per_million_tokens",{})
         if "input" in rates and "output" in rates:
             cost={"status":"available","currency":"USD","value":round((telemetry["input_tokens"]["value"]*rates["input"]+telemetry["output_tokens"]["value"]*rates["output"])/1_000_000,8)}
-    result={"schema_version":"1.0.0","inputs":supplied,"started_at":start,"local_completed_at":completed,"elapsed_seconds":elapsed,
+    round_keys=("precheck_rounds","changed_test_rounds","ci_rounds")
+    total_rounds=dict(UNAVAILABLE)
+    if all(telemetry.get(k,{}).get("status")=="available" and isinstance(telemetry[k].get("value"),int) and not isinstance(telemetry[k]["value"],bool) and telemetry[k]["value"]>=0 for k in round_keys):
+        total_rounds={"status":"available","value":sum(telemetry[k]["value"] for k in round_keys)}
+    result={"schema_version":"1.0.0","inputs":supplied,"started_at":start,"local_completed_at":completed if success else None,"local_success":success,"elapsed_seconds":elapsed,
       "remote_first_push":dict(UNAVAILABLE),"environment":{"platform":platform.platform(),"python":platform.python_version(),"env":{k:os.environ[k] for k in sorted(os.environ) if k in ("LANG","LC_ALL","TZ")}},
       "adapter":{"name":a.adapter,"model":a.model,"command":command,"version_command":adapter["version_command"],"version_output":"adapter-version.stdout"},
       "telemetry":telemetry,"pricing":pricing,"computed_cost":cost,"commands":transcript,
-      "precheck_rounds":sum(r["argv"][:2]==["make","precheck"] for r in local),
-      "changed_test_rounds":sum(r["argv"][:2]==["make","test-changed"] for r in local),"ci_rounds":dict(UNAVAILABLE),
-      "commit":{"status":"available","created":commits.stdout.strip() != "0","head":commit.stdout.strip()},
+      "total_rounds":total_rounds,"driver_validation_attempts":{"precheck":sum(r["argv"][:2]==["make","precheck"] for r in local),
+      "test_changed":sum(r["argv"][:2]==["make","test-changed"] for r in local)},
+      "precheck_rounds":telemetry.get("precheck_rounds",dict(UNAVAILABLE)),
+      "changed_test_rounds":telemetry.get("changed_test_rounds",dict(UNAVAILABLE)),"ci_rounds":telemetry.get("ci_rounds",dict(UNAVAILABLE)),
+      "commit":{"status":"available" if inspection_ok else "unavailable","created":created,"head":head if inspection_ok else None,"snapshot":base},
       "changed_plan_receipt":{"file":"validation-2.stdout" if len(local)>1 else None,"not_run_locally":[x for x in plan.splitlines() if "NOT RUN LOCALLY" in x]}}
     write(out/"result.json",result); write(out/"transcript.json",transcript)
-    return 0 if local and all(x["exit_code"]==0 for x in local) else 1
+    return 0 if success else 1
 if __name__ == "__main__": sys.exit(main())

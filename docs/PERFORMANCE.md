@@ -166,22 +166,53 @@ differ** — regenerate with `bash bench/run_bench.sh`):
 | `scalar_loop` | ~26 ms | arithmetic dispatch + env-slot reuse (40k iters) |
 | `dict_ops` | ~54 ms | hash insert + lookup under churn (12k keys) |
 | `string_build` | ~28 ms | native text builder (15k appends) |
-| `observed_loop` | ~37 ms | numeric loop **with** per-assignment observer |
-| `unobserved_loop` | ~29 ms | the same loop inside `unobserved:` |
+| `observed_loop` | ~6 ms | numeric loop, statically observer-gated |
+| `unobserved_loop` | ~6 ms | the same loop inside `unobserved:` |
 
 ## The observer overhead, measured
 
-`observed_loop` vs `unobserved_loop` is the same arithmetic; the only difference
-is that the observed one pays per-assignment entropy/trend bookkeeping. That cost
-is now an executable document:
+`observed_loop` and `unobserved_loop` contain the same arithmetic, with the
+second spelling the loop inside `unobserved:`. On 2026-10-01, Callgrind n=5
+versus n=5 runs were byte-for-byte stable within each arm; the medians are
+below. The observer gate shipped in #915 on 2026-08-23, but that change alone
+did not make this workload's overhead negligible: read-free assignments still
+entered observer helpers and returned from their internal gate. Commit
+`983053c` in #972 hoisted the gate ahead of those calls in September 2026. At
+the measured revision, the completed gate proves that this whole-file workload
+does not read observer state and skips the calls in both arms.
+`unobserved:` therefore buys nothing on this ordinary hot loop (the small
+negative difference is fixed instruction-layout noise, not observer cost).
 
-- **Wall-clock:** ~28% slower observed (~37 ms vs ~29 ms here).
-- **Instructions (deterministic):** ~46% more (`Ir` ≈ 93.2M vs 63.8M).
+<!-- observer-ir:start -->
+| workload | Callgrind median `Ir` (n=5) | Cachegrind baseline `Ir` |
+|---|---:|---:|
+| `observed_loop` | 60,459,942 | 59,530,737 |
+| `unobserved_loop` | 60,465,939 | 59,536,974 |
+| observed overhead | -0.01% | -0.01% |
 
-So wrap a hot numeric loop that doesn't need convergence tracking in
-`unobserved:` — the win is real and now regression-gated in both directions
-(a change that made the observer cheaper, or the unobserved path costlier, would
-move the baseline).
+There remains one narrow use for `unobserved:`. The gate deliberately stays
+open when static analysis cannot resolve a computed `load_file` path. In a
+constructed conservative case using the same 60,000-iteration loop, the
+Callgrind n=5 medians are:
+
+| workload | Callgrind median `Ir` (n=5) |
+|---|---:|
+| `conservative_observed_loop` | 101,455,371 |
+| `conservative_unobserved_loop` | 88,260,898 |
+| instruction reduction | 13.0% |
+
+Use the keyword only when profiling identifies observer bookkeeping in such a
+conservatively gated program; it is not a default hot-loop optimization.
+<!-- observer-ir:end -->
+
+Both tables are generated from the twenty raw results in
+`bench/observer_callgrind.txt`; run
+`python3 tools/performance_observer_docs.py --update` after deliberately
+re-measuring all four arms. The suite requires exactly five measurements per
+arm, checks the generated medians, and publishes the two corresponding values
+and derived overhead from the local Cachegrind regression baseline in the table.
+Its self-test independently changes a Callgrind measurement and a
+`bench/baseline.txt` observer figure to prove either kind of drift is rejected.
 
 ## Concurrency
 
