@@ -1758,13 +1758,11 @@ Value* builtin_write_bytes(Value *arg) {
 
     int n = 0;
     Value **items = NULL;
-    double *bufd = NULL;
     if (data && data->type == VAL_LIST) {
         n = data->data.list.count;
         items = data->data.list.items;
     } else if (data && data->type == VAL_BUFFER) {
         n = data->data.buffer.count;
-        bufd = data->data.buffer.data;
     } else {
         /* Reaching this else IS the condition: `data` is neither a list of
          * byte ints nor a buffer, the only two forms the header documents. */
@@ -1786,8 +1784,9 @@ Value* builtin_write_bytes(Value *arg) {
             return make_null();
         }
         double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
-                          : bufd[i];
-        out[i] = (unsigned char)((int)dv & 0xFF);
+                          : buffer_read_num(data, i);
+        if (g_has_error) { free(out); return make_null(); }
+        out[i] = finite_num_to_byte(dv);
     }
     FILE *f = xfopen_write(path_val->data.str, append ? "ab" : "wb");
     /* fs:ANSWER the path was accepted by the guard above; a NULL FILE* is

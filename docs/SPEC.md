@@ -300,11 +300,10 @@ consequences are contracts you can rely on:
     `NaN` from finite operands (`0 / 0` and `x % 0` raise first, and no
     operand can hold an infinity), so any other source hits a backstop that
     raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
-    result, so both tiers raise from the same guard. One `EIGS_STRICT=0`
-    asymmetry is older than strict mode and is left alone by it: a `matmul`
-    whose result is a **buffer** preserves a `NaN` sentinel consistently
-    across platforms (it reads back as `null`, and `math_flags` is not set),
-    where a list result collapses to `0` — strict raises on both.
+    result, so both tiers raise from the same guard. Buffer storage may retain
+    a raw non-finite kernel result internally, but every scalar read uses the
+    same rule: infinity saturates at ±`1e308`, while under `EIGS_STRICT=0` a
+    `NaN` becomes `0` and sets `math_flags.invalid` (strict mode raises).
   - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
     document is walked leniently and a parse failure answers the same `""`
     an absent key does. Under strict `json_path` applies `json_decode`'s
@@ -2270,6 +2269,17 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 [buf, rows, cols]` shapes an existing flat buffer (the element count must
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
+Every element crossing the buffer/scalar boundary uses the numeric guard:
+infinity saturates at ±`1e308`, while a `NaN` raises in strict mode or becomes
+`0` and sets `math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer
+equality and scalar reductions normalize each input before comparison or
+arithmetic. A strict read that raises inside a function retains that
+function's source location and call frame. Buffer-to-list tensor materialization
+and numeric byte/sample/device conversions apply the same read rule, stopping
+at the first raised read. Numeric bytes truncate and wrap modulo 256 after
+normalization; audio samples then clamp to their documented sample range.
+Raw buffer copies, typed serialization and internal buffer-only kernel work
+areas retain their stored representation.
 
 The tensor builtins operate directly on the flat data — no per-call conversion.
 `matmul of [a, b]` multiplies two shaped buffers (a 1-D buffer is a row vector,

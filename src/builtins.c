@@ -4455,7 +4455,7 @@ Value* builtin_get_at(Value *arg) {
             int idx;
             if (!buf_at_index(arg->data.list.items[1], buf->data.buffer.count,
                               &idx)) return make_null();
-            return make_num(buf->data.buffer.data[idx]);
+            return make_num(buffer_read_num(buf, idx));
         }
         if (argc == 3 && buf->data.buffer.rows > 0) {
             int row, col;
@@ -4463,7 +4463,7 @@ Value* builtin_get_at(Value *arg) {
                               &row)) return make_null();
             if (!buf_at_index(arg->data.list.items[2], buf->data.buffer.cols,
                               &col)) return make_null();
-            return make_num(buf->data.buffer.data[(int64_t)row * buf->data.buffer.cols + col]);
+            return make_num(buffer_read_num(buf, (int64_t)row * buf->data.buffer.cols + col));
         }
         rt_error(EK_TYPE, 0, "get_at: [buffer, row, col] needs a shaped buffer "
                  "(see reshape)");
@@ -6143,8 +6143,10 @@ Value* builtin_list_index_of(Value *arg) {
     ARG_GUARD(!list || list->type != VAL_LIST,
               "list_index_of", "a list as its first argument", make_num(-1));
     for (int i = 0; i < list->data.list.count; i++) {
-        if (values_equal(list->data.list.items[i], needle))
-            return make_num((double)i);
+        int equal = values_equal(list->data.list.items[i], needle);
+        /* #1417: structural buffer comparison can raise on a strict NaN. */
+        if (g_has_error) return make_null();
+        if (equal) return make_num((double)i);
     }
     /* fs:ANSWER the whole list was scanned and nothing equalled the needle —
      * -1 is list_index_of's documented miss. */
@@ -6160,8 +6162,10 @@ Value* builtin_list_contains(Value *arg) {
     Value *needle = arg->data.list.items[1];
     ARG_GUARD(!list || list->type != VAL_LIST, "list_contains", "a list as its first argument", make_num(0));
     for (int i = 0; i < list->data.list.count; i++) {
-        if (values_equal(list->data.list.items[i], needle))
-            return make_num(1);
+        int equal = values_equal(list->data.list.items[i], needle);
+        /* #1417: structural buffer comparison can raise on a strict NaN. */
+        if (g_has_error) return make_null();
+        if (equal) return make_num(1);
     }
     /* fs:ANSWER the scan completed and found nothing; 0 is the predicate's
      * answer, not a stand-in for a rejected argument. */
@@ -6382,10 +6386,14 @@ static Value* builtin_dot(Value *arg) {
     ARG_GUARD(!a || !b || a->type != VAL_BUFFER || b->type != VAL_BUFFER, "dot", "two buffers", make_num(0));
     int n = a->data.buffer.count;
     if (b->data.buffer.count < n) n = b->data.buffer.count;
-    double *ad = a->data.buffer.data, *bd = b->data.buffer.data;
     double s = 0.0;
-    for (int i = 0; i < n; i++)
-        s = num_guard(s + num_guard(ad[i] * bd[i]));
+    for (int i = 0; i < n; i++) {
+        double av = buffer_read_num(a, i);
+        if (g_has_error) return make_null();
+        double bv = buffer_read_num(b, i);
+        if (g_has_error) return make_null();
+        s = num_guard(s + num_guard(av * bv));
+    }
     return make_num(s);
 }
 

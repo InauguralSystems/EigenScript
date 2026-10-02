@@ -136,7 +136,7 @@ nb[2] is 1e300
 nb[3] is 1e300
 nm is reshape of [nb, 2, 2]
 np is matmul of [nm, nm]
-assert_true of [np[0] > 1e308, "matmul overflow really is non-finite"]
+assert_eq of [np[0], 1e308, "matmul overflow is clamped at the scalar read boundary"]
 nk is store_put of [db2, "blobs", {"n": np}]
 ni is store_get of [db2, "blobs", nk]
 assert_eq of [type of ni.n, "buffer", "non-finite buffer still decodes as a buffer"]

@@ -2426,14 +2426,15 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         int loop_start = capture_loop_start(c);
         lp->continue_target = loop_start;
 
-        int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
-        /* ITER_NEXT pushes element on non-exit (+1) */
         /* #1381: every iteration's loop-variable store is filed under the
-         * `for` line. Without this, the first store took the iterable's last
-         * line and every later one the loop body's last line. */
+         * `for` line. #1417: stamp before ITER_NEXT too: a buffer read can
+         * raise before the binder store. The back-edge/continue target must
+         * include this stamp so a later read cannot inherit the body line. */
         int for_line = node->data.forloop.header_line ? node->data.forloop.header_line
                                                       : node->line;
         restamp_line(c, for_line);
+        int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
+        /* ITER_NEXT pushes element on non-exit (+1) */
 
         if (can_skip_env) {
             /* Bind loop var to a function-env slot. SET_LOCAL leaves the
@@ -3083,12 +3084,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         emit(c, OP_ITER_SETUP, node->line);
 
         int loop_start = capture_loop_start(c);
-        int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
-
         /* #1381: the comprehension variable is filed under the
-         * comprehension's first line. Free on one line: the element
-         * expression's own stamp then dedups against this one. */
+         * comprehension's first line. #1417: establish that line before
+         * the fallible iterator read, including every back-edge entry. */
         restamp_line(c, node->line);
+        int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
 
         /* Bind loop var via Env */
         {

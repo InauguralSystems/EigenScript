@@ -1692,6 +1692,28 @@ static inline double num_guard(double x) {
     return x;
 }
 
+/* #1417: VAL_BUFFER storage is an unboxed numerical work area, so kernels
+ * can transiently leave an IEEE NaN or infinity in it.  The language's
+ * finite-number invariant applies when an element crosses the buffer/scalar
+ * boundary: every scalar read goes through this helper.  Keeping the guard at
+ * that boundary also lets bulk kernels retain their unboxed representation. */
+static inline double buffer_read_num(const Value *buffer, int64_t index) {
+    return num_guard(buffer->data.buffer.data[index]);
+}
+
+/* Numeric byte consumers truncate and wrap modulo 256. Reduce in double
+ * first: even a normalized finite number can be outside the C int range.
+ * The caller must normalize the input and stop on a raised read first. */
+static inline unsigned char finite_num_to_byte(double x) {
+    return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
+}
+
+static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {
+    double x = buffer_read_num(buffer, index);
+    if (g_has_error) return 0;
+    return finite_num_to_byte(x);
+}
+
 /* #971: num_guard for a builtin whose result CAN be NaN on the current tree
  * (`pow` of a negative base with a fractional exponent, `num of "nan"`,
  * `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation,

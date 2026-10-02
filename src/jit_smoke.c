@@ -124,12 +124,36 @@ void jit_helper_observe_name_post(struct EigsChunk *chunk, int name_idx) {
     (void)chunk; (void)name_idx;
 }
 
-/* Stages 4q-a / 4q-c / 4q-d / 4q-f / 4v: same linker-immediate pattern —
- * jit.c references each helper as a call-site immediate from its emitter
- * for OP_ITER_NEXT / OP_INDEX_GET / OP_LOCAL_DOT_SET / OP_DOT_GET /
- * OP_LOCAL_IDX_DOT_GET. The smoke binary emits none of those opcodes,
- * so these stubs are unreachable. SET_NAME below records actual calls. */
-int jit_helper_iter_next(void) { return 1; }
+/* Controlled reader statuses exercise the production emitter without
+ * constructing containers, raising runtime errors, or executing a language
+ * program. These receipts cover only the helper-call/exit ABI. */
+static struct {
+    uint8_t *ip;
+    int kind, status, calls, bad;
+} reader_receipt;
+int jit_helper_iter_next(void) {
+    VM *vm = eigs_current->vm;
+    reader_receipt.calls++;
+    if (reader_receipt.kind != 1 || vm->sp != 1 ||
+        vm->stack[0].d != 0 || vm->frames[0].ip != reader_receipt.ip ||
+        vm->current_line != 71)
+        reader_receipt.bad++;
+    if (reader_receipt.status != 1)
+        vm->stack[vm->sp++] = slot_from_num(reader_receipt.status ? 0 : 42);
+    return reader_receipt.status;
+}
+int jit_helper_index_get(void) {
+    VM *vm = eigs_current->vm;
+    reader_receipt.calls++;
+    if (reader_receipt.kind != 0 || vm->sp != 2 ||
+        vm->stack[0].d != 0 || vm->stack[1].d != 1 ||
+        vm->frames[0].ip != reader_receipt.ip || vm->current_line != 71)
+        reader_receipt.bad++;
+    vm->sp -= 2;
+    vm->stack[vm->sp++] = slot_from_num(reader_receipt.status ? 0 : 42);
+    return reader_receipt.status;
+}
+/* Remaining Stage 4q/4v helpers are linker-immediate stubs. */
 void jit_helper_index_set(void) {}
 int jit_helper_loop_stall_check(void) { return 1; }
 int jit_helper_loop_cap_check(void) { return 1; }
@@ -157,7 +181,6 @@ void jit_helper_set_name(struct EigsChunk *chunk, int idx) {
 void jit_helper_set_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_fn_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_local(struct EigsChunk *chunk, int slot) { (void)chunk; (void)slot; }
-void jit_helper_index_get(void) { }
 void jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx) {
     (void)chunk; (void)slot; (void)name_idx;
 }
@@ -434,6 +457,112 @@ static int run_index_bail_cases(void) {
 #endif
 }
 
+/* Each prefix has only its reader as a bailout opcode, including the OSR
+ * slice at offset 2. A later LINE and immediate push witness continuation;
+ * ITER_NEXT also has an in-prefix exhaustion target distinct from error. */
+static int run_reader_bail_cases(void) {
+#if EIGS_JIT_ENABLED
+    int rc = 0, rows = 0;
+    EigsState *state = calloc(1, sizeof *state);
+    EigsThread *thread = calloc(1, sizeof *thread);
+    VM *vm = calloc(1, sizeof *vm);
+    if (!state || !thread || !vm) {
+        fprintf(stderr, "FAIL: reader-bail fixture allocation\n");
+        free(vm); free(thread); free(state);
+        return 1;
+    }
+    thread->state = state;
+    thread->vm = vm;
+    vm->owner = thread;
+    eigs_current = thread;
+    state->jit_entry_threshold = state->jit_iter_threshold = 1;
+    uint8_t index_code[] = {OP_NULL, OP_POP, OP_NULL, OP_POP,
+        OP_NUM_ZERO, OP_NUM_ONE, OP_INDEX_GET,
+        OP_LINE, 72, 0, 0, 0, OP_NUM_ONE};
+    uint8_t iter_code[] = {OP_NULL, OP_POP, OP_NULL, OP_POP,
+        OP_NUM_ZERO, OP_ITER_NEXT, 6, 0,
+        OP_LINE, 72, 0, 0, 0, OP_NUM_ONE, OP_NUM_ZERO};
+    for (int kind = 0; kind < 2; kind++) {
+        EigsChunk chunk = {0};
+        chunk.code = kind ? iter_code : index_code;
+        chunk.code_len = kind ? sizeof iter_code : sizeof index_code;
+        chunk.exec_count = 1;
+        const char *name = kind ? "iter" : "dynamic-index";
+        for (int osr = 0; osr < 2; osr++) {
+            if (osr) jit_try_compile_chunk_osr(&chunk, 2, 0);
+            else jit_try_compile_chunk(&chunk);
+            void *thunk = osr ? chunk.jit_osr[0].code : chunk.jit_code;
+            int compiled = (osr ? chunk.jit_osr[0].state : chunk.jit_state) == 2;
+            if (!compiled || !thunk) {
+                fprintf(stderr, "FAIL: reader-bail %s/%s did not compile\n",
+                        name, osr ? "osr" : "entry");
+                rc = 1;
+                continue;
+            }
+            for (int status = 0; status < (kind ? 3 : 2); status++) {
+                vm->sp = 0;
+                for (int k = 0; k < 4; k++) vm->stack[k] = slot_null();
+                vm->frame_count = 1;
+                vm->frames[0].chunk = &chunk;
+                vm->frames[0].ip = chunk.code + (osr ? 2 : 0);
+                vm->current_line = g_trace_current_line_smoke = 71;
+                reader_receipt.ip = vm->frames[0].ip;
+                reader_receipt.kind = kind;
+                reader_receipt.status = status;
+                reader_receipt.calls = reader_receipt.bad = 0;
+                chunk.jit_advance = chunk.jit_osr[0].advance = -99;
+                register uint64_t saved_r13 __asm__("r13") = UINT64_C(0x13579bdf2468ace0);
+                __asm__ __volatile__("" : "+r"(saved_r13));
+                ((JitChunkFn)thunk)();
+                __asm__ __volatile__("" : "+r"(saved_r13));
+                int raised = status == (kind ? 2 : 1);
+                int expected = (raised ? (kind ? 8 : 7) : chunk.code_len) -
+                               (osr ? 2 : 0);
+                int advance = osr ? chunk.jit_osr[0].advance : chunk.jit_advance;
+                int expected_sp = kind ? (status ? 2 : 4) : (status ? 1 : 2);
+                int expected_line = status ? 71 : 72;
+                int stack_ok = kind
+                    ? vm->stack[0].d == 0 &&
+                      (status ? vm->stack[1].d == 0 :
+                       vm->stack[1].d == 42 && vm->stack[2].d == 1 &&
+                       vm->stack[3].d == 0)
+                    : (status ? vm->stack[0].d == 0 :
+                       vm->stack[0].d == 42 && vm->stack[1].d == 1);
+                int good = saved_r13 == UINT64_C(0x13579bdf2468ace0) &&
+                    advance == expected && reader_receipt.calls == 1 &&
+                    reader_receipt.bad == 0 && vm->sp == expected_sp && stack_ok &&
+                    vm->frame_count == 1 && vm->frames[0].chunk == &chunk &&
+                    vm->frames[0].ip == reader_receipt.ip &&
+                    vm->current_line == expected_line &&
+                    g_trace_current_line_smoke == expected_line;
+                rows++;
+                if (!good) {
+                    fprintf(stderr, "FAIL: reader-bail %s/%s status=%d r13=%" PRIx64
+                            " advance=%d/%d sp=%d/%d line=%d/%d calls=%d bad=%d\n",
+                            name, osr ? "osr" : "entry", status, saved_r13,
+                            advance, expected, vm->sp, expected_sp, vm->current_line,
+                            expected_line, reader_receipt.calls, reader_receipt.bad);
+                    rc = 1;
+                } else {
+                    printf("ok  reader-bail %s/%s status=%d ABI/advance/frame/line/continuation\n",
+                           name, osr ? "osr" : "entry", status);
+                }
+            }
+        }
+        jit_unregister_chunk(&chunk);
+    }
+    jit_thread_destroy(thread);
+    eigs_current = NULL;
+    free(vm); free(thread); free(state);
+    if (rows != 10) rc = 1;
+    if (!rc) printf("Reader-bail smoke: 10/10 rows passed.\n");
+    return rc;
+#else
+    printf("Reader-bail smoke: SKIP (native JIT unavailable).\n");
+    return 0;
+#endif
+}
+
 /* A four-iteration stack-only loop executes the real production emitter in
  * both entry and OSR mode. A stopped scope must bail at the FIRST back-edge;
  * removing that poll still terminates after four iterations and fails the
@@ -525,6 +654,7 @@ int main(void) {
     rc |= run_case(INT64_MAX);
     rc |= run_store_cases();
     rc |= run_index_bail_cases();
+    rc |= run_reader_bail_cases();
     rc |= run_exit_cases();
     if (rc == 0) printf("\nJIT smoke: all cases passed.\n");
     return rc;

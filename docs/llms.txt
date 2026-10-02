@@ -193,6 +193,12 @@ sqrt(2) = 1.414213562373095
   `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run
   opt-out that brings the finite stand-ins back (`NaN` collapses to `0`,
   `sqrt of -1` is `0`, `abs of "x"` is `0`).
+  Raw non-finite tensor results receive the same guard whenever an element is
+  read from a buffer, independent of the consuming operator. Structural buffer
+  equality, scalar reductions, mixed buffer/list materialization and numeric
+  byte/sample/device conversions normalize their buffer inputs too and stop at
+  the first raised read. Numeric bytes truncate and wrap modulo 256 afterward;
+  raw copies, serialization and buffer-only work areas preserve representation.
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`. Each `{…}` converts with the builtin `str`, even if you rebind `str`.

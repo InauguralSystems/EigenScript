@@ -801,10 +801,11 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * these as last_imm pass-through (see the last_imm switch). */
         } else if (op == OP_ITER_NEXT) {
             /* Stage 4q-a: 3-byte op [op][exit_offset:16]. Helper does the
-             * iter step against g_vm.stack[sp-1] and returns 1 (exhausted)
-             * or 0 (pushed an element). Emitter calls helper, tests eax,
-             * conditional-jumps to the exit target on non-zero. Same
-             * pending-patch / has_bail_op pattern as OP_JUMP_IF_FALSE.
+             * iter step against g_vm.stack[sp-1] and returns 1 (exhausted),
+             * 0 (pushed an element), or 2 (read raised). Exhaustion branches
+             * to the exit target; error exits the thunk with post-op advance.
+             * has_bail_op preserves r13/r14 and publishes that advance even
+             * when this is the prefix's only fallible opcode.
              * Fall-through TOS may be a heap pointer (VAL_LIST element)
              * or an immediate num (VAL_BUFFER element) — cannot guarantee
              * immediate, so disable the OP_POP peephole. */
@@ -813,18 +814,18 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *has_bail_op = 1;
         } else if (op == OP_INDEX_GET) {
             /* Stage 4q-c: 1-byte op. Helper pops 2 (idx, target), pushes
-             * 1 result. Can call runtime_error on out-of-range — the
-             * dispatch loop's CHECK_ERROR picks it up after the thunk
-             * returns. has_bail_op=1 so the per-op advance writeback runs
-             * (next op resumes at i+1 if the thunk bails). Pushed value
+             * 1 result and returns the pending error status. The emitter
+             * immediately exits on error, with post-op advance for CHECK_ERROR.
+             * has_bail_op=1 preserves r13/r14 and publishes that advance even
+             * when this is the prefix's only fallible opcode. Pushed value
              * type is opaque to the scanner. */
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
         } else if (op == OP_INDEX_SET) {
             /* Stage 4v: 1-byte op. Helper pops 3 (val, idx, target) and
              * pushes val back (net sp -2); full opcode semantics live in
-             * the helper, so no bail path. Same error/CHECK_ERROR story
-             * as INDEX_GET. Pushed value type is opaque.
+             * the helper, so no bail path. Its pending error is handled by
+             * CHECK_ERROR when the thunk returns. Pushed value type is opaque.
              *
              * Stage 5a: the emitter now inlines the buffer-write fast
              * path (guards + store + decref) ahead of the helper call.
@@ -3837,9 +3838,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *   mov %ecx -> g_vm.sp     ; sync our sp cache so helper sees it
              *   push %rcx                ; align (body at 8-mod-16 -> 0-mod-16)
              *   movabs &jit_helper_iter_next, %rax
-             *   call %rax                ; eax = 0 (pushed) / 1 (exhausted)
+             *   call %rax                ; eax = 0 (pushed), 1 (done), 2 (error)
              *   pop %rcx                 ; (junk, will be reloaded)
              *   mov g_vm.sp -> %ecx      ; reload — helper may have pushed
+             *   cmp $2, %eax
+             *   je <epilogue>            ; with post-op advance, CHECK_ERROR next
              *   test %eax, %eax
              *   jz skip_taken            ; fall-through when not exhausted
              *   mov $(exit_target - entry_offset), %r13d
@@ -3848,7 +3851,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *
              * Same pending-patch bookkeeping as OP_JUMP_IF_FALSE. */
             if (pending_count + 1 > (int)(sizeof pending /
-                                          sizeof pending[0])) {
+                                          sizeof pending[0]) ||
+                bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
             uint16_t off = (uint16_t)(chunk->code[i + 1] |
@@ -3861,7 +3866,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
-            w = emit_test_rax_rax(w);
+            w = emit_cmp_imm8_eax(w, 2);
+            uint8_t *no_error_patch;
+            w = emit_jne_rel32(w, &no_error_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(no_error_patch, w);
+            w = emit_cmp_imm8_eax(w, 0);
 
             uint8_t *skip_patch;
             /* Take when ZF=0 (exhausted, eax != 0); skip taken arm when
@@ -3886,19 +3897,29 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *   mov %ecx -> g_vm.sp     ; sync sp cache
              *   push %rcx                ; align (body at 8-mod-16 -> 0-mod-16)
              *   movabs &jit_helper_index_get, %rax
-             *   call %rax
+             *   call %rax                ; eax = pending error status
              *   pop %rcx                 ; (junk, will be reloaded)
              *   mov g_vm.sp -> %ecx      ; reload — helper mutated sp
              *
-             * No return value to test — helper handles errors via
-             * runtime_error, picked up by CHECK_ERROR after the thunk
-             * returns. */
+             * A raised read has already completed this opcode's stack
+             * effect. Exit at i+1, preserving its current line and live
+             * frame for CHECK_ERROR instead of executing another opcode. */
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_index_get);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_patch;
+            w = emit_je_rel32(w, &ok_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 1 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_patch, w);
             i += 1;
         } else if (op == OP_INDEX_SET) {
             /* Stage 5a: inline buffer-write fast path; helper on any

@@ -583,6 +583,9 @@ int main(void) {
     CHECK(eigs_value_buffer_get(buf, 3) == 255.0, "buffer get [3]");
     CHECK(eigs_value_buffer_get(buf, 4) == 0.0,   "buffer OOB get is 0");
     CHECK(eigs_value_buffer_get(buf, -1) == 0.0,  "buffer negative get is 0");
+    eigs_value_buffer_set(buf, 2, INFINITY);
+    CHECK(eigs_value_buffer_get(buf, 2) == EIGS_NUM_MAX,
+          "buffer non-finite get is clamped");
 
     /* Host buffer visible to script — SAME object, no copy at the
      * boundary: the script's buf_set is visible back in C. */
@@ -594,6 +597,266 @@ int main(void) {
     CHECK(eigs_value_buffer_get(buf, 1) == 17.0,
           "script buf_set visible to host (shared object)");
     eigs_value_release(buf);
+
+    /* #1417: ordinary host buffers can contain NaN. Scalar readers must
+     * raise before later elements are read, and a speculative leaf must
+     * fall back while its callee source/frame can still be reported. */
+    {
+        int nf_saved_strict = g_strict;
+        unsigned nf_saved_flags = g_math_flags;
+        EigsValue *nf_raw = eigs_value_new_buffer(2);
+        EigsValue *nf_finite = eigs_value_new_buffer(2);
+        EigsValue *nf_later = eigs_value_new_buffer(2);
+        eigs_value_buffer_set(nf_raw, 0, NAN);
+        eigs_value_buffer_set(nf_raw, 1, INFINITY);
+        eigs_value_buffer_set(nf_finite, 0, 3.0);
+        eigs_value_buffer_set(nf_finite, 1, 4.0);
+        eigs_value_buffer_set(nf_later, 0, INFINITY);
+        eigs_value_buffer_set(nf_later, 1, 4.0);
+        eigs_set_global("nf_raw", nf_raw);
+        eigs_set_global("nf_finite", nf_finite);
+        eigs_set_global("nf_later", nf_later);
+        eigs_value_release(nf_raw);
+        eigs_value_release(nf_finite);
+        eigs_value_release(nf_later);
+        eigs_state_set_strict(st, 1);
+        r = eigs_eval_string("nf_shaped is reshape of [nf_raw, 1, 2]");
+        CHECK(r != NULL && !eigs_has_error(),
+              "#1417 prepare shaped materialization control");
+        eigs_value_release(r);
+        const char *nf_reads[] = {
+            "nf_raw == nf_raw", "nf_raw == nf_finite",
+            "list_contains of [[nf_raw, nf_later], nf_finite]",
+            "list_index_of of [[nf_raw, nf_later], nf_finite]",
+            "sum of nf_raw", "mean of nf_raw", "norm of nf_raw",
+            "sum of ([nf_raw, nf_later])",
+            "mean of ([nf_raw, nf_later])",
+            "norm of ([nf_raw, nf_later])",
+            "dot of [nf_raw, nf_finite]",
+            "buf_dot of [nf_raw, nf_finite, 0, 0, 2]",
+            "buf_peak of [nf_raw, 0, 2]",
+            "str_from_bytes of nf_raw", "f64_from_bytes of nf_raw",
+            "buf_from_pcm16le of [nf_raw, 0, 1]",
+            "buf_to_pcm16le of [nf_raw, 0, 2]",
+            "add of [nf_raw, [0, 0]]", "add of [[0, 0], nf_raw]",
+            "subtract of [nf_raw, [0, 0]]", "subtract of [[0, 0], nf_raw]",
+            "multiply of [nf_raw, [0, 0]]", "multiply of [[0, 0], nf_raw]",
+            "divide of [nf_raw, [1, 1]]", "divide of [[1, 1], nf_raw]",
+            "pow of [nf_raw, [1, 1]]", "pow of [[1, 1], nf_raw]",
+            "add of [nf_shaped, [[0, 0]]]", "add of [[[0, 0]], nf_shaped]",
+            "add of [[[nf_raw], [nf_later]], [[[0, 0]], [[0, 0]]]]",
+            "add of [[[[0, 0]], [[0, 0]]], [[nf_raw], [nf_later]]]"
+#if EIGENSCRIPT_EXT_ZLIB
+            , "deflate of nf_raw", "inflate of nf_raw",
+            "zlib_deflate of nf_raw", "zlib_inflate of nf_raw"
+#endif
+#if EIGENSCRIPT_EXT_NET
+            , "net_send of [0, nf_raw]"
+#endif
+        };
+        for (size_t i = 0; i < sizeof nf_reads / sizeof nf_reads[0]; i++) {
+            g_math_flags = 0;
+            r = eigs_eval_string(nf_reads[i]);
+            CHECK(r == NULL && eigs_has_error(), nf_reads[i]);
+            CHECK(eigs_last_error_kind() &&
+                      strcmp(eigs_last_error_kind(), "value") == 0,
+                  "#1417 strict scalar read reports value error");
+            CHECK(g_math_flags == EIGS_MATH_INVALID,
+                  "#1417 stop at NaN before reading later infinity");
+            CHECK(eigs_last_error_message() &&
+                      strstr(eigs_last_error_message(), "not a number"),
+                  "#1417 retain the first NaN diagnostic");
+            eigs_value_release(r);
+            eigs_clear_error();
+        }
+        /* The byte wrapper must finish validation before opening/truncating
+         * a file. This is one ordinary byte, with a first-read NaN input. */
+        char nf_path[] = "/tmp/eigs_nf_bytes_XXXXXX";
+        int nf_fd = mkstemp(nf_path);
+        CHECK(nf_fd >= 0, "#1417 prepare byte-output control");
+        if (nf_fd >= 0) {
+            CHECK(write(nf_fd, "Q", 1) == 1, "#1417 initialize byte-output control");
+            close(nf_fd);
+            EigsValue *nf_path_value = eigs_value_new_string(nf_path);
+            eigs_set_global("nf_byte_path", nf_path_value);
+            eigs_value_release(nf_path_value);
+            g_math_flags = 0;
+            r = eigs_eval_string("write_bytes of [nf_byte_path, nf_raw]");
+            CHECK(r == NULL && eigs_has_error() && eigs_last_error_kind() &&
+                      strcmp(eigs_last_error_kind(), "value") == 0,
+                  "#1417 byte sink retains the normalized read error");
+            CHECK(g_math_flags == EIGS_MATH_INVALID,
+                  "#1417 byte sink stops before the later infinity");
+            eigs_value_release(r);
+            eigs_clear_error();
+            FILE *nf_file = fopen(nf_path, "rb");
+            CHECK(nf_file && fgetc(nf_file) == 'Q' && fgetc(nf_file) == EOF,
+                  "#1417 failed byte read does not truncate its destination");
+            if (nf_file) fclose(nf_file);
+            unlink(nf_path);
+        }
+#if EIGENSCRIPT_EXT_GFX
+        /* The PPU builtin is pure computation: no window or device opens.
+         * Fixed hardware dimensions are the smallest valid ordinary input. */
+        EigsValue *nf_ppu_mem = eigs_value_new_buffer(65536);
+        EigsValue *nf_ppu_fb = eigs_value_new_buffer(23040);
+        eigs_set_global("nf_ppu_mem", nf_ppu_mem);
+        eigs_set_global("nf_ppu_fb", nf_ppu_fb);
+        eigs_value_buffer_set(nf_ppu_mem, 0xFF40, NAN);
+        eigs_value_buffer_set(nf_ppu_mem, 0xFF42, INFINITY);
+        eigs_value_buffer_set(nf_ppu_fb, 0, 9);
+        g_math_flags = 0;
+        r = eigs_eval_string("ppu_render_frame of [nf_ppu_mem, nf_ppu_fb]");
+        CHECK(r == NULL && eigs_has_error() && eigs_last_error_kind() &&
+                  strcmp(eigs_last_error_kind(), "value") == 0,
+              "#1417 PPU normalizes its first register read");
+        CHECK(g_math_flags == EIGS_MATH_INVALID &&
+                  eigs_value_buffer_get(nf_ppu_fb, 0) == 9,
+              "#1417 PPU register error stops before later reads or writes");
+        eigs_value_release(r);
+        eigs_clear_error();
+        eigs_value_buffer_set(nf_ppu_mem, 0xFF40, 0x91);
+        eigs_value_buffer_set(nf_ppu_mem, 0xFF42, 0);
+        eigs_value_buffer_set(nf_ppu_mem, 0x9800, NAN);
+        g_math_flags = 0;
+        r = eigs_eval_string("ppu_render_frame of [nf_ppu_mem, nf_ppu_fb]");
+        CHECK(r == NULL && eigs_has_error() && eigs_last_error_kind() &&
+                  strcmp(eigs_last_error_kind(), "value") == 0,
+              "#1417 PPU normalizes its tile-map byte read");
+        CHECK(g_math_flags == EIGS_MATH_INVALID &&
+                  eigs_value_buffer_get(nf_ppu_fb, 0) == 9,
+              "#1417 PPU tile error stops before framebuffer writes");
+        eigs_value_release(r);
+        eigs_clear_error();
+        eigs_value_buffer_set(nf_ppu_mem, 0xFF40, 0);
+        r = eigs_eval_string("ppu_render_frame of [nf_ppu_mem, nf_ppu_fb]");
+        CHECK(r != NULL && !eigs_has_error() &&
+                  eigs_value_buffer_get(nf_ppu_fb, 0) == 0,
+              "#1417 finite LCD-off control still blanks the framebuffer");
+        eigs_value_release(r);
+        eigs_value_release(nf_ppu_mem);
+        eigs_value_release(nf_ppu_fb);
+#endif
+        /* Validate the entire index vector before scatter writes anything.
+         * The second NaN must leave even the earlier valid destination alone. */
+        EigsValue *nf_indices = eigs_value_new_buffer(2);
+        EigsValue *nf_dst = eigs_value_new_buffer(2);
+        eigs_value_buffer_set(nf_indices, 0, 0.0);
+        eigs_value_buffer_set(nf_indices, 1, NAN);
+        eigs_value_buffer_set(nf_dst, 0, 10.0);
+        eigs_value_buffer_set(nf_dst, 1, 20.0);
+        eigs_set_global("nf_indices", nf_indices);
+        eigs_set_global("nf_dst", nf_dst);
+        r = eigs_eval_string("scatter_add of [nf_dst, nf_indices, [5, 5]]");
+        CHECK(r == NULL && eigs_has_error() && eigs_last_error_kind() &&
+                  strcmp(eigs_last_error_kind(), "value") == 0,
+              "#1417 scatter propagates a normalized index error");
+        CHECK(eigs_value_buffer_get(nf_dst, 0) == 10.0 &&
+                  eigs_value_buffer_get(nf_dst, 1) == 20.0,
+              "#1417 scatter index error leaves every destination unchanged");
+        eigs_value_release(r);
+        eigs_clear_error();
+
+        /* Both the partially filled and first-row failure free gather output.
+         * A later invalid index must not replace the first NaN diagnostic. */
+        for (int nf_first_row = 0; nf_first_row < 2; nf_first_row++) {
+            eigs_value_buffer_set(nf_indices, 0, nf_first_row ? NAN : 0.0);
+            eigs_value_buffer_set(nf_indices, 1, nf_first_row ? 2.0 : NAN);
+            g_math_flags = 0;
+            r = eigs_eval_string("gather of [(buffer of [2, 1]), nf_indices]");
+            CHECK(r == NULL && eigs_has_error() && eigs_last_error_kind() &&
+                      strcmp(eigs_last_error_kind(), "value") == 0,
+                  "#1417 gather retains the first normalized index error");
+            CHECK(g_math_flags == EIGS_MATH_INVALID,
+                  "#1417 gather stops at its NaN index");
+            eigs_value_release(r);
+            eigs_clear_error();
+        }
+        /* The same fallible index helper serves row/column gradient readers
+         * and mutators, for both matrix representations. No callback or
+         * matrix write may happen after the first index read raises. */
+        r = eigs_eval_string("nf_matrix is buffer of [2, 2]\n"
+                             "nf_matrix[0] is 10\n"
+                             "nf_matrix[1] is 20\n"
+                             "nf_matrix[2] is 30\n"
+                             "nf_matrix[3] is 40\n"
+                             "nf_list_matrix is [[10, 20], [30, 40]]\n"
+                             "nf_grad_calls is 0\n"
+                             "define nf_loss(n) as:\n"
+                             "    nf_grad_calls += 1\n"
+                             "    return 1\n");
+        CHECK(r != NULL && !eigs_has_error(),
+              "#1417 prepare finite index-consumer controls");
+        eigs_value_release(r);
+        const char *nf_index_reads[] = {
+            "numerical_grad_rows of [nf_loss, nf_matrix, nf_indices, 0.01]",
+            "numerical_grad_rows of [nf_loss, nf_list_matrix, nf_indices, 0.01]",
+            "numerical_grad_cols of [nf_loss, nf_matrix, nf_indices, 0.01]",
+            "numerical_grad_cols of [nf_loss, nf_list_matrix, nf_indices, 0.01]",
+            "sgd_update_rows of [nf_matrix, nf_matrix, nf_indices, 0.1]",
+            "sgd_update_rows of [nf_list_matrix, nf_list_matrix, nf_indices, 0.1]",
+            "sgd_update_cols of [nf_matrix, nf_matrix, nf_indices, 0.1]",
+            "sgd_update_cols of [nf_list_matrix, nf_list_matrix, nf_indices, 0.1]"
+        };
+        for (size_t i = 0; i < sizeof nf_index_reads / sizeof nf_index_reads[0]; i++) {
+            g_math_flags = 0;
+            r = eigs_eval_string(nf_index_reads[i]);
+            CHECK(r == NULL && eigs_has_error() && eigs_last_error_kind() &&
+                      strcmp(eigs_last_error_kind(), "value") == 0,
+                  nf_index_reads[i]);
+            CHECK(g_math_flags == EIGS_MATH_INVALID,
+                  "#1417 index consumer stops on the first NaN");
+            eigs_value_release(r);
+            eigs_clear_error();
+            r = eigs_eval_string("nf_grad_calls == 0 and "
+                                 "nf_matrix[0] == 10 and nf_matrix[1] == 20 and "
+                                 "nf_matrix[2] == 30 and nf_matrix[3] == 40 and "
+                                 "nf_list_matrix == [[10, 20], [30, 40]]");
+            CHECK(r != NULL && eigs_value_as_num(r) == 1.0 && !eigs_has_error(),
+                  "#1417 failed index read performs no callback or matrix write");
+            eigs_value_release(r);
+        }
+        eigs_value_release(nf_indices);
+        eigs_value_release(nf_dst);
+
+        r = eigs_eval_string("define nf_first(x, i) as:\n"
+                             "    return x[i]\n"
+                             "nf_first of [nf_finite, 0]\n");
+        CHECK(r != NULL && eigs_value_as_num(r) == 3.0 && !eigs_has_error(),
+              "#1417 finite leaf accessor remains usable");
+        eigs_value_release(r);
+        FILE *nf_capture = tmpfile();
+        int nf_stderr = dup(STDERR_FILENO);
+        CHECK(nf_capture != NULL && nf_stderr >= 0,
+              "#1417 prepare leaf diagnostic capture");
+        if (nf_capture && nf_stderr >= 0) {
+            fflush(stderr);
+            int nf_redirected = dup2(fileno(nf_capture), STDERR_FILENO);
+            CHECK(nf_redirected >= 0, "#1417 capture leaf diagnostic");
+            if (nf_redirected >= 0) {
+                r = eigs_eval_string("nf_first of [nf_raw, 0]\n");
+                CHECK(r == NULL && eigs_has_error(),
+                      "#1417 strict NaN leaf raises");
+                CHECK(eigs_last_error_line() == 2,
+                      "#1417 leaf error retains indexed callee line");
+                eigs_value_release(r);
+                fflush(stderr);
+                CHECK(dup2(nf_stderr, STDERR_FILENO) >= 0,
+                      "#1417 restore diagnostic stream");
+                rewind(nf_capture);
+                char nf_diag[1024];
+                size_t nf_size = fread(nf_diag, 1, sizeof nf_diag - 1, nf_capture);
+                nf_diag[nf_size] = '\0';
+                CHECK(strstr(nf_diag, "  at nf_first (line 2)") != NULL,
+                      "#1417 leaf error retains callee frame");
+                eigs_clear_error();
+            }
+        }
+        if (nf_stderr >= 0) close(nf_stderr);
+        if (nf_capture) fclose(nf_capture);
+        eigs_state_set_strict(st, nf_saved_strict);
+        g_math_flags = nf_saved_flags;
+    }
 
     /* Script-created buffer read from the host. */
     r = eigs_eval_string("sb is buffer of 3\nbuf_set of [sb, 2, 42]\nsb");

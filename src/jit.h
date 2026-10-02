@@ -221,17 +221,19 @@ void jit_helper_observe_name_post(struct EigsChunk *chunk, int name_idx);
 
 /* Stage 4q-a: out-of-line helper for OP_ITER_NEXT. Returns 1 if the
  * iterator at g_vm.stack[sp-1] is exhausted (no element pushed), 0 if
- * it pushed the next element and advanced the in-state index. Mirrors
- * the body of CASE(ITER_NEXT) in vm.c but without ip mutation — the
- * JIT-emitted call site does the branch. */
+ * it pushed the next element and advanced the in-state index, or 2 if
+ * that completed step raised. Mirrors CASE(ITER_NEXT) without ip mutation.
+ * The emitter branches to the loop exit only for 1; for 2 it exits the
+ * thunk with post-op advance so CHECK_ERROR runs before another opcode. */
 int jit_helper_iter_next(void);
 
 /* Stage 4q-c: out-of-line helper for OP_INDEX_GET. Mirrors
  * CASE(INDEX_GET): pops index + target slots from g_vm.stack (sp -= 2),
- * pushes the indexed value (or null on error, after calling
- * runtime_error to preserve interpreter semantics). The JIT site
- * must sync %ecx → g_vm.sp before the call and reload after. */
-void jit_helper_index_get(void);
+ * pushes the indexed value (or the interpreter's error placeholder),
+ * and returns g_has_error. The JIT site must sync %ecx → g_vm.sp before
+ * the call and reload after; a nonzero result exits the thunk with
+ * post-op advance so CHECK_ERROR runs before another opcode. */
+int jit_helper_index_get(void);
 void jit_helper_index_set(void);
 int  jit_helper_loop_stall_check(void);
 int  jit_helper_loop_cap_check(void);

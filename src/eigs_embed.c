@@ -376,7 +376,7 @@ int eigs_value_buffer_len(EigsValue *v) {
 double eigs_value_buffer_get(EigsValue *v, int i) {
     if (!v || v->type != VAL_BUFFER) return 0.0;
     if (i < 0 || i >= v->data.buffer.count) return 0.0;
-    return v->data.buffer.data[i];
+    return buffer_read_num(v, i);
 }
 
 void eigs_value_buffer_set(EigsValue *v, int i, double x) {

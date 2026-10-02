@@ -1349,7 +1349,7 @@ int jit_helper_local_idx_get(int slot, int idx) {
         int i = idx;
         if (target->type == VAL_BUFFER) {
             if (i < target->data.buffer.count) {
-                vm_push_slot(slot_from_num(target->data.buffer.data[i]));
+                vm_push_slot(slot_from_num(buffer_read_num(target, i)));
             } else {
                 rt_error(EK_INDEX, g_vm.current_line,
                     "buffer index %d out of range (length %d)",
@@ -1766,8 +1766,9 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
  *
  * Mirrors CASE(ITER_NEXT) in vm_run, but without ip mutation — returns
  * 1 if the iterator is exhausted (no element pushed), 0 if it pushed
- * the next element. The JIT-emitted call site reads the return value
- * and emits the conditional forward jump to the loop exit target.
+ * the next element, or 2 if that read raised. The raising path completes
+ * the same stack/index work as CASE(ITER_NEXT), then the emitted caller
+ * exits to CHECK_ERROR before executing the loop body or exit target.
  *
  * NOTE: NUM_REUSE check inlined here (the macro is defined further
  * down in this TU). */
@@ -1798,7 +1799,7 @@ int jit_helper_iter_next(void) {
     if (idx >= len) return 1;
     Value *elem;
     if (iterable->type == VAL_BUFFER) {
-        elem = make_num(iterable->data.buffer.data[idx]);
+        elem = make_num(buffer_read_num(iterable, idx));
     } else {
         elem = iterable->data.list.items[idx];
         val_incref(elem);
@@ -1816,7 +1817,7 @@ int jit_helper_iter_next(void) {
                                               : make_num(idx + 1);
     }
     vm_push(elem);
-    return 0;
+    return g_has_error ? 2 : 0;
 }
 
 /* Integer-valued test for a subscript index: an exact integer (2.0) returns 1
@@ -1946,7 +1947,12 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
                     mini[msp++] = slot_from_heap(r);    /* borrow, no incref */
             } else if (target->type == VAL_BUFFER) {
                 if (!vm_index_resolve(&i, target->data.buffer.count)) return 0;
-                mini[msp++] = slot_from_num(target->data.buffer.data[i]);
+                /* #1417: this speculative evaluator has no callee frame and
+                 * skips OP_LINE. Let the generic call report a strict NaN at
+                 * the indexed expression, before the guard can raise here. */
+                double raw = target->data.buffer.data[i];
+                if (g_strict && raw != raw) return 0;
+                mini[msp++] = slot_from_num(buffer_read_num(target, i));
             } else {
                 return 0;
             }
@@ -2254,7 +2260,7 @@ void jit_helper_index_set(void) {
     vm_push(val);
 }
 
-void jit_helper_index_get(void) {
+int jit_helper_index_get(void) {
     EigsSlot idx_s = g_vm.stack[g_vm.sp - 1];
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 2];
     g_vm.sp -= 2;
@@ -2284,11 +2290,11 @@ void jit_helper_index_get(void) {
                 slot_decref(tgt_s);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
         if (target->type == VAL_BUFFER) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                double v = target->data.buffer.data[i];
+                double v = buffer_read_num(target, i);
                 slot_decref(tgt_s);
                 vm_push_slot(slot_from_num(v));
             } else {
@@ -2299,7 +2305,7 @@ void jit_helper_index_get(void) {
                 slot_decref(tgt_s);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
     }
     /* Slow path: materialize both via slot_to_value for unified handling. */
@@ -2340,7 +2346,7 @@ void jit_helper_index_get(void) {
         if (!vm_index_is_int(idx->data.num, &i))
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
         else if (vm_index_resolve(&i, target->data.buffer.count))
-            result = make_num(target->data.buffer.data[i]);
+            result = make_num(buffer_read_num(target, i));
         else
             rt_error(EK_INDEX, g_vm.current_line,
                 "buffer index %d out of range (length %d)",
@@ -2351,6 +2357,7 @@ void jit_helper_index_get(void) {
     }
     val_decref(target); val_decref(idx);
     vm_push(result);
+    return g_has_error;
 }
 
 /* Direct-borrow heuristic, shared by the three builtin call sites
@@ -4554,7 +4561,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             if (target->type == VAL_BUFFER) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                    double v = target->data.buffer.data[i];
+                    double v = buffer_read_num(target, i);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_from_num(v));
                 } else {
@@ -4601,7 +4608,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!vm_index_is_int(idx->data.num, &i))
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
             else if (vm_index_resolve(&i, target->data.buffer.count))
-                result = make_num(target->data.buffer.data[i]);
+                result = make_num(buffer_read_num(target, i));
             else
                 rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else {
@@ -4859,7 +4866,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (target->type == VAL_BUFFER) {
                 /* DMG hot path: mem[addr] — emit immediate, skip make_num. */
                 if (i < target->data.buffer.count) {
-                    vm_push_slot(slot_from_num(target->data.buffer.data[i]));
+                    vm_push_slot(slot_from_num(buffer_read_num(target, i)));
                 } else {
                     rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
@@ -5055,7 +5062,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (iterable->type == VAL_BUFFER) {
                 /* Push number immediate directly — skip make_num + immediate-
                  * promote round-trip through vm_push. */
-                vm_push_slot(slot_from_num(iterable->data.buffer.data[idx]));
+                vm_push_slot(slot_from_num(buffer_read_num(iterable, idx)));
             } else {
                 Value *elem = iterable->data.list.items[idx];
                 val_incref(elem);

@@ -1175,9 +1175,9 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
         int n = samples->data.buffer.count;
         if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
         int16_t *buf = xmalloc_array(n, sizeof(int16_t));
-        const double *src = samples->data.buffer.data;
         for (int i = 0; i < n; i++) {
-            double s = src[i];
+            double s = buffer_read_num(samples, i);
+            if (g_has_error) { free(buf); return NULL; }
             if (s > 1.0) s = 1.0;
             if (s < -1.0) s = -1.0;
             buf[i] = (int16_t)(s * 32767);
@@ -2251,9 +2251,9 @@ Value* builtin_gfx_fb(Value *arg) {
     /* Convert buffer → ARGB pixel array */
     int total = w * h;
     Uint32 *pixels = xmalloc_array(total, sizeof(Uint32));
-    double *src = buf->data.buffer.data;
     for (int i = 0; i < total; i++) {
-        int idx = (int)src[i];
+        int idx = buffer_read_byte(buf, i);
+        if (g_has_error) { free(pixels); return make_null(); }
         pixels[i] = palette[idx & 3];
     }
 
@@ -2289,23 +2289,30 @@ Value* builtin_ppu_render_frame(Value *arg) {
               "ppu_render_frame", "[buffer mem, buffer fb of at least 23040]",
               make_null());
 
-    double *mem = mem_v->data.buffer.data;
     double *fb  = fb_v->data.buffer.data;
 
-    int lcdc = (int)mem[0xFF40];
+    int lcdc = buffer_read_byte(mem_v, 0xFF40);
+    if (g_has_error) return make_null();
     if (!(lcdc & 0x80)) {
         /* LCD off — blank */
         for (int i = 0; i < 23040; i++) fb[i] = 0;
         return make_null(); /* fs:VOID the LCD is off, so the frame was blanked; ppu_render_frame answers null on every path -- this is the return value, not a stand-in for a rejected argument */
     }
 
-    int scy = (int)mem[0xFF42];
-    int scx = (int)mem[0xFF43];
-    int bgp_raw = (int)mem[0xFF47];
-    int obp0_raw = (int)mem[0xFF48];
-    int obp1_raw = (int)mem[0xFF49];
-    int wy = (int)mem[0xFF4A];
-    int wx = (int)mem[0xFF4B];
+    int scy = buffer_read_byte(mem_v, 0xFF42);
+    if (g_has_error) return make_null();
+    int scx = buffer_read_byte(mem_v, 0xFF43);
+    if (g_has_error) return make_null();
+    int bgp_raw = buffer_read_byte(mem_v, 0xFF47);
+    if (g_has_error) return make_null();
+    int obp0_raw = buffer_read_byte(mem_v, 0xFF48);
+    if (g_has_error) return make_null();
+    int obp1_raw = buffer_read_byte(mem_v, 0xFF49);
+    if (g_has_error) return make_null();
+    int wy = buffer_read_byte(mem_v, 0xFF4A);
+    if (g_has_error) return make_null();
+    int wx = buffer_read_byte(mem_v, 0xFF4B);
+    if (g_has_error) return make_null();
 
     /* Decode palettes */
     int bgp[4]  = { bgp_raw & 3, (bgp_raw >> 2) & 3, (bgp_raw >> 4) & 3, (bgp_raw >> 6) & 3 };
@@ -2348,7 +2355,8 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
                 if (tile_x != prev_tile_x) {
                     prev_tile_x = tile_x;
-                    int tile_num = (int)mem[bg_map_base + map_row + tile_x];
+                    int tile_num = buffer_read_byte(mem_v, bg_map_base + map_row + tile_x);
+                    if (g_has_error) return make_null();
                     int tile_addr;
                     if (unsigned_mode)
                         tile_addr = 0x8000 + tile_num * 16 + tile_row * 2;
@@ -2356,8 +2364,10 @@ Value* builtin_ppu_render_frame(Value *arg) {
                         tile_addr = (tile_num >= 128)
                             ? 0x8800 + (tile_num - 128) * 16 + tile_row * 2
                             : 0x9000 + tile_num * 16 + tile_row * 2;
-                    tile_lo = (int)mem[tile_addr];
-                    tile_hi = (int)mem[tile_addr + 1];
+                    tile_lo = buffer_read_byte(mem_v, tile_addr);
+                    if (g_has_error) return make_null();
+                    tile_hi = buffer_read_byte(mem_v, tile_addr + 1);
+                    if (g_has_error) return make_null();
                 }
 
                 int bit = 7 - (bg_x & 7);
@@ -2387,7 +2397,8 @@ Value* builtin_ppu_render_frame(Value *arg) {
                 int wtx = win_x >> 3;
                 if (wtx != prev_wtx) {
                     prev_wtx = wtx;
-                    int wtn = (int)mem[win_map_base + win_map_row + wtx];
+                    int wtn = buffer_read_byte(mem_v, win_map_base + win_map_row + wtx);
+                    if (g_has_error) return make_null();
                     int wta;
                     if (unsigned_mode)
                         wta = 0x8000 + wtn * 16 + win_row * 2;
@@ -2395,8 +2406,10 @@ Value* builtin_ppu_render_frame(Value *arg) {
                         wta = (wtn >= 128)
                             ? 0x8800 + (wtn - 128) * 16 + win_row * 2
                             : 0x9000 + wtn * 16 + win_row * 2;
-                    wtile_lo = (int)mem[wta];
-                    wtile_hi = (int)mem[wta + 1];
+                    wtile_lo = buffer_read_byte(mem_v, wta);
+                    if (g_has_error) return make_null();
+                    wtile_hi = buffer_read_byte(mem_v, wta + 1);
+                    if (g_has_error) return make_null();
                 }
                 int wbit = 7 - (win_x & 7);
                 int wcid = ((wtile_hi >> wbit) & 1) << 1 | ((wtile_lo >> wbit) & 1);
@@ -2414,13 +2427,17 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
             for (int i = 0; i < 40 && spr_count < 10; i++) {
                 int oam = 0xFE00 + i * 4;
-                int sy = (int)mem[oam] - 16;
-                int sx = (int)mem[oam + 1] - 8;
+                int sy = buffer_read_byte(mem_v, oam) - 16;
+                if (g_has_error) return make_null();
+                int sx = buffer_read_byte(mem_v, oam + 1) - 8;
+                if (g_has_error) return make_null();
                 if (ly >= sy && ly < sy + sprite_h) {
                     sprites[spr_count].sx = sx;
                     sprites[spr_count].sy = sy;
-                    sprites[spr_count].tile = (int)mem[oam + 2];
-                    sprites[spr_count].flags = (int)mem[oam + 3];
+                    sprites[spr_count].tile = buffer_read_byte(mem_v, oam + 2);
+                    if (g_has_error) return make_null();
+                    sprites[spr_count].flags = buffer_read_byte(mem_v, oam + 3);
+                    if (g_has_error) return make_null();
                     sprites[spr_count].oam_idx = i;
                     spr_count++;
                 }
@@ -2456,8 +2473,10 @@ Value* builtin_ppu_render_frame(Value *arg) {
                 }
 
                 int taddr = 0x8000 + tile * 16 + row * 2;
-                int slo = (int)mem[taddr];
-                int shi = (int)mem[taddr + 1];
+                int slo = buffer_read_byte(mem_v, taddr);
+                if (g_has_error) return make_null();
+                int shi = buffer_read_byte(mem_v, taddr + 1);
+                if (g_has_error) return make_null();
 
                 for (int col = 0; col < 8; col++) {
                     int scr_x = sx + col;

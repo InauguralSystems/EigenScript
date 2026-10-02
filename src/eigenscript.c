@@ -2773,7 +2773,9 @@ int is_truthy(Value *v) {
  * guard prevents runaway recursion on self-referential containers; beyond
  * it we fall back to identity. */
 static int values_equal_impl(Value *a, Value *b, int depth) {
-    if (a == b) return 1;
+    /* #1417: a buffer compared with itself still exposes its elements. Do
+     * not bypass normalization (or a strict NaN raise) through identity. */
+    if (a == b && (!a || a->type != VAL_BUFFER)) return 1;
     if (!a || !b) return 0;
     if (a->type != b->type) return 0;
     if (depth > 64) return a == b;
@@ -2803,8 +2805,13 @@ static int values_equal_impl(Value *a, Value *b, int depth) {
         }
         case VAL_BUFFER: {
             if (a->data.buffer.count != b->data.buffer.count) return 0;
-            for (int i = 0; i < a->data.buffer.count; i++)
-                if (a->data.buffer.data[i] != b->data.buffer.data[i]) return 0;
+            for (int i = 0; i < a->data.buffer.count; i++) {
+                double av = buffer_read_num(a, i);
+                if (g_has_error) return 0;
+                double bv = buffer_read_num(b, i);
+                if (g_has_error) return 0;
+                if (av != bv) return 0;
+            }
             return 1;
         }
         case VAL_TEXT_BUILDER:

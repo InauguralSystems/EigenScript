@@ -308,7 +308,11 @@ to infinity saturate at `+/-1e308`. Strict mode is the default: an
 out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
-`asin`/`acos` clamp their inputs.
+`asin`/`acos` clamp their inputs. The same rule applies when a raw tensor-kernel
+result is read from a `buffer`; one stored element never changes meaning with
+the operator that consumes it. Structural buffer equality and scalar reductions
+normalize each input by this rule too, as do mixed buffer/list materialization
+and numeric byte or sample conversion. A raised read stops subsequent work.
 
 The optional model extension raises a catchable `value` error when
 `eigen_generate` or `eigen_eval_loss` receives a prompt longer than the loaded
