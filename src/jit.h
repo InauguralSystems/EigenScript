@@ -69,8 +69,9 @@ typedef void (*JitChunkFn)(void);
 
 /* Try to compile `chunk` into native code. On success, sets
  * chunk->jit_state = 2 and chunk->jit_code to a JitChunkFn pointer.
- * On any unsupported pattern, sets jit_state = 1 and leaves jit_code
- * NULL. Idempotent — subsequent calls on the same chunk return
+ * On any unsupported pattern, sets jit_state = 1; when the code cache is
+ * full, sets the distinct jit_state = 3. Both leave jit_code NULL.
+ * Idempotent — subsequent calls on the same chunk return
  * immediately if jit_state != 0. */
 void jit_try_compile_chunk(struct EigsChunk *chunk);
 
@@ -135,6 +136,8 @@ typedef struct {
      * VM.owner -> EigsThread.state. */
     int  off_thread_state;            /* offsetof(EigsThread, state) */
     int  off_state_obs_needed;        /* offsetof(EigsState, obs_needed) */
+    int  off_thread_exit_scope;       /* offsetof(EigsThread, exit_scope) */
+    int  off_exit_scope_latched;      /* offsetof(EigsExitScope, latched_storage) */
     int  off_sp;
     int  off_stack;
     int  off_frame_count;
@@ -172,19 +175,19 @@ void jit_helper_get_name(struct EigsChunk *chunk, int idx);
 
 /* Stage 4l: out-of-line helper for OP_LOCAL_IDX_GET. Mirrors the
  * VAL_BUFFER/VAL_LIST/VAL_STR dispatch in CASE(LOCAL_IDX_GET). */
-void jit_helper_local_idx_get(int slot, int idx);
+int jit_helper_local_idx_get(int slot, int idx);
 
 /* Stage 4m: out-of-line helper for OP_LOCAL_DOT_GET. Needs chunk for
  * const_interns / const_hashes — same shape as jit_helper_get_name. */
-void jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx);
+int jit_helper_local_dot_get(struct EigsChunk *chunk, int slot, int name_idx);
 
 /* Stage 4v: out-of-line helper for OP_LOCAL_IDX_DOT_GET — the #1 DMG
  * bailout (48% of stops). Pushes one slot (local[slot][list_idx].name),
  * net sp change +1. Same sp sync/reload pattern as OP_LOCAL_DOT_GET:
  * sync %ecx → g_vm.sp before call so helper's vm_push_* sees the
  * current top; reload %ecx ← g_vm.sp after to pick up the push. */
-void jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
-                                  int list_idx, int name_idx);
+int jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
+                                 int list_idx, int name_idx);
 
 /* Stage 4q-f: out-of-line helper for OP_DOT_GET. Pops target,
  * pushes target.name — net sp change zero. Needs chunk for
@@ -218,17 +221,19 @@ void jit_helper_observe_name_post(struct EigsChunk *chunk, int name_idx);
 
 /* Stage 4q-a: out-of-line helper for OP_ITER_NEXT. Returns 1 if the
  * iterator at g_vm.stack[sp-1] is exhausted (no element pushed), 0 if
- * it pushed the next element and advanced the in-state index. Mirrors
- * the body of CASE(ITER_NEXT) in vm.c but without ip mutation — the
- * JIT-emitted call site does the branch. */
+ * it pushed the next element and advanced the in-state index, or 2 if
+ * that completed step raised. Mirrors CASE(ITER_NEXT) without ip mutation.
+ * The emitter branches to the loop exit only for 1; for 2 it exits the
+ * thunk with post-op advance so CHECK_ERROR runs before another opcode. */
 int jit_helper_iter_next(void);
 
 /* Stage 4q-c: out-of-line helper for OP_INDEX_GET. Mirrors
  * CASE(INDEX_GET): pops index + target slots from g_vm.stack (sp -= 2),
- * pushes the indexed value (or null on error, after calling
- * runtime_error to preserve interpreter semantics). The JIT site
- * must sync %ecx → g_vm.sp before the call and reload after. */
-void jit_helper_index_get(void);
+ * pushes the indexed value (or the interpreter's error placeholder),
+ * and returns g_has_error. The JIT site must sync %ecx → g_vm.sp before
+ * the call and reload after; a nonzero result exits the thunk with
+ * post-op advance so CHECK_ERROR runs before another opcode. */
+int jit_helper_index_get(void);
 void jit_helper_index_set(void);
 int  jit_helper_loop_stall_check(void);
 int  jit_helper_loop_cap_check(void);

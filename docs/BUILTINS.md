@@ -192,7 +192,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `vm_run_bytecode` | `vm_run_bytecode of <descriptor>` | Assemble a chunk from a descriptor and run it on the C VM, returning the result. Descriptor: `[abi, code, constants, functions?, param_count?, name?, local_names?]` — `abi` is the **bytecode ABI revision** the producer was built against (currently `1`; see below); `code` is a list of byte ints (opcodes + little-endian operands, 16-bit except `OP_LINE`'s, which is 32-bit since #630); `constants` is the pool; `functions` is a list of nested descriptors referenced by `OP_CLOSURE` (nested descriptors carry **no** `abi` element); `local_names` (slot order) sizes the call frame and names parameters. The minimal `[abi, code, constants]` form is a flat module chunk. The bridge for an EigenScript-written compiler: emit bytecode as data, execute it on the same VM (and JIT) the C compiler's output uses. Caller supplies a well-formed chunk ending in `OP_RETURN`. **The chunk must also be stack-balanced**, and is refused (`null`, or `{ok: 0, "invalid chunk descriptor"}` through `sandbox_run`) if it is not: no instruction may be reached with fewer operands on the stack than it consumes, and the stack depth must be the same on every path into a given instruction — the JVM/Wasm rule, which keeps verification linear. So an `if`/`else` whose two arms leave different depths is rejected, as is a `CALL` that cannot see its own callee; the depth an instruction runs at is measured from the chunk's own frame base, and consuming below it would reach the caller's operands. This is the shape the C compiler already emits — a conditional's arms each push their value before the join — so a producer that mirrors compiler output needs no change. **A descriptor whose `abi` is missing or does not match the runtime raises (kind `value`) rather than executing** — #704: opcode numbers *and* operand widths are the bytecode ABI, and before the stamp a producer built against an older revision ran misaligned garbage at exit 0 with no error. Producers must hardcode the revision as a literal; a producer that reads the runtime's current value back would always agree and the check would be decoration. A non-list descriptor also raises (it silently returned `null` before #704). |
+| `vm_run_bytecode` | `vm_run_bytecode of <descriptor>` | Assemble a chunk from a descriptor and run it on the C VM, returning the result. Descriptor: `[abi, code, constants, functions?, param_count?, name?, local_names?]` — `abi` is the **bytecode ABI revision** the producer was built against (currently `1`; see below); `code` is a list of byte ints (opcodes + little-endian operands, 16-bit except `OP_LINE`'s, which is 32-bit since #630); `constants` is the pool; `functions` is a list of nested descriptors referenced by `OP_CLOSURE` (nested descriptors carry **no** `abi` element); `local_names` (slot order) sizes the call frame and names parameters. The minimal `[abi, code, constants]` form is a flat module chunk. The bridge for an EigenScript-written compiler: emit bytecode as data, execute it on the same VM (and JIT) the C compiler's output uses. Caller supplies a well-formed chunk ending in `OP_RETURN`. **The chunk must also be stack-balanced**. `vm_run_bytecode` rejects an invalid chunk by raising a catchable `value` error whose diagnostic names the malformed field or stack-verification failure; `sandbox_run` returns its structured rejection `{ok: 0, error: {kind: "value", message: "invalid chunk descriptor", line: 0}}` instead. No instruction may be reached with fewer operands on the stack than it consumes, and the stack depth must be the same on every path into a given instruction — the JVM/Wasm rule, which keeps verification linear. So an `if`/`else` whose two arms leave different depths is rejected, as is a `CALL` that cannot see its own callee; the depth an instruction runs at is measured from the chunk's own frame base, and consuming below it would reach the caller's operands. This is the shape the C compiler already emits — a conditional's arms each push their value before the join — so a producer that mirrors compiler output needs no change. **A descriptor whose `abi` is missing or does not match the runtime raises (kind `value`) rather than executing** — #704: opcode numbers *and* operand widths are the bytecode ABI, and before the stamp a producer built against an older revision ran misaligned garbage at exit 0 with no error. Producers must hardcode the revision as a literal; a producer that reads the runtime's current value back would always agree and the check would be decoration. A non-list descriptor also raises (it silently returned `null` before #704). |
 | `record_history` | `record_history of flag` | Enable (nonzero) / disable (0) per-assignment history recording that `prev of x` and `<kw> is x at <line>` temporal queries read (sets both value- and observer-state history). The C compiler auto-enables it when compiling a temporal query; a self-hosted compiler calls this. The flag must be a number — a non-numeric flag raises (it is not silently treated as disable). Returns the previous setting. |
 | `sandbox_run` | `sandbox_run of [descriptor, max_iterations?, max_bytes?]` | Run a chunk (same ABI-stamped descriptor as `vm_run_bytecode`) under safety bounds. Does not throw: an ABI-revision mismatch comes back as `{ok: 0, error: {kind, message, line}}` with a message naming the revision, distinct from a malformed chunk's `invalid chunk descriptor`, so a grading ladder can tell "your producer is stale" from "your bytecode is wrong" without re-running. **Fail-closed**: only a pure-compute *allowlist* (math, bit, list/dict/string ops, buffers, json, regex, observer reads, parse/tokenize, `print`/`assert`) is visible — every other builtin (file/process/network/db, code-exec, threads, channels, terminal, `exit`, global-state mutators like `set_observer_thresholds`, and the whole extension surface) is shadowed by a blocked stub, so a new builtin is denied by default. The sandbox env is a **sealed root**, not a child of the host global env: the allowlist is copied in, so an outward assignment (`x is v`, `OP_SET_NAME`) has no outer binding to write through to and a name the host defines later is not reachable. `import` is gated at the opcode — it is not a name, so the allowlist never covered it. A **callable cannot cross the boundary**: a `fn` in the result closes over the sandbox env and would run in the host after the caps are restored, so it comes back as `{ok: 0, error: {kind: "sandbox", ...}}` instead. That scan is node/depth budgeted and fails closed, so a result too large to scan is also refused — with a message saying so, distinct from the one naming an actual callable. `max_iterations` bounds loops through **two** counters, whichever trips first, and they are scoped differently. The compiler-emitted cap check (`OP_LOOP_CAP_CHECK`) is **per call frame** — each invocation starts fresh, and tripping it exits the loop gracefully and reports the run as a capped *partial run*. The back-edge counter (`OP_JUMP_BACK`) is a **cumulative total for the whole `sandbox_run`**, deliberately not restored per frame so an assembled chunk cannot reset its own DoS budget by calling a function; tripping it raises. So the same loop called twice within one run can trip the cumulative budget even though each call is individually well inside `max_iterations` — the bound is on the run, not on any one loop. Either way neither a runaway loop nor a single blocking call can hang the host. **A chunk that could underflow the operand stack is refused before it runs** (see `vm_run_bytecode` for the balance rule): the interpreter's arithmetic fast paths index the value stack directly rather than through the guarded pop, so an opcode reached with too few operands read and wrote below the stack's base — `[OP_ADD, OP_RETURN]` was enough. The equivalent env-chain fault is caught at the instruction instead, since it cannot be settled statically: an `OP_LOOP_ENV_END` with no matching `OP_LOOP_ENV_FRESH` raises `loop-env underflow` rather than walking the frame off the end of its scope chain. **Memory is capped at `max_bytes` (default 256 MiB)**: the size-controlled allocators (`zeros`/`fill`/`buffer`/`range`/`concat`) and the zlib codecs (`inflate`/`deflate` and their `zlib_*` duals — both the codec buffer and the list of values built from it) charge a per-run budget, so a single huge allocation *or* an aggregate across a loop raises a caught error (→ `{ok:0}`) instead of an uncatchable out-of-memory `abort()`. The codecs matter here because every other allocator makes the caller *name* a size, which is what the charge reads, while a compressed blob names nothing and amplifies ~1000x. **The descriptor itself is verified as untrusted data, under one bounded context for the whole graph**: a single work allowance covering the root chunk, every nested function chunk, code, constants, function lists and local names — nested chunks share it rather than each declaring their own — plus an explicit recursion-depth bound and back-edge (cycle) refusal. A graph that cannot be verified within that allowance comes back as `{ok: 0, "invalid chunk descriptor"}`. **Descriptor constants are data-only and ISOLATED**: a callable (or text builder) anywhere in the pool is refused at any depth, and each mutable constant (list/dict/buffer) is deep-copied, so the sandbox mutates its own copy — an allowlisted `append`/`set_at`/`dict_set`/`buf_set` on a constant cannot be seen by the host, and the host cannot change a constant mid-run. For the same reason the allowlist copies only the pure C builtin each allowed name actually holds: if the host has rebound one of those names, the sandbox gets the blocked stub rather than the host's value. Runtime errors are caught. Returns `{ok: 1/0, result: value}`. For validating untrusted/generated code. |
 
@@ -357,7 +357,7 @@ Boolean keywords that check the most recently observed value:
 | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` raises by default; under `EIGS_STRICT=0` it answers `""` (#971). |
 | `try_parse` | `try_parse of code_string` | 1 if string is valid EigenScript syntax, 0 otherwise |
 | `mkdir` | `mkdir of "path"` | Create directory (and parents). 1 on success, 0 on failure. Trace-recorded: replay serves the recorded bit and does not re-create the directory (#585) |
-| `ls` | `ls of "path"` | List directory contents as list of strings. Trace-recorded, so replay is deterministic (#585) |
+| `ls` | `ls of "path"` | List non-hidden directory entries as bytewise-sorted strings (the order of `LC_ALL=C ls -1`). Trace-recorded, so replay is deterministic (#585) |
 | `getcwd` | `getcwd of null` | Current working directory as string. Trace-recorded, so replay is deterministic (#585) |
 | `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH. Trace-recorded, so replay is deterministic (#585) |
 | `chdir` | `chdir of "path"` | Change working directory. 1 on success, 0 on failure |
@@ -369,11 +369,12 @@ Boolean keywords that check the most recently observed value:
 ### Streaming Tensor I/O
 
 Single-handle streaming writer for the tensor binary format. Use when
-producing tensors too large to materialise in memory.
+producing tensors without materialising all values in memory; the file still
+has the shared 10,000,000-element limit.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `stream_open` | `stream_open of ["path", count]` | Open file, write header for `count` float64 values. 1 on success, 0 on failure. One stream per **thread**: opening a second closes the first, and an unclosed stream is flushed and closed when the thread ends (#739) |
+| `stream_open` | `stream_open of ["path", count]` | Open file, write header for an integral `count` from 1 through 10,000,000 float64 values. Counts outside that range or fractional counts raise a catchable `limit` error naming the path and cap, including under `EIGS_STRICT=0`. Returns 1 on success, 0 on an I/O failure. One stream per **thread**: opening a second closes the first, and an unclosed stream is flushed and closed when the thread ends (#739) |
 | `stream_write` | `stream_write of value` | Append one float64 to the open stream. 1 on success, 0 on failure |
 | `stream_close` | `stream_close of null` | Close the stream. 1 on success, 0 on failure |
 
@@ -528,7 +529,7 @@ either way, so the numbers are byte-identical.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; by default that raises a catchable `value` error naming `matmul` (#971). Under `EIGS_STRICT=0` the two result kinds differ, and the difference is pre-existing: a **list/tensor** result boxes through `make_num`, so the `NaN` collapses to `0` and sets `math_flags.invalid`, while a **buffer** result is whatever the kernel wrote — the raw `NaN` stays in the buffer and reads back as `null` (a `NaN` bit pattern is a boxed slot tag), with `math_flags` untouched. An overflowed element in a buffer result is likewise stored raw (reads back above `1e308`). Both buffer holes are recorded in ROADMAP.md; #971 left them exactly as v0.43.0 had them rather than change the default path under a strict-mode flag. |
+| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; by default that raises a catchable `value` error naming `matmul` (#971). Kernels may retain raw non-finite values in buffer storage, but every scalar read applies the finite-number guard (#1417): infinity saturates at ±`1e308`, and with strict mode off a `NaN` becomes `0` and sets `math_flags.invalid`, matching the list result. |
 | `matmul_at` | `matmul_at of [a, b]` | `aᵀ·b` without materialising the transpose: `a` is `(m × k)`, `b` is `(m × n)`, result `(k × n)` — the weight gradient `dW = Xᵀ·dY` of a linear layer. Buffers and nested lists; byte-identical to `matmul` of the explicitly transposed operand (same tiled kernel order). Two 1-D operands give their `(k × n)` outer product. Shape/type/size errors raise like `matmul` (#973) |
 | `matmul_bt` | `matmul_bt of [a, b]` | `a·bᵀ`: `a` is `(m × k)`, `b` is `(n × k)`, result `(m × n)` — the input gradient `dX = dY·Wᵀ`. A 1-D left operand is a row vector and yields a 1-D result, as for `matmul` (#973) |
 | `gather` | `gather of [matrix, indices, dim]` | Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
@@ -555,8 +556,8 @@ either way, so the numbers are byte-identical.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor to a binary file (preserves observer state) |
-| `tensor_load` | `tensor_load of "path"` | Load tensor from binary file (restores observer state). `NaN` bytes in the file raise a `value` error naming `tensor_load` by default; under `EIGS_STRICT=0` they collapse to `0` and set `math_flags.invalid` (#971). |
+| `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor of at most 10,000,000 elements to a binary file (preserves observer state). An over-cap tensor raises a catchable `limit` error before opening the file, including under `EIGS_STRICT=0` |
+| `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file (restores observer state). An over-cap header raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file raise a `value` error naming `tensor_load` by default; under `EIGS_STRICT=0` they collapse to `0` and set `math_flags.invalid` (#971). |
 
 ### Gradients & SGD
 
@@ -591,17 +592,18 @@ either way, so the numbers are byte-identical.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `build_corpus` | `build_corpus of [files, top_n, stream_path, vocab_path]` | Three-pass C-backed corpus builder: tokenise `files`, emit top-`n` vocabulary and stream-format token IDs |
+| `build_corpus` | `build_corpus of [files, top_n, stream_path, vocab_path]` | Three-pass C-backed corpus builder: tokenise `files`, emit top-`n` vocabulary and stream-format token IDs. The token stream, including file separators, is capped at 10,000,000 elements; exceeding it raises a catchable `limit` error naming the stream path and cap, including under `EIGS_STRICT=0`, before opening the stream file |
 
 ## Optional: Network Extension (TCP sockets)
 
-Requires a `make net` build (`EIGENSCRIPT_EXT_NET=1`; in no default
-build). Raw TCP sockets whose every nondeterministic outcome — accepted
+Requires a `make server` build (`EIGENSCRIPT_EXT_NET=1`; not in the default
+release). Raw TCP sockets whose every nondeterministic outcome — accepted
 connections, received bytes, bytes-sent counts, dial results,
 kernel-assigned ports — rides the trace tape: a session recorded under
 `EIGS_TRACE` replays byte-identically under `EIGS_REPLAY` with **no
 network present** (the replay run performs zero socket syscalls). See
 [TRACE.md](TRACE.md).
+`make net` remains a compatibility alias for `make server`.
 
 | Builtin | Form | Returns |
 |---------|------|---------|
@@ -725,10 +727,10 @@ If the `require_auth` key is absent, the worker falls back to a
 `require_auth` *function* in the global env (legacy path; default
 worker envs don't populate it).
 
-## Optional: Graphics (SDL2) Extension
+## Graphics (SDL2) Extension
 
-Requires a build with graphics enabled (`make gfx`). Dynamically loads
-libSDL2 at runtime — no SDL2 headers needed at build time.
+Compiled into the hosted release (`make`). It dynamically loads libSDL2 at
+first use, so no SDL2 headers or link-time SDL dependency are needed.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
@@ -777,7 +779,7 @@ user-callee half. `tools/strict_differential.sh`
 crosses every guarded builtin in the extension with the wrong-container
 shapes and requires each pair to raise or to carry a reason in its allowlist,
 so this paragraph is checked against the binary rather than asserted.
-What changed with the flag OFF is the *read*, not the answer. `Value`'s union
+What changed under `EIGS_STRICT=0` is the *read*, not the answer. `Value`'s union
 overlaps `double num` with `char *str`, so `gfx_rect of [0, 0, 32, 32, "255",
 0, 0]` used to reinterpret a `char *` as a `double`, `(int)`-cast it, and
 draw a **black** rectangle where red was asked for — silently, in both modes.
@@ -806,8 +808,8 @@ is a *coercion*: under `EIGS_STRICT=0` they still measure at scale 1.
 wrong-typed scale refuses the call and draws nothing. By default,
 all three raise. Layout code that sizes a box with `gfx_text_width` and then
 draws with `gfx_text` therefore sees a box with no text in it if it passes a
-stringy scale, which is the loudest signal available under `EIGS_STRICT=0`; run
-strict to get the error.
+stringy scale, which is the loudest signal available under `EIGS_STRICT=0`; leave
+strict mode at its default to get the error.
 
 A few values are deliberately left quiet because they are the *answer*, not a
 rejected argument: a drawing call with no window open answers `null` (that is
@@ -859,11 +861,12 @@ revoked permission *and* an empty table alike, so a reporting script kept
 printing "0 rows" forever after a schema change and a migration that did
 nothing looked healthy in CI.
 
-The core build (`make build`) has no db builtins, so the call below raises
-as an undefined variable. The db build (`make full`) raises a catchable
+The release build (`make build`) omits db bindings, so resolving the db name
+below raises a catchable `value` error naming the database capability
+and the server-db profile before evaluating call arguments. The db build (`make server-db`) raises a catchable
 `io` error when there is no connection (`db: not connected — call db_connect
 first`). Both paths are a failure of the query, so the executed example
-prints only the prefix — `e.message` is one of the two strings above,
+prints only the prefix — `e.message` depends on the compiled profile,
 depending on which binary you run it on, and pinning either one here would
 document the other build's absence.
 
@@ -924,7 +927,8 @@ Requires full build. Transformer model inference and training.
 | `eigen_model_load` | `eigen_model_load of "path.json"` | Load model weights from JSON |
 | `eigen_model_loaded` | `eigen_model_loaded of null` | 1 if model loaded, 0 otherwise |
 | `eigen_model_info` | `eigen_model_info of null` | JSON with model config and stats |
-| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Generate text from prompt |
+| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Generate text from prompt. Raises when the prompt exceeds the model's `max_seq_len`. |
+| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Return the target token's cross-entropy loss. Raises when the prompt exceeds the model's `max_seq_len`. |
 | `native_train_step_builtin` | `native_train_step_builtin of [input, output, lr]` | Single training step. Raises when the combined input and output length exceeds the model's `max_seq_len`. |
 | `model_save_weights` | `model_save_weights of "path.json"` | Save model weights to JSON |
 | `model_load_weights` | `model_load_weights of "path.json"` | Load model weights (alias) |
@@ -978,7 +982,7 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` raise by default and answer `0` under `EIGS_STRICT=0` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). A **short or non-list** argument also raises under strict (#1007 — it used to skip the check entirely, open at the defaults and hand back a real device id, so `audio_open of [44100]` was indistinguishable from a well-formed call). `of null` is still the defaults. |
+| `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` raise by default and answer `0` under `EIGS_STRICT=0` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). A **short or non-list** argument also raises by default; with `EIGS_STRICT=0`, it opens at the defaults and returns the device id or `0` if unavailable (#1007). `of null` is still the defaults. |
 | `audio_sweep` | `audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]` | Generate a frequency sweep with continuous phase. `waveform`: 0=sine, 1=sawtooth. Returns sample list. |
 | `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device. A non-numeric element in `samples` raises a `type_mismatch` error (#1007 — it used to be coerced to 0, so a wrong-typed list played silence on a real channel id), and so does a `samples` that is not a list or buffer at all (#1007 — `audio_play of 42` answered the documented "nothing to play" `0`, indistinguishable from an empty clip). `of null` still plays nothing. |
 | `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. `loops` must be a number equal to `-1` or in `1..10000`; anything else raises by default and answers `0` under `EIGS_STRICT=0` (#1007), and so does a `samples` slot that is not a list or buffer. |

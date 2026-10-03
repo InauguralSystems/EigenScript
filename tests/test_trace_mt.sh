@@ -52,6 +52,7 @@ parse_tape() {
         if (s ~ /^O [0-9][0-9]* cfg [^ ]+ [^ ]+ [^ ]+ [0-9][0-9]* [^ ]+$/) return 1
         if (s ~ /^O [0-9][0-9]* win [^ ]+ [0-9][0-9]*$/) return 1
         if (s ~ /^V [0-9][0-9]* [^ ]+$/) return 1
+        if (s ~ /^B [0-9][0-9]* [0-9][0-9]* [0-9][0-9]* [0-9][0-9]* (root (-|[0-9a-f]+)|host [0-9a-f]+|child [0-9][0-9]* [0-9][0-9]*|local)$/) return 1
         if (s ~ /^[AN] [0-9][0-9]* [^= ]+=/) {
             v = s
             sub(/^[AN] [0-9][0-9]* [^= ]+=/, "", v)
@@ -87,10 +88,10 @@ selftest() {
     local torn="$TMPDIR/torn.tape"
     local empty="$TMPDIR/empty.tape"
     local good="$TMPDIR/good.tape"
-    printf '%s\n' 'V 4 0.43.0' '30257A r=570844060311' '30101653L 7' \
+    printf '%s\n' 'V 5 0.43.0' '30257A r=570844060311' '30101653L 7' \
         'N 0 random=0.5N 0 monotonic_ns=17' 'A 0 x=1A 0 y=2' > "$torn"
     : > "$empty"
-    printf '%s\n' 'V 4 0.43.0' 'L 0 1' 'N 0 random=0.5' 'A 0 x=1' > "$good"
+    printf '%s\n' 'V 5 0.43.0' 'B 0 1 1 0 root -' 'L 0 1' 'N 0 random=0.5' 'A 0 x=1' > "$good"
 
     local t_lines t_well t_mal t_n t_o t_ex
     read -r t_lines t_well t_mal t_n t_o t_ex <<< "$(parse_tape "$torn")"
@@ -115,7 +116,7 @@ selftest() {
     fi
 
     read -r t_lines t_well t_mal t_n t_o t_ex <<< "$(parse_tape "$good")"
-    if [ "$t_mal" -eq 0 ] && [ "$t_ex" -eq 4 ] && [ "$t_n" -eq 1 ]; then
+    if [ "$t_mal" -eq 0 ] && [ "$t_ex" -eq 5 ] && [ "$t_n" -eq 1 ]; then
         ok "selftest: well-formed fixture is green (examined=$t_ex N=$t_n)"
     else
         fail "selftest: well-formed fixture is green" \
@@ -290,11 +291,11 @@ for nlen in 5 120 121 160 1000; do
         ok "long-scope-name: $nlen-char name, exact S record then A q=2 (examined=$lexamined)"
     else
         fail "long-scope-name: $nlen-char name, exact S record then A q=2" \
-             "rc=$lrc malformed=$lmal examined=$lexamined next='$lnext' S=$(grep '^S f' "$ltape" | cut -c1-40)"
+             "rc=$lrc malformed=$lmal examined=$lexamined next='$lnext' S=$(grep '^S 0 f' "$ltape" | cut -c1-40)"
     fi
 done
 
-echo "=== replay-workers (must fail-loud, no signal) ==="
+echo "=== replay-workers (causal streams, no live fallback) ==="
 # Build a synthetic tape with this binary's V header + 6000 tagged N random=0.5.
 hdr="$TMPDIR/hdr.tape"
 printf 'print of 1\n' > "$TMPDIR/one.eigs"
@@ -302,7 +303,8 @@ EIGS_TRACE="$hdr" "$EIGS" "$TMPDIR/one.eigs" >/dev/null 2>&1
 vline=$(head -1 "$hdr" 2>/dev/null || true)
 rtape="$TMPDIR/replay.tape"
 {
-    printf '%s\n' "$vline"
+    printf '%s\n' "$vline" 'B 0 1 1 0 root -' \
+        'B 1 2 1 0 child 0 1' 'B 2 3 1 0 child 0 2'
     i=0
     while [ "$i" -lt 6000 ]; do
         printf 'N %d random=0.5\n' $((i % 2 + 1))
@@ -321,10 +323,10 @@ fi
 # Missing, signed, overflowed, and concatenated stream tags are all red.
 printf 'print of (random of null)\n' > "$TMPDIR/take.eigs"
 for bad in 'N random=0.5' 'N -1 random=0.5' 'N 18446744073709551616 random=0.5' 'N 0 random=0.5N 1 random=0.4'; do
-    { printf '%s\n' "$vline"; printf '%s\n' "$bad"; } > "$TMPDIR/bad-id.tape"
+    { printf '%s\n' "$vline" 'B 0 1 1 0 root -'; printf '%s\n' "$bad"; } > "$TMPDIR/bad-id.tape"
     EIGS_REPLAY="$TMPDIR/bad-id.tape" "$EIGS" "$TMPDIR/take.eigs" >/dev/null 2>"$TMPDIR/bad-id.err"
     brc=$?
-    if [ "$brc" -eq 3 ] && grep -q 'malformed v4 stream id' "$TMPDIR/bad-id.err"; then
+    if [ "$brc" -eq 3 ] && grep -q 'malformed v5 stream id' "$TMPDIR/bad-id.err"; then
         ok "parser rejects malformed stream tag: $bad"
     else
         fail "parser rejects malformed stream tag: $bad" "rc=$brc"

@@ -25,10 +25,16 @@ TSAN_RUN_TIMEOUT=${TSAN_RUN_TIMEOUT:-120}
 # LAST_RC, silently disabling the hang branch (caught by a planted hang).
 WARNINGS=0
 LAST_RC=0
+RUN_OUTPUT=""
 tsan_warnings() {
     local out
-    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$1" 2>&1)
+    if [ "${1##*/}" = "tsan_spawn_emitted_jit.eigs" ]; then
+        out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_JIT_STATS=1 EIGS_JIT_HOT=1 "$EIGS" "$1" 2>&1)
+    else
+        out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$1" 2>&1)
+    fi
     LAST_RC=$?
+    RUN_OUTPUT=$out
     WARNINGS=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
 }
 
@@ -60,7 +66,8 @@ echo "=== concurrency slice must be race-free ==="
 SLICE="test_concurrent test_spawn_parallel test_chan_dict_xthread test_spawn_gc \
        test_channel_nb test_spawn_channel_exit test_spawn_args \
        test_spawn_arena_return test_spawn_jit test_spawn_jit_warm test_obs_mt_race \
-       tsan_no_yield_race tsan_sandbox_snapshot_race tsan_mt_clear_respawn"
+       tsan_no_yield_race tsan_sandbox_snapshot_race tsan_mt_clear_respawn \
+       tsan_transfer_buffer_race tsan_message_buffer_copy"
 for t in $SLICE; do
     f="$TESTS_DIR/$t.eigs"
     [ -f "$f" ] || continue
@@ -79,6 +86,68 @@ for t in $SLICE; do
         FAIL=$((FAIL + 1))
     fi
 done
+
+echo "=== concurrent random streams have no races or duplicate draws (#1150) ==="
+RANDOM_MT="$TESTS_DIR/random_mt_no_duplicates.eigs"
+for run in 1 2 3; do
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$RANDOM_MT" 2>&1)
+    LAST_RC=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
+    case "$out" in *"All tests passed."*) summary_ok=1 ;; *) summary_ok=0 ;; esac
+    if [ "$LAST_RC" -eq 0 ] && [ "$w" -eq 0 ] && [ "$summary_ok" -eq 1 ]; then
+        echo "  PASS: random workers run $run: 0 duplicates, TSan-clean"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: random workers run $run: rc=$LAST_RC warnings=$w output='$out'"
+        FAIL=$((FAIL + 1))
+    fi
+done
+
+echo "=== declared concurrency shapes must be race-free (#1152) ==="
+# This is an exact inventory, not a glob. These shapes were absent from the
+# original 13-file slice; a rename must make the row red rather than silently
+# shrinking its coverage.
+SHAPE_FIXTURES="tsan_fanin3 tsan_close_blocked tsan_nested_spawn \
+tsan_worker_throw tsan_worker_exit tsan_worker_tasks tsan_worker_eval \
+tsan_spawn_emitted_jit"
+SHAPE_DECLARED=8
+SHAPE_EXAMINED=0
+for t in $SHAPE_FIXTURES; do
+    SHAPE_EXAMINED=$((SHAPE_EXAMINED + 1))
+    f="$TESTS_DIR/$t.eigs"
+    if [ ! -f "$f" ]; then
+        echo "  FAIL: $t fixture missing ($f)"; FAIL=$((FAIL + 1)); continue
+    fi
+    expected_rc=0
+    if [ "$t" = tsan_worker_exit ]; then expected_rc=5; fi
+    tsan_warnings "$f"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+    elif [ "$LAST_RC" -ne "$expected_rc" ]; then
+        echo "  FAIL: $t exited $LAST_RC (want $expected_rc)"; FAIL=$((FAIL + 1))
+    elif [ "$t" = tsan_worker_exit ] && [ "$RUN_OUTPUT" != WORKER_EXIT_REQUEST ]; then
+        echo "  FAIL: $t requires only the pre-exit marker; output='$RUN_OUTPUT'"; FAIL=$((FAIL + 1))
+    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+         ! grep -Eq '\[jit\].*compiled=[1-9][0-9]*' <<< "$RUN_OUTPUT"; then
+        echo "  FAIL: $t did not compile emitted JIT code"; FAIL=$((FAIL + 1))
+    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+         ! grep -Eq '^hot[[:space:]]+80[[:space:]]+yes[[:space:]]+[0-9.]+%[[:space:]]+RET[[:space:]]' <<< "$RUN_OUTPUT"; then
+        # The named hot row's RET is the native-return sentinel, written by
+        # execution; compilation initializes advance to a byte count. The 80
+        # entries precede spawn; MT calls do not increment this counter.
+        echo "  FAIL: $t missing hot native-return witness after 80 warm calls"; FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $t TSan-clean and exited $expected_rc"; PASS=$((PASS + 1))
+    fi
+done
+if [ "$SHAPE_EXAMINED" -eq "$SHAPE_DECLARED" ]; then
+    echo "  PASS: concurrency-shape fixtures examined == declared ($SHAPE_EXAMINED)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: concurrency-shape fixtures examined == declared (examined=$SHAPE_EXAMINED declared=$SHAPE_DECLARED)"
+    FAIL=$((FAIL + 1))
+fi
 
 echo "=== C embed observer contract (raw state and worker arming) ==="
 if TSAN_OPTIONS="halt_on_error=1 exitcode=66" setarch -R \
@@ -115,36 +184,47 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-echo "=== replay-workers under EIGS_REPLAY must fail-loud, TSan-clean (#1142) ==="
+echo "=== replay-workers under EIGS_REPLAY: causal values, TSan-clean ==="
 RP_EIGS="$TESTS_DIR/trace_mt_replay_workers.eigs"
 RP_TAPE="$TESTS_DIR/../build/tsan_replay_mt.tape"
 RP_HDR="$TESTS_DIR/../build/tsan_replay_hdr.tape"
 if [ -f "$RP_EIGS" ]; then
     printf 'print of 1\n' > "$TESTS_DIR/../build/tsan_one.eigs"
+    header_rc=0
     EIGS_TRACE="$RP_HDR" timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" \
-        "$TESTS_DIR/../build/tsan_one.eigs" >/dev/null 2>&1 || true
-    {
-        head -1 "$RP_HDR" 2>/dev/null || echo "V 3 0.43.0"
-        i=0
-        while [ "$i" -lt 4000 ]; do printf 'N random=0.5\n'; i=$((i+1)); done
-    } > "$RP_TAPE"
-    TSAN_OPTIONS="halt_on_error=1 exitcode=66" \
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_REPLAY="$RP_TAPE" "$EIGS" "$RP_EIGS" \
-        >"$TESTS_DIR/../build/tsan_replay_mt.out" 2>"$TESTS_DIR/../build/tsan_replay_mt.err"
-    LAST_RC=$?
-    if [ "$LAST_RC" -eq 66 ]; then
-        echo "  FAIL: replay-workers ThreadSanitizer race (exit 66)"
+        "$TESTS_DIR/../build/tsan_one.eigs" >/dev/null 2>&1 || header_rc=$?
+    vline=$(head -1 "$RP_HDR" 2>/dev/null || true)
+    if [ "$header_rc" -ne 0 ] || ! printf '%s\n' "$vline" | grep -q '^V 5 '; then
+        echo "  FAIL: replay-workers header setup rc=$header_rc"
         FAIL=$((FAIL + 1))
-    elif [ "$LAST_RC" -eq 124 ]; then
-        echo "  FAIL: replay-workers HUNG"
-        FAIL=$((FAIL + 1))
-    elif [ "$LAST_RC" -eq 1 ] && grep -q 'not replayable under EIGS_REPLAY' \
-            "$TESTS_DIR/../build/tsan_replay_mt.err"; then
-        echo "  PASS: replay-workers fail-loud, TSan-clean"; PASS=$((PASS + 1))
     else
-        echo "  FAIL: replay-workers rc=$LAST_RC (want 1 + diagnostic)"
-        FAIL=$((FAIL + 1))
-        head -3 "$TESTS_DIR/../build/tsan_replay_mt.err"
+        {
+            printf '%s\n' "$vline" 'B 0 1 1 0 root -' \
+                'B 1 2 1 0 child 0 1' 'B 2 3 1 0 child 0 2'
+            # The existing fixture performs 3000 takes in each of two workers.
+            i=0
+            while [ "$i" -lt 6000 ]; do
+                printf 'N %d random=0.5\n' $((i % 2 + 1)); i=$((i+1))
+            done
+        } > "$RP_TAPE"
+        TSAN_OPTIONS="halt_on_error=1 exitcode=66" \
+            timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_REPLAY="$RP_TAPE" "$EIGS" "$RP_EIGS" \
+            >"$TESTS_DIR/../build/tsan_replay_mt.out" 2>"$TESTS_DIR/../build/tsan_replay_mt.err"
+        LAST_RC=$?
+        if [ "$LAST_RC" -eq 66 ]; then
+            echo "  FAIL: replay-workers ThreadSanitizer race (exit 66)"
+            FAIL=$((FAIL + 1))
+        elif [ "$LAST_RC" -eq 124 ]; then
+            echo "  FAIL: replay-workers HUNG"
+            FAIL=$((FAIL + 1))
+        elif [ "$LAST_RC" -eq 0 ] && grep -qx 'a=1500 b=1500' \
+                "$TESTS_DIR/../build/tsan_replay_mt.out"; then
+            echo "  PASS: replay-workers causal values, TSan-clean"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: replay-workers rc=$LAST_RC (want 0 and exact two-worker values)"
+            FAIL=$((FAIL + 1))
+            head -3 "$TESTS_DIR/../build/tsan_replay_mt.err"
+        fi
     fi
     rm -f "$RP_TAPE" "$RP_HDR" "$TESTS_DIR/../build/tsan_one.eigs"
 else
@@ -156,52 +236,27 @@ echo "=== embed-concurrent under TSan: ANY report fails (#1334) ==="
 ROOT="$TESTS_DIR/.."
 TSAN_OBJS=$(ls "$ROOT"/build/tsan/*.o 2>/dev/null | grep -v '/main.o$' || true)
 EC_BIN="$ROOT/build/tsan/embed_concurrent"
-EC_SUPP="$TESTS_DIR/tsan_embed_concurrent.supp"
-if [ -n "$TSAN_OBJS" ] && [ -f "$EC_SUPP" ]; then
+if [ -n "$TSAN_OBJS" ]; then
     gcc $WERROR_FLAGS -fsanitize=thread -g -O1 -o "$EC_BIN" \
         "$ROOT/src/embed_concurrent.c" $TSAN_OBJS -lm -lpthread \
         -I"$ROOT/src" -I"$ROOT/build"
     # Until #1334 this row counted only reports whose stack was in
     # src/trace.c, so a race anywhere else in the runtime passed. Now every
-    # report fails it. The one deliberate race (the harness's own control) is
-    # suppressed in $EC_SUPP with its reason, and the suppression must MATCH:
-    # an unused one means that case stopped running.
-    TSAN_OPTIONS="halt_on_error=0 exitcode=66 suppressions=$EC_SUPP print_suppressions=1" \
+    # report fails it. The harness control uses atomic accesses, so this run
+    # needs no suppressions: every TSan report is a failure.
+    TSAN_OPTIONS="halt_on_error=0 exitcode=66" \
         timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EC_BIN" \
         >"$ROOT/build/tsan_embed_concurrent.out" 2>"$ROOT/build/tsan_embed_concurrent.err"
     LAST_RC=$?
     EC_W=$(grep -c 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" 2>/dev/null || true)
-    # Every entry in the file must appear in TSan's "Matched" block (it lists
-    # only the templates that matched), so an entry nothing hits is a FAIL.
-    # Entries are normalised the way TSan's parser does (CR and surrounding
-    # blanks trimmed), and a last line without a newline still counts. The
-    # entry reaches awk through the environment so no escape processing
-    # rewrites it.
-    EC_ENTRIES=0; EC_UNUSED=""; EC_SEEN=""
-    while IFS= read -r ent || [ -n "$ent" ]; do
-        ent=${ent%$'\r'}
-        ent=${ent#"${ent%%[![:blank:]]*}"}
-        ent=${ent%"${ent##*[![:blank:]]}"}
-        case "$ent" in ''|'#'*) continue ;; esac
-        EC_ENTRIES=$((EC_ENTRIES + 1))
-        # TSan prints one Matched line per template, so a second copy of an
-        # entry would read as used while matching nothing: refuse duplicates.
-        if printf '%s\n' "${EC_SEEN:-}" | grep -qxF -- "$ent"; then
-            EC_UNUSED="$EC_UNUSED '$ent'(duplicate)"; continue
-        fi
-        EC_SEEN="${EC_SEEN:-}$ent
-"
-        EC_ENT="$ent" awk '$1 ~ /^[0-9]+$/ && substr($0, length($1) + 2) == ENVIRON["EC_ENT"] { f = 1 } END { exit !f }' \
-            "$ROOT/build/tsan_embed_concurrent.err" || EC_UNUSED="$EC_UNUSED '$ent'"
-    done < "$EC_SUPP"
     if [ "$LAST_RC" -eq 124 ]; then
         echo "  FAIL: embed-concurrent HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
-    elif [ "$LAST_RC" -eq 0 ] && [ "${EC_W:-0}" -eq 0 ] && [ "$EC_ENTRIES" -gt 0 ] && [ -z "$EC_UNUSED" ] \
+    elif [ "$LAST_RC" -eq 0 ] && [ "${EC_W:-0}" -eq 0 ] \
          && grep -q 'EMBED_CONCURRENT_OK' "$ROOT/build/tsan_embed_concurrent.out"; then
-        echo "  PASS: embed-concurrent TSan-clean (0 reports; all $EC_ENTRIES suppression(s) matched)"
+        echo "  PASS: embed-concurrent TSan-clean (0 reports; no suppressions)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: embed-concurrent rc=$LAST_RC reports=${EC_W:-0} suppressions=$EC_ENTRIES unused:${EC_UNUSED:- none} (want rc 0, 0 reports, every suppression matched)"
+        echo "  FAIL: embed-concurrent rc=$LAST_RC reports=${EC_W:-0} (want rc 0, 0 reports)"
         FAIL=$((FAIL + 1))
         grep -A3 'WARNING: ThreadSanitizer' "$ROOT/build/tsan_embed_concurrent.err" | head -16
         grep -v '^[[:space:]]*PASS:' "$ROOT/build/tsan_embed_concurrent.out" | tail -5

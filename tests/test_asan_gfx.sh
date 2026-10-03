@@ -3,8 +3,8 @@ WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
 . "$(dirname "$0")/../tools/read_werror_flags.sh" || exit 1
 # ext_gfx.c under AddressSanitizer + LeakSanitizer, over a gfx corpus (#1007).
 #
-# WHY THIS EXISTS. `make asan` compiles ext_gfx.c out entirely, so until
-# `make asan-gfx` landed (#1018) NO sanitizer build anywhere -- local or CI --
+# WHY THIS EXISTS. Before #1415, `make asan` compiled ext_gfx.c out entirely,
+# so until `make asan-gfx` landed (#1018) NO sanitizer build anywhere -- local or CI --
 # ever instrumented the file that every app in the fleet (DMG, dynamics, eddy,
 # eigen-edit, eigen-sheet, DeslanStudio) and all 18 lib/ui modules run on.
 # #1018 shipped the TARGET; it was not wired into any suite section or
@@ -203,7 +203,7 @@ if [ "$TOOLCHAIN_ONLY" -eq 1 ]; then
 fi
 
 # ---------------------------------------------------------------- the binary
-# Prefer an artifact `make asan-gfx` already produced, but ONLY when it is
+# Prefer the artifact `make asan` already produced, but ONLY when it is
 # newer than every source it was built from. A stale prebuilt is the vacuity
 # hazard here: the section would report on code that is no longer in the tree
 # and read exactly like a pass.
@@ -212,11 +212,11 @@ if [ -n "${EIGS_ASAN_GFX:-}" ] && [ -x "${EIGS_ASAN_GFX}" ]; then
     BIN="$EIGS_ASAN_GFX"
     echo "  using EIGS_ASAN_GFX=$BIN"
 elif [ -z "${EIGS_ASAN_GFX_CC:-}" ] \
-     && [ -x "$ROOT/build/asan-gfx/eigenscript" ] \
-     && [ -z "$(find "$ROOT/src" -name '*.c' -newer "$ROOT/build/asan-gfx/eigenscript" -print -quit 2>/dev/null)" ] \
-     && [ -z "$(find "$ROOT/src" -name '*.h' -newer "$ROOT/build/asan-gfx/eigenscript" -print -quit 2>/dev/null)" ]; then
-    BIN="$ROOT/build/asan-gfx/eigenscript"
-    echo "  using build/asan-gfx/eigenscript (newer than every src/*.c and src/*.h)"
+     && [ -x "$ROOT/build/asan/eigenscript" ] \
+     && [ -z "$(find "$ROOT/src" -name '*.c' -newer "$ROOT/build/asan/eigenscript" -print -quit 2>/dev/null)" ] \
+     && [ -z "$(find "$ROOT/src" -name '*.h' -newer "$ROOT/build/asan/eigenscript" -print -quit 2>/dev/null)" ]; then
+    BIN="$ROOT/build/asan/eigenscript"
+    echo "  using build/asan/eigenscript (newer than every src/*.c and src/*.h)"
 else
     # Build our own, into /tmp. Deliberately NOT `make asan-gfx`: the runner
     # re-points src/eigenscript per variant and its #681 fingerprint guard

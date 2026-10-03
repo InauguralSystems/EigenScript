@@ -13,6 +13,7 @@
 #define EIGENSCRIPT_TRACE_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* EigsSlot is fully defined in value_slot.h (which requires Value).
  * For the trace API surface we only need the union shape, so guard
@@ -28,12 +29,36 @@ typedef union { double d; uint64_t u; } EigsSlot;
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 4   /* v4 (#1286): stream id on every non-header record */
+#define TRACE_FORMAT_VERSION 5   /* v5: stream/state/correspondence declarations */
+#define TRACE_STREAM_KEY_MAX 1024
+
+/* B payload parser shared with the non-executing tape reader. key_hex points
+ * into the caller's NUL-terminated payload; it is borrowed, never freed here. */
+typedef struct {
+    uint64_t lifetime, state, spawn_base, parent, occurrence;
+    char kind;                 /* r=root, h=host, c=child, l=local */
+    const char *key_hex;
+} TraceAssociation;
+int trace_parse_association(const char *payload, TraceAssociation *out);
 
 /* Reserve an id for an external producer (for example a future GPU stream).
  * CPU and embedded streams use the same allocator lazily. UINT64_MAX means
  * there is no active tape session. */
 uint64_t trace_external_stream_acquire(void);
+
+/* Internal attachment lifecycle. No runtime-owned pointer is retained by
+ * the tape; recording bindings are attachment-owned and freed at detach.
+ * A state switch parks the existing token/binding without resetting it. */
+struct EigsThread;
+struct EigsState;
+struct TraceSpawnBinding;
+void trace_state_init(struct EigsState *state);
+void trace_attachment_init(struct EigsThread *thread);
+void trace_attachment_destroy(struct EigsThread *thread);
+int trace_bind_stream(const char *key);
+int trace_spawn_prepare(struct TraceSpawnBinding **out);
+void trace_spawn_attach(struct TraceSpawnBinding *binding);
+void trace_spawn_release(struct TraceSpawnBinding *binding);
 
 /* 1 when EIGS_TRACE was set and a tape was successfully opened.
  * Hook sites in vm.c gate on this directly so the disabled case
@@ -100,16 +125,12 @@ extern int g_trace_hist_storage;
  * point. The narrowing is a per-assign CPU optimization for the
  * single-threaded long-running programs #827 was about; the history is
  * bounded either way. */
-/* #915: compile-time arming state, saved/restored around the observer gate's
- * eager pre-pass so that merely SCANNING a module cannot arm the parent's
- * history channel. See the definition for the executed consequence. */
-typedef struct {
-    int      trace_hist, obs_hist;
-    int      arm_all, arm_count;
-    int      occ_all, occ_count;
-} TraceArmState;
-void trace_arm_snapshot(TraceArmState *out);
-void trace_arm_restore(const TraceArmState *in);
+/* Diagnostic-only compilation must not arm process-wide history.  Suppression
+ * is per-thread and nestable: unlike snapshot/restore it cannot narrow arming
+ * performed concurrently by another embedded state. */
+void trace_arm_suppress_begin(void);
+void trace_arm_suppress_end(void);
+void trace_arm_observer_history(void);
 
 void trace_arm_history_all(void);
 void trace_arm_history_all_mt(void);
@@ -159,22 +180,13 @@ int trace_occ_window(void);
 #define TRACE_OCC_WINDOW_MAX     (1 << 20)
 
 /* Source line currently being executed. Written by OP_LINE, read by
- * trace_assign to stamp history entries and by the tape writer. The JIT
- * stamps it via a flat-address write, so it cannot be __thread.
- *
- * #297 gated the interpreter write off under MT (a state's own workers),
- * which is why parallel workers never raced it. #1142: TWO STATES on two
- * threads are each single-threaded by that test, so both wrote this plain
- * int — TSan reported the race on every concurrent-embed run once the
- * louder compiler.c one was silenced. Access is RELAXED-atomic: on x86-64
- * that is the same `mov` (the JIT's flat write stays valid), but it is a
- * defined access rather than a data race.
- *
- * Residual, documented: the VALUE is still process-global, so two states
- * recording at once can stamp each other's line into their (thread-local)
- * history tables. Per-thread line stamping needs the JIT's flat write to
- * become a TLS write — tracked as the remaining #1142 gap, not fixed here. */
-extern int g_trace_current_line;
+ * trace_assign and by native/AOT error fallback. It lives on EigsThread:
+ * #1435's worker must never overwrite the parent's line. The accessor keeps
+ * the historical lvalue spelling used by linked native code and gives the JIT
+ * a flat address to bake into code. JIT code cannot migrate to another thread:
+ * entering multithreaded mode gates both compilation and thunk dispatch. */
+int *trace_current_line_addr(void);
+#define g_trace_current_line (*trace_current_line_addr())
 #define trace_current_line_store(v) \
     __atomic_store_n(&g_trace_current_line, (int)(v), __ATOMIC_RELAXED)
 #define trace_current_line_load() \
@@ -219,10 +231,12 @@ void trace_thread_release(void);
  * uninstalls and stops recording (unless EIGS_TRACE also opened a
  * file). trace_set_replay_mem installs a whole tape as the replay
  * source (bytes are COPIED in); NULL clears it. Returns 0 on OOM. */
-#include <stddef.h>
 void trace_set_sink(void (*cb)(const char *bytes, size_t len, void *ud),
                     void *ud);
 int  trace_set_replay_mem(const char *bytes, size_t len, int strict);
+/* Host-only, between evaluations with all participating producers quiescent.
+ * Refuses while any current-session N remains; never discards sibling data. */
+int  trace_replay_advance_session(void);
 
 /* #1142 round 5 — the tape's staging-buffer CAPACITY in bytes, read under
  * the tape lock. Read-only, and it exists for one reason: to give the
@@ -271,6 +285,9 @@ void trace_obs_window_binding(const char *name, int n);
  * Retention is bounded by the pruning in either case (#827 defect B), so
  * the filter is a per-assign CPU optimization and never a safety property.
  * When in doubt, call trace_assign. */
+/* All assignment entry points suppress shared history retention while the
+ * attached thread is executing a sandbox. Tape A emission remains enabled.
+ * trace_record_obs observes the same boundary for existing host snapshots. */
 void trace_assign(const char *name, EigsSlot value);
 void trace_assign_filtered(const char *name, EigsSlot value);
 /* Interpreter-only twins: use the executing thread's VM line instead of the
@@ -392,21 +409,18 @@ int trace_name_is_internal(const char *name);
  * anyway (Phase 3.0 lenient policy — strict ordering is the contract,
  * names are for human-readable debug). Set EIGS_REPLAY_STRICT=1 to make
  * a mismatch fatal instead: the process reports the divergence and exits
- * with status 3, for harnesses that want tape/program drift loud. EOF or
- * unparseable records return 0 and the builtin falls back to its normal
- * source. */
+ * with status 3, for harnesses that want tape/program drift loud. Missing
+ * correspondence, exhaustion, or a later V boundary raises without consulting
+ * a live source. Only explicit non-replayable value markers return 0. */
 extern int g_replay_enabled_storage;
 #define g_replay_enabled __atomic_load_n(&g_replay_enabled_storage, __ATOMIC_ACQUIRE)
 #define replay_enabled_store(v) __atomic_store_n(&g_replay_enabled_storage, (v), __ATOMIC_RELEASE)
 int trace_replay_take(const char *fn, struct Value **out);
-/* #1142: 1 when replay is active and the calling OS thread is not the
- * thread that opened the tape. Nondet builtins raise rather than take.
- * Until per-thread N streams exist, a single consumer (the opener thread)
- * is the only legal replay reader. Reads owner state under the tape lock. */
+/* Legacy diagnostic query: whether the caller has the replay opener's exact
+ * attachment lifetime. Other callers may take using host/causal bindings. */
 int trace_replay_off_owner_thread(void);
-/* Raise the recv-family refusal and return 1 if this OS thread must not
- * consume N records. Hand-rolled take sites (read_bytes_buf) call this
- * before trace_replay_take, same as TRACE_NONDET_*. */
+/* Compatibility hook for hand-rolled TAKE sites. Binding validation now belongs
+ * to trace_replay_take itself; this hook does not impose a pthread restriction. */
 int trace_replay_refuse_off_owner(const char *fn);
 
 /* Centralized nondet-return macro for builtins.
@@ -424,9 +438,8 @@ int trace_replay_refuse_off_owner(const char *fn);
 #define TRACE_NONDET_RET(name, expr) do {                            \
     Value *_tr_v;                                                    \
     if (__builtin_expect(g_replay_enabled, 0)) {                     \
-        /* #1142: a nondet builtin on a non-owner thread cannot      \
-         * consume the single-consumer N stream. Same catchable      \
-         * error the receive family raises. */                       \
+        /* Legacy hook stays compatible; TAKE resolves the caller's \
+         * key/causal stream and raises on missing correspondence. */ \
         if (trace_replay_refuse_off_owner((name)))                   \
             return make_null();                                      \
         if (trace_replay_take((name), &_tr_v))                       \

@@ -30,6 +30,8 @@ typedef struct {
     int      depth;     /* scope depth (0 = function-level) */
     int      slot;
     int      captured;
+    int      hidden;    /* compiler-only slot; never participates in source
+                         * name resolution (its name is diagnostic only) */
     int      retired;   /* #1105: a fresh `for` binder's slot after its loop.
                          * Still owned by the frame (the slot index stays
                          * allocated) but invisible to name resolution, so a
@@ -328,7 +330,7 @@ static int op_stack_effect(uint8_t op8) {
     case OP_INTERROGATE:
         return 0;
     /* SET: peek, no change */
-    case OP_SET_LOCAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
+    case OP_SET_LOCAL: case OP_SET_LOCAL_INTERNAL: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL:
     case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
     case OP_OBSERVE_NAME_POST:   /* #262 Phase-3: peeks TOS, no stack change */
@@ -586,7 +588,7 @@ static int add_num_constant(Compiler *c, double num) {
 
 static int resolve_local(Compiler *c, const char *name, uint32_t hash) {
     for (int i = c->local_count - 1; i >= 0; i--) {
-        if (c->locals[i].retired) continue;   /* #1105 */
+        if (c->locals[i].retired || c->locals[i].hidden) continue;
         if (c->locals[i].hash == hash && strcmp(c->locals[i].name, name) == 0)
             return c->locals[i].slot;
     }
@@ -618,8 +620,15 @@ static int add_local(Compiler *c, const char *name, uint32_t hash) {
     c->locals[slot].depth = c->scope_depth;
     c->locals[slot].slot = slot;
     c->locals[slot].captured = 0;
+    c->locals[slot].hidden = 0;
     c->locals[slot].retired = 0;
     c->local_count++;
+    return slot;
+}
+
+static int add_hidden_local(Compiler *c, const char *diagnostic_name) {
+    int slot = add_local(c, diagnostic_name, env_hash_name(diagnostic_name));
+    if (slot >= 0) c->locals[slot].hidden = 1;
     return slot;
 }
 
@@ -1811,7 +1820,8 @@ static int scan_dispatch_rebind_block(ASTNode **stmts, int count) {
 static int name_in_enclosing(Compiler *c, const char *name) {
     for (Compiler *e = c->enclosing; e && e->enclosing; e = e->enclosing) {
         for (int i = 0; i < e->local_count; i++)
-            if (!e->locals[i].retired && strcmp(e->locals[i].name, name) == 0) return 1;
+            if (!e->locals[i].retired && !e->locals[i].hidden &&
+                strcmp(e->locals[i].name, name) == 0) return 1;
         if (name_set_has(&e->captured, name)) return 1;
         if (name_set_has(&e->interrogated, name)) return 1;
     }
@@ -2338,7 +2348,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                          * NO prior binding gets a fresh slot that is
                          * retired at the loop exit (#1105, below). */
                         prior_slot = loop_var_slot;
-                        save_slot = add_local(c, "__for_save", env_hash_name("__for_save"));
+                        save_slot = add_hidden_local(c, "<for-save>");
                     } else
                         loop_var_slot = add_local(c, loop_var, loop_var_hash);
                     if (loop_var_slot >= 0) can_skip_env = 1;
@@ -2349,7 +2359,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: save */
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)prior_slot, node->line);
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)save_slot, node->line);
+            emit_op_u16(c, OP_SET_LOCAL_INTERNAL, (uint16_t)save_slot, node->line);
             emit(c, OP_POP, node->line);
         }
 
@@ -2416,14 +2426,15 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         int loop_start = capture_loop_start(c);
         lp->continue_target = loop_start;
 
-        int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
-        /* ITER_NEXT pushes element on non-exit (+1) */
         /* #1381: every iteration's loop-variable store is filed under the
-         * `for` line. Without this, the first store took the iterable's last
-         * line and every later one the loop body's last line. */
+         * `for` line. #1417: stamp before ITER_NEXT too: a buffer read can
+         * raise before the binder store. The back-edge/continue target must
+         * include this stamp so a later read cannot inherit the body line. */
         int for_line = node->data.forloop.header_line ? node->data.forloop.header_line
                                                       : node->line;
         restamp_line(c, for_line);
+        int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
+        /* ITER_NEXT pushes element on non-exit (+1) */
 
         if (can_skip_env) {
             /* Bind loop var to a function-env slot. SET_LOCAL leaves the
@@ -2478,13 +2489,13 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         if (can_persist_env) emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, OP_POP, node->line); /* pop iterator state */
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: restore */
-            /* #1381: the restore writes the outer binding's history, so it
-             * is filed under the `for` line like the loop-variable stores.
-             * Normal exit and `break` both arrive here, after the body or the
-             * break left the stamp elsewhere. */
-            restamp_line(c, for_line);
+            /* #1384: save/restore are compiler bookkeeping, not user
+             * assignments. Keep both out of assignment history and the
+             * trace tape; exposing the save leaked __for_save, while tracing
+             * only the function-tier restore made temporal answers depend on
+             * the compiler's slot-vs-loop-env optimisation. */
             emit_op_u16(c, OP_GET_LOCAL, (uint16_t)save_slot, node->line);
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)prior_slot, node->line);
+            emit_op_u16(c, OP_SET_LOCAL_INTERNAL, (uint16_t)prior_slot, node->line);
             emit(c, OP_POP, node->line);
         } else if (can_skip_env && prior_slot < 0) {
             /* #1105: a binder with NO prior binding is loop-scoped here
@@ -3073,12 +3084,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         emit(c, OP_ITER_SETUP, node->line);
 
         int loop_start = capture_loop_start(c);
-        int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
-
         /* #1381: the comprehension variable is filed under the
-         * comprehension's first line. Free on one line: the element
-         * expression's own stamp then dedups against this one. */
+         * comprehension's first line. #1417: establish that line before
+         * the fallible iterator read, including every back-edge entry. */
         restamp_line(c, node->line);
+        int exit_jump = emit_jump(c, OP_ITER_NEXT, node->line);
 
         /* Bind loop var via Env */
         {
@@ -3201,7 +3211,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * Same shape as the AT form below: the operand's value is never
              * needed, only its compile-time name. */
             if (kind >= 3 && kind <= 5)
-                trace_flag_store(g_trace_obs_hist_storage, 1);   /* enable observer-state capture */
+                trace_arm_observer_history();   /* enable observer-state capture */
             compile_node(c, when_expr);
             int name_idx = add_string_constant(c, expr->data.ident.name);
             emit_op_u16_u16(c, OP_INTERROGATE_NAMED_WHEN,
@@ -3213,7 +3223,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* `<kw> is x at <expr>` — operand value is not needed; only
              * the name (compile-time known). Push line, emit AT op. */
             if (kind >= 3 && kind <= 5)
-                trace_flag_store(g_trace_obs_hist_storage, 1);   /* enable observer-state capture */
+                trace_arm_observer_history();   /* enable observer-state capture */
             compile_node(c, at_expr);
             int name_idx = add_string_constant(c, expr->data.ident.name);
             emit_op_u16_u16(c, OP_INTERROGATE_NAMED_AT,
@@ -3836,6 +3846,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     char *slots[OBS_GATE_MAX_LOADS];
     char *resolved = NULL;
     char *module_dir = NULL;
+    int single_thread_reserved = 0;
     L.paths = slots; L.count = 0; L.cap = OBS_GATE_MAX_LOADS; L.overflow = 0;
 
     /* The eager pass informs a RUNTIME decision. Entry points that compile
@@ -3871,8 +3882,11 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
      * threads, and showed the fd-2 mute swallowing other requests' stderr and
      * then destroying the server's real stderr permanently. See
      * eigs_process_thread_count. */
-    if (L.count > 0 && (g_vm_multithreaded || eigs_process_thread_count() > 1)) {
-        eigs_obs_enable_runtime(); goto done;
+    if (L.count > 0) {
+        if (g_vm_multithreaded || !eigs_process_single_thread_begin()) {
+            eigs_obs_enable_runtime(); goto done;
+        }
+        single_thread_reserved = 1;
     }
 
     /* HEAP, not stack. As `char resolved[8192]` inside the loop this frame
@@ -3910,7 +3924,19 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
              * memo or budget anyway). Otherwise resolve through
              * eigs_import_resolve -- THE resolver the OP_IMPORT handler calls,
              * project-first then stdlib -- so what is scanned is what runs. */
+            /* A provider is host code and may synchronously start and join a
+             * worker that attaches an interpreter thread.  Attachments wait
+             * for this reservation, so never retain it across the callback:
+             * the provider would otherwise wait for a worker which waits for
+             * us.  Nothing process-global is temporarily modified here; take
+             * the reservation again before resuming the eager scan. */
+            eigs_process_single_thread_end();
+            single_thread_reserved = 0;
             if (eigs_source_lookup(L.paths[i])) { eigs_obs_enable_runtime(); break; }
+            if (g_vm_multithreaded || !eigs_process_single_thread_begin()) {
+                eigs_obs_enable_runtime(); break;
+            }
+            single_thread_reserved = 1;
             resolved_ok = eigs_import_resolve(L.bases[i], L.paths[i], resolved, 8192, NULL, 0);
         } else {
             resolved_ok = resolve_eigenscript_file_from(L.bases[i], L.paths[i], resolved, 8192);
@@ -4024,6 +4050,7 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     }
 
 done:
+    if (single_thread_reserved) eigs_process_single_thread_end();
     free(module_dir);
     free(resolved);
     for (int i = 0; i < L.count; i++) {

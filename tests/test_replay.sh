@@ -91,6 +91,7 @@ EOF
 
 cat > "$TMPDIR/dict.tape" <<EOF
 $VHDR
+B 0 1 1 0 root -
 N 0 env_get={"a": 1, "b": "two", "c": null}
 EOF
 
@@ -113,6 +114,7 @@ EOF
 # Outer list: [{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
 cat > "$TMPDIR/nested.tape" <<EOF
 $VHDR
+B 0 1 1 0 root -
 N 0 env_get=[{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
 EOF
 
@@ -133,6 +135,7 @@ EOF
 
 cat > "$TMPDIR/strict.tape" <<EOF
 $VHDR
+B 0 1 1 0 root -
 N 0 monotonic_ns=12345
 EOF
 
@@ -371,17 +374,17 @@ else
     fail "file_exists replay (#585)" "rec='$FE_REC' rep='$FE_REP'"
 fi
 
-# ls: record two entries, delete them, replay must serve the recorded count.
+# ls: record two entries, delete them, replay must serve the sorted listing.
 mkdir -p "$TMPDIR/ls585"
-touch "$TMPDIR/ls585/a" "$TMPDIR/ls585/b"
+touch "$TMPDIR/ls585/b" "$TMPDIR/ls585/a"
 cat > "$TMPDIR/p_ls.eigs" <<EOF
-print of (len of (ls of "$TMPDIR/ls585"))
+print of (ls of "$TMPDIR/ls585")
 EOF
 LS_REC=$(EIGS_TRACE="$TMPDIR/ls.tape" "$EIGS" "$TMPDIR/p_ls.eigs" 2>&1)
 rm -f "$TMPDIR/ls585/a" "$TMPDIR/ls585/b"
 LS_REP=$(EIGS_REPLAY="$TMPDIR/ls.tape" "$EIGS" "$TMPDIR/p_ls.eigs" 2>&1)
-if [ "$LS_REC" = "2" ] && [ "$LS_REP" = "2" ]; then
-    ok "ls replay: recorded listing wins after the entries are deleted (#585)"
+if [ "$LS_REC" = '["a", "b"]' ] && [ "$LS_REP" = '["a", "b"]' ]; then
+    ok "ls replay: recorded sorted listing wins after the entries are deleted (#585, #1407)"
 else
     fail "ls replay (#585)" "rec='$LS_REC' rep='$LS_REP'"
 fi
@@ -430,6 +433,31 @@ else
     fail "clock_unix replay" "rec='$REC_CU' rep='$REP_CU'"
 fi
 
+# ---- heap_inuse is a taped nondeterminism source ----
+# Allocator usage varies with process state. Replace its recorded value with a
+# sentinel so replay can prove it consumes the tape rather than sampling the
+# replay process's live allocator.
+cat > "$TMPDIR/p_heap_inuse.eigs" <<'EOF'
+print of (heap_inuse of null)
+EOF
+
+TAPE_HI="$TMPDIR/heap_inuse.tape"
+REC_HI=$(EIGS_TRACE="$TAPE_HI" "$EIGS" "$TMPDIR/p_heap_inuse.eigs" 2>&1)
+if [ "$REC_HI" = "null" ]; then
+    echo "  SKIP: heap_inuse replay (mallinfo2 unavailable)"
+elif grep -q '^N [0-9][0-9]* heap_inuse=' "$TAPE_HI"; then
+    sed -E 's/^N ([0-9][0-9]*) heap_inuse=.*/N \1 heap_inuse=424242/' "$TAPE_HI" > "$TMPDIR/heap_inuse-edited.tape"
+    mv "$TMPDIR/heap_inuse-edited.tape" "$TAPE_HI"
+    REP_HI=$(EIGS_REPLAY="$TAPE_HI" "$EIGS" "$TMPDIR/p_heap_inuse.eigs" 2>&1)
+    if [ "$REP_HI" = "424242" ]; then
+        ok "heap_inuse replay: recorded allocator usage wins on replay"
+    else
+        fail "heap_inuse replay" "rec='$REC_HI' rep='$REP_HI'"
+    fi
+else
+    fail "heap_inuse trace" "missing N record (value='$REC_HI')"
+fi
+
 # ---- #579: audio capture is a taped nondeterminism source ----
 # Gated: needs a gfx build AND a working capture device (the dummy SDL
 # driver provides a silent one; the CI dev image has no libSDL2, so this
@@ -475,6 +503,13 @@ EOF
     fi
 else
     echo "  SKIP: capture replay (no gfx build / no capture device)"
+fi
+
+# EigenStore's live file/handle family is an explicit replay boundary (#1242).
+if bash "$TESTS_DIR/test_store_replay.sh" "$EIGS"; then
+    PASS=$((PASS + 1))
+else
+    FAIL=$((FAIL + 1))
 fi
 
 echo

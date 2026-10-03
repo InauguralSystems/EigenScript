@@ -45,6 +45,16 @@ Companion documents: [SYNTAX.md](SYNTAX.md) (tutorial-style guide),
 
 ## Program model
 
+Hosted build profiles determine which extension implementations are compiled
+in. In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
+
 An EigenScript program is a sequence of statements executed top to
 bottom. There is no required entry point — the file *is* the program.
 Statements are expressions, assignments, definitions, or control
@@ -300,11 +310,10 @@ consequences are contracts you can rely on:
     `NaN` from finite operands (`0 / 0` and `x % 0` raise first, and no
     operand can hold an infinity), so any other source hits a backstop that
     raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
-    result, so both tiers raise from the same guard. One `EIGS_STRICT=0`
-    asymmetry is older than strict mode and is left alone by it: a `matmul`
-    whose result is a **buffer** preserves a `NaN` sentinel consistently
-    across platforms (it reads back as `null`, and `math_flags` is not set),
-    where a list result collapses to `0` — strict raises on both.
+    result, so both tiers raise from the same guard. Buffer storage may retain
+    a raw non-finite kernel result internally, but every scalar read uses the
+    same rule: infinity saturates at ±`1e308`, while under `EIGS_STRICT=0` a
+    `NaN` becomes `0` and sets `math_flags.invalid` (strict mode raises).
   - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
     document is walked leniently and a parse failure answers the same `""`
     an absent key does. Under strict `json_path` applies `json_decode`'s
@@ -583,6 +592,12 @@ for k in range of 5:
 ```
 
 ## Lists
+
+Arena-backed lists are promoted iteratively when they escape into longer-lived
+storage. Repeated references to the same source list share one promoted list.
+A promotion may contain at most 100,000 distinct arena-backed lists; exceeding
+it raises a catchable `limit` error, or `sandbox` inside a sandbox. Promotion
+copies and bookkeeping count toward an active sandbox allocation budget.
 
 Lists are mutable, heterogeneous, zero-indexed. They support negative
 indexing, half-open slicing with optional bounds, `append`, `len`,
@@ -1019,6 +1034,10 @@ expressions match too
 
 ## Error handling
 
+`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result.
+
+Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
+
 `try:` / `catch name:` captures runtime errors. A **built-in** runtime
 error binds a small dict `{kind, message, line}`: `kind` is drawn from
 a closed vocabulary (below), `message` is the error text without the
@@ -1370,6 +1389,8 @@ never rebind an importer's pre-existing `counter`. `load_file` is the
 one exception, per its older, documented contract above: its top-level
 statements still execute directly in the current (caller's) scope, so
 a same-named top-level assignment there *does* bind through.
+
+`lib/eigen.eigs` snapshots the host values used by its tokenizer, parser, evaluator, import helpers, and fresh meta environments when it loads (#1386). Later host builtin rebinding does not change those dependencies, including entropy's `log`/`divide` calls. For `load_file`, the snapshots use values visible during initialization; loaded code still shares the host scope. String conversion still uses the pristine reserved f-string bridge. Explicit custom environments, debug hooks, and rebinding the interpreter's own helper names remain caller-controlled; captured caller-defined functions retain their own binding behavior.
 
 **Builtins in module code (#1388).** An imported module's builtin names
 resolve against the runtime's own builtin set, never the importer's
@@ -1881,6 +1902,23 @@ handle; `thread_join of handle` waits and returns its result. Channels
 (`channel of null`, `send`, `recv`, `try_recv`, `recv_timeout`)
 communicate between threads.
 
+Trace replay matches a spawned worker by its bound parent and that parent's
+spawn occurrence, not by the order workers reach a line or nondeterministic
+call. Independently created embedding threads supply stable keys before their
+first event/take. Missing correspondence raises rather than borrowing another
+stream's value. The flat tape IDs, state-association metadata and version 5
+compatibility rule are specified in `docs/TRACE.md`.
+Replay never crosses a session header on an ordinary take. The embedding host
+explicitly advances at a quiescent boundary; an unread sibling outcome prevents
+advance. Replacing memory replay preserves a suspended file's complete context.
+
+Values crossing a channel, `thread_join`, or cooperative-task boundary are
+copied recursively. This includes buffers (payload and shape) and text builders
+(bytes and builder metadata). Closures retain their captured environment by
+reference, resource handles remain shared, repeated aliases split into separate
+copies, and objects below the depth-64 recursion guard remain shared. The
+executable kind-by-kind contract is in `docs/CONCURRENCY.md`.
+
 ```eigenscript
 ch is channel of null
 spawn of [(v) => send of [ch, v * 2], 21]
@@ -1925,9 +1963,17 @@ A worker that **dies of an uncaught error** prints its trace and the
 fire-and-forget thread's failure is never swallowed into a success exit.
 This covers a builtin spawned directly (`spawn of [recv, 5]` raises
 "invalid channel" on the worker) as well as a function body. An error
-`catch`-ed inside the worker recovers normally (exit 0), and a worker's
-`exit of N` still decides the status (#739). The failure is always a
-clean exit, never a signal (#1112).
+`catch`-ed inside the worker recovers normally (exit 0). A worker's
+`exit of N` is instead a state-wide, uncatchable stop request: the first
+request decides the process status. VM threads observe it at loop back edges
+and builtin returns, and main-thread waits in `recv`, `recv_timeout`,
+`thread_join`, or `usleep` are woken so teardown can begin. Once a thread
+observes the request, its later script statements do not run (#1149). Native I/O outside these runtime waits is not asynchronously
+cancelled: teardown still waits for those workers to return before freeing
+state. An interrupted join consumes its handle and defers reaping; it does not
+return the target's result. Embedded outer evals have separate stop scopes;
+workers retain the scope of their spawning eval (see `docs/EMBEDDING.md`).
+The failure is always a clean exit, never a signal (#1112).
 
 ## Cooperative tasks
 
@@ -2131,12 +2177,12 @@ for e in task_sched_trace of null:
     print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"
 ```
 ```output
-0 t=0 task=1 spawn
-1 t=0 task=2 spawn
-2 t=0 task=1 yield
-3 t=0 task=2 yield
-4 t=10 task=1 sleep-wake
-5 t=10 task=2 sleep-wake
+0 t=0 task=257 spawn
+1 t=0 task=258 spawn
+2 t=0 task=257 yield
+3 t=0 task=258 yield
+4 t=10 task=257 sleep-wake
+5 t=10 task=258 sleep-wake
 6 t=10 task=0 join-release
 ```
 
@@ -2255,6 +2301,17 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 [buf, rows, cols]` shapes an existing flat buffer (the element count must
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
+Every element crossing the buffer/scalar boundary uses the numeric guard:
+infinity saturates at ±`1e308`, while a `NaN` raises in strict mode or becomes
+`0` and sets `math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer
+equality and scalar reductions normalize each input before comparison or
+arithmetic. A strict read that raises inside a function retains that
+function's source location and call frame. Buffer-to-list tensor materialization
+and numeric byte/sample/device conversions apply the same read rule, stopping
+at the first raised read. Numeric bytes truncate and wrap modulo 256 after
+normalization; audio samples then clamp to their documented sample range.
+Raw buffer copies, typed serialization and internal buffer-only kernel work
+areas retain their stored representation.
 
 The tensor builtins operate directly on the flat data — no per-call conversion.
 `matmul of [a, b]` multiplies two shaped buffers (a 1-D buffer is a row vector,
@@ -2313,6 +2370,12 @@ buffer). Mixing a buffer with a list yields a list. The reductions
 (`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
+
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
 
 ```eigenscript
 l is [1.0, 4.0, 9.0]
@@ -2388,6 +2451,18 @@ cross-unit history by default; hosts may explicitly promise isolated observer
 use with `eigs_set_eval_observer_isolated`. Missing history then raises
 conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
+
+### Model context limits
+
+With a model loaded, `eigen_generate` and `eigen_eval_loss` accept nonempty
+prompts up to and including the model's `max_seq_len`. Longer prompts raise
+a catchable `value` error; neither builtin truncates the supplied prompt.
+`native_train_step_builtin` applies the same refusal rule to the combined
+input and output lengths. These limits apply with `EIGS_STRICT=0` too.
+Generation records either its token list or its context refusal on the trace
+tape. Replay reproduces that outcome before consulting the model, even when
+the checkpoint is missing or has a different context limit, and preserves the
+following call's record.
 
 ### HTTP startup and response attribution
 

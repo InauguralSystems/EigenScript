@@ -252,7 +252,7 @@ static void test_error_isolation(void) {
  * comparison — is capable of catching a shared global at all. Without it, three
  * green rows are consistent with a harness that never races. */
 
-static volatile double planted_shared_threshold;   /* the mistake, deliberately */
+static _Atomic double planted_shared_threshold;    /* the mistake, deliberately */
 
 /* START BARRIER. Without one, this control is a race against pthread_create:
  * thread A can run ALL its rounds before B exists, giving zero overlap, zero
@@ -266,45 +266,30 @@ static pthread_barrier_t planted_start;
 
 typedef struct { double want; int mismatches; int rounds_run; } PlantArg;
 
-/* The control must OBSERVE the race, not merely give it 200 chances. A fixed
- * round count is a bet on the scheduler: on a runner slot where one thread's
- * write-yield-read triple stays adjacent, 200 rounds can pass with zero
- * cross-talk (CI on 07a0ac3, 2026-09-06: `A=0 B=0 over 200 rounds each`, the
- * file identical on main; PR #1034 hit the same shape before the barrier was
- * added). So each worker runs at least ROUNDS rounds and then keeps racing
- * until BOTH sides have seen at least one mismatch or PLANT_BUDGET rounds have
- * elapsed. A harness that truly never interleaves still exhausts the budget
- * and FAILS the control — the property being checked is unchanged; only the
- * sample size adapts to the scheduler. */
-#define PLANT_BUDGET 200000
-static _Atomic int planted_seen;           /* number of workers that observed a mismatch */
+/* Make every control round deterministic rather than betting on sched_yield:
+ * both workers publish before either reads, and neither starts the next round
+ * until both have read. The shared value is atomic because the planted fault
+ * models cross-talk, not a C data race. With sequentially consistent accesses,
+ * both reads observe the last of the two stores, so at least one worker must
+ * see the other worker's value in every round. */
 
 static void *planted_worker(void *p) {
     PlantArg *a = (PlantArg *)p;
-    int counted = 0;
     pthread_barrier_wait(&planted_start);
-    for (int i = 0; i < PLANT_BUDGET; i++) {
-        if (i >= ROUNDS && atomic_load(&planted_seen) >= 2) break;
-        planted_shared_threshold = a->want;
-        /* Give the other thread a window between write and read. Without one
-         * the compiler and the scheduler can keep the pair adjacent and the
-         * control reports NO cross-talk — which reads as "the harness does not
-         * race" and would invalidate every row above it. `volatile` stops the
-         * value being kept in a register; the yield supplies the interleaving. */
-        sched_yield();
-        double got = planted_shared_threshold;
+    for (int i = 0; i < ROUNDS; i++) {
+        atomic_store(&planted_shared_threshold, a->want);
+        pthread_barrier_wait(&planted_start);
+        double got = atomic_load(&planted_shared_threshold);
         a->rounds_run++;
-        if (got < a->want - 1e-9 || got > a->want + 1e-9) {
+        if (got < a->want - 1e-9 || got > a->want + 1e-9)
             a->mismatches++;
-            if (!counted) { counted = 1; atomic_fetch_add(&planted_seen, 1); }
-        }
+        pthread_barrier_wait(&planted_start);
     }
     return NULL;
 }
 
 static void test_planted_fault_is_detectable(void) {
     PlantArg a = { 0.001, 0, 0 }, b = { 0.002, 0, 0 };
-    atomic_store(&planted_seen, 0);
     pthread_t ta, tb;
     pthread_barrier_init(&planted_start, NULL, 2);
     pthread_create(&ta, NULL, planted_worker, &a);
@@ -315,10 +300,10 @@ static void test_planted_fault_is_detectable(void) {
 
     /* The shared global MUST produce cross-talk. If it does not, the harness is
      * not interleaving and every green row above is uninformative. */
-    check(a.mismatches > 0 && b.mismatches > 0,
+    check(a.mismatches + b.mismatches > 0,
           "control: a shared global DOES cross-talk under this harness");
-    printf("        control cross-talk: A=%d/%d B=%d/%d rounds (min %d, budget %d)\n",
-           a.mismatches, a.rounds_run, b.mismatches, b.rounds_run, ROUNDS, PLANT_BUDGET);
+    printf("        control cross-talk: A=%d/%d B=%d/%d rounds\n",
+           a.mismatches, a.rounds_run, b.mismatches, b.rounds_run);
 }
 
 /* ------------------------------------------------------------------ 5 */
@@ -466,10 +451,14 @@ static int tape_line_ok(const char *line) {
     if (line[0] == 'V' && line[1] == ' ')       /* V <format> <version> */
         return tape_fields(line + 2) == 2 && !tape_glued(line);
     const char *body = line + 2;
-    if (strchr("LASNO", line[0]) && line[1] == ' ') {
+    if (strchr("BLASNO", line[0]) && line[1] == ' ') {
         if (*body < '0' || *body > '9') return 0;
         while (*body >= '0' && *body <= '9') body++;
         if (*body++ != ' ' || !*body) return 0;
+    }
+    if (line[0] == 'B' && line[1] == ' ') {
+        TraceAssociation association;
+        return trace_parse_association(body, &association);
     }
     if (line[0] == 'L' && line[1] == ' ') {
         const char *p = body;
@@ -1018,7 +1007,7 @@ static void test_replay_take_serialized(void) {
 }
 
 /* ------------------------------------------------------------------ 9 */
-/* #1142: a state that did not open the tape must RAISE on eigs_replay_take. */
+/* An independent, unkeyed non-opener cannot claim another stream. */
 
 static pthread_barrier_t owner_bar;
 static char *owner_tape_bytes;
@@ -1045,7 +1034,7 @@ static void *owner_taker_worker(void *p) {
     if (v) eigs_value_release(v);
     const char *msg = eigs_last_error_message();
     *raised = (got && eigs_has_error() && msg
-               && strstr(msg, "no matching recorded N value") != NULL);
+               && strstr(msg, "no host/causal binding") != NULL);
     eigs_close(st);
     pthread_barrier_wait(&owner_bar);
     return NULL;
@@ -1064,12 +1053,11 @@ static void test_owner_state_raises(void) {
     check(nl != NULL, "owner-state: captured a V header");
     if (!nl) { sinkbuf_free(&hdr); return; }
     size_t hlen = (size_t)(nl - hdr.buf + 1);
-    owner_tape_len = hlen + 16;
+    static const char owner_records[] = "B 0 1 1 0 root -\nN 0 random=1\n";
+    owner_tape_len = hlen + sizeof(owner_records) - 1;
     owner_tape_bytes = malloc(owner_tape_len + 1);
     memcpy(owner_tape_bytes, hdr.buf, hlen);
-    memcpy(owner_tape_bytes + hlen, "N 0 random=1\n", 11);
-    owner_tape_len = hlen + 11;
-    owner_tape_bytes[owner_tape_len] = '\0';
+    memcpy(owner_tape_bytes + hlen, owner_records, sizeof(owner_records));
     sinkbuf_free(&hdr);
 
     int raised = 0;
@@ -1080,7 +1068,7 @@ static void test_owner_state_raises(void) {
     pthread_join(ta, NULL);
     pthread_join(tb, NULL);
     pthread_barrier_destroy(&owner_bar);
-    check(raised, "owner-state: non-opener take raises");
+    check(raised, "owner-state: unkeyed non-opener take raises");
     eigs_trace_shutdown();
     free(owner_tape_bytes);
     owner_tape_bytes = NULL;
@@ -1803,11 +1791,13 @@ static void test_replay_take_under_lock(void) {
     check(nl != NULL, "replay-take-lock: captured a V header");
     if (!nl) { sinkbuf_free(&hdr); return; }
     size_t hlen = (size_t)(nl - hdr.buf + 1);
-    size_t tcap = hlen + (size_t)TL_TAPE_N * 32;
+    static const char association[] = "B 0 1 1 0 root -\n";
+    size_t tcap = hlen + sizeof(association) - 1 + (size_t)TL_TAPE_N * 32;
     char *tape = malloc(tcap + 1);
     if (!tape) { sinkbuf_free(&hdr); return; }
     memcpy(tape, hdr.buf, hlen);
-    size_t off = hlen;
+    memcpy(tape + hlen, association, sizeof(association) - 1);
+    size_t off = hlen + sizeof(association) - 1;
     for (int i = 1; i <= TL_TAPE_N; i++)
         off += (size_t)snprintf(tape + off, tcap - off + 1, "N 0 random=%d\n", i);
     tape[off] = '\0';

@@ -32,6 +32,21 @@ RETURN is 40
 # PR and the bump is the reminder that every external producer needs one too.
 ABI is 1
 
+# Invalid descriptors are programmer errors, not program results. The helper
+# proves both that the error is catchable and that its diagnostic identifies
+# the rejected part of the descriptor (#1386).
+define assert_bad_descriptor(desc, reason, label) as:
+    local raised is 0
+    local message is ""
+    local error_kind is ""
+    try:
+        local ignored is vm_run_bytecode of desc
+    catch e:
+        raised is 1
+        error_kind is e["kind"]
+        message is e["message"]
+    assert of [raised == 1 and error_kind == "value" and (contains of [message, reason]), label]
+
 # 2 + 3 -> 5
 assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "arith add"]
 
@@ -56,8 +71,8 @@ assert_eq of [vm_run_bytecode of [ABI, maxcode, [10, 3]], 10, "max(10,3) fall-th
 assert_eq of [vm_run_bytecode of [ABI, maxcode, [3, 10]], 10, "max(3,10) jump-taken branch"]
 assert_eq of [vm_run_bytecode of [ABI, maxcode, [7, 2]], 7, "max(7,2)"]
 
-# bad args degrade to null, not a crash — once past the ABI stamp
-assert_eq of [vm_run_bytecode of [ABI, 42, []], null, "non-list code -> null"]
+# bad args raise with a specific diagnostic once past the ABI stamp
+assert_bad_descriptor of [[ABI, 42, []], "code and constants must be lists", "non-list code raises with its reason"]
 
 # nested function chunk: define double(x) = x + x; double of 21 -> 42
 CLOSURE is 38
@@ -141,18 +156,18 @@ assert_eq of [sr_partial >= 0, 1, "sandbox: capped loop names the partial run"]
 # --- bytecode verifier: out-of-range operands are rejected, not run ---
 # Untrusted/hand-assembled descriptors must never reach the VM with an
 # operand that drives an out-of-bounds read. The verifier rejects the chunk
-# (vm_run_bytecode -> null; sandbox_run -> {ok:0}) instead of segfaulting.
+# (vm_run_bytecode raises; sandbox_run -> {ok:0}) instead of segfaulting.
 
 # constant index past the pool (0xFFFF) — was an OOB read of constants[]
-assert_eq of [vm_run_bytecode of [ABI, [CONST,255,255, RETURN], [42]], null, "verify: OOB const index rejected"]
+assert_bad_descriptor of [[ABI, [CONST,255,255, RETURN], [42]], "constant index 65535 out of range", "verify: OOB const index raises with its reason"]
 # forward jump target past the end of code
-assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, JUMP_IF_FALSE,255,255, RETURN], [1]], null, "verify: OOB jump target rejected"]
+assert_bad_descriptor of [[ABI, [CONST,0,0, JUMP_IF_FALSE,255,255, RETURN], [1]], "jump target", "verify: OOB jump target raises with its reason"]
 # CLOSURE referencing a function index with no functions present
-assert_eq of [vm_run_bytecode of [ABI, [CLOSURE,0,0, RETURN], []], null, "verify: OOB function index rejected"]
+assert_bad_descriptor of [[ABI, [CLOSURE,0,0, RETURN], []], "function index 0 out of range", "verify: OOB function index raises with its reason"]
 # truncated operand (opcode with no room for its 2 operand bytes)
-assert_eq of [vm_run_bytecode of [ABI, [CONST], [42]], null, "verify: truncated operand rejected"]
+assert_bad_descriptor of [[ABI, [CONST], [42]], "truncated operand", "verify: truncated operand raises with its reason"]
 # unknown opcode byte
-assert_eq of [vm_run_bytecode of [ABI, [254, RETURN], []], null, "verify: unknown opcode rejected"]
+assert_bad_descriptor of [[ABI, [254, RETURN], []], "unknown opcode 254", "verify: unknown opcode raises with its reason"]
 # same, through the sandbox: a bad descriptor returns ok=0, no crash
 sr_bad is sandbox_run of [[ABI, [CONST,255,255, RETURN], [42]], 1000]
 assert_eq of [sr_bad["ok"], 0, "verify: sandbox rejects OOB const (ok=0)"]
@@ -161,7 +176,7 @@ assert_eq of [sr_bad["ok"], 0, "verify: sandbox rejects OOB const (ok=0)"]
 # constant — the interned-name pointer is NULL for non-strings, so the VM
 # dereferenced NULL. The verifier now requires name operands to be strings.
 DICT is 43
-assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, RETURN], [42]], null, "verify: name op on numeric const rejected"]
+assert_bad_descriptor of [[ABI, [GET_NAME,0,0, RETURN], [42]], "is not a string", "verify: name op on numeric const raises with its reason"]
 # OP_DICT with a count larger than the live stack — once an out-of-bounds stack
 # read, then bounded at runtime to the pairs actually present, and now refused
 # outright by the verifier's stack-height pass.
@@ -172,8 +187,7 @@ assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, RETURN], [42]], null, "ver
 # expression, which is how a grading ladder uses it — an over-claimed count
 # consumes the CALLER's operands and decrefs them, freeing values the host is
 # still using. A count the stack cannot cover is refused before it runs.
-dr is vm_run_bytecode of [ABI, [DICT,255,255, RETURN], []]
-assert_eq of [dr, null, "verify: OP_DICT oversized count refused"]
+assert_bad_descriptor of [[ABI, [DICT,255,255, RETURN], []], "needs", "verify: OP_DICT oversized count raises with its reason"]
 # The honest form still builds its dict.
 dr_ok is vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, DICT,1,0, RETURN], ["k", 7]]
 assert_eq of [dr_ok["k"], 7, "verify: OP_DICT with the pairs present still runs"]
@@ -207,12 +221,11 @@ assert_eq of [vm_run_bytecode of [ABI, [LINE,7,0,0,0, CONST,0,0, CONST,1,0, ADD,
 # the pre-#630 shape — OP_LINE + 2 operand bytes — must NOT still evaluate to 5.
 # It is either verifier-rejected or misaligned garbage; either way the contract
 # is that it is no longer the arithmetic the producer intended.
-old_shape is vm_run_bytecode of [ABI, [LINE,7,0, CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
-assert of [old_shape != 5, "pre-#630 16-bit OP_LINE emission no longer silently works"]
+assert_bad_descriptor of [[ABI, [LINE,7,0, CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], "constant index", "pre-#630 16-bit OP_LINE emission raises instead of silently working"]
 # a line number past 65535 — the regime #630 exists for — survives the operand.
 assert_eq of [vm_run_bytecode of [ABI, [LINE,161,134,1,0, CONST,0,0, RETURN], [99]], 99, "OP_LINE carries a line past 65535 (#630)"]
 # truncated 32-bit operand is rejected by the verifier, not read off the end.
-assert_eq of [vm_run_bytecode of [ABI, [LINE,7,0,0], []], null, "verify: truncated OP_LINE operand rejected"]
+assert_bad_descriptor of [[ABI, [LINE,7,0,0], []], "truncated LINE operand", "verify: truncated OP_LINE raises with its reason"]
 
 # --- #704: the ABI revision stamp itself ---
 # The canary above catches an operand-width change only for the ONE opcode it
@@ -283,8 +296,8 @@ LIST is 42
 ITER_NEXT is 49
 TRY_BEGIN is 54
 
-assert_eq of [vm_run_bytecode of [ABI, [1], []], null, "#721: chunk with no terminator is refused (was a SEGV)"]
-assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0], [7]], null, "#721: trailing CONST falls off the end — refused"]
+assert_bad_descriptor of [[ABI, [1], []], "no terminating", "#721: chunk with no terminator raises (was a SEGV)"]
+assert_bad_descriptor of [[ABI, [CONST,0,0], [7]], "no terminating", "#721: trailing CONST raises instead of falling off the end"]
 assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, RETURN], [7]], 7, "#721: the same chunk WITH a terminator still runs"]
 assert_eq of [vm_run_bytecode of [ABI, [RETURN_NULL], []], null, "#721: RETURN_NULL terminates too"]
 
@@ -317,11 +330,11 @@ assert_eq of [vm_run_bytecode of [ABI, traj_ok, [7]], 7, "#737: a jump PAST the 
 
 # The drift — same chunk, JUMP off=1 -> target 4, the SECOND byte of
 # TRAJECTORY_SLOT's operand. With the operand correctly counted, offset 4 is not
-# an instruction boundary and the chunk is refused (null). On the drifted table
+# an instruction boundary and the chunk raises. On the drifted table
 # offset 4 was a start (the 1-byte walk), the jump passed pass 2, and execution
 # fell through the two OP_NULLs into the CONST -> returned 7.
 traj_mid is [JUMP,1,0, TRAJECTORY_SLOT,NULLOP,NULLOP, CONST,0,0, RETURN]
-assert_eq of [vm_run_bytecode of [ABI, traj_mid, [7]], null, "#737: a jump INTO the trajectory operand is not a boundary — refused (was 7)"]
+assert_bad_descriptor of [[ABI, traj_mid, [7]], "instruction boundary", "#737: a jump INTO the trajectory operand raises (was 7)"]
 
 # The constant pool of a DESCRIPTOR is indexed positionally by the code stream,
 # but it was loaded through the deduplicating add: a repeated number collapsed

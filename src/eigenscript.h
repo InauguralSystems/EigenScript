@@ -200,6 +200,8 @@ typedef enum {
 
 typedef struct ASTNode ASTNode;
 typedef struct Env Env;
+typedef struct EnvInternTable EnvInternTable;
+typedef struct EnvInternRef EnvInternRef;
 
 struct ASTNode {
     ASTType type;
@@ -362,6 +364,8 @@ struct Env {
     Env *gc_prev;
     unsigned char in_gc_list;
     EnvHash hash;
+    /* Counted non-node leaf owners for borrowed binding names. */
+    EnvInternRef *intern_refs;
     /* #262 Phase-1: self-managed slot-keyed observer array (own capacity,
      * grown in observer_slot_update; freed/reset at env teardown/park). NULL
      * until the first shadow observation under EIGS_OBS_SHADOW. */
@@ -400,9 +404,9 @@ struct Value {
          * union object, as it does everywhere here. */
         struct { char *ptr; size_t len; } strv;
         struct { Value **items; int count; int capacity; } list;
-        struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; } fn;
+        struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; EnvInternTable *param_intern_tbl; } fn;
         BuiltinFn builtin;
-        struct { char **keys; Value **vals; int count; int capacity; EnvHash hash; } dict;
+        struct { char **keys; Value **vals; int count; int capacity; EnvHash hash; EnvInternRef *intern_refs; } dict;
         struct { double *data; int count; int rows, cols; } buffer;  /* rows==0 => unshaped 1-D (count is length); rows>0 => 2-D, rows*cols==count */
         struct { char *data; size_t len; size_t cap; int parts; } text_builder;
     } data;
@@ -425,6 +429,9 @@ struct Value {
      * is what makes the common (non-namespace) dict path a single byte test —
      * including in the JIT's inline dict-cache probe, which bails on it. */
     unsigned char module_ns;
+    /* 1 iff this dictionary has a private-name registry record. Object-local
+     * fast rejection: unrelated Value destruction never takes its mutex. */
+    unsigned char intern_private;
 };
 
 /* #1183: the `str` / `strv.ptr` overlay is the whole mechanism — pin it at
@@ -631,6 +638,16 @@ typedef struct {
  * functions only, so the field layout can still evolve. */
 typedef struct EigsState  EigsState;
 typedef struct EigsThread EigsThread;
+
+/* A stop request is immutable after publication. State, attached threads and
+ * not-yet-started workers each retain their evaluation scope, so a new host
+ * eval cannot erase an older worker's request or reuse its status storage. */
+typedef struct EigsExitScope {
+    int refs;
+    int latched_storage;
+    int code;
+} EigsExitScope;
+struct EigsThreadHandle;
 struct VM;
 struct EigsJitCache;
 struct EigsChunk;
@@ -691,10 +708,13 @@ typedef struct EnvNameIntern {
 typedef struct EnvInternValueOwner EnvInternValueOwner;
 
 /* #1065: see EigsThread.intern_tbl. */
-typedef struct EnvInternTable {
+struct EnvInternTable {
     int            refcount;                       /* atomic */
     EnvNameIntern *buckets[ENV_NAME_INTERN_BUCKETS];
-} EnvInternTable;
+};
+/* Table refs are leaf ownership, not cycle-collector graph nodes. */
+struct EnvInternRef { EnvInternTable *table; EnvInternRef *next; };
+void env_retain_intern_table(Env *env, EnvInternTable *table);
 EnvInternTable *env_intern_table_new(void);
 void            env_intern_table_ref(EnvInternTable *t);
 void            env_intern_table_unref(EnvInternTable *t);
@@ -702,8 +722,12 @@ void            env_intern_table_unref(EnvInternTable *t);
 /* Per-interpreter-instance config + shared registry. Transparent for
  * internal TUs (Phase 10's embed.h wraps it behind accessors). */
 struct EigsState {
+    uint64_t trace_state_token;   /* association metadata; never an address */
     pthread_mutex_t threads_lock;
     EigsThread     *threads;
+    /* Private promoted keys belong to Values, across same-state attachments. */
+    pthread_mutex_t intern_owner_lock;
+    EnvInternValueOwner *sandbox_intern_owners;
     /* Observer-classification thresholds (set_observer_threshold builtin).
      * Per-state because they're interpreter configuration, not execution
      * state; one knob per host application, shared across worker threads. */
@@ -744,17 +768,6 @@ struct EigsState {
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
     int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
     double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
-    /* #1142: last observer config THIS state emitted onto the process tape.
-     * Initialized to the compiled-in defaults so a default-config state
-     * writes no `O cfg` (single-state tapes stay byte-identical). Compared
-     * under the tape mutex. tape_obs_session tracks the tape-open generation
-     * so a new V header re-emits a non-default config. */
-    double          tape_obs_dh_zero;
-    double          tape_obs_dh_small;
-    double          tape_obs_h_low;
-    double          tape_obs_scale;
-    int             tape_obs_window;
-    unsigned        tape_obs_session;
     /* #971/#1361: strict mode. ON by default (read once at creation; only
      * EIGS_STRICT=0 turns it off): a wrong-typed or out-of-domain argument,
      * or a NaN result, RAISES instead of getting a finite stand-in. Off
@@ -798,6 +811,9 @@ struct EigsState {
     EigsHandleSlot  handle_table[HANDLE_TABLE_SIZE];
     pthread_mutex_t handle_mutex;
     int             handle_next;
+    /* Claimed joins interrupted by exit remain owned until the normal drain.
+     * They still contribute to live_workers; their original slots may recycle. */
+    struct EigsThreadHandle *deferred_threads;
     /* Set to 1 by builtin_spawn before pthread_create; cleared by
      * spawn_mt_maybe_clear (builtins.c) when the last live worker is joined
      * and the joiner is the state's only attached thread (#1147), and by
@@ -814,13 +830,14 @@ struct EigsState {
      * but was never joined still counts, so `multithreaded` stays set until
      * someone joins it; that errs toward the MT (safe) side. */
     int             live_workers;
-    /* #739: process-exit request, LATCHED at the state. The per-thread flag
-     * above drives CHECK_ERROR's uncatchable unwind and is cleared at host
-     * eval entry; this latch is what `main` reports as the process exit code,
-     * so `exit of N` inside a spawned worker still sets it — the per-thread
-     * flag alone would have silently dropped a worker's exit code to 0. */
-    int             exit_latched;
-    int             exit_latch_code;
+    /* The state's default exit scope is replaced at a host eval boundary,
+     * under exit_mutex. Each thread retains the scope it executes in; spawned
+     * workers inherit that thread's scope before pthread_create. */
+    EigsExitScope  *exit_scope;
+    /* Completion and exit wakeup share this condition. Scope flags publish
+     * atomically and are never reset while any reader can retain the scope. */
+    pthread_mutex_t exit_mutex;
+    pthread_cond_t  exit_cond;
     /* #1112: number of spawn()ed OS-thread workers that died of an UNCAUGHT
      * runtime error (the #493 rule for cooperative tasks, applied to
      * threads: a fire-and-forget worker's death must not green the run).
@@ -840,9 +857,10 @@ struct EigsState {
     pthread_mutex_t gc_lock;
     /* #307: value-candidate buffer — LIST/DICT "possible roots" parked by
      * gc_note_possible_root for the next collection (Bacon-Rajan). Per-STATE
-     * like the env registry, but only ever touched single-threaded (the hook
-     * is gated off under MT), so it needs no lock. The buffer holds one pin
-     * apiece; gc_collect_cycles feeds it in as seeds, then drains the pins. */
+     * like the env registry. The sandbox-promotion path may register under MT
+     * using gc_lock; actual collection remains deferred until the state is
+     * single-threaded. The buffer holds one pin apiece; gc_collect_cycles
+     * feeds it in as seeds, then drains the pins. */
     Value         **gc_val_buf;
     int             gc_val_count;
     int             gc_val_cap;
@@ -889,6 +907,8 @@ typedef struct EigsJitHotRow {
 
 struct EigsThread {
     EigsState  *state;
+    EigsExitScope *exit_scope;        /* owning, changed only by this thread */
+    int         is_spawn_worker;    /* host evals inside workers inherit scope */
     Arena       arena;
     /* #739: temporal prev-table (`prev of x`, `at <line>`, `state_at`).
      * Per-THREAD because it is keyed by interned name pointer and the
@@ -910,6 +930,10 @@ struct EigsThread {
     int          parse_errors;
     int          has_error;
     int          try_depth;
+    /* Source-line stamp used by native/AOT callers and temporal history when
+     * no VM frame supplies a line. Per-thread so a spawned worker cannot
+     * replace its parent's fallback error line (#1435). */
+    int          trace_current_line;
     /* #739: `exit of N` request. Sits with has_error/try_depth because
      * CHECK_ERROR reads all three together — an exit unwind is uncatchable.
      * Cleared at host eval entry (eigs_eval_string) so a second eval on this
@@ -1075,7 +1099,6 @@ struct EigsThread {
      * scope is released. */
     uint32_t             sandbox_intern_scope;
     uint32_t             sandbox_intern_scope_next;
-    EnvInternValueOwner *sandbox_intern_owners;
     /* Recursion-depth guards (parse/tokenize/value_to_string/JSON/native
      * call). Reset per top-level entry; reside here so multiple states
      * sharing an OS thread don't see each other's mid-walk depth. */
@@ -1165,13 +1188,12 @@ struct EigsThread {
      * other's file mid-write. Closed at thread detach so an unclosed stream
      * is not leaked. Opaque (FILE*) to keep stdio out of this header. */
     void                *stream_file;
-    /* Tape-session-local logical identities (#1286). */
-    uint64_t             trace_stream_id;
-    unsigned             trace_stream_session;
-    uint32_t             trace_scope_serial;
-    unsigned             trace_scope_session;
-    uint64_t             replay_stream_id;
-    unsigned             replay_stream_session;
+    /* Recording identity belongs to this attachment lifetime, not its OS
+     * thread or state. The lazy binding owns its session's emitted caches;
+     * both survive parking and the binding is freed only at detach. */
+    uint64_t             trace_attachment_token;
+    struct TraceRecordingBinding *trace_recording;
+    struct TraceStreamOrigin *trace_origin; /* owned, lazy causal descriptor */
     /* Registry list — set by eigs_thread_attach. */
     EigsThread *next;
 };
@@ -1343,8 +1365,7 @@ extern __thread EigsThread *eigs_current;
 #define g_compile_import_toplevel (eigs_current->compile_import_toplevel)
 #define g_import_resolve_dir  (eigs_current->import_resolve_dir)
 #define g_vm_multithreaded    (eigs_current->state->multithreaded)
-#define g_exit_latched        (eigs_current->state->exit_latched)
-#define g_exit_latch_code     (eigs_current->state->exit_latch_code)
+#define g_exit_latched        __atomic_load_n(&eigs_current->exit_scope->latched_storage, __ATOMIC_ACQUIRE)
 #define g_gc_envs             (eigs_current->state->gc_envs)
 #define g_gc_captured_live    (eigs_current->state->gc_captured_live)
 #define g_gc_val_buf          (eigs_current->state->gc_val_buf)
@@ -1361,7 +1382,7 @@ extern __thread EigsThread *eigs_current;
 #define g_env_name_interns    (eigs_current->intern_tbl->buckets)
 #define g_sandbox_intern_scope (eigs_current->sandbox_intern_scope)
 #define g_sandbox_intern_scope_next (eigs_current->sandbox_intern_scope_next)
-#define g_sandbox_intern_owners (eigs_current->sandbox_intern_owners)
+#define g_sandbox_intern_owners (eigs_current->state->sandbox_intern_owners)
 #define g_prev_tab            (eigs_current->prev_tab)
 #define g_prev_cap            (eigs_current->prev_cap)
 #define g_prev_count          (eigs_current->prev_count)
@@ -1433,6 +1454,12 @@ void eigs_obs_enable(void);
  * "this process has one thread" — a per-state multithreaded flag cannot see a
  * sibling state, and ext_http runs one state per connection per thread. */
 int  eigs_process_thread_count(void);
+/* Reserve the process-wide single-attached-thread state for an operation that
+ * mutates process-global compiler resources.  A successful begin blocks new
+ * thread attachments until the matching end without holding the lifecycle
+ * mutex across the reserved operation or any host callback it invokes. */
+int  eigs_process_single_thread_begin(void);
+void eigs_process_single_thread_end(void);
 /* #1142/#1143: a bare snapshot of the live EigsState count. NOT usable as a
  * close decision — see eigs_process_state_release below. trace_shutdown is
  * its only caller. */
@@ -1494,6 +1521,26 @@ void* xmalloc(size_t size);
 void* xcalloc(size_t nmemb, size_t size);
 void* xrealloc(void *p, size_t size);
 char* xstrdup(const char *s);
+/* Measurement-only allocation accounting for #1319.  Defining free this way
+ * lets the candidate checked-allocation chokepoint observe matching releases;
+ * untracked pointers are passed through unchanged.  Keep the overwhelmingly
+ * common disabled path at the call site so it can call libc directly instead
+ * of paying for another out-of-line function call on every release.  No limit
+ * is enforced. */
+extern int eigs_alloc_stats_enabled __attribute__((weak));
+void eigs_alloc_stats_free(void *p) __attribute__((weak));
+static inline __attribute__((always_inline))
+void eigs_alloc_stats_maybe_free(void *p) {
+    /* Small standalone tools (notably `make jit-smoke`) intentionally link
+     * no allocator runtime.  Weak references preserve ordinary libc free in
+     * that configuration instead of imposing two unresolved symbols. */
+    if (!eigs_alloc_stats_free || !&eigs_alloc_stats_enabled ||
+        __atomic_load_n(&eigs_alloc_stats_enabled, __ATOMIC_RELAXED) == 0)
+        free(p);
+    else
+        eigs_alloc_stats_free(p);
+}
+#define free(p) eigs_alloc_stats_maybe_free(p)
 size_t safe_size_mul(size_t a, size_t b);
 void* xmalloc_array(size_t nmemb, size_t size);
 void* xcalloc_array(size_t nmemb, size_t size);
@@ -1585,7 +1632,7 @@ void     env_intern_scope_end(uint32_t scope, uint32_t previous);
 char    *env_intern_scope_promote(Value *owner, char *name);
 void     env_intern_scope_retain(const char *name);
 void     env_intern_release_value(Value *owner);
-void     env_intern_release_all_values(void);
+void     env_intern_release_all_values(EigsState *st);
 void free_value(Value *v);
 
 /* ---- Reference counting (atomic for thread safety) ----
@@ -1599,6 +1646,10 @@ void free_value(Value *v);
  * comparison (jit.c), and observer_slot_saturated (eigenscript.c). It was
  * a bare literal in all three; one macro so they cannot drift apart. */
 #define EIGS_NUM_MAX 1e308
+
+/* Binary tensor files share the same aggregate element ceiling as tensor
+ * construction.  Keep readers and every writer on this one policy. */
+#define EIGS_TENSOR_MAX_ELEMENTS 10000000
 
 /* Numeric invariant: EigenScript has no NaN or Infinity.
  * All numeric operations route through this guard.
@@ -1650,6 +1701,28 @@ static inline double num_guard(double x) {
     return x;
 }
 
+/* #1417: VAL_BUFFER storage is an unboxed numerical work area, so kernels
+ * can transiently leave an IEEE NaN or infinity in it.  The language's
+ * finite-number invariant applies when an element crosses the buffer/scalar
+ * boundary: every scalar read goes through this helper.  Keeping the guard at
+ * that boundary also lets bulk kernels retain their unboxed representation. */
+static inline double buffer_read_num(const Value *buffer, int64_t index) {
+    return num_guard(buffer->data.buffer.data[index]);
+}
+
+/* Numeric byte consumers truncate and wrap modulo 256. Reduce in double
+ * first: even a normalized finite number can be outside the C int range.
+ * The caller must normalize the input and stop on a raised read first. */
+static inline unsigned char finite_num_to_byte(double x) {
+    return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
+}
+
+static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {
+    double x = buffer_read_num(buffer, index);
+    if (g_has_error) return 0;
+    return finite_num_to_byte(x);
+}
+
 /* #971: num_guard for a builtin whose result CAN be NaN on the current tree
  * (`pow` of a negative base with a fractional exponent, `num of "nan"`,
  * `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation,
@@ -1692,6 +1765,9 @@ static inline double num_guard_named(double x, const char *who) {
  * cycle collection. Out-of-line (keeps val_decref/slot_decref lean) and gated
  * inside on GC-enabled / not-collecting / single-threaded. */
 void gc_note_possible_root(Value *v);
+/* Sandbox arena promotion can create cycles rooted only in its sealed env.
+ * Preserve those candidates even while collection is deferred under MT. */
+void gc_note_possible_root_deferred(Value *v);
 
 static inline void val_incref(Value *v) {
     if (v && !v->arena) {
@@ -1709,7 +1785,8 @@ static inline void val_decref(Value *v) {
         else
             newrc = --v->refcount;
         if (newrc <= 0) free_value(v);
-        else if (__builtin_expect((v->type == VAL_LIST || v->type == VAL_DICT)
+        else if (__builtin_expect(!g_vm_multithreaded
+                                  && (v->type == VAL_LIST || v->type == VAL_DICT)
                                   && !v->gc_buffered, 0))
             gc_note_possible_root(v);
     }
@@ -1820,12 +1897,15 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 /* Same as env_set_local_hashed_slot, but `interned` must come from
  * env_intern_name() so it can be stored directly without re-interning.
- * VM uses this with chunk->const_interns[idx] in the hot SET_NAME paths. */
+ * owner must be the table supplying that exact pointer (usually the chunk
+ * table), not necessarily the currently attached thread's table. */
 void env_set_local_pre_interned_slot(Env *env, const char *interned,
+                                      EnvInternTable *owner,
                                      uint32_t h, EigsSlot s);
 /* Bind a parameter into a freshly-created call env. Skips env_hash_find;
  * caller guarantees the name does not collide with an earlier binding. */
 void env_bind_fresh_param_slot(Env *env, const char *interned,
+                               EnvInternTable *owner,
                                uint32_t h, EigsSlot s);
 /* Raw insert into env hash (exposed for vm.c inline call-site fast paths). */
 void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
@@ -1875,6 +1955,9 @@ void env_mark_captured(Env *env);
  * doesn't prove a subgraph dead it leaks instead of freeing. No-op when
  * multithreaded. */
 void gc_collect_cycles(void);
+/* Drain buffered LIST/DICT possible roots without seeding the traversal from
+ * the unrelated captured-environment registry. */
+void gc_collect_value_candidates(void);
 /* Exit-time teardown of the global scope: drops every global binding,
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */
@@ -1909,6 +1992,9 @@ extern int g_compile_module_slots;
 /* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
+/* Measure leading spaces/tabs using the language's four-column tab stops.
+ * byte_count, when non-NULL, receives the number of source bytes consumed. */
+int eigs_measure_indent(const char *line, int *byte_count);
 void free_tokenlist(TokenList *tl);
 void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 
@@ -1946,10 +2032,10 @@ void eigs_num_text(char *buf, size_t nbuf, double n);
 void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
 /* #880: decode a JSON string body (s[*pos] = first byte after the opening
- * quote) into `out`, leaving *pos past the closing quote. One decoder for
- * json_decode, the LSP, and the DAP — they used to disagree on which escapes
- * exist. */
-void eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
+ * quote) into `out`, leaving *pos past the closing quote. Returns whether
+ * every input scalar was preserved; lenient U+FFFD repair returns false.
+ * One decoder serves json_decode, the LSP, and the DAP. */
+int eigs_json_decode_string_body(const char *s, int *pos, strbuf *out);
 
 /* ---- Registration ---- */
 
@@ -2159,11 +2245,23 @@ void*  handle_claim(int id, uint32_t gen, HandleType type, int *why);
  * ("joined" for a thread, "closed" for a channel or store). */
 void   handle_raise_unresolved(const char *who, const char *kind, int id,
                                int why, const char *gone_verb);
-/* Deterministic teardown of channel + thread handles (builtins.c): joins
- * outstanding workers, then frees remaining channels. Call once execution is
- * done and the value world is still alive (before env/thread teardown). */
+Value *builtin_spawn(Value *arg);
+Value *builtin_thread_join(Value *arg);
+/* Deterministic teardown of every resource in the handle table (builtins.c):
+ * HANDLE_THREAD, HANDLE_CHANNEL, HANDLE_NET, HANDLE_STORE, and HANDLE_TASK.
+ * Call once execution is done and the value world is still alive (before
+ * env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
+
+/* `exit`: first request wins within the caller's evaluation scope. Workers
+ * retain the scope captured at spawn, including across later host evals. */
+void   eigs_state_request_exit(struct EigsState *st, int code);
+int    eigs_state_exit_requested(struct EigsState *st, int *code);
+void   eigs_state_begin_eval(struct EigsState *st);
+void   eigs_exit_scope_retain(EigsExitScope *scope);
+void   eigs_exit_scope_release(EigsExitScope *scope);
+void   eigs_thread_set_exit_scope(EigsExitScope *scope);
 
 /* ---- EigenStore embedded database ---- */
 void register_store_builtins(Env *env);
@@ -2201,6 +2299,9 @@ typedef struct {
  * directive take effect. Used by the LSP to publish diagnostics. */
 int lint_collect(ASTNode *ast, const char *path, const char *source,
                  LintDiag *out, int max);
+/* Allocate and return every diagnostic. The caller owns the returned array. */
+LintDiag *lint_collect_alloc(ASTNode *ast, const char *path,
+                             const char *source, int *count);
 /* 1 if the source carries a file-wide `# lint: allow-file <code>` directive
  * for `code` (or `all`). Callers of lint_collect apply it themselves (the
  * CLI and the LSP both do) — suppression filters lint_collect's OUTPUT;
@@ -2220,5 +2321,9 @@ int eigs_api_dump(FILE *out, int json);
  * pinned from script at all (found via iLambdaAi's eval-determinism probe,
  * 2026-08-17). */
 void eigs_ensure_random_seeded(void);
+/* The libc drand48 family owns one process-global state.  These are the only
+ * entry points runtime code may use, so seeding and draws share one lock. */
+double eigs_random_double(void);
+long eigs_random_long(void);
 
 #endif /* EIGENSCRIPT_H */

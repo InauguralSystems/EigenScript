@@ -1,0 +1,18 @@
+# Keep this deliberately ineligible for the frameless leaf-accessor fast path:
+# the local makes calls enter the ordinary chunk. The runner requires hot's
+# native RET diagnostic after 80 warm calls. Spawn occurs at module level,
+# followed by hot calls while MT mode is on; this does not cover spawn from
+# inside an active native caller.
+define hot(v) as:
+    local doubled is v * 2
+    return doubled + 1
+i is 0
+loop while i < 80:
+    hot of i
+    i is i + 1
+define worker() as:
+    return hot of 20
+h is spawn of worker
+main_value is hot of 10
+if (thread_join of h) != 41 or main_value != 21:
+    throw of "emitted JIT call returned wrong value"

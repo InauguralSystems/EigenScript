@@ -39,8 +39,10 @@ static void show_stop(const Tape *t, int pos) {
         printf("  | %s\n", t->src[line - 1]);
     /* events that happened during this step (its A/N records) */
     int bound = (pos + 1 < t->nsteps) ? t->steps[pos + 1] : t->nrecs;
+    uint64_t stream = t->recs[rec].stream;
     for (int i = rec + 1; i < bound; i++) {
         const StepRec *r = &t->recs[i];
+        if (r->stream != stream) continue;
         if (r->kind == 'A') printf("  A %s=%s\n", r->name, r->value);
         if (r->kind == 'N') printf("  N %s=%s\n", r->name, r->value);
     }
@@ -65,10 +67,11 @@ static void print_binding(const Tape *t, int pos, const NameHist *h,
  * the same name is skipped). Dead frames' locals no longer appear. */
 static void show_bindings(const Tape *t, int pos, const char *only) {
     int shown = 0;
+    uint64_t stream = t->recs[t->steps[pos]].stream;
     if (only) {
         const NameHist *h = tape_resolve_at(t, pos, only);
         if (h) {
-            const ScopeInfo *si = tape_scope_info(t, h->scope);
+            const ScopeInfo *si = tape_scope_info_stream(t, h->scope, h->stream);
             char note[160] = "";
             if (si && si->depth > 0)
                 snprintf(note, sizeof note, "in %s", si->name);
@@ -82,12 +85,12 @@ static void show_bindings(const Tape *t, int pos, const char *only) {
     const char *seen[512]; int nseen = 0;
     uint32_t sc = tape_scope_at(t, pos);
     for (;;) {
-        const ScopeInfo *si = tape_scope_info(t, sc);
+        const ScopeInfo *si = tape_scope_info_stream(t, sc, stream);
         char note[160] = "";
         if (si && si->depth > 0) snprintf(note, sizeof note, "in %s", si->name);
         for (int i = 0; i < t->nnames; i++) {
             const NameHist *h = &t->names[i];
-            if (h->scope != sc) continue;
+            if (h->scope != sc || h->stream != stream) continue;
             /* #736: the loop machinery's own bindings are implementation
              * detail — keep them out of the unfiltered listing. `p
              * __loop_exit__` still answers: an explicit request is not a
@@ -116,7 +119,7 @@ static void show_trajectory(const Tape *t, int pos, const char *name) {
         return;
     }
     {
-        const ScopeInfo *si = tape_scope_info(t, h->scope);
+        const ScopeInfo *si = tape_scope_info_stream(t, h->scope, h->stream);
         if (si && si->depth > 0)
             printf("(%s in %s, frame #%u)\n", name, si->name, h->scope);
     }

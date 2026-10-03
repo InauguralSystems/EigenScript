@@ -43,6 +43,10 @@ EigsState *eigs_open(void) {
     return st;
 }
 
+void eigs_state_set_strict(EigsState *st, int enabled) {
+    if (st) st->strict = enabled != 0;
+}
+
 void eigs_close(EigsState *st) {
     if (!st) return;
     /* Mirror main.c's teardown order. #301: drain the handle table FIRST — reap
@@ -106,15 +110,22 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
 
     g_parse_errors = 0;
     g_has_error = 0;
-    /* #739: don't carry a prior eval's `exit` into this one. CHECK_ERROR makes
-     * an exit unwind uncatchable — correct — but the request was never
-     * cleared, so after any script called `exit of N` every later eval in this
-     * process ran with exception handling silently disabled: a raise inside
-     * `try` went to vm_error_halt instead of the catch handler. One line of
-     * script permanently corrupted the semantics for a long-lived host running
-     * untrusted snippets. g_exit_code needs no reset — builtin_exit always
-     * writes it before setting the flag, so it can never be read stale. */
-    g_exit_requested = 0;
+    /* #739/#1149: a new eval owns a fresh stop scope. Existing workers keep
+     * their inherited scope and its immutable exit code until they detach;
+     * clearing a shared latch here could revive them or import their late
+     * exit into this eval. Host calls into one attachment stay sequential. */
+    if (!eigs_current->is_spawn_worker &&
+        (!eigs_current->vm || g_vm.frame_count == 0)) {
+        g_exit_requested = 0;
+        eigs_state_begin_eval(eigs_current->state);
+    }
+    /* A host callback may evaluate nested source. It is part of the active
+     * evaluation, so it shares that scope rather than replacing its caller's. */
+    if (eigs_state_exit_requested(eigs_current->state, &g_exit_code)) {
+        g_exit_requested = 1;
+        g_has_error = 1;
+        return NULL;
+    }
 
     TokenList tl = tokenize(src);
     if (g_parse_errors > 0) {
@@ -365,7 +376,7 @@ int eigs_value_buffer_len(EigsValue *v) {
 double eigs_value_buffer_get(EigsValue *v, int i) {
     if (!v || v->type != VAL_BUFFER) return 0.0;
     if (i < 0 || i >= v->data.buffer.count) return 0.0;
-    return v->data.buffer.data[i];
+    return buffer_read_num(v, i);
 }
 
 void eigs_value_buffer_set(EigsValue *v, int i, double x) {
@@ -380,8 +391,16 @@ void eigs_set_trace_sink(EigsTraceSink cb, void *ud) {
     trace_set_sink(cb, ud);
 }
 
+int eigs_trace_bind_stream(const char *key) {
+    return trace_bind_stream(key);
+}
+
 int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
     return trace_set_replay_mem(bytes, len, strict);
+}
+
+int eigs_replay_advance_session(void) {
+    return trace_replay_advance_session();
 }
 
 int eigs_replay_take(const char *name, EigsValue **out) {

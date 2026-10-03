@@ -113,6 +113,23 @@ eigs_state_destroy(st);
 the state; `eigs_thread_detach` is called from the same thread before
 the state is destroyed or the thread exits.
 
+### Per-state strict mode
+
+Strict errors are enabled by default. At creation, each state independently
+snapshots `EIGS_STRICT`; exactly `EIGS_STRICT=0` selects the legacy finite
+stand-ins. An embedder can supersede that creation-time value for one state:
+
+```c
+EigsState *st = eigs_open();
+eigs_state_set_strict(st, 0); /* stand-in mode; nonzero enables strict mode */
+```
+
+`eigs_state_set_strict` is valid after either `eigs_state_new` or `eigs_open`,
+but must be called before that state's first evaluation. It is null-safe.
+Strictness is plain state-local configuration, not a synchronized runtime
+control: never call the setter concurrently with evaluation of that state.
+Changing one state does not affect any other state or the process environment.
+
 ## Source eval
 
 ```c
@@ -377,7 +394,9 @@ API reaches the same machinery as bytes, so a freestanding embedder
 ```c
 typedef void (*EigsTraceSink)(const char *bytes, size_t len, void *ud);
 void eigs_set_trace_sink(EigsTraceSink cb, void *ud);  /* non-NULL enables recording */
+int  eigs_trace_bind_stream(const char *key); /* current host attachment; copied */
 int  eigs_set_replay_tape(const char *bytes, size_t len, int strict); /* copied; NULL clears */
+int  eigs_replay_advance_session(void); /* explicit quiescent host boundary */
 int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served from tape */
 void eigs_trace_record_nondet(const char *name, EigsValue *v);
 ```
@@ -391,7 +410,7 @@ journal entries directly. It fires from inside
 evaluation — do not re-enter the runtime from it; buffer the bytes and
 act between evals. While a replay tape is set, nondet builtins return
 the recorded `N` values in order instead of consulting their live
-sources; when the tape runs out they fall back to live.
+sources. Exhaustion raises instead of falling back to a live source.
 
 The first call a freshly installed sink receives is always its own `V`
 header: the callback pointer and the header are published in the same
@@ -429,15 +448,44 @@ cooperative task scheduler are per-**thread** and released at
 sandbox budget, close each other's stream, or freeze each other's JIT
 tuning — all of which they did while those lived in process globals.
 The trace tape and sink remain per-process by design (below).
+Recording identity is attachment-local: `eigs_thread_switch` preserves it
+when parking and restoring a state, while `eigs_thread_detach` releases the
+binding. A later attachment on that OS thread gets a new lifetime. Each
+attachment's stream separately announces its state's observer configuration,
+line events and native/frame scope; a new tape session resets the emitted
+caches. Native callbacks record through this binding even before their first
+line event. Cooperative tasks keep their attachment's stream.
 
-**A script's `exit` does not outlive its eval** (#739). `exit of N` is
-deliberately uncatchable — `CHECK_ERROR` refuses to route it to a `try`
-handler — but the request is per-thread and cleared at the top of
-`eigs_eval_string`, so it applies to the eval that raised it and no
-later one. Before that it was a process global nothing ever reset: one
-untrusted snippet calling `exit` left every subsequent eval in the
-process running with exception handling silently disabled, in any state.
-A host that wants the exit code reads it from the eval that requested it.
+A sink installed while unattached belongs to a session-owned native opener;
+other recording producers must attach. An attachment created later does not
+inherit that native opener's stream zero. Recording lifetime tokens are internal;
+independent hosts establish replay correspondence with `eigs_trace_bind_stream`.
+Call it once before the attachment's first event/take, outside evaluation, with
+a stable nonempty key of at most 1024 bytes. The bytes are copied. Active-session
+duplicates, rebinding and late binding return zero without replacing the prior
+identity. A key survives A/B/A switching and is released at detach. A key set
+before a tape is active is checked when it binds to the session. Script-spawned
+workers instead inherit causal parent/occurrence metadata automatically.
+
+
+**A script's `exit` belongs to its evaluation** (#739, #1149). Each outer
+`eigs_eval_string` or `eigs_eval_file` starts a fresh stop scope; a nested eval
+from a host callback shares the active scope. `exit of N` is uncatchable and
+stops the caller plus workers spawned in that scope. The first request keeps
+its status. Workers retain their scope, including a worker that first starts
+or spawns a child after a later host eval begins. A later eval neither erases
+an old worker's stop request nor imports an old worker's late `exit`.
+
+Returning from an eval does **not** mean every worker has finished. Runtime
+channel, sleep and join waits wake on that scope's stop, but arbitrary native
+I/O or a host callback is not asynchronously cancelled. Its worker observes
+the request when it returns to the VM. An interrupted `thread_join` consumes
+its handle and leaves the worker owned by the state for later reaping; it
+does not return the target's result. `eigs_close` still waits for all workers,
+including those in native I/O, before releasing handles, closures or state.
+A host must finish or unblock its outstanding I/O before closing. Later evals
+can run while those workers finish; the existing shared-value concurrency
+rules still apply. A host reads an exit status before starting the next eval.
 
 **The sink and the tape are per-PROCESS, not per-state** (#739, #1142,
 #1143). With several states co-located, one sink serves them all.
@@ -470,15 +518,29 @@ A worker that wants to release its own temporal history calls
 every thread. The per-name history behind `prev of x` / `at` /
 `state_at` is per-thread and never shared.
 
-Replay is a single-consumer stream until per-thread N streams exist: the
-OS thread that installed the tape may take; a nondet builtin on any
-other thread, or `eigs_replay_take` from a state that did not open the
-tape, raises the same catchable error as `recv` under `EIGS_REPLAY`
-(docs/TRACE.md "Threads and states"). A take that IS allowed holds the
-same process-wide tape mutex a record emission holds, so it can never
+Replay maps independently created host attachments by their keys, and script
+children by their bound parent's spawn occurrence. Registration and first-event
+order can differ from recording. A missing/duplicate binding or inconsistent
+state grouping raises instead of taking another stream's value. A take holds
+the same process-wide tape mutex a record emission holds, so it can never
 interleave with one — `eigs_replay_take` will BLOCK for as long as a
 concurrent sink callback runs, which is one more reason not to do slow
 work inside the callback.
+
+Ordinary takes stop at a later session header. At a host boundary, after parking
+or joining every participating producer, call `eigs_replay_advance_session()`.
+It returns one when it installs the next session, or zero if any current-session
+N remains, there is no next session/source, or the caller is still evaluating.
+Refusal preserves unread sibling outcomes. The host establishes quiescence;
+holding the tape mutex alone is not evidence that other threads are between
+evaluations. Continuing keyed and causal attachments resolve the new namespace
+through lifetime metadata, never through repeated numeric IDs.
+
+An installed memory tape suspends the file replay context as a whole. Clearing
+memory restores the file's cursor, queued values, parser buffer, bindings and
+strictness; it neither rewinds nor takes data from the memory source. A refused
+memory replacement leaves the active context untouched. The version 5 grammar
+and older-format refusal rule are documented in `docs/TRACE.md`.
 
 Host builtins participate with the take/record pair, the same contract
 the runtime's own nondet builtins use:
@@ -561,8 +623,30 @@ between minor releases.
 - Inside a single `EigsState`, the VM is not internally re-entrant.
   Don't call `eigs_eval_string` from a host function that was called by
   the VM — return to the VM first.
-- Multiple `EigsState` instances are fully independent. Two host
-  threads each with their own state can run script concurrently.
+- Multiple `EigsState` instances have independent VM heaps and execution
+  state. A host running states concurrently must observe the thread or process
+  scope of these runtime surfaces:
+  - Trace tape, sink, and replay state — **shared: the host must serialize**
+    tape/replay use across states (#1142).
+  - Observer history and occurrence arming sets — **locked** across states
+    (#1145).
+  - `g_trace_current_line` — **per attached `EigsThread`**: workers and
+    independent attached states keep their own diagnostic line (#1435).
+    Unattached tooling uses a process-global fallback.
+  - `g_source_provider` and its userdata — **shared: the host must serialize**
+    registration against evaluation, and install one provider for the process.
+  - The module-namespace table — **writer-locked**, with atomic entry publication
+    and tombstones; rebuild retires backing tables while multithreaded (#1144).
+  - `g_random_seeded` and the PRNG used by `random`, `random_int`, and
+    `seed_random` are **locked** across states (#1150). Seed and draw
+    operations share one process-wide stream; thread scheduling determines
+    draw order.
+  - The process's SIGPIPE disposition — **shared: the host must serialize**
+    changes to its process-wide setting. `proc_write` suppresses SIGPIPE only
+    around its own write without changing that disposition; spawned child
+    setup resets only the child's disposition.
+  - The pointer installed by `eigs_set_abort_flag` — **shared: the host must
+    serialize** registration; it is one process-global abort source (#410).
 - One `EigsState` accessed by multiple OS threads: each thread must
   `eigs_thread_attach`, and the host must serialize eval calls (a
   mutex around `eigs_eval_string` per state is sufficient). The shared

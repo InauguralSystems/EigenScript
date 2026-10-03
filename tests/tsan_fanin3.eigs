@@ -1,0 +1,13 @@
+ch is channel of 8
+define put(v) as:
+    send of [ch, v]
+    return v
+a is spawn of [put, 10]
+b is spawn of [put, 20]
+c is spawn of [put, 30]
+total is (recv of ch) + (recv of ch) + (recv of ch)
+thread_join of a
+thread_join of b
+thread_join of c
+if total != 60:
+    throw of "fan-in lost a message"

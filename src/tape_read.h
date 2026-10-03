@@ -21,6 +21,13 @@
 #define EIGENSCRIPT_TAPE_READ_H
 
 #include <stdint.h>
+#include "trace.h"
+
+typedef struct {
+    uint64_t stream;             /* unique reader key across appended sessions */
+    uint64_t id;                 /* numeric ID within the recorded session */
+    TraceAssociation association; /* key_hex borrows Tape.tape */
+} TapeStreamInfo;
 
 /* One observer-configuration change recovered from the tape's `O` records
  * (#1044/#1045 follow-up). `rec` is the index of the first stored record the
@@ -37,6 +44,7 @@ typedef struct {
     int      window;        /* binding == 0: state default; 1: the override */
     const char *name;       /* binding == 1: the overridden binding */
     uint32_t scope;         /* binding == 1: frame instance the call resolved from */
+    uint64_t stream;        /* v4 stream whose configuration changed */
 } ObsCfgRec;
 
 typedef struct {
@@ -48,7 +56,8 @@ typedef struct {
     const char *value;  /* A/N: serialized value (into tape buf) */
     uint32_t scope;     /* #539 v2: frame-instance serial this record
                          * belongs to (from the preceding S record;
-                         * 0 = before any S). */
+                         * 0 = module/native scope or before any S). */
+    uint64_t stream;
 } StepRec;
 
 typedef struct {
@@ -62,6 +71,7 @@ typedef struct {
 typedef struct {
     const char *name;
     uint32_t scope;     /* one history per (scope-instance, name) */
+    uint64_t stream;    /* and per v4 execution stream */
     Assign *a;
     int n, cap;
 } NameHist;
@@ -71,6 +81,7 @@ typedef struct {
  * push time, 0 for the base frame. */
 typedef struct {
     uint32_t serial;
+    uint64_t stream;
     const char *name;   /* chunk name: fn, <module>, <lambda> (into tape buf) */
     int depth;
     uint32_t parent;
@@ -91,6 +102,8 @@ typedef struct {
     char    *srcbuf;
     ObsCfgRec *obscfg;  /* observer-configuration changes, in tape order */
     int      nobscfg, obscfgcap;
+    TapeStreamInfo *streams;
+    int      nstreams, streamcap;
 } Tape;
 
 /* Read + version-check + parse a tape (and optionally its source file)
@@ -104,6 +117,10 @@ void tape_free(Tape *t);
 /* The (scope-instance, name) history, or NULL. */
 NameHist  *tape_hist_for(Tape *t, const char *name, uint32_t scope, int create);
 ScopeInfo *tape_scope_info(const Tape *t, uint32_t serial);
+NameHist  *tape_hist_for_stream(Tape *t, const char *name, uint32_t scope,
+                                uint64_t stream, int create);
+ScopeInfo *tape_scope_info_stream(const Tape *t, uint32_t serial,
+                                  uint64_t stream);
 
 /* Latest assign of `h` visible at position `pos`, or NULL. */
 const Assign *tape_latest_at(const NameHist *h, int pos);

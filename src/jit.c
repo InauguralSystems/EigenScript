@@ -35,7 +35,7 @@ extern int g_trace_hist_storage;
  * immediate so OP_LINE can stamp it. The interpreter CASE(LINE) writes it
  * unconditionally — the line prev_record_assign records into history — so the
  * JIT must too, or temporal at/when/state_at freeze at the OSR point. */
-extern int g_trace_current_line;
+extern int *trace_current_line_addr(void);
 /* OP_LINE also emits the tape's L record when a trace sink is open.  Keep the
  * flag test in native code so an ordinary (untraced) run pays no helper call. */
 extern int g_trace_enabled_storage;
@@ -167,8 +167,9 @@ JitConstFn jit_emit_const_return(EigsJitCache *jc, int64_t value) {
  * registry, scan counters, and stop-opcode histogram — all live on
  * `eigs_current` (EigsThread). The `g_*` identifiers below are
  * bridge macros (eigenscript.h) so call-site code stays unchanged.
- * Stop-opcode histogram rules in jit_try_compile_chunk: every bail
- * bumps g_jit_stop_counts[stop_op]; if prefix==0 we also bump
+ * Stop-opcode histogram rules in jit_try_compile_chunk: every scanner result
+ * that reaches a verdict bumps g_jit_stop_counts[stop_op]; if prefix==0 it
+ * also bumps
  * g_jit_stop_at_zero. Compiled chunks bump g_jit_compiled_count and
  * ALSO record their trailing stop_op (the op that would unlock
  * further extension). */
@@ -234,10 +235,14 @@ static void jit_hot_row_fill(EigsJitHotRow *r, const struct EigsChunk *c,
     r->jit_state       = c->jit_state;
     r->raw_advance     = c->jit_advance;
     r->advance         = c->jit_state == 2
-        ? (c->jit_advance == -1 ? c->code_len : c->jit_advance) : 0;
+        ? (c->jit_advance == -1 ? c->code_len
+           : c->jit_advance >= 0 ? c->jit_advance : 0) : 0;
     r->osr_state       = c->jit_osr[0].state;
+    /* In either entry mode, -2 records a deep bailout, not a byte count.
+     * Unlike -1 (a completed return), it gives no reliable coverage length. */
     r->osr_advance     = c->jit_osr[0].state == 2
-        ? (c->jit_osr[0].advance == -1 ? c->code_len : c->jit_osr[0].advance) : 0;
+        ? (c->jit_osr[0].advance == -1 ? c->code_len
+           : c->jit_osr[0].advance >= 0 ? c->jit_osr[0].advance : 0) : 0;
     r->osr_entry       = c->jit_osr[0].state != 0 ? c->jit_osr[0].entry_offset : 0;
     r->stop_op         = c->jit_stop_op;
 }
@@ -397,12 +402,13 @@ void jit_thread_destroy(EigsThread *th) {
             }
             uint64_t total_exec = 0;
             for (int i = 0; i < nrows; i++) total_exec += rows[i].exec_count;
-            /* Static native-byte coverage diagnostic: each chunk entry
-             * executes some prefix of its bytecode natively (if compiled)
-             * and the remainder interpreted. Aggregating exec_count *
-             * advance vs exec_count * code_len tells us roughly what
-             * fraction of executed bytecode bytes are native -- and thus
-             * whether extending the JIT prefix further would still pay. */
+            /* Estimated native-byte coverage diagnostic. Frame entries
+             * account for one trip through the chunk; interpreter back-edges
+             * account for another trip through its bytecode. A compiled OSR
+             * thunk contributes its covered bytes on each such trip. The
+             * chunk length is deliberately the denominator for a back-edge:
+             * the counter does not retain individual loop spans, so this is
+             * a conservative estimate rather than silently ignoring loops. */
             uint64_t bytes_native = 0, bytes_total = 0;
             uint64_t bytes_native_top = 0, bytes_total_top = 0;
             fprintf(stderr, "\n=== Hot chunks (top %d of %d) ===\n",
@@ -422,10 +428,12 @@ void jit_thread_destroy(EigsThread *th) {
             for (int a = 0; a < top; a++) {
                 EigsJitHotRow *r = &rows[a];
                 if (r->exec_count == 0) break;
-                const char *jstate =
-                    r->jit_state == 2 ? "yes" : r->jit_state == 1 ? "no " : "?  ";
-                const char *ostate =
-                    r->osr_state == 2 ? "yes" : r->osr_state == 1 ? "no " : "?  ";
+                const char *jstate = r->jit_state == 2 ? "yes " :
+                    r->jit_state == 1 ? "no  " :
+                    r->jit_state == 3 ? "full" : "?   ";
+                const char *ostate = r->osr_state == 2 ? "yes " :
+                    r->osr_state == 1 ? "no  " :
+                    r->osr_state == 3 ? "full" : "?   ";
                 double pct = total_exec
                     ? (100.0 * (double)r->exec_count / (double)total_exec) : 0.0;
                 double nat = r->code_len
@@ -444,13 +452,18 @@ void jit_thread_destroy(EigsThread *th) {
                         r->name ? r->name : "<anon>",
                         r->exec_count, jstate, pct, adv_buf, r->code_len, nat,
                         r->back_edge_count, ostate, r->osr_advance, r->osr_entry,
+                        r->jit_state == 3 ? "<cache-full>" :
                         r->stop_op == OP_COUNT ? "<end>" : op_name(r->stop_op));
-                bytes_native_top += r->exec_count * (uint64_t)r->advance;
-                bytes_total_top  += r->exec_count * (uint64_t)r->code_len;
+                bytes_native_top += r->exec_count * (uint64_t)r->advance
+                    + r->back_edge_count * (uint64_t)r->osr_advance;
+                bytes_total_top  += (r->exec_count + r->back_edge_count)
+                    * (uint64_t)r->code_len;
             }
             for (int i = 0; i < nrows; i++) {
-                bytes_native += rows[i].exec_count * (uint64_t)rows[i].advance;
-                bytes_total  += rows[i].exec_count * (uint64_t)rows[i].code_len;
+                bytes_native += rows[i].exec_count * (uint64_t)rows[i].advance
+                    + rows[i].back_edge_count * (uint64_t)rows[i].osr_advance;
+                bytes_total  += (rows[i].exec_count + rows[i].back_edge_count)
+                    * (uint64_t)rows[i].code_len;
             }
             double nat_share_top = bytes_total_top
                 ? 100.0 * (double)bytes_native_top / (double)bytes_total_top : 0.0;
@@ -623,11 +636,12 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *needs_frame_cache = 1;   /* Stage 5b inline IC fast path */
         } else if (op == OP_LOCAL_IDX_GET) {
             /* 5-byte op: [op][slot:16][idx:16]. Helper handles VAL_BUFFER/
-             * VAL_LIST/VAL_STR dispatch; on error it pushes null and
-             * sets g_vm.had_error so the interpreter CHECK_ERROR fires
-             * once execution resumes after the JIT thunk. */
+             * VAL_LIST/VAL_STR dispatch and reports a latched error.
+             * Its bailout writes r13d, so even an index-only prefix needs
+             * the saved advance registers and epilogue writeback. */
             if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 5; ops++; non_line_ops++;
+            *has_bail_op = 1;
         } else if (op == OP_LOCAL_DOT_GET) {
             /* Stage 4m: 5-byte op [op][slot:16][name_idx:16]. Helper needs
              * chunk pointer for const_interns/const_hashes lookup — same
@@ -787,10 +801,11 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * these as last_imm pass-through (see the last_imm switch). */
         } else if (op == OP_ITER_NEXT) {
             /* Stage 4q-a: 3-byte op [op][exit_offset:16]. Helper does the
-             * iter step against g_vm.stack[sp-1] and returns 1 (exhausted)
-             * or 0 (pushed an element). Emitter calls helper, tests eax,
-             * conditional-jumps to the exit target on non-zero. Same
-             * pending-patch / has_bail_op pattern as OP_JUMP_IF_FALSE.
+             * iter step against g_vm.stack[sp-1] and returns 1 (exhausted),
+             * 0 (pushed an element), or 2 (read raised). Exhaustion branches
+             * to the exit target; error exits the thunk with post-op advance.
+             * has_bail_op preserves r13/r14 and publishes that advance even
+             * when this is the prefix's only fallible opcode.
              * Fall-through TOS may be a heap pointer (VAL_LIST element)
              * or an immediate num (VAL_BUFFER element) — cannot guarantee
              * immediate, so disable the OP_POP peephole. */
@@ -799,18 +814,18 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *has_bail_op = 1;
         } else if (op == OP_INDEX_GET) {
             /* Stage 4q-c: 1-byte op. Helper pops 2 (idx, target), pushes
-             * 1 result. Can call runtime_error on out-of-range — the
-             * dispatch loop's CHECK_ERROR picks it up after the thunk
-             * returns. has_bail_op=1 so the per-op advance writeback runs
-             * (next op resumes at i+1 if the thunk bails). Pushed value
+             * 1 result and returns the pending error status. The emitter
+             * immediately exits on error, with post-op advance for CHECK_ERROR.
+             * has_bail_op=1 preserves r13/r14 and publishes that advance even
+             * when this is the prefix's only fallible opcode. Pushed value
              * type is opaque to the scanner. */
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
         } else if (op == OP_INDEX_SET) {
             /* Stage 4v: 1-byte op. Helper pops 3 (val, idx, target) and
              * pushes val back (net sp -2); full opcode semantics live in
-             * the helper, so no bail path. Same error/CHECK_ERROR story
-             * as INDEX_GET. Pushed value type is opaque.
+             * the helper, so no bail path. Its pending error is handled by
+             * CHECK_ERROR when the thunk returns. Pushed value type is opaque.
              *
              * Stage 5a: the emitter now inlines the buffer-write fast
              * path (guards + store + decref) ahead of the helper call.
@@ -2507,7 +2522,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     uint8_t *code = jit_cache_alloc(g_jit_cache, size);
     if (!code) {
         g_jit_cache_full_rejects++;
-        *out_state = 1;
+        /* The prefix scanner succeeded, but no code was emitted. This is
+         * neither an unsupported-bytecode verdict nor a stop-opcode sample:
+         * cache capacity, not stop_op, decided the outcome. */
+        g_jit_stop_counts[stop_op]--;
+        *out_state = 3;
         *out_code = NULL;
         jit_cache_seal(g_jit_cache);
         return;
@@ -2865,7 +2884,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_cmp_esi_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             if (op == OP_SET_NAME) {
-                /* target = walk_depth ? start->parent : start */
+                /* target = walk_depth ? start->parent : start.  GET_NAME
+                 * shares this IC and may have cached the sealed builtin
+                 * parent, so reject that one target without sending every
+                 * ordinary parent store through the helper. */
                 w = emit_cmpb_imm8_disp32_rax(w, (int32_t)offsetof(EnvIC, walk_depth), 0);
                 uint8_t *depth0_p;
                 w = emit_je_rel8(w, &depth0_p);
@@ -2873,8 +2895,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 w = emit_mov_disp32_rdx_to_rdx(w, (int32_t)offsetof(Env, parent));
                 w = emit_test_rdx_rdx(w);
                 w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
-                *depth0_p = (uint8_t)(w - depth0_after);
+                w = emit_movabs_rsi(w, (uint64_t)(uintptr_t)g_builtin_env);
+                w = emit_cmp_rsi_rdx(w);
+                w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
                 w = emit_mov_disp32_rdx_to_esi(w, (int32_t)offsetof(Env, binding_version));
+                *depth0_p = (uint8_t)(w - depth0_after);
             } else {
                 /* LOCAL variants pin walk_depth == 0; target == start and
                  * %esi still holds start->binding_version. */
@@ -2958,6 +2983,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                        ((uint16_t)chunk->code[i + 2] << 8));
             uint16_t idx = (uint16_t)(chunk->code[i + 3] |
                                       ((uint16_t)chunk->code[i + 4] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_imm32_edi(w, (uint32_t)slot);
             w = emit_mov_imm32_esi(w, (uint32_t)idx);
@@ -2966,6 +2995,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_test_rax_rax(w);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 5 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             i += 5;
         } else if (op == OP_LOCAL_DOT_GET) {
             /* Stage 5d: inline the dict-cache-hit + untracked-num path
@@ -2981,6 +3016,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                        ((uint16_t)chunk->code[i + 2] << 8));
             uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
                                            ((uint16_t)chunk->code[i + 4] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             const char *key = chunk->const_interns[name_idx];
             uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
             if (h == 0) {
@@ -3018,6 +3057,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_test_rax_rax(w);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 5 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             if (done_p) patch_rel32(done_p, w);
             i += 5;
         } else if (op == OP_LOCAL_IDX_DOT_GET) {
@@ -3036,6 +3081,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                            ((uint16_t)chunk->code[i + 4] << 8));
             uint16_t name_idx = (uint16_t)(chunk->code[i + 5] |
                                            ((uint16_t)chunk->code[i + 6] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
             w = emit_mov_r14_rdi(w);
@@ -3046,6 +3095,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_test_rax_rax(w);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 7 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             i += 7;
         } else if (op == OP_DOT_GET) {
             /* Stage 4q-f: out-of-line call to
@@ -3662,7 +3717,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * end of body emission. */
             if (pending_count + 1 > (int)(sizeof pending /
                                           sizeof pending[0]) ||
-                bail_count + 1 > (int)(sizeof bail_patches /
+                bail_count + (op == OP_JUMP_BACK ? 2 : 1) >
+                                  (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3671,6 +3727,20 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             int target = (op == OP_JUMP) ? (i + 3 + (int)off)
                                          : (i + 3 - (int)off);
             if (op == OP_JUMP_BACK) {
+                /* #1149: a thunk may have called spawn after passing the
+                 * entry-time single-threaded gate. Poll its retained exit scope
+                 * at native back-edges and bail at this opcode; the
+                 * interpreter re-runs it and imports the exit code through
+                 * POLL_STATE_EXIT. This is a plain acquire-equivalent load on
+                 * x86 and only adds work to native loop back-edges. */
+                w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
+                w = emit_mov_disp32_rax_to_rax(w, g_layout.off_thread_exit_scope);
+                w = emit_cmpl_imm32_disp32_rax(w,
+                                               g_layout.off_exit_scope_latched,
+                                               0);
+                w = emit_jne_rel32(w, &bail_patches[bail_count]);
+                bail_count++;
+
                 /* #410: poll the async abort flag on every native
                  * back-edge, mirroring CASE(JUMP_BACK). The pointer is
                  * never NULL (sentinel), so: load the registered pointer,
@@ -3768,9 +3838,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *   mov %ecx -> g_vm.sp     ; sync our sp cache so helper sees it
              *   push %rcx                ; align (body at 8-mod-16 -> 0-mod-16)
              *   movabs &jit_helper_iter_next, %rax
-             *   call %rax                ; eax = 0 (pushed) / 1 (exhausted)
+             *   call %rax                ; eax = 0 (pushed), 1 (done), 2 (error)
              *   pop %rcx                 ; (junk, will be reloaded)
              *   mov g_vm.sp -> %ecx      ; reload — helper may have pushed
+             *   cmp $2, %eax
+             *   je <epilogue>            ; with post-op advance, CHECK_ERROR next
              *   test %eax, %eax
              *   jz skip_taken            ; fall-through when not exhausted
              *   mov $(exit_target - entry_offset), %r13d
@@ -3779,7 +3851,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *
              * Same pending-patch bookkeeping as OP_JUMP_IF_FALSE. */
             if (pending_count + 1 > (int)(sizeof pending /
-                                          sizeof pending[0])) {
+                                          sizeof pending[0]) ||
+                bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
             uint16_t off = (uint16_t)(chunk->code[i + 1] |
@@ -3792,7 +3866,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
-            w = emit_test_rax_rax(w);
+            w = emit_cmp_imm8_eax(w, 2);
+            uint8_t *no_error_patch;
+            w = emit_jne_rel32(w, &no_error_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(no_error_patch, w);
+            w = emit_cmp_imm8_eax(w, 0);
 
             uint8_t *skip_patch;
             /* Take when ZF=0 (exhausted, eax != 0); skip taken arm when
@@ -3817,19 +3897,29 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *   mov %ecx -> g_vm.sp     ; sync sp cache
              *   push %rcx                ; align (body at 8-mod-16 -> 0-mod-16)
              *   movabs &jit_helper_index_get, %rax
-             *   call %rax
+             *   call %rax                ; eax = pending error status
              *   pop %rcx                 ; (junk, will be reloaded)
              *   mov g_vm.sp -> %ecx      ; reload — helper mutated sp
              *
-             * No return value to test — helper handles errors via
-             * runtime_error, picked up by CHECK_ERROR after the thunk
-             * returns. */
+             * A raised read has already completed this opcode's stack
+             * effect. Exit at i+1, preserving its current line and live
+             * frame for CHECK_ERROR instead of executing another opcode. */
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_index_get);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_patch;
+            w = emit_je_rel32(w, &ok_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 1 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_patch, w);
             i += 1;
         } else if (op == OP_INDEX_SET) {
             /* Stage 5a: inline buffer-write fast path; helper on any
@@ -4096,10 +4186,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                             (int32_t)line);
             /* Also stamp g_trace_current_line (the line prev_record_assign
              * writes into the history tape), mirroring the interpreter's
-             * CASE(LINE). Without this, temporal `at`/`when`/`state_at` and
-             * named interrogatives are silently wrong under JIT/OSR — frozen at
-             * the line where the thunk took over. %rax is scratch between ops. */
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_current_line);
+             * CASE(LINE). Resolve its per-attached-thread address when the
+             * thunk RUNS, not while it is compiled: chunks and their native
+             * code can be shared by serialized evals on another attached
+             * thread. %ecx is the cached VM sp and must survive the ABI call;
+             * trace_current_line_addr returns the destination in %rax. */
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w,
+                (uint64_t)(uintptr_t)&trace_current_line_addr);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
             w = emit_movl_imm_at_rax(w, (int32_t)line);
             /* Mirror CASE(LINE)'s tape hook.  On x86 the plain load supplies
              * the acquire semantics used by g_trace_enabled; trace_line owns

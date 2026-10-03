@@ -148,8 +148,6 @@ int main(int argc, char **argv) {
         return eigenscript_fmt(path, write_mode);
     }
 
-    trace_init();
-    atexit(trace_shutdown);
     /* #972: EIGS_OBS_GATE_STATS=1 also tallies observe-helper entries (the
      * per-unit verdict lines come from compile_ast); reported at exit so a
      * read-free program can be checked for `observe-calls 0`. */
@@ -162,6 +160,10 @@ int main(int argc, char **argv) {
      * which are EigsState bridge macros — attach before computing. */
     EigsState *eigs_st = eigs_state_new();
     eigs_thread_attach(eigs_st);
+    /* The CLI's main attachment is the tape opener. Native embedders that
+     * deliberately open a tape before attaching retain their separate zero. */
+    trace_init();
+    atexit(trace_shutdown);
     set_exe_dir(argc > 0 ? argv[0] : NULL);
 
     /* #660: SIGUSR1 live observer dump — an outside process can ask a
@@ -284,7 +286,8 @@ int main(int argc, char **argv) {
          * (state latch, reached through eigs_current), so eigs_thread_detach
          * below leaves nothing to read it through — the script path at the
          * bottom of main already captures it first, for the same reason. */
-        int repl_exit_code = g_exit_latched ? g_exit_latch_code : 0;
+        int repl_exit_code = 0;
+        (void)eigs_state_exit_requested(eigs_st, &repl_exit_code);
         trace_shutdown();
         /* Drop the global scope's bindings (closures defined at top level
          * die here), then collect the env<->fn cycles those closures left
@@ -398,12 +401,12 @@ int main(int argc, char **argv) {
     /* `exit of N` requests a specific code (and unwound via g_has_error); it
      * takes precedence over the generic uncaught-error code. Clear the unwind
      * flag so the teardown below sees a clean state. */
-    /* #739: the CODE comes from the state latch, so `exit of N` inside a
-     * spawned worker still decides the process's exit status; the unwind flag
-     * is cleared off THIS thread's request, so a worker's exit never erases a
-     * genuine main-thread error. */
-    int exit_code = g_exit_latched ? g_exit_latch_code
-                    : ((g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0);
+    /* #739/#1149: the CODE comes from the state latch, so `exit of N` inside
+     * a worker stops main and decides the process status. The unwind flag is
+     * cleared only for an exit request observed on THIS thread. */
+    int exit_code = 0;
+    if (!eigs_state_exit_requested(eigs_st, &exit_code))
+        exit_code = (g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0;
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release
      * it so exit is leak-clean. */

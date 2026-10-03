@@ -1,0 +1,59 @@
+# #1402: a catch creates its structured error dict while the run-owned intern
+# scope is active. The host error wrapper is created after sandbox_run restores
+# the host scope; it must not borrow equal-named keys (especially "message")
+# from that still-live run scope, which is released at the return boundary.
+# Read the returned keys after the boundary 100 times for both required shapes:
+# ASan catches the dangling key, while byte-exact equality catches corruption
+# that happens not to fault.
+
+ABI is 1
+CONST is 0
+GET_NAME is 25
+POP is 35
+CALL is 39
+RETURN is 40
+TRY_BEGIN is 54
+TRY_END is 55
+
+big is ""
+for i in range of 250:
+    big is big + "XXXXXXXX"
+
+# str_lower(1) raises inside try; its catch drops the structured error and a
+# later missing-name lookup supplies sandbox_run's host-returned error.
+late_error_code is [TRY_BEGIN,11,0,
+                     GET_NAME,0,0, CONST,1,0, CALL,1,0,
+                     TRY_END, RETURN,
+                     POP, GET_NAME,2,0, RETURN]
+late_error_desc is [ABI, late_error_code,
+                    ["str_lower", 1, "missing_after_catch"]]
+
+# The same catch shape around an allocation larger than max_bytes. The sticky
+# refusal makes sandbox_run return the budget error even though catch resumes.
+caught_budget_code is [TRY_BEGIN,11,0,
+                       GET_NAME,0,0, CONST,1,0, CALL,1,0,
+                       TRY_END, RETURN,
+                       POP, CONST,2,0, RETURN]
+caught_budget_desc is [ABI, caught_budget_code,
+                       ["str_lower", big, "caught-budget-survived"]]
+
+expected_error_keys is ["ki" + "nd", "mes" + "sage", "li" + "ne"]
+late_keys is []
+budget_keys is []
+for i in range of 100:
+    caught_budget is sandbox_run of [caught_budget_desc, 100000, 1000]
+    append of [budget_keys, keys of caught_budget["error"]]
+    late_error is sandbox_run of [late_error_desc, 100000, 100000]
+    append of [late_keys, keys of late_error["error"]]
+
+# Load the assertion helper only after every boundary read: loading libraries
+# may legitimately intern common metadata names globally and would mask the
+# run-owned/global collision this regression isolates.
+load_file of "lib/test.eigs"
+for i in range of 100:
+    assert_eq of [late_keys[i], expected_error_keys,
+                  "#1402: catch followed by later error keeps exact host error keys"]
+    assert_eq of [budget_keys[i], expected_error_keys,
+                  "#1402: byte-budget abort inside try keeps exact host error keys"]
+
+test_summary of null

@@ -1546,10 +1546,8 @@ void eigs_thread_drain_caches(EigsThread *th) {
     th->env_freelist = NULL;
     th->env_freelist_count = 0;
 
-    /* Returned sandbox dictionaries own detached intern entries until their
-     * Values are released. A clean thread normally has no live owners here,
-     * but drain defensively before freeing the table itself. */
-    env_intern_release_all_values();
+    /* Private promoted keys are Value-owned in the state registry; detaching
+     * their creator must not release keys still borrowed by surviving Values. */
 
     /* env_name_interns (#1065): release the THREAD's ref on its intern
      * table. Chunks created on this thread hold their own refs (they carry
@@ -1584,6 +1582,27 @@ void env_intern_table_unref(EnvInternTable *t) {
         }
     }
     free(t);
+}
+
+/* Leaf references: no outgoing runtime-object edges and no GC traversal.
+ * Callers serialize this list exactly as the names they publish. */
+static void intern_ref_add(EnvInternRef **refs, EnvInternTable *table) {
+    if (!table) return;
+    for (EnvInternRef *r = *refs; r; r = r->next)
+        if (r->table == table) return;
+    EnvInternRef *r = xmalloc(sizeof(*r));
+    env_intern_table_ref(table);
+    r->table = table; r->next = *refs; *refs = r;
+}
+static void intern_refs_release(EnvInternRef **refs) {
+    EnvInternRef *r = *refs; *refs = NULL;
+    while (r) {
+        EnvInternRef *next = r->next;
+        env_intern_table_unref(r->table); free(r); r = next;
+    }
+}
+void env_retain_intern_table(Env *env, EnvInternTable *table) {
+    intern_ref_add(&env->intern_refs, table);
 }
 
 void free_value(Value *v) {
@@ -1621,7 +1640,7 @@ void free_value(Value *v) {
                 if (me) env_decref(me);
             }
             for (int i = 0; i < v->data.dict.count; i++) {
-                /* keys are interned (env_intern_name) — do not free */
+                /* Keys have table/private-node ownership; do not free individually. */
                 val_decref(v->data.dict.vals[i]);
             }
             free(v->data.dict.keys);
@@ -1629,12 +1648,15 @@ void free_value(Value *v) {
             free(v->data.dict.hash.hashes);
             free(v->data.dict.hash.indices);
             free(v->data.dict.hash.generations);
+            intern_refs_release(&v->data.dict.intern_refs);
             break;
         case VAL_FN:
             free(v->data.fn.name);
-            /* params[i] are interned (lifetime owned by intern map); only free the array. */
+            /* Parameters keep an independent leaf table ref, separate from body. */
             free(v->data.fn.params);
             free(v->data.fn.param_hashes);
+            env_intern_table_unref(v->data.fn.param_intern_tbl);
+            v->data.fn.param_intern_tbl = NULL;
             if (v->data.fn.body_count != -1) {
                 /* AST-based function — free body nodes */
                 for (int i = 0; i < v->data.fn.body_count; i++)
@@ -1765,23 +1787,52 @@ Value* slot_to_value(EigsSlot s) {
     return &g_null_singleton;
 }
 
-Value* promote_if_arena(Value *v) {
-    if (!v || !v->arena) return v;
+/* One entry for each arena list temporarily marked during promotion.  The
+ * source list itself is the memo table: count == -1 means that items points
+ * at its heap copy.  Keeping the original fields here lets us restore the
+ * arena graph before returning.  This makes lookup O(1), including for
+ * attacker-chosen cyclic graphs, rather than turning every edge into a scan
+ * of a growing side table. */
+typedef struct {
+    Value *src;
+    Value *dst;
+    Value **items;
+    int count;
+    int capacity;
+    int copied_count;
+} PromoteEntry;
+
+#define PROMOTE_MAX_LISTS 100000
+
+static Value *promote_arena_scalar(Value *v) {
     if (v->type == VAL_NUM) {
-        /* #262 Step E: no observer fields to carry across the promotion. */
+        if (!sandbox_charge(sizeof(Value))) return NULL;
         return make_num_permanent(v->data.num);
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
+        size_t n = val_str_len(v);
+        if (!sandbox_charge(sizeof(Value) + n + 1)) return NULL;
         Value *h = xcalloc(1, sizeof(Value));
         h->type = v->type;
-        /* #1183: the source already knows its length — copy it, don't re-scan. */
-        size_t n = val_str_len(v);
         char *copy = xmalloc(n + 1);
         memcpy(copy, v->data.str ? v->data.str : "", n);
         copy[n] = '\0';
         val_str_set(h, copy, n);
         h->refcount = 1;
         return h;
+    }
+    return v;
+}
+
+Value* promote_if_arena(Value *v) {
+    if (!v || !v->arena) return v;
+    if (v->type == VAL_NUM || v->type == VAL_STR || v->type == VAL_JSON_RAW) {
+        Value *h = promote_arena_scalar(v);
+        /* A sandbox refusal is sticky and unwinds at the next dispatch, but a
+         * store may retain this result in host history before that unwind.
+         * Never let the arena pointer cross that boundary: the immortal null
+         * preserves callers' non-NULL contract without another allocation. */
+        return h ? h : &g_null_singleton;
     }
     if (v->type == VAL_NULL) {
         /* VAL_NULL has a single immortal singleton (g_null_singleton, arena=1).
@@ -1790,29 +1841,128 @@ Value* promote_if_arena(Value *v) {
         return v;
     }
     if (v->type == VAL_LIST) {
-        /* #873: an arena list stored into a binding or heap container
-         * outlives arena_reset as a dangling reference — silent wrong
-         * values, type confusion, even free() aborts when a decref
-         * walks the stale pointer. Deep-promote instead: a fresh heap
-         * list; arena children promote recursively (fresh rc=1,
-         * adopted), heap children are shared (incref'd). Arena lists
-         * are acyclic at promotion time — building a cycle requires
-         * mutating through a binding, and binding stores promote — so
-         * the recursion terminates. Aliasing between two references to
-         * the same UNBOUND arena temporary is not preserved (each
-         * promotes to its own copy); observing that would require a
-         * binding, which promotes. Lists are the only arena-capable
-         * container: make_dict/make_fn/buffers/text builders are
-         * heap-only constructors and never carry v->arena. */
-        Value *h = make_list_heap(v->data.list.count);
-        for (int i = 0; i < v->data.list.count; i++) {
-            Value *c = v->data.list.items[i];
-            Value *pc = promote_if_arena(c);
-            if (pc == c) val_incref(pc);
-            h->data.list.items[i] = pc;
+        PromoteEntry *work = NULL;
+        int work_count = 0;
+        int work_capacity = 0;
+        int refused = 0;
+
+        /* Discover and fill iteratively: native stack use is constant. */
+        Value *pending = v;
+        int wi = 0;
+        for (;;) {
+            if (pending) {
+                if (work_count == PROMOTE_MAX_LISTS) {
+                    rt_error(eigs_current && g_sandbox_active ? EK_SANDBOX : EK_LIMIT,
+                             0, "arena promotion exceeds %d lists",
+                             PROMOTE_MAX_LISTS);
+                    refused = 1;
+                    break;
+                }
+                if (work_count == work_capacity) {
+                    int old = work_capacity;
+                    int next = old ? old * 2 : 16;
+                    if (next > PROMOTE_MAX_LISTS) next = PROMOTE_MAX_LISTS;
+                    if (!sandbox_charge((size_t)(next - old) *
+                                        sizeof(PromoteEntry))) {
+                        refused = 1;
+                        break;
+                    }
+                    work = xrealloc_array(work, (size_t)next,
+                                          sizeof(PromoteEntry));
+                    work_capacity = next;
+                }
+                int cap = pending->data.list.count < 8
+                              ? 8 : pending->data.list.count;
+                if (!sandbox_charge(sizeof(Value) +
+                                    (size_t)cap * sizeof(Value *))) {
+                    refused = 1;
+                    break;
+                }
+                PromoteEntry *e = &work[work_count++];
+                e->src = pending;
+                e->items = pending->data.list.items;
+                e->count = pending->data.list.count;
+                e->capacity = pending->data.list.capacity;
+                e->copied_count = 0;
+                e->dst = make_list_heap(e->count);
+                /* Intrusive memo marker; restored on every exit below. */
+                pending->data.list.items = (Value **)e->dst;
+                pending->data.list.count = -1;
+                pending = NULL;
+            }
+
+            /* Breadth-first fill: wi only advances, so every edge costs O(1)
+             * native bookkeeping in addition to its charged copy work. */
+            while (wi < work_count &&
+                   work[wi].dst->data.list.count == work[wi].count)
+                wi++;
+            if (wi == work_count) break;
+
+            PromoteEntry *e = &work[wi];
+            int edge = e->dst->data.list.count;
+            Value *child = e->items[edge];
+            Value *copy;
+            int copy_is_fresh_scalar = 0;
+            if (child && child->arena && child->type == VAL_LIST) {
+                if (child->data.list.count == -1) {
+                    copy = (Value *)child->data.list.items;
+                } else {
+                    pending = child;
+                    continue;
+                }
+            } else if (child && child->arena) {
+                copy = promote_arena_scalar(child);
+                copy_is_fresh_scalar = 1;
+                if (!copy) {
+                    refused = 1;
+                    break;
+                }
+            } else {
+                copy = child;
+            }
+            if (!copy_is_fresh_scalar) val_incref(copy);
+            e->dst->data.list.items[e->dst->data.list.count++] = copy;
         }
-        h->data.list.count = v->data.list.count;
-        return h;
+
+        Value *root = work_count ? work[0].dst : NULL;
+        /* Restore the arena graph before any decref can invoke collection. */
+        for (int i = 0; i < work_count; i++) {
+            work[i].src->data.list.items = work[i].items;
+            work[i].src->data.list.count = work[i].count;
+            work[i].src->data.list.capacity = work[i].capacity;
+        }
+        if (refused) {
+            /* Hide every copied edge from cycle collection before dropping
+             * any of its references.  A decref can collect an entire copied
+             * cycle, so leaving even a sibling list traversable would let a
+             * later cleanup step follow an already-freed child. */
+            for (int i = 0; i < work_count; i++) {
+                Value *dst = work[i].dst;
+                work[i].copied_count = dst->data.list.count;
+                dst->data.list.count = 0;
+            }
+            for (int i = 0; i < work_count; i++) {
+                Value *dst = work[i].dst;
+                for (int j = 0; j < work[i].copied_count; j++) {
+                    Value *child = dst->data.list.items[j];
+                    dst->data.list.items[j] = NULL;
+                    val_decref(child);
+                }
+            }
+            for (int i = 0; i < work_count; i++) val_decref(work[i].dst);
+            /* As with scalar refusal, host observers can retain the return
+             * value before the sandbox unwinds and resets its arena. */
+            root = &g_null_singleton;
+        } else {
+            /* Edges own refs; the caller owns only the root constructor ref. */
+            for (int i = 1; i < work_count; i++) val_decref(work[i].dst);
+            /* A worker's sealed sandbox env is not an exit-snapshot root, and
+             * ordinary MT decrefs deliberately do not enter the candidate
+             * buffer. Preserve this promoted graph until deferred collection. */
+            if (g_vm_multithreaded) gc_note_possible_root_deferred(root);
+        }
+        free(work);
+        return root;
     }
     /* Remaining types (dict/fn/builtin/buffer/text builder) are
      * heap-only at construction; an arena flag on one is unreachable. */
@@ -1970,6 +2120,8 @@ Value* make_fn(const char *name, char **params, int param_count, Env *closure) {
     v->data.fn.params = xmalloc_array(param_count, sizeof(char*));
     v->data.fn.param_hashes = xmalloc_array(param_count, sizeof(uint32_t));
     v->data.fn.param_count = param_count;
+    v->data.fn.param_intern_tbl = param_count ? eigs_current->intern_tbl : NULL;
+    env_intern_table_ref(v->data.fn.param_intern_tbl);
     for (int i = 0; i < param_count; i++) {
         v->data.fn.params[i] = env_intern_name(params[i]);
         v->data.fn.param_hashes[i] = env_hash_name(params[i]);
@@ -2061,9 +2213,9 @@ Value* make_dict(int capacity) {
  * whole-dict reader (keys / values / len / printing / json / iteration /
  * equality) still works — those call eigs_module_ns_sync first.
  *
- * The Env* lives in this side table rather than in `struct Value` so the
- * Value stays 72 bytes: the flag byte fits in the struct's existing tail
- * padding, and only a flagged dict ever pays for the lookup.
+ * The Env* lives in this side table rather than in `struct Value`; only a
+ * flagged dictionary pays for the namespace lookup. Value layout is not a
+ * fixed-size contract.
  *
  * Ownership: attach takes env_incref; the edge is one GC_EDGE_TABLE row
  * (dict -> env), cleared by gc_clear_node and by free_value. Module
@@ -2467,11 +2619,15 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
          * boundary: trace history and other counted Value holders may retain
          * an inner dict even when that dict is not reachable from the
          * returned result. */
+        char *original = interned;
         interned = env_intern_scope_promote(dict, interned);
+        if (interned == original)
+            intern_ref_add(&dict->data.dict.intern_refs, eigs_current->intern_tbl);
     } else if (__builtin_expect(g_vm_multithreaded, 0)) {
         interned = (char *)shared_intern_key(key);
     } else {
         interned = env_intern_name(key);
+        intern_ref_add(&dict->data.dict.intern_refs, eigs_current->intern_tbl);
     }
     dict->data.dict.keys[dict->data.dict.count] = interned;
     Value *promoted = promote_if_arena(val);
@@ -2538,9 +2694,10 @@ void dict_set_owned(Value *dict, const char *key, Value *val) {
  * only the interned KEYS need rehoming. We deep-copy the value on send and
  * re-intern its dict keys into the process-global table above. Copying
  * also removes the old shared-by-reference concurrent-mutation footgun for the
- * data types it covers. Non-container types (fn/builtin/buffer/text_builder/
- * json) are still shared by refcount; sending a closure from a thread that then
- * exits remains unsupported (its interned params would dangle). */
+ * data types it covers. Buffers and text builders are mutable values, so they
+ * are copied too. Functions, builtins, and raw JSON remain shared by refcount;
+ * function parameters now retain their own intern table independently of
+ * the creating attachment. This does not permit cross-state Value transfer. */
 
 #define CHAN_CLONE_MAX_DEPTH 64
 static Value *chan_clone_rec(Value *v, int depth) {
@@ -2581,6 +2738,39 @@ static Value *chan_clone_rec(Value *v, int depth) {
              * handle_table_drain has cleared the flag — so this stays. */
             for (int i = 0; i < out->data.dict.count; i++)
                 out->data.dict.keys[i] = (char *)shared_intern_key(out->data.dict.keys[i]);
+            intern_refs_release(&out->data.dict.intern_refs);
+            env_intern_release_value(out);
+            return out;
+        }
+        case VAL_BUFFER: {
+            int n = v->data.buffer.count;
+            Value *out = xcalloc(1, sizeof(Value));
+            out->type = VAL_BUFFER;
+            out->data.buffer.count = n;
+            out->data.buffer.rows = v->data.buffer.rows;
+            out->data.buffer.cols = v->data.buffer.cols;
+            out->data.buffer.data = xcalloc(n > 0 ? (size_t)n : 1,
+                                            sizeof(double));
+            if (n > 0)
+                memcpy(out->data.buffer.data, v->data.buffer.data,
+                       (size_t)n * sizeof(double));
+            out->refcount = 1;
+            return out;
+        }
+        case VAL_TEXT_BUILDER: {
+            size_t cap = v->data.text_builder.cap;
+            Value *out = xcalloc(1, sizeof(Value));
+            out->type = VAL_TEXT_BUILDER;
+            out->data.text_builder.cap = cap;
+            out->data.text_builder.data = xmalloc(cap > 0 ? cap : 1);
+            out->data.text_builder.len = v->data.text_builder.len;
+            out->data.text_builder.parts = v->data.text_builder.parts;
+            if (v->data.text_builder.data)
+                memcpy(out->data.text_builder.data, v->data.text_builder.data,
+                       v->data.text_builder.len + 1);
+            else
+                out->data.text_builder.data[0] = '\0';
+            out->refcount = 1;
             return out;
         }
         /* Shared by refcount, not cloned. Enumerated rather than covered by a
@@ -2588,8 +2778,6 @@ static Value *chan_clone_rec(Value *v, int depth) {
          * ValType to choose clone-vs-share here. */
         case VAL_FN:
         case VAL_BUILTIN:
-        case VAL_BUFFER:
-        case VAL_TEXT_BUILDER:
         case VAL_JSON_RAW:
             val_incref(v);
             return v;
@@ -2743,7 +2931,9 @@ int is_truthy(Value *v) {
  * guard prevents runaway recursion on self-referential containers; beyond
  * it we fall back to identity. */
 static int values_equal_impl(Value *a, Value *b, int depth) {
-    if (a == b) return 1;
+    /* #1417: a buffer compared with itself still exposes its elements. Do
+     * not bypass normalization (or a strict NaN raise) through identity. */
+    if (a == b && (!a || a->type != VAL_BUFFER)) return 1;
     if (!a || !b) return 0;
     if (a->type != b->type) return 0;
     if (depth > 64) return a == b;
@@ -2773,8 +2963,13 @@ static int values_equal_impl(Value *a, Value *b, int depth) {
         }
         case VAL_BUFFER: {
             if (a->data.buffer.count != b->data.buffer.count) return 0;
-            for (int i = 0; i < a->data.buffer.count; i++)
-                if (a->data.buffer.data[i] != b->data.buffer.data[i]) return 0;
+            for (int i = 0; i < a->data.buffer.count; i++) {
+                double av = buffer_read_num(a, i);
+                if (g_has_error) return 0;
+                double bv = buffer_read_num(b, i);
+                if (g_has_error) return 0;
+                if (av != bv) return 0;
+            }
             return 1;
         }
         case VAL_TEXT_BUILDER:
@@ -3158,6 +3353,7 @@ static EnvInternValueOwner *env_intern_owner_find(Value *value) {
 }
 
 static void env_intern_owner_add(Value *value, EnvNameIntern *name) {
+    pthread_mutex_lock(&eigs_current->state->intern_owner_lock);
     EnvInternValueOwner *owner = env_intern_owner_find(value);
     if (!owner) {
         owner = xcalloc(1, sizeof(*owner));
@@ -3167,14 +3363,23 @@ static void env_intern_owner_add(Value *value, EnvNameIntern *name) {
     }
     name->owner_next = owner->names;
     owner->names = name;
+    value->intern_private = 1;
+    pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
 }
 
 static void env_intern_scope_remove(char *name) {
-    for (EnvInternValueOwner *owner = g_sandbox_intern_owners; owner; owner = owner->next)
-        for (EnvNameIntern **link = &owner->names; *link; link = &(*link)->owner_next)
+    EnvNameIntern *drop = NULL;
+    pthread_mutex_lock(&eigs_current->state->intern_owner_lock);
+    for (EnvInternValueOwner *owner = g_sandbox_intern_owners; owner; owner = owner->next) {
+        for (EnvNameIntern **link = &owner->names; *link; link = &(*link)->owner_next) {
             if ((*link)->name == name) {
-                EnvNameIntern *drop = *link; *link = drop->owner_next;
-                free(drop->name); free(drop); return; }
+                drop = *link; *link = drop->owner_next; break;
+            }
+        }
+        if (drop) break;
+    }
+    pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
+    if (drop) { free(drop->name); free(drop); }
 }
 
 size_t env_intern_debug_count(const char *prefix) {
@@ -3182,9 +3387,11 @@ size_t env_intern_debug_count(const char *prefix) {
     for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++)
         for (EnvNameIntern *it = g_env_name_interns[i]; it; it = it->next)
             if (!prefix || strncmp(it->name, prefix, strlen(prefix)) == 0) count++;
+    pthread_mutex_lock(&eigs_current->state->intern_owner_lock);
     for (EnvInternValueOwner *o = g_sandbox_intern_owners; o; o = o->next)
         for (EnvNameIntern *it = o->names; it; it = it->owner_next)
             if (!prefix || strncmp(it->name, prefix, strlen(prefix)) == 0) count++;
+    pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
     if (!prefix) {
         pthread_mutex_lock(&g_shared_key_mutex);
         count += g_shared_key_intern_count;
@@ -3226,17 +3433,24 @@ char *env_intern_scope_promote(Value *owner, char *name) {
             return copy->name;
         }
     }
+    EnvNameIntern *copy = NULL;
+    pthread_mutex_lock(&eigs_current->state->intern_owner_lock);
     for (EnvInternValueOwner *it = g_sandbox_intern_owners; it; it = it->next) {
         for (EnvNameIntern *held = it->names; held; held = held->owner_next) {
             if (held->name != name) continue;
-            if (it->value == owner) return held->name;
-            EnvNameIntern *copy = xcalloc(1, sizeof(*copy));
+            if (it->value == owner) {
+                pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
+                return held->name;
+            }
+            copy = xcalloc(1, sizeof(*copy));
             copy->name = xstrdup(name);
             copy->hash = h;
-            env_intern_owner_add(owner, copy);
-            return copy->name;
+            break;
         }
+        if (copy) break;
     }
+    pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
+    if (copy) { env_intern_owner_add(owner, copy); return copy->name; }
     return name; /* process-global channel keys and ordinary names are stable */
 }
 
@@ -3279,35 +3493,39 @@ void env_intern_scope_end(uint32_t scope, uint32_t previous) {
     g_sandbox_intern_scope = previous;
 }
 
-void env_intern_release_value(Value *value) {
-    if (!value) return;
-    EnvInternValueOwner **link = &g_sandbox_intern_owners;
-    while (*link && (*link)->value != value) link = &(*link)->next;
-    if (!*link) return;
-    EnvInternValueOwner *owner = *link;
-    *link = owner->next;
+static void env_intern_private_owner_free(EnvInternValueOwner *owner) {
     EnvNameIntern *name = owner->names;
     while (name) {
         EnvNameIntern *next = name->owner_next;
-        free(name->name);
-        free(name);
-        name = next;
+        free(name->name); free(name); name = next;
     }
     free(owner);
 }
 
-void env_intern_release_all_values(void) {
-    while (g_sandbox_intern_owners) {
-        EnvInternValueOwner *owner = g_sandbox_intern_owners;
-        g_sandbox_intern_owners = owner->next;
-        EnvNameIntern *name = owner->names;
-        while (name) {
-            EnvNameIntern *next = name->owner_next;
-            free(name->name);
-            free(name);
-            name = next;
-        }
-        free(owner);
+void env_intern_release_value(Value *value) {
+    if (!value || value->type != VAL_DICT || !value->intern_private ||
+        !eigs_current) return;
+    EigsState *st = eigs_current->state;
+    pthread_mutex_lock(&st->intern_owner_lock);
+    EnvInternValueOwner **link = &st->sandbox_intern_owners;
+    while (*link && (*link)->value != value) link = &(*link)->next;
+    EnvInternValueOwner *owner = *link;
+    if (owner) *link = owner->next;
+    value->intern_private = 0;
+    pthread_mutex_unlock(&st->intern_owner_lock);
+    if (owner) env_intern_private_owner_free(owner);
+}
+
+void env_intern_release_all_values(EigsState *st) {
+    /* Shutdown fallback after Values have ceased borrowing these names.
+     * Detach the registry under its lock; destruction never holds the lock. */
+    pthread_mutex_lock(&st->intern_owner_lock);
+    EnvInternValueOwner *owner = st->sandbox_intern_owners;
+    st->sandbox_intern_owners = NULL;
+    pthread_mutex_unlock(&st->intern_owner_lock);
+    while (owner) {
+        EnvInternValueOwner *next = owner->next;
+        env_intern_private_owner_free(owner); owner = next;
     }
 }
 
@@ -3316,10 +3534,14 @@ char *env_intern_name(const char *name) {
     int bucket = h & (ENV_NAME_INTERN_BUCKETS - 1);
     for (EnvNameIntern *it = g_env_name_interns[bucket]; it; it = it->next) {
         /* A nested sandbox must not borrow an outer run's temporary node:
-         * the inner result may outlive that outer binding and promote it. */
+         * the inner result may outlive that outer binding and promote it.
+         * The same rule applies after a run restores scope zero but before
+         * scope_end releases its nodes: host wrapper keys must resolve to the
+         * global pool, not briefly alias the run-owned equal spelling. */
         if (it->hash == h && strcmp(it->name, name) == 0 &&
-            (g_sandbox_intern_scope == 0 || it->sandbox_scope == 0 ||
-             it->sandbox_scope == g_sandbox_intern_scope))
+            (it->sandbox_scope == 0 ||
+             (g_sandbox_intern_scope != 0 &&
+              it->sandbox_scope == g_sandbox_intern_scope)))
             return it->name;
     }
     EnvNameIntern *it = xcalloc(1, sizeof(EnvNameIntern));
@@ -3465,6 +3687,8 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     env->names[env->count] = __builtin_expect(g_vm_multithreaded, 0)
                              ? (char *)shared_intern_key(name)
                              : env_intern_name(name);
+    if (!g_vm_multithreaded)
+        env_retain_intern_table(env, eigs_current->intern_tbl);
     Value *promoted = promote_if_arena(val);
     if (promoted == val) val_incref(promoted);
     env->values[env->count] = slot_from_value(promoted);
@@ -3531,6 +3755,7 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
 
 /* Core local-set implementation: caller has already interned `name`. */
 void env_set_local_pre_interned_slot(Env *env, const char *interned,
+                                      EnvInternTable *owner,
                                      uint32_t h, EigsSlot s) {
     /* #1144: the probe MUST be inside the hold. Its old comment — "single
      * writer (module code runs on the main thread only), so the unlocked
@@ -3592,6 +3817,7 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
     env->names[env->count] = __builtin_expect(g_vm_multithreaded, 0)
                              ? (char *)shared_intern_key(interned)
                              : (char *)interned;
+    if (!g_vm_multithreaded) env_retain_intern_table(env, owner);
     EigsSlot stored = s;
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);
@@ -3620,7 +3846,8 @@ store:
 
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
     if (h == 0) h = env_hash_name(name);
-    env_set_local_pre_interned_slot(env, env_intern_name(name), h, s);
+    env_set_local_pre_interned_slot(env, env_intern_name(name),
+                                      eigs_current->intern_tbl, h, s);
 }
 
 /* Bind a parameter into a freshly-created call env. Caller guarantees:
@@ -3630,6 +3857,7 @@ void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot 
  *     (compiler rejects duplicate params)
  * Skips env_hash_find. */
 void env_bind_fresh_param_slot(Env *env, const char *interned,
+                               EnvInternTable *owner,
                                uint32_t h, EigsSlot s) {
     if (env->count >= env->capacity) {
         int new_cap = env->capacity * 2;
@@ -3640,6 +3868,7 @@ void env_bind_fresh_param_slot(Env *env, const char *interned,
         env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
         env->capacity = new_cap;
     }
+    env_retain_intern_table(env, owner);
     env->names[env->count] = (char*)interned;
     EigsSlot stored = s;
     if (slot_is_ptr(s)) {
@@ -3771,6 +4000,7 @@ void env_decref(Env *env) {
     /* #262 Phase-1: drop slot-keyed observer state on both park and free so a
      * recycled env never carries another binding's trajectory. */
     observer_slot_reset(env);
+    intern_refs_release(&env->intern_refs);
     if (env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
         g_env_freelist_count < ENV_FREELIST_CAP) {
         env->count = 0;
@@ -3840,6 +4070,7 @@ void env_destroy_final(Env *env) {
     for (int i = 0; i < count; i++)
         slot_decref(vals[i]);
     observer_slot_reset(env);   /* #262 Phase-1 */
+    intern_refs_release(&env->intern_refs);
     env_free_retired(env);      /* #607 */
     free(vals);
     free(env->names);
@@ -4204,6 +4435,23 @@ static int gc_env_is_node(Env *e) {
         GC_EDGE_TABLE(GC_EDGE_WALK, CHILD_OBJ, CHILD_KIND, BODY)              \
     } while (0)
 
+/* Traversal work includes the node and every slot the walker tests, even
+ * leaves and duplicate references. Derive it from the ownership table so
+ * budgeting cannot drift from traversal. No extra child walk is needed. */
+#define GC_EDGE_WORK(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR,         \
+                     _x1, _x2, _x3)                                         \
+    if (GUARD) work += (uint64_t)(COUNT);
+
+static uint64_t gc_node_work(void *obj, int kind) {
+    int _k = kind;
+    Env *_e = (Env *)obj;
+    EigsChunk *_c = (EigsChunk *)obj;
+    Value *_v = (Value *)obj;
+    uint64_t work = 1;
+    GC_EDGE_TABLE(GC_EDGE_WORK, 0, 0, 0)
+    return work;
+}
+
 /* Clear every outgoing edge of a garbage node (exactly the edges
  * GC_EDGE_TABLE lists, leaf refs included) so the cycle is broken; the
  * node itself stays allocated (pinned) until the unpin pass. */
@@ -4242,16 +4490,16 @@ static void gc_clear_node(void *obj, int kind) {
  * to grow by a fraction of the last universe before the next collection
  * makes the amortised scan cost O(1) per capture event; when the heap is
  * mostly captured envs (last universe ~ live) this is the old 2x rule. */
-/* #1096, the possible-root side: a collection seeded by N buffered candidates
- * walks everything reachable from them (the AOT compiler: 990 collections in
- * a 6-second compile, each over ~2800 objects, live captured envs 0). A fixed
- * GC_VAL_THRESHOLD made the cadence proportional to allocations while the
- * walk grew with the heap. Require the candidate count to reach a fraction of
- * the last universe before collecting again (as many candidates as objects the
- * last walk touched, so the amortised walk cost per candidate is O(1); garbage
- * cycles wait for at most that many registrations). */
-static int gc_val_next_threshold(int last_universe) {
-    long t = last_universe;   /* one candidate per object the last walk touched: O(1) amortised */
+/* #1096/#1442, the possible-root side: budget surviving traversal WORK,
+ * not just nodes. A dense live graph has many slots per node; a node-only
+ * budget repeatedly rescans its edges during short-lived task churn. Count
+ * one unit per surviving node plus each owned slot tested by its walker
+ * (including leaves). Garbage contributes nothing to the next walk's cost,
+ * so garbage-heavy collections return to the floor rather than accumulating
+ * ~8200 candidates when only ~5 nodes survive. The floor amortises setup;
+ * the cap bounds the candidate buffer. Use wide arithmetic before clamping. */
+static int gc_val_next_threshold(uint64_t work) {
+    uint64_t t = work;
     if (t < GC_VAL_THRESHOLD) t = GC_VAL_THRESHOLD;
     if (t > 100000000L) t = 100000000L;
     return (int)t;
@@ -4265,10 +4513,11 @@ static int gc_next_threshold(int live, int last_universe) {
     return (int)t;
 }
 
-static void gc_collect_impl(Value **seeds, int seed_count) {
+static void gc_collect_impl(Value **seeds, int seed_count,
+                            int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
-    if (!g_gc_envs && seed_count == 0) {
-        g_gc_threshold = GC_THRESHOLD_MIN;
+    if ((!include_captured_envs || !g_gc_envs) && seed_count == 0) {
+        if (include_captured_envs) g_gc_threshold = GC_THRESHOLD_MIN;
         return;
     }
     g_in_gc = 1;
@@ -4283,8 +4532,10 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
      * edge counts, including duplicate edges and self references. The graph
      * stays unchanged until clearing, so discovery also records which nodes
      * have no node children; marking need not scan their leaf slots again. */
-    for (Env *e = g_gc_envs; e; e = e->gc_next)
-        gcu_add(&u, e, GC_KIND_ENV);
+    if (include_captured_envs) {
+        for (Env *e = g_gc_envs; e; e = e->gc_next)
+            gcu_add(&u, e, GC_KIND_ENV);
+    }
     for (int s = 0; s < seed_count; s++) {
         gcu_add(&u, seeds[s], GC_KIND_VAL);
         u.pinned[gcu_find(&u, seeds[s])]++;
@@ -4319,19 +4570,27 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     if (bad) {
         if (eigs_env_flag("EIGS_GC_DEBUG"))
             fprintf(stderr, "[gc] accounting mismatch — collection aborted\n");
+        /* The graph is unchanged: recover its discovery work only on abort,
+         * so successful collections never budget garbage they will discard. */
+        uint64_t discovery_work = 0;
+        for (int n = 0; n < u.count; n++)
+            discovery_work += gc_node_work(u.objs[n], u.kind[n]);
         free(stack);
         free(u.table); free(u.objs); free(u.kind);
         free(u.internal); free(u.pinned); free(u.mark);
         free(u.has_node_children);
-        g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
-        g_gc_val_threshold = gc_val_next_threshold(u.count);
+        if (include_captured_envs)
+            g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
+        g_gc_val_threshold = gc_val_next_threshold(discovery_work);
         g_in_gc = 0;
         return;
     }
 
     /* 4. Mark everything reachable from the roots within U. */
+    uint64_t survivor_work = 0;
     while (sp > 0) {
         int n = stack[--sp];
+        survivor_work += gc_node_work(u.objs[n], u.kind[n]);
         if (!u.has_node_children[n]) continue;
         GC_FOR_EACH_CHILD(&u, n, child, child_kind, {
             (void)child_kind;
@@ -4371,8 +4630,9 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
     free(u.table); free(u.objs); free(u.kind);
     free(u.internal); free(u.pinned); free(u.mark);
     free(u.has_node_children);
-    g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
-    g_gc_val_threshold = gc_val_next_threshold(u.count);
+    if (include_captured_envs)
+        g_gc_threshold = gc_next_threshold(g_gc_captured_live, u.count);
+    g_gc_val_threshold = gc_val_next_threshold(survivor_work);
     g_in_gc = 0;
 }
 
@@ -4384,15 +4644,29 @@ static void gc_collect_impl(Value **seeds, int seed_count) {
  * pin so it survives until the next collection, which decides via the same
  * edge-accounting whether it (and its cycle) is actually garbage.
  *
- * Gated exactly like env_mark_captured: off when GC is disabled, mid-collection
- * (the collector's own decrefs must not re-register), or multithreaded (the
- * buffer is single-threaded-only — MT value cycles are rare and swept at exit
- * via the global snapshot; this keeps the hot decref lock-free). */
-void gc_note_possible_root(Value *v) {
-    if (!g_gc_enabled || g_in_gc || g_vm_multithreaded || v->gc_buffered)
+ * Gated off when GC is disabled or mid-collection (the collector's own decrefs
+ * must not re-register).  In multithreaded states the state GC lock protects
+ * the shared buffer.  This matters for roots that are not reachable from the
+ * exit snapshot, notably a sandbox's sealed, short-lived environment: a worker
+ * can drop its last external reference to a promoted cycle while MT collection
+ * is deferred, and the candidate pin must survive until the last worker joins.
+ */
+static void gc_buffer_possible_root(Value *v) {
+    if (!g_gc_enabled || g_in_gc) return;
+    int mt = g_vm_multithreaded;
+    if (mt) pthread_mutex_lock(&eigs_current->state->gc_lock);
+    if (v->gc_buffered) {
+        if (mt) pthread_mutex_unlock(&eigs_current->state->gc_lock);
         return;
-    v->gc_buffered = 1;
-    v->refcount++;   /* buffer pin — single-threaded here, so plain ++ */
+    }
+    /* The caller holds a live owner through registration. Emitted x86 testb
+     * may read this atomic byte as a hint in an already-active native frame;
+     * it never publishes ownership or registry data. C MT decrement paths
+     * skip the hint, and the helper rechecks MT. Pin and insertion finish
+     * under gc_lock before unlock; only post-MT collection clears the flag. */
+    __atomic_store_n(&v->gc_buffered, 1, __ATOMIC_RELAXED);
+    if (mt) __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
+    else v->refcount++;
     if (g_gc_val_count >= g_gc_val_cap) {
         g_gc_val_cap = g_gc_val_cap ? g_gc_val_cap * 2 : 64;
         g_gc_val_buf = xrealloc_array(g_gc_val_buf, g_gc_val_cap, sizeof(Value *));
@@ -4400,16 +4674,27 @@ void gc_note_possible_root(Value *v) {
     g_gc_val_buf[g_gc_val_count++] = v;
     /* #1096: the possible-root trigger is cost-aware -- see gc_val_next_threshold. */
     if (!g_gc_val_threshold) g_gc_val_threshold = GC_VAL_THRESHOLD;
-    if (__builtin_expect(g_gc_val_count >= g_gc_val_threshold, 0))
+    int should_collect = !mt && g_gc_val_count >= g_gc_val_threshold;
+    if (mt) pthread_mutex_unlock(&eigs_current->state->gc_lock);
+    if (__builtin_expect(should_collect, 0))
         gc_collect_cycles();
 }
 
-void gc_collect_cycles(void) {
+void gc_note_possible_root(Value *v) {
+    if (g_vm_multithreaded) return;
+    gc_buffer_possible_root(v);
+}
+
+void gc_note_possible_root_deferred(Value *v) {
+    gc_buffer_possible_root(v);
+}
+
+static void gc_drain_value_candidates(int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
     /* Feed the value-candidate buffer in as pinned seeds (each holds exactly
-     * one buffer pin, accounted like the exit snapshot's), alongside the
-     * captured-env registry. */
-    gc_collect_impl(g_gc_val_buf, g_gc_val_count);
+     * one buffer pin, accounted like the exit snapshot's), optionally
+     * alongside the captured-env registry. */
+    gc_collect_impl(g_gc_val_buf, g_gc_val_count, include_captured_envs);
     /* Drain the buffer: clear the buffered flags, then drop each pin. The
      * collection has already broken any garbage cycle's internal edges, so the
      * final pin drop frees the garbage; live candidates keep their other refs.
@@ -4423,6 +4708,18 @@ void gc_collect_cycles(void) {
         for (int i = 0; i < n; i++) val_decref(g_gc_val_buf[i]);
         g_in_gc = 0;
     }
+}
+
+void gc_collect_cycles(void) {
+    gc_drain_value_candidates(1);
+}
+
+void gc_collect_value_candidates(void) {
+    /* Sandbox budgets end at each invocation, so their state-wide candidate
+     * pins must end there too. Seed only from those candidates: captured envs
+     * reached from a candidate are still traversed, but unrelated captured
+     * graphs and their adaptive threshold are left alone. */
+    gc_drain_value_candidates(0);
 }
 
 /* ---- Module cache (Phase 0a) ----------------------------------------
@@ -4612,7 +4909,7 @@ void gc_collect_at_exit(Env *global) {
         }
     }
     if (global) env_clear(global);
-    gc_collect_impl(seeds, seed_count);
+    gc_collect_impl(seeds, seed_count, 1);
     for (int i = 0; i < seed_count; i++)
         val_decref(seeds[i]);
     free(seeds);

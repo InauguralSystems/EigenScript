@@ -29,7 +29,28 @@ asking the running program about its own state and history.
 | errors | exceptions | exceptions | `Result` | conditions | `try`/`catch` |
 | self-inspection | none | none | none | macros | interrogatives + observer |
 
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
+
+`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result.
+
+Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
+
+`lib/eigen.eigs` snapshots the host values used by its tokenizer, parser, evaluator, import helpers, and fresh meta environments when it loads (#1386). Later host builtin rebinding does not change those dependencies, including entropy's `log`/`divide` calls. For `load_file`, the snapshots use values visible during initialization; loaded code still shares the host scope. String conversion still uses the pristine reserved f-string bridge. Explicit custom environments, debug hooks, and rebinding the interpreter's own helper names remain caller-controlled; captured caller-defined functions retain their own binding behavior.
+
 ## Variables and arithmetic
+
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
 
 Python:
 
@@ -139,6 +160,12 @@ print of (c of null)
 
 ## Lists: map / filter / comprehension
 
+Arena-backed lists are promoted iteratively when they escape into longer-lived
+storage. Repeated references to the same source list share one promoted list.
+A promotion may contain at most 100,000 distinct arena-backed lists; exceeding
+it raises a catchable `limit` error, or `sandbox` inside a sandbox. Promotion
+copies and bookkeeping count toward an active sandbox allocation budget.
+
 Python:
 
 ```python
@@ -207,6 +234,15 @@ the rest accept either, and hand back a buffer when every operand was one.
 `matmul`, `matmul_at`, and `matmul_bt` round each multiplication to binary64
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.
+Raw non-finite results may remain in a buffer's internal work area, but every
+scalar read applies EigenScript's numeric guard: infinity saturates at
+±`1e308`, and a NaN raises in strict mode (or becomes `0` and sets the invalid
+math flag under `EIGS_STRICT=0`). Structural buffer equality and scalar
+reductions normalize each input before comparison or arithmetic; the reduction
+association contracts remain unchanged. Mixed buffer/list tensor operations and
+numeric byte/sample/device conversions also normalize reads and stop on the
+first error. Byte conversion truncates and wraps modulo 256 after normalization.
+Raw copies, typed serialization and buffer-only work areas preserve their data.
 
 One place EigenScript is louder than NumPy: an out-of-range index in `gather`
 **raises** rather than answering a stand-in, on both containers — NumPy's
@@ -299,6 +335,12 @@ caught: boom
 caught: type_mismatch at line 7
 ```
 
+The optional model extension also uses catchable `value` errors for context
+limits: `eigen_generate` and `eigen_eval_loss` reject prompts longer than the
+loaded model's `max_seq_len`, while `native_train_step_builtin` checks the
+combined input and output length. This refusal applies even with
+`EIGS_STRICT=0`; context truncation is the caller's explicit choice.
+
 ## Pipes (vs Lisp threading / shell pipes)
 
 Clojure:
@@ -320,6 +362,15 @@ print of (5 |> double |> inc)
 
 ## Concurrency
 
+EigenScript's trace replay identifies script workers by their parent and that
+parent's spawn occurrence. Independent embedding threads use host-provided
+stable keys; matching does not depend on first-event scheduling. Unbound replay
+calls raise instead of borrowing another thread's nondeterministic values.
+The tape association contract is documented in `docs/TRACE.md`.
+Replay session changes require an explicit quiescent host advance, which refuses
+while a sibling has an unread outcome. Memory replay suspends and restores the
+file source's cursor, pending outcomes, correspondence and strictness together.
+
 Python (threads + queue):
 
 ```python
@@ -340,10 +391,23 @@ print of (recv of ch)
 42
 ```
 
+Channel messages and joined/task results deep-copy ordinary values, including
+buffers and text builders. Closures keep their captured environment by
+reference, and resource handles still name shared process state; the executable
+kind table and graph-depth limits are in `docs/CONCURRENCY.md`.
+
 One difference in failure: a Python thread's uncaught exception is printed
 and the process still exits 0. A `spawn`ed EigenScript worker that dies of
 an uncaught error fails the whole run (exit status 1), joined or not — the
 same rule as its cooperative tasks (see SPEC.md "Concurrency").
+A worker's `exit of N` requests an uncatchable stop of the whole state:
+blocked concurrency calls wake, and VM threads unwind when they observe the
+request at a loop back edge or builtin return. The first request sets the
+process status. Teardown retains workers until native I/O or host callbacks
+return; those calls are not asynchronously cancelled. An embedded worker keeps
+the stop scope of its spawning eval, isolated from later outer evals.
+Cooperative task IDs are opaque numeric handles: their packed generation
+prevents a detached task's recycled slot from naming a later task.
 
 ## Convergence loops: boilerplate you stop writing
 

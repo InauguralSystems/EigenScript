@@ -107,23 +107,7 @@ static int json_get_int(const char *json, const char *key, int fallback) {
 
 static void json_escape_to(strbuf *sb, const char *s) {
     strbuf_append_char(sb, '"');
-    for (; *s; s++) {
-        switch (*s) {
-            case '"': strbuf_append(sb, "\\\""); break;
-            case '\\': strbuf_append(sb, "\\\\"); break;
-            case '\n': strbuf_append(sb, "\\n"); break;
-            case '\r': strbuf_append(sb, "\\r"); break;
-            case '\t': strbuf_append(sb, "\\t"); break;
-            default:
-                if ((unsigned char)*s < 0x20) {
-                    char esc[8];
-                    snprintf(esc, sizeof(esc), "\\u%04x", (unsigned char)*s);
-                    strbuf_append(sb, esc);
-                } else {
-                    strbuf_append_char(sb, *s);
-                }
-        }
-    }
+    eigs_json_escape_append(sb, s, SIZE_MAX);
     strbuf_append_char(sb, '"');
 }
 
@@ -135,7 +119,8 @@ static void dap_response(int request_seq, const char *command,
     strbuf_init(&sb);
     strbuf_append_fmt(&sb,
         "{\"seq\":%d,\"type\":\"response\",\"request_seq\":%d,"
-        "\"success\":true,\"command\":\"%s\"", g_seq++, request_seq, command);
+        "\"success\":true,\"command\":", g_seq++, request_seq);
+    json_escape_to(&sb, command);
     if (body_json) strbuf_append_fmt(&sb, ",\"body\":%s", body_json);
     strbuf_append_char(&sb, '}');
     dap_send(sb.data);
@@ -148,8 +133,9 @@ static void dap_error(int request_seq, const char *command,
     strbuf_init(&sb);
     strbuf_append_fmt(&sb,
         "{\"seq\":%d,\"type\":\"response\",\"request_seq\":%d,"
-        "\"success\":false,\"command\":\"%s\",\"message\":",
-        g_seq++, request_seq, command);
+        "\"success\":false,\"command\":", g_seq++, request_seq);
+    json_escape_to(&sb, command);
+    strbuf_append(&sb, ",\"message\":");
     json_escape_to(&sb, message);
     strbuf_append_char(&sb, '}');
     dap_send(sb.data);
@@ -159,8 +145,9 @@ static void dap_error(int request_seq, const char *command,
 static void dap_event(const char *event, const char *body_json) {
     strbuf sb;
     strbuf_init(&sb);
-    strbuf_append_fmt(&sb, "{\"seq\":%d,\"type\":\"event\",\"event\":\"%s\"",
-                      g_seq++, event);
+    strbuf_append_fmt(&sb, "{\"seq\":%d,\"type\":\"event\",\"event\":",
+                      g_seq++);
+    json_escape_to(&sb, event);
     if (body_json) strbuf_append_fmt(&sb, ",\"body\":%s", body_json);
     strbuf_append_char(&sb, '}');
     dap_send(sb.data);
@@ -170,8 +157,9 @@ static void dap_event(const char *event, const char *body_json) {
 static void dap_stopped(const char *reason) {
     strbuf sb;
     strbuf_init(&sb);
-    strbuf_append_fmt(&sb, "{\"reason\":\"%s\",\"threadId\":1,"
-                      "\"allThreadsStopped\":true}", reason);
+    strbuf_append(&sb, "{\"reason\":");
+    json_escape_to(&sb, reason);
+    strbuf_append(&sb, ",\"threadId\":1,\"allThreadsStopped\":true}");
     dap_event("stopped", sb.data);
     strbuf_free(&sb);
 }
@@ -202,10 +190,11 @@ static uint32_t frame_id_to_serial(int fid) {
     return g_tape.scopes[idx].serial;
 }
 
-static int serial_to_frame_id(uint32_t serial) {
+static int serial_to_frame_id(uint32_t serial, uint64_t stream) {
     if (serial == 0) return 1;
     for (int i = 0; i < g_tape.nscopes; i++)
-        if (g_tape.scopes[i].serial == serial) return i + 2;
+        if (g_tape.scopes[i].serial == serial &&
+            g_tape.scopes[i].stream == stream) return i + 2;
     return 1;
 }
 
@@ -216,11 +205,11 @@ static int cur_line(void) {
 /* Last source line at which frame `serial` was active at or before the
  * current position — the current line for the innermost frame, the
  * call-progress line for outer ones. 0 when the frame never assigned. */
-static int frame_line_at(uint32_t serial) {
+static int frame_line_at(uint32_t serial, uint64_t stream) {
     int bound = (g_pos + 1 < g_tape.nsteps) ? g_tape.steps[g_pos + 1]
                                             : g_tape.nrecs;
     for (int i = bound - 1; i >= 0; i--)
-        if (g_tape.recs[i].scope == serial)
+        if (g_tape.recs[i].scope == serial && g_tape.recs[i].stream == stream)
             return g_tape.recs[g_tape.steps[g_tape.recs[i].step]].line;
     return 0;
 }
@@ -251,13 +240,15 @@ static void handle_stack_trace(int rseq) {
     strbuf_init(&sb);
     strbuf_append(&sb, "{\"stackFrames\":[");
     uint32_t sc = tape_scope_at(&g_tape, g_pos);
+    uint64_t stream = g_tape.recs[g_tape.steps[g_pos]].stream;
     int n = 0;
     for (;;) {
-        const ScopeInfo *si = tape_scope_info(&g_tape, sc);
+        const ScopeInfo *si = tape_scope_info_stream(&g_tape, sc, stream);
         const char *name = sc == 0 ? "<module>" : (si ? si->name : "?");
-        int line = n == 0 ? cur_line() : frame_line_at(sc);
+        int line = n == 0 ? cur_line() : frame_line_at(sc, stream);
         if (n) strbuf_append_char(&sb, ',');
-        strbuf_append_fmt(&sb, "{\"id\":%d,\"name\":", serial_to_frame_id(sc));
+        strbuf_append_fmt(&sb, "{\"id\":%d,\"name\":",
+                          serial_to_frame_id(sc, stream));
         json_escape_to(&sb, name);
         strbuf_append_fmt(&sb, ",\"line\":%d,\"column\":1", line);
         append_source(&sb);
@@ -339,9 +330,13 @@ static void handle_variables(int rseq, const char *msg) {
         }
     } else if (ref >= VR_LOCALS) {
         uint32_t serial = frame_id_to_serial(ref - VR_LOCALS);
+        int fidx = ref - VR_LOCALS - 2;
+        uint64_t stream = fidx >= 0 && fidx < g_tape.nscopes
+                        ? g_tape.scopes[fidx].stream
+                        : g_tape.recs[g_tape.steps[g_pos]].stream;
         for (int i = 0; i < g_tape.nnames; i++) {
             const NameHist *h = &g_tape.names[i];
-            if (h->scope != serial) continue;
+            if (h->scope != serial || h->stream != stream) continue;
             if (trace_name_is_internal(h->name)) continue;
             if (!tape_latest_at(h, g_pos)) continue;
             if (n) strbuf_append_char(&sb, ',');
@@ -417,13 +412,17 @@ static void handle_evaluate(int rseq, const char *msg) {
      * bare names only — the tape holds folds, not an evaluator. */
     int fid = json_get_int(msg, "frameId", 0);
     uint32_t sc = fid > 0 ? frame_id_to_serial(fid) : tape_scope_at(&g_tape, g_pos);
+    int fidx = fid - 2;
+    uint64_t stream = fidx >= 0 && fidx < g_tape.nscopes
+                    ? g_tape.scopes[fidx].stream
+                    : g_tape.recs[g_tape.steps[g_pos]].stream;
     const NameHist *h = NULL;
     for (;;) {
-        h = tape_hist_for(&g_tape, expr, sc, 0);
+        h = tape_hist_for_stream(&g_tape, expr, sc, stream, 0);
         if (h && tape_latest_at(h, g_pos)) break;
         h = NULL;
         if (sc == 0) break;
-        const ScopeInfo *si = tape_scope_info(&g_tape, sc);
+        const ScopeInfo *si = tape_scope_info_stream(&g_tape, sc, stream);
         sc = si ? si->parent : 0;
     }
     if (!h) {

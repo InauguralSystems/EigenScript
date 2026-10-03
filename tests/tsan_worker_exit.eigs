@@ -1,0 +1,9 @@
+# Worker exit stops the state (#1535), including the joined parent. The runner
+# requires exit 5 and exactly the pre-exit marker, with no continuation output.
+define done() as:
+    print of "WORKER_EXIT_REQUEST"
+    exit of 5
+    print of "WORKER_CONTINUED"
+h is spawn of done
+thread_join of h
+print of "PARENT_CONTINUED"

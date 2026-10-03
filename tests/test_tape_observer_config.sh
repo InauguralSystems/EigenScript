@@ -211,7 +211,7 @@ grep -q '^O ' "$TMPDIR/plain.tape" \
 # would make one unfiltered `p`/DAP locals request consume disproportionate
 # CPU. This is an aggregate-work limit, not merely a file-size limit.
 WORK_TAPE="$TMPDIR/observer-work-limit.tape"
-head -1 "$TMPDIR/plain.tape" > "$WORK_TAPE"
+head -2 "$TMPDIR/plain.tape" > "$WORK_TAPE"
 for _ in $(seq 1 1000); do
     echo 'O 0 cfg 0.001 0.01 0.1 10 0.001' >> "$WORK_TAPE"
 done
@@ -229,29 +229,28 @@ RC=$?
             "rc=$RC $(head -1 "$TMPDIR/work-limit.err")"
 
 # ---- 7. #411 version/compat path. The `O` records are an ENCODING change,
-# so TRACE_FORMAT_VERSION went 3 -> 4 for stream identities (after 2 -> 3 added O records) and the rule is the standing one:
-# version-and-reject, never migrate. A v3 tape — one recorded by any earlier
-# binary, whose knob calls are simply not on it — is refused loudly by both
-# the stepper and replay rather than silently classified at the defaults.
-head -1 "$TMPDIR/thr.tape" | grep -q '^V 4 ' \
-    && ok "tapes written by this build stamp format v4" \
-    || fail "tapes written by this build stamp format v4" \
+# so TRACE_FORMAT_VERSION is now 5 for correspondence declarations.
+# Version-and-reject, never migrate: a v4 tape has stream IDs but no
+# host/causal associations and is refused by both the stepper and replay.
+head -1 "$TMPDIR/thr.tape" | grep -q '^V 5 ' \
+    && ok "tapes written by this build stamp format v5" \
+    || fail "tapes written by this build stamp format v5" \
             "$(head -1 "$TMPDIR/thr.tape")"
 
-V2="$TMPDIR/v3.tape"
-sed "1s/^V 4 /V 3 /" "$TMPDIR/thr.tape" > "$V2"
+V2="$TMPDIR/v4.tape"
+sed "1s/^V 5 /V 4 /" "$TMPDIR/thr.tape" > "$V2"
 echo q | "$EIGS" --step "$V2" "$TMPDIR/thr.eigs" >/dev/null 2>"$TMPDIR/v2.err"
 RC=$?
-[ "$RC" -eq 3 ] && grep -q "tape format v3" "$TMPDIR/v2.err" \
-    && ok "a v3 (pre-stream-id) tape is refused by --step with exit 3" \
-    || fail "a v3 (pre-stream-id) tape is refused by --step with exit 3" \
+[ "$RC" -eq 3 ] && grep -q "tape format v4" "$TMPDIR/v2.err" \
+    && ok "a v4 (pre-association) tape is refused by --step with exit 3" \
+    || fail "a v4 (pre-association) tape is refused by --step with exit 3" \
             "rc=$RC $(head -1 "$TMPDIR/v2.err")"
 
 EIGS_REPLAY="$V2" "$EIGS" "$TMPDIR/thr.eigs" >/dev/null 2>"$TMPDIR/v2r.err"
 RC=$?
-[ "$RC" -eq 3 ] && grep -q "format v3" "$TMPDIR/v2r.err" \
-    && ok "a v3 (pre-stream-id) tape is refused by EIGS_REPLAY with exit 3" \
-    || fail "a v3 (pre-stream-id) tape is refused by EIGS_REPLAY with exit 3" \
+[ "$RC" -eq 3 ] && grep -q "format v4" "$TMPDIR/v2r.err" \
+    && ok "a v4 (pre-association) tape is refused by EIGS_REPLAY with exit 3" \
+    || fail "a v4 (pre-association) tape is refused by EIGS_REPLAY with exit 3" \
             "rc=$RC $(head -1 "$TMPDIR/v2r.err")"
 
 # The two checks above rewrite this build's own header, which proves the
