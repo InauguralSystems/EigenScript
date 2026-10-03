@@ -1580,17 +1580,10 @@ static void obs_cfg_sync(void) {
     if (!eigs_current || !eigs_current->state) return;
     EigsState *st = eigs_current->state;
     TraceRecordingBinding *binding = g_emit_stream;
-    /* Compare encodings rather than floating-point values. Besides avoiding
-     * NaN's always-unequal semantics, this preserves an exact tape config
-     * boundary for signed zero and for distinct NaN payloads. */
-    if (memcmp(&st->obs_dh_zero, &binding->obs_dh_zero,
-               sizeof(st->obs_dh_zero)) == 0 &&
-        memcmp(&st->obs_dh_small, &binding->obs_dh_small,
-               sizeof(st->obs_dh_small)) == 0 &&
-        memcmp(&st->obs_h_low, &binding->obs_h_low,
-               sizeof(st->obs_h_low)) == 0 &&
-        memcmp(&st->obs_scale, &binding->obs_scale,
-               sizeof(st->obs_scale)) == 0 &&
+    if (st->obs_dh_zero  == binding->obs_dh_zero  &&
+        st->obs_dh_small == binding->obs_dh_small &&
+        st->obs_h_low    == binding->obs_h_low    &&
+        st->obs_scale    == binding->obs_scale    &&
         st->obs_window   == binding->obs_window) return;
     binding->obs_dh_zero  = st->obs_dh_zero;
     binding->obs_dh_small = st->obs_dh_small;
@@ -2015,11 +2008,6 @@ static void trace_replay_init(void) {
     const char *path = getenv("EIGS_REPLAY");
     if (!path || !*path) return;
     ReplayContext *ctx = xcalloc(1, sizeof(*ctx));
-    /* EIGS_REPLAY deliberately names an arbitrary caller-owned tape, just as
-     * the --trace CLI argument names an arbitrary output. The environment is
-     * process configuration, not data from an EigenScript program, and this
-     * read-only open neither adds a privilege boundary nor constructs a path. */
-    // lgtm[cpp/path-injection]
     ctx->file = fopen(path, "r");
     if (!ctx->file) {
         fprintf(stderr, "trace: cannot open EIGS_REPLAY=%s: %s\n", path, strerror(errno));

@@ -27,15 +27,15 @@ else
     bad "taped binder program exits cleanly and prints restored value (rc=$RC, out=$(cat "$TMP/tape.out"))"
 fi
 
-if grep -q '^A __for_save=' "$TMP/trace.tape"; then
+if grep -q '^A [0-9][0-9]* __for_save=' "$TMP/trace.tape"; then
     bad "trace tape hides the compiler's __for_save slot"
 else
     ok "trace tape hides the compiler's __for_save slot"
 fi
 
 # Only the two source-level binder assignments belong on the tape.  A third
-# `A i=` would be the compiler's post-loop restore masquerading as source.
-I_RECORDS=$(grep -c '^A i=' "$TMP/trace.tape" 2>/dev/null); I_RECORDS=${I_RECORDS:-0}
+# `A <stream> i=` would be the compiler's post-loop restore masquerading as source.
+I_RECORDS=$(grep -c '^A [0-9][0-9]* i=' "$TMP/trace.tape" 2>/dev/null); I_RECORDS=${I_RECORDS:-0}
 if [ "$I_RECORDS" -eq 2 ]; then
     ok "trace tape omits the compiler's binder restore"
 else
