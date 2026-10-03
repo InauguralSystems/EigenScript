@@ -82,7 +82,7 @@ typedef enum { SYM_VAR, SYM_FUNC, SYM_PARAM, SYM_IMPORT } SymKind;
 typedef struct {
     char name[256];
     SymKind kind;
-    int line, col;
+    int line, name_col;
     char params[MAX_PARAMS][64];
     int param_count;
     int scope_depth;
@@ -340,7 +340,22 @@ static void doc_remove(const char *uri) {
 
 /* ---- AST Walking: Build symbol table ---- */
 
-static void walk_ast_symbols(ASTNode *node, Symbol *symbols, int *count, int depth) {
+static int symbol_name_col(const TokenList *tokens, int line, int from_col,
+                           const char *name) {
+    for (int i = 0; i < tokens->count; i++) {
+        const Token *t = &tokens->tokens[i];
+        if (t->line == line && t->col >= from_col && t->type == TOK_IDENT &&
+            t->str_val && strcmp(t->str_val, name) == 0)
+            return t->col;
+    }
+    /* Parsed declaration names should always have a source token.  Retain the
+     * parser's statement column only as a defensive fallback for malformed
+     * documents, where emitting some location is preferable to crashing. */
+    return from_col;
+}
+
+static void walk_ast_symbols(ASTNode *node, const TokenList *tokens,
+                             Symbol *symbols, int *count, int depth) {
     if (!node || *count >= MAX_SYMBOLS) return;
 
     switch (node->type) {
@@ -349,7 +364,7 @@ static void walk_ast_symbols(ASTNode *node, Symbol *symbols, int *count, int dep
             snprintf(s->name, sizeof(s->name), "%s", node->data.func.name ? node->data.func.name : "");
             s->kind = SYM_FUNC;
             s->line = node->line;
-            s->col = node->col;
+            s->name_col = symbol_name_col(tokens, node->line, node->col, s->name);
             s->param_count = node->data.func.param_count;
             for (int i = 0; i < node->data.func.param_count; i++) {
                 snprintf(s->params[i], sizeof(s->params[i]), "%s",
@@ -363,13 +378,16 @@ static void walk_ast_symbols(ASTNode *node, Symbol *symbols, int *count, int dep
                          node->data.func.params[i] ? node->data.func.params[i] : "");
                 ps->kind = SYM_PARAM;
                 ps->line = node->line;
-                ps->col = node->col;
+                /* Preserve the existing parameter location until declaration
+                 * spans come from parser/binding metadata (#1614). Searching
+                 * the first line cannot locate multiline or implicit params. */
+                ps->name_col = node->col;
                 ps->param_count = 0;
                 ps->scope_depth = depth + 1;
             }
             /* Walk body */
             for (int i = 0; i < node->data.func.body_count; i++) {
-                walk_ast_symbols(node->data.func.body[i], symbols, count, depth + 1);
+                walk_ast_symbols(node->data.func.body[i], tokens, symbols, count, depth + 1);
             }
             break;
         }
@@ -378,11 +396,11 @@ static void walk_ast_symbols(ASTNode *node, Symbol *symbols, int *count, int dep
             snprintf(s->name, sizeof(s->name), "%s", node->data.assign.name ? node->data.assign.name : "");
             s->kind = SYM_VAR;
             s->line = node->line;
-            s->col = node->col;
+            s->name_col = symbol_name_col(tokens, node->line, node->col, s->name);
             s->param_count = 0;
             s->scope_depth = depth;
             if (node->data.assign.expr)
-                walk_ast_symbols(node->data.assign.expr, symbols, count, depth);
+                walk_ast_symbols(node->data.assign.expr, tokens, symbols, count, depth);
             break;
         }
         case AST_IMPORT: {
@@ -390,7 +408,7 @@ static void walk_ast_symbols(ASTNode *node, Symbol *symbols, int *count, int dep
             snprintf(s->name, sizeof(s->name), "%s", node->data.import.module_name ? node->data.import.module_name : "");
             s->kind = SYM_IMPORT;
             s->line = node->line;
-            s->col = node->col;
+            s->name_col = symbol_name_col(tokens, node->line, node->col, s->name);
             s->param_count = 0;
             s->scope_depth = depth;
             break;
@@ -400,82 +418,82 @@ static void walk_ast_symbols(ASTNode *node, Symbol *symbols, int *count, int dep
             snprintf(s->name, sizeof(s->name), "%s", node->data.forloop.var ? node->data.forloop.var : "");
             s->kind = SYM_VAR;
             s->line = node->line;
-            s->col = node->col;
+            s->name_col = symbol_name_col(tokens, node->line, node->col, s->name);
             s->param_count = 0;
             s->scope_depth = depth + 1;
             if (node->data.forloop.iter)
-                walk_ast_symbols(node->data.forloop.iter, symbols, count, depth);
+                walk_ast_symbols(node->data.forloop.iter, tokens, symbols, count, depth);
             for (int i = 0; i < node->data.forloop.body_count; i++) {
-                walk_ast_symbols(node->data.forloop.body[i], symbols, count, depth + 1);
+                walk_ast_symbols(node->data.forloop.body[i], tokens, symbols, count, depth + 1);
             }
             break;
         }
         case AST_IF:
-            walk_ast_symbols(node->data.cond.cond, symbols, count, depth);
+            walk_ast_symbols(node->data.cond.cond, tokens, symbols, count, depth);
             for (int i = 0; i < node->data.cond.if_count; i++)
-                walk_ast_symbols(node->data.cond.if_body[i], symbols, count, depth + 1);
+                walk_ast_symbols(node->data.cond.if_body[i], tokens, symbols, count, depth + 1);
             for (int i = 0; i < node->data.cond.else_count; i++)
-                walk_ast_symbols(node->data.cond.else_body[i], symbols, count, depth + 1);
+                walk_ast_symbols(node->data.cond.else_body[i], tokens, symbols, count, depth + 1);
             break;
         case AST_LOOP:
-            walk_ast_symbols(node->data.loop.cond, symbols, count, depth);
+            walk_ast_symbols(node->data.loop.cond, tokens, symbols, count, depth);
             for (int i = 0; i < node->data.loop.body_count; i++)
-                walk_ast_symbols(node->data.loop.body[i], symbols, count, depth + 1);
+                walk_ast_symbols(node->data.loop.body[i], tokens, symbols, count, depth + 1);
             break;
         case AST_TRY:
             for (int i = 0; i < node->data.trycatch.try_count; i++)
-                walk_ast_symbols(node->data.trycatch.try_body[i], symbols, count, depth + 1);
+                walk_ast_symbols(node->data.trycatch.try_body[i], tokens, symbols, count, depth + 1);
             for (int i = 0; i < node->data.trycatch.catch_count; i++)
-                walk_ast_symbols(node->data.trycatch.catch_body[i], symbols, count, depth + 1);
+                walk_ast_symbols(node->data.trycatch.catch_body[i], tokens, symbols, count, depth + 1);
             break;
         case AST_BLOCK:
         case AST_UNOBSERVED:
             for (int i = 0; i < node->data.block.count; i++)
-                walk_ast_symbols(node->data.block.stmts[i], symbols, count, depth);
+                walk_ast_symbols(node->data.block.stmts[i], tokens, symbols, count, depth);
             break;
         case AST_PROGRAM:
             for (int i = 0; i < node->data.program.count; i++)
-                walk_ast_symbols(node->data.program.stmts[i], symbols, count, depth);
+                walk_ast_symbols(node->data.program.stmts[i], tokens, symbols, count, depth);
             break;
         case AST_MATCH:
-            walk_ast_symbols(node->data.match.expr, symbols, count, depth);
+            walk_ast_symbols(node->data.match.expr, tokens, symbols, count, depth);
             for (int i = 0; i < node->data.match.case_count; i++) {
                 if (node->data.match.patterns[i])
-                    walk_ast_symbols(node->data.match.patterns[i], symbols, count, depth + 1);
+                    walk_ast_symbols(node->data.match.patterns[i], tokens, symbols, count, depth + 1);
                 for (int j = 0; j < node->data.match.body_counts[i]; j++)
-                    walk_ast_symbols(node->data.match.bodies[i][j], symbols, count, depth + 1);
+                    walk_ast_symbols(node->data.match.bodies[i][j], tokens, symbols, count, depth + 1);
             }
             break;
         case AST_BINOP:
-            walk_ast_symbols(node->data.binop.left, symbols, count, depth);
-            walk_ast_symbols(node->data.binop.right, symbols, count, depth);
+            walk_ast_symbols(node->data.binop.left, tokens, symbols, count, depth);
+            walk_ast_symbols(node->data.binop.right, tokens, symbols, count, depth);
             break;
         case AST_UNARY:
-            walk_ast_symbols(node->data.unary.operand, symbols, count, depth);
+            walk_ast_symbols(node->data.unary.operand, tokens, symbols, count, depth);
             break;
         case AST_RELATION:
-            walk_ast_symbols(node->data.relation.left, symbols, count, depth);
-            walk_ast_symbols(node->data.relation.right, symbols, count, depth);
+            walk_ast_symbols(node->data.relation.left, tokens, symbols, count, depth);
+            walk_ast_symbols(node->data.relation.right, tokens, symbols, count, depth);
             break;
         case AST_RETURN:
-            walk_ast_symbols(node->data.ret.expr, symbols, count, depth);
+            walk_ast_symbols(node->data.ret.expr, tokens, symbols, count, depth);
             break;
         case AST_INDEX:
-            walk_ast_symbols(node->data.index.target, symbols, count, depth);
-            walk_ast_symbols(node->data.index.index, symbols, count, depth);
+            walk_ast_symbols(node->data.index.target, tokens, symbols, count, depth);
+            walk_ast_symbols(node->data.index.index, tokens, symbols, count, depth);
             break;
         case AST_LIST:
             for (int i = 0; i < node->data.list.count; i++)
-                walk_ast_symbols(node->data.list.elems[i], symbols, count, depth);
+                walk_ast_symbols(node->data.list.elems[i], tokens, symbols, count, depth);
             break;
         case AST_DICT:
             for (int i = 0; i < node->data.dict.count; i++) {
-                walk_ast_symbols(node->data.dict.keys[i], symbols, count, depth);
-                walk_ast_symbols(node->data.dict.vals[i], symbols, count, depth);
+                walk_ast_symbols(node->data.dict.keys[i], tokens, symbols, count, depth);
+                walk_ast_symbols(node->data.dict.vals[i], tokens, symbols, count, depth);
             }
             break;
         case AST_DOT:
-            walk_ast_symbols(node->data.dot.target, symbols, count, depth);
+            walk_ast_symbols(node->data.dot.target, tokens, symbols, count, depth);
             break;
         /* Nothing to do for these. Enumerated rather than covered by a `default:`
          * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
@@ -658,7 +676,7 @@ static void doc_analyze(Document *doc) {
 
     /* Build symbol table */
     if (doc->ast) {
-        walk_ast_symbols(doc->ast, doc->symbols, &doc->symbol_count, 0);
+        walk_ast_symbols(doc->ast, &doc->tokens, doc->symbols, &doc->symbol_count, 0);
     }
 }
 
@@ -1271,7 +1289,7 @@ static void handle_definition(int id, const char *params) {
             strbuf_append(&sb, "{\"uri\":");
             json_escape_to(&sb, doc->uri);
             strbuf_append_fmt(&sb, ",\"range\":{\"start\":{\"line\":%d,\"character\":%d},\"end\":{\"line\":%d,\"character\":%d}}}",
-                s->line - 1, s->col, s->line - 1, s->col + (int)strlen(s->name));
+                s->line - 1, s->name_col, s->line - 1, s->name_col + (int)strlen(s->name));
             lsp_response(id, sb.data);
             strbuf_free(&sb);
             free(uri);
@@ -1326,7 +1344,7 @@ static void handle_references(int id, const char *params) {
             /* Check if already in list */
             int found = 0;
             for (int j = 0; j < loc_count; j++) {
-                if (locs[j].line == s->line && locs[j].col == s->col) { found = 1; break; }
+                if (locs[j].line == s->line && locs[j].col == s->name_col) { found = 1; break; }
             }
             if (!found) {
                 if (loc_count == loc_capacity) {
@@ -1334,7 +1352,7 @@ static void handle_references(int id, const char *params) {
                     locs = xrealloc(locs, (size_t)loc_capacity * sizeof *locs);
                 }
                 locs[loc_count].line = s->line;
-                locs[loc_count].col = s->col;
+                locs[loc_count].col = s->name_col;
                 loc_count++;
             }
         }
@@ -1413,9 +1431,9 @@ static void handle_document_symbol(int id, const char *params) {
         strbuf_append_fmt(&sb, ",\"kind\":%d", sym_to_lsp_kind(s->kind));
         int nlen = (int)strlen(s->name);
         strbuf_append(&sb, ",\"range\":");
-        append_range(&sb, s->line, s->col, nlen);
+        append_range(&sb, s->line, s->name_col, nlen);
         strbuf_append(&sb, ",\"selectionRange\":");
-        append_range(&sb, s->line, s->col, nlen);
+        append_range(&sb, s->line, s->name_col, nlen);
         strbuf_append_char(&sb, '}');
     }
     strbuf_append_char(&sb, ']');
@@ -1931,7 +1949,7 @@ static void handle_workspace_symbol(int id, const char *params) {
             strbuf_append_fmt(&sb, ",\"kind\":%d,\"location\":{\"uri\":", sym_to_lsp_kind(s->kind));
             json_escape_to(&sb, doc->uri);
             strbuf_append(&sb, ",\"range\":");
-            append_range(&sb, s->line, s->col, (int)strlen(s->name));
+            append_range(&sb, s->line, s->name_col, (int)strlen(s->name));
             strbuf_append(&sb, "}}");
         }
     }
