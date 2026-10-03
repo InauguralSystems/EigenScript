@@ -46,10 +46,14 @@ Companion documents: [SYNTAX.md](SYNTAX.md) (tutorial-style guide),
 ## Program model
 
 Hosted build profiles determine which extension implementations are compiled
-in. Omitted HTTP, network, database, and model builtin names remain bound to
-stubs: calling one raises a catchable `value` error naming the unavailable
-capability and the required profile. Merely referencing that name succeeds.
-This direct-call diagnostic does not implement capability imports or host grants.
+in. In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
 
 An EigenScript program is a sequence of statements executed top to
 bottom. There is no required entry point — the file *is* the program.
@@ -1938,9 +1942,17 @@ A worker that **dies of an uncaught error** prints its trace and the
 fire-and-forget thread's failure is never swallowed into a success exit.
 This covers a builtin spawned directly (`spawn of [recv, 5]` raises
 "invalid channel" on the worker) as well as a function body. An error
-`catch`-ed inside the worker recovers normally (exit 0), and a worker's
-`exit of N` still decides the status (#739). The failure is always a
-clean exit, never a signal (#1112).
+`catch`-ed inside the worker recovers normally (exit 0). A worker's
+`exit of N` is instead a state-wide, uncatchable stop request: the first
+request decides the process status. VM threads observe it at loop back edges
+and builtin returns, and main-thread waits in `recv`, `recv_timeout`,
+`thread_join`, or `usleep` are woken so teardown can begin. Once a thread
+observes the request, its later script statements do not run (#1149). Native I/O outside these runtime waits is not asynchronously
+cancelled: teardown still waits for those workers to return before freeing
+state. An interrupted join consumes its handle and defers reaping; it does not
+return the target's result. Embedded outer evals have separate stop scopes;
+workers retain the scope of their spawning eval (see `docs/EMBEDDING.md`).
+The failure is always a clean exit, never a signal (#1112).
 
 ## Cooperative tasks
 

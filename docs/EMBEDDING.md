@@ -447,14 +447,24 @@ sandbox budget, close each other's stream, or freeze each other's JIT
 tuning — all of which they did while those lived in process globals.
 The trace tape and sink remain per-process by design (below).
 
-**A script's `exit` does not outlive its eval** (#739). `exit of N` is
-deliberately uncatchable — `CHECK_ERROR` refuses to route it to a `try`
-handler — but the request is per-thread and cleared at the top of
-`eigs_eval_string`, so it applies to the eval that raised it and no
-later one. Before that it was a process global nothing ever reset: one
-untrusted snippet calling `exit` left every subsequent eval in the
-process running with exception handling silently disabled, in any state.
-A host that wants the exit code reads it from the eval that requested it.
+**A script's `exit` belongs to its evaluation** (#739, #1149). Each outer
+`eigs_eval_string` or `eigs_eval_file` starts a fresh stop scope; a nested eval
+from a host callback shares the active scope. `exit of N` is uncatchable and
+stops the caller plus workers spawned in that scope. The first request keeps
+its status. Workers retain their scope, including a worker that first starts
+or spawns a child after a later host eval begins. A later eval neither erases
+an old worker's stop request nor imports an old worker's late `exit`.
+
+Returning from an eval does **not** mean every worker has finished. Runtime
+channel, sleep and join waits wake on that scope's stop, but arbitrary native
+I/O or a host callback is not asynchronously cancelled. Its worker observes
+the request when it returns to the VM. An interrupted `thread_join` consumes
+its handle and leaves the worker owned by the state for later reaping; it
+does not return the target's result. `eigs_close` still waits for all workers,
+including those in native I/O, before releasing handles, closures or state.
+A host must finish or unblock its outstanding I/O before closing. Later evals
+can run while those workers finish; the existing shared-value concurrency
+rules still apply. A host reads an exit status before starting the next eval.
 
 **The sink and the tape are per-PROCESS, not per-state** (#739, #1142,
 #1143). With several states co-located, one sink serves them all.

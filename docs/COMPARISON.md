@@ -37,10 +37,14 @@ separators in its capped token count. These limits also raise under
 
 ## Variables and arithmetic
 
-Extension availability depends on the hosted build profile. An omitted HTTP,
-network, database, or model builtin remains bound; calling it raises a
-catchable `value` error naming the capability and required profile. A bare
-reference succeeds, so feature detection must exercise an operation.
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
 
 Python:
 
@@ -366,6 +370,12 @@ One difference in failure: a Python thread's uncaught exception is printed
 and the process still exits 0. A `spawn`ed EigenScript worker that dies of
 an uncaught error fails the whole run (exit status 1), joined or not — the
 same rule as its cooperative tasks (see SPEC.md "Concurrency").
+A worker's `exit of N` requests an uncatchable stop of the whole state:
+blocked concurrency calls wake, and VM threads unwind when they observe the
+request at a loop back edge or builtin return. The first request sets the
+process status. Teardown retains workers until native I/O or host callbacks
+return; those calls are not asynchronously cancelled. An embedded worker keeps
+the stop scope of its spawning eval, isolated from later outer evals.
 Cooperative task IDs are opaque numeric handles: their packed generation
 prevents a detached task's recycled slot from naming a later task.
 

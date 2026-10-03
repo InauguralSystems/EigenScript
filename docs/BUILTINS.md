@@ -861,9 +861,9 @@ revoked permission *and* an empty table alike, so a reporting script kept
 printing "0 rows" forever after a schema change and a migration that did
 nothing looked healthy in CI.
 
-The release build (`make build`) binds db names to unavailable stubs, so the
-call below raises a catchable `value` error naming the database capability
-and the server-db profile. The db build (`make server-db`) raises a catchable
+The release build (`make build`) omits db bindings, so resolving the db name
+below raises a catchable `value` error naming the database capability
+and the server-db profile before evaluating call arguments. The db build (`make server-db`) raises a catchable
 `io` error when there is no connection (`db: not connected — call db_connect
 first`). Both paths are a failure of the query, so the executed example
 prints only the prefix — `e.message` depends on the compiled profile,

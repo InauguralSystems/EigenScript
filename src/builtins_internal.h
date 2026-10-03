@@ -82,5 +82,7 @@ int replay_blocks(const char *fn);
 /* builtins.c — the "is this name the language's?" predicate shared with
  * builtins_host.c (build_corpus skips registered builtins). */
 int eigs_is_registered_builtin(const char *name);
+/* Failed VM/native-JIT full name resolution only; does not create a binding. */
+void eigs_raise_missing_name(const char *name, int line);
 
 #endif /* EIGENSCRIPT_BUILTINS_INTERNAL_H */

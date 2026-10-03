@@ -25,6 +25,11 @@ while closure environments and resource handles stay shared by reference,
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 
+`exit of N` is state-wide even when a spawned worker calls it: VM threads stop,
+blocked concurrency calls wake, and the process exits with status `N` after
+worker teardown. Native I/O must return before teardown completes. Embedded
+evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
+
 ## Try it in your browser
 
 **[inauguralsystems.github.io/EigenScript/playground](https://inauguralsystems.github.io/EigenScript/playground/)** —
@@ -48,9 +53,14 @@ Run `./install.sh server` to also build the HTTP + raw-TCP + model profile
 latter path requires PostgreSQL development headers. `full` remains a
 compatibility spelling for `server-db`.
 
-Omitted HTTP, network, database, and model builtin names remain bound. Calling
-one raises a catchable `value` error naming the unavailable capability and
-the required profile. A reference alone does not check availability.
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
 
 **Homebrew** (macOS + Linux):
 

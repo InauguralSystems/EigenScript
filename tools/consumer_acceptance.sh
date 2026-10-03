@@ -493,7 +493,7 @@ row() {
   [ "$verdict" = PASS ]
 }
 # Prove the supplied profile can execute its owned operations; --api also
-# lists omitted names, and a reference alone can bind an unavailable stub.
+# lists omitted names without promising callable availability.
 profile_probe() {
   local binary="$1" profile="$2" src="$WORK/profile-$2.eigs" out="$WORK/profile-$2.out" rc
   cat > "$src" <<'PROBE'

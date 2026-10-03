@@ -25,6 +25,8 @@
 
 #include <pthread.h>
 
+static void wake_channels_for_exit(EigsState *st);
+
 /* #744: the extension ENTRY POINTS, not the extensions' private headers.
  * This TU calls five registrars and uses no extension type; pulling
  * ext_db_internal.h for one declaration dragged <libpq-fe.h> into the core
@@ -53,35 +55,59 @@
  * from stdlib entries by Value type alone. */
 static int g_builtin_binding_count = 0;  /* atomic: every worker EigsState writes it (#1137) */
 
-/* Keep the language surface discoverable in smaller hosted profiles.  An
- * omitted extension must fail with an actionable capability diagnostic, not
- * masquerade as a misspelled variable. */
+/* Omitted extension names remain discoverable without allocating bindings.
+ * This classifier is used only after failed language resolution and by rare
+ * language-surface discovery. Compiled-in but unregistered names are ordinary
+ * undefined names. It never consults or changes the user's environment. */
+static const char *omitted_capability_message(const char *name) {
+    if (!name) return NULL;
+#define X(spelling, fn) if (strcmp(name, #spelling) == 0) return message;
 #if !EIGENSCRIPT_EXT_HTTP
-static Value *builtin_http_unavailable(Value *arg) {
-    (void)arg; rt_error(EK_VALUE, 0, "HTTP capability unavailable; use the server profile"); return make_null();
-}
-#endif
-#if !EIGENSCRIPT_EXT_NET
-static Value *builtin_net_unavailable(Value *arg) {
-    (void)arg; rt_error(EK_VALUE, 0, "network capability unavailable; use the server profile"); return make_null();
-}
+    {
+        const char *message = "HTTP capability unavailable; use the server profile";
+        EIGS_HTTP_BUILTINS(X)
+        EIGS_HTTP_REQUEST_BUILTINS(X)
+    }
 #endif
 #if !EIGENSCRIPT_EXT_DB
-static Value *builtin_db_unavailable(Value *arg) {
-    (void)arg; rt_error(EK_VALUE, 0, "database capability unavailable; use the server-db profile"); return make_null();
-}
+    {
+        const char *message = "database capability unavailable; use the server-db profile";
+        EIGS_DB_BUILTINS(X)
+    }
+#endif
+#if !EIGENSCRIPT_EXT_NET
+    {
+        const char *message = "network capability unavailable; use the server profile";
+        EIGS_NET_BUILTINS(X)
+    }
 #endif
 #if !EIGENSCRIPT_EXT_MODEL
-static Value *builtin_model_unavailable(Value *arg) {
-    (void)arg; rt_error(EK_VALUE, 0, "model capability unavailable; use the server profile"); return make_null();
-}
+    {
+        const char *message = "model capability unavailable; use the server profile";
+        EIGS_MODEL_BUILTINS(X)
+    }
 #endif
+#undef X
+    return NULL;
+}
 
-/* True iff `name` is a name the runtime registered, as opposed to one the
- * running script defined. Deliberately allocation-free — the suite gates on a
- * zero leak tally, and a process-lifetime name snapshot would show up there. */
+/* Shared internal cold failure seam; direct AOT adoption is separate work. */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline, cold))
+#endif
+void eigs_raise_missing_name(const char *name, int line) {
+    const char *message = omitted_capability_message(name);
+    if (message) rt_error(EK_VALUE, line, "%s", message);
+    else rt_error(EK_UNDEFINED_NAME, line, "undefined variable '%s'", name);
+}
+
+/* True iff `name` belongs to the runtime language surface, including omitted
+ * extension names, as opposed to one the running script defined. Deliberately
+ * allocation-free: a process-lifetime name snapshot would leak. */
 int eigs_is_registered_builtin(const char *name) {
-    if (!name || !g_global_env) return 0;
+    if (!name) return 0;
+    if (omitted_capability_message(name)) return 1;
+    if (!g_global_env) return 0;
     int n = __atomic_load_n(&g_builtin_binding_count, __ATOMIC_RELAXED);
     if (n > g_global_env->count) n = g_global_env->count;
     for (int i = 0; i < n; i++) {
@@ -125,7 +151,24 @@ Value* builtin_flush(Value *arg) {
 Value* builtin_usleep(Value *arg) {
     if (!arg || arg->type != VAL_NUM) return make_null();
     int us = (int)arg->data.num;
-    if (us > 0) usleep(us);
+    if (us > 0) {
+        struct timespec deadline;
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_sec += us / 1000000;
+        deadline.tv_nsec += (long)(us % 1000000) * 1000L;
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000L;
+        }
+        EigsState *st = eigs_current_state();
+        pthread_mutex_lock(&st->exit_mutex);
+        while (!eigs_state_exit_requested(st, NULL)) {
+            int rc = pthread_cond_timedwait(&st->exit_cond, &st->exit_mutex,
+                                            &deadline);
+            if (rc == ETIMEDOUT) break;
+        }
+        pthread_mutex_unlock(&st->exit_mutex);
+    }
     return make_null();
 }
 
@@ -831,7 +874,7 @@ Value* builtin_get_observer_scale(Value *arg) {
  * it is consulted with — as a process global nothing ever reset it, so one
  * script's `exit` disabled try/catch for every later eval in the PROCESS, in
  * any state. The exit CODE is additionally latched at the EigsState, so `exit`
- * inside a spawned worker still decides the process's status. */
+ * inside a spawned worker stops its evaluation and decides the CLI status. */
 Value* builtin_exit(Value *arg) {
     int code = 0;
     if (arg && arg->type == VAL_NUM) {
@@ -843,8 +886,8 @@ Value* builtin_exit(Value *arg) {
     }
     g_exit_code = code;
     g_exit_requested = 1;      /* this thread's unwind: uncatchable */
-    g_exit_latch_code = code;  /* the state's: what main reports as the */
-    g_exit_latched = 1;        /* process exit code, incl. from a worker */
+    eigs_state_request_exit(eigs_current_state(), code);
+    wake_channels_for_exit(eigs_current_state());
     g_has_error = 1;   /* triggers CHECK_ERROR -> unwind to main */
     return make_null();
 }
@@ -4515,12 +4558,14 @@ Value* builtin_get_at(Value *arg) {
  * CONCURRENCY: spawn/join/channel builtins
  * ================================================================ */
 
-typedef struct {
+typedef struct EigsThreadHandle {
     Value *fn;
     Value **fn_args;       /* arg_count Value* — owned (incref'd by spawn) */
     int fn_arg_count;
     Env *parent_env;
     EigsState *parent_state;  /* state the spawning thread is attached to */
+    EigsExitScope *exit_scope; /* owned snapshot BEFORE pthread_create */
+    struct EigsThreadHandle *deferred_next;
     Value *result;
     volatile int done;
     pthread_t tid;
@@ -4536,12 +4581,20 @@ static void *thread_entry(void *arg) {
      * runs arena_init internally, so the legacy arena_init call site
      * has moved into the lifecycle. */
     eigs_thread_attach(h->parent_state);
+    eigs_thread_set_exit_scope(h->exit_scope);
+    eigs_current->is_spawn_worker = 1;
     g_sandbox_loop_max = h->sandbox_loop_max;
     g_sandbox_cap_hit = 0;
     g_loop_iterations = 0;
     g_loop_backedge_count = 0;
     Value *fn = h->fn;
-    if (fn->type == VAL_FN) {
+    /* A worker may first get CPU after its eval has already exited and a
+     * newer eval has begun. Do not invoke even one builtin/body in that case. */
+    if (eigs_state_exit_requested(h->parent_state, &g_exit_code)) {
+        g_exit_requested = 1;
+        g_has_error = 1;
+        h->result = make_null();
+    } else if (fn->type == VAL_FN) {
         Env *call_env = env_new(fn->data.fn.closure);
         int bind_n = h->fn_arg_count;
         if (bind_n > fn->data.fn.param_count) bind_n = fn->data.fn.param_count;
@@ -4646,13 +4699,28 @@ static void *thread_entry(void *arg) {
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();
-    __atomic_store_n(&h->done, 1, __ATOMIC_RELEASE);
     /* Detach from the state — runs arena_destroy and clears TLS. The
      * cycle collector resumes when the last worker is JOINED and the joiner
      * is the only attached thread (spawn_mt_maybe_clear, #1147), or at the
      * exit drain. */
     eigs_thread_detach();
+    /* Completion has the same wakeup lock as exit. Publish only after detach,
+     * so a joiner reaching pthread_join has no remaining runtime/I/O work to
+     * wait for. The owning join/drain keeps h and the state alive throughout. */
+    pthread_mutex_lock(&h->parent_state->exit_mutex);
+    __atomic_store_n(&h->done, 1, __ATOMIC_RELEASE);
+    pthread_cond_broadcast(&h->parent_state->exit_cond);
+    pthread_mutex_unlock(&h->parent_state->exit_mutex);
     return NULL;
+}
+
+static void thread_handle_free(ThreadHandle *h) {
+    if (h->result) val_decref(h->result);
+    val_decref(h->fn);
+    for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
+    free(h->fn_args);
+    eigs_exit_scope_release(h->exit_scope);
+    free(h);
 }
 
 /* #1147: return the state to single-threaded mode once the last worker is
@@ -4737,18 +4805,16 @@ Value* builtin_spawn(Value *arg) {
     h->fn_arg_count = fn_arg_count;
     h->parent_env = g_global_env;
     h->parent_state = eigs_current_state();
+    h->exit_scope = eigs_current->exit_scope;
+    eigs_exit_scope_retain(h->exit_scope);
+    h->deferred_next = NULL;
     h->result = NULL;
     h->done = 0;
     h->sandbox_loop_max = g_sandbox_loop_max;
     uint32_t hgen = 0;
     int hid = handle_register(h, HANDLE_THREAD, &hgen);
     if (hid < 0) {
-        val_decref(fn);
-        if (fn_args) {
-            for (int i = 0; i < fn_arg_count; i++) val_decref(fn_args[i]);
-            free(fn_args);
-        }
-        free(h);
+        thread_handle_free(h);
         /* #1146 (3): RAISE. This used to return make_null() with only a line
          * on stderr from handle_register, and `thread_join of null` then
          * returned null — so 300 unjoined spawns reported
@@ -4799,12 +4865,7 @@ Value* builtin_spawn(Value *arg) {
          * the new thread's stack allocation failed with EAGAIN/ENOMEM.
          * thread_entry never ran, so unwind this thread's setup fully. */
         handle_release(hid, hgen);
-        val_decref(h->fn);
-        if (h->fn_args) {
-            for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
-            free(h->fn_args);
-        }
-        free(h);
+        thread_handle_free(h);
         /* #1147: this spawn set multithreaded above and no worker exists, so
          * leave MT mode now, as a join would; otherwise a caught spawn failure
          * keeps the collector and JIT off for the rest of the run. */
@@ -4859,15 +4920,28 @@ Value* builtin_thread_join(Value *arg) {
         handle_raise_unresolved("thread_join", "thread", hid, why, "joined");
         return make_null();
     }
+    EigsState *st = eigs_current_state();
+    pthread_mutex_lock(&st->exit_mutex);
+    while (!__atomic_load_n(&h->done, __ATOMIC_ACQUIRE) &&
+           !eigs_state_exit_requested(st, NULL))
+        pthread_cond_wait(&st->exit_cond, &st->exit_mutex);
+    int done = __atomic_load_n(&h->done, __ATOMIC_ACQUIRE);
+    pthread_mutex_unlock(&st->exit_mutex);
+    if (!done) {
+        /* The generation-checked claim already consumed the public handle;
+         * its slot may now name another resource. Transfer ownership to the
+         * drain instead of restoring that slot or detaching/leaking a worker.
+         * live_workers is unchanged until the eventual pthread_join. */
+        pthread_mutex_lock(&st->handle_mutex);
+        h->deferred_next = st->deferred_threads;
+        st->deferred_threads = h;
+        pthread_mutex_unlock(&st->handle_mutex);
+        return make_null();
+    }
     pthread_join(h->tid, NULL);
     Value *result = h->result ? h->result : make_null();
-    val_decref(h->fn);
-    if (h->fn_args) {
-        for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
-        free(h->fn_args);
-    }
-    free(h);
-    EigsState *st = eigs_current_state();
+    h->result = NULL; /* transfer the worker's owned result to the caller */
+    thread_handle_free(h);
     __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);   /* #1147 */
     spawn_mt_maybe_clear(st);
     return result;
@@ -4885,6 +4959,24 @@ typedef struct {
     pthread_cond_t not_empty;
     pthread_cond_t not_full;
 } Channel;
+
+/* Wake channel waiters after publishing a state-wide exit request. Channel
+ * slots remain alive until the exit drain, so holding handle_mutex makes this
+ * scan stable while a concurrent spawn/channel registration is in flight. */
+static void wake_channels_for_exit(EigsState *st) {
+    if (!st) return;
+    pthread_mutex_lock(&st->handle_mutex);
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->handle_table[i].type != HANDLE_CHANNEL) continue;
+        Channel *ch = (Channel *)st->handle_table[i].ptr;
+        if (!ch) continue;
+        pthread_mutex_lock(&ch->mutex);
+        pthread_cond_broadcast(&ch->not_empty);
+        pthread_cond_broadcast(&ch->not_full);
+        pthread_mutex_unlock(&ch->mutex);
+    }
+    pthread_mutex_unlock(&st->handle_mutex);
+}
 
 /* #1146 (2): same generation check as thread handles. `close_channel` only
  * flips a flag — no channel slot is released before the exit drain — so a
@@ -4989,8 +5081,14 @@ Value* builtin_send(Value *arg) {
      * channel buffer; receiver adopts that ref. */
     Value *val = val_clone_for_send(arg->data.list.items[1]);
     pthread_mutex_lock(&ch->mutex);
-    while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed)
+    while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed &&
+           !eigs_state_exit_requested(eigs_current_state(), NULL))
         pthread_cond_wait(&ch->not_full, &ch->mutex);
+    if (eigs_state_exit_requested(eigs_current_state(), NULL)) {
+        pthread_mutex_unlock(&ch->mutex);
+        val_decref(val);
+        return make_null();
+    }
     if (!ch->closed) {
         ch->buffer[ch->tail] = val;
         ch->tail = (ch->tail + 1) % CHANNEL_BUF_SIZE;
@@ -5018,7 +5116,8 @@ Value* builtin_recv(Value *arg) {
     if (!ch) return make_null();
     if (replay_blocks("recv")) return make_null();
     pthread_mutex_lock(&ch->mutex);
-    while (ch->count == 0 && !ch->closed)
+    while (ch->count == 0 && !ch->closed &&
+           !eigs_state_exit_requested(eigs_current_state(), NULL))
         pthread_cond_wait(&ch->not_empty, &ch->mutex);
     Value *val = NULL;
     if (ch->count > 0) {
@@ -5089,7 +5188,8 @@ Value* builtin_recv_timeout(Value *arg) {
 
     pthread_mutex_lock(&ch->mutex);
     int rc = 0;
-    while (ch->count == 0 && !ch->closed && rc == 0) {
+    while (ch->count == 0 && !ch->closed && rc == 0 &&
+           !eigs_state_exit_requested(eigs_current_state(), NULL)) {
         rc = pthread_cond_timedwait(&ch->not_empty, &ch->mutex, &deadline);
     }
     Value *val = NULL;
@@ -5566,12 +5666,13 @@ Value* builtin_task_sched_trace(Value *arg) {
  * the GC — `close_channel` only flips a flag, and an unjoined worker leaves its
  * ThreadHandle behind. Reclaim them here so a program that spawns/uses channels
  * is leak-clean at exit:
- *   pass 1 — atomically claim and join every still-registered worker, closing
+ *   pass 1 — claim registered/deferred workers and join them, closing
  *            channels while each runs and rescanning for nested spawns;
  *   pass 2 — free each remaining channel: drain + decref buffered messages,
  *            destroy the mutex/conds, free the struct.
  * builtin_thread_join already releases+frees joined threads, so the table holds
- * only the un-joined remainder — no double-join. Idempotent (slots are nulled),
+ * only the un-joined remainder (including interrupted claims) — no double-join.
+ * Idempotent (slots and the deferred list are nulled),
  * so a later eigs_state_destroy sees an empty table. */
 void handle_table_drain(EigsState *st) {
     if (!st) return;
@@ -5584,7 +5685,11 @@ void handle_table_drain(EigsState *st) {
     while (__atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0) {
         ThreadHandle *h = NULL;
         pthread_mutex_lock(&st->handle_mutex);
-        for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (st->deferred_threads) {
+            h = st->deferred_threads;
+            st->deferred_threads = h->deferred_next;
+        }
+        for (int i = 1; !h && i < HANDLE_TABLE_SIZE; i++) {
             EigsHandleSlot *slot = &st->handle_table[i];
             if (slot->type == HANDLE_THREAD && slot->ptr) {
                 h = (ThreadHandle *)slot->ptr;
@@ -5620,13 +5725,7 @@ void handle_table_drain(EigsState *st) {
             usleep(1000);
         }
         pthread_join(h->tid, NULL);
-        if (h->result) val_decref(h->result);
-        val_decref(h->fn);
-        if (h->fn_args) {
-            for (int j = 0; j < h->fn_arg_count; j++) val_decref(h->fn_args[j]);
-            free(h->fn_args);
-        }
-        free(h);
+        thread_handle_free(h);
         __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);   /* #1147 */
     }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
@@ -6578,35 +6677,18 @@ void register_builtins(Env *env) {
 
 #if EIGENSCRIPT_EXT_HTTP
     register_http_builtins(env);
-#else
-#define X(name, fn) env_set_local_owned(env, #name, make_builtin(builtin_http_unavailable));
-    EIGS_HTTP_BUILTINS(X)
-    EIGS_HTTP_REQUEST_BUILTINS(X)
-#undef X
 #endif
 
 #if EIGENSCRIPT_EXT_DB
     register_db_builtins(env);
-#else
-#define X(name, fn) env_set_local_owned(env, #name, make_builtin(builtin_db_unavailable));
-    EIGS_DB_BUILTINS(X)
-#undef X
 #endif
 
 #if EIGENSCRIPT_EXT_NET
     register_net_builtins(env);
-#else
-#define X(name, fn) env_set_local_owned(env, #name, make_builtin(builtin_net_unavailable));
-    EIGS_NET_BUILTINS(X)
-#undef X
 #endif
 
 #if EIGENSCRIPT_EXT_MODEL
     register_model_builtins(env);
-#else
-#define X(name, fn) env_set_local_owned(env, #name, make_builtin(builtin_model_unavailable));
-    EIGS_MODEL_BUILTINS(X)
-#undef X
 #endif
 
 #if EIGENSCRIPT_EXT_GFX

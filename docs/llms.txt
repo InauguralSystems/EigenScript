@@ -12,9 +12,16 @@
 
 Hosted release includes lazy graphics. The server profile adds HTTP, raw TCP,
 and models; server-db additionally includes PostgreSQL. Omitted HTTP, network,
-database, and model names remain bound to stubs that raise a catchable `value`
-error at the call, naming the unavailable capability and required profile.
-Referencing the name alone does not check availability.
+database, and model names follow the first-reference rule below.
+
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
 
 - Apply a function or builtin with `of`: `print of x`, `sqrt of n`, `len of xs`.
 - A **bare literal list** after `of` is an argument list at every element
@@ -223,6 +230,10 @@ EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
 ## Threads: VALUES copy through a channel, HANDLES share
 
 - `spawn of [fn, arg]` / `channel of n` / `send` / `recv` / `thread_join`.
+- `exit of N` in any spawned worker stops the whole state: blocked concurrency
+  calls wake, all VM threads unwind, and the process exits with N after worker
+  teardown. Native I/O must return before teardown completes. Embedded outer
+  evals have separate stop scopes; workers retain their spawning eval's scope.
 - **A number, string, list, dict, buffer, or text builder sent through a
   channel is DEEP-COPIED**; the receiver cannot see a later mutation by the
   sender. The same boundary applies to thread results and cooperative tasks.
