@@ -647,6 +647,11 @@ freestanding-libc-diff:
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
 	/tmp/eigs_libc_diff
 
+# Ordinary strict-shape descriptor producer; reuse the owning embed objects.
+# This file target does not relink the CLI alias.
+build/$(EMBED_OBSERVER_VARIANT)/strict_shape_descriptor: tests/strict_shape_descriptor.c $(EMBED_OBSERVER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_OBSERVER_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_OBSERVER_OBJ) $(LIBS_$(EMBED_OBSERVER_VARIANT))
+
 # #1575: direct history-writer boundary, including actual trace.c privately
 # for metadata inspection. No production test hooks or CLI alias relink.
 HISTORY_BOUNDARY_VARIANT ?= release

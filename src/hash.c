@@ -329,6 +329,7 @@ Value* builtin_md5_file(Value *arg) {
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
 Value* builtin_hmac_sha256(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "hmac_sha256");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {  /* #511 */
         rt_error(EK_TYPE, 0, "hmac_sha256 requires [key, message]");
 /* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this

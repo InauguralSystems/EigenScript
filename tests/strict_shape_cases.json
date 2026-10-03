@@ -1,0 +1,3160 @@
+[
+  {
+    "name": "add",
+    "args": [
+      "[1, 2]",
+      "[3, 4]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [4, 6]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "append",
+    "args": [
+      "xs",
+      "3"
+    ],
+    "setup": "xs is [1, 2]",
+    "valid_assert": "xs == [1, 2, 3]",
+    "observe": "print of xs",
+    "unchanged": "assert of [xs == [1, 2], \"append mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "assert",
+    "args": [
+      "1",
+      "\"ordinary true assertion\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == null",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "scalar_forms": [
+      "1"
+    ],
+    "optional_args": [
+      [
+        "1"
+      ]
+    ]
+  },
+  {
+    "name": "atan2",
+    "args": [
+      "0",
+      "1"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 0",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "44100",
+      "1"
+    ],
+    "valid_assert": "shape_result >= 2",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "audio_capture_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_audio",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "scalar_forms": [
+      "null"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1418,
+      "function": "builtin_audio_capture_open",
+      "body_sha256": "ac82196bf8ae33c9dfa0e181ce1050bafeb8d68382351332617078272cfc0c3d"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_capture_open",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive."
+  },
+  {
+    "args": [
+      "[0.5, 0.25, 0]",
+      "0",
+      "0",
+      "0.5",
+      "0"
+    ],
+    "valid_assert": "(len of shape_result) == 3 and shape_result[0] == 0.25 and shape_result[1] == 0.125",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 2156,
+      "function": "builtin_audio_envelope",
+      "body_sha256": "a5c2bca588e02e6650460271ffc49c5d7bcfe475d4992ba7da484eee027db832"
+    },
+    "maximum": 5,
+    "execution": "UNRUN",
+    "name": "audio_envelope",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "[0.25, 0 - 0.25]",
+      "0.5"
+    ],
+    "valid_assert": "(len of shape_result) == 2 and shape_result[0] == 0.125 and shape_result[1] == (0 - 0.125)",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 2119,
+      "function": "builtin_audio_gain",
+      "body_sha256": "7acf6c1ae28148a617d5e76655a41204d6b3d51a6bd3b7318845cca7bcd3f9e1"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_gain",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "[0.25, 0 - 0.25]",
+      "[0.125, 0.125]"
+    ],
+    "valid_assert": "(len of shape_result) == 2 and shape_result[0] == 0.375 and shape_result[1] == (0 - 0.125)",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 2088,
+      "function": "builtin_audio_mix",
+      "body_sha256": "96305c3c54b5be2d6d136719245e634f56a444e6e5aad57cec9a08ad89e6b19f"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_mix",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"@WAV@\"",
+      "0"
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "audio_music_stop of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"@WAV@\""
+      ]
+    ],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_audio",
+      "vmem_1500000",
+      "parent_deadline",
+      "sdl_mixer",
+      "owned_tiny_wav"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1693,
+      "function": "builtin_audio_music_play",
+      "body_sha256": "dffb159c46466f29dbb0a4684ea9e187d47c2d26e78effaef8165dc83f84e2a2"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_music_play",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Driver must supply tiny valid WAV and verify mixer availability; no missing-file positive."
+  },
+  {
+    "args": [
+      "32"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_music is audio_music_play of [\"@WAV@\", 0 - 1]\nassert of [shape_music == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "audio_music_stop of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_audio",
+      "vmem_1500000",
+      "parent_deadline",
+      "sdl_mixer",
+      "owned_tiny_wav"
+    ],
+    "scalar_forms": [
+      "32"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1737,
+      "function": "builtin_audio_music_volume",
+      "body_sha256": "7f488dc4f89f2060622f0295601cda3920205a0c67c3037a57fe6f29145f10f1"
+    },
+    "maximum": 1,
+    "execution": "UNRUN",
+    "name": "audio_music_volume",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Successful music setup required; volume answers null even with no mixer, which alone proves nothing."
+  },
+  {
+    "args": [
+      "0.001",
+      "0"
+    ],
+    "valid_assert": "(len of shape_result) == 44 and (sum of shape_result) == 0",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "resource_notes": "Zero amplitude makes output deterministic; checks shape acceptance, not random distribution.",
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 2056,
+      "function": "builtin_audio_noise",
+      "body_sha256": "c39854326b92289b241cb137b0b8d3f7be2de0addf8770532969fd7a7b551852"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_noise",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "44100",
+      "1"
+    ],
+    "valid_assert": "shape_result >= 2",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "audio_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_audio",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "scalar_forms": [
+      "null"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1283,
+      "function": "builtin_audio_open",
+      "body_sha256": "b70ff75bb2f477266a52692977f30a16ea2e832bd31f28d060ee423136824300"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_open",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive."
+  },
+  {
+    "args": [
+      "[0, 0, 0]",
+      "1"
+    ],
+    "valid_assert": "shape_result > 0",
+    "setup": "shape_audio is audio_open of [44100, 1]\nassert of [shape_audio >= 2, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "audio_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_audio",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1789,
+      "function": "builtin_audio_play_loop",
+      "body_sha256": "94a1884bd8dc3b1a0e15fa7af407b299a907dadfdc4ff9b3e8b42f0171ff8ec7"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_play_loop",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires successful real dummy device setup."
+  },
+  {
+    "args": [
+      "440",
+      "0.001",
+      "0.25"
+    ],
+    "valid_assert": "(len of shape_result) == 44",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1938,
+      "function": "builtin_audio_saw",
+      "body_sha256": "201b24c1c5a728b786a2ed45a65cab2d4474221864a5b0c43bfdd7c07fa8ea5b"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "audio_saw",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "440",
+      "0.001",
+      "0.25"
+    ],
+    "valid_assert": "(len of shape_result) == 44",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1895,
+      "function": "builtin_audio_sine",
+      "body_sha256": "3e2ff22aa6f4385de2b4964690132a49b58b8676bad1625821af644e33e76ef0"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "audio_sine",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "440",
+      "0.001",
+      "0.25"
+    ],
+    "valid_assert": "(len of shape_result) == 44",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1973,
+      "function": "builtin_audio_square",
+      "body_sha256": "6c282b564c084c4cf815c71afd7cf42fc44ffc014b6f91c7ba60e04e42797128"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "audio_square",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "44100",
+      "1"
+    ],
+    "valid_assert": "shape_result >= 2",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "audio_stream_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_audio",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "scalar_forms": [
+      "null"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1550,
+      "function": "builtin_audio_stream_open",
+      "body_sha256": "4df943571c21ee5dfe2cfb12b647e1f202ed680ebdc268f45a71d27429bc2784"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_stream_open",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive."
+  },
+  {
+    "args": [
+      "440",
+      "880",
+      "0.001",
+      "0.25",
+      "0"
+    ],
+    "valid_assert": "(len of shape_result) == 44",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 2009,
+      "function": "builtin_audio_sweep",
+      "body_sha256": "fbfa02a3d890f7c1a8ff2ed8a594c58a607ef9686b1df20e705ee9833c11afd5"
+    },
+    "maximum": 5,
+    "execution": "UNRUN",
+    "name": "audio_sweep",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "shape_channel",
+      "0.5"
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "shape_audio is audio_open of [44100, 1]\nassert of [shape_audio >= 2, \"shape control\"]\nshape_channel is audio_play_loop of [[0, 0, 0], 0 - 1]\nassert of [shape_channel > 0, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "audio_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_audio",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1829,
+      "function": "builtin_audio_volume",
+      "body_sha256": "59e78165e1634c51e0b6652e2955656068d9d08c9482c76d72cba997d1297678"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "audio_volume",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires successful dummy device; documented -1 loop keeps channel live until explicit close."
+  },
+  {
+    "name": "bit_and",
+    "args": [
+      "6",
+      "3"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 2",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "bit_or",
+    "args": [
+      "6",
+      "3"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 7",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "bit_shl",
+    "args": [
+      "6",
+      "1"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 12",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "bit_shr",
+    "args": [
+      "6",
+      "1"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 3",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "bit_xor",
+    "args": [
+      "6",
+      "3"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 5",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_copy",
+    "args": [
+      "a",
+      "0",
+      "b",
+      "1",
+      "2"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(shape_snapshot of b) == [5, 1, 2, 8]",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_deinterleave",
+    "args": [
+      "a",
+      "1",
+      "2",
+      "2"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(shape_snapshot of shape_result) == [2, 4]",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "optional_args": [
+      [
+        "a",
+        "1",
+        "2"
+      ]
+    ]
+  },
+  {
+    "name": "buf_dot",
+    "args": [
+      "a",
+      "b",
+      "0",
+      "0",
+      "2"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "shape_result == 17",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_fill",
+    "args": [
+      "a",
+      "1",
+      "2",
+      "9"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(shape_snapshot of a) == [1, 9, 9, 4]",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_from_pcm16le",
+    "args": [
+      "a",
+      "0",
+      "2"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(len of shape_result) == 2 and shape_result[0] == (513 / 32767) and shape_result[1] == (1027 / 32767)",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_get",
+    "args": [
+      "a",
+      "1"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "shape_result == 2",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_mix",
+    "args": [
+      "b",
+      "a",
+      "0",
+      "0",
+      "2",
+      "0.5"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(shape_snapshot of b) == [5.5, 7, 7, 8]",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_peak",
+    "args": [
+      "a",
+      "0",
+      "4"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "shape_result == 4",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_resample_linear",
+    "args": [
+      "a",
+      "3"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(shape_snapshot of shape_result) == [1, 2.5, 4]",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_scale_range",
+    "args": [
+      "a",
+      "1",
+      "2",
+      "2"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(shape_snapshot of a) == [1, 4, 6, 4]",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_set",
+    "args": [
+      "a",
+      "1",
+      "9"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "a[1] == 9",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_to_pcm16le",
+    "args": [
+      "a",
+      "0",
+      "2"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(shape_snapshot of shape_result) == [255, 127, 255, 127]",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "[\"@TMP@/input.eigs\"]",
+      "4",
+      "\"@TMP@/tokens\"",
+      "\"@TMP@/vocab\"",
+      "\"@TMP@/idents\"",
+      "0",
+      "0"
+    ],
+    "valid_assert": "(len of shape_result) == 3 and shape_result[0] > 0 and shape_result[2] == 1",
+    "setup": "write_text of [\"@TMP@/input.eigs\", \"x is 1\\n\"]",
+    "observe": "assert of [(file_exists of \"@TMP@/tokens\") == 1, \"shape control\"]\nassert of [(file_exists of \"@TMP@/vocab\") == 1, \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "",
+    "unchanged": "assert of [(file_exists of \"@TMP@/tokens\") == 0, \"shape control\"]\nassert of [(file_exists of \"@TMP@/vocab\") == 0, \"shape control\"]",
+    "optional_args": [
+      [
+        "[\"@TMP@/input.eigs\"]",
+        "4",
+        "\"@TMP@/tokens\"",
+        "\"@TMP@/vocab\""
+      ]
+    ],
+    "requirements": [
+      "owned_temp"
+    ],
+    "resource_notes": "One tiny source file, top-N 4, no model.",
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 439,
+      "function": "builtin_build_corpus",
+      "body_sha256": "e6bb8893de8e49fc816af413e4fad41be4f4b8bd4f80ee2c6512daf5cae9ae72"
+    },
+    "maximum": 7,
+    "execution": "UNRUN",
+    "name": "build_corpus",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "name": "char_at",
+    "args": [
+      "\"abc\"",
+      "1"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == \"b\"",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "classify",
+    "args": [
+      "snap",
+      "\"value\""
+    ],
+    "setup": "tracked is 2\ntracked is 3\nsnap is trajectory of tracked",
+    "valid_assert": "(type of shape_result) == \"str\"",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "optional_args": [
+      [
+        "snap"
+      ]
+    ],
+    "scalar_forms": [
+      "snap"
+    ]
+  },
+  {
+    "name": "coalesce",
+    "args": [
+      "null",
+      "4"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 4",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "concat",
+    "args": [
+      "[1, 2]",
+      "[3]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [1, 2, 3]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "contains",
+    "args": [
+      "\"abc\"",
+      "\"b\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "copy_into",
+    "args": [
+      "xs",
+      "1",
+      "[3]"
+    ],
+    "setup": "xs is [1, 2]",
+    "valid_assert": "xs == [1, 3]",
+    "observe": "print of xs",
+    "unchanged": "assert of [xs == [1, 2], \"copy mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "dict_remove",
+    "args": [
+      "d",
+      "\"k\""
+    ],
+    "setup": "d is {\"k\": 2}",
+    "valid_assert": "(has_key of [d, \"k\"]) == 0",
+    "observe": "print of d",
+    "unchanged": "assert of [d.k == 2, \"dictionary mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "dict_set",
+    "args": [
+      "d",
+      "\"k\"",
+      "3"
+    ],
+    "setup": "d is {\"k\": 2}",
+    "valid_assert": "d.k == 3",
+    "observe": "print of d",
+    "unchanged": "assert of [d.k == 2, \"dictionary mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "dispatch",
+    "args": [
+      "[(v) => v + 1]",
+      "0",
+      "4"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 5",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "divide",
+    "args": [
+      "[1, 2]",
+      "[3, 4]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [1 / 3, 0.5]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "dot",
+    "args": [
+      "shape_dot_a",
+      "shape_dot_b"
+    ],
+    "setup": "shape_dot_a is buf_from_list of ([1, 2])\nshape_dot_b is buf_from_list of ([3, 4])",
+    "valid_assert": "shape_result == 11",
+    "observe": "print of shape_result",
+    "unchanged": "assert of [(buf_get of [shape_dot_a, 0]) == 1 and (buf_get of [shape_dot_a, 1]) == 2 and (buf_get of [shape_dot_b, 0]) == 3 and (buf_get of [shape_dot_b, 1]) == 4, \"dot changed operands on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "[1]",
+      "1"
+    ],
+    "valid_assert": "shape_result == (0 - 1)",
+    "setup": "assert of [(eigen_model_loaded of null) == 0, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "model_compiled",
+      "fresh_unloaded_model"
+    ],
+    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
+    "source": {
+      "file": "src/model_infer.c",
+      "line": 618,
+      "function": "builtin_eigen_eval_loss",
+      "body_sha256": "f53b17e438ef9f1acb06ee13258e639b4e262bb38f314ac38d58dac57a02c985"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "eigen_eval_loss",
+    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
+  },
+  {
+    "args": [
+      "[1]",
+      "0.1",
+      "1",
+      "0"
+    ],
+    "valid_assert": "(len of shape_result) == 0",
+    "setup": "assert of [(eigen_model_loaded of null) == 0, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "[1]",
+        "0.1",
+        "1"
+      ]
+    ],
+    "requirements": [
+      "model_compiled",
+      "fresh_unloaded_model"
+    ],
+    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
+    "source": {
+      "file": "src/model_infer.c",
+      "line": 525,
+      "function": "builtin_eigen_generate",
+      "body_sha256": "91c0cb1384bd9f884923f7c82a9d915a5a236a8110714f65261a978e99c8e408"
+    },
+    "maximum": 4,
+    "execution": "UNRUN",
+    "name": "eigen_generate",
+    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
+  },
+  {
+    "name": "ends_with",
+    "args": [
+      "\"abc\"",
+      "\"bc\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "exit",
+    "args": [
+      "0"
+    ],
+    "setup": "print of \"exit-entered\"",
+    "valid_assert": "1",
+    "observe": "# Exit must unwind before this point.",
+    "unchanged": "print of \"exit-not-requested\"",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "scalar_forms": [
+      "0"
+    ],
+    "exits": true
+  },
+  {
+    "name": "fill",
+    "args": [
+      "2",
+      "\"x\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [\"x\", \"x\"]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "gather",
+    "args": [
+      "[[2, 3]]",
+      "[1]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [3]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "2",
+      "2",
+      "1",
+      "10",
+      "20",
+      "30",
+      "255"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "2",
+        "2",
+        "1",
+        "10",
+        "20",
+        "30"
+      ]
+    ],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 603,
+      "function": "builtin_gfx_circle",
+      "body_sha256": "facc85037ae8017793f484e0c2d87c0ea6e64f9650849857be789697fc569e56"
+    },
+    "maximum": 7,
+    "execution": "UNRUN",
+    "name": "gfx_circle",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "0",
+      "0",
+      "0"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "scalar_forms": [
+      "null"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 509,
+      "function": "builtin_gfx_clear",
+      "body_sha256": "be71a2ab45c720e01a01580a59fe9157288a3f4509255acb08aae5894feb21c8"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "gfx_clear",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "0",
+      "0",
+      "8",
+      "8"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "scalar_forms": [
+      "null"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 676,
+      "function": "builtin_gfx_clip",
+      "body_sha256": "ea1998b4576ed0dbbf0d85a665764b281547ecfeb0bdcd6787d687d84cbbebbf"
+    },
+    "maximum": 4,
+    "execution": "UNRUN",
+    "name": "gfx_clip",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "shape_pixels",
+      "1",
+      "1",
+      "0",
+      "0",
+      "1"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]\nshape_pixels is buffer of 1",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 2227,
+      "function": "builtin_gfx_fb",
+      "body_sha256": "e9e020ca3ff7076b5a0b4e7a77262aeb85efb917fc07b8b88b46dc20062a5e29"
+    },
+    "maximum": 6,
+    "execution": "UNRUN",
+    "name": "gfx_fb",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "0",
+      "0",
+      "1",
+      "1",
+      "10",
+      "20",
+      "30"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 564,
+      "function": "builtin_gfx_line",
+      "body_sha256": "29805ff2d8b1fc998e5476b3a5b8e177cf239f4d81a38a1d834dfb60c7c5a273"
+    },
+    "maximum": 7,
+    "execution": "UNRUN",
+    "name": "gfx_line",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "16",
+      "16",
+      "\"shape\""
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 444,
+      "function": "builtin_gfx_open",
+      "body_sha256": "f204470677536e8461c1475a8ae1c4f4597681a46cd7ba9089561908d660a9b7"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "gfx_open",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Driver must establish actual SDL dummy availability; a zero open result cannot count as positive."
+  },
+  {
+    "args": [
+      "0",
+      "0",
+      "10",
+      "20",
+      "30"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 585,
+      "function": "builtin_gfx_point",
+      "body_sha256": "533a1155906cf2498e4bf1381eef921328dad34de180092e66ec1c22cf60959e"
+    },
+    "maximum": 5,
+    "execution": "UNRUN",
+    "name": "gfx_point",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "0",
+      "0"
+    ],
+    "valid_assert": "(len of shape_result) == 3",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]\ngfx_clear of [10, 20, 30]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 709,
+      "function": "builtin_gfx_read",
+      "body_sha256": "13fe539204dfd0c34542168b75f49e8f01fda67e9462c1280469e3c40552412e"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "gfx_read",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "0",
+      "0",
+      "2",
+      "2",
+      "10",
+      "20",
+      "30",
+      "255"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "0",
+        "0",
+        "2",
+        "2",
+        "10",
+        "20",
+        "30"
+      ]
+    ],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 541,
+      "function": "builtin_gfx_rect",
+      "body_sha256": "7a401ca7de0f69246cc3c3155b3a020d57a193d092e3f4e47176a7190d9307a6"
+    },
+    "maximum": 8,
+    "execution": "UNRUN",
+    "name": "gfx_rect",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "0",
+      "0",
+      "4",
+      "4",
+      "1",
+      "10",
+      "20",
+      "30",
+      "255"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "0",
+        "0",
+        "4",
+        "4",
+        "1",
+        "10",
+        "20",
+        "30"
+      ]
+    ],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 630,
+      "function": "builtin_gfx_rrect",
+      "body_sha256": "bb938df2c0cecc6bbae19b02cf1f188af1bb19c03f854bd6b89b7004d1107c8a"
+    },
+    "maximum": 9,
+    "execution": "UNRUN",
+    "name": "gfx_rrect",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "0",
+      "0",
+      "\"a\"",
+      "10",
+      "20",
+      "30",
+      "1"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "gfx_close of null",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "0",
+        "0",
+        "\"a\"",
+        "10",
+        "20",
+        "30"
+      ]
+    ],
+    "requirements": [
+      "gfx_compiled",
+      "sdl_dummy_video",
+      "vmem_1500000",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 975,
+      "function": "builtin_gfx_text",
+      "body_sha256": "e20e8d5550eaeae78ae996b9dcb325a5e92182d4d7ef325ba6e48a55903cd63a"
+    },
+    "maximum": 7,
+    "execution": "UNRUN",
+    "name": "gfx_text",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+  },
+  {
+    "args": [
+      "1"
+    ],
+    "valid_assert": "shape_result > 0",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "scalar_forms": [
+      "1",
+      "null"
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1104,
+      "function": "builtin_gfx_text_height",
+      "body_sha256": "965d51421b5f3237e154fde13900675cf595b887d3ba89c16aae9d9aacd9908d"
+    },
+    "maximum": 1,
+    "execution": "UNRUN",
+    "name": "gfx_text_height",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"a\"",
+      "1"
+    ],
+    "valid_assert": "shape_result > 0",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"a\""
+      ]
+    ],
+    "requirements": [],
+    "scalar_forms": [
+      "\"a\""
+    ],
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 1066,
+      "function": "builtin_gfx_text_width",
+      "body_sha256": "b2cef885d1b8cc57032c8e6ce4273ffda98d2ae6860499bb3a145962b088239e"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "gfx_text_width",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "name": "has_key",
+    "args": [
+      "{\"k\": 2}",
+      "\"k\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "hex",
+    "args": [
+      "26",
+      "4"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == \"001A\"",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "scalar_forms": [
+      "26"
+    ],
+    "form_asserts": {
+      "scalar:0": "shape_result == \"1A\""
+    }
+  },
+  {
+    "args": [
+      "\"key\"",
+      "\"message\""
+    ],
+    "valid_assert": "(len of shape_result) == 64",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/hash.c",
+      "line": 331,
+      "function": "builtin_hmac_sha256",
+      "body_sha256": "3b8b4760aa9af6ce36fe05fd7c5ead90b41bac05afb68d6f02515503e04c0180"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "hmac_sha256",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"@HTTP_URL@\"",
+      "\"{}\"",
+      "\"abc\""
+    ],
+    "valid_assert": "shape_result == \"ok\"",
+    "setup": "define shape_post_count(ignored) as:\n    counted is exec_capture of [\"curl\", \"-fsS\", \"--max-time\", \"2\", \"@HTTP_COUNT_URL@\"]\n    assert of [counted[0] == 0, \"owned count request failed\"]\n    return counted[1]\nassert of [(shape_post_count of null) == \"0\", \"fresh POST count\"]",
+    "observe": "assert of [(shape_post_count of null) == \"1\", \"exactly one POST\"]\nprint of shape_result",
+    "cleanup": "",
+    "unchanged": "assert of [(shape_post_count of null) == \"0\", \"surplus must not POST\"]",
+    "optional_args": [],
+    "requirements": [
+      "http_compiled",
+      "owned_loopback_http",
+      "parent_deadline"
+    ],
+    "source": {
+      "file": "src/ext_http.c",
+      "line": 699,
+      "function": "builtin_http_post",
+      "body_sha256": "51b58e2c5fb750f39f36f785b68842375526ef769ca5141f0f58b87136049c05"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "http_post",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "http_context": "client"
+  },
+  {
+    "args": [
+      "\"GET\"",
+      "\"/shape\"",
+      "\"static\"",
+      "\"ok\""
+    ],
+    "valid_assert": "shape_result == \"route registered\"",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"GET\"",
+        "\"/shape\"",
+        "\"ok\""
+      ]
+    ],
+    "requirements": [
+      "http_compiled"
+    ],
+    "resource_notes": "Configuration only; does not bind or start a listener.",
+    "source": {
+      "file": "src/ext_http.c",
+      "line": 465,
+      "function": "builtin_http_route",
+      "body_sha256": "9bc321c504aca8ea7d64f287d8178e816c9b389f3e08c620fd1f9fb5c39baace"
+    },
+    "maximum": 4,
+    "execution": "UNRUN",
+    "name": "http_route",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"GET\"",
+      "\"/shape\"",
+      "\"static\"",
+      "\"ok\""
+    ],
+    "valid_assert": "shape_result == \"route registered\"",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"GET\"",
+        "\"/shape\"",
+        "\"ok\""
+      ]
+    ],
+    "requirements": [
+      "http_compiled"
+    ],
+    "resource_notes": "Configuration only; does not bind or start a listener.",
+    "source": {
+      "file": "src/ext_http.c",
+      "line": 470,
+      "function": "builtin_http_route_authed",
+      "body_sha256": "a220e711107d4c5f3db2a5cdcdabef0991419aebc3791e3b0f4aeb3c0d034060"
+    },
+    "maximum": 4,
+    "execution": "UNRUN",
+    "name": "http_route_authed",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"/shape\"",
+      "\"@TMP@\""
+    ],
+    "valid_assert": "shape_result == \"static registered\"",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "http_compiled",
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/ext_http.c",
+      "line": 475,
+      "function": "builtin_http_static",
+      "body_sha256": "d1f857f68ea7f10ed11d752f58cad71ef765cdbb0d5febb0eb9f3bd7008290bb"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "http_static",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "name": "index_of",
+    "args": [
+      "\"abc\"",
+      "\"b\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "join",
+    "args": [
+      "[\"a\", \"b\"]",
+      "\"-\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == \"a-b\"",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "json_path",
+    "args": [
+      "\"{\\\"k\\\":2}\"",
+      "\"k\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == \"2\"",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "list_contains",
+    "args": [
+      "[1, 2]",
+      "2"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "list_index_of",
+    "args": [
+      "[1, 2]",
+      "2"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "list_insert_at",
+    "args": [
+      "xs",
+      "1",
+      "3"
+    ],
+    "setup": "xs is [1, 2]",
+    "valid_assert": "xs == [1, 3, 2]",
+    "observe": "print of xs",
+    "unchanged": "assert of [xs == [1, 2], \"list mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "list_remove_at",
+    "args": [
+      "xs",
+      "0"
+    ],
+    "setup": "xs is [1, 2]",
+    "valid_assert": "xs == [2]",
+    "observe": "print of xs",
+    "unchanged": "assert of [xs == [1, 2], \"list mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "list_slice",
+    "args": [
+      "[1, 2, 3]",
+      "0",
+      "2"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [1, 2]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "list_truncate",
+    "args": [
+      "xs",
+      "1"
+    ],
+    "setup": "xs is [1, 2]",
+    "valid_assert": "xs == [1]",
+    "observe": "print of xs",
+    "unchanged": "assert of [xs == [1, 2], \"list mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "matmul",
+    "args": [
+      "[[2]]",
+      "[[3]]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [6]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "matmul_at",
+    "args": [
+      "[[2]]",
+      "[[3]]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [[6]]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "matmul_bt",
+    "args": [
+      "[[2]]",
+      "[[3]]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [6]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "multiply",
+    "args": [
+      "[1, 2]",
+      "[3, 4]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [3, 8]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "[1]",
+      "[2]",
+      "0.001"
+    ],
+    "valid_assert": "shape_result == \"{\\\"status\\\": \\\"error\\\", \\\"error\\\": \\\"Model not loaded\\\"}\"",
+    "setup": "assert of [(eigen_model_loaded of null) == 0, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [
+      "model_compiled",
+      "fresh_unloaded_model"
+    ],
+    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
+    "source": {
+      "file": "src/model_train.c",
+      "line": 1432,
+      "function": "builtin_native_train_step",
+      "body_sha256": "4a656ba54a20ddcb6adbcf58348779e8cc8181602b516ff62990f8104e43eec8"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "native_train_step_builtin",
+    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
+  },
+  {
+    "name": "nearest_in_range",
+    "args": [
+      "[{\"px\": 1, \"py\": 0, \"active\": 1}, {\"px\": 2, \"py\": 0, \"active\": 1}]",
+      "0",
+      "0",
+      "4",
+      "8",
+      "8",
+      "\"px\"",
+      "\"py\"",
+      "\"active\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result.index == 0 and shape_result.dist == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "optional_args": [
+      [
+        "[{\"px\": 1, \"py\": 0, \"active\": 1}, {\"px\": 2, \"py\": 0, \"active\": 1}]",
+        "0",
+        "0",
+        "4",
+        "8",
+        "8"
+      ]
+    ]
+  },
+  {
+    "name": "nearest_in_range_all",
+    "args": [
+      "[{\"px\": 1, \"py\": 0, \"active\": 1}, {\"px\": 2, \"py\": 0, \"active\": 1}]",
+      "4",
+      "8",
+      "8",
+      "\"px\"",
+      "\"py\"",
+      "\"active\""
+    ],
+    "setup": "",
+    "valid_assert": "(len of shape_result) == 2 and shape_result[0].index == 0",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "optional_args": [
+      [
+        "[{\"px\": 1, \"py\": 0, \"active\": 1}, {\"px\": 2, \"py\": 0, \"active\": 1}]",
+        "4",
+        "8",
+        "8"
+      ]
+    ]
+  },
+  {
+    "name": "numerical_grad",
+    "args": [
+      "loss",
+      "p",
+      "0.001"
+    ],
+    "setup": "p is [2]\ndefine loss(n) as:\n    return p[0] * p[0]",
+    "valid_assert": "(abs of (shape_result[0] - 4)) < 0.00001",
+    "observe": "print of shape_result\nprint of p",
+    "unchanged": "assert of [p == [2], \"gradient mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "numerical_grad_cols",
+    "args": [
+      "loss",
+      "p",
+      "[0]",
+      "0.001"
+    ],
+    "setup": "p is [[2]]\ndefine loss(n) as:\n    return p[0][0] * p[0][0]",
+    "valid_assert": "(abs of (shape_result[0][0] - 4)) < 0.00001",
+    "observe": "print of shape_result\nprint of p",
+    "unchanged": "assert of [p == [[2]], \"gradient mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "numerical_grad_rows",
+    "args": [
+      "loss",
+      "p",
+      "[0]",
+      "0.001"
+    ],
+    "setup": "p is [[2]]\ndefine loss(n) as:\n    return p[0][0] * p[0][0]",
+    "valid_assert": "(abs of (shape_result[0][0] - 4)) < 0.00001",
+    "observe": "print of shape_result\nprint of p",
+    "unchanged": "assert of [p == [[2]], \"gradient mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "path_join",
+    "args": [
+      "\"a\"",
+      "\"b\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == \"a/b\"",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "pow",
+    "args": [
+      "[1, 2]",
+      "[3, 4]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [1, 16]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "shape_mem",
+      "shape_fb"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "shape_mem is buffer of 65536\nshape_fb is buffer of 23040\nbuf_set of [shape_fb, 0, 3]",
+    "observe": "assert of [(buf_get of [shape_fb, 0]) == 0, \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "",
+    "unchanged": "assert of [(buf_get of [shape_fb, 0]) == 3, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "gfx_compiled",
+      "vmem_1500000"
+    ],
+    "resource_notes": "Finite zero-filled memory, LCD off; actual documented 65536/23040 operand sizes, no device.",
+    "source": {
+      "file": "src/ext_gfx.c",
+      "line": 2300,
+      "function": "builtin_ppu_render_frame",
+      "body_sha256": "b47a90924e043554ce67b53a33ed4432ca4b7b112b8dcacbc311af1fa8ad0e65"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "ppu_render_frame",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "shape_proc[2]",
+      "3"
+    ],
+    "valid_assert": "shape_result == \"abc\"",
+    "setup": "shape_proc is proc_spawn of [\"@PRINTF@\", \"abc\"]\nassert of [shape_proc[0] > 0, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "proc_close of shape_proc[1]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"shape control\"]",
+    "unchanged": "assert of [(proc_read of [shape_proc[2], 3]) == \"abc\", \"read consumed bytes on rejection\"]",
+    "optional_args": [],
+    "requirements": [
+      "owned_process_group",
+      "printf_executable",
+      "parent_deadline"
+    ],
+    "legacy_surplus_null": true,
+    "legacy_surplus_assert": "shape_result == null",
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1624,
+      "function": "builtin_proc_read",
+      "body_sha256": "50572234ed2aa6636259b68bb347f0fcccad9bf5879d7d4146fd166bc6266378"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "proc_read",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "legacy_surplus_observe": "shape_legacy_remaining is proc_read of [shape_proc[2], 3]\nassert of [shape_legacy_remaining == \"abc\", \"legacy surplus did not preserve unread bytes\"]\nprint of shape_result"
+  },
+  {
+    "args": [
+      "shape_proc[2]",
+      "3"
+    ],
+    "valid_assert": "(len of shape_result) == 3 and (buf_get of [shape_result, 1]) == 98",
+    "setup": "shape_proc is proc_spawn of [\"@PRINTF@\", \"abc\"]\nassert of [shape_proc[0] > 0, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "proc_close of shape_proc[1]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"shape control\"]",
+    "unchanged": "shape_remaining is proc_read of [shape_proc[2], 3]\nassert of [shape_remaining == \"abc\", \"buffer read consumed bytes on rejection\"]",
+    "optional_args": [],
+    "requirements": [
+      "owned_process_group",
+      "printf_executable",
+      "parent_deadline"
+    ],
+    "legacy_surplus_null": true,
+    "legacy_surplus_assert": "shape_result == null",
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1653,
+      "function": "builtin_proc_read_buf",
+      "body_sha256": "5f68a8c97f24e4dfdc644839c9d0d49eee5363ea0e0cce1e5eceb1f8270a54fd"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "proc_read_buf",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "legacy_surplus_observe": "shape_legacy_remaining is proc_read of [shape_proc[2], 3]\nassert of [shape_legacy_remaining == \"abc\", \"legacy surplus did not preserve unread bytes\"]\nprint of shape_result"
+  },
+  {
+    "args": [
+      "shape_proc[1]",
+      "\"abc\""
+    ],
+    "valid_assert": "shape_result == 3",
+    "setup": "shape_proc is proc_spawn of ([\"@CAT@\"])\nassert of [shape_proc[0] > 0, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "proc_close of shape_proc[1]\nshape_drain is proc_read of [shape_proc[2], 3]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"shape control\"]",
+    "unchanged": "proc_close of shape_proc[1]\nshape_rejected_data is proc_read of [shape_proc[2], 3]\nassert of [shape_rejected_data == null, \"write emitted bytes on rejection\"]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"owned child joined\"]",
+    "optional_args": [],
+    "requirements": [
+      "owned_process_group",
+      "cat_executable",
+      "parent_deadline"
+    ],
+    "legacy_surplus_assert": "shape_result == (0 - 1)",
+    "resource_notes": "Close stdin before drain: cat returns data or EOF for accepted/rejected calls. Drain never waits with stdin open. At most three bytes. Parent must terminate/reap group on any failed assertion.",
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1543,
+      "function": "builtin_proc_write",
+      "body_sha256": "0484d5631e62dc029e769092ed139218a9857aa83cd29cb6f25e3efb28529e17"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "proc_write",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "strict_cleanup": ""
+  },
+  {
+    "name": "random_int",
+    "args": [
+      "2",
+      "2"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 2",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "random_normal",
+    "args": [
+      "1",
+      "2",
+      "0.1"
+    ],
+    "setup": "seed_random of 7",
+    "valid_assert": "(shape of shape_result) == [1, 2]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "optional_args": [
+      [
+        "2",
+        "0.1"
+      ]
+    ],
+    "form_asserts": {
+      "optional:0": "(len of shape_result) == 2"
+    },
+    "legacy_surplus_null": true
+  },
+  {
+    "name": "range",
+    "args": [
+      "0",
+      "3",
+      "1"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [0, 1, 2]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "optional_args": [
+      [
+        "0",
+        "3"
+      ],
+      [
+        "3"
+      ],
+      []
+    ],
+    "scalar_forms": [
+      "3"
+    ],
+    "form_asserts": {
+      "optional:1": "shape_result == [0, 1, 2]",
+      "optional:2": "shape_result == []"
+    }
+  },
+  {
+    "args": [
+      "\"@TMP@/bytes\"",
+      "3"
+    ],
+    "valid_assert": "(len of shape_result) == 3 and (buf_get of [shape_result, 1]) == 98",
+    "setup": "write_text of [\"@TMP@/bytes\", \"abc\"]",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"@TMP@/bytes\""
+      ]
+    ],
+    "requirements": [
+      "owned_temp"
+    ],
+    "scalar_forms": [
+      "\"@TMP@/bytes\""
+    ],
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1113,
+      "function": "builtin_read_bytes_buf",
+      "body_sha256": "1fdb94abf37b60c94acf57a4514160bebb2d23d8e0fabe74bb09bf98fd14cdc5"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "read_bytes_buf",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "name": "recv_timeout",
+    "args": [
+      "ch",
+      "1"
+    ],
+    "setup": "ch is channel of null\nsend of [ch, 7]",
+    "valid_assert": "shape_result == 7",
+    "observe": "print of shape_result",
+    "unchanged": "assert of [(try_recv of ch) == 7, \"recv consumed on rejection\"]",
+    "cleanup": "close_channel of ch",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "\"aba\"",
+      "\"a\""
+    ],
+    "valid_assert": "(len of shape_result) == 2",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 145,
+      "function": "builtin_match_all",
+      "body_sha256": "205e2dc4d39dcc40c47305ed236bc282d55a08516d6eeeaba925a170f677ebbd"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "regex_find",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"aba\"",
+      "\"a\""
+    ],
+    "valid_assert": "(len of shape_result) == 1 and shape_result[0] == \"a\"",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 88,
+      "function": "builtin_match",
+      "body_sha256": "7cd0deb28e9cd3334f3d59cd4ee5c9fd24e7e37826adc2bc4917610f4b511e5c"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "regex_match",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"aba\"",
+      "\"a\"",
+      "\"x\""
+    ],
+    "valid_assert": "shape_result == \"xbx\"",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [],
+    "requirements": [],
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 183,
+      "function": "builtin_regex_replace",
+      "body_sha256": "c72c493a69ef1061d57c4aed98adaa553f70ce1906c5659dd9bcd62e7486421c"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "regex_replace",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"@TMP@/from\"",
+      "\"@TMP@/to\""
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "write_text of [\"@TMP@/from\", \"abc\"]",
+    "observe": "assert of [(read_text of \"@TMP@/to\") == \"abc\", \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "",
+    "unchanged": "assert of [(read_text of \"@TMP@/from\") == \"abc\", \"shape control\"]\nassert of [(file_exists of \"@TMP@/to\") == 0, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1040,
+      "function": "builtin_rename",
+      "body_sha256": "db2a5901dd07e83993494dbddb86f9243d532732c6277eeceadf4eb472ff4d62"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "rename",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "name": "reshape",
+    "args": [
+      "a",
+      "2",
+      "2"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2, 3, 4])\nb is buf_from_list of ([5, 6, 7, 8])",
+    "valid_assert": "(shape of shape_result) == [2, 2]",
+    "observe": "print of shape_result\nprint of (shape_snapshot of a)\nprint of (shape_snapshot of b)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2, 3, 4] and (shape_snapshot of b) == [5, 6, 7, 8], \"buffer changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "sandbox_run",
+    "args": [
+      "descriptor",
+      "100",
+      "1048576"
+    ],
+    "setup": "descriptor is @DESCRIPTOR@",
+    "valid_assert": "shape_result.ok == 1 and shape_result.result == 42",
+    "observe": "print of shape_result.result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [
+      "normal_compiler_constant_42",
+      "owning_variant_producer",
+      "outer_process_deadline"
+    ],
+    "claim": "Normal-compiler-produced return 42 only; max and optional successful calls plus inert surplus. No refusal or security-workload claim.",
+    "optional_args": [
+      [
+        "descriptor"
+      ],
+      [
+        "descriptor",
+        "100"
+      ]
+    ]
+  },
+  {
+    "name": "scan_int_tokens",
+    "args": [
+      "\"2 3\"",
+      "\"#\""
+    ],
+    "setup": "",
+    "valid_assert": "(len of shape_result) == 2",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "scalar_forms": [
+      "\"2 3\""
+    ],
+    "optional_args": [
+      [
+        "\"2 3\""
+      ]
+    ]
+  },
+  {
+    "name": "scan_ints",
+    "args": [
+      "\"2 3\"",
+      "\"#\""
+    ],
+    "setup": "",
+    "valid_assert": "(len of shape_result) == 2",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "scalar_forms": [
+      "\"2 3\""
+    ],
+    "optional_args": [
+      [
+        "\"2 3\""
+      ]
+    ]
+  },
+  {
+    "name": "scan_tokens",
+    "args": [
+      "\"2 3\"",
+      "\"#\""
+    ],
+    "setup": "",
+    "valid_assert": "(len of shape_result) == 2",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "scalar_forms": [
+      "\"2 3\""
+    ],
+    "optional_args": [
+      [
+        "\"2 3\""
+      ]
+    ]
+  },
+  {
+    "name": "scatter_add",
+    "args": [
+      "a",
+      "[1]",
+      "[3]"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\na is buf_from_list of ([1, 2])",
+    "valid_assert": "(shape_snapshot of a) == [1, 5]",
+    "observe": "print of (shape_snapshot of a)",
+    "unchanged": "assert of [(shape_snapshot of a) == [1, 2], \"scatter mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "screen_put",
+    "args": [
+      "1",
+      "1",
+      "\"x\"",
+      "0"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == null",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "optional_args": [
+      [
+        "1",
+        "1",
+        "\"x\""
+      ]
+    ]
+  },
+  {
+    "name": "screen_render",
+    "args": [
+      "[[0, 0, \"x\", 0]]",
+      "2",
+      "2",
+      "0",
+      "0",
+      "4",
+      "4"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == null",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "secure_equals",
+    "args": [
+      "\"same\"",
+      "\"same\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "send",
+    "args": [
+      "ch",
+      "7"
+    ],
+    "setup": "ch is channel of null",
+    "valid_assert": "shape_result == null",
+    "observe": "print of (try_recv of ch)",
+    "unchanged": "assert of [(try_recv of ch) == null, \"send enqueued on rejection\"]",
+    "cleanup": "close_channel of ch",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "set_observer_thresholds",
+    "args": [
+      "0.001",
+      "0.01",
+      "0.1"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == null",
+    "observe": "print of shape_result",
+    "unchanged": "# Warning is emitted only on successful threshold mutation; rejected stdout/stderr must contain solely the exact guard witness.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "sgd_update",
+    "args": [
+      "p",
+      "[2]",
+      "0.5"
+    ],
+    "setup": "p is [4]",
+    "valid_assert": "p == [3]",
+    "observe": "print of p",
+    "unchanged": "assert of [p == [4], \"SGD mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "sgd_update_cols",
+    "args": [
+      "p",
+      "[[2]]",
+      "[0]",
+      "0.5"
+    ],
+    "setup": "p is [[4]]",
+    "valid_assert": "p == [[3]]",
+    "observe": "print of p",
+    "unchanged": "assert of [p == [[4]], \"SGD mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "sgd_update_rows",
+    "args": [
+      "p",
+      "[[2]]",
+      "[0]",
+      "0.5"
+    ],
+    "setup": "p is [[4]]",
+    "valid_assert": "p == [[3]]",
+    "observe": "print of p",
+    "unchanged": "assert of [p == [[4]], \"SGD mutated on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "\"shape-key\"",
+      "2"
+    ],
+    "valid_assert": "shape_result == 5",
+    "setup": "shared_set of [\"shape-key\", 3]\nassert of [(shared_get of \"shape-key\") == 3, \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "assert of [(shared_get of \"shape-key\") == 3, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "http_compiled",
+      "active_owned_server_context"
+    ],
+    "source": {
+      "file": "src/ext_http.c",
+      "line": 933,
+      "function": "builtin_shared_incr",
+      "body_sha256": "406fea8f09c1afa210b43baa7001bdb07b45b894a30aa1bc4d3838515a5b8ae5"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "shared_incr",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "http_context": "handler"
+  },
+  {
+    "args": [
+      "\"shape-key\"",
+      "3"
+    ],
+    "valid_assert": "shape_result == null",
+    "setup": "",
+    "observe": "assert of [(shared_get of \"shape-key\") == 3, \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "",
+    "unchanged": "assert of [(shared_has of \"shape-key\") == 0, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "http_compiled",
+      "active_owned_server_context"
+    ],
+    "source": {
+      "file": "src/ext_http.c",
+      "line": 882,
+      "function": "builtin_shared_set",
+      "body_sha256": "04322cca44d76c1fe80b436d6f9bcbc61ae3c39368c86b7ae8ba856c45ff804e"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "shared_set",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "http_context": "handler"
+  },
+  {
+    "name": "sign_extend",
+    "args": [
+      "255",
+      "8"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == (0 - 1)",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "sort_by",
+    "args": [
+      "[2, 1]",
+      "(v) => v"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [1, 2]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "split",
+    "args": [
+      "\"a,b\"",
+      "\",\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [\"a\", \"b\"]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "scalar_forms": [
+      "\"a,b\""
+    ],
+    "form_asserts": {
+      "scalar:0": "(len of shape_result) >= 1"
+    }
+  },
+  {
+    "name": "starts_with",
+    "args": [
+      "\"abc\"",
+      "\"ab\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "shape_store",
+      "\"items\""
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "store_close of shape_store",
+    "unchanged": "assert of [(store_count of [shape_store, \"items\"]) == 1, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "store_compiled",
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/ext_store.c",
+      "line": 1386,
+      "function": "builtin_store_count",
+      "body_sha256": "cb4beac5e3778aa4c29a4b05550faade130b3e289a3c74c93b1b7d7c8fd4591e"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "store_count",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "shape_store",
+      "\"items\"",
+      "shape_key"
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
+    "observe": "assert of [(store_count of [shape_store, \"items\"]) == 0, \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "store_close of shape_store",
+    "unchanged": "assert of [(store_count of [shape_store, \"items\"]) == 1, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "store_compiled",
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/ext_store.c",
+      "line": 1286,
+      "function": "builtin_store_delete",
+      "body_sha256": "f1ef15b7482b0175a222842711fe6e22068446fd09c823eb75a2a49be42160ae"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "store_delete",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "shape_store",
+      "\"items\""
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
+    "observe": "assert of [(store_count of [shape_store, \"items\"]) == 0, \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "store_close of shape_store",
+    "unchanged": "assert of [(store_count of [shape_store, \"items\"]) == 1, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "store_compiled",
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/ext_store.c",
+      "line": 1577,
+      "function": "builtin_store_drop",
+      "body_sha256": "d7cf81f5ed270ddec2e30131f46e680ae8fa2186444dbc5b02f5547214dfc30b"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "store_drop",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "shape_store",
+      "\"items\"",
+      "shape_key"
+    ],
+    "valid_assert": "shape_result[\"value\"] == 1",
+    "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "store_close of shape_store",
+    "unchanged": "assert of [(store_count of [shape_store, \"items\"]) == 1, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "store_compiled",
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/ext_store.c",
+      "line": 1132,
+      "function": "builtin_store_get",
+      "body_sha256": "fe17851a5a2d3386f56f514038c8c2067b5ab41db65b5581d68956919d4f6c61"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "store_get",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "shape_store",
+      "\"items\"",
+      "{\"value\": 2}"
+    ],
+    "valid_assert": "(type of shape_result) == \"str\"",
+    "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]",
+    "observe": "assert of [(store_count of [shape_store, \"items\"]) == 1, \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "store_close of shape_store",
+    "unchanged": "assert of [(store_count of [shape_store, \"items\"]) == 0, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "store_compiled",
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/ext_store.c",
+      "line": 968,
+      "function": "builtin_store_put",
+      "body_sha256": "61be0df6c04ca8f7bec7f1325ccce81f68f2f285ef000cf0f994ac7939509bc4"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "store_put",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "shape_store",
+      "\"items\""
+    ],
+    "valid_assert": "(len of shape_result) == 1",
+    "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
+    "observe": "print of shape_result",
+    "cleanup": "store_close of shape_store",
+    "unchanged": "assert of [(store_count of [shape_store, \"items\"]) == 1, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "store_compiled",
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/ext_store.c",
+      "line": 1342,
+      "function": "builtin_store_query",
+      "body_sha256": "174c0b5006db76b51d9887ce6a4f22e68f395ecffbac387e54390a307d574a3e"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "store_query",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "shape_store",
+      "\"items\"",
+      "shape_key",
+      "{\"value\": 2}"
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
+    "observe": "shape_after is store_get of [shape_store, \"items\", shape_key]\nassert of [shape_after[\"value\"] == 2, \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "store_close of shape_store",
+    "unchanged": "assert of [(store_count of [shape_store, \"items\"]) == 1, \"shape control\"] \nshape_after is store_get of [shape_store, \"items\", shape_key]\nassert of [shape_after[\"value\"] == 1, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "store_compiled",
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/ext_store.c",
+      "line": 1436,
+      "function": "builtin_store_update",
+      "body_sha256": "f114d68ee7dcda12c7543151c6de57229a33d1861daed61d3329f7bbd8ba652d"
+    },
+    "maximum": 4,
+    "execution": "UNRUN",
+    "name": "store_update",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "name": "str_replace",
+    "args": [
+      "\"aba\"",
+      "\"a\"",
+      "\"x\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == \"xbx\"",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "\"@TMP@/stream\"",
+      "1"
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "stream_close of null",
+    "unchanged": "assert of [(file_exists of \"@TMP@/stream\") == 0, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 256,
+      "function": "builtin_stream_open",
+      "body_sha256": "c7c970e8911fd271a624aee4d7edc5b4f16bb017c4fea00c72b626448d826d5a"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "stream_open",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "name": "substr",
+    "args": [
+      "\"abcd\"",
+      "1",
+      "2"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == \"bc\"",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "subtract",
+    "args": [
+      "[1, 2]",
+      "[3, 4]"
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == [(0 - 2), (0 - 2)]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "task_send",
+    "args": [
+      "0",
+      "7"
+    ],
+    "setup": "define completed(n) as:\n    return 3\ntask_id is task_spawn of completed",
+    "valid_assert": "shape_result == 1",
+    "observe": "print of shape_result\nprint of (task_try_recv of null)",
+    "unchanged": "assert of [(task_try_recv of null) == null, \"task send enqueued on rejection\"]",
+    "cleanup": "assert of [(task_join of task_id) == 3, \"owned task join\"]",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "tensor_save",
+    "args": [
+      "[[2, 3]]",
+      "\"@TMP@/tensor\""
+    ],
+    "setup": "",
+    "valid_assert": "shape_result == 1",
+    "observe": "assert of [(tensor_load of \"@TMP@/tensor\") == [[2, 3]], \"tensor round trip\"]\nprint of \"observed\"",
+    "unchanged": "assert of [(file_exists of \"@TMP@/tensor\") == 0, \"tensor file created on rejection\"]",
+    "cleanup": "",
+    "requirements": [
+      "owned_temp"
+    ],
+    "claim": "Tiny finite tensor save/load round trip; surplus rejection creates no file."
+  },
+  {
+    "name": "text_builder_append",
+    "args": [
+      "tb",
+      "\"b\""
+    ],
+    "setup": "tb is text_builder_new of null\ntext_builder_append of [tb, \"a\"]",
+    "valid_assert": "(text_builder_to_string of tb) == \"ab\"",
+    "observe": "print of (text_builder_to_string of tb)",
+    "unchanged": "assert of [(text_builder_to_string of tb) == \"a\", \"builder changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "text_builder_append_line",
+    "args": [
+      "tb",
+      "\"b\""
+    ],
+    "setup": "tb is text_builder_new of null\ntext_builder_append of [tb, \"a\"]",
+    "valid_assert": "(text_builder_to_string of tb) == \"ab\\n\"",
+    "observe": "print of (text_builder_to_string of tb)",
+    "unchanged": "assert of [(text_builder_to_string of tb) == \"a\", \"builder changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "text_builder_extend",
+    "args": [
+      "tb",
+      "[\"b\", \"c\"]"
+    ],
+    "setup": "tb is text_builder_new of null\ntext_builder_append of [tb, \"a\"]",
+    "valid_assert": "(text_builder_to_string of tb) == \"abc\"",
+    "observe": "print of (text_builder_to_string of tb)",
+    "unchanged": "assert of [(text_builder_to_string of tb) == \"a\", \"builder changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "args": [
+      "\"@TMP@/bytes\"",
+      "[65, 66]",
+      "0"
+    ],
+    "valid_assert": "shape_result == 2",
+    "setup": "",
+    "observe": "assert of [(read_text of \"@TMP@/bytes\") == \"AB\", \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "",
+    "unchanged": "assert of [(file_exists of \"@TMP@/bytes\") == 0, \"shape control\"]",
+    "optional_args": [
+      [
+        "\"@TMP@/bytes\"",
+        "[65, 66]"
+      ]
+    ],
+    "requirements": [
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1751,
+      "function": "builtin_write_bytes",
+      "body_sha256": "8ddec6ba90c89cb73074f97bb008b7bd67e3c83b6a241ab566668d76c7e78d59"
+    },
+    "maximum": 3,
+    "execution": "UNRUN",
+    "name": "write_bytes",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "args": [
+      "\"@TMP@/text\"",
+      "\"abc\""
+    ],
+    "valid_assert": "shape_result == 1",
+    "setup": "",
+    "observe": "assert of [(read_text of \"@TMP@/text\") == \"abc\", \"shape control\"]\nprint of \"observed\"",
+    "cleanup": "",
+    "unchanged": "assert of [(file_exists of \"@TMP@/text\") == 0, \"shape control\"]",
+    "optional_args": [],
+    "requirements": [
+      "owned_temp"
+    ],
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1248,
+      "function": "builtin_write_text",
+      "body_sha256": "8c9648deb0fe6a175cb48712206f6de270af09492e1d044fc44e80fcd2d61aca"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "write_text",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+  },
+  {
+    "name": "zeros",
+    "args": [
+      "1",
+      "2"
+    ],
+    "setup": "define shape_snapshot(b) as:\n    return [v for v in b]\n",
+    "valid_assert": "shape_result == [[0, 0]]",
+    "observe": "print of shape_result",
+    "unchanged": "# Pure input: no mutable argument or external state.",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
+    "scalar_forms": [
+      "2"
+    ],
+    "form_asserts": {
+      "scalar:0": "(type of shape_result) == \"buffer\" and (shape_snapshot of shape_result) == [0, 0]"
+    }
+  }
+]

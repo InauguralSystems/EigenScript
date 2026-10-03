@@ -174,6 +174,7 @@ Value* builtin_usleep(Value *arg) {
 
 /* screen_put of [row, col, char, color_code] — write a character at terminal position */
 Value* builtin_screen_put(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "screen_put");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     int row = (int)arg->data.list.items[0]->data.num;
     int col = (int)arg->data.list.items[1]->data.num;
@@ -207,6 +208,7 @@ Value* builtin_screen_end(Value *arg) {
  * entities_list: [[wx, wy, char, color], ...]
  * Clears screen, projects all entities, flushes once. All in C. */
 Value* builtin_screen_render(Value *arg) {
+    STRICT_LIST_MAX(arg, 7, "screen_render");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 7) return make_null();
     Value *entities = arg->data.list.items[0];
     int sw = (int)arg->data.list.items[1]->data.num;
@@ -285,6 +287,7 @@ Value* builtin_screen_render(Value *arg) {
 /* join of [list, separator] — concatenate list elements into a string.
  * C-backed for performance — single allocation instead of O(n²) concat. */
 Value* builtin_join(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "join");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "join", "[list, separator]", make_str(""));
     Value *list = arg->data.list.items[0];
     Value *sep_val = arg->data.list.items[1];
@@ -401,6 +404,7 @@ Value* builtin_text_builder_new(Value *arg) {
 }
 
 Value* builtin_text_builder_append(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "text_builder_append");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *builder = arg->data.list.items[0];
     if (!builder || builder->type != VAL_TEXT_BUILDER) return make_null();
@@ -409,6 +413,7 @@ Value* builtin_text_builder_append(Value *arg) {
 }
 
 Value* builtin_text_builder_append_line(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "text_builder_append_line");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *builder = arg->data.list.items[0];
     if (!builder || builder->type != VAL_TEXT_BUILDER) return make_null();
@@ -418,6 +423,7 @@ Value* builtin_text_builder_append_line(Value *arg) {
 }
 
 Value* builtin_text_builder_extend(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "text_builder_extend");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *builder = arg->data.list.items[0];
     Value *values = arg->data.list.items[1];
@@ -473,18 +479,21 @@ static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out) {
 }
 
 Value* builtin_bit_and(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "bit_and");
     int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_and expects [number, number]"); return make_null(); }
     return make_num((double)(a & b));
 }
 
 Value* builtin_bit_or(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "bit_or");
     int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_or expects [number, number]"); return make_null(); }
     return make_num((double)(a | b));
 }
 
 Value* builtin_bit_xor(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "bit_xor");
     int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_xor expects [number, number]"); return make_null(); }
     return make_num((double)(a ^ b));
@@ -497,12 +506,14 @@ Value* builtin_bit_not(Value *arg) {
 }
 
 Value* builtin_bit_shift_left(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "bit_shl");
     int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_shl expects [number, number]"); return make_null(); }
     return make_num((double)(a << (b & 63)));
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "bit_shr");
     int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_shr expects [number, number]"); return make_null(); }
     /* Arithmetic shift, like the infix >> on int64 (negative operands
@@ -628,6 +639,7 @@ Value* builtin_num(Value *arg) {
 }
 
 Value* builtin_append(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "append");
     /* #506: append requires exactly a [list, item] pair. Fewer than two
      * elements (or a non-list arg-vector) was a silent no-op returning the
      * target unchanged. NB a bare list is the builtin's arg-vector (#405),
@@ -672,6 +684,7 @@ Value* builtin_report(Value *arg) {
  * The defaults are precisely tuned. Only adjust for studying slow convergence
  * or when working with values whose entropy changes are unusually small. */
 Value* builtin_set_observer_thresholds(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "set_observer_thresholds");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "set_observer_thresholds requires [dh_zero, dh_small, h_low]");
         return make_null();
@@ -876,6 +889,7 @@ Value* builtin_get_observer_scale(Value *arg) {
  * any state. The exit CODE is additionally latched at the EigsState, so `exit`
  * inside a spawned worker stops its evaluation and decides the CLI status. */
 Value* builtin_exit(Value *arg) {
+    STRICT_LIST_MAX(arg, 1, "exit");
     int code = 0;
     if (arg && arg->type == VAL_NUM) {
         code = (int)arg->data.num;
@@ -893,6 +907,7 @@ Value* builtin_exit(Value *arg) {
 }
 
 Value* builtin_assert(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "assert");
     /* Failure path raises a normal runtime error (g_has_error + g_error_msg)
      * rather than exit(1); that lets vm_run unwind to main, which runs the
      * standard teardown (env_decref, gc_collect_at_exit, chunk_free). Direct
@@ -977,6 +992,7 @@ Value* builtin_values(Value *arg) {
 }
 
 Value* builtin_has_key(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "has_key");
     ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2, "has_key", "[dict, key]", make_num(0));
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
@@ -985,7 +1001,9 @@ Value* builtin_has_key(Value *arg) {
 }
 
 Value* builtin_dict_set(Value *arg) {
-    if (arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    STRICT_LIST_MAX(arg, 3, "dict_set");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "dict_set", "[dict, key, value]", make_null());
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
     Value *val = arg->data.list.items[2];
@@ -995,7 +1013,9 @@ Value* builtin_dict_set(Value *arg) {
 }
 
 Value* builtin_dict_remove(Value *arg) {
-    if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    STRICT_LIST_MAX(arg, 2, "dict_remove");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "dict_remove", "[dict, key]", make_null());
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
     if (d->type != VAL_DICT || key->type != VAL_STR) return make_null();
@@ -1017,6 +1037,7 @@ Value* builtin_observe(Value *arg) {
 }
 
 Value* builtin_classify(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "classify");
     /* #421 `classify of t` — classify a trajectory SNAPSHOT (the dict
      * `trajectory of x` builds), so a callee can classify what its CALLER
      * observed: the snapshot crosses the call boundary; the binding slot
@@ -1663,6 +1684,7 @@ Value* builtin_json_decode(Value *arg) {
 }
 
 Value* builtin_coalesce(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "coalesce");
     /* coalesce of [value, default] — returns value unless empty/null */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return arg ? arg : make_null();
@@ -1763,6 +1785,7 @@ Value* builtin_str_lower(Value *arg) {
  * idiom folded them to "" — and an empty needle/prefix/suffix matches
  * everything, so `contains of [[1,2,3], 2]` reported a spurious hit. */
 Value* builtin_contains(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "contains");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "contains", "[haystack, needle]", make_num(0));
     Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
     ARG_GUARD(!h || h->type != VAL_STR || !n || n->type != VAL_STR, "contains", "two strings", make_num(0));
@@ -1770,6 +1793,7 @@ Value* builtin_contains(Value *arg) {
 }
 
 Value* builtin_starts_with(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "starts_with");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "starts_with", "[string, prefix]", make_num(0));
     Value *s = arg->data.list.items[0], *p = arg->data.list.items[1];
     ARG_GUARD(!s || s->type != VAL_STR || !p || p->type != VAL_STR, "starts_with", "two strings", make_num(0));
@@ -1777,6 +1801,7 @@ Value* builtin_starts_with(Value *arg) {
 }
 
 Value* builtin_split(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "split");
     const char *str = "", *delim = " ";
     /* #971 Phase D: a non-string subject coerced to "" (so `split of 42` was
      * [""], a plausible one-part answer) and a non-string delimiter fell
@@ -1841,6 +1866,7 @@ Value* builtin_split(Value *arg) {
  * non-empty string, lines whose first non-whitespace character matches its
  * first byte are skipped. */
 Value* builtin_scan_ints(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "scan_ints");
     const char *str = NULL;
     char comment_marker = '\0';
 
@@ -1946,6 +1972,7 @@ static int scan_integer_token_value(const char *start, size_t len, double *out_v
  * comment_marker is non-empty, lines whose first non-whitespace character
  * matches its first byte are skipped. */
 Value* builtin_scan_tokens(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "scan_tokens");
     const char *str = NULL;
     char comment_marker = '\0';
 
@@ -2035,6 +2062,7 @@ Value* builtin_scan_tokens(Value *arg) {
  * same pass. Invalid integer tokens keep their text/span, set is_int=0, and
  * use value=0. */
 Value* builtin_scan_int_tokens(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "scan_int_tokens");
     const char *str = NULL;
     char comment_marker = '\0';
 
@@ -2139,6 +2167,7 @@ Value* builtin_trim(Value *arg) {
 #define STR_REPLACE_MAX ((size_t)256 * 1024 * 1024)
 
 Value* builtin_str_replace(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "str_replace");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3, "str_replace", "[string, old, new]", make_str(""));
     const char *str = "", *old_s = "", *new_s = "";
     /* Coercion, not a guard: a non-string element silently stays "" and the
@@ -2210,6 +2239,7 @@ Value* builtin_str_upper(Value *arg) {
 /* char_at of [string, index] → single character as string, or "" if out of range.
  * Negative indices count from the end, matching the [] operator (#312). */
 Value* builtin_char_at(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "char_at");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "char_at", "[string, index]", make_str(""));
     Value *str_val = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
@@ -2228,6 +2258,7 @@ Value* builtin_char_at(Value *arg) {
 
 /* ==== BUILTIN: ends_with ==== */
 Value* builtin_ends_with(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "ends_with");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "ends_with", "[string, suffix]", make_num(0));
     Value *sv = arg->data.list.items[0], *xv = arg->data.list.items[1];
     ARG_GUARD(!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR, "ends_with", "two strings", make_num(0));
@@ -2242,6 +2273,7 @@ Value* builtin_ends_with(Value *arg) {
 /* ==== BUILTIN: substr ==== */
 /* substr of [string, start, length] → substring */
 Value* builtin_substr(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "substr");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3, "substr", "[string, start, length]", make_str(""));
     Value *str_val = arg->data.list.items[0];
     Value *start_val = arg->data.list.items[1];
@@ -2279,6 +2311,7 @@ Value* builtin_substr(Value *arg) {
 /* index_of of [haystack, needle] → first index, or -1. Non-string operands
  * are a miss (-1), never a fold-to-"" false positive at index 0 (#316). */
 Value* builtin_index_of(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "index_of");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "index_of", "[haystack, needle]", make_num(-1));
     Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
@@ -2349,6 +2382,7 @@ Value* builtin_atan(Value *arg) {
 }
 
 Value* builtin_atan2(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "atan2");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "atan2", "[y, x]", make_num(0));
     Value *y = arg->data.list.items[0];
     Value *x = arg->data.list.items[1];
@@ -2468,6 +2502,7 @@ Value* builtin_random(Value *arg) {
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
 Value* builtin_random_int(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "random_int");
     /* #971 Phase D: a malformed range answered 0 — a number in nobody's
      * range. Taped shape: the soft half still records/replays as before. */
     ARG_GUARD_TAPED(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -2551,6 +2586,7 @@ Value* builtin_args(Value *arg) {
 
 /* path_join of [a, b] → "a/b" */
 Value* builtin_path_join(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "path_join");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "path_join", "[a, b]", make_str(""));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
@@ -2651,6 +2687,7 @@ static Value* json_obj_get(Value *obj, const char *key) {
 #endif
 
 Value* builtin_json_path(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "json_path");
     /* json_path of [json_string, "dot.path"] -> value as string, or "" */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "json_path", "[json_string, path]", make_str(""));
     const char *json_str = "", *path = "";
@@ -3012,6 +3049,7 @@ Value* builtin_state_at(Value *arg) {
  * via timing. (Length is not treated as secret — it is folded in but the
  * loop runs over the longer operand.) */
 Value* builtin_secure_equals(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "secure_equals");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "secure_equals", "[string, string]", make_num(0));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
@@ -3069,6 +3107,7 @@ Value* builtin_chr(Value *arg) {
  * Demanded by the emulator repos (DMG GAP-DMG-010): addresses/opcodes/
  * registers all want hex diagnostics and every consumer hand-rolled it. */
 Value* builtin_hex(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "hex");
     double num;
     long long width = 0;
     if (arg && arg->type == VAL_NUM) {
@@ -3797,6 +3836,7 @@ static Value *sandbox_finish_run(Value *out) {
  * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
  * "does it run?" rung for a self-hosted compiler validating generated code. */
 Value* builtin_sandbox_run(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "sandbox_run");
     /* #915: same descriptor hazard as vm_run_bytecode. Unexploitable TODAY only
      * because the sandbox env is a sealed root (parent == NULL), so a descriptor
      * cannot reach a host binding's slot — that is the sandbox's defence, not
@@ -4140,6 +4180,7 @@ Value* builtin_record_history(Value *arg) {
  * destination was one of them. Loud now, like the rest of the numeric
  * contexts; the doc row states the order this code reads. */
 Value* builtin_copy_into(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "copy_into");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "copy_into requires [dest, offset, src]");
         return make_null();
@@ -4206,6 +4247,7 @@ Value* builtin_copy_into(Value *arg) {
  * end (like get_at/set_at, #312); both bounds then clamp to [0, len].
  * start >= end gives []. Never raises on bounds. */
 Value* builtin_list_slice(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "list_slice");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *list = arg->data.list.items[0];
     if (!list || list->type != VAL_LIST) return make_null();
@@ -4243,6 +4285,7 @@ Value* builtin_num_copy(Value *arg) {
 /* ==== BUILTIN: concat ==== */
 /* concat of [list_a, list_b] → new 1D list with a's elements then b's */
 Value* builtin_concat(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "concat");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
@@ -4264,6 +4307,7 @@ Value* builtin_concat(Value *arg) {
  * range of [start, end] → [start, start+1, ..., end-1]
  * range of [start, end, step] → [start, start+step, ...] while < end (or > end if step < 0) */
 Value* builtin_range(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "range");
     int start = 0, end = 0, step = 1;
 
     if (!arg) return make_list(0);
@@ -4349,6 +4393,7 @@ Value* builtin_range(Value *arg) {
 /* fill of [count, value] — create a list of `count` elements all set to `value`.
    Much faster than a loop for large arrays (e.g., 64K memory). */
 Value* builtin_fill(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "fill");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "fill requires [count, value]");
         return make_list(0);
@@ -5100,6 +5145,7 @@ Value* builtin_channel(Value *arg) {
  * copied; fn/builtin are shared by refcount. The copy also removes the old
  * shared-mutable-value hazard for the copied types. */
 Value* builtin_send(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "send");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "send requires [channel, value]");
         return make_null();
@@ -5181,6 +5227,7 @@ Value* builtin_try_recv(Value *arg) {
  * interpreted as milliseconds; fractional values are honored (ns precision
  * on Linux). Negative ms degenerates to a try_recv. */
 Value* builtin_recv_timeout(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "recv_timeout");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "recv_timeout requires [channel, ms]");
         return make_null();
@@ -5486,6 +5533,7 @@ Value* builtin_task_join(Value *arg) {
  * an error — Akka dead-letters / Erlang cast. Returns 1 if delivered, 0 if
  * dropped. Never blocks (the mailbox is unbounded in v1). */
 Value* builtin_task_send(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "task_send");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "task_send", "[id, value]", make_num(0));
     Value *idv = arg->data.list.items[0];
     /* The type guard precedes the scheduler-state check deliberately. With the
@@ -5825,6 +5873,7 @@ void handle_table_drain(EigsState *st) {
    Iterates entities (list of dicts), finds nearest active entity within range
    using torus distance. Keys default to "px", "py", "active" if not provided. */
 Value* builtin_nearest_in_range(Value *arg) {
+    STRICT_LIST_MAX(arg, 9, "nearest_in_range");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 6) {
         rt_error(EK_TYPE, 0, "nearest_in_range requires [entities, x, y, range, world_w, world_h]");
         return make_null();
@@ -5945,6 +5994,7 @@ Value* builtin_nearest_in_range(Value *arg) {
    becomes pure arithmetic on contiguous doubles instead of cache-missing
    pointer chases through 6-key dicts. */
 Value* builtin_nearest_in_range_all(Value *arg) {
+    STRICT_LIST_MAX(arg, 7, "nearest_in_range_all");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
         rt_error(EK_TYPE, 0, "nearest_in_range_all requires [entities, range, world_w, world_h]");
         return make_null();
@@ -6092,6 +6142,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
 /* sign_extend of [val, bits] — sign-extend val from given bit width.
  * E.g. sign_extend of [0xFF, 8] → -1 */
 Value* builtin_sign_extend(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "sign_extend");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "sign_extend", "[val, bits]", make_num(0));
     /* The ELEMENT type check below is new, and it is the one place in this
      * change where the non-strict result is not byte-identical to before.
@@ -6115,6 +6166,7 @@ Value* builtin_sign_extend(Value *arg) {
 /* list_truncate of [list, new_len] — shrink list in-place to new_len items.
  * If new_len >= current length, no-op. Returns the list. */
 Value* builtin_list_truncate(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "list_truncate");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "list_truncate requires [list, new_len]");
         return make_null();
@@ -6148,6 +6200,7 @@ Value* builtin_list_truncate(Value *arg) {
 /* list_remove_at of [list, index] — remove element at index, shift tail down.
  * Out-of-bounds index is a no-op. Returns the list. */
 Value* builtin_list_remove_at(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "list_remove_at");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *list = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
@@ -6168,6 +6221,7 @@ Value* builtin_list_remove_at(Value *arg) {
  * up. Dual of list_remove_at. index == count appends; any other out-of-bounds
  * index is a no-op. Returns the list. */
 Value* builtin_list_insert_at(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "list_insert_at");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *list = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
@@ -6214,6 +6268,7 @@ Value* builtin_list_insert_at(Value *arg) {
  * "no raise mechanism in the builtin layer"; ARG_GUARD is one, and #1008
  * wired these guards into it — the -1 still stands with the flag off.) */
 Value* builtin_list_index_of(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "list_index_of");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "list_index_of", "[list, value]", make_num(-1));
     Value *list = arg->data.list.items[0];
@@ -6235,6 +6290,7 @@ Value* builtin_list_index_of(Value *arg) {
  * value (same values_equal scan as list_index_of), else 0. Bad args give 0,
  * mirroring contains. */
 Value* builtin_list_contains(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "list_contains");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "list_contains", "[list, value]", make_num(0));
     Value *list = arg->data.list.items[0];
     Value *needle = arg->data.list.items[1];
@@ -6264,6 +6320,7 @@ static int sort_by_pair_cmp(const void *a, const void *b) {
 }
 
 Value* builtin_sort_by(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "sort_by");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *list = arg->data.list.items[0];
     Value *key_fn = arg->data.list.items[1];
@@ -6349,6 +6406,7 @@ Value* builtin_sort(Value *arg) {
    arg: value passed to the selected function.
    Returns the function's return value, or null if slot is empty. */
 Value* builtin_dispatch(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "dispatch");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "dispatch requires [table, key, arg]");
         return make_null();
@@ -6458,6 +6516,7 @@ Value* builtin_dispatch(Value *arg) {
  * accumulation instead. no-NaN/Inf is preserved (num_guard at each step), so
  * the result still respects EigenScript's no-NaN/Inf invariant. */
 static Value* builtin_dot(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "dot");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "dot", "[a, b]", make_num(0));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];

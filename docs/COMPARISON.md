@@ -250,6 +250,8 @@ One place EigenScript is louder than NumPy: an out-of-range index in `gather`
 an `IndexError` there as well, so this matches. It is `gather`'s own history
 that changed: the list form used to answer `0.0` (#973/#1093).
 
+Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+
 ## Dictionaries / objects
 
 JavaScript:

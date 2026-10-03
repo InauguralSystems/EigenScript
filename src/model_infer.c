@@ -523,6 +523,7 @@ Value* builtin_eigen_model_loaded(Value *arg) {
 }
 
 Value* builtin_eigen_generate(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "eigen_generate");
     /* Input: [prompt_ids_list, temperature, max_tokens]
      * Output: list of generated token IDs
      *
@@ -616,6 +617,7 @@ Value* builtin_eigen_generate(Value *arg) {
 }
 
 Value* builtin_eigen_eval_loss(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "eigen_eval_loss");
     /* Input: [prompt_ids_list, target_id]
      * Output: cross-entropy of target_id given the prompt, in nats.
      *

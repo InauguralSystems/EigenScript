@@ -329,6 +329,8 @@ the operator that consumes it. Structural buffer equality and scalar reductions
 normalize each input by this rule too, as do mixed buffer/list materialization
 and numeric byte or sample conversion. A raised read stops subsequent work.
 
+Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+
 The optional model extension raises a catchable `value` error when
 `eigen_generate` or `eigen_eval_loss` receives a prompt longer than the loaded
 model's `max_seq_len`. Training applies the same limit to the combined input

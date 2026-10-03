@@ -463,16 +463,19 @@ static Value *http_route_register(Value *arg, int requires_auth) {
 }
 
 Value* builtin_http_route(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "http_route");
     if (http_config_frozen("http_route")) return make_null();
     return http_route_register(arg, 0);
 }
 
 Value* builtin_http_route_authed(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "http_route_authed");
     if (http_config_frozen("http_route_authed")) return make_null();
     return http_route_register(arg, 1);
 }
 
 Value* builtin_http_static(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "http_static");
     if (http_config_frozen("http_static")) return make_null();
     if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     char *prefix = value_to_string(arg->data.list.items[0]);
@@ -697,6 +700,7 @@ static int http_url_is_allowed(const char *url) {
 }
 
 Value* builtin_http_post(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "http_post");
     TRACE_NONDET_TAKE("http_post");
     /* http_post of [url, headers_json, body_string] -> response body string
      * Uses fork/execvp to invoke curl — no shell involved, no injection risk. */
@@ -880,6 +884,7 @@ static int shared_find(Server *s, const char *key) {
 }
 
 Value* builtin_shared_set(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "shared_set");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *key_v = arg->data.list.items[0];
     Value *val = arg->data.list.items[1];
@@ -931,6 +936,7 @@ Value* builtin_shared_set(Value *arg) {
  * mutating. Subject to the same byte cap as shared_set. Returns the new
  * value on success, null on bad args / over-cap / type mismatch. */
 Value* builtin_shared_incr(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "shared_incr");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *key_v = arg->data.list.items[0];
     Value *delta_v = arg->data.list.items[1];

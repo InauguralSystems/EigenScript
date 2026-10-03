@@ -34,9 +34,12 @@
 #
 #   bash tools/strict_differential.sh <baseline-binary>
 #   bash tools/strict_differential.sh --no-baseline
+#   bash tools/strict_differential.sh --shapes-only --no-baseline
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
+SHAPES_ONLY=0
+if [ "${1:-}" = --shapes-only ]; then SHAPES_ONLY=1; shift; fi
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 BASE="${1:-}"
 NO_BASELINE=0
@@ -54,6 +57,149 @@ export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
 str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
 str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
+
+. tests/lsan_classify.sh
+shape_canonical() { # exact owned prefix only; call AFTER raw classification
+    local prefix="$2/" marker='@OWNED@/'
+    printf '%s' "${1//"$prefix"/$marker}"
+}
+
+# ASan reserves a large virtual shadow mapping. The local ordinary GFX cap
+# must not become a portable sanitizer limit. Inspect the actual executable;
+# neither ASAN_OPTIONS nor a filename is evidence of instrumentation.
+shape_asan_symbols() {
+    printf '%s\n' "$1" | awk '$NF ~ /^_?__asan_init(@.*)?$/ { found=1 } END { exit !found }'
+}
+shape_binary_instrumentation() {
+    local symbols
+    if symbols=$(readelf --wide --syms "$1" 2>/dev/null) ||
+       symbols=$(nm "$1" 2>/dev/null); then
+        if shape_asan_symbols "$symbols"; then echo asan; else echo ordinary; fi
+    else
+        echo "FAIL: cannot inspect GFX executable instrumentation: $1" >&2
+        return 1
+    fi
+}
+shape_gfx_limit() { # called only in the individual GFX child subshell
+    local instrumentation
+    if [ "$1" = "$NEW" ]; then instrumentation=$NEW_SHAPE_INSTRUMENTATION
+    elif [ -n "$BASE" ] && [ "$1" = "$BASE" ]; then instrumentation=$BASE_SHAPE_INSTRUMENTATION
+    else echo 'FAIL: unrecognized GFX executable' >&2; return 125; fi
+    case "$instrumentation" in
+        ordinary) ulimit -v 1500000 || return 125 ;;
+        asan)
+            [ "$(ulimit -v)" = unlimited ] || {
+                echo 'FAIL: instrumented GFX requires an uncapped parent virtual address space' >&2
+                return 125
+            } ;;
+        *) echo 'FAIL: unknown GFX executable instrumentation' >&2; return 125 ;;
+    esac
+}
+
+shape_capture() { # binary, mode, fixture, cap; parent owns the process deadline
+    local raw owned="${3%/*}" output child_rc
+    if [ -f "$owned/http-context" ]; then
+        output=$(bash tests/test_http_server.sh --strict-shape "$1" "$2" "$3" 2>&1); child_rc=$?
+        raw=$(printf '%s\n%s' "$child_rc" "$output")
+    elif [ "$4" = gfx ]; then
+        raw=$(shape_gfx_limit "$1" || exit 125; run_capture "$1" "$2" "$3")
+    else
+        raw=$(run_capture "$1" "$2" "$3")
+    fi
+    printf '%s\n' "$raw" > "$owned/capture.raw"
+    if shape_receipt_ok "$raw"; then
+        shape_canonical "$raw" "$owned"
+    else
+        printf '%s' "$raw"
+    fi
+}
+shape_receipt_ok() { # captured rc+output; exact exit plus canonical sanitizer veto
+    [ "${1%%$'\n'*}" = 0 ] && [ "$(lsan_classify_name "${1#*$'\n'}")" = none ]
+}
+shape_done() { shape_receipt_ok "$1" && str_has_line "$1" shape-complete; }
+shape_positive_ok() {
+    if [ "$2" = 1 ]; then [ "$1" = $'0\nexit-entered' ]
+    else shape_done "$1"; fi
+}
+shape_abort() {
+    shape_fail=$((shape_fail + 1)); rc=1
+    echo "  FAIL shape: $1 — $2: $(clip "$3" 180)"
+}
+
+
+shape_selftest() {
+    local passed=0 failed=0 saved
+    shape_case() {
+        local label="$1" expected="$2" capture="$3" actual=1
+        shape_done "$capture" && actual=0
+        if [ "$actual" = "$expected" ]; then
+            echo "  PASS: $label"; passed=$((passed + 1))
+        else
+            echo "  FAIL: $label"; failed=$((failed + 1))
+        fi
+    }
+    shape_case 'healthy completed receipt' 0 $'0\nshape-complete'
+    shape_case 'ordinary nonzero' 1 $'1\nshape-complete'
+    shape_case 'timeout is not success' 1 $'124\nshape-complete'
+    shape_case 'signal is not success' 1 $'139\nshape-complete'
+    shape_case 'missing completion' 1 $'0\nordinary output'
+    shape_case 'ASan text with zero rc' 1 $'0\nERROR: AddressSanitizer: synthetic ordinary classifier control\nshape-complete'
+    shape_case 'LSan text with zero rc' 1 $'0\nERROR: LeakSanitizer: detected memory leaks\nshape-complete'
+    shape_case 'UBSan text with zero rc' 1 $'0\nfixture.c:1: runtime error: synthetic classifier control\nshape-complete'
+    shape_case 'discussion text is not a diagnostic' 0 $'0\nThis fixture discusses AddressSanitizer checks.\nshape-complete'
+    shape_case 'completion substring is not a line' 1 $'0\nnot-shape-complete'
+    saved=$(declare -f shape_receipt_ok)
+    # Private function-only calibration: inert captured text, no product fault.
+    shape_receipt_ok() { [ "${1%%$'\n'*}" = 0 ]; }
+    shape_case 'removed sanitizer veto admits ASan (expected RED)' 0 $'0\nERROR: AddressSanitizer: synthetic classifier control\nshape-complete'
+    shape_case 'removed sanitizer veto admits LSan (expected RED)' 0 $'0\nERROR: LeakSanitizer: detected memory leaks\nshape-complete'
+    eval "$saved"
+    shape_case 'restored sanitizer veto rejects capture' 1 $'0\nERROR: AddressSanitizer: synthetic classifier control\nshape-complete'
+    shape_case 'owned-prefix canonicalization matches' 0 "$(
+        a=$(shape_canonical $'0\nWritten /owned/a/data\nshape-complete' /owned/a)
+        b=$(shape_canonical $'0\nWritten /owned/b/data\nshape-complete' /owned/b)
+        [ "$a" = "$b" ] && printf '0\nshape-complete' || printf '1\nmismatch')"
+    shape_case 'unowned lookalike path difference retained' 0 "$(
+        a=$(shape_canonical $'0\nRead /owned/a-other\nshape-complete' /owned/a)
+        b=$(shape_canonical $'0\nRead /owned/b-other\nshape-complete' /owned/b)
+        [ "$a" != "$b" ] && printf '0\nshape-complete' || printf '1\nmasked')"
+    shape_case 'owned path sanitizer capture still fails' 1 $'0\nERROR: AddressSanitizer: synthetic /owned/a/data\nshape-complete'
+
+    shape_case 'ELF ASan init symbol recognized' 0 "$(
+        shape_asan_symbols '  7: 000000 0 FUNC GLOBAL DEFAULT UND __asan_init' && printf '0\nshape-complete' || printf '1\nmissed')"
+    shape_case 'Mach-O ASan init symbol recognized' 0 "$(
+        shape_asan_symbols '                 U ___asan_init' && printf '0\nshape-complete' || printf '1\nmissed')"
+    shape_case 'symbol substring is not instrumentation' 0 "$(
+        shape_asan_symbols '0000 T fake__asan_init_suffix' && printf '1\nfalse positive' || printf '0\nshape-complete')"
+    shape_case 'ordinary symbols remain ordinary' 0 "$(
+        shape_asan_symbols '0000 T main' && printf '1\nfalse positive' || printf '0\nshape-complete')"
+    shape_case 'ordinary GFX child receives both local limits' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=ordinary
+        shape_gfx_limit "$NEW" && [ "$(ulimit -Sv)" = 1500000 ] && [ "$(ulimit -Hv)" = 1500000 ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+    shape_case 'verified ASan child keeps unlimited mapping space' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=asan
+        shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+    shape_case 'already capped ASan parent refuses before execution' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=asan; ulimit -v 1500000 || exit 1
+        shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
+        [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\naccepted cap')"
+    shape_case 'unknown instrumentation refuses before execution' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=unknown
+        shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
+        [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\naccepted unknown')"
+    saved=$(declare -f shape_gfx_limit)
+    shape_gfx_limit() { ulimit -v 1500000; }
+    shape_case 'restored old unconditional cap breaks ASan oracle (expected RED)' 1 "$(
+        NEW_SHAPE_INSTRUMENTATION=asan
+        shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+    eval "$saved"
+    shape_case 'restored instrumentation branch preserves mapping space' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=asan
+        shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 26 declared"
+    [ "$failed" = 0 ] && [ "$passed" = 26 ]
+}
+if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
 
 [ -x "$NEW" ] || { echo "FAIL: no built binary at $NEW"; exit 1; }
 if [ -z "$BASE" ] && [ "$NO_BASELINE" = 0 ]; then
@@ -75,6 +221,11 @@ bin_fingerprint() {
 FP_NEW_START="$(bin_fingerprint "$NEW")"
 FP_BASE_START=""
 [ -n "$BASE" ] && FP_BASE_START="$(bin_fingerprint "$BASE")"
+NEW_SHAPE_INSTRUMENTATION=$(shape_binary_instrumentation "$NEW") || exit 1
+BASE_SHAPE_INSTRUMENTATION=none
+if [ -n "$BASE" ]; then BASE_SHAPE_INSTRUMENTATION=$(shape_binary_instrumentation "$BASE") || exit 1; fi
+echo "GFX address-space policy: subject=$NEW_SHAPE_INSTRUMENTATION baseline=$BASE_SHAPE_INSTRUMENTATION (ordinary=1500000 KiB; ASan=inherited unlimited)"
+
 
 TMP="$(mktemp -d)"
 verdict_printed=0
@@ -82,7 +233,11 @@ _sd_main_depth=$BASH_SUBSHELL
 _sd_exit() {
     local es=$?
     [ "$BASH_SUBSHELL" = "${_sd_main_depth:-}" ] || return 0
-    rm -rf "${TMP:-}"
+    if [ "${EIGS_DIFF_KEEP_TMP:-0}" = 1 ]; then
+        echo "Strict differential raw captures retained: ${TMP:-}"
+    else
+        rm -rf "${TMP:-}"
+    fi
     if [ "${verdict_printed:-0}" != "1" ]; then
         if [ "$es" = "0" ]; then
             echo "  ABORTED: this differential was terminated before printing a verdict."
@@ -92,6 +247,46 @@ _sd_exit() {
     fi
 }
 trap _sd_exit EXIT
+
+# Cheap contract/enrollment check precedes every runtime probe.
+if ! python3 tools/strict_shape_contract.py --render "$TMP/shapes"; then
+    verdict_printed=1
+    exit 1
+fi
+
+# Produce one tiny descriptor through the owning normal compiler. The auxiliary
+# file target reuses variant objects and never relinks the CLI under this gate.
+[ "$NEW" -ef ./src/eigenscript ] || { echo 'FAIL: shape producer requires this checkout owning CLI'; exit 1; }
+shape_variant=
+for shape_binary in build/*/eigenscript; do
+    if [ "$NEW" -ef "$shape_binary" ]; then
+        shape_variant=$(basename "$(dirname "$shape_binary")"); break
+    fi
+done
+if [ -z "$shape_variant" ]; then
+    shape_variant=release
+    echo 'Shape descriptor: build.sh CLI layout; compiler producer uses owning source release objects'
+fi
+make --no-print-directory "build/$shape_variant/strict_shape_descriptor" "EMBED_OBSERVER_VARIANT=$shape_variant" || exit 1
+descriptor_rc=0
+"build/$shape_variant/strict_shape_descriptor" > "$TMP/descriptor.json" 2> "$TMP/descriptor.stderr" || descriptor_rc=$?
+if [ "$descriptor_rc" != 0 ] || [ -s "$TMP/descriptor.stderr" ] ||
+   [ "$(lsan_classify_name "$(cat "$TMP/descriptor.json" "$TMP/descriptor.stderr")")" != none ]; then
+    cat "$TMP/descriptor.stderr"; echo 'FAIL: ordinary descriptor producer'; exit 1
+fi
+python3 - "$TMP" <<'PY' || exit 1
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+descriptor = json.loads((root / 'descriptor.json').read_text())
+assert isinstance(descriptor, list) and len(descriptor) == 3
+assert descriptor[2] == [42] and 0 < len(descriptor[1]) <= 64
+text = json.dumps(descriptor, separators=(',', ':'))
+for fixture in (root / 'shapes/sandbox_run').glob('*/*/*/case.eigs'):
+    source = fixture.read_text()
+    assert source.count('@DESCRIPTOR@') == 1
+    fixture.write_text(source.replace('@DESCRIPTOR@', text))
+PY
 
 # name|program[|expect]  — wrong-typed call; expect defaults to "<name>: expected"
 PROBES=$(cat <<'EOF'
@@ -105,6 +300,8 @@ ceil|print of (ceil of "x")
 chdir|print of (chdir of 42)
 char_at|print of (char_at of [42, 0])
 contains|print of (contains of [[1, 2, 3], 2])
+dict_remove|print of (dict_remove of ([]))
+dict_set|print of (dict_set of ([]))
 cos|print of (cos of "hello")
 dot|print of (dot of [1, 2])
 ends_with|print of (ends_with of [42, "x"])
@@ -490,7 +687,11 @@ cap_state() { # exact ordinary-operation observation in all strict modes
     # DB's no-database answer must not depend on the caller's live service.
     local DATABASE_URL=""
     for mode in - 0 1; do
-        got="$(run_capture "$bin" "$mode" "$TMP/cap-$cap.eigs")"
+        if [ "$cap" = gfx ]; then
+            got="$(shape_gfx_limit "$bin" || exit 125; run_capture "$bin" "$mode" "$TMP/cap-$cap.eigs")"
+        else
+            got="$(run_capture "$bin" "$mode" "$TMP/cap-$cap.eigs")"
+        fi
         case "$got" in
             $'0\nimplemented') got=implemented ;;
             $'0\nundefined') got=undefined ;;
@@ -600,6 +801,7 @@ probe_builtin_present() {
     return 0
 }
 
+if [ "$SHAPES_ONLY" = 0 ]; then
 while IFS='|' read -r who prog expect; do
     [ -z "${who:-}" ] && continue
     expect="${expect:-$who: expected}"
@@ -774,6 +976,107 @@ if [ "$NO_BASELINE" = 1 ]; then
     echo "  NOTE: identical-when-off was NOT measured (no baseline binary)."
 fi
 
+fi # historical wrong-type/valid-input halves
+
+# ------------------------------------------------ typed fixed-shape controls (#1398)
+# Candidate discovery is independent of the guards and reviewed contract data.
+# Every process/form owns fresh files; no universal malformed numeric prefix.
+shape_rows=0; shape_pass=0; shape_absent=0; shape_pending=0; shape_fail=0
+if [ -f "$TMP/shapes/rows" ]; then
+    while IFS='|' read -r who max forms legacy exits pending; do
+        [ -n "$who" ] || continue
+        shape_rows=$((shape_rows + 1)); row_good=1
+        cap="$(cap_for_name "$who")"
+        if ! probe_builtin_present "$who"; then
+            printf 'ignore is %s of null\n' "$who" > "$TMP/shape-absent.eigs"
+            if [ -n "$cap" ]; then
+                if [ "$cap" = gfx ]; then
+                    (shape_gfx_limit "$NEW" || exit 125; check_absent_call "$NEW" "$(state_for subject "$cap")" "$cap" "$who" "$TMP/shape-absent.eigs") || row_good=0
+                else
+                    check_absent_call "$NEW" "$(state_for subject "$cap")" "$cap" "$who" "$TMP/shape-absent.eigs" || row_good=0
+                fi
+            else
+                echo "  SHAPE ABSENCE UNCLASSIFIED: $who"; row_good=0
+            fi
+            if [ "$row_good" = 1 ]; then
+                shape_absent=$((shape_absent + 1)); echo "  UNAVAILABLE shape: $who (not a valid-operation pass)"
+            else
+                shape_fail=$((shape_fail + 1)); rc=1; break
+            fi
+            continue
+        fi
+        if [ "$pending" = 1 ]; then
+            shape_pending=$((shape_pending + 1)); rc=1
+            echo "  PENDING shape: $who — $(cat "$TMP/shapes/$who/pending")"
+            continue
+        fi
+        shape_base=1
+        if [ -n "$BASE" ] && [ -n "$cap" ] && [ "$(state_for baseline "$cap")" != implemented ]; then
+            shape_base=0
+            printf 'ignore is %s of null\n' "$who" > "$TMP/shape-absent.eigs"
+            check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "$who" "$TMP/shape-absent.eigs" || row_good=0
+        fi
+        old_ifs=$IFS; IFS=','; read -r -a shape_forms <<<"$forms"; IFS=$old_ifs
+        maximum=""
+        for form in "${shape_forms[@]}"; do
+            off="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/subject/0/$form/case.eigs" "$cap")"
+            if ! shape_positive_ok "$off" "$exits"; then shape_abort "$who" "valid $form/0" "$off"; break 2; fi
+            on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/subject/1/$form/case.eigs" "$cap")"
+            if ! shape_positive_ok "$on" "$exits"; then shape_abort "$who" "valid $form/1" "$on"; break 2; fi
+            default="$(shape_capture "$NEW" - "$TMP/shapes/$who/subject/default/$form/case.eigs" "$cap")"
+            if ! shape_positive_ok "$default" "$exits"; then shape_abort "$who" "valid $form/-" "$default"; break 2; fi
+            if [ "$exits" = 1 ]; then
+                [ "$off" = $'0\nexit-entered' ] || row_good=0
+            else
+                shape_done "$off" || row_good=0
+            fi
+            [ "$off" = "$on" ] && [ "$on" = "$default" ] || row_good=0
+            if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
+                for mode in 0 1 default; do
+                    flag=$mode; [ "$mode" = default ] && flag=-
+                    old="$(shape_capture "$BASE" "$flag" "$TMP/shapes/$who/baseline/$mode/$form/case.eigs" "$cap")"
+                    if ! shape_positive_ok "$old" "$exits"; then shape_abort "$who" "baseline $form/$mode" "$old"; break 3; fi
+                    [ "$old" = "$off" ] || row_good=0
+                done
+            fi
+            [ "$form" != max ] || maximum=$off
+        done
+        soft="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/subject/0/surplus/case.eigs" "$cap")"
+        if ! shape_receipt_ok "$soft"; then shape_abort "$who" "strict-off surplus" "$soft"; break; fi
+        shape_receipt_ok "$soft" || row_good=0
+        if [ "$legacy" = 0 ]; then [ "$soft" = "$maximum" ] || row_good=0
+        else shape_done "$soft" || row_good=0; fi
+        if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
+            old="$(shape_capture "$BASE" 0 "$TMP/shapes/$who/baseline/0/surplus/case.eigs" "$cap")"
+            if ! shape_receipt_ok "$old"; then shape_abort "$who" "baseline surplus" "$old"; break; fi
+            [ "$old" = "$soft" ] || row_good=0
+        fi
+        on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/subject/1/strict/case.eigs" "$cap")"
+        if ! shape_done "$on"; then shape_abort "$who" "strict surplus" "$on"; break; fi
+        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/subject/default/strict/case.eigs" "$cap")"
+        if ! shape_done "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
+        shape_done "$on" && [ "$on" = "$default" ] || row_good=0
+        if [ "$row_good" = 1 ]; then
+            shape_pass=$((shape_pass + 1)); echo "  PASS shape: $who (max=$max; forms=$forms)"
+        else
+            shape_fail=$((shape_fail + 1)); rc=1
+            echo "  FAIL shape: $who (strict/default=$(clip "$on" 160); soft=$(clip "$soft" 160))"
+            # Stop at a real unexpected failure; do not run later resource rows.
+            break
+        fi
+    done < "$TMP/shapes/rows"
+else
+    rc=1; shape_fail=$((shape_fail + 1))
+fi
+shape_declared=$(python3 -c 'import json; print(len(json.load(open("tests/strict_shape_cases.json"))))')
+shape_unrun=$((shape_declared - shape_rows))
+echo "== typed fixed-shape controls =="
+echo "  declared=$shape_declared examined=$shape_rows passed=$shape_pass failed=$shape_fail unavailable=$shape_absent pending=$shape_pending unrun=$shape_unrun"
+[ "$shape_rows" = "$shape_declared" ] && [ "$shape_fail" = 0 ] && [ "$shape_pending" = 0 ] || rc=1
+[ -n "$BASE" ] || echo "  NOTE: shape baseline equality was NOT measured."
+[ "$shape_fail" = 0 ] || SHAPES_ONLY=1
+
+if [ "$SHAPES_ONLY" = 0 ]; then
 # ------------------------------------------------ gfx capability
 case "$(state_for subject gfx)" in
     undefined)
@@ -787,12 +1090,10 @@ if [ "$gfx_on" = 1 ]; then
 # name|shape-id|reason. A pair that raises is stale; a pair nothing probes is dead.
 ALLOW=$(cat <<'EOF'
 gfx_text_height|scalar|the scale slot is documented as `gfx_text_height of 2`, a bare number
-gfx_text_height|list2|[scale] with a numeric first slot is the documented list form; the surplus slot is #989
 gfx_text_width|string|`gfx_text_width of "hello"` is the documented one-argument form
 audio_pause|scalar|`audio_pause of 1` is the documented flag form
 audio_stop|scalar|`audio_stop of 1` is the documented channel form
 audio_music_volume|scalar|`audio_music_volume of 96` is the documented form
-audio_music_volume|list2|[volume] with a numeric first slot is the documented list form; the surplus slot is #989
 gfx_delay|scalar|`gfx_delay of 16` is the documented one-argument form
 gfx_title|string|`gfx_title of "name"` is the documented one-argument form
 audio_play|list2|a 2-element numeric list IS a sample list -- the valid call
@@ -1133,6 +1434,8 @@ if [ -n "$missing_slots" ]; then
 fi
 if [ "$n_prow" -lt 1 ]; then echo "  VACUOUS: pixel rows=0"; rc=1; fi
 fi
+
+fi # historical graphics halves
 
 if [ -n "$FP_NEW_START" ]; then
     _fp_now="$(bin_fingerprint "$NEW")"
