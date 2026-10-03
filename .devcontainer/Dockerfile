@@ -41,6 +41,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   procps           -> sysctl in CI setup steps
 # SDL headers anchor the input fixture to the real SDL ABI; Xvfb and
 # xdotool drive an isolated real-input window without touching a user display.
+# SDL_mixer supplies the ordinary music-positive strict-shape controls.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         build-essential \
@@ -56,6 +57,7 @@ RUN apt-get update \
         curl \
         procps \
         libsdl2-dev \
+        libsdl2-mixer-2.0-0 \
         xvfb \
         xauth \
         xdotool \

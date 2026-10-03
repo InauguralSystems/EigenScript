@@ -149,6 +149,21 @@ def audit(sources, header, contracts, cases):
                     errors.append(public + ': missing control scope/requirements')
                 if not case.get('observe') or not case.get('unchanged'):
                     errors.append(public + ': missing result or no-effect observation')
+                required = set(case.get('requirements', []))
+                backend = ('mixer' if 'sdl_mixer' in required else
+                           'sdl' if required & {'sdl_dummy_audio', 'sdl_dummy_video'} else '')
+                if case.get('backend', '') != backend:
+                    errors.append(public + ': device requirement/backend classification differs')
+                if backend:
+                    absent = case.get('backend_absent', {})
+                    states = {'absent-sdl', 'absent-mixer'} if backend == 'mixer' else {'absent-sdl'}
+                    if (not isinstance(absent, dict) or
+                            not all(isinstance(absent.get(k), str) for k in
+                                    ('setup', 'valid_assert', 'observe', 'unchanged', 'claim')) or
+                            set(absent.get('outputs', {})) != states or
+                            not all(isinstance(v, str) and v.endswith('\nshape-complete')
+                                    for v in absent.get('outputs', {}).values())):
+                        errors.append(public + ': incomplete documented backend-absence controls')
         elif row['disposition'] == 'exempt':
             if guards:
                 errors.append(name + ': exempt function has a max guard')
@@ -219,6 +234,12 @@ void register_all(Env *env) {
     add('macro registry alias change', False, header='X(renamed, builtin_pair)')
     add('comments and strings are not new functions', True, replace('void register_all', '/* Value* builtin_ghost(Value *arg) { return arg->data.list; } */\nvoid register_all'))
     add('optional positive missing', False, contract_edit=lambda c: c[0].update(category='optional'))
+    add('device requirement without backend classification', False,
+        case_edit=lambda k: k[0].update(requirements=['sdl_dummy_audio']))
+    add('backend classification without absence controls', False,
+        case_edit=lambda k: k[0].update(requirements=['sdl_dummy_audio'], backend='sdl'))
+    add('pure control must not become backend absent', False,
+        case_edit=lambda k: k[0].update(backend='sdl'))
     passed = 0
     for label, expected, s, header, c, k in scenarios:
         errors, _, _ = audit(s, header, c, k)
@@ -275,27 +296,48 @@ def render(directory, cases):
                 pending = 'required ordinary tool unavailable: ' + tool
         (directory / name).mkdir()
         (directory / name / 'pending').write_text(pending + '\n')
-        for which in ('subject', 'baseline'):
-            for mode in ('0', '1', 'default'):
-                for form, values, scalar in forms + [('surplus', row['args'], False), ('strict', row['args'], False)]:
-                    owned = directory / name / which / mode / form
-                    owned.mkdir(parents=True)
-                    operation = form if form in ('surplus', 'strict') else 'valid'
-                    assertion_form = form.replace('optional-', 'optional:').replace('scalar-', 'scalar:')
-                    source = render_program(row, assertion_form, values, operation, scalar)
-                    substitutions = {'@TMP@': str(owned), '@CAT@': shutil.which('cat') or '', '@PRINTF@': shutil.which('printf') or '', '@WAV@': str(owned / 'sample.wav')}
-                    if '@WAV@' in source:
-                        with wave.open(str(owned / 'sample.wav'), 'wb') as wav:
-                            wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(44100)
-                            wav.writeframes(b'\0\0' * 32)
-                    for before, after in substitutions.items():
-                        source = source.replace(before, json.dumps(after)[1:-1])
-                    (owned / 'case.eigs').write_text(source)
-                    if row.get('http_context'):
-                        (owned / 'http-context').write_text(row['http_context'] + '\n')
+        variants = [('', row)]
+        if row.get('backend'):
+            variants.append(('-absent', dict(row, **row['backend_absent'])))
+            for state, output in row['backend_absent']['outputs'].items():
+                (directory / name / state).write_text('0\n' + output + '\n')
+        for suffix, active in variants:
+            for which in ('subject' + suffix, 'baseline' + suffix):
+                for mode in ('0', '1', 'default'):
+                    for form, values, scalar in forms + [('surplus', row['args'], False), ('strict', row['args'], False)]:
+                        owned = directory / name / which / mode / form
+                        owned.mkdir(parents=True)
+                        operation = form if form in ('surplus', 'strict') else 'valid'
+                        assertion_form = form.replace('optional-', 'optional:').replace('scalar-', 'scalar:')
+                        source = render_program(active, assertion_form, values, operation, scalar)
+                        substitutions = {'@TMP@': str(owned), '@CAT@': shutil.which('cat') or '', '@PRINTF@': shutil.which('printf') or '', '@WAV@': str(owned / 'sample.wav')}
+                        if '@WAV@' in source:
+                            with wave.open(str(owned / 'sample.wav'), 'wb') as wav:
+                                wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(44100)
+                                wav.writeframes(b'\0\0' * 32)
+                        for before, after in substitutions.items():
+                            source = source.replace(before, json.dumps(after)[1:-1])
+                        (owned / 'case.eigs').write_text(source)
+                        if active.get('http_context'):
+                            (owned / 'http-context').write_text(active['http_context'] + '\n')
         legacy = int(bool(row.get('legacy_surplus_null') or row.get('legacy_surplus_assert')))
-        manifest.append('|'.join([name, str(len(row['args'])), ','.join(f[0] for f in forms), str(legacy), str(int(bool(row.get('exits')))), str(int(bool(pending)))]))
+        manifest.append('|'.join([name, str(len(row['args'])), ','.join(f[0] for f in forms), str(legacy), str(int(bool(row.get('exits')))), str(int(bool(pending))), row.get('backend', 'none')]))
     (directory / 'rows').write_text('\n'.join(manifest) + '\n')
+    # Ordinary dependency witnesses use the same owning runtime and dummy drivers.
+    backend_dir = directory / 'backend'
+    backend_dir.mkdir()
+    wav_path = backend_dir / 'sample.wav'
+    with wave.open(str(wav_path), 'wb') as wav:
+        wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(44100)
+        wav.writeframes(b'\0\0' * 32)
+    (backend_dir / 'sdl.eigs').write_text(
+        'shape_backend_result is gfx_open of [8, 8, "shape-backend"]\n'
+        'print of ("shape-backend: " + (str of shape_backend_result))\n'
+        'gfx_close of null\n')
+    (backend_dir / 'mixer.eigs').write_text(
+        'shape_backend_result is audio_music_play of [' + json.dumps(str(wav_path)) + ', 0]\n'
+        'print of ("shape-backend: " + (str of shape_backend_result))\n'
+        'audio_music_stop of null\n')
 
 
 def main():

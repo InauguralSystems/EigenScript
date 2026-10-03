@@ -1,0 +1,14 @@
+# #1398: explicit compatibility mode retains the legacy surplus result.
+# Keep an independent strong child reference throughout this ordinary value
+# control; historical ownership-boundary coverage is not claimed here.
+load_file of "lib/test.eigs"
+assert_eq of [(env_get of "EIGS_STRICT"), "0", "legacy control requires explicit compatibility mode"]
+
+child is [7, 7]
+big is [child, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+returned is coalesce of big
+assert_eq of [returned, child, "coalesce keeps the explicit legacy result"]
+big is null
+assert_eq of [returned, child, "legacy value remains equal with independent child ownership"]
+
+test_summary of null

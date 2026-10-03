@@ -127,6 +127,69 @@ shape_abort() {
 }
 
 
+# Backend presence differs from compiled GFX: bitmap text metrics work without
+# SDL. Only exact documented missing-library receipts qualify, currently on
+# Darwin. Linux owns provisioned device positives and refuses missing libraries.
+shape_backend_classify() { # kind, captured rc+output, actual platform
+    shape_receipt_ok "$2" || return 1
+    case "$1" in sdl|mixer) ;; *) return 1 ;; esac
+    if [ "$2" = $'0\nshape-backend: 1' ]; then echo present; return 0; fi
+    [ "$3" = Darwin ] || return 1
+    if [ "$1" = sdl ] && [ "$2" = $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' ]; then
+        echo absent-sdl; return 0
+    fi
+    if [ "$1" = mixer ] && [ "$2" = $'0\naudio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\nshape-backend: 0' ]; then
+        echo absent-mixer; return 0
+    fi
+    return 1
+}
+shape_backend_probe() { # binary, subject/baseline, kind
+    local mode got found state=""
+    for mode in - 0 1; do
+        got=$(shape_gfx_limit "$1" || exit 125; run_capture "$1" "$mode" "$TMP/shapes/backend/$3.eigs")
+        printf '%s\n' "$got" > "$TMP/shapes/backend/$2-$3-$mode.raw"
+        found=$(shape_backend_classify "$3" "$got" "$SHAPE_BACKEND_PLATFORM") || {
+            echo "FAIL: $2 $3 backend dependency: $(clip "$got" 180)" >&2
+            return 1
+        }
+        if [ -n "$state" ] && [ "$state" != "$found" ]; then
+            echo "FAIL: $2 $3 backend modes disagree" >&2; return 1
+        fi
+        state=$found
+    done
+    printf '%s\n' "$state"
+}
+shape_backend_prepare() { # binary, subject/baseline, kind; lazy per-binary cache
+    local key="$2-$3" state
+    case "$key" in
+        subject-sdl) state=$SHAPE_SUBJECT_SDL ;;
+        subject-mixer) state=$SHAPE_SUBJECT_MIXER ;;
+        baseline-sdl) state=$SHAPE_BASELINE_SDL ;;
+        baseline-mixer) state=$SHAPE_BASELINE_MIXER ;;
+        *) return 1 ;;
+    esac
+    if [ "$state" = unmeasured ]; then
+        if [ "$3" = mixer ]; then
+            shape_backend_prepare "$1" "$2" sdl || return 1
+            if [ "$SHAPE_BACKEND_STATE" = absent-sdl ]; then state=absent-sdl; fi
+        fi
+        if [ "$state" = unmeasured ]; then state=$(shape_backend_probe "$1" "$2" "$3") || return 1; fi
+        case "$key" in
+            subject-sdl) SHAPE_SUBJECT_SDL=$state ;;
+            subject-mixer) SHAPE_SUBJECT_MIXER=$state ;;
+            baseline-sdl) SHAPE_BASELINE_SDL=$state ;;
+            baseline-mixer) SHAPE_BASELINE_MIXER=$state ;;
+        esac
+        echo "  BACKEND $2 $3: $state"
+    fi
+    SHAPE_BACKEND_STATE=$state
+}
+shape_typed_positive_ok() { # unchanged positive oracle, or exact absence oracle
+    shape_positive_ok "$1" "$2" || return 1
+    [ -z "$3" ] || [ "$1" = "$3" ]
+}
+
+
 shape_selftest() {
     local passed=0 failed=0 saved
     shape_case() {
@@ -196,8 +259,175 @@ shape_selftest() {
     shape_case 'restored instrumentation branch preserves mapping space' 0 "$(
         NEW_SHAPE_INSTRUMENTATION=asan
         shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
-    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 26 declared"
-    [ "$failed" = 0 ] && [ "$passed" = 26 ]
+    # Inert exact captures from the independently reviewed backend decision table.
+    backend_case() {
+        local label="$1" expected_rc="$2" expected_stdout="$3" got actual
+        got=$(shape_backend_classify "$4" "$5" "$6"); actual=$?
+        if [ "$actual" = "$expected_rc" ] && [ "$got" = "$expected_stdout" ]; then
+            echo "  PASS: backend $label"; passed=$((passed + 1))
+        else
+            echo "  FAIL: backend $label (rc=$actual state=$got)"; failed=$((failed + 1))
+        fi
+    }
+    backend_case sdl-present-Darwin 0 present sdl '0
+shape-backend: 1' Darwin
+    backend_case sdl-present-Linux 0 present sdl '0
+shape-backend: 1' Linux
+    backend_case sdl-exact-absent-Darwin 0 absent-sdl sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-absence-Linux-is-failure 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 0' Linux
+    backend_case sdl-other-backend-diagnostic 1 '' sdl '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case sdl-wrong-child-rc-1 1 '' sdl '1
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-wrong-child-rc-3 1 '' sdl '3
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-wrong-child-rc-124 1 '' sdl '124
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-wrong-child-rc--9 1 '' sdl '-9
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-altered-diagnostic 1 '' sdl '0
+gfx_open: cannot load libSDL2 changed
+shape-backend: 0' Darwin
+    backend_case sdl-unrelated-first-line 1 '' sdl '0
+unrelated diagnostic
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-unrelated-last-line 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 0
+unrelated diagnostic' Darwin
+    backend_case sdl-duplicate-diagnostic 1 '' sdl '0
+gfx_open: cannot load libSDL2
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-arbitrary-zero 1 '' sdl '0
+shape-backend: 0' Darwin
+    backend_case sdl-success-with-absence-diagnostic 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 1' Darwin
+    backend_case sdl-wrong-result-marker 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 2' Darwin
+    backend_case sdl-missing-child-rc 1 '' sdl 'gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-duplicate-result-marker 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 0
+shape-backend: 0' Darwin
+    backend_case sdl-missing-result-marker 1 '' sdl '0
+gfx_open: cannot load libSDL2' Darwin
+    backend_case sdl-asan-veto 1 '' sdl '0
+gfx_open: cannot load libSDL2
+ERROR: AddressSanitizer: inert classifier text
+shape-backend: 0' Darwin
+    backend_case sdl-lsan-veto 1 '' sdl '0
+gfx_open: cannot load libSDL2
+ERROR: LeakSanitizer: detected memory leaks
+shape-backend: 0' Darwin
+    backend_case sdl-ubsan-veto 1 '' sdl '0
+gfx_open: cannot load libSDL2
+runtime error: inert classifier text
+shape-backend: 0' Darwin
+    backend_case sdl-tsan-veto 1 '' sdl '0
+gfx_open: cannot load libSDL2
+WARNING: ThreadSanitizer: data race (inert text only)
+shape-backend: 0' Darwin
+    backend_case mixer-present-Darwin 0 present mixer '0
+shape-backend: 1' Darwin
+    backend_case mixer-present-Linux 0 present mixer '0
+shape-backend: 1' Linux
+    backend_case mixer-exact-absent-Darwin 0 absent-mixer mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-absence-Linux-is-failure 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Linux
+    backend_case mixer-other-backend-diagnostic 1 '' mixer '0
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case mixer-wrong-child-rc-1 1 '' mixer '1
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-wrong-child-rc-3 1 '' mixer '3
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-wrong-child-rc-124 1 '' mixer '124
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-wrong-child-rc--9 1 '' mixer '-9
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-altered-diagnostic 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0) changed
+shape-backend: 0' Darwin
+    backend_case mixer-unrelated-first-line 1 '' mixer '0
+unrelated diagnostic
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-unrelated-last-line 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0
+unrelated diagnostic' Darwin
+    backend_case mixer-duplicate-diagnostic 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-arbitrary-zero 1 '' mixer '0
+shape-backend: 0' Darwin
+    backend_case mixer-success-with-absence-diagnostic 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 1' Darwin
+    backend_case mixer-wrong-result-marker 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 2' Darwin
+    backend_case mixer-missing-child-rc 1 '' mixer 'audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-duplicate-result-marker 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0
+shape-backend: 0' Darwin
+    backend_case mixer-missing-result-marker 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)' Darwin
+    backend_case mixer-asan-veto 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+ERROR: AddressSanitizer: inert classifier text
+shape-backend: 0' Darwin
+    backend_case mixer-lsan-veto 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+ERROR: LeakSanitizer: detected memory leaks
+shape-backend: 0' Darwin
+    backend_case mixer-ubsan-veto 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+runtime error: inert classifier text
+shape-backend: 0' Darwin
+    backend_case mixer-tsan-veto 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+WARNING: ThreadSanitizer: data race (inert text only)
+shape-backend: 0' Darwin
+    backend_case unknown-kind-Darwin 1 '' other '0
+shape-backend: 1' Darwin
+    backend_case unknown-kind-Linux 1 '' other '0
+shape-backend: 1' Linux
+    # Private inert calibration: removing platform ownership admits Linux
+    # absence. Restore the actual classifier before the following control.
+    saved=$(declare -f shape_backend_classify)
+    eval "${saved/shape_backend_classify/shape_backend_original}"
+    shape_backend_classify() { shape_backend_original "$1" "$2" Darwin; }
+    backend_case 'removed Linux-positive policy is detected (expected RED)' 0 absent-sdl sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' Linux
+    eval "$saved"
+    unset -f shape_backend_original
+    backend_case 'restored Linux-positive policy refuses absence' 1 '' sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' Linux
+    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 76 declared"
+    [ "$failed" = 0 ] && [ "$passed" = 76 ]
 }
 if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
 
@@ -981,9 +1211,12 @@ fi # historical wrong-type/valid-input halves
 # ------------------------------------------------ typed fixed-shape controls (#1398)
 # Candidate discovery is independent of the guards and reviewed contract data.
 # Every process/form owns fresh files; no universal malformed numeric prefix.
-shape_rows=0; shape_pass=0; shape_absent=0; shape_pending=0; shape_fail=0
+shape_rows=0; shape_pass=0; shape_absent=0; shape_backend_absent=0; shape_pending=0; shape_fail=0
+SHAPE_BACKEND_PLATFORM=$(uname -s)
+SHAPE_SUBJECT_SDL=unmeasured; SHAPE_SUBJECT_MIXER=unmeasured
+SHAPE_BASELINE_SDL=unmeasured; SHAPE_BASELINE_MIXER=unmeasured
 if [ -f "$TMP/shapes/rows" ]; then
-    while IFS='|' read -r who max forms legacy exits pending; do
+    while IFS='|' read -r who max forms legacy exits pending backend; do
         [ -n "$who" ] || continue
         shape_rows=$((shape_rows + 1)); row_good=1
         cap="$(cap_for_name "$who")"
@@ -1016,15 +1249,36 @@ if [ -f "$TMP/shapes/rows" ]; then
             printf 'ignore is %s of null\n' "$who" > "$TMP/shape-absent.eigs"
             check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "$who" "$TMP/shape-absent.eigs" || row_good=0
         fi
+        shape_subject=subject; shape_baseline=baseline; shape_absence_output=""
+        if [ "$backend" != none ]; then
+            if ! shape_backend_prepare "$NEW" subject "$backend"; then
+                shape_abort "$who" 'backend dependency' 'exact dependency receipt required'; break
+            fi
+            shape_backend_state=$SHAPE_BACKEND_STATE
+            if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
+                if ! shape_backend_prepare "$BASE" baseline "$backend"; then
+                    shape_abort "$who" 'baseline backend dependency' 'exact dependency receipt required'; break
+                fi
+                if [ "$shape_backend_state" != "$SHAPE_BACKEND_STATE" ]; then
+                    shape_abort "$who" 'backend transition' "$shape_backend_state != $SHAPE_BACKEND_STATE"; break
+                fi
+            fi
+            if [ "$shape_backend_state" != present ]; then
+                shape_subject=subject-absent; shape_baseline=baseline-absent
+                shape_absence_output=$(cat "$TMP/shapes/$who/$shape_backend_state") || {
+                    shape_abort "$who" 'backend absence oracle missing' "$shape_backend_state"; break
+                }
+            fi
+        fi
         old_ifs=$IFS; IFS=','; read -r -a shape_forms <<<"$forms"; IFS=$old_ifs
         maximum=""
         for form in "${shape_forms[@]}"; do
-            off="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/subject/0/$form/case.eigs" "$cap")"
-            if ! shape_positive_ok "$off" "$exits"; then shape_abort "$who" "valid $form/0" "$off"; break 2; fi
-            on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/subject/1/$form/case.eigs" "$cap")"
-            if ! shape_positive_ok "$on" "$exits"; then shape_abort "$who" "valid $form/1" "$on"; break 2; fi
-            default="$(shape_capture "$NEW" - "$TMP/shapes/$who/subject/default/$form/case.eigs" "$cap")"
-            if ! shape_positive_ok "$default" "$exits"; then shape_abort "$who" "valid $form/-" "$default"; break 2; fi
+            off="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/$shape_subject/0/$form/case.eigs" "$cap")"
+            if ! shape_typed_positive_ok "$off" "$exits" "$shape_absence_output"; then shape_abort "$who" "valid $form/0" "$off"; break 2; fi
+            on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/$shape_subject/1/$form/case.eigs" "$cap")"
+            if ! shape_typed_positive_ok "$on" "$exits" "$shape_absence_output"; then shape_abort "$who" "valid $form/1" "$on"; break 2; fi
+            default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/$form/case.eigs" "$cap")"
+            if ! shape_typed_positive_ok "$default" "$exits" "$shape_absence_output"; then shape_abort "$who" "valid $form/-" "$default"; break 2; fi
             if [ "$exits" = 1 ]; then
                 [ "$off" = $'0\nexit-entered' ] || row_good=0
             else
@@ -1034,30 +1288,36 @@ if [ -f "$TMP/shapes/rows" ]; then
             if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
                 for mode in 0 1 default; do
                     flag=$mode; [ "$mode" = default ] && flag=-
-                    old="$(shape_capture "$BASE" "$flag" "$TMP/shapes/$who/baseline/$mode/$form/case.eigs" "$cap")"
-                    if ! shape_positive_ok "$old" "$exits"; then shape_abort "$who" "baseline $form/$mode" "$old"; break 3; fi
+                    old="$(shape_capture "$BASE" "$flag" "$TMP/shapes/$who/$shape_baseline/$mode/$form/case.eigs" "$cap")"
+                    if ! shape_typed_positive_ok "$old" "$exits" "$shape_absence_output"; then shape_abort "$who" "baseline $form/$mode" "$old"; break 3; fi
                     [ "$old" = "$off" ] || row_good=0
                 done
             fi
             [ "$form" != max ] || maximum=$off
         done
-        soft="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/subject/0/surplus/case.eigs" "$cap")"
+        soft="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/$shape_subject/0/surplus/case.eigs" "$cap")"
         if ! shape_receipt_ok "$soft"; then shape_abort "$who" "strict-off surplus" "$soft"; break; fi
         shape_receipt_ok "$soft" || row_good=0
         if [ "$legacy" = 0 ]; then [ "$soft" = "$maximum" ] || row_good=0
         else shape_done "$soft" || row_good=0; fi
         if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
-            old="$(shape_capture "$BASE" 0 "$TMP/shapes/$who/baseline/0/surplus/case.eigs" "$cap")"
+            old="$(shape_capture "$BASE" 0 "$TMP/shapes/$who/$shape_baseline/0/surplus/case.eigs" "$cap")"
             if ! shape_receipt_ok "$old"; then shape_abort "$who" "baseline surplus" "$old"; break; fi
             [ "$old" = "$soft" ] || row_good=0
         fi
-        on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/subject/1/strict/case.eigs" "$cap")"
+        on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/$shape_subject/1/strict/case.eigs" "$cap")"
         if ! shape_done "$on"; then shape_abort "$who" "strict surplus" "$on"; break; fi
-        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/subject/default/strict/case.eigs" "$cap")"
+        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/strict/case.eigs" "$cap")"
         if ! shape_done "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
         shape_done "$on" && [ "$on" = "$default" ] || row_good=0
+        if [ -n "$shape_absence_output" ] && [ "$on" != $'0\nshape-complete' ]; then row_good=0; fi
         if [ "$row_good" = 1 ]; then
-            shape_pass=$((shape_pass + 1)); echo "  PASS shape: $who (max=$max; forms=$forms)"
+            if [ -n "$shape_absence_output" ]; then
+                shape_backend_absent=$((shape_backend_absent + 1))
+                echo "  BACKEND ABSENT shape: $who (documented outcomes + strict surplus; no device-positive claim)"
+            else
+                shape_pass=$((shape_pass + 1)); echo "  PASS shape: $who (max=$max; forms=$forms)"
+            fi
         else
             shape_fail=$((shape_fail + 1)); rc=1
             echo "  FAIL shape: $who (strict/default=$(clip "$on" 160); soft=$(clip "$soft" 160))"
@@ -1071,8 +1331,8 @@ fi
 shape_declared=$(python3 -c 'import json; print(len(json.load(open("tests/strict_shape_cases.json"))))')
 shape_unrun=$((shape_declared - shape_rows))
 echo "== typed fixed-shape controls =="
-echo "  declared=$shape_declared examined=$shape_rows passed=$shape_pass failed=$shape_fail unavailable=$shape_absent pending=$shape_pending unrun=$shape_unrun"
-[ "$shape_rows" = "$shape_declared" ] && [ "$shape_fail" = 0 ] && [ "$shape_pending" = 0 ] || rc=1
+echo "  declared=$shape_declared examined=$shape_rows passed=$shape_pass failed=$shape_fail unavailable=$shape_absent backend_absent=$shape_backend_absent pending=$shape_pending unrun=$shape_unrun"
+[ "$shape_rows" = "$shape_declared" ] && [ "$shape_rows" = "$((shape_pass + shape_absent + shape_backend_absent + shape_fail + shape_pending))" ] && [ "$shape_fail" = 0 ] && [ "$shape_pending" = 0 ] || rc=1
 [ -n "$BASE" ] || echo "  NOTE: shape baseline equality was NOT measured."
 [ "$shape_fail" = 0 ] || SHAPES_ONLY=1
 

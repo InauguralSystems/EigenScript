@@ -93,7 +93,18 @@
     "execution": "UNRUN",
     "name": "audio_capture_open",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive."
+    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == 0",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "0\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -200,7 +211,19 @@
     "execution": "UNRUN",
     "name": "audio_music_play",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Driver must supply tiny valid WAV and verify mixer availability; no missing-file positive."
+    "resource_precondition": "Driver must supply tiny valid WAV and verify mixer availability; no missing-file positive.",
+    "backend": "mixer",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == 0",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "0\nshape-complete",
+        "absent-mixer": "audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\n0\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -233,7 +256,19 @@
     "execution": "UNRUN",
     "name": "audio_music_volume",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Successful music setup required; volume answers null even with no mixer, which alone proves nothing."
+    "resource_precondition": "Successful music setup required; volume answers null even with no mixer, which alone proves nothing.",
+    "backend": "mixer",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete",
+        "absent-mixer": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -289,7 +324,18 @@
     "execution": "UNRUN",
     "name": "audio_open",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive."
+    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == 0",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "0\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -318,7 +364,18 @@
     "execution": "UNRUN",
     "name": "audio_play_loop",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires successful real dummy device setup."
+    "resource_precondition": "Requires successful real dummy device setup.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == 0",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "0\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -422,7 +479,18 @@
     "execution": "UNRUN",
     "name": "audio_stream_open",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive."
+    "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == 0",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "0\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -477,7 +545,18 @@
     "execution": "UNRUN",
     "name": "audio_volume",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires successful dummy device; documented -1 loop keeps channel live until explicit close."
+    "resource_precondition": "Requires successful dummy device; documented -1 loop keeps channel live until explicit close.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "shape_channel is 0  # Closed-device outcome only; never a live-channel positive.",
+      "valid_assert": "shape_result == 0",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "0\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "name": "bit_and",
@@ -1109,7 +1188,18 @@
     "execution": "UNRUN",
     "name": "gfx_circle",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1142,7 +1232,18 @@
     "execution": "UNRUN",
     "name": "gfx_clear",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1176,7 +1277,18 @@
     "execution": "UNRUN",
     "name": "gfx_clip",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1209,7 +1321,18 @@
     "execution": "UNRUN",
     "name": "gfx_fb",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "shape_pixels is buffer of 1",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1243,7 +1366,18 @@
     "execution": "UNRUN",
     "name": "gfx_line",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1273,7 +1407,18 @@
     "execution": "UNRUN",
     "name": "gfx_open",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Driver must establish actual SDL dummy availability; a zero open result cannot count as positive."
+    "resource_precondition": "Driver must establish actual SDL dummy availability; a zero open result cannot count as positive.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == 0",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "gfx_open: cannot load libSDL2\n0\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1305,7 +1450,18 @@
     "execution": "UNRUN",
     "name": "gfx_point",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1334,7 +1490,18 @@
     "execution": "UNRUN",
     "name": "gfx_read",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1379,7 +1546,18 @@
     "execution": "UNRUN",
     "name": "gfx_rect",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1426,7 +1604,18 @@
     "execution": "UNRUN",
     "name": "gfx_rrect",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
@@ -1469,7 +1658,18 @@
     "execution": "UNRUN",
     "name": "gfx_text",
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return."
+    "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
+    "backend": "sdl",
+    "backend_absent": {
+      "setup": "",
+      "valid_assert": "shape_result == null",
+      "observe": "print of shape_result",
+      "unchanged": "# Entry rejection is checked before any absent-backend operation.",
+      "outputs": {
+        "absent-sdl": "null\nshape-complete"
+      },
+      "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
+    }
   },
   {
     "args": [
