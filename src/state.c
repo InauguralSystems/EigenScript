@@ -36,6 +36,7 @@ static int g_live_states = 0;
 EigsState *eigs_state_new(void) {
     EigsState *st = xcalloc(1, sizeof(*st));
     pthread_mutex_init(&st->threads_lock, NULL);
+    pthread_mutex_init(&st->intern_owner_lock, NULL);
     pthread_mutex_init(&st->handle_mutex, NULL);
     pthread_mutex_init(&st->exit_mutex, NULL);
     pthread_cond_init(&st->exit_cond, NULL);
@@ -103,6 +104,9 @@ static void state_destroy_body(EigsState *st, int already_released) {
     /* #307: value-candidate buffer pins were drained at gc_collect_at_exit;
      * free the (now-empty) backing array. NULL if no cycle ever parked. */
     free(st->gc_val_buf);
+    /* Values/envs/chunks have already been drained by normal close. */
+    env_intern_release_all_values(st);
+    pthread_mutex_destroy(&st->intern_owner_lock);
     pthread_mutex_destroy(&st->module_lock);
     pthread_mutex_destroy(&st->threads_lock);
     pthread_mutex_destroy(&st->handle_mutex);

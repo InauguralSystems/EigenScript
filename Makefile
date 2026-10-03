@@ -263,6 +263,16 @@ build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c
 embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
 	@echo "Embed observer test built: $<"
 
+# #1463: structural intern ownership against the owning runtime variant.
+# No CLI relink; the fixture holds test references throughout teardown.
+INTERN_OWNER_VARIANT ?= release
+INTERN_OWNER_OBJ := $(filter-out build/$(INTERN_OWNER_VARIANT)/main.o,$(OBJ_$(INTERN_OWNER_VARIANT)))
+build/$(INTERN_OWNER_VARIANT)/test_intern_owners: tests/test_intern_owners.c $(INTERN_OWNER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(INTERN_OWNER_VARIANT)) -I$(SRC_DIR) -o $@ $< $(INTERN_OWNER_OBJ) $(LIBS_$(INTERN_OWNER_VARIANT))
+.PHONY: intern-owner-test
+intern-owner-test: build/$(INTERN_OWNER_VARIANT)/test_intern_owners
+	@echo "Intern owner structural oracle built: $<"
+
 # #1056: use the same variant as the CLI under test, without relinking it.
 ROAD_VARIANT ?= release
 EMBED_ROADS_OBJ := $(filter-out build/$(ROAD_VARIANT)/main.o,$(OBJ_$(ROAD_VARIANT)))

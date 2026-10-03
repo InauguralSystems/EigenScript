@@ -1546,10 +1546,8 @@ void eigs_thread_drain_caches(EigsThread *th) {
     th->env_freelist = NULL;
     th->env_freelist_count = 0;
 
-    /* Returned sandbox dictionaries own detached intern entries until their
-     * Values are released. A clean thread normally has no live owners here,
-     * but drain defensively before freeing the table itself. */
-    env_intern_release_all_values();
+    /* Private promoted keys are Value-owned in the state registry; detaching
+     * their creator must not release keys still borrowed by surviving Values. */
 
     /* env_name_interns (#1065): release the THREAD's ref on its intern
      * table. Chunks created on this thread hold their own refs (they carry
@@ -1584,6 +1582,27 @@ void env_intern_table_unref(EnvInternTable *t) {
         }
     }
     free(t);
+}
+
+/* Leaf references: no outgoing runtime-object edges and no GC traversal.
+ * Callers serialize this list exactly as the names they publish. */
+static void intern_ref_add(EnvInternRef **refs, EnvInternTable *table) {
+    if (!table) return;
+    for (EnvInternRef *r = *refs; r; r = r->next)
+        if (r->table == table) return;
+    EnvInternRef *r = xmalloc(sizeof(*r));
+    env_intern_table_ref(table);
+    r->table = table; r->next = *refs; *refs = r;
+}
+static void intern_refs_release(EnvInternRef **refs) {
+    EnvInternRef *r = *refs; *refs = NULL;
+    while (r) {
+        EnvInternRef *next = r->next;
+        env_intern_table_unref(r->table); free(r); r = next;
+    }
+}
+void env_retain_intern_table(Env *env, EnvInternTable *table) {
+    intern_ref_add(&env->intern_refs, table);
 }
 
 void free_value(Value *v) {
@@ -1621,7 +1640,7 @@ void free_value(Value *v) {
                 if (me) env_decref(me);
             }
             for (int i = 0; i < v->data.dict.count; i++) {
-                /* keys are interned (env_intern_name) — do not free */
+                /* Keys have table/private-node ownership; do not free individually. */
                 val_decref(v->data.dict.vals[i]);
             }
             free(v->data.dict.keys);
@@ -1629,12 +1648,15 @@ void free_value(Value *v) {
             free(v->data.dict.hash.hashes);
             free(v->data.dict.hash.indices);
             free(v->data.dict.hash.generations);
+            intern_refs_release(&v->data.dict.intern_refs);
             break;
         case VAL_FN:
             free(v->data.fn.name);
-            /* params[i] are interned (lifetime owned by intern map); only free the array. */
+            /* Parameters keep an independent leaf table ref, separate from body. */
             free(v->data.fn.params);
             free(v->data.fn.param_hashes);
+            env_intern_table_unref(v->data.fn.param_intern_tbl);
+            v->data.fn.param_intern_tbl = NULL;
             if (v->data.fn.body_count != -1) {
                 /* AST-based function — free body nodes */
                 for (int i = 0; i < v->data.fn.body_count; i++)
@@ -1970,6 +1992,8 @@ Value* make_fn(const char *name, char **params, int param_count, Env *closure) {
     v->data.fn.params = xmalloc_array(param_count, sizeof(char*));
     v->data.fn.param_hashes = xmalloc_array(param_count, sizeof(uint32_t));
     v->data.fn.param_count = param_count;
+    v->data.fn.param_intern_tbl = param_count ? eigs_current->intern_tbl : NULL;
+    env_intern_table_ref(v->data.fn.param_intern_tbl);
     for (int i = 0; i < param_count; i++) {
         v->data.fn.params[i] = env_intern_name(params[i]);
         v->data.fn.param_hashes[i] = env_hash_name(params[i]);
@@ -2061,9 +2085,9 @@ Value* make_dict(int capacity) {
  * whole-dict reader (keys / values / len / printing / json / iteration /
  * equality) still works — those call eigs_module_ns_sync first.
  *
- * The Env* lives in this side table rather than in `struct Value` so the
- * Value stays 72 bytes: the flag byte fits in the struct's existing tail
- * padding, and only a flagged dict ever pays for the lookup.
+ * The Env* lives in this side table rather than in `struct Value`; only a
+ * flagged dictionary pays for the namespace lookup. Value layout is not a
+ * fixed-size contract.
  *
  * Ownership: attach takes env_incref; the edge is one GC_EDGE_TABLE row
  * (dict -> env), cleared by gc_clear_node and by free_value. Module
@@ -2467,11 +2491,15 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
          * boundary: trace history and other counted Value holders may retain
          * an inner dict even when that dict is not reachable from the
          * returned result. */
+        char *original = interned;
         interned = env_intern_scope_promote(dict, interned);
+        if (interned == original)
+            intern_ref_add(&dict->data.dict.intern_refs, eigs_current->intern_tbl);
     } else if (__builtin_expect(g_vm_multithreaded, 0)) {
         interned = (char *)shared_intern_key(key);
     } else {
         interned = env_intern_name(key);
+        intern_ref_add(&dict->data.dict.intern_refs, eigs_current->intern_tbl);
     }
     dict->data.dict.keys[dict->data.dict.count] = interned;
     Value *promoted = promote_if_arena(val);
@@ -2540,8 +2568,8 @@ void dict_set_owned(Value *dict, const char *key, Value *val) {
  * also removes the old shared-by-reference concurrent-mutation footgun for the
  * data types it covers. Buffers and text builders are mutable values, so they
  * are copied too. Functions, builtins, and raw JSON remain shared by refcount;
- * sending a closure from a thread that then exits remains unsupported (its
- * interned params would dangle). */
+ * function parameters now retain their own intern table independently of
+ * the creating attachment. This does not permit cross-state Value transfer. */
 
 #define CHAN_CLONE_MAX_DEPTH 64
 static Value *chan_clone_rec(Value *v, int depth) {
@@ -2582,6 +2610,8 @@ static Value *chan_clone_rec(Value *v, int depth) {
              * handle_table_drain has cleared the flag — so this stays. */
             for (int i = 0; i < out->data.dict.count; i++)
                 out->data.dict.keys[i] = (char *)shared_intern_key(out->data.dict.keys[i]);
+            intern_refs_release(&out->data.dict.intern_refs);
+            env_intern_release_value(out);
             return out;
         }
         case VAL_BUFFER: {
@@ -3195,6 +3225,7 @@ static EnvInternValueOwner *env_intern_owner_find(Value *value) {
 }
 
 static void env_intern_owner_add(Value *value, EnvNameIntern *name) {
+    pthread_mutex_lock(&eigs_current->state->intern_owner_lock);
     EnvInternValueOwner *owner = env_intern_owner_find(value);
     if (!owner) {
         owner = xcalloc(1, sizeof(*owner));
@@ -3204,14 +3235,23 @@ static void env_intern_owner_add(Value *value, EnvNameIntern *name) {
     }
     name->owner_next = owner->names;
     owner->names = name;
+    value->intern_private = 1;
+    pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
 }
 
 static void env_intern_scope_remove(char *name) {
-    for (EnvInternValueOwner *owner = g_sandbox_intern_owners; owner; owner = owner->next)
-        for (EnvNameIntern **link = &owner->names; *link; link = &(*link)->owner_next)
+    EnvNameIntern *drop = NULL;
+    pthread_mutex_lock(&eigs_current->state->intern_owner_lock);
+    for (EnvInternValueOwner *owner = g_sandbox_intern_owners; owner; owner = owner->next) {
+        for (EnvNameIntern **link = &owner->names; *link; link = &(*link)->owner_next) {
             if ((*link)->name == name) {
-                EnvNameIntern *drop = *link; *link = drop->owner_next;
-                free(drop->name); free(drop); return; }
+                drop = *link; *link = drop->owner_next; break;
+            }
+        }
+        if (drop) break;
+    }
+    pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
+    if (drop) { free(drop->name); free(drop); }
 }
 
 size_t env_intern_debug_count(const char *prefix) {
@@ -3219,9 +3259,11 @@ size_t env_intern_debug_count(const char *prefix) {
     for (int i = 0; i < ENV_NAME_INTERN_BUCKETS; i++)
         for (EnvNameIntern *it = g_env_name_interns[i]; it; it = it->next)
             if (!prefix || strncmp(it->name, prefix, strlen(prefix)) == 0) count++;
+    pthread_mutex_lock(&eigs_current->state->intern_owner_lock);
     for (EnvInternValueOwner *o = g_sandbox_intern_owners; o; o = o->next)
         for (EnvNameIntern *it = o->names; it; it = it->owner_next)
             if (!prefix || strncmp(it->name, prefix, strlen(prefix)) == 0) count++;
+    pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
     if (!prefix) {
         pthread_mutex_lock(&g_shared_key_mutex);
         count += g_shared_key_intern_count;
@@ -3263,17 +3305,24 @@ char *env_intern_scope_promote(Value *owner, char *name) {
             return copy->name;
         }
     }
+    EnvNameIntern *copy = NULL;
+    pthread_mutex_lock(&eigs_current->state->intern_owner_lock);
     for (EnvInternValueOwner *it = g_sandbox_intern_owners; it; it = it->next) {
         for (EnvNameIntern *held = it->names; held; held = held->owner_next) {
             if (held->name != name) continue;
-            if (it->value == owner) return held->name;
-            EnvNameIntern *copy = xcalloc(1, sizeof(*copy));
+            if (it->value == owner) {
+                pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
+                return held->name;
+            }
+            copy = xcalloc(1, sizeof(*copy));
             copy->name = xstrdup(name);
             copy->hash = h;
-            env_intern_owner_add(owner, copy);
-            return copy->name;
+            break;
         }
+        if (copy) break;
     }
+    pthread_mutex_unlock(&eigs_current->state->intern_owner_lock);
+    if (copy) { env_intern_owner_add(owner, copy); return copy->name; }
     return name; /* process-global channel keys and ordinary names are stable */
 }
 
@@ -3316,35 +3365,39 @@ void env_intern_scope_end(uint32_t scope, uint32_t previous) {
     g_sandbox_intern_scope = previous;
 }
 
-void env_intern_release_value(Value *value) {
-    if (!value) return;
-    EnvInternValueOwner **link = &g_sandbox_intern_owners;
-    while (*link && (*link)->value != value) link = &(*link)->next;
-    if (!*link) return;
-    EnvInternValueOwner *owner = *link;
-    *link = owner->next;
+static void env_intern_private_owner_free(EnvInternValueOwner *owner) {
     EnvNameIntern *name = owner->names;
     while (name) {
         EnvNameIntern *next = name->owner_next;
-        free(name->name);
-        free(name);
-        name = next;
+        free(name->name); free(name); name = next;
     }
     free(owner);
 }
 
-void env_intern_release_all_values(void) {
-    while (g_sandbox_intern_owners) {
-        EnvInternValueOwner *owner = g_sandbox_intern_owners;
-        g_sandbox_intern_owners = owner->next;
-        EnvNameIntern *name = owner->names;
-        while (name) {
-            EnvNameIntern *next = name->owner_next;
-            free(name->name);
-            free(name);
-            name = next;
-        }
-        free(owner);
+void env_intern_release_value(Value *value) {
+    if (!value || value->type != VAL_DICT || !value->intern_private ||
+        !eigs_current) return;
+    EigsState *st = eigs_current->state;
+    pthread_mutex_lock(&st->intern_owner_lock);
+    EnvInternValueOwner **link = &st->sandbox_intern_owners;
+    while (*link && (*link)->value != value) link = &(*link)->next;
+    EnvInternValueOwner *owner = *link;
+    if (owner) *link = owner->next;
+    value->intern_private = 0;
+    pthread_mutex_unlock(&st->intern_owner_lock);
+    if (owner) env_intern_private_owner_free(owner);
+}
+
+void env_intern_release_all_values(EigsState *st) {
+    /* Shutdown fallback after Values have ceased borrowing these names.
+     * Detach the registry under its lock; destruction never holds the lock. */
+    pthread_mutex_lock(&st->intern_owner_lock);
+    EnvInternValueOwner *owner = st->sandbox_intern_owners;
+    st->sandbox_intern_owners = NULL;
+    pthread_mutex_unlock(&st->intern_owner_lock);
+    while (owner) {
+        EnvInternValueOwner *next = owner->next;
+        env_intern_private_owner_free(owner); owner = next;
     }
 }
 
@@ -3506,6 +3559,8 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     env->names[env->count] = __builtin_expect(g_vm_multithreaded, 0)
                              ? (char *)shared_intern_key(name)
                              : env_intern_name(name);
+    if (!g_vm_multithreaded)
+        env_retain_intern_table(env, eigs_current->intern_tbl);
     Value *promoted = promote_if_arena(val);
     if (promoted == val) val_incref(promoted);
     env->values[env->count] = slot_from_value(promoted);
@@ -3572,6 +3627,7 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
 
 /* Core local-set implementation: caller has already interned `name`. */
 void env_set_local_pre_interned_slot(Env *env, const char *interned,
+                                      EnvInternTable *owner,
                                      uint32_t h, EigsSlot s) {
     /* #1144: the probe MUST be inside the hold. Its old comment — "single
      * writer (module code runs on the main thread only), so the unlocked
@@ -3633,6 +3689,7 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
     env->names[env->count] = __builtin_expect(g_vm_multithreaded, 0)
                              ? (char *)shared_intern_key(interned)
                              : (char *)interned;
+    if (!g_vm_multithreaded) env_retain_intern_table(env, owner);
     EigsSlot stored = s;
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);
@@ -3661,7 +3718,8 @@ store:
 
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
     if (h == 0) h = env_hash_name(name);
-    env_set_local_pre_interned_slot(env, env_intern_name(name), h, s);
+    env_set_local_pre_interned_slot(env, env_intern_name(name),
+                                      eigs_current->intern_tbl, h, s);
 }
 
 /* Bind a parameter into a freshly-created call env. Caller guarantees:
@@ -3671,6 +3729,7 @@ void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot 
  *     (compiler rejects duplicate params)
  * Skips env_hash_find. */
 void env_bind_fresh_param_slot(Env *env, const char *interned,
+                               EnvInternTable *owner,
                                uint32_t h, EigsSlot s) {
     if (env->count >= env->capacity) {
         int new_cap = env->capacity * 2;
@@ -3681,6 +3740,7 @@ void env_bind_fresh_param_slot(Env *env, const char *interned,
         env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
         env->capacity = new_cap;
     }
+    env_retain_intern_table(env, owner);
     env->names[env->count] = (char*)interned;
     EigsSlot stored = s;
     if (slot_is_ptr(s)) {
@@ -3812,6 +3872,7 @@ void env_decref(Env *env) {
     /* #262 Phase-1: drop slot-keyed observer state on both park and free so a
      * recycled env never carries another binding's trajectory. */
     observer_slot_reset(env);
+    intern_refs_release(&env->intern_refs);
     if (env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
         g_env_freelist_count < ENV_FREELIST_CAP) {
         env->count = 0;
@@ -3881,6 +3942,7 @@ void env_destroy_final(Env *env) {
     for (int i = 0; i < count; i++)
         slot_decref(vals[i]);
     observer_slot_reset(env);   /* #262 Phase-1 */
+    intern_refs_release(&env->intern_refs);
     env_free_retired(env);      /* #607 */
     free(vals);
     free(env->names);
