@@ -1787,23 +1787,52 @@ Value* slot_to_value(EigsSlot s) {
     return &g_null_singleton;
 }
 
-Value* promote_if_arena(Value *v) {
-    if (!v || !v->arena) return v;
+/* One entry for each arena list temporarily marked during promotion.  The
+ * source list itself is the memo table: count == -1 means that items points
+ * at its heap copy.  Keeping the original fields here lets us restore the
+ * arena graph before returning.  This makes lookup O(1), including for
+ * attacker-chosen cyclic graphs, rather than turning every edge into a scan
+ * of a growing side table. */
+typedef struct {
+    Value *src;
+    Value *dst;
+    Value **items;
+    int count;
+    int capacity;
+    int copied_count;
+} PromoteEntry;
+
+#define PROMOTE_MAX_LISTS 100000
+
+static Value *promote_arena_scalar(Value *v) {
     if (v->type == VAL_NUM) {
-        /* #262 Step E: no observer fields to carry across the promotion. */
+        if (!sandbox_charge(sizeof(Value))) return NULL;
         return make_num_permanent(v->data.num);
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
+        size_t n = val_str_len(v);
+        if (!sandbox_charge(sizeof(Value) + n + 1)) return NULL;
         Value *h = xcalloc(1, sizeof(Value));
         h->type = v->type;
-        /* #1183: the source already knows its length — copy it, don't re-scan. */
-        size_t n = val_str_len(v);
         char *copy = xmalloc(n + 1);
         memcpy(copy, v->data.str ? v->data.str : "", n);
         copy[n] = '\0';
         val_str_set(h, copy, n);
         h->refcount = 1;
         return h;
+    }
+    return v;
+}
+
+Value* promote_if_arena(Value *v) {
+    if (!v || !v->arena) return v;
+    if (v->type == VAL_NUM || v->type == VAL_STR || v->type == VAL_JSON_RAW) {
+        Value *h = promote_arena_scalar(v);
+        /* A sandbox refusal is sticky and unwinds at the next dispatch, but a
+         * store may retain this result in host history before that unwind.
+         * Never let the arena pointer cross that boundary: the immortal null
+         * preserves callers' non-NULL contract without another allocation. */
+        return h ? h : &g_null_singleton;
     }
     if (v->type == VAL_NULL) {
         /* VAL_NULL has a single immortal singleton (g_null_singleton, arena=1).
@@ -1812,29 +1841,128 @@ Value* promote_if_arena(Value *v) {
         return v;
     }
     if (v->type == VAL_LIST) {
-        /* #873: an arena list stored into a binding or heap container
-         * outlives arena_reset as a dangling reference — silent wrong
-         * values, type confusion, even free() aborts when a decref
-         * walks the stale pointer. Deep-promote instead: a fresh heap
-         * list; arena children promote recursively (fresh rc=1,
-         * adopted), heap children are shared (incref'd). Arena lists
-         * are acyclic at promotion time — building a cycle requires
-         * mutating through a binding, and binding stores promote — so
-         * the recursion terminates. Aliasing between two references to
-         * the same UNBOUND arena temporary is not preserved (each
-         * promotes to its own copy); observing that would require a
-         * binding, which promotes. Lists are the only arena-capable
-         * container: make_dict/make_fn/buffers/text builders are
-         * heap-only constructors and never carry v->arena. */
-        Value *h = make_list_heap(v->data.list.count);
-        for (int i = 0; i < v->data.list.count; i++) {
-            Value *c = v->data.list.items[i];
-            Value *pc = promote_if_arena(c);
-            if (pc == c) val_incref(pc);
-            h->data.list.items[i] = pc;
+        PromoteEntry *work = NULL;
+        int work_count = 0;
+        int work_capacity = 0;
+        int refused = 0;
+
+        /* Discover and fill iteratively: native stack use is constant. */
+        Value *pending = v;
+        int wi = 0;
+        for (;;) {
+            if (pending) {
+                if (work_count == PROMOTE_MAX_LISTS) {
+                    rt_error(eigs_current && g_sandbox_active ? EK_SANDBOX : EK_LIMIT,
+                             0, "arena promotion exceeds %d lists",
+                             PROMOTE_MAX_LISTS);
+                    refused = 1;
+                    break;
+                }
+                if (work_count == work_capacity) {
+                    int old = work_capacity;
+                    int next = old ? old * 2 : 16;
+                    if (next > PROMOTE_MAX_LISTS) next = PROMOTE_MAX_LISTS;
+                    if (!sandbox_charge((size_t)(next - old) *
+                                        sizeof(PromoteEntry))) {
+                        refused = 1;
+                        break;
+                    }
+                    work = xrealloc_array(work, (size_t)next,
+                                          sizeof(PromoteEntry));
+                    work_capacity = next;
+                }
+                int cap = pending->data.list.count < 8
+                              ? 8 : pending->data.list.count;
+                if (!sandbox_charge(sizeof(Value) +
+                                    (size_t)cap * sizeof(Value *))) {
+                    refused = 1;
+                    break;
+                }
+                PromoteEntry *e = &work[work_count++];
+                e->src = pending;
+                e->items = pending->data.list.items;
+                e->count = pending->data.list.count;
+                e->capacity = pending->data.list.capacity;
+                e->copied_count = 0;
+                e->dst = make_list_heap(e->count);
+                /* Intrusive memo marker; restored on every exit below. */
+                pending->data.list.items = (Value **)e->dst;
+                pending->data.list.count = -1;
+                pending = NULL;
+            }
+
+            /* Breadth-first fill: wi only advances, so every edge costs O(1)
+             * native bookkeeping in addition to its charged copy work. */
+            while (wi < work_count &&
+                   work[wi].dst->data.list.count == work[wi].count)
+                wi++;
+            if (wi == work_count) break;
+
+            PromoteEntry *e = &work[wi];
+            int edge = e->dst->data.list.count;
+            Value *child = e->items[edge];
+            Value *copy;
+            int copy_is_fresh_scalar = 0;
+            if (child && child->arena && child->type == VAL_LIST) {
+                if (child->data.list.count == -1) {
+                    copy = (Value *)child->data.list.items;
+                } else {
+                    pending = child;
+                    continue;
+                }
+            } else if (child && child->arena) {
+                copy = promote_arena_scalar(child);
+                copy_is_fresh_scalar = 1;
+                if (!copy) {
+                    refused = 1;
+                    break;
+                }
+            } else {
+                copy = child;
+            }
+            if (!copy_is_fresh_scalar) val_incref(copy);
+            e->dst->data.list.items[e->dst->data.list.count++] = copy;
         }
-        h->data.list.count = v->data.list.count;
-        return h;
+
+        Value *root = work_count ? work[0].dst : NULL;
+        /* Restore the arena graph before any decref can invoke collection. */
+        for (int i = 0; i < work_count; i++) {
+            work[i].src->data.list.items = work[i].items;
+            work[i].src->data.list.count = work[i].count;
+            work[i].src->data.list.capacity = work[i].capacity;
+        }
+        if (refused) {
+            /* Hide every copied edge from cycle collection before dropping
+             * any of its references.  A decref can collect an entire copied
+             * cycle, so leaving even a sibling list traversable would let a
+             * later cleanup step follow an already-freed child. */
+            for (int i = 0; i < work_count; i++) {
+                Value *dst = work[i].dst;
+                work[i].copied_count = dst->data.list.count;
+                dst->data.list.count = 0;
+            }
+            for (int i = 0; i < work_count; i++) {
+                Value *dst = work[i].dst;
+                for (int j = 0; j < work[i].copied_count; j++) {
+                    Value *child = dst->data.list.items[j];
+                    dst->data.list.items[j] = NULL;
+                    val_decref(child);
+                }
+            }
+            for (int i = 0; i < work_count; i++) val_decref(work[i].dst);
+            /* As with scalar refusal, host observers can retain the return
+             * value before the sandbox unwinds and resets its arena. */
+            root = &g_null_singleton;
+        } else {
+            /* Edges own refs; the caller owns only the root constructor ref. */
+            for (int i = 1; i < work_count; i++) val_decref(work[i].dst);
+            /* A worker's sealed sandbox env is not an exit-snapshot root, and
+             * ordinary MT decrefs deliberately do not enter the candidate
+             * buffer. Preserve this promoted graph until deferred collection. */
+            if (g_vm_multithreaded) gc_note_possible_root_deferred(root);
+        }
+        free(work);
+        return root;
     }
     /* Remaining types (dict/fn/builtin/buffer/text builder) are
      * heap-only at construction; an arena flag on one is unreachable. */
@@ -4516,15 +4644,29 @@ static void gc_collect_impl(Value **seeds, int seed_count,
  * pin so it survives until the next collection, which decides via the same
  * edge-accounting whether it (and its cycle) is actually garbage.
  *
- * Gated exactly like env_mark_captured: off when GC is disabled, mid-collection
- * (the collector's own decrefs must not re-register), or multithreaded (the
- * buffer is single-threaded-only — MT value cycles are rare and swept at exit
- * via the global snapshot; this keeps the hot decref lock-free). */
-void gc_note_possible_root(Value *v) {
-    if (!g_gc_enabled || g_in_gc || g_vm_multithreaded || v->gc_buffered)
+ * Gated off when GC is disabled or mid-collection (the collector's own decrefs
+ * must not re-register).  In multithreaded states the state GC lock protects
+ * the shared buffer.  This matters for roots that are not reachable from the
+ * exit snapshot, notably a sandbox's sealed, short-lived environment: a worker
+ * can drop its last external reference to a promoted cycle while MT collection
+ * is deferred, and the candidate pin must survive until the last worker joins.
+ */
+static void gc_buffer_possible_root(Value *v) {
+    if (!g_gc_enabled || g_in_gc) return;
+    int mt = g_vm_multithreaded;
+    if (mt) pthread_mutex_lock(&eigs_current->state->gc_lock);
+    if (v->gc_buffered) {
+        if (mt) pthread_mutex_unlock(&eigs_current->state->gc_lock);
         return;
-    v->gc_buffered = 1;
-    v->refcount++;   /* buffer pin — single-threaded here, so plain ++ */
+    }
+    /* The caller holds a live owner through registration. Emitted x86 testb
+     * may read this atomic byte as a hint in an already-active native frame;
+     * it never publishes ownership or registry data. C MT decrement paths
+     * skip the hint, and the helper rechecks MT. Pin and insertion finish
+     * under gc_lock before unlock; only post-MT collection clears the flag. */
+    __atomic_store_n(&v->gc_buffered, 1, __ATOMIC_RELAXED);
+    if (mt) __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
+    else v->refcount++;
     if (g_gc_val_count >= g_gc_val_cap) {
         g_gc_val_cap = g_gc_val_cap ? g_gc_val_cap * 2 : 64;
         g_gc_val_buf = xrealloc_array(g_gc_val_buf, g_gc_val_cap, sizeof(Value *));
@@ -4532,8 +4674,19 @@ void gc_note_possible_root(Value *v) {
     g_gc_val_buf[g_gc_val_count++] = v;
     /* #1096: the possible-root trigger is cost-aware -- see gc_val_next_threshold. */
     if (!g_gc_val_threshold) g_gc_val_threshold = GC_VAL_THRESHOLD;
-    if (__builtin_expect(g_gc_val_count >= g_gc_val_threshold, 0))
+    int should_collect = !mt && g_gc_val_count >= g_gc_val_threshold;
+    if (mt) pthread_mutex_unlock(&eigs_current->state->gc_lock);
+    if (__builtin_expect(should_collect, 0))
         gc_collect_cycles();
+}
+
+void gc_note_possible_root(Value *v) {
+    if (g_vm_multithreaded) return;
+    gc_buffer_possible_root(v);
+}
+
+void gc_note_possible_root_deferred(Value *v) {
+    gc_buffer_possible_root(v);
 }
 
 static void gc_drain_value_candidates(int include_captured_envs) {

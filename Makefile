@@ -610,6 +610,14 @@ fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 		-lm -lpthread
 	@echo "libFuzzer binary built. Run: ./fuzz/fuzz_eigenscript fuzz/corpus/ -max_len=4096 -timeout=5"
 
+# Ordinary acyclic promotion oracle, linked only against its owning variant.
+ARENA_PROMOTION_VARIANT ?= release
+ARENA_PROMOTION_OBJ := $(filter-out build/$(ARENA_PROMOTION_VARIANT)/main.o,$(OBJ_$(ARENA_PROMOTION_VARIANT)))
+build/$(ARENA_PROMOTION_VARIANT)/test_arena_promotion_ordinary: tests/test_arena_promotion_ordinary.c $(ARENA_PROMOTION_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(ARENA_PROMOTION_VARIANT)) -I$(SRC_DIR) -o $@ $< $(ARENA_PROMOTION_OBJ) $(LIBS_$(ARENA_PROMOTION_VARIANT))
+.PHONY: arena-promotion-ordinary-test
+arena-promotion-ordinary-test: build/$(ARENA_PROMOTION_VARIANT)/test_arena_promotion_ordinary
+
 version:
 	@echo $(VERSION)
 

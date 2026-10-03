@@ -160,6 +160,12 @@ print of (c of null)
 
 ## Lists: map / filter / comprehension
 
+Arena-backed lists are promoted iteratively when they escape into longer-lived
+storage. Repeated references to the same source list share one promoted list.
+A promotion may contain at most 100,000 distinct arena-backed lists; exceeding
+it raises a catchable `limit` error, or `sandbox` inside a sandbox. Promotion
+copies and bookkeeping count toward an active sandbox allocation budget.
+
 Python:
 
 ```python
