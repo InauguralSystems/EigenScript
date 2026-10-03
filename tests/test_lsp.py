@@ -558,8 +558,11 @@ def main():
     r = converse([INIT, did_open(define_doc), defn, SHUTDOWN, EXIT])
     res = (by_id(r, 4) or {}).get("result")
     loc = res[0] if isinstance(res, list) and res else res
-    check("definition returns a location with a range",
-          isinstance(loc, dict) and "range" in loc and loc.get("uri") == URI)
+    helper_range = {"start": {"line": 0, "character": 7},
+                    "end": {"line": 0, "character": 13}}
+    check("definition range covers the function name, not `define` (#1369)",
+          isinstance(loc, dict) and loc.get("range") == helper_range
+          and loc.get("uri") == URI)
 
     # --- references returns a list ---
     refs = {"jsonrpc": "2.0", "id": 5, "method": "textDocument/references",
@@ -569,6 +572,45 @@ def main():
     res = (by_id(r, 5) or {}).get("result")
     check("references returns a list of locations",
           isinstance(res, list) and len(res) >= 1 and "range" in res[0])
+    ref_ranges = [location.get("range") for location in res] if isinstance(res, list) else []
+    check("references include the function name declaration range (#1369)",
+          len(ref_ranges) == 2 and helper_range in ref_ranges)
+
+    indented_define_doc = ("define outer() as:\n"
+                           "    define helper(a) as:\n"
+                           "        return a\n"
+                           "    return helper of 5\n")
+    indented_defn = {"jsonrpc": "2.0", "id": 1369,
+                     "method": "textDocument/definition",
+                     "params": {"textDocument": {"uri": URI},
+                                "position": {"line": 3, "character": 13}}}
+    r = converse([INIT, did_open(indented_define_doc), indented_defn, SHUTDOWN, EXIT])
+    loc = (by_id(r, 1369) or {}).get("result")
+    loc = loc[0] if isinstance(loc, list) and loc else loc
+    check("definition range includes ordinary space indentation (#1369)",
+          isinstance(loc, dict) and loc.get("range") ==
+              {"start": {"line": 1, "character": 11},
+               "end": {"line": 1, "character": 17}})
+
+    # Parameter spans are a separate older limitation; the function-name fix
+    # must not invent columns beyond a multiline signature's first line.
+    multiline_doc = "define f(\n    a,\n    b\n) as:\n    return a + b\n"
+    multiline_refs = {"jsonrpc": "2.0", "id": 1370,
+                      "method": "textDocument/references",
+                      "params": {"textDocument": {"uri": URI},
+                                 "position": {"line": 4, "character": 15},
+                                 "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(multiline_doc), multiline_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 1370) or {}).get("result")
+    lines = multiline_doc.splitlines()
+    check("multiline parameter reference ranges stay within source lines (#1369)",
+          isinstance(res, list) and len(res) == 2
+          and all(0 <= loc["range"]["start"]["line"] < len(lines)
+                  and loc["range"]["start"]["line"] == loc["range"]["end"]["line"]
+                  and 0 <= loc["range"]["start"]["character"]
+                  <= loc["range"]["end"]["character"]
+                  <= len(lines[loc["range"]["start"]["line"]])
+                  for loc in res))
 
     # #1375: neither result stream may silently stop at its former fixed cap.
     many_ref_doc = "target is 1\n" + "".join("print of target\n" for _ in range(520))
@@ -606,6 +648,12 @@ def main():
           isinstance(res, list) and all("range" in s and "selectionRange" in s for s in res))
     check("documentSymbol function kind is 12 (Function)",
           isinstance(res, list) and any(s.get("name") == "helper" and s.get("kind") == 12 for s in res))
+    helper_symbols = [s for s in res if s.get("name") == "helper"] if isinstance(res, list) else []
+    check("documentSymbol function ranges cover the name (#1369)",
+          len(helper_symbols) == 1
+          and helper_symbols[0].get("range") == {"start": {"line": 1, "character": 7},
+                                                   "end": {"line": 1, "character": 13}}
+          and helper_symbols[0].get("selectionRange") == helper_symbols[0].get("range"))
 
     # --- workspace/symbol: case-insensitive filter across open docs ---
     wsym = {"jsonrpc": "2.0", "id": 7, "method": "workspace/symbol",
@@ -618,6 +666,11 @@ def main():
     check("workspace/symbol carries a location uri+range",
           isinstance(res, list) and res and res[0].get("location", {}).get("uri") == URI
           and "range" in res[0]["location"])
+    check("workspace/symbol function range covers the name (#1369)",
+          isinstance(res, list) and len(res) == 1
+          and res[0].get("location", {}).get("range") ==
+              {"start": {"line": 1, "character": 7},
+               "end": {"line": 1, "character": 13}})
 
     # --- formatting: whole-doc TextEdit with normalized source ---
     fmt = {"jsonrpc": "2.0", "id": 8, "method": "textDocument/formatting",
@@ -644,14 +697,16 @@ def main():
           applied == "total is 0\ntotal is total + 1\nprint of total\n")
 
     # --- function rename hits the definition and the call, nothing else ---
-    fn_doc = "define helper(a) as:\n    return a + 1\nr is helper of 5\n"
+    fn_doc = "define helper(a) as:\n    return a + 1\nr is helper of 5\nprint of r\n"
     rnf = {"jsonrpc": "2.0", "id": 10, "method": "textDocument/rename",
            "params": {"textDocument": {"uri": URI}, "position": {"line": 0, "character": 7},
                       "newName": "compute"}}
     r = converse([INIT, did_open(fn_doc), rnf, SHUTDOWN, EXIT])
     applied = apply_rename(fn_doc, (by_id(r, 10) or {}).get("result"))
     check("function rename applies cleanly (def + call)",
-          applied == "define compute(a) as:\n    return a + 1\nr is compute of 5\n")
+          applied == "define compute(a) as:\n    return a + 1\nr is compute of 5\nprint of r\n")
+    check("function rename preserves execution through the real CLI (#1369)",
+          run_eigs(fn_doc) == (0, "6\n") and run_eigs(applied or "") == (0, "6\n"))
 
     # --- parameter rename works from the signature position too ---
     rnp = {"jsonrpc": "2.0", "id": 11, "method": "textDocument/rename",
@@ -660,7 +715,7 @@ def main():
     r = converse([INIT, did_open(fn_doc), rnp, SHUTDOWN, EXIT])
     applied = apply_rename(fn_doc, (by_id(r, 11) or {}).get("result"))
     check("parameter rename applies cleanly from the signature",
-          applied == "define helper(x) as:\n    return x + 1\nr is helper of 5\n")
+          applied == "define helper(x) as:\n    return x + 1\nr is helper of 5\nprint of r\n")
 
     # --- dot-member access is a distinct binding; rename must skip it ---
     dot_doc = "count is 0\nrec is {\"count\": 5}\nv is rec.count\nprint of count\n"
