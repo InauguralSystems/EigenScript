@@ -15,6 +15,10 @@ def error(message):
 def git(*args):
     return subprocess.check_output(['git', '-c', 'safe.directory=*', *args]).decode().split('\0')
 
+def git_ref_exists(ref):
+    return subprocess.run(['git', '-c', 'safe.directory=*', 'rev-parse', '-q', '--verify', ref],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
 PRODUCT_TRIGGER_MAX_S = 60
 
 def main():
@@ -25,6 +29,12 @@ def main():
         args = args or ['--all']
     if args not in (['--all'],) and not (len(args) == 2 and args[0] == '--changed'):
         error('usage: tools/selftests.sh --all | --changed <base-ref> | --list')
+    pending_merge = args[0] == '--changed' and git_ref_exists('MERGE_HEAD')
+    if pending_merge:
+        unresolved = set(git('diff', '--diff-filter=U', '--no-renames', '--name-only', '-z')) - {''}
+        if unresolved:
+            error('unresolved merge; resolve candidate paths before changed selection: ' +
+                  ' '.join(sorted(unresolved)))
     # Recognise shell/Python dispatch idioms; new language idioms need extending here.
     # Calls/prose are not implementations. mutants tests the product.
     mode = r'(?:--self-?test(?:-paths)?|selftest)'
@@ -90,9 +100,16 @@ def main():
         error('enrolment mismatch: missing=' + repr(sorted(implemented - enrolled)) + ' stale=' + repr(sorted(enrolled - implemented)))
     changed = set()
     if args[0] == '--changed':
-        changed.update(git('diff', '--no-renames', '--name-only', '-z', args[1] + '...HEAD'))
-        changed.update(git('diff', '--no-renames', '--name-only', '-z'))
-        changed.update(git('diff', '--cached', '--no-renames', '--name-only', '-z'))
+        if pending_merge:
+            # HEAD is the old side during an uncommitted merge. Compare the
+            # resolved index/worktree candidate directly with the requested
+            # incoming base so incoming-only staged paths do not become changes.
+            changed.update(git('diff', '--no-renames', '--name-only', '-z', args[1]))
+            changed.update(git('diff', '--cached', '--no-renames', '--name-only', '-z', args[1]))
+        else:
+            changed.update(git('diff', '--no-renames', '--name-only', '-z', args[1] + '...HEAD'))
+            changed.update(git('diff', '--no-renames', '--name-only', '-z'))
+            changed.update(git('diff', '--cached', '--no-renames', '--name-only', '-z'))
         changed.update(git('ls-files', '--others', '--exclude-standard', '-z'))
     all_rows = args[0] != '--changed' or bool(changed & {'tools/selftests.sh', 'tools/selftests.txt'})
     selected = [r for r in rows if all_rows or any(fnmatch.fnmatchcase(f, p) for f in changed for p in r[0])]
