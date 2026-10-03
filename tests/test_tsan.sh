@@ -25,10 +25,16 @@ TSAN_RUN_TIMEOUT=${TSAN_RUN_TIMEOUT:-120}
 # LAST_RC, silently disabling the hang branch (caught by a planted hang).
 WARNINGS=0
 LAST_RC=0
+RUN_OUTPUT=""
 tsan_warnings() {
     local out
-    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$1" 2>&1)
+    if [ "${1##*/}" = "tsan_spawn_emitted_jit.eigs" ]; then
+        out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_JIT_STATS=1 EIGS_JIT_HOT=1 "$EIGS" "$1" 2>&1)
+    else
+        out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$1" 2>&1)
+    fi
     LAST_RC=$?
+    RUN_OUTPUT=$out
     WARNINGS=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
 }
 
@@ -96,6 +102,52 @@ for run in 1 2 3; do
         FAIL=$((FAIL + 1))
     fi
 done
+
+echo "=== declared concurrency shapes must be race-free (#1152) ==="
+# This is an exact inventory, not a glob. These shapes were absent from the
+# original 13-file slice; a rename must make the row red rather than silently
+# shrinking its coverage.
+SHAPE_FIXTURES="tsan_fanin3 tsan_close_blocked tsan_nested_spawn \
+tsan_worker_throw tsan_worker_exit tsan_worker_tasks tsan_worker_eval \
+tsan_spawn_emitted_jit"
+SHAPE_DECLARED=8
+SHAPE_EXAMINED=0
+for t in $SHAPE_FIXTURES; do
+    SHAPE_EXAMINED=$((SHAPE_EXAMINED + 1))
+    f="$TESTS_DIR/$t.eigs"
+    if [ ! -f "$f" ]; then
+        echo "  FAIL: $t fixture missing ($f)"; FAIL=$((FAIL + 1)); continue
+    fi
+    expected_rc=0
+    if [ "$t" = tsan_worker_exit ]; then expected_rc=5; fi
+    tsan_warnings "$f"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+    elif [ "$LAST_RC" -ne "$expected_rc" ]; then
+        echo "  FAIL: $t exited $LAST_RC (want $expected_rc)"; FAIL=$((FAIL + 1))
+    elif [ "$t" = tsan_worker_exit ] && [ "$RUN_OUTPUT" != WORKER_EXIT_REQUEST ]; then
+        echo "  FAIL: $t requires only the pre-exit marker; output='$RUN_OUTPUT'"; FAIL=$((FAIL + 1))
+    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+         ! grep -Eq '\[jit\].*compiled=[1-9][0-9]*' <<< "$RUN_OUTPUT"; then
+        echo "  FAIL: $t did not compile emitted JIT code"; FAIL=$((FAIL + 1))
+    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+         ! grep -Eq '^hot[[:space:]]+80[[:space:]]+yes[[:space:]]+[0-9.]+%[[:space:]]+RET[[:space:]]' <<< "$RUN_OUTPUT"; then
+        # The named hot row's RET is the native-return sentinel, written by
+        # execution; compilation initializes advance to a byte count. The 80
+        # entries precede spawn; MT calls do not increment this counter.
+        echo "  FAIL: $t missing hot native-return witness after 80 warm calls"; FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $t TSan-clean and exited $expected_rc"; PASS=$((PASS + 1))
+    fi
+done
+if [ "$SHAPE_EXAMINED" -eq "$SHAPE_DECLARED" ]; then
+    echo "  PASS: concurrency-shape fixtures examined == declared ($SHAPE_EXAMINED)"; PASS=$((PASS + 1))
+else
+    echo "  FAIL: concurrency-shape fixtures examined == declared (examined=$SHAPE_EXAMINED declared=$SHAPE_DECLARED)"
+    FAIL=$((FAIL + 1))
+fi
 
 echo "=== C embed observer contract (raw state and worker arming) ==="
 if TSAN_OPTIONS="halt_on_error=1 exitcode=66" setarch -R \
