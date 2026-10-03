@@ -343,12 +343,22 @@ args546 is [d546, "k2", 2]
 returned is dict_set of args546
 assert of [returned.k2 == 2, "dict_set of raw arg-list var returns the dict"]
 
-# Raw list longer than the scan cap: the borrowed child sits at index 0,
-# well under the cap, and must still be protected
+# #1398: coalesce has a two-element outer shape. The old >scan-cap
+# argument is rejected by default. Explicit EIGS_STRICT=0 result checks
+# use independent child ownership in test_coalesce_legacy.eigs.
 big is [[7, 7], 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-b4 is coalesce of big
-assert of [b4 == [7, 7], "borrow from >cap-length raw list still protected"]
-big is null
-assert of [b4 == [7, 7], "child of dropped >cap-length list survives"]
+shape1398_caught is 0
+shape1398_kind is ""
+shape1398_message is ""
+try:
+    b4 is coalesce of big
+catch shape1398_error:
+    shape1398_caught is 1
+    shape1398_kind is shape1398_error.kind
+    shape1398_message is shape1398_error.message
+assert of [shape1398_caught == 1, "coalesce surplus raises by default"]
+assert of [shape1398_kind == "type_mismatch", "coalesce surplus error kind"]
+assert of [shape1398_message == "coalesce: expected a fixed-shape list with at most 2 elements", "coalesce surplus names its exact shape"]
+assert of [big == [[7, 7], 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], "coalesce rejection preserves the input"]
 
 print of "All tests passed"

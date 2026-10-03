@@ -14,6 +14,10 @@ ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
 if ! command -v curl >/dev/null 2>&1; then
+    if [ "${1:-}" = --strict-shape ]; then
+        echo 'FAIL: ordinary HTTP shape context requires curl'
+        exit 1
+    fi
     echo "  SKIP: curl not available"
     echo "HTTP_SERVER: 0 passed, 0 failed (skipped)"
     exit 0
@@ -50,6 +54,101 @@ wait_ready() {
     done
     return 1
 }
+
+# A single ordinary shape capture. This exits before every historical HTTP
+# fixture below, and reuses only pick_port/wait_ready. The outer gate owns a
+# process-group deadline; this wrapper owns and reaps its listener on exit.
+# http_serve binds INADDR_ANY: requests use loopback, but this is not a
+# loopback-only bind. Routes contain fixed benign assertions/counters only.
+# A fresh ready token plus live owned PID rejects unrelated port listeners.
+if [ "${1:-}" = --strict-shape ]; then
+    [ "$#" = 4 ] || { echo 'FAIL: strict-shape expects binary/mode/fixture'; exit 2; }
+    SH_BIN=$2 SH_MODE=$3 SH_CASE=$4
+    SH_DIR=$(cd "$(dirname "$SH_CASE")" && pwd)
+    SH_CASE="$SH_DIR/$(basename "$SH_CASE")"
+    SH_KIND=$(cat "$SH_DIR/http-context")
+    case "$SH_KIND" in client|handler) ;; *) echo 'FAIL: unknown HTTP shape context'; exit 2 ;; esac
+    SH_PORT=$(pick_port)
+    SH_TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(16))') || exit 1
+    SH_READY="http://127.0.0.1:$SH_PORT/ready/$SH_TOKEN"
+    SH_IDENTITY=$(cksum "$SH_BIN") || exit 1
+    SH_PID= SH_STOPPED=0 SH_CLEAN=0 SH_RC=NOT_RUN
+    shape_stop() {
+        [ "$SH_STOPPED" = 0 ] || return 0
+        SH_STOPPED=1
+        [ -n "$SH_PID" ] || return 0
+        if ! kill -0 "$SH_PID" 2>/dev/null; then
+            SH_CLEAN=1
+        else
+            kill "$SH_PID" 2>/dev/null || SH_CLEAN=1
+            for ((sh_wait=0; sh_wait<20; sh_wait++)); do
+                kill -0 "$SH_PID" 2>/dev/null || break
+                sleep 0.05
+            done
+            if kill -0 "$SH_PID" 2>/dev/null; then
+                kill -KILL "$SH_PID" 2>/dev/null || true
+                SH_CLEAN=1
+            fi
+        fi
+        SH_WAIT=0
+        wait "$SH_PID" 2>/dev/null || SH_WAIT=$?
+        case "$SH_WAIT" in 0|143) ;; *) SH_CLEAN=1 ;; esac
+        printf 'pid=%s client_rc=%s wait_rc=%s cleanup=%s stop=owned_TERM\n' \
+            "$SH_PID" "$SH_RC" "$SH_WAIT" "$SH_CLEAN" > "$SH_DIR/listener.receipt"
+        printf 'binary=%s identity=%s ready=%s bind=INADDR_ANY\n' \
+            "$SH_BIN" "$SH_IDENTITY" "$SH_READY" >> "$SH_DIR/listener.receipt"
+    }
+    trap shape_stop EXIT
+    trap 'exit 130' INT TERM
+    python3 - "$SH_CASE" "$SH_PORT" "$SH_KIND" "$SH_TOKEN" <<'PY' || exit 1
+import json, sys
+from pathlib import Path
+case, port, kind = Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+base = 'http://127.0.0.1:' + str(port)
+source = case.read_text().replace('@HTTP_URL@', base + '/post').replace('@HTTP_COUNT_URL@', base + '/count')
+(case.parent / 'context-client.eigs').write_text(source)
+routes = [('GET', '/ready/' + sys.argv[4], sys.argv[4])]
+code_routes = [('POST', '/post', 'shared_incr of ["posts",1]\n"ok"'),
+               ('GET', '/count', 'str of (shared_incr of ["posts",0])')]
+if kind == 'handler':
+    # Existing assertions run in the real request state. A final value reaches
+    # the client only if the VM completed them; an uncaught error is HTTP 500.
+    code_routes.append(('GET', '/case', source + '\n"shape-complete"\n'))
+lines = ['http_route of ' + json.dumps(list(row)) for row in routes]
+lines += ['http_route of ' + json.dumps([method, path, 'code', body])
+          for method, path, body in code_routes]
+lines.append('http_serve of ' + str(port))
+(case.parent / 'context-server.eigs').write_text('\n'.join(lines) + '\n')
+PY
+    if [ "$SH_MODE" = - ]; then
+        env -u EIGS_STRICT "$SH_BIN" "$SH_DIR/context-server.eigs" > "$SH_DIR/server.raw" 2>&1 &
+    else
+        EIGS_STRICT="$SH_MODE" "$SH_BIN" "$SH_DIR/context-server.eigs" > "$SH_DIR/server.raw" 2>&1 &
+    fi
+    SH_PID=$!
+    if ! wait_ready "$SH_READY" 15 || ! kill -0 "$SH_PID" 2>/dev/null ||
+       [ "$(curl -fsS --max-time 1 "$SH_READY")" != "$SH_TOKEN" ]; then
+        echo 'FAIL: ordinary shape listener readiness'; cat "$SH_DIR/server.raw"; exit 1
+    fi
+    SH_RC=0
+    if [ "$SH_KIND" = handler ]; then
+        curl -fsS --max-time 5 "http://127.0.0.1:$SH_PORT/case" > "$SH_DIR/client.raw" 2>&1 || SH_RC=$?
+    elif [ "$SH_MODE" = - ]; then
+        env -u EIGS_STRICT "$SH_BIN" "$SH_DIR/context-client.eigs" > "$SH_DIR/client.raw" 2>&1 || SH_RC=$?
+    else
+        EIGS_STRICT="$SH_MODE" "$SH_BIN" "$SH_DIR/context-client.eigs" > "$SH_DIR/client.raw" 2>&1 || SH_RC=$?
+    fi
+    shape_stop
+    . "$TESTS_DIR/lsan_classify.sh"
+    if [ "$SH_RC" != 0 ] || [ "$SH_CLEAN" != 0 ] ||
+       [ "$(lsan_classify_name "$(cat "$SH_DIR/server.raw" "$SH_DIR/client.raw")")" != none ]; then
+        cat "$SH_DIR/server.raw" "$SH_DIR/client.raw"
+        echo "FAIL: HTTP shape client_rc=$SH_RC listener_cleanup=$SH_CLEAN wait_rc=$SH_WAIT"
+        exit 1
+    fi
+    cat "$SH_DIR/client.raw"
+    exit 0
+fi
 
 # Pick a listen port below the kernel's ephemeral range (#760) — the old
 # 40000-49999 window sits inside it, so this suite's own curl clients could

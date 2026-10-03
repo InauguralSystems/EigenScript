@@ -966,6 +966,7 @@ static Value* builtin_store_close(Value *arg) {
 
 /* store_put([handle, collection, record]) -> key string */
 static Value* builtin_store_put(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "store_put");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "store_put requires [handle, collection, record]\n");
         return make_null();
@@ -1130,6 +1131,7 @@ static Value* builtin_store_put(Value *arg) {
 
 /* store_get([handle, collection, key]) -> record dict or null */
 static Value* builtin_store_get(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "store_get");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "store_get requires [handle, collection, key]\n");
         return make_null();
@@ -1284,6 +1286,7 @@ static int store_untombstone(Store *store, const StoreLoc *loc, const char *key_
 
 /* store_delete([handle, collection, key]) -> 1 or 0 */
 static Value* builtin_store_delete(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "store_delete");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "store_delete requires [handle, collection, key]\n");
         /* fs:CHANNEL the arity/type failure is already signalled by the
@@ -1340,6 +1343,7 @@ static Value* builtin_store_delete(Value *arg) {
 
 /* store_query([handle, collection]) -> list of all records */
 static Value* builtin_store_query(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "store_query");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "store_query requires [handle, collection]\n");
         return make_list(0);
@@ -1384,6 +1388,7 @@ static Value* builtin_store_query(Value *arg) {
 
 /* store_count([handle, collection]) -> number */
 static Value* builtin_store_count(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "store_count");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "store_count requires [handle, collection]\n");
         /* fs:CHANNEL the arity/type failure is already signalled by the
@@ -1434,6 +1439,7 @@ static Value* builtin_store_count(Value *arg) {
 
 /* store_update([handle, collection, key, record]) -> 1 or 0 */
 static Value* builtin_store_update(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "store_update");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
         rt_error(EK_TYPE, 0, "store_update requires [handle, collection, key, record]\n");
         /* fs:CHANNEL the arity/type failure is already signalled by the
@@ -1575,6 +1581,7 @@ static Value* builtin_store_collections(Value *arg) {
 
 /* store_drop([handle, collection]) -> 1 or 0 */
 static Value* builtin_store_drop(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "store_drop");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "store_drop requires [handle, collection]\n");
         /* fs:CHANNEL the arity/type failure is already signalled by the

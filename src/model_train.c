@@ -1430,6 +1430,7 @@ static int native_train_step(int *input_ids, int input_len, int *output_ids, int
 }
 
 Value* builtin_native_train_step(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "native_train_step_builtin");
     /* Thin wrapper around native_train_step().
      * Input: [input_ids_list, output_ids_list, learning_rate]
      * Output: JSON string with status, loss, tokens, model_age, training_samples */

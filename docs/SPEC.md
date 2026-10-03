@@ -298,6 +298,8 @@ consequences are contracts you can rely on:
   documented answer. `tools/strict_differential.sh` checks the distinction
   that can be executed: a guard probe must raise in strict mode, the default
   (with the variable unset or set to `1`), and a pinned documented answer must not.
+  Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+
   Three further classes are loud in strict mode and unchanged under `EIGS_STRICT=0`:
   - **The `NaN`→`0` collapse.** Under `EIGS_STRICT=0` a `NaN` still collapses to
     `0` and sets `math_flags.invalid`. In strict mode every reachable `NaN`

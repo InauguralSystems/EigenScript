@@ -69,6 +69,7 @@ Value* builtin_buffer(Value *arg) {
 /* reshape of [buf, rows, cols] -> a shaped copy of the flat buffer (rows*cols
  * must equal the element count). */
 Value* builtin_reshape(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "reshape");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *b = arg->data.list.items[0];
     if (b->type != VAL_BUFFER) return make_null();
@@ -93,6 +94,7 @@ Value* builtin_reshape(Value *arg) {
 
 /* buf_get of [buf, index] — O(1) indexed read */
 Value* builtin_buf_get(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "buf_get");
     /* #502: out-of-range used to fold to 0 — indistinguishable from a real
      * stored 0. Raise index_range, matching the buffer `[i]` operator. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
@@ -118,6 +120,7 @@ Value* builtin_buf_get(Value *arg) {
 
 /* buf_set of [buf, index, value] — O(1) indexed write */
 Value* builtin_buf_set(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "buf_set");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {  /* #502 */
         rt_error(EK_TYPE, 0, "buf_set requires [buffer, index, value]");
         return make_null();
@@ -579,6 +582,7 @@ static int buf_window_arg(const char *who, Value *buf, Value *off_val,
  * rest of the family (the crash-safety guarantee — no OOB memmove — holds
  * either way). count 0 is a valid no-op. */
 Value* builtin_buf_copy(Value *arg) {
+    STRICT_LIST_MAX(arg, 5, "buf_copy");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
         rt_error(EK_TYPE, 0, "buf_copy requires [src, src_off, dst, dst_off, count]");
         return make_null();
@@ -605,6 +609,7 @@ Value* builtin_buf_copy(Value *arg) {
  * overlapping windows; the loop runs forward in index order (documented,
  * deterministic). Returns null. */
 Value* builtin_buf_mix(Value *arg) {
+    STRICT_LIST_MAX(arg, 6, "buf_mix");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 6) {
         rt_error(EK_TYPE, 0, "buf_mix requires [dst, src, dst_off, src_off, count, gain]");
         return make_null();
@@ -629,6 +634,7 @@ Value* builtin_buf_mix(Value *arg) {
  * window: b[off+i] *= gain (num_guard per element, VM-identical).
  * Fades/normalize. Returns null. */
 Value* builtin_buf_scale_range(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "buf_scale_range");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
         rt_error(EK_TYPE, 0, "buf_scale_range requires [buffer, off, count, gain]");
         return make_null();
@@ -650,6 +656,7 @@ Value* builtin_buf_scale_range(Value *arg) {
  * b[off+i] = value (stored verbatim, like buf_set). Silence gaps,
  * click-free zeroing. Returns null. */
 Value* builtin_buf_fill(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "buf_fill");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) {
         rt_error(EK_TYPE, 0, "buf_fill requires [buffer, off, count, value]");
         return make_null();
@@ -670,6 +677,7 @@ Value* builtin_buf_fill(Value *arg) {
 /* buf_peak of [b, off, count] — max |x| over a window (normalize and
  * meter scans). An empty window peaks at 0. */
 Value* builtin_buf_peak(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "buf_peak");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "buf_peak requires [buffer, off, count]");
         /* fs:CHANNEL the rt_error above already raised */
@@ -698,6 +706,7 @@ Value* builtin_buf_peak(Value *arg) {
  * needing a strict left-to-right reduction write the explicit loop.
  * no-NaN/Inf is preserved (num_guard at each step). */
 Value* builtin_buf_dot(Value *arg) {
+    STRICT_LIST_MAX(arg, 5, "buf_dot");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
         rt_error(EK_TYPE, 0, "buf_dot requires [a, b, a_off, b_off, count]");
         /* fs:CHANNEL the rt_error above already raised */
@@ -750,6 +759,7 @@ static Value* buf_alloc_flat(long long count) {
  * NEW float buffer. Exactly wavio's wav_read arithmetic:
  *   v = b0 + 256*b1;  if v >= 32768: v -= 65536;  sample = v / 32767 */
 Value* builtin_buf_from_pcm16le(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "buf_from_pcm16le");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "buf_from_pcm16le requires [bytes, byte_off, count]");
         return make_null();
@@ -788,6 +798,7 @@ Value* builtin_buf_from_pcm16le(Value *arg) {
  * via +65536, low byte = v - floor(v/256)*256 (the ds_fmod expansion),
  * high byte = floor(v/256). */
 Value* builtin_buf_to_pcm16le(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "buf_to_pcm16le");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "buf_to_pcm16le requires [floats, off, count]");
         return make_null();
@@ -825,6 +836,7 @@ Value* builtin_buf_to_pcm16le(Value *arg) {
  * channel split; wavio addresses sample (i, c) at i*nch + c). count
  * defaults to the full available tail. Pure copy — no arithmetic. */
 Value* builtin_buf_deinterleave(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "buf_deinterleave");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "buf_deinterleave requires [src, channel, nch, count?]");
         return make_null();
@@ -889,6 +901,7 @@ Value* builtin_buf_deinterleave(Value *arg) {
  * BUILTINS.md). dst_len 0 -> empty buffer; empty src with dst_len > 0
  * raises `value` (the consumer's wrapper guards n == 0 itself). */
 Value* builtin_buf_resample_linear(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "buf_resample_linear");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "buf_resample_linear requires [src, dst_len]");
         return make_null();

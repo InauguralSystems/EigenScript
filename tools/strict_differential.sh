@@ -34,9 +34,12 @@
 #
 #   bash tools/strict_differential.sh <baseline-binary>
 #   bash tools/strict_differential.sh --no-baseline
+#   bash tools/strict_differential.sh --shapes-only --no-baseline
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
+SHAPES_ONLY=0
+if [ "${1:-}" = --shapes-only ]; then SHAPES_ONLY=1; shift; fi
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 BASE="${1:-}"
 NO_BASELINE=0
@@ -48,12 +51,464 @@ fi
 if [ "$BASE" = "--no-baseline" ]; then NO_BASELINE=1; BASE=""; fi
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
+# Derive platform here, before any capability or backend capture; no env override.
+SHAPE_BACKEND_PLATFORM=$(uname -s) || exit 1
 
 # Matchers are bash case-globs: no pipe, so pipefail cannot invert a match.
 # Bodies are pinned byte-for-byte (tools/pipefail_verdict_check.sh).
 str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
 str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
+
+. tests/lsan_classify.sh
+shape_canonical() { # exact owned prefix only; call AFTER raw classification
+    local prefix="$2/" marker='@OWNED@/'
+    printf '%s' "${1//"$prefix"/$marker}"
+}
+
+# ASan reserves a large virtual shadow mapping. The local ordinary GFX cap
+# must not become a portable sanitizer limit. Inspect the actual executable;
+# neither ASAN_OPTIONS nor a filename is evidence of instrumentation.
+shape_asan_symbols() {
+    printf '%s\n' "$1" | awk '$NF ~ /^_?__asan_init(@.*)?$/ { found=1 } END { exit !found }'
+}
+shape_binary_instrumentation() {
+    local symbols
+    if symbols=$(readelf --wide --syms "$1" 2>/dev/null) ||
+       symbols=$(nm "$1" 2>/dev/null); then
+        if shape_asan_symbols "$symbols"; then echo asan; else echo ordinary; fi
+    else
+        echo "FAIL: cannot inspect GFX executable instrumentation: $1" >&2
+        return 1
+    fi
+}
+shape_gfx_limit() { # called only in the individual GFX child subshell
+    local instrumentation
+    if [ "$1" = "$NEW" ]; then instrumentation=$NEW_SHAPE_INSTRUMENTATION
+    elif [ -n "$BASE" ] && [ "$1" = "$BASE" ]; then instrumentation=$BASE_SHAPE_INSTRUMENTATION
+    else echo 'FAIL: unrecognized GFX executable' >&2; return 125; fi
+    case "$SHAPE_BACKEND_PLATFORM" in
+        Linux|Darwin) ;;
+        *) echo 'FAIL: unsupported GFX address-space platform' >&2; return 125 ;;
+    esac
+    case "$instrumentation" in
+        ordinary)
+            # This machine's required Linux ceiling is not a Darwin limit:
+            # XNU rejects a ceiling below mappings already owned by the shell.
+            if [ "$SHAPE_BACKEND_PLATFORM" = Linux ]; then
+                ulimit -v 1500000 || return 125
+            fi ;;
+        asan)
+            [ "$(ulimit -v)" = unlimited ] || {
+                echo 'FAIL: instrumented GFX requires an uncapped parent virtual address space' >&2
+                return 125
+            } ;;
+        *) echo 'FAIL: unknown GFX executable instrumentation' >&2; return 125 ;;
+    esac
+}
+
+cap_observation_ok() { # diagnostic prefix, capability, exact observed state
+    case "$3" in implemented|unavailable|undefined) return 0 ;; esac
+    echo "  ${1}CAPABILITY DID NOT MEASURE: $2 — $3"
+    return 1
+}
+
+shape_capture() { # binary, mode, fixture, cap; parent owns the process deadline
+    local raw owned="${3%/*}" output child_rc
+    if [ -f "$owned/http-context" ]; then
+        output=$(bash tests/test_http_server.sh --strict-shape "$1" "$2" "$3" 2>&1); child_rc=$?
+        raw=$(printf '%s\n%s' "$child_rc" "$output")
+    elif [ "$4" = gfx ]; then
+        raw=$(shape_gfx_limit "$1" || exit 125; run_capture "$1" "$2" "$3")
+    else
+        raw=$(run_capture "$1" "$2" "$3")
+    fi
+    printf '%s\n' "$raw" > "$owned/capture.raw"
+    if shape_receipt_ok "$raw"; then
+        shape_canonical "$raw" "$owned"
+    else
+        printf '%s' "$raw"
+    fi
+}
+shape_receipt_ok() { # captured rc+output; exact exit plus canonical sanitizer veto
+    [ "${1%%$'\n'*}" = 0 ] && [ "$(lsan_classify_name "${1#*$'\n'}")" = none ]
+}
+shape_done() { shape_receipt_ok "$1" && str_has_line "$1" shape-complete; }
+shape_positive_ok() {
+    if [ "$2" = 1 ]; then [ "$1" = $'0\nexit-entered' ]
+    else shape_done "$1"; fi
+}
+shape_abort() {
+    shape_fail=$((shape_fail + 1)); rc=1
+    echo "  FAIL shape: $1 — $2: $(clip "$3" 180)"
+}
+
+
+# Backend presence differs from compiled GFX: bitmap text metrics work without
+# SDL. Only exact documented missing-library receipts qualify, currently on
+# Darwin. Linux owns provisioned device positives and refuses missing libraries.
+shape_backend_classify() { # kind, captured rc+output, actual platform
+    shape_receipt_ok "$2" || return 1
+    case "$1" in sdl|mixer) ;; *) return 1 ;; esac
+    if [ "$2" = $'0\nshape-backend: 1' ]; then echo present; return 0; fi
+    [ "$3" = Darwin ] || return 1
+    if [ "$1" = sdl ] && [ "$2" = $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' ]; then
+        echo absent-sdl; return 0
+    fi
+    if [ "$1" = mixer ] && [ "$2" = $'0\naudio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\nshape-backend: 0' ]; then
+        echo absent-mixer; return 0
+    fi
+    return 1
+}
+shape_backend_probe() { # binary, subject/baseline, kind
+    local mode got found state=""
+    for mode in - 0 1; do
+        got=$(shape_gfx_limit "$1" || exit 125; run_capture "$1" "$mode" "$TMP/shapes/backend/$3.eigs")
+        printf '%s\n' "$got" > "$TMP/shapes/backend/$2-$3-$mode.raw"
+        found=$(shape_backend_classify "$3" "$got" "$SHAPE_BACKEND_PLATFORM") || {
+            echo "FAIL: $2 $3 backend dependency: $(clip "$got" 180)" >&2
+            return 1
+        }
+        if [ -n "$state" ] && [ "$state" != "$found" ]; then
+            echo "FAIL: $2 $3 backend modes disagree" >&2; return 1
+        fi
+        state=$found
+    done
+    printf '%s\n' "$state"
+}
+shape_backend_prepare() { # binary, subject/baseline, kind; lazy per-binary cache
+    local key="$2-$3" state
+    case "$key" in
+        subject-sdl) state=$SHAPE_SUBJECT_SDL ;;
+        subject-mixer) state=$SHAPE_SUBJECT_MIXER ;;
+        baseline-sdl) state=$SHAPE_BASELINE_SDL ;;
+        baseline-mixer) state=$SHAPE_BASELINE_MIXER ;;
+        *) return 1 ;;
+    esac
+    if [ "$state" = unmeasured ]; then
+        if [ "$3" = mixer ]; then
+            shape_backend_prepare "$1" "$2" sdl || return 1
+            if [ "$SHAPE_BACKEND_STATE" = absent-sdl ]; then state=absent-sdl; fi
+        fi
+        if [ "$state" = unmeasured ]; then state=$(shape_backend_probe "$1" "$2" "$3") || return 1; fi
+        case "$key" in
+            subject-sdl) SHAPE_SUBJECT_SDL=$state ;;
+            subject-mixer) SHAPE_SUBJECT_MIXER=$state ;;
+            baseline-sdl) SHAPE_BASELINE_SDL=$state ;;
+            baseline-mixer) SHAPE_BASELINE_MIXER=$state ;;
+        esac
+        echo "  BACKEND $2 $3: $state"
+    fi
+    SHAPE_BACKEND_STATE=$state
+}
+shape_typed_positive_ok() { # unchanged positive oracle, or exact absence oracle
+    shape_positive_ok "$1" "$2" || return 1
+    [ -z "$3" ] || [ "$1" = "$3" ]
+}
+
+
+shape_selftest() {
+    local passed=0 failed=0 saved
+    shape_case() {
+        local label="$1" expected="$2" capture="$3" actual=1
+        shape_done "$capture" && actual=0
+        if [ "$actual" = "$expected" ]; then
+            echo "  PASS: $label"; passed=$((passed + 1))
+        else
+            echo "  FAIL: $label"; failed=$((failed + 1))
+        fi
+    }
+    shape_case 'healthy completed receipt' 0 $'0\nshape-complete'
+    shape_case 'ordinary nonzero' 1 $'1\nshape-complete'
+    shape_case 'timeout is not success' 1 $'124\nshape-complete'
+    shape_case 'signal is not success' 1 $'139\nshape-complete'
+    shape_case 'missing completion' 1 $'0\nordinary output'
+    shape_case 'ASan text with zero rc' 1 $'0\nERROR: AddressSanitizer: synthetic ordinary classifier control\nshape-complete'
+    shape_case 'LSan text with zero rc' 1 $'0\nERROR: LeakSanitizer: detected memory leaks\nshape-complete'
+    shape_case 'UBSan text with zero rc' 1 $'0\nfixture.c:1: runtime error: synthetic classifier control\nshape-complete'
+    shape_case 'discussion text is not a diagnostic' 0 $'0\nThis fixture discusses AddressSanitizer checks.\nshape-complete'
+    shape_case 'completion substring is not a line' 1 $'0\nnot-shape-complete'
+    saved=$(declare -f shape_receipt_ok)
+    # Private function-only calibration: inert captured text, no product fault.
+    shape_receipt_ok() { [ "${1%%$'\n'*}" = 0 ]; }
+    shape_case 'removed sanitizer veto admits ASan (expected RED)' 0 $'0\nERROR: AddressSanitizer: synthetic classifier control\nshape-complete'
+    shape_case 'removed sanitizer veto admits LSan (expected RED)' 0 $'0\nERROR: LeakSanitizer: detected memory leaks\nshape-complete'
+    eval "$saved"
+    shape_case 'restored sanitizer veto rejects capture' 1 $'0\nERROR: AddressSanitizer: synthetic classifier control\nshape-complete'
+    shape_case 'owned-prefix canonicalization matches' 0 "$(
+        a=$(shape_canonical $'0\nWritten /owned/a/data\nshape-complete' /owned/a)
+        b=$(shape_canonical $'0\nWritten /owned/b/data\nshape-complete' /owned/b)
+        [ "$a" = "$b" ] && printf '0\nshape-complete' || printf '1\nmismatch')"
+    shape_case 'unowned lookalike path difference retained' 0 "$(
+        a=$(shape_canonical $'0\nRead /owned/a-other\nshape-complete' /owned/a)
+        b=$(shape_canonical $'0\nRead /owned/b-other\nshape-complete' /owned/b)
+        [ "$a" != "$b" ] && printf '0\nshape-complete' || printf '1\nmasked')"
+    shape_case 'owned path sanitizer capture still fails' 1 $'0\nERROR: AddressSanitizer: synthetic /owned/a/data\nshape-complete'
+
+    shape_case 'ELF ASan init symbol recognized' 0 "$(
+        shape_asan_symbols '  7: 000000 0 FUNC GLOBAL DEFAULT UND __asan_init' && printf '0\nshape-complete' || printf '1\nmissed')"
+    shape_case 'Mach-O ASan init symbol recognized' 0 "$(
+        shape_asan_symbols '                 U ___asan_init' && printf '0\nshape-complete' || printf '1\nmissed')"
+    shape_case 'symbol substring is not instrumentation' 0 "$(
+        shape_asan_symbols '0000 T fake__asan_init_suffix' && printf '1\nfalse positive' || printf '0\nshape-complete')"
+    shape_case 'ordinary symbols remain ordinary' 0 "$(
+        shape_asan_symbols '0000 T main' && printf '1\nfalse positive' || printf '0\nshape-complete')"
+    shape_case 'ordinary GFX child follows the actual platform policy' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=ordinary
+        before_soft=$(ulimit -Sv); before_hard=$(ulimit -Hv)
+        shape_gfx_limit "$NEW" || exit 1
+        if [ "$SHAPE_BACKEND_PLATFORM" = Linux ]; then
+            [ "$(ulimit -Sv)" = 1500000 ] && [ "$(ulimit -Hv)" = 1500000 ] || exit 1
+        elif [ "$SHAPE_BACKEND_PLATFORM" = Darwin ]; then
+            [ "$(ulimit -Sv)" = "$before_soft" ] && [ "$(ulimit -Hv)" = "$before_hard" ] || exit 1
+        else
+            exit 1
+        fi
+        printf '0\nshape-complete')"
+    shape_case 'verified ASan child keeps unlimited mapping space' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=asan
+        shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+    shape_case 'already capped ASan parent refuses before execution' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=asan
+        # Inert inherited-limit query: portable even where lowering RLIMIT_AS fails.
+        ulimit() { [ "$*" = '-v' ] || return 1; echo 1500000; }
+        shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
+        [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\naccepted cap')"
+    shape_case 'unknown instrumentation refuses before execution' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=unknown
+        shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
+        [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\naccepted unknown')"
+    saved=$(declare -f shape_gfx_limit)
+    shape_gfx_limit() { ulimit -v 1500000; }
+    shape_case 'restored old unconditional cap breaks ASan oracle (expected RED)' 1 "$(
+        NEW_SHAPE_INSTRUMENTATION=asan; virtual_limit=unlimited
+        ulimit() {
+            if [ "$*" = '-v 1500000' ]; then
+                virtual_limit=1500000
+            elif [ "$*" = '-v' ]; then
+                echo "$virtual_limit"
+            else
+                return 1
+            fi
+        }
+        shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+    eval "$saved"
+    shape_case 'restored instrumentation branch preserves mapping space' 0 "$(
+        NEW_SHAPE_INSTRUMENTATION=asan
+        shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+    # Inert policy controls call the actual functions; no runtime/device child.
+    shape_case 'Darwin ordinary makes no virtual-limit setter call' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Darwin; NEW_SHAPE_INSTRUMENTATION=ordinary; called=0
+        ulimit() { called=1; return 1; }
+        shape_gfx_limit "$NEW" && [ "$called" = 0 ] && printf '0\nshape-complete' || printf '1\nsetter called')"
+    shape_case 'Darwin baseline ordinary also preserves inherited limits' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Darwin; BASE=/shape-baseline; BASE_SHAPE_INSTRUMENTATION=ordinary; called=0
+        ulimit() { called=1; return 1; }
+        shape_gfx_limit "$BASE" && [ "$called" = 0 ] && printf '0\nshape-complete' || printf '1\nsetter called')"
+    shape_case 'Linux cap failure stops before a child' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Linux; NEW_SHAPE_INSTRUMENTATION=ordinary
+        ulimit() { return 1; }
+        got=$(shape_gfx_limit "$NEW" || exit 125; printf child-ran); actual=$?
+        [ "$actual" = 125 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\nchild or failure lost')"
+    shape_case 'unknown platform stops before a child' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Unknown; NEW_SHAPE_INSTRUMENTATION=ordinary
+        got=$(shape_gfx_limit "$NEW" 2>/dev/null || exit 125; printf child-ran); actual=$?
+        [ "$actual" = 125 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\nunknown accepted')"
+    shape_case 'Darwin inherited ASan cap still refuses' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Darwin; NEW_SHAPE_INSTRUMENTATION=asan
+        ulimit() { [ "$*" = '-v' ] || return 1; echo 1500000; }
+        shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
+        [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\nASan cap accepted')"
+    shape_case 'unknown platform also refuses instrumented executable' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Unknown; NEW_SHAPE_INSTRUMENTATION=asan
+        shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
+        [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\nunknown accepted')"
+    shape_case 'implemented capability observation is valid' 0 "$(
+        cap_observation_ok '' gfx implemented && printf '0\nshape-complete' || printf '1\nrejected')"
+    shape_case 'documented unavailable observation remains valid' 0 "$(
+        cap_observation_ok '' model unavailable && printf '0\nshape-complete' || printf '1\nrejected')"
+    shape_case 'undefined observation remains explicit' 0 "$(
+        cap_observation_ok 'BASELINE ' gfx undefined && printf '0\nshape-complete' || printf '1\nrejected')"
+    shape_case 'invalid subject observation cannot reach absence derivation' 0 "$(
+        got=$(cap_observation_ok '' gfx 'invalid: cap failed' >/dev/null || exit 1; printf absent-derived); actual=$?
+        [ "$actual" = 1 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\ninvalid accepted')"
+    shape_case 'invalid baseline observation cannot reach absence derivation' 0 "$(
+        got=$(cap_observation_ok 'BASELINE ' gfx 'invalid: modes disagree' >/dev/null || exit 1; printf absent-derived); actual=$?
+        [ "$actual" = 1 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\ninvalid accepted')"
+    shape_case 'empty observation cannot reach absence derivation' 0 "$(
+        got=$(cap_observation_ok '' gfx '' >/dev/null || exit 1; printf absent-derived); actual=$?
+        [ "$actual" = 1 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\nempty accepted')"
+    # Inert exact captures from the independently reviewed backend decision table.
+    backend_case() {
+        local label="$1" expected_rc="$2" expected_stdout="$3" got actual
+        got=$(shape_backend_classify "$4" "$5" "$6"); actual=$?
+        if [ "$actual" = "$expected_rc" ] && [ "$got" = "$expected_stdout" ]; then
+            echo "  PASS: backend $label"; passed=$((passed + 1))
+        else
+            echo "  FAIL: backend $label (rc=$actual state=$got)"; failed=$((failed + 1))
+        fi
+    }
+    backend_case sdl-present-Darwin 0 present sdl '0
+shape-backend: 1' Darwin
+    backend_case sdl-present-Linux 0 present sdl '0
+shape-backend: 1' Linux
+    backend_case sdl-exact-absent-Darwin 0 absent-sdl sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-absence-Linux-is-failure 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 0' Linux
+    backend_case sdl-other-backend-diagnostic 1 '' sdl '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case sdl-wrong-child-rc-1 1 '' sdl '1
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-wrong-child-rc-3 1 '' sdl '3
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-wrong-child-rc-124 1 '' sdl '124
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-wrong-child-rc--9 1 '' sdl '-9
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-altered-diagnostic 1 '' sdl '0
+gfx_open: cannot load libSDL2 changed
+shape-backend: 0' Darwin
+    backend_case sdl-unrelated-first-line 1 '' sdl '0
+unrelated diagnostic
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-unrelated-last-line 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 0
+unrelated diagnostic' Darwin
+    backend_case sdl-duplicate-diagnostic 1 '' sdl '0
+gfx_open: cannot load libSDL2
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-arbitrary-zero 1 '' sdl '0
+shape-backend: 0' Darwin
+    backend_case sdl-success-with-absence-diagnostic 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 1' Darwin
+    backend_case sdl-wrong-result-marker 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 2' Darwin
+    backend_case sdl-missing-child-rc 1 '' sdl 'gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case sdl-duplicate-result-marker 1 '' sdl '0
+gfx_open: cannot load libSDL2
+shape-backend: 0
+shape-backend: 0' Darwin
+    backend_case sdl-missing-result-marker 1 '' sdl '0
+gfx_open: cannot load libSDL2' Darwin
+    backend_case sdl-asan-veto 1 '' sdl '0
+gfx_open: cannot load libSDL2
+ERROR: AddressSanitizer: inert classifier text
+shape-backend: 0' Darwin
+    backend_case sdl-lsan-veto 1 '' sdl '0
+gfx_open: cannot load libSDL2
+ERROR: LeakSanitizer: detected memory leaks
+shape-backend: 0' Darwin
+    backend_case sdl-ubsan-veto 1 '' sdl '0
+gfx_open: cannot load libSDL2
+runtime error: inert classifier text
+shape-backend: 0' Darwin
+    backend_case sdl-tsan-veto 1 '' sdl '0
+gfx_open: cannot load libSDL2
+WARNING: ThreadSanitizer: data race (inert text only)
+shape-backend: 0' Darwin
+    backend_case mixer-present-Darwin 0 present mixer '0
+shape-backend: 1' Darwin
+    backend_case mixer-present-Linux 0 present mixer '0
+shape-backend: 1' Linux
+    backend_case mixer-exact-absent-Darwin 0 absent-mixer mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-absence-Linux-is-failure 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Linux
+    backend_case mixer-other-backend-diagnostic 1 '' mixer '0
+gfx_open: cannot load libSDL2
+shape-backend: 0' Darwin
+    backend_case mixer-wrong-child-rc-1 1 '' mixer '1
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-wrong-child-rc-3 1 '' mixer '3
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-wrong-child-rc-124 1 '' mixer '124
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-wrong-child-rc--9 1 '' mixer '-9
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-altered-diagnostic 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0) changed
+shape-backend: 0' Darwin
+    backend_case mixer-unrelated-first-line 1 '' mixer '0
+unrelated diagnostic
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-unrelated-last-line 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0
+unrelated diagnostic' Darwin
+    backend_case mixer-duplicate-diagnostic 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-arbitrary-zero 1 '' mixer '0
+shape-backend: 0' Darwin
+    backend_case mixer-success-with-absence-diagnostic 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 1' Darwin
+    backend_case mixer-wrong-result-marker 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 2' Darwin
+    backend_case mixer-missing-child-rc 1 '' mixer 'audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0' Darwin
+    backend_case mixer-duplicate-result-marker 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+shape-backend: 0
+shape-backend: 0' Darwin
+    backend_case mixer-missing-result-marker 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)' Darwin
+    backend_case mixer-asan-veto 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+ERROR: AddressSanitizer: inert classifier text
+shape-backend: 0' Darwin
+    backend_case mixer-lsan-veto 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+ERROR: LeakSanitizer: detected memory leaks
+shape-backend: 0' Darwin
+    backend_case mixer-ubsan-veto 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+runtime error: inert classifier text
+shape-backend: 0' Darwin
+    backend_case mixer-tsan-veto 1 '' mixer '0
+audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
+WARNING: ThreadSanitizer: data race (inert text only)
+shape-backend: 0' Darwin
+    backend_case unknown-kind-Darwin 1 '' other '0
+shape-backend: 1' Darwin
+    backend_case unknown-kind-Linux 1 '' other '0
+shape-backend: 1' Linux
+    # Private inert calibration: removing platform ownership admits Linux
+    # absence. Restore the actual classifier before the following control.
+    saved=$(declare -f shape_backend_classify)
+    eval "${saved/shape_backend_classify/shape_backend_original}"
+    shape_backend_classify() { shape_backend_original "$1" "$2" Darwin; }
+    backend_case 'removed Linux-positive policy is detected (expected RED)' 0 absent-sdl sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' Linux
+    eval "$saved"
+    unset -f shape_backend_original
+    backend_case 'restored Linux-positive policy refuses absence' 1 '' sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' Linux
+    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 88 declared"
+    [ "$failed" = 0 ] && [ "$passed" = 88 ]
+}
+if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
 
 [ -x "$NEW" ] || { echo "FAIL: no built binary at $NEW"; exit 1; }
 if [ -z "$BASE" ] && [ "$NO_BASELINE" = 0 ]; then
@@ -75,6 +530,11 @@ bin_fingerprint() {
 FP_NEW_START="$(bin_fingerprint "$NEW")"
 FP_BASE_START=""
 [ -n "$BASE" ] && FP_BASE_START="$(bin_fingerprint "$BASE")"
+NEW_SHAPE_INSTRUMENTATION=$(shape_binary_instrumentation "$NEW") || exit 1
+BASE_SHAPE_INSTRUMENTATION=none
+if [ -n "$BASE" ]; then BASE_SHAPE_INSTRUMENTATION=$(shape_binary_instrumentation "$BASE") || exit 1; fi
+echo "GFX address-space policy: platform=$SHAPE_BACKEND_PLATFORM subject=$NEW_SHAPE_INSTRUMENTATION baseline=$BASE_SHAPE_INSTRUMENTATION (ordinary Linux=1500000 KiB; ordinary Darwin=inherited limits, no imposed address-space cap; ASan=inherited unlimited)"
+
 
 TMP="$(mktemp -d)"
 verdict_printed=0
@@ -82,7 +542,11 @@ _sd_main_depth=$BASH_SUBSHELL
 _sd_exit() {
     local es=$?
     [ "$BASH_SUBSHELL" = "${_sd_main_depth:-}" ] || return 0
-    rm -rf "${TMP:-}"
+    if [ "${EIGS_DIFF_KEEP_TMP:-0}" = 1 ]; then
+        echo "Strict differential raw captures retained: ${TMP:-}"
+    else
+        rm -rf "${TMP:-}"
+    fi
     if [ "${verdict_printed:-0}" != "1" ]; then
         if [ "$es" = "0" ]; then
             echo "  ABORTED: this differential was terminated before printing a verdict."
@@ -92,6 +556,46 @@ _sd_exit() {
     fi
 }
 trap _sd_exit EXIT
+
+# Cheap contract/enrollment check precedes every runtime probe.
+if ! python3 tools/strict_shape_contract.py --render "$TMP/shapes"; then
+    verdict_printed=1
+    exit 1
+fi
+
+# Produce one tiny descriptor through the owning normal compiler. The auxiliary
+# file target reuses variant objects and never relinks the CLI under this gate.
+[ "$NEW" -ef ./src/eigenscript ] || { echo 'FAIL: shape producer requires this checkout owning CLI'; exit 1; }
+shape_variant=
+for shape_binary in build/*/eigenscript; do
+    if [ "$NEW" -ef "$shape_binary" ]; then
+        shape_variant=$(basename "$(dirname "$shape_binary")"); break
+    fi
+done
+if [ -z "$shape_variant" ]; then
+    shape_variant=release
+    echo 'Shape descriptor: build.sh CLI layout; compiler producer uses owning source release objects'
+fi
+make --no-print-directory "build/$shape_variant/strict_shape_descriptor" "EMBED_OBSERVER_VARIANT=$shape_variant" || exit 1
+descriptor_rc=0
+"build/$shape_variant/strict_shape_descriptor" > "$TMP/descriptor.json" 2> "$TMP/descriptor.stderr" || descriptor_rc=$?
+if [ "$descriptor_rc" != 0 ] || [ -s "$TMP/descriptor.stderr" ] ||
+   [ "$(lsan_classify_name "$(cat "$TMP/descriptor.json" "$TMP/descriptor.stderr")")" != none ]; then
+    cat "$TMP/descriptor.stderr"; echo 'FAIL: ordinary descriptor producer'; exit 1
+fi
+python3 - "$TMP" <<'PY' || exit 1
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+descriptor = json.loads((root / 'descriptor.json').read_text())
+assert isinstance(descriptor, list) and len(descriptor) == 3
+assert descriptor[2] == [42] and 0 < len(descriptor[1]) <= 64
+text = json.dumps(descriptor, separators=(',', ':'))
+for fixture in (root / 'shapes/sandbox_run').glob('*/*/*/case.eigs'):
+    source = fixture.read_text()
+    assert source.count('@DESCRIPTOR@') == 1
+    fixture.write_text(source.replace('@DESCRIPTOR@', text))
+PY
 
 # name|program[|expect]  — wrong-typed call; expect defaults to "<name>: expected"
 PROBES=$(cat <<'EOF'
@@ -105,6 +609,8 @@ ceil|print of (ceil of "x")
 chdir|print of (chdir of 42)
 char_at|print of (char_at of [42, 0])
 contains|print of (contains of [[1, 2, 3], 2])
+dict_remove|print of (dict_remove of ([]))
+dict_set|print of (dict_set of ([]))
 cos|print of (cos of "hello")
 dot|print of (dot of [1, 2])
 ends_with|print of (ends_with of [42, "x"])
@@ -490,7 +996,11 @@ cap_state() { # exact ordinary-operation observation in all strict modes
     # DB's no-database answer must not depend on the caller's live service.
     local DATABASE_URL=""
     for mode in - 0 1; do
-        got="$(run_capture "$bin" "$mode" "$TMP/cap-$cap.eigs")"
+        if [ "$cap" = gfx ]; then
+            got="$(shape_gfx_limit "$bin" || exit 125; run_capture "$bin" "$mode" "$TMP/cap-$cap.eigs")"
+        else
+            got="$(run_capture "$bin" "$mode" "$TMP/cap-$cap.eigs")"
+        fi
         case "$got" in
             $'0\nimplemented') got=implemented ;;
             $'0\nundefined') got=undefined ;;
@@ -539,18 +1049,18 @@ differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; ski
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
 for cap in http net db model gfx; do
     ns="$(cap_state "$NEW" "$cap")"
+    cap_observation_ok "" "$cap" "$ns" || exit 1
     NEW_CAPS="$NEW_CAPS
 $cap|$ns"
     case "$ns" in
         implemented|unavailable) ;;
         undefined) [ "$cap" = gfx ] || { echo "  CAPABILITY BINDING MISSING: $cap"; rc=1; } ;;
-        *) echo "  CAPABILITY DID NOT MEASURE: $cap — $ns"; rc=1 ;;
     esac
     [ -n "$BASE" ] || continue
     bs="$(cap_state "$BASE" "$cap")"
+    cap_observation_ok "BASELINE " "$cap" "$bs" || exit 1
     BASE_CAPS="$BASE_CAPS
 $cap|$bs"
-    case "$bs" in implemented|unavailable|undefined) ;; *) echo "  BASELINE CAPABILITY DID NOT MEASURE: $cap — $bs"; rc=1 ;; esac
     if [ "$bs" != "$ns" ]; then
         profile_transitions="$profile_transitions
     $cap: baseline=$bs subject=$ns"
@@ -600,6 +1110,7 @@ probe_builtin_present() {
     return 0
 }
 
+if [ "$SHAPES_ONLY" = 0 ]; then
 while IFS='|' read -r who prog expect; do
     [ -z "${who:-}" ] && continue
     expect="${expect:-$who: expected}"
@@ -774,6 +1285,136 @@ if [ "$NO_BASELINE" = 1 ]; then
     echo "  NOTE: identical-when-off was NOT measured (no baseline binary)."
 fi
 
+fi # historical wrong-type/valid-input halves
+
+# ------------------------------------------------ typed fixed-shape controls (#1398)
+# Candidate discovery is independent of the guards and reviewed contract data.
+# Every process/form owns fresh files; no universal malformed numeric prefix.
+shape_rows=0; shape_pass=0; shape_absent=0; shape_backend_absent=0; shape_pending=0; shape_fail=0
+SHAPE_SUBJECT_SDL=unmeasured; SHAPE_SUBJECT_MIXER=unmeasured
+SHAPE_BASELINE_SDL=unmeasured; SHAPE_BASELINE_MIXER=unmeasured
+if [ -f "$TMP/shapes/rows" ]; then
+    while IFS='|' read -r who max forms legacy exits pending backend; do
+        [ -n "$who" ] || continue
+        shape_rows=$((shape_rows + 1)); row_good=1
+        cap="$(cap_for_name "$who")"
+        if ! probe_builtin_present "$who"; then
+            printf 'ignore is %s of null\n' "$who" > "$TMP/shape-absent.eigs"
+            if [ -n "$cap" ]; then
+                if [ "$cap" = gfx ]; then
+                    (shape_gfx_limit "$NEW" || exit 125; check_absent_call "$NEW" "$(state_for subject "$cap")" "$cap" "$who" "$TMP/shape-absent.eigs") || row_good=0
+                else
+                    check_absent_call "$NEW" "$(state_for subject "$cap")" "$cap" "$who" "$TMP/shape-absent.eigs" || row_good=0
+                fi
+            else
+                echo "  SHAPE ABSENCE UNCLASSIFIED: $who"; row_good=0
+            fi
+            if [ "$row_good" = 1 ]; then
+                shape_absent=$((shape_absent + 1)); echo "  UNAVAILABLE shape: $who (not a valid-operation pass)"
+            else
+                shape_fail=$((shape_fail + 1)); rc=1; break
+            fi
+            continue
+        fi
+        if [ "$pending" = 1 ]; then
+            shape_pending=$((shape_pending + 1)); rc=1
+            echo "  PENDING shape: $who — $(cat "$TMP/shapes/$who/pending")"
+            continue
+        fi
+        shape_base=1
+        if [ -n "$BASE" ] && [ -n "$cap" ] && [ "$(state_for baseline "$cap")" != implemented ]; then
+            shape_base=0
+            printf 'ignore is %s of null\n' "$who" > "$TMP/shape-absent.eigs"
+            check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "$who" "$TMP/shape-absent.eigs" || row_good=0
+        fi
+        shape_subject=subject; shape_baseline=baseline; shape_absence_output=""
+        if [ "$backend" != none ]; then
+            if ! shape_backend_prepare "$NEW" subject "$backend"; then
+                shape_abort "$who" 'backend dependency' 'exact dependency receipt required'; break
+            fi
+            shape_backend_state=$SHAPE_BACKEND_STATE
+            if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
+                if ! shape_backend_prepare "$BASE" baseline "$backend"; then
+                    shape_abort "$who" 'baseline backend dependency' 'exact dependency receipt required'; break
+                fi
+                if [ "$shape_backend_state" != "$SHAPE_BACKEND_STATE" ]; then
+                    shape_abort "$who" 'backend transition' "$shape_backend_state != $SHAPE_BACKEND_STATE"; break
+                fi
+            fi
+            if [ "$shape_backend_state" != present ]; then
+                shape_subject=subject-absent; shape_baseline=baseline-absent
+                shape_absence_output=$(cat "$TMP/shapes/$who/$shape_backend_state") || {
+                    shape_abort "$who" 'backend absence oracle missing' "$shape_backend_state"; break
+                }
+            fi
+        fi
+        old_ifs=$IFS; IFS=','; read -r -a shape_forms <<<"$forms"; IFS=$old_ifs
+        maximum=""
+        for form in "${shape_forms[@]}"; do
+            off="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/$shape_subject/0/$form/case.eigs" "$cap")"
+            if ! shape_typed_positive_ok "$off" "$exits" "$shape_absence_output"; then shape_abort "$who" "valid $form/0" "$off"; break 2; fi
+            on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/$shape_subject/1/$form/case.eigs" "$cap")"
+            if ! shape_typed_positive_ok "$on" "$exits" "$shape_absence_output"; then shape_abort "$who" "valid $form/1" "$on"; break 2; fi
+            default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/$form/case.eigs" "$cap")"
+            if ! shape_typed_positive_ok "$default" "$exits" "$shape_absence_output"; then shape_abort "$who" "valid $form/-" "$default"; break 2; fi
+            if [ "$exits" = 1 ]; then
+                [ "$off" = $'0\nexit-entered' ] || row_good=0
+            else
+                shape_done "$off" || row_good=0
+            fi
+            [ "$off" = "$on" ] && [ "$on" = "$default" ] || row_good=0
+            if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
+                for mode in 0 1 default; do
+                    flag=$mode; [ "$mode" = default ] && flag=-
+                    old="$(shape_capture "$BASE" "$flag" "$TMP/shapes/$who/$shape_baseline/$mode/$form/case.eigs" "$cap")"
+                    if ! shape_typed_positive_ok "$old" "$exits" "$shape_absence_output"; then shape_abort "$who" "baseline $form/$mode" "$old"; break 3; fi
+                    [ "$old" = "$off" ] || row_good=0
+                done
+            fi
+            [ "$form" != max ] || maximum=$off
+        done
+        soft="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/$shape_subject/0/surplus/case.eigs" "$cap")"
+        if ! shape_receipt_ok "$soft"; then shape_abort "$who" "strict-off surplus" "$soft"; break; fi
+        shape_receipt_ok "$soft" || row_good=0
+        if [ "$legacy" = 0 ]; then [ "$soft" = "$maximum" ] || row_good=0
+        else shape_done "$soft" || row_good=0; fi
+        if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
+            old="$(shape_capture "$BASE" 0 "$TMP/shapes/$who/$shape_baseline/0/surplus/case.eigs" "$cap")"
+            if ! shape_receipt_ok "$old"; then shape_abort "$who" "baseline surplus" "$old"; break; fi
+            [ "$old" = "$soft" ] || row_good=0
+        fi
+        on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/$shape_subject/1/strict/case.eigs" "$cap")"
+        if ! shape_done "$on"; then shape_abort "$who" "strict surplus" "$on"; break; fi
+        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/strict/case.eigs" "$cap")"
+        if ! shape_done "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
+        shape_done "$on" && [ "$on" = "$default" ] || row_good=0
+        if [ -n "$shape_absence_output" ] && [ "$on" != $'0\nshape-complete' ]; then row_good=0; fi
+        if [ "$row_good" = 1 ]; then
+            if [ -n "$shape_absence_output" ]; then
+                shape_backend_absent=$((shape_backend_absent + 1))
+                echo "  BACKEND ABSENT shape: $who (documented outcomes + strict surplus; no device-positive claim)"
+            else
+                shape_pass=$((shape_pass + 1)); echo "  PASS shape: $who (max=$max; forms=$forms)"
+            fi
+        else
+            shape_fail=$((shape_fail + 1)); rc=1
+            echo "  FAIL shape: $who (strict/default=$(clip "$on" 160); soft=$(clip "$soft" 160))"
+            # Stop at a real unexpected failure; do not run later resource rows.
+            break
+        fi
+    done < "$TMP/shapes/rows"
+else
+    rc=1; shape_fail=$((shape_fail + 1))
+fi
+shape_declared=$(python3 -c 'import json; print(len(json.load(open("tests/strict_shape_cases.json"))))')
+shape_unrun=$((shape_declared - shape_rows))
+echo "== typed fixed-shape controls =="
+echo "  declared=$shape_declared examined=$shape_rows passed=$shape_pass failed=$shape_fail unavailable=$shape_absent backend_absent=$shape_backend_absent pending=$shape_pending unrun=$shape_unrun"
+[ "$shape_rows" = "$shape_declared" ] && [ "$shape_rows" = "$((shape_pass + shape_absent + shape_backend_absent + shape_fail + shape_pending))" ] && [ "$shape_fail" = 0 ] && [ "$shape_pending" = 0 ] || rc=1
+[ -n "$BASE" ] || echo "  NOTE: shape baseline equality was NOT measured."
+[ "$shape_fail" = 0 ] || SHAPES_ONLY=1
+
+if [ "$SHAPES_ONLY" = 0 ]; then
 # ------------------------------------------------ gfx capability
 case "$(state_for subject gfx)" in
     undefined)
@@ -787,12 +1428,10 @@ if [ "$gfx_on" = 1 ]; then
 # name|shape-id|reason. A pair that raises is stale; a pair nothing probes is dead.
 ALLOW=$(cat <<'EOF'
 gfx_text_height|scalar|the scale slot is documented as `gfx_text_height of 2`, a bare number
-gfx_text_height|list2|[scale] with a numeric first slot is the documented list form; the surplus slot is #989
 gfx_text_width|string|`gfx_text_width of "hello"` is the documented one-argument form
 audio_pause|scalar|`audio_pause of 1` is the documented flag form
 audio_stop|scalar|`audio_stop of 1` is the documented channel form
 audio_music_volume|scalar|`audio_music_volume of 96` is the documented form
-audio_music_volume|list2|[volume] with a numeric first slot is the documented list form; the surplus slot is #989
 gfx_delay|scalar|`gfx_delay of 16` is the documented one-argument form
 gfx_title|string|`gfx_title of "name"` is the documented one-argument form
 audio_play|list2|a 2-element numeric list IS a sample list -- the valid call
@@ -1133,6 +1772,8 @@ if [ -n "$missing_slots" ]; then
 fi
 if [ "$n_prow" -lt 1 ]; then echo "  VACUOUS: pixel rows=0"; rc=1; fi
 fi
+
+fi # historical graphics halves
 
 if [ -n "$FP_NEW_START" ]; then
     _fp_now="$(bin_fingerprint "$NEW")"

@@ -613,6 +613,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
 
 /* ==== BUILTIN: add ==== */
 Value* builtin_tensor_add(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "add");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     /* #1093: the buffer fast path moved into tensor_elementwise, so all five
      * elementwise builtins share one implementation. #973 arrived with a
@@ -625,24 +626,28 @@ Value* builtin_tensor_add(Value *arg) {
 
 /* ==== BUILTIN: subtract ==== */
 Value* builtin_tensor_subtract(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "subtract");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     return tensor_elementwise(arg->data.list.items[0], arg->data.list.items[1], op_sub);
 }
 
 /* ==== BUILTIN: multiply ==== */
 Value* builtin_tensor_multiply(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "multiply");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     return tensor_elementwise(arg->data.list.items[0], arg->data.list.items[1], op_mul);
 }
 
 /* ==== BUILTIN: divide ==== */
 Value* builtin_tensor_divide(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "divide");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     return tensor_elementwise(arg->data.list.items[0], arg->data.list.items[1], op_div);
 }
 
 /* ==== BUILTIN: pow ==== */
 Value* builtin_tensor_pow(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "pow");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     return tensor_elementwise(arg->data.list.items[0], arg->data.list.items[1], op_pow);
 }
@@ -717,6 +722,7 @@ Value* builtin_tensor_negative(Value *arg) { return tensor_unary(arg, op_neg); }
 
 /* ==== BUILTIN: matmul ==== */
 Value* builtin_tensor_matmul(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "matmul");
     /* #512: invalid shapes/types raise instead of returning a silent null —
      * a null in a numeric pipeline (training, games) is hard to spot.
      * type_mismatch for non-matrix operands, value for incompatible shapes,
@@ -812,6 +818,7 @@ Value* builtin_tensor_matmul(Value *arg) {
 /* matmul_at of [a, b] → aᵀ·b: a is (m x k), b is (m x n), result (k x n).
  * The weight gradient dW = Xᵀ·dY of a linear layer, without materialising Xᵀ. */
 Value* builtin_tensor_matmul_at(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "matmul_at");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "matmul_at requires [A, B]");
         return make_null();
@@ -869,6 +876,7 @@ Value* builtin_tensor_matmul_at(Value *arg) {
  * The input gradient dX = dY·Wᵀ of a linear layer, without materialising Wᵀ.
  * Like `matmul`, a 1-D left operand is a row vector and yields a 1-D result. */
 Value* builtin_tensor_matmul_bt(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "matmul_bt");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "matmul_bt requires [A, B]");
         return make_null();
@@ -932,6 +940,7 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
  * (value): indices/values counts must be equal, and the per-row form needs
  * one index per row. Wrong types raise (type). */
 Value* builtin_tensor_scatter_add(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "scatter_add");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "scatter_add requires [dst, indices, values]");
         return make_null();
@@ -1293,6 +1302,7 @@ Value* builtin_tensor_norm(Value *arg) {
 /* ==== BUILTIN: zeros ==== */
 /* zeros of n → a BUFFER of n zeros (#1093); zeros of [rows, cols] → 2D list */
 Value* builtin_tensor_zeros(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "zeros");
     if (!arg) return make_null();
     /* #1093 (breaking, documented): `zeros of n` is the FLAT numeric
      * container — a VAL_BUFFER of n doubles, not a list of n boxed numbers.
@@ -1422,6 +1432,7 @@ static int flat_index_is_num(Value *v, int i) {
  * its own change (recorded as a residual on the integration commit). A short
  * index vector still truncates to the row count. */
 Value* builtin_tensor_gather(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "gather");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *tensor = arg->data.list.items[0];
     Value *indices = arg->data.list.items[1];
@@ -1609,6 +1620,7 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
 /* ==== BUILTIN: random_normal ==== */
 /* random_normal of [rows, cols, scale] → 2D, or random_normal of [len, scale] → 1D */
 Value* builtin_random_normal(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "random_normal");
     TRACE_NONDET_TAKE("random_normal");
     if (!arg || arg->type != VAL_LIST) TRACE_NONDET_RECORD("random_normal", make_null());
     /* #960: draw from the shared drand48 stream that `seed_random` pins, not
@@ -1717,6 +1729,7 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
  * param is a 1D or 2D tensor (VAL_LIST).
  * Returns gradient tensor matching param shape. */
 Value* builtin_numerical_grad(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "numerical_grad");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *loss_fn = arg->data.list.items[0];
     Value *param = arg->data.list.items[1];
@@ -1809,6 +1822,7 @@ Value* builtin_numerical_grad(Value *arg) {
 /* ==== BUILTIN: sgd_update ==== */
 /* sgd_update of [param, grad, lr] — in-place param = param - lr * grad */
 Value* builtin_sgd_update(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "sgd_update");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *param = arg->data.list.items[0];
     Value *grad = arg->data.list.items[1];
@@ -1865,6 +1879,7 @@ Value* builtin_sgd_update(Value *arg) {
  * row_indices is a 1D list of integer row indices (pre-deduplicated by caller).
  * Returns a gradient matrix of the same shape, with zero rows for untouched rows. */
 Value* builtin_numerical_grad_rows(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "numerical_grad_rows");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
     Value *loss_fn = arg->data.list.items[0];
     Value *matrix = arg->data.list.items[1];
@@ -1958,6 +1973,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
 /* sgd_update_rows of [matrix, grad, row_indices, lr]
  * Updates only the specified rows of matrix in-place: row -= lr * grad_row */
 Value* builtin_sgd_update_rows(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "sgd_update_rows");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
     Value *matrix = arg->data.list.items[0];
     Value *grad = arg->data.list.items[1];
@@ -2013,6 +2029,7 @@ Value* builtin_sgd_update_rows(Value *arg) {
  * col_indices is a 1D list of integer column indices.
  * Returns a gradient matrix of the same shape, with zero columns for untouched cols. */
 Value* builtin_numerical_grad_cols(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "numerical_grad_cols");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
     Value *loss_fn = arg->data.list.items[0];
     Value *matrix = arg->data.list.items[1];
@@ -2112,6 +2129,7 @@ Value* builtin_numerical_grad_cols(Value *arg) {
 /* sgd_update_cols of [matrix, grad, col_indices, lr]
  * Updates only the specified columns of matrix in-place: elem -= lr * grad_elem */
 Value* builtin_sgd_update_cols(Value *arg) {
+    STRICT_LIST_MAX(arg, 4, "sgd_update_cols");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
     Value *matrix = arg->data.list.items[0];
     Value *grad = arg->data.list.items[1];
@@ -2163,6 +2181,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
 }
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_tensor_save(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "tensor_save");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "tensor_save", "[tensor, path]", make_num(0));
     Value *tensor = arg->data.list.items[0];
