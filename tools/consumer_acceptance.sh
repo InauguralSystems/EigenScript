@@ -208,7 +208,7 @@ plan() {
   echo "VERDICT: PASS -- $seen consumers, every one with a derived acceptance command"
 }
 
-WORK=""; RECORD=""; ACTIVE=""; SHIM=""; CALL_LOG=""; OVERLAY=""
+WORK=""; RECORD=""; ACTIVE=""; SHIM=""; CALL_LOG=""; OVERLAY=""; LOG_ROOT=""; LOGS=""
 RUNTIME_SLOTS=()
 SELECTORS=""; SELECTOR_ENV=()
 stop_row_group() {
@@ -462,7 +462,11 @@ row() {
     elif [ -n "$skip_problem" ]; then verdict=FAIL; prereq="$skip_problem"
     fi
   fi
-  mkdir -p "$LOGS" && cp "$log" "$LOGS/$name.log" || return 1
+  # Archive failure is a row result, not an early return: a COMPLETE record
+  # must still contain one row for every examined consumer.
+  if ! cp "$log" "$LOGS/$name.log"; then
+    verdict=FAIL; prereq=log-archive
+  fi
   # A consumer may write the original binary. Account for that row as a
   # failure even when its command and every counted call returned zero.
   actual="$(sha256sum "$candidate" 2>/dev/null | awk '{print $1}')" || actual=missing
@@ -487,6 +491,11 @@ row() {
   local line="row|$name|$pin|$verdict|$rc|$dur|cand_calls=$calls|cand_ok=$ok|cand_fail=$fail|consumer_skips=$skips|selectors_overridden=${SELECTORS:-none}"
   [ -z "$prereq" ] || line="$line|prereq=$prereq"
   echo "$line" | tee -a "$BODY"
+  if [ -f "$LOGS/$name.log" ]; then
+    printf 'consumer_log|%s|%s\n' "$name" "$LOGS/$name.log" >> "$BODY"
+  else
+    printf 'consumer_log|%s|MISSING\n' "$name" >> "$BODY"
+  fi
   if [ "$verdict" != PASS ] && [ -s "$log" ]; then
     tail -n 20 "$log" | while IFS= read -r v; do printf 'log|%s|%s\n' "$name" "$v"; done >> "$BODY"
   fi
@@ -552,8 +561,14 @@ run() {
   # Output-path selection completes argument validation. Read the old floor,
   # invalidate that exact path, and install traps before any candidate hash.
   RECORD="${CA_RECORD:-$HERE/reports/consumer_acceptance/$(date -u +%F)-candidate.record}"
-  LOGS="${CA_LOGS:-$RECORD.logs}"
-  mkdir -p "$LOGS" || { echo "cannot create consumer log directory: $LOGS"; return 2; }
+  LOG_ROOT="${CA_LOGS:-$RECORD.logs}"
+  # CA_LOGS is a retention root. Each invocation owns a fresh child and never
+  # removes or overwrites files retained there by another invocation.
+  LOGS="$(mktemp -d "$LOG_ROOT/run.XXXXXX" 2>/dev/null)" || {
+    mkdir -p "$LOG_ROOT" || { echo "cannot create consumer log root: $LOG_ROOT"; return 2; }
+    LOGS="$(mktemp -d "$LOG_ROOT/run.XXXXXX")" || { echo "cannot create consumer log directory below: $LOG_ROOT"; return 2; }
+  }
+  export CA_LOG_RUN="$LOGS"
   record_floor
   {
     echo '# consumer_acceptance record'
@@ -574,6 +589,9 @@ run() {
     echo 'server_sha256=PENDING'
     echo 'server_db_sha256=PENDING'
     echo "record_floor=$FLOOR"
+    echo "consumer_logs_root=$LOG_ROOT"
+    echo "consumer_logs=$LOGS"
+    echo 'consumer_logs_retention=run-owned; unrelated entries retained'
     echo 'inventory=PENDING'
     echo 'examined=0'
     echo 'status=INCOMPLETE'
@@ -655,6 +673,9 @@ run() {
     echo "server_sha256=$SERVER_SHA"
     echo "server_db_sha256=$SERVER_DB_SHA"
     echo "record_floor=$FLOOR"
+    echo "consumer_logs_root=$LOG_ROOT"
+    echo "consumer_logs=$LOGS"
+    echo 'consumer_logs_retention=run-owned; unrelated entries retained'
     echo "inventory=$inventory"
     echo "examined=$examined"
     echo 'status=COMPLETE'
@@ -867,10 +888,12 @@ selftest() {
   st_rc=0; st_run || st_rc=$?
   if [ "$st_rc" -eq 0 ] && grep -Fq 'row|ouroboros|v0.43.0|PASS|0|' "$st_record"; then
     echo 'plant H check=makefile-overlay GREEN tools/werror_flags.txt=read cand_calls=1'
-  else echo "plant H check=makefile-overlay SILENT $(grep '^row|ouroboros|' "$st_record" | head -1)"; cat "$st_record.logs/ouroboros.log"; st_bad=1; fi
-  # (I) Logs survive beside the record without an explicit CA_LOGS setting.
-  if [ -f "$st_record.logs/ouroboros.log" ]; then
-    echo 'plant I check=default-consumer-logs GREEN record.logs/ouroboros.log=present'
+  else echo "plant H check=makefile-overlay SILENT $(grep '^row|ouroboros|' "$st_record" | head -1)"; st_bad=1; fi
+  # (I) Logs survive in the record's named run directory by default.
+  local recorded_logs
+  recorded_logs="$(sed -n 's/^consumer_logs=//p' "$st_record" | tail -1)"
+  if [ -f "$recorded_logs/ouroboros.log" ]; then
+    echo 'plant I check=default-consumer-logs GREEN recorded-run/ouroboros.log=present'
   else echo 'plant I check=default-consumer-logs SILENT'; st_bad=1; fi
   # (J) A gfx executable must resolve a real stdlib module, not just ../lib.
   mkdir -p "$st_root/build/gfx"
@@ -1038,8 +1061,28 @@ CANDIDATE
   if [ "$st_rc" -eq 0 ] && grep -Fq 'row|iLambdaAi|v0.43.0|PASS|0|' "$st_record" && grep -Fq 'cand_calls=1|cand_ok=1|cand_fail=0|consumer_skips=0|' "$st_record" && grep -Fqx 'VERDICT: PASS' "$st_record"; then
     echo 'plant Y check=consumer-skip-clean GREEN consumer_skips=0 calls=1'
   else echo 'plant Y check=consumer-skip-clean SILENT'; st_bad=1; fi
+  # (Z) Reusing CA_LOGS retains unrelated files while records name only their
+  # own fresh run directories.
+  local shared_logs="$st_root/shared-logs" first_logs second_logs
+  mkdir -p "$shared_logs"; printf 'keep\n' > "$shared_logs/unrelated"
+  st_reset; st_consumer retained 'eigenscript good.eigs'; printf 'retained\n' > "$st_eco/.ca_expected"
+  st_rc=0; CA_LOGS="$shared_logs" st_run || st_rc=$?
+  first_logs="$(sed -n 's/^consumer_logs=//p' "$st_record" | tail -1)"
+  st_rc=0; CA_LOGS="$shared_logs" st_run || st_rc=$?
+  second_logs="$(sed -n 's/^consumer_logs=//p' "$st_record" | tail -1)"
+  if [ "$st_rc" -eq 0 ] && [ "$first_logs" != "$second_logs" ] && [ -f "$first_logs/retained.log" ] && [ -f "$second_logs/retained.log" ] && [ "$(cat "$shared_logs/unrelated")" = keep ]; then
+    echo 'plant Z check=log-root-reuse GREEN runs=2 unrelated=retained records=exact'
+  else echo 'plant Z check=log-root-reuse SILENT'; st_bad=1; fi
+  # (AA) Destruction of the exported run directory deterministically makes
+  # archival fail, but the completed record still carries the failed row.
+  st_reset; st_consumer archive_fail 'eigenscript good.eigs; rm -rf "$CA_LOG_RUN"; : > "$CA_LOG_RUN"'
+  printf 'archive_fail\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -ne 0 ] && grep -Fq 'row|archive_fail|v0.43.0|FAIL|0|' "$st_record" && grep -Fq 'prereq=log-archive' "$st_record" && grep -Fqx 'consumer_log|archive_fail|MISSING' "$st_record" && grep -Fqx 'status=COMPLETE' "$st_record"; then
+    echo 'plant AA check=archive-failure RED row=FAIL log=MISSING record=COMPLETE'
+  else echo 'plant AA check=archive-failure SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 33/33 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 35/35 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
