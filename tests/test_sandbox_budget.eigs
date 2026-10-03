@@ -757,10 +757,10 @@ assert_eq of [edge_scan >= 0, 1, "boundary: exact-limit refusal is the result sc
 
 # --- #965 (fix3): the first budget refusal wins across one producer ---------
 # json_decode is allowlisted and continues an array after a refused string.
-# On the runner sizeof(Value) + 8*sizeof(Value*) is 72 + 8*8 = C=136 bytes for
+# On the runner sizeof(Value) + 8*sizeof(Value*) is 80 + 8*8 = C=144 bytes for
 # the parser's initial make_list(8). The first 128-byte string grows 64->128,
-# then requests 128 with 200 used and C+127 available; the independent 64-byte
-# second string later requests 64 with only 63 left. The first refusal must stay
+# then requests 128 with 208 used and 263 available; the independent 64-byte
+# second string later requests 64 with only 55 left. The first refusal must stay
 # visible, rather than being overwritten by that later request.
 first128 is ""
 for i in range of 16:
@@ -778,7 +778,7 @@ multi_json_msg is ""
 if sr_multi_json["ok"] == 0:
     multi_json_msg is sr_multi_json["error"]["message"]
 assert_eq of [multi_json_msg,
-              "sandbox memory budget exceeded (used 200 + 128 > 263 bytes)",
+              "sandbox memory budget exceeded (used 208 + 128 > 263 bytes)",
               "budget: first refusal remains exact across multiple strbufs"]
 
 # --- #965 (fix3): sandbox descriptors cannot smuggle callable constants ----

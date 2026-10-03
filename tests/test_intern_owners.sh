@@ -37,6 +37,7 @@ lsan_classify "$(cat "$owned/output")" || classification=$?
 if [[ "$rc" -ne 0 || "$classification" -ne 2 ]]; then
     exit 1
 fi
-[[ $(grep -c '^PASS:' "$owned/output") -eq 32 ]]
-[[ $(grep -Fxc 'intern owner structural: 32 passed, 0 failed (32 declared)' "$owned/output") -eq 1 ]]
-[[ $(grep -Ec '^layout: Value=[1-9][0-9]* Env=[1-9][0-9]* fn-param-owner=[0-9]+ dict-owner=[0-9]+ private-flag=[0-9]+$' "$owned/output") -eq 1 ]]
+[[ $(grep -c '^PASS:' "$owned/output") -eq 32 ]] || exit 1
+[[ $(grep -Fxc 'intern owner structural: 32 passed, 0 failed (32 declared)' "$owned/output") -eq 1 ]] || exit 1
+[[ $(grep -Ec '^layout: Value=[1-9][0-9]* Env=[1-9][0-9]* fn-param-owner=[0-9]+ dict-owner=[0-9]+ private-flag=[0-9]+$' "$owned/output") -eq 1 ]] || exit 1
+if grep -q '^FAIL:' "$owned/output"; then exit 1; fi
