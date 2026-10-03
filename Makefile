@@ -263,6 +263,16 @@ build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c
 embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
 	@echo "Embed observer test built: $<"
 
+# #1463: structural intern ownership against the owning runtime variant.
+# No CLI relink; the fixture holds test references throughout teardown.
+INTERN_OWNER_VARIANT ?= release
+INTERN_OWNER_OBJ := $(filter-out build/$(INTERN_OWNER_VARIANT)/main.o,$(OBJ_$(INTERN_OWNER_VARIANT)))
+build/$(INTERN_OWNER_VARIANT)/test_intern_owners: tests/test_intern_owners.c $(INTERN_OWNER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(INTERN_OWNER_VARIANT)) -I$(SRC_DIR) -o $@ $< $(INTERN_OWNER_OBJ) $(LIBS_$(INTERN_OWNER_VARIANT))
+.PHONY: intern-owner-test
+intern-owner-test: build/$(INTERN_OWNER_VARIANT)/test_intern_owners
+	@echo "Intern owner structural oracle built: $<"
+
 # #1056: use the same variant as the CLI under test, without relinking it.
 ROAD_VARIANT ?= release
 EMBED_ROADS_OBJ := $(filter-out build/$(ROAD_VARIANT)/main.o,$(OBJ_$(ROAD_VARIANT)))
@@ -620,3 +630,11 @@ freestanding-libc-diff:
 		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
 	/tmp/eigs_libc_diff
+
+# Ordinary acyclic promotion oracle, linked only against its owning variant.
+ARENA_PROMOTION_VARIANT ?= release
+ARENA_PROMOTION_OBJ := $(filter-out build/$(ARENA_PROMOTION_VARIANT)/main.o,$(OBJ_$(ARENA_PROMOTION_VARIANT)))
+build/$(ARENA_PROMOTION_VARIANT)/test_arena_promotion_ordinary: tests/test_arena_promotion_ordinary.c $(ARENA_PROMOTION_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(ARENA_PROMOTION_VARIANT)) -I$(SRC_DIR) -o $@ $< $(ARENA_PROMOTION_OBJ) $(LIBS_$(ARENA_PROMOTION_VARIANT))
+.PHONY: arena-promotion-ordinary-test
+arena-promotion-ordinary-test: build/$(ARENA_PROMOTION_VARIANT)/test_arena_promotion_ordinary

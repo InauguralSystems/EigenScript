@@ -410,8 +410,9 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
  * (true for fresh envs from env_new — capacity is ENV_INIT_CAP = 16).
  * Skips capacity check, env_hash_find, env_hash_rebuild. */
 static inline void vm_bind_fresh_param(Env *env, int slot_idx,
-                                       const char *interned, uint32_t h,
-                                       EigsSlot s) {
+                                       const char *interned, EnvInternTable *owner,
+                                       uint32_t h, EigsSlot s) {
+    env_retain_intern_table(env, owner);
     env->names[slot_idx] = (char *)interned;
     EigsSlot stored = s;
     if (__builtin_expect(slot_is_ptr(s), 0)) {
@@ -1242,7 +1243,7 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
         }
         return;
     }
-    env_set_local_pre_interned_slot(env_binding_home(start), name, h, s);
+    env_set_local_pre_interned_slot(env_binding_home(start), name, chunk->intern_tbl, h, s);
     Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
     if (t2 == start) {
         ic->starting_env = start;
@@ -1273,7 +1274,7 @@ void jit_helper_set_name_local(EigsChunk *chunk, int idx) {
     const char *name = chunk->const_interns[idx];
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
     if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
-    env_set_local_pre_interned_slot(start, name, h, s);
+    env_set_local_pre_interned_slot(start, name, chunk->intern_tbl, h, s);
     int slot_idx, depth;
     Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
     if (target == start) {
@@ -1324,7 +1325,7 @@ void jit_helper_set_fn_name_local(EigsChunk *chunk, int idx) {
     const char *name = chunk->const_interns[idx];
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
     if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
-    env_set_local_pre_interned_slot(target, name, h, s);
+    env_set_local_pre_interned_slot(target, name, chunk->intern_tbl, h, s);
     int slot_idx, depth;
     Env *resolved = env_resolve_chain(target, name, h, &slot_idx, &depth);
     if (resolved == target) {
@@ -2594,7 +2595,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
                 uint32_t ph = phashes ? phashes[i]
                                       : env_hash_name(fn_val->data.fn.params[i]);
                 env_bind_fresh_param_slot(call_env,
-                    fn_val->data.fn.params[i], ph,
+                    fn_val->data.fn.params[i], fn_val->data.fn.param_intern_tbl, ph,
                     g_vm.stack[g_vm.sp - argc + i]);
             }
         } else if (param_count == 1 && !can_default) {
@@ -2602,14 +2603,14 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
                                   : env_hash_name(fn_val->data.fn.params[0]);
             if (argc == 1) {
                 vm_bind_fresh_param(call_env, 0,
-                    fn_val->data.fn.params[0], ph,
+                    fn_val->data.fn.params[0], fn_val->data.fn.param_intern_tbl, ph,
                     g_vm.stack[g_vm.sp - 1]);
             } else {
                 Value *arg_list = make_list_heap(argc);  /* #873: bound as a param slot — heap so it cannot dangle (and no deep-promote cost) */
                 for (int i = 0; i < argc; i++)
                     list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
                 vm_bind_fresh_param(call_env, 0,
-                    fn_val->data.fn.params[0], ph,
+                    fn_val->data.fn.params[0], fn_val->data.fn.param_intern_tbl, ph,
                     slot_from_heap(arg_list));
                 val_decref(arg_list);
             }
@@ -2619,7 +2620,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
                 uint32_t ph = phashes ? phashes[i]
                                       : env_hash_name(fn_val->data.fn.params[i]);
                 env_bind_fresh_param_slot(call_env,
-                    fn_val->data.fn.params[i], ph, slot_null());
+                    fn_val->data.fn.params[i], fn_val->data.fn.param_intern_tbl, ph, slot_null());
             }
         }
         if (fn_chunk->local_count > param_count)
@@ -3775,7 +3776,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         /* Not found anywhere — create it in the nearest enclosing NON-loop
          * scope (#959), then populate IC. */
-        env_set_local_pre_interned_slot(env_binding_home(start), name, h, s);
+        env_set_local_pre_interned_slot(env_binding_home(start), name, chunk->intern_tbl, h, s);
         Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (!g_vm_multithreaded && t2 == start) {   /* #297: see above */
             ic->starting_env = start;
@@ -3807,7 +3808,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
-        env_set_local_pre_interned_slot(start, name, h, s);
+        env_set_local_pre_interned_slot(start, name, chunk->intern_tbl, h, s);
         int slot_idx, depth;
         Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (!g_vm_multithreaded && target == start) {   /* #297: see above */
@@ -3848,7 +3849,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         const char *name = chunk->const_interns[idx];
         uint32_t h = chunk->const_hashes ? chunk->const_hashes[idx] : 0;
         if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
-        env_set_local_pre_interned_slot(target, name, h, s);
+        env_set_local_pre_interned_slot(target, name, chunk->intern_tbl, h, s);
         int slot_idx, depth;
         Env *resolved = env_resolve_chain(target, name, h, &slot_idx, &depth);
         if (!g_vm_multithreaded && resolved == target) {   /* #297: see above */
@@ -4261,21 +4262,21 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 for (int i = 0; i < bound; i++) {
                     uint32_t ph = phashes ? phashes[i] : env_hash_name(fn_val->data.fn.params[i]);
                     env_bind_fresh_param_slot(call_env,
-                        fn_val->data.fn.params[i], ph,
+                        fn_val->data.fn.params[i], fn_val->data.fn.param_intern_tbl, ph,
                         g_vm.stack[g_vm.sp - argc + i]);
                 }
             } else if (param_count == 1 && !can_default) {
                 uint32_t ph = phashes ? phashes[0] : env_hash_name(fn_val->data.fn.params[0]);
                 if (argc == 1) {
                     vm_bind_fresh_param(call_env, 0,
-                        fn_val->data.fn.params[0], ph,
+                        fn_val->data.fn.params[0], fn_val->data.fn.param_intern_tbl, ph,
                         g_vm.stack[g_vm.sp - 1]);
                 } else {
                     Value *arg_list = make_list_heap(argc);  /* #873: bound as a param slot — heap so it cannot dangle (and no deep-promote cost) */
                     for (int i = 0; i < argc; i++)
                         list_append(arg_list, STK_AS_VAL(g_vm.sp - argc + i));
                     vm_bind_fresh_param(call_env, 0,
-                        fn_val->data.fn.params[0], ph,
+                        fn_val->data.fn.params[0], fn_val->data.fn.param_intern_tbl, ph,
                         slot_from_heap(arg_list));
                     val_decref(arg_list);
                 }
@@ -4285,7 +4286,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     uint32_t ph = phashes ? phashes[i]
                                           : env_hash_name(fn_val->data.fn.params[i]);
                     env_bind_fresh_param_slot(call_env,
-                        fn_val->data.fn.params[i], ph, slot_null());
+                        fn_val->data.fn.params[i], fn_val->data.fn.param_intern_tbl, ph, slot_null());
                 }
             }
 
@@ -6457,7 +6458,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 uint32_t ph = fn->data.fn.param_hashes ? fn->data.fn.param_hashes[0]
                                                        : env_hash_name(fn->data.fn.params[0]);
                 vm_bind_fresh_param(call_env, 0,
-                    fn->data.fn.params[0], ph, arg_s);
+                    fn->data.fn.params[0], fn->data.fn.param_intern_tbl, ph, arg_s);
             } else {
                 slot_decref(arg_s);
             }
@@ -6470,7 +6471,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     uint32_t ph = phashes ? phashes[i]
                                           : env_hash_name(fn->data.fn.params[i]);
                     env_bind_fresh_param_slot(call_env,
-                        fn->data.fn.params[i], ph, slot_null());
+                        fn->data.fn.params[i], fn->data.fn.param_intern_tbl, ph, slot_null());
                 }
             }
             /* Pre-allocate slots for non-captured locals */

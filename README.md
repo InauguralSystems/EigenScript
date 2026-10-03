@@ -345,6 +345,13 @@ scope are safe: anything stored into a binding or a container that
 outlives the window is promoted to the heap at the store (#873) — the
 arena reclaims only the unstored intermediates.
 
+Arena-backed lists are promoted iteratively when they escape into longer-lived
+storage. Repeated references to the same source list share one promoted list.
+A promotion may contain at most 100,000 distinct arena-backed lists; exceeding
+it raises a catchable `limit` error, or `sandbox` inside a sandbox. Promotion
+copies and bookkeeping count toward an active sandbox allocation budget.
+
+
 ## Standard Library
 
 Pure EigenScript libraries under `lib/`:
