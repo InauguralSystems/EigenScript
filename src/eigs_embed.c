@@ -391,8 +391,16 @@ void eigs_set_trace_sink(EigsTraceSink cb, void *ud) {
     trace_set_sink(cb, ud);
 }
 
+int eigs_trace_bind_stream(const char *key) {
+    return trace_bind_stream(key);
+}
+
 int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
     return trace_set_replay_mem(bytes, len, strict);
+}
+
+int eigs_replay_advance_session(void) {
+    return trace_replay_advance_session();
 }
 
 int eigs_replay_take(const char *name, EigsValue **out) {

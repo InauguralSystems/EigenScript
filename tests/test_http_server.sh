@@ -845,7 +845,7 @@ else
         curl -s --max-time 5 "http://127.0.0.1:$PORT3/hit" > /dev/null 2>&1
     done
     sleep 0.5
-    MARKERS=$(grep -c '^A zz=' "$TAPE3" 2>/dev/null || echo 0)
+    MARKERS=$(grep -c '^A [0-9][0-9]* zz=' "$TAPE3" 2>/dev/null || echo 0)
     # The readiness probe is request 1, so requests 2+ are what the bug ate.
     if [ "$MARKERS" -ge 3 ]; then
         ok "HS33 tape keeps recording after the first request ($MARKERS markers)"
@@ -853,7 +853,7 @@ else
         fail "HS33 tape stopped after the first request" \
              "got $MARKERS request markers (expected >= 3)"
     fi
-    if grep -q '^A zz=3' "$TAPE3" 2>/dev/null; then
+    if grep -q '^A [0-9][0-9]* zz=3' "$TAPE3" 2>/dev/null; then
         ok "HS33 a later request's records reach the tape"
     else
         fail "HS33 later request missing from tape" "no 'A zz=3' record"

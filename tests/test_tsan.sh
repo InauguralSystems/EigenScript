@@ -184,36 +184,47 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-echo "=== replay-workers under EIGS_REPLAY must fail-loud, TSan-clean (#1142) ==="
+echo "=== replay-workers under EIGS_REPLAY: causal values, TSan-clean ==="
 RP_EIGS="$TESTS_DIR/trace_mt_replay_workers.eigs"
 RP_TAPE="$TESTS_DIR/../build/tsan_replay_mt.tape"
 RP_HDR="$TESTS_DIR/../build/tsan_replay_hdr.tape"
 if [ -f "$RP_EIGS" ]; then
     printf 'print of 1\n' > "$TESTS_DIR/../build/tsan_one.eigs"
+    header_rc=0
     EIGS_TRACE="$RP_HDR" timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" \
-        "$TESTS_DIR/../build/tsan_one.eigs" >/dev/null 2>&1 || true
-    {
-        head -1 "$RP_HDR" 2>/dev/null || echo "V 3 0.43.0"
-        i=0
-        while [ "$i" -lt 4000 ]; do printf 'N random=0.5\n'; i=$((i+1)); done
-    } > "$RP_TAPE"
-    TSAN_OPTIONS="halt_on_error=1 exitcode=66" \
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_REPLAY="$RP_TAPE" "$EIGS" "$RP_EIGS" \
-        >"$TESTS_DIR/../build/tsan_replay_mt.out" 2>"$TESTS_DIR/../build/tsan_replay_mt.err"
-    LAST_RC=$?
-    if [ "$LAST_RC" -eq 66 ]; then
-        echo "  FAIL: replay-workers ThreadSanitizer race (exit 66)"
+        "$TESTS_DIR/../build/tsan_one.eigs" >/dev/null 2>&1 || header_rc=$?
+    vline=$(head -1 "$RP_HDR" 2>/dev/null || true)
+    if [ "$header_rc" -ne 0 ] || ! printf '%s\n' "$vline" | grep -q '^V 5 '; then
+        echo "  FAIL: replay-workers header setup rc=$header_rc"
         FAIL=$((FAIL + 1))
-    elif [ "$LAST_RC" -eq 124 ]; then
-        echo "  FAIL: replay-workers HUNG"
-        FAIL=$((FAIL + 1))
-    elif [ "$LAST_RC" -eq 1 ] && grep -q 'not replayable under EIGS_REPLAY' \
-            "$TESTS_DIR/../build/tsan_replay_mt.err"; then
-        echo "  PASS: replay-workers fail-loud, TSan-clean"; PASS=$((PASS + 1))
     else
-        echo "  FAIL: replay-workers rc=$LAST_RC (want 1 + diagnostic)"
-        FAIL=$((FAIL + 1))
-        head -3 "$TESTS_DIR/../build/tsan_replay_mt.err"
+        {
+            printf '%s\n' "$vline" 'B 0 1 1 0 root -' \
+                'B 1 2 1 0 child 0 1' 'B 2 3 1 0 child 0 2'
+            # The existing fixture performs 3000 takes in each of two workers.
+            i=0
+            while [ "$i" -lt 6000 ]; do
+                printf 'N %d random=0.5\n' $((i % 2 + 1)); i=$((i+1))
+            done
+        } > "$RP_TAPE"
+        TSAN_OPTIONS="halt_on_error=1 exitcode=66" \
+            timeout "$TSAN_RUN_TIMEOUT" setarch -R env EIGS_REPLAY="$RP_TAPE" "$EIGS" "$RP_EIGS" \
+            >"$TESTS_DIR/../build/tsan_replay_mt.out" 2>"$TESTS_DIR/../build/tsan_replay_mt.err"
+        LAST_RC=$?
+        if [ "$LAST_RC" -eq 66 ]; then
+            echo "  FAIL: replay-workers ThreadSanitizer race (exit 66)"
+            FAIL=$((FAIL + 1))
+        elif [ "$LAST_RC" -eq 124 ]; then
+            echo "  FAIL: replay-workers HUNG"
+            FAIL=$((FAIL + 1))
+        elif [ "$LAST_RC" -eq 0 ] && grep -qx 'a=1500 b=1500' \
+                "$TESTS_DIR/../build/tsan_replay_mt.out"; then
+            echo "  PASS: replay-workers causal values, TSan-clean"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: replay-workers rc=$LAST_RC (want 0 and exact two-worker values)"
+            FAIL=$((FAIL + 1))
+            head -3 "$TESTS_DIR/../build/tsan_replay_mt.err"
+        fi
     fi
     rm -f "$RP_TAPE" "$RP_HDR" "$TESTS_DIR/../build/tsan_one.eigs"
 else

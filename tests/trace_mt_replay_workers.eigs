@@ -1,5 +1,5 @@
 # Two workers consuming N records from one replay tape concurrently.
-# Under EIGS_REPLAY this must raise the recv-family catchable error (#1142).
+# Under EIGS_REPLAY each child consumes its own parent/occurrence stream.
 define worker(id) as:
     local acc is 0
     local i is 0

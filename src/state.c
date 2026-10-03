@@ -35,6 +35,7 @@ static int g_live_states = 0;
 
 EigsState *eigs_state_new(void) {
     EigsState *st = xcalloc(1, sizeof(*st));
+    trace_state_init(st);
     pthread_mutex_init(&st->threads_lock, NULL);
     pthread_mutex_init(&st->intern_owner_lock, NULL);
     pthread_mutex_init(&st->handle_mutex, NULL);
@@ -54,14 +55,6 @@ EigsState *eigs_state_new(void) {
     st->obs_h_low    = OBSERVER_H_LOW_DEFAULT;
     st->obs_window   = OBSERVER_WINDOW_N;        /* #1044 */
     st->obs_scale    = OBSERVER_SCALE_DEFAULT;   /* #1045 */
-    /* #1142: last-emitted tape config starts at the compiled-in defaults so a
-     * default-config state's first record does not emit `O cfg`. */
-    st->tape_obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
-    st->tape_obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
-    st->tape_obs_h_low    = OBSERVER_H_LOW_DEFAULT;
-    st->tape_obs_window   = OBSERVER_WINDOW_N;
-    st->tape_obs_scale    = OBSERVER_SCALE_DEFAULT;
-    st->tape_obs_session  = 0;
     /* #971/#1361: strict mode, read once from env at creation (like the JIT
      * thresholds below). ON BY DEFAULT: unset or empty is strict, and so is
      * any value other than "0"; EIGS_STRICT=0 is the per-run opt-out that
@@ -277,6 +270,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     }
     EigsThread *th = xcalloc(1, sizeof(*th));
     th->state = st;
+    trace_attachment_init(th);
     pthread_mutex_lock(&st->exit_mutex);
     th->exit_scope = st->exit_scope;
     eigs_exit_scope_retain(th->exit_scope);
@@ -396,6 +390,7 @@ void eigs_thread_detach(void) {
 
     arena_destroy();
     eigs_exit_scope_release(th->exit_scope);
+    trace_attachment_destroy(th);
     eigs_current = NULL;
 
     pthread_mutex_lock(&st->threads_lock);

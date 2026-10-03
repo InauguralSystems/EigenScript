@@ -6348,7 +6348,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * g_vm.current_line above. (The hot single-threaded path is unchanged:
          * one predicted branch on an already-cached flag.) */
         if (!g_vm_multithreaded) trace_current_line_store(line);
-        if (__builtin_expect(g_trace_enabled, 0)) trace_line(line);
+        if (__builtin_expect(g_trace_enabled || g_replay_enabled, 0))
+            trace_line(line);
         DISPATCH();
     }
 
@@ -6734,7 +6735,8 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
          * reads the callee's line there and the entering line here. Line 0
          * is "no line" (main's own entry, an embedder that never stamps), so
          * it writes nothing. trace_line dedups against the tape's last L. */
-        if (__builtin_expect(g_trace_enabled, 0) && entry_trace_line > 0)
+        if (__builtin_expect(g_trace_enabled || g_replay_enabled, 0) &&
+            entry_trace_line > 0)
             trace_line(entry_trace_line);
     }
     return r;

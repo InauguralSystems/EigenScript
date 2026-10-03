@@ -77,7 +77,7 @@ EOF
 
 recorded=$(EIGS_TENSOR_REPLAY_WITNESS=recorded EIGS_TRACE="$tmp/over.tape" "$EIGENSCRIPT" "$tmp/replay.eigs" 2>&1); record_rc=$?
 expected=$(printf "limit|tensor_load: '%s' has columns=10000001, over the 10000000-element cap\nrecorded" "$tmp/over.tensor")
-record_names=$(sed -n 's/^N \([^=]*\)=.*/\1/p' "$tmp/over.tape")
+record_names=$(sed -n 's/^N [0-9][0-9]* \([^=]*\)=.*/\1/p' "$tmp/over.tape")
 expected_names=$(printf 'tensor_load\nenv_get')
 if [ "$record_rc" -ne 0 ] || [ "$recorded" != "$expected" ] || [ "$record_names" != "$expected_names" ]; then
     echo "  FAIL: cap recording did not produce the exact diagnostic and two ordered observations (rc=$record_rc)"
@@ -119,7 +119,7 @@ EOF
 positive=$(EIGS_TENSOR_REPLAY_WITNESS=recorded EIGS_TRACE="$tmp/positive.tape" "$EIGENSCRIPT" "$tmp/positive.eigs" 2>&1); positive_rc=$?
 positive_replay=$(EIGS_TENSOR_REPLAY_WITNESS=changed EIGS_REPLAY_STRICT=1 EIGS_REPLAY="$tmp/positive.tape" "$EIGENSCRIPT" "$tmp/positive.eigs" 2>&1); positive_replay_rc=$?
 positive_expected=$(printf '[4, 7, -2, 1.5]\nrecorded')
-positive_names=$(sed -n 's/^N \([^=]*\)=.*/\1/p' "$tmp/positive.tape")
+positive_names=$(sed -n 's/^N [0-9][0-9]* \([^=]*\)=.*/\1/p' "$tmp/positive.tape")
 if [ "$positive_rc" -ne 0 ] || [ "$positive_replay_rc" -ne 0 ] || [ "$positive" != "$positive_expected" ] || [ "$positive_replay" != "$positive" ] || [ "$positive_names" != "$expected_names" ]; then
     echo "  FAIL: ordinary tensor payload/alignment changed (record=$positive_rc replay=$positive_replay_rc)"
     printf '%s\n' "$positive" "$positive_replay"
@@ -130,7 +130,7 @@ fi
 # stand-in, rather than introducing a catch that the recording did not take.
 noncap=$(EIGS_TENSOR_REPLAY_WITNESS=recorded EIGS_TRACE="$tmp/noncap.tape" "$EIGENSCRIPT" "$tmp/replay.eigs" 2>&1); noncap_rc=$?
 noncap_expected=$(printf 'none|\nrecorded')
-noncap_names=$(sed -n 's/^N \([^=]*\)=.*/\1/p' "$tmp/noncap.tape")
+noncap_names=$(sed -n 's/^N [0-9][0-9]* \([^=]*\)=.*/\1/p' "$tmp/noncap.tape")
 mv "$tmp/over-original.tensor" "$tmp/over.tensor" || exit 1
 noncap_replay=$(EIGS_TENSOR_REPLAY_WITNESS=changed EIGS_REPLAY_STRICT=1 EIGS_REPLAY="$tmp/noncap.tape" "$EIGENSCRIPT" "$tmp/replay.eigs" 2>&1); noncap_replay_rc=$?
 if [ "$noncap_rc" -ne 0 ] || [ "$noncap_replay_rc" -ne 0 ] || [ "$noncap" != "$noncap_expected" ] || [ "$noncap_replay" != "$noncap" ] || [ "$noncap_names" != "$expected_names" ]; then

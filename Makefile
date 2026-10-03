@@ -263,6 +263,22 @@ build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c
 embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
 	@echo "Embed observer test built: $<"
 
+TRACE_CORRESPONDENCE_VARIANT ?= release
+TRACE_CORRESPONDENCE_OBJ := $(filter-out build/$(TRACE_CORRESPONDENCE_VARIANT)/main.o,$(OBJ_$(TRACE_CORRESPONDENCE_VARIANT)))
+build/$(TRACE_CORRESPONDENCE_VARIANT)/test_trace_correspondence: tests/test_trace_correspondence.c $(TRACE_CORRESPONDENCE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(TRACE_CORRESPONDENCE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(TRACE_CORRESPONDENCE_OBJ) $(LIBS_$(TRACE_CORRESPONDENCE_VARIANT))
+.PHONY: trace-correspondence-test
+trace-correspondence-test: build/$(TRACE_CORRESPONDENCE_VARIANT)/test_trace_correspondence
+	@echo "Trace correspondence test built: $<"
+
+TRACE_CONTEXT_VARIANT ?= release
+TRACE_CONTEXT_OBJ := $(filter-out build/$(TRACE_CONTEXT_VARIANT)/main.o,$(OBJ_$(TRACE_CONTEXT_VARIANT)))
+build/$(TRACE_CONTEXT_VARIANT)/test_trace_context: tests/test_trace_context.c $(TRACE_CONTEXT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(TRACE_CONTEXT_VARIANT)) -I$(SRC_DIR) -o $@ $< $(TRACE_CONTEXT_OBJ) $(LIBS_$(TRACE_CONTEXT_VARIANT))
+.PHONY: trace-context-test
+trace-context-test: build/$(TRACE_CONTEXT_VARIANT)/test_trace_context
+	@echo "Trace context test built: $<"
+
 # #1463: structural intern ownership against the owning runtime variant.
 # No CLI relink; the fixture holds test references throughout teardown.
 INTERN_OWNER_VARIANT ?= release

@@ -161,10 +161,10 @@ int main(void) {
     trace_record_obs(host, 9, 8, 7);
     g_sandbox_active = 0;
     check(!tape.overflow && tape.assignments == 4 &&
-          strstr(tape.bytes, "A boundary_fresh=5\n") &&
-          strstr(tape.bytes, "A boundary_fresh=6\n") &&
-          strstr(tape.bytes, "A boundary_fresh=7\n") &&
-          strstr(tape.bytes, "A boundary_fresh=8\n"),
+          strstr(tape.bytes, "A 0 boundary_fresh=5\n") &&
+          strstr(tape.bytes, "A 0 boundary_fresh=6\n") &&
+          strstr(tape.bytes, "A 0 boundary_fresh=7\n") &&
+          strstr(tape.bytes, "A 0 boundary_fresh=8\n"),
           "all assignment routes retain exact ordinary tape records");
     check(g_arm_all && g_prev_tab == table && g_prev_count == count &&
           g_prev_cap == capacity,
@@ -189,7 +189,7 @@ int main(void) {
           e->occ[2].entropy == .75 && e->occ[2].dH == .5,
           "host occurrence observer recording resumes");
     trace_assign_tape_only(fresh, slot_from_num(9));
-    check(tape.assignments == 6 && strstr(tape.bytes, "A boundary_fresh=9\n") &&
+    check(tape.assignments == 6 && strstr(tape.bytes, "A 0 boundary_fresh=9\n") &&
           g_prev_count == count,
           "explicit tape-only producer remains tape-only outside boundary");
 

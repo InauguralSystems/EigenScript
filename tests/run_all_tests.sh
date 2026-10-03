@@ -2524,7 +2524,7 @@ echo ""
 # [42h] #1142/#1143: the trace tape under threads and states. PINNED totals —
 # "at least one check passed" is satisfied by a gate reduced to a single echo.
 echo "[42h] Trace tape MT (#1142/#1143)"
-TMT_EXPECTED=22
+TMT_EXPECTED=21
 TMT_OUTPUT=$(bash "$TESTS_DIR/test_trace_mt.sh" 2>&1); TMT_RC=$?
 TMT_PASS=$(echo "$TMT_OUTPUT" | grep -c "  PASS:" || true)
 TMT_FAIL=$(echo "$TMT_OUTPUT" | grep -c "  FAIL:" || true)
@@ -3722,7 +3722,7 @@ READPROG
     EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
     EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
     if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
-    GA_READ_N=$(grep -c '^N gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
+    GA_READ_N=$(grep -c '^N [0-9][0-9]* gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
     rm -rf "$GA_RDIR"
 
     # FIFTH PASS (#1361): the passes above run under EIGS_STRICT=0, but the
@@ -3755,8 +3755,8 @@ DFLTREAD
         cmp -s "$GA_DDIR/$__ga_p.1" "$GA_DDIR/$__ga_p.2" || GA_DFLT_OK=0
         grep -qx rejected "$GA_DDIR/$__ga_p.1" || GA_DFLT_OK=0   # the default really raised
     done
-    GA_DFLT_CAP_N=$(grep -c '^N audio_capture_open=' "$GA_DDIR/cap.tape" 2>/dev/null); GA_DFLT_CAP_N=${GA_DFLT_CAP_N:-0}
-    GA_DFLT_READ_N=$(grep -c '^N gfx_read=' "$GA_DDIR/read.tape" 2>/dev/null); GA_DFLT_READ_N=${GA_DFLT_READ_N:-0}
+    GA_DFLT_CAP_N=$(grep -c '^N [0-9][0-9]* audio_capture_open=' "$GA_DDIR/cap.tape" 2>/dev/null); GA_DFLT_CAP_N=${GA_DFLT_CAP_N:-0}
+    GA_DFLT_READ_N=$(grep -c '^N [0-9][0-9]* gfx_read=' "$GA_DDIR/read.tape" 2>/dev/null); GA_DFLT_READ_N=${GA_DFLT_READ_N:-0}
     rm -rf "$GA_DDIR"
     # TWO environment axes now, each derived from the file's own marker so
     # neither branch is a floor: an audio device adds 3 rows to the plain pass
@@ -4178,7 +4178,7 @@ if ! echo "$NET_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable
     NET_TAPE=$(mktemp /tmp/eigs_net_tape_XXXXXX)
     NET_REC=$(EIGS_TRACE=$NET_TAPE ./eigenscript ../tests/test_net.eigs 2>&1); NET_REC_RC=$?
     NET_REP=$(EIGS_REPLAY=$NET_TAPE ./eigenscript ../tests/test_net.eigs 2>&1); NET_REP_RC=$?
-    NET_NREC=$(grep -c '^N net_' "$NET_TAPE")
+    NET_NREC=$(grep -c '^N [0-9][0-9]* net_' "$NET_TAPE")
     rm -f "$NET_TAPE"
     TOTAL=$((TOTAL + 1))
     if [ "$NET_REC_RC" = "0" ] && echo "$NET_REC" | grep -q "All net tests passed"; then

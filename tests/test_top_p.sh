@@ -135,8 +135,8 @@ gen_harness 7
 rm -f "$TAPE"
 REC=$(gline "$(EIGS_TRACE="$TAPE" "$EIGS" "$HARNESS" 2>/dev/null)")
 
-NREC=$(grep -c '^N eigen_generate=' "$TAPE" 2>/dev/null || true)
-RECVAL=$(sed -n 's/^N eigen_generate=//p' "$TAPE" 2>/dev/null | head -1)
+NREC=$(grep -c '^N [0-9][0-9]* eigen_generate=' "$TAPE" 2>/dev/null || true)
+RECVAL=$(sed -n 's/^N [0-9][0-9]* eigen_generate=//p' "$TAPE" 2>/dev/null | head -1)
 # 12 tokens in one list record => 11 separators. A per-token record scheme
 # lands 12 records of one token each and fails on the count instead.
 NSEP=$(printf '%s' "$RECVAL" | tr -cd ',' | wc -c | tr -d '[:space:]')
