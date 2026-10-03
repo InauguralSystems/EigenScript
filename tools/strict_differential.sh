@@ -51,6 +51,8 @@ fi
 if [ "$BASE" = "--no-baseline" ]; then NO_BASELINE=1; BASE=""; fi
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
+# Derive platform here, before any capability or backend capture; no env override.
+SHAPE_BACKEND_PLATFORM=$(uname -s) || exit 1
 
 # Matchers are bash case-globs: no pipe, so pipefail cannot invert a match.
 # Bodies are pinned byte-for-byte (tools/pipefail_verdict_check.sh).
@@ -85,8 +87,17 @@ shape_gfx_limit() { # called only in the individual GFX child subshell
     if [ "$1" = "$NEW" ]; then instrumentation=$NEW_SHAPE_INSTRUMENTATION
     elif [ -n "$BASE" ] && [ "$1" = "$BASE" ]; then instrumentation=$BASE_SHAPE_INSTRUMENTATION
     else echo 'FAIL: unrecognized GFX executable' >&2; return 125; fi
+    case "$SHAPE_BACKEND_PLATFORM" in
+        Linux|Darwin) ;;
+        *) echo 'FAIL: unsupported GFX address-space platform' >&2; return 125 ;;
+    esac
     case "$instrumentation" in
-        ordinary) ulimit -v 1500000 || return 125 ;;
+        ordinary)
+            # This machine's required Linux ceiling is not a Darwin limit:
+            # XNU rejects a ceiling below mappings already owned by the shell.
+            if [ "$SHAPE_BACKEND_PLATFORM" = Linux ]; then
+                ulimit -v 1500000 || return 125
+            fi ;;
         asan)
             [ "$(ulimit -v)" = unlimited ] || {
                 echo 'FAIL: instrumented GFX requires an uncapped parent virtual address space' >&2
@@ -94,6 +105,12 @@ shape_gfx_limit() { # called only in the individual GFX child subshell
             } ;;
         *) echo 'FAIL: unknown GFX executable instrumentation' >&2; return 125 ;;
     esac
+}
+
+cap_observation_ok() { # diagnostic prefix, capability, exact observed state
+    case "$3" in implemented|unavailable|undefined) return 0 ;; esac
+    echo "  ${1}CAPABILITY DID NOT MEASURE: $2 — $3"
+    return 1
 }
 
 shape_capture() { # binary, mode, fixture, cap; parent owns the process deadline
@@ -236,14 +253,25 @@ shape_selftest() {
         shape_asan_symbols '0000 T fake__asan_init_suffix' && printf '1\nfalse positive' || printf '0\nshape-complete')"
     shape_case 'ordinary symbols remain ordinary' 0 "$(
         shape_asan_symbols '0000 T main' && printf '1\nfalse positive' || printf '0\nshape-complete')"
-    shape_case 'ordinary GFX child receives both local limits' 0 "$(
+    shape_case 'ordinary GFX child follows the actual platform policy' 0 "$(
         NEW_SHAPE_INSTRUMENTATION=ordinary
-        shape_gfx_limit "$NEW" && [ "$(ulimit -Sv)" = 1500000 ] && [ "$(ulimit -Hv)" = 1500000 ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+        before_soft=$(ulimit -Sv); before_hard=$(ulimit -Hv)
+        shape_gfx_limit "$NEW" || exit 1
+        if [ "$SHAPE_BACKEND_PLATFORM" = Linux ]; then
+            [ "$(ulimit -Sv)" = 1500000 ] && [ "$(ulimit -Hv)" = 1500000 ] || exit 1
+        elif [ "$SHAPE_BACKEND_PLATFORM" = Darwin ]; then
+            [ "$(ulimit -Sv)" = "$before_soft" ] && [ "$(ulimit -Hv)" = "$before_hard" ] || exit 1
+        else
+            exit 1
+        fi
+        printf '0\nshape-complete')"
     shape_case 'verified ASan child keeps unlimited mapping space' 0 "$(
         NEW_SHAPE_INSTRUMENTATION=asan
         shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
     shape_case 'already capped ASan parent refuses before execution' 0 "$(
-        NEW_SHAPE_INSTRUMENTATION=asan; ulimit -v 1500000 || exit 1
+        NEW_SHAPE_INSTRUMENTATION=asan
+        # Inert inherited-limit query: portable even where lowering RLIMIT_AS fails.
+        ulimit() { [ "$*" = '-v' ] || return 1; echo 1500000; }
         shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
         [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\naccepted cap')"
     shape_case 'unknown instrumentation refuses before execution' 0 "$(
@@ -253,12 +281,63 @@ shape_selftest() {
     saved=$(declare -f shape_gfx_limit)
     shape_gfx_limit() { ulimit -v 1500000; }
     shape_case 'restored old unconditional cap breaks ASan oracle (expected RED)' 1 "$(
-        NEW_SHAPE_INSTRUMENTATION=asan
+        NEW_SHAPE_INSTRUMENTATION=asan; virtual_limit=unlimited
+        ulimit() {
+            if [ "$*" = '-v 1500000' ]; then
+                virtual_limit=1500000
+            elif [ "$*" = '-v' ]; then
+                echo "$virtual_limit"
+            else
+                return 1
+            fi
+        }
         shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
     eval "$saved"
     shape_case 'restored instrumentation branch preserves mapping space' 0 "$(
         NEW_SHAPE_INSTRUMENTATION=asan
         shape_gfx_limit "$NEW" && [ "$(ulimit -v)" = unlimited ] && printf '0\nshape-complete' || printf '1\nwrong limit')"
+    # Inert policy controls call the actual functions; no runtime/device child.
+    shape_case 'Darwin ordinary makes no virtual-limit setter call' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Darwin; NEW_SHAPE_INSTRUMENTATION=ordinary; called=0
+        ulimit() { called=1; return 1; }
+        shape_gfx_limit "$NEW" && [ "$called" = 0 ] && printf '0\nshape-complete' || printf '1\nsetter called')"
+    shape_case 'Darwin baseline ordinary also preserves inherited limits' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Darwin; BASE=/shape-baseline; BASE_SHAPE_INSTRUMENTATION=ordinary; called=0
+        ulimit() { called=1; return 1; }
+        shape_gfx_limit "$BASE" && [ "$called" = 0 ] && printf '0\nshape-complete' || printf '1\nsetter called')"
+    shape_case 'Linux cap failure stops before a child' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Linux; NEW_SHAPE_INSTRUMENTATION=ordinary
+        ulimit() { return 1; }
+        got=$(shape_gfx_limit "$NEW" || exit 125; printf child-ran); actual=$?
+        [ "$actual" = 125 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\nchild or failure lost')"
+    shape_case 'unknown platform stops before a child' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Unknown; NEW_SHAPE_INSTRUMENTATION=ordinary
+        got=$(shape_gfx_limit "$NEW" 2>/dev/null || exit 125; printf child-ran); actual=$?
+        [ "$actual" = 125 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\nunknown accepted')"
+    shape_case 'Darwin inherited ASan cap still refuses' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Darwin; NEW_SHAPE_INSTRUMENTATION=asan
+        ulimit() { [ "$*" = '-v' ] || return 1; echo 1500000; }
+        shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
+        [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\nASan cap accepted')"
+    shape_case 'unknown platform also refuses instrumented executable' 0 "$(
+        SHAPE_BACKEND_PLATFORM=Unknown; NEW_SHAPE_INSTRUMENTATION=asan
+        shape_gfx_limit "$NEW" 2>/dev/null; actual=$?
+        [ "$actual" = 125 ] && printf '0\nshape-complete' || printf '1\nunknown accepted')"
+    shape_case 'implemented capability observation is valid' 0 "$(
+        cap_observation_ok '' gfx implemented && printf '0\nshape-complete' || printf '1\nrejected')"
+    shape_case 'documented unavailable observation remains valid' 0 "$(
+        cap_observation_ok '' model unavailable && printf '0\nshape-complete' || printf '1\nrejected')"
+    shape_case 'undefined observation remains explicit' 0 "$(
+        cap_observation_ok 'BASELINE ' gfx undefined && printf '0\nshape-complete' || printf '1\nrejected')"
+    shape_case 'invalid subject observation cannot reach absence derivation' 0 "$(
+        got=$(cap_observation_ok '' gfx 'invalid: cap failed' >/dev/null || exit 1; printf absent-derived); actual=$?
+        [ "$actual" = 1 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\ninvalid accepted')"
+    shape_case 'invalid baseline observation cannot reach absence derivation' 0 "$(
+        got=$(cap_observation_ok 'BASELINE ' gfx 'invalid: modes disagree' >/dev/null || exit 1; printf absent-derived); actual=$?
+        [ "$actual" = 1 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\ninvalid accepted')"
+    shape_case 'empty observation cannot reach absence derivation' 0 "$(
+        got=$(cap_observation_ok '' gfx '' >/dev/null || exit 1; printf absent-derived); actual=$?
+        [ "$actual" = 1 ] && [ -z "$got" ] && printf '0\nshape-complete' || printf '1\nempty accepted')"
     # Inert exact captures from the independently reviewed backend decision table.
     backend_case() {
         local label="$1" expected_rc="$2" expected_stdout="$3" got actual
@@ -426,8 +505,8 @@ shape-backend: 1' Linux
     eval "$saved"
     unset -f shape_backend_original
     backend_case 'restored Linux-positive policy refuses absence' 1 '' sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' Linux
-    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 76 declared"
-    [ "$failed" = 0 ] && [ "$passed" = 76 ]
+    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 88 declared"
+    [ "$failed" = 0 ] && [ "$passed" = 88 ]
 }
 if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
 
@@ -454,7 +533,7 @@ FP_BASE_START=""
 NEW_SHAPE_INSTRUMENTATION=$(shape_binary_instrumentation "$NEW") || exit 1
 BASE_SHAPE_INSTRUMENTATION=none
 if [ -n "$BASE" ]; then BASE_SHAPE_INSTRUMENTATION=$(shape_binary_instrumentation "$BASE") || exit 1; fi
-echo "GFX address-space policy: subject=$NEW_SHAPE_INSTRUMENTATION baseline=$BASE_SHAPE_INSTRUMENTATION (ordinary=1500000 KiB; ASan=inherited unlimited)"
+echo "GFX address-space policy: platform=$SHAPE_BACKEND_PLATFORM subject=$NEW_SHAPE_INSTRUMENTATION baseline=$BASE_SHAPE_INSTRUMENTATION (ordinary Linux=1500000 KiB; ordinary Darwin=inherited limits, no imposed address-space cap; ASan=inherited unlimited)"
 
 
 TMP="$(mktemp -d)"
@@ -970,18 +1049,18 @@ differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; ski
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
 for cap in http net db model gfx; do
     ns="$(cap_state "$NEW" "$cap")"
+    cap_observation_ok "" "$cap" "$ns" || exit 1
     NEW_CAPS="$NEW_CAPS
 $cap|$ns"
     case "$ns" in
         implemented|unavailable) ;;
         undefined) [ "$cap" = gfx ] || { echo "  CAPABILITY BINDING MISSING: $cap"; rc=1; } ;;
-        *) echo "  CAPABILITY DID NOT MEASURE: $cap — $ns"; rc=1 ;;
     esac
     [ -n "$BASE" ] || continue
     bs="$(cap_state "$BASE" "$cap")"
+    cap_observation_ok "BASELINE " "$cap" "$bs" || exit 1
     BASE_CAPS="$BASE_CAPS
 $cap|$bs"
-    case "$bs" in implemented|unavailable|undefined) ;; *) echo "  BASELINE CAPABILITY DID NOT MEASURE: $cap — $bs"; rc=1 ;; esac
     if [ "$bs" != "$ns" ]; then
         profile_transitions="$profile_transitions
     $cap: baseline=$bs subject=$ns"
@@ -1212,7 +1291,6 @@ fi # historical wrong-type/valid-input halves
 # Candidate discovery is independent of the guards and reviewed contract data.
 # Every process/form owns fresh files; no universal malformed numeric prefix.
 shape_rows=0; shape_pass=0; shape_absent=0; shape_backend_absent=0; shape_pending=0; shape_fail=0
-SHAPE_BACKEND_PLATFORM=$(uname -s)
 SHAPE_SUBJECT_SDL=unmeasured; SHAPE_SUBJECT_MIXER=unmeasured
 SHAPE_BASELINE_SDL=unmeasured; SHAPE_BASELINE_MIXER=unmeasured
 if [ -f "$TMP/shapes/rows" ]; then
