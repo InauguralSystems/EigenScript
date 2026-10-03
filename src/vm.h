@@ -731,6 +731,9 @@ const char *op_name(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */
 int        chunk_verify(EigsChunk *chunk);
+/* Diagnostic form used at descriptor boundaries. On rejection, writes the
+ * verifier's reason to why (when non-NULL). */
+int        chunk_verify_reason(EigsChunk *chunk, char *why, size_t whyn);
 /* EIGS_VERIFY_SELF=1 gate: assert the C compiler's own output satisfies
  * chunk_verify (including the stack-height pass), or exit 70 naming the chunk
  * and the reason. Called from compile_ast; see chunk.c for the rationale. */

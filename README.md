@@ -30,6 +30,8 @@ blocked concurrency calls wake, and the process exits with status `N` after
 worker teardown. Native I/O must return before teardown completes. Embedded
 evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
 
+`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result.
+
 ## Try it in your browser
 
 **[inauguralsystems.github.io/EigenScript/playground](https://inauguralsystems.github.io/EigenScript/playground/)** —
@@ -402,6 +404,8 @@ Pure EigenScript libraries under `lib/`:
 The table names importable modules. The `lib/ui_*.eigs` files are
 **fragments of `lib/ui.eigs`**, composed by it rather than imported directly,
 so they have no row of their own. Inspect `lib/` for the current module set.
+
+`lib/eigen.eigs` snapshots the host values used by its tokenizer, parser, evaluator, import helpers, and fresh meta environments when it loads (#1386). Later host builtin rebinding does not change those dependencies, including entropy's `log`/`divide` calls. For `load_file`, the snapshots use values visible during initialization; loaded code still shares the host scope. String conversion still uses the pristine reserved f-string bridge. Explicit custom environments, debug hooks, and rebinding the interpreter's own helper names remain caller-controlled; captured caller-defined functions retain their own binding behavior.
 
 An imported module's builtin names are the builtins: rebinding `len` or `str`
 in your program changes them for your code, never inside a module you import

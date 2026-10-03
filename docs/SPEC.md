@@ -1018,6 +1018,8 @@ expressions match too
 
 ## Error handling
 
+`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result.
+
 `try:` / `catch name:` captures runtime errors. A **built-in** runtime
 error binds a small dict `{kind, message, line}`: `kind` is drawn from
 a closed vocabulary (below), `message` is the error text without the
@@ -1369,6 +1371,8 @@ never rebind an importer's pre-existing `counter`. `load_file` is the
 one exception, per its older, documented contract above: its top-level
 statements still execute directly in the current (caller's) scope, so
 a same-named top-level assignment there *does* bind through.
+
+`lib/eigen.eigs` snapshots the host values used by its tokenizer, parser, evaluator, import helpers, and fresh meta environments when it loads (#1386). Later host builtin rebinding does not change those dependencies, including entropy's `log`/`divide` calls. For `load_file`, the snapshots use values visible during initialization; loaded code still shares the host scope. String conversion still uses the pristine reserved f-string bridge. Explicit custom environments, debug hooks, and rebinding the interpreter's own helper names remain caller-controlled; captured caller-defined functions retain their own binding behavior.
 
 **Builtins in module code (#1388).** An imported module's builtin names
 resolve against the runtime's own builtin set, never the importer's
