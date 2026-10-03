@@ -253,6 +253,9 @@ void trace_obs_window_binding(const char *name, int n);
  * Retention is bounded by the pruning in either case (#827 defect B), so
  * the filter is a per-assign CPU optimization and never a safety property.
  * When in doubt, call trace_assign. */
+/* All assignment entry points suppress shared history retention while the
+ * attached thread is executing a sandbox. Tape A emission remains enabled.
+ * trace_record_obs observes the same boundary for existing host snapshots. */
 void trace_assign(const char *name, EigsSlot value);
 void trace_assign_filtered(const char *name, EigsSlot value);
 /* Interpreter-only twins: use the executing thread's VM line instead of the

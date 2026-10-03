@@ -3065,4 +3065,965 @@ assert_eq of [gm859.w, 80, "#859 dropping the row labels narrows the rect back"]
 # Summary
 # ============================================================
 
+# Proposed helpers, to insert before the new cases in tests/test_ui.eigs.
+# They count only observed fields/primitives after actual function calls.
+define assert_ui_fields(actual, expected, desc) as:
+    assert_true of [(len of (keys of expected)) > 0, desc + ": nonempty fields"]
+    for field in keys of expected:
+        assert_eq of [actual[field], expected[field], desc + ":" + field]
+
+define assert_ui_result1(fn, arg, expected, desc) as:
+    actual is fn of arg
+    assert_eq of [actual, expected, desc]
+
+define assert_ui_transition1(fn, widget, expected, desc) as:
+    fn of widget
+    assert_ui_fields of [widget, expected, desc]
+
+define assert_ui_transition5(fn, widget, root, mx, my, ev, expected, desc) as:
+    fn of [widget, root, mx, my, ev]
+    assert_ui_fields of [widget, expected, desc]
+
+# Caller enables existing primitive recording for its bounded case batch.
+# Compare each scalar operand, avoiding reliance on container equality.
+define assert_ui_render(fn, widget, kind, expected_args, desc) as:
+    start is len of _gfx_log
+    fn of [widget, 10, 20]
+    found is 0
+    for i in range of [start, len of _gfx_log]:
+        entry is _gfx_log[i]
+        if entry[0] == kind and (len of entry[1]) == (len of expected_args):
+            same is 1
+            for j in range of (len of expected_args):
+                if entry[1][j] != expected_args[j]:
+                    same is 0
+            if same == 1:
+                found is 1
+    assert_eq of [found, 1, desc]
+
+define assert_ui_transition2(fn, widget, event, expected, desc) as:
+    fn of [widget, event]
+    assert_ui_fields of [widget, expected, desc]
+
+define assert_ui_transition4(fn, widget, root, mx, my, expected, desc) as:
+    fn of [widget, root, mx, my]
+    assert_ui_fields of [widget, expected, desc]
+
+define assert_ui_render1(fn, widget, kind, expected_args, desc) as:
+    start is len of _gfx_log
+    fn of widget
+    found is 0
+    for i in range of [start, len of _gfx_log]:
+        entry is _gfx_log[i]
+        if entry[0] == kind and (len of entry[1]) == (len of expected_args):
+            same is 1
+            for j in range of (len of expected_args):
+                if entry[1][j] != expected_args[j]:
+                    same is 0
+            if same == 1:
+                found is 1
+    assert_eq of [found, 1, desc]
+
+# Source-only proposed batch. Insert before existing final test_summary.
+# Helpers in assert_helpers.eigs are required. No new summary/own success marker.
+# Deterministic finite scalar helpers.
+assert_ui_result1 of [_ease_linear, 0.25, 0.25, "linear quarter"]
+assert_ui_result1 of [_ease_in, 0.5, 0.25, "ease-in half"]
+assert_ui_result1 of [_ease_out, 0.5, 0.75, "ease-out half"]
+assert_ui_result1 of [_ease_in_out, 0.25, 0.125, "ease-in-out first half"]
+assert_ui_result1 of [_ease_in_out, 0.75, 0.875, "ease-in-out second half"]
+assert_eq of [_point_in_rect of [11, 21, 10, 20, 4, 5], 1, "point inside rectangle"]
+assert_eq of [_point_in_rect of [14, 21, 10, 20, 4, 5], 0, "right rectangle edge excluded"]
+assert_eq of [text_width of ["ab", 2], 24, "bitmap text advance"]
+assert_ui_result1 of [text_height, 2, 14, "bitmap text height"]
+assert_eq of [_combo_matches of ["ctrl+shift+x", 1, 1, 0, "x"], 1, "hotkey exact modifiers"]
+assert_eq of [_combo_matches of ["ctrl+shift+x", 1, 0, 0, "x"], 0, "hotkey missing shift"]
+
+# Basic constructors: meaningful geometry and content, not bound-name presence.
+assert_ui_fields of [label of ["probe-label", 2, 3, "ab"], {"type": "label", "text": "ab", "x": 2, "y": 3, "auto_size": 1}, "label constructor"]
+assert_ui_fields of [separator of ["probe-sep", 2, 3, 17, 1], {"type": "separator", "w": 1, "h": 17}, "vertical separator"]
+assert_ui_fields of [separator of ["probe-sep", 2, 3, 17, 0], {"type": "separator", "w": 17, "h": 1}, "horizontal separator"]
+assert_ui_fields of [section of ["probe-section", 2, 3, 80, "Title"], {"type": "section", "w": 80, "h": 20, "text": "Title"}, "section constructor"]
+assert_ui_fields of [color_dot of ["probe-dot", 2, 3, 8, [11, 22, 33]], {"type": "color_dot", "w": 8, "h": 8}, "color dot constructor"]
+assert_ui_fields of [badge of ["probe-badge", 2, 3, "Hi", [11, 22, 33]], {"type": "badge", "text": "Hi"}, "badge constructor"]
+assert_ui_fields of [progress_bar of ["probe-progress", 2, 3, 80, 0.25], {"type": "progress_bar", "w": 80, "h": 12, "value": 0.25}, "progress constructor"]
+probe_label is label of ["probe-measure", 0, 0, "a"]
+probe_label.scale is 2
+probe_label.text is "abc"
+assert_ui_transition1 of [_label_measure, probe_label, {"w": 36, "h": 14}, "label remeasure"]
+
+# Real renderer invocation under recorded primitives; every expected call has
+# exact geometry and operands. Keep supplied colors independent of theme.
+_gfx_rec is 1
+probe_label.color is [11, 22, 33]
+assert_ui_render of [_render_label, probe_label, "text", [10, 20, "abc", 11, 22, 33, 2], "label text primitive"]
+probe_sep is separator of ["probe-sep-render", 0, 0, 17, 1]
+probe_sep.color is [11, 22, 33]
+assert_ui_render of [_render_separator, probe_sep, "rect", [10, 20, 1, 17, 11, 22, 33], "separator geometry"]
+probe_section is section of ["probe-section-render", 0, 0, 80, "Title"]
+assert_ui_render of [_render_section, probe_section, "text", [20, 26, "Title", _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1], "section title offset"]
+probe_dot is color_dot of ["probe-dot-render", 0, 0, 8, [11, 22, 33]]
+assert_ui_render of [_render_color_dot, probe_dot, "circle", [14, 24, 4, 11, 22, 33], "dot center and radius"]
+probe_badge is badge of ["probe-badge-render", 0, 0, "Hi", [11, 22, 33]]
+assert_ui_render of [_render_badge, probe_badge, "text", [16, 23, "Hi", 255, 255, 255, _theme.font_scale], "badge content"]
+probe_progress is progress_bar of ["probe-progress-render", 0, 0, 80, 0.25]
+assert_ui_render of [_render_progress_bar, probe_progress, "rrect", [10, 20, 20, 12, 3, _theme.accent[0], _theme.accent[1], _theme.accent[2]], "progress quarter fill"]
+_gfx_rec is 0
+
+# Handler state: press enabled button, clear it, reject disabled press.
+probe_button is button of ["probe-button", 0, 0, 30, 20, "Go", null]
+probe_event is {"type": "mousedown", "x": 1, "y": 1, "button": 1}
+assert_ui_transition5 of [_mousedown_button, probe_button, probe_button, 1, 1, probe_event, {"pressed": 1}, "enabled button presses"]
+assert_ui_transition1 of [_clear_pressed_button, probe_button, {"pressed": 0}, "button release reset"]
+probe_button.enabled is 0
+assert_ui_transition5 of [_mousedown_button, probe_button, probe_button, 1, 1, probe_event, {"pressed": 0}, "disabled button stays released"]
+probe_toggle is toggle of ["probe-toggle", 0, 0, 0, null]
+assert_ui_transition5 of [_mousedown_toggle, probe_toggle, probe_toggle, 1, 1, probe_event, {"value": 1}, "toggle on"]
+assert_ui_transition5 of [_mousedown_toggle, probe_toggle, probe_toggle, 1, 1, probe_event, {"value": 0}, "toggle off"]
+probe_check is checkbox of ["probe-check", 0, 0, "Check", 0, null]
+assert_ui_transition5 of [_mousedown_checkbox, probe_check, probe_check, 1, 1, probe_event, {"value": 1}, "checkbox on"]
+probe_toggle_button is toggle_button of ["probe-toggle-button", 0, 0, 30, 20, "Toggle", null]
+assert_ui_transition5 of [_mousedown_toggle_button, probe_toggle_button, probe_toggle_button, 1, 1, probe_event, {"value": 1}, "toggle button on"]
+
+# Source-only input-family behavior cases. Shared transition2/4 and render1
+# helpers must invoke the first function argument before checking fields/logs.
+coverage_input_saved is {"focus": _ui.focused_input, "edit": _ui.edit_root, "clipboard": _ui.clipboard, "record": _gfx_rec}
+coverage_input_log is {"changes": 0, "commits": 0, "id": "", "text": ""}
+define coverage_input_changed(widget) as:
+    coverage_input_log.changes is coverage_input_log.changes + 1
+    coverage_input_log.id is widget.id
+define coverage_input_committed(widget) as:
+    coverage_input_log.commits is coverage_input_log.commits + 1
+    coverage_input_log.text is widget.text
+
+assert_ui_fields of [text_input of ["cov-ti-constructor", 2, 3, 100, "abc", null], {"type": "text_input", "w": 100, "h": 24, "cursor": 3, "focused": 0}, "input constructor cursor and geometry"]
+assert_ui_fields of [editable_label of ["cov-el-constructor", 2, 3, "ab", null], {"type": "editable_label", "text": "ab", "editing": 0, "cursor": 0, "w": (12 * _theme.font_scale) + 8, "h": _theme.char_h + 4}, "editable constructor metrics"]
+assert_ui_fields of [spinbox of ["cov-sp-constructor", 2, 3, 100, 0, 10, 5, 2, null], {"type": "spinbox", "value": 5, "step": 2, "h": 24}, "spinbox constructor range and step"]
+assert_ui_fields of [combobox of ["cov-cb-constructor", 2, 3, 100, ["Alpha", "Beta"], null], {"type": "combobox", "selected": -1, "filter_text": "", "open": 0, "h": 24}, "combobox starts unselected and closed"]
+coverage_ti is text_input of ["cov-ti", 0, 0, 100, "abc", coverage_input_changed]
+coverage_el is editable_label of ["cov-el", 0, 0, "ab", coverage_input_committed]
+coverage_sp is spinbox of ["cov-sp", 0, 0, 100, 0, 10, 5, 2, coverage_input_changed]
+coverage_cb is combobox of ["cov-cb", 0, 0, 100, ["Alpha", "Beta"], coverage_input_changed]
+coverage_ev is {"type": "mousedown", "button": 1, "x": 20, "y": 21}
+_gfx_rec is 1
+assert_ui_render of [_render_text_input, coverage_ti, "text", [16, 25, "abc", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale], "text input emits content inset"]
+coverage_el.color is [11, 22, 33]
+coverage_el.scale is 1
+assert_ui_render of [_render_editable_label, coverage_el, "text", [10, 20, "ab", 11, 22, 33, 1], "closed editable label emits supplied color"]
+assert_ui_render of [_render_spinbox, coverage_sp, "text", [74, 25, "-", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale], "spinbox minus control offset"]
+assert_ui_render of [_render_combobox, coverage_cb, "line", [94, 28, 98, 34, _theme.dropdown_arrow[0], _theme.dropdown_arrow[1], _theme.dropdown_arrow[2]], "combobox arrow geometry"]
+assert_eq of [(_combobox_popup_rect of coverage_cb)[0], 10, "combobox popup uses recorded absolute x"]
+assert_eq of [(_combobox_popup_rect of coverage_cb)[1], 46, "combobox popup begins below box gap"]
+assert_eq of [(_combobox_popup_rect of coverage_cb)[3], 48, "combobox popup has two item rows"]
+coverage_cb.open is 1
+assert_ui_render1 of [_render_combobox_popup, coverage_cb, "rrect", [10, 46, 100, 48, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]], "combobox popup frame is absolute"]
+assert_eq of [(_hit_test_combobox of [coverage_cb, 10, 20, 11, 21]).id, "cov-cb", "combobox closed box hit"]
+assert_eq of [_hit_test_combobox of [coverage_cb, 10, 20, 11, 70], null, "combobox popup excluded from in-tree hit"]
+coverage_sp._ax is 10
+assert_ui_transition4 of [_mousemove_spinbox, coverage_sp, coverage_sp, 75, 21, {"hover_btn": 1}, "spinbox minus hover"]
+assert_eq of [_combobox_item_at of [coverage_cb, 71], 1, "combobox second popup item by click y"]
+assert_eq of [_combobox_item_at of [coverage_cb, 45], -1, "combobox box gap is not an item"]
+assert_ui_transition4 of [_mousemove_combobox, coverage_cb, coverage_cb, 20, 71, {"hover_index": 1}, "combobox popup hover follows y"]
+assert_ui_transition5 of [_mousedown_text_input, coverage_ti, coverage_ti, 20, 21, coverage_ev, {"focused": 1}, "text input takes focus"]
+assert_eq of [_ui.focused_input.id, "cov-ti", "focused input tracks pressed control"]
+assert_ui_transition5 of [_mousedown_editable_label, coverage_el, coverage_el, 20, 21, coverage_ev, {"editing": 0, "text": "ab"}, "single click does not start editable label"]
+assert_ui_transition5 of [_mousedown_spinbox, coverage_sp, coverage_sp, 75, 21, coverage_ev, {"value": 3}, "spinbox minus applies step"]
+assert_eq of [coverage_input_log.changes, 1, "spinbox invokes change callback"]
+assert_eq of [coverage_input_log.id, "cov-sp", "spinbox callback receives real widget"]
+coverage_cb.open is 0
+assert_ui_transition5 of [_mousedown_combobox, coverage_cb, coverage_cb, 20, 21, coverage_ev, {"open": 1, "cursor": 0, "filter_text": ""}, "combobox press opens empty filter"]
+assert_ui_transition5 of [_mousedown_combobox, coverage_cb, coverage_cb, 20, 71, coverage_ev, {"selected": 1, "open": 0, "filter_text": "Beta"}, "combobox click selects actual second item"]
+assert_eq of [coverage_input_log.changes, 2, "combobox selection invokes callback"]
+coverage_sp.hover is 1
+coverage_sp.hover_btn is 2
+assert_ui_transition1 of [_clear_hover_spinbox, coverage_sp, {"hover": 0, "hover_btn": 0}, "spinbox clears both hover fields"]
+coverage_cb.hover is 1
+coverage_cb.hover_index is 1
+assert_ui_transition1 of [_clear_hover_combobox, coverage_cb, {"hover": 0, "hover_index": -1}, "combobox clears row hover"]
+assert_ui_transition2 of [_handle_text_key, coverage_ti, {"type": "keydown", "key": "backspace", "shift": 0, "ctrl": 0}, {"text": "ab", "cursor": 2}, "text key removes previous character"]
+assert_ui_transition2 of [_insert_char, coverage_ti, "Z", {"text": "abZ", "cursor": 3}, "insert character updates text and caret"]
+assert_eq of [coverage_input_log.changes, 4, "text edit paths invoke callbacks"]
+coverage_ti.sel_start is 3
+coverage_ti.sel_end is 1
+assert_eq of [_get_selected_text of coverage_ti, "bZ", "reversed selection extracts sorted interval"]
+assert_ui_transition1 of [_delete_selection, coverage_ti, {"text": "a", "cursor": 1, "sel_start": -1, "sel_end": -1}, "selection removal updates text and resets bounds"]
+coverage_ti.sel_start is 0
+coverage_ti.sel_end is 1
+assert_ui_transition1 of [_clear_selection, coverage_ti, {"sel_start": -1, "sel_end": -1}, "clear selection retains text but resets bounds"]
+_ui.edit_root is coverage_el
+assert_ui_transition1 of [_start_editing, coverage_el, {"editing": 1, "cursor": 2}, "start editing puts caret at end"]
+assert_eq of [_ui.focused_input.id, "cov-el", "editing focuses editable label"]
+assert_ui_transition1 of [_commit_editing, coverage_el, {"editing": 0, "w": 20}, "commit updates bitmap text width"]
+assert_eq of [coverage_input_log.commits, 1, "commit callback invoked once"]
+assert_eq of [coverage_input_log.text, "ab", "commit callback sees edited content"]
+coverage_el.editing is 1
+assert_ui_transition1 of [_unfocus_all_editable, coverage_el, {"editing": 0}, "unfocus commits active editable leaf"]
+assert_eq of [coverage_input_log.commits, 2, "unfocus invokes commit path"]
+coverage_cb.open is 1
+assert_ui_transition2 of [_handle_combobox_key, coverage_cb, {"type": "keydown", "key": "a", "shift": 0}, {"filter_text": "Betaa", "cursor": 5, "hover_index": 0}, "combobox key updates filter state"]
+assert_eq of [len of coverage_cb.filtered, 0, "combobox filtering removes nonmatching rows"]
+_ui.focused_input is coverage_input_saved.focus
+_ui.edit_root is coverage_input_saved.edit
+_ui.clipboard is coverage_input_saved.clipboard
+_gfx_rec is coverage_input_saved.record
+
+# Report-owned source-only menu behavior batch.
+coverage_menu_saved is {"record": _gfx_rec, "window": _ui.window_w}
+coverage_menu_log is {"changes": 0, "selects": 0, "index": -1}
+define coverage_menu_changed(widget) as:
+    coverage_menu_log.changes is coverage_menu_log.changes + 1
+define coverage_menu_selected(widget, index) as:
+    coverage_menu_log.selects is coverage_menu_log.selects + 1
+    coverage_menu_log.index is index
+assert_ui_fields of [dropdown of ["cov-dd-new", 1, 2, 100, ["A", "B"], 0, null], {"type": "dropdown", "h": 24, "selected": 0, "open": 0}, "dropdown defaults"]
+assert_ui_fields of [menu of ["cov-menu-new", ["A"], null], {"type": "menu", "w": 140, "visible": 0}, "menu starts hidden"]
+assert_ui_fields of [menu_bar of ["cov-bar-new", 0, 0, 200, [{"title": "F", "items": ["A"], "on_select": null}]], {"type": "menu_bar", "open_index": -1, "h": (7 * _theme.font_scale) + 8}, "menu bar measured height"]
+assert_ui_fields of [radio_group of ["cov-radio-new", 0, 0, ["A", "B"], 0, null], {"type": "radio_group", "h": 24, "selected": 0}, "radio constructor"]
+assert_ui_fields of [tabs of ["cov-tabs-new", 0, 0, 120, 80, ["A", "B"], null], {"type": "tabs", "active": 0, "hover_tab": -1}, "tabs constructor"]
+coverage_dd is dropdown of ["cov-dd", 0, 0, 100, ["A", "B"], 0, coverage_menu_changed]
+coverage_menu is menu of ["cov-menu", ["A", "-"], coverage_menu_selected]
+coverage_bar is menu_bar of ["cov-bar", 0, 0, 200, [{"title": "F", "items": ["A", "B"], "on_select": coverage_menu_selected}, {"title": "E", "items": ["C"], "on_select": coverage_menu_selected}]]
+coverage_radio is radio_group of ["cov-radio", 0, 0, ["A", "B"], 0, coverage_menu_changed]
+coverage_tabs is tabs of ["cov-tabs", 0, 0, 120, 80, ["A", "B"], coverage_menu_changed]
+coverage_evt is {"type": "mousedown", "button": 1}
+_gfx_rec is 1
+assert_eq of [_menu_content_w of (["A", "-"]), 120, "menu minimum content width"]
+assert_ui_render of [_render_dropdown, coverage_dd, "line", [94, 28, 98, 34, _theme.dropdown_arrow[0], _theme.dropdown_arrow[1], _theme.dropdown_arrow[2]], "dropdown arrow"]
+coverage_menu.visible is 1
+assert_ui_render of [_render_menu, coverage_menu, "rrect", [12, 22, 140, 48, _theme.radius_sm, 10, 10, 15, 120], "menu shadow"]
+assert_ui_render of [_render_menu_bar, coverage_bar, "rect", [10, 20, 200, coverage_bar.h, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]], "menu bar strip"]
+assert_ui_render of [_render_radio_group, coverage_radio, "text", [18, 25, "A", 255, 255, 255, _theme.font_scale], "selected radio label"]
+assert_ui_render of [_render_tabs, coverage_tabs, "rect", [10, 20, 120, 28, _theme.tab_bg[0], _theme.tab_bg[1], _theme.tab_bg[2]], "tabs bar"]
+coverage_menu._ax is 10
+coverage_menu._ay is 20
+coverage_bar._ax is 10
+coverage_bar._ay is 20
+coverage_radio._ax is 10
+coverage_radio._ay is 20
+coverage_tabs._ax is 10
+coverage_tabs._ay is 20
+_ui.window_w is 500
+assert_eq of [(_dropdown_popup_rect of coverage_dd)[1], 46, "dropdown below-gap popup"]
+coverage_dd.open is 1
+assert_ui_render1 of [_render_dropdown_popup, coverage_dd, "rrect", [10, 46, 100, 48, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]], "dropdown popup frame"]
+assert_eq of [_menu_bar_title_at of [coverage_bar, 1], 0, "first menu title interval"]
+assert_eq of [(_menu_bar_popup_pos of [coverage_bar, 0])[1], 20 + coverage_bar.h, "menu bar popup below strip"]
+coverage_bar.open_index is 0
+assert_ui_render1 of [_render_menu_bar_popup, coverage_bar, "rrect", [10, 20 + coverage_bar.h, 120, 48, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]], "bar popup frame"]
+assert_eq of [(_hit_test_menu_bar of [coverage_bar, 10, 20, 11, 21]).id, coverage_bar.id, "_hit_test_menu_bar inside hit"]
+assert_eq of [(_hit_test_dropdown of [coverage_dd, 10, 20, 11, 21]).id, coverage_dd.id, "_hit_test_dropdown inside hit"]
+assert_eq of [(_hit_test_tabs of [coverage_tabs, 10, 20, 11, 21]).id, coverage_tabs.id, "_hit_test_tabs inside hit"]
+assert_eq of [(_hit_test_menu of [coverage_menu, 10, 20, 11, 21]).id, coverage_menu.id, "_hit_test_menu inside hit"]
+assert_eq of [_dropdown_item_at of [coverage_dd, 71], 1, "dropdown item uses click y"]
+assert_ui_transition4 of [_mousemove_dropdown, coverage_dd, coverage_dd, 11, 71, {"hover_index": 1}, "_mousemove_dropdown hover"]
+assert_ui_transition4 of [_mousemove_menu, coverage_menu, coverage_menu, 11, 45, {"hover_index": 1}, "_mousemove_menu hover"]
+assert_ui_transition4 of [_mousemove_radio_group, coverage_radio, coverage_radio, 11, 21, {"hover_index": 0}, "_mousemove_radio_group hover"]
+assert_ui_transition4 of [_mousemove_tabs, coverage_tabs, coverage_tabs, 11, 21, {"hover_tab": 0}, "_mousemove_tabs hover"]
+assert_ui_transition4 of [_mousemove_menu_bar, coverage_bar, coverage_bar, 11, 21, {"hover_index": 0, "open_index": 0}, "_mousemove_menu_bar hover"]
+assert_ui_transition5 of [_mousedown_dropdown, coverage_dd, coverage_dd, 11, 71, coverage_evt, {"selected": 1, "open": 0}, "dropdown selects second by y"]
+assert_eq of [coverage_menu_log.changes, 1, "dropdown callback"]
+coverage_menu.hover_index is 0
+assert_ui_transition5 of [_mousedown_menu, coverage_menu, coverage_menu, 11, 21, coverage_evt, {"visible": 0}, "menu selection hides popup"]
+assert_eq of [coverage_menu_log.selects, 1, "menu callback"]
+assert_ui_transition5 of [_mousedown_radio_group, coverage_radio, coverage_radio, 11 + (6 * _theme.font_scale) + 16, 21, coverage_evt, {"selected": 1}, "_mousedown_radio_group second selection"]
+assert_ui_transition5 of [_mousedown_tabs, coverage_tabs, coverage_tabs, 11 + (6 * _theme.font_scale) + 24, 21, coverage_evt, {"active": 1}, "_mousedown_tabs second selection"]
+assert_eq of [coverage_menu_log.changes, 3, "radio and tabs callbacks"]
+assert_ui_transition5 of [_mousedown_menu_bar, coverage_bar, coverage_bar, 11, 21 + coverage_bar.h, coverage_evt, {"open_index": -1}, "bar popup click selects then closes"]
+assert_eq of [coverage_menu_log.selects, 2, "menu bar callback"]
+assert_eq of [coverage_menu_log.index, 0, "menu bar actual click index"]
+assert_ui_transition1 of [_clear_hover_dropdown, coverage_dd, {"hover": 0, "hover_index": -1}, "_clear_hover_dropdown reset"]
+assert_ui_transition1 of [_clear_hover_radio_group, coverage_radio, {"hover_index": -1}, "_clear_hover_radio_group reset"]
+assert_ui_transition1 of [_clear_hover_tabs, coverage_tabs, {"hover_tab": -1}, "_clear_hover_tabs reset"]
+assert_ui_transition1 of [_clear_hover_menu_bar, coverage_bar, {"hover_index": -1}, "_clear_hover_menu_bar reset"]
+assert_ui_transition2 of [_update_tab_hover, coverage_tabs, 1, {"hover_tab": 0}, "tab hover helper first interval"]
+assert_eq of [_tab_index_at of [coverage_tabs, 1], 0, "tab index first interval"]
+assert_eq of [_radio_index_at of [coverage_radio, 1], 0, "radio index first interval"]
+coverage_bar.open_index is 0
+coverage_bar.popups[0].visible is 1
+assert_ui_transition1 of [_menu_bar_close, coverage_bar, {"open_index": -1}, "bar close resets open index"]
+assert_eq of [coverage_bar.popups[0].visible, 0, "bar close hides owned popup"]
+coverage_dd.open is 1
+assert_eq of [(_find_open_popup_at of [coverage_dd, 11, 71]).id, "cov-dd", "overlay finds open dropdown"]
+assert_ui_render1 of [_render_popups, coverage_dd, "rrect", [10, 46, 100, 48, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]], "overlay renders dropdown"]
+assert_ui_transition2 of [_close_dropdowns_except, coverage_dd, coverage_dd, {"open": 1}, "close-except preserves target"]
+assert_ui_transition1 of [_close_dropdowns, coverage_dd, {"open": 0}, "close dropdown leaf"]
+coverage_bar.open_index is 0
+assert_ui_transition2 of [_close_menu_bars, coverage_bar, null, {"open_index": -1}, "close bars outside target"]
+coverage_menu.visible is 1
+assert_ui_transition1 of [_close_menus, coverage_menu, {"visible": 0}, "close menu leaf"]
+_gfx_rec is coverage_menu_saved.record
+_ui.window_w is coverage_menu_saved.window
+
+define assert_ui_transition3(fn, widget, x, y, expected, desc) as:
+    fn of [widget, x, y]
+    assert_ui_fields of [widget, expected, desc]
+
+# Source-only dialog batch. Filesystem controls use the suite-owned cwd only.
+coverage_dialog_saved is {"record": _gfx_rec, "drag": _ui.drag_widget}
+coverage_dialog_log is {"buttons": 0, "index": -1, "changes": 0, "key": "", "value": null}
+define coverage_dialog_button(widget, index) as:
+    coverage_dialog_log.buttons is coverage_dialog_log.buttons + 1
+    coverage_dialog_log.index is index
+define coverage_dialog_color(widget) as:
+    coverage_dialog_log.changes is coverage_dialog_log.changes + 1
+define coverage_dialog_property(change) as:
+    coverage_dialog_log.key is change.key
+    coverage_dialog_log.value is change.value
+assert_ui_fields of [dialog of ["cov-dialog-new", 240, 160, "Title", "Message", ["OK"], null], {"type": "dialog", "w": 240, "h": 160, "visible": 0, "hover_btn": -1}, "dialog starts hidden"]
+assert_ui_fields of [color_picker of ["cov-color-new", 1, 2, null], {"type": "color_picker", "w": 180, "h": 150, "hue": 0, "sat": 1, "val": 1}, "color picker starts saturated red"]
+assert_ui_fields of [property_editor of ["cov-props", 0, 0, 240, 100, [{"key": "count", "type": "number", "value": 5, "min": 1, "max": 9}], null], {"type": "scroll_panel", "content_h": 32}, "property row sets scroll content height"]
+assert_true of [((_make_prop_cb of [coverage_dialog_property, "count"]) of {"type": "spinbox", "value": 7}) == null and coverage_dialog_log.key == "count" and coverage_dialog_log.value == 7, "property callback invokes key/value translation"]
+coverage_dlg is dialog of ["cov-dialog", 240, 160, "Title", "Message", ["OK"], coverage_dialog_button]
+coverage_cp is color_picker of ["cov-color", 0, 0, coverage_dialog_color]
+coverage_dlg._ax is 10
+coverage_dlg._ay is 20
+coverage_dlg.visible is 1
+coverage_cp._ax is 10
+coverage_cp._ay is 20
+coverage_dr is _dialog_btn_rect of [coverage_dlg, 0, 10, 20]
+assert_eq of [(_dialog_btn_rect of [coverage_dlg, 0, 10, 20])[1], 140, "dialog button bottom inset"]
+assert_eq of [(_dialog_btn_rect of [coverage_dlg, 0, 10, 20])[2], (12 * _theme.font_scale) + 24, "dialog button measured label width"]
+assert_eq of [_dialog_btn_at of [coverage_dlg, 10, 20, coverage_dr[0] + 1, 141], 0, "dialog button point index"]
+assert_eq of [(_hsv_to_rgb of [120, 1, 1])[1], 255, "HSV green component"]
+assert_eq of [(_hsv_to_rgb of [120, 1, 1])[0], 0, "HSV green excludes red"]
+_gfx_rec is 1
+assert_ui_render of [_render_dialog, coverage_dlg, "rect", [0, 0, 9999, 9999, 0, 0, 0, 140], "dialog dims backdrop"]
+assert_ui_render of [_render_color_picker, coverage_cp, "rrect", [10, 146, 40, 24, 4, 255, 0, 0], "color picker emits actual red preview"]
+assert_ui_transition5 of [_mousedown_color_picker, coverage_cp, coverage_cp, 10, 20, {"type": "mousedown"}, {"drag_part": "sv", "sat": 0, "val": 1}, "SV click sets white corner"]
+assert_eq of [coverage_cp.color[0], 255, "SV white red component"]
+assert_eq of [coverage_cp.color[1], 255, "SV white green component"]
+assert_ui_transition2 of [_drag_color_picker, coverage_cp, {"x": 160, "y": 140}, {"sat": 1, "val": 0}, "SV drag clamps black corner"]
+assert_eq of [coverage_cp.color[0], 0, "SV drag black red component"]
+assert_eq of [coverage_dialog_log.changes, 2, "picker click and drag callbacks"]
+assert_eq of [(_hit_test_dialog of [coverage_dlg, 10, 20, 11, 21]).id, "cov-dialog", "dialog chrome hit"]
+assert_ui_transition4 of [_mousemove_dialog, coverage_dlg, coverage_dlg, coverage_dr[0] + 1, 141, {"hover_btn": 0}, "dialog hover uses button rectangle"]
+assert_ui_transition1 of [_clear_hover_dialog, coverage_dlg, {"hover_btn": -1}, "dialog hover reset"]
+assert_ui_transition5 of [_mousedown_dialog, coverage_dlg, coverage_dlg, coverage_dr[0] + 1, 141, {"type": "mousedown"}, {"visible": 0}, "dialog valid button hides it"]
+assert_eq of [coverage_dialog_log.buttons, 1, "dialog button callback once"]
+assert_eq of [coverage_dialog_log.index, 0, "dialog callback selected index"]
+assert_eq of [_fd_join of ["/a/", "b"], "/a/b", "file path joins single slash"]
+assert_eq of [_fd_parent of "/a/b/", "/a", "file parent strips trailing slash"]
+coverage_fd_dir is getcwd of null
+assert_ui_fields of [file_dialog of ["cov-fd-new", 240, 200, "Open", coverage_fd_dir, null], {"type": "dialog", "dir": coverage_fd_dir, "visible": 0}, "file dialog mounts real cwd listing"]
+coverage_fd is file_dialog of ["cov-fd", 240, 200, "Open", coverage_fd_dir, null]
+coverage_fd.listing.selected is 0
+coverage_fd.listing.scroll_y is 24
+assert_ui_fields of [file_dialog_refresh of coverage_fd, {"dir": coverage_fd_dir}, "refresh retains requested directory"]
+assert_eq of [coverage_fd.dir_label.text, coverage_fd_dir, "refresh updates displayed directory"]
+assert_eq of [coverage_fd.listing.items[0], "..", "refresh prefixes parent entry"]
+assert_eq of [coverage_fd.listing.selected, -1, "refresh resets selection"]
+assert_eq of [coverage_fd.listing.scroll_y, 0, "refresh resets scroll"]
+assert_eq of [_fd_is_dir of [coverage_fd_dir, "."], 1, "file dialog directory predicate reaches real cwd"]
+_gfx_rec is coverage_dialog_saved.record
+_ui.drag_widget is coverage_dialog_saved.drag
+
+coverage_slider_saved is {"record": _gfx_rec, "drag": _ui.drag_widget, "ox": _ui.drag_ox, "oy": _ui.drag_oy}
+# All twenty ui_w_slider functions: concrete state changes and draw operands.
+assert_ui_fields of [slider of ["s1263", 1, 2, 100, 0, 100, 25, null], {"type": "slider", "x": 1, "y": 2, "w": 100, "h": 16, "value": 25, "dragging": 0}, "horizontal slider fields"]
+assert_ui_fields of [vslider of ["v1263", 1, 2, 100, 0, 100, 25, null], {"type": "vslider", "x": 1, "y": 2, "w": 16, "h": 100, "value": 25, "dragging": 0}, "vertical slider fields"]
+assert_ui_fields of [knob of ["k1263", 1, 2, 40, 0, 100, 25, null], {"type": "knob", "w": 40, "h": 40, "value": 25, "drag_start_y": 0, "drag_start_val": 0}, "knob fields"]
+assert_ui_fields of [scrollbar of ["b1263", 1, 2, 100, 0, null], {"type": "scrollbar", "w": 100, "h": 12, "vertical": 0, "thumb_size": 0.2, "value": 0}, "horizontal scrollbar fields"]
+assert_ui_fields of [scrollbar of ["bv1263", 1, 2, 100, 1, null], {"w": 12, "h": 100, "vertical": 1}, "vertical scrollbar fields"]
+s1263 is slider of ["s1263", 10, 20, 100, 0, 100, 25, null]
+v1263 is vslider of ["v1263", 10, 20, 100, 0, 100, 25, null]
+k1263 is knob of ["k1263", 10, 20, 40, 0, 100, 25, null]
+b1263 is scrollbar of ["b1263", 10, 20, 100, 0, null]
+b1263.value is 0.25
+_gfx_rec is 1
+assert_ui_render of [_render_slider, s1263, "rrect", [10, 26, 23, 4, 2, _theme.slider_fill[0], _theme.slider_fill[1], _theme.slider_fill[2]], "slider quarter fill geometry"]
+assert_ui_render of [_render_vslider, v1263, "rrect", [16, 97, 4, 23, 2, _theme.slider_fill[0], _theme.slider_fill[1], _theme.slider_fill[2]], "vertical slider bottom-up fill"]
+assert_ui_render of [_render_knob, k1263, "circle", [30, 40, 18, _theme.knob_bg[0], _theme.knob_bg[1], _theme.knob_bg[2]], "knob center and radius"]
+assert_ui_render of [_render_scrollbar, b1263, "rrect", [30, 22, 20, 8, 3, _theme.slider_thumb[0], _theme.slider_thumb[1], _theme.slider_thumb[2]], "scrollbar proportional thumb"]
+_gfx_rec is 0
+s1263._ax is 10
+s1263._ay is 20
+v1263._ax is 10
+v1263._ay is 20
+k1263._ax is 10
+k1263._ay is 20
+b1263._ax is 10
+b1263._ay is 20
+e1263 is {"type": "mousedown", "x": 60, "y": 45, "button": 1}
+assert_ui_transition5 of [_mousedown_slider, s1263, s1263, 60, 45, e1263, {"dragging": 1, "value": 50}, "slider press starts positioned drag"]
+assert_eq of [_ui.drag_widget == s1263, 1, "slider press owns capture"]
+assert_ui_transition5 of [_mousedown_vslider, v1263, v1263, 60, 45, e1263, {"dragging": 1, "value": 75}, "vertical press reverses axis"]
+assert_ui_transition5 of [_mousedown_knob, k1263, k1263, 60, 45, e1263, {"dragging": 1, "drag_start_y": 45, "drag_start_val": 25}, "knob press snapshots baseline"]
+assert_ui_transition5 of [_mousedown_scrollbar, b1263, b1263, 60, 45, e1263, {"dragging": 1, "value": 0.5}, "scrollbar press centers thumb"]
+_ui.drag_ox is 10
+_ui.drag_oy is 20
+assert_ui_transition2 of [_update_drag, s1263, 1000, {"value": 100}, "slider drag clamps at maximum"]
+assert_ui_transition2 of [_update_vdrag, v1263, -10, {"value": 100}, "vertical drag clamps above track"]
+k1263.drag_start_y is 50
+k1263.drag_start_val is 25
+assert_ui_transition2 of [_update_knob_drag, k1263, 0, {"value": 50}, "knob delta uses captured baseline"]
+assert_ui_transition3 of [_update_scrollbar_drag, b1263, 90, 45, {"value": 0.875}, "scrollbar usable track excludes thumb"]
+assert_ui_transition2 of [_drag_slider, s1263, {"x": 35, "y": 99}, {"value": 25}, "slider event uses x"]
+assert_ui_transition2 of [_drag_vslider, v1263, {"x": 999, "y": 70}, {"value": 50}, "vertical event uses y"]
+assert_ui_transition2 of [_drag_knob, k1263, {"x": 999, "y": 100}, {"value": 0}, "knob event clamps negative result"]
+assert_ui_transition2 of [_drag_scrollbar, b1263, {"x": 30, "y": 999}, {"value": 0.125}, "horizontal scrollbar event uses x"]
+_ui.drag_widget is null
+
+_gfx_rec is coverage_slider_saved.record
+_ui.drag_widget is coverage_slider_saved.drag
+_ui.drag_ox is coverage_slider_saved.ox
+_ui.drag_oy is coverage_slider_saved.oy
+
+# Source-only special widgets: finite splitter and one octave.
+coverage_special_saved is {"record": _gfx_rec, "drag": _ui.drag_widget, "ox": _ui.drag_ox}
+coverage_special_log is {"resizes": 0, "events": 0, "note": -1, "down": -1}
+define coverage_special_resize(widget) as:
+    coverage_special_log.resizes is coverage_special_log.resizes + 1
+define coverage_special_note(widget, note, down) as:
+    coverage_special_log.events is coverage_special_log.events + 1
+    coverage_special_log.note is note
+    coverage_special_log.down is down
+assert_ui_fields of [splitter of ["cov-split-new", 0, 0, 200, 80, 70, null], {"type": "splitter", "split_pos": 70, "bar_width": 4, "dragging": 0}, "splitter initial divider"]
+assert_ui_fields of [piano_keyboard of ["cov-piano-new", 0, 0, 1, null], {"type": "piano_kb", "w": 144, "h": 80, "pressed_note": -1}, "one octave plus final C"]
+coverage_split is splitter of ["cov-split", 0, 0, 200, 80, 70, coverage_special_resize]
+coverage_piano is piano_keyboard of ["cov-piano", 0, 0, 1, coverage_special_note]
+coverage_split._ax is 10
+coverage_piano._ax is 10
+coverage_piano._ay is 20
+assert_eq of [_piano_note_at of [coverage_piano, 14, 1], 1, "black C sharp takes precedence"]
+assert_eq of [_piano_note_at of [coverage_piano, 14, 60], 0, "lower white C below black key"]
+_gfx_rec is 1
+assert_ui_render of [_render_splitter, coverage_split, "rect", [80, 20, 4, 80, _theme.panel_border[0], _theme.panel_border[1], _theme.panel_border[2]], "splitter divider rectangle"]
+assert_ui_render of [_render_piano_kb, coverage_piano, "rrect", [23, 20, 10, 50, 2, 30, 30, 35], "piano black-key overlay"]
+assert_eq of [(_hit_test_splitter of [coverage_split, 10, 20, 81, 21]).id, "cov-split", "divider hit"]
+assert_ui_transition4 of [_mousemove_piano_kb, coverage_piano, coverage_piano, 24, 21, {"hover_note": 1}, "piano hover C sharp"]
+assert_ui_transition5 of [_mousedown_splitter, coverage_split, coverage_split, 81, 21, {"type": "mousedown"}, {"dragging": 1}, "splitter claims drag"]
+assert_eq of [_ui.drag_widget.id, "cov-split", "splitter drag owner"]
+assert_ui_transition2 of [_drag_splitter, coverage_split, {"x": 0}, {"split_pos": 50}, "splitter drag clamps left minimum"]
+assert_eq of [coverage_special_log.resizes, 1, "splitter resize callback"]
+assert_ui_transition5 of [_mousedown_piano_kb, coverage_piano, coverage_piano, 24, 21, {"type": "mousedown"}, {"pressed_note": 1}, "piano press C sharp"]
+assert_eq of [coverage_special_log.note, 1, "note callback pitch"]
+assert_eq of [coverage_special_log.down, 1, "note callback on"]
+coverage_split.hover is 1
+assert_ui_transition1 of [_clear_hover_splitter, coverage_split, {"hover": 0}, "splitter hover clear"]
+assert_ui_transition1 of [_clear_hover_piano_kb, coverage_piano, {"hover_note": -1}, "piano hover clear"]
+assert_ui_transition1 of [_clear_pressed_piano_kb, coverage_piano, {"pressed_note": -1}, "piano releases held note"]
+assert_eq of [coverage_special_log.events, 2, "one note-on and one note-off"]
+assert_eq of [coverage_special_log.down, 0, "note-off callback"]
+_gfx_rec is coverage_special_saved.record
+_ui.drag_widget is coverage_special_saved.drag
+_ui.drag_ox is coverage_special_saved.ox
+
+# Source-only container batch with finite bounds.
+coverage_container_saved_record is _gfx_rec
+assert_ui_fields of [panel of ["cov-panel-new", 1, 2, 100, 60], {"type": "panel", "w": 100, "h": 60, "visible": 1}, "panel constructor bounds"]
+coverage_panel is panel of ["cov-panel", 0, 0, 100, 60]
+assert_ui_fields of [hbox of ["cov-hbox-new", 1, 2, 100, 60], {"type": "hbox", "w": 100, "h": 60, "visible": 1}, "hbox constructor bounds"]
+coverage_hbox is hbox of ["cov-hbox", 0, 0, 100, 60]
+assert_ui_fields of [vbox of ["cov-vbox-new", 1, 2, 100, 60], {"type": "vbox", "w": 100, "h": 60, "visible": 1}, "vbox constructor bounds"]
+coverage_vbox is vbox of ["cov-vbox", 0, 0, 100, 60]
+assert_ui_fields of [scroll_panel of ["cov-scroll_panel-new", 1, 2, 100, 60], {"type": "scroll_panel", "w": 100, "h": 60, "visible": 1}, "scroll_panel constructor bounds"]
+coverage_scroll_panel is scroll_panel of ["cov-scroll_panel", 0, 0, 100, 60]
+assert_ui_fields of [toolbar of ["cov-toolbar-new", 1, 2, 100], {"type": "toolbar", "h": 40, "visible": 1}, "toolbar fixed height"]
+coverage_toolbar is toolbar of ["cov-toolbar", 0, 0, 100]
+assert_ui_fields of [statusbar of ["cov-statusbar-new", 1, 2, 100], {"type": "statusbar", "h": 24, "visible": 1}, "statusbar fixed height"]
+coverage_statusbar is statusbar of ["cov-statusbar", 0, 0, 100]
+_gfx_rec is 1
+coverage_panel.bg is [11, 22, 33]
+coverage_panel.border is null
+assert_ui_render of [_render_panel, coverage_panel, "rrect", [10, 20, 100, 60, _theme.radius, 11, 22, 33], "panel supplied background"]
+coverage_hbox.bg is [11, 22, 33]
+coverage_hbox.border is null
+assert_ui_render of [_render_hbox, coverage_hbox, "rrect", [10, 20, 100, 60, _theme.radius, 11, 22, 33], "hbox supplied background"]
+coverage_vbox.bg is [11, 22, 33]
+coverage_vbox.border is null
+assert_ui_render of [_render_vbox, coverage_vbox, "rrect", [10, 20, 100, 60, _theme.radius, 11, 22, 33], "vbox supplied background"]
+coverage_toolbar.bg is [11, 22, 33]
+assert_ui_render of [_render_toolbar, coverage_toolbar, "rect", [10, 20, 100, 40, 11, 22, 33], "toolbar background strip"]
+coverage_statusbar.bg is [11, 22, 33]
+assert_ui_render of [_render_statusbar, coverage_statusbar, "rect", [10, 20, 100, 24, 11, 22, 33], "statusbar background strip"]
+coverage_scroll_panel.content_h is 120
+coverage_scroll_panel.content_w is 200
+coverage_scroll_panel._ax is 10
+coverage_scroll_panel._ay is 20
+assert_ui_render of [_render_scroll_panel, coverage_scroll_panel, "rrect", [104, 20, 4, 30, 2, 80, 80, 100], "vertical scroll thumb half height"]
+coverage_container_child is button of ["cov-container-child", 0, 0, 50, 24, "C", null]
+coverage_panel.children is [coverage_container_child]
+assert_eq of [(_hit_test_container of [coverage_panel, 10, 20, 11, 21]).id, "cov-container-child", "container hit routes to child"]
+assert_eq of [(_hit_test_scroll_panel of [coverage_scroll_panel, 10, 20, 105, 21]).id, "cov-scroll_panel", "scrollbar hit selects scrolling container"]
+assert_ui_transition5 of [_mousedown_scroll_panel, coverage_scroll_panel, coverage_scroll_panel, 105, 50, {"type": "mousedown"}, {"scroll_y": 30}, "scrollbar click jumps halfway"]
+assert_true of [(_scroll_scroll_panel of [coverage_scroll_panel, 500, 500]) == null and coverage_scroll_panel.scroll_x == 100 and coverage_scroll_panel.scroll_y == 60, "scroll clamps to finite content extents"]
+_gfx_rec is coverage_container_saved_record
+
+# Source-only dock: one west region and finite center.
+coverage_dock_saved is {"record": _gfx_rec, "drag": _ui.drag_widget}
+coverage_dock_log is {"layouts": 0}
+define coverage_dock_layout(widget) as:
+    coverage_dock_log.layouts is coverage_dock_log.layouts + 1
+assert_ui_fields of [dock of ["cov-dock-new", 1, 2, 400, 200], {"type": "dock", "west_w": 200, "handle_w": 5, "_drag_region": ""}, "dock constructor defaults"]
+assert_ui_fields of [dock_panel of ["Tools", panel of ["cov-dock-new-panel", 0, 0, 1, 1]], {"title": "Tools", "collapsed": 0}, "dock panel expanded default"]
+coverage_dock is dock of ["cov-dock", 10, 20, 400, 200]
+coverage_dock.on_layout is coverage_dock_layout
+coverage_dock_child is panel of ["cov-dock-child", 0, 0, 1, 1]
+coverage_dock_panel is dock_panel of ["Tools", coverage_dock_child]
+coverage_dock_center is panel of ["cov-dock-center", 0, 0, 1, 1]
+assert_ui_fields of [dock_add of [coverage_dock, "west", coverage_dock_panel], {"title": "Tools", "collapsed": 0}, "dock add returns mounted panel"]
+assert_eq of [len of coverage_dock.children, 1, "dock add enrolls hosted child"]
+assert_ui_fields of [dock_set_center of [coverage_dock, coverage_dock_center], {"id": "cov-dock-center"}, "dock center returns hosted widget"]
+assert_eq of [len of coverage_dock.children, 2, "dock center enrolls child"]
+assert_true of [(dock_set_collapsed of [coverage_dock, coverage_dock_panel, 1]) == null and coverage_dock_panel.collapsed == 1 and coverage_dock_log.layouts == 0, "programmatic collapse is silent"]
+assert_eq of [_dock_title_h of null, 13, "dock title uses scale-one text height"]
+assert_eq of [(_dock_origin of coverage_dock)[0], 10, "dock origin falls back to local x"]
+assert_eq of [(dock_view of coverage_dock).center[0], 215, "west region plus handle shifts center"]
+assert_eq of [(dock_view of coverage_dock).center[2], 195, "center excludes west and handle widths"]
+assert_ui_transition1 of [_layout_dock, coverage_dock, {"w": 400}, "dock layout keeps own bounds"]
+assert_eq of [coverage_dock_child.visible, 0, "layout hides collapsed hosted widget"]
+assert_eq of [coverage_dock_center.w, 195, "layout stamps center width"]
+coverage_dock_panel.collapsed is 0
+_layout_dock of coverage_dock
+_gfx_rec is 1
+assert_ui_render of [_render_dock, coverage_dock, "rrect", [10, 20, 400, 1, 0, (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[0], (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[1], (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[2]], "dock top border geometry"]
+assert_eq of [_dock_in of [[10, 20, 200, 200], 11, 21], 1, "dock rectangle contains point"]
+assert_eq of [_dock_in of [null, 11, 21], 0, "absent region rejects point"]
+assert_eq of [_dock_in_handle of [[210, 20, 5, 200], 208, 21, 0], 1, "vertical handle includes three-pixel slop"]
+assert_eq of [(_hit_test_dock of [coverage_dock, 10, 20, 211, 21]).id, "cov-dock", "handle hit belongs to dock"]
+assert_ui_transition5 of [_mousedown_dock, coverage_dock, coverage_dock, 211, 21, {"type": "mousedown"}, {"_drag_region": "west"}, "west handle starts drag"]
+assert_eq of [_ui.drag_widget.id, "cov-dock", "dock holds drag ownership"]
+assert_ui_transition2 of [_drag_dock, coverage_dock, {"x": 10, "y": 20}, {"west_w": 60}, "dock drag clamps to region minimum"]
+assert_eq of [coverage_dock_log.layouts, 1, "user resize fires layout callback"]
+assert_ui_transition1 of [_clear_pressed_dock, coverage_dock, {"_drag_region": ""}, "dock release clears drag region"]
+_gfx_rec is coverage_dock_saved.record
+_ui.drag_widget is coverage_dock_saved.drag
+
+# Source-only data controls with finite two-row inputs.
+coverage_data_saved_record is _gfx_rec
+coverage_data_log is {"selects": 0, "row": -1, "col": -1}
+define coverage_data_selected(widget) as:
+    coverage_data_log.selects is coverage_data_log.selects + 1
+define coverage_data_tree_selected(widget, node) as:
+    coverage_data_log.selects is coverage_data_log.selects + 1
+define coverage_data_cell(widget, row, col) as:
+    coverage_data_log.row is row
+    coverage_data_log.col is col
+define coverage_data_byte(addr) as:
+    return 65
+define coverage_data_hex_selected(widget, addr) as:
+    coverage_data_log.selects is coverage_data_log.selects + 1
+    coverage_data_log.col is addr
+assert_ui_fields of [table of ["cov-table", 0, 0, 100, 46, [{"name": "A", "width": 100}], coverage_data_selected], {"type": "table", "visible": 1}, "table real constructor"]
+coverage_table is table of ["cov-table", 0, 0, 100, 46, [{"name": "A", "width": 100}], coverage_data_selected]
+coverage_table._ax is 10
+coverage_table._ay is 20
+assert_ui_fields of [tree of ["cov-tree", 0, 0, 100, 22, [{"id": "root", "text": "R", "expanded": 1, "children": [{"id": "child", "text": "C"}]}], coverage_data_tree_selected], {"type": "tree", "visible": 1}, "tree real constructor"]
+coverage_tree is tree of ["cov-tree", 0, 0, 100, 22, [{"id": "root", "text": "R", "expanded": 1, "children": [{"id": "child", "text": "C"}]}], coverage_data_tree_selected]
+coverage_tree._ax is 10
+coverage_tree._ay is 20
+assert_ui_fields of [item_list of ["cov-list", 0, 0, 100, 22, ["A", "B"], coverage_data_selected], {"type": "item_list", "visible": 1}, "item_list real constructor"]
+coverage_item_list is item_list of ["cov-list", 0, 0, 100, 22, ["A", "B"], coverage_data_selected]
+coverage_item_list._ax is 10
+coverage_item_list._ay is 20
+assert_ui_fields of [grid of ["cov-grid", 0, 0, 2, 1, 20, 22, coverage_data_cell], {"type": "grid", "visible": 1}, "grid real constructor"]
+coverage_grid is grid of ["cov-grid", 0, 0, 2, 1, 20, 22, coverage_data_cell]
+coverage_grid._ax is 10
+coverage_grid._ay is 20
+assert_ui_fields of [hex_view of ["cov-hex", 0, 0, 100, 22, coverage_data_byte, 2], {"type": "hex_view", "visible": 1}, "hex_view real constructor"]
+coverage_hex_view is hex_view of ["cov-hex", 0, 0, 100, 22, coverage_data_byte, 2]
+coverage_hex_view._ax is 10
+coverage_hex_view._ay is 20
+coverage_table.rows is [["A"], ["B"]]
+coverage_hex_view.bytes_per_row is 1
+coverage_hex_view.on_select is coverage_data_hex_selected
+coverage_flat is []
+assert_true of [(_flatten_tree of [coverage_tree.nodes, 0, coverage_flat]) == null and (len of coverage_flat) == 2 and coverage_flat[1].depth == 1, "flatten includes expanded child with depth"]
+_gfx_rec is 1
+assert_ui_render of [_render_table, coverage_table, "rect", [10, 20, 100, 24, _theme.tab_bg[0], _theme.tab_bg[1], _theme.tab_bg[2]], "table actual primitive"]
+assert_ui_render of [_render_tree, coverage_tree, "text", [18, 24, "R", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale], "tree actual primitive"]
+assert_ui_render of [_render_item_list, coverage_item_list, "text", [18, 24, "A", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale], "item_list actual primitive"]
+assert_ui_render of [_render_grid, coverage_grid, "rrect", [11, 21, 18, 20, 2, 40, 40, 55], "grid actual primitive"]
+assert_ui_render of [_render_hex_view, coverage_hex_view, "text", [50, 22, "41", (_theme_color of ["hex_text", _theme.text_color])[0], (_theme_color of ["hex_text", _theme.text_color])[1], (_theme_color of ["hex_text", _theme.text_color])[2], 1], "hex_view actual primitive"]
+assert_eq of [_grid_gutter of coverage_grid, 0, "unlabeled grid has no gutter"]
+coverage_grid.row_labels is ["R"]
+assert_ui_transition1 of [_grid_measure, coverage_grid, {"w": 100}, "row label gutter widens grid"]
+assert_eq of [(grid_cell_origin of coverage_grid)[0], 70, "cell origin includes gutter"]
+assert_ui_transition4 of [_mousemove_table, coverage_table, coverage_table, 11, 45, {"hover_row": 0}, "table hover follows pointer"]
+assert_ui_transition4 of [_mousemove_tree, coverage_tree, coverage_tree, 11, 21, {"hover_index": 0}, "tree hover follows pointer"]
+assert_ui_transition4 of [_mousemove_item_list, coverage_item_list, coverage_item_list, 11, 21, {"hover_index": 0}, "item_list hover follows pointer"]
+assert_ui_transition4 of [_mousemove_grid, coverage_grid, coverage_grid, 71, 21, {"hover_row": 0, "hover_col": 0}, "grid hover follows pointer"]
+assert_ui_transition4 of [_mousemove_hex_view, coverage_hex_view, coverage_hex_view, 51, 23, {"hover_addr": 0}, "hex_view hover follows pointer"]
+assert_ui_transition5 of [_mousedown_table, coverage_table, coverage_table, 11, 45, {"type": "mousedown"}, {"selected": 0}, "table click applies selection"]
+assert_ui_transition5 of [_mousedown_tree, coverage_tree, coverage_tree, 30, 21, {"type": "mousedown"}, {"selected_id": "root"}, "tree click applies selection"]
+assert_ui_transition5 of [_mousedown_item_list, coverage_item_list, coverage_item_list, 11, 21, {"type": "mousedown"}, {"selected": 0}, "item_list click applies selection"]
+assert_ui_transition5 of [_mousedown_grid, coverage_grid, coverage_grid, 71, 21, {"type": "mousedown"}, {"owns_cells": 1}, "grid click applies selection"]
+assert_ui_transition5 of [_mousedown_hex_view, coverage_hex_view, coverage_hex_view, 51, 23, {"type": "mousedown"}, {"cursor": 0}, "hex_view click applies selection"]
+assert_eq of [coverage_grid.cells[0][0], 1, "owned grid flips clicked cell"]
+assert_eq of [coverage_data_log.row, 0, "grid callback row"]
+assert_eq of [coverage_data_log.col, 0, "grid and hex callback address"]
+assert_eq of [coverage_data_log.selects, 4, "table tree list hex callbacks"]
+assert_ui_transition1 of [_clear_hover_table, coverage_table, {"hover_row": -1, "hover_col_header": -1}, "table hover reset"]
+assert_ui_transition1 of [_clear_hover_tree, coverage_tree, {"hover_index": -1}, "tree hover reset"]
+assert_ui_transition1 of [_clear_hover_item_list, coverage_item_list, {"hover_index": -1}, "item_list hover reset"]
+assert_ui_transition1 of [_clear_hover_grid, coverage_grid, {"hover_row": -1, "hover_col": -1}, "grid hover reset"]
+assert_ui_transition1 of [_clear_hover_hex_view, coverage_hex_view, {"hover_addr": -1}, "hex_view hover reset"]
+assert_true of [(_scroll_table of [coverage_table, 0, 500]) == null and coverage_table.scroll_y == 22, "table scroll clamps to finite extent"]
+assert_true of [(_scroll_tree of [coverage_tree, 0, 500]) == null and coverage_tree.scroll_y == 22, "tree scroll clamps to finite extent"]
+assert_true of [(_scroll_item_list of [coverage_item_list, 0, 500]) == null and coverage_item_list.scroll_y == 22, "item_list scroll clamps to finite extent"]
+assert_true of [(_scroll_hex_view of [coverage_hex_view, 0, 500]) == null and coverage_hex_view.scroll_y == 0, "hex_view scroll clamps to finite extent"]
+assert_true of [(hex_set_cursor of [coverage_hex_view, 1]) == null and coverage_hex_view.cursor == 1 and coverage_data_log.selects == 4, "programmatic hex cursor is silent"]
+assert_eq of [(hex_view_metrics of coverage_hex_view).row_h, 11, "hex measured row height"]
+assert_eq of [hex_view_addr_at of [coverage_hex_view, 51, 23], 0, "hex address uses measured gutter"]
+assert_eq of [(_hex_style_color of ([11, 22, 33]))[1], 22, "literal hex highlight color preserved"]
+_gfx_rec is coverage_data_saved_record
+
+# Source-only visualization behavior: finite lists and geometry.
+coverage_viz_saved is {"record": _gfx_rec, "drag": _ui.drag_widget, "ox": _ui.drag_ox, "oy": _ui.drag_oy}
+coverage_viz_log is {"mouse": 0, "click": -1, "scrubs": 0}
+define coverage_viz_paint(widget, ax, ay) as:
+    gfx_rect of [ax, ay, 3, 4, 11, 22, 33]
+define coverage_viz_mouse(widget, ev) as:
+    coverage_viz_log.mouse is coverage_viz_log.mouse + 1
+define coverage_viz_click(widget, index) as:
+    coverage_viz_log.click is index
+define coverage_viz_scrub(widget, value) as:
+    coverage_viz_log.scrubs is coverage_viz_log.scrubs + 1
+assert_ui_fields of [chart of ["cov-chart-new", 0, 0, 152, 134], {"type": "chart", "zoom": 1, "hover_index": -1}, "chart default view"]
+assert_ui_fields of [chart_series of ["S", null, [0, 1], [11, 22, 33]], {"label": "S", "style": "line", "_scanned": 0}, "series cache defaults"]
+assert_ui_fields of [chart_marker of ["point", 1, 2, "P", null], {"kind": "point", "x": 1, "y": 2}, "point marker coordinates"]
+assert_ui_fields of [chart_vline of [2, "V", null], {"kind": "vline", "x": 2, "y": 0}, "vertical marker coordinate"]
+assert_ui_fields of [chart_hline of [3, "H", null], {"kind": "hline", "x": 0, "y": 3}, "horizontal marker coordinate"]
+coverage_chart is chart of ["cov-chart", 10, 20, 152, 134]
+coverage_chart.pad_frac is 0
+assert_eq of [chart_add_series of [coverage_chart, chart_series of ["S", null, [0, 1], [11, 22, 33]]], 0, "series insertion index"]
+assert_eq of [chart_add_marker of [coverage_chart, chart_vline of [0, "V", null]], 0, "marker insertion index"]
+assert_eq of [(chart_bounds of coverage_chart).y1, 1, "chart bounds scan original data"]
+assert_true of [(add_point of [coverage_chart, 0, 2]) == null and coverage_chart.series[0].data[2] == 2, "point append retains value"]
+assert_true of [(add_xy of [coverage_chart, 0, 4, 3]) == null and coverage_chart.series[0].x[3] == 4 and coverage_chart.series[0].data[3] == 3, "explicit XY append"]
+assert_true of [(_chart_extend of [coverage_chart, 0, 5, 4]) == null and coverage_chart._bx1 == 5 and coverage_chart._by1 == 4, "incremental cache widens"]
+assert_ui_transition1 of [chart_invalidate, coverage_chart, {"_have_bounds": 0}, "invalidate drops cache"]
+assert_ui_transition1 of [_chart_scan, coverage_chart, {"_have_bounds": 1, "_bx1": 4, "_by1": 3}, "scan rebuilds actual sample bounds"]
+assert_true of [(chart_trim of [coverage_chart, 0, 2]) == null and (len of coverage_chart.series[0].data) == 2 and coverage_chart.series[0].data[0] == 2, "trim keeps newest two"]
+coverage_chart.x_min is 0
+coverage_chart.x_max is 10
+coverage_chart.y_min is 0
+coverage_chart.y_max is 10
+assert_eq of [(_chart_plot_rect of [coverage_chart, 10, 20])[2], 100, "chart plot width excludes pads"]
+assert_eq of [(_chart_origin of coverage_chart)[0], 10, "chart local origin fallback"]
+assert_eq of [(chart_view of coverage_chart).ph, 100, "chart visible plot height"]
+assert_eq of [(_chart_map of [chart_view of coverage_chart, 0, 0])[0], 54, "map low x to left plot edge"]
+assert_eq of [(chart_to_pixel of [coverage_chart, 10, 10])[0], 154, "map high x to right plot edge"]
+assert_eq of [(chart_from_pixel of [coverage_chart, 54, 128])[1], 0, "inverse map bottom to low y"]
+assert_true of [(chart_pan_by of [coverage_chart, 10, 0]) == null and coverage_chart.pan_x == -1, "pixel pan translates data window"]
+assert_true of [(chart_zoom_at of [coverage_chart, 2, 104, 78]) == null and coverage_chart.zoom == 2, "anchor zoom updates scale"]
+assert_ui_transition1 of [chart_reset_view, coverage_chart, {"pan_x": 0, "pan_y": 0, "zoom": 1}, "chart reset restores identity"]
+assert_eq of [_chart_nice_step of [10, 5], 2, "nice tick step two"]
+assert_eq of [(chart_ticks of [0, 10, 5])[5], 10, "ticks include upper endpoint"]
+assert_eq of [_chart_fmt of [0, 0.1], "0", "zero tick format"]
+assert_eq of [(_clip_seg of [-5, 5, 15, 5, 0, 0, 10, 10])[0], 0, "clip segment starts at left boundary"]
+assert_eq of [_clampi of [20, 0, 10], 10, "integer clamp upper bound"]
+assert_eq of [(_chart_series_color of [coverage_chart, 0])[1], 22, "explicit series palette"]
+_gfx_rec is 1
+assert_true of [(_chart_line of [-5, 5, 15, 5, [0, 0, 10, 10], [11, 22, 33]]) == null and _gfx_log[(len of _gfx_log) - 1][0] == "line" and _gfx_log[(len of _gfx_log) - 1][1][0] == 0 and _gfx_log[(len of _gfx_log) - 1][1][2] == 9, "line emits clipped endpoints"]
+assert_true of [(_chart_dot of [0, 0, 2, [0, 0, 10, 10], [11, 22, 33]]) == null and _gfx_log[(len of _gfx_log) - 1][0] == "rect" and _gfx_log[(len of _gfx_log) - 1][1][2] == 3, "edge dot intersects finite rect"]
+assert_true of [(_chart_text of [1, 1, "A", [11, 22, 33], 1, [0, 0, 10, 10]]) == null and _gfx_log[(len of _gfx_log) - 1][0] == "text" and _gfx_log[(len of _gfx_log) - 1][1][2] == "A", "chart text emits fitting label"]
+coverage_chart.bg is [11, 22, 33]
+assert_ui_render of [_render_chart, coverage_chart, "rect", [10, 20, 152, 134, 11, 22, 33], "chart supplied background"]
+assert_ui_fields of [bar_chart of ["cov-bar-chart", 0, 0, 100, 80, ["A"], [1], coverage_viz_click], {"type": "bar_chart", "visible": 1}, "bar_chart constructor"]
+coverage_bar_chart is bar_chart of ["cov-bar-chart", 0, 0, 100, 80, ["A"], [1], coverage_viz_click]
+coverage_bar_chart._ax is 10
+coverage_bar_chart._ay is 20
+assert_ui_fields of [gauge of ["cov-gauge", 0, 0, 80, 0, 10, 5, "G"], {"type": "gauge", "visible": 1}, "gauge constructor"]
+coverage_gauge is gauge of ["cov-gauge", 0, 0, 80, 0, 10, 5, "G"]
+coverage_gauge._ax is 10
+coverage_gauge._ay is 20
+assert_ui_fields of [meter of ["cov-meter", 0, 0, 20, 100], {"type": "meter", "visible": 1}, "meter constructor"]
+coverage_meter is meter of ["cov-meter", 0, 0, 20, 100]
+coverage_meter._ax is 10
+coverage_meter._ay is 20
+assert_ui_fields of [canvas of ["cov-canvas", 0, 0, 100, 80, coverage_viz_paint, coverage_viz_mouse], {"type": "canvas", "visible": 1}, "canvas constructor"]
+coverage_canvas is canvas of ["cov-canvas", 0, 0, 100, 80, coverage_viz_paint, coverage_viz_mouse]
+coverage_canvas._ax is 10
+coverage_canvas._ay is 20
+assert_ui_fields of [waveform_view of ["cov-wave", 0, 0, 100, 80], {"type": "waveform_view", "visible": 1}, "waveform_view constructor"]
+coverage_waveform_view is waveform_view of ["cov-wave", 0, 0, 100, 80]
+coverage_waveform_view._ax is 10
+coverage_waveform_view._ay is 20
+assert_ui_fields of [code_view of ["cov-code", 0, 0, 100, 80, "A"], {"type": "code_view", "visible": 1}, "code_view constructor"]
+coverage_code_view is code_view of ["cov-code", 0, 0, 100, 80, "A"]
+coverage_code_view._ax is 10
+coverage_code_view._ay is 20
+coverage_bar_chart.color is [11, 22, 33]
+assert_ui_render of [_render_bar_chart, coverage_bar_chart, "rrect", [18, 30, 80, 50, 2, 11, 22, 33], "bar height represents maximum value"]
+assert_ui_render of [_render_gauge, coverage_gauge, "text", [50 - (floor of ((6 * _theme.font_scale) / 2)), 54 - (floor of (_theme.char_h / 2)), "5", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale], "gauge value text geometry"]
+coverage_meter.value is 0.5
+assert_ui_render of [_render_meter, coverage_meter, "rect", [11, 70, 18, 50, 40, 180, 80], "meter half fill green"]
+assert_ui_render of [_render_canvas, coverage_canvas, "rect", [10, 20, 3, 4, 11, 22, 33], "canvas invokes actual paint callback"]
+assert_ui_render of [_render_waveform_view, coverage_waveform_view, "line", [10, 60, 110, 60, (_theme_color of ["wave_center", [35, 35, 45]])[0], (_theme_color of ["wave_center", [35, 35, 45]])[1], (_theme_color of ["wave_center", [35, 35, 45]])[2]], "wave center line"]
+assert_ui_render of [_render_code_view, coverage_code_view, "rect", [10, 20, 100, 80, 20, 20, 30], "code background"]
+assert_ui_transition4 of [_mousemove_chart, coverage_chart, coverage_chart, 74, 108, {"hover_series": 0, "hover_index": 0}, "chart hover nearest sample"]
+assert_ui_transition5 of [_mousedown_chart, coverage_chart, coverage_chart, 74, 108, {"type": "mousedown"}, {"zoom": 1}, "chart press starts pan"]
+assert_eq of [_ui.drag_widget.id, "cov-chart", "chart claimed pointer"]
+assert_ui_transition2 of [_drag_chart, coverage_chart, {"x": 84, "y": 108}, {"pan_x": -1}, "chart drag pans ten pixels"]
+assert_ui_transition2 of [_wheel_chart, coverage_chart, {"y": 1, "mx": 104, "my": 78}, {"zoom": 1.2}, "chart wheel zoom"]
+assert_ui_transition4 of [_mousemove_bar_chart, coverage_bar_chart, coverage_bar_chart, 19, 21, {"hover_index": 0}, "bar hover index"]
+assert_ui_transition5 of [_mousedown_canvas, coverage_canvas, coverage_canvas, 11, 21, {"type": "mousedown"}, {"hover": 0}, "canvas delivers mouse callback"]
+assert_eq of [coverage_viz_log.mouse, 1, "canvas callback observable"]
+assert_ui_transition5 of [_mousedown_waveform_view, coverage_waveform_view, coverage_waveform_view, 15, 21, {"type": "mousedown"}, {"sel_start": 5, "sel_end": 5}, "wave click sample origin"]
+assert_ui_transition2 of [_drag_waveform_view, coverage_waveform_view, {"x": 20}, {"sel_end": 10}, "wave drag sample end"]
+assert_ui_transition5 of [_mousedown_bar_chart, coverage_bar_chart, coverage_bar_chart, 19, 21, {"type": "mousedown"}, {"hover_index": 0}, "bar callback receives clicked index"]
+assert_eq of [coverage_viz_log.click, 0, "bar callback index zero"]
+assert_ui_transition1 of [_clear_hover_chart, coverage_chart, {"hover_index": -1, "hover_series": -1}, "chart hover reset"]
+assert_ui_transition1 of [_clear_hover_bar_chart, coverage_bar_chart, {"hover_index": -1}, "bar hover reset"]
+assert_true of [(_scroll_code_view of [coverage_code_view, 0, 100]) == null and coverage_code_view.scroll_y == 0, "single line code view clamps scroll"]
+
+# Continues viz-chart.eigs; one finite lane and marker/span.
+assert_ui_fields of [timeline of ["cov-tl-new", 0, 0, 170, 113], {"type": "timeline", "zoom": 1, "_drag_mode": ""}, "timeline default view"]
+assert_ui_fields of [timeline_lane of ["L", "Lane"], {"id": "L", "label": "Lane"}, "timeline lane identity"]
+assert_ui_fields of [timeline_marker of [2, "L", "event"], {"t": 2, "lane": "L", "kind": "event"}, "time marker coordinates"]
+assert_ui_fields of [timeline_span of [1, 3, "L", "span"], {"t0": 1, "t1": 3, "lane": "L"}, "time span endpoints"]
+coverage_tl is timeline of ["cov-tl", 10, 20, 170, 113]
+coverage_tl.on_scrub is coverage_viz_scrub
+assert_eq of [timeline_add_lane of [coverage_tl, timeline_lane of ["L", "Lane"]], 0, "lane insertion index"]
+assert_eq of [timeline_lane_index of [coverage_tl, "L"], 0, "lane id resolution"]
+assert_eq of [timeline_add_marker of [coverage_tl, timeline_marker of [2, "L", "event"]], 0, "marker insertion index"]
+assert_eq of [timeline_add_span of [coverage_tl, timeline_span of [1, 3, "L", "span"]], 0, "span insertion index"]
+assert_true of [(timeline_style of [coverage_tl, "event", [11, 22, 33]]) == null and coverage_tl.kind_style.event[1] == 22, "kind style assignment"]
+assert_true of [(timeline_set_cursor of [coverage_tl, 2]) == null and coverage_tl.cursor == 2 and coverage_viz_log.scrubs == 0, "programmatic cursor is silent"]
+assert_ui_transition1 of [_tl_scan, coverage_tl, {"_have_bounds": 1, "_bt0": 1, "_bt1": 3}, "time scan covers marker and span"]
+assert_true of [(_tl_widen of [coverage_tl, 0, 4]) == null and coverage_tl._bt0 == 0 and coverage_tl._bt1 == 4, "incremental time widening"]
+assert_ui_transition1 of [timeline_invalidate, coverage_tl, {"_have_bounds": 0, "_scan_m": 0, "_scan_s": 0}, "time invalidation resets counters"]
+assert_eq of [(timeline_bounds of coverage_tl).t0, 1, "bounds rebuild actual minimum"]
+coverage_tl.t_min is 0
+coverage_tl.t_max is 10
+assert_eq of [(_tl_origin of coverage_tl)[0], 10, "timeline local origin fallback"]
+assert_eq of [(timeline_view of coverage_tl).pw, 100, "timeline plot width excludes gutters"]
+assert_eq of [timeline_to_pixel of [coverage_tl, 5], 124, "time midpoint pixel"]
+assert_eq of [timeline_from_pixel of [coverage_tl, 124], 5, "time midpoint inverse"]
+assert_eq of [timeline_lane_at of [coverage_tl, 34], 0, "body point maps lane zero"]
+assert_true of [(timeline_pan_by of [coverage_tl, 10]) == null and coverage_tl.pan_t == -1, "time pan by pixels"]
+assert_true of [(timeline_zoom_at of [coverage_tl, 2, 124]) == null and coverage_tl.zoom == 2, "time anchor zoom"]
+assert_ui_transition1 of [timeline_reset_view, coverage_tl, {"pan_t": 0, "zoom": 1}, "timeline identity reset"]
+assert_eq of [(_tl_kind_color of [coverage_tl, "event", null])[1], 22, "kind resolves explicit literal style"]
+assert_ui_render of [_render_timeline, coverage_tl, "rect", [74, 20, 100, 13, (_theme_color of ["tl_ruler_bg", (_theme_color of ["plot_grid", [40, 40, 55]])])[0], (_theme_color of ["tl_ruler_bg", (_theme_color of ["plot_grid", [40, 40, 55]])])[1], (_theme_color of ["tl_ruler_bg", (_theme_color of ["plot_grid", [40, 40, 55]])])[2]], "timeline ruler geometry"]
+assert_ui_transition2 of [_tl_scrub_to, coverage_tl, 124, {"cursor": 5}, "scrub sets actual midpoint"]
+assert_eq of [coverage_viz_log.scrubs, 1, "scrub callback"]
+assert_ui_transition5 of [_mousedown_timeline, coverage_tl, coverage_tl, 124, 21, {"type": "mousedown"}, {"_drag_mode": "scrub", "cursor": 5}, "ruler click begins scrub"]
+assert_ui_transition2 of [_drag_timeline, coverage_tl, {"x": 174, "y": 21}, {"cursor": 10}, "scrub drag clamps endpoint"]
+assert_eq of [coverage_viz_log.scrubs, 3, "scrub click and drag callbacks"]
+assert_ui_transition4 of [_mousemove_timeline, coverage_tl, coverage_tl, 94, 34, {"cursor": 10}, "timeline hover updates item at marker"]
+assert_eq of [coverage_tl.hover_item.kind, "event", "marker wins span overlap"]
+assert_ui_transition2 of [_wheel_timeline, coverage_tl, {"y": 1, "mx": 124}, {"zoom": 1.2}, "timeline pointer wheel zoom"]
+assert_ui_transition1 of [_clear_hover_timeline, coverage_tl, {"hover_item": null}, "timeline hover reset"]
+_gfx_rec is coverage_viz_saved.record
+_ui.drag_widget is coverage_viz_saved.drag
+_ui.drag_ox is coverage_viz_saved.ox
+_ui.drag_oy is coverage_viz_saved.oy
+
+# Core contracts: finite values, real toolkit widgets, deterministic clock.
+coverage_core_theme is theme of null
+assert_eq of [(theme of null).bg[0], coverage_core_theme.bg[0], "theme getter returns selected palette"]
+assert_eq of [(theme_dark of null).bg[0], 25, "dark theme background"]
+assert_eq of [(theme_light of null).bg[0], 235, "light theme background"]
+assert_eq of [(theme_high_contrast of null).bg[0], 0, "high contrast background"]
+assert_true of [(set_theme of (theme_light of null)) == null and (theme of null).bg[0] == 235, "theme setter changes active palette"]
+assert_eq of [(_theme_color of ["missing-coverage-color", [11, 22, 33]])[1], 22, "missing theme color uses fallback"]
+assert_eq of [(_theme_color of ["bg", [11, 22, 33]])[0], 235, "present theme color wins"]
+set_theme of coverage_core_theme
+
+coverage_opts is {"container": 1, "focusable": 1}
+assert_true of [(_register_widget of ["coverage-custom", coverage_opts]) == null and _widget_registry["coverage-custom"].container == 1, "registry stores custom options"]
+assert_eq of [_is_container of "coverage-custom", 1, "registered custom container"]
+assert_eq of [_is_container of "coverage-absent", 0, "unregistered type is not container"]
+coverage_focus_button is button of ["coverage-focus", 0, 0, 20, 10, "F", null]
+assert_ui_result1 of [_is_focusable, coverage_focus_button, 1, "enabled visible button focusable"]
+coverage_focus_button.enabled is 0
+assert_ui_result1 of [_is_focusable, coverage_focus_button, 0, "disabled button not focusable"]
+coverage_focus_button.enabled is 1
+dict_remove of [_widget_registry, "coverage-custom"]
+
+# Tween start_time belongs to the returned ordinary object; the existing fake
+# clock reads 1000, so 950 is a deterministic half-duration update.
+coverage_core_tweens is _active_tweens
+_active_tweens is []
+coverage_anim is button of ["coverage-anim", 10, 0, 20, 10, "A", null]
+assert_ui_fields of [tween of [coverage_anim, "x", 20, 100, "linear"], {"start": 10, "target": 20, "duration": 100, "start_time": 1000}, "tween captures start and clock"]
+coverage_tw is tween of [coverage_anim, "x", 20, 100, "linear"]
+coverage_tw.start_time is 950
+assert_true of [(_update_tweens of null) == null and coverage_anim.x == 15, "tween half-duration interpolation"]
+assert_eq of [_tween_get of [coverage_anim, "x"], 15, "tween field getter"]
+assert_true of [(_tween_set of [coverage_anim, "x", 12]) == null and coverage_anim.x == 12, "tween field setter"]
+coverage_tw.start_time is 0
+assert_true of [(cancel_tweens of coverage_anim) == null and (_update_tweens of null) == null and coverage_anim.x == 12, "cancel prevents pending completion"]
+coverage_tx is tween of [coverage_anim, "x", 99, 100, "linear"]
+coverage_ty is tween of [coverage_anim, "y", 8, 100, "linear"]
+coverage_tx.start_time is 0
+coverage_ty.start_time is 0
+assert_true of [(_remove_tween of [coverage_anim, "x"]) == null and (_update_tweens of null) == null and coverage_anim.x == 12 and coverage_anim.y == 8, "field removal preserves other tween"]
+cancel_tweens of coverage_anim
+_active_tweens is coverage_core_tweens
+
+# Actual primitive calls with exact independently specified operands.
+coverage_draw_saved_rec is _gfx_rec
+_gfx_rec is 1
+coverage_draw_start is len of _gfx_log
+assert_true of [(_draw_box of [1, 2, 8, 9, [11, 22, 33], null]) == null and (len of _gfx_log) == coverage_draw_start + 1 and (str of _gfx_log[coverage_draw_start]) == (str of ["rrect", [1, 2, 8, 9, 0, 11, 22, 33]]), "plain box exact primitive"]
+coverage_draw_start is len of _gfx_log
+assert_true of [(_draw_rbox of [1, 2, 8, 9, 3, [11, 22, 33], [44, 55, 66]]) == null and (len of _gfx_log) == coverage_draw_start + 2 and (str of _gfx_log[coverage_draw_start + 1]) == (str of ["rrect", [2, 3, 6, 7, 3, 11, 22, 33]]), "rounded border insets fill"]
+coverage_draw_start is len of _gfx_log
+assert_true of [(_draw_text_clipped of [1, 2, 12, "abcd", [11, 22, 33], 1]) == null and (len of _gfx_log) == coverage_draw_start + 1 and (str of _gfx_log[coverage_draw_start]) == (str of ["text", [1, 2, "ab", 11, 22, 33, 1]]), "clipped text truncates by measured width"]
+coverage_draw_start is len of _gfx_log
+assert_true of [(_draw_focus_ring of [10, 20, 30, 40, 0]) == null and (len of _gfx_log) == coverage_draw_start + 4 and (str of _gfx_log[coverage_draw_start]) == (str of ["rect", [8, 18, 34, 2, _theme.focus_ring[0], _theme.focus_ring[1], _theme.focus_ring[2]]]), "focus ring extends outside box"]
+coverage_draw_start is len of _gfx_log
+assert_true of [(_draw_disabled_overlay of [1, 2, 8, 9]) == null and (len of _gfx_log) == coverage_draw_start + 1 and (str of _gfx_log[coverage_draw_start]) == (str of ["rrect", [1, 2, 8, 9, 0, _theme.disabled_overlay[0], _theme.disabled_overlay[1], _theme.disabled_overlay[2], 140]]), "disabled overlay alpha and bounds"]
+coverage_draw_start is len of _gfx_log
+assert_true of [(_draw_arc of [10, 20, 2, 0, 0, 1, [11, 22, 33]]) == null and (len of _gfx_log) == coverage_draw_start + 21 and (str of _gfx_log[coverage_draw_start]) == (str of ["point", [12, 20, 11, 22, 33]]), "arc finite point geometry"]
+coverage_clip_depth is _clip.depth
+assert_eq of [coverage_clip_depth, 0, "core clip controls start balanced"]
+assert_true of [(ui_clip_push of [1, 2, 8, 9]) == null and _clip.depth == coverage_clip_depth + 1 and (str of _gfx_log[(len of _gfx_log) - 1]) == (str of ["clip", [1, 2, 8, 9]]), "clip pushes own rectangle"]
+assert_true of [(ui_clip_push of [4, 5, 8, 9]) == null and (str of _gfx_log[(len of _gfx_log) - 1]) == (str of ["clip", [4, 5, 5, 6]]), "nested clip intersects parent"]
+assert_true of [(ui_clip_pop of null) == null and _clip.depth == coverage_clip_depth + 1 and (str of _gfx_log[(len of _gfx_log) - 1]) == (str of ["clip", [1, 2, 8, 9]]), "clip pop restores parent"]
+ui_clip_pop of null
+_gfx_rec is coverage_draw_saved_rec
+
+# Box layout observes actual child geometry and cached absolute positions.
+coverage_box is hbox of ["coverage-box", 10, 20, 100, 30]
+coverage_a is button of ["coverage-a", 0, 0, 10, 10, "A", null]
+coverage_b is button of ["coverage-b", 0, 0, 20, 10, "B", null]
+add_child of [coverage_box, coverage_a]
+add_child of [coverage_box, coverage_b]
+coverage_box.padding is 2
+coverage_box.gap is 3
+assert_true of [(_layout of [coverage_box, 5, 6]) == null and coverage_a._ax == 17 and coverage_a._ay == 28 and coverage_b.x == 15, "layout stamps absolute child geometry"]
+coverage_box.gap is 5
+assert_true of [(_layout_box of [coverage_box, 1]) == null and coverage_b.x == 17 and coverage_b._ax == 32, "box helper recomputes gap"]
+coverage_toolbar is toolbar of ["coverage-toolbar", 0, 0, 100]
+add_child of [coverage_toolbar, coverage_a]
+coverage_toolbar._ax is 3
+coverage_toolbar._ay is 4
+assert_true of [(_layout_toolbar of coverage_toolbar) == null and coverage_a.x == 8 and coverage_a.y == 15 and coverage_a._ax == 11 and coverage_a._ay == 19, "toolbar centers child vertically"]
+
+# Focus helpers: known tree, deterministic index movement and activation.
+coverage_focus_saved is {"list": _ui.focus_list, "index": _ui.focus_index, "widget": _ui.focused_widget, "input": _ui.focused_input}
+coverage_focus_root is panel of ["coverage-focus-root", 0, 0, 100, 100]
+coverage_focus_toggle is toggle of ["coverage-focus-toggle", 0, 0, 0, null]
+add_child of [coverage_focus_root, coverage_focus_button]
+add_child of [coverage_focus_root, coverage_focus_toggle]
+_ui.focus_list is []
+assert_true of [(_build_focus_list of coverage_focus_root) == null and (len of _ui.focus_list) == 2 and _ui.focus_list[1].id == "coverage-focus-toggle", "focus walk includes ordered visible controls"]
+assert_true of [(_sync_focus_to of coverage_focus_button) == null and _ui.focus_index == 0 and _ui.focused_widget.id == "coverage-focus", "focus sync locates actual widget"]
+assert_true of [(_focus_next of [coverage_focus_root, 0]) == null and _ui.focus_index == 1 and _ui.focused_widget.id == "coverage-focus-toggle", "focus next follows tree order"]
+assert_true of [(_handle_focus_key of [coverage_focus_root, {"key": "space", "shift": 0}]) == 1 and coverage_focus_toggle.value == 1, "focus activation changes toggle"]
+_ui.focus_list is coverage_focus_saved.list
+_ui.focus_index is coverage_focus_saved.index
+_ui.focused_widget is coverage_focus_saved.widget
+_ui.focused_input is coverage_focus_saved.input
+
+# Composed UI orchestration: finite widgets and one callback-terminated frame.
+coverage_main_saved is {}
+for coverage_key in keys of _ui:
+    dict_set of [coverage_main_saved, coverage_key, _ui[coverage_key]]
+coverage_main_record is _gfx_rec
+coverage_main_log is {"hotkeys": 0, "ticks": 0, "paints": 0}
+define coverage_main_hotkey(unused) as:
+    coverage_main_log.hotkeys is coverage_main_log.hotkeys + 1
+define coverage_main_paint(widget, ax, ay) as:
+    coverage_main_log.paints is coverage_main_log.paints + 1
+    gfx_rect of [ax, ay, 3, 4, 11, 22, 33]
+define coverage_main_tick(widget) as:
+    coverage_main_log.ticks is coverage_main_log.ticks + 1
+    request_quit of null
+_ui.hotkeys is []
+_ui.toasts is []
+_ui.modal_stack is []
+_ui.focus_list is []
+_ui.focused_widget is null
+_ui.focused_input is null
+_ui.drag_widget is null
+_ui.tooltip_widget is null
+_ui.edit_root is null
+_ui.dnd_state is {"active": 0, "source": null, "source_index": -1, "data": null, "mx": 20, "my": 30, "text": "A"}
+_ui.window_w is 200
+_ui.window_h is 100
+coverage_main_root is panel of ["coverage-main-root", 0, 0, 200, 100]
+coverage_main_button is button of ["coverage-main-button", 10, 20, 40, 24, "B", null]
+assert_true of [(add_child of [coverage_main_root, coverage_main_button]) == coverage_main_root and coverage_main_root.children[0].id == "coverage-main-button", "add child mounts exact widget"]
+assert_eq of [(find_by_id of [coverage_main_root, "coverage-main-button"]).id, "coverage-main-button", "recursive find returns child"]
+assert_eq of [find_by_id of [coverage_main_root, "coverage-main-missing"], null, "missing id has no match"]
+coverage_stack_a is button of ["coverage-stack-a", 0, 0, 10, 12, "A", null]
+coverage_stack_b is button of ["coverage-stack-b", 0, 0, 20, 14, "B", null]
+assert_true of [(len of (stack_vertical of [[coverage_stack_a, coverage_stack_b], 3, 4, 2])) == 2 and coverage_stack_b.x == 3 and coverage_stack_b.y == 18, "vertical stack includes prior height and gap"]
+assert_true of [(len of (stack_horizontal of [[coverage_stack_a, coverage_stack_b], 3, 4, 2])) == 2 and coverage_stack_b.x == 15 and coverage_stack_b.y == 4, "horizontal stack includes prior width and gap"]
+assert_true of [(show_toast of ["A", 1000]) == null and _ui.toasts[0].text == "A" and _ui.toasts[0].start_time == 1000, "toast records text and clock"]
+_gfx_rec is 1
+coverage_main_start is len of _gfx_log
+assert_true of [(_render_toasts of null) == null and (str of _gfx_log[coverage_main_start]) == (str of ["rrect", [172 - (6 * _theme.font_scale), 8, (6 * _theme.font_scale) + 16, (7 * _theme.font_scale) + 12, 4, 40, 40, 55, 220]]), "toast positions finite text against right edge"]
+_ui.toasts[0].start_time is 0
+assert_true of [(_update_toasts of null) == null and (len of _ui.toasts) == 0, "elapsed toast is removed"]
+coverage_main_button.tooltip is "A"
+_ui.tooltip_widget is coverage_main_button
+_ui.tooltip_start_time is 0
+_ui.tooltip_x is 40
+_ui.tooltip_y is 40
+coverage_main_start is len of _gfx_log
+assert_true of [(_render_tooltip of null) == null and (str of _gfx_log[coverage_main_start + 2]) == (str of ["text", [56, 24, "A", _theme.tooltip_text[0], _theme.tooltip_text[1], _theme.tooltip_text[2], 1]]), "tooltip actual text placement"]
+_ui.tooltip_widget is null
+_ui.dnd_state.active is 1
+coverage_main_start is len of _gfx_log
+assert_true of [(_render_dnd of null) == null and (str of _gfx_log[coverage_main_start + 1]) == (str of ["text", [36, 24, "A", 255, 255, 255, _theme.font_scale]]), "drag overlay paints carried label"]
+_ui.dnd_state.active is 0
+coverage_main_canvas is canvas of ["coverage-main-canvas", 2, 3, 20, 20, coverage_main_paint, null]
+assert_ui_render of [render, coverage_main_canvas, "rect", [12, 23, 3, 4, 11, 22, 33], "public render routes actual paint at composed origin"]
+assert_eq of [coverage_main_log.paints, 1, "public renderer callback once"]
+assert_eq of [(_hit_test of [coverage_main_root, 0, 0, 11, 21]).id, "coverage-main-button", "public tree hit resolves child"]
+coverage_main_button.hover is 1
+coverage_main_button.pressed is 1
+assert_true of [(_clear_hover of coverage_main_root) == null and coverage_main_button.hover == 0, "hover reset descends through registry container"]
+assert_true of [(_clear_pressed of coverage_main_root) == null and coverage_main_button.pressed == 0, "pressed reset descends through registry container"]
+coverage_main_scroll is scroll_panel of ["coverage-main-scroll", 0, 0, 100, 20]
+coverage_main_scroll.content_h is 80
+assert_true of [(_scroll_panels of [coverage_main_scroll, 0, 7]) == null and coverage_main_scroll.scroll_y == 7, "scroll routing invokes registry handler"]
+assert_eq of [(_find_scrollable_at of [coverage_main_scroll, 0, 0, 1, 1]).id, "coverage-main-scroll", "scroll target is actual bounded widget"]
+coverage_main_input is text_input of ["coverage-main-input", 0, 0, 100, "A", null]
+coverage_main_input.focused is 1
+assert_true of [(_unfocus_all of coverage_main_input) == null and coverage_main_input.focused == 0, "unfocus clears input state"]
+coverage_main_dialog is dialog of ["coverage-main-dialog", 80, 40, "D", "M", ["OK"], null]
+coverage_main_dialog.visible is 1
+assert_eq of [(_find_visible_dialog of coverage_main_dialog).id, "coverage-main-dialog", "visible dialog discovery"]
+assert_true of [(register_hotkey of ["ctrl+q", coverage_main_hotkey]) == null and _ui.hotkeys[0].combo == "ctrl+q", "hotkey registration records requested combo"]
+assert_true of [(_match_hotkey of {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}) == 1 and coverage_main_log.hotkeys == 1, "matching hotkey invokes callback"]
+assert_true of [(handle_key of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) == 1 and coverage_main_log.hotkeys == 2, "public key handler preserves hotkey priority"]
+assert_true of [(dispatch of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) == 1 and coverage_main_log.hotkeys == 3, "public dispatch routes keyboard callback"]
+assert_true of [(unregister_hotkey of "ctrl+q") == null and (len of _ui.hotkeys) == 0, "unregister removes exact combo"]
+assert_true of [(push_modal of [coverage_main_dialog, 200, 100]) == null and _ui.modal_stack[0].id == "coverage-main-dialog" and coverage_main_dialog.x == 60 and coverage_main_dialog.y == 30, "modal push centers and mounts dialog"]
+assert_true of [(pop_modal of null).id == "coverage-main-dialog" and coverage_main_dialog.visible == 0 and (len of _ui.modal_stack) == 0, "modal pop hides and returns same dialog"]
+assert_true of [(show_dialog of [coverage_main_dialog, 200, 100]) == null and coverage_main_dialog.visible == 1 and (len of _ui.modal_stack) == 1, "show dialog uses modal stack"]
+pop_modal of null
+coverage_main_menu is menu of ["coverage-main-menu", ["A"], null]
+assert_true of [(show_menu of [coverage_main_menu, 7, 9]) == null and coverage_main_menu.x == 7 and coverage_main_menu.y == 9 and coverage_main_menu.visible == 1, "show menu stamps requested origin"]
+coverage_main_popup is dropdown of ["coverage-main-popup", 0, 0, 100, ["A"], 0, null]
+coverage_main_popup.open is 1
+assert_eq of [_has_open_popup of coverage_main_popup, 1, "open dropdown reports overlay state"]
+assert_true of [(claim_drag of coverage_main_canvas) == null and _ui.drag_widget.id == "coverage-main-canvas", "claim drag records exact owner"]
+assert_true of [(release_drag of null) == null and _ui.drag_widget == null, "release drag clears owner"]
+assert_true of [(request_quit of null) == null and _ui.quit_requested == 1, "quit request latches UI flag"]
+# Poll stub returns null; on_tick requests quit, bounding the real loop to one frame.
+assert_true of [(app_loop of [coverage_main_root, null, coverage_main_tick]) == null and coverage_main_log.ticks == 1 and _ui.quit_requested == 1 and coverage_main_button._ax == 10, "app loop executes one callback and layout frame"]
+for coverage_key in keys of coverage_main_saved:
+    dict_set of [_ui, coverage_key, coverage_main_saved[coverage_key]]
+_gfx_rec is coverage_main_record
+
+# Button-family constructors and actual render operands.
+coverage_button_record is _gfx_rec
+assert_ui_fields of [button of ["coverage-button-new", 1, 2, 40, 24, "B", null], {"type": "button", "label": "B", "pressed": 0}, "button constructor state"]
+assert_ui_fields of [toggle_button of ["coverage-toggle-button-new", 1, 2, 40, 24, "B", null], {"type": "toggle_button", "value": 0}, "toggle button starts off"]
+assert_ui_fields of [checkbox of ["coverage-checkbox-new", 1, 2, "B", 1, null], {"type": "checkbox", "value": 1, "w": (6 * _theme.font_scale) + 22}, "checkbox measured label"]
+assert_ui_fields of [toggle of ["coverage-toggle-new", 1, 2, 1, null], {"type": "toggle", "value": 1, "w": 32, "h": 16}, "toggle compact geometry"]
+coverage_render_button is button of ["coverage-render-button", 0, 0, 40, 24, "B", null]
+coverage_render_button.bg is [11, 22, 33]
+coverage_render_toggle_button is toggle_button of ["coverage-render-toggle-button", 0, 0, 40, 24, "B", null]
+coverage_render_toggle_button.value is 1
+coverage_render_checkbox is checkbox of ["coverage-render-checkbox", 0, 0, "B", 1, null]
+coverage_render_toggle is toggle of ["coverage-render-toggle", 0, 0, 1, null]
+_gfx_rec is 1
+assert_ui_render of [_render_button, coverage_render_button, "rrect", [11, 21, 38, 22, _theme.radius_sm, 11, 22, 33], "custom button inset fill"]
+assert_ui_render of [_render_toggle_button, coverage_render_toggle_button, "rrect", [11, 21, 38, 22, _theme.radius_sm, _theme.accent[0], _theme.accent[1], _theme.accent[2]], "active toggle button inset fill"]
+assert_ui_render of [_render_checkbox, coverage_render_checkbox, "line", [13, 27, 16, 30, 255, 255, 255], "checkbox actual check stroke"]
+assert_ui_render of [_render_toggle, coverage_render_toggle, "circle", [34, 28, 5, 220, 220, 230], "on toggle thumb at right"]
+coverage_render_button.hover is 1
+coverage_button_start is len of _gfx_log
+assert_true of [(_draw_hover_shade of [coverage_render_button, 10, 20, 40, 24, 3]) == null and (str of _gfx_log[coverage_button_start]) == (str of ["rrect", [10, 20, 40, 24, 3, _theme.hover_shade[0], _theme.hover_shade[1], _theme.hover_shade[2], _theme.hover_shade[3]]]), "hover shade retains alpha and geometry"]
+_gfx_rec is coverage_button_record
+
 test_summary of null

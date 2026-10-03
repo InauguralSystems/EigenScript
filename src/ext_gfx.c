@@ -814,7 +814,7 @@ Value* builtin_gfx_poll(Value *arg) {
             poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_WINDOWEVENT:
-            /* SDL_WINDOWEVENT_RESIZED = 6 */
+            /* SDL_WINDOWEVENT_SIZE_CHANGED = 6 (RESIZED is 5). */
             if (ev.window.event == 6) {
                 dict_set_owned(d, "type", make_str("resize"));
                 dict_set_owned(d, "w", make_num(ev.window.data1));

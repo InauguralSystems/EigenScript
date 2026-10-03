@@ -900,6 +900,11 @@ Mouse and wheel events from `gfx_poll` carry `shift`/`ctrl`/`alt`
 (0/1) like key events; headless tests synthesize event dicts, where
 absent keys read null.
 
+The remaining public state helpers are `unregister_hotkey`,
+`hex_set_cursor`, `hex_view_metrics`, and `hex_view_addr_at`; these remove a
+registered shortcut and expose the hex viewer's cursor and coordinate
+conversion seams, respectively.
+
 ### lib/invariant.eigs — Runtime Invariant Checks
 
 Declare-and-check invariants inside programs; see the module header
@@ -1858,3 +1863,415 @@ signature (dodging the #294 flat-entropy blind spot). `supervisor_new`,
 [sup, max_ticks]` (drive to settled); wedged and crashed workers are
 restarted from their spec under a per-worker restart-intensity cap. Eight
 slots. See `examples/supervisor_tree.eigs`.
+
+<!-- ui-surface-contracts:start -->
+
+### UI function contracts
+
+Internal names below are implementation contracts for maintainers, not a stable application API.
+
+| Function | Contract |
+|---|---|
+| `_ease_linear(t)` | Internal linear easing returns the input fraction. |
+| `_ease_in(t)` | Internal quadratic easing returns the squared input fraction. |
+| `_ease_out(t)` | Internal quadratic deceleration returns one minus the squared remaining fraction. |
+| `_ease_in_out(t)` | Internal symmetric quadratic acceleration and deceleration branches at one half. |
+| `_point_in_rect(px, py, x, y, w, h)` | Internal containment includes left/top and excludes right/bottom edges. |
+| `text_width(text, scale)` | Measures active-backend text; bitmap fallback advances six pixels per character per scale. |
+| `text_height(scale)` | Measures active-backend font height; bitmap fallback is seven pixels per scale. |
+| `_combo_matches(combo, ctrl, shift, alt, key)` | Internal hotkey match requires exact modifiers and key. |
+| `label(id, x, y, text)` | Creates a visible automatically measured text widget with theme color and scale. |
+| `separator(id, x, y, length, vertical)` | Creates a one-pixel line whose requested length is its height when vertical. |
+| `section(id, x, y, w, text)` | Creates a 20-pixel-high section caption with the requested width. |
+| `color_dot(id, x, y, size, color)` | Creates a square indicator rendered as a centered circle. |
+| `badge(id, x, y, text, color)` | Creates a colored badge padded around measured text. |
+| `progress_bar(id, x, y, w, value)` | Creates a 12-pixel-high bar with fill width equal to the floored fraction times width. |
+| `_label_measure(widget)` | Internal measurement hook updates width and height from current text and scale. |
+| `_render_label(widget, ax, ay)` | Internal renderer emits text at the absolute origin with widget color and scale. |
+| `_render_separator(widget, ax, ay)` | Internal renderer emits the widget's line bounds and color. |
+| `_render_section(widget, ax, ay)` | Internal renderer places a caption between decorative horizontal lines. |
+| `_render_color_dot(widget, ax, ay)` | Internal renderer centers a circle using half the widget dimensions. |
+| `_render_badge(widget, ax, ay)` | Internal renderer paints a rounded background and padded white text. |
+| `_render_progress_bar(widget, ax, ay)` | Internal renderer paints the track and positive fractional fill with theme colors. |
+| `_mousedown_button(hit, root, mx, my, ev)` | Internal handler sets pressed only for an enabled button. |
+| `_clear_pressed_button(widget)` | Internal reset hook clears pressed state. |
+| `_mousedown_toggle(hit, root, mx, my, ev)` | Internal enabled toggle handler flips value and invokes an installed change callback. |
+| `_mousedown_checkbox(hit, root, mx, my, ev)` | Internal enabled checkbox handler flips value and invokes an installed change callback. |
+| `_mousedown_toggle_button(hit, root, mx, my, ev)` | Internal enabled toggle-button handler flips value and invokes an installed click callback. |
+
+## Input widgets and internal handlers
+
+| Signature | Contract |
+|---|---|
+| `text_input(id, x, y, w, text, on_change)` | Create a 24px text input with cursor at text end, empty selection and disabled focus. |
+| `editable_label(id, x, y, text, on_commit)` | Create a nonediting label sized from text metrics; retains commit callback and scale. |
+| `spinbox(id, x, y, w, min_val, max_val, value, step, on_change)` | Create a 24px stepped numeric control carrying min/max/value and change callback. |
+| `combobox(id, x, y, w, items, on_change)` | Create a closed, unselected filter control; filtered rows initially match supplied items. |
+| `_render_text_input(widget, ax, ay)` | Internal: paint input frame, clipped text, selection and focused blinking caret at supplied absolute origin. |
+| `_render_editable_label(widget, ax, ay)` | Internal: paint plain supplied label colors, or editing frame/text/caret when editing. |
+| `_render_spinbox(widget, ax, ay)` | Internal: paint numeric text and distinct minus/plus controls using hover state. |
+| `_render_combobox(widget, ax, ay)` | Internal: cache absolute origin and paint box, current filter/selection and arrow; popup uses separate pass. |
+| `_combobox_popup_rect(widget)` | Internal: return absolute popup rectangle below box with 24px rows capped at 200px height. |
+| `_render_combobox_popup(widget)` | Internal: paint open cached-origin popup frame and filtered rows; closed/empty/unplaced popup emits nothing. |
+| `_hit_test_combobox(widget, ax, ay, mx, my)` | Internal: return the widget only within its closed box; popup is excluded from in-tree hit bounds. |
+| `_mousemove_spinbox(hit, root, mx, my)` | Internal: derive minus/plus hover button from absolute mouse x. |
+| `_combobox_item_at(widget, my)` | Internal: map absolute mouse y to filtered row or -1 outside rows. |
+| `_mousemove_combobox(hit, root, mx, my)` | Internal: update open-popup hover index from actual y. |
+| `_mousedown_text_input(hit, root, mx, my, ev)` | Internal: enabled press clears root focus, focuses input and records it in UI state. |
+| `_mousedown_editable_label(hit, root, mx, my, ev)` | Internal: single mouse press leaves editing unchanged; editing starts elsewhere. |
+| `_mousedown_spinbox(hit, root, mx, my, ev)` | Internal: enabled minus/plus press applies step, clamps range and calls change callback. |
+| `_mousedown_combobox(hit, root, mx, my, ev)` | Internal: enabled press opens/reset filter or selects actual clicked row, closes and invokes callback. |
+| `_clear_hover_spinbox(widget)` | Internal: clear outer hover and minus/plus hover. |
+| `_clear_hover_combobox(widget)` | Internal: clear outer hover and row hover. |
+| `_handle_text_key(widget, ev)` | Internal: apply typed keyboard editing/selection/clipboard/navigation events and change/commit behavior. |
+| `_insert_char(widget, ch)` | Internal: replace selection if present, insert character at caret and notify change callback. |
+| `_get_selected_text(widget)` | Internal: return selected substring with normalized endpoints, or empty string when no valid selection. |
+| `_delete_selection(widget)` | Internal: remove normalized selected interval and reset caret/selection. |
+| `_clear_selection(widget)` | Internal: reset existing selection bounds to -1 without changing text. |
+| `_start_editing(widget)` | Internal: commit other editable controls under edit root, focus this label and move caret to end. |
+| `_commit_editing(widget)` | Internal: stop editing, resize from text/scale, clear UI focus and invoke commit callback. |
+| `_unfocus_all_editable(widget)` | Internal: recursively commit editing labels in containers, tabs and splitter panels. |
+| `_handle_combobox_key(widget, ev)` | Internal: handle row navigation/select/escape or update text filter and reset hovered result row. |
+
+| `dropdown(id, x, y, w, items, selected, on_change)` | Creates a 24px closed selectable list with enabled/visible defaults. |
+| `menu(id, items, on_select)` | Creates a hidden popup with item rows and selection callback. |
+| `_menu_content_w(items)` | Internal: Returns at least 120px and accommodates labels plus shortcuts. |
+| `menu_bar(id, x, y, w, menus)` | Measures title widths and owns hidden pull-down menus. |
+| `radio_group(id, x, y, items, selected, on_change)` | Creates a segmented single-selection control. |
+| `tabs(id, x, y, w, h, tab_names, on_tab)` | Creates an active-zero tab strip with optional panels. |
+| `_render_dropdown(widget, ax, ay)` | Internal: Emits widget-specific primitive geometry and colors; popup renderers honor open/visible state. |
+| `_dropdown_popup_rect(widget)` | Internal: Returns cached absolute popup bounds, below the 2px gap. |
+| `_render_dropdown_popup(widget)` | Internal: Emits widget-specific primitive geometry and colors; popup renderers honor open/visible state. |
+| `_render_menu(widget, ax, ay)` | Internal: Emits widget-specific primitive geometry and colors; popup renderers honor open/visible state. |
+| `_menu_bar_title_at(widget, rel_x)` | Internal: Returns the title interval index or -1. |
+| `_menu_bar_popup_pos(widget, idx)` | Internal: Places a pull-down below its title and clamps to window width. |
+| `_render_menu_bar(widget, ax, ay)` | Internal: Emits widget-specific primitive geometry and colors; popup renderers honor open/visible state. |
+| `_render_menu_bar_popup(widget)` | Internal: Emits widget-specific primitive geometry and colors; popup renderers honor open/visible state. |
+| `_hit_test_menu_bar(widget, ax, ay, mx, my)` | Internal: Returns this widget for its specified hit rectangle, otherwise null; overlays are handled separately where applicable. |
+| `_mousedown_menu_bar(hit, root, mx, my, ev)` | Internal: Applies click selection/toggle state and invokes the configured callback for a valid choice. |
+| `_mousemove_menu_bar(hit, root, mx, my)` | Internal: Updates the widget hover row/title/segment from actual absolute pointer coordinates. |
+| `_clear_hover_menu_bar(widget)` | Internal: Clears the widget-specific hover fields to their inactive sentinel. |
+| `_menu_bar_close(widget)` | Internal: Hides the owned open popup and resets open_index. |
+| `_render_radio_group(widget, ax, ay)` | Internal: Emits widget-specific primitive geometry and colors; popup renderers honor open/visible state. |
+| `_render_tabs(widget, ax, ay)` | Internal: Emits widget-specific primitive geometry and colors; popup renderers honor open/visible state. |
+| `_hit_test_dropdown(widget, ax, ay, mx, my)` | Internal: Returns this widget for its specified hit rectangle, otherwise null; overlays are handled separately where applicable. |
+| `_hit_test_tabs(widget, ax, ay, mx, my)` | Internal: Returns this widget for its specified hit rectangle, otherwise null; overlays are handled separately where applicable. |
+| `_hit_test_menu(widget, ax, ay, mx, my)` | Internal: Returns this widget for its specified hit rectangle, otherwise null; overlays are handled separately where applicable. |
+| `_dropdown_item_at(widget, my)` | Internal: Returns the 24px popup row from absolute y, or -1. |
+| `_mousemove_dropdown(hit, root, mx, my)` | Internal: Updates the widget hover row/title/segment from actual absolute pointer coordinates. |
+| `_mousemove_menu(hit, root, mx, my)` | Internal: Updates the widget hover row/title/segment from actual absolute pointer coordinates. |
+| `_mousemove_radio_group(hit, root, mx, my)` | Internal: Updates the widget hover row/title/segment from actual absolute pointer coordinates. |
+| `_mousemove_tabs(hit, root, mx, my)` | Internal: Updates the widget hover row/title/segment from actual absolute pointer coordinates. |
+| `_mousedown_dropdown(hit, root, mx, my, ev)` | Internal: Applies click selection/toggle state and invokes the configured callback for a valid choice. |
+| `_mousedown_menu(hit, root, mx, my, ev)` | Internal: Applies click selection/toggle state and invokes the configured callback for a valid choice. |
+| `_mousedown_radio_group(hit, root, mx, my, ev)` | Internal: Applies click selection/toggle state and invokes the configured callback for a valid choice. |
+| `_mousedown_tabs(hit, root, mx, my, ev)` | Internal: Applies click selection/toggle state and invokes the configured callback for a valid choice. |
+| `_clear_hover_dropdown(widget)` | Internal: Clears the widget-specific hover fields to their inactive sentinel. |
+| `_clear_hover_radio_group(widget)` | Internal: Clears the widget-specific hover fields to their inactive sentinel. |
+| `_clear_hover_tabs(widget)` | Internal: Clears the widget-specific hover fields to their inactive sentinel. |
+| `_update_tab_hover(widget, rel_x)` | Internal: Updates hover_tab from a bar-relative x coordinate. |
+| `_tab_index_at(widget, rel_x)` | Internal: Returns the tab interval index or -1. |
+| `_radio_index_at(widget, rel_x)` | Internal: Returns the radio segment index or -1. |
+| `_close_dropdowns(widget)` | Internal: Recursively closes dropdown and combobox leaves. |
+| `_close_dropdowns_except(widget, keep)` | Internal: Recursively closes lists except the matching target id. |
+| `_close_menu_bars(widget, keep)` | Internal: Recursively closes bars except the matching target id. |
+| `_find_open_popup_at(widget, mx, my)` | Internal: Returns the visible overlay widget under absolute pointer coordinates. |
+| `_render_popups(widget)` | Internal: Emits widget-specific primitive geometry and colors; popup renderers honor open/visible state. |
+| `_close_menus(widget)` | Internal: Recursively hides popup menu leaves. |
+
+| `dialog(id, w, h, title, message, buttons, on_button)` | Creates a hidden modal container with title, message and button callbacks. |
+| `_dialog_btn_rect(widget, i, ax, ay)` | Internal: Returns right-aligned button bounds or null for an invalid index. |
+| `_dialog_btn_at(widget, ax, ay, mx, my)` | Internal: Returns the button at an absolute point or -1. |
+| `color_picker(id, x, y, on_change)` | Creates a red HSV picker with 180x150 geometry. |
+| `property_editor(id, x, y, w, h, properties, on_change)` | Builds labeled typed property controls inside a scrolling container. |
+| `_make_prop_cb(on_change, key)` | Internal: Returns a callback translating a control value into a key/value change record. |
+| `_hsv_to_rgb(h, s, v)` | Internal: Converts finite HSV components to floored RGB channels. |
+| `_render_dialog(widget, ax, ay)` | Internal: Draws modal dimming, chrome, children and button strip. |
+| `_render_color_picker(widget, ax, ay)` | Internal: Draws SV/hue gradients, cursor marks and the actual RGB preview. |
+| `_mousedown_color_picker(hit, root, mx, my, ev)` | Internal: Selects the SV or hue drag region and calls the change callback. |
+| `_drag_color_picker(w, ev)` | Internal: Clamps dragged HSV coordinates, recomputes RGB and calls the callback. |
+| `_hit_test_dialog(widget, ax, ay, mx, my)` | Internal: Hit-tests children topmost-first, then visible dialog chrome. |
+| `_mousedown_dialog(hit, root, mx, my, ev)` | Internal: Hides a dialog after a valid button click and reports its index. |
+| `_mousemove_dialog(hit, root, mx, my)` | Internal: Sets hovered button from the shared button geometry. |
+| `_clear_hover_dialog(widget)` | Internal: Clears the hovered button sentinel. |
+| `_fd_join(dir, name)` | Internal: Joins an entry path, with parent-navigation handling. |
+| `_fd_parent(dir)` | Internal: Returns the parent directory with root and trailing-slash handling. |
+| `file_dialog_refresh(fd)` | Reads actual directory entries, sorts directories before files and resets list state. |
+| `_fd_is_dir(dir, name)` | Internal: Uses the actual filesystem directory predicate on a joined path. |
+| `file_dialog(id, w, h, title, start_dir, on_ok)` | Builds a dialog with directory label, listing and editable chosen path. |
+
+## Slider widgets and internal handlers
+
+| Signature | Contract |
+|---|---|
+| `slider(id, x, y, w, min_val, max_val, value, on_change)` | Create a horizontal 16px slider with supplied range/value and initially inactive drag. |
+| `vslider(id, x, y, h, min_val, max_val, value, on_change)` | Create a vertical 16px-wide slider; drag maps the top to the maximum. |
+| `knob(id, x, y, size, min_val, max_val, value, on_change)` | Create a square rotary control with captured drag-origin fields initially zero. |
+| `scrollbar(id, x, y, length, vertical, on_change)` | Create a horizontal or vertical 12px track with normalized value zero and 0.2 thumb proportion. |
+| `_render_slider(widget, ax, ay)` | Internal: draw track, proportional horizontal fill and thumb at the supplied absolute origin. |
+| `_render_vslider(widget, ax, ay)` | Internal: draw vertical track with proportional fill measured upward from the bottom. |
+| `_render_knob(widget, ax, ay)` | Internal: draw knob disk and angle indicator derived from its normalized value. |
+| `_render_scrollbar(widget, ax, ay)` | Internal: draw oriented track and minimum-sized proportional thumb, highlighting hover or drag. |
+| `_mousedown_slider(hit, root, mx, my, ev)` | Internal: enabled press captures horizontal origin, starts dragging and applies mouse x. |
+| `_mousedown_vslider(hit, root, mx, my, ev)` | Internal: enabled press captures vertical origin, starts dragging and applies reversed mouse y. |
+| `_mousedown_knob(hit, root, mx, my, ev)` | Internal: enabled press captures starting y and value for subsequent relative drag. |
+| `_mousedown_scrollbar(hit, root, mx, my, ev)` | Internal: enabled press captures both origins and positions the thumb on its oriented track. |
+| `_update_drag(widget, mx)` | Internal: map horizontal mouse displacement to range, clamp it and notify an installed change callback. |
+| `_update_vdrag(widget, my)` | Internal: invert vertical displacement to range, clamp it and notify an installed change callback. |
+| `_update_knob_drag(widget, my)` | Internal: map 200px relative drag to a full value range using the captured starting value, then clamp. |
+| `_update_scrollbar_drag(widget, mx, my)` | Internal: normalize the thumb center on the usable oriented track and clamp to zero through one. |
+| `_drag_slider(w, ev)` | Internal: delegate captured motion x to horizontal slider drag calculation. |
+| `_drag_vslider(w, ev)` | Internal: delegate captured motion y to reversed vertical slider calculation. |
+| `_drag_knob(w, ev)` | Internal: delegate captured motion y to relative knob calculation. |
+| `_drag_scrollbar(w, ev)` | Internal: pass both motion coordinates to the orientation-aware scrollbar calculation. |
+
+| `splitter(id, x, y, w, h, split_pos, on_resize)` | Creates a two-panel divider with explicit bar geometry. |
+| `piano_keyboard(id, x, y, octaves, on_note)` | Creates a horizontal note-trigger strip with a final C key. |
+| `_piano_note_at(widget, rel_x, rel_y)` | Internal: Checks black-key overlap before mapping white-key pitch. |
+| `_render_splitter(widget, ax, ay)` | Internal: Renders clipped panes and the divider bar. |
+| `_render_piano_kb(widget, ax, ay)` | Internal: Renders white keys, black overlays and octave labels. |
+| `_hit_test_splitter(widget, ax, ay, mx, my)` | Internal: Returns divider or child hit, otherwise null. |
+| `_mousemove_piano_kb(hit, root, mx, my)` | Internal: Updates hovered note using absolute pointer coordinates. |
+| `_mousedown_splitter(hit, root, mx, my, ev)` | Internal: Starts divider drag and records its absolute origin. |
+| `_drag_splitter(w, ev)` | Internal: Clamps split position and invokes resize callback. |
+| `_mousedown_piano_kb(hit, root, mx, my, ev)` | Internal: Records pressed pitch and invokes note-on callback. |
+| `_clear_hover_splitter(widget)` | Internal: Clears divider hover. |
+| `_clear_hover_piano_kb(widget)` | Internal: Clears piano hover pitch. |
+| `_clear_pressed_piano_kb(widget)` | Internal: Releases a held note and invokes note-off once. |
+
+| `panel(id, x, y, w, h)` | Creates a visible framed child container. |
+| `hbox(id, x, y, w, h)` | Creates a horizontal layout container with zero gap/padding defaults. |
+| `vbox(id, x, y, w, h)` | Creates a vertical layout container with zero gap/padding defaults. |
+| `toolbar(id, x, y, w)` | Creates a 40px toolbar with padding and gap. |
+| `statusbar(id, x, y, w)` | Creates a 24px section strip. |
+| `scroll_panel(id, x, y, w, h)` | Creates a framed scroll container with zero offsets. |
+| `_render_panel(widget, ax, ay)` | Internal: Renders the panel frame then its children. |
+| `_render_hbox(widget, ax, ay)` | Internal: Renders optional background then horizontal children. |
+| `_render_vbox(widget, ax, ay)` | Internal: Renders optional background then vertical children. |
+| `_render_toolbar(widget, ax, ay)` | Internal: Renders toolbar strip then children. |
+| `_render_statusbar(widget, ax, ay)` | Internal: Renders fixed/flexible text sections and separators. |
+| `_render_scroll_panel(widget, ax, ay)` | Internal: Clips scrolled children and draws proportional scroll thumbs. |
+| `_hit_test_container(widget, ax, ay, mx, my)` | Internal: Hit-tests children in reverse paint order. |
+| `_hit_test_scroll_panel(widget, ax, ay, mx, my)` | Internal: Returns scrollbar, scrolled child or container within bounds. |
+| `_mousedown_scroll_panel(hit, root, mx, my, ev)` | Internal: Maps scrollbar click fraction to clamped scroll offset. |
+| `_scroll_scroll_panel(widget, dx, dy)` | Internal: Adds deltas and clamps both offsets to content extents. |
+
+| `dock(id, x, y, w, h)` | Creates a workspace with optional west/east/south regions and center. |
+| `dock_panel(title, widget)` | Creates an expanded titled wrapper around a hosted widget. |
+| `dock_add(dk, region, p)` | Mounts a region panel and registers its hosted child. |
+| `dock_set_center(dk, widget)` | Sets and registers the center widget. |
+| `dock_set_collapsed(dk, p, v)` | Sets collapse state silently; layout later updates visibility. |
+| `_dock_title_h()` | Internal: Returns scale-one title text height plus padding. |
+| `_dock_origin(dk)` | Internal: Uses cached absolute origin when available, otherwise local coordinates. |
+| `dock_view(dk)` | Returns absolute region, title, body, handle and center geometry. |
+| `_layout_dock(dk)` | Internal: Stamps hosted bounds and hides collapsed panel bodies. |
+| `_render_dock(widget, ax, ay)` | Internal: Draws region chrome, clipped hosted content, handles and borders. |
+| `_dock_in(r, mx, my)` | Internal: Checks a finite rectangle, returning false for null. |
+| `_dock_in_handle(r, mx, my, horiz)` | Internal: Checks thin handle bounds with axis-specific three-pixel hit slop. |
+| `_hit_test_dock(widget, ax, ay, mx, my)` | Internal: Routes handles/titles to the dock and bodies to hosted widgets. |
+| `_mousedown_dock(hit, root, mx, my, ev)` | Internal: Claims a region drag or toggles a title, honoring interactive state. |
+| `_drag_dock(w, ev)` | Internal: Resizes the held region with minimum-region and minimum-center constraints. |
+| `_clear_pressed_dock(widget)` | Internal: Clears the active drag region. |
+
+| `table(id, x, y, w, h, columns, on_select)` | Creates a selectable/sortable table with 24px header and 22px rows. |
+| `tree(id, x, y, w, h, nodes, on_select)` | Creates an expandable node view with 22px items. |
+| `item_list(id, x, y, w, h, items, on_select)` | Creates a selectable scrolling list with drag mode disabled. |
+| `grid(id, x, y, cols, rows, cell_w, cell_h, on_cell)` | Allocates finite zero cells and defaults to widget-owned toggling. |
+| `_flatten_tree(nodes, depth, out)` | Internal: Appends depth-tagged visible nodes, descending only expanded branches. |
+| `_render_table(widget, ax, ay)` | Internal: Renders visible data rows/cells with measured geometry, palette and containment. |
+| `_render_tree(widget, ax, ay)` | Internal: Renders visible data rows/cells with measured geometry, palette and containment. |
+| `_render_item_list(widget, ax, ay)` | Internal: Renders visible data rows/cells with measured geometry, palette and containment. |
+| `_grid_gutter(widget)` | Internal: Returns zero without labels, otherwise configured gutter width. |
+| `_grid_measure(widget)` | Internal: Restamps width from gutter plus cell columns. |
+| `grid_cell_origin(widget)` | Returns cached absolute cell-zero origin including gutter. |
+| `_render_grid(widget, ax, ay)` | Internal: Renders visible data rows/cells with measured geometry, palette and containment. |
+| `_mousemove_table(hit, root, mx, my)` | Internal: Updates data-specific hover position from absolute pointer and scroll offsets. |
+| `_mousemove_tree(hit, root, mx, my)` | Internal: Updates data-specific hover position from absolute pointer and scroll offsets. |
+| `_mousemove_item_list(hit, root, mx, my)` | Internal: Updates data-specific hover position from absolute pointer and scroll offsets. |
+| `_mousemove_grid(hit, root, mx, my)` | Internal: Updates data-specific hover position from absolute pointer and scroll offsets. |
+| `_mousedown_table(hit, root, mx, my, ev)` | Internal: Selects or toggles a valid data target and reports its configured callback. |
+| `_mousedown_tree(hit, root, mx, my, ev)` | Internal: Selects or toggles a valid data target and reports its configured callback. |
+| `_mousedown_item_list(hit, root, mx, my, ev)` | Internal: Selects or toggles a valid data target and reports its configured callback. |
+| `_mousedown_grid(hit, root, mx, my, ev)` | Internal: Selects or toggles a valid data target and reports its configured callback. |
+| `_clear_hover_table(widget)` | Internal: Resets all data-specific hover sentinels. |
+| `_clear_hover_tree(widget)` | Internal: Resets all data-specific hover sentinels. |
+| `_clear_hover_item_list(widget)` | Internal: Resets all data-specific hover sentinels. |
+| `_clear_hover_grid(widget)` | Internal: Resets all data-specific hover sentinels. |
+| `_scroll_table(widget, dx, dy)` | Internal: Applies vertical delta and clamps to actual visible data extent. |
+| `_scroll_tree(widget, dx, dy)` | Internal: Applies vertical delta and clamps to actual visible data extent. |
+| `_scroll_item_list(widget, dx, dy)` | Internal: Applies vertical delta and clamps to actual visible data extent. |
+| `hex_view(id, x, y, w, h, reader, size)` | Creates a reader-backed byte view without copying source data. |
+| `hex_set_cursor(hv, addr)` | Sets absolute cursor silently, without user callback. |
+| `hex_view_metrics(hv)` | Returns measured glyph, gutter, cell and row dimensions. |
+| `hex_view_addr_at(hv, mx, my)` | Maps screen coordinates to byte address or -1 for a miss. |
+| `_hex_style_color(st)` | Internal: Resolves a theme-key color or preserves literal RGB. |
+| `_render_hex_view(widget, ax, ay)` | Internal: Renders visible data rows/cells with measured geometry, palette and containment. |
+| `_mousemove_hex_view(hit, root, mx, my)` | Internal: Updates data-specific hover position from absolute pointer and scroll offsets. |
+| `_mousedown_hex_view(hit, root, mx, my, ev)` | Internal: Selects or toggles a valid data target and reports its configured callback. |
+| `_clear_hover_hex_view(widget)` | Internal: Resets all data-specific hover sentinels. |
+| `_scroll_hex_view(widget, dx, dy)` | Internal: Applies vertical delta and clamps to actual visible data extent. |
+
+| `chart(id, x, y, w, h)` | Creates an autoscaled chart with identity pan/zoom. |
+| `chart_series(label, xs, ys, color)` | Creates a series with optional explicit x data and literal color. |
+| `chart_add_series(ch, s)` | Appends a series and returns its index. |
+| `chart_marker(kind, x, y, label, color)` | Creates a typed data-coordinate marker. |
+| `chart_vline(x, label, color)` | Creates a vertical marker using only x. |
+| `chart_hline(y, label, color)` | Creates a horizontal marker using only y. |
+| `chart_add_marker(ch, m)` | Appends a marker and returns its index. |
+| `add_point(ch, series_idx, value)` | Appends an index-x sample and extends cached bounds. |
+| `add_xy(ch, series_idx, x, y)` | Appends an explicit x/y sample, materializing prior index coordinates if needed. |
+| `chart_trim(ch, series_idx, max_n)` | Keeps the newest samples and invalidates bounds after trimming. |
+| `_chart_extend(ch, si, vx, vy)` | Internal: Widens an initialized sample cache for an accounted append. |
+| `chart_invalidate(ch)` | Invalidates per-chart and per-series bounds marks. |
+| `_chart_scan(ch)` | Internal: Scans missing/replaced samples into the bounds cache. |
+| `chart_bounds(ch)` | Resolves data range with autoscale padding and explicit overrides. |
+| `_chart_plot_rect(ch, ax, ay)` | Internal: Returns plot bounds after chart padding with positive size floors. |
+| `_chart_origin(ch)` | Internal: Resolves cached absolute chart origin or local coordinates. |
+| `chart_view(ch)` | Returns visible transformed data bounds and plot geometry. |
+| `_chart_map(v, dx, dy)` | Internal: Maps data coordinates to unrounded screen pixels. |
+| `chart_to_pixel(ch, dx, dy)` | Maps data coordinates using the current visible chart transform. |
+| `chart_from_pixel(ch, sx, sy)` | Maps screen pixels back to data coordinates. |
+| `chart_reset_view(ch)` | Resets pan and zoom to identity. |
+| `chart_pan_by(ch, dpx, dpy)` | Converts pixel drag deltas into data pan offsets. |
+| `chart_zoom_at(ch, factor, sx, sy)` | Clamps zoom and preserves the data under an anchor pixel. |
+| `_chart_nice_step(span, target)` | Internal: Chooses a round 1/2/5 power-of-ten tick step. |
+| `chart_ticks(v0, v1, target)` | Produces bounded round ticks within an axis interval. |
+| `_chart_fmt(v, step)` | Internal: Formats rounded tick values with precision derived from step. |
+| `_clip_seg(x0, y0, x1, y1, rx, ry, rw, rh)` | Internal: Clips a segment against a finite rectangle or returns null. |
+| `_chart_line(x0, y0, x1, y1, r, c)` | Internal: Emits a clipped, floored and clamped line primitive. |
+| `_clampi(v, lo, hi)` | Internal: Clamps a scalar to a finite interval. |
+| `_chart_dot(x, y, rad, r, c)` | Internal: Intersects a sample marker rectangle with plot bounds. |
+| `_chart_text(x, y, txt, c, scale, r)` | Internal: Emits only vertically fitting text, horizontally width-clipped. |
+| `_chart_series_color(ch, si)` | Internal: Returns literal series color or indexed theme palette. |
+| `bar_chart(id, x, y, w, h, labels, values, on_click)` | Creates a labeled bar chart with callback and hover defaults. |
+| `gauge(id, x, y, size, min_val, max_val, value, label)` | Creates a square range gauge. |
+| `meter(id, x, y, w, h)` | Creates an empty level/peak meter. |
+| `canvas(id, x, y, w, h, on_paint, on_mouse)` | Creates callback-driven custom paint and input surface. |
+| `waveform_view(id, x, y, w, h)` | Creates an unselected waveform view with identity sample transform. |
+| `code_view(id, x, y, w, h, text)` | Creates a scrolling code view with optional styled spans. |
+| `_render_chart(widget, ax, ay)` | Internal: Emits the widget's primitive geometry and colors, with visible data and containment rules. |
+| `_render_bar_chart(widget, ax, ay)` | Internal: Emits the widget's primitive geometry and colors, with visible data and containment rules. |
+| `_render_gauge(widget, ax, ay)` | Internal: Emits the widget's primitive geometry and colors, with visible data and containment rules. |
+| `_render_meter(widget, ax, ay)` | Internal: Emits the widget's primitive geometry and colors, with visible data and containment rules. |
+| `_render_canvas(widget, ax, ay)` | Internal: Emits the widget's primitive geometry and colors, with visible data and containment rules. |
+| `_render_waveform_view(widget, ax, ay)` | Internal: Emits the widget's primitive geometry and colors, with visible data and containment rules. |
+| `_render_code_view(widget, ax, ay)` | Internal: Emits the widget's primitive geometry and colors, with visible data and containment rules. |
+| `_mousemove_chart(hit, root, mx, my)` | Internal: Computes observable nearest sample/bar/item hover from actual pointer coordinates. |
+| `_mousedown_chart(hit, root, mx, my, ev)` | Internal: Applies the widget's pointer gesture and invokes its configured callback or claims drag. |
+| `_drag_chart(w, ev)` | Internal: Updates the held pan, selection or scrub gesture from event coordinates. |
+| `_wheel_chart(w, ev)` | Internal: Zooms about the actual event or toolkit pointer anchor. |
+| `_mousemove_bar_chart(hit, root, mx, my)` | Internal: Computes observable nearest sample/bar/item hover from actual pointer coordinates. |
+| `_mousedown_canvas(hit, root, mx, my, ev)` | Internal: Applies the widget's pointer gesture and invokes its configured callback or claims drag. |
+| `_mousedown_waveform_view(hit, root, mx, my, ev)` | Internal: Applies the widget's pointer gesture and invokes its configured callback or claims drag. |
+| `_drag_waveform_view(w, ev)` | Internal: Updates the held pan, selection or scrub gesture from event coordinates. |
+| `_mousedown_bar_chart(hit, root, mx, my, ev)` | Internal: Applies the widget's pointer gesture and invokes its configured callback or claims drag. |
+| `_clear_hover_chart(widget)` | Internal: Clears the widget's hover sentinel fields. |
+| `_clear_hover_bar_chart(widget)` | Internal: Clears the widget's hover sentinel fields. |
+| `_scroll_code_view(widget, dx, dy)` | Internal: Clamps vertical scroll to actual line count and measured row height. |
+| `timeline(id, x, y, w, h)` | Creates a lane timeline with identity view and hidden cursor. |
+| `timeline_lane(id, label)` | Creates an id/label lane record. |
+| `timeline_add_lane(tl, lane)` | Appends a lane and returns its index. |
+| `timeline_lane_index(tl, lane_id)` | Resolves lane id to index or -1. |
+| `timeline_marker(t, lane, kind)` | Creates a time/lane/kind event record. |
+| `timeline_span(t0, t1, lane, kind)` | Creates a time interval/lane/kind record. |
+| `timeline_add_marker(tl, m)` | Appends a marker and incrementally widens accounted bounds. |
+| `timeline_add_span(tl, s)` | Appends a span and incrementally widens accounted bounds. |
+| `timeline_style(tl, kind, style)` | Associates an event kind with theme-key or literal RGB style. |
+| `timeline_set_cursor(tl, t)` | Sets cursor silently without user scrub callback. |
+| `_tl_widen(tl, ta, tb)` | Internal: Widens initialized cached time endpoints. |
+| `timeline_invalidate(tl)` | Resets bounds and marker/span scan counters. |
+| `_tl_scan(tl)` | Internal: Scans unaccounted marker/span endpoints into cached bounds. |
+| `timeline_bounds(tl)` | Resolves data time endpoints with explicit overrides. |
+| `_tl_origin(tl)` | Internal: Resolves cached absolute timeline origin or local coordinates. |
+| `timeline_view(tl)` | Returns transformed time bounds and ruler/lane body geometry. |
+| `timeline_to_pixel(tl, t)` | Maps time to absolute unrounded x. |
+| `timeline_from_pixel(tl, sx)` | Maps absolute x to visible time. |
+| `timeline_lane_at(tl, sy)` | Maps absolute y to lane index or -1. |
+| `timeline_reset_view(tl)` | Resets time pan and zoom to identity. |
+| `timeline_pan_by(tl, dpx)` | Converts pixel delta into time pan offset. |
+| `timeline_zoom_at(tl, factor, sx)` | Clamps zoom while preserving time under anchor x. |
+| `_tl_kind_color(tl, kind, explicit)` | Internal: Resolves item color, then kind style, then stable palette fallback. |
+| `_render_timeline(widget, ax, ay)` | Internal: Emits the widget's primitive geometry and colors, with visible data and containment rules. |
+| `_tl_scrub_to(tl, sx)` | Internal: Clamps pointer to body bounds, sets cursor and reports user scrub. |
+| `_mousedown_timeline(hit, root, mx, my, ev)` | Internal: Applies the widget's pointer gesture and invokes its configured callback or claims drag. |
+| `_drag_timeline(w, ev)` | Internal: Updates the held pan, selection or scrub gesture from event coordinates. |
+| `_wheel_timeline(w, ev)` | Internal: Zooms about the actual event or toolkit pointer anchor. |
+| `_mousemove_timeline(hit, root, mx, my)` | Internal: Computes observable nearest sample/bar/item hover from actual pointer coordinates. |
+| `_clear_hover_timeline(widget)` | Internal: Clears the widget's hover sentinel fields. |
+
+## Core UI, orchestration and button contracts
+
+| Signature | Contract |
+|---|---|
+| `_build_focus_list(widget)` | Internal: append visible focusable widgets in tree order, including active nested controls. |
+| `_clear_hover(widget)` | Internal: clear hover through registered handlers and recurse through container children. |
+| `_clear_pressed(widget)` | Internal: release pressed state through registered handlers and nested children. |
+| `_draw_arc(cx, cy, r, start_angle, end_angle, thickness, color)` | Internal: draw finite concentric point arcs using the requested angles, radius and color. |
+| `_draw_box(x, y, w, h, bg, border)` | Internal: draw a rectangular fill with an optional border through the rounded-box primitive. |
+| `_draw_disabled_overlay(x, y, w, h)` | Internal: paint the theme disabled color over the supplied bounds with alpha 140. |
+| `_draw_focus_ring(x, y, w, h, rad)` | Internal: paint four two-pixel strips outside the focused widget bounds. |
+| `_draw_hover_shade(widget, ax, ay, w, h, radius)` | Internal: overlay the enabled widget's pressed or hover theme shade without replacing its fill. |
+| `_draw_rbox(x, y, w, h, rad, bg, border)` | Internal: draw an optional border and inset fill using the supplied corner radius. |
+| `_draw_text_clipped(x, y, w, text, color, scale)` | Internal: truncate text to measured available width before emitting the text primitive. |
+| `_find_scrollable_at(widget, ox, oy, mx, my)` | Internal: find the deepest visible registered scroll target containing the pointer. |
+| `_find_visible_dialog(widget)` | Internal: recursively locate the first visible dialog in a widget tree. |
+| `_focus_next(root, reverse)` | Internal: rebuild the visible focus order and move forward or backward with wraparound. |
+| `_handle_focus_key(root, ev)` | Internal: consume supported focus navigation and activation keys, updating the selected control. |
+| `_has_open_popup(widget)` | Internal: report whether a dropdown, combobox or menu bar currently exposes its popup. |
+| `_hit_test(widget, ox, oy, mx, my)` | Internal: resolve the visible widget under a point through the widget registry. |
+| `_is_container(t)` | Internal: read the authoritative registered container flag, including custom widget types. |
+| `_is_focusable(widget)` | Internal: require a registered focusable type and an enabled, visible widget. |
+| `_layout(widget, ox, oy)` | Internal: stamp absolute positions, measure supported widgets and recursively lay out children. |
+| `_layout_box(widget, horizontal)` | Internal: arrange horizontal or vertical children using padding, gaps, alignment and flex. |
+| `_layout_toolbar(widget)` | Internal: place toolbar children left to right and center them vertically. |
+| `_match_hotkey(ev)` | Internal: invoke the first registered callback matching the event key and exact modifiers. |
+| `_register_widget(type_name, opts)` | Internal: install a widget type's rendering, event and container options in the registry. |
+| `_remove_tween(widget, field)` | Internal: remove an active tween for one widget id and field while retaining other fields. |
+| `_render_button(widget, ax, ay)` | Internal: draw themed or custom fill, enabled feedback and centered measured button text. |
+| `_render_checkbox(widget, ax, ay)` | Internal: draw selected check strokes or an empty box, label and hover feedback. |
+| `_render_dnd()` | Internal: paint the active drag label beside the current pointer with translucent background. |
+| `_render_toasts()` | Internal: paint active messages at the window's right edge, fading near expiry. |
+| `_render_toggle(widget, ax, ay)` | Internal: paint the pill background and position its thumb according to the current value. |
+| `_render_toggle_button(widget, ax, ay)` | Internal: draw the active or inactive button palette and centered label. |
+| `_render_tooltip()` | Internal: paint a delayed tooltip near its pointer, clamped to window bounds. |
+| `_scroll_panels(widget, dx, dy)` | Internal: route scroll deltas to registered handlers or recurse through nested containers. |
+| `_sync_focus_to(widget)` | Internal: set the focused widget and locate its index in the current focus list. |
+| `_theme_color(key, fallback)` | Internal: return the active theme color or the supplied fallback for a missing key. |
+| `_tween_get(widget, field)` | Internal: read one supported numeric widget field for animation interpolation. |
+| `_tween_set(widget, field, val)` | Internal: write one supported numeric widget field during an animation update. |
+| `_unfocus_all(widget)` | Internal: clear text-input focus recursively through the supported widget tree. |
+| `_update_toasts()` | Internal: discard messages whose elapsed duration has reached their expiry. |
+| `_update_tweens()` | Internal: interpolate pending fields at the current clock and complete expired animations. |
+| `add_child(parent, child)` | Append the child widget to the parent's children and return the parent. |
+| `app_loop(root, on_key, on_tick)` | Poll events, route input, update layout and animation, and render until quit or callback termination. |
+| `button(id, x, y, w, h, text, on_click)` | Create an enabled button with label, callback and initially clear hover and pressed state. |
+| `cancel_tweens(widget)` | Cancel every active animation targeting the supplied widget id. |
+| `checkbox(id, x, y, text, value, on_change)` | Create a checkbox whose width includes its measured label and whose value is supplied by the caller. |
+| `claim_drag(widget)` | Capture subsequent pointer motion and release events for the specified widget. |
+| `dispatch(root, ev)` | Route keyboard, pointer, drag and wheel events through the active modal and widget registry. |
+| `find_by_id(widget, id)` | Search the widget and supported descendants for the requested id, returning null when absent. |
+| `handle_key(root, ev)` | Apply hotkey, modal, text-input and focus priorities and report whether a key was consumed. |
+| `pop_modal()` | Hide and return the top dialog, remove it from the modal stack and rebuild focus. |
+| `push_modal(dlg, parent_w, parent_h)` | Center and show a dialog, append it to the modal stack and scope focus to its children. |
+| `register_hotkey(combo, callback)` | Append a key combination and callback to the ordered hotkey registry. |
+| `release_drag()` | Clear the current pointer-capture owner. |
+| `render(widget, ox, oy)` | Measure and draw a visible widget at its composed origin, preserving clipping and focus feedback. |
+| `request_quit()` | Latch the quit request that ends the current application loop after its frame. |
+| `set_theme(t)` | Select the theme palette used by subsequent toolkit rendering and construction. |
+| `show_dialog(dlg, parent_w, parent_h)` | Show and center a dialog through the same modal-stack operation as push_modal. |
+| `show_menu(menu_widget, x, y)` | Set the popup menu origin, show it and clear its hover selection. |
+| `show_toast(text, duration)` | Append a timed message using the current graphics clock and optional default duration. |
+| `stack_horizontal(widgets, x, y, gap)` | Position widgets left to right with the supplied origin and gap, returning the list. |
+| `stack_vertical(widgets, x, y, gap)` | Position widgets top to bottom with the supplied origin and gap, returning the list. |
+| `theme()` | Return the currently selected theme palette. |
+| `theme_dark()` | Return the built-in dark theme palette. |
+| `theme_high_contrast()` | Return the built-in high-contrast theme palette. |
+| `theme_light()` | Return the built-in light theme palette. |
+| `toggle(id, x, y, value, on_change)` | Create a compact on/off pill with the supplied value and change callback. |
+| `toggle_button(id, x, y, w, h, text, on_click)` | Create an initially inactive labeled toggle button with on/off theme colors. |
+| `tween(widget, field, target, duration, easing)` | Replace the widget field's prior animation and return its new timed interpolation record. |
+| `ui_clip_pop()` | Remove the top clip and restore its parent rectangle or clear the backend clip. |
+| `ui_clip_push(x, y, w, h)` | Intersect a new rectangle with its parent and push the resulting backend clip. |
+| `unregister_hotkey(combo)` | Remove registrations whose key combination exactly matches the supplied string. |
+
+<!-- ui-surface-contracts:end -->

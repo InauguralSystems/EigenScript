@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test
+.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -262,6 +262,16 @@ build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c
 .PHONY: embed-observer-test
 embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
 	@echo "Embed observer test built: $<"
+
+# #1463: structural intern ownership against the owning runtime variant.
+# No CLI relink; the fixture holds test references throughout teardown.
+INTERN_OWNER_VARIANT ?= release
+INTERN_OWNER_OBJ := $(filter-out build/$(INTERN_OWNER_VARIANT)/main.o,$(OBJ_$(INTERN_OWNER_VARIANT)))
+build/$(INTERN_OWNER_VARIANT)/test_intern_owners: tests/test_intern_owners.c $(INTERN_OWNER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(INTERN_OWNER_VARIANT)) -I$(SRC_DIR) -o $@ $< $(INTERN_OWNER_OBJ) $(LIBS_$(INTERN_OWNER_VARIANT))
+.PHONY: intern-owner-test
+intern-owner-test: build/$(INTERN_OWNER_VARIANT)/test_intern_owners
+	@echo "Intern owner structural oracle built: $<"
 
 # #1056: use the same variant as the CLI under test, without relinking it.
 ROAD_VARIANT ?= release
@@ -457,6 +467,14 @@ embed-smoke-gfx: build
 		-lm -lpthread $(LIBS_release)
 	/tmp/embed_smoke_gfx
 
+# Exercise the actual polling builtin using the owning graphics-capable variant.
+UI_INPUT_VARIANT ?= release
+UI_INPUT_OBJ := $(filter-out build/$(UI_INPUT_VARIANT)/main.o,$(OBJ_$(UI_INPUT_VARIANT)))
+build/$(UI_INPUT_VARIANT)/ui_sdl_input: tests/ui_sdl_input.c $(UI_INPUT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(UI_INPUT_VARIANT)) -I$(SRC_DIR) $$(sdl2-config --cflags) -o $@ $< $(UI_INPUT_OBJ) $(LIBS_$(UI_INPUT_VARIANT)) $$(sdl2-config --libs)
+ui-sdl-input-gfx: build/$(UI_INPUT_VARIANT)/ui_sdl_input
+	SDL_VIDEODRIVER=dummy build/$(UI_INPUT_VARIANT)/ui_sdl_input
+
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that
 # the normal -O2 build silently tolerates. ~2x slower; for testing only.
@@ -600,6 +618,14 @@ fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 		-lm -lpthread
 	@echo "libFuzzer binary built. Run: ./fuzz/fuzz_eigenscript fuzz/corpus/ -max_len=4096 -timeout=5"
 
+# Ordinary acyclic promotion oracle, linked only against its owning variant.
+ARENA_PROMOTION_VARIANT ?= release
+ARENA_PROMOTION_OBJ := $(filter-out build/$(ARENA_PROMOTION_VARIANT)/main.o,$(OBJ_$(ARENA_PROMOTION_VARIANT)))
+build/$(ARENA_PROMOTION_VARIANT)/test_arena_promotion_ordinary: tests/test_arena_promotion_ordinary.c $(ARENA_PROMOTION_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(ARENA_PROMOTION_VARIANT)) -I$(SRC_DIR) -o $@ $< $(ARENA_PROMOTION_OBJ) $(LIBS_$(ARENA_PROMOTION_VARIANT))
+.PHONY: arena-promotion-ordinary-test
+arena-promotion-ordinary-test: build/$(ARENA_PROMOTION_VARIANT)/test_arena_promotion_ordinary
+
 version:
 	@echo $(VERSION)
 
@@ -620,3 +646,14 @@ freestanding-libc-diff:
 		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
 	/tmp/eigs_libc_diff
+
+# #1575: direct history-writer boundary, including actual trace.c privately
+# for metadata inspection. No production test hooks or CLI alias relink.
+HISTORY_BOUNDARY_VARIANT ?= release
+HISTORY_BOUNDARY_OBJ := $(filter-out build/$(HISTORY_BOUNDARY_VARIANT)/main.o build/$(HISTORY_BOUNDARY_VARIANT)/trace.o,$(OBJ_$(HISTORY_BOUNDARY_VARIANT)))
+build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary: tests/test_trace_history_boundary.c $(SRC_DIR)/trace.c $(HISTORY_BOUNDARY_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(HISTORY_BOUNDARY_VARIANT)) -I$(SRC_DIR) -o $@ $< $(HISTORY_BOUNDARY_OBJ) $(LIBS_$(HISTORY_BOUNDARY_VARIANT))
+.PHONY: trace-history-boundary-test
+trace-history-boundary-test: build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary
+	@echo "Trace history boundary test built: $<"
+

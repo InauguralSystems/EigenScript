@@ -39,8 +39,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   gdb              -> the JIT debugging workflow (see CLAUDE.md)
 #   curl             -> exercising the http extension by hand
 #   procps           -> sysctl in CI setup steps
-# SDL2 is deliberately absent: `make gfx` dlopen's it at runtime and compiles
-# against typedefs only, so no -dev headers are needed to build it.
+# SDL headers anchor the input fixture to the real SDL ABI; Xvfb and
+# xdotool drive an isolated real-input window without touching a user display.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         build-essential \
@@ -55,6 +55,11 @@ RUN apt-get update \
         gdb \
         curl \
         procps \
+        libsdl2-dev \
+        xvfb \
+        xauth \
+        xdotool \
+        python3-pil \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspaces/EigenScript

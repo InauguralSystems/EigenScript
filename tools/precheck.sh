@@ -91,6 +91,7 @@ run|tools/obs_marker_check.sh
 run|tools/obs_reader_sync_check.sh
 run|tools/vm_operand_width_check.sh
 run|tools/stdlib_index_check.sh
+run|tools/ui_surface_check.sh
 run|tools/codspeed_targets_check.sh
 run|tools/gfx_guard_order_check.sh
 run|tools/changelog_fragments.sh check $BASE

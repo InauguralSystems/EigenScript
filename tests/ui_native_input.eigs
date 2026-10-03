@@ -1,0 +1,32 @@
+# Real X11 input reaches gfx_poll, toolkit dispatch and rendered slider pixels.
+load_file of "lib/ui.eigs"
+assert of [(gfx_open of [320, 240, "ui-native-1263"]) == 1, "native fixture window"]
+native_root is panel of ["native-root", 0, 0, 320, 240]
+native_slider is slider of ["native-slider", 20, 30, 200, 0, 100, 0, null]
+add_child of [native_root, native_slider]
+_layout of [native_root, 0, 0]
+gfx_clear of [20, 20, 20]
+render of [native_root, 0, 0]
+gfx_present of null
+print of "UI_NATIVE_READY"
+native_running is 1
+native_frames is 0
+loop while native_running == 1 and native_frames < 5000:
+    native_event is gfx_poll of null
+    if native_event != null:
+        dispatch of [native_root, native_event]
+        if native_event.type == "resize":
+            native_root.w is native_event.w
+            native_root.h is native_event.h
+            _layout of [native_root, 0, 0]
+        if native_event.type == "quit":
+            native_running is 0
+        gfx_clear of [20, 20, 20]
+        render of [native_root, 0, 0]
+        gfx_present of null
+        print of (json_encode of {"event": native_event, "slider": native_slider.value})
+    gfx_delay of 10
+    native_frames is native_frames + 1
+gfx_close of null
+assert of [native_running == 0, "native close event received before fixture deadline"]
+print of "UI_NATIVE_CLOSED"

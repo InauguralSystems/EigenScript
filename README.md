@@ -32,6 +32,8 @@ evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result.
 
+Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
+
 ## Try it in your browser
 
 **[inauguralsystems.github.io/EigenScript/playground](https://inauguralsystems.github.io/EigenScript/playground/)** —
@@ -344,6 +346,13 @@ Bounded computation for constrained environments. Values that escape the
 scope are safe: anything stored into a binding or a container that
 outlives the window is promoted to the heap at the store (#873) — the
 arena reclaims only the unstored intermediates.
+
+Arena-backed lists are promoted iteratively when they escape into longer-lived
+storage. Repeated references to the same source list share one promoted list.
+A promotion may contain at most 100,000 distinct arena-backed lists; exceeding
+it raises a catchable `limit` error, or `sandbox` inside a sandbox. Promotion
+copies and bookkeeping count toward an active sandbox allocation budget.
+
 
 ## Standard Library
 

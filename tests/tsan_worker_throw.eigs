@@ -1,0 +1,10 @@
+define worker() as:
+    caught is 0
+    try:
+        throw of "expected worker error"
+    catch e:
+        caught is 1
+    return caught
+h is spawn of worker
+if (thread_join of h) != 1:
+    throw of "worker throw was not caught"

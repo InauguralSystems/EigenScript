@@ -80,6 +80,17 @@ whencode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
 got_when is vm_run_bytecode of [ABI, whencode, [11, "tmp830w", 22, 99]]
 assert_eq of [got_when, 2, "#830: when-at counts descriptor assignments (was 0)"]
 
+# Sandbox execution does not contribute assignments to shared history.
+# A later trusted descriptor read therefore sees no sandbox value.
+sandboxcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
+               CONST,2,0, RETURN]
+sandboxed is sandbox_run of [[ABI, sandboxcode, [33, "tmp830sandbox", null]],
+                             1000, 1000000]
+assert_eq of [sandboxed["ok"], 1, "sandbox history: assignment run succeeds"]
+sandboxread is [CONST,0,0, INTERROGATE_NAMED_AT,0,0,1,0, RETURN]
+escaped is vm_run_bytecode of [ABI, sandboxread, [99, "tmp830sandbox"]]
+assert_eq of [escaped, null, "sandbox history: unqueried value is not retained past run"]
+
 # ---- Note on the other half of #827: that a name no temporal query names is
 # still not recorded (defect A's narrowing) is NOT assertable from source — by
 # construction, writing the question arms the name. Its gate is the memory

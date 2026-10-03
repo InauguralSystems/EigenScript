@@ -1,0 +1,9 @@
+define task_value(v) as:
+    task_yield of null
+    return v + 1
+define worker() as:
+    t is task_spawn of [task_value, 40]
+    return task_join of t
+h is spawn of worker
+if (thread_join of h) != 41:
+    throw of "worker task returned wrong value"

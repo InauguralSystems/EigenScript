@@ -556,7 +556,11 @@ static int occ_index_of(const PrevEntry *e, long long ordinal) {
 
 static void prev_record_assign(const char *name, EigsSlot value, int filtered,
                                int source_line) {
-    if (!eigs_current || !name) return;
+    /* #1575: sandbox execution cannot read shared temporal history and must
+     * not contribute to it. Stop before name promotion, table growth, slot
+     * retention or metadata updates, regardless of producer/arming mode.
+     * trace_assign_ex still emits the ordinary tape A record afterwards. */
+    if (!eigs_current || g_sandbox_active || !name) return;
     /* #1072 (via #873): the history table is a HEAP structure that outlives
      * any arena window, so an arena-allocated value must be PROMOTED before
      * it is retained here -- exactly as OP_INDEX_SET / set_at / list_append
@@ -681,7 +685,9 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered,
  * Gated by g_trace_obs_hist at the call site. */
 void trace_record_obs(const char *name, double entropy, double dH,
                       double last_entropy) {
-    if (!eigs_current || !name || !g_prev_tab) return;
+    /* An ignored sandbox assignment must not overwrite an older host
+     * assignment's observer snapshot, including its occurrence-ring twin. */
+    if (!eigs_current || g_sandbox_active || !name || !g_prev_tab) return;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, name);
     if (!e->name) return;
     /* #868: patch the newest ring entry too, so `where/why/how is x when N`

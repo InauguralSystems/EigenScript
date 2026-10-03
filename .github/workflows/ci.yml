@@ -739,6 +739,10 @@ jobs:
         run: bash tests/test_amalgamation.sh
 
       - if: needs.scope.outputs.code == 'true'
+        name: UI surface and actual SDL input
+        run: bash tools/ui_surface_check.sh --gfx-input
+
+      - if: needs.scope.outputs.code == 'true'
         name: Build consolidated server variant
         run: make server
 
