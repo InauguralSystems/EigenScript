@@ -254,8 +254,10 @@ Extensions are conditionally compiled via flags:
 | `EIGENSCRIPT_EXT_MODEL` | Transformer | none |
 | `EIGENSCRIPT_EXT_GFX` | SDL2 graphics | libSDL2 (loaded at runtime via `dlopen`) |
 
-The minimal build (`make build`) sets all flags to 0. The full build
-(`make full`) enables everything.
+The hosted release (`make build`) compiles graphics in while keeping SDL
+lazy-loaded. `make server` adds HTTP, raw TCP, and models; `make server-db` adds
+PostgreSQL, and `make zlib` separately adds the libz-backed codecs. The old
+`gfx`, `http`, `net`, and `full` targets remain compatibility aliases.
 
 ## Standard Library
 

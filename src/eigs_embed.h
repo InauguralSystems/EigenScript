@@ -20,6 +20,10 @@
  * accept an EigsValue* either store it (consuming the caller's ref) or
  * leave the caller's ref untouched — the comment on each prototype says
  * which.
+ *
+ * Signal contract: the runtime does not change any signal disposition
+ * process-wide. CLI-only signal handlers installed by src/main.c are not
+ * reached through this embedding API.
  */
 #ifndef EIGS_EMBED_H
 #define EIGS_EMBED_H
@@ -56,6 +60,12 @@ void        eigs_trace_shutdown(void);
 EigsState  *eigs_state_new(void);
 void        eigs_state_destroy(EigsState *st);
 EigsThread *eigs_thread_attach(EigsState *st);
+
+/* Override this state's creation-time EIGS_STRICT setting: zero selects
+ * finite stand-ins and every nonzero value selects strict errors. NULL is a
+ * no-op. Call after eigs_state_new or eigs_open, but before the state's first
+ * eval, and never concurrently with evaluation of that state. */
+void        eigs_state_set_strict(EigsState *st, int enabled);
 
 /* Single-thread multi-state switching: park the calling thread's current
  * attachment (nothing is torn down) and activate its attachment to `st`,

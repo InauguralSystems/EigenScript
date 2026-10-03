@@ -192,4 +192,180 @@ clear_math_flags of null
 ac is acos of (0 - 9)
 assert of [(math_flags of null).invalid == 1, "NG29 acos clamps and flags"]
 
+# #1417: tensor kernels may hold an intermediate IEEE infinity in their
+# unboxed result buffer.  Every language-level read must expose the numeric
+# ceiling, independent of which opcode consumes the scalar.
+raw_inf_input is buffer of 4
+raw_inf_input[0] is 1e300
+raw_inf_input[1] is 1e300
+raw_inf_input[2] is 1e300
+raw_inf_input[3] is 1e300
+raw_inf_matrix is reshape of [raw_inf_input, 2, 2]
+raw_inf_product is matmul of [raw_inf_matrix, raw_inf_matrix]
+assert of [not (raw_inf_product[0] > CAP), "NG31 comparison reads a clamped buffer infinity"]
+assert of [(raw_inf_product[0] / raw_inf_product[1]) == 1, "NG31 division reads clamped buffer infinities"]
+assert of [(raw_inf_product[0] % 3) == 2, "NG31 modulo reads a clamped buffer infinity"]
+assert of [not (raw_inf_product[0] * 0.5 > CAP), "NG31 multiplication reads a clamped buffer infinity"]
+assert of [not (raw_inf_product[0] + 0 > CAP), "NG31 addition reads a clamped buffer infinity"]
+raw_inf_scalar is raw_inf_product[0]
+assert of [raw_inf_scalar == CAP, "NG31 index read into a scalar is clamped"]
+assert of [(buf_get of [raw_inf_product, 0]) == CAP, "NG31 buf_get is clamped"]
+
+# A NaN uses the same read boundary as infinity. In non-strict mode every
+# accessor returns numeric 0 and sets invalid; none may leak the NaN-box null
+# tag merely because it bypasses make_num.
+nan_left is buffer of [1, 2]
+nan_left[0] is 1e200
+nan_left[1] is 1e200
+nan_right is buffer of [2, 1]
+nan_right[0] is 1e200
+nan_right[1] is 0 - 1e200
+raw_nan_product is matmul of [nan_left, nan_right]
+clear_math_flags of null
+assert of [raw_nan_product[0] == 0, "NG32 indexed NaN read collapses to zero"]
+assert of [(math_flags of null).invalid == 1, "NG32 indexed NaN read sets invalid"]
+clear_math_flags of null
+assert of [(buf_get of [raw_nan_product, 0]) == 0, "NG33 buf_get NaN read collapses to zero"]
+assert of [(math_flags of null).invalid == 1, "NG33 buf_get NaN read sets invalid"]
+clear_math_flags of null
+assert of [(get_at of [raw_nan_product, 0]) == 0, "NG34 get_at NaN read collapses to zero"]
+assert of [(math_flags of null).invalid == 1, "NG34 get_at NaN read sets invalid"]
+clear_math_flags of null
+nan_gathered is gather of [raw_nan_product, [0]]
+assert of [nan_gathered[0] == 0, "NG35 gather NaN read collapses to zero"]
+assert of [(math_flags of null).invalid == 1, "NG35 gather NaN read sets invalid"]
+
+# #1417: structural comparisons and scalar reductions read normalized inputs.
+pair_left is buffer of [1, 1]
+pair_left[0] is 1e200
+pair_right is buffer of [1, 2]
+pair_right[0] is 1e200
+pair_right[1] is 0 - 1e200
+raw_pair is matmul of [pair_left, pair_right]
+finite_pair is buffer of 2
+finite_pair[0] is CAP
+finite_pair[1] is 0 - CAP
+assert of [raw_pair == finite_pair, "NG36 structural equality normalizes infinities"]
+assert of [(list_contains of [[raw_pair], finite_pair]) == 1, "NG36 list_contains shares normalized equality"]
+assert of [(list_index_of of [[raw_pair], finite_pair]) == 0, "NG36 list_index_of shares normalized equality"]
+assert of [(sum of raw_pair) == 0, "NG37 sum normalizes before cancellation"]
+assert of [(mean of raw_pair) == 0, "NG37 mean normalizes before cancellation"]
+clear_math_flags of null
+assert of [raw_nan_product == raw_nan_product, "NG38 same-buffer equality normalizes NaN"]
+assert of [(math_flags of null).invalid == 1, "NG38 equality exposes invalid"]
+zero_one is buffer of 1
+clear_math_flags of null
+assert of [raw_nan_product == zero_one, "NG39 distinct-buffer equality normalizes NaN"]
+assert of [(math_flags of null).invalid == 1, "NG39 equality sets invalid"]
+zero_pair is buffer of 2
+clear_math_flags of null
+assert of [(dot of [raw_pair, zero_pair]) == 0, "NG40 dot normalizes before multiplying by zero"]
+assert of [(math_flags of null).invalid == 0, "NG40 normalized dot does not create NaN"]
+clear_math_flags of null
+assert of [(buf_dot of [raw_pair, zero_pair, 0, 0, 2]) == 0, "NG41 buf_dot normalizes each operand"]
+assert of [(math_flags of null).invalid == 0, "NG41 normalized buf_dot does not create NaN"]
+clear_math_flags of null
+assert of [(buf_peak of [raw_nan_product, 0, 1]) == 0, "NG42 buf_peak reads NaN as zero"]
+assert of [(math_flags of null).invalid == 1, "NG42 buf_peak does not ignore NaN"]
+
+# Ordinary finite/empty controls preserve the pre-existing reduction policies.
+finite is buffer of 2
+finite[0] is 3
+finite[1] is 4
+finite_copy is buffer of 2
+finite_copy[0] is 3
+finite_copy[1] is 4
+assert of [finite == finite_copy, "NG43 finite structural equality"]
+assert of [finite == finite, "NG43 finite identity equality"]
+finite_copy[1] is 5
+assert of [finite != finite_copy, "NG43 unequal finite elements"]
+assert of [finite != zero_one, "NG43 unequal buffer lengths"]
+assert of [(sum of finite) == 7, "NG44 finite sum"]
+assert of [(mean of finite) == 3.5, "NG44 finite mean"]
+assert of [(norm of finite) == 5, "NG44 finite norm"]
+empty is buffer of 0
+assert of [(sum of empty) == 0, "NG45 empty sum"]
+assert of [(mean of empty) == 0, "NG45 empty mean"]
+assert of [(norm of empty) == 0, "NG45 empty norm"]
+short is buffer of 1
+short[0] is 2
+assert of [(dot of [finite, short]) == 6, "NG46 dot retains shorter-length policy"]
+assert of [(buf_dot of [finite, finite_copy, 0, 1, 1]) == 15, "NG47 windowed dot keeps distinct offsets"]
+assert of [(buf_peak of [finite, 1, 1]) == 4, "NG47 peak keeps its window"]
+assert of [(buf_dot of [finite, finite_copy, 2, 2, 0]) == 0, "NG48 empty dot window"]
+assert of [(buf_peak of [finite, 2, 0]) == 0, "NG48 empty peak window"]
+
+# A containing list must retain the scalar buffer-read normalization rule.
+assert of [(sum of ([raw_pair])) == 0, "NG49 nested sum normalizes before cancellation"]
+assert of [(mean of ([raw_pair])) == 0, "NG49 nested mean normalizes before cancellation"]
+assert of [(norm of ([raw_pair])) == (norm of raw_pair), "NG49 nested norm uses normalized inputs"]
+clear_math_flags of null
+assert of [(sum of ([raw_nan_product])) == 0, "NG50 nested NaN sum is zero"]
+assert of [(math_flags of null).invalid == 1, "NG50 nested sum sets invalid"]
+clear_math_flags of null
+assert of [(mean of ([raw_nan_product])) == 0, "NG50 nested NaN mean is zero"]
+assert of [(math_flags of null).invalid == 1, "NG50 nested mean sets invalid"]
+clear_math_flags of null
+assert of [(norm of ([raw_nan_product])) == 0, "NG50 nested NaN norm is zero"]
+assert of [(math_flags of null).invalid == 1, "NG50 nested norm sets invalid"]
+assert of [(sum of ([finite])) == 7, "NG51 nested finite sum"]
+assert of [(mean of ([finite])) == 3.5, "NG51 nested finite mean"]
+assert of [(norm of ([finite])) == 5, "NG51 nested finite norm"]
+assert of [(sum of ([empty])) == 0, "NG51 nested empty sum"]
+assert of [(mean of ([empty])) == 0, "NG51 nested empty mean"]
+assert of [(norm of ([empty])) == 0, "NG51 nested empty norm"]
+
+# Non-strict NaN indices still select zero after normalization.
+index_dst is buffer of 1
+index_dst[0] is 10
+clear_math_flags of null
+scatter_add of [index_dst, raw_nan_product, 5]
+assert of [index_dst[0] == 15, "NG52 non-strict scatter NaN index selects zero"]
+assert of [(math_flags of null).invalid == 1, "NG52 scatter index read sets invalid"]
+index_matrix is buffer of [1, 1]
+index_matrix[0] is 7
+clear_math_flags of null
+index_selected is gather of [index_matrix, raw_nan_product]
+assert of [index_selected[0] == 7, "NG53 non-strict gather NaN index selects zero"]
+assert of [(math_flags of null).invalid == 1, "NG53 gather index read sets invalid"]
+
+# Numeric byte decoders normalize before converting, preserving finite byte
+# truncation/modulo behavior and the buffer's raw work-area representation.
+assert of [(str_from_bytes of (buf_from_list of [65.75, 321, -191])) == "AAA", "NG54 finite byte truncation and wrapping"]
+assert of [(f64_from_bytes of (buf_from_list of (f64_to_bytes of 12.5))) == 12.5, "NG54 finite f64 byte round trip"]
+clear_math_flags of null
+assert of [(str_from_bytes of raw_nan_product) == "", "NG55 non-strict NaN byte is NUL"]
+assert of [(math_flags of null).invalid == 1, "NG55 string decoder observes invalid read"]
+clear_math_flags of null
+assert of [(f64_from_bytes of raw_nan_product) == 0, "NG56 non-strict NaN byte decodes zero"]
+assert of [(math_flags of null).invalid == 1, "NG56 f64 decoder observes invalid read"]
+clear_math_flags of null
+assert of [(str_from_bytes of raw_pair) == "", "NG57 normalized infinity wraps to byte zero"]
+assert of [(math_flags of null).overflow == 1, "NG57 byte decoder observes overflow read"]
+clear_math_flags of null
+encoded_nan is buf_to_pcm16le of [raw_nan_product, 0, 1]
+assert of [encoded_nan == (buf_from_list of [0, 0]), "NG58 non-strict NaN PCM sample is silence"]
+assert of [(math_flags of null).invalid == 1, "NG58 PCM encoder observes invalid read"]
+clear_math_flags of null
+encoded_infinity is buf_to_pcm16le of [raw_pair, 0, 2]
+assert of [encoded_infinity == (buf_from_list of [255, 127, 1, 128]), "NG59 normalized PCM infinities clamp to samples"]
+assert of [(math_flags of null).overflow == 1, "NG59 PCM encoder observes overflow read"]
+
+# Mixed buffer/list results box each buffer element before arithmetic.
+# Shaped buffers keep their matrix rows when boxed into nested lists.
+finite_mixed_cell is buffer of [1, 1]
+finite_mixed_cell[0] is 10
+assert of [(add of [finite_mixed_cell, [2]]) == [[12]], "NG60 shaped mixed finite cell retains its row"]
+finite_mixed_row is buffer of [1, 2]
+finite_mixed_row[0] is 3
+finite_mixed_row[1] is 0 - 3
+assert of [(add of [finite_mixed_row, [0, 0]]) == [[3, 0 - 3]], "NG60 shaped mixed finite row retains its row"]
+assert of [(add of [finite, [1, 2]]) == [4, 6], "NG60 finite mixed tensor left"]
+assert of [(add of [[1, 2], finite]) == [4, 6], "NG60 finite mixed tensor right"]
+assert of [(add of [empty, []]) == [], "NG60 empty mixed tensor"]
+clear_math_flags of null
+assert of [(add of [raw_nan_product, [2]]) == [[2]], "NG61 non-strict mixed NaN is zero"]
+assert of [(math_flags of null).invalid == 1, "NG61 mixed materialization observes invalid"]
+assert of [(add of [raw_pair, [0, 0]]) == [[CAP, 0 - CAP]], "NG62 mixed materialization clamps both infinity signs"]
+
 print of "All numeric-guard tests passed"

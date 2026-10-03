@@ -1,0 +1,55 @@
+# #1386: after-load host rebinding must not change the implementation or
+# fresh meta builtins. Restore the host before using the assertion library.
+load_file of "lib/eigen.eigs"
+load_file of "lib/test.eigs"
+
+_host_values is [contains, append, char_at, range, type, num, set_at, dict_set,
+    file_exists, read_text, path_dir, exe_path, log, divide, log2]
+
+contains is (s, c) => 0
+append is (xs, v) => null
+char_at is (s, i) => ""
+range is (n) => []
+type is (v) => "null"
+num is (v) => 0
+set_at is (xs, i, v) => null
+dict_set is (d, k, v) => null
+file_exists is (p) => 0
+read_text is (p) => ""
+path_dir is (p) => ""
+exe_path is (v) => ""
+log is (v) => 0
+divide is (a, b) => 0
+log2 is (v) => 0
+
+_literal_result is eigen_run of "42"
+_list_result is eigen_run of "xs is []\nappend of [xs, 7]\nxs[0]"
+_update_result is eigen_run of "x is 1\nx is 2\nd is {}\nd[\"answer\"] is x + 1\nd[\"answer\"]"
+_function_result is eigen_run of "define total(xs) as:\n    result is 0\n    for x in xs:\n        result is result + x\n    return result\ntotal of ([1, 2, 3])"
+_import_result is eigen_run of "import log\nhas_key of [log, \"log_info\"]"
+_entropy_result is eigen_run of "xs is [1, 2, 3]\nwhere of xs"
+
+contains is _host_values[0]
+append is _host_values[1]
+char_at is _host_values[2]
+range is _host_values[3]
+type is _host_values[4]
+num is _host_values[5]
+set_at is _host_values[6]
+dict_set is _host_values[7]
+file_exists is _host_values[8]
+read_text is _host_values[9]
+path_dir is _host_values[10]
+exe_path is _host_values[11]
+log is _host_values[12]
+divide is _host_values[13]
+log2 is _host_values[14]
+
+assert_eq of [_literal_result, 42, "captured scanner and numeric conversion"]
+assert_eq of [_list_result, 7, "captured parser append and meta append"]
+assert_eq of [_update_result, 3, "captured environment and dictionary updates"]
+assert_eq of [_function_result, 6, "captured parser and evaluator range/type"]
+assert_eq of [_import_result, 1, "captured import path probes and file reader"]
+assert_near of [_entropy_result, 2, 0.000000000001, "entropy retains captured transitive log/divide"]
+
+test_summary of null

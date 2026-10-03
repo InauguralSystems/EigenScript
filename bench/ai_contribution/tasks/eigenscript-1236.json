@@ -1,0 +1,18 @@
+{
+  "name": "EigenScript issue 1236 replay",
+  "prompt": "bench/ai_contribution/tasks/eigenscript-1236.txt",
+  "validation": [
+    [
+      "make",
+      "precheck",
+      "BASE={base}"
+    ],
+    [
+      "make",
+      "test-changed",
+      "BASE={base}"
+    ]
+  ],
+  "revision": "b3bf498791ef1048ae7df270216948fd5f48566a",
+  "fixture_evidence": "History-only replay: b3bf498 reverts 02544c235eaa3089a126d854b29b39b82b91b010, including lib/args.eigs builtin capture and import regression tests."
+}

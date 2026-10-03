@@ -55,7 +55,13 @@ int g_trace_enabled_storage = 0;
 int g_replay_enabled_storage = 0;
 int g_trace_obs_hist_storage = 0;
 int g_trace_hist_storage = 0;
-int g_trace_current_line = 0;
+/* Calls without an attached state are limited to standalone tooling. Runtime
+ * and linked native/AOT callers use their attached EigsThread field. */
+static int g_trace_current_line_unattached = 0;
+int *trace_current_line_addr(void) {
+    return eigs_current ? &eigs_current->trace_current_line
+                        : &g_trace_current_line_unattached;
+}
 
 /* ----- Phase 3.0a: prev-value table.
  *
@@ -245,6 +251,7 @@ static int      g_arm_cap   = 0;
  * takes it INSIDE g_tape_mu; because no path holds g_arm_mu across a tape
  * lock, that is not a cycle. Keep it that way. */
 static pthread_mutex_t g_arm_mu = PTHREAD_MUTEX_INITIALIZER;
+static __thread unsigned g_arm_suppress_depth = 0;
 static inline void arm_lock(void)   { pthread_mutex_lock(&g_arm_mu); }
 static inline void arm_unlock(void) { pthread_mutex_unlock(&g_arm_mu); }
 
@@ -338,6 +345,7 @@ static int occ_set_has(const char *name) {
 }
 
 void trace_arm_occurrences_all(void) {
+    if (g_arm_suppress_depth) return;
     if (g_occ_all) return;
     occ_all_store(1);
     occ_gen_bump();
@@ -345,6 +353,7 @@ void trace_arm_occurrences_all(void) {
 }
 
 void trace_arm_occurrences_name(const char *name) {
+    if (g_arm_suppress_depth) return;
     if (!name || g_occ_all) return;
     /* The ring is fed from prev_record_assign, which only runs when the
      * line-history is armed for this name — so arm that too. */
@@ -367,58 +376,19 @@ void trace_arm_occurrences_name(const char *name) {
     arm_unlock();
 }
 
-/* Widen to the wildcard WITHOUT enabling recording. Separate from
- * trace_arm_history_all because `spawn` calls it: a program with no temporal
- * query must not start recording just because it made a thread. */
-/* #915: snapshot/restore the compile-time ARMING state.
- *
- * The observer gate's eager pre-pass runs the REAL compiler over a module's
- * source purely to decide whether that module reads observer state. compile_node
- * arms this channel as a side effect — trace_arm_history_name/_all,
- * trace_arm_occurrences_name, g_trace_hist, g_trace_obs_hist — so a module that
- * is only SCANNED used to switch per-assignment history recording on in the
- * PARENT, and change the parent's temporal answers.
- *
- * Executed consequence: with `x is 1.0 / 2.0 / 3.0` then a literal
- * `load_file of "mod.eigs"` where mod.eigs holds `prev of x`, the parent printed
- * `2`; spelling the same path as `"mod" + ".eigs"` printed `null`, which is what
- * the pre-#915 baseline prints. The SPELLING of a path had become semantically
- * load-bearing. Worse, it was non-monotone: adding an unrelated `report of z`
- * opened the gate, which skipped the eager pass, which un-armed the name — a
- * program that asked the observer MORE got LESS history.
- *
- * The pre-pass already seals its other output channel (it mutes fd 2, because
- * "a pre-pass that speaks is a pre-pass that changes the program's output").
- * This is the same rule applied to the channel that was left open.
- *
- * The name sets are append-only, so a count is a sufficient snapshot; the
- * generation counter is bumped on restore so cached per-entry decisions
- * recheck. */
-void trace_arm_snapshot(TraceArmState *out) {
-    if (!out) return;
-    out->trace_hist   = g_trace_hist;
-    out->obs_hist     = g_trace_obs_hist;
-    out->arm_all      = g_arm_all;
-    out->occ_all      = g_occ_all;
-    arm_lock();                       /* #1145 */
-    out->arm_count    = g_arm_count;
-    out->occ_count    = g_occ_count;
-    arm_unlock();
+/* Diagnostic compilers run on attached threads, so TLS gives them a private
+ * side-effect barrier without holding g_arm_mu across the whole compilation.
+ * Holding that leaf mutex would deadlock when the compiler calls an arming
+ * function; restoring a snapshot afterward could instead erase a concurrent
+ * compiler's legitimate process-global additions. */
+void trace_arm_suppress_begin(void) { g_arm_suppress_depth++; }
+void trace_arm_suppress_end(void) {
+    if (g_arm_suppress_depth) g_arm_suppress_depth--;
 }
 
-void trace_arm_restore(const TraceArmState *in) {
-    if (!in) return;
-    arm_lock();                       /* #1145: the one SHRINKING writer */
-    for (int i = in->arm_count; i < g_arm_count; i++) free(g_arm_names[i]);
-    g_arm_count = in->arm_count;
-    for (int i = in->occ_count; i < g_occ_count; i++) free(g_occ_names[i]);
-    g_occ_count = in->occ_count;
-    arm_unlock();
-    trace_flag_store(g_trace_hist_storage, in->trace_hist);
-    trace_flag_store(g_trace_obs_hist_storage, in->obs_hist);
-    arm_all_store(in->arm_all);
-    occ_all_store(in->occ_all);
-    arm_gen_bump();                    /* invalidate cached per-entry decisions */
+void trace_arm_observer_history(void) {
+    if (!g_arm_suppress_depth)
+        trace_flag_store(g_trace_obs_hist_storage, 1);
 }
 
 void trace_arm_history_all_mt(void) {
@@ -428,11 +398,13 @@ void trace_arm_history_all_mt(void) {
 }
 
 void trace_arm_history_all(void) {
+    if (g_arm_suppress_depth) return;
     trace_flag_store(g_trace_hist_storage, 1);
     trace_arm_history_all_mt();
 }
 
 void trace_arm_history_name(const char *name) {
+    if (g_arm_suppress_depth) return;
     trace_flag_store(g_trace_hist_storage, 1);
     if (!name || g_arm_all) return;
     arm_lock();                      /* #1145: check + grow + append is ONE step */
@@ -464,7 +436,7 @@ void trace_history_disable(void) {
  * (eigenscript.h), reached only with a thread attached. Every read path below
  * that can run during teardown or from atexit guards on `eigs_current` first. */
 
-/* g_trace_current_line (exported, see trace.h) replaces the old static
+/* g_trace_current_line (per-thread, see trace.h) replaces the old static
  * line cache: OP_LINE stores it directly instead of paying a call. */
 
 #define PREV_INIT_CAP 16
@@ -582,8 +554,13 @@ static int occ_index_of(const PrevEntry *e, long long ordinal) {
     return (int)idx;
 }
 
-static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
-    if (!eigs_current || !name) return;
+static void prev_record_assign(const char *name, EigsSlot value, int filtered,
+                               int source_line) {
+    /* #1575: sandbox execution cannot read shared temporal history and must
+     * not contribute to it. Stop before name promotion, table growth, slot
+     * retention or metadata updates, regardless of producer/arming mode.
+     * trace_assign_ex still emits the ordinary tape A record afterwards. */
+    if (!eigs_current || g_sandbox_active || !name) return;
     /* #1072 (via #873): the history table is a HEAP structure that outlives
      * any arena window, so an arena-allocated value must be PROMOTED before
      * it is retained here -- exactly as OP_INDEX_SET / set_at / list_append
@@ -637,8 +614,11 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
     e->current = value;
     e->has_current = 1;
 
-    /* Stamp with the current VM line as cached by trace_line. */
-    int line = trace_current_line_load();
+    /* VM callers pass their per-thread current line. Other producers (AOT
+     * and embedders) use the process-wide trace stamp. Keeping the VM line
+     * explicit matters while spawn has the multithreaded gate raised: OP_LINE
+     * deliberately does not write the shared stamp then (#297). */
+    int line = source_line >= 0 ? source_line : trace_current_line_load();
     lc_bump(e, line);
 
     /* #868: the occurrence ring runs alongside the line history, not inside
@@ -705,7 +685,9 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered) {
  * Gated by g_trace_obs_hist at the call site. */
 void trace_record_obs(const char *name, double entropy, double dH,
                       double last_entropy) {
-    if (!eigs_current || !name || !g_prev_tab) return;
+    /* An ignored sandbox assignment must not overwrite an older host
+     * assignment's observer snapshot, including its occurrence-ring twin. */
+    if (!eigs_current || g_sandbox_active || !name || !g_prev_tab) return;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, name);
     if (!e->name) return;
     /* #868: patch the newest ring entry too, so `where/why/how is x when N`
@@ -1144,6 +1126,7 @@ static void tp_printf(const char *fmt, ...) {
  * at every tape open so each session's first A record is preceded by its
  * scope. */
 static uint32_t g_last_scope_serial = 0;
+static int g_last_scope_native = 0;
 
 /* Stamp `S <fn> <depth> <serial>` when the innermost frame differs from the
  * one the last S record named (by frame-instance serial, so two invocations
@@ -1157,10 +1140,23 @@ static uint32_t g_last_scope_serial = 0;
  * when the call widens a parameter's window before the body writes it, so the
  * transition cannot be left to the next A). */
 static void emit_scope_transition(void) {
-    if (!eigs_current || !eigs_current->vm || g_vm.frame_count == 0) return;
+    if (!eigs_current || !eigs_current->vm || g_vm.frame_count == 0) {
+        /* A producer can write through trace_assign after an interpreted
+         * callback has returned (embedders and AOT code both do).  Without
+         * an explicit transition, the reader leaves cur_scope on that
+         * callback's last frame and files this module-level assignment as a
+         * dead local.  Serial 0 is the reader's module scope; name it so the
+         * transition remains visible and reviewable on the tape. */
+        if (g_last_scope_native) return;
+        g_last_scope_serial = 0;
+        g_last_scope_native = 1;
+        tp_puts("S <native> 0 0\n");
+        return;
+    }
     CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
-    if (f->call_serial == g_last_scope_serial) return;
+    if (!g_last_scope_native && f->call_serial == g_last_scope_serial) return;
     g_last_scope_serial = f->call_serial;
+    g_last_scope_native = 0;
     /* The name is variable-length: write it with tp_puts, never through
      * tp_printf's 128-byte staging, which truncated a name of 121+ chars
      * together with the record's newline and glued the next record on (#1157). */
@@ -1264,6 +1260,7 @@ static void emit_header(void) {
     tp_printf("V %d %s\n", TRACE_FORMAT_VERSION, EIGENSCRIPT_VERSION);
     sink_flush();
     g_last_scope_serial = 0;
+    g_last_scope_native = 0;
     /* A session starts from the defaults on the tape: obs_cfg_sync emits an
      * `O cfg` for whatever the state already carries before the first L/A. */
     obs_cfg_reset();
@@ -2072,7 +2069,8 @@ static void write_slot(EigsSlot s) {
     tp_puts("<unknown>");
 }
 
-static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int record_prev) {
+static void trace_assign_ex(const char *name, EigsSlot value, int filtered,
+                            int record_prev, int source_line) {
     /* Prev-map update runs regardless of EIGS_TRACE — `prev of x` is a
      * language feature, not a tape feature. The tape write below is
      * still gated on a tape (file or sink) being open. record_prev == 0 is
@@ -2081,7 +2079,7 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int 
      * records; test_dap's breakpoint inside `double` is one) but must not
      * enter the name-keyed prev table, where a callee's same-named local
      * would rewrite the caller's `prev`. */
-    if (record_prev) prev_record_assign(name, value, filtered);
+    if (record_prev) prev_record_assign(name, value, filtered, source_line);
 
     if (!tape_emit_begin()) return;
     obs_cfg_sync();
@@ -2109,12 +2107,16 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered, int 
  * chunk) reaches the history through here and needs no arming ritual it has
  * no way to perform. */
 void trace_assign(const char *name, EigsSlot value) {
-    trace_assign_ex(name, value, 0, 1);
+    trace_assign_ex(name, value, 0, 1, -1);
+}
+
+void trace_assign_at_line(const char *name, EigsSlot value, int line) {
+    trace_assign_ex(name, value, 0, 1, line);
 }
 
 /* #1063: tape record only -- see trace_assign_ex. */
 void trace_assign_tape_only(const char *name, EigsSlot value) {
-    trace_assign_ex(name, value, 1, 0);
+    trace_assign_ex(name, value, 1, 0, -1);
 }
 
 /* The narrowed twin, for callers running a chunk the bytecode compiler
@@ -2123,7 +2125,11 @@ void trace_assign_tape_only(const char *name, EigsSlot value) {
  * it. Retention is bounded by the suffix-minima pruning either way — this is
  * an optimization, never a safety property. */
 void trace_assign_filtered(const char *name, EigsSlot value) {
-    trace_assign_ex(name, value, 1, 1);
+    trace_assign_ex(name, value, 1, 1, -1);
+}
+
+void trace_assign_filtered_at_line(const char *name, EigsSlot value, int line) {
+    trace_assign_ex(name, value, 1, 1, line);
 }
 
 /* ----- Full-fidelity writer for nondet records.

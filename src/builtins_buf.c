@@ -113,7 +113,7 @@ Value* builtin_buf_get(Value *arg) {
         /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
         return make_num(0);
     }
-    return make_num(buf->data.buffer.data[idx]);
+    return make_num(buffer_read_num(buf, idx));
 }
 
 /* buf_set of [buf, index, value] — O(1) indexed write */
@@ -194,13 +194,11 @@ Value* builtin_buf_from_list(Value *arg) {
 Value* builtin_str_from_bytes(Value *arg) {
     int n = 0;
     Value **items = NULL;
-    double *bufd = NULL;
     if (arg && arg->type == VAL_LIST) {
         n = arg->data.list.count;
         items = arg->data.list.items;
     } else if (arg && arg->type == VAL_BUFFER) {
         n = arg->data.buffer.count;
-        bufd = arg->data.buffer.data;
     } else {
         ARG_GUARD(1, "str_from_bytes", "a list or buffer of byte values", make_str(""));
     }
@@ -208,8 +206,9 @@ Value* builtin_str_from_bytes(Value *arg) {
     int len = 0;
     for (int i = 0; i < n; i++) {
         double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
-                          : bufd[i];
-        int b = (int)dv & 0xFF;
+                          : buffer_read_num(arg, i);
+        if (g_has_error) { free(s); return make_null(); }
+        int b = finite_num_to_byte(dv);
         if (b == 0) break;            /* C-string terminates at NUL */
         s[len++] = (char)b;
     }
@@ -250,14 +249,16 @@ Value* builtin_f64_from_bytes(Value *arg) {
                 bytes_in[i] = arg->data.list.items[i]->data.num;
     } else if (arg && arg->type == VAL_BUFFER) {
         int n = arg->data.buffer.count;
-        for (int i = 0; i < 8 && i < n; i++)
-            bytes_in[i] = arg->data.buffer.data[i];
+        for (int i = 0; i < 8 && i < n; i++) {
+            bytes_in[i] = buffer_read_num(arg, i);
+            if (g_has_error) return make_null();
+        }
     } else {
         ARG_GUARD(1, "f64_from_bytes", "a list or buffer of 8 byte values", make_num(0));
     }
     uint64_t bits = 0;
     for (int i = 0; i < 8; i++)
-        bits = (bits << 8) | (uint64_t)((int)bytes_in[i] & 0xFF);
+        bits = (bits << 8) | (uint64_t)finite_num_to_byte(bytes_in[i]);
     double d;
     memcpy(&d, &bits, sizeof(d));
     /* #971: eight arbitrary bytes can spell a NaN; collapse (default) or
@@ -302,13 +303,11 @@ static int zlib_bytes_arg(Value *arg, const char *who,
     *out_n = 0;
     int n = 0;
     Value **items = NULL;
-    double *bufd = NULL;
     if (arg && arg->type == VAL_LIST) {
         n = arg->data.list.count;
         items = arg->data.list.items;
     } else if (arg && arg->type == VAL_BUFFER) {
         n = arg->data.buffer.count;
-        bufd = arg->data.buffer.data;
     } else {
         rt_error(EK_TYPE, 0,
                  "%s requires a list of byte values (0-255) or a buffer, got %s",
@@ -318,8 +317,9 @@ static int zlib_bytes_arg(Value *arg, const char *who,
     unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
     for (int i = 0; i < n; i++) {
         double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
-                          : bufd[i];
-        b[i] = (unsigned char)((int)dv & 0xFF);
+                          : buffer_read_num(arg, i);
+        if (g_has_error) { free(b); return 0; }
+        b[i] = finite_num_to_byte(dv);
     }
     *out = b;
     *out_n = (size_t)n;
@@ -681,10 +681,11 @@ Value* builtin_buf_peak(Value *arg) {
         !buf_window_arg("buf_peak", buf, arg->data.list.items[1], count, &off))
         /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
         return make_num(0);
-    double *d = &buf->data.buffer.data[off];
     double m = 0.0;
     for (long long i = 0; i < count; i++) {
-        double a = d[i] < 0 ? -d[i] : d[i];
+        double x = buffer_read_num(buf, off + i);
+        if (g_has_error) return make_null();
+        double a = x < 0 ? -x : x;
         if (a > m) m = a;
     }
     return make_num(m);
@@ -710,11 +711,14 @@ Value* builtin_buf_dot(Value *arg) {
         !buf_window_arg("buf_dot", b, arg->data.list.items[3], count, &b_off))
         /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
         return make_num(0);
-    double *ad = &a->data.buffer.data[a_off];
-    double *bd = &b->data.buffer.data[b_off];
     double s = 0.0;
-    for (long long i = 0; i < count; i++)
-        s = num_guard(s + num_guard(ad[i] * bd[i]));
+    for (long long i = 0; i < count; i++) {
+        double av = buffer_read_num(a, a_off + i);
+        if (g_has_error) return make_null();
+        double bv = buffer_read_num(b, b_off + i);
+        if (g_has_error) return make_null();
+        s = num_guard(s + num_guard(av * bv));
+    }
     return make_num(s);
 }
 
@@ -763,10 +767,14 @@ Value* builtin_buf_from_pcm16le(Value *arg) {
         return make_null();
     Value *out = buf_alloc_flat(count);
     if (!out) return make_null();
-    const double *sd = &src->data.buffer.data[off];
     double *od = out->data.buffer.data;
     for (long long i = 0; i < count; i++) {
-        double v = num_guard(sd[2*i] + num_guard(256.0 * sd[2*i + 1]));
+        double lo = buffer_read_num(src, off + 2*i);
+        if (g_has_error) { val_decref(out); return make_null(); }
+        double hi = buffer_read_num(src, off + 2*i + 1);
+        if (g_has_error) { val_decref(out); return make_null(); }
+        double v = num_guard(lo + num_guard(256.0 * hi));
+        if (g_has_error) { val_decref(out); return make_null(); }
         if (v >= 32768.0) v = num_guard(v - 65536.0);
         od[i] = num_guard(v / 32767.0);
     }
@@ -797,10 +805,10 @@ Value* builtin_buf_to_pcm16le(Value *arg) {
         return make_null();
     Value *out = buf_alloc_flat(count * 2);
     if (!out) return make_null();
-    const double *sd = &src->data.buffer.data[off];
     double *od = out->data.buffer.data;
     for (long long i = 0; i < count; i++) {
-        double x = sd[i];
+        double x = buffer_read_num(src, off + i);
+        if (g_has_error) { val_decref(out); return make_null(); }
         if (x < -1.0) x = -1.0;
         if (x > 1.0) x = 1.0;
         double v = round(num_guard(x * 32767.0));

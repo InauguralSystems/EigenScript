@@ -1,0 +1,35 @@
+# A blocking join must retain the generation it resolved before suspension.
+# The churner runs after the detached target is reaped but before the joiner,
+# fills the handle table, and puts a replacement task in the target's slot.
+target is 0
+
+define target_worker() as:
+    task_yield of null
+    return 11
+
+define replacement() as:
+    return 29
+
+define joiner() as:
+    try:
+        return task_join of target
+    catch e:
+        if (index_of of [e.message, "stale"]) >= 0:
+            return "ERR-stale"
+        return f"ERR-other({e.message})"
+
+define churner() as:
+    # Let target finish first. Its completion queues this task before joiner.
+    task_yield of null
+    local i is 0
+    loop while i < 253:
+        task_spawn of replacement
+        i is i + 1
+    return 1
+
+target is task_spawn of target_worker
+joined is task_spawn of joiner
+churned is task_spawn of churner
+task_detach of target
+answer is task_join of joined
+print of f"blocking_join={answer}"

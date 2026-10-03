@@ -8,6 +8,7 @@
 #include "eigenscript.h"
 #include "fsutil.h"
 #include "vm.h"
+#include "builtins_internal.h"
 #include "task.h"
 #include "jit.h"
 #include "trace.h"
@@ -20,18 +21,19 @@
  * running chunk's provenance warrants. A compiler-produced chunk was scanned
  * for temporal queries and its names armed, so #827's armed-name filter is a
  * sound per-assign CPU saving there; a chunk assembled from a descriptor
- * (vm_run_bytecode / sandbox_run) was never scanned, so filtering it normally
- * drops assignments the chunk's own `prev of` / `at` reads then miss. Sandbox
- * descriptors are the exception: chunk_arm_temporal() has armed every name
- * they can query, and filtering prevents unrelated attacker-chosen names from
- * retaining values after the sandbox allocation budget has been restored.
- * Both callers are already behind the `g_trace_hist` branch, so this costs the
- * hot path nothing. */
+ * (vm_run_bytecode / sandbox_run) was never scanned, so filtering it drops
+ * assignments the chunk's own `prev of` / `at` reads then miss. Both callers
+ * are already behind the `g_trace_hist` branch, so this costs the hot path
+ * nothing. */
 static inline void vm_trace_assign(const EigsChunk *chunk, const char *name,
                                    EigsSlot value) {
-    if (chunk->compiler_scanned || g_sandbox_active)
-        trace_assign_filtered(name, value);
-    else                         trace_assign(name, value);
+    /* g_vm.current_line is per-thread. The process-wide trace stamp is not
+     * updated while workers are live (#297), so consulting it here filed
+     * main-thread stores under the stale pre-spawn line (#1439). */
+    if (chunk->compiler_scanned)
+        trace_assign_filtered_at_line(name, value, g_vm.current_line);
+    else
+        trace_assign_at_line(name, value, g_vm.current_line);
 }
 
 /* #262 slot-keyed observer shadow. Off unless EIGS_OBS_SHADOW is set;
@@ -711,6 +713,14 @@ static inline Value *vm_local_lift(Env *e, uint16_t slot) {
     return v;
 }
 
+/* vm_local_lift uses C NULL for both an immediate EigenScript null and an
+ * invalid slot.  LOCAL_* reads are compiler-generated with valid slots, but
+ * their error paths still need to distinguish the language value from the
+ * defensive out-of-range case. */
+static inline int vm_local_is_null(Env *e, uint16_t slot) {
+    return (int)slot < e->count && slot_is_null(e->values[slot]);
+}
+
 /* ---- VM helpers ---- */
 
 static void vm_init(void) {
@@ -871,17 +881,25 @@ static inline uint32_t read_u32(uint8_t *ip) {
  * per process (an import statement re-resolves on every execution, and a
  * collided name imported from several files would otherwise repeat the
  * same line). Process-lifetime by design: still-reachable at exit, which
- * LeakSanitizer does not report. Main-thread only, like the module cache. */
+ * LeakSanitizer does not report. HTTP code routes can import concurrently,
+ * so the process-wide cache is protected across lookup, growth and insert. */
 static int import_collision_first_report(const char *name) {
     static char **warned = NULL;
     static size_t warned_n = 0, warned_cap = 0;
-    for (size_t i = 0; i < warned_n; i++)
-        if (strcmp(warned[i], name) == 0) return 0;
+    static pthread_mutex_t warned_lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&warned_lock);
+    for (size_t i = 0; i < warned_n; i++) {
+        if (strcmp(warned[i], name) == 0) {
+            pthread_mutex_unlock(&warned_lock);
+            return 0;
+        }
+    }
     if (warned_n == warned_cap) {
         warned_cap = warned_cap ? warned_cap * 2 : 8;
         warned = xrealloc_array(warned, warned_cap, sizeof(char *));
     }
     warned[warned_n++] = xstrdup(name);
+    pthread_mutex_unlock(&warned_lock);
     return 1;
 }
 #endif
@@ -1058,7 +1076,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
     int slot_idx, depth;
     Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
     if (!target) {
-        rt_error(EK_UNDEFINED_NAME, g_vm.current_line, "undefined variable '%s'", name);
+        eigs_raise_missing_name(name, g_vm.current_line);
         vm_push_slot(slot_null());
         return;
     }
@@ -1195,7 +1213,11 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
     if (__builtin_expect(ic->starting_env == start &&
                          ic->starting_ver == start->binding_version, 1)) {
         Env *target = ic->walk_depth ? start->parent : start;
-        if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
+        /* GET_NAME and SET_NAME share this per-name IC.  A preceding load can
+         * therefore leave a valid cache entry for the sealed builtin layer;
+         * never let a store consume that entry. */
+        if (__builtin_expect(target && target != g_builtin_env &&
+                             target->binding_version == ic->target_ver, 1)) {
             env_store_slot(target, ic->slot_idx, s);
             if (target->assign_counts)
                 target->assign_counts[ic->slot_idx]++;
@@ -1320,7 +1342,7 @@ void jit_helper_set_fn_name_local(EigsChunk *chunk, int idx) {
  * with the same error semantics so try/catch behavior is preserved.
  * No chunk pointer required (unlike GET_NAME): the slot is enough to
  * reach fn_env via g_vm.frames[]. */
-void jit_helper_local_idx_get(int slot, int idx) {
+int jit_helper_local_idx_get(int slot, int idx) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *target = vm_local_lift(e, (uint16_t)slot);
@@ -1328,14 +1350,14 @@ void jit_helper_local_idx_get(int slot, int idx) {
         int i = idx;
         if (target->type == VAL_BUFFER) {
             if (i < target->data.buffer.count) {
-                vm_push_slot(slot_from_num(target->data.buffer.data[i]));
+                vm_push_slot(slot_from_num(buffer_read_num(target, i)));
             } else {
                 rt_error(EK_INDEX, g_vm.current_line,
                     "buffer index %d out of range (length %d)",
                     i, target->data.buffer.count);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
         if (target->type == VAL_LIST) {
             if (i < target->data.list.count) {
@@ -1352,7 +1374,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
                     i, target->data.list.count);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
         if (target->type == VAL_STR) {
             int len = (int)val_str_len(target);
@@ -1365,14 +1387,17 @@ void jit_helper_local_idx_get(int slot, int idx) {
                     i, len);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
         {
             rt_error(EK_TYPE, g_vm.current_line,
                 "cannot index %s", val_type_name(target->type));
         }
+    } else if (vm_local_is_null(e, (uint16_t)slot)) {
+        rt_error(EK_TYPE, g_vm.current_line, "cannot index null");
     }
     vm_push_slot(slot_null());
+    return g_has_error;
 }
 
 /* JIT Stage 4m: out-of-line helper for OP_LOCAL_DOT_GET.
@@ -1380,7 +1405,7 @@ void jit_helper_local_idx_get(int slot, int idx) {
  * Mirrors CASE(LOCAL_DOT_GET) — looks up local[slot], dict-gets the
  * named field, pushes via immediate-num peephole when possible. Needs
  * chunk for const_interns / const_hashes (same as GET_NAME). */
-void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
+int jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *target = vm_local_lift(e, (uint16_t)slot);
@@ -1402,15 +1427,20 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
         } else {
             vm_push_slot(slot_null());
         }
-        return;
+        return g_has_error;
     }
     if (target) {
         const char *key = chunk->const_interns[name_idx];
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot access field '%s' on %s",
             key, val_type_name(target->type));
+    } else if (vm_local_is_null(e, (uint16_t)slot)) {
+        const char *key = chunk->const_interns[name_idx];
+        rt_error(EK_TYPE, g_vm.current_line,
+            "cannot access field '%s' on null", key);
     }
     vm_push_slot(slot_null());
+    return g_has_error;
 }
 
 /* JIT Stage 4v: out-of-line helper for OP_LOCAL_IDX_DOT_GET — the #1
@@ -1422,8 +1452,8 @@ void jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
  * (after runtime_error for the type errors) to match interpreter
  * semantics. The JIT site does not need to sync/reload sp around the
  * call — helper drives g_vm.sp directly via vm_push_*. */
-void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
-                                  int list_idx, int name_idx) {
+int jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
+                                 int list_idx, int name_idx) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *target = vm_local_lift(e, (uint16_t)slot);
@@ -1448,7 +1478,7 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                         val_incref(v);
                         vm_push(v);
                     }
-                    return;
+                    return g_has_error;
                 }
             } else if (dict) {
                 const char *key = chunk->const_interns[name_idx];
@@ -1464,8 +1494,11 @@ void jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
     } else if (target) {
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
+    } else if (vm_local_is_null(e, (uint16_t)slot)) {
+        rt_error(EK_TYPE, g_vm.current_line, "cannot index null");
     }
     vm_push_slot(slot_null());
+    return g_has_error;
 }
 
 /* JIT Stage 4q-f: out-of-line helper for OP_DOT_GET.
@@ -1607,6 +1640,35 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
     (void)chunk; (void)name_idx;
 }
 
+/* Numeric `unobserved:` assignments are deliberately common in simulation
+ * loops.  Keep the already-allocated ring fast path in this translation unit
+ * so the JIT helper does not bounce through two more out-of-line functions on
+ * every assignment.  The public routine owns allocation/window-growth and is
+ * still the cold fallback. */
+static inline void jit_sample_num_gated(Env *e, int slot, double v) {
+    ObserverSlot *s = env_obs_slot(e, slot);
+    int n = s && s->win_override ? s->win_override : g_obs_window;
+    if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {
+        observer_slot_sample_num_gated(e, slot, v);
+        return;
+    }
+    if (s->v_used) {
+        double raw = v - s->last_value;
+        double scale = fabs(v);
+        double prev_scale = fabs(s->last_value);
+        if (prev_scale > scale) scale = prev_scale;
+        if (g_obs_scale > scale) scale = g_obs_scale;
+        s->v_window[s->v_window_head] = raw / scale;
+        s->vr_window[s->v_window_head] = raw;
+        if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
+        if (s->v_window_count < s->v_cap) s->v_window_count++;
+    }
+    s->last_value = v;
+    s->v_used = 1;
+    s->v_last = 1;
+    s->used = 1;
+}
+
 void jit_helper_observe_assign_local(int slot) {
     eigs_obs_count_call();   /* #972: entered — the emitter's inline gate test
                               * is what keeps this at 0 for a read-free program */
@@ -1623,8 +1685,8 @@ void jit_helper_observe_assign_local(int slot) {
     Env *e = frame->fn_env;
     if (g_unobserved_depth != 0) {
         /* #1049: elided — value-window sample only (mirrors the CASE body). */
-        if (slot_is_num(s))      observer_slot_sample_num(e, slot, s.d);
-        else if (slot_is_ptr(s)) observer_slot_sample(e, slot, slot_as_ptr(s));
+        if (slot_is_num(s))      jit_sample_num_gated(e, slot, s.d);
+        else if (slot_is_ptr(s)) observer_slot_sample_gated(e, slot, slot_as_ptr(s));
         return;
     }
     if (slot_is_num(s)) {
@@ -1683,8 +1745,8 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     int oidx = -1, odepth = 0;
     Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
     if (oe && oidx >= 0 && g_unobserved_depth != 0) {
-        if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
-        else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+        if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
+        else                observer_slot_sample_gated(oe, oidx, slot_as_ptr(s));
         return;
     }
     if (oe && oidx >= 0) {
@@ -1705,8 +1767,9 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
  *
  * Mirrors CASE(ITER_NEXT) in vm_run, but without ip mutation — returns
  * 1 if the iterator is exhausted (no element pushed), 0 if it pushed
- * the next element. The JIT-emitted call site reads the return value
- * and emits the conditional forward jump to the loop exit target.
+ * the next element, or 2 if that read raised. The raising path completes
+ * the same stack/index work as CASE(ITER_NEXT), then the emitted caller
+ * exits to CHECK_ERROR before executing the loop body or exit target.
  *
  * NOTE: NUM_REUSE check inlined here (the macro is defined further
  * down in this TU). */
@@ -1737,7 +1800,7 @@ int jit_helper_iter_next(void) {
     if (idx >= len) return 1;
     Value *elem;
     if (iterable->type == VAL_BUFFER) {
-        elem = make_num(iterable->data.buffer.data[idx]);
+        elem = make_num(buffer_read_num(iterable, idx));
     } else {
         elem = iterable->data.list.items[idx];
         val_incref(elem);
@@ -1755,7 +1818,7 @@ int jit_helper_iter_next(void) {
                                               : make_num(idx + 1);
     }
     vm_push(elem);
-    return 0;
+    return g_has_error ? 2 : 0;
 }
 
 /* Integer-valued test for a subscript index: an exact integer (2.0) returns 1
@@ -1885,7 +1948,12 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
                     mini[msp++] = slot_from_heap(r);    /* borrow, no incref */
             } else if (target->type == VAL_BUFFER) {
                 if (!vm_index_resolve(&i, target->data.buffer.count)) return 0;
-                mini[msp++] = slot_from_num(target->data.buffer.data[i]);
+                /* #1417: this speculative evaluator has no callee frame and
+                 * skips OP_LINE. Let the generic call report a strict NaN at
+                 * the indexed expression, before the guard can raise here. */
+                double raw = target->data.buffer.data[i];
+                if (g_strict && raw != raw) return 0;
+                mini[msp++] = slot_from_num(buffer_read_num(target, i));
             } else {
                 return 0;
             }
@@ -2193,7 +2261,7 @@ void jit_helper_index_set(void) {
     vm_push(val);
 }
 
-void jit_helper_index_get(void) {
+int jit_helper_index_get(void) {
     EigsSlot idx_s = g_vm.stack[g_vm.sp - 1];
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 2];
     g_vm.sp -= 2;
@@ -2223,11 +2291,11 @@ void jit_helper_index_get(void) {
                 slot_decref(tgt_s);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
         if (target->type == VAL_BUFFER) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                double v = target->data.buffer.data[i];
+                double v = buffer_read_num(target, i);
                 slot_decref(tgt_s);
                 vm_push_slot(slot_from_num(v));
             } else {
@@ -2238,7 +2306,7 @@ void jit_helper_index_get(void) {
                 slot_decref(tgt_s);
                 vm_push_slot(slot_null());
             }
-            return;
+            return g_has_error;
         }
     }
     /* Slow path: materialize both via slot_to_value for unified handling. */
@@ -2279,7 +2347,7 @@ void jit_helper_index_get(void) {
         if (!vm_index_is_int(idx->data.num, &i))
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
         else if (vm_index_resolve(&i, target->data.buffer.count))
-            result = make_num(target->data.buffer.data[i]);
+            result = make_num(buffer_read_num(target, i));
         else
             rt_error(EK_INDEX, g_vm.current_line,
                 "buffer index %d out of range (length %d)",
@@ -2290,6 +2358,7 @@ void jit_helper_index_get(void) {
     }
     val_decref(target); val_decref(idx);
     vm_push(result);
+    return g_has_error;
 }
 
 /* Direct-borrow heuristic, shared by the three builtin call sites
@@ -2645,6 +2714,16 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     }
     if (!consumes_arg && result != arg) val_decref(arg);
     vm_push(result);
+    /* A builtin such as spawn can turn a formerly single-threaded state into
+     * a multithreaded one while this thunk is already executing. Import a
+     * worker's exit before allowing native execution to continue. */
+    if (__builtin_expect(eigs_state_exit_requested(eigs_current->state,
+                                                   &g_exit_code), 0)) {
+        g_exit_requested = 1;
+        g_has_error = 1;
+        g_vm.frames[g_vm.frame_count - 1].ip = caller_chunk->code + resume_off;
+        return 2;
+    }
     if (__builtin_expect(g_arena.active, 0)) {
         /* #873: the builtin just opened an arena window (arena_mark).
          * The caller thunk's inline stores don't arena-promote, so hand
@@ -2750,6 +2829,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_vm_owner                 = (int)offsetof(VM, owner);
     out->off_thread_state             = (int)offsetof(EigsThread, state);   /* #972 */
     out->off_state_obs_needed         = (int)offsetof(EigsState, obs_needed);
+    out->off_thread_exit_scope        = (int)offsetof(EigsThread, exit_scope);
+    out->off_exit_scope_latched       = (int)offsetof(EigsExitScope, latched_storage);
     out->off_sp              = (int)offsetof(VM, sp);
     out->off_stack           = (int)offsetof(VM, stack);
     out->off_frame_count     = (int)offsetof(VM, frame_count);
@@ -3012,6 +3093,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_LT] = &&lbl_LT, [OP_GT] = &&lbl_GT,
         [OP_LE] = &&lbl_LE, [OP_GE] = &&lbl_GE,
         [OP_GET_LOCAL] = &&lbl_GET_LOCAL, [OP_SET_LOCAL] = &&lbl_SET_LOCAL,
+        [OP_SET_LOCAL_INTERNAL] = &&lbl_SET_LOCAL_INTERNAL,
         [OP_GET_NAME] = &&lbl_GET_NAME, [OP_SET_NAME] = &&lbl_SET_NAME,
         [OP_SET_NAME_LOCAL] = &&lbl_SET_NAME_LOCAL,
         [OP_SET_FN_NAME_LOCAL] = &&lbl_SET_FN_NAME_LOCAL,
@@ -3110,6 +3192,18 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
             } \
         } \
     } while(0)
+    #define POLL_STATE_EXIT() do { \
+        if (__builtin_expect(!g_exit_requested && \
+                g_exit_latched, 0)) { \
+            int _state_exit_code; \
+            if (eigs_state_exit_requested(eigs_current->state, \
+                                          &_state_exit_code)) { \
+                g_exit_code = _state_exit_code; \
+                g_exit_requested = 1; \
+                g_has_error = 1; \
+            } \
+        } \
+    } while(0)
     #define DISPATCH() do { CHECK_ERROR(); goto *dispatch_table[*ip++]; } while(0)
     #define CASE(op) lbl_##op
 #else
@@ -3120,6 +3214,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
 #endif
 
 vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above */
+    POLL_STATE_EXIT();
     DISPATCH();
 
     /* ---- Constants ---- */
@@ -3577,6 +3672,19 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH();
     }
 
+    CASE(SET_LOCAL_INTERNAL): {
+        uint16_t slot = read_u16(ip); ip += 2;
+        Env *e = frame->fn_env;
+        if ((int)slot < e->count) {
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+        } else {
+            rt_error(EK_INTERNAL, current_line,
+                     "SET_LOCAL_INTERNAL slot %d out of range (env has %d slots)",
+                     (int)slot, e->count);
+        }
+        DISPATCH();
+    }
+
     CASE(GET_NAME): {
         uint16_t idx = read_u16(ip); ip += 2;
         EnvIC *ic = &chunk->env_ic[idx];
@@ -3600,7 +3708,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int slot_idx, depth;
         Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (!target) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -3638,7 +3746,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (__builtin_expect(ic->starting_env == start &&
                              ic->starting_ver == start->binding_version, 1)) {
             Env *target = ic->walk_depth ? start->parent : start;
-            if (__builtin_expect(target && target->binding_version == ic->target_ver, 1)) {
+            /* A GET_NAME cache may target the sealed builtin layer. */
+            if (__builtin_expect(target && target != g_builtin_env &&
+                                 target->binding_version == ic->target_ver, 1)) {
                 env_store_slot(target, ic->slot_idx, s);
                 if (target->assign_counts)
                     target->assign_counts[ic->slot_idx]++;
@@ -3762,6 +3872,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(JUMP_BACK): {
         uint16_t offset = read_u16(ip); ip += 2;
         ip -= offset;
+        /* A worker's state-wide exit must stop CPU-bound peers, but polling
+         * it from CHECK_ERROR made every opcode pay for an atomic acquire
+         * load. Every unbounded bytecode path crosses a back edge, so use the
+         * existing loop safepoint instead; blocking builtins are woken by the
+         * request itself. This keeps straight-line dispatch at its former
+         * cost while retaining prompt interruption of busy loops. */
+        if (__builtin_expect(g_vm_multithreaded, 0)) POLL_STATE_EXIT();
+        if (__builtin_expect(g_exit_requested, 0)) DISPATCH();
         /* Async abort: poll the embedder's registered flag on the one
          * opcode every loop crosses. Consume the flag (edge, not level)
          * so the abort kills exactly one eval. #410: the pointer is
@@ -4054,6 +4172,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push(result);
 
             /* Check for errors from builtins */
+            POLL_STATE_EXIT();
             CHECK_ERROR();
             /* #408: a suspending builtin (task_yield/task_join) sets the
              * request flag and leaves its placeholder result on the stack.
@@ -4443,7 +4562,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             if (target->type == VAL_BUFFER) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                    double v = target->data.buffer.data[i];
+                    double v = buffer_read_num(target, i);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_from_num(v));
                 } else {
@@ -4490,7 +4609,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!vm_index_is_int(idx->data.num, &i))
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
             else if (vm_index_resolve(&i, target->data.buffer.count))
-                result = make_num(target->data.buffer.data[i]);
+                result = make_num(buffer_read_num(target, i));
             else
                 rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else {
@@ -4701,6 +4820,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 key, val_type_name(target->type));
             vm_push_slot(slot_null());
         } else {
+            const char *key = chunk->const_interns[name_idx];
+            if (vm_local_is_null(e, slot))
+                rt_error(EK_TYPE, current_line,
+                    "cannot access field '%s' on null", key);
             vm_push_slot(slot_null());
         }
         DISPATCH();
@@ -4744,7 +4867,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (target->type == VAL_BUFFER) {
                 /* DMG hot path: mem[addr] — emit immediate, skip make_num. */
                 if (i < target->data.buffer.count) {
-                    vm_push_slot(slot_from_num(target->data.buffer.data[i]));
+                    vm_push_slot(slot_from_num(buffer_read_num(target, i)));
                 } else {
                     rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
@@ -4782,6 +4905,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 DISPATCH();
             }
             rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
+        } else if (vm_local_is_null(e, slot)) {
+            rt_error(EK_TYPE, current_line, "cannot index null");
         }
         vm_push_slot(slot_null());
         DISPATCH();
@@ -4826,6 +4951,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
         } else if (target) {
             rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
+        } else if (vm_local_is_null(e, slot)) {
+            rt_error(EK_TYPE, current_line, "cannot index null");
         }
         vm_push_slot(slot_null());
         DISPATCH();
@@ -4936,7 +5063,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (iterable->type == VAL_BUFFER) {
                 /* Push number immediate directly — skip make_num + immediate-
                  * promote round-trip through vm_push. */
-                vm_push_slot(slot_from_num(iterable->data.buffer.data[idx]));
+                vm_push_slot(slot_from_num(buffer_read_num(iterable, idx)));
             } else {
                 Value *elem = iterable->data.list.items[idx];
                 val_incref(elem);
@@ -5108,8 +5235,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * observer_slot_sample_num (eigenscript.c). */
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             Env *e = frame->fn_env;
-            if (slot_is_num(s))      observer_slot_sample_num(e, (int)slot, s.d);
-            else if (slot_is_ptr(s)) observer_slot_sample(e, (int)slot, slot_as_ptr(s));
+            eigs_obs_count_call();
+            if (slot_is_num(s))      observer_slot_sample_num_gated(e, (int)slot, s.d);
+            else if (slot_is_ptr(s)) observer_slot_sample_gated(e, (int)slot, slot_as_ptr(s));
         }
         DISPATCH();
     }
@@ -5143,7 +5271,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5192,7 +5320,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5243,7 +5371,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5298,7 +5426,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * read of the same name in the same position dies here; so does
              * this one now. (The AOT carried a carve-out for this case --
              * ouroboros t124 -- which can be deleted at the next pin bump.) */
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5345,8 +5473,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 int oidx = -1, odepth = 0;
                 Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
                 if (oe && oidx >= 0 && g_unobserved_depth != 0) {
-                    if (slot_is_num(s)) observer_slot_sample_num(oe, oidx, s.d);
-                    else                observer_slot_sample(oe, oidx, slot_as_ptr(s));
+                    eigs_obs_count_call();
+                    if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
+                    else                observer_slot_sample_gated(oe, oidx, slot_as_ptr(s));
                 } else if (oe && oidx >= 0) {
                     if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
                     else observer_slot_update(oe, oidx, slot_as_ptr(s));
@@ -5784,7 +5913,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -6301,6 +6430,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!consumes_arg && result != arg) val_decref(arg);
             slot_decref(table_s);
             vm_push(result);
+            /* A blocking builtin can return because a peer requested exit. */
+            POLL_STATE_EXIT();
             CHECK_ERROR();
             DISPATCH();
         }
@@ -6561,9 +6692,13 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
     vm_init();
     /* Only the OUTERMOST vm_execute drives the scheduler; a nested call
      * (eval/dispatch/import/comparator) runs to completion on the C stack and
-     * may not suspend (enforced at CASE(CALL) via base_frame). frame_count==0
-     * identifies the outermost. */
-    int outermost = (g_vm.frame_count == 0);
+     * may not suspend (enforced at CASE(CALL) via base_frame). Do not infer
+     * this from frame_count: a task whose entry is a builtin has no bytecode
+     * frame while that builtin invokes a user callback. In that shape the
+     * callback used to re-enter the scheduler and deadlock its own task
+     * (#1437). execute_depth follows the native vm_execute boundary itself. */
+    int outermost = (g_vm.execute_depth == 0);
+    g_vm.execute_depth++;
     /* #1434: native code that runs interpreted code (a builtin's callback,
      * an embedder's eval, the AOT) gets back the line it entered with, on
      * every exit. The callee's OP_LINEs overwrite both the VM line and the
@@ -6588,6 +6723,7 @@ static Value *vm_execute_common(EigsChunk *chunk, Env *env, int call_argc) {
      * place the VM hands control to them; with no scheduler armed it returns
      * `r` unchanged, so a program that never spawns pays one call. */
     if (outermost) r = task_sched_after_outermost(r);
+    g_vm.execute_depth--;
     g_vm.current_line = entry_vm_line;
     if (!g_vm_multithreaded) {
         trace_current_line_store(entry_trace_line);

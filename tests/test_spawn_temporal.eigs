@@ -1,0 +1,14 @@
+load_file of "lib/test.eigs"
+# Regression for #1439: while a worker is live, main-thread assignments must
+# retain their own source lines in temporal history. The worker parks so the
+# multithreaded gate is deterministically active across both writes.
+define parked(ch) as:
+    return recv of ch
+ch is channel of null
+h is spawn of [parked, ch]
+r is 0
+r is 5
+assert_eq of [what is r at 9, 0, "main-thread history uses the assignment's line while a worker is live"]
+send of [ch, 1]
+thread_join of h
+test_summary of null

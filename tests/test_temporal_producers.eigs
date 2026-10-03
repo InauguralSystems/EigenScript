@@ -80,11 +80,8 @@ whencode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
 got_when is vm_run_bytecode of [ABI, whencode, [11, "tmp830w", 22, 99]]
 assert_eq of [got_when, 2, "#830: when-at counts descriptor assignments (was 0)"]
 
-# A sandbox descriptor is untrusted and its allocation budget ends with the
-# run. It must therefore record only names armed by its own temporal opcodes,
-# rather than retaining every assigned value in the thread-wide history. Read
-# the name afterwards from a trusted descriptor: the sandbox assignment must
-# not have escaped its run through that hidden reference.
+# Sandbox execution does not contribute assignments to shared history.
+# A later trusted descriptor read therefore sees no sandbox value.
 sandboxcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
                CONST,2,0, RETURN]
 sandboxed is sandbox_run of [[ABI, sandboxcode, [33, "tmp830sandbox", null]],

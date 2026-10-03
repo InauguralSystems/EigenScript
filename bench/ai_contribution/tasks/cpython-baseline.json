@@ -1,0 +1,1 @@
+{"name":"Established-language one-line stdlib regression fixture (candidate; exact bug remains open)","prompt":"bench/ai_contribution/tasks/cpython-baseline.txt","validation":[["python3","-m","test","test_json"]]}

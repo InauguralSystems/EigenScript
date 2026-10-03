@@ -1,0 +1,47 @@
+# #1417 opt-out boxed-accessor exact-output fixture for an optional AOT mirror.
+# The five infinity operators use buf_get-boxed operands, not the original
+# issue's direct indexed operands; direct AOT parity remains pending.
+big is buffer of 4
+big[0] is 1e300
+big[1] is 1e300
+big[2] is 1e300
+big[3] is 1e300
+matrix is reshape of [big, 2, 2]
+infs is matmul of [matrix, matrix]
+# These operands exercise the shared runtime scalar-read accessor contract.
+# They do not establish direct indexed-operator or strict diagnostic/flag
+# parity with ouroboros's separate unboxed-number optimizer.
+print of ((buf_get of [infs, 0]) > 1e308)
+print of ((buf_get of [infs, 0]) / (buf_get of [infs, 1]))
+print of ((buf_get of [infs, 0]) % 3)
+print of ((buf_get of [infs, 0]) * 0.5 > 1e308)
+print of ((buf_get of [infs, 0]) + 0 > 1e308)
+print of (buf_get of [infs, 0])
+print of (get_at of [infs, 0])
+print of (gather of [infs, [0, 0]])[0]
+
+left is buffer of [1, 2]
+left[0] is 1e200
+left[1] is 1e200
+right is buffer of [2, 1]
+right[0] is 1e200
+right[1] is 0 - 1e200
+nans is matmul of [left, right]
+clear_math_flags of null
+print of nans[0]
+print of (buf_get of [nans, 0])
+print of (get_at of [nans, 0])
+print of (gather of [nans, [0]])[0]
+print of (math_flags of null).invalid
+
+# Buffer indices are scalar reads as well. A NaN index must collapse to zero
+# before it is converted to an integer; casting the raw value is undefined C.
+clear_math_flags of null
+source is buffer of 1
+source[0] is 7
+source_matrix is reshape of [source, 1, 1]
+print of (gather of [source_matrix, nans])[0]
+target is buffer of 1
+scatter_add of [target, nans, [5]]
+print of target[0]
+print of (math_flags of null).invalid

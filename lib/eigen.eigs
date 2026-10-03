@@ -38,7 +38,37 @@
 #   eigen_eval of [ast, env]    -> value
 #   eigen_run of source         -> evaluate source string
 
-load_file of "lib/math.eigs"
+# #1386: snapshot direct host dependencies once when this file loads.
+# Keep the file loader itself before the math load, then retain math's pure
+# abs helper and the other host values before defining the implementation.
+_eigen_load_file is load_file
+_eigen_load_file of "lib/math.eigs"
+
+_eigen_len is len
+_eigen_abs is abs
+_eigen_append is append
+_eigen_char_at is char_at
+_eigen_contains is contains
+_eigen_dict_set is dict_set
+_eigen_exe_path is exe_path
+_eigen_file_exists is file_exists
+_eigen_has_key is has_key
+_eigen_keys is keys
+_eigen_list_remove_at is list_remove_at
+_eigen_num is num
+_eigen_path_dir is path_dir
+_eigen_range is range
+_eigen_read_text is read_text
+_eigen_set_at is set_at
+_eigen_throw is throw
+_eigen_type is type
+_eigen_log is log
+_eigen_divide is divide
+
+# math.log2 calls public log/divide at invocation time. Capturing its function
+# would leave those transitive dependencies mutable. Preserve its formula
+# locally using captured dependencies; lib/math's public helpers stay intact.
+_eigen_log2 is (x) => _eigen_divide of [_eigen_log of x, 0.6931471805599453]
 
 # ============================================================
 # Tokenizer
@@ -51,10 +81,10 @@ load_file of "lib/math.eigs"
 # "comma", "colon", "dot", "arrow", "pipe", "null", "true", "false"
 
 define _is_digit(c) as:
-    return contains of ["0123456789", c]
+    return _eigen_contains of ["0123456789", c]
 
 define _is_alpha(c) as:
-    return contains of ["abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ", c]
+    return _eigen_contains of ["abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ", c]
 
 define _is_alnum(c) as:
     if (_is_alpha of c) == 1:
@@ -66,26 +96,26 @@ define _is_alnum(c) as:
 # interpolation ends, at every nesting level. String literals, `#` comments
 # (to end of line) and nested f-strings all hide braces.
 # _fstr_interp_end: pos is just past the `{`; returns the index of the
-# matching `}`, or len of source when unterminated.
+# matching `}`, or _eigen_len of source when unterminated.
 define _fstr_interp_end(source, pos) as:
-    local n is len of source
+    local n is _eigen_len of source
     local start is pos
     local depth is 1
     local c is ""
     loop while pos < n:
-        c is char_at of [source, pos]
-        if (c == "f") and ((pos + 1) < n) and ((char_at of [source, pos + 1]) == "\"") and ((pos == start) or ((_is_alnum of (char_at of [source, pos - 1])) == 0)):
+        c is _eigen_char_at of [source, pos]
+        if (c == "f") and ((pos + 1) < n) and ((_eigen_char_at of [source, pos + 1]) == "\"") and ((pos == start) or ((_is_alnum of (_eigen_char_at of [source, pos - 1])) == 0)):
             pos is _fstr_skip_fstring of [source, pos]
         elif c == "\"":
             pos is pos + 1
-            loop while (pos < n) and ((char_at of [source, pos]) != "\""):
-                if ((char_at of [source, pos]) == "\\") and ((pos + 1) < n):
+            loop while (pos < n) and ((_eigen_char_at of [source, pos]) != "\""):
+                if ((_eigen_char_at of [source, pos]) == "\\") and ((pos + 1) < n):
                     pos is pos + 1
                 pos is pos + 1
             if pos < n:
                 pos is pos + 1
         elif c == "#":
-            loop while (pos < n) and ((char_at of [source, pos]) != "\n"):
+            loop while (pos < n) and ((_eigen_char_at of [source, pos]) != "\n"):
                 pos is pos + 1
         elif c == "{":
             depth is depth + 1
@@ -101,11 +131,11 @@ define _fstr_interp_end(source, pos) as:
 
 # pos at the `f` of f"...": returns the index just past the closing quote.
 define _fstr_skip_fstring(source, pos) as:
-    local n is len of source
+    local n is _eigen_len of source
     local c is ""
     pos is pos + 2
-    loop while (pos < n) and ((char_at of [source, pos]) != "\""):
-        c is char_at of [source, pos]
+    loop while (pos < n) and ((_eigen_char_at of [source, pos]) != "\""):
+        c is _eigen_char_at of [source, pos]
         if c == "\\":
             pos is pos + 2
         elif c == "{":
@@ -139,53 +169,53 @@ _predicates is ["converged", "stable", "improving", "oscillating", "diverging", 
 _reserved_forms is ["report", "report_value"]
 
 define _is_keyword(word) as:
-    for i in range of (len of _keywords):
+    for i in _eigen_range of (_eigen_len of _keywords):
         if word == _keywords[i]:
             return 1
     return 0
 
 define _is_interrogative(word) as:
-    for i in range of (len of _interrogatives):
+    for i in _eigen_range of (_eigen_len of _interrogatives):
         if word == _interrogatives[i]:
             return 1
     return 0
 
 define _is_predicate(word) as:
-    for i in range of (len of _predicates):
+    for i in _eigen_range of (_eigen_len of _predicates):
         if word == _predicates[i]:
             return 1
     return 0
 
 define _is_reserved_form(word) as:
-    for i in range of (len of _reserved_forms):
+    for i in _eigen_range of (_eigen_len of _reserved_forms):
         if word == _reserved_forms[i]:
             return 1
     return 0
 
 define _predicate_index(word) as:
-    for i in range of (len of _predicates):
+    for i in _eigen_range of (_eigen_len of _predicates):
         if word == _predicates[i]:
             return i
     return 0
 
 define _interrogative_index(word) as:
-    for i in range of (len of _interrogatives):
+    for i in _eigen_range of (_eigen_len of _interrogatives):
         if word == _interrogatives[i]:
             return i
     return 0
 
 define eigen_tokenize(source) as:
-    return _eigen_tokenize_at of [source, 1]
+    return _eigen_tokenize_at of [source, 1, 1]
 
 # `line` is the physical line `source` starts on: an f-string interpolation is
 # sub-lexed from the line of its `{`, and a newline inside a string or an
-# interpolation advances it (#1251). No layout switch is needed for #1337:
-# this tokenizer never rejects an inconsistent dedent, and the splice drops
-# layout tokens, so a continuation line's indentation is already inert here.
-define _eigen_tokenize_at(source, line) as:
+# interpolation advances it (#1251). The splice drops layout tokens, so a
+# continuation line's indentation is inert there; ordinary source still has
+# its dedents checked against the indentation stack (#1378).
+define _eigen_tokenize_at(source, line, check_layout) as:
     tokens is []
     pos is 0
-    src_len is len of source
+    src_len is _eigen_len of source
     indent_stack is [0]
     at_line_start is 1
     bracket_depth is 0
@@ -198,7 +228,7 @@ define _eigen_tokenize_at(source, line) as:
                 spaces is 0
                 counting is 1
                 loop while (pos < src_len) and (counting == 1):
-                    ch is char_at of [source, pos]
+                    ch is _eigen_char_at of [source, pos]
                     if ch == " ":
                         spaces is spaces + 1
                         pos is pos + 1
@@ -209,8 +239,8 @@ define _eigen_tokenize_at(source, line) as:
                         counting is 0
                 # Skip comment lines
                 if pos < src_len:
-                    if (char_at of [source, pos]) == "#":
-                        loop while (pos < src_len) and ((char_at of [source, pos]) != "\n"):
+                    if (_eigen_char_at of [source, pos]) == "#":
+                        loop while (pos < src_len) and ((_eigen_char_at of [source, pos]) != "\n"):
                             pos is pos + 1
                         if pos < src_len:
                             pos is pos + 1
@@ -220,7 +250,7 @@ define _eigen_tokenize_at(source, line) as:
                 # Skip blank lines
                 blank_line is 0
                 if pos < src_len:
-                    if (char_at of [source, pos]) == "\n":
+                    if (_eigen_char_at of [source, pos]) == "\n":
                         pos is pos + 1
                         line is line + 1
                         at_line_start is 1
@@ -229,21 +259,23 @@ define _eigen_tokenize_at(source, line) as:
                     blank_line is 1
                 if blank_line == 0:
                     # Emit indent/dedent
-                    current_indent is indent_stack[(len of indent_stack) - 1]
+                    current_indent is indent_stack[(_eigen_len of indent_stack) - 1]
                     if spaces > current_indent:
-                        append of [indent_stack, spaces]
-                        append of [tokens, ["indent", null, line]]
+                        _eigen_append of [indent_stack, spaces]
+                        _eigen_append of [tokens, ["indent", null, line]]
                     else:
-                        loop while spaces < (indent_stack[(len of indent_stack) - 1]):
+                        loop while spaces < (indent_stack[(_eigen_len of indent_stack) - 1]):
                             # pop
                             new_stack is []
-                            for si in range of ((len of indent_stack) - 1):
-                                append of [new_stack, indent_stack[si]]
+                            for si in _eigen_range of ((_eigen_len of indent_stack) - 1):
+                                _eigen_append of [new_stack, indent_stack[si]]
                             indent_stack is new_stack
-                            append of [tokens, ["dedent", null, line]]
+                            _eigen_append of [tokens, ["dedent", null, line]]
+                        if (check_layout == 1) and (spaces != indent_stack[(_eigen_len of indent_stack) - 1]):
+                            _eigen_throw of f"parse error line {line}: indentation does not match any outer level"
         # Now handle non-indent characters
         if (at_line_start == 0) and (pos < src_len):
-            c is char_at of [source, pos]
+            c is _eigen_char_at of [source, pos]
             handled is 0
             # Skip inline spaces
             if (_is_space of c) == 1:
@@ -253,7 +285,7 @@ define _eigen_tokenize_at(source, line) as:
             if (handled == 0) and (c == "#"):
                 commenting is 1
                 loop while (pos < src_len) and (commenting == 1):
-                    ch2 is char_at of [source, pos]
+                    ch2 is _eigen_char_at of [source, pos]
                     if ch2 == "\n":
                         commenting is 0
                     else:
@@ -262,33 +294,33 @@ define _eigen_tokenize_at(source, line) as:
             # Newlines
             if (handled == 0) and (c == "\n"):
                 if bracket_depth == 0:
-                    if (len of tokens) > 0:
-                        last is tokens[(len of tokens) - 1]
+                    if (_eigen_len of tokens) > 0:
+                        last is tokens[(_eigen_len of tokens) - 1]
                         if last[0] != "newline":
                             if last[0] != "indent":
                                 if last[0] != "dedent":
-                                    append of [tokens, ["newline", null, line]]
+                                    _eigen_append of [tokens, ["newline", null, line]]
                     at_line_start is 1
                 pos is pos + 1
                 line is line + 1
                 handled is 1
             # f-strings: f"text {expr}"
             if (handled == 0) and (c == "f") and ((pos + 1) < src_len):
-                if (char_at of [source, pos + 1]) == "\"":
+                if (_eigen_char_at of [source, pos + 1]) == "\"":
                     pos is pos + 2
                     fstr_line is line
                     has_segments is 0
                     buf is ""
                     reading_fstr is 1
                     loop while (pos < src_len) and (reading_fstr == 1):
-                        fc is char_at of [source, pos]
+                        fc is _eigen_char_at of [source, pos]
                         if fc == "\"":
                             pos is pos + 1
                             reading_fstr is 0
                         elif fc == "\\":
                             pos is pos + 1
                             if pos < src_len:
-                                esc is char_at of [source, pos]
+                                esc is _eigen_char_at of [source, pos]
                                 if esc == "n":
                                     buf is buf + "\n"
                                 elif esc == "t":
@@ -308,10 +340,10 @@ define _eigen_tokenize_at(source, line) as:
                                 pos is pos + 1
                         elif fc == "{":
                             # Emit accumulated literal
-                            if ((len of buf) > 0) or (has_segments == 0):
+                            if ((_eigen_len of buf) > 0) or (has_segments == 0):
                                 if has_segments == 1:
-                                    append of [tokens, ["op", "+", line]]
-                                append of [tokens, ["str", buf, line]]
+                                    _eigen_append of [tokens, ["op", "+", line]]
+                                _eigen_append of [tokens, ["str", buf, line]]
                                 has_segments is 1
                             buf is ""
                             pos is pos + 1
@@ -321,33 +353,33 @@ define _eigen_tokenize_at(source, line) as:
                             # builtin in _make_default_env, so a user `str`
                             # never reaches it (src/lexer.c does the same).
                             if has_segments == 1:
-                                append of [tokens, ["op", "+", line]]
+                                _eigen_append of [tokens, ["op", "+", line]]
                             else:
                                 has_segments is 1
-                            append of [tokens, ["lparen", null, line]]
-                            append of [tokens, ["ident", "_#fstr", line]]
-                            append of [tokens, ["kw", "of", line]]
-                            append of [tokens, ["lparen", null, line]]
+                            _eigen_append of [tokens, ["lparen", null, line]]
+                            _eigen_append of [tokens, ["ident", "_#fstr", line]]
+                            _eigen_append of [tokens, ["kw", "of", line]]
+                            _eigen_append of [tokens, ["lparen", null, line]]
                             # Collect expression text inside braces: its
                             # extent comes from the one shared scanner
                             iend is _fstr_interp_end of [source, pos]
                             if iend >= src_len:
-                                throw of f"parse error line {fstr_line}: unterminated f-string expression"
+                                _eigen_throw of f"parse error line {fstr_line}: unterminated f-string expression"
                             expr_buf is source[pos:iend]
                             pos is iend + 1
                             # Recursively tokenize the inner expression
-                            inner_tokens is _eigen_tokenize_at of [expr_buf, line]
-                            for eci in range of (len of expr_buf):
-                                if (char_at of [expr_buf, eci]) == "\n":
+                            inner_tokens is _eigen_tokenize_at of [expr_buf, line, 0]
+                            for eci in _eigen_range of (_eigen_len of expr_buf):
+                                if (_eigen_char_at of [expr_buf, eci]) == "\n":
                                     line is line + 1
-                            for iti in range of (len of inner_tokens):
+                            for iti in _eigen_range of (_eigen_len of inner_tokens):
                                 itok is inner_tokens[iti]
                                 # Layout tokens are meaningless inside a
                                 # spliced expression (C parity, #334)
                                 if (itok[0] != "eof") and (itok[0] != "newline") and (itok[0] != "indent") and (itok[0] != "dedent"):
-                                    append of [tokens, itok]
-                            append of [tokens, ["rparen", null, line]]
-                            append of [tokens, ["rparen", null, line]]
+                                    _eigen_append of [tokens, itok]
+                            _eigen_append of [tokens, ["rparen", null, line]]
+                            _eigen_append of [tokens, ["rparen", null, line]]
                         else:
                             buf is buf + fc
                             pos is pos + 1
@@ -355,14 +387,14 @@ define _eigen_tokenize_at(source, line) as:
                                 line is line + 1
                     # The C lexer rejects an unterminated f-string (#1338)
                     if reading_fstr == 1:
-                        throw of f"parse error line {fstr_line}: unterminated f-string"
+                        _eigen_throw of f"parse error line {fstr_line}: unterminated f-string"
                     # Emit trailing literal
-                    if (len of buf) > 0:
+                    if (_eigen_len of buf) > 0:
                         if has_segments == 1:
-                            append of [tokens, ["op", "+", line]]
-                        append of [tokens, ["str", buf, line]]
+                            _eigen_append of [tokens, ["op", "+", line]]
+                        _eigen_append of [tokens, ["str", buf, line]]
                     elif has_segments == 0:
-                        append of [tokens, ["str", "", line]]
+                        _eigen_append of [tokens, ["str", "", line]]
                     handled is 1
             # Strings
             if (handled == 0) and (c == "\""):
@@ -371,13 +403,13 @@ define _eigen_tokenize_at(source, line) as:
                 str_line is line
                 reading_str is 1
                 loop while (pos < src_len) and (reading_str == 1):
-                    ch is char_at of [source, pos]
+                    ch is _eigen_char_at of [source, pos]
                     if ch == "\"":
                         pos is pos + 1
                         reading_str is 0
                     elif ch == "\\":
                         pos is pos + 1
-                        esc is char_at of [source, pos]
+                        esc is _eigen_char_at of [source, pos]
                         if esc == "n":
                             buf is buf + "\n"
                         elif esc == "t":
@@ -396,7 +428,9 @@ define _eigen_tokenize_at(source, line) as:
                         pos is pos + 1
                         if ch == "\n":
                             line is line + 1
-                append of [tokens, ["str", buf, str_line]]
+                if reading_str == 1:
+                    _eigen_throw of f"parse error line {str_line}: unterminated string"
+                _eigen_append of [tokens, ["str", buf, str_line]]
                 handled is 1
             # Numbers
             if (handled == 0) and ((_is_digit of c) == 1):
@@ -404,7 +438,7 @@ define _eigen_tokenize_at(source, line) as:
                 has_dot is 0
                 reading_num is 1
                 loop while (pos < src_len) and (reading_num == 1):
-                    ch is char_at of [source, pos]
+                    ch is _eigen_char_at of [source, pos]
                     if (_is_digit of ch) == 1:
                         buf is buf + ch
                         pos is pos + 1
@@ -414,113 +448,113 @@ define _eigen_tokenize_at(source, line) as:
                         pos is pos + 1
                     else:
                         reading_num is 0
-                append of [tokens, ["num", num of buf, line]]
+                _eigen_append of [tokens, ["num", _eigen_num of buf, line]]
                 handled is 1
             # Identifiers and keywords
             if (handled == 0) and ((_is_alpha of c) == 1):
                 buf is ""
                 reading_id is 1
                 loop while (pos < src_len) and (reading_id == 1):
-                    ch is char_at of [source, pos]
+                    ch is _eigen_char_at of [source, pos]
                     if (_is_alnum of ch) == 1:
                         buf is buf + ch
                         pos is pos + 1
                     else:
                         reading_id is 0
                 if buf == "null":
-                    append of [tokens, ["null", null, line]]
+                    _eigen_append of [tokens, ["null", null, line]]
                 elif buf == "true":
-                    append of [tokens, ["true", 1, line]]
+                    _eigen_append of [tokens, ["true", 1, line]]
                 elif buf == "false":
-                    append of [tokens, ["false", 0, line]]
+                    _eigen_append of [tokens, ["false", 0, line]]
                 elif (_is_interrogative of buf) == 1:
-                    append of [tokens, ["interrogative", buf, line]]
+                    _eigen_append of [tokens, ["interrogative", buf, line]]
                 elif (_is_predicate of buf) == 1:
-                    append of [tokens, ["predicate", buf, line]]
+                    _eigen_append of [tokens, ["predicate", buf, line]]
                 elif (_is_reserved_form of buf) == 1:
-                    append of [tokens, ["report", buf, line]]
+                    _eigen_append of [tokens, ["report", buf, line]]
                 elif (_is_keyword of buf) == 1:
-                    append of [tokens, ["kw", buf, line]]
+                    _eigen_append of [tokens, ["kw", buf, line]]
                 else:
-                    append of [tokens, ["ident", buf, line]]
+                    _eigen_append of [tokens, ["ident", buf, line]]
                 handled is 1
             # Two-character operators
             if (handled == 0) and ((pos + 1) < src_len):
-                next is char_at of [source, pos + 1]
+                next is _eigen_char_at of [source, pos + 1]
                 two is c + next
                 if two == "==":
-                    append of [tokens, ["op", "==", line]]
+                    _eigen_append of [tokens, ["op", "==", line]]
                     pos is pos + 2
                     handled is 1
                 elif two == "!=":
-                    append of [tokens, ["op", "!=", line]]
+                    _eigen_append of [tokens, ["op", "!=", line]]
                     pos is pos + 2
                     handled is 1
                 elif two == "<=":
-                    append of [tokens, ["op", "<=", line]]
+                    _eigen_append of [tokens, ["op", "<=", line]]
                     pos is pos + 2
                     handled is 1
                 elif two == ">=":
-                    append of [tokens, ["op", ">=", line]]
+                    _eigen_append of [tokens, ["op", ">=", line]]
                     pos is pos + 2
                     handled is 1
                 elif two == "=>":
-                    append of [tokens, ["arrow", null, line]]
+                    _eigen_append of [tokens, ["arrow", null, line]]
                     pos is pos + 2
                     handled is 1
                 elif two == "|>":
-                    append of [tokens, ["pipe", null, line]]
+                    _eigen_append of [tokens, ["pipe", null, line]]
                     pos is pos + 2
                     handled is 1
             # Single-character operators and punctuation
             if handled == 0:
-                if (contains of ["+-*/%<>", c]) == 1:
-                    append of [tokens, ["op", c, line]]
+                if (_eigen_contains of ["+-*/%<>", c]) == 1:
+                    _eigen_append of [tokens, ["op", c, line]]
                     pos is pos + 1
                     handled is 1
                 elif c == "(":
-                    append of [tokens, ["lparen", null, line]]
+                    _eigen_append of [tokens, ["lparen", null, line]]
                     pos is pos + 1
                     bracket_depth is bracket_depth + 1
                     handled is 1
                 elif c == ")":
-                    append of [tokens, ["rparen", null, line]]
+                    _eigen_append of [tokens, ["rparen", null, line]]
                     pos is pos + 1
                     if bracket_depth > 0:
                         bracket_depth is bracket_depth - 1
                     handled is 1
                 elif c == "[":
-                    append of [tokens, ["lbracket", null, line]]
+                    _eigen_append of [tokens, ["lbracket", null, line]]
                     pos is pos + 1
                     bracket_depth is bracket_depth + 1
                     handled is 1
                 elif c == "]":
-                    append of [tokens, ["rbracket", null, line]]
+                    _eigen_append of [tokens, ["rbracket", null, line]]
                     pos is pos + 1
                     if bracket_depth > 0:
                         bracket_depth is bracket_depth - 1
                     handled is 1
                 elif c == "{":
-                    append of [tokens, ["lbrace", null, line]]
+                    _eigen_append of [tokens, ["lbrace", null, line]]
                     pos is pos + 1
                     bracket_depth is bracket_depth + 1
                     handled is 1
                 elif c == "}":
-                    append of [tokens, ["rbrace", null, line]]
+                    _eigen_append of [tokens, ["rbrace", null, line]]
                     pos is pos + 1
                     if bracket_depth > 0:
                         bracket_depth is bracket_depth - 1
                     handled is 1
                 elif c == ",":
-                    append of [tokens, ["comma", null, line]]
+                    _eigen_append of [tokens, ["comma", null, line]]
                     pos is pos + 1
                     handled is 1
                 elif c == ":":
-                    append of [tokens, ["colon", null, line]]
+                    _eigen_append of [tokens, ["colon", null, line]]
                     pos is pos + 1
                     handled is 1
                 elif c == ".":
-                    append of [tokens, ["dot", null, line]]
+                    _eigen_append of [tokens, ["dot", null, line]]
                     pos is pos + 1
                     handled is 1
                 else:
@@ -532,17 +566,17 @@ define _eigen_tokenize_at(source, line) as:
                     if c == "\r":
                         pos is pos + 1
                     else:
-                        throw of f"tokenize error: unknown character '{c}' at line {line}"
+                        _eigen_throw of f"tokenize error: unknown character '{c}' at line {line}"
 
     # Emit remaining dedents
-    loop while (len of indent_stack) > 1:
+    loop while (_eigen_len of indent_stack) > 1:
         new_stack is []
-        for si in range of ((len of indent_stack) - 1):
-            append of [new_stack, indent_stack[si]]
+        for si in _eigen_range of ((_eigen_len of indent_stack) - 1):
+            _eigen_append of [new_stack, indent_stack[si]]
         indent_stack is new_stack
-        append of [tokens, ["dedent", null, line]]
+        _eigen_append of [tokens, ["dedent", null, line]]
 
-    append of [tokens, ["eof", null, line]]
+    _eigen_append of [tokens, ["eof", null, line]]
     return tokens
 
 # ============================================================
@@ -589,12 +623,12 @@ define _p_pos(p) as:
     return p[1]
 
 define _p_cur(p) as:
-    if p[1] >= (len of p[0]):
+    if p[1] >= (_eigen_len of p[0]):
         return ["eof", null, 0]
     return p[0][p[1]]
 
 define _p_advance(p) as:
-    set_at of [p, 1, p[1] + 1]
+    _eigen_set_at of [p, 1, p[1] + 1]
 
 define _p_peek_type(p) as:
     tok is _p_cur of p
@@ -606,7 +640,7 @@ define _p_peek_val(p) as:
 
 define _p_peek_at(p, offset) as:
     idx is p[1] + offset
-    if idx >= (len of p[0]):
+    if idx >= (_eigen_len of p[0]):
         return ["eof", null, 0]
     return p[0][idx]
 
@@ -616,8 +650,8 @@ define _p_peek_at(p, offset) as:
 # only — eigen tokens carry no column).
 define _p_report_error(tok, operand) as:
     if operand == 1:
-        throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; requires a variable name operand [E005]"
-    throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; use it with 'of variable', never as a binding [E005]"
+        _eigen_throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; requires a variable name operand [E005]"
+    _eigen_throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; use it with 'of variable', never as a binding [E005]"
 
 # A dot key may be any word, including a reserved observer form (#1102:
 # `d.report` is a data key, never a binding).
@@ -633,7 +667,7 @@ define _p_expect(p, ttype) as:
     if tok[0] == "report":
         _p_report_error of [tok, 0]
     if tok[0] != ttype:
-        throw of f"parse error: expected {ttype}, got {tok[0]} ('{tok[1]}') at line {tok[2]}"
+        _eigen_throw of f"parse error: expected {ttype}, got {tok[0]} ('{tok[1]}') at line {tok[2]}"
     _p_advance of p
     return tok
 
@@ -645,7 +679,7 @@ define _p_param_sep(p, tok, prev) as:
     if tok[0] == "comma":
         _p_advance of p
     elif tok[0] == "ident":
-        throw of f"parse error: expected ',' between parameters '{prev}' and '{tok[1]}' at line {tok[2]}"
+        _eigen_throw of f"parse error: expected ',' between parameters '{prev}' and '{tok[1]}' at line {tok[2]}"
 
 define _p_skip_newlines(p) as:
     loop while (_p_peek_type of p) == "newline":
@@ -664,7 +698,7 @@ define _p_end_statement(p) as:
     if tt == "dedent":
         return null
     tok is _p_cur of p
-    throw of f"parse error: unexpected {tok[0]} ('{tok[1]}') after statement at line {tok[2]} — one statement per line"
+    _eigen_throw of f"parse error: unexpected {tok[0]} ('{tok[1]}') after statement at line {tok[2]} — one statement per line"
 
 define _p_parse_block(p) as:
     stmts is []
@@ -678,14 +712,14 @@ define _p_parse_block(p) as:
                 return stmts
             stmt is _p_parse_statement of p
             if stmt != null:
-                append of [stmts, stmt]
+                _eigen_append of [stmts, stmt]
             _p_skip_newlines of p
         _p_advance of p
     else:
         # Single-line block
         stmt is _p_parse_statement of p
         if stmt != null:
-            append of [stmts, stmt]
+            _eigen_append of [stmts, stmt]
     return stmts
 
 define _p_parse_statement(p) as:
@@ -709,11 +743,11 @@ define _p_parse_statement(p) as:
             if (_p_peek_type of p) == "lparen":
                 _p_advance of p
                 loop while (_p_peek_type of p) == "ident":
-                    append of [params, (_p_cur of p)[1]]
+                    _eigen_append of [params, (_p_cur of p)[1]]
                     _p_advance of p
-                    _p_param_sep of [p, (_p_cur of p), params[(len of params) - 1]]
+                    _p_param_sep of [p, (_p_cur of p), params[(_eigen_len of params) - 1]]
                 _p_expect of [p, "rparen"]
-            if (len of params) == 0:
+            if (_eigen_len of params) == 0:
                 params is ["n"]
             # as:
             if (_p_peek_type of p) == "kw":
@@ -736,7 +770,7 @@ define _p_parse_statement(p) as:
             if (_p_peek_type of p) == "kw":
                 if (_p_peek_val of p) == "elif":
                     # Rewrite as else { if ... }
-                    set_at of [(_p_cur of p), 1, "if"]
+                    _eigen_set_at of [(_p_cur of p), 1, "if"]
                     elif_stmt is _p_parse_statement of p
                     else_body is [elif_stmt]
                 elif (_p_peek_val of p) == "else":
@@ -838,7 +872,7 @@ define _p_parse_statement(p) as:
                 _p_expect of [p, "colon"]
                 _p_skip_newlines of p
                 case_body is _p_parse_block of p
-                append of [cases, [pattern, case_body]]
+                _eigen_append of [cases, [pattern, case_body]]
                 _p_skip_newlines of p
             if (_p_peek_type of p) == "dedent":
                 _p_advance of p
@@ -872,7 +906,7 @@ define _p_parse_statement(p) as:
                     _p_end_statement of p
                     return ["_line", _stmt_line, ["index_assign", target[1], target[2], expr]]
             # Not an assignment — restore and fall through
-            set_at of [p, 1, saved_pos]
+            _eigen_set_at of [p, 1, saved_pos]
 
         # Assignment: ident is expr
         saved_pos is p[1]
@@ -885,7 +919,7 @@ define _p_parse_statement(p) as:
                 _p_end_statement of p
                 return ["_line", _stmt_line, ["assign", name, expr]]
         # Not an assignment — restore and parse as expression
-        set_at of [p, 1, saved_pos]
+        _eigen_set_at of [p, 1, saved_pos]
 
     # Expression statement
     expr is _p_parse_expr of p
@@ -1119,7 +1153,7 @@ define _p_parse_primary(p) as:
         scan_pos is p[1]
         scan_ok is 1
         loop while scan_ok == 1:
-            if scan_pos >= (len of p[0]):
+            if scan_pos >= (_eigen_len of p[0]):
                 scan_ok is 0
             else:
                 stok is p[0][scan_pos]
@@ -1127,7 +1161,7 @@ define _p_parse_primary(p) as:
                     scan_pos is scan_pos + 1
                 elif stok[0] == "rparen":
                     # Check if next is arrow
-                    if (scan_pos + 1) < (len of p[0]):
+                    if (scan_pos + 1) < (_eigen_len of p[0]):
                         if p[0][scan_pos + 1][0] == "arrow":
                             is_lambda is 1
                     scan_ok is 0
@@ -1136,17 +1170,17 @@ define _p_parse_primary(p) as:
         if is_lambda == 1:
             params is []
             loop while (_p_peek_type of p) == "ident":
-                append of [params, (_p_cur of p)[1]]
+                _eigen_append of [params, (_p_cur of p)[1]]
                 _p_advance of p
-                _p_param_sep of [p, (_p_cur of p), params[(len of params) - 1]]
-            if (len of params) == 0:
+                _p_param_sep of [p, (_p_cur of p), params[(_eigen_len of params) - 1]]
+            if (_eigen_len of params) == 0:
                 params is ["n"]
             _p_expect of [p, "rparen"]
             _p_expect of [p, "arrow"]
             body is _p_parse_expr of p
             return ["lambda", params, body]
         # Not a lambda — restore and parse as grouping
-        set_at of [p, 1, saved_pos]
+        _eigen_set_at of [p, 1, saved_pos]
         _p_advance of p
         expr is _p_parse_expr of p
         _p_expect of [p, "rparen"]
@@ -1183,7 +1217,7 @@ define _p_parse_primary(p) as:
             _p_advance of p
             if (_p_peek_type of p) == "rbracket":
                 break
-            append of [elems, _p_parse_expr of p]
+            _eigen_append of [elems, _p_parse_expr of p]
         _p_expect of [p, "rbracket"]
         return ["list", elems]
 
@@ -1195,7 +1229,7 @@ define _p_parse_primary(p) as:
             key is _p_parse_expr of p
             _p_expect of [p, "colon"]
             val is _p_parse_expr of p
-            append of [pairs, [key, val]]
+            _eigen_append of [pairs, [key, val]]
             loop while (_p_peek_type of p) == "comma":
                 _p_advance of p
                 if (_p_peek_type of p) == "rbrace":
@@ -1203,11 +1237,11 @@ define _p_parse_primary(p) as:
                 key is _p_parse_expr of p
                 _p_expect of [p, "colon"]
                 val is _p_parse_expr of p
-                append of [pairs, [key, val]]
+                _eigen_append of [pairs, [key, val]]
         _p_expect of [p, "rbrace"]
         return ["dict", pairs]
 
-    throw of f"parse error: unexpected token {tt} '{_p_peek_val of p}'"
+    _eigen_throw of f"parse error: unexpected token {tt} '{_p_peek_val of p}'"
 
 define eigen_parse(tokens) as:
     p is _parser_new of tokens
@@ -1216,7 +1250,7 @@ define eigen_parse(tokens) as:
     loop while (_p_peek_type of p) != "eof":
         stmt is _p_parse_statement of p
         if stmt != null:
-            append of [stmts, stmt]
+            _eigen_append of [stmts, stmt]
         _p_skip_newlines of p
     return ["block", stmts]
 
@@ -1234,17 +1268,17 @@ define eigen_parse(tokens) as:
 # refused outright — those bindings are not part of a namespace and are never
 # projected or written through it.
 define _ns_env_for(target_node, key, target) as:
-    if (type of target_node) != "list":
+    if (_eigen_type of target_node) != "list":
         return null
-    if (len of target_node) < 2:
+    if (_eigen_len of target_node) < 2:
         return null
     if target_node[0] != "ident":
         return null
-    if (len of key) > 0:
-        if (char_at of [key, 0]) == "_":
+    if (_eigen_len of key) > 0:
+        if (_eigen_char_at of [key, 0]) == "_":
             return null
     mod_name is target_node[1]
-    if (has_key of [_eigen_module_envs, mod_name]) == 0:
+    if (_eigen_has_key of [_eigen_module_envs, mod_name]) == 0:
         return null
     if target != _eigen_module_ns[mod_name]:
         return null
@@ -1255,7 +1289,7 @@ define _env_new(parent) as:
 
 define _env_get(env, name) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in _eigen_range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             return bindings[i][1]
     if env[1] != null:
@@ -1267,7 +1301,7 @@ define _env_get(env, name) as:
 # (matching the C VM) without confusing it with a name bound to null.
 define _env_has(env, name) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in _eigen_range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             return 1
     if env[1] != null:
@@ -1276,9 +1310,9 @@ define _env_has(env, name) as:
 
 define _env_set(env, name, val) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in _eigen_range of (_eigen_len of bindings):
         if bindings[i][0] == name:
-            set_at of [bindings, i, [name, val]]
+            _eigen_set_at of [bindings, i, [name, val]]
             return null
     if env[1] != null:
         parent_val is _env_get of [env[1], name]
@@ -1286,32 +1320,32 @@ define _env_set(env, name, val) as:
             _env_set of [env[1], name, val]
             return null
     # New binding in current scope
-    append of [bindings, [name, val]]
+    _eigen_append of [bindings, [name, val]]
     return null
 
 define _env_set_local(env, name, val) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in _eigen_range of (_eigen_len of bindings):
         if bindings[i][0] == name:
-            set_at of [bindings, i, [name, val]]
+            _eigen_set_at of [bindings, i, [name, val]]
             return null
-    append of [bindings, [name, val]]
+    _eigen_append of [bindings, [name, val]]
     return null
 
 # #1105: the current env's OWN bindings only (no chain walk) -- a `for`
 # binder saves and restores exactly the scope it binds into.
 define _env_has_local(env, name) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in _eigen_range of (_eigen_len of bindings):
         if bindings[i][0] == name:
             return 1
     return 0
 
 define _env_unset_local(env, name) as:
     bindings is env[0]
-    for i in range of (len of bindings):
+    for i in _eigen_range of (_eigen_len of bindings):
         if bindings[i][0] == name:
-            list_remove_at of [bindings, i]
+            _eigen_list_remove_at of [bindings, i]
             return null
     return null
 
@@ -1330,12 +1364,12 @@ define _env_unset_local(env, name) as:
 # the process's working directory. Deciding with `file_exists` and raising
 # when no candidate resolves removes both.
 define _eigen_module_path(name) as:
-    exedir is path_dir of (exe_path of null)
+    exedir is _eigen_path_dir of (_eigen_exe_path of null)
     cands is ["lib/" + name + ".eigs", name + ".eigs",
         exedir + "/../lib/" + name + ".eigs",
         exedir + "/../lib/eigenscript/" + name + ".eigs"]
-    for ci in range of (len of cands):
-        if (file_exists of cands[ci]) == 1:
+    for ci in _eigen_range of (_eigen_len of cands):
+        if (_eigen_file_exists of cands[ci]) == 1:
             return cands[ci]
     return null
 
@@ -1382,47 +1416,47 @@ define eigen_set_hook(hook) as:
 _eigen_obs is {}
 
 define _compute_entropy(val) as:
-    t is type of val
+    t is _eigen_type of val
     if t == "num":
-        x is abs of val
+        x is _eigen_abs of val
         if (x == 0) or (x == 1):
             return 0
         p is 1.0 / (1.0 + x)
         if (p <= 0) or (p >= 1):
             return 0
-        return 0 - (p * (log2 of p) + (1 - p) * (log2 of (1 - p)))
+        return 0 - (p * (_eigen_log2 of p) + (1 - p) * (_eigen_log2 of (1 - p)))
     if t == "str":
-        slen is len of val
+        slen is _eigen_len of val
         if slen == 0:
             return 0
-        return log2 of (slen + 1)
+        return _eigen_log2 of (slen + 1)
     if t == "list":
-        llen is len of val
+        llen is _eigen_len of val
         if llen == 0:
             return 0
-        return log2 of (llen + 1)
+        return _eigen_log2 of (llen + 1)
     if t == "dict":
-        dk is keys of val
-        dlen is len of dk
+        dk is _eigen_keys of val
+        dlen is _eigen_len of dk
         if dlen == 0:
             return 0
-        return log2 of (dlen + 1)
+        return _eigen_log2 of (dlen + 1)
     return 0
 
 define _update_observer(name, val) as:
     new_entropy is _compute_entropy of val
-    if (has_key of [_eigen_obs, name]) == 1:
+    if (_eigen_has_key of [_eigen_obs, name]) == 1:
         old is _eigen_obs[name]
         obs_count is old[0] + 1
         prev_ent is old[1]
         dH is new_entropy - prev_ent
-        dict_set of [_eigen_obs, name, [obs_count, new_entropy, dH, old[3]]]
+        _eigen_dict_set of [_eigen_obs, name, [obs_count, new_entropy, dH, old[3]]]
     else:
-        dict_set of [_eigen_obs, name, [1, new_entropy, 0, 0]]
+        _eigen_dict_set of [_eigen_obs, name, [1, new_entropy, 0, 0]]
     return null
 
 define _get_observer(name) as:
-    if (has_key of [_eigen_obs, name]) == 1:
+    if (_eigen_has_key of [_eigen_obs, name]) == 1:
         return _eigen_obs[name]
     return [0, 0, 0, 0]
 
@@ -1451,7 +1485,7 @@ define eigen_eval(node, env) as:
         # number, so unlike the C VM's "Error line N: undefined variable ..." we
         # can't prefix the source line.
         if (_env_has of [env, node[1]]) == 0:
-            throw of f"undefined variable '{node[1]}'"
+            _eigen_throw of f"undefined variable '{node[1]}'"
         return _env_get of [env, node[1]]
 
     if ntype == "report":
@@ -1460,7 +1494,7 @@ define eigen_eval(node, env) as:
         # time); the classification is this interpreter's documented
         # value-only bridge (no host trajectory: equilibrium / opaque).
         if (_env_has of [env, node[2]]) == 0:
-            throw of f"undefined variable '{node[2]}'"
+            _eigen_throw of f"undefined variable '{node[2]}'"
         val is _env_get of [env, node[2]]
         if node[1] == "report_value":
             return _report_value_bridge of val
@@ -1493,9 +1527,9 @@ define eigen_eval(node, env) as:
         left is eigen_eval of [node[2], env]
         right is eigen_eval of [node[3], env]
         if op == "+":
-            if (type of left) == "str":
+            if (_eigen_type of left) == "str":
                 return left + (_pristine_str of right)
-            if (type of right) == "str":
+            if (_eigen_type of right) == "str":
                 return (_pristine_str of left) + right
             return left + right
         if op == "-":
@@ -1508,11 +1542,11 @@ define eigen_eval(node, env) as:
             # error; here the meta-interpreter throws (the parity suite checks
             # only that both raise, not that the error objects are identical).
             if right == 0:
-                throw of "division by zero"
+                _eigen_throw of "division by zero"
             return left / right
         if op == "%":
             if right == 0:
-                throw of "modulo by zero"
+                _eigen_throw of "modulo by zero"
             return left % right
         if op == "==":
             if left == right:
@@ -1552,8 +1586,8 @@ define eigen_eval(node, env) as:
         fn is eigen_eval of [node[1], env]
         arg is eigen_eval of [node[2], env]
         # Check for eigen function (meta-interpreter defined)
-        if (type of fn) == "list":
-            if (len of fn) >= 4:
+        if (_eigen_type of fn) == "list":
+            if (_eigen_len of fn) >= 4:
                 if fn[0] == "__eigen_fn__":
                     # fn is [__eigen_fn__, name, params, body]
                     params is fn[2]
@@ -1571,8 +1605,8 @@ define eigen_eval(node, env) as:
                     # the call-site AST, so we check the arg NODE
                     # (node[2]), not the runtime value.
                     if node[2][0] == "list":
-                        argc is len of arg
-                        if (len of params) == 1:
+                        argc is _eigen_len of arg
+                        if (_eigen_len of params) == 1:
                             if argc == 1:
                                 _env_set_local of [call_env, params[0], arg[0]]
                             else:
@@ -1581,7 +1615,7 @@ define eigen_eval(node, env) as:
                                 else:
                                     _env_set_local of [call_env, params[0], arg]
                         else:
-                            for pi in range of (len of params):
+                            for pi in _eigen_range of (_eigen_len of params):
                                 if pi < argc:
                                     _env_set_local of [call_env, params[pi], arg[pi]]
                                 else:
@@ -1589,7 +1623,7 @@ define eigen_eval(node, env) as:
                     else:
                         _env_set_local of [call_env, params[0], arg]
                         fill is 1
-                        loop while fill < (len of params):
+                        loop while fill < (_eigen_len of params):
                             _env_set_local of [call_env, params[fill], null]
                             fill is fill + 1
                     _eigen_returning is 0
@@ -1609,18 +1643,18 @@ define eigen_eval(node, env) as:
     if ntype == "list":
         elems is node[1]
         result is []
-        for i in range of (len of elems):
-            append of [result, eigen_eval of [elems[i], env]]
+        for i in _eigen_range of (_eigen_len of elems):
+            _eigen_append of [result, eigen_eval of [elems[i], env]]
         return result
 
     if ntype == "dict":
         pairs is node[1]
         result is {}
-        for i in range of (len of pairs):
+        for i in _eigen_range of (_eigen_len of pairs):
             pair is pairs[i]
             k is eigen_eval of [pair[0], env]
             v is eigen_eval of [pair[1], env]
-            dict_set of [result, _pristine_str of k, v]
+            _eigen_dict_set of [result, _pristine_str of k, v]
         return result
 
     if ntype == "index":
@@ -1631,43 +1665,43 @@ define eigen_eval(node, env) as:
     if ntype == "dot":
         target is eigen_eval of [node[1], env]
         key is node[2]
-        if (type of target) == "dict":
+        if (_eigen_type of target) == "dict":
             # #1057: `M.x` on a module namespace reads M's CURRENT binding.
             ns_env is _ns_env_for of [node[1], key, target]
             if ns_env != null:
                 mbind is ns_env[0]
-                for mi in range of (len of mbind):
+                for mi in _eigen_range of (_eigen_len of mbind):
                     if mbind[mi][0] == key:
                         return mbind[mi][1]
-            if (has_key of [target, key]) == 1:
+            if (_eigen_has_key of [target, key]) == 1:
                 return target[key]
             return null
-        throw of f"cannot access .{key} on {type of target}"
+        _eigen_throw of f"cannot access .{key} on {_eigen_type of target}"
 
     if ntype == "dot_assign":
         target is eigen_eval of [node[1], env]
         key is node[2]
         val is eigen_eval of [node[3], env]
-        if (type of target) == "dict":
+        if (_eigen_type of target) == "dict":
             # #1057: `M.x is v` on a module namespace writes M's binding.
             ns_env is _ns_env_for of [node[1], key, target]
             if ns_env != null:
                 _env_set_local of [ns_env, key, val]
-            dict_set of [target, key, val]
+            _eigen_dict_set of [target, key, val]
             return val
-        throw of f"cannot assign .{key} on {type of target}"
+        _eigen_throw of f"cannot assign .{key} on {_eigen_type of target}"
 
     if ntype == "index_assign":
         target is eigen_eval of [node[1], env]
         idx is eigen_eval of [node[2], env]
         val is eigen_eval of [node[3], env]
-        if (type of target) == "list":
-            set_at of [target, idx, val]
+        if (_eigen_type of target) == "list":
+            _eigen_set_at of [target, idx, val]
             return val
-        if (type of target) == "dict":
-            dict_set of [target, _pristine_str of idx, val]
+        if (_eigen_type of target) == "dict":
+            _eigen_dict_set of [target, _pristine_str of idx, val]
             return val
-        throw of f"cannot index-assign on {type of target}"
+        _eigen_throw of f"cannot index-assign on {_eigen_type of target}"
 
     if ntype == "lambda":
         params is node[1]
@@ -1720,16 +1754,23 @@ define eigen_eval(node, env) as:
         prior_val is null
         if had_prior == 1:
             prior_val is _env_get of [env, var_name]
-        for i in range of (len of iter):
-            _env_set_local of [env, var_name, iter[i]]
-            result is _eval_block of [node[3], env]
-            if _eigen_returning == 1:
-                break
-            if _eigen_breaking == 1:
-                _eigen_breaking is 0
-                break
-            if _eigen_continuing == 1:
-                _eigen_continuing is 0
+        try:
+            for i in _eigen_range of (_eigen_len of iter):
+                _env_set_local of [env, var_name, iter[i]]
+                result is _eval_block of [node[3], env]
+                if _eigen_returning == 1:
+                    break
+                if _eigen_breaking == 1:
+                    _eigen_breaking is 0
+                    break
+                if _eigen_continuing == 1:
+                    _eigen_continuing is 0
+        catch _for_error:
+            if had_prior == 1:
+                _env_set_local of [env, var_name, prior_val]
+            else:
+                _env_unset_local of [env, var_name]
+            _eigen_throw of _for_error
         if had_prior == 1:
             _env_set_local of [env, var_name, prior_val]
         else:
@@ -1780,7 +1821,7 @@ define eigen_eval(node, env) as:
     if ntype == "match":
         val is eigen_eval of [node[1], env]
         cases is node[2]
-        for ci in range of (len of cases):
+        for ci in _eigen_range of (_eigen_len of cases):
             case_pair is cases[ci]
             pattern is case_pair[0]
             case_body is case_pair[1]
@@ -1796,8 +1837,8 @@ define eigen_eval(node, env) as:
         mod_name is node[1]
         path is _eigen_module_path of mod_name
         if path == null:
-            throw of f"import: module '{mod_name}' not found"
-        source is read_text of path
+            _eigen_throw of f"import: module '{mod_name}' not found"
+        source is _eigen_read_text of path
         # Parse and eval in a child environment
         mod_tokens is eigen_tokenize of source
         mod_ast is eigen_parse of mod_tokens
@@ -1806,19 +1847,19 @@ define eigen_eval(node, env) as:
         # Collect bindings into a dict
         mod_dict is {}
         mod_bindings is mod_env[0]
-        for mi in range of (len of mod_bindings):
+        for mi in _eigen_range of (_eigen_len of mod_bindings):
             bname is mod_bindings[mi][0]
             bval is mod_bindings[mi][1]
             # Skip private names starting with _
-            if (len of bname) > 0:
-                first_char is char_at of [bname, 0]
+            if (_eigen_len of bname) > 0:
+                first_char is _eigen_char_at of [bname, 0]
                 if first_char != "_":
-                    dict_set of [mod_dict, bname, bval]
+                    _eigen_dict_set of [mod_dict, bname, bval]
         # #1057: register the module env so the namespace reads/writes live,
         # and the namespace dict it belongs to so a later rebinding of the
         # name does not keep answering from the module.
-        dict_set of [_eigen_module_envs, mod_name, mod_env]
-        dict_set of [_eigen_module_ns, mod_name, mod_dict]
+        _eigen_dict_set of [_eigen_module_envs, mod_name, mod_env]
+        _eigen_dict_set of [_eigen_module_ns, mod_name, mod_dict]
         _env_set of [env, mod_name, mod_dict]
         return mod_dict
 
@@ -1828,7 +1869,7 @@ define eigen_eval(node, env) as:
         iter is eigen_eval of [node[3], env]
         filter_node is node[4]
         result is []
-        for i in range of (len of iter):
+        for i in _eigen_range of (_eigen_len of iter):
             comp_env is _env_new of env
             _env_set_local of [comp_env, var_name, iter[i]]
             if filter_node != null:
@@ -1838,7 +1879,7 @@ define eigen_eval(node, env) as:
                 if cond == null:
                     continue
             val is eigen_eval of [expr_node, comp_env]
-            append of [result, val]
+            _eigen_append of [result, val]
         return result
 
     if ntype == "unobserved":
@@ -1851,18 +1892,18 @@ define eigen_eval(node, env) as:
         # kind: 0=what, 1=who, 2=when, 3=where, 4=why, 5=how
         if kind == 0:
             # what: value / magnitude
-            if (type of target) == "num":
+            if (_eigen_type of target) == "num":
                 return target
-            if (type of target) == "str":
-                return len of target
-            if (type of target) == "list":
-                return len of target
+            if (_eigen_type of target) == "str":
+                return _eigen_len of target
+            if (_eigen_type of target) == "list":
+                return _eigen_len of target
             return 0
         if kind == 1:
             # who: name / type
             if node[2][0] == "ident":
                 return node[2][1]
-            return type of target
+            return _eigen_type of target
         if kind == 2:
             # when: observation count
             if node[2][0] == "ident":
@@ -1909,13 +1950,13 @@ define eigen_eval(node, env) as:
             h is _compute_entropy of last_obs
         if kind == 0:
             # converged: low dH and low entropy
-            if (abs of dh) < 0.001:
+            if (_eigen_abs of dh) < 0.001:
                 if h < 0.1:
                     return 1
             return 0
         if kind == 1:
             # stable: low dH, moderate entropy
-            if (abs of dh) < 0.01:
+            if (_eigen_abs of dh) < 0.01:
                 if h >= 0.1:
                     return 1
             return 0
@@ -1927,7 +1968,7 @@ define eigen_eval(node, env) as:
         if kind == 3:
             # oscillating: sign change in dH
             if (dh * prev_dh) < 0:
-                if (abs of dh) > 0.001:
+                if (_eigen_abs of dh) > 0.001:
                     return 1
             return 0
         if kind == 4:
@@ -1937,7 +1978,7 @@ define eigen_eval(node, env) as:
             return 0
         if kind == 5:
             # equilibrium: very low dH
-            if (abs of dh) < 0.001:
+            if (_eigen_abs of dh) < 0.001:
                 return 1
             return 0
         return 0
@@ -1946,11 +1987,11 @@ define eigen_eval(node, env) as:
 
 define _eval_block(stmts, env) as:
     result is null
-    for i in range of (len of stmts):
+    for i in _eigen_range of (_eigen_len of stmts):
         stmt is stmts[i]
         # Unwrap _line wrapper to extract line number
-        if (type of stmt) == "list":
-            if (len of stmt) >= 3:
+        if (_eigen_type of stmt) == "list":
+            if (_eigen_len of stmt) >= 3:
                 if stmt[0] == "_line":
                     _eigen_current_line is stmt[1]
                     stmt is stmt[2]
@@ -1989,89 +2030,172 @@ _report_value_bridge is (v) => report_value of v
 # concatenation, and a host `str` rebinding must not reach them either.
 _pristine_str is (v) => f"{v}"
 
+# #1386: snapshot every host builtin used to construct a fresh meta environment.
+# EigenScript names are late-bound, so referring to (for example) `len` inside
+# `_make_default_env` would otherwise observe a host rebinding made after this
+# module loaded.  The two environment helpers are dependencies too.
+_default_env_new is _env_new
+_default_env_set_local is _env_set_local
+_default_print is print
+_default_write is write
+_default_flush is flush
+_default_len is _eigen_len
+_default_str is _pristine_str
+_default_num is _eigen_num
+_default_append is _eigen_append
+_default_type is _eigen_type
+_default_assert is assert
+_default_throw is _eigen_throw
+_default_keys is _eigen_keys
+_default_values is values
+_default_has_key is _eigen_has_key
+_default_dict_set is _eigen_dict_set
+_default_dict_remove is dict_remove
+_default_observe is observe
+_default_contains is _eigen_contains
+_default_starts_with is starts_with
+_default_ends_with is ends_with
+_default_split is split
+_default_trim is trim
+_default_str_replace is str_replace
+_default_str_lower is str_lower
+_default_str_upper is str_upper
+_default_char_at is _eigen_char_at
+_default_substr is substr
+_default_index_of is index_of
+_default_join is join
+_default_concat is concat
+_default_range is _eigen_range
+_default_abs is _eigen_abs
+_default_floor is floor
+_default_ceil is ceil
+_default_round is round
+_default_min is min
+_default_max is max
+_default_sin is sin
+_default_cos is cos
+_default_tan is tan
+_default_asin is asin
+_default_acos is acos
+_default_atan is atan
+_default_atan2 is atan2
+_default_log is _eigen_log
+_default_exp is exp
+_default_sqrt is sqrt
+_default_pow is pow
+_default_pi is pi
+_default_random is random
+_default_random_int is random_int
+_default_seed_random is seed_random
+_default_set_at is _eigen_set_at
+_default_get_at is get_at
+_default_load_file is _eigen_load_file
+_default_file_exists is _eigen_file_exists
+_default_read_text is _eigen_read_text
+_default_write_text is write_text
+_default_json_encode is json_encode
+_default_json_decode is json_decode
+_default_coalesce is coalesce
+_default_env_get is env_get
+_default_exec_capture is exec_capture
+_default_path_join is path_join
+_default_path_dir is _eigen_path_dir
+_default_path_base is path_base
+_default_path_ext is path_ext
+_default_mkdir is mkdir
+_default_ls is ls
+_default_rm is rm
+_default_regex_match is regex_match
+_default_regex_find is regex_find
+_default_regex_replace is regex_replace
+_default_monotonic_ms is monotonic_ms
+_default_monotonic_ns is monotonic_ns
+_default_chr is chr
+_default_try_parse is try_parse
+
 define _make_default_env as:
-    env is _env_new of null
+    env is _default_env_new of null
     # Bridge the C builtins into the meta-interpreter's environment.
-    # Since we're running inside the C runtime, these names resolve to
-    # VAL_BUILTIN values. The "call" handler calls them
+    # The load-time snapshots above are VAL_BUILTIN values. The "call"
+    # handler calls them
     # with `fn of arg` which the C runtime handles natively.
-    _env_set_local of [env, "print", print]
-    _env_set_local of [env, "write", write]
-    _env_set_local of [env, "flush", flush]
-    _env_set_local of [env, "len", len]
-    _env_set_local of [env, "str", str]
-    _env_set_local of [env, "_#fstr", _pristine_str]
-    _env_set_local of [env, "num", num]
-    _env_set_local of [env, "append", append]
-    _env_set_local of [env, "type", type]
-    _env_set_local of [env, "assert", assert]
-    _env_set_local of [env, "throw", throw]
-    _env_set_local of [env, "keys", keys]
-    _env_set_local of [env, "values", values]
-    _env_set_local of [env, "has_key", has_key]
-    _env_set_local of [env, "dict_set", dict_set]
-    _env_set_local of [env, "dict_remove", dict_remove]
-    _env_set_local of [env, "observe", observe]
-    _env_set_local of [env, "contains", contains]
-    _env_set_local of [env, "starts_with", starts_with]
-    _env_set_local of [env, "ends_with", ends_with]
-    _env_set_local of [env, "split", split]
-    _env_set_local of [env, "trim", trim]
-    _env_set_local of [env, "str_replace", str_replace]
-    _env_set_local of [env, "str_lower", str_lower]
-    _env_set_local of [env, "str_upper", str_upper]
-    _env_set_local of [env, "char_at", char_at]
-    _env_set_local of [env, "substr", substr]
-    _env_set_local of [env, "index_of", index_of]
-    _env_set_local of [env, "join", join]
-    _env_set_local of [env, "concat", concat]
-    _env_set_local of [env, "range", range]
-    _env_set_local of [env, "abs", abs]
-    _env_set_local of [env, "floor", floor]
-    _env_set_local of [env, "ceil", ceil]
-    _env_set_local of [env, "round", round]
-    _env_set_local of [env, "min", min]
-    _env_set_local of [env, "max", max]
-    _env_set_local of [env, "sin", sin]
-    _env_set_local of [env, "cos", cos]
-    _env_set_local of [env, "tan", tan]
-    _env_set_local of [env, "asin", asin]
-    _env_set_local of [env, "acos", acos]
-    _env_set_local of [env, "atan", atan]
-    _env_set_local of [env, "atan2", atan2]
-    _env_set_local of [env, "log", log]
-    _env_set_local of [env, "exp", exp]
-    _env_set_local of [env, "sqrt", sqrt]
-    _env_set_local of [env, "pow", pow]
-    _env_set_local of [env, "pi", pi]
-    _env_set_local of [env, "random", random]
-    _env_set_local of [env, "random_int", random_int]
-    _env_set_local of [env, "seed_random", seed_random]
-    _env_set_local of [env, "set_at", set_at]
-    _env_set_local of [env, "get_at", get_at]
-    _env_set_local of [env, "load_file", load_file]
-    _env_set_local of [env, "file_exists", file_exists]
-    _env_set_local of [env, "read_text", read_text]
-    _env_set_local of [env, "write_text", write_text]
-    _env_set_local of [env, "json_encode", json_encode]
-    _env_set_local of [env, "json_decode", json_decode]
-    _env_set_local of [env, "coalesce", coalesce]
-    _env_set_local of [env, "env_get", env_get]
-    _env_set_local of [env, "exec_capture", exec_capture]
-    _env_set_local of [env, "path_join", path_join]
-    _env_set_local of [env, "path_dir", path_dir]
-    _env_set_local of [env, "path_base", path_base]
-    _env_set_local of [env, "path_ext", path_ext]
-    _env_set_local of [env, "mkdir", mkdir]
-    _env_set_local of [env, "ls", ls]
-    _env_set_local of [env, "rm", rm]
-    _env_set_local of [env, "regex_match", regex_match]
-    _env_set_local of [env, "regex_find", regex_find]
-    _env_set_local of [env, "regex_replace", regex_replace]
-    _env_set_local of [env, "monotonic_ms", monotonic_ms]
-    _env_set_local of [env, "monotonic_ns", monotonic_ns]
-    _env_set_local of [env, "chr", chr]
-    _env_set_local of [env, "try_parse", try_parse]
+    _default_env_set_local of [env, "print", _default_print]
+    _default_env_set_local of [env, "write", _default_write]
+    _default_env_set_local of [env, "flush", _default_flush]
+    _default_env_set_local of [env, "len", _default_len]
+    _default_env_set_local of [env, "str", _default_str]
+    _default_env_set_local of [env, "_#fstr", _pristine_str]
+    _default_env_set_local of [env, "num", _default_num]
+    _default_env_set_local of [env, "append", _default_append]
+    _default_env_set_local of [env, "type", _default_type]
+    _default_env_set_local of [env, "assert", _default_assert]
+    _default_env_set_local of [env, "throw", _default_throw]
+    _default_env_set_local of [env, "keys", _default_keys]
+    _default_env_set_local of [env, "values", _default_values]
+    _default_env_set_local of [env, "has_key", _default_has_key]
+    _default_env_set_local of [env, "dict_set", _default_dict_set]
+    _default_env_set_local of [env, "dict_remove", _default_dict_remove]
+    _default_env_set_local of [env, "observe", _default_observe]
+    _default_env_set_local of [env, "contains", _default_contains]
+    _default_env_set_local of [env, "starts_with", _default_starts_with]
+    _default_env_set_local of [env, "ends_with", _default_ends_with]
+    _default_env_set_local of [env, "split", _default_split]
+    _default_env_set_local of [env, "trim", _default_trim]
+    _default_env_set_local of [env, "str_replace", _default_str_replace]
+    _default_env_set_local of [env, "str_lower", _default_str_lower]
+    _default_env_set_local of [env, "str_upper", _default_str_upper]
+    _default_env_set_local of [env, "char_at", _default_char_at]
+    _default_env_set_local of [env, "substr", _default_substr]
+    _default_env_set_local of [env, "index_of", _default_index_of]
+    _default_env_set_local of [env, "join", _default_join]
+    _default_env_set_local of [env, "concat", _default_concat]
+    _default_env_set_local of [env, "range", _default_range]
+    _default_env_set_local of [env, "abs", _default_abs]
+    _default_env_set_local of [env, "floor", _default_floor]
+    _default_env_set_local of [env, "ceil", _default_ceil]
+    _default_env_set_local of [env, "round", _default_round]
+    _default_env_set_local of [env, "min", _default_min]
+    _default_env_set_local of [env, "max", _default_max]
+    _default_env_set_local of [env, "sin", _default_sin]
+    _default_env_set_local of [env, "cos", _default_cos]
+    _default_env_set_local of [env, "tan", _default_tan]
+    _default_env_set_local of [env, "asin", _default_asin]
+    _default_env_set_local of [env, "acos", _default_acos]
+    _default_env_set_local of [env, "atan", _default_atan]
+    _default_env_set_local of [env, "atan2", _default_atan2]
+    _default_env_set_local of [env, "log", _default_log]
+    _default_env_set_local of [env, "exp", _default_exp]
+    _default_env_set_local of [env, "sqrt", _default_sqrt]
+    _default_env_set_local of [env, "pow", _default_pow]
+    _default_env_set_local of [env, "pi", _default_pi]
+    _default_env_set_local of [env, "random", _default_random]
+    _default_env_set_local of [env, "random_int", _default_random_int]
+    _default_env_set_local of [env, "seed_random", _default_seed_random]
+    _default_env_set_local of [env, "set_at", _default_set_at]
+    _default_env_set_local of [env, "get_at", _default_get_at]
+    _default_env_set_local of [env, "load_file", _default_load_file]
+    _default_env_set_local of [env, "file_exists", _default_file_exists]
+    _default_env_set_local of [env, "read_text", _default_read_text]
+    _default_env_set_local of [env, "write_text", _default_write_text]
+    _default_env_set_local of [env, "json_encode", _default_json_encode]
+    _default_env_set_local of [env, "json_decode", _default_json_decode]
+    _default_env_set_local of [env, "coalesce", _default_coalesce]
+    _default_env_set_local of [env, "env_get", _default_env_get]
+    _default_env_set_local of [env, "exec_capture", _default_exec_capture]
+    _default_env_set_local of [env, "path_join", _default_path_join]
+    _default_env_set_local of [env, "path_dir", _default_path_dir]
+    _default_env_set_local of [env, "path_base", _default_path_base]
+    _default_env_set_local of [env, "path_ext", _default_path_ext]
+    _default_env_set_local of [env, "mkdir", _default_mkdir]
+    _default_env_set_local of [env, "ls", _default_ls]
+    _default_env_set_local of [env, "rm", _default_rm]
+    _default_env_set_local of [env, "regex_match", _default_regex_match]
+    _default_env_set_local of [env, "regex_find", _default_regex_find]
+    _default_env_set_local of [env, "regex_replace", _default_regex_replace]
+    _default_env_set_local of [env, "monotonic_ms", _default_monotonic_ms]
+    _default_env_set_local of [env, "monotonic_ns", _default_monotonic_ns]
+    _default_env_set_local of [env, "chr", _default_chr]
+    _default_env_set_local of [env, "try_parse", _default_try_parse]
     return env
 
 # ============================================================

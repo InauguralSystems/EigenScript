@@ -80,40 +80,19 @@ milestone when an issue is filed against them.
   the taint.
   ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
 
-- **A `matmul` BUFFER result is stored raw — `inf` reads back above
-  `1e308`, and a `NaN` reads back as `null`.** The boxed roads go
-  through `make_num`, whose `num_guard` saturates an
-  infinity and collapses a `NaN` to `0` + `math_flags.invalid`. The
-  buffer fast path writes the kernel's accumulator straight into the
-  result buffer instead, so both survive: `r[0] > 1e308` is `1`, and a
-  `NaN` element is not a number the program can even see — its bit
-  pattern IS the boxed-slot tag for null (0xFFF8… == `SLOT_NULL_BITS`),
-  so `r[0]` reads `null` out of a buffer of numbers, and
-  `math_flags.invalid` stays `0`.
-  **#971 built the NaN half of the fix and then reverted it, on
-  purpose.** Collapsing NaN there is two lines and passed every test,
-  but it changes the DEFAULT path (`null` -> `0`, `invalid` 0 -> 1), and
-  the one claim the strict reform makes is that with the flag off
-  nothing changed — proven by `tools/strict_differential.sh` against the
-  previous release binary. Shipping it meant carrying a waived
-  divergence in that tool, i.e. the proof with a hole in it, for an
-  incidental fix that was never what #971 was about. So strict raises on
-  both paths (`STRICT_DOMAIN`, which cannot touch the soft path) and the
-  default answer is byte-identical to v0.43.0; `tests/test_strict_math.sh`
-  SM49a/SM49b pin both halves so neither moves by accident.
-  **The writer is not the place to fix it.** `matmul` is not the only
-  road to a `NaN` buffer element: `ext_store` round-trips one on
-  purpose (`store_nonfinite_sentinel` encodes `"nan"`/`"inf"`/`"-inf"`
-  because JSON has no literal for them), and the embed API's
-  `eigs_value_buffer_set` takes a raw `double` from the host. Whatever
-  is decided has to be decided at the READ, where every road meets.
-  Doing it properly is its own change: decide the buffer contract for
-  BOTH non-finites together (saturate the `inf` too, or keep both raw and
-  make the buffer read report a NaN as a number rather than as `null`),
-  mirror it in the AOT — ouroboros `aot_rt.h`'s `aot_tensor_matmul`
-  reads the same raw buffer and its round-187 fixture PINS the `inf`
-  read — and run the differential over both.
-  ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))
+- **Decided (#1417): normalize non-finite buffer elements on scalar reads.**
+  Kernels and persistence may retain raw IEEE infinity or NaN in the unboxed
+  work area. The VM/runtime and native JIT implementation makes each scalar read cross
+  `buffer_read_num`: infinity saturates at ±`1e308`; NaN raises in strict mode
+  or collapses to `0` and sets `math_flags.invalid` under `EIGS_STRICT=0`.
+  The [owner decision](https://github.com/InauguralSystems/EigenScript/issues/1417#issuecomment-5955582205)
+  includes structural equality and scalar reductions. Direct indexed-operator
+  parity with ouroboros AOT remains unresolved and requires its own mirror,
+  runtime pin migration and validation. `tests/test_buffer_nonfinite_read.eigs`
+  and its exact-output sibling cover boxed `buf_get` operands and scalar
+  accessor/index paths under `EIGS_STRICT=0`; the optional AOT mirror does not
+  establish the original direct indexed operators or strict diagnostics/flags.
+  ([#1417](https://github.com/InauguralSystems/EigenScript/issues/1417))
 
 - **Flip `EIGS_STRICT` to the default?** — **DECIDED 2026-09-28: flipped
   ([#1361](https://github.com/InauguralSystems/EigenScript/issues/1361));
@@ -141,9 +120,7 @@ milestone when an issue is filed against them.
   `aot_rt.h` carries its own inlined `num_guard`, `op_div`-shaped
   `aot_ddiv` and a raw-`inf` matmul read pinned by its round-187
   fixture — a default flip without the mirror flipping recreates the
-  #975 div0 fossil), and a decision on the **raw non-finite in a
-  `matmul` buffer result** (the entry below; strict raises on it, so it
-  now shows only under `EIGS_STRICT=0`). The differential
+  #975 div0 fossil), and the buffer read-boundary decision now recorded in #1417. The differential
   (`tools/strict_differential.sh <parent-build>`) keeps the
   `EIGS_STRICT=0` path byte-identical to the previous build.
   ([#971](https://github.com/InauguralSystems/EigenScript/issues/971))

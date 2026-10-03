@@ -95,16 +95,12 @@ extern int g_trace_hist_storage;
  * point. The narrowing is a per-assign CPU optimization for the
  * single-threaded long-running programs #827 was about; the history is
  * bounded either way. */
-/* #915: compile-time arming state, saved/restored around the observer gate's
- * eager pre-pass so that merely SCANNING a module cannot arm the parent's
- * history channel. See the definition for the executed consequence. */
-typedef struct {
-    int      trace_hist, obs_hist;
-    int      arm_all, arm_count;
-    int      occ_all, occ_count;
-} TraceArmState;
-void trace_arm_snapshot(TraceArmState *out);
-void trace_arm_restore(const TraceArmState *in);
+/* Diagnostic-only compilation must not arm process-wide history.  Suppression
+ * is per-thread and nestable: unlike snapshot/restore it cannot narrow arming
+ * performed concurrently by another embedded state. */
+void trace_arm_suppress_begin(void);
+void trace_arm_suppress_end(void);
+void trace_arm_observer_history(void);
 
 void trace_arm_history_all(void);
 void trace_arm_history_all_mt(void);
@@ -154,22 +150,13 @@ int trace_occ_window(void);
 #define TRACE_OCC_WINDOW_MAX     (1 << 20)
 
 /* Source line currently being executed. Written by OP_LINE, read by
- * trace_assign to stamp history entries and by the tape writer. The JIT
- * stamps it via a flat-address write, so it cannot be __thread.
- *
- * #297 gated the interpreter write off under MT (a state's own workers),
- * which is why parallel workers never raced it. #1142: TWO STATES on two
- * threads are each single-threaded by that test, so both wrote this plain
- * int — TSan reported the race on every concurrent-embed run once the
- * louder compiler.c one was silenced. Access is RELAXED-atomic: on x86-64
- * that is the same `mov` (the JIT's flat write stays valid), but it is a
- * defined access rather than a data race.
- *
- * Residual, documented: the VALUE is still process-global, so two states
- * recording at once can stamp each other's line into their (thread-local)
- * history tables. Per-thread line stamping needs the JIT's flat write to
- * become a TLS write — tracked as the remaining #1142 gap, not fixed here. */
-extern int g_trace_current_line;
+ * trace_assign and by native/AOT error fallback. It lives on EigsThread:
+ * #1435's worker must never overwrite the parent's line. The accessor keeps
+ * the historical lvalue spelling used by linked native code and gives the JIT
+ * a flat address to bake into code. JIT code cannot migrate to another thread:
+ * entering multithreaded mode gates both compilation and thunk dispatch. */
+int *trace_current_line_addr(void);
+#define g_trace_current_line (*trace_current_line_addr())
 #define trace_current_line_store(v) \
     __atomic_store_n(&g_trace_current_line, (int)(v), __ATOMIC_RELAXED)
 #define trace_current_line_load() \
@@ -266,8 +253,15 @@ void trace_obs_window_binding(const char *name, int n);
  * Retention is bounded by the pruning in either case (#827 defect B), so
  * the filter is a per-assign CPU optimization and never a safety property.
  * When in doubt, call trace_assign. */
+/* All assignment entry points suppress shared history retention while the
+ * attached thread is executing a sandbox. Tape A emission remains enabled.
+ * trace_record_obs observes the same boundary for existing host snapshots. */
 void trace_assign(const char *name, EigsSlot value);
 void trace_assign_filtered(const char *name, EigsSlot value);
+/* Interpreter-only twins: use the executing thread's VM line instead of the
+ * process-wide AOT/embed trace stamp. */
+void trace_assign_at_line(const char *name, EigsSlot value, int line);
+void trace_assign_filtered_at_line(const char *name, EigsSlot value, int line);
 /* #1063: A record on the tape, NO prev-table entry -- for a slot write whose
  * name the owning chunk does not interrogate (EigsChunk.local_traced). */
 void trace_assign_tape_only(const char *name, EigsSlot value);

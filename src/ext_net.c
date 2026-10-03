@@ -313,6 +313,22 @@ Value* builtin_net_recv(Value *arg) {
  * is suppressed: the recorded count is served and nothing touches a
  * socket (see the header comment for why that is sound here and not
  * for proc_write). */
+/* Borrow the already converted bytes. The caller owns any workspace across
+ * the early replay return as well as every live send outcome. */
+static Value* net_send_bytes(Value *conn, const unsigned char *bytes, size_t len) {
+    TRACE_NONDET_TAKE("net_send");
+    EigsNetSock *s = net_lookup(conn, NET_SOCK_CONN);
+    if (!s) TRACE_NONDET_RECORD("net_send", make_num(-1));
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = send(s->fd, bytes + sent, len - sent, MSG_NOSIGNAL);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) TRACE_NONDET_RECORD("net_send", make_num(-1));
+        sent += (size_t)n;
+    }
+    TRACE_NONDET_RECORD("net_send", make_num((double)sent));
+}
+
 Value* builtin_net_send(Value *arg) {
     if (!net_require_list(arg, 2, 2, "net_send")) return make_null();
     Value *conn = arg->data.list.items[0];
@@ -322,10 +338,8 @@ Value* builtin_net_send(Value *arg) {
         rt_error(EK_TYPE, 0, "net_send: data must be a string, buffer, or byte list");
         return make_null();
     }
-    TRACE_NONDET_TAKE("net_send");
-    EigsNetSock *s = net_lookup(conn, NET_SOCK_CONN);
-    if (!s) TRACE_NONDET_RECORD("net_send", make_num(-1));
-
+    /* Read errors are deterministic argument errors: stop before the tape
+     * boundary in both capture and replay, before any socket work. */
     const unsigned char *bytes;
     unsigned char *owned = NULL;
     size_t len;
@@ -338,25 +352,20 @@ Value* builtin_net_send(Value *arg) {
         owned = xmalloc(n > 0 ? (size_t)n : 1);
         for (int i = 0; i < n; i++) {
             double dv = data->type == VAL_BUFFER
-                ? data->data.buffer.data[i]
+                ? buffer_read_num(data, i)
                 : (data->data.list.items[i] &&
                    data->data.list.items[i]->type == VAL_NUM
                        ? data->data.list.items[i]->data.num : 0.0);
-            owned[i] = (unsigned char)((int)dv & 0xFF);
+            if (g_has_error) { free(owned); return make_null(); }
+            owned[i] = finite_num_to_byte(dv);
         }
         bytes = owned;
         len = (size_t)n;
     }
 
-    size_t sent = 0;
-    while (sent < len) {
-        ssize_t n = send(s->fd, bytes + sent, len - sent, MSG_NOSIGNAL);
-        if (n < 0 && errno == EINTR) continue;
-        if (n <= 0) { free(owned); TRACE_NONDET_RECORD("net_send", make_num(-1)); }
-        sent += (size_t)n;
-    }
+    Value *result = net_send_bytes(conn, bytes, len);
     free(owned);
-    TRACE_NONDET_RECORD("net_send", make_num((double)sent));
+    return result;
 }
 
 /* net_close of handle_id → null. Deterministic and untraced: closing is

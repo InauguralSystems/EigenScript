@@ -215,8 +215,17 @@ define render(widget, ox, oy) as:
         if entry.clip != null and entry.clip == 0:
             entry.render of [widget, ax, ay]
         else:
+            clip_depth is _clip.depth
             ui_clip_push of [ax, ay, widget.w, widget.h]
-            entry.render of [widget, ax, ay]
+            try:
+                entry.render of [widget, ax, ay]
+            catch render_err:
+                # A container renderer may have pushed its own clip before
+                # one of its descendants failed. Restore every frame added
+                # during this render, not merely the innermost one.
+                loop while _clip.depth > clip_depth:
+                    ui_clip_pop of null
+                throw of render_err
             ui_clip_pop of null
     # Disabled overlay
     if widget.enabled != null and widget.enabled == 0:
@@ -879,6 +888,10 @@ define app_loop(root, on_key, on_tick) as:
     # Build initial focus list
     _ui.focus_list is []
     _build_focus_list of root
+    # Section [97] uses this opt-in marker to distinguish arrival here from a
+    # hang during example setup. Normal applications do not set the variable.
+    if env_get of "EIGS_GFX_READY" == "1":
+        print of "EIGS_GFX_READY"
     loop while _running == 1 and _ui.quit_requested == 0:
         ev is gfx_poll of null
         loop while ev != null:

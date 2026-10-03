@@ -17,11 +17,13 @@ define check(label, got, want) as:
 
 check of ["host str is hijacked for the host's own calls", str of 5, "H"]
 check of ["VM f-string ignores the host str", f"<{5}>", "<5>"]
+check of ["meta str builtin ignores a host str bound before import", eigen.eigen_run of "str of 5", "5"]
 check of ["meta f-string ignores a host str bound before import", eigen.eigen_run of "f\"<{5}>\"", "<5>"]
 check of ["meta string + number ignores the host str", eigen.eigen_run of "\"a\" + 5", "a5"]
 check of ["meta f-string of a list matches the VM", eigen.eigen_run of "f\"<{[1, 2]}>\"", f"<{[1, 2]}>"]
 # rebind between runs
 str is (x) => "J"
+check of ["meta str builtin ignores a host str rebound between runs", eigen.eigen_run of "str of 7", "7"]
 check of ["meta f-string ignores a host str rebound between runs", eigen.eigen_run of "f\"[{7}]\"", "[7]"]
 check of ["meta program's own define str still answers its own calls", eigen.eigen_run of "define str(x) as:\n    return \"M\"\nstr of 1", "M"]
 check of ["meta program's own define str does not reach its f-strings", eigen.eigen_run of "define str(x) as:\n    return \"M\"\nf\"<{1}>\"", "<1>"]

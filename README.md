@@ -17,14 +17,22 @@
 # EigenScript
 
 A complete, standalone programming language with native observer semantics,
-OS-thread concurrency (`spawn`/`channel`/`thread_join`, with a documented
-memory model in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) — *values* copy
-through a channel, while closures and `buffer`/`text_builder` HANDLES are
-shared by reference, the last of which is the open defect
-[#1148](https://github.com/InauguralSystems/EigenScript/issues/1148) under
-[#1153](https://github.com/InauguralSystems/EigenScript/issues/1153)),
+OS-thread concurrency (`spawn`/`channel`/`thread_join`), a cooperative task
+layer whose numeric task IDs are opaque generation-checked handles, and a
+memory model documented in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) —
+*values* copy through a channel, including mutable buffers and text builders,
+while closure environments and resource handles stay shared by reference,
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
+
+`exit of N` is state-wide even when a spawned worker calls it: VM threads stop,
+blocked concurrency calls wake, and the process exits with status `N` after
+worker teardown. Native I/O must return before teardown completes. Embedded
+evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
+
+`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result.
+
+Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
 ## Try it in your browser
 
@@ -41,11 +49,22 @@ cd EigenScript
 ./install.sh
 ```
 
-This builds the minimal binary and installs it to `~/.local/bin/eigenscript`.
+This builds the hosted release (including lazily loaded graphics) and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
-Run `./install.sh full` to also build the optional HTTP/DB/model binary
-(`eigenscript-full`); that path requires PostgreSQL development headers.
+Run `./install.sh server` to also build the HTTP + raw-TCP + model profile
+(`eigenscript-server`), or `./install.sh server-db` to add PostgreSQL; the
+latter path requires PostgreSQL development headers. `full` remains a
+compatibility spelling for `server-db`.
+
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
 
 **Homebrew** (macOS + Linux):
 
@@ -288,6 +307,12 @@ Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
 
+Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
+`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
+an integral count from 1 through that cap, and `build_corpus` includes file
+separators in its capped token count. These limits also raise under
+`EIGS_STRICT=0`; see [BUILTINS.md](docs/BUILTINS.md) for the I/O contracts.
+
 Each of them takes a nested list, a flat list, or a flat numeric **`buffer`**,
 and returns a buffer when every tensor operand was one. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
@@ -298,7 +323,16 @@ to infinity saturate at `+/-1e308`. Strict mode is the default: an
 out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
-`asin`/`acos` clamp their inputs.
+`asin`/`acos` clamp their inputs. The same rule applies when a raw tensor-kernel
+result is read from a `buffer`; one stored element never changes meaning with
+the operator that consumes it. Structural buffer equality and scalar reductions
+normalize each input by this rule too, as do mixed buffer/list materialization
+and numeric byte or sample conversion. A raised read stops subsequent work.
+
+The optional model extension raises a catchable `value` error when
+`eigen_generate` or `eigen_eval_loss` receives a prompt longer than the loaded
+model's `max_seq_len`. Training applies the same limit to the combined input
+and output lengths; callers must choose their context window explicitly.
 
 ### Arena Memory
 
@@ -383,6 +417,8 @@ Pure EigenScript libraries under `lib/`:
 The table names importable modules. The `lib/ui_*.eigs` files are
 **fragments of `lib/ui.eigs`**, composed by it rather than imported directly,
 so they have no row of their own. Inspect `lib/` for the current module set.
+
+`lib/eigen.eigs` snapshots the host values used by its tokenizer, parser, evaluator, import helpers, and fresh meta environments when it loads (#1386). Later host builtin rebinding does not change those dependencies, including entropy's `log`/`divide` calls. For `load_file`, the snapshots use values visible during initialization; loaded code still shares the host scope. String conversion still uses the pristine reserved f-string bridge. Explicit custom environments, debug hooks, and rebinding the interpreter's own helper names remain caller-controlled; captured caller-defined functions retain their own binding behavior.
 
 An imported module's builtin names are the builtins: rebinding `len` or `str`
 in your program changes them for your code, never inside a module you import
@@ -602,11 +638,17 @@ get made and how contributors can earn commit access over time.
 ```bash
 make                  # build
 make test             # build and run the full suite
-make gfx              # build with SDL2 graphics (UI toolkit, games)
-make net              # build with raw TCP sockets (record/replay-able)
+make server           # build with HTTP + raw TCP sockets + model builtins
+make server-db        # server profile plus PostgreSQL
+make zlib             # release profile plus DEFLATE codecs (links libz)
 make install          # install to ~/.local/bin
 make clean            # remove build artifacts
 ```
+
+The `tools/consumer_acceptance.sh` helper takes the release binary as its
+positional input, with separate server and database-capable binaries when
+needed. See [Consumer acceptance wave](docs/CI.md#consumer-acceptance-wave)
+for its profile options, compatibility aliases and recorded binary identities.
 
 Or use the shell scripts directly: `./build.sh` and `./install.sh`.
 
