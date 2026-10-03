@@ -603,6 +603,12 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [examples/errors/](examples/errors/) — programs that fail on purpose,
   each with its expected error message (suite-verified)
 
+Embedded trace replay uses stable host-provided stream keys and parent-local
+spawn occurrences to match workers. Tape associations carry state grouping;
+event order does not choose replay identity. Hosts explicitly advance replay
+sessions between evaluations; unread sibling outcomes prevent advance. See [docs/TRACE.md](docs/TRACE.md)
+and [docs/EMBEDDING.md](docs/EMBEDDING.md) for the binding and version contract.
+
 ## Stability
 
 EigenScript is pre-1.0. The compatibility surface is exactly what

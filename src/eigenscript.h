@@ -722,6 +722,7 @@ void            env_intern_table_unref(EnvInternTable *t);
 /* Per-interpreter-instance config + shared registry. Transparent for
  * internal TUs (Phase 10's embed.h wraps it behind accessors). */
 struct EigsState {
+    uint64_t trace_state_token;   /* association metadata; never an address */
     pthread_mutex_t threads_lock;
     EigsThread     *threads;
     /* Private promoted keys belong to Values, across same-state attachments. */
@@ -767,17 +768,6 @@ struct EigsState {
     double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
     int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
     double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
-    /* #1142: last observer config THIS state emitted onto the process tape.
-     * Initialized to the compiled-in defaults so a default-config state
-     * writes no `O cfg` (single-state tapes stay byte-identical). Compared
-     * under the tape mutex. tape_obs_session tracks the tape-open generation
-     * so a new V header re-emits a non-default config. */
-    double          tape_obs_dh_zero;
-    double          tape_obs_dh_small;
-    double          tape_obs_h_low;
-    double          tape_obs_scale;
-    int             tape_obs_window;
-    unsigned        tape_obs_session;
     /* #971/#1361: strict mode. ON by default (read once at creation; only
      * EIGS_STRICT=0 turns it off): a wrong-typed or out-of-domain argument,
      * or a NaN result, RAISES instead of getting a finite stand-in. Off
@@ -1198,6 +1188,12 @@ struct EigsThread {
      * other's file mid-write. Closed at thread detach so an unclosed stream
      * is not leaked. Opaque (FILE*) to keep stdio out of this header. */
     void                *stream_file;
+    /* Recording identity belongs to this attachment lifetime, not its OS
+     * thread or state. The lazy binding owns its session's emitted caches;
+     * both survive parking and the binding is freed only at detach. */
+    uint64_t             trace_attachment_token;
+    struct TraceRecordingBinding *trace_recording;
+    struct TraceStreamOrigin *trace_origin; /* owned, lazy causal descriptor */
     /* Registry list — set by eigs_thread_attach. */
     EigsThread *next;
 };

@@ -191,12 +191,12 @@ i is 3
 EOF
 EIGS_TRACE="$SCOPE_TAPE" "$EIGS" "$SCOPE_FIX" > /dev/null 2>&1
 
-grep -q '^S work 1 ' "$SCOPE_TAPE" \
+grep -q '^S [0-9][0-9]* work 1 ' "$SCOPE_TAPE" \
     && ok "tape carries S scope-transition records (v2)" \
     || fail "tape carries S scope-transition records (v2)"
 
 # two work() invocations = two distinct frame serials on their S records
-NSER=$(grep '^S work 1 ' "$SCOPE_TAPE" | sort -u | wc -l)
+NSER=$(grep '^S [0-9][0-9]* work 1 ' "$SCOPE_TAPE" | sort -u | wc -l)
 [ "$NSER" -eq 2 ] \
     && ok "same-function invocations get distinct frame serials" \
     || fail "same-function invocations get distinct frame serials" "got $NSER"
@@ -235,14 +235,15 @@ NATIVE_TAPE="$TMPDIR/native-scope.tape"
 {
     head -1 "$TAPE"
     cat <<'EOF'
-S first_callback 0 41
-L 1
-A callback_local=1
-S <native> 0 0
-A native_after_callback=1441
-S later_callback 0 42
-L 2
-A later_local=2
+B 0 1 1 0 root -
+S 0 first_callback 0 41
+L 0 1
+A 0 callback_local=1
+S 0 <native> 0 0
+A 0 native_after_callback=1441
+S 0 later_callback 0 42
+L 0 2
+A 0 later_local=2
 EOF
 } > "$NATIVE_TAPE"
 OUT=$(printf 'c\nt native_after_callback\nq\n' | "$EIGS" --step "$NATIVE_TAPE" 2>&1)
@@ -258,12 +259,13 @@ NATIVE_SHADOW_TAPE="$TMPDIR/native-shadow-scope.tape"
 {
     head -1 "$TAPE"
     cat <<'EOF'
-S first_callback 0 41
-L 1
-A shared_name=1
-S <native> 0 0
-A shared_name=1441
-L 2
+B 0 1 1 0 root -
+S 0 first_callback 0 41
+L 0 1
+A 0 shared_name=1
+S 0 <native> 0 0
+A 0 shared_name=1441
+L 0 2
 EOF
 } > "$NATIVE_SHADOW_TAPE"
 OUT=$(printf 'c\nt shared_name\nq\n' | "$EIGS" --step "$NATIVE_SHADOW_TAPE" 2>&1)

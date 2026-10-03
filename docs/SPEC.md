@@ -1902,6 +1902,16 @@ handle; `thread_join of handle` waits and returns its result. Channels
 (`channel of null`, `send`, `recv`, `try_recv`, `recv_timeout`)
 communicate between threads.
 
+Trace replay matches a spawned worker by its bound parent and that parent's
+spawn occurrence, not by the order workers reach a line or nondeterministic
+call. Independently created embedding threads supply stable keys before their
+first event/take. Missing correspondence raises rather than borrowing another
+stream's value. The flat tape IDs, state-association metadata and version 5
+compatibility rule are specified in `docs/TRACE.md`.
+Replay never crosses a session header on an ordinary take. The embedding host
+explicitly advances at a quiescent boundary; an unread sibling outcome prevents
+advance. Replacing memory replay preserves a suspended file's complete context.
+
 Values crossing a channel, `thread_join`, or cooperative-task boundary are
 copied recursively. This includes buffers (payload and shape) and text builders
 (bytes and builder metadata). Closures retain their captured environment by

@@ -3,12 +3,14 @@
  * ================================================================
  * Tape format (text, one record per line):
  *   V <format> <runtime-ver>    version header — always the first record
- *   L <line>                    source-line event
- *   A <name>=<value>            name-keyed assignment delta
- *   N <fn>=<value>              nondeterministic builtin return
- *   O cfg <dh_zero> <dh_small> <h_low> <window> <scale>
+ *   B <stream> <lifetime> <state> <spawn-base> <origin>
+ *                               host/causal correspondence metadata (v5)
+ *   L <stream> <line>           source-line event
+ *   A <stream> <name>=<value>   name-keyed assignment delta
+ *   N <stream> <fn>=<value>     nondeterministic builtin return
+ *   O <stream> cfg <dh_zero> <dh_small> <h_low> <window> <scale>
  *                               observer configuration in force (v3)
- *   O win <name> <n>            per-binding observer window override (v3)
+ *   O <stream> win <name> <n>   per-binding observer window override (v3)
  *
  * Value encoding:
  *   <num>          numeric (immediate, tracked, or heap VAL_NUM)
@@ -900,12 +902,6 @@ Value *trace_state_at(int line) {
 static FILE *g_trace_fp = NULL;
 static int   g_trace_initialized = 0;
 
-/* Line dedupe state. g_last_line < 0 means "no line written yet, always
- * emit". g_line_dirty == 1 means an A or N event landed since the last
- * L, so the next L is meaningful even if numerically identical. */
-static int g_last_line  = -1;
-static int g_line_dirty = 0;
-
 /* ----- Embed byte-sink seam (trace_set_sink).
  *
  * The freestanding profile has no filesystem, so EIGS_TRACE's fopen is
@@ -930,8 +926,8 @@ static void *g_trace_sink_ud = NULL;
  * tape_emit_begin, and released in tape_emit_end — so a record (its
  * obs-cfg diff, its scope transition, its bytes, the line-stamp/scope
  * state update and the commit) is one atomic unit, and every piece of
- * shared decision state (g_last_line, g_line_dirty, g_last_scope_serial,
- * g_tape_session, the state's tape_obs_* last-emitted) is read and
+ * shared decision state (the stream's line/scope/config caches and
+ * g_tape_session) is read and
  * written under it. Never held across an EigenScript-level call or a
  * blocking builtin. The sink callback fires while the lock is held — do
  * not re-enter the runtime from it. */
@@ -960,9 +956,8 @@ static int  trace_out_active(void);
  *   - the mutex is taken once in tape_emit_begin and released once in
  *     tape_emit_end, so a record (its obs-cfg diff, its scope transition,
  *     its bytes, the line-stamp/scope state update and the commit) is one
- *     atomic unit, and every piece of shared decision state (g_last_line,
- *     g_line_dirty, g_last_scope_serial, g_tape_session, the state's
- *     tape_obs_* last-emitted) is read and written under it;
+ *     atomic unit, and every stream's line/scope/config cache plus
+ *     g_tape_session is read and written under it;
  *   - g_rec_at marks where the record being formatted starts, so
  *     tape_emit_end can hand the SINK exactly that record in one call —
  *     which is what killed the old g_sink_buf[4096] + unsynchronised
@@ -979,6 +974,166 @@ static char   *g_out     = NULL;
 static size_t  g_out_cap = 0;
 static size_t  g_out_len = 0;   /* bytes formatted but not yet fwritten */
 static size_t  g_rec_at  = 0;   /* offset of the record being formatted */
+static uint64_t g_tape_session = 0;
+static uint64_t g_stream_next = 1;
+static uint64_t g_attachment_next = 1;  /* process lifetime; never reset at V */
+static uint64_t g_stream_opener_token = 0;
+static uint64_t g_native_opener_token = 0;
+/* TLS dies with the OS thread; a recycled pthread_t cannot inherit it. */
+static __thread uint64_t g_native_session_token = 0;
+
+/* Scalar/string-only descriptors outlive a detached parent when a child still
+ * needs its causal origin. Refcounts and links are protected by g_tape_mu. */
+typedef struct TraceStreamOrigin {
+    unsigned refs;
+    uint64_t token, state, spawn_next;
+    struct TraceStreamOrigin *parent;
+    uint64_t occurrence;
+    char *key_hex;
+    uint64_t record_session, record_id;
+    int declared;
+} TraceStreamOrigin;
+typedef struct TraceSpawnBinding {
+    TraceStreamOrigin *origin;
+} TraceSpawnBinding;
+typedef struct RecordingKey {
+    char *hex;
+    uint64_t token;
+    struct RecordingKey *next;
+} RecordingKey;
+static RecordingKey *g_recording_keys;
+static void replay_forget_origin_locked(uint64_t token);
+
+static void origin_release_locked(TraceStreamOrigin *origin) {
+    /* Iterative: a deep ordinary spawn ancestry must not consume C stack. */
+    while (origin && --origin->refs == 0) {
+        TraceStreamOrigin *parent = origin->parent;
+        replay_forget_origin_locked(origin->token);
+        free(origin->key_hex);
+        free(origin);
+        origin = parent;
+    }
+}
+
+static TraceStreamOrigin *origin_current_locked(void) {
+    if (!eigs_current) return NULL;
+    TraceStreamOrigin *origin = eigs_current->trace_origin;
+    if (!origin) {
+        origin = xcalloc(1, sizeof(*origin));
+        origin->refs = 1;
+        origin->token = eigs_current->trace_attachment_token;
+        origin->state = eigs_current->state->trace_state_token;
+        eigs_current->trace_origin = origin;
+    }
+    return origin;
+}
+
+static void recording_keys_clear_locked(void) {
+    while (g_recording_keys) {
+        RecordingKey *next = g_recording_keys->next;
+        free(g_recording_keys->hex);
+        free(g_recording_keys);
+        g_recording_keys = next;
+    }
+}
+
+static int recording_key_available_locked(const char *hex, uint64_t token) {
+    for (RecordingKey *key = g_recording_keys; key; key = key->next)
+        if (key->token != token && strcmp(key->hex, hex) == 0) return 0;
+    return 1;
+}
+
+static int recording_declare_locked(TraceStreamOrigin *origin);
+static int replay_origin_claimed_locked(uint64_t token);
+static int replay_key_available_locked(const char *hex, uint64_t token);
+static int replay_bind_origin_locked(TraceStreamOrigin *origin);
+static int replay_prepare_child_locked(TraceStreamOrigin *parent,
+                                        TraceStreamOrigin *child);
+
+/* Recording caches have the same owner as the ID consuming their records.
+ * They never own a state/thread/VM pointer. A parked attachment keeps this
+ * allocation; detach destroys it, and a session mismatch resets it lazily.
+ * A session opened without an attachment has one session-owned native
+ * binding, usable only by that unattached opener. */
+typedef struct TraceRecordingBinding {
+    uint64_t session;
+    uint64_t id;
+    int last_line;              /* -1: no L yet */
+    int line_dirty;             /* an A/N since the previous L */
+    uint32_t scope_serial;
+    int scope_native;
+    double obs_dh_zero, obs_dh_small, obs_h_low, obs_scale;
+    int obs_window;
+} TraceRecordingBinding;
+static TraceRecordingBinding g_native_recording;
+/* Valid only during one tape-locked emit window. */
+static TraceRecordingBinding *g_emit_stream = NULL;
+
+static uint64_t recording_token_locked(void) {
+    /* Zero is the unattached sentinel. Never wrap into a prior lifetime. */
+    if (g_attachment_next == UINT64_MAX) {
+        fprintf(stderr, "trace: attachment identity space exhausted\n");
+        abort();
+    }
+    return g_attachment_next++;
+}
+
+void trace_attachment_init(EigsThread *thread) {
+    tape_lock();
+    thread->trace_attachment_token = recording_token_locked();
+    tape_unlock();
+}
+
+void trace_state_init(EigsState *state) {
+    tape_lock();
+    state->trace_state_token = recording_token_locked();
+    tape_unlock();
+}
+
+void trace_attachment_destroy(EigsThread *thread) {
+    tape_lock();
+    free(thread->trace_recording);
+    thread->trace_recording = NULL;
+    origin_release_locked(thread->trace_origin);
+    thread->trace_origin = NULL;
+    thread->trace_attachment_token = 0;
+    tape_unlock();
+}
+
+static void recording_binding_reset(TraceRecordingBinding *binding,
+                                    uint64_t id) {
+    memset(binding, 0, sizeof(*binding));
+    binding->session = g_tape_session;
+    binding->id = id;
+    binding->last_line = -1;
+    binding->obs_dh_zero = OBSERVER_DH_ZERO_DEFAULT;
+    binding->obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
+    binding->obs_h_low = OBSERVER_H_LOW_DEFAULT;
+    binding->obs_scale = OBSERVER_SCALE_DEFAULT;
+    binding->obs_window = OBSERVER_WINDOW_N;
+}
+
+/* Caller holds g_tape_mu. Allocation order is only recording identity;
+ * it is not correspondence between recordings and replay executions. */
+static TraceRecordingBinding *recording_binding_locked(void) {
+    if (!eigs_current) {
+        if (g_native_opener_token &&
+            g_native_session_token == g_native_opener_token)
+            return &g_native_recording;
+        fprintf(stderr, "trace: recording producer must attach to a state\n");
+        return NULL;
+    }
+    TraceRecordingBinding *binding = eigs_current->trace_recording;
+    if (binding && binding->session == g_tape_session) return binding;
+    TraceStreamOrigin *origin = origin_current_locked();
+    if (!recording_declare_locked(origin)) return NULL;
+    if (!binding) {
+        binding = xcalloc(1, sizeof(*binding));
+        eigs_current->trace_recording = binding;
+    }
+    recording_binding_reset(binding, origin->record_id);
+    return binding;
+}
 
 /* #1142 round 5: read-only witness for the sink-only DROP two functions
  * below. Takes the lock so the read is not a torn one. See trace.h for why
@@ -1019,6 +1174,11 @@ static int tape_emit_begin(void) {
     if (!g_trace_enabled) return 0;
     tape_lock();
     if (!trace_out_active()) {
+        tape_unlock();
+        return 0;
+    }
+    g_emit_stream = recording_binding_locked();
+    if (!g_emit_stream) {
         tape_unlock();
         return 0;
     }
@@ -1080,6 +1240,7 @@ static void sink_flush(void) {
 
 static void tape_emit_end(void) {
     sink_flush();               /* commit-under-lock */
+    g_emit_stream = NULL;
     tape_unlock();
 }
 
@@ -1121,12 +1282,231 @@ static void tp_printf(const char *fmt, ...) {
     tp_write(buf, (size_t)n);
 }
 
-/* #539 v2: scope-transition dedup state. The last frame-instance serial
- * an S record was emitted for; 0 = none yet (serials start at 1). Reset
- * at every tape open so each session's first A record is preceded by its
- * scope. */
-static uint32_t g_last_scope_serial = 0;
-static int g_last_scope_native = 0;
+static int association_number(const char **text, uint64_t *out) {
+    const char *p = *text;
+    if (*p < '0' || *p > '9') return 0;
+    uint64_t n = 0;
+    do {
+        unsigned digit = (unsigned)(*p++ - '0');
+        if (n > (UINT64_MAX - digit) / 10) return 0;
+        n = n * 10 + digit;
+    } while (*p >= '0' && *p <= '9');
+    if (n == UINT64_MAX || (*p && *p != ' ')) return 0;
+    *out = n;
+    *text = p;
+    return 1;
+}
+
+static int association_hex(const char *text) {
+    size_t n = 0;
+    for (; text[n]; n++) {
+        if (n == TRACE_STREAM_KEY_MAX * 2 ||
+            !((text[n] >= '0' && text[n] <= '9') ||
+              (text[n] >= 'a' && text[n] <= 'f'))) return 0;
+    }
+    return n > 0 && n % 2 == 0;
+}
+
+int trace_parse_association(const char *payload, TraceAssociation *out) {
+    if (!payload || !out) return 0;
+    memset(out, 0, sizeof(*out));
+    const char *p = payload;
+    if (!association_number(&p, &out->lifetime) || !out->lifetime || *p++ != ' ' ||
+        !association_number(&p, &out->state) || *p++ != ' ' ||
+        !association_number(&p, &out->spawn_base) || *p++ != ' ') return 0;
+    if (strncmp(p, "root ", 5) == 0) {
+        out->kind = 'r';
+        p += 5;
+        if (strcmp(p, "-") == 0) return 1;
+        if (!association_hex(p)) return 0;
+        out->key_hex = p;
+        return 1;
+    }
+    if (strncmp(p, "host ", 5) == 0) {
+        out->kind = 'h';
+        p += 5;
+        if (!out->state || !association_hex(p)) return 0;
+        out->key_hex = p;
+        return 1;
+    }
+    if (strncmp(p, "child ", 6) == 0) {
+        out->kind = 'c';
+        p += 6;
+        return out->state && association_number(&p, &out->parent) && *p++ == ' ' &&
+               association_number(&p, &out->occurrence) && out->occurrence && !*p;
+    }
+    out->kind = 'l';
+    return out->state && strcmp(p, "local") == 0;
+}
+
+/* Declare undeclared ancestors first, without recursive C calls. Descriptors
+ * may outlive their attachment, but contain only owned descriptors/scalars. */
+static int recording_declare_locked(TraceStreamOrigin *origin) {
+    TraceStreamOrigin **chain = NULL;
+    size_t count = 0, capacity = 0;
+    for (TraceStreamOrigin *p = origin; p; p = p->parent) {
+        if (p->record_session == g_tape_session && p->declared) break;
+        if (p->key_hex && !recording_key_available_locked(p->key_hex, p->token)) {
+            fprintf(stderr, "trace: duplicate host stream key; refusing recording binding\n");
+            free(chain);
+            return 0;
+        }
+        if (count == capacity) {
+            capacity = capacity ? capacity * 2 : 8;
+            chain = xrealloc(chain, capacity * sizeof(*chain));
+        }
+        chain[count++] = p;
+        if (p->token == g_stream_opener_token) break;
+    }
+    g_rec_at = g_out_len;
+    while (count) {
+        TraceStreamOrigin *p = chain[--count];
+        uint64_t id = 0;
+        if (p->token != g_stream_opener_token) {
+            if (g_stream_next == UINT64_MAX) {
+                fprintf(stderr, "trace: recording stream identity space exhausted\n");
+                free(chain);
+                sink_flush();
+                return 0;
+            }
+            id = g_stream_next++;
+        }
+        p->record_session = g_tape_session;
+        p->record_id = id;
+        p->declared = 1;
+        tp_printf("B %llu ", (unsigned long long)id);
+        tp_printf("%llu ", (unsigned long long)p->token);
+        tp_printf("%llu ", (unsigned long long)p->state);
+        tp_printf("%llu ", (unsigned long long)p->spawn_next);
+        if (p->token == g_stream_opener_token) {
+            tp_puts("root ");
+            tp_puts(p->key_hex ? p->key_hex : "-");
+        } else if (p->parent) {
+            tp_printf("child %llu ", (unsigned long long)p->parent->record_id);
+            tp_printf("%llu", (unsigned long long)p->occurrence);
+        } else if (p->key_hex) {
+            tp_puts("host ");
+            tp_puts(p->key_hex);
+        } else {
+            tp_puts("local");
+        }
+        tp_putc('\n');
+        if (p->key_hex) {
+            RecordingKey *key = xcalloc(1, sizeof(*key));
+            key->hex = xstrdup(p->key_hex);
+            key->token = p->token;
+            key->next = g_recording_keys;
+            g_recording_keys = key;
+        }
+    }
+    free(chain);
+    sink_flush();
+    return 1;
+}
+
+int trace_bind_stream(const char *key) {
+    if (!key || !*key || !eigs_current) return 0;
+    if (eigs_current->vm && eigs_current->vm->execute_depth) return 0;
+    size_t len = 0;
+    while (len <= TRACE_STREAM_KEY_MAX && key[len]) len++;
+    if (len > TRACE_STREAM_KEY_MAX) return 0;
+    static const char hex[] = "0123456789abcdef";
+    char *encoded = malloc(len * 2 + 1);
+    if (!encoded) return 0;
+    for (size_t i = 0; i < len; i++) {
+        encoded[i * 2] = hex[(unsigned char)key[i] >> 4];
+        encoded[i * 2 + 1] = hex[(unsigned char)key[i] & 15];
+    }
+    encoded[len * 2] = 0;
+    tape_lock();
+    TraceStreamOrigin *origin = origin_current_locked();
+    int late = (origin->record_session == g_tape_session && origin->declared) ||
+               replay_origin_claimed_locked(origin->token);
+    int ok = !origin->parent && !origin->key_hex && !late &&
+             (!trace_out_active() ||
+              (recording_key_available_locked(encoded, origin->token) &&
+               (origin->token == g_stream_opener_token || g_stream_next != UINT64_MAX))) &&
+             replay_key_available_locked(encoded, origin->token);
+    if (ok) {
+        origin->key_hex = encoded;
+        encoded = NULL;
+        if (g_replay_enabled_storage) ok = replay_bind_origin_locked(origin);
+        if (ok && trace_out_active()) ok = recording_declare_locked(origin);
+        if (!ok) {
+            encoded = origin->key_hex;
+            origin->key_hex = NULL;
+        }
+    }
+    tape_unlock();
+    free(encoded);
+    return ok;
+}
+
+int trace_spawn_prepare(TraceSpawnBinding **out) {
+    if (!out || !eigs_current) return 0;
+    *out = NULL;
+    tape_lock();
+    TraceStreamOrigin *parent = origin_current_locked();
+    int ok = !trace_out_active() || recording_declare_locked(parent);
+    if (parent->spawn_next == UINT64_MAX - 1) ok = 0;
+    TraceSpawnBinding *ticket = NULL;
+    if (ok) {
+        ticket = xcalloc(1, sizeof(*ticket));
+        TraceStreamOrigin *child = xcalloc(1, sizeof(*child));
+        ticket->origin = child;
+        child->refs = 1;
+        child->token = recording_token_locked();
+        child->state = parent->state;
+        child->parent = parent;
+        parent->refs++;
+        child->occurrence = ++parent->spawn_next;
+        ok = !g_replay_enabled_storage || replay_prepare_child_locked(parent, child);
+        if (ok && trace_out_active()) ok = recording_declare_locked(child);
+    }
+    if (!ok && ticket) {
+        origin_release_locked(ticket->origin);
+        free(ticket);
+        ticket = NULL;
+    }
+    tape_unlock();
+    if (!ok) {
+        rt_error(EK_IO, 0, "spawn: trace stream correspondence unavailable");
+        return 0;
+    }
+    *out = ticket;
+    return 1;
+}
+
+void trace_spawn_attach(TraceSpawnBinding *binding) {
+    if (!binding || !eigs_current) return;
+    tape_lock();
+    origin_release_locked(eigs_current->trace_origin);
+    eigs_current->trace_origin = binding->origin;
+    binding->origin->refs++;
+    eigs_current->trace_attachment_token = binding->origin->token;
+    tape_unlock();
+}
+
+void trace_spawn_release(TraceSpawnBinding *binding) {
+    if (!binding) return;
+    tape_lock();
+    origin_release_locked(binding->origin);
+    tape_unlock();
+    free(binding);
+}
+
+uint64_t trace_external_stream_acquire(void) {
+    tape_lock();
+    uint64_t id = trace_out_active() && g_stream_next != UINT64_MAX
+                ? g_stream_next++ : UINT64_MAX;
+    tape_unlock();
+    return id;
+}
+
+static void emit_tag(const char *kind) {
+    tp_puts(kind);
+    tp_printf(" %llu ", (unsigned long long)g_emit_stream->id);
+}
 
 /* Stamp `S <fn> <depth> <serial>` when the innermost frame differs from the
  * one the last S record named (by frame-instance serial, so two invocations
@@ -1134,12 +1514,14 @@ static int g_last_scope_native = 0;
  * scope transitions only cost tape bytes where a record actually needs them.
  * Callers must already have checked trace_out_active().
  *
- * Two callers: every A record (a binding belongs to the frame that wrote it),
- * and every per-binding `O win` record (an override belongs to the frame that
+ * Every A/N record belongs to the frame/native context that produced it.
+ * Every per-binding `O win` record belongs to the frame that
  * RESOLVED the name — and that frame may not have assigned anything yet, e.g.
  * when the call widens a parameter's window before the body writes it, so the
- * transition cannot be left to the next A). */
+ * transition cannot be left to the next A. */
 static void emit_scope_transition(void) {
+    uint32_t *last = &g_emit_stream->scope_serial;
+    int *native = &g_emit_stream->scope_native;
     if (!eigs_current || !eigs_current->vm || g_vm.frame_count == 0) {
         /* A producer can write through trace_assign after an interpreted
          * callback has returned (embedders and AOT code both do).  Without
@@ -1147,20 +1529,21 @@ static void emit_scope_transition(void) {
          * callback's last frame and files this module-level assignment as a
          * dead local.  Serial 0 is the reader's module scope; name it so the
          * transition remains visible and reviewable on the tape. */
-        if (g_last_scope_native) return;
-        g_last_scope_serial = 0;
-        g_last_scope_native = 1;
-        tp_puts("S <native> 0 0\n");
+        if (*native) return;
+        *last = 0;
+        *native = 1;
+        emit_tag("S");
+        tp_puts("<native> 0 0\n");
         return;
     }
     CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
-    if (!g_last_scope_native && f->call_serial == g_last_scope_serial) return;
-    g_last_scope_serial = f->call_serial;
-    g_last_scope_native = 0;
+    if (!*native && f->call_serial == *last) return;
+    *last = f->call_serial;
+    *native = 0;
     /* The name is variable-length: write it with tp_puts, never through
      * tp_printf's 128-byte staging, which truncated a name of 121+ chars
      * together with the record's newline and glued the next record on (#1157). */
-    tp_puts("S ");
+    emit_tag("S");
     tp_puts((f->chunk && f->chunk->name) ? f->chunk->name : "?");
     tp_printf(" %d %u\n", g_vm.frame_count - 1, f->call_serial);
 }
@@ -1181,60 +1564,41 @@ static void emit_scope_transition(void) {
  *
  * The state-level scalars are emitted by DIFF rather than from the knob
  * builtins: obs_cfg_sync compares the state's live configuration against what
- * THAT STATE last emitted and emits an `O cfg` record when they differ,
- * immediately before the next L or A record. Two co-located states with
- * different thresholds therefore emit one record each at first use, not a
- * torn ping-pong of process-global last-emitted (#1142). The per-binding
+ * THIS STREAM last emitted and emits an `O cfg` record when they differ,
+ * before the next L/A/N/O-win record. Sibling attachments share current
+ * state knobs but each must announce them in its own stream. The per-binding
  * window override (`set_observer_window of ["x", n]`) lives on an Env slot,
  * not on the state, so it has no cheap diff and is emitted from its builtin
  * through trace_obs_window_binding.
  *
- * Cost when no tape is open: nothing (both entry points return on
- * trace_out_active). With a tape open: five compares per L/A record. */
-/* #1142: tape-open generation. emit_header increments it; obs_cfg_sync
- * treats a state's last-emitted as defaults when the session mismatches,
- * so a new V header re-emits a non-default config (matching the old
- * process-global reset) without a process-global last-emitted slot. */
-static unsigned g_tape_session = 0;
-
-/* Reset is a session bump: each state's next L/A compares against defaults. */
-static void obs_cfg_reset(void) {
-    g_tape_session++;
-}
-
-/* Emit `O cfg` when THIS state's observer configuration has moved since
- * what THIS state last emitted. Callers hold g_tape_mu and have checked
- * trace_out_active(). A default-config state writes no record — single-
- * threaded tapes stay byte-identical to the process-global-diff era. */
+ * Cost when no tape is open: nothing (the recording entry points return on
+ * g_trace_enabled). With a tape open: five compares per L/A/N/O-win record. */
+/* Emit `O cfg` when the state's observer configuration has moved since
+ * what THIS STREAM last emitted. Callers hold g_tape_mu and have checked
+ * trace_out_active(). A default-config stream writes no configuration record. */
 static void obs_cfg_sync(void) {
     if (!eigs_current || !eigs_current->state) return;
     EigsState *st = eigs_current->state;
-    if (st->tape_obs_session != g_tape_session) {
-        st->tape_obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
-        st->tape_obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
-        st->tape_obs_h_low    = OBSERVER_H_LOW_DEFAULT;
-        st->tape_obs_scale    = OBSERVER_SCALE_DEFAULT;
-        st->tape_obs_window   = OBSERVER_WINDOW_N;
-        st->tape_obs_session  = g_tape_session;
-    }
-    if (st->obs_dh_zero  == st->tape_obs_dh_zero  &&
-        st->obs_dh_small == st->tape_obs_dh_small &&
-        st->obs_h_low    == st->tape_obs_h_low    &&
-        st->obs_scale    == st->tape_obs_scale    &&
-        st->obs_window   == st->tape_obs_window) return;
-    st->tape_obs_dh_zero  = st->obs_dh_zero;
-    st->tape_obs_dh_small = st->obs_dh_small;
-    st->tape_obs_h_low    = st->obs_h_low;
-    st->tape_obs_scale    = st->obs_scale;
-    st->tape_obs_window   = st->obs_window;
+    TraceRecordingBinding *binding = g_emit_stream;
+    if (st->obs_dh_zero  == binding->obs_dh_zero  &&
+        st->obs_dh_small == binding->obs_dh_small &&
+        st->obs_h_low    == binding->obs_h_low    &&
+        st->obs_scale    == binding->obs_scale    &&
+        st->obs_window   == binding->obs_window) return;
+    binding->obs_dh_zero  = st->obs_dh_zero;
+    binding->obs_dh_small = st->obs_dh_small;
+    binding->obs_h_low    = st->obs_h_low;
+    binding->obs_scale    = st->obs_scale;
+    binding->obs_window   = st->obs_window;
     /* One field per tp_printf: its staging buffer is 128 bytes and five
      * %.17g fields in one call could silently truncate the record. */
-    tp_puts("O cfg ");
-    tp_printf("%.17g ", st->tape_obs_dh_zero);
-    tp_printf("%.17g ", st->tape_obs_dh_small);
-    tp_printf("%.17g ", st->tape_obs_h_low);
-    tp_printf("%d ",    st->tape_obs_window);
-    tp_printf("%.17g\n", st->tape_obs_scale);
+    emit_tag("O");
+    tp_puts("cfg ");
+    tp_printf("%.17g ", binding->obs_dh_zero);
+    tp_printf("%.17g ", binding->obs_dh_small);
+    tp_printf("%.17g ", binding->obs_h_low);
+    tp_printf("%d ",    binding->obs_window);
+    tp_printf("%.17g\n", binding->obs_scale);
 }
 
 /* `set_observer_window of ["x", n]` — the per-binding override, recorded at
@@ -1245,7 +1609,8 @@ void trace_obs_window_binding(const char *name, int n) {
     if (!name || !tape_emit_begin()) return;
     obs_cfg_sync();
     emit_scope_transition();
-    tp_puts("O win ");
+    emit_tag("O");
+    tp_puts("win ");
     tp_puts(name);
     tp_printf(" %d\n", n);
     tape_emit_end();
@@ -1259,11 +1624,29 @@ static void emit_header(void) {
     g_rec_at = g_out_len;
     tp_printf("V %d %s\n", TRACE_FORMAT_VERSION, EIGENSCRIPT_VERSION);
     sink_flush();
-    g_last_scope_serial = 0;
-    g_last_scope_native = 0;
-    /* A session starts from the defaults on the tape: obs_cfg_sync emits an
-     * `O cfg` for whatever the state already carries before the first L/A. */
-    obs_cfg_reset();
+    /* Every stream starts from the tape defaults at V, independently of
+     * which sibling most recently announced the shared state's knobs. */
+    if (g_tape_session == UINT64_MAX) {
+        fprintf(stderr, "trace: recording session identity space exhausted\n");
+        abort();
+    }
+    g_tape_session++;
+    g_stream_next = 1;
+    recording_keys_clear_locked();
+    g_stream_opener_token = eigs_current ? eigs_current->trace_attachment_token : 0;
+    g_native_opener_token = 0;
+    if (!eigs_current) {
+        g_native_session_token = recording_token_locked();
+        g_native_opener_token = g_native_session_token;
+    }
+    recording_binding_reset(&g_native_recording, 0);
+    if (eigs_current) {
+        (void)recording_declare_locked(origin_current_locked());
+    } else {
+        g_rec_at = g_out_len;
+        tp_printf("B 0 %llu 0 0 root -\n", (unsigned long long)g_native_opener_token);
+        sink_flush();
+    }
 }
 
 void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
@@ -1271,8 +1654,6 @@ void trace_set_sink(void (*cb)(const char *, size_t, void *), void *ud) {
     if (cb) {
         g_trace_sink = cb;
         g_trace_sink_ud = ud;
-        g_last_line = -1;
-        g_line_dirty = 0;
         trace_enabled_store(1);
         trace_arm_history_all();   /* a tape records every name's assigns */
         emit_header();             /* commits the V record to the new sink */
@@ -1368,224 +1749,331 @@ void trace_init(void) {
  * A records are skipped — the contract is that nondet outcomes appear in
  * the same order both runs, not that line numbers line up exactly. */
 
-static FILE *g_replay_fp = NULL;
-static char *g_replay_line = NULL;     /* growable read buffer */
-static size_t g_replay_cap = 0;
-static int   g_replay_strict = 0;      /* EIGS_REPLAY_STRICT=1: mismatch is fatal */
+typedef struct ReplayAssociation {
+    uint64_t id;
+    TraceAssociation data;
+    struct ReplayAssociation *next;
+} ReplayAssociation;
+typedef struct ReplayClaim {
+    uint64_t token, state, id, spawn_next;
+    uint64_t recorded_lifetime, session;
+    int retired;
+    struct ReplayClaim *next;
+} ReplayClaim;
+typedef struct ReplayPending {
+    uint64_t stream_id;
+    char *name, *value;
+    struct ReplayPending *next;
+} ReplayPending;
 
-/* Embed replay source (trace_set_replay_mem): the whole tape as bytes,
- * copied in (the embedder's buffer may go away). The freestanding
- * counterpart of EIGS_REPLAY — EigenOS M11 reads the journal from its
- * store and hands it here. */
-static char  *g_replay_mem = NULL;
-static size_t g_replay_mem_len = 0;
-static size_t g_replay_mem_pos = 0;
+/* A source owns everything needed to resume it. Pending IDs are implicitly
+ * keyed by (this context's generation, session, stream); a namespace advances
+ * only after all its pending values have been consumed. Claims retain scalar
+ * lifetime correspondence across V, never a live thread/state pointer. */
+typedef struct ReplayContext {
+    FILE *file;
+    char *memory;
+    size_t memory_len, memory_pos;
+    char *line;
+    size_t line_cap;
+    int strict, eof, boundary, read_failed;
+    uint64_t generation, session;
+    uint64_t owner_token, owner_lifetime;
+    ReplayAssociation *associations;
+    ReplayClaim *claims;
+    ReplayPending *pending;
+} ReplayContext;
+static ReplayContext *g_replay_file;
+static ReplayContext *g_replay_memory;
+static ReplayContext *g_replay_active;
+static uint64_t g_replay_generation;
+static __thread uint64_t g_native_replay_token;
 
-/* #1142: the OS thread (and, when known, the EigsState) that opened the
- * replay tape. Nondet builtins on any other thread raise; eigs_replay_take
- * additionally refuses a state that is not the opener. */
-static pthread_t   g_replay_owner_tid;
-static EigsState  *g_replay_owner_state = NULL;
-static int         g_replay_owner_valid = 0;
+static void replay_associations_clear(ReplayContext *ctx) {
+    while (ctx->associations) {
+        ReplayAssociation *next = ctx->associations->next;
+        free((char *)ctx->associations->data.key_hex);
+        free(ctx->associations);
+        ctx->associations = next;
+    }
+}
 
-static void replay_note_owner(void) {
-    g_replay_owner_tid = pthread_self();
-    g_replay_owner_state = eigs_current ? eigs_current->state : NULL;
-    g_replay_owner_valid = 1;
+static void replay_context_free(ReplayContext *ctx) {
+    if (!ctx) return;
+#if !EIGENSCRIPT_FREESTANDING
+    if (ctx->file) fclose(ctx->file);
+#endif
+    free(ctx->memory);
+    free(ctx->line);
+    while (ctx->pending) {
+        ReplayPending *next = ctx->pending->next;
+        free(ctx->pending->name); free(ctx->pending->value);
+        free(ctx->pending); ctx->pending = next;
+    }
+    replay_associations_clear(ctx);
+    while (ctx->claims) {
+        ReplayClaim *next = ctx->claims->next;
+        free(ctx->claims);
+        ctx->claims = next;
+    }
+    free(ctx);
+}
+
+static void replay_note_owner(ReplayContext *ctx) {
+    if (g_replay_generation == UINT64_MAX) {
+        fprintf(stderr, "trace: replay source identity space exhausted\n");
+        abort();
+    }
+    ctx->generation = ++g_replay_generation;
+    ctx->session = 1;
+    if (eigs_current) ctx->owner_token = eigs_current->trace_attachment_token;
+    else {
+        /* One OS-thread lifetime, not one install: suspending a file for a
+         * memory tape must not change that file owner's identity. */
+        if (!g_native_replay_token) g_native_replay_token = recording_token_locked();
+        ctx->owner_token = g_native_replay_token;
+    }
+}
+
+static uint64_t replay_caller_token(void) {
+    return eigs_current ? eigs_current->trace_attachment_token : g_native_replay_token;
+}
+
+static ReplayAssociation *replay_association_locked(ReplayContext *ctx, uint64_t id) {
+    for (ReplayAssociation *row = ctx->associations; row; row = row->next)
+        if (row->id == id) return row;
+    return NULL;
+}
+
+static ReplayClaim *replay_claim_locked(ReplayContext *ctx, uint64_t token) {
+    for (ReplayClaim *claim = ctx->claims; claim; claim = claim->next)
+        if (claim->token == token) return claim;
+    return NULL;
+}
+
+static void replay_forget_origin_locked(uint64_t token) {
+    ReplayContext *contexts[2] = {g_replay_file, g_replay_memory};
+    for (int i = 0; i < 2; i++) {
+        ReplayContext *ctx = contexts[i];
+        if (!ctx) continue;
+        ReplayClaim **slot = &ctx->claims;
+        while (*slot && (*slot)->token != token) slot = &(*slot)->next;
+        if (*slot) {
+            ReplayClaim *old = *slot;
+            if (old->session == ctx->session) {
+                /* Reserve this session's ID/key even after detach; a new
+                 * attachment cannot steal a consumed stream's identity. */
+                old->retired = 1;
+            } else {
+                *slot = old->next;
+                free(old);
+            }
+        }
+    }
+}
+
+static int replay_origin_claimed_locked(uint64_t token) {
+    return (g_replay_file && replay_claim_locked(g_replay_file, token)) ||
+           (g_replay_memory && replay_claim_locked(g_replay_memory, token));
+}
+
+static int replay_key_available_locked(const char *hex, uint64_t token) {
+    ReplayContext *ctx = g_replay_active;
+    if (!ctx) return 1;
+    for (ReplayClaim *claim = ctx->claims; claim; claim = claim->next) {
+        if (claim->session != ctx->session) continue;
+        ReplayAssociation *row = replay_association_locked(ctx, claim->id);
+        if (claim->token != token && row && row->data.key_hex &&
+            strcmp(row->data.key_hex, hex) == 0) return 0;
+    }
+    return 1;
+}
+
+/* Consume `<kind> <uint64> ` and return the payload.  Signs, overflow,
+ * missing digits and missing separators are malformed rather than aliases. */
+static int replay_record_prefix(ReplayContext *ctx, char kind, uint64_t *id, char **payload) {
+    char *p = ctx->line;
+    if (p[0] != kind || p[1] != ' ') return 0;
+    p += 2;
+    if (*p < '0' || *p > '9') return -1;
+    uint64_t n = 0;
+    char *end = p;
+    while (*end >= '0' && *end <= '9') {
+        unsigned digit = (unsigned)(*end - '0');
+        if (n > (UINT64_MAX - digit) / 10) return -1;
+        n = n * 10 + digit;
+        end++;
+    }
+    /* UINT64_MAX is the allocator's failure sentinel, not a stream id. */
+    if (n == UINT64_MAX || *end != ' ') return -1;
+    *id = n;
+    *payload = end + 1;
+    return **payload ? 1 : -1;
+}
+
+static void replay_malformed_id(ReplayContext *ctx) {
+    fprintf(stderr, "trace: malformed v5 stream id in record '%s'; refusing to replay\n",
+            ctx->line ? ctx->line : "");
+#if EIGENSCRIPT_FREESTANDING
+    abort();
+#else
+    _exit(3);
+#endif
+}
+
+static void replay_malformed_value(const char *value) {
+    fprintf(stderr, "trace: malformed v5 stream id or N value '%s'; refusing to replay\n",
+            value ? value : "");
+#if EIGENSCRIPT_FREESTANDING
+    abort();
+#else
+    _exit(3);
+#endif
+}
+
+static int replay_value_is_marker(const char *value) {
+    return value && (value[0] == '<' || (unsigned char)value[0] == 0xE2);
 }
 
 int trace_replay_off_owner_thread(void) {
     tape_lock();
-    int off = g_replay_enabled_storage && g_replay_owner_valid
-              && !pthread_equal(pthread_self(), g_replay_owner_tid);
+    int off = g_replay_active &&
+              replay_caller_token() != g_replay_active->owner_token;
     tape_unlock();
     return off;
 }
 
 int trace_replay_refuse_off_owner(const char *fn) {
-    if (!trace_replay_off_owner_thread()) return 0;
-    rt_error(EK_IO, 0,
-        "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
-        "boundary; see docs/TRACE.md)", fn ? fn : "nondet");
-    return 1;
+    (void)fn;
+    return 0; /* Key/causal correspondence is resolved at TAKE, not by pthread. */
 }
 
-static int replay_is_owner_state(void) {
-    if (!g_replay_owner_valid) return 0;
-    if (!g_replay_owner_state) return 1; /* CLI opened before attach */
-    return eigs_current && eigs_current->state == g_replay_owner_state;
-}
-
-/* #411: consume and verify the tape's V header(s). Defined below
- * read_tape_line; prints the refusal reason on failure. */
-static int read_tape_line(void);
-static int replay_check_header(void);
-static int replay_vline_ok(void);
+/* Context-local parser functions never borrow the active source's buffer. */
+static int read_tape_line(ReplayContext *ctx);
+static int replay_check_header(ReplayContext *ctx);
+static int replay_vline_ok(ReplayContext *ctx);
 
 int trace_set_replay_mem(const char *bytes, size_t len, int strict) {
     tape_lock();
     if (!bytes) {
-        free(g_replay_mem);
-        g_replay_mem = NULL;
-        g_replay_mem_len = 0;
-        g_replay_mem_pos = 0;
-        if (!g_replay_fp) {
-            replay_enabled_store(0);
-            g_replay_owner_valid = 0;
-            g_replay_owner_state = NULL;
-        }
+        ReplayContext *old = g_replay_memory;
+        g_replay_memory = NULL;
+        g_replay_active = g_replay_file;
+        replay_enabled_store(g_replay_active != NULL);
+        replay_context_free(old);
         tape_unlock();
         return 1;
     }
 
-    char *nm = malloc(len > 0 ? len : 1);
-    if (!nm) { tape_unlock(); return 0; }   /* prior replay state untouched */
-    memcpy(nm, bytes, len);
-
-    /* Stage the new tape and validate EVERY session header up front (#411):
-     * the first line must be a matching V record, and so must the header of
-     * each appended session (a journal written across several sink installs).
-     * Deferring a later header to the take loop would turn a refusable
-     * install into a mid-eval abort of the host process — the return-0
-     * contract exists so the embedder gets to handle refusal. */
-    char  *om = g_replay_mem;
-    size_t ol = g_replay_mem_len, op = g_replay_mem_pos;
-    int    os = g_replay_strict, oe = g_replay_enabled;
-    pthread_t ot = g_replay_owner_tid;
-    EigsState *ost = g_replay_owner_state;
-    int ov = g_replay_owner_valid;
-    g_replay_mem = nm;
-    g_replay_mem_len = len;
-    g_replay_mem_pos = 0;
-    g_replay_strict = strict;
-    int ok = replay_check_header();
-    while (ok) {
-        if (read_tape_line() < 0) break;
-        /* Any V-shaped line is a session header (or a torn one) —
-         * replay_vline_ok refuses the malformed shapes loudly. */
-        if (g_replay_line[0] == 'V') ok = replay_vline_ok();
-    }
-    if (!ok) {
-        /* Version-and-reject (#411), atomically: the refused tape is
-         * discarded and the PREVIOUS replay state — tape, strict mode,
-         * enablement — survives untouched, never a half-armed replay. */
-        free(nm);
-        g_replay_mem = om;
-        g_replay_mem_len = ol;
-        g_replay_mem_pos = op;
-        g_replay_strict = os;
-        replay_enabled_store(oe);
-        g_replay_owner_tid = ot;
-        g_replay_owner_state = ost;
-        g_replay_owner_valid = ov;
+    ReplayContext *candidate = calloc(1, sizeof(*candidate));
+    if (!candidate) { tape_unlock(); return 0; }
+    candidate->memory = malloc(len ? len : 1);
+    if (!candidate->memory) {
+        replay_context_free(candidate);
         tape_unlock();
         return 0;
     }
-    free(om);
-    g_replay_mem_pos = 0;
+    memcpy(candidate->memory, bytes, len);
+    candidate->memory_len = len;
+    candidate->strict = strict;
+    /* Validate all V headers using only candidate-owned cursor/parser state.
+     * No active pointer, pending value, claim or strict flag changes on 0. */
+    int ok = replay_check_header(candidate);
+    size_t first_body = candidate->memory_pos;
+    while (ok) {
+        int n = read_tape_line(candidate);
+        if (n < 0) { if (candidate->read_failed) ok = 0; break; }
+        if (candidate->line[0] == 'V') ok = replay_vline_ok(candidate);
+    }
+    if (!ok) {
+        replay_context_free(candidate);
+        tape_unlock();
+        return 0;
+    }
+    candidate->memory_pos = first_body;
+    replay_note_owner(candidate);
+    ReplayContext *old = g_replay_memory;
+    g_replay_memory = candidate;
+    g_replay_active = candidate;
     replay_enabled_store(1);
-    replay_note_owner();
+    replay_context_free(old);
     tape_unlock();
     return 1;
 }
 
 static void trace_replay_init(void) {
 #if EIGENSCRIPT_FREESTANDING
-    return;   /* tape files need a filesystem; replay is a hosted tool */
+    return;
 #else
     const char *path = getenv("EIGS_REPLAY");
     if (!path || !*path) return;
-    g_replay_fp = fopen(path, "r");
-    if (!g_replay_fp) {
-        fprintf(stderr, "trace: cannot open EIGS_REPLAY=%s: %s\n",
-                path, strerror(errno));
-        /* Fatal, like every other way of not honoring the requested
-         * replay (#411): a warn-and-run-live here is the same silent
-         * divergence a mismatched header would be — worse, it's the
-         * most common operator error (typo'd/deleted tape path). */
+    ReplayContext *ctx = xcalloc(1, sizeof(*ctx));
+    ctx->file = fopen(path, "r");
+    if (!ctx->file) {
+        fprintf(stderr, "trace: cannot open EIGS_REPLAY=%s: %s\n", path, strerror(errno));
+        replay_context_free(ctx);
         _exit(3);
     }
-    g_replay_strict = eigs_env_flag("EIGS_REPLAY_STRICT");
-    if (!replay_check_header()) {
-        /* Version-and-reject (#411): falling back to a live run would be
-         * the exact silent divergence the header exists to prevent — the
-         * user asked for a replay, so a tape this binary can't honor is
-         * fatal. Same _exit rationale as the strict divergence abort. */
+    ctx->strict = eigs_env_flag("EIGS_REPLAY_STRICT");
+    if (!replay_check_header(ctx)) {
+        replay_context_free(ctx);
         _exit(3);
     }
+    tape_lock();
+    replay_note_owner(ctx);
+    g_replay_file = ctx;
+    /* A prior explicit memory source keeps precedence, if present. */
+    g_replay_active = g_replay_memory ? g_replay_memory : ctx;
     replay_enabled_store(1);
-    replay_note_owner();
-#endif /* !EIGENSCRIPT_FREESTANDING */
+    tape_unlock();
+#endif
 }
 
 static void replay_shutdown(void) {
-#if !EIGENSCRIPT_FREESTANDING
-    if (g_replay_fp) { fclose(g_replay_fp); g_replay_fp = NULL; }
-#endif
-    free(g_replay_line); g_replay_line = NULL; g_replay_cap = 0;
-    free(g_replay_mem);  g_replay_mem = NULL;
-    g_replay_mem_len = 0; g_replay_mem_pos = 0;
+    ReplayContext *file = g_replay_file, *memory = g_replay_memory;
+    g_replay_active = g_replay_file = g_replay_memory = NULL;
     replay_enabled_store(0);
-    g_replay_owner_valid = 0;
-    g_replay_owner_state = NULL;
+    replay_context_free(memory);
+    replay_context_free(file);
 }
 
-/* getline that does not need _GNU_SOURCE — keeps a growable buffer in the
- * file-static slot, reads up to and including the next newline (or EOF).
- * Returns the length (newline NOT included, NUL-terminated) or -1 at EOF. */
-static int read_tape_line(void) {
-    if (g_replay_mem) {
-        /* serve the next newline-terminated line from the memory tape */
-        if (g_replay_mem_pos >= g_replay_mem_len) return -1;
-        if (g_replay_cap < 256) {
-            g_replay_cap = 256;
-            g_replay_line = realloc(g_replay_line, g_replay_cap);
-            if (!g_replay_line) { g_replay_cap = 0; return -1; }
-        }
-        size_t len = 0;
-        while (g_replay_mem_pos < g_replay_mem_len) {
-            char c = g_replay_mem[g_replay_mem_pos++];
-            if (c == '\n') break;
-            if (len + 2 > g_replay_cap) {
-                size_t nc = g_replay_cap * 2;
-                char *nb = realloc(g_replay_line, nc);
-                if (!nb) return -1;
-                g_replay_line = nb; g_replay_cap = nc;
-            }
-            g_replay_line[len++] = c;
-        }
-        g_replay_line[len] = '\0';
-        return (int)len;
-    }
-    if (!g_replay_fp) return -1;
-    if (g_replay_cap < 256) {
-        g_replay_cap = 256;
-        g_replay_line = realloc(g_replay_line, g_replay_cap);
-        if (!g_replay_line) { g_replay_cap = 0; return -1; }
-    }
+/* getline without _GNU_SOURCE. Allocation/I/O failure is distinct from EOF;
+ * a candidate install refuses and an active source reports failure. */
+static int read_tape_line(ReplayContext *ctx) {
+    if (ctx->read_failed) return -1;
     size_t len = 0;
-    int c;
-    while ((c = fgetc(g_replay_fp)) != EOF) {
-        if (len + 2 > g_replay_cap) {
-            size_t nc = g_replay_cap * 2;
-            char *nb = realloc(g_replay_line, nc);
-            if (!nb) return -1;
-            g_replay_line = nb; g_replay_cap = nc;
+    for (;;) {
+        if (len + 2 > ctx->line_cap) {
+            size_t nc = ctx->line_cap ? ctx->line_cap * 2 : 256;
+            char *nb = realloc(ctx->line, nc);
+            if (!nb) { ctx->read_failed = 1; return -1; }
+            ctx->line = nb; ctx->line_cap = nc;
         }
-        if (c == '\n') break;
-        g_replay_line[len++] = (char)c;
+        int c = EOF;
+        if (ctx->memory) {
+            if (ctx->memory_pos < ctx->memory_len)
+                c = (unsigned char)ctx->memory[ctx->memory_pos++];
+        }
+#if !EIGENSCRIPT_FREESTANDING
+        else if (ctx->file) {
+            c = fgetc(ctx->file);
+            if (c == EOF && ferror(ctx->file)) { ctx->read_failed = 1; return -1; }
+        }
+#endif
+        if (c == EOF || c == '\n') {
+            ctx->line[len] = '\0';
+            return c == EOF && !len ? -1 : (int)len;
+        }
+        ctx->line[len++] = (char)c;
     }
-    if (c == EOF && len == 0) return -1;
-    g_replay_line[len] = '\0';
-    return (int)len;
 }
 
-/* #411: validate the V record sitting in g_replay_line against this
+/* #411: validate the V record in this context's parser buffer against this
  * binary. One rule, no migration path: format AND runtime version must
  * match exactly, else the tape is refused with the reason on stderr.
  * (The tape is plain text — a deliberate override is editing line 1.) */
-static int replay_vline_ok(void) {
-    const char *p = g_replay_line;
+static int replay_vline_ok(ReplayContext *ctx) {
+    const char *p = ctx->line;
     if (p[0] != 'V' || p[1] != ' ') {
         if (p[0] == 'V') {
             /* A V-shaped line that isn't `V ` is a torn/corrupted header
@@ -1624,13 +2112,13 @@ static int replay_vline_ok(void) {
 }
 
 /* #411: the first record of a tape must be a matching V header. */
-static int replay_check_header(void) {
-    if (read_tape_line() < 0) {
+static int replay_check_header(ReplayContext *ctx) {
+    if (read_tape_line(ctx) < 0) {
         fprintf(stderr, "trace: empty replay tape — refusing to replay "
                 "(docs/TRACE.md)\n");
         return 0;
     }
-    return replay_vline_ok();
+    return replay_vline_ok(ctx);
 }
 
 /* Un-escape a tape-format quoted string in place. Reads the byte stream
@@ -1832,87 +2320,245 @@ static Value *parse_value(const char *s) {
     return v;
 }
 
+static void replay_add_association_locked(ReplayContext *ctx, uint64_t id,
+                                          const char *payload) {
+    TraceAssociation parsed;
+    if (!trace_parse_association(payload, &parsed) ||
+        ((parsed.kind == 'r') != (id == 0)) || replay_association_locked(ctx, id))
+        replay_malformed_id(ctx);
+    for (ReplayAssociation *old = ctx->associations; old; old = old->next) {
+        if (old->data.lifetime == parsed.lifetime ||
+            (old->data.key_hex && parsed.key_hex &&
+             strcmp(old->data.key_hex, parsed.key_hex) == 0))
+            replay_malformed_id(ctx);
+        if (parsed.kind == 'c' && old->data.kind == 'c' &&
+            old->data.parent == parsed.parent &&
+            old->data.occurrence == parsed.occurrence) replay_malformed_id(ctx);
+    }
+    if (parsed.kind == 'c') {
+        ReplayAssociation *parent = replay_association_locked(ctx, parsed.parent);
+        if (!parent || parent->id == id || parent->data.state != parsed.state)
+            replay_malformed_id(ctx);
+    }
+    ReplayAssociation *row = xcalloc(1, sizeof(*row));
+    row->id = id;
+    row->data = parsed;
+    if (parsed.key_hex) row->data.key_hex = xstrdup(parsed.key_hex);
+    row->next = ctx->associations;
+    ctx->associations = row;
+    /* Remember the first opener even if it makes no TAKE before advance. */
+    if (ctx->session == 1 && id == 0) ctx->owner_lifetime = parsed.lifetime;
+}
+
+/* Read one useful record without materializing another attachment's Value.
+ * A validated V is retained as a boundary; only explicit advance clears it. */
+static int replay_scan_locked(ReplayContext *ctx) {
+    if (ctx->eof || ctx->boundary || ctx->read_failed) return 0;
+    for (;;) {
+        int len = read_tape_line(ctx);
+        if (len < 0) { ctx->eof = !ctx->read_failed; return 0; }
+        if (len && ctx->line[0] == 'V') {
+            if (!replay_vline_ok(ctx)) {
+#if EIGENSCRIPT_FREESTANDING
+                abort();
+#else
+                _exit(3);
+#endif
+            }
+            ctx->boundary = 1;
+            return 0;
+        }
+        if (len < 2 || !strchr("BLASNO", ctx->line[0])) continue;
+        uint64_t id = 0;
+        char *payload = NULL;
+        if (replay_record_prefix(ctx, ctx->line[0], &id, &payload) <= 0)
+            replay_malformed_id(ctx);
+        if (ctx->line[0] == 'B') {
+            replay_add_association_locked(ctx, id, payload);
+            return 1;
+        }
+        if (!replay_association_locked(ctx, id)) replay_malformed_id(ctx);
+        if (ctx->line[0] != 'N') continue;
+        char *eq = strchr(payload, '=');
+        if (!eq || eq == payload) replay_malformed_id(ctx);
+        *eq = 0;
+        ReplayPending *pending = xcalloc(1, sizeof(*pending));
+        pending->stream_id = id;
+        pending->name = xstrdup(payload);
+        pending->value = xstrdup(eq + 1);
+        ReplayPending **tail = &ctx->pending;
+        while (*tail) tail = &(*tail)->next;
+        *tail = pending;
+        return 1;
+    }
+}
+
+static ReplayClaim *replay_claim_association_locked(ReplayContext *ctx,
+                                                   uint64_t token, uint64_t state,
+                                                   ReplayAssociation *row) {
+    if (!row || !token || ((state == 0) != (row->data.state == 0))) return NULL;
+    ReplayClaim *reuse = NULL;
+    for (ReplayClaim *claim = ctx->claims; claim; claim = claim->next) {
+        if (claim->token == token) {
+            if (claim->retired) return NULL;
+            if (claim->session == ctx->session)
+                return claim->id == row->id ? claim : NULL;
+            reuse = claim;
+        }
+        if (claim->session != ctx->session) continue;
+        if (claim->id == row->id) return NULL;
+        ReplayAssociation *old = replay_association_locked(ctx, claim->id);
+        if ((claim->state == state) != (old->data.state == row->data.state))
+            return NULL;
+    }
+    ReplayClaim *claim = reuse;
+    if (!claim) {
+        claim = xcalloc(1, sizeof(*claim));
+        claim->next = ctx->claims;
+        ctx->claims = claim;
+    }
+    claim->token = token;
+    claim->state = state;
+    claim->id = row->id;
+    claim->spawn_next = row->data.spawn_base;
+    claim->recorded_lifetime = row->data.lifetime;
+    claim->session = ctx->session;
+    return claim;
+}
+
+static ReplayClaim *replay_resolve_origin_locked(ReplayContext *ctx,
+                                                TraceStreamOrigin *origin) {
+    uint64_t token = origin ? origin->token : replay_caller_token();
+    uint64_t state = origin ? origin->state : 0;
+    ReplayClaim *claim = replay_claim_locked(ctx, token);
+    if (claim && claim->session == ctx->session) return claim;
+    int root = token && token == ctx->owner_token;
+    uint64_t lifetime = claim ? claim->recorded_lifetime
+                             : (root ? ctx->owner_lifetime : 0);
+    if (!root && !lifetime && (!origin || !origin->key_hex)) return NULL;
+    for (;;) {
+        for (ReplayAssociation *row = ctx->associations; row; row = row->next) {
+            int continuation = lifetime && row->data.lifetime == lifetime;
+            int opener = root && ctx->session == 1 && row->id == 0;
+            int keyed = origin && origin->key_hex && row->data.key_hex &&
+                        (row->data.kind == 'h' || row->data.kind == 'r') &&
+                        strcmp(row->data.key_hex, origin->key_hex) == 0;
+            if (continuation || opener || keyed)
+                return replay_claim_association_locked(ctx, token, state, row);
+        }
+        if (!replay_scan_locked(ctx)) return NULL;
+    }
+}
+
+static int replay_bind_origin_locked(TraceStreamOrigin *origin) {
+    return g_replay_active && replay_resolve_origin_locked(g_replay_active, origin) != NULL;
+}
+
+static int replay_prepare_child_locked(TraceStreamOrigin *parent,
+                                       TraceStreamOrigin *child) {
+    ReplayContext *ctx = g_replay_active;
+    if (!ctx) return 0;
+    ReplayClaim *p = replay_resolve_origin_locked(ctx, parent);
+    if (!p || p->spawn_next == UINT64_MAX - 1) return 0;
+    uint64_t occurrence = ++p->spawn_next;
+    for (;;) {
+        for (ReplayAssociation *row = ctx->associations; row; row = row->next) {
+            if (row->data.kind == 'c' && row->data.parent == p->id &&
+                row->data.occurrence == occurrence)
+                return replay_claim_association_locked(ctx, child->token, child->state, row) != NULL;
+        }
+        if (!replay_scan_locked(ctx)) return 0;
+    }
+}
+
+/* Host must park/join participating producers before calling. Reading another
+ * thread's VM depth would itself be unsynchronized; only the caller's ordinary
+ * VM/native boundary is mechanically checked here. No scheduler/exit change. */
+int trace_replay_advance_session(void) {
+    if (eigs_current && ((eigs_current->vm && eigs_current->vm->execute_depth) ||
+                         eigs_current->native_call_depth)) return 0;
+    tape_lock();
+    ReplayContext *ctx = g_replay_active;
+    if (!ctx) { tape_unlock(); return 0; }
+    /* Pending means there is still an observable current-session outcome.
+     * Read-ahead may create one for a sibling, but can never discard it. */
+    while (!ctx->pending && replay_scan_locked(ctx)) {}
+    if (ctx->pending || !ctx->boundary || ctx->read_failed || ctx->session == UINT64_MAX) {
+        tape_unlock();
+        return 0;
+    }
+    replay_associations_clear(ctx);
+    ReplayClaim **slot = &ctx->claims;
+    while (*slot) {
+        ReplayClaim *claim = *slot;
+        if (claim->retired) { *slot = claim->next; free(claim); }
+        else slot = &claim->next;
+    }
+    ctx->session++;
+    ctx->boundary = 0;
+    ctx->eof = 0;
+    /* Keep scalar lifetime claims for continuing attachments. Each is
+     * re-associated lazily against this session's metadata before use. */
+    tape_unlock();
+    return 1;
+}
+
 int trace_replay_take(const char *fn, Value **out) {
     if (!out) return 0;
     replay_take_lock();
-    if (!g_replay_enabled || (!g_replay_fp && !g_replay_mem)) {
+    ReplayContext *ctx = g_replay_active;
+    if (!ctx) { replay_take_unlock(); return 0; }
+    ReplayClaim *claim = replay_resolve_origin_locked(ctx, origin_current_locked());
+    if (!claim) {
         replay_take_unlock();
-        return 0;
-    }
-    /* #1142: embed API — a state that did not open the tape cannot consume
-     * the single-consumer N stream. Unlock before rt_error (never hold the
-     * tape mutex across a raise). */
-    if (!replay_is_owner_state()) {
-        replay_take_unlock();
-        rt_error(EK_IO, 0,
-            "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
-            "boundary; see docs/TRACE.md)", fn ? fn : "nondet");
+        if (eigs_current) rt_error(EK_IO, 0, "%s: replay stream has no host/causal binding",
+                                   fn ? fn : "nondet");
+        else fprintf(stderr, "trace: replay producer has no host/causal binding\n");
         *out = make_null();
         return 1;
     }
+    uint64_t wanted = claim->id;
+    ReplayPending **slot;
     for (;;) {
-        int len = read_tape_line();
-        if (len < 0) {
-            /* Tape exhausted — turn off replay so future calls skip the
-             * read overhead, and let the builtin run normally. */
-            replay_shutdown();
-            replay_take_unlock();
-            return 0;
-        }
-        if (len >= 1 && g_replay_line[0] == 'V') {
-            /* Mid-stream header: a concatenated tape (journal appended
-             * across sessions/sink installs). Every session's header must
-             * match this binary — a mismatch OR a torn/malformed V line is
-             * always fatal, strict or not (#411): continuing would splice
-             * another version's (or an unverifiable) session's records
-             * into this replay. Memory tapes were fully pre-scanned at
-             * install, so this fires only for EIGS_REPLAY files. */
-            if (!replay_vline_ok()) {
-#if EIGENSCRIPT_FREESTANDING
-                abort();
-#else
-                _exit(3);
-#endif
-            }
-            continue;
-        }
-        if (len < 2 || g_replay_line[0] != 'N' || g_replay_line[1] != ' ')
-            continue;  /* skip L, A, blanks, anything else */
-
-        char *p = g_replay_line + 2;
-        char *eq = strchr(p, '=');
-        if (!eq) continue;
-        *eq = '\0';
-        const char *rec_name = p;
-        const char *rec_val  = eq + 1;
-
-        if (fn && strcmp(rec_name, fn) != 0) {
-            if (g_replay_strict) {
-                fprintf(stderr, "trace: replay name mismatch — tape has '%s', "
-                        "program called '%s' (EIGS_REPLAY_STRICT — aborting)\n",
-                        rec_name, fn);
-                /* _exit, not exit: an abort must not run atexit teardown
-                 * (half-executed program state) and keeps the status
-                 * deterministic under sanitizers, whose leak checker
-                 * would otherwise override the code at forced exits.
-                 * Freestanding has no _exit; abort() is a HAL root
-                 * (halt) and a strict mismatch on bare metal is a
-                 * panic by any name. */
-#if EIGENSCRIPT_FREESTANDING
-                abort();
-#else
-                _exit(3);
-#endif
-            }
-            fprintf(stderr, "trace: replay name mismatch — expected '%s', got '%s' (using anyway)\n",
-                    fn, rec_name);
-        }
-        Value *v = parse_value(rec_val);
-        if (!v) { replay_take_unlock(); return 0; }   /* unparseable — fall through to live source */
-        *out = v;
+        slot = &ctx->pending;
+        while (*slot && (*slot)->stream_id != wanted) slot = &(*slot)->next;
+        if (*slot || !replay_scan_locked(ctx)) break;
+    }
+    if (!*slot) {
+        int read_failed = ctx->read_failed;
         replay_take_unlock();
+        const char *reason = read_failed ? "cannot read its replay source"
+                                        : "has no matching recorded N value";
+        if (eigs_current)
+            rt_error(EK_IO, 0, "%s: replay stream %llu %s", fn ? fn : "nondet",
+                     (unsigned long long)wanted, reason);
+        else fprintf(stderr, "trace: replay stream %llu %s\n",
+                     (unsigned long long)wanted, reason);
+        *out = make_null();
         return 1;
     }
+    ReplayPending *hit = *slot;
+    *slot = hit->next;
+    if (fn && strcmp(hit->name, fn) != 0) {
+        if (ctx->strict) {
+            fprintf(stderr, "trace: replay name mismatch — tape has '%s', program called '%s' (EIGS_REPLAY_STRICT — aborting)\n", hit->name, fn);
+#if EIGENSCRIPT_FREESTANDING
+            abort();
+#else
+            _exit(3);
+#endif
+        }
+        fprintf(stderr, "trace: replay name mismatch — expected '%s', got '%s' (using anyway)\n",
+                fn, hit->name);
+    }
+    Value *v = parse_value(hit->value);
+    int marker = replay_value_is_marker(hit->value);
+    if (!v && !marker) replay_malformed_value(hit->value);
+    free(hit->name); free(hit->value); free(hit);
+    if (!v) { replay_take_unlock(); return 0; }
+    *out = v;
+    replay_take_unlock();
+    return 1;
 }
 
 /* #739: release THIS THREAD's prev-table. Idempotent, and a no-op with no
@@ -1987,6 +2633,7 @@ void trace_shutdown(void) {
     g_trace_sink = NULL;        /* shutdown-clear-sink */
     g_trace_sink_ud = NULL;
     trace_enabled_store(0);
+    recording_keys_clear_locked();
     replay_shutdown();
     /* Publish the wildcard BEFORE freeing names so an ACQUIRE of
      * g_arm_all == 1 skips arm_set_has (which would UAF). */
@@ -2009,17 +2656,17 @@ void trace_shutdown(void) {
 }
 
 void trace_line(int line) {
-    /* OP_LINE stores g_trace_current_line directly; this function is
-     * only called when a tape is open (g_trace_enabled). */
+    /* Replay correspondence comes from host/causal metadata, never LINE order. */
     if (!tape_emit_begin()) return;
     obs_cfg_sync();
-    if (line == g_last_line && !g_line_dirty) {
+    if (line == g_emit_stream->last_line && !g_emit_stream->line_dirty) {
         tape_emit_end();
         return;
     }
-    tp_printf("L %d\n", line);
-    g_last_line  = line;
-    g_line_dirty = 0;
+    emit_tag("L");
+    tp_printf("%d\n", line);
+    g_emit_stream->last_line = line;
+    g_emit_stream->line_dirty = 0;
     tape_emit_end();
 }
 
@@ -2092,12 +2739,12 @@ static void trace_assign_ex(const char *name, EigsSlot value, int filtered,
      * transitions only cost tape bytes at call boundaries that actually
      * assign. Replay skips S like A; only the stepper folds them. */
     emit_scope_transition();
-    tp_puts("A ");
+    emit_tag("A");
     tp_puts(name);
     tp_putc('=');
     write_slot(value);
     tp_putc('\n');
-    g_line_dirty = 1;
+    g_emit_stream->line_dirty = 1;
     tape_emit_end();
 }
 
@@ -2230,14 +2877,16 @@ static void write_value_ptr_full(Value *v, int *budget) {
 
 void trace_nondet_value(const char *fn, Value *v) {
     if (!tape_emit_begin()) return;
+    obs_cfg_sync();
+    emit_scope_transition();
     if (!fn) fn = "?";
-    tp_puts("N ");
+    emit_tag("N");
     tp_puts(fn);
     tp_putc('=');
     int budget = TRACE_NONDET_MAX;
     write_value_ptr_full(v, &budget);
     if (budget <= 0) tp_puts("…<truncated>");
     tp_putc('\n');
-    g_line_dirty = 1;
+    g_emit_stream->line_dirty = 1;
     tape_emit_end();
 }

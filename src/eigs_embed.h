@@ -209,11 +209,10 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
  * serves every co-located EigsState, each record is emitted under a
  * process-wide tape mutex, and eigs_close shuts the tape only when it
  * closes the last live state. Call eigs_trace_shutdown to drop the
- * sink/tape/replay reader explicitly. Replay is a single-consumer
- * stream until per-thread N streams exist: the OS thread that installed
- * the tape may take; a nondet builtin on any other thread, or
- * eigs_replay_take from a state that did not open the tape, raises the
- * same catchable error as recv-under-replay.
+ * sink/tape/replay reader explicitly. The exact opener lifetime owns stream
+ * zero; independent hosts bind stable keys and script children inherit
+ * parent/occurrence correspondence. Missing correspondence raises rather than
+ * selecting a stream by OS thread, state address or first-event order.
  *
  * NOTHING IS BUFFERED FOR YOU, and that is a promise, not an accident:
  * each record reaches the sink from inside the call that emitted it,
@@ -232,7 +231,10 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
  * EigsState is recording at that moment.
  *
  * eigs_set_replay_tape hands the whole tape back as the replay source
- * (bytes are copied; NULL clears). Returns 0 on OOM or when the tape is
+ * (bytes are copied; NULL restores a suspended file source, if any).
+ * File and memory sources own separate cursors, pending values, parser state,
+ * bindings and strictness; suspension does not rewind or discard any of them.
+ * Returns 0 on OOM or when the tape is
  * REFUSED: a tape whose version headers are missing, torn, or don't
  * match this runtime (format and version both) is never installed —
  * version-and-reject, no migration (#411, docs/TRACE.md; reason goes to
@@ -260,7 +262,21 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
  */
 typedef void (*EigsTraceSink)(const char *bytes, size_t len, void *ud);
 void eigs_set_trace_sink(EigsTraceSink cb, void *ud);
+/* Bind the current host attachment to a stable replay key. Call once before
+ * its first recording event/replay take, outside evaluation. The nonempty
+ * NUL-terminated key is copied (at most 1024 bytes). Keys must be unique per
+ * session; a refused duplicate/late binding returns 0 without changing the
+ * previous identity. Script-spawned workers bind by their parent/occurrence
+ * automatically and cannot be rebound. The opener needs no key. */
+int  eigs_trace_bind_stream(const char *key);
 int  eigs_set_replay_tape(const char *bytes, size_t len, int strict);
+/* Advance the active source to its next V namespace. Call only between
+ * evaluations after parking/joining every participating producer. Returns 0
+ * while any current-session N is unconsumed, at EOF, without a source, or
+ * from inside the caller's VM/native evaluation. A refusal preserves queued
+ * values; a successful advance preserves continuing lifetime correspondence.
+ * This is an explicit host action: ordinary TAKE never crosses V. */
+int  eigs_replay_advance_session(void);
 int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served */
 void eigs_trace_record_nondet(const char *name, EigsValue *v);
 

@@ -100,7 +100,7 @@ else
 fi
 
 # Exactly one N record per call: 2 lines + the EOF null = 3.
-NREC=$(grep -c '^N read_line=' "$TAPE")
+NREC=$(grep -c '^N [0-9][0-9]* read_line=' "$TAPE")
 [ "$NREC" = "3" ] \
     && ok "tape carries one N record per call (2 lines + EOF null)" \
     || fail "tape N-record count" "got $NREC"

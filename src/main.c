@@ -148,8 +148,6 @@ int main(int argc, char **argv) {
         return eigenscript_fmt(path, write_mode);
     }
 
-    trace_init();
-    atexit(trace_shutdown);
     /* #972: EIGS_OBS_GATE_STATS=1 also tallies observe-helper entries (the
      * per-unit verdict lines come from compile_ast); reported at exit so a
      * read-free program can be checked for `observe-calls 0`. */
@@ -162,6 +160,10 @@ int main(int argc, char **argv) {
      * which are EigsState bridge macros — attach before computing. */
     EigsState *eigs_st = eigs_state_new();
     eigs_thread_attach(eigs_st);
+    /* The CLI's main attachment is the tape opener. Native embedders that
+     * deliberately open a tape before attaching retain their separate zero. */
+    trace_init();
+    atexit(trace_shutdown);
     set_exe_dir(argc > 0 ? argv[0] : NULL);
 
     /* #660: SIGUSR1 live observer dump — an outside process can ask a

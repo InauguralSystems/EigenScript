@@ -1,0 +1,1 @@
+- Trace format v4 gives every non-header record a tape-local stream ID and replays nondeterministic inputs independently per CPU, embedded, or external/GPU stream.

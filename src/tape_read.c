@@ -42,10 +42,11 @@ static char *read_whole_file_priv(const char *path, long *out_len) {
     return buf;
 }
 
-NameHist *tape_hist_for(Tape *t, const char *name, uint32_t scope,
-                        int create) {
+NameHist *tape_hist_for_stream(Tape *t, const char *name,
+                               uint32_t scope, uint64_t stream,
+                               int create) {
     for (int i = 0; i < t->nnames; i++)
-        if (t->names[i].scope == scope &&
+        if (t->names[i].scope == scope && t->names[i].stream == stream &&
             strcmp(t->names[i].name, name) == 0) return &t->names[i];
     if (!create) return NULL;
     if (t->nnames == t->namecap) {
@@ -58,9 +59,15 @@ NameHist *tape_hist_for(Tape *t, const char *name, uint32_t scope,
     NameHist *h = &t->names[t->nnames++];
     h->name = name;
     h->scope = scope;
+    h->stream = stream;
     h->a = NULL;
     h->n = h->cap = 0;
     return h;
+}
+
+NameHist *tape_hist_for(Tape *t, const char *name, uint32_t scope,
+                        int create) {
+    return tape_hist_for_stream(t, name, scope, 0, create);
 }
 
 static int hist_push(NameHist *h, Assign a) {
@@ -99,8 +106,17 @@ ScopeInfo *tape_scope_info(const Tape *t, uint32_t serial) {
     return NULL;
 }
 
+
+ScopeInfo *tape_scope_info_stream(const Tape *t, uint32_t serial,
+                                  uint64_t stream) {
+    for (int i = 0; i < t->nscopes; i++)
+        if (t->scopes[i].serial == serial && t->scopes[i].stream == stream)
+            return (ScopeInfo *)&t->scopes[i];
+    return NULL;
+}
+
 static ScopeInfo *scope_add(Tape *t, uint32_t serial, const char *name,
-                            int depth, uint32_t parent) {
+                            int depth, uint32_t parent, uint64_t stream) {
     if (t->nscopes == t->scopecap) {
         int nc = t->scopecap ? t->scopecap * 2 : 16;
         ScopeInfo *ns = realloc(t->scopes, (size_t)nc * sizeof(ScopeInfo));
@@ -110,6 +126,7 @@ static ScopeInfo *scope_add(Tape *t, uint32_t serial, const char *name,
     }
     ScopeInfo *si = &t->scopes[t->nscopes++];
     si->serial = serial;
+    si->stream = stream;
     si->name = name;
     si->depth = depth;
     si->parent = parent;
@@ -193,6 +210,34 @@ static int obs_cfg_rec_ok(const ObsCfgRec *o, const char *line) {
     return obs_cfg_refuse(why, line);
 }
 
+typedef struct {
+    uint64_t id;
+    uint64_t key;              /* unique even when a later V restarts ids */
+    uint32_t stack[256];
+    int depth;
+    uint32_t scope;
+    int declared;
+    TraceAssociation association;
+} ParseStream;
+
+static ParseStream *parse_stream(ParseStream **streams, int *count, int *cap,
+                                 uint64_t *next_key, uint64_t id) {
+    for (int i = 0; i < *count; i++)
+        if ((*streams)[i].id == id) return &(*streams)[i];
+    if (*count == *cap) {
+        int nc = *cap ? *cap * 2 : 4;
+        ParseStream *ns = realloc(*streams, (size_t)nc * sizeof(**streams));
+        if (!ns) return NULL;
+        *streams = ns;
+        *cap = nc;
+    }
+    ParseStream *s = &(*streams)[(*count)++];
+    memset(s, 0, sizeof(*s));
+    s->id = id;
+    s->key = (*next_key)++;
+    return s;
+}
+
 /* Parse the NUL-split tape buffer into recs/steps/name histories.
  * Returns 0 on version refusal, 1 otherwise. */
 static int tape_parse(Tape *t, long len) {
@@ -205,41 +250,115 @@ static int tape_parse(Tape *t, long len) {
     if (!t->recs || !t->steps) return 0;
 
     int first = 1;
-    uint32_t sstack[256];       /* scope-serial stack (only assigning frames
-                                 * appear; overflow degrades to flat scope,
-                                 * never corrupts) */
-    int sdepth = 0;
-    uint32_t cur_scope = 0;
+    ParseStream *streams = NULL;
+    int nstreams = 0, streamcap = 0;
+    uint64_t next_stream_key = 0;
     char *p = t->tape, *end = t->tape + len;
     while (p < end) {
         char *nl = memchr(p, '\n', (size_t)(end - p));
         if (nl) *nl = '\0';
         if (first) {
-            if (!vline_ok(p)) return 0;
+            if (!vline_ok(p)) { free(streams); return 0; }
             first = 0;
         }
         StepRec r = {0};
         r.kind = p[0];
         r.step = t->nsteps > 0 ? t->nsteps - 1 : 0;
-        r.scope = cur_scope;
+        char *body = p + 2;
+        uint64_t stream_id = 0;
+        if (p[0] != 'V' && strchr("BLASNO", p[0])) {
+            if (p[1] != ' ' || *body < '0' || *body > '9') {
+                fprintf(stderr, "step: malformed v5 stream id in '%s'; refusing to step\n", p);
+                free(streams); return 0;
+            }
+            char *id_end = body;
+            uint64_t id = 0;
+            while (*id_end >= '0' && *id_end <= '9') {
+                unsigned digit = (unsigned)(*id_end - '0');
+                if (id > (UINT64_MAX - digit) / 10) break;
+                id = id * 10 + digit;
+                id_end++;
+            }
+            if (id == UINT64_MAX || *id_end != ' ' || !id_end[1]) {
+                fprintf(stderr, "step: malformed v5 stream id in '%s'; refusing to step\n", p);
+                free(streams); return 0;
+            }
+            body = id_end + 1;
+            stream_id = id;
+        }
+        if (p[0] == 'V') {
+            if (!vline_ok(p)) { free(streams); return 0; }
+            nstreams = 0;      /* session-local ids restart after every V */
+            p = nl ? nl + 1 : end;
+            continue;
+        }
+        if (!strchr("BLASNO", p[0])) {
+            p = nl ? nl + 1 : end;
+            continue;
+        }
+        ParseStream *ps = parse_stream(&streams, &nstreams, &streamcap,
+                                       &next_stream_key, stream_id);
+        if (!ps) { free(streams); return 0; }
+        if (p[0] == 'B') {
+            TraceAssociation association = {0};
+            int valid = !ps->declared && trace_parse_association(body, &association);
+            if (valid && ((association.kind == 'r') != (stream_id == 0))) valid = 0;
+            int parent_found = association.kind != 'c';
+            for (int j = 0; valid && j < nstreams; j++) {
+                ParseStream *old = &streams[j];
+                if (!old->declared) continue;
+                if (old->association.lifetime == association.lifetime ||
+                    (old->association.key_hex && association.key_hex &&
+                     strcmp(old->association.key_hex, association.key_hex) == 0)) valid = 0;
+                if (association.kind == 'c') {
+                    if (old->id == association.parent && old->id != stream_id &&
+                        old->association.state == association.state) parent_found = 1;
+                    if (old->association.kind == 'c' &&
+                        old->association.parent == association.parent &&
+                        old->association.occurrence == association.occurrence) valid = 0;
+                }
+            }
+            if (!valid || !parent_found) {
+                fprintf(stderr, "step: invalid stream association in '%s'; refusing to step\n", p);
+                free(streams); return 0;
+            }
+            if (t->nstreams == t->streamcap) {
+                int nc = t->streamcap ? t->streamcap * 2 : 4;
+                TapeStreamInfo *ns = realloc(t->streams, (size_t)nc * sizeof(*ns));
+                if (!ns) { free(streams); return 0; }
+                t->streams = ns;
+                t->streamcap = nc;
+            }
+            ps->declared = 1;
+            ps->association = association;
+            t->streams[t->nstreams++] = (TapeStreamInfo){ps->key, stream_id, association};
+            p = nl ? nl + 1 : end;
+            continue;                       /* metadata does not add a step */
+        }
+        if (!ps->declared) {
+            fprintf(stderr, "step: stream %llu has no association; refusing to step\n",
+                    (unsigned long long)stream_id);
+            free(streams); return 0;
+        }
+        uint64_t stream_key = ps->key;
+        r.stream = stream_key;
+        r.scope = ps->scope;
         switch (p[0]) {
-            case 'V':
-                if (!vline_ok(p)) return 0;   /* mid-stream session header */
-                break;
             case 'L':
-                r.line = atoi(p + 2);
+                r.line = atoi(body);
                 t->steps[t->nsteps] = t->nrecs;
                 r.step = t->nsteps;
                 t->nsteps++;
                 break;
             case 'A': case 'N': {
-                char *eq = strchr(p + 2, '=');
+                char *eq = strchr(body, '=');
                 if (!eq) { r.kind = 0; break; }   /* torn record: skip */
                 *eq = '\0';
-                r.name  = p + 2;
+                r.name  = body;
                 r.value = eq + 1;
                 if (r.kind == 'A') {
-                    NameHist *h = tape_hist_for(t, r.name, cur_scope, 1);
+                    NameHist *h = tape_hist_for_stream(t, r.name, ps->scope,
+                                                       stream_key, 1);
                     if (h) {
                         Assign a;
                         a.rec = t->nrecs;
@@ -259,9 +378,10 @@ static int tape_parse(Tape *t, long len) {
                 ObsCfgRec o;
                 memset(&o, 0, sizeof o);
                 o.rec = t->nrecs;
-                o.scope = cur_scope;
-                if (strncmp(p + 2, "cfg ", 4) == 0) {
-                    char *q = p + 6, *q0;
+                o.scope = ps->scope;
+                o.stream = stream_key;
+                if (strncmp(body, "cfg ", 4) == 0) {
+                    char *q = body + 4, *q0;
                     int ok = 1;
                     o.binding  = 0;
                     q0 = q; o.dh_zero  = strtod(q, &q);        ok &= (q != q0);
@@ -269,11 +389,11 @@ static int tape_parse(Tape *t, long len) {
                     q0 = q; o.h_low    = strtod(q, &q);        ok &= (q != q0);
                     q0 = q; o.window   = (int)strtol(q, &q, 10); ok &= (q != q0);
                     q0 = q; o.scale    = strtod(q, &q);        ok &= (q != q0);
-                    if (!ok) return obs_cfg_refuse("truncated record", p);
-                    if (!obs_cfg_rec_ok(&o, p)) return 0;
+                    if (!ok) { free(streams); return obs_cfg_refuse("truncated record", p); }
+                    if (!obs_cfg_rec_ok(&o, p)) { free(streams); return 0; }
                     obscfg_push(t, &o);
-                } else if (strncmp(p + 2, "win ", 4) == 0) {
-                    char *nm = p + 6;
+                } else if (strncmp(body, "win ", 4) == 0) {
+                    char *nm = body + 4;
                     char *sp = strchr(nm, ' ');
                     if (sp) {
                         char *q = sp + 1, *q0 = q;
@@ -281,8 +401,8 @@ static int tape_parse(Tape *t, long len) {
                         o.window  = (int)strtol(q, &q, 10);
                         /* validated before the name is NUL-terminated in
                          * place, so the refusal can quote the whole line */
-                        if (q == q0) return obs_cfg_refuse("truncated record", p);
-                        if (!obs_cfg_rec_ok(&o, p)) return 0;
+                        if (q == q0) { free(streams); return obs_cfg_refuse("truncated record", p); }
+                        if (!obs_cfg_rec_ok(&o, p)) { free(streams); return 0; }
                         *sp = '\0';
                         o.name = nm;
                         obscfg_push(t, &o);
@@ -292,7 +412,7 @@ static int tape_parse(Tape *t, long len) {
                 break;
             }
             case 'S': {                            /* #539 v2 scope transition */
-                char *nm = p + 2;
+                char *nm = body;
                 char *sp1 = strchr(nm, ' ');
                 if (!sp1) { r.kind = 0; break; }
                 *sp1 = '\0';
@@ -300,22 +420,24 @@ static int tape_parse(Tape *t, long len) {
                 char *sp2 = strchr(sp1 + 1, ' ');
                 uint32_t serial = sp2 ? (uint32_t)strtoul(sp2 + 1, NULL, 10) : 0;
                 int on_stack = -1;
-                for (int k = sdepth - 1; k >= 0; k--)
-                    if (sstack[k] == serial) { on_stack = k; break; }
+                for (int k = ps->depth - 1; k >= 0; k--)
+                    if (ps->stack[k] == serial) { on_stack = k; break; }
                 if (on_stack >= 0) {
-                    sdepth = on_stack + 1;         /* returned into it */
+                    ps->depth = on_stack + 1;      /* returned into it */
                 } else {
-                    while (sdepth > 0) {
-                        ScopeInfo *top = tape_scope_info(t, sstack[sdepth - 1]);
+                    while (ps->depth > 0) {
+                        ScopeInfo *top = tape_scope_info_stream(
+                            t, ps->stack[ps->depth - 1], stream_key);
                         if (top && top->depth < depth) break;
-                        sdepth--;                  /* silently-exited frames */
+                        ps->depth--;               /* silently-exited frames */
                     }
-                    uint32_t parent = sdepth > 0 ? sstack[sdepth - 1] : 0;
-                    scope_add(t, serial, nm, depth, parent);
-                    if (sdepth < (int)(sizeof(sstack)/sizeof(sstack[0])))
-                        sstack[sdepth++] = serial;
+                    uint32_t parent = ps->depth > 0
+                                    ? ps->stack[ps->depth - 1] : 0;
+                    scope_add(t, serial, nm, depth, parent, stream_key);
+                    if (ps->depth < (int)(sizeof(ps->stack)/sizeof(ps->stack[0])))
+                        ps->stack[ps->depth++] = serial;
                 }
-                cur_scope = serial;
+                ps->scope = serial;
                 r.kind = 0;                        /* folded, not kept */
                 break;
             }
@@ -326,6 +448,7 @@ static int tape_parse(Tape *t, long len) {
         if (r.kind) t->recs[t->nrecs++] = r;
         p = nl ? nl + 1 : end;
     }
+    free(streams);
     if ((unsigned long long)t->nobscfg * (unsigned long long)t->nnames >
         TAPE_OBS_REPLAY_WORK_MAX) {
         fprintf(stderr, "step: tape observer replay exceeds the %llu-work "
@@ -365,6 +488,7 @@ void tape_free(Tape *t) {
     free(t->names);
     free(t->scopes);
     free(t->obscfg);
+    free(t->streams);
     free(t->src); free(t->srcbuf);
     memset(t, 0, sizeof *t);
 }
@@ -433,10 +557,12 @@ static void obs_cfg_capture(TapeObsCfg *c) {
  * none or more than one. Used only as the last resort below: when a name is
  * unambiguous across the tape, a record naming it can only mean that binding,
  * and applying it there is a fact rather than a guess. */
-static const NameHist *obs_win_unique(const Tape *t, const char *name) {
+static const NameHist *obs_win_unique(const Tape *t, const char *name,
+                                      uint64_t stream) {
     const NameHist *found = NULL;
     for (int i = 0; i < t->nnames; i++) {
-        if (strcmp(t->names[i].name, name) != 0) continue;
+        if (t->names[i].stream != stream ||
+            strcmp(t->names[i].name, name) != 0) continue;
         if (found) return NULL;         /* ambiguous — refuse to guess */
         found = &t->names[i];
     }
@@ -462,10 +588,11 @@ static const NameHist *obs_win_unique(const Tape *t, const char *name) {
 static const NameHist *obs_win_target(const Tape *t, const ObsCfgRec *o) {
     uint32_t sc = o->scope;
     for (;;) {
-        const NameHist *h = tape_hist_for((Tape *)t, o->name, sc, 0);
+        const NameHist *h = tape_hist_for_stream((Tape *)t, o->name, sc,
+                                                 o->stream, 0);
         if (h) return h;
-        if (sc == 0) return obs_win_unique(t, o->name);
-        const ScopeInfo *si = tape_scope_info(t, sc);
+        if (sc == 0) return obs_win_unique(t, o->name, o->stream);
+        const ScopeInfo *si = tape_scope_info_stream(t, sc, o->stream);
         sc = si ? si->parent : 0;
     }
 }
@@ -485,6 +612,7 @@ void tape_traj_begin(TapeTraj *tr, const Tape *t, const NameHist *h) {
 
 /* Apply one recorded configuration change to the fold in progress. */
 static void obs_cfg_apply(TapeTraj *tr, const ObsCfgRec *o) {
+    if (!tr->h || o->stream != tr->h->stream) return;
     if (o->binding == 0) {
         TapeObsCfg c = { o->dh_zero, o->dh_small, o->h_low, o->scale,
                          o->window };
@@ -567,16 +695,21 @@ const Assign *tape_latest_at(const NameHist *h, int pos) {
  * interpreted callback.  Skipping it resurrects the callback's dead frame. */
 uint32_t tape_scope_at(const Tape *t, int pos) {
     int bound = (pos + 1 < t->nsteps) ? t->steps[pos + 1] : t->nrecs;
-    return bound > 0 ? t->recs[bound - 1].scope : 0;
+    uint64_t stream = t->recs[t->steps[pos]].stream;
+    for (int i = bound - 1; i >= 0; i--)
+        if (t->recs[i].stream == stream)
+            return t->recs[i].scope;
+    return 0;
 }
 
 const NameHist *tape_resolve_at(const Tape *t, int pos, const char *name) {
     uint32_t sc = tape_scope_at(t, pos);
+    uint64_t stream = t->recs[t->steps[pos]].stream;
     for (;;) {
-        const NameHist *h = tape_hist_for((Tape *)t, name, sc, 0);
+        const NameHist *h = tape_hist_for_stream((Tape *)t, name, sc, stream, 0);
         if (h && tape_latest_at(h, pos)) return h;
         if (sc == 0) return NULL;
-        const ScopeInfo *si = tape_scope_info(t, sc);
+        const ScopeInfo *si = tape_scope_info_stream(t, sc, stream);
         sc = si ? si->parent : 0;
     }
 }

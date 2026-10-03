@@ -362,6 +362,15 @@ print of (5 |> double |> inc)
 
 ## Concurrency
 
+EigenScript's trace replay identifies script workers by their parent and that
+parent's spawn occurrence. Independent embedding threads use host-provided
+stable keys; matching does not depend on first-event scheduling. Unbound replay
+calls raise instead of borrowing another thread's nondeterministic values.
+The tape association contract is documented in `docs/TRACE.md`.
+Replay session changes require an explicit quiescent host advance, which refuses
+while a sibling has an unread outcome. Memory replay suspends and restores the
+file source's cursor, pending outcomes, correspondence and strictness together.
+
 Python (threads + queue):
 
 ```python

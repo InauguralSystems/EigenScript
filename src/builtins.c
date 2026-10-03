@@ -4594,6 +4594,7 @@ typedef struct EigsThreadHandle {
     Env *parent_env;
     EigsState *parent_state;  /* state the spawning thread is attached to */
     EigsExitScope *exit_scope; /* owned snapshot BEFORE pthread_create */
+    struct TraceSpawnBinding *trace_binding; /* owned, reserved before launch */
     struct EigsThreadHandle *deferred_next;
     Value *result;
     volatile int done;
@@ -4610,6 +4611,7 @@ static void *thread_entry(void *arg) {
      * runs arena_init internally, so the legacy arena_init call site
      * has moved into the lifecycle. */
     eigs_thread_attach(h->parent_state);
+    trace_spawn_attach(h->trace_binding);
     eigs_thread_set_exit_scope(h->exit_scope);
     eigs_current->is_spawn_worker = 1;
     g_sandbox_loop_max = h->sandbox_loop_max;
@@ -4749,6 +4751,7 @@ static void thread_handle_free(ThreadHandle *h) {
     for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
     free(h->fn_args);
     eigs_exit_scope_release(h->exit_scope);
+    trace_spawn_release(h->trace_binding);
     free(h);
 }
 
@@ -4828,6 +4831,7 @@ Value* builtin_spawn(Value *arg) {
         return make_null();
     }
     ThreadHandle *h = xmalloc(sizeof(ThreadHandle));
+    h->trace_binding = NULL;
     h->fn = fn;
     val_incref(fn);
     h->fn_args = fn_args;
@@ -4854,6 +4858,11 @@ Value* builtin_spawn(Value *arg) {
         rt_error(EK_LIMIT, 0,
                  "spawn: handle table full (max %d live threads/channels/"
                  "tasks/sockets)", HANDLE_TABLE_SIZE - 1);
+        return make_null();
+    }
+    if (!trace_spawn_prepare(&h->trace_binding)) {
+        handle_release(hid, hgen);
+        thread_handle_free(h);
         return make_null();
     }
     /* Flip refcounts to atomic mode before any new thread can observe a Value.

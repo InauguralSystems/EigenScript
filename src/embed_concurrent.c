@@ -66,7 +66,7 @@ static void check(int ok, const char *what) {
  * the number: bumping a population pin to clear its own red is how a gate
  * launders the loss it exists to report (mechanical-gates §4, §106). The
  * number only ever moves for a check you just wrote. */
-#define EC_EXPECTED_CHECKS 85
+#define EC_EXPECTED_CHECKS 87
 
 /* Rounds are deliberately modest: these assertions fire on the RATIO of two
  * states' settings, not on how long they are held, so a long spin buys nothing
@@ -450,25 +450,35 @@ static int tape_line_ok(const char *line) {
     if (!line || !line[0]) return 0;
     if (line[0] == 'V' && line[1] == ' ')       /* V <format> <version> */
         return tape_fields(line + 2) == 2 && !tape_glued(line);
+    const char *body = line + 2;
+    if (strchr("BLASNO", line[0]) && line[1] == ' ') {
+        if (*body < '0' || *body > '9') return 0;
+        while (*body >= '0' && *body <= '9') body++;
+        if (*body++ != ' ' || !*body) return 0;
+    }
+    if (line[0] == 'B' && line[1] == ' ') {
+        TraceAssociation association;
+        return trace_parse_association(body, &association);
+    }
     if (line[0] == 'L' && line[1] == ' ') {
-        const char *p = line + 2;
+        const char *p = body;
         if (!*p) return 0;
         while (*p) { if (*p < '0' || *p > '9') return 0; p++; }
         return 1;
     }
     if (line[0] == 'S' && line[1] == ' ')       /* S <fn> <depth> <serial> */
-        return tape_fields(line + 2) == 3 && !tape_glued(line);
+        return tape_fields(body) == 3 && !tape_glued(line);
     if ((line[0] == 'A' || line[0] == 'N') && line[1] == ' ') {
-        const char *p = line + 2, *eq = p;
+        const char *p = body, *eq = p;
         while (*eq && *eq != '=' && *eq != ' ') eq++;
         if (*eq != '=' || eq == p) return 0;
         return tape_value_ok(eq + 1);
     }
-    if (strncmp(line, "O cfg ", 6) == 0)
+    if (line[0] == 'O' && strncmp(body, "cfg ", 4) == 0)
         /* five fields: three floats, window int, scale float */
-        return tape_fields(line + 6) == 5;
-    if (strncmp(line, "O win ", 6) == 0)
-        return tape_fields(line + 6) == 2 && !tape_glued(line);
+        return tape_fields(body + 4) == 5;
+    if (line[0] == 'O' && strncmp(body, "win ", 4) == 0)
+        return tape_fields(body + 4) == 2 && !tape_glued(line);
     return 0;
 }
 
@@ -498,7 +508,7 @@ static TapeParse parse_tape_buf(const char *buf, size_t len) {
             t.parsed_bytes += rec;
             if (line[0] == 'N' && line[1] == ' ') t.nrec++;
             if (line[0] == 'S' && line[1] == ' ') t.srec++;
-            if (strncmp(line, "O cfg ", 6) == 0) t.ocfg++;
+            if (line[0] == 'O' && strstr(line, " cfg ")) t.ocfg++;
         } else {
             t.malformed++;
         }
@@ -597,10 +607,10 @@ static int tape_a_switches(const char *buf, size_t len,
         size_t start = i;
         while (i < len && buf[i] != '\n') i++;
         if (i > start && buf[start] == 'A' && buf[start + 1] == ' ') {
-            if (strncmp(buf + start, pa, strlen(pa)) == 0) {
+            if (strstr(buf + start, pa) && strstr(buf + start, pa) < buf + i) {
                 if (last == 2) sw++;
                 last = 1;
-            } else if (strncmp(buf + start, pb, strlen(pb)) == 0) {
+            } else if (strstr(buf + start, pb) && strstr(buf + start, pb) < buf + i) {
                 if (last == 1) sw++;
                 last = 2;
             }
@@ -618,6 +628,14 @@ static void test_two_state_sink(void) {
     SinkBuf sb;
     sinkbuf_init(&sb);
     eigs_set_trace_sink(sinkbuf_cb, &sb);
+
+    /* Synthetic GPU producers reserve from the same flat allocator before a
+     * backend exists.  They do not require a device and are deliberately
+     * just metadata: a no-GPU reader sees ordinary numeric stream ids. */
+    uint64_t gpu0 = trace_external_stream_acquire();
+    uint64_t gpu1 = trace_external_stream_acquire();
+    check(gpu0 > 0 && gpu1 > 0, "stream ids: synthetic GPU ids are positive");
+    check(gpu1 == gpu0 + 1, "stream ids: CPU/GPU namespace is monotonic and shared");
 
     SinkArg a = {0, 0, 0}, b = {0, 0, 1};
     pthread_barrier_init(&sink_start, NULL, 2);
@@ -665,7 +683,7 @@ static void test_two_state_sink(void) {
     {
         SinkBuf ctl;
         sinkbuf_init(&ctl);
-        sinkbuf_cb("S fa 1 7\nA qa=1\n", 16, &ctl);
+        sinkbuf_cb("S 0 fa 1 7\nA 0 qa=1\n", 20, &ctl);
         check(ctl.calls == 1 && ctl.multi_rec == 1,
               "control: a two-record hand-off is counted as multi_rec");
         sinkbuf_free(&ctl);
@@ -686,7 +704,7 @@ static void test_two_state_sink(void) {
         /* The kill for sink-flush-outside-lock only exists where the two
          * states' records actually overlap. A run where they never
          * interleave is INCONCLUSIVE, not a pass — name it and go red. */
-        int sw = tape_a_switches(sb.buf, sb.len, "A sa=", "A sb=");
+        int sw = tape_a_switches(sb.buf, sb.len, "sa=", "sb=");
         check(sw >= 2, "sink: interleaving observed (no interleaving observed "
                        "= inconclusive run, not a pass)");
         printf("        sink: interleave switches=%d\n", sw);
@@ -696,7 +714,7 @@ static void test_two_state_sink(void) {
           "control: glued A records are malformed");
     check(!tape_line_ok("N random=0.5N monotonic_ns=17"),
           "control: glued N records are malformed");
-    check(tape_line_ok("A s=\"a b c\"") && tape_line_ok("N f=[1, 2, 3]"),
+    check(tape_line_ok("A 0 s=\"a b c\"") && tape_line_ok("N 0 f=[1, 2, 3]"),
           "control: a quoted string and a list value stay well-formed");
     /* Control: a truncated stream MUST make the byte-sum check red. */
     if (sb.len > 8) {
@@ -771,7 +789,7 @@ static void test_ocfg_per_state(void) {
     printf("        O cfg: calls=%ld multi_rec=%ld unterminated=%ld lines=%d\n",
            sb.calls, sb.multi_rec, sb.unterminated, p.lines);
     {
-        int sw = tape_a_switches(sb.buf, sb.len, "A oa=", "A ob=");
+        int sw = tape_a_switches(sb.buf, sb.len, "oa=", "ob=");
         check(sw >= 2, "O cfg: interleaving observed (no interleaving observed "
                        "= inconclusive run, not a pass)");
         printf("        O cfg: interleave switches=%d\n", sw);
@@ -857,8 +875,8 @@ static void test_close_while_other_runs(void) {
 /* ------------------------------------------------------------------ 8 */
 /* #1142: two OS threads of the SAME owner state calling eigs_replay_take
  * concurrently. The tape mutex serializes them; without it, N records tear
- * or are double-consumed. Builtins on the second thread still fail-loud
- * (TRACE_NONDET_RET); this path is the embed take API. */
+ * or are double-consumed. Each attachment claims its explicit v5 stream;
+ * this path is the embed take API. */
 
 #define TAKE_N 400
 
@@ -898,32 +916,23 @@ static void take_drain(TakeArg *a) {
             if (v) eigs_value_release(v);
         }
     }
-    /* Anything the rounds left (a torn take can lose a record) */
-    for (;;) {
-        EigsValue *v = NULL;
-        if (!eigs_replay_take("random", &v)) break;
-        if (a->takes < TAKE_N) {
-            a->v[a->takes] = v ? eigs_value_as_num(v) : -1.0;
-            a->takes++;
-        }
-        if (v) eigs_value_release(v);
-    }
 }
 
 static void *take_worker(void *p) {
     TakeArg *a = (TakeArg *)p;
     if (!eigs_thread_attach(take_st)) return NULL;
     pthread_barrier_wait(&take_start);
-    a->started = 1;
+    /* A v5 independent attachment must claim its explicit recorded host key. */
+    a->started = eigs_trace_bind_stream("take-worker") != 0;
     take_drain(a);
     eigs_thread_detach();
     return NULL;
 }
 
 static void test_replay_take_serialized(void) {
-    /* Distinct N values so the union is a multiset, not a scheduling split.
-     * Any A/B split including 0/400 is valid; duplicates or a missing i
-     * mean the take path tore. */
+    /* Distinct N values and fixed per-stream ordering. The two explicit
+     * v5 claims each consume their own 200 values; duplicates or a missing i
+     * mean the take path lost the recorded multiset. */
     SinkBuf hdr;
     sinkbuf_init(&hdr);
     EigsState *prep = eigs_open();
@@ -937,13 +946,20 @@ static void test_replay_take_serialized(void) {
     check(nl != NULL, "replay-take: captured a V header");
     if (!nl) { sinkbuf_free(&hdr); return; }
     size_t hlen = (size_t)(nl - hdr.buf + 1);
-    size_t tlen = hlen + (size_t)TAKE_N * 32;
+    /* v5 requires declarations before events. Both attachments share one
+     * state; the opener is zero and the sibling has a stable host key. */
+    static const char associations[] =
+        "B 0 1 1 0 root -\n"
+        "B 1 2 1 0 host 74616b652d776f726b6572\n"; /* take-worker */
+    size_t tlen = hlen + sizeof(associations) - 1 + (size_t)TAKE_N * 32;
     char *tape = malloc(tlen + 1);
     if (!tape) { sinkbuf_free(&hdr); return; }
     memcpy(tape, hdr.buf, hlen);
-    size_t off = hlen;
+    memcpy(tape + hlen, associations, sizeof(associations) - 1);
+    size_t off = hlen + sizeof(associations) - 1;
     for (int i = 1; i <= TAKE_N; i++) {
-        int n = snprintf(tape + off, tlen - off + 1, "N random=%d\n", i);
+        int n = snprintf(tape + off, tlen - off + 1, "N %d random=%d\n",
+                         (i - 1) % 2, i);
         if (n < 0) break;
         off += (size_t)n;
     }
@@ -998,7 +1014,7 @@ static void test_replay_take_serialized(void) {
 }
 
 /* ------------------------------------------------------------------ 9 */
-/* #1142: a state that did not open the tape must RAISE on eigs_replay_take. */
+/* An independent, unkeyed non-opener cannot claim another stream. */
 
 static pthread_barrier_t owner_bar;
 static char *owner_tape_bytes;
@@ -1025,7 +1041,7 @@ static void *owner_taker_worker(void *p) {
     if (v) eigs_value_release(v);
     const char *msg = eigs_last_error_message();
     *raised = (got && eigs_has_error() && msg
-               && strstr(msg, "not replayable under EIGS_REPLAY") != NULL);
+               && strstr(msg, "no host/causal binding") != NULL);
     eigs_close(st);
     pthread_barrier_wait(&owner_bar);
     return NULL;
@@ -1044,12 +1060,11 @@ static void test_owner_state_raises(void) {
     check(nl != NULL, "owner-state: captured a V header");
     if (!nl) { sinkbuf_free(&hdr); return; }
     size_t hlen = (size_t)(nl - hdr.buf + 1);
-    owner_tape_len = hlen + 16;
+    static const char owner_records[] = "B 0 1 1 0 root -\nN 0 random=1\n";
+    owner_tape_len = hlen + sizeof(owner_records) - 1;
     owner_tape_bytes = malloc(owner_tape_len + 1);
     memcpy(owner_tape_bytes, hdr.buf, hlen);
-    memcpy(owner_tape_bytes + hlen, "N random=1\n", 11);
-    owner_tape_len = hlen + 11;
-    owner_tape_bytes[owner_tape_len] = '\0';
+    memcpy(owner_tape_bytes + hlen, owner_records, sizeof(owner_records));
     sinkbuf_free(&hdr);
 
     int raised = 0;
@@ -1060,7 +1075,7 @@ static void test_owner_state_raises(void) {
     pthread_join(ta, NULL);
     pthread_join(tb, NULL);
     pthread_barrier_destroy(&owner_bar);
-    check(raised, "owner-state: non-opener take raises");
+    check(raised, "owner-state: unkeyed non-opener take raises");
     eigs_trace_shutdown();
     free(owner_tape_bytes);
     owner_tape_bytes = NULL;
@@ -1783,13 +1798,15 @@ static void test_replay_take_under_lock(void) {
     check(nl != NULL, "replay-take-lock: captured a V header");
     if (!nl) { sinkbuf_free(&hdr); return; }
     size_t hlen = (size_t)(nl - hdr.buf + 1);
-    size_t tcap = hlen + (size_t)TL_TAPE_N * 32;
+    static const char association[] = "B 0 1 1 0 root -\n";
+    size_t tcap = hlen + sizeof(association) - 1 + (size_t)TL_TAPE_N * 32;
     char *tape = malloc(tcap + 1);
     if (!tape) { sinkbuf_free(&hdr); return; }
     memcpy(tape, hdr.buf, hlen);
-    size_t off = hlen;
+    memcpy(tape + hlen, association, sizeof(association) - 1);
+    size_t off = hlen + sizeof(association) - 1;
     for (int i = 1; i <= TL_TAPE_N; i++)
-        off += (size_t)snprintf(tape + off, tcap - off + 1, "N random=%d\n", i);
+        off += (size_t)snprintf(tape + off, tcap - off + 1, "N 0 random=%d\n", i);
     tape[off] = '\0';
     sinkbuf_free(&hdr);
 

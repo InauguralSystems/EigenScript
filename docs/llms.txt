@@ -405,3 +405,10 @@ check first — this is the same parse→compile→sandbox ladder iLambdaAi uses
 
 Full executable spec: docs/SPEC.md. Language-vs-Python/JS: docs/COMPARISON.md.
 Observer model: docs/OBSERVER.md + docs/PREDICATES.md.
+
+Embedded trace replay matches independent host attachments by stable
+host-provided keys and spawned children by parent-local spawn occurrence.
+Tape associations carry state grouping; event order does not select identity.
+Hosts explicitly advance replay sessions at quiescent boundaries; pending
+sibling outcomes prevent advance, and memory replay preserves a suspended file.
+See docs/TRACE.md and docs/EMBEDDING.md for binding and format compatibility.

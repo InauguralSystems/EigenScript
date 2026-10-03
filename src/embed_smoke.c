@@ -897,15 +897,15 @@ int main(void) {
         s.d = 1441.0;
         trace_assign(NM, s);
         g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
-        CHECK(strstr(g_tape, "S <native> 0 0\nA native_after_callback=1441\n") != NULL,
+        CHECK(strstr(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441\n") != NULL,
               "native assignment after callback carries native scope");
     }
     eigs_set_trace_sink(NULL, NULL);
     CHECK(g_tape_len > 0, "sink captured tape bytes");
     g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
-    CHECK(strstr(g_tape, "N host_sensor=100") != NULL, "tape has N record 100");
-    CHECK(strstr(g_tape, "N host_sensor=101") != NULL, "tape has N record 101");
-    CHECK(strstr(g_tape, "A s1=100") != NULL, "tape has assignment record");
+    CHECK(strstr(g_tape, "N 0 host_sensor=100") != NULL, "tape has N record 100");
+    CHECK(strstr(g_tape, "N 0 host_sensor=101") != NULL, "tape has N record 101");
+    CHECK(strstr(g_tape, "A 0 s1=100") != NULL, "tape has assignment record");
 
     /* recording stopped: another live read advances but adds no bytes */
     size_t tape_frozen = g_tape_len;
@@ -923,14 +923,13 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 100101.0,
           "replay serves recorded 100 then 101");
     if (r) eigs_value_release(r);
-    /* tape exhausted: the builtin falls back to its live source */
+    /* Exhaustion is a replay error; it must not consult the live sensor. */
     r = eigs_eval_string("host_sensor of []");
-    CHECK(r != NULL && eigs_value_as_num(r) == 103.0,
-          "tape exhausted: live source resumes");
+    CHECK(r == NULL, "tape exhausted: replay raises without a live read");
     if (r) eigs_value_release(r);
     CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1, "replay cleared");
     r = eigs_eval_string("host_sensor of []");
-    CHECK(r != NULL && eigs_value_as_num(r) == 104.0, "clear: live again");
+    CHECK(r != NULL && eigs_value_as_num(r) == 103.0, "clear: live again");
     if (r) eigs_value_release(r);
 
     /* --- #411 refusal contract: install-time, atomic, return 0. ------ */
@@ -939,7 +938,7 @@ int main(void) {
     CHECK(eigs_set_replay_tape(noh, sizeof noh - 1, 0) == 0,
           "headerless tape refused (return 0)");
     r = eigs_eval_string("host_sensor of []");
-    CHECK(r != NULL && eigs_value_as_num(r) == 105.0,
+    CHECK(r != NULL && eigs_value_as_num(r) == 104.0,
           "refused install: live source untouched");
     if (r) eigs_value_release(r);
 

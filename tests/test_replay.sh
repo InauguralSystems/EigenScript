@@ -75,7 +75,7 @@ fi
 # Handcrafted tapes below reuse the real header off the recorded tape, so
 # they stay valid when the format or runtime version bumps.
 VHDR=$(head -1 "$TAPE_L")
-if echo "$VHDR" | grep -Eq '^V [0-9]+ .'; then
+if echo "$VHDR" | grep -Eq '^V [0-9][0-9]* .'; then
     ok "version header: recorded tape starts with 'V <format> <runtime>'"
 else
     fail "version header" "first line='$VHDR'"
@@ -91,7 +91,8 @@ EOF
 
 cat > "$TMPDIR/dict.tape" <<EOF
 $VHDR
-N env_get={"a": 1, "b": "two", "c": null}
+B 0 1 1 0 root -
+N 0 env_get={"a": 1, "b": "two", "c": null}
 EOF
 
 REP_D=$(EIGS_REPLAY="$TMPDIR/dict.tape" "$EIGS" "$TMPDIR/p_dict.eigs" 2>/dev/null)
@@ -113,7 +114,8 @@ EOF
 # Outer list: [{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
 cat > "$TMPDIR/nested.tape" <<EOF
 $VHDR
-N env_get=[{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
+B 0 1 1 0 root -
+N 0 env_get=[{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
 EOF
 
 REP_N=$(EIGS_REPLAY="$TMPDIR/nested.tape" "$EIGS" "$TMPDIR/p_nested.eigs" 2>/dev/null)
@@ -133,7 +135,8 @@ EOF
 
 cat > "$TMPDIR/strict.tape" <<EOF
 $VHDR
-N monotonic_ns=12345
+B 0 1 1 0 root -
+N 0 monotonic_ns=12345
 EOF
 
 # Lenient (default): warns on stderr, uses the recorded value anyway.
@@ -424,7 +427,7 @@ REC_CU=$(EIGS_TRACE="$TAPE_CU" "$EIGS" "$TMPDIR/p_clock.eigs" 2>&1)
 sleep 1
 REP_CU=$(EIGS_REPLAY="$TAPE_CU" "$EIGS" "$TMPDIR/p_clock.eigs" 2>&1)
 
-if [ -n "$REC_CU" ] && [ "$REC_CU" = "$REP_CU" ] && grep -q '^N clock_unix=' "$TAPE_CU"; then
+if [ -n "$REC_CU" ] && [ "$REC_CU" = "$REP_CU" ] && grep -q '^N [0-9][0-9]* clock_unix=' "$TAPE_CU"; then
     ok "clock_unix replay: recorded epoch wins on replay (#683)"
 else
     fail "clock_unix replay" "rec='$REC_CU' rep='$REP_CU'"
@@ -442,8 +445,9 @@ TAPE_HI="$TMPDIR/heap_inuse.tape"
 REC_HI=$(EIGS_TRACE="$TAPE_HI" "$EIGS" "$TMPDIR/p_heap_inuse.eigs" 2>&1)
 if [ "$REC_HI" = "null" ]; then
     echo "  SKIP: heap_inuse replay (mallinfo2 unavailable)"
-elif grep -q '^N heap_inuse=' "$TAPE_HI"; then
-    sed -i 's/^N heap_inuse=.*/N heap_inuse=424242/' "$TAPE_HI"
+elif grep -q '^N [0-9][0-9]* heap_inuse=' "$TAPE_HI"; then
+    sed -E 's/^N ([0-9][0-9]*) heap_inuse=.*/N \1 heap_inuse=424242/' "$TAPE_HI" > "$TMPDIR/heap_inuse-edited.tape"
+    mv "$TMPDIR/heap_inuse-edited.tape" "$TAPE_HI"
     REP_HI=$(EIGS_REPLAY="$TAPE_HI" "$EIGS" "$TMPDIR/p_heap_inuse.eigs" 2>&1)
     if [ "$REP_HI" = "424242" ]; then
         ok "heap_inuse replay: recorded allocator usage wins on replay"
@@ -492,7 +496,7 @@ EOF
     REC_LEN=$(echo "$REC_C" | sed -n '2p')
 
     if [ "$REC_C" = "$REP_C" ] && [ "$(echo "$REC_C" | sed -n '1p')" = "1" ] \
-       && [ "${REC_LEN:-0}" -gt 0 ] && grep -q '^N audio_capture_read=b\[' "$TAPE_C"; then
+       && [ "${REC_LEN:-0}" -gt 0 ] && grep -q '^N [0-9][0-9]* audio_capture_read=b\[' "$TAPE_C"; then
         ok "capture replay: recorded mic session replays without a device (#579)"
     else
         fail "capture replay" "rec='$REC_C' rep='$REP_C'"
