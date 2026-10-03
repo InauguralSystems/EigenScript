@@ -875,8 +875,8 @@ static void test_close_while_other_runs(void) {
 /* ------------------------------------------------------------------ 8 */
 /* #1142: two OS threads of the SAME owner state calling eigs_replay_take
  * concurrently. The tape mutex serializes them; without it, N records tear
- * or are double-consumed. Builtins on the second thread still fail-loud
- * (TRACE_NONDET_RET); this path is the embed take API. */
+ * or are double-consumed. Each attachment claims its explicit v5 stream;
+ * this path is the embed take API. */
 
 #define TAKE_N 400
 
@@ -922,16 +922,17 @@ static void *take_worker(void *p) {
     TakeArg *a = (TakeArg *)p;
     if (!eigs_thread_attach(take_st)) return NULL;
     pthread_barrier_wait(&take_start);
-    a->started = 1;
+    /* A v5 independent attachment must claim its explicit recorded host key. */
+    a->started = eigs_trace_bind_stream("take-worker") != 0;
     take_drain(a);
     eigs_thread_detach();
     return NULL;
 }
 
 static void test_replay_take_serialized(void) {
-    /* Distinct N values so the union is a multiset, not a scheduling split.
-     * Any A/B split including 0/400 is valid; duplicates or a missing i
-     * mean the take path tore. */
+    /* Distinct N values and fixed per-stream ordering. The two explicit
+     * v5 claims each consume their own 200 values; duplicates or a missing i
+     * mean the take path lost the recorded multiset. */
     SinkBuf hdr;
     sinkbuf_init(&hdr);
     EigsState *prep = eigs_open();
@@ -945,11 +946,17 @@ static void test_replay_take_serialized(void) {
     check(nl != NULL, "replay-take: captured a V header");
     if (!nl) { sinkbuf_free(&hdr); return; }
     size_t hlen = (size_t)(nl - hdr.buf + 1);
-    size_t tlen = hlen + (size_t)TAKE_N * 32;
+    /* v5 requires declarations before events. Both attachments share one
+     * state; the opener is zero and the sibling has a stable host key. */
+    static const char associations[] =
+        "B 0 1 1 0 root -\n"
+        "B 1 2 1 0 host 74616b652d776f726b6572\n"; /* take-worker */
+    size_t tlen = hlen + sizeof(associations) - 1 + (size_t)TAKE_N * 32;
     char *tape = malloc(tlen + 1);
     if (!tape) { sinkbuf_free(&hdr); return; }
     memcpy(tape, hdr.buf, hlen);
-    size_t off = hlen;
+    memcpy(tape + hlen, associations, sizeof(associations) - 1);
+    size_t off = hlen + sizeof(associations) - 1;
     for (int i = 1; i <= TAKE_N; i++) {
         int n = snprintf(tape + off, tlen - off + 1, "N %d random=%d\n",
                          (i - 1) % 2, i);

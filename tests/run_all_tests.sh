@@ -4178,7 +4178,7 @@ if ! echo "$NET_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable
     NET_TAPE=$(mktemp /tmp/eigs_net_tape_XXXXXX)
     NET_REC=$(EIGS_TRACE=$NET_TAPE ./eigenscript ../tests/test_net.eigs 2>&1); NET_REC_RC=$?
     NET_REP=$(EIGS_REPLAY=$NET_TAPE ./eigenscript ../tests/test_net.eigs 2>&1); NET_REP_RC=$?
-    NET_NREC=$(grep -c '^N net_' "$NET_TAPE")
+    NET_NREC=$(grep -c '^N [0-9][0-9]* net_' "$NET_TAPE")
     rm -f "$NET_TAPE"
     TOTAL=$((TOTAL + 1))
     if [ "$NET_REC_RC" = "0" ] && echo "$NET_REC" | grep -q "All net tests passed"; then

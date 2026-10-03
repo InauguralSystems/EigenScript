@@ -115,10 +115,10 @@ for jit_off in 0 1; do
     trace_name="CW-trace-$jit_off"
     run_clean "$trace_name" "$EXPECTED_ERR" env EIGS_JIT_OFF="$jit_off" EIGS_TRACE="$tape" "$EIGS" "$HARNESS"
     sed -n '/^CW transcript$/,$p' "$WORK/$trace_name.out" > "$WORK/recorded.out"
-    nrec=$(grep -c '^N eigen_generate=' "$tape")
-    nlists=$(grep -c '^N eigen_generate=\[' "$tape")
-    nrefusals=$(grep -Fxc 'N eigen_generate="eigen_generate: prompt length 17 exceeds model max_seq_len 16"' "$tape")
-    nrandom=$(grep -c '^N random_int=' "$tape")
+    nrec=$(grep -c '^N [0-9][0-9]* eigen_generate=' "$tape")
+    nlists=$(grep -c '^N [0-9][0-9]* eigen_generate=\[' "$tape")
+    nrefusals=$(grep -c '^N [0-9][0-9]* eigen_generate="eigen_generate: prompt length 17 exceeds model max_seq_len 16"$' "$tape")
+    nrandom=$(grep -c '^N [0-9][0-9]* random_int=' "$tape")
     if [ "$nrec" = 3 ] && [ "$nlists" = 2 ] && [ "$nrefusals" = 1 ] && [ "$nrandom" = 1 ]; then
         ok "CW-trace-$jit_off one outcome per call, successful lists unchanged"
     else
