@@ -1,0 +1,8 @@
+define leaf(v) as:
+    return v + 1
+define parent(v) as:
+    h is spawn of [leaf, v]
+    return thread_join of h
+h is spawn of [parent, 40]
+if (thread_join of h) != 41:
+    throw of "nested spawn returned wrong value"

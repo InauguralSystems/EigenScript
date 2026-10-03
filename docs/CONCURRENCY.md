@@ -6,6 +6,16 @@ waits for a worker and returns its result. This document is the contract for
 what is shared, what is copied, and what that costs — the questions a static
 type cannot answer for you.
 
+Closures may capture bindings and containers by reference. **Any concurrent
+access to one of those shared bindings or containers is undefined, including
+a read racing a write.** This is not merely a lost-update rule: measured
+shared-list races have terminated in `realloc(): invalid old size` and
+`double free or corruption`, and a binding reader can retain a value after a
+writer has freed it. The lock added in #607 protects root-environment array
+growth only; it does not make a slot's value, a list, or an ordinary dict safe
+for concurrent access. Transfer values through channels, or join the writer
+before reading them.
+
 ## The one rule: VALUES copy, HANDLES share
 
 **A value sent through a channel, or returned through `thread_join`, is COPIED**
@@ -571,6 +581,10 @@ exit drain. Join workers when you are done with them. (Before #1147 the mode
 lasted to exit: one spawn+join made a closure-cycle loop peak at 117x the RSS
 of the same loop with no spawn.) (A quantified before/after number lands with the replay-pinned
 benchmark harness, #398.)
+
+`EIGS_JIT_STATS=1` is a per-thread diagnostic: each attached thread prints
+its own `[jit] scanned=...` footer when it detaches. A main thread plus two
+workers therefore prints three footers; these are not a process-wide total.
 
 ## The scheduler trace is a reader, not a source (#846)
 
