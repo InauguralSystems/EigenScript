@@ -65,13 +65,55 @@ cases = [
 ]
 for name, command, docker, green, marker in cases:
     row = scratch / name; (row / "workflows").mkdir(parents=True)
-    (row / "workflows/ci.yml").write_text("name: fixture\njobs:\n  check:\n    container: {image: dev-image}\n    steps:\n      - run: " + json.dumps(command) + "\n")
+    (row / "workflows/ci.yml").write_text("name: fixture\njobs:\n  check:\n    container:\n      image: ${{ needs.dev-image.outputs.image }}\n    steps:\n      - run: " + json.dumps(command) + "\n")
     if docker is not None: (row / "Dockerfile").write_text(docker)
     env = dict(os.environ, WORKFLOW_CHECK_DIR=str(row / "workflows"), WORKFLOW_CHECK_DOCKERFILE=str(row / "Dockerfile"))
     result = subprocess.run(["bash", checker], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if (result.returncode == 0) != green or marker not in result.stdout:
         print("FAIL: " + name + " (rc=%d)\n" % result.returncode + result.stdout); sys.exit(1)
 print("workflow-yaml selftest: %d/%d passed" % (len(cases), len(cases)))
+
+# Scope contracts are tested separately so each declared population is
+# nonempty and its classification is visible through the public entrypoint.
+scope_cases = [
+    ("compact-image-expression", """jobs:
+  control:
+    container: {image: '${{ needs.dev-image.outputs.image }}'}
+    steps: [{run: 'python3 --version'}]
+  compact:
+    container: {image: '${{needs.dev-image.outputs.image}}'}
+    steps: [{run: 'not_in_the_dev_image'}]
+""", 1, ["jobs.compact image=dev-image", "not_in_the_dev_image", "jobs-examined=2, jobs-skipped=0, jobs-unsupported=0"]),
+    ("image-scope", """jobs:
+  supported:
+    container: {image: '${{ needs.dev-image.outputs.image }}'}
+    steps: [{shell: bash, run: 'python3 --version'}]
+  other:
+    container: {image: 'alpine:3.20'}
+    steps: [{run: 'not_in_the_dev_image'}]
+""", 0, ["jobs.supported image=dev-image", "jobs.other reason=image 'alpine:3.20' is not the dev-image expression", "jobs-examined=1, jobs-skipped=1, jobs-unsupported=0"]),
+    ("non-posix-shell", """jobs:
+  supported:
+    container: {image: '${{ needs.dev-image.outputs.image }}'}
+    steps:
+      - shell: pwsh
+        run: Get-ChildItem
+""", 1, ["JOB REJECTED ", "jobs.supported reason=unsupported shell grammar", "unsupported shell 'pwsh'", "jobs-examined=0, jobs-skipped=0, jobs-unsupported=1"]),
+    ("empty-shell", """jobs:
+  supported:
+    container: {image: '${{ needs.dev-image.outputs.image }}'}
+    steps: [{shell: '', run: 'python3 --version'}]
+""", 1, ["JOB REJECTED ", "unsupported shell ''", "jobs-examined=0, jobs-skipped=0, jobs-unsupported=1"]),
+]
+for name, workflow, expected_rc, markers in scope_cases:
+    row = scratch / name; (row / "workflows").mkdir(parents=True)
+    (row / "workflows/ci.yml").write_text("name: fixture\n" + workflow)
+    (row / "Dockerfile").write_text(base)
+    env = dict(os.environ, WORKFLOW_CHECK_DIR=str(row / "workflows"), WORKFLOW_CHECK_DOCKERFILE=str(row / "Dockerfile"))
+    result = subprocess.run(["bash", checker], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if result.returncode != expected_rc or any(marker not in result.stdout for marker in markers):
+        print("FAIL: " + name + " (expected rc=%d, observed rc=%d)\n" % (expected_rc, result.returncode) + result.stdout); sys.exit(1)
+print("workflow-yaml scope selftest: %d/%d passed" % (len(scope_cases), len(scope_cases)))
 PY_SELFTEST
     selftest_rc=$?
     [ "$selftest_rc" -eq 0 ] || exit "$selftest_rc"
@@ -147,6 +189,10 @@ available = BASE | BUILTINS
 for package in packages:
     available.update(PACKAGE_COMMANDS.get(package, "").split())
 CONTAINER_STEPS = 0
+JOBS_EXAMINED = 0
+JOBS_SKIPPED = 0
+JOBS_UNSUPPORTED = 0
+DEV_IMAGE = re.compile(r"\s*\$\{\{\s*needs\.dev-image\.outputs\.image\s*\}\}\s*")
 
 def strip_shell_comments(script):
     """One comment interpretation for substitutions and command tokenization."""
@@ -297,10 +343,41 @@ for f in files:
         if not isinstance(job, dict): continue
         if "name" in job: note(f, "jobs.%s.name" % jid, job.get("name"))
         steps = job.get("steps") if isinstance(job.get("steps"), list) else []
+        container = job.get("container")
+        image = container.get("image") if isinstance(container, dict) else container
+        dev_image = isinstance(image, str) and DEV_IMAGE.fullmatch(image) is not None
+        run_steps = [st for st in steps if isinstance(st, dict) and "run" in st]
+        if container is None:
+            JOBS_SKIPPED += 1
+            sys.stdout.write("JOB SKIPPED %s:jobs.%s reason=no container\n" % (f, jid))
+        elif not dev_image:
+            JOBS_SKIPPED += 1
+            sys.stdout.write("JOB SKIPPED %s:jobs.%s reason=image %r is not the dev-image expression\n" % (f, jid, image))
+        else:
+            workflow_defaults = doc.get("defaults") if isinstance(doc.get("defaults"), dict) else {}
+            job_defaults = job.get("defaults") if isinstance(job.get("defaults"), dict) else {}
+            workflow_run = workflow_defaults.get("run") if isinstance(workflow_defaults.get("run"), dict) else {}
+            job_run = job_defaults.get("run") if isinstance(job_defaults.get("run"), dict) else {}
+            unsupported = []
+            for i, st in enumerate(steps):
+                if not isinstance(st, dict) or "run" not in st: continue
+                shell = st.get("shell", job_run.get("shell", workflow_run.get("shell")))
+                shell_words = str(shell).strip().split(None, 1) if shell is not None else []
+                shell_word = shell_words[0] if shell_words else ""
+                if shell is not None and os.path.basename(shell_word) not in ("bash", "sh"):
+                    unsupported.append((i, shell))
+            if unsupported:
+                JOBS_UNSUPPORTED += 1
+                sys.stdout.write("JOB REJECTED %s:jobs.%s reason=unsupported shell grammar\n" % (f, jid))
+                for i, shell in unsupported:
+                    sys.stdout.write("RED: %s: jobs.%s.steps[%d].shell unsupported shell %r; POSIX command availability was not evaluated\n" % (f, jid, i, shell)); bad += 1
+            else:
+                JOBS_EXAMINED += 1
+                sys.stdout.write("JOB EXAMINED %s:jobs.%s image=dev-image run-steps=%d\n" % (f, jid, len(run_steps)))
         for i, st in enumerate(steps):
             if isinstance(st, dict) and "name" in st:
                 note(f, "jobs.%s.steps[%d].name" % (jid, i), st.get("name"))
-            if not isinstance(st, dict) or "run" not in st or "container" not in job: continue
+            if not isinstance(st, dict) or "run" not in st or not dev_image or unsupported: continue
             CONTAINER_STEPS += 1
             for cmd in commands(str(st["run"])):
                 # Repository paths and action-generated tools are not external
@@ -310,13 +387,16 @@ for f in files:
 if CONTAINER_STEPS == 0:
     sys.stdout.write("RED: examined 0 run steps in dev-image container jobs\n"); bad += 1
 sys.stdout.write("CONTAINER_STEPS %d\n" % CONTAINER_STEPS)
+sys.stdout.write("JOB_COUNTS %d %d %d\n" % (JOBS_EXAMINED, JOBS_SKIPPED, JOBS_UNSUPPORTED))
 sys.exit(1 if bad else 0)
 PY
 )
 pyrc=$?
 examined=$(printf '%s\n' "$out" | sed -n 's/^EXAMINED //p' | head -1); examined=${examined:-0}
 container_steps=$(printf '%s\n' "$out" | sed -n 's/^CONTAINER_STEPS //p' | head -1); container_steps=${container_steps:-0}
+job_counts=$(printf '%s\n' "$out" | sed -n 's/^JOB_COUNTS //p' | head -1); job_counts=${job_counts:-"0 0 0"}
 printf '%s\n' "$out" | grep '^RED:' || true
+printf '%s\n' "$out" | grep '^JOB \(EXAMINED\|SKIPPED\|REJECTED\) ' || true
 if [ "$pyrc" -ne 0 ] && ! printf '%s\n' "$out" | grep -q '^RED:'; then
     printf '%s\n' "$out"
     echo "workflow-yaml: RED: the YAML loader failed on $WF_DIR"; exit 1
@@ -325,9 +405,12 @@ if [ "$examined" -eq 0 ]; then
     echo "workflow-yaml: RED: examined 0 workflow files in $WF_DIR — an empty population loaded nothing"; exit 1
 fi
 if [ "$pyrc" -ne 0 ]; then
-    echo "workflow-yaml: FAIL (examined=$examined file(s), loader=pyyaml, problems=$(printf '%s\n' "$out" | grep -c '^RED:'))"
+    set -- $job_counts
+    echo "workflow-yaml: FAIL (examined=$examined file(s), loader=pyyaml, problems=$(printf '%s\n' "$out" | grep -c '^RED:'), jobs-examined=$1, jobs-skipped=$2, jobs-unsupported=$3)"
     exit 1
 fi
 echo "workflow-yaml: OK (examined=$examined file(s), loader=pyyaml)"
 echo "workflow-container: OK (run-steps=$container_steps, image=dev-image)"
+set -- $job_counts
+echo "workflow-container-scope: OK (jobs-examined=$1, jobs-skipped=$2, jobs-unsupported=$3)"
 exit 0
