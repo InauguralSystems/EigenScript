@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test
+.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -466,6 +466,14 @@ embed-smoke-gfx: build
 		$(filter-out build/release/main.o,$(OBJ_release)) \
 		-lm -lpthread $(LIBS_release)
 	/tmp/embed_smoke_gfx
+
+# Exercise the actual polling builtin using the owning graphics-capable variant.
+UI_INPUT_VARIANT ?= release
+UI_INPUT_OBJ := $(filter-out build/$(UI_INPUT_VARIANT)/main.o,$(OBJ_$(UI_INPUT_VARIANT)))
+build/$(UI_INPUT_VARIANT)/ui_sdl_input: tests/ui_sdl_input.c $(UI_INPUT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(UI_INPUT_VARIANT)) -I$(SRC_DIR) $$(sdl2-config --cflags) -o $@ $< $(UI_INPUT_OBJ) $(LIBS_$(UI_INPUT_VARIANT)) $$(sdl2-config --libs)
+ui-sdl-input-gfx: build/$(UI_INPUT_VARIANT)/ui_sdl_input
+	SDL_VIDEODRIVER=dummy build/$(UI_INPUT_VARIANT)/ui_sdl_input
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that
