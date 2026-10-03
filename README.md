@@ -32,6 +32,8 @@ evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result.
 
+Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
+
 ## Try it in your browser
 
 **[inauguralsystems.github.io/EigenScript/playground](https://inauguralsystems.github.io/EigenScript/playground/)** —

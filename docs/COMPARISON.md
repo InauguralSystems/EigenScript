@@ -37,6 +37,8 @@ separators in its capped token count. These limits also raise under
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result.
 
+Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
+
 `lib/eigen.eigs` snapshots the host values used by its tokenizer, parser, evaluator, import helpers, and fresh meta environments when it loads (#1386). Later host builtin rebinding does not change those dependencies, including entropy's `log`/`divide` calls. For `load_file`, the snapshots use values visible during initialization; loaded code still shares the host scope. String conversion still uses the pristine reserved f-string bridge. Explicit custom environments, debug hooks, and rebinding the interpreter's own helper names remain caller-controlled; captured caller-defined functions retain their own binding behavior.
 
 ## Variables and arithmetic

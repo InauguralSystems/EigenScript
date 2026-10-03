@@ -630,3 +630,14 @@ freestanding-libc-diff:
 		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
 	/tmp/eigs_libc_diff
+
+# #1575: direct history-writer boundary, including actual trace.c privately
+# for metadata inspection. No production test hooks or CLI alias relink.
+HISTORY_BOUNDARY_VARIANT ?= release
+HISTORY_BOUNDARY_OBJ := $(filter-out build/$(HISTORY_BOUNDARY_VARIANT)/main.o build/$(HISTORY_BOUNDARY_VARIANT)/trace.o,$(OBJ_$(HISTORY_BOUNDARY_VARIANT)))
+build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary: tests/test_trace_history_boundary.c $(SRC_DIR)/trace.c $(HISTORY_BOUNDARY_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(HISTORY_BOUNDARY_VARIANT)) -I$(SRC_DIR) -o $@ $< $(HISTORY_BOUNDARY_OBJ) $(LIBS_$(HISTORY_BOUNDARY_VARIANT))
+.PHONY: trace-history-boundary-test
+trace-history-boundary-test: build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary
+	@echo "Trace history boundary test built: $<"
+

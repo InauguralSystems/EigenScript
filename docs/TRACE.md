@@ -676,8 +676,8 @@ the same assignment hooks. This history is **independent of
 The tape exists for cross-run reproducibility; the history exists for
 in-run time travel.
 
-- History tracks assignments at **every scope**, function locals
-  included — exactly the assignments that produce `A` records when
+- Outside sandbox execution, history tracks assignments at **every scope**,
+  function locals included — the assignments that produce `A` records when
   tracing is on. Entries are keyed by name only (no scope qualifier),
   so `state_at` merges same-named bindings from different scopes into
   one stream, and a query can see a local of a function that has
@@ -711,7 +711,7 @@ in-run time travel.
   populate that set. The bytecode compiler is *not* the only producer of
   EigenScript programs, though — the AOT (sibling `ouroboros` repo) emits C
   that calls `trace_assign` directly, an embedder can drive the same seam,
-  and `vm_run_bytecode` / `sandbox_run` assemble a chunk from a descriptor.
+  and trusted `vm_run_bytecode` calls assemble a chunk from a descriptor.
   v0.35.1 filtered those producers on a set they never fed, so their
   assignments recorded nothing and every `prev of` / `at`-qualified read
   answered `null` — a silent wrong answer, in a public release, that the
@@ -719,8 +719,8 @@ in-run time travel.
   The rule now follows the chunk's provenance:
 
   - `trace_assign(name, slot)` is the producer-facing entry point and
-    **records unconditionally**. Any new producer gets correct temporal
-    reads by calling it and nothing else; there is no arming ritual to
+    **records without an arming filter outside sandbox execution**. Any new
+    trusted producer gets correct temporal reads by calling it; there is no arming ritual to
     remember, and no way to be silently wrong by forgetting one.
   - `trace_assign_filtered(name, slot)` is the narrowed twin, used only by
     the VM/JIT assignment hooks and only when the running chunk carries
@@ -734,6 +734,16 @@ in-run time travel.
   `tests/test_temporal_producers.eigs` (suite `[70e]`, the descriptor
   producer) and `src/embed_smoke.c` (`make embed-smoke`, the AOT's exact
   C-level shape, with no source compiled anywhere in the process).
+- **Sandbox execution does not contribute to shared temporal history**
+  (#1575), matching its existing refusal of shared temporal reads. The history
+  writer returns before retaining names or values, allocating table entries,
+  or updating assignment/occurrence counts. Its observer-snapshot writer also
+  leaves existing host entries untouched. This applies to filtered and
+  unfiltered producers even when a host has armed a name or wildcard recording.
+  Ordinary `A` records still emit to an open tape; their encoding is unchanged.
+  Outside the sandbox, producer history and observer snapshots resume normally.
+  `tests/test_trace_history_boundary.c` checks the boundary with fixed immediate
+  values and direct producer calls, without executing descriptor programs.
 - When the compiled program contains a `where`/`why`/`how ... at`
   query, each history entry also stamps an observer snapshot
   (entropy, dH) at assign time, so the observer-derived
