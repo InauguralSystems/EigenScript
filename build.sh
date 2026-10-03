@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build EigenScript — the language runtime.
-# No external dependencies required for minimal build.
+# No link-time external dependencies required for the hosted release.
 set -e
 
 cd "$(dirname "$0")/src"
@@ -33,6 +33,10 @@ fi
 # JIT_FLAGS=-DEIGENSCRIPT_JIT_FORCE_OFF=1`).
 JIT_FLAGS=""
 
+# The objdir engine may leave a hard link here. Unlink before compiling so
+# build.sh never truncates an existing per-variant artifact.
+if [ "$1" != "lsp" ]; then rm -f eigenscript; fi
+
 if [ "$1" = "lsp" ]; then
     # Language server (src/eigenlsp) — the editor-intelligence half of the
     # toolchain. Links eigenlsp.c against the runtime (SOURCES minus the
@@ -53,32 +57,40 @@ if [ "$1" = "lsp" ]; then
         $JIT_FLAGS \
         -lm -lpthread
     echo "EigenScript LSP $VERSION built. Binary: $(du -sh eigenlsp | cut -f1)"
-elif [ "$1" = "full" ]; then
-    # Full build: all extensions. Requires libpq-dev.
-    # The Makefile's objdir engine (#740) may leave this as a hard link.
-    # Unlink it so build.sh does not truncate the variant's binary.
-    rm -f eigenscript
-    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_http.c ext_db.c \
-        model_io.c model_infer.c model_train.c \
+elif [ "$1" = "server-db" ] || [ "$1" = "full" ]; then
+    # Server + PostgreSQL profile. "full" is the compatibility spelling.
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c ext_db.c model_io.c model_infer.c model_train.c \
         -I/usr/include/postgresql \
         -DEIGENSCRIPT_EXT_HTTP=1 \
         -DEIGENSCRIPT_EXT_MODEL=1 \
         -DEIGENSCRIPT_EXT_DB=1 \
+        -DEIGENSCRIPT_EXT_NET=1 \
+        -DEIGENSCRIPT_EXT_GFX=1 \
         -DEIGENSCRIPT_VERSION="\"$VERSION\"" \
         $JIT_FLAGS \
-        -lm -lpthread -lpq
-    echo "EigenScript $VERSION (full) built. Binary: $(du -sh eigenscript | cut -f1)"
+        -lm -lpthread -ldl -lpq
+    echo "EigenScript $VERSION (server-db) built. Binary: $(du -sh eigenscript | cut -f1)"
+elif [ "$1" = "server" ] || [ "$1" = "http" ] || [ "$1" = "net" ]; then
+    # Network server profile. "http" and "net" are compatibility spellings.
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c model_io.c model_infer.c model_train.c \
+        -DEIGENSCRIPT_EXT_HTTP=1 \
+        -DEIGENSCRIPT_EXT_MODEL=1 \
+        -DEIGENSCRIPT_EXT_DB=0 \
+        -DEIGENSCRIPT_EXT_NET=1 \
+        -DEIGENSCRIPT_EXT_GFX=1 \
+        -DEIGENSCRIPT_VERSION="\"$VERSION\"" \
+        $JIT_FLAGS \
+        -lm -lpthread -ldl
+    echo "EigenScript $VERSION (server) built. Binary: $(du -sh eigenscript | cut -f1)"
 else
-    # Minimal build: language + stdlib only.
-    # The Makefile's objdir engine (#740) may leave this as a hard link.
-    # Unlink it so build.sh does not truncate the variant's binary.
-    rm -f eigenscript
-    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES \
+    # Hosted release: gfx is compiled in; SDL remains lazy-loaded via dlopen.
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c \
         -DEIGENSCRIPT_EXT_HTTP=0 \
         -DEIGENSCRIPT_EXT_MODEL=0 \
         -DEIGENSCRIPT_EXT_DB=0 \
+        -DEIGENSCRIPT_EXT_GFX=1 \
         -DEIGENSCRIPT_VERSION="\"$VERSION\"" \
         $JIT_FLAGS \
-        -lm -lpthread
+        -lm -lpthread -ldl
     echo "EigenScript $VERSION built. Binary: $(du -sh eigenscript | cut -f1)"
 fi

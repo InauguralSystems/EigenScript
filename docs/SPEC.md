@@ -45,6 +45,16 @@ Companion documents: [SYNTAX.md](SYNTAX.md) (tutorial-style guide),
 
 ## Program model
 
+Hosted build profiles determine which extension implementations are compiled
+in. In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
+
 An EigenScript program is a sequence of statements executed top to
 bottom. There is no required entry point — the file *is* the program.
 Statements are expressions, assignments, definitions, or control

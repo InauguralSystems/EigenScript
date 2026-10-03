@@ -20,10 +20,10 @@ if [ -z "$variant" ]; then
     echo "SIGPIPE contract: no matching CLI variant (build.sh layout); using release"
 fi
 case "$variant" in
-    asan*) http_variant=asan-http ;;
-    tsan*) http_variant=tsan-http ;;
-    full|http) http_variant=$variant ;;
-    *) http_variant=http ;;
+    asan*) http_variant=asan-server ;;
+    tsan*) http_variant=tsan-server ;;
+    server|server-db) http_variant=$variant ;;
+    *) http_variant=server ;;
 esac
 echo "SIGPIPE contract: runtime=$variant HTTP=$http_variant"
 # File/auxiliary targets never repoint src/eigenscript or auxiliary aliases.

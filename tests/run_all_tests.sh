@@ -1510,9 +1510,10 @@ PROBE
 PROBE_OUT=$(./eigenscript "$PROBE_FILE" 2>&1)
 rm -f "$PROBE_FILE"
 
-# Model extension present only if no "undefined variable" error
+# Disabled extensions stay bound so direct calls can explain which profile is
+# required; probes treat that capability diagnostic as unavailable too.
 echo "[17/17] Transformer Smoke"
-if ! echo "$PROBE_OUT" | grep -q "undefined variable"; then
+if ! echo "$PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
 
     # Generate tiny v1 model
     ./eigenscript ../tests/gen_tiny_model.eigs > /tmp/eigs_tiny_v1.json 2>/dev/null
@@ -2841,7 +2842,7 @@ HTTP_PROBE_OUT=$(./eigenscript "$HTTP_PROBE_FILE" 2>&1)
 rm -f "$HTTP_PROBE_FILE"
 
 echo "[44/47] HTTP Builtins"
-if ! echo "$HTTP_PROBE_OUT" | grep -q "undefined variable"; then
+if ! echo "$HTTP_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
     HTTP_OUTPUT=$(./eigenscript ../tests/test_http.eigs 2>&1); HTTP_OUTPUT_RC=$?
     if rc_ok "$HTTP_OUTPUT_RC" "$HTTP_OUTPUT" && echo "$HTTP_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + 1))
@@ -2954,7 +2955,7 @@ DB_PROBE_OUT=$(./eigenscript "$DB_PROBE_FILE" 2>&1)
 rm -f "$DB_PROBE_FILE"
 
 echo "[46/47] DB Builtins"
-if ! echo "$DB_PROBE_OUT" | grep -q "undefined variable"; then
+if ! echo "$DB_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
     DB_OUTPUT=$(./eigenscript ../tests/test_db.eigs 2>&1); DB_OUTPUT_RC=$?
     if rc_ok "$DB_OUTPUT_RC" "$DB_OUTPUT" && echo "$DB_OUTPUT" | grep -q "All db tests passed"; then
         TOTAL=$((TOTAL + 1))
@@ -2985,7 +2986,7 @@ MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
 rm -f "$MODEL_PROBE_FILE"
 
 echo "[47/47] Model Save/Load Roundtrip"
-if ! echo "$MODEL_PROBE_OUT" | grep -q "undefined variable"; then
+if ! echo "$MODEL_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
     MRT_OUTPUT=$(bash "$TESTS_DIR/test_model_roundtrip.sh" 2>&1)
     MRT_PASS=$(echo "$MRT_OUTPUT" | grep -c "PASS:" || true)
     MRT_FAIL=$(echo "$MRT_OUTPUT" | grep -c "FAIL:" || true)
@@ -4147,8 +4148,8 @@ else
 fi
 
 # [125] ext_net TCP sockets on the trace tape (#414) — probe-gated like
-# [44] HTTP: the net_* builtins exist only under `make net` / `make
-# asan-http` (in no default build), so a default binary skips cleanly.
+# [44] HTTP: the server profiles enable net_*; the hosted release binds
+# unavailable stubs so direct calls explain which profile is needed.
 # Two parts: the loopback echo suite, then the definition-of-done —
 # the same file recorded under EIGS_TRACE must replay byte-identically
 # under EIGS_REPLAY (the tape pins every socket outcome; the replay run
@@ -4156,13 +4157,13 @@ fi
 # unexplained change in tape accounting is a regression, not noise.
 NET_PROBE_FILE=$(mktemp /tmp/eigs_net_probe_XXXXXX.eigs)
 cat > "$NET_PROBE_FILE" <<'PROBE'
-print of net_close
+print of (net_close of -1)
 PROBE
 NET_PROBE_OUT=$(./eigenscript "$NET_PROBE_FILE" 2>&1)
 rm -f "$NET_PROBE_FILE"
 
 echo "[125] Network Extension (#414)"
-if ! echo "$NET_PROBE_OUT" | grep -q "ndefined variable"; then
+if ! echo "$NET_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
     NET_OUTPUT=$(./eigenscript ../tests/test_net.eigs 2>&1); NET_OUTPUT_RC=$?
     if rc_ok "$NET_OUTPUT_RC" "$NET_OUTPUT" && echo "$NET_OUTPUT" | grep -q "All net tests passed"; then
         TOTAL=$((TOTAL + 1))
@@ -6693,6 +6694,13 @@ rm -f "$EX_GFX_PROBE"
 echo "[97] Example programs (examples/*.eigs)"
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
 EIGS_ABS="$(pwd)/eigenscript"
+# RLIMIT_AS cannot coexist with ASan's multi-terabyte shadow mapping. Gfx is
+# now in the default sanitizer profile (#1415), so keep the runaway timeout
+# but omit only the address-space cap under ASan.
+EX_GFX_ULIMIT='ulimit -v 2000000 2>/dev/null'
+if ASAN_OPTIONS=help=1 "$EIGS_ABS" --version 2>&1 | grep -q 'AddressSanitizer'; then
+    EX_GFX_ULIMIT=':'
+fi
 # Runaway guard reuses the shared $EIGS_TMO (defined near the top). The old
 # `timeout 60` here was a latency assertion in disguise: invariant_weak.eigs
 # takes ~60.5s standalone under ASan and tripped the 60s guard under suite load
@@ -6703,9 +6711,9 @@ for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
     if grep -q 'gfx_' "$f"; then
         if [ "$EX_HAS_GFX" != "1" ]; then EX_SKIP=$((EX_SKIP + 1)); continue; fi
         # #886: require the explicit pre-loop marker: rc 124 alone could also
-        # mean setup hung. Memory-capped — an unbounded UI run can take the
-        # whole machine.
-        EX_OUT=$( cd "$(dirname "$f")" && ulimit -v 2000000 2>/dev/null; \
+        # mean setup hung. Memory-capped — an unbounded
+        # UI run can take the whole machine.
+        EX_OUT=$( cd "$(dirname "$f")" && eval "$EX_GFX_ULIMIT"; \
                   cd "$(dirname "$f")" && EIGS_GFX_READY=1 SDL_VIDEODRIVER=dummy timeout 3 \
                   "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
         if { [ "$EX_RC" = "124" ] || [ "$EX_RC" = "0" ]; } && \

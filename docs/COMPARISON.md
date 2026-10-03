@@ -41,6 +41,15 @@ separators in its capped token count. These limits also raise under
 
 ## Variables and arithmetic
 
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
+
 Python:
 
 ```python

@@ -230,15 +230,30 @@ The scanned inventory must cover the recorded inventory floor, and every
 consumer needs a command. The commands returned by `plan` are compared
 byte for byte with the pre-change oracle when this gate changes.
 
-`run <tree-or-binary> [--full binary] [--gfx binary]` runs each command in its
-checkout. A tree argument selects `src/eigenscript`; a binary symlink is
+The helper's `run` command accepts a release binary and optional server profiles:
+
+```bash
+bash tools/consumer_acceptance.sh run ./src/eigenscript \
+  --server ./src/eigenscript-server --server-db ./src/eigenscript-server-db
+```
+
+These are options to `tools/consumer_acceptance.sh`. A former
+`eigenscript-gfx` invocation uses release after its graphics binding probe.
+An explicit `--gfx binary` preserves an older graphics layout, and
+`--full binary` supplies the legacy full executable; without that override,
+the full name uses the supplied server-db binary. Records identify each
+supplied profile and its hash.
+
+Each acceptance command runs in its consumer checkout.
+A tree argument selects `src/eigenscript`; a binary symlink is
 resolved before walking to its candidate tree. When a source tree is found,
 its `src/eigenscript` or `build/release/eigenscript` must match the resolved
 binary by inode or SHA256. A standalone binary gets a minimal overlay;
 `CA_TREE=<dir>` explicitly overrides the tree check and is recorded.
 The base and supplied variant binaries are hashed before the rows start. A
 shim directory is first on the inherited
-`PATH`; its `eigenscript`, `eigenscript-full` and `eigenscript-gfx` entries
+`PATH`; its `eigenscript`, `eigenscript-full`, `eigenscript-gfx`,
+`eigenscript-server` and `eigenscript-server-db` entries
 execute the original resolved binary paths and log calls, preserving
 executable-relative standard-library loading. Each supplied binary is hashed
 again after every row; a changed hash makes that row `FAIL` with

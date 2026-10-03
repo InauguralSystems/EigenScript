@@ -8,6 +8,7 @@
 #include "eigenscript.h"
 #include "fsutil.h"
 #include "vm.h"
+#include "builtins_internal.h"
 #include "task.h"
 #include "jit.h"
 #include "trace.h"
@@ -1075,7 +1076,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
     int slot_idx, depth;
     Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
     if (!target) {
-        rt_error(EK_UNDEFINED_NAME, g_vm.current_line, "undefined variable '%s'", name);
+        eigs_raise_missing_name(name, g_vm.current_line);
         vm_push_slot(slot_null());
         return;
     }
@@ -3707,7 +3708,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int slot_idx, depth;
         Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
         if (!target) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5270,7 +5271,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5319,7 +5320,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5370,7 +5371,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5425,7 +5426,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * read of the same name in the same position dies here; so does
              * this one now. (The AOT carried a carve-out for this case --
              * ouroboros t124 -- which can be deleted at the next pin bump.) */
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5912,7 +5913,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            rt_error(EK_UNDEFINED_NAME, current_line, "undefined variable '%s'", name);
+            eigs_raise_missing_name(name, current_line);
             vm_push_slot(slot_null());
             DISPATCH();
         }

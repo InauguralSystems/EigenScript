@@ -10,6 +10,19 @@
 
 ## Calls use `of`, never `f(x)`
 
+Hosted release includes lazy graphics. The server profile adds HTTP, raw TCP,
+and models; server-db additionally includes PostgreSQL. Omitted HTTP, network,
+database, and model names follow the first-reference rule below.
+
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
+
 - Apply a function or builtin with `of`: `print of x`, `sqrt of n`, `len of xs`.
 - A **bare literal list** after `of` is an argument list at every element
   count: `f of []` zero arguments, `f of [x]` ONE argument (x itself, not a

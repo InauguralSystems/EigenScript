@@ -641,7 +641,7 @@ jobs:
 
   extensions:
     name: extensions (http+model+gfx suite; embed/lsp/jit-smoke)
-    needs: [scope, extensions-http, extensions-gfx, extensions-zlib, extensions-net]
+    needs: [scope, extensions-http, extensions-zlib]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -659,20 +659,18 @@ jobs:
           SCOPE_RESULT: ${{ needs.scope.result }}
           CODE: ${{ needs.scope.outputs.code }}
           HTTP_RESULT: ${{ needs.extensions-http.result }}
-          GFX_RESULT: ${{ needs.extensions-gfx.result }}
           ZLIB_RESULT: ${{ needs.extensions-zlib.result }}
-          NET_RESULT: ${{ needs.extensions-net.result }}
         run: |
           set -euo pipefail
           [ "$SCOPE_RESULT" = success ]
           case "$CODE" in true|false) ;; *) exit 1;; esac
-          for result in "$HTTP_RESULT" "$GFX_RESULT" "$ZLIB_RESULT" "$NET_RESULT"; do
+          for result in "$HTTP_RESULT" "$ZLIB_RESULT"; do
             [ "$result" = success ] || exit 1
           done
-          echo "Extension coverage complete (code=$CODE; four workers succeeded)"
+          echo "Extension coverage complete (code=$CODE; server and zlib workers succeeded)"
 
   extensions-http:
-    name: extensions / http+model and ancillary checks
+    name: extensions / server (http+net+model+gfx) and ancillary checks
     needs: [dev-image, scope]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -741,12 +739,12 @@ jobs:
         run: bash tests/test_amalgamation.sh
 
       - if: needs.scope.outputs.code == 'true'
-        name: Build http+model variant
-        run: make http
+        name: Build consolidated server variant
+        run: make server
 
       # Every variant exercises the complete suite on every code event.
       - if: needs.scope.outputs.code == 'true'
-        name: Run full suite against http build
+        name: Run full suite against server build
         run: cd tests && bash run_all_tests.sh
 
       - if: needs.scope.outputs.code == 'true'
@@ -763,40 +761,6 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: Fuzz smoke (ASan harness, curated corpus)
         run: make fuzz && bash fuzz/run_fuzz.sh
-
-      - name: Require compiler guard activity
-        if: always() && needs.scope.outputs.code == 'true'
-        run: bash tools/cc_guard.sh --report
-  extensions-gfx:
-    name: extensions / gfx suite
-    needs: [dev-image, scope]
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ${{ needs.dev-image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Install compiler guard
-        run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
-          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
-          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
-          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Build gfx variant
-        run: make gfx
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Run full suite against gfx build
-        run: cd tests && bash run_all_tests.sh
 
       - name: Require compiler guard activity
         if: always() && needs.scope.outputs.code == 'true'
@@ -835,48 +799,6 @@ jobs:
       - name: Require compiler guard activity
         if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report
-  extensions-net:
-    name: extensions / net suite
-    needs: [dev-image, scope]
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ${{ needs.dev-image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Install compiler guard
-        run: |
-          { lscpu 2>/dev/null | grep -m1 'Model name:' || sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'CPU: unknown'; }; echo "CC=${CC:-unset}"; seen=; for c in ${CC:-} gcc cc clang; do case " $seen " in *" $c "*) continue ;; esac; seen="$seen $c"; if command -v "$c" >/dev/null 2>&1; then printf '%s: ' "$c"; "$c" --version 2>&1 | sed -n 1p; elif [ "$c" != clang ]; then echo "$c: missing"; fi; done
-          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
-          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
-          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Build net variant
-        run: make net
-
-      - if: needs.scope.outputs.code == 'true'
-        name: Run full suite against net build
-        run: cd tests && bash run_all_tests.sh
-
-      - name: Require compiler guard activity
-        if: always() && needs.scope.outputs.code == 'true'
-        run: bash tools/cc_guard.sh --report
-
-
-  # Build the `full` variant (http+model+db) against a real PostgreSQL service
-  # and run the suite with DATABASE_URL set. Without this, ext_db.c never
-  # executes anywhere: the suite's DB section [46] is probe-gated on the build,
-  # and test_db.eigs's live-path checks (DB09-DB15) additionally gate on an
-  # actual connection. When the job is containerized the service is reachable
-  # by its label (`db`), not localhost.
   database-worker:
     name: db extension suite (postgres service)
     needs: [dev-image, scope]
@@ -914,8 +836,8 @@ jobs:
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
-        name: Build full variant (http+model+db)
-        run: make full
+        name: Build server-db variant (http+net+model+gfx+db)
+        run: make server-db
 
       - if: needs.scope.outputs.code == 'true'
         name: Run full suite against full build with live DATABASE_URL
@@ -1096,7 +1018,7 @@ jobs:
 
       - if: needs.scope.outputs.code == 'true'
         name: Build with AddressSanitizer + UBSan
-        run: make asan-http
+        run: make asan-server
 
       # THE OWNER OF EACH JOB-LEVEL EXTRA IS DERIVED, NOT HARD-WIRED (#1160
       # round 6). Round 4 pinned both of these to shard 1 — which is by
@@ -1116,7 +1038,7 @@ jobs:
             exit 0
           fi
           echo "gc_traversal=yes" >> "$GITHUB_ENV"
-          python3 tools/gc_traversal_check.py --variant asan-http
+          python3 tools/gc_traversal_check.py --variant asan-server
 
       - if: needs.scope.outputs.code == 'true'
         name: Run shard ${{ matrix.shard }}/3 of the suite under sanitizers
@@ -1139,7 +1061,7 @@ jobs:
       # 3, the same step on shard 1 cost 267 s building eigenlsp from scratch.
       - if: needs.scope.outputs.code == 'true'
         name: Behavior-test the LSP under sanitizers (the shard running [88] owns it)
-        # `make asan-http` builds the interpreter, not eigenlsp — so the LSP would
+        # `make asan-server` builds the interpreter, not eigenlsp — so the LSP would
         # otherwise never run under a sanitizer in CI. This builds it with
         # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
         # sanitizer report from the LSP process (leaks, UB).

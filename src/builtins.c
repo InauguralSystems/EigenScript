@@ -35,6 +35,7 @@ static void wake_channels_for_exit(EigsState *st);
  * stays: handle_table_drain's HANDLE_NET pass reads EigsNetSock.fd, and that
  * header is deliberately free of socket headers for exactly this use. */
 #include "ext_register.h"
+#include "ext_names.h"
 
 #if EIGENSCRIPT_EXT_NET
 #include "ext_net_internal.h"
@@ -54,11 +55,59 @@ static void wake_channels_for_exit(EigsState *st);
  * from stdlib entries by Value type alone. */
 static int g_builtin_binding_count = 0;  /* atomic: every worker EigsState writes it (#1137) */
 
-/* True iff `name` is a name the runtime registered, as opposed to one the
- * running script defined. Deliberately allocation-free — the suite gates on a
- * zero leak tally, and a process-lifetime name snapshot would show up there. */
+/* Omitted extension names remain discoverable without allocating bindings.
+ * This classifier is used only after failed language resolution and by rare
+ * language-surface discovery. Compiled-in but unregistered names are ordinary
+ * undefined names. It never consults or changes the user's environment. */
+static const char *omitted_capability_message(const char *name) {
+    if (!name) return NULL;
+#define X(spelling, fn) if (strcmp(name, #spelling) == 0) return message;
+#if !EIGENSCRIPT_EXT_HTTP
+    {
+        const char *message = "HTTP capability unavailable; use the server profile";
+        EIGS_HTTP_BUILTINS(X)
+        EIGS_HTTP_REQUEST_BUILTINS(X)
+    }
+#endif
+#if !EIGENSCRIPT_EXT_DB
+    {
+        const char *message = "database capability unavailable; use the server-db profile";
+        EIGS_DB_BUILTINS(X)
+    }
+#endif
+#if !EIGENSCRIPT_EXT_NET
+    {
+        const char *message = "network capability unavailable; use the server profile";
+        EIGS_NET_BUILTINS(X)
+    }
+#endif
+#if !EIGENSCRIPT_EXT_MODEL
+    {
+        const char *message = "model capability unavailable; use the server profile";
+        EIGS_MODEL_BUILTINS(X)
+    }
+#endif
+#undef X
+    return NULL;
+}
+
+/* Shared internal cold failure seam; direct AOT adoption is separate work. */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline, cold))
+#endif
+void eigs_raise_missing_name(const char *name, int line) {
+    const char *message = omitted_capability_message(name);
+    if (message) rt_error(EK_VALUE, line, "%s", message);
+    else rt_error(EK_UNDEFINED_NAME, line, "undefined variable '%s'", name);
+}
+
+/* True iff `name` belongs to the runtime language surface, including omitted
+ * extension names, as opposed to one the running script defined. Deliberately
+ * allocation-free: a process-lifetime name snapshot would leak. */
 int eigs_is_registered_builtin(const char *name) {
-    if (!name || !g_global_env) return 0;
+    if (!name) return 0;
+    if (omitted_capability_message(name)) return 1;
+    if (!g_global_env) return 0;
     int n = __atomic_load_n(&g_builtin_binding_count, __ATOMIC_RELAXED);
     if (n > g_global_env->count) n = g_global_env->count;
     for (int i = 0; i < n; i++) {

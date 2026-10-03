@@ -47,11 +47,22 @@ cd EigenScript
 ./install.sh
 ```
 
-This builds the minimal binary and installs it to `~/.local/bin/eigenscript`.
+This builds the hosted release (including lazily loaded graphics) and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
-Run `./install.sh full` to also build the optional HTTP/DB/model binary
-(`eigenscript-full`); that path requires PostgreSQL development headers.
+Run `./install.sh server` to also build the HTTP + raw-TCP + model profile
+(`eigenscript-server`), or `./install.sh server-db` to add PostgreSQL; the
+latter path requires PostgreSQL development headers. `full` remains a
+compatibility spelling for `server-db`.
+
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
 
 **Homebrew** (macOS + Linux):
 
@@ -625,11 +636,17 @@ get made and how contributors can earn commit access over time.
 ```bash
 make                  # build
 make test             # build and run the full suite
-make gfx              # build with SDL2 graphics (UI toolkit, games)
-make net              # build with raw TCP sockets (record/replay-able)
+make server           # build with HTTP + raw TCP sockets + model builtins
+make server-db        # server profile plus PostgreSQL
+make zlib             # release profile plus DEFLATE codecs (links libz)
 make install          # install to ~/.local/bin
 make clean            # remove build artifacts
 ```
+
+The `tools/consumer_acceptance.sh` helper takes the release binary as its
+positional input, with separate server and database-capable binaries when
+needed. See [Consumer acceptance wave](docs/CI.md#consumer-acceptance-wave)
+for its profile options, compatibility aliases and recorded binary identities.
 
 Or use the shell scripts directly: `./build.sh` and `./install.sh`.
 

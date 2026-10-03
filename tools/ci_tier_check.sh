@@ -111,8 +111,7 @@ ci = W["ci.yml"][1]
 # allocation on PRs; the aggregator is what owns the required check name.
 HEAVY = {"build-and-test-macos", "extensions", "database", "sanitizers",
          "valgrind", "tsan", "tsan-http", "bench"}
-HEAVY_WORKERS = {"build-and-test-macos-worker", "extensions-http",
-                 "extensions-gfx", "extensions-zlib", "extensions-net",
+HEAVY_WORKERS = {"build-and-test-macos-worker", "extensions-http", "extensions-zlib",
                  "database-worker", "sanitizers-core"}
 if len(ci) != int(os.environ["CT_AWK"]) or not ci:
     V("vacuous", f"ci.yml: the loader sees {len(ci)} jobs, awk sees {os.environ['CT_AWK']}")

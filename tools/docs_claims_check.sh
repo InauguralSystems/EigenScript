@@ -99,7 +99,7 @@ def strict_default_wording():
     print(f'  STRICT DEFAULT ROWS: examined {len(lines)} line(s)')
     if not lines:
         red('STRICT DEFAULT ROWS examined 0 lines')
-    headings = ('Optional: Graphics (SDL2) Extension', 'Audio (additional)')
+    headings = ('Graphics (SDL2) Extension', 'Audio (additional)')
     sections = collections.defaultdict(list)
     for match in re.finditer(r'^## ([^\n]+)\n(.*?)(?=^## |\Z)', text, re.M | re.S):
         if match[1] in headings:
@@ -472,6 +472,8 @@ def selftest():
                  'A **short or non-list** argument also raises under strict;', 'describes strict errors as conditional'),
                 ('strict-section-missing', '## Audio (additional)',
                  '## Removed audio heading', "strict-default section 'Audio (additional)' must exist exactly once"),
+                ('strict-gfx-section-missing', '## Graphics (SDL2) Extension',
+                 '## Removed graphics heading', "strict-default section 'Graphics (SDL2) Extension' must exist exactly once"),
             ]:
                 assert original.count(anchor) == 1, (label, anchor)
                 p.write_text(original.replace(anchor, replacement, 1))
@@ -508,8 +510,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 16 case(s) run, {passed} passed, {16-passed} failed')
-            return 0 if passed == 16 else 1
+            print(f'SELFTEST: 17 case(s) run, {passed} passed, {17-passed} failed')
+            return 0 if passed == 17 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 

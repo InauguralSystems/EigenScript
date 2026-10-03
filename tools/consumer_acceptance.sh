@@ -307,7 +307,7 @@ overlay_runtime_slots() {
     base="${item##*/}"
     case "$base" in
       *.*) continue ;;
-      eigenscript|eigenscript-full|eigenscript-gfx) ;;
+      eigenscript|eigenscript-full|eigenscript-gfx|eigenscript-server|eigenscript-server-db) ;;
       eigenscript-*) [ -x "$item" ] || continue ;;
       *) continue ;;
     esac
@@ -337,7 +337,7 @@ build_overlay() {
   overlay_runtime_slots "$OVERLAY/src" || return 1
   overlay_runtime_slots "$OVERLAY" || return 1
   overlay_runtime_slots "$OVERLAY/lib" || return 1
-  for name in eigenscript eigenscript-full eigenscript-gfx; do
+  for name in eigenscript eigenscript-full eigenscript-gfx eigenscript-server eigenscript-server-db; do
     if [ ! -e "$OVERLAY/src/$name" ]; then
       cp "$SHIM/$name" "$OVERLAY/src/$name" || return 1
       RUNTIME_SLOTS+=("$OVERLAY/src/$name")
@@ -366,13 +366,56 @@ unsupported_variant() {
       eigenscript) ;;
       eigenscript-full) [ -n "$FULL" ] || { echo "$n"; return; } ;;
       eigenscript-gfx) [ -n "$GFX" ] || { echo "$n"; return; } ;;
+      eigenscript-server) [ -n "$SERVER" ] || { echo "$n"; return; } ;;
+      eigenscript-server-db) [ -n "$SERVER_DB" ] || { echo "$n"; return; } ;;
       eigenscript*) echo "$n"; return ;;
     esac
   done <<< "$raw"
 }
+# Shared by live rows and retained-log replay. Only status tokens at the start
+# of a line count; prose such as "0 skipped" or "ok: halted-skip" does not.
+# iLambdaAi tests/test_gates.sh declares one final gates: summary. Its skipped
+# count is a fallback when individual events are absent, never an added count.
+consumer_skip_check() {
+  local name="$1" log="$2"
+  if [ ! -f "$log" ] || [ ! -r "$log" ]; then
+    echo '0|skip-accounting:unreadable-log'; return 2
+  fi
+  LC_ALL=C awk -v consumer="$name" '
+    {
+      line = tolower($0)
+      if (line ~ /^[[:space:]]*skip([[:space:]:]|$)/) events++
+      if (consumer == "iLambdaAi" && line ~ /^[[:space:]]*gates:/) {
+        summaries++
+        if (line !~ /^[[:space:]]*gates: [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped, faults_run=[0-9]+[[:space:]]*$/) {
+          malformed = 1
+        } else {
+          sub(/^[[:space:]]*/, "", line)
+          split(line, fields, /[[:space:]]+/)
+          summary_skips = fields[6] + 0
+        }
+      }
+    }
+    END {
+      count = events + 0
+      if (summary_skips > count) count = summary_skips
+      reason = ""
+      if (consumer == "iLambdaAi") {
+        if (summaries == 0) reason = "missing-summary"
+        else if (summaries != 1) reason = "duplicate-summary"
+        else if (malformed) reason = "malformed-summary"
+        else if (events > 0 && events != summary_skips) reason = "summary-mismatch"
+      }
+      if (reason != "") reason = "skip-accounting:" reason
+      else if (count > 0) reason = "skips:" count
+      print count "|" reason
+      exit (reason != "")
+    }
+  ' "$log"
+}
 row() {
   local i="$1" name="${NAMES[i]}" pin="${PINS[i]}" cmd="${CMDS[i]}" kind="${KINDS[i]}"
-  local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated=""
+  local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated="" skip_result="" skip_problem="" skip_rc=0
   local -a session=(setsid)
   if ! command -v setsid >/dev/null 2>&1; then
     session=(python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1],sys.argv[1:])')
@@ -398,6 +441,8 @@ row() {
         case "$v" in
           eigenscript-full) [ -n "$FULL" ] || missing_variant="$v" ;;
           eigenscript-gfx) [ -n "$GFX" ] || missing_variant="$v" ;;
+          eigenscript-server) [ -n "$SERVER" ] || missing_variant="$v" ;;
+          eigenscript-server-db) [ -n "$SERVER_DB" ] || missing_variant="$v" ;;
           eigenscript*) missing_variant="$v" ;;
         esac
       fi
@@ -405,14 +450,16 @@ row() {
       calls=$((calls+1))
       if [ "$_rc" -eq 0 ]; then ok=$((ok+1)); else fail=$((fail+1)); fi
     done < "$CALL_LOG"
-    skips="$(grep -c '^SKIP' "$log" || true)"
+    skip_result="$(consumer_skip_check "$name" "$log")" || skip_rc=$?
+    [ "$skip_rc" -le 1 ] || skip_result='0|skip-accounting:reader-failed'
+    IFS='|' read -r skips skip_problem <<< "${skip_result:-0|skip-accounting:reader-failed}"
     if replaced_runtime_slot; then verdict=FAIL; prereq=runtime-slot-replaced
     elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then verdict=HANG
     elif [ -n "$missing_variant" ]; then verdict=UNRUNNABLE; prereq="variant:$missing_variant"
     elif [ "$rc" -ne 0 ]; then verdict=FAIL
     elif [ "$calls" -eq 0 ]; then verdict=FAIL; prereq=UNEXERCISED
     elif [ "$ok" -eq 0 ]; then verdict=FAIL; prereq=SWALLOWED
-    elif [ "$skips" -gt 0 ]; then verdict=FAIL; prereq="skips:$skips"
+    elif [ -n "$skip_problem" ]; then verdict=FAIL; prereq="$skip_problem"
     fi
   fi
   mkdir -p "$LOGS" && cp "$log" "$LOGS/$name.log" || return 1
@@ -428,6 +475,14 @@ row() {
     actual="$(sha256sum "$GFX" 2>/dev/null | awk '{print $1}')" || actual=missing
     [ "$actual" = "$GFX_SHA" ] || mutated="${mutated:+$mutated,}eigenscript-gfx"
   fi
+  if [ -n "$SERVER" ]; then
+    actual="$(sha256sum "$SERVER" 2>/dev/null | awk '{print $1}')" || actual=missing
+    [ "$actual" = "$SERVER_SHA" ] || mutated="${mutated:+$mutated,}eigenscript-server"
+  fi
+  if [ -n "$SERVER_DB" ]; then
+    actual="$(sha256sum "$SERVER_DB" 2>/dev/null | awk '{print $1}')" || actual=missing
+    [ "$actual" = "$SERVER_DB_SHA" ] || mutated="${mutated:+$mutated,}eigenscript-server-db"
+  fi
   if [ -n "$mutated" ]; then verdict=FAIL; prereq="candidate-mutated:$mutated"; fi
   local line="row|$name|$pin|$verdict|$rc|$dur|cand_calls=$calls|cand_ok=$ok|cand_fail=$fail|consumer_skips=$skips|selectors_overridden=${SELECTORS:-none}"
   [ -z "$prereq" ] || line="$line|prereq=$prereq"
@@ -437,15 +492,35 @@ row() {
   fi
   [ "$verdict" = PASS ]
 }
+# Prove the supplied profile can execute its owned operations; --api also
+# lists omitted names without promising callable availability.
+profile_probe() {
+  local binary="$1" profile="$2" src="$WORK/profile-$2.eigs" out="$WORK/profile-$2.out" rc
+  cat > "$src" <<'PROBE'
+r is http_route of ["GET", "/consumer-profile-probe", "probe"]
+r is net_close of -1
+r is eigen_model_loaded of null
+PROBE
+  if [ "$profile" = server-db ]; then printf '%s\n' 'r is db_connect of null' >> "$src"; fi
+  printf '%s\n' 'print of "PROFILE_READY"' >> "$src"
+  DATABASE_URL= timeout --kill-after=2s 5 "$binary" "$src" > "$out" 2>&1 && rc=0 || rc=$?
+  if [ "$rc" -ne 0 ] || [ "$(cat "$out")" != PROFILE_READY ]; then
+    echo "profile unavailable: $profile (probe rc=$rc): $binary"
+    cat "$out"
+    return 1
+  fi
+}
 run() {
   local candidate="${1:-}" arg i examined=0 bad=0 rc version final_tmp gfx_checkout_lib gfx_prefix_lib gfx_user_lib
-  FULL=""; GFX=""
-  [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--full binary] [--gfx binary]'; return 2; }
+  FULL=""; GFX=""; SERVER=""; SERVER_DB=""; GFX_ROUTE=missing
+  [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--server binary] [--server-db binary] [--full binary] [--gfx binary]'; return 2; }
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --full) [ "$#" -ge 2 ] || return 2; FULL="$2"; shift 2 ;;
-      --gfx) [ "$#" -ge 2 ] || return 2; GFX="$2"; shift 2 ;;
+      --gfx) [ "$#" -ge 2 ] || return 2; GFX="$2"; GFX_ROUTE=explicit; shift 2 ;;
+      --server) [ "$#" -ge 2 ] || return 2; SERVER="$2"; shift 2 ;;
+      --server-db) [ "$#" -ge 2 ] || return 2; SERVER_DB="$2"; shift 2 ;;
       *) echo "unknown argument: $1"; return 2 ;;
     esac
   done
@@ -453,9 +528,13 @@ run() {
   if [ -d "$candidate" ]; then candidate="$candidate/src/eigenscript"; fi
   [ -f "$candidate" ] && [ -x "$candidate" ] || { echo "candidate not executable: $candidate"; return 2; }
   candidate="$(readlink -f "$candidate")" || { echo 'candidate resolution failed'; return 2; }
-  for arg in "$FULL" "$GFX"; do [ -z "$arg" ] || { [ -f "$arg" ] && [ -x "$arg" ]; } || { echo "variant not executable: $arg"; return 2; }; done
+  for arg in "$FULL" "$GFX" "$SERVER" "$SERVER_DB"; do [ -z "$arg" ] || { [ -f "$arg" ] && [ -x "$arg" ]; } || { echo "variant not executable: $arg"; return 2; }; done
   [ -z "$FULL" ] || FULL="$(readlink -f "$FULL")"
   [ -z "$GFX" ] || GFX="$(readlink -f "$GFX")"
+  [ -z "$SERVER" ] || SERVER="$(readlink -f "$SERVER")"
+  [ -z "$SERVER_DB" ] || SERVER_DB="$(readlink -f "$SERVER_DB")"
+  # The former full executable is the server-db compatibility name.
+  [ -n "$FULL" ] || FULL="$SERVER_DB"
   if [ -n "$GFX" ]; then
     # Match the runtime's checkout and installed-stdlib probes. A parent lib
     # directory alone proves nothing; require the concrete observer module.
@@ -486,9 +565,14 @@ run() {
     echo 'candidate_version=PENDING'
     echo "candidate_full=${FULL:-none}"
     echo "candidate_gfx=${GFX:-none}"
+    echo "gfx_route=$GFX_ROUTE"
+    echo "candidate_server=${SERVER:-none}"
+    echo "candidate_server_db=${SERVER_DB:-none}"
     echo 'candidate_sha256=PENDING'
     echo 'full_sha256=PENDING'
     echo 'gfx_sha256=PENDING'
+    echo 'server_sha256=PENDING'
+    echo 'server_db_sha256=PENDING'
     echo "record_floor=$FLOOR"
     echo 'inventory=PENDING'
     echo 'examined=0'
@@ -509,19 +593,30 @@ run() {
       TREE_OVERRIDE=none
     else TREE_OVERRIDE=standalone; fi
   fi
-  FULL_SHA=none; GFX_SHA=none
+  FULL_SHA=none; GFX_SHA=none; SERVER_SHA=none; SERVER_DB_SHA=none
   if [ -n "$FULL" ]; then FULL_SHA="$(sha256sum "$FULL" | awk '{print $1}')" || { echo 'cannot hash full variant'; return 2; }; [ "${#FULL_SHA}" -eq 64 ] || { echo 'invalid full SHA256'; return 2; }; fi
   if [ -n "$GFX" ]; then GFX_SHA="$(sha256sum "$GFX" | awk '{print $1}')" || { echo 'cannot hash gfx variant'; return 2; }; [ "${#GFX_SHA}" -eq 64 ] || { echo 'invalid gfx SHA256'; return 2; }; fi
+  if [ -n "$SERVER" ]; then SERVER_SHA="$(sha256sum "$SERVER" | awk '{print $1}')" || { echo 'cannot hash server variant'; return 2; }; [ "${#SERVER_SHA}" -eq 64 ] || return 2; fi
+  if [ -n "$SERVER_DB" ]; then SERVER_DB_SHA="$(sha256sum "$SERVER_DB" | awk '{print $1}')" || { echo 'cannot hash server-db variant'; return 2; }; [ "${#SERVER_DB_SHA}" -eq 64 ] || return 2; fi
   CAND_GIT_SHA="$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null)" || CAND_GIT_SHA=none
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.XXXXXX")" || { echo 'cannot create scratch'; return 2; }
   version="$(timeout "$BUDGET" "$candidate" --version 2>/dev/null)" || version=unknown
   version="${version%%$'\n'*}"
   [ -n "$version" ] || version=unknown
+  # Route former gfx invocations to release only after its binding probe.
+  # Preserve the explicit --gfx override for older candidates.
+  if [ -z "$GFX" ] && ! probe_prereq dynamics '' "$candidate" > "$WORK/gfx-prereq"; then
+    GFX="$candidate"; GFX_SHA="$CAND_SHA"; GFX_ROUTE=release
+  fi
+  [ -z "$SERVER" ] || profile_probe "$SERVER" server || return 2
+  [ -z "$SERVER_DB" ] || profile_probe "$SERVER_DB" server-db || return 2
   SHIM="$WORK/bin"; mkdir -p "$SHIM"
   CALL_LOG="$WORK/calls"; : > "$CALL_LOG"
   make_shim eigenscript "$candidate"
   make_shim eigenscript-full "${FULL:-missing}"
   make_shim eigenscript-gfx "${GFX:-missing}"
+  make_shim eigenscript-server "${SERVER:-missing}"
+  make_shim eigenscript-server-db "${SERVER_DB:-missing}"
   derive_runtime_selectors
   BODY="$WORK/record-body"; : > "$BODY"
   scan_inventory > "$WORK/inventory"
@@ -551,9 +646,14 @@ run() {
     echo "candidate_version=$version"
     echo "candidate_full=${FULL:-none}"
     echo "candidate_gfx=${GFX:-none}"
+    echo "gfx_route=$GFX_ROUTE"
+    echo "candidate_server=${SERVER:-none}"
+    echo "candidate_server_db=${SERVER_DB:-none}"
     echo "candidate_sha256=$CAND_SHA"
     echo "full_sha256=$FULL_SHA"
     echo "gfx_sha256=$GFX_SHA"
+    echo "server_sha256=$SERVER_SHA"
+    echo "server_db_sha256=$SERVER_DB_SHA"
     echo "record_floor=$FLOOR"
     echo "inventory=$inventory"
     echo "examined=$examined"
@@ -874,8 +974,72 @@ selftest() {
   if [ "$st_rc" -eq 0 ] && grep -Fq 'cand_calls=1|cand_ok=1' "$st_record"; then
     echo 'plant R check=gfx-prefix-runtime-lib GREEN module=../lib/eigenscript/observer.eigs home=absent'
   else echo 'plant R check=gfx-prefix-runtime-lib SILENT'; st_bad=1; fi
+  # (S) A hosted release routes all former gfx call forms through its shim.
+  cat > "$st_candidate" <<'CANDIDATE'
+#!/bin/sh
+case "$1" in
+  --api) echo gfx_open ;;
+  *gfx_bind.eigs) echo '<builtin>' ;;
+  --version) echo 0.43.0 ;;
+  *) echo RELEASE ;;
+esac
+CANDIDATE
+  chmod +x "$st_candidate"
+  st_reset; st_consumer release_gfx 'test "$(eigenscript-gfx good.eigs)" = RELEASE && test "$("$EIGS_DIR/src/eigenscript-gfx" good.eigs)" = RELEASE && bash selector.sh'
+  printf '%s\n' '#!/bin/sh' 'test "$("$EIGENSCRIPT_GFX" good.eigs)" = RELEASE' > "$st_eco/release_gfx/selector.sh"
+  printf 'release_gfx\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Fqx 'gfx_route=release' "$st_record" && grep -Fq 'cand_calls=3|cand_ok=3' "$st_record"; then
+    echo 'plant S check=release-gfx-routing GREEN named=release tree=release selector=release calls=3'
+  else echo 'plant S check=release-gfx-routing SILENT'; st_bad=1; fi
+  # (T) Server and server-db inputs remain distinct; full is the DB alias.
+  local st_server="$st_root/server" st_server_db="$st_root/server-db"
+  printf '#!/bin/sh\ncase "$1" in *profile-server.eigs) echo PROFILE_READY;; *) echo SERVER;; esac\n' > "$st_server"
+  printf '#!/bin/sh\ncase "$1" in *profile-server-db.eigs) echo PROFILE_READY;; *) echo SERVER_DB;; esac\n' > "$st_server_db"
+  chmod +x "$st_server" "$st_server_db"
+  st_reset; st_consumer profiles 'test "$(eigenscript-server good.eigs)" = SERVER && test "$(eigenscript-server-db good.eigs)" = SERVER_DB && test "$(eigenscript-full good.eigs)" = SERVER_DB'
+  printf 'profiles\n' > "$st_eco/.ca_expected"
+  st_rc=0
+  CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 timeout 60 \
+    bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --server "$st_server" --server-db "$st_server_db" > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'cand_calls=3|cand_ok=3' "$st_record" && grep -Fqx "candidate_server=$st_server" "$st_record" && grep -Fqx "candidate_server_db=$st_server_db" "$st_record"; then
+    echo 'plant T check=distinct-server-profiles GREEN server=SERVER db=SERVER_DB full=SERVER_DB calls=3'
+  else echo 'plant T check=distinct-server-profiles SILENT'; st_bad=1; fi
+  # (U) A server-only input never satisfies a server-db invocation.
+  st_reset; st_consumer needs_db 'eigenscript-server-db good.eigs'
+  printf 'needs_db\n' > "$st_eco/.ca_expected"
+  st_rc=0
+  CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 timeout 60 \
+    bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --server "$st_server" > "$st_out" 2>&1 || st_rc=$?
+  st_check U server-db-required 'prereq=variant:eigenscript-server-db' "$st_record"
+  # (V) A release passed as server fails before running any consumer.
+  st_rc=0
+  CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 timeout 60 \
+    bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --server "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 2 ] && grep -Fq 'profile unavailable: server' "$st_out" && grep -Fqx 'VERDICT: INCOMPLETE' "$st_record"; then
+    echo 'plant V check=profile-operation-probe RED release-as-server=refused record=INCOMPLETE'
+  else echo 'plant V check=profile-operation-probe SILENT'; st_bad=1; fi
+  # (W) Overwriting a server input is named and invalidates its counted row.
+  st_reset; st_consumer profile_mutation 'eigenscript-server good.eigs && printf changed > "$CA_MUTATE_TARGET"'
+  printf 'profile_mutation\n' > "$st_eco/.ca_expected"
+  st_rc=0
+  CA_MUTATE_TARGET="$st_server" CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 timeout 60 \
+    bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --server "$st_server" > "$st_out" 2>&1 || st_rc=$?
+  st_check W server-mutation 'prereq=candidate-mutated:eigenscript-server' "$st_record"
+  # (X) An indented lowercase event and its summary are one omitted branch.
+  st_reset; st_consumer iLambdaAi 'eigenscript good.eigs; printf "  skip: fixture omitted\ngates: 5 passed, 0 failed, 1 skipped, faults_run=2\n"'
+  printf 'iLambdaAi\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  st_check X consumer-skips 'cand_calls=1|cand_ok=1|cand_fail=0|consumer_skips=1|selectors_overridden=none|prereq=skips:1' "$st_record"
+  # (Y) A zero-skipped summary and ordinary prose preserve an honest PASS.
+  st_reset; st_consumer iLambdaAi 'eigenscript good.eigs; printf "ok: fixture discusses skips\nSKIPPER is an identifier\ngates: 6 passed, 0 failed, 0 skipped, faults_run=3\n"'
+  printf 'iLambdaAi\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'row|iLambdaAi|v0.43.0|PASS|0|' "$st_record" && grep -Fq 'cand_calls=1|cand_ok=1|cand_fail=0|consumer_skips=0|' "$st_record" && grep -Fqx 'VERDICT: PASS' "$st_record"; then
+    echo 'plant Y check=consumer-skip-clean GREEN consumer_skips=0 calls=1'
+  else echo 'plant Y check=consumer-skip-clean SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 26/26 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 33/33 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
@@ -883,5 +1047,8 @@ case "${1:-plan}" in
   plan) shift 2>/dev/null || true; plan "$@" ;;
   run) shift; run "$@" ;;
   --self-test) selftest ;;
-  *) echo 'usage: consumer_acceptance.sh [plan [--cmd consumer]|run candidate [--full binary] [--gfx binary]|--self-test]'; exit 2 ;;
+  --check-skips)
+    [ "$#" -eq 3 ] || { echo 'usage: consumer_acceptance.sh --check-skips consumer logfile'; exit 2; }
+    consumer_skip_check "$2" "$3" ;;
+  *) echo 'usage: consumer_acceptance.sh [plan [--cmd consumer]|run candidate [--server binary] [--server-db binary] [--full binary] [--gfx binary]|--self-test|--check-skips consumer logfile]'; exit 2 ;;
 esac

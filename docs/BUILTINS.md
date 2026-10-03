@@ -596,13 +596,14 @@ either way, so the numbers are byte-identical.
 
 ## Optional: Network Extension (TCP sockets)
 
-Requires a `make net` build (`EIGENSCRIPT_EXT_NET=1`; in no default
-build). Raw TCP sockets whose every nondeterministic outcome — accepted
+Requires a `make server` build (`EIGENSCRIPT_EXT_NET=1`; not in the default
+release). Raw TCP sockets whose every nondeterministic outcome — accepted
 connections, received bytes, bytes-sent counts, dial results,
 kernel-assigned ports — rides the trace tape: a session recorded under
 `EIGS_TRACE` replays byte-identically under `EIGS_REPLAY` with **no
 network present** (the replay run performs zero socket syscalls). See
 [TRACE.md](TRACE.md).
+`make net` remains a compatibility alias for `make server`.
 
 | Builtin | Form | Returns |
 |---------|------|---------|
@@ -726,10 +727,10 @@ If the `require_auth` key is absent, the worker falls back to a
 `require_auth` *function* in the global env (legacy path; default
 worker envs don't populate it).
 
-## Optional: Graphics (SDL2) Extension
+## Graphics (SDL2) Extension
 
-Requires a build with graphics enabled (`make gfx`). Dynamically loads
-libSDL2 at runtime — no SDL2 headers needed at build time.
+Compiled into the hosted release (`make`). It dynamically loads libSDL2 at
+first use, so no SDL2 headers or link-time SDL dependency are needed.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
@@ -860,11 +861,12 @@ revoked permission *and* an empty table alike, so a reporting script kept
 printing "0 rows" forever after a schema change and a migration that did
 nothing looked healthy in CI.
 
-The core build (`make build`) has no db builtins, so the call below raises
-as an undefined variable. The db build (`make full`) raises a catchable
+The release build (`make build`) omits db bindings, so resolving the db name
+below raises a catchable `value` error naming the database capability
+and the server-db profile before evaluating call arguments. The db build (`make server-db`) raises a catchable
 `io` error when there is no connection (`db: not connected — call db_connect
 first`). Both paths are a failure of the query, so the executed example
-prints only the prefix — `e.message` is one of the two strings above,
+prints only the prefix — `e.message` depends on the compiled profile,
 depending on which binary you run it on, and pinning either one here would
 document the other build's absence.
 
