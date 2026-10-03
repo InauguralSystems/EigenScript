@@ -200,6 +200,8 @@ typedef enum {
 
 typedef struct ASTNode ASTNode;
 typedef struct Env Env;
+typedef struct EnvInternTable EnvInternTable;
+typedef struct EnvInternRef EnvInternRef;
 
 struct ASTNode {
     ASTType type;
@@ -362,6 +364,8 @@ struct Env {
     Env *gc_prev;
     unsigned char in_gc_list;
     EnvHash hash;
+    /* Counted non-node leaf owners for borrowed binding names. */
+    EnvInternRef *intern_refs;
     /* #262 Phase-1: self-managed slot-keyed observer array (own capacity,
      * grown in observer_slot_update; freed/reset at env teardown/park). NULL
      * until the first shadow observation under EIGS_OBS_SHADOW. */
@@ -400,9 +404,9 @@ struct Value {
          * union object, as it does everywhere here. */
         struct { char *ptr; size_t len; } strv;
         struct { Value **items; int count; int capacity; } list;
-        struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; } fn;
+        struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; EnvInternTable *param_intern_tbl; } fn;
         BuiltinFn builtin;
-        struct { char **keys; Value **vals; int count; int capacity; EnvHash hash; } dict;
+        struct { char **keys; Value **vals; int count; int capacity; EnvHash hash; EnvInternRef *intern_refs; } dict;
         struct { double *data; int count; int rows, cols; } buffer;  /* rows==0 => unshaped 1-D (count is length); rows>0 => 2-D, rows*cols==count */
         struct { char *data; size_t len; size_t cap; int parts; } text_builder;
     } data;
@@ -425,6 +429,9 @@ struct Value {
      * is what makes the common (non-namespace) dict path a single byte test —
      * including in the JIT's inline dict-cache probe, which bails on it. */
     unsigned char module_ns;
+    /* 1 iff this dictionary has a private-name registry record. Object-local
+     * fast rejection: unrelated Value destruction never takes its mutex. */
+    unsigned char intern_private;
 };
 
 /* #1183: the `str` / `strv.ptr` overlay is the whole mechanism — pin it at
@@ -701,10 +708,13 @@ typedef struct EnvNameIntern {
 typedef struct EnvInternValueOwner EnvInternValueOwner;
 
 /* #1065: see EigsThread.intern_tbl. */
-typedef struct EnvInternTable {
+struct EnvInternTable {
     int            refcount;                       /* atomic */
     EnvNameIntern *buckets[ENV_NAME_INTERN_BUCKETS];
-} EnvInternTable;
+};
+/* Table refs are leaf ownership, not cycle-collector graph nodes. */
+struct EnvInternRef { EnvInternTable *table; EnvInternRef *next; };
+void env_retain_intern_table(Env *env, EnvInternTable *table);
 EnvInternTable *env_intern_table_new(void);
 void            env_intern_table_ref(EnvInternTable *t);
 void            env_intern_table_unref(EnvInternTable *t);
@@ -714,6 +724,9 @@ void            env_intern_table_unref(EnvInternTable *t);
 struct EigsState {
     pthread_mutex_t threads_lock;
     EigsThread     *threads;
+    /* Private promoted keys belong to Values, across same-state attachments. */
+    pthread_mutex_t intern_owner_lock;
+    EnvInternValueOwner *sandbox_intern_owners;
     /* Observer-classification thresholds (set_observer_threshold builtin).
      * Per-state because they're interpreter configuration, not execution
      * state; one knob per host application, shared across worker threads. */
@@ -1095,7 +1108,6 @@ struct EigsThread {
      * scope is released. */
     uint32_t             sandbox_intern_scope;
     uint32_t             sandbox_intern_scope_next;
-    EnvInternValueOwner *sandbox_intern_owners;
     /* Recursion-depth guards (parse/tokenize/value_to_string/JSON/native
      * call). Reset per top-level entry; reside here so multiple states
      * sharing an OS thread don't see each other's mid-walk depth. */
@@ -1373,7 +1385,7 @@ extern __thread EigsThread *eigs_current;
 #define g_env_name_interns    (eigs_current->intern_tbl->buckets)
 #define g_sandbox_intern_scope (eigs_current->sandbox_intern_scope)
 #define g_sandbox_intern_scope_next (eigs_current->sandbox_intern_scope_next)
-#define g_sandbox_intern_owners (eigs_current->sandbox_intern_owners)
+#define g_sandbox_intern_owners (eigs_current->state->sandbox_intern_owners)
 #define g_prev_tab            (eigs_current->prev_tab)
 #define g_prev_cap            (eigs_current->prev_cap)
 #define g_prev_count          (eigs_current->prev_count)
@@ -1623,7 +1635,7 @@ void     env_intern_scope_end(uint32_t scope, uint32_t previous);
 char    *env_intern_scope_promote(Value *owner, char *name);
 void     env_intern_scope_retain(const char *name);
 void     env_intern_release_value(Value *owner);
-void     env_intern_release_all_values(void);
+void     env_intern_release_all_values(EigsState *st);
 void free_value(Value *v);
 
 /* ---- Reference counting (atomic for thread safety) ----
@@ -1884,12 +1896,15 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s);
 /* Same as env_set_local_hashed_slot, but `interned` must come from
  * env_intern_name() so it can be stored directly without re-interning.
- * VM uses this with chunk->const_interns[idx] in the hot SET_NAME paths. */
+ * owner must be the table supplying that exact pointer (usually the chunk
+ * table), not necessarily the currently attached thread's table. */
 void env_set_local_pre_interned_slot(Env *env, const char *interned,
+                                      EnvInternTable *owner,
                                      uint32_t h, EigsSlot s);
 /* Bind a parameter into a freshly-created call env. Skips env_hash_find;
  * caller guarantees the name does not collide with an earlier binding. */
 void env_bind_fresh_param_slot(Env *env, const char *interned,
+                               EnvInternTable *owner,
                                uint32_t h, EigsSlot s);
 /* Raw insert into env hash (exposed for vm.c inline call-site fast paths). */
 void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
