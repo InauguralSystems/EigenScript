@@ -515,6 +515,10 @@ void observer_slot_sample_num(struct Env *e, int idx, double num);
 void observer_slot_sample_gated(struct Env *e, int idx, Value *newval);
 void observer_slot_sample_num_gated(struct Env *e, int idx, double num);
 void observer_slot_reset(struct Env *e);
+/* Clear every slot and its inner rings, retaining the initialized outer array
+ * only when its allocated capacity is no greater than max_retain_cap.
+ * A negative limit requests full destruction. */
+void observer_slot_reset_bounded(struct Env *e, int max_retain_cap);
 /* Observed-loop halting on an explicit env (no VM-frame dependency): one
  * iteration of OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK. Returns 1 when the loop
  * should exit (observer stalled 100 iters, or the absolute cap). Lets the AOT

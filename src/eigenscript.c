@@ -875,7 +875,7 @@ int observer_slot_set_window(Env *e, int idx, int n) {
     return 1;
 }
 
-void observer_slot_reset(Env *e) {
+void observer_slot_reset_bounded(Env *e, int max_retain_cap) {
     if (!e || !e->obs) return;
     vm_obs_slot_dropped(e);   /* invalidate the VM's last-observed-slot tracker */
     for (int i = 0; i < e->obs_cap; i++) {
@@ -883,9 +883,20 @@ void observer_slot_reset(Env *e) {
         free(e->obs[i].v_window);   /* #294 value-signal window */
         free(e->obs[i].vr_window);  /* #422 raw-step window */
     }
+    /* observer_obs_grow initializes the entire allocated extent, not merely
+     * the binding prefix. Clearing obs_cap slots is therefore both necessary
+     * (an override may exist on an otherwise unused slot) and sufficient. */
+    if (max_retain_cap >= 0 && e->obs_cap <= max_retain_cap) {
+        memset(e->obs, 0, (size_t)e->obs_cap * sizeof(*e->obs));
+        return;
+    }
     free(e->obs);
     e->obs = NULL;
     e->obs_cap = 0;
+}
+
+void observer_slot_reset(Env *e) {
+    observer_slot_reset_bounded(e, -1);
 }
 
 /* #861: a numeric binding pinned at the saturation ceiling (±EIGS_NUM_MAX,
