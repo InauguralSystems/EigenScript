@@ -513,11 +513,13 @@ The runtime publishes a loop's iteration count as an ordinary binding in the
 loop's env (`loop_iter_store`, `src/vm.c`). For a MODULE-LEVEL loop that env
 is the shared root env — so main's module-level loop and a worker's
 module-level loop inside `load_file` write the same slot even when the two
-threads load completely different modules. Today the consequence is a lost
-update on a runtime-internal counter (the slot holds an immediate number, so
-nothing is freed twice and no value your program reads is corrupted); a
-`report`/`when is` on that name can under-count. It is tracked with the same
-issue.
+threads load completely different modules. Publication into a shared env
+under multithreading uses the existing locked environment setter, including
+the assignment-count update, instead of the cached slot-write path. The
+calculation counter remains thread-local and call-frame scoped; the shared
+binding still holds the last published value, not a sum across threads.
+This narrow runtime-bookkeeping change does not establish safety for concurrent
+user access to shared bindings or complete the remaining work tracked by #1171.
 
 ## Observer arming sets are process-global and locked (#1145)
 

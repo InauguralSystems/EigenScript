@@ -273,6 +273,23 @@ build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c
 embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
 	@echo "Embed observer test built: $<"
 
+# #1171: one-writer compatibility and real setter routing; reuse the owning
+# variant without changing the CLI alias. GNU-style --wrap is test-only and
+# confined to Linux linking; portable runtime objects are unchanged.
+LOOP_COUNTER_VARIANT ?= release
+.PHONY: loop-counter-sequential-test
+ifeq ($(shell uname -s),Linux)
+LOOP_COUNTER_OBJ := $(filter-out build/$(LOOP_COUNTER_VARIANT)/main.o,$(OBJ_$(LOOP_COUNTER_VARIANT)))
+build/$(LOOP_COUNTER_VARIANT)/test_loop_counter_sequential: tests/test_loop_counter_sequential.c $(LOOP_COUNTER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
+	$(CC) $(FLAGS_$(LOOP_COUNTER_VARIANT)) -I$(SRC_DIR) -Wl,--wrap=env_set_local -o $@ $< $(LOOP_COUNTER_OBJ) $(LIBS_$(LOOP_COUNTER_VARIANT))
+loop-counter-sequential-test: build/$(LOOP_COUNTER_VARIANT)/test_loop_counter_sequential
+	@echo "Sequential loop counter test built: $<"
+else
+loop-counter-sequential-test:
+	@echo "loop-counter-sequential-test requires Linux GNU-style --wrap linking" >&2
+	@exit 2
+endif
+
 TRACE_CORRESPONDENCE_VARIANT ?= release
 TRACE_CORRESPONDENCE_OBJ := $(filter-out build/$(TRACE_CORRESPONDENCE_VARIANT)/main.o,$(OBJ_$(TRACE_CORRESPONDENCE_VARIANT)))
 build/$(TRACE_CORRESPONDENCE_VARIANT)/test_trace_correspondence: tests/test_trace_correspondence.c $(TRACE_CORRESPONDENCE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
