@@ -70,7 +70,14 @@ void eigs_close(EigsState *st) {
         handle_table_drain(st);
         if (g_global_env) {
             Env *global = g_global_env;
+            /* trace_shutdown includes this attachment's prev-table drain, but
+             * it is process-wide and therefore reserved for the last state.
+             * A non-last close still has to drop its own trace-held refs
+             * before cycle collection: imported module namespaces and their
+             * exported functions can both be retained there, making their
+             * otherwise-unreachable cycle look externally rooted (#1608). */
             if (last_state) trace_shutdown();
+            else trace_thread_release();
             gc_collect_at_exit(global);
             env_decref(global);
             g_global_env = NULL;

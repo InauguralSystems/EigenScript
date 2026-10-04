@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx
+.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -472,6 +472,16 @@ embed-smoke: amalgamation
 	$(CC) $(CFLAGS) -Ibuild -o /tmp/embed_smoke $(SRC_DIR)/embed_smoke.c build/eigenscript_all.c \
 		-lm -lpthread
 	/tmp/embed_smoke
+
+# The amalgamation smoke above is a release control, not a leak check.  Link
+# the same owning host against the real sanitizer objects so state teardown is
+# observed by LeakSanitizer (#1608).
+embed-smoke-asan embed-smoke-asan-server: embed-smoke-%: %
+	$(CC) $(FLAGS_$*) -o /tmp/embed_smoke_$* $(SRC_DIR)/embed_smoke.c \
+		$(filter-out build/$*/main.o,$(OBJ_$*)) $(LIBS_$*)
+	@readelf -Ws /tmp/embed_smoke_$* | grep -q '__asan_init'
+	ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		/tmp/embed_smoke_$*
 
 # Same smoke against the gfx variant's objects: pins that the embed API's
 # env is composed by the ONE registration seam (#742 — pre-fix, only the

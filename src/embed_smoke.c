@@ -1038,8 +1038,8 @@ int main(void) {
     if (r) eigs_value_release(r);
     /* A second, independent state's `len` is untouched. */
     CHECK(eigs_thread_switch(st2) != NULL, "#1388 switch to st2");
-    /* (No import on st2: a module imported on a parked, non-last state
-     * leaks its function cycle at eigs_close on origin/main too.) */
+    /* st2 imported smokemod above. Closing that non-last state below must
+     * reclaim the module/function cycle without disturbing this builtin. */
     r = eigs_eval_string("len of [1, 2]");
     CHECK(r != NULL && eigs_value_as_num(r) == 2.0,
           "#1388 st2's len untouched by st1's `len is 5`");
