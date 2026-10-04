@@ -135,22 +135,52 @@ as a force-destroy escape hatch (no current callers in main).
   `rc > internal + pinned`); afterward it clears the flags and drops the pins
   (the final pin drop frees the now-edge-cleared garbage; live candidates keep
   their other refs). The buffer drains on the env-registry threshold trigger,
-  on its own adaptive threshold, and at exit. After a successful collection
-  that threshold is `min(100000000, max(1024, surviving traversal work))`
+  on its own adaptive admission threshold, and at exit. After a successful
+  collection that threshold is `min(100000000, max(1024, surviving traversal work))`
   (#1096, #1442). Work is one unit per marked node plus one per owned child
   slot its walker tests, including leaf slots and duplicate references;
   the counts come from `GC_EDGE_TABLE`, without an additional edge walk.
   A dense surviving graph therefore buys a longer interval before the next
   scan than a sparse graph with the same node count. Garbage contributes no
   work to the successful re-arm, so garbage-heavy collections return to the
-  floor. This trades a larger pending-candidate buffer for amortising the
-  surviving graph's scan; the cap bounds that budget. An accounting-aborted
+  floor. This amortises the surviving graph's scan; the cap bounds that
+  admission budget. An accounting-aborted
   collection uses the entire discovery work because it has no trustworthy
   survivor classification. The hook is off when
   GC-disabled, mid-collection, or multithreaded, so the hot decref stays
   lock-free and single-threaded-only. (This is *not* identical to
   `env_mark_captured`, whose registration continues under `gc_lock` while
   multithreaded — only its collection trigger is suppressed there.)
+- **Pin-only retirement (#1623).** Each outer single-threaded admission
+  first publishes its new pin, then inspects at most one older candidate.
+  If that candidate's refcount is exactly one, the buffer pin is its only
+  counted reference: remove its entry and flag, then drop the pin through
+  ordinary refcount destruction. Other candidates stay available to the
+  full cycle collector. The cursor advances and swap-removal completes
+  before destruction; no address into the candidate array survives across
+  child decrefs, which may append candidates and reallocate that array.
+  A separate cull-active flag defers nested culls and admission-triggered
+  full scans, but **does not suppress child registration**. A dying parent
+  may orphan a child cycle that needs its own candidate pin. Using `in_gc`
+  for this partial retirement would lose that registration. Current
+  destructors do not evaluate callbacks or enter collection except through
+  candidate admission; adding such a path requires complete request deferral.
+
+  A saturating per-state admission counter, not compacted buffer length,
+  drives the unchanged full-scan threshold. Every new admission counts,
+  including nested/deferred-MT admissions; dedup no-ops do not. Retirement
+  never erases this progress, so continuing admitted churn still services
+  retained cycles. Both full-drain modes reset the counter and cursor even
+  when no seeds remain; MT/in-collection early returns leave them intact.
+  Deferred-MT updates use the existing registry lock, without culling or
+  scanning while MT is active.
+
+  One inspection and constant-size array edits do **not** bound destruction
+  time, C-stack use, or pending heap: a pin release may recursively destroy
+  a large ownership subtree, and a candidate can become pin-only after its
+  cursor visit. Without new admissions, existing explicit/lifecycle/exit
+  collection remains the reclamation endpoint. No per-Value index or new
+  owning edge is added; the full collector's edge accounting is unchanged.
 - **Exit.** `gc_collect_at_exit(global)` (main.c, both REPL and script
   paths): flush the value-candidate buffer first (`gc_collect_cycles`), then
   snapshot the global scope's container values with one pinning ref apiece,

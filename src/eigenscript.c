@@ -4647,6 +4647,38 @@ static void gc_collect_impl(Value **seeds, int seed_count,
     g_in_gc = 0;
 }
 
+/* #1623: inspect at most one candidate that predates this admission. A sole
+ * buffer pin (refcount == 1) can be dropped without discovering a graph.
+ * This bounds inspection/array work, NOT destructor work, C-stack use or the
+ * pending heap: ordinary destruction may release a large ownership subtree.
+ *
+ * The incoming candidate is already pinned/published. Compact and advance
+ * before decref: child destruction may append/reallocate g_gc_val_buf. Keep
+ * no address into that array across destruction. Do NOT set g_in_gc here:
+ * a dying parent may orphan a child cycle which must still register a pin.
+ * g_gc_val_culling defers recursive culls and admission-triggered scans only.
+ * Current Value/Env/Chunk destructors do not evaluate user callbacks or call
+ * an explicit collector entry; adding either would require complete request
+ * deferral, not a gc_collect_impl-only guard followed by an unclassified drain.
+ * Called only by an outer single-threaded registration, without gc_lock. */
+static void gc_cull_value_candidate(int prior_count) {
+    if (!prior_count) return;
+    int i = g_gc_val_cursor;
+    if (i >= prior_count) i = 0;
+    g_gc_val_culling = 1;
+    Value *v = g_gc_val_buf[i];
+    int retire = v->refcount == 1;
+    if (retire) {
+        int last = --g_gc_val_count;
+        g_gc_val_buf[i] = g_gc_val_buf[last];
+        g_gc_val_buf[last] = NULL;
+        v->gc_buffered = 0;
+    }
+    g_gc_val_cursor = i + 1 < g_gc_val_count ? i + 1 : 0;
+    if (retire) val_decref(v);  /* no array or Value access after this call */
+    g_gc_val_culling = 0;
+}
+
 /* #307: Bacon-Rajan "possible root" registration. Called from val_decref /
  * slot_decref when a LIST/DICT lost a ref but stayed alive — it may now be the
  * root of a garbage value cycle that nothing else would reclaim (the env
@@ -4674,20 +4706,31 @@ static void gc_buffer_possible_root(Value *v) {
      * may read this atomic byte as a hint in an already-active native frame;
      * it never publishes ownership or registry data. C MT decrement paths
      * skip the hint, and the helper rechecks MT. Pin and insertion finish
-     * under gc_lock before unlock; only post-MT collection clears the flag. */
+     * under gc_lock before unlock; flags are cleared only single-threaded.
+     * Publish this pin before culling an older parent can drop refs to v. */
     __atomic_store_n(&v->gc_buffered, 1, __ATOMIC_RELAXED);
     if (mt) __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
     else v->refcount++;
+    int prior_count = g_gc_val_count;
     if (g_gc_val_count >= g_gc_val_cap) {
         g_gc_val_cap = g_gc_val_cap ? g_gc_val_cap * 2 : 64;
         g_gc_val_buf = xrealloc_array(g_gc_val_buf, g_gc_val_cap, sizeof(Value *));
     }
     g_gc_val_buf[g_gc_val_count++] = v;
+    /* Compaction must not erase progress toward scanning retained cycles.
+     * Include nested/MT admissions, but not dedup no-ops. INT_MAX exceeds
+     * the unchanged full-scan threshold cap and prevents counter wrap. */
+    if (g_gc_val_admissions < INT_MAX) g_gc_val_admissions++;
     /* #1096: the possible-root trigger is cost-aware -- see gc_val_next_threshold. */
     if (!g_gc_val_threshold) g_gc_val_threshold = GC_VAL_THRESHOLD;
-    int should_collect = !mt && g_gc_val_count >= g_gc_val_threshold;
-    if (mt) pthread_mutex_unlock(&eigs_current->state->gc_lock);
-    if (__builtin_expect(should_collect, 0))
+    if (mt) {
+        pthread_mutex_unlock(&eigs_current->state->gc_lock);
+        return;
+    }
+    if (g_gc_val_culling) return;  /* the outer admission services this debt */
+    gc_cull_value_candidate(prior_count);
+    /* Destruction may have registered more children: reread current debt. */
+    if (__builtin_expect(g_gc_val_admissions >= g_gc_val_threshold, 0))
         gc_collect_cycles();
 }
 
@@ -4719,6 +4762,10 @@ static void gc_drain_value_candidates(int include_captured_envs) {
         for (int i = 0; i < n; i++) val_decref(g_gc_val_buf[i]);
         g_in_gc = 0;
     }
+    /* Both full-drain modes end this admission epoch, even with no seeds.
+     * The early MT/in_gc return above must leave live debt/cursor intact. */
+    g_gc_val_admissions = 0;
+    g_gc_val_cursor = 0;
 }
 
 void gc_collect_cycles(void) {

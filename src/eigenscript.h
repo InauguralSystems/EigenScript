@@ -864,11 +864,15 @@ struct EigsState {
      * like the env registry. The sandbox-promotion path may register under MT
      * using gc_lock; actual collection remains deferred until the state is
      * single-threaded. The buffer holds one pin apiece; gc_collect_cycles
-     * feeds it in as seeds, then drains the pins. */
+     * feeds it in as seeds, then drains the pins. A single-threaded admission
+     * may first retire one older candidate held only by its buffer pin. */
     Value         **gc_val_buf;
     int             gc_val_count;
     int             gc_val_cap;
     int                  gc_val_threshold; /* #1096: adaptive possible-root trigger */
+    int             gc_val_admissions; /* #1623: full-scan debt; saturates at INT_MAX */
+    int             gc_val_cursor;     /* next old candidate to inspect */
+    int             gc_val_culling;    /* defer nested culls/scans, not registration */
     /* JIT tuning thresholds (entry / per-iter / OSR). Each state
      * reads its own copy from EIGS_JIT_ENTRY_THRESHOLD /
      * EIGS_JIT_ITER_THRESHOLD / EIGS_JIT_OSR_THRESHOLD at state_new,
@@ -1395,6 +1399,9 @@ extern __thread EigsThread *eigs_current;
 #define g_gc_val_count        (eigs_current->state->gc_val_count)
 #define g_gc_val_cap          (eigs_current->state->gc_val_cap)
 #define g_gc_val_threshold    (eigs_current->state->gc_val_threshold)
+#define g_gc_val_admissions   (eigs_current->state->gc_val_admissions)
+#define g_gc_val_cursor       (eigs_current->state->gc_val_cursor)
+#define g_gc_val_culling      (eigs_current->state->gc_val_culling)
 #define g_gc_threshold        (eigs_current->gc_threshold)
 #define g_gc_enabled          (eigs_current->gc_enabled)
 #define g_in_gc               (eigs_current->in_gc)
