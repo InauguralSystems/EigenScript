@@ -2601,7 +2601,8 @@
     "args": [
       "descriptor",
       "100",
-      "1048576"
+      "1048576",
+      "10000"
     ],
     "setup": "descriptor is @DESCRIPTOR@",
     "valid_assert": "shape_result.ok == 1 and shape_result.result == 42",
@@ -2621,6 +2622,11 @@
       [
         "descriptor",
         "100"
+      ],
+      [
+        "descriptor",
+        "100",
+        "1048576"
       ]
     ]
   },

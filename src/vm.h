@@ -772,6 +772,8 @@ int sandbox_charge(size_t bytes);
 
 /* VM execution */
 Value     *vm_execute(EigsChunk *chunk, Env *env);
+/* Shared sandbox dispatch accounting; public for the focused boundary unit. */
+int        vm_sandbox_work_charge(uint64_t amount);
 /* #997: vm_execute with an explicit caller-supplied argument count, so an
  * under-arity entry from spawn / task_spawn / a builtin callback still lets
  * the callee's default-parameter prologue fire. vm_execute passes

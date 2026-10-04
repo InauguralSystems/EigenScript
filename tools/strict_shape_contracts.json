@@ -1896,8 +1896,8 @@
     "file": "src/builtins.c",
     "category": "optional_or_scalar",
     "minimum": 1,
-    "maximum": 3,
-    "reason": "Descriptor scalar or descriptor plus optional iteration/byte budgets. Source classification only; no historical descriptor/fault execution.",
+    "maximum": 4,
+    "reason": "Descriptor scalar or descriptor plus optional iteration/byte/work budgets. Source classification only; no historical descriptor/fault execution.",
     "public_names": [
       "sandbox_run"
     ],

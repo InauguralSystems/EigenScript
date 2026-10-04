@@ -248,7 +248,7 @@ static const char *builtin_docs[][2] = {
     {"reshape", "reshape of [buf, rows, cols] -> a shaped copy of the flat buffer (rows*cols"},
     {"rm", "rm of \"path\" → 1 on success, 0 on failure"},
     {"round", "round — builtin; see docs/BUILTINS.md"},
-    {"sandbox_run", "sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled"},
+    {"sandbox_run", "sandbox_run of [descriptor, max_iterations?, max_bytes?, max_work?] — run an EigenScript-assembled"},
     {"scan_int_tokens", "scan_int_tokens of text"},
     {"scan_ints", "scan_ints of text"},
     {"scan_tokens", "scan_tokens of text"},

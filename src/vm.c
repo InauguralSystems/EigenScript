@@ -45,6 +45,25 @@ static inline void vm_trace_assign(const EigsChunk *chunk, const char *name,
 Value* builtin_report(Value *arg);
 Value* builtin_observe(Value *arg);
 
+/* Charge bytecode work at the interpreter's one dispatch choke point.  The
+ * subtraction form is overflow-safe, and the eigs_current guard preserves
+ * formatter/linter and other pre-state entry points.  Exhaustion is a sticky
+ * sandbox refusal; callers must halt rather than route it through a catch. */
+int vm_sandbox_work_charge(uint64_t amount) {
+    if (!eigs_current || !g_sandbox_active || g_sandbox_work_max == 0)
+        return 1;
+    if (g_sandbox_work_used > g_sandbox_work_max ||
+        amount > g_sandbox_work_max - g_sandbox_work_used) {
+        g_sandbox_work_used = g_sandbox_work_max;
+        rt_error(EK_SANDBOX, vm_current_line(),
+                 "execution work budget exhausted (max_work=%llu)",
+                 (unsigned long long)g_sandbox_work_max);
+        return 0;
+    }
+    g_sandbox_work_used += amount;
+    return 1;
+}
+
 /* #262 Phase-3 D: read the last-observed trajectory (dH, entropy) for the
  * observer loop-stall check. Prefers the slot model (the default); falls back
  * to the global last-observer Value when the slot isn't populated (e.g. a
@@ -2523,7 +2542,8 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         /* #366: frameless leaf-accessor fast path — same contract as
          * return 0 (args+fn consumed, result pushed). Bail falls through
          * to the thunk path / interpreter re-execution. */
-        if (fn_chunk->leaf_accessor && argc == fn_val->data.fn.param_count &&
+        if (!g_sandbox_active && fn_chunk->leaf_accessor &&
+            argc == fn_val->data.fn.param_count &&
             !g_trace_hist && vm_leaf_accessor_exec(fn_chunk, argc))
             return 0;
         if (fn_chunk->jit_state != 2 || !fn_chunk->jit_code) return 1;
@@ -3205,13 +3225,19 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
             } \
         } \
     } while(0)
-    #define DISPATCH() do { CHECK_ERROR(); goto *dispatch_table[*ip++]; } while(0)
+    #define DISPATCH() do { \
+        CHECK_ERROR(); \
+        if (__builtin_expect(!vm_sandbox_work_charge(1), 0)) goto vm_error_halt; \
+        goto *dispatch_table[*ip++]; \
+    } while(0)
     #define CASE(op) lbl_##op
 #else
     /* Switch-based fallback */
     #define DISPATCH() break
     #define CASE(op) case op
-    for (;;) { switch (*ip++) {
+    for (;;) {
+        if (__builtin_expect(!vm_sandbox_work_charge(1), 0)) goto vm_error_halt;
+        switch (*ip++) {
 #endif
 
 vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above */
@@ -4218,7 +4244,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             /* #366: frameless leaf-accessor fast path. Bail (0) falls
              * through to the generic call with the stack untouched. */
-            if (fn_chunk->leaf_accessor && (int)argc == param_count &&
+            if (!g_sandbox_active && fn_chunk->leaf_accessor &&
+                (int)argc == param_count &&
                 !g_trace_hist &&
                 vm_leaf_accessor_exec(fn_chunk, (int)argc)) {
                 DISPATCH();
