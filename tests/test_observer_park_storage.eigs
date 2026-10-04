@@ -25,10 +25,13 @@ assert_eq of [stale_second, 0, "stale-history/override actual cached-call path"]
 
 local probe_mode is 0
 local probe_seed is 0
-define probe() as:
+# x is a name-bound parameter inside the fixed frame. String window APIs
+# can resolve its slot without introducing an extra dynamic-name binding.
+# Parameter binding does not sample the observer: keep the explicit first write.
+define probe(x) as:
     local mode is probe_mode
-    local seed is probe_seed
-    local x is seed
+    local seed is x
+    x is seed
     local y is seed + 100
     if mode == 1:
         set_observer_window of ["x", 4]
@@ -43,23 +46,26 @@ define probe() as:
     return (converged of x) * 1000 + (converged of y) * 100 + (get_observer_window of "x")
 
 # First fill a short overridden window. The next two calls are the named
-# stale-history/override assertion: each has only six x samples, so a fresh
+# stale-history/override assertion: each has fewer than ten observed x samples, so a fresh
 # default-10 trajectory cannot converge and its effective window is 10.
 probe_mode is 1
 probe_seed is 0.001
-local warm is probe of null
+local warm is probe of probe_seed
 probe_mode is 0
 probe_seed is 2.0
-local stale_history is probe of null
+local stale_history is probe of probe_seed
 probe_seed is 3.0
-local again is probe of null
+local again is probe of probe_seed
 assert_eq of [warm, 1004, "warm override"]
 assert_eq of [stale_history, 10,
                 "stale-history/override after observed-unobserved-observed call"]
 assert_eq of [again, 10, "fresh settings on repeated cached call"]
 
-define previous_probe(seed) as:
-    local p is seed - 1
+# The interrogated binding is already the fixed, name-bound parameter.
+# Keep the two explicit writes so prev has the same 11/29 expectations.
+define previous_probe(p) as:
+    local seed is p
+    p is seed - 1
     p is seed
     return prev of p
 
@@ -68,10 +74,12 @@ assert_eq of [previous_probe of 30, 29, "fresh previous value on repeated call"]
 
 local unwind_should_throw is 0
 local unwind_seed is 0
-define unwind_probe() as:
+# The override-bearing parameter is fixed/name-bound too. Normal return
+# can park this frame; exception unwinding destroys the taken frame instead.
+define unwind_probe(a) as:
     local should_throw is unwind_should_throw
-    local seed is unwind_seed
-    local a is seed
+    local seed is a
+    a is seed
     if should_throw:
         set_observer_window of ["a", 4]
     a is seed
@@ -82,16 +90,23 @@ define unwind_probe() as:
         throw of "ordinary unwind"
     return (converged of a) * 100 + (get_observer_window of "a")
 
+# Park a real normal call first. The next throwing call must take that cache;
+# after the throw destroys its env, the following normal call starts fresh.
+unwind_should_throw is 0
+unwind_seed is 0.001
+local before_unwind is unwind_probe of unwind_seed
+assert_eq of [before_unwind, 10, "normal unwind probe warms actual cache"]
+
 try:
     unwind_should_throw is 1
     unwind_seed is 0.001
-    unwind_probe of null
+    unwind_probe of unwind_seed
 catch err:
     assert_eq of [err, "ordinary unwind", "ordinary exception value"]
 
 unwind_should_throw is 0
 unwind_seed is 7.0
-local after_unwind is unwind_probe of null
+local after_unwind is unwind_probe of unwind_seed
 assert_eq of [after_unwind, 10, "fresh history after ordinary unwind"]
 
 print of "OBS_PARK_STORAGE_OK"
