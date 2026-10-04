@@ -243,6 +243,10 @@ association contracts remain unchanged. Mixed buffer/list tensor operations and
 numeric byte/sample/device conversions also normalize reads and stop on the
 first error. Byte conversion truncates and wraps modulo 256 after normalization.
 Raw copies, typed serialization and buffer-only work areas preserve their data.
+`str_from_bytes` and the `inflate`/`deflate` codecs (including their `zlib_*` forms) reject nonnumeric list elements with a builtin-named
+`type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
+substitution. `str_from_bytes` stops at numeric NUL and does not inspect later
+elements, while compression codecs consume and validate the complete list.
 
 One place EigenScript is louder than NumPy: an out-of-range index in `gather`
 **raises** rather than answering a stand-in, on both containers — NumPy's

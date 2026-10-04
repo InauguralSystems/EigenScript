@@ -1,0 +1,1 @@
+- Reject nonnumeric list elements in strict byte conversions while preserving compatibility-mode substitution and numeric NUL termination.

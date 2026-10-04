@@ -188,6 +188,22 @@ Value* builtin_buf_from_list(Value *arg) {
     return v;
 }
 
+/* Strict list-byte validation shared by text and codec conversion. Text
+ * conversion stops at its first numeric NUL, so later elements are not part
+ * of that conversion; codec conversion consumes the complete list. */
+static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
+    if (!g_strict || !arg || arg->type != VAL_LIST) return 1;
+    for (int i = 0; i < arg->data.list.count; i++) {
+        Value *item = arg->data.list.items[i];
+        if (!item || item->type != VAL_NUM) {
+            rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
+            return 0;
+        }
+        if (nul_ends && finite_num_to_byte(item->data.num) == 0) break;
+    }
+    return 1;
+}
+
 /* str_from_bytes of <list|buffer of byte ints> → string of those raw bytes.
  * Reconstructs a native string from its bytes (the inverse of an `ord` loop);
  * the list form of scalar `chr` (chr of n == str_from_bytes of [n] for
@@ -205,6 +221,7 @@ Value* builtin_str_from_bytes(Value *arg) {
     } else {
         ARG_GUARD(1, "str_from_bytes", "a list or buffer of byte values", make_str(""));
     }
+    if (!strict_numeric_byte_list(arg, "str_from_bytes", 1)) return make_null();
     char *s = xcalloc((size_t)(n > 0 ? n : 0) + 1, 1);
     int len = 0;
     for (int i = 0; i < n; i++) {
@@ -278,8 +295,9 @@ Value* builtin_f64_from_bytes(Value *arg) {
  * try/catch instead of dying on "undefined variable".
  *
  * Byte representation mirrors read_bytes/write_bytes exactly: input is
- * a list of ints 0-255 (values taken mod 256, non-numbers read as 0)
- * or a VAL_BUFFER; output is always a fresh list of ints 0-255.
+ * a list of ints 0-255 (values taken mod 256) or a VAL_BUFFER; output is
+ * always a fresh list of ints 0-255. Strict mode rejects nonnumeric list
+ * elements; compatibility mode retains their numeric-zero conversion.
  *
  * inflate/deflate are the RAW DEFLATE pair (windowBits -15) — the ZIP
  * member format, so .xlsx/.ods entries are readable. zlib_inflate/
@@ -317,6 +335,7 @@ static int zlib_bytes_arg(Value *arg, const char *who,
                  who, val_type_name(arg ? arg->type : VAL_NULL));
         return 0;
     }
+    if (!strict_numeric_byte_list(arg, who, 0)) return 0;
     unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
     for (int i = 0; i < n; i++) {
         double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
