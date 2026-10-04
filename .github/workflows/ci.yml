@@ -718,11 +718,6 @@ jobs:
         run: make embed-smoke
 
       - if: needs.scope.outputs.code == 'true'
-        name: Embedding API owning ASan lifecycle (#1608)
-        timeout-minutes: 5
-        run: make embed-smoke-asan
-
-      - if: needs.scope.outputs.code == 'true'
         name: Embedding API smoke, gfx variant (one registration seam, #742)
         run: make embed-smoke-gfx
 
@@ -1028,6 +1023,13 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: Build with AddressSanitizer + UBSan
         run: make asan-server
+
+      # Reuse this shard's instrumented runtime instead of building a second
+      # sanitizer variant in the extensions job. The owning host runs in full.
+      - if: needs.scope.outputs.code == 'true'
+        name: Embedding API owning ASan lifecycle (#1608)
+        timeout-minutes: 5
+        run: make embed-smoke-asan-server
 
       # THE OWNER OF EACH JOB-LEVEL EXTRA IS DERIVED, NOT HARD-WIRED (#1160
       # round 6). Round 4 pinned both of these to shard 1 — which is by
