@@ -718,6 +718,11 @@ jobs:
         run: make embed-smoke
 
       - if: needs.scope.outputs.code == 'true'
+        name: Embedding API owning ASan lifecycle (#1608)
+        timeout-minutes: 5
+        run: make embed-smoke-asan
+
+      - if: needs.scope.outputs.code == 'true'
         name: Embedding API smoke, gfx variant (one registration seam, #742)
         run: make embed-smoke-gfx
 
