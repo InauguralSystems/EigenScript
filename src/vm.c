@@ -523,12 +523,14 @@ static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
         env->values[i] = slot_null();
         if (env->assign_counts) env->assign_counts[i] = 0;
     }
-    /* Observer state (entropy/dH per slot) is part of binding identity: a
-     * recycled env must start the next invocation with a fresh trajectory,
-     * or a windowed predicate (converged/stable/...) on an observed local
-     * reads the PREVIOUS call's history. Resetting slot values alone leaves
-     * env->obs intact — the silent drift this clears. */
-    observer_slot_reset(env);
+    /* Observer state is part of binding identity. Destroy the inner rings and
+     * logically clear every allocated slot, but keep the outer table when it
+     * is within the fixed frame shape plus observer_obs_grow's idx+8 slack.
+     * One env per chunk can be parked, so retained bytes are bounded by the
+     * sum of (fixed frame count + 7) * sizeof(ObserverSlot) over cached chunks.
+     * Overflow or an unexpectedly larger table takes the destructive path. */
+    int obs_retain_cap = expected <= INT_MAX - 7 ? expected + 7 : -1;
+    observer_slot_reset_bounded(env, obs_retain_cap);
     chunk->env_cache = env;
     return 1;
 }
