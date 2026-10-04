@@ -1913,6 +1913,9 @@ compatibility rule are specified in `docs/TRACE.md`.
 Replay never crosses a session header on an ordinary take. The embedding host
 explicitly advances at a quiescent boundary; an unread sibling outcome prevents
 advance. Replacing memory replay preserves a suspended file's complete context.
+Host effects that the tape cannot reconstruct are replay boundaries. In
+particular, `mktemp` raises a catchable filesystem-boundary error before it
+creates a file; outside replay it creates a file and returns its fresh path.
 
 Values crossing a channel, `thread_join`, or cooperative-task boundary are
 copied recursively. This includes buffers (payload and shape) and text builders

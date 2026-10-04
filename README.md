@@ -610,6 +610,8 @@ spawn occurrences to match workers. Tape associations carry state grouping;
 event order does not choose replay identity. Hosts explicitly advance replay
 sessions between evaluations; unread sibling outcomes prevent advance. See [docs/TRACE.md](docs/TRACE.md)
 and [docs/EMBEDDING.md](docs/EMBEDDING.md) for the binding and version contract.
+Replay also refuses side-effecting boundaries the tape cannot reconstruct:
+in particular, `mktemp` raises before creating a temporary file.
 
 ## Stability
 

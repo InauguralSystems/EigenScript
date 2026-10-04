@@ -372,6 +372,9 @@ The tape association contract is documented in `docs/TRACE.md`.
 Replay session changes require an explicit quiescent host advance, which refuses
 while a sibling has an unread outcome. Memory replay suspends and restores the
 file source's cursor, pending outcomes, correspondence and strictness together.
+Replay refuses host effects it cannot reconstruct: `mktemp`, for example,
+raises at the filesystem boundary before creating a file, while ordinary calls
+retain their create-and-return-path behavior.
 
 Python (threads + queue):
 
