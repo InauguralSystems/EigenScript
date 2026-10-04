@@ -477,11 +477,16 @@ that the original tape neither captured nor re-creates:
   already-live handle but before any file or catalog access (relevant to embedders that enable replay mid-state).
   Consequently a database may be changed or absent during replay without
   being read, recreated, or modified.
+- **Temporary-file creation:** `mktemp`. Its fresh pathname is host state and
+  the call creates the named file. Replay refuses before creating anything;
+  ordinary execution still creates a file that the caller can remove with
+  `rm`.
 
 These builtins raise a catchable runtime error under
 `EIGS_REPLAY`, with the message format
 `"<fn>: not replayable under EIGS_REPLAY (<boundary> boundary; see
-docs/TRACE.md)"`, where `<boundary>` is `subprocess/concurrency` or `store`.
+docs/TRACE.md)"`, where `<boundary>` is `subprocess/concurrency`, `store`, or
+`filesystem`.
 Programs that need to be replay-safe
 must guard these call sites or avoid them entirely.
 

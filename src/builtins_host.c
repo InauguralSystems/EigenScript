@@ -418,6 +418,14 @@ Value* builtin_chdir(Value *arg) {
 /* mktemp of null → path to a new temporary file */
 Value* builtin_mktemp(Value *arg) {
     (void)arg;
+    /* A fresh pathname is host state and creating it is a side effect.  The
+     * tape records neither, so replay must stop before mkstemp creates a file. */
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0,
+                 "mktemp: not replayable under EIGS_REPLAY (filesystem "
+                 "boundary; see docs/TRACE.md)");
+        return make_str("");
+    }
     char tmpl[] = "/tmp/eigen_XXXXXX";
     int fd = mkstemp(tmpl);
     /* fs:ANSWER mktemp ignores `arg` entirely ((void)arg above), so this cannot

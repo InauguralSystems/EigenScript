@@ -414,3 +414,6 @@ Tape associations carry state grouping; event order does not select identity.
 Hosts explicitly advance replay sessions at quiescent boundaries; pending
 sibling outcomes prevent advance, and memory replay preserves a suspended file.
 See docs/TRACE.md and docs/EMBEDDING.md for binding and format compatibility.
+Replay refuses unreconstructable host effects: `mktemp` raises a catchable
+filesystem-boundary error before creating a file; ordinary `mktemp` still
+creates the file and returns its path for later `rm`.

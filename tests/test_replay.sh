@@ -237,6 +237,77 @@ else
     fail "replay-block message" "out='$BLOCK_MSG'"
 fi
 
+# ---- #1464: mktemp is a filesystem replay boundary ----
+# First pin the ordinary lifecycle with the issue's tiny mktemp/print/rm
+# shape: a fresh path exists, rm succeeds, and the path is gone afterwards.
+cat > "$TMPDIR/p_mktemp_live.eigs" <<'EOF'
+p is mktemp of null
+print of p
+print of (file_exists of p)
+print of (rm of p)
+print of (file_exists of p)
+EOF
+MKT_LIVE=$("$EIGS" "$TMPDIR/p_mktemp_live.eigs" 2>&1); MKT_LIVE_RC=$?
+MKT_PATH=$(printf '%s\n' "$MKT_LIVE" | sed -n '1p')
+MKT_STATE=$(printf '%s\n' "$MKT_LIVE" | sed -n '2,4p')
+if [ "$MKT_LIVE_RC" -eq 0 ] && [ "$MKT_STATE" = $'1\n1\n0' ] \
+   && [ ! -e "$MKT_PATH" ]; then
+    ok "mktemp ordinary lifecycle: create, print, and rm"
+else
+    fail "mktemp ordinary lifecycle" "rc=$MKT_LIVE_RC out='$MKT_LIVE'"
+    case "$MKT_PATH" in /tmp/eigen_??????) rm -f "$MKT_PATH" ;; esac
+fi
+
+# A header-only tape is sufficient: mktemp has no tape encoding. Pin the
+# exact strict refusal. Successful calibration paths remove their own file;
+# no global /tmp population is sampled (other processes may create files).
+# The pre-creation guarantee is the guard's source ordering before mkstemp.
+cat > "$TMPDIR/p_mktemp_replay.eigs" <<'EOF'
+p is mktemp of null
+print of p
+removed is rm of p
+EOF
+MKT_REPLAY=$(EIGS_REPLAY_STRICT=1 EIGS_REPLAY="$TMPDIR/block.tape" \
+    "$EIGS" "$TMPDIR/p_mktemp_replay.eigs" 2>&1); MKT_REPLAY_RC=$?
+MKT_EXPECT=$(cat <<'EOF'
+Error line 1: mktemp: not replayable under EIGS_REPLAY (filesystem boundary; see docs/TRACE.md)
+     1 | p is mktemp of null
+       |             ^
+  at <module> (line 1)
+EOF
+)
+if [ "$MKT_REPLAY_RC" -eq 1 ] && [ "$MKT_REPLAY" = "$MKT_EXPECT" ]; then
+    ok "mktemp strict replay: exact boundary refusal"
+else
+    fail "mktemp strict replay" "rc=$MKT_REPLAY_RC out='$MKT_REPLAY'"
+fi
+
+# The boundary is a catchable io error in either replay mode. A catch must
+# leave ordinary subsequent execution usable; a successful mutant cleans up.
+cat > "$TMPDIR/p_mktemp_caught.eigs" <<'EOF'
+caught_kind is ""
+caught_message is ""
+try:
+    p is mktemp of null
+    removed is rm of p
+catch e:
+    caught_kind is e.kind
+    caught_message is e.message
+print of caught_kind
+print of caught_message
+print of 7
+EOF
+MKT_CAUGHT_EXPECT=$'io\nmktemp: not replayable under EIGS_REPLAY (filesystem boundary; see docs/TRACE.md)\n7'
+for mkt_strict in 0 1; do
+    MKT_CAUGHT=$(EIGS_REPLAY_STRICT="$mkt_strict" EIGS_REPLAY="$TMPDIR/block.tape" \
+        "$EIGS" "$TMPDIR/p_mktemp_caught.eigs" 2>&1); MKT_CAUGHT_RC=$?
+    if [ "$MKT_CAUGHT_RC" -eq 0 ] && [ "$MKT_CAUGHT" = "$MKT_CAUGHT_EXPECT" ]; then
+        ok "mktemp catchable io and continuation (strict=$mkt_strict)"
+    else
+        fail "mktemp catchable io (strict=$mkt_strict)" "rc=$MKT_CAUGHT_RC out='$MKT_CAUGHT'"
+    fi
+done
+
 # ---- #411: version-and-reject — every mismatch class refuses loudly ----
 # Control first: the untampered tape must still replay (proves the checks
 # below fail because of the tamper, not a broken fixture), on both tiers.
