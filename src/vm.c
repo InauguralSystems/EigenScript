@@ -3227,7 +3227,8 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
     } while(0)
     #define DISPATCH() do { \
         CHECK_ERROR(); \
-        if (__builtin_expect(!vm_sandbox_work_charge(1), 0)) goto vm_error_halt; \
+        if (__builtin_expect(g_sandbox_active, 0) && \
+            !vm_sandbox_work_charge(1)) goto vm_error_halt; \
         goto *dispatch_table[*ip++]; \
     } while(0)
     #define CASE(op) lbl_##op
@@ -3236,7 +3237,8 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
     #define DISPATCH() break
     #define CASE(op) case op
     for (;;) {
-        if (__builtin_expect(!vm_sandbox_work_charge(1), 0)) goto vm_error_halt;
+        if (__builtin_expect(g_sandbox_active, 0) &&
+            !vm_sandbox_work_charge(1)) goto vm_error_halt;
         switch (*ip++) {
 #endif
 
