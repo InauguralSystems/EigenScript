@@ -699,7 +699,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
     "public_names": [
       "deflate"
     ],
@@ -713,8 +713,11 @@
         "b84d1eecab6982800b3777935dc650338d310c93c30a622eea3135c962bdb3c8",
         "e629cded8eb8323555969d974904261b1396e093245f761f50c45e3b62f8a6b3"
       ],
+      "strict_numeric_byte_list": [
+        "dcfe8257673becda013e3c060cc3c3d73a151e9ad0920e7d45024a71785fb85f"
+      ],
       "zlib_bytes_arg": [
-        "4a51456279e25067c6360eca269e095b18bb78cbee3d04dfa1f23d16b68882d4"
+        "45914e64f065c5d3f527890fe913d691743e0cacc5d6e26942905e0ae3b23089"
       ],
       "zlib_deflate_impl": [
         "374d09087d4f62c26f227e4b4708db3b6a06ddc42c7f973b129fc44f0a47c90f"
@@ -1187,7 +1190,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
     "public_names": [
       "inflate"
     ],
@@ -1201,8 +1204,11 @@
         "7d40d2af315bd0adcb03f2528a6c3c1bcec82325e3b9c6f7cea7681b9fe1075f",
         "d89562220316e85c2ed110b250eee934769205aab21a2f3bc76a9804aa171060"
       ],
+      "strict_numeric_byte_list": [
+        "dcfe8257673becda013e3c060cc3c3d73a151e9ad0920e7d45024a71785fb85f"
+      ],
       "zlib_bytes_arg": [
-        "4a51456279e25067c6360eca269e095b18bb78cbee3d04dfa1f23d16b68882d4"
+        "45914e64f065c5d3f527890fe913d691743e0cacc5d6e26942905e0ae3b23089"
       ],
       "zlib_inflate_impl": [
         "a54f1d8a2b596ca7c363f20303516358bf5992479e5aadc7ea6f2536e2089914"
@@ -2303,17 +2309,20 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
     "public_names": [
       "str_from_bytes"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "59a72eb4cffa13b9334d4a546e465842857ffc18360e683f98a50da0a784d408"
+      "7e50840f4c9305688c9e04d8fc833a55e33f846478dcca87c3ea26b8bd001f4e"
     ],
     "source_sha256": {
       "builtin_str_from_bytes": [
-        "59a72eb4cffa13b9334d4a546e465842857ffc18360e683f98a50da0a784d408"
+        "7e50840f4c9305688c9e04d8fc833a55e33f846478dcca87c3ea26b8bd001f4e"
+      ],
+      "strict_numeric_byte_list": [
+        "dcfe8257673becda013e3c060cc3c3d73a151e9ad0920e7d45024a71785fb85f"
       ]
     }
   },
@@ -3050,7 +3059,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
     "public_names": [
       "zlib_deflate"
     ],
@@ -3064,8 +3073,11 @@
         "14cb07e809e8d01e4276b86ddebae8accaf2e2415d9034f76bc5ee312955a74a",
         "b68fb4aca23a1abfe47935e6c9e0cf8907e704a5b8621a19837643c7a27c4289"
       ],
+      "strict_numeric_byte_list": [
+        "dcfe8257673becda013e3c060cc3c3d73a151e9ad0920e7d45024a71785fb85f"
+      ],
       "zlib_bytes_arg": [
-        "4a51456279e25067c6360eca269e095b18bb78cbee3d04dfa1f23d16b68882d4"
+        "45914e64f065c5d3f527890fe913d691743e0cacc5d6e26942905e0ae3b23089"
       ],
       "zlib_deflate_impl": [
         "374d09087d4f62c26f227e4b4708db3b6a06ddc42c7f973b129fc44f0a47c90f"
@@ -3078,7 +3090,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
     "public_names": [
       "zlib_inflate"
     ],
@@ -3092,8 +3104,11 @@
         "7f0b3ff95423b1e1073140cd4f4fd0f682f0aefe6aee8b0b9045b744161313cc",
         "ede1e56b7d6bb385970e70743e836ed5d1c161d35f447ffad6b5c4a6b9115ddb"
       ],
+      "strict_numeric_byte_list": [
+        "dcfe8257673becda013e3c060cc3c3d73a151e9ad0920e7d45024a71785fb85f"
+      ],
       "zlib_bytes_arg": [
-        "4a51456279e25067c6360eca269e095b18bb78cbee3d04dfa1f23d16b68882d4"
+        "45914e64f065c5d3f527890fe913d691743e0cacc5d6e26942905e0ae3b23089"
       ],
       "zlib_inflate_impl": [
         "a54f1d8a2b596ca7c363f20303516358bf5992479e5aadc7ea6f2536e2089914"
