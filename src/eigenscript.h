@@ -1167,6 +1167,11 @@ struct EigsThread {
                                               * cleanly" — it produced partial
                                               * results with exit 0) */
     int                  sandbox_active;
+    /* Cumulative bytecode-dispatch allowance for the whole sandbox boundary.
+     * Unlike sandbox_loop_max this charges straight-line and call-heavy work.
+     * Zero means unarmed; builtin_sandbox_run owns save/restore. */
+    uint64_t             sandbox_work_used;
+    uint64_t             sandbox_work_max;
     int                  sandbox_error_latched; /* first diagnostic in the
                                                   * currently armed run wins */
     size_t               sandbox_bytes_used;
@@ -1506,6 +1511,8 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
 #define g_sandbox_cap_hit     (eigs_current->sandbox_cap_hit)
 #define g_sandbox_active      (eigs_current->sandbox_active)
+#define g_sandbox_work_used   (eigs_current->sandbox_work_used)
+#define g_sandbox_work_max    (eigs_current->sandbox_work_max)
 #define g_sandbox_error_latched (eigs_current->sandbox_error_latched)
 #define g_sandbox_bytes_used  (eigs_current->sandbox_bytes_used)
 #define g_sandbox_byte_max    (eigs_current->sandbox_byte_max)

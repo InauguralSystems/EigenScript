@@ -3829,14 +3829,15 @@ static Value *sandbox_finish_run(Value *out) {
     return out;
 }
 
-/* sandbox_run of [descriptor, max_iterations?] — run an EigenScript-assembled
- * chunk (same descriptor as vm_run_bytecode) under two safety bounds: dangerous
+/* sandbox_run of [descriptor, max_iterations?, max_bytes?, max_work?] — run an EigenScript-assembled
+ * chunk (same descriptor as vm_run_bytecode) under safety bounds: dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
- * max_iterations (default 1,000,000) so runaway code can't hang. Runtime errors
+ * max_iterations (default 1,000,000). A separate cumulative instruction
+ * limit bounds VM work, but does not bound time inside a native builtin. Runtime errors
  * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
  * "does it run?" rung for a self-hosted compiler validating generated code. */
 Value* builtin_sandbox_run(Value *arg) {
-    STRICT_LIST_MAX(arg, 3, "sandbox_run");
+    STRICT_LIST_MAX(arg, 4, "sandbox_run");
     /* #915: same descriptor hazard as vm_run_bytecode. Unexploitable TODAY only
      * because the sandbox env is a sealed root (parent == NULL), so a descriptor
      * cannot reach a host binding's slot — that is the sandbox's defence, not
@@ -3856,6 +3857,20 @@ Value* builtin_sandbox_run(Value *arg) {
         arg->data.list.items[2] && arg->data.list.items[2]->type == VAL_NUM &&
         arg->data.list.items[2]->data.num > 0)
         max_bytes = (size_t)arg->data.list.items[2]->data.num;
+    /* VM instructions, cumulative across callback re-entry and function
+     * frames.  This is intentionally distinct from the compatibility loop
+     * limit.  Ten million keeps normal generated programs comfortable while
+     * placing a finite ceiling on straight-line/call-heavy computation. */
+    uint64_t max_work = UINT64_C(10000000);
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 4 &&
+        arg->data.list.items[3] && arg->data.list.items[3]->type == VAL_NUM) {
+        double requested = arg->data.list.items[3]->data.num;
+        /* A double rounds UINT64_MAX up to 2^64, so use a strict bound;
+         * accepting equality and casting it would itself be undefined. */
+        if (isfinite(requested) && requested >= 1.0 &&
+            requested < 18446744073709551616.0)
+            max_work = (uint64_t)requested;
+    }
 
     /* Descriptor values are untrusted input. Start the run-owned intern scope
      * before validation/assembly: vm_build_chunk_desc interns every string
@@ -3986,6 +4001,8 @@ Value* builtin_sandbox_run(Value *arg) {
            sizeof saved_sb_refusal_msg);
     size_t saved_sb_used   = g_sandbox_bytes_used;
     size_t saved_sb_max    = g_sandbox_byte_max;
+    uint64_t saved_work_used = g_sandbox_work_used;
+    uint64_t saved_work_max  = g_sandbox_work_max;
     /* Names made by untrusted descriptor assembly or VM execution belong to
      * this run until a dictionary insertion promotes them (dict_set_hashed,
      * at insertion -- the only promotion site since #1014).
@@ -3996,6 +4013,8 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_refusal    = 0;
     g_sandbox_bytes_used = 0;
     g_sandbox_byte_max   = max_bytes;
+    g_sandbox_work_used  = 0;
+    g_sandbox_work_max   = max_work;
     /* #1026: the bare OP_PREDICATE reads the thread's last-observed-slot
      * tracker (g_last_obs_slot_env/idx), not an env, so a descriptor with no
      * operands and no host reference read the HOST's last observed binding
@@ -4014,7 +4033,14 @@ Value* builtin_sandbox_run(Value *arg) {
     g_last_obs_slot_env = NULL;
     g_last_obs_slot_idx = -1;
 
+    /* An execution-budget refusal exits without running catch handlers or
+     * trailing unobserved/try epilogues. Restore the caller's dynamic scope
+     * after the VM has released the run's frames and operands. */
+    int saved_try_depth = g_try_depth;
+    int saved_unobserved_depth = g_unobserved_depth;
     Value *result = vm_execute(chunk, sbox);
+    g_try_depth = saved_try_depth;
+    g_unobserved_depth = saved_unobserved_depth;
 
     g_last_obs_slot_env = saved_last_obs_env;
     g_last_obs_slot_idx = saved_last_obs_idx;
@@ -4042,6 +4068,8 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_active     = saved_sb_active;
     g_sandbox_bytes_used = saved_sb_used;
     g_sandbox_byte_max   = saved_sb_max;
+    g_sandbox_work_used  = saved_work_used;
+    g_sandbox_work_max   = saved_work_max;
     /* Stop tagging names created while we assemble the host-owned diagnostic
      * wrapper. The run-owned entries remain linked until the result scan has
      * rehomed every escaped key and the temporary sandbox env is released. */

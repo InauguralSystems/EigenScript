@@ -199,6 +199,16 @@ $(SANDBOX_INTERN_TEST): $(SANDBOX_INTERN_TEST_OBJ) $(filter-out build/release/ma
 sandbox-intern-test: $(SANDBOX_INTERN_TEST)
 	@echo "Sandbox intern lifetime test built: $(SANDBOX_INTERN_TEST)"
 
+# #1403: direct exact-boundary/overflow controls for cumulative VM work.
+SANDBOX_WORK_VARIANT ?= release
+SANDBOX_WORK_TEST := build/$(SANDBOX_WORK_VARIANT)/test_sandbox_work_budget
+SANDBOX_WORK_OBJ := $(filter-out build/$(SANDBOX_WORK_VARIANT)/main.o build/$(SANDBOX_WORK_VARIANT)/repl.o build/$(SANDBOX_WORK_VARIANT)/step.o build/$(SANDBOX_WORK_VARIANT)/tape_read.o build/$(SANDBOX_WORK_VARIANT)/bundle.o,$(OBJ_$(SANDBOX_WORK_VARIANT)))
+$(SANDBOX_WORK_TEST): tests/test_sandbox_work_budget.c $(SANDBOX_WORK_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
+	$(CC) $(FLAGS_$(SANDBOX_WORK_VARIANT)) -I$(SRC_DIR) -o $@ $< $(SANDBOX_WORK_OBJ) $(LIBS_$(SANDBOX_WORK_VARIANT))
+.PHONY: sandbox-work-test
+sandbox-work-test: $(SANDBOX_WORK_TEST)
+	@echo "Sandbox work budget test built: $(SANDBOX_WORK_TEST)"
+
 # #1082: a builtin's line-0 raise with no live VM frame reports the trace stamp
 ERRLINE_TEST := build/release/test_error_line_fallback
 ERRLINE_TEST_OBJ := build/release/test_error_line_fallback.o
@@ -687,4 +697,3 @@ build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary: tests/test_trace_
 .PHONY: trace-history-boundary-test
 trace-history-boundary-test: build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary
 	@echo "Trace history boundary test built: $<"
-
