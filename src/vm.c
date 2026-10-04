@@ -2062,6 +2062,17 @@ void vm_thread_reset_caches(void) {
 }
 
 static void loop_iter_store(Env *env, double n) {
+    /* #1171: runtime-owned publication can target a shared root or module
+     * env even when user code shares no writable binding. Keep the slot
+     * replacement and assignment count under the existing env lock. The
+     * cache lookup and refill below also read shared arrays/version, so
+     * return before either path; a thread-local cache is not a slot lock. */
+    if (__builtin_expect(g_vm_multithreaded, 0) && env->mt_shared) {
+        Value *iter_val = make_num(n);
+        env_set_local(env, "__loop_iterations__", iter_val);
+        val_decref(iter_val);
+        return;
+    }
     LoopIterCache *c = &g_loop_iter_cache;
     if (c->env == env && c->version == env->binding_version &&
         slot_is_num(env->values[c->slot])) {
