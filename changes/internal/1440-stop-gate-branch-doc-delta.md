@@ -1,1 +1,0 @@
-- Make the stop hook count documentation already committed on the branch when checking a later semantics edit, with planted pass/block coverage.

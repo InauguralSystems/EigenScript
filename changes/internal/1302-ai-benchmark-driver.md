@@ -1,1 +1,0 @@
-- Add the provider-neutral, artifact-first AI contribution benchmark protocol and adapters; measurements and publication remain a separate periodic campaign.

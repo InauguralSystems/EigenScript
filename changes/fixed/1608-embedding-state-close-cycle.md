@@ -1,1 +1,0 @@
-- Reclaim imported module/function cycles held by a closing non-last embedding state's trace table.

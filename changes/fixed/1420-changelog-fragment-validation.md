@@ -1,1 +1,0 @@
-- Reject symlink and empty changelog fragments, unauthorized fragment deletions, and release cuts that delete non-fragment files under `changes/`.

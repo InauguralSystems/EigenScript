@@ -1,1 +1,0 @@
-- Make the JIT differential runner use the test suite's per-program environment, so fail-soft tests are compared through completion instead of only to their first strict-mode error.

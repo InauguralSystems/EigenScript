@@ -1,1 +1,0 @@
-- Harden consumer acceptance against consumer builds replacing the overlay runtime counting slot.

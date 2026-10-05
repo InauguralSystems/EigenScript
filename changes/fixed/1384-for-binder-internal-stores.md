@@ -1,1 +1,0 @@
-- Hide compiler-internal `for`-binder save and restore stores from trace tapes and assignment history, making temporal answers consistent between function and module scope.

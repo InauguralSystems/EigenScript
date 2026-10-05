@@ -1,1 +1,0 @@
-- `make precheck` now applies the suite's full portability receipt validation and has an enrolled self-test for pass, failure, skip, missing-verdict, identity, platform, and missing-binary classifications.

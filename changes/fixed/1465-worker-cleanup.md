@@ -1,1 +1,0 @@
-- Safely drain spawned workers and nested spawns before fuzz-input cleanup, reset the per-input cooperative scheduler, and preserve sandbox loop caps on worker threads.

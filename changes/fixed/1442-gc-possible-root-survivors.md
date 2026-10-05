@@ -1,1 +1,0 @@
-- Re-arm the possible-root cycle collector from surviving traversal work (nodes plus owned child slots), restoring hot list-loop performance after a live heap while budgeting repeated scans of dense live graphs (#1442).

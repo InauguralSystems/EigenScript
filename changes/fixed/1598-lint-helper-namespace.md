@@ -1,1 +1,0 @@
-- Prefix cross-file lint helpers with `eigs_lint_` so embedding hosts can use their former generic names without archive link collisions.

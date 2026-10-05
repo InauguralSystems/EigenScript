@@ -1,1 +1,0 @@
-- Graphics examples now emit an opt-in readiness marker immediately before entering their event loop, allowing the test harness to reject setup hangs.

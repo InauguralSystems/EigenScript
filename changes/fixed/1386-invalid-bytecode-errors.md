@@ -1,2 +1,0 @@
-- `vm_run_bytecode` now raises a catchable value error with a specific diagnostic when its chunk descriptor is invalid, instead of returning an ambiguous `null`.
-- `lib/eigen.eigs` snapshots its direct host dependencies and fresh-environment builtin values at load time, including the entropy helper's `log`/`divide` dependencies, so later host rebinding does not change meta-interpreter behavior.

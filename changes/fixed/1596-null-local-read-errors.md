@@ -1,1 +1,0 @@
-- Make optimized local field and index reads raise immediately on null receivers instead of continuing through later side effects.

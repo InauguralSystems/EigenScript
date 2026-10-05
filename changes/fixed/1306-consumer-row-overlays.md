@@ -1,1 +1,0 @@
-- Consumer acceptance runs each consumer against a fresh candidate-tree overlay, preventing one row's runtime-slot writes from bypassing candidate checks in later rows (#1306).

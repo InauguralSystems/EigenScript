@@ -1,1 +1,0 @@
-- Bound arena-list promotion with iterative native work, preserve repeated list references, charge promotion allocations to sandbox budgets, and retain deferred promoted-list candidate ownership until normal single-threaded collection.

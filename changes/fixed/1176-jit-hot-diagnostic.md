@@ -1,1 +1,0 @@
-- `EIGS_JIT_HOT=1` prints its per-chunk hot-chunk table again. It had printed nothing since 0.11.8 because teardown emptied the chunk registry before the dump ran; rows are now retained at unregister time, the dump never exits silently, and a retained-row cap reports overflow (#1176).

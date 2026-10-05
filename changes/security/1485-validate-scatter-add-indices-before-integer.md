@@ -1,1 +1,0 @@
-- Validate scatter_add indices before integer conversion (#1485).

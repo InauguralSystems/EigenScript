@@ -1,1 +1,0 @@
-- `import args` no longer breaks `args.parse_args`: the module namespace was bound over the CLI-args builtin, so `parse_args` failed with "cannot call dict". The builtin is now captured before the namespace is installed (#1236).
