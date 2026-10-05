@@ -1,0 +1,1 @@
+- `--lint --json` bounds the E000 missing-file message to the existing UTF-8 message limit after assembling it, so a very long or multibyte missing path no longer produces an oversized diagnostic; short messages are byte-identical (#1132).
