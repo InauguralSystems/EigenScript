@@ -212,6 +212,10 @@ sqrt(2) = 1.414213562373095
   byte/sample/device conversions normalize their buffer inputs too and stop at
   the first raised read. Numeric bytes truncate and wrap modulo 256 afterward;
   raw copies, serialization and buffer-only work areas preserve representation.
+  `str_from_bytes` and the `inflate`/`deflate` codecs (including their `zlib_*` forms) reject nonnumeric list elements with a builtin-named
+  `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
+  substitution. `str_from_bytes` stops at numeric NUL without inspecting later
+  elements; byte codecs consume the complete list.
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`. Each `{…}` converts with the builtin `str`, even if you rebind `str`.

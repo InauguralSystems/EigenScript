@@ -203,7 +203,7 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Strings are NUL-terminated: a `0` byte ends the string — keep NUL-bearing binary in a buffer. |
+| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` by default and convert to numeric zero under `EIGS_STRICT=0`. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
 | `f64_to_bytes` | `f64_to_bytes of x` | List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number raises by default; under `EIGS_STRICT=0` it encodes as `0.0` (#971). |
 | `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Decode a double from the first 8 big-endian IEEE-754 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern raises a `value` error by default; under `EIGS_STRICT=0` it collapses to `0` and sets `math_flags.invalid` (#971). |
 
@@ -227,10 +227,10 @@ Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `inflate` | `inflate of <list\|buffer>` | Raw DEFLATE decompression (windowBits −15) — the ZIP member format, so `.xlsx`/`.ods` entries are readable. Dual of `deflate`. |
-| `deflate` | `deflate of <list\|buffer>` | Raw DEFLATE compression (windowBits −15, default level). Dual of `inflate`. |
-| `zlib_inflate` | `zlib_inflate of <list\|buffer>` | Wrapped decompression with windowBits 15+32: auto-detects **zlib AND gzip** headers — this is what makes plain `.gz` files readable (`read_bytes of path` then `zlib_inflate`). Dual of `zlib_deflate`. |
-| `zlib_deflate` | `zlib_deflate of <list\|buffer>` | zlib-wrapped compression (RFC 1950 header, default level). Dual of `zlib_inflate`. |
+| `inflate` | `inflate of <list\|buffer>` | Raw DEFLATE decompression (windowBits −15) — the ZIP member format, so `.xlsx`/`.ods` entries are readable. Dual of `deflate`. Byte lists must be numeric by default; `EIGS_STRICT=0` converts nonnumbers to zero. |
+| `deflate` | `deflate of <list\|buffer>` | Raw DEFLATE compression (windowBits −15, default level). Dual of `inflate`. Byte lists must be numeric by default; `EIGS_STRICT=0` converts nonnumbers to zero. |
+| `zlib_inflate` | `zlib_inflate of <list\|buffer>` | Wrapped decompression with windowBits 15+32: auto-detects **zlib AND gzip** headers — this is what makes plain `.gz` files readable (`read_bytes of path` then `zlib_inflate`). Dual of `zlib_deflate`. Byte lists must be numeric by default; `EIGS_STRICT=0` converts nonnumbers to zero. |
+| `zlib_deflate` | `zlib_deflate of <list\|buffer>` | zlib-wrapped compression (RFC 1950 header, default level). Dual of `zlib_inflate`. Byte lists must be numeric by default; `EIGS_STRICT=0` converts nonnumbers to zero. |
 
 ### JSON
 

@@ -331,6 +331,11 @@ consequences are contracts you can rely on:
     `file_exists` of a missing path `0` — is unchanged in both modes.
   Overflow saturation is the same in both modes. (Division and modulo by zero
   raise in *both* modes — no defined value.)
+  `str_from_bytes` and the `inflate`/`deflate` codecs (including their
+  `zlib_*` forms) likewise reject a nonnumeric list element with a
+  builtin-named `type_mismatch` error by default; `EIGS_STRICT=0` retains the
+  numeric-zero substitution. `str_from_bytes` ends at a numeric byte that
+  converts to NUL, so elements after that terminator are not inspected.
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
   `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
   `1 << 40` is exact where an f64 mantissa alone would not help. This is the

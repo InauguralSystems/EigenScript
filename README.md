@@ -328,6 +328,10 @@ result is read from a `buffer`; one stored element never changes meaning with
 the operator that consumes it. Structural buffer equality and scalar reductions
 normalize each input by this rule too, as do mixed buffer/list materialization
 and numeric byte or sample conversion. A raised read stops subsequent work.
+`str_from_bytes` and the `inflate`/`deflate` codecs (including their `zlib_*` forms) reject nonnumeric list elements with a builtin-named
+`type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
+substitution. `str_from_bytes` stops at numeric NUL, without inspecting later
+elements; byte codecs consume the complete list.
 
 Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
