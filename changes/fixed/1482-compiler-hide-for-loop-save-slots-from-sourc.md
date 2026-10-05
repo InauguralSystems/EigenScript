@@ -1,1 +1,0 @@
-- compiler: hide for-loop save slots from source names (#1482).

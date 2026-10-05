@@ -1,1 +1,0 @@
-- Retain intern-name storage for the lifetime of environments, function parameters, and ordinary dictionary keys, independently of the creating attachment. Keep promoted private dictionary keys owned across attachments of the same state.

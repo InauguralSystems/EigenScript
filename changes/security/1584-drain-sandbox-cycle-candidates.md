@@ -1,1 +1,0 @@
-- Drain state-wide value-cycle candidates after every sandbox outcome without repeatedly scanning unrelated captured environments (#1584).

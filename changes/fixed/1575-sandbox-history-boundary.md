@@ -1,1 +1,0 @@
-- Keep sandbox assignments and observer snapshots out of shared temporal history before retaining names, values or count metadata. Ordinary tape assignment records and trusted host/descriptor history outside the sandbox are preserved.

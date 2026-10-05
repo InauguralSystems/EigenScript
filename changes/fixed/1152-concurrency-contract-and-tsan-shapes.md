@@ -1,1 +1,0 @@
-- Document that shared binding/container races are undefined, enumerate the embedding API's process-global concurrency surfaces, and extend the TSan gate with a declared inventory of previously untested concurrency shapes.

@@ -1,1 +1,0 @@
-- Drain per-request handles during HTTP worker teardown (#1449).

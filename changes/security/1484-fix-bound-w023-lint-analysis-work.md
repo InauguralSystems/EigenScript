@@ -1,1 +1,0 @@
-- fix: bound W023 lint analysis work (#1484).

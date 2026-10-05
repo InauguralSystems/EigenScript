@@ -1,1 +1,0 @@
-- Lint W021 (stdlib-name shadowing) can no longer record a truncated path when `realpath` fails on a 4097-4501 byte path, which would have reported against a file it did not scan; this also removes the `-Wformat-truncation` warning every build printed (#1182).

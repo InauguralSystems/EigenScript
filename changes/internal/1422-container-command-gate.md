@@ -1,1 +1,0 @@
-- Add a CI workflow gate that rejects commands unavailable in the shared development image.

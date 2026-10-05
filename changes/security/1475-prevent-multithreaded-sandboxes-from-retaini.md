@@ -1,1 +1,0 @@
-- Prevent multithreaded sandboxes from retaining dictionary keys (#1475).

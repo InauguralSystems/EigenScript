@@ -1,1 +1,0 @@
-- Stop `sandbox_run` errors from printing an uncaught-error header and stack trace to stderr; failures are now reported only through the returned structured error.

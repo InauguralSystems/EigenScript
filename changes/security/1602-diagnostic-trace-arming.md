@@ -1,1 +1,0 @@
-- Prevent lint and LSP diagnostic compilation from arming process-wide temporal history.

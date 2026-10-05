@@ -4,6 +4,8 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-10-05
+
 - HTTP routes and the static root are frozen once `http_serve` starts (#1140). A `code` route's worker points at the spawning server, so `http_route`, `http_route_authed` or `http_static` called from one wrote the live route table while every other worker read it lock-free: one request could register a route for the whole process, and `route_count++` with no fence let a concurrent lookup `strcmp` a half-filled slot (ThreadSanitizer: 10 reports on a /mutate-vs-/ hammer before, 0 after). The three builtins now raise "must register before http_serve" once serving, as `http_response_header` already did. An uncaught error in a `code` route's source now answers 500 with the generic body `{"error": "internal error"}` instead of `200 null`; the message goes only to the server's stderr, since it can carry paths or values a client must not see.
 - The cycle collector, the JIT and plain refcounts come back mid-run once every spawned worker is joined (#1147). `multithreaded` was cleared only by the exit drain, so one `spawn` + `thread_join` left collection off for the rest of the run: a closure-cycle loop after it peaked at 12x the RSS of the same loop with no spawn at 100k iterations (117x at 300k). The state now counts live workers (up before `pthread_create`, down after `pthread_join`) and `thread_join` clears the flag when the count reaches zero and the joiner is the state's only attached thread. An unjoined worker, finished or not, keeps the mode on until exit. Section [101a] gates the resume by peak-RSS ratio with a live-worker witness; `tests/tsan_mt_clear_respawn.eigs` (join, collect, spawn again, nested spawn) joins the TSan slice.
 - A newline inside a string literal or inside f-string literal text advances the lexer's line counter (#1251). Every later token used to sit one line early per swallowed newline, so `what is x at N` answered for the wrong statement and `e.line`, the error header, lint/LSP diagnostics and rename all pointed at the wrong line.
@@ -873,6 +875,12 @@ All notable changes to EigenScript are documented here.
   row-label gutter is folded into its own rect. Two of the #823 containment
   clip's four registry opt-outs are gone.
 
+- Add `eigs_state_set_strict` so hosted and freestanding embedders can choose
+  strict or finite-stand-in semantics independently for each state.
+
+- Add autograd operations and analytic gradients for transpose, causal-masked
+  softmax, layer normalization, and GELU, enabling causal self-attention models.
+
 ### Fixed
 
 - **Parser depth-limit errors are the recorded first error (#1342).** Every `PARSE_MAX_DEPTH` guard records its message at the current token, so `--lint --json` and the LSP report `expression nesting too deep` instead of the recovery cascade.
@@ -1537,6 +1545,250 @@ All notable changes to EigenScript are documented here.
   out-of-tree import-shadow warning before diffing (#1115)**, so two
   byte-identical trees at different paths no longer compare unequal.
 
+- `--lint --json` bounds the E000 missing-file message to the existing UTF-8 message limit after assembling it, so a very long or multibyte missing path no longer produces an oversized diagnostic; short messages are byte-identical (#1132).
+
+- Add regression coverage for direct buffer and text-builder `thread_join`
+  results, plus a TSan buffer-transfer fixture that sends while its reader
+  worker is already live.
+
+- Make `exit of N` from a spawned worker stop all VM threads and wake main-thread concurrency waits, instead of leaving main hung in a runtime wait. Interrupted joins retain their workers for teardown, which still waits for native I/O. Embedded evaluations keep separate exit scopes so an old worker cannot revive or stop a later eval.
+
+- Serialize the shared random-number stream so concurrent workers cannot race or receive duplicate draws.
+
+- Preserve a host application's SIGPIPE disposition across subprocess and HTTP operations, while reporting failed `print` output instead of silently succeeding.
+
+- Document that shared binding/container races are undefined, enumerate the embedding API's process-global concurrency surfaces, and extend the TSan gate with a declared inventory of previously untested concurrency shapes.
+
+- Copy buffers and text builders, including nested instances, at channel,
+  thread-join, and cooperative-task transfer boundaries instead of sharing
+  mutable storage across execution contexts.
+
+- Route runtime loop-count publication into shared environments through the
+  existing locked setter, preserving the slot update and assignment count
+  together. This does not change the shared user-binding contract (#1171).
+
+- Cooperative task IDs now carry their handle-slot generation, so using an ID
+after `task_detach` recycles its slot raises a catchable stale-handle error
+instead of observing or controlling the replacement task.
+
+- `EIGS_JIT_HOT=1` prints its per-chunk hot-chunk table again. It had printed nothing since 0.11.8 because teardown emptied the chunk registry before the dump ran; rows are now retained at unregister time, the dump never exits silently, and a retained-row cap reports overflow (#1176).
+
+- Distinguish JIT code-cache exhaustion from unsupported bytecode in hot-chunk
+  diagnostics, and exclude capacity rejections from the stop-opcode histogram.
+
+- Correct `EIGS_JIT_HOT`'s native-byte share to include loop back-edges and
+  native OSR coverage instead of weighting chunks by frame entries alone.
+
+- Lint W021 (stdlib-name shadowing) can no longer record a truncated path when `realpath` fails on a 4097-4501 byte path, which would have reported against a file it did not scan; this also removes the `-Wformat-truncation` warning every build printed (#1182).
+
+- `import args` no longer breaks `args.parse_args`: the module namespace was bound over the CLI-args builtin, so `parse_args` failed with "cannot call dict". The builtin is now captured before the namespace is installed (#1236).
+
+- Refuse every EigenStore operation during trace replay before accessing live
+  storage, preventing changed or missing databases from silently corrupting a
+  deterministic replay.
+
+- Gate every top-level `lib/ui*.eigs` function on assertion and reference-document
+coverage, including internal helpers. Exercise decoded fields through SDL's real
+queue and native input on a private display, with visible slider-drag evidence.
+Source calibration rejects missing coverage and non-executing assertion references.
+
+- Recording stream identity follows an attachment's lifetime across state
+switches. Detach releases its recording binding; a replacement attachment
+receives a distinct identity. Line, scope and emitted observer configuration
+caches now belong to each stream and tape session, including native callbacks
+that record before a source-line event.
+
+- Replay file and memory sources now own their complete cursor, parser, pending
+outcome and correspondence state. Refused memory replacements preserve the
+active source; clearing memory resumes the suspended file without rewinding or
+mixing queued values. Hosts explicitly advance concatenated tape sessions only
+at quiescent boundaries with no unread current-session outcome. Continuing
+attachments and children resolve the next namespace through lifetime metadata.
+
+- Trace tapes now declare host keys, state grouping and causal spawned-worker
+origins before stream events. Replay matches host keys and parent-local spawn
+occurrences instead of assigning streams in first-event order. Child identity
+is reserved before launch and released through the existing handle lifecycle.
+The association encoding is version 5; older tapes are refused explicitly.
+
+- Consumer acceptance runs each consumer against a fresh candidate-tree overlay, preventing one row's runtime-slot writes from bypassing candidate checks in later rows (#1306).
+
+- Report parser collection-size limits as the primary structured diagnostic in
+  `--lint --json` and the language server, with the offending token's location.
+
+- Make every string emitted by `eigsdap` valid UTF-8 JSON, including input
+  text ending in the middle of a multibyte character.
+
+- Bound LSP function-parameter metadata with the parser's shared parameter
+  limit and move document-symbol deduplication storage off the C stack.
+
+- Fix LSP definition, symbol, and reference ranges for functions to cover the
+  function name instead of the `define` keyword, including indented definitions.
+
+- Make the lexer and formatter use the same four-column tab stops for mixed
+  tab-and-space indentation, so formatting cannot change a program's blocks.
+
+- Show the offending source line and caret beneath lexer errors, including correctly aligned tab-indented input.
+
+- Align parse- and runtime-error carets after multi-byte UTF-8 characters in source excerpts.
+
+- Run the LSP sanitizer checks without stack or register roots so stale pointers
+  cannot hide leaks from LeakSanitizer.
+
+- Fixed `eigenlsp` silently truncating reference results after 512 locations and diagnostics after 256 entries.
+
+- `eigenlsp` now reports an error to the client instead of silently changing a
+  document URI containing an escaped NUL or silently dropping the 65th open
+  document when its 64-document table is full.
+
+- Fixed the EigenScript meta-interpreter accepting unterminated plain strings and inconsistent dedents that the native lexer rejects.
+
+- eigenlsp now splits multi-line semantic tokens for clients that do not advertise
+  `multilineTokenSupport`, and pinpoints an unexpected `)` parse error's source range.
+
+- File temporal control flow and every assignment form under the statement's
+  own first source line, and omit the synthetic end-of-file stamp from traces.
+
+- Make JIT- and OSR-compiled line operations emit the same trace-tape line
+  records as interpreted execution.
+
+- Hide compiler-internal `for`-binder save and restore stores from trace tapes and assignment history, making temporal answers consistent between function and module scope.
+
+- `vm_run_bytecode` now raises a catchable value error with a specific diagnostic when its chunk descriptor is invalid, instead of returning an ambiguous `null`.
+- `lib/eigen.eigs` snapshots its direct host dependencies and fresh-environment builtin values at load time, including the entropy helper's `log`/`divide` dependencies, so later host rebinding does not change meta-interpreter behavior.
+
+- Embed API errors raised after an evaluation no longer report the last line of
+  that unrelated evaluation.
+
+- Fixed consumer acceptance overlays omitting Makefile support files, worktree ecosystem discovery, ephemeral per-consumer logs, and gfx variants without a resolvable standard library.
+
+- Align binary tensor loading and writing with the 10,000,000-element cap;
+  report over-cap files with catchable limit errors, and document the shared
+  stream count constraints.
+- Record the tensor loader's cap decision so the same limit diagnostic and
+  catch branch replay after the file changes, without taping tensor payloads.
+
+- Make the JIT differential runner use the test suite's per-program environment, so fail-soft tests are compared through completion instead of only to their first strict-mode error.
+
+- Fixed- and optional-shape builtin argument lists reject surplus outer elements under the strict default before mutation, resource acquisition or tape consumption. Errors name the builtin and maximum width. Strict-off legacy results, scalar overloads, list-data inputs and variadic arguments are preserved. A source-derived contract inventory and typed ordinary controls cover the classified population (Refs #1398).
+
+- Fixed `sandbox_run` error dictionaries borrowing run-scoped interned keys after
+  a caught error, which could leave `kind`, `message`, or `line` dangling at the
+  host boundary.
+
+- Make `eigen_generate` and `eigen_eval_loss` raise when a prompt exceeds the
+  model's `max_seq_len`, matching the training API instead of truncating input.
+
+- Make `ls` return directory entries in deterministic bytewise order instead of filesystem-dependent `readdir` order.
+
+- Tensor builtins now raise a catchable `type` error by default when a list
+  tensor contains a non-number element, rather than silently replacing it with
+  zero. Set `EIGS_STRICT=0` to retain the legacy coercion.
+
+- Clamp non-finite buffer elements at scalar read boundaries in the VM/runtime
+  and native JIT, so indexed
+  comparisons, arithmetic, structural equality, scalar reductions (including nested buffers), tensor
+  element access, and embedding API reads all observe EigenScript's finite-number
+  invariant consistently. Numeric byte/sample/device conversion and mixed
+  buffer/list materialization follow the same rule, with defined byte wrapping.
+  Raised reads stop before later operations or writes and release temporary
+  conversion storage. A failing iterator read reports its for-loop or
+  comprehension header, including reads after the first iteration.
+  Refs #1417: direct indexed-operand parity and the runtime pin migration in
+  ouroboros AOT remain unresolved; the optional boxed-accessor mirror has a
+  narrower opt-out fixture scope.
+
+- EigenStore now preserves a user dictionary whose keys are `_eigs_buffer` and
+  `_eigs_shape` as a dictionary instead of decoding it as a buffer.
+
+- Reject symlink and empty changelog fragments, unauthorized fragment deletions, and release cuts that delete non-fragment files under `changes/`.
+
+- After a call returns, a raise in the caller's expression reports the caller's line (#1424). The VM kept the
+  callee's last line as the current line, so `e.line`, the `Error line N` header and the traceback's frame line
+  named a line inside the callee for `sqrt of (f of x)`, `1 / (f of x)`, `a % (f of x)` and a builtin raising after
+  it ran a user callback (`sort_by`). Every frame now records its caller's line when it is pushed, and `RETURN`,
+  `RETURN_NULL` and the JIT's return helpers restore it, in the interpreter, the JIT and OSR. Trace-tape `L`
+  records and temporal answers are unchanged.
+
+- Stop `sandbox_run` errors from printing an uncaught-error header and stack trace to stderr; failures are now reported only through the returned structured error.
+
+- Classify documentation-named symlinks as code changes in CI scope detection, preventing links to runtime files from skipping the test suite.
+
+- Native code that runs EigenScript gets its own line back when that code returns (#1434). A builtin's callback,
+  an embedder's `eigs_eval_string` and an AOT binary's call into interpreted code all go through `vm_execute`,
+  and the called code's lines overwrote both the VM's line and the trace line stamp. Nothing restored the stamp,
+  and #1424's restore covered only a normal return. So with no interpreter frame live (an AOT binary or an
+  embedder) a builtin raising after the callback, such as `sort_by` with a key that returns a string, reported
+  the callback's line, and a store right after the call was filed under that line. In the interpreter a callback
+  that stopped on an error `sandbox_run` swallowed left the next raise in the caller's expression on the chunk's
+  line (`e.line`, the `Error line N` header and the traceback). `vm_execute` now restores both lines on every
+  exit, in the interpreter, the JIT and OSR, and writes an `L` record for the restored line when a tape is
+  recording, so `eigenscript --step` and the DAP file a store made right after the call under the same line as
+  live history. With an interpreter frame live the restored line is the caller's own line, even when a call
+  that returned earlier in the expression left the stamp on its last line. Tapes of programs that return from
+  `load_file`/`import` or whose builtins run callbacks gain those `L` records; the record shape is unchanged.
+
+- Keep native/AOT fallback error-line stamps per thread, so a spawned worker cannot make another thread report the worker's source line.
+
+- Fixed cooperative tasks whose entry is a callback-running builtin (such as
+  `sort_by`) deadlocking when the builtin invokes its user function.
+
+- Make `numerical_grad`, `numerical_grad_rows`, and `numerical_grad_cols` raise a named type error under strict mode when the loss function returns a non-number, instead of silently treating it as zero.
+
+- Preserve main-thread source-line stamps for temporal history assignments while spawned workers are running.
+
+- File assignments emitted by native embedders and AOT code in module scope
+  instead of incorrectly attaching them to the last interpreted callback's
+  frame in trace tapes.
+
+- Re-arm the possible-root cycle collector from surviving traversal work (nodes plus owned child slots), restoring hot list-loop performance after a live heap while budgeting repeated scans of dense live graphs (#1442).
+
+- Restored `unobserved:` hot-loop performance in observer-armed programs while
+  retaining every numeric value-window sample.
+
+- Retain intern-name storage for the lifetime of environments, function parameters, and ordinary dictionary keys, independently of the creating attachment. Keep promoted private dictionary keys owned across attachments of the same state.
+
+- Refuse `mktemp` at the documented filesystem boundary during replay, before
+  creating a fresh temporary file that the trace tape cannot reconstruct.
+
+- Safely drain spawned workers and nested spawns before fuzz-input cleanup, reset the per-input cooperative scheduler, and preserve sandbox loop caps on worker threads.
+
+- Meta evaluator restores loop binders after exceptions (#1476).
+
+- compiler: hide for-loop save slots from source names (#1482).
+
+- Reject ragged matrices in charpoly (#1483).
+
+- Keep sandbox assignments and observer snapshots out of shared temporal history before retaining names, values or count metadata. Ordinary tape assignment records and trusted host/descriptor history outside the sandbox are preserved.
+
+- Bound arena-list promotion with iterative native work, preserve repeated list references, charge promotion allocations to sandbox budgets, and retain deferred promoted-list candidate ownership until normal single-threaded collection.
+
+- Reject nonnumeric list elements in strict byte conversions while preserving compatibility-mode substitution and numeric NUL termination.
+
+- Fixed `heap_inuse` replay on glibc builds to return the recorded allocator
+  measurement instead of sampling the replay process.
+
+- Restore widget clip state when a renderer raises an error.
+
+- Fixed chart rendering for narrow numeric ranges whose reciprocal exceeds the runtime numeric guard, preventing plotted points from collapsing at the plot edges.
+
+- Make optimized local field and index reads raise immediately on null receivers instead of continuing through later side effects.
+
+- Prefix cross-file lint helpers with `eigs_lint_` so embedding hosts can use their former generic names without archive link collisions.
+
+- Prevent concurrent thread attachment from racing the observer pre-pass without holding the lifecycle mutex across source-provider callbacks.
+
+- Refuse to run damaged bundles truncated immediately after the archive head, including bundles with non-ASCII entry names.
+
+- Add bounded LSP diagnostic tests for temporary trace-arming suppression, host-state preservation and subsequent normal compilation.
+
+- Reclaim imported module/function cycles held by a closing non-last embedding state's trace table.
+
+- Retire possible-root containers held only by their buffer pin during later
+  single-threaded admissions, separately from full cycle collection. Preserve
+  child-cycle registration and the survivor-work scan budget with an admission
+  counter that pin retirement cannot erase (#1623).
+
 ### Changed
 
 - **Front-door docs no longer hand-type counts of the tree (#1275).** They
@@ -1890,6 +2142,92 @@ All notable changes to EigenScript are documented here.
 
 - **`ext_net` raw TCP/UDP sockets are ticked as shipped in `ROADMAP.md`
   (#1119).**
+
+- Changelog entries are fragments now (#1268): a PR adds `changes/<category>/<issue>-<slug>.md` and never edits `CHANGELOG.md`, so two PRs no longer conflict on the top of `[Unreleased]`. `tools/changelog_fragments.sh cut <version> <date>` assembles the fragments into the release section under the `###` headings, bumps `VERSION` and deletes them; the gate in `tools/precheck.sh` fails a `src/` or `lib/` change with no fragment (the `internal` category opts out) and a direct `CHANGELOG.md` edit that is not a reproducible cut. See `changes/README.md`.
+
+- Trace format v4 gives every non-header record a tape-local stream ID and replays nondeterministic inputs independently per CPU, embedded, or external/GPU stream.
+
+- Include lazily loaded graphics in the hosted release, introduce `server`
+  (HTTP + raw TCP + models) and `server-db` profiles, and retain the former build
+  targets and full executable spelling as compatibility aliases. Consolidate
+  HTTP/gfx/net CI coverage in the server lane, preserve model sanitizer coverage,
+  and route consumer server inputs separately; former gfx calls can use release
+  after a binding probe. Unresolved omitted HTTP/net/DB/model names report the unavailable
+  capability and required profile at first VM/native-JIT reference, before call
+  arguments, without allocating placeholder bindings. Shadow bindings win.
+  Discovery retains the language surface; direct host lookup reports actual
+  absence. Direct AOT adoption remains deferred. Refs #1415 and #1159;
+  capability registry, host grants,
+  reserved imports, package requires checks, and measured profile evidence remain
+  open.
+
+- Graphics examples now emit an opt-in readiness marker immediately before entering their event loop, allowing the test harness to reject setup hangs.
+
+### Removed
+
+- Removed the consumer-specific `EIGS_DEDENT_LOSS_WEIGHT`,
+  `EIGS_CLASS_LOSS_DUMP`, and `EIGS_DEPTH_LOSS_DUMP` training diagnostics;
+  model training no longer embeds token IDs from an external vocabulary.
+
+### Security
+
+- Refuse `native_train_step_builtin` windows longer than the model's
+  `max_seq_len` instead of corrupting the batched training cache.
+
+- Bound sandboxed straight-line and function-heavy bytecode with a cumulative
+  per-run instruction-work budget, independently of the existing loop and
+  allocation limits.
+
+- Drain per-request handles during HTTP worker teardown (#1449).
+
+- Bound nested f-string boundary scanner depth (#1450).
+
+- Seal builtin layer against shared name cache stores (#1452).
+
+- Fix shell injection in test-changed BASE handling (#1453).
+
+- Prevent sandbox descriptors from reading shared host temporal history.
+
+- Prevent multithreaded sandboxes from retaining dictionary keys (#1475).
+
+- Bound observer tape replay work (#1478).
+
+- Pin sandbox observer tracker environment across untrusted execution (#1479).
+
+- fix: bound W023 lint analysis work (#1484).
+
+- Validate scatter_add indices before integer conversion (#1485).
+
+- Synchronize the process-wide import-collision warning cache for concurrent HTTP imports.
+
+- eigenlsp: bound scope and binding analysis for rename requests, refusing an edit when adversarial document structure exhausts the per-request work budget (#1583).
+
+- Drain state-wide value-cycle candidates after every sandbox outcome without repeatedly scanning unrelated captured environments (#1584).
+
+- Prevent lint and LSP diagnostic compilation from arming process-wide temporal history.
+
+### Documentation
+
+- Correct the obsolete observer-overhead guidance, document the remaining conservative-gate use for `unobserved:`, and generate the published instruction counts from the benchmark baseline so the two cannot drift again.
+
+- Document the Homebrew tap's automatic formula-bump workflow, including its
+  computed checksum, test-bot gate, and manual recovery path.
+
+- `docs/BUILTINS.md`: the `spawn` row said surplus arguments are ignored. They follow the direct-call rule: a callee
+  of two or more parameters raises `call passes 3 arguments but the callee takes 2` at the spawn site, and a
+  1-parameter callee receives the whole list (#1362).
+
+- Correct the `task_spawn` builtin reference to describe when cooperative tasks run.
+
+- State the default error and `EIGS_STRICT=0` behavior for short `audio_open`
+  arguments; guard conditional strict wording throughout the builtin reference
+  while allowing intentional references to the explicit strict setting.
+
+- Correct the `handle_table_drain` declaration comment to name every handle
+  type reclaimed at teardown.
+
+- Correct the graphics argument-handling documentation to describe strict errors as
+  the default and `EIGS_STRICT=0` as the compatibility mode.
 
 ## [0.43.0] - 2026-09-06
 

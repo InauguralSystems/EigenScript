@@ -1,1 +1,0 @@
-- Refuse to run damaged bundles truncated immediately after the archive head, including bundles with non-ASCII entry names.

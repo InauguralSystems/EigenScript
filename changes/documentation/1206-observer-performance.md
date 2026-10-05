@@ -1,1 +1,0 @@
-- Correct the obsolete observer-overhead guidance, document the remaining conservative-gate use for `unobserved:`, and generate the published instruction counts from the benchmark baseline so the two cannot drift again.

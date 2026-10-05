@@ -1,1 +1,0 @@
-- Fixed consumer acceptance overlays omitting Makefile support files, worktree ecosystem discovery, ephemeral per-consumer logs, and gfx variants without a resolvable standard library.

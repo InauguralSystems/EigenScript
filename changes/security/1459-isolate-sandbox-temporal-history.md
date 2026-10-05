@@ -1,1 +1,0 @@
-- Prevent sandbox descriptors from reading shared host temporal history.

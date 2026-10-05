@@ -1,1 +1,0 @@
-- Preserve main-thread source-line stamps for temporal history assignments while spawned workers are running.

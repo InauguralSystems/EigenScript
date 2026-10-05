@@ -1,1 +1,0 @@
-- Keep the sanitizer LSP gate on a dedicated, verified ASan binary so it cannot silently test a stale release build.

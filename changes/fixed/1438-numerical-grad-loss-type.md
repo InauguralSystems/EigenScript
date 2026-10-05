@@ -1,1 +1,0 @@
-- Make `numerical_grad`, `numerical_grad_rows`, and `numerical_grad_cols` raise a named type error under strict mode when the loss function returns a non-number, instead of silently treating it as zero.

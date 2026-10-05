@@ -1,1 +1,0 @@
-- Pin sandbox observer tracker environment across untrusted execution (#1479).
