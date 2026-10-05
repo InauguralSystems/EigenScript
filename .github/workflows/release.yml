@@ -114,7 +114,47 @@ jobs:
           mv src/eigenscript eigenscript-full-${{ matrix.label }}
           chmod +x eigenscript-full-${{ matrix.label }}
 
+      # The suite's dependency-gated sections fail, not skip, when a
+      # dependency is missing, so the runner needs what CI's test
+      # environments carry. Installed AFTER both builds, so the shipped
+      # binaries (and the Linux glibc floor) do not change.
+      # Linux: the runtime packages of .devcontainer/Dockerfile (SDL and
+      # SDL_mixer for the strict-shape backend controls, Xvfb/xdotool for
+      # the real-input checks).
+      - name: Install test dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-dev libsdl2-mixer-2.0-0 xvfb xauth xdotool python3-pil zlib1g-dev
+
+      # macOS: the toolchain step of ci.yml's build-and-test-macos-worker.
+      # coreutils supplies `timeout`, which the gfx example and sanitizer
+      # checks require; upstream LLVM supplies the gfx LeakSanitizer
+      # runtime (LLVM 20 deadlocks before main on macOS 26.4+,
+      # llvm-project#182943, fixed in 22).
+      - name: Install test dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          case '${{ matrix.os }}' in
+            macos-15-intel) formula=llvm@18 ;;
+            *)
+              formula=llvm@22
+              brew install --force-bottle "$formula"
+              ;;
+          esac
+          if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+            brew install --force-bottle coreutils
+          fi
+          brewbin="$(brew --prefix "$formula")/bin"
+          test -x "$brewbin/clang"
+          echo "PATH=$brewbin:$PATH" >> "$GITHUB_ENV"
+          echo "EIGS_ASAN_GFX_CC=clang" >> "$GITHUB_ENV"
+
+      # TMPDIR: two suite diagnostics redirect into "$TMPDIR/..." and
+      # hosted runners leave it unset (#1624).
       - name: Run tests against the release binary
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           cp eigenscript-${{ matrix.label }} src/eigenscript
           cd tests && bash run_all_tests.sh
