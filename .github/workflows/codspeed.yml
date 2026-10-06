@@ -54,7 +54,7 @@ jobs:
       # Shallow fetch of one commit; `git clone` of a branch is not a pin.
       - name: Fetch consumer DMG at its pin
         env:
-          DMG_REF: cf6ef5e151deff98cc29250a7c8fc394ee4b64d6  # DMG master, 2026-09-21
+          DMG_REF: afd9bd52778cb0a8d1ab0473ec726aaae556fb90  # DMG master, 2026-10-06 (DMG#79: ready for the boolean type, #1637)
         run: |
           set -euo pipefail
           mkdir -p .codspeed-consumers/DMG && cd .codspeed-consumers/DMG
