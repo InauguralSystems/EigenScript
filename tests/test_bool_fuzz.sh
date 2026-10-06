@@ -109,7 +109,13 @@ FNR == NR {                      # marks: prog|strict|P:type  or  prog|strict|k:
     }
 }
 END {
-    for (key in anyv) if (!(key in usedany)) { printf "  FAIL: unused any-value entry %s\n", key; bad_any++ }
+    # an entry for a name this build lacks (an extension that is off) is not
+    # stale -- it is unexercised here; an unused entry for a present name is
+    for (key in anyv) if (!(key in usedany)) {
+        nm = key; sub(/[|].*/, "", nm)
+        if ((nm in absent) && !(nm in examined_name)) { anyabsent++; continue }
+        printf "  FAIL: unused any-value entry %s\n", key; bad_any++
+    }
     for (i = 1; i <= nb; i++) printf "  FAIL: broken probe program %s (%s)\n", brokenl[i], seenprog[substr(brokenl[i], 1, index(brokenl[i], "|") - 1)]
     nex = 0; for (n in examined_name) if (n != "@vm") nex++
     nab = 0; for (n in absent) if (!(n in examined_name)) nab++
