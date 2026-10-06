@@ -6323,7 +6323,8 @@ Value* builtin_list_index_of(Value *arg) {
     ARG_GUARD(!list || list->type != VAL_LIST,
               "list_index_of", "a list as its first argument", make_num(-1));
     for (int i = 0; i < list->data.list.count; i++) {
-        int equal = values_equal(list->data.list.items[i], needle);
+        /* #1637: the `==` comparison, raising on bool vs num like `==`. */
+        int equal = values_equal_op(list->data.list.items[i], needle, "list_index_of");
         /* #1417: structural buffer comparison can raise on a strict NaN. */
         if (g_has_error) return make_null();
         if (equal) return make_num((double)i);
@@ -6333,8 +6334,8 @@ Value* builtin_list_index_of(Value *arg) {
     return make_num(-1);
 }
 
-/* list_contains of [list, value] — 1 if any element structurally equals
- * value (same values_equal scan as list_index_of), else 0. Bad args give 0,
+/* list_contains of [list, value] — true if any element structurally equals
+ * value (same scan as list_index_of), else false. Bad args give false,
  * mirroring contains. */
 Value* builtin_list_contains(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "list_contains");
@@ -6343,7 +6344,8 @@ Value* builtin_list_contains(Value *arg) {
     Value *needle = arg->data.list.items[1];
     ARG_GUARD(!list || list->type != VAL_LIST, "list_contains", "a list as its first argument", make_bool(0));
     for (int i = 0; i < list->data.list.count; i++) {
-        int equal = values_equal(list->data.list.items[i], needle);
+        /* #1637: the `==` comparison, raising on bool vs num like `==`. */
+        int equal = values_equal_op(list->data.list.items[i], needle, "list_contains");
         /* #1417: structural buffer comparison can raise on a strict NaN. */
         if (g_has_error) return make_null();
         if (equal) return make_bool(1);

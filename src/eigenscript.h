@@ -2064,7 +2064,8 @@ int is_truthy(Value *v);
 /* Structural equality for == / != (recursive for lists/dicts/buffers;
  * identity for functions/builtins; no cross-type coercion). */
 int values_equal(Value *a, Value *b);
-/* #1637: the `==`/`!=` operator form — raises on a bool meeting a number. */
+/* #1637: both raise on a bool meeting a number; `op` names the operator or
+ * builtin in the message. */
 int values_equal_op(Value *a, Value *b, const char *op);
 char* value_to_string(Value *v);
 /* #875: THE number->text rule. Every producer of number text calls this —

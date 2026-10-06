@@ -2964,22 +2964,29 @@ int is_truthy(Value *v) {
  * (no coercion — consistent with the comparison operators). The depth
  * guard prevents runaway recursion on self-referential containers; beyond
  * it we fall back to identity. */
-/* #1637: `op` is non-NULL on the `==`/`!=` operator path. There a bool met
- * by a number — at any depth of the two values — RAISES instead of answering
- * "not equal", so `(pred of x) == 1` written against the old 1/0 predicates
- * fails loudly rather than silently flipping. Every other mixed-type pair
- * stays unequal. Library membership tests (contains, index_of, ...) pass
- * NULL and keep plain "not equal". */
+/* #1637 item 6: a bool met by a number — at any depth of the two values —
+ * RAISES instead of answering "not equal", so `(pred of x) == 1` written
+ * against the old 1/0 predicates fails loudly rather than silently flipping.
+ * There is NO non-raising mode: the membership builtins (list_contains,
+ * list_index_of) search with this same comparison and raise the same way, or
+ * an old 1/0 membership check would flip from found to not-found. `op` names
+ * the operator (`==`, `!=`) or the builtin, for the message. Every other
+ * mixed-type pair stays unequal. */
 static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
     /* #1417: a buffer compared with itself still exposes its elements. Do
      * not bypass normalization (or a strict NaN raise) through identity. */
     if (a == b && (!a || a->type != VAL_BUFFER)) return 1;
     if (!a || !b) return 0;
     if (a->type != b->type) {
-        if (op && ((a->type == VAL_BOOL && b->type == VAL_NUM) ||
-                   (a->type == VAL_NUM && b->type == VAL_BOOL)))
-            rt_error(EK_TYPE, 0, "cannot compare %s and %s with '%s'",
-                     val_type_name(a->type), val_type_name(b->type), op);
+        if ((a->type == VAL_BOOL && b->type == VAL_NUM) ||
+            (a->type == VAL_NUM && b->type == VAL_BOOL)) {
+            if (op[0] == '=' || op[0] == '!')
+                rt_error(EK_TYPE, 0, "cannot compare %s and %s with '%s'",
+                         val_type_name(a->type), val_type_name(b->type), op);
+            else
+                rt_error(EK_TYPE, 0, "%s: cannot compare %s and %s (a bool is not a number)",
+                         op, val_type_name(a->type), val_type_name(b->type));
+        }
         return 0;
     }
     if (depth > 64) return a == b;
@@ -3033,7 +3040,7 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
     return a == b;   /* unreachable for valid ValType values */
 }
 
-int values_equal(Value *a, Value *b) { return values_equal_impl(a, b, 0, NULL); }
+int values_equal(Value *a, Value *b) { return values_equal_impl(a, b, 0, "=="); }
 int values_equal_op(Value *a, Value *b, const char *op) { return values_equal_impl(a, b, 0, op); }
 
 /* THE number->text rule, in one place (#875).

@@ -112,6 +112,18 @@ same of ["true" == T, F, "\"true\" == true is false"]
 same of [T == T, T, "true == true"]
 same of [T != F, T, "true != false"]
 same of [F == (3 < 2), T, "false == false"]
+# Membership searches with the `==` comparison, so it raises the same way
+# (#1637 item 6): an old 1/0 membership check must not flip found -> not-found.
+raises of [(_) => list_contains of [[1], 1 == 1], "list_contains: cannot compare num and bool", "list_contains of a bool in a number list"]
+raises of [(_) => list_contains of [[0], 1 == 2], "list_contains: cannot compare num and bool", "list_contains of false in [0]"]
+raises of [(_) => list_contains of [[true], 1], "list_contains: cannot compare bool and num", "list_contains of a number in a bool list"]
+raises of [(_) => list_index_of of [[1, 2], 1 == 1], "list_index_of: cannot compare num and bool", "list_index_of of a bool in a number list"]
+raises of [(_) => list_contains of [[[1]], [true]], "list_contains", "list_contains: bool vs num inside a nested element"]
+same of [list_contains of [[true, false], false], true, "list_contains finds a bool among bools"]
+same of [list_index_of of [["x", false], false], 1, "list_index_of finds a bool past a string"]
+same of [list_contains of [["true", null], true], false, "list_contains: other mixed types stay unequal"]
+same of [list_contains of [[null], false], false, "list_contains: null is not false"]
+same of [list_index_of of [["1"], 1], -1, "list_index_of: a string is not a number"]
 # Bools stay distinct from 1/0 wherever a value is keyed by its text.
 keyed is {}
 keyed[str of T] is "bool"

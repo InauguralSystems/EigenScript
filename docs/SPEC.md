@@ -506,7 +506,10 @@ bool
 A bool is not a number. Arithmetic on a bool raises, and so do `==` and `!=`
 between a bool and a number, so a check written against the old `1`/`0`
 answers fails loudly instead of quietly flipping: write `if pred of x:` or
-`(pred of x) == true`. Every other mixed-type pair is simply unequal
+`(pred of x) == true`. The membership builtins `list_contains` and
+`list_index_of` search with the same comparison and raise the same way, so an
+old 1/0 membership test cannot quietly flip from found to not-found. Every
+other mixed-type pair is simply unequal
 (`null == false` is `false`, `"true" == true` is `false`). A bool converts to
 a number only explicitly, by branching on it; `num of b` raises.
 
