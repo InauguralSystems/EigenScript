@@ -219,8 +219,8 @@
       "observe": "print of shape_result",
       "unchanged": "# Entry rejection is checked before any absent-backend operation.",
       "outputs": {
-        "absent-sdl": "0\nshape-complete",
-        "absent-mixer": "audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\n0\nshape-complete"
+        "absent-sdl": "false\nshape-complete",
+        "absent-mixer": "audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\nfalse\nshape-complete"
       },
       "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
     }
@@ -1415,7 +1415,7 @@
       "observe": "print of shape_result",
       "unchanged": "# Entry rejection is checked before any absent-backend operation.",
       "outputs": {
-        "absent-sdl": "gfx_open: cannot load libSDL2\n0\nshape-complete"
+        "absent-sdl": "gfx_open: cannot load libSDL2\nfalse\nshape-complete"
       },
       "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
     }
