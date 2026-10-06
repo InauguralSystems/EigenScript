@@ -326,7 +326,7 @@ POPULATION = {
     # file                       fences paired fragment nocheck value-comments
     "README.md":                 (  8,    3,     5,      0,      0),
     "docs/llms.txt":             (  9,    6,     2,      1,      0),
-    "docs/SPEC.md":              ( 84,   80,     1,      3,      0),   # #1637: +1 paired (bool raises)
+    "docs/SPEC.md":              ( 85,   81,     1,      3,      0),   # #1637: +2 paired (bool raises, deep == short-circuit)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  7,    7,     0,      0,      0),
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),

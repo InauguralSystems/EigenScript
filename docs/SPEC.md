@@ -503,12 +503,26 @@ true
 bool
 ```
 
-A bool is not a number. Arithmetic on a bool raises, every numeric builtin
-given a bool raises (in every strict mode: `EIGS_STRICT=0` keeps its soft
-stand-ins for other wrong types, never for a bool), and so do `==` and `!=`
-between a bool and a number, so a check written against the old `1`/`0`
-answers fails loudly instead of quietly flipping: write `if pred of x:` or
-`(pred of x) == true`. The membership builtins `list_contains` and
+A bool is not a number. The exact rule, in every strict mode
+(`EIGS_STRICT=0` keeps its soft stand-ins for other wrong types, never for a
+bool):
+
+- Arithmetic, ordering (`<`, `sort`), indexing, slice bounds, `range`, an
+  `at` line and a `when` ordinal raise on a bool, and so do `==` and `!=`
+  between a bool and a number.
+- A builtin raises when it is given a bool anywhere it does not take one: as
+  its argument, at a position of its argument list, or as an element of a
+  list it reads as numbers (`sum of [1, true]`, `sgd_update`'s gradient). The
+  positions that DO take a bool are few and reviewed: printing and
+  conversion (`print`, `write`, `str`, `type of`, `json_encode`), the
+  observer, `assert`'s condition, `write_bytes`'s append flag, and the
+  element slots of containers and channels (`append`, `set_at`, `dict_set`,
+  `fill`, `list_insert_at`, `send`, a `json_build` value). The full list is
+  `tests/bool_fuzz_anyvalue.txt`; `tests/test_bool_fuzz.sh` puts `true` and
+  `false` into every argument slot of every builtin and checks it.
+
+So a check written against the old `1`/`0` answers fails loudly instead of
+quietly flipping: write `if pred of x:` or `(pred of x) == true`. The membership builtins `list_contains` and
 `list_index_of` search with the same comparison and raise the same way, so an
 old 1/0 membership test cannot quietly flip from found to not-found. Every
 other mixed-type pair is simply unequal
@@ -524,6 +538,15 @@ try:
     print of ((1 < 2) == 1)
 catch e:
     print of e.message
+xs is [10, 20, 30]
+try:
+    print of xs[(1 < 2):]
+catch e:
+    print of e.message
+try:
+    print of (sum of [1, 2 > 1])
+catch e:
+    print of e.message
 print of (null == false)
 n is 0
 if 2 > 1:
@@ -533,6 +556,8 @@ print of n
 ```output
 cannot apply '+' to bool and num
 cannot compare bool and num with '=='
+slice bound must be an integer or null, got bool
+sum: argument 2 is a bool, which sum does not take there
 false
 1
 ```
@@ -548,6 +573,24 @@ print of ({"a": 1} == {"a": 2})
 true
 true
 false
+```
+
+A deep comparison walks the pairs in order (lists by index, dicts in the
+left operand's key order) and stops at the first unequal pair. A bool/number
+pair raises when the walk reaches it, so whether `[x, true] == [y, 1]` raises
+depends on the pairs before it: an earlier unequal pair answers `false`
+first.
+
+```eigenscript
+print of ([1, true] == [2, 1])
+try:
+    print of ([2, true] == [2, 1])
+catch e:
+    print of e.message
+```
+```output
+false
+cannot compare bool and num with '=='
 ```
 
 ## Bitwise operators
