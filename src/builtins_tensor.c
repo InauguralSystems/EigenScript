@@ -256,19 +256,22 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
      * the default, so reject that lossy conversion before allocating; the
      * explicit EIGS_STRICT=0 path deliberately retains the old stand-in.
      * Check even when the first element or row gives no usable shape. */
-    if (g_strict && v && v->type == VAL_LIST) {
+    /* #1637: a bool element is refused in every strict mode. */
+#define FLAT_BAD(e) ((e)->type != VAL_NUM && (g_strict || (e)->type == VAL_BOOL))
+    if (v && v->type == VAL_LIST) {
         int bad = 0;
         if (ndim == 1) {
             for (int i = 0; i < v->data.list.count; i++)
-                if (v->data.list.items[i]->type != VAL_NUM) { bad = 1; break; }
+                if (FLAT_BAD(v->data.list.items[i])) { bad = 1; break; }
         } else {
             for (int r = 0; r < v->data.list.count && !bad; r++) {
                 Value *row = v->data.list.items[r];
-                if (row->type != VAL_LIST) { bad = 1; break; }
+                if (row->type != VAL_LIST) { bad = g_strict || row->type == VAL_BOOL; if (bad) break; continue; }
                 for (int c = 0; c < row->data.list.count; c++)
-                    if (row->data.list.items[c]->type != VAL_NUM) { bad = 1; break; }
+                    if (FLAT_BAD(row->data.list.items[c])) { bad = 1; break; }
             }
         }
+#undef FLAT_BAD
         if (bad) {
             rt_error(EK_TYPE, 0, "%s: expected a tensor containing only numbers", who);
             return NULL;
@@ -357,9 +360,9 @@ static int tensor_total(Value *v) {
     /* #1637: arithmetic on a bool raises. Other non-number elements keep
      * their old (counted-as-absent) reading; a bool is the one that used to
      * BE a number, so letting it vanish from `sum of [a < b, ...]` would turn
-     * a count into a silent 0. Strict-gated like ARG_GUARD. */
-    if (v->type == VAL_BOOL && g_strict && !g_has_error)
-        rt_error(EK_TYPE, 0, "cannot use a bool as a number (convert explicitly, e.g. `if b: 1 else: 0`)");
+     * a count into a silent 0. Raised in every strict mode (#1637). */
+    if (v->type == VAL_BOOL && !g_has_error)
+        rt_error(EK_TYPE, 0, "cannot use a bool as a number (branch on it: `if b:`)");
     if (v->type == VAL_BUFFER) return v->data.buffer.count;   /* #1093 */
     if (v->type != VAL_LIST) return 0;
     int total = 0;
@@ -473,7 +476,9 @@ static Value* buf_scalar_elementwise(Value *buf, double sc, BinOpFn fn, int buf_
 
 static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     /* Shared by add/subtract/multiply/divide/pow (and by its own recursion on
-     * nested elements), so the guard names that surface rather than one call. */
+     * nested elements), so the guard names that surface rather than one call.
+     * `arg` is what the guard macros test for a bool (#1637): either operand. */
+    Value *arg = (a && a->type == VAL_BOOL) ? a : b;
     ARG_GUARD(!a || !b, "add/subtract/multiply/divide/pow",
               "two tensor operands", make_num(0.0));
 
@@ -661,6 +666,7 @@ Value* builtin_tensor_pow(Value *arg) {
 /* ---- Element-wise unary op ---- */
 typedef double (*UnaryOpFn)(double);
 static Value* tensor_unary(Value *v, UnaryOpFn fn) {
+    Value *arg = v;   /* what the guard macros test for a bool (#1637) */
     if (v->type == VAL_NUM) return make_num(fn(v->data.num));
     /* #1093: a buffer is a flat numeric tensor — same kernel, buffer out. */
     if (v->type == VAL_BUFFER) {
@@ -1056,6 +1062,7 @@ Value* builtin_tensor_scatter_add(Value *arg) {
 
 /* ==== BUILTIN: softmax ==== */
 Value* builtin_tensor_softmax(Value *arg) {
+    BOOL_REFUSE(arg, "softmax");
     /* #632: softmax of a single element normalizes to 1.0. */
     if (arg && arg->type == VAL_NUM) return make_num(1.0);
     /* flat-buffer fast path (#973): row-wise on the shape, 1-D is one row;
@@ -1080,6 +1087,7 @@ Value* builtin_tensor_softmax(Value *arg) {
 
 /* ==== BUILTIN: log_softmax ==== */
 Value* builtin_tensor_log_softmax(Value *arg) {
+    BOOL_REFUSE(arg, "log_softmax");
     /* Accept: log_softmax of tensor  OR  log_softmax of [tensor, dim].
      * #973: the [tensor, dim] form is recognised only as exactly [list, num].
      * The old test ("first element is a list") was satisfied by EVERY 2-D
@@ -1128,6 +1136,7 @@ Value* builtin_tensor_log_softmax(Value *arg) {
 /* ==== BUILTIN: relu ==== */
 /* relu of tensor → element-wise max(0, x). Works on 1D or 2D. */
 Value* builtin_tensor_relu(Value *arg) {
+    BOOL_REFUSE(arg, "relu");
     /* #632: a scalar is the degenerate element-wise case, like sqrt/exp/log. */
     if (arg && arg->type == VAL_NUM) {
         double x = arg->data.num;
@@ -1148,6 +1157,7 @@ Value* builtin_tensor_relu(Value *arg) {
 /* ==== BUILTIN: leaky_relu ==== */
 /* leaky_relu of tensor → element-wise max(0.01*x, x). Works on 1D or 2D. */
 Value* builtin_tensor_leaky_relu(Value *arg) {
+    BOOL_REFUSE(arg, "leaky_relu");
     /* #632: scalar is the degenerate element-wise case. */
     if (arg && arg->type == VAL_NUM) {
         double x = arg->data.num;
@@ -1309,6 +1319,7 @@ Value* builtin_tensor_norm(Value *arg) {
 /* zeros of n → a BUFFER of n zeros (#1093); zeros of [rows, cols] → 2D list */
 Value* builtin_tensor_zeros(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "zeros");
+    BOOL_REFUSE(arg, "zeros");
     if (!arg) return make_null();
     /* #1093 (breaking, documented): `zeros of n` is the FLAT numeric
      * container — a VAL_BUFFER of n doubles, not a list of n boxed numbers.
@@ -1627,6 +1638,7 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
 /* random_normal of [rows, cols, scale] → 2D, or random_normal of [len, scale] → 1D */
 Value* builtin_random_normal(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "random_normal");
+    BOOL_REFUSE(arg, "random_normal");   /* before the tape: a type error is not recorded */
     TRACE_NONDET_TAKE("random_normal");
     if (!arg || arg->type != VAL_LIST) TRACE_NONDET_RECORD("random_normal", make_null());
     /* #960: draw from the shared drand48 stream that `seed_random` pins, not

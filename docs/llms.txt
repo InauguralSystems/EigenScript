@@ -199,7 +199,8 @@ sqrt(2) = 1.414213562373095
 
 - `bool` is its own type: `true`/`false`. Comparisons, `not`, the observer
   predicates and every predicate builtin/lib function return a bool; `and`/`or`
-  return an operand. A bool is NOT a number: `true + 1` raises, and so does
+  return an operand. A bool is NOT a number: `true + 1` and `abs of true`
+  raise (even under `EIGS_STRICT=0`), and so does
   `(pred of x) == 1` (bool vs number). Test it directly (`if pred of x:`) or
   compare with `== true`. `false`, `0`, `null`, `""`, `[]`, `{}` are falsy.
 - `+` concatenates **strings only**. List concatenation is `append of [xs, v]`

@@ -503,7 +503,9 @@ true
 bool
 ```
 
-A bool is not a number. Arithmetic on a bool raises, and so do `==` and `!=`
+A bool is not a number. Arithmetic on a bool raises, every numeric builtin
+given a bool raises (in every strict mode: `EIGS_STRICT=0` keeps its soft
+stand-ins for other wrong types, never for a bool), and so do `==` and `!=`
 between a bool and a number, so a check written against the old `1`/`0`
 answers fails loudly instead of quietly flipping: write `if pred of x:` or
 `(pred of x) == true`. The membership builtins `list_contains` and

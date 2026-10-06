@@ -458,6 +458,7 @@ Value* builtin_build_corpus(Value *arg) {
     Value *vocab_path_val = arg->data.list.items[3];
 
     if (!file_list || file_list->type != VAL_LIST) return make_null();
+    BOOL_REFUSE(topn_val, "build_corpus");
     if (!topn_val || topn_val->type != VAL_NUM) return make_null();
     if (!stream_path_val || stream_path_val->type != VAL_STR) return make_null();
     if (!vocab_path_val || vocab_path_val->type != VAL_STR) return make_null();

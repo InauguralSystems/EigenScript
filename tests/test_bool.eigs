@@ -100,6 +100,15 @@ raises of [(_) => sum of [1 < 2, 3 < 4], "bool", "sum of a list of comparisons"]
 raises of [(_) => abs of T, "abs", "abs of a bool"]
 raises of [(_) => sqrt of F, "sqrt", "sqrt of a bool"]
 raises of [(_) => max of [T, 3], "max", "max over a bool element"]
+# Round 2 (#1637): numeric builtins that answered a bool with null/[] or read
+# it as 0. The [0fb] section runs this file under EIGS_STRICT=0 as well; the
+# full enumeration is tests/test_bool_numeric.py.
+raises of [(_) => usleep of T, "usleep: expected a number, got a bool", "usleep of a bool"]
+raises of [(_) => zeros of T, "zeros", "zeros of a bool"]
+raises of [(_) => fill of [T, 3], "fill", "fill with a bool count"]
+raises of [(_) => sum of [T, T, 1], "bool", "sum counting bools"]
+raises of [(_) => abs of T, "abs", "abs of a bool (no soft 0)"]
+same of [len of (fill of [2, T]), 2, "fill with a bool VALUE is fine"]
 
 # ---- 6. equality between a bool and a number raises; other mixes unequal ----
 raises of [(_) => T == 1, "cannot compare bool and num with '=='", "true == 1"]

@@ -1267,10 +1267,33 @@ extern __thread EigsThread *eigs_current;
  * Deliberately a macro rather than a helper: each call site keeps its own
  * early `return`, which is what makes the conversion reviewable one guard at
  * a time instead of a control-flow rewrite. */
+/* #1637: a bool where a number is wanted raises in EVERY strict mode. The
+ * EIGS_STRICT=0 opt-out keeps the soft stand-in for other wrong types, but a
+ * soft answer for a bool is a silent wrong value (`abs of true` was 0, so true
+ * read as 0). A guard counts as numeric when its `want` text names a number
+ * (eigs_want_numeric: "num", "size", "integer", "index", "count", " id");
+ * the bool may be the argument itself or a top-level element of the
+ * argument list. The test is the binary's own: tests/test_bool_numeric.py
+ * derives the numeric builtins by probing and requires the raise in both
+ * modes. */
+int eigs_arg_has_bool(const Value *arg);
+int eigs_want_numeric(const char *want);
+/* #1637: for a builtin that reads a number without a typed guard (its other
+ * wrong types answer null): a bool there raises in every strict mode. */
+#define BOOL_REFUSE(v, who)                                                   \
+    do {                                                                      \
+        if (eigs_arg_has_bool(v)) {                                           \
+            rt_error(EK_TYPE, 0, "%s: expected a number, got a bool", (who)); \
+            return make_null();                                               \
+        }                                                                     \
+    } while (0)
+#define EIGS_GUARD_RAISES(want)                                               \
+    (g_strict || (eigs_want_numeric(want) && eigs_arg_has_bool(arg)))
+
 #define ARG_GUARD(cond, who, want, soft)                                      \
     do {                                                                      \
         if (cond) {                                                           \
-            if (g_strict) {                                                   \
+            if (EIGS_GUARD_RAISES(want)) {                                    \
                 rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
                 return make_null();                                           \
             }                                                                 \
@@ -1289,7 +1312,7 @@ extern __thread EigsThread *eigs_current;
 #define ARG_GUARD_TAPED(cond, who, want, soft)                                \
     do {                                                                      \
         if (cond) {                                                           \
-            if (g_strict) {                                                   \
+            if (EIGS_GUARD_RAISES(want)) {                                                   \
                 rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
                 return make_null();                                           \
             }                                                                 \
@@ -1304,7 +1327,7 @@ extern __thread EigsThread *eigs_current;
 #define ARG_GUARD_PRETAKE(cond, who, want, soft)                              \
     do {                                                                      \
         if (cond) {                                                           \
-            if (g_strict) {                                                   \
+            if (EIGS_GUARD_RAISES(want)) {                                                   \
                 rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
                 return make_null();                                           \
             }                                                                 \
@@ -1359,7 +1382,7 @@ extern __thread EigsThread *eigs_current;
 
 #define STRICT_REQUIRE(cond, who, want)                                       \
     do {                                                                      \
-        if (g_strict && (cond)) {                                             \
+        if ((cond) && EIGS_GUARD_RAISES(want)) {                              \
             rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));           \
             return make_null();                                               \
         }                                                                     \

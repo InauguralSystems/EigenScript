@@ -149,6 +149,7 @@ Value* builtin_flush(Value *arg) {
 
 /* usleep of microseconds — pause execution */
 Value* builtin_usleep(Value *arg) {
+    BOOL_REFUSE(arg, "usleep");
     if (!arg || arg->type != VAL_NUM) return make_null();
     int us = (int)arg->data.num;
     if (us > 0) {
@@ -3048,6 +3049,7 @@ Value* builtin_token_name(Value *arg) {
  * null if the line argument isn't a number. Phase 4 backward-state query;
  * the dict snapshot it returns is independent of subsequent program state. */
 Value* builtin_state_at(Value *arg) {
+    BOOL_REFUSE(arg, "state_at");
     if (!arg || arg->type != VAL_NUM) return make_null();
     Value *d = trace_state_at((int)arg->data.num);
     return d ? d : make_null();
@@ -4291,6 +4293,8 @@ Value* builtin_list_slice(Value *arg) {
     if (!list || list->type != VAL_LIST) return make_null();
     Value *start_v = arg->data.list.items[1];
     Value *end_v = arg->data.list.items[2];
+    BOOL_REFUSE(start_v, "list_slice");
+    BOOL_REFUSE(end_v, "list_slice");
     if (!start_v || start_v->type != VAL_NUM || !end_v || end_v->type != VAL_NUM)
         return make_null();
     int n = list->data.list.count;
@@ -4316,6 +4320,7 @@ Value* builtin_list_slice(Value *arg) {
 /* num_copy of val → fresh heap-allocated copy of a numeric Value.
  * Use to extract a scalar from arena before arena_reset. */
 Value* builtin_num_copy(Value *arg) {
+    BOOL_REFUSE(arg, "num_copy");
     if (!arg || arg->type != VAL_NUM) return make_null();
     return make_num_permanent(arg->data.num);
 }
@@ -4436,6 +4441,7 @@ Value* builtin_fill(Value *arg) {
         rt_error(EK_TYPE, 0, "fill requires [count, value]");
         return make_list(0);
     }
+    BOOL_REFUSE(arg->data.list.items[0], "fill");   /* the count; the value may be anything */
     int count = (int)arg->data.list.items[0]->data.num;
     Value *val = arg->data.list.items[1];
     if (count < 0) count = 0;
@@ -5927,6 +5933,7 @@ Value* builtin_nearest_in_range(Value *arg) {
     }
     Value *entities = arg->data.list.items[0];
     if (!entities || entities->type != VAL_LIST) return make_null();
+    BOOL_REFUSE(arg, "nearest_in_range");   /* x, y, range, world: numbers */
     double px = arg->data.list.items[1]->data.num;
     double py = arg->data.list.items[2]->data.num;
     double range = arg->data.list.items[3]->data.num;
@@ -6048,6 +6055,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     }
     Value *entities = arg->data.list.items[0];
     if (!entities || entities->type != VAL_LIST) return make_null();
+    BOOL_REFUSE(arg, "nearest_in_range_all");   /* range, world: numbers */
     double range = arg->data.list.items[1]->data.num;
     double ww = arg->data.list.items[2]->data.num;
     double wh = arg->data.list.items[3]->data.num;

@@ -73,6 +73,7 @@ Value* builtin_reshape(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *b = arg->data.list.items[0];
     if (b->type != VAL_BUFFER) return make_null();
+    BOOL_REFUSE(arg, "reshape");   /* rows/cols; the buffer is not a bool */
     if (arg->data.list.items[1]->type != VAL_NUM ||
         arg->data.list.items[2]->type != VAL_NUM) return make_null();
     int r = (int)arg->data.list.items[1]->data.num;
@@ -192,10 +193,11 @@ Value* builtin_buf_from_list(Value *arg) {
  * conversion stops at its first numeric NUL, so later elements are not part
  * of that conversion; codec conversion consumes the complete list. */
 static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
-    if (!g_strict || !arg || arg->type != VAL_LIST) return 1;
+    if (!arg || arg->type != VAL_LIST) return 1;
     for (int i = 0; i < arg->data.list.count; i++) {
         Value *item = arg->data.list.items[i];
-        if (!item || item->type != VAL_NUM) {
+        /* #1637: a bool byte is refused in every strict mode. */
+        if (!item || (item->type != VAL_NUM && (g_strict || item->type == VAL_BOOL))) {
             rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
             return 0;
         }

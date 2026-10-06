@@ -1769,6 +1769,23 @@ static Value g_null_singleton;
 static Value g_true_singleton  = { .type = VAL_BOOL, .data = { .boolean = 1 }, .refcount = 1000000, .arena = 1 };
 static Value g_false_singleton = { .type = VAL_BOOL, .data = { .boolean = 0 }, .refcount = 1000000, .arena = 1 };
 Value* make_bool(int b) { return b ? &g_true_singleton : &g_false_singleton; }
+int eigs_want_numeric(const char *want) {
+    static const char *const words[] = {"num", "size", "integer", "index", "count", " id"};
+    for (size_t i = 0; i < sizeof words / sizeof words[0]; i++)
+        if (want && strstr(want, words[i])) return 1;
+    return 0;
+}
+
+int eigs_arg_has_bool(const Value *arg) {
+    if (!arg) return 0;
+    if (arg->type == VAL_BOOL) return 1;
+    if (arg->type == VAL_LIST)
+        for (int i = 0; i < arg->data.list.count; i++) {
+            const Value *e = arg->data.list.items[i];
+            if (e && e->type == VAL_BOOL) return 1;
+        }
+    return 0;
+}
 
 /* ---- NaN-boxing boundary shims ----
  *
