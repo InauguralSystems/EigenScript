@@ -82,17 +82,18 @@ else
 fi
 
 # ---- Dict replay (handcrafted tape — no nondet builtin returns dicts) ----
-# trace_replay_take is lenient on name mismatch (warns, uses anyway),
-# so we craft the N record under any nondet name and bind it.
+# The record must be a kind its builtin can return (#1637: k_tape_kinds in
+# src/trace.c). No core taped builtin returns a dict, so the dict rides inside
+# `ls`'s list.
 cat > "$TMPDIR/p_dict.eigs" <<'EOF'
-v is env_get of "EIGS_REPLAY_TEST_KEY_DOES_NOT_EXIST"
-print of v
+v is ls of "."
+print of v[0]
 EOF
 
 cat > "$TMPDIR/dict.tape" <<EOF
 $VHDR
 B 0 1 1 0 root -
-N 0 env_get={"a": 1, "b": "two", "c": null}
+N 0 ls=[{"a": 1, "b": "two", "c": null}]
 EOF
 
 REP_D=$(EIGS_REPLAY="$TMPDIR/dict.tape" "$EIGS" "$TMPDIR/p_dict.eigs" 2>/dev/null)
@@ -105,7 +106,7 @@ fi
 
 # ---- Nested replay (list containing dict and buffer) ----
 cat > "$TMPDIR/p_nested.eigs" <<'EOF'
-v is env_get of "EIGS_REPLAY_TEST_KEY_NESTED"
+v is ls of "."
 print of v[0]
 print of v[1]["k"]
 print of v[2][1]
@@ -115,7 +116,7 @@ EOF
 cat > "$TMPDIR/nested.tape" <<EOF
 $VHDR
 B 0 1 1 0 root -
-N 0 env_get=[{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
+N 0 ls=[{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
 EOF
 
 REP_N=$(EIGS_REPLAY="$TMPDIR/nested.tape" "$EIGS" "$TMPDIR/p_nested.eigs" 2>/dev/null)
