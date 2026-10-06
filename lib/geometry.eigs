@@ -382,7 +382,7 @@ define polygon_perimeter(vertices) as:
 # Ray casting algorithm -- odd number of crossings = inside
 define point_in_polygon(point, vertices) as:
     n is len of vertices
-    inside is 0
+    inside is false
     px is point[0]
     py is point[1]
     j is n - 1
@@ -395,7 +395,7 @@ define point_in_polygon(point, vertices) as:
         if (yi > py) != (yj > py):
             slope is (xj - xi) * (py - yi) / (yj - yi) + xi
             if px < slope:
-                inside is 1 - inside
+                inside is not inside
         j is i
     return inside
 

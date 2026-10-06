@@ -1503,7 +1503,7 @@ Computational geometry: 2D/3D points and vectors, line/segment intersection, tri
 | `polygon_area` | `polygon_area of vertices` | Positive = counter-clockwise, negative = clockwise |
 | `polygon_centroid` | `polygon_centroid of vertices` | Centroid of simple polygon |
 | `polygon_perimeter` | `polygon_perimeter of vertices` | Sum of edge lengths |
-| `point_in_polygon` | `point_in_polygon of [point, vertices]` | Ray casting algorithm -- odd number of crossings = inside |
+| `point_in_polygon` | `point_in_polygon of [point, vertices]` | `true` when the point is inside (ray casting: an odd number of crossings) |
 | `polygon_is_convex` | `polygon_is_convex of vertices` | Check if all cross products have same sign |
 | `polygon_is_clockwise` | `polygon_is_clockwise of vertices` | Check winding order via signed area |
 | `convex_hull` | `convex_hull of points` | Convex hull (Andrew's monotone chain) |

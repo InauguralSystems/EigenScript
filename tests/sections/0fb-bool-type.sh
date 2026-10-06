@@ -62,3 +62,15 @@ else
 fi
 rm -rf "$BOOL_TP_DIR"
 unset BOOL_TP_DIR BOOL_TP_REC BOOL_TP_REP BOOL_TP_OUT BOOL_TP_RC
+# Every public lib predicate, run on a battery plus true/false cases, answers
+# with a bool (tests/test_bool_lib_predicates.py measures; it reads no code).
+check_binary_fingerprint
+TOTAL=$((TOTAL + 1))
+BOOL_LIB_OUT=$($EIGS_TMO python3 "$TESTS_DIR/test_bool_lib_predicates.py" ./eigenscript 2>&1); BOOL_LIB_RC=$?
+if [ "$BOOL_LIB_RC" = 0 ] && grep -q "^BOOL_LIB_PREDICATES: .* PASS$" <<< "$BOOL_LIB_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: lib predicates answer bools ($(grep '^BOOL_LIB_PREDICATES' <<< "$BOOL_LIB_OUT"))"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: lib predicates answer bools (rc=$BOOL_LIB_RC)"
+    printf '%s\n' "$BOOL_LIB_OUT" | eigs_failure_output
+fi
+unset BOOL_LIB_OUT BOOL_LIB_RC
