@@ -290,13 +290,13 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
     }
     if (ndim == 1) {
         for (int i = 0; i < *cols; i++)
-            out[i] = (v->data.list.items[i]->type == VAL_NUM) ? v->data.list.items[i]->data.num : 0.0;
+            out[i] = (v->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(v->data.list.items[i], __func__) : 0.0;
     } else {
         for (int r = 0; r < *rows; r++) {
             Value *row = v->data.list.items[r];
             int rc = (row->type == VAL_LIST) ? row->data.list.count : 0;
             for (int c = 0; c < *cols && c < rc; c++)
-                out[r * (*cols) + c] = (row->data.list.items[c]->type == VAL_NUM) ? row->data.list.items[c]->data.num : 0.0;
+                out[r * (*cols) + c] = (row->data.list.items[c]->type == VAL_NUM) ? eigs_num_arg(row->data.list.items[c], __func__) : 0.0;
         }
     }
     return out;
@@ -375,7 +375,7 @@ static int tensor_total(Value *v) {
  * Return failure at the first raised read; callers own and free the workspace. */
 static int tensor_flatten_recursive(Value *v, double *out, int *idx) {
     if (!v) return 1;
-    if (v->type == VAL_NUM) { out[(*idx)++] = v->data.num; return 1; }
+    if (v->type == VAL_NUM) { out[(*idx)++] = eigs_num_arg(v, __func__); return 1; }
     if (v->type == VAL_BUFFER) {                              /* #1093 */
         for (int i = 0; i < v->data.buffer.count; i++) {
             double x = buffer_read_num(v, i);
@@ -484,7 +484,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
 
     /* scalar op scalar */
     if (a->type == VAL_NUM && b->type == VAL_NUM)
-        return make_num(fn(a->data.num, b->data.num));
+        return make_num(fn(eigs_num_arg(a, __func__), eigs_num_arg(b, __func__)));
 
     /* #1093 buffers are flat numeric tensors. Buffer-only operands compute on
      * the flat doubles and return a buffer; a buffer MIXED with a list is
@@ -493,9 +493,9 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     if (a->type == VAL_BUFFER && b->type == VAL_BUFFER)
         return buf_elementwise(a, b, fn);
     if (a->type == VAL_BUFFER && b->type == VAL_NUM)
-        return buf_scalar_elementwise(a, b->data.num, fn, 1);
+        return buf_scalar_elementwise(a, eigs_num_arg(b, __func__), fn, 1);
     if (a->type == VAL_NUM && b->type == VAL_BUFFER)
-        return buf_scalar_elementwise(b, a->data.num, fn, 0);
+        return buf_scalar_elementwise(b, eigs_num_arg(a, __func__), fn, 0);
     if (a->type == VAL_BUFFER && b->type == VAL_LIST) {
         Value *al = buf_as_tensor_list(a);
         if (g_has_error) { val_decref(al); return make_null(); }
@@ -667,7 +667,7 @@ Value* builtin_tensor_pow(Value *arg) {
 typedef double (*UnaryOpFn)(double);
 static Value* tensor_unary(Value *v, UnaryOpFn fn) {
     Value *arg = v;   /* what the guard macros test for a bool (#1637) */
-    if (v->type == VAL_NUM) return make_num(fn(v->data.num));
+    if (v->type == VAL_NUM) return make_num(fn(eigs_num_arg(v, __func__)));
     /* #1093: a buffer is a flat numeric tensor — same kernel, buffer out. */
     if (v->type == VAL_BUFFER) {
         Value *out = make_buffer_like(v);
@@ -777,7 +777,7 @@ Value* builtin_tensor_matmul(Value *arg) {
                                   "result is not a number (NaN has no defined value)");
                     break;
                 }
-                res->data.buffer.data[i] = slot_null().d;
+                res->data.buffer.data[i] = SLOT_NUM_RAW(slot_null());
             }
         }
         return res;
@@ -1003,7 +1003,7 @@ Value* builtin_tensor_scatter_add(Value *arg) {
                     rt_error(EK_TYPE, 0, "scatter_add: index %d is %s (expected a number)", i, val_type_name(iv->type));
                     return make_null();
                 }
-                di = iv->data.num;
+                di = eigs_num_arg(iv, __func__);
             } else {
                 /* #1417: an index is a scalar read too.  Guard before the
                  * double-to-int conversion: casting a stored NaN is undefined
@@ -1018,11 +1018,11 @@ Value* builtin_tensor_scatter_add(Value *arg) {
                     rt_error(EK_TYPE, 0, "scatter_add: value %d is %s (expected a number)", i, val_type_name(vv->type));
                     return make_null();
                 }
-                v = vv->data.num;
+                v = eigs_num_arg(vv, __func__);
             } else if (values->type == VAL_BUFFER) {
                 v = values->data.buffer.data[i];
             } else {
-                v = values->data.num;
+                v = eigs_num_arg(values, __func__);
             }
             /* Check the double before converting it to int.  In particular,
              * an out-of-range floating-to-integer conversion is undefined C
@@ -1139,7 +1139,7 @@ Value* builtin_tensor_relu(Value *arg) {
     BOOL_REFUSE(arg, "relu");
     /* #632: a scalar is the degenerate element-wise case, like sqrt/exp/log. */
     if (arg && arg->type == VAL_NUM) {
-        double x = arg->data.num;
+        double x = eigs_num_arg(arg, __func__);
         return make_num(x < 0.0 ? 0.0 : x);
     }
     /* #1093: buffers go through the same flatten path and come back as
@@ -1160,7 +1160,7 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
     BOOL_REFUSE(arg, "leaky_relu");
     /* #632: scalar is the degenerate element-wise case. */
     if (arg && arg->type == VAL_NUM) {
-        double x = arg->data.num;
+        double x = eigs_num_arg(arg, __func__);
         return make_num(x < 0.0 ? 0.01 * x : x);
     }
     /* flat-buffer fast path (#973), the twin of relu's. */
@@ -1330,7 +1330,7 @@ Value* builtin_tensor_zeros(Value *arg) {
      * (ouroboros#170). make_shaped_buffer carries the sandbox charge, which
      * is now 8 bytes/element instead of TENSOR_LIST_ELEM_BYTES. */
     if (arg->type == VAL_NUM) {
-        int64_t n64 = (int64_t)arg->data.num;
+        int64_t n64 = (int64_t)eigs_num_arg(arg, __func__);
         if (n64 < 0) n64 = 0;
         if (n64 > 10000000) n64 = 10000000;  /* #292: cap like fill/buffer (was uncapped → x_oom/abort) */
         Value *out = make_shaped_buffer(0, (int)n64);
@@ -1402,7 +1402,7 @@ static int flat_is_vector(Value *v) {
 static int flat_index_at(Value *v, int i) {
     if (v->type == VAL_LIST)
         return (v->data.list.items[i]->type == VAL_NUM)
-             ? (int)v->data.list.items[i]->data.num : -1;
+             ? (int)eigs_num_arg(v->data.list.items[i], __func__) : -1;
     /* #1417: normalize before conversion, and let every caller propagate a
      * raised read before using its index or touching an output. Saturated
      * infinity is still outside the int domain and uses the existing invalid
@@ -1458,7 +1458,7 @@ Value* builtin_tensor_gather(Value *arg) {
      * buffer with a scalar index yields that element. */
     if (tensor->type == VAL_BUFFER) {
         if (indices->type == VAL_NUM && tensor->data.buffer.rows == 0) {
-            int idx = (int)indices->data.num;
+            int idx = (int)eigs_num_arg(indices, __func__);
             if (idx < 0 || idx >= tensor->data.buffer.count) {
                 rt_error(EK_INDEX, 0, "gather: index %d out of range (length %d)",
                          idx, tensor->data.buffer.count);
@@ -1503,6 +1503,12 @@ Value* builtin_tensor_gather(Value *arg) {
         for (int i = 0; i < n; i++) {
             Value *row = tensor->data.list.items[i];
             if (row->type != VAL_LIST) {   /* not a matrix row — shape, not index */
+                /* #1637: a bool where a row belongs raises, in every mode. */
+                if (row->type == VAL_BOOL) {
+                    val_decref(out);
+                    eigs_num_arg_slow(row, "gather");
+                    return make_null();
+                }
                 list_append_owned(out, make_num(0.0));
                 continue;
             }
@@ -1512,7 +1518,7 @@ Value* builtin_tensor_gather(Value *arg) {
                          i, val_type_name(indices->data.list.items[i]->type));
                 return make_null();
             }
-            int idx = (int)indices->data.list.items[i]->data.num;
+            int idx = (int)eigs_num_arg(indices->data.list.items[i], __func__);
             if (idx < 0 || idx >= row->data.list.count) {
                 val_decref(out);
                 rt_error(EK_INDEX, 0,
@@ -1520,21 +1526,25 @@ Value* builtin_tensor_gather(Value *arg) {
                          idx, i, row->data.list.count);
                 return make_null();
             }
-            list_append_owned(out, make_num(row->data.list.items[idx]->type == VAL_NUM
-                ? row->data.list.items[idx]->data.num : 0.0));
+            /* #1637 round 4: the selected cell is read as a number -- a
+             * bool there raised nothing and read as 0 (critic r3). */
+            double cell = eigs_elem_num(row->data.list.items[idx], "gather");
+            if (g_has_error) { val_decref(out); return make_null(); }
+            list_append_owned(out, make_num(cell));
         }
         return out;
     }
     /* 1D tensor, scalar index */
     if (tensor->type == VAL_LIST && indices->type == VAL_NUM) {
-        int idx = (int)indices->data.num;
+        int idx = (int)eigs_num_arg(indices, __func__);
         if (idx < 0 || idx >= tensor->data.list.count) {
             rt_error(EK_INDEX, 0, "gather: index %d out of range (length %d)",
                      idx, tensor->data.list.count);
             return make_null();
         }
-        return make_num(tensor->data.list.items[idx]->type == VAL_NUM
-            ? tensor->data.list.items[idx]->data.num : 0.0);
+        double cell = eigs_elem_num(tensor->data.list.items[idx], "gather");   /* #1637 round 4 */
+        if (g_has_error) return make_null();
+        return make_num(cell);
     }
     /* The fs:TODO #971 left here is resolved by the raise above: the two
      * readings that shared this line are separated. Out-of-range no longer
@@ -1728,7 +1738,7 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
     if (!*loss_valid) return 0.0;
     Value *loss = call_eigs_fn(loss_fn, arg);
     if (loss && loss->type == VAL_NUM) {
-        double result = loss->data.num;
+        double result = eigs_num_arg(loss, __func__);
         val_decref(loss);
         return result;
     }
@@ -1748,7 +1758,7 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
  * Returns gradient tensor matching param shape. */
 /* #1637: the cells a numeric-gradient / SGD builtin reads (and, for the
  * numerical_grad family, writes in place) must be numbers. A bool cell used
- * to read as 0 -- and numerical_grad_rows/_cols wrote `cell->data.num` into
+ * to read as 0 -- and numerical_grad_rows/_cols wrote `eigs_num_arg(cell, __func__)` into
  * it, i.e. into the immortal true/false singleton. Checked up front, in every
  * strict mode, before anything is mutated; a non-list row of a 2-D operand
  * keeps its old skip unless it is a bool. Index lists are checked too: a bool
@@ -2012,11 +2022,11 @@ Value* builtin_numerical_grad_rows(Value *arg) {
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
             Value *cell = row->data.list.items[c];
             double old_val = eigs_num_arg(cell, __func__);
-            cell->data.num = old_val + eps;
+            VAL_NUM_RAW(cell) = old_val + eps;
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            cell->data.num = old_val - eps;
+            VAL_NUM_RAW(cell) = old_val - eps;
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            cell->data.num = old_val;
+            VAL_NUM_RAW(cell) = old_val;
             /* gradient — release the zero placeholder this slot held */
             val_decref(grad_row->data.list.items[c]);
             grad_row->data.list.items[c] = make_num((loss_plus - loss_minus) / (2.0 * eps));

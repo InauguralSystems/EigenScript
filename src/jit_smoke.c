@@ -135,7 +135,7 @@ int jit_helper_iter_next(void) {
     VM *vm = eigs_current->vm;
     reader_receipt.calls++;
     if (reader_receipt.kind != 1 || vm->sp != 1 ||
-        vm->stack[0].d != 0 || vm->frames[0].ip != reader_receipt.ip ||
+        SLOT_NUM_RAW(vm->stack[0]) != 0 || vm->frames[0].ip != reader_receipt.ip ||
         vm->current_line != 71)
         reader_receipt.bad++;
     if (reader_receipt.status != 1)
@@ -146,7 +146,7 @@ int jit_helper_index_get(void) {
     VM *vm = eigs_current->vm;
     reader_receipt.calls++;
     if (reader_receipt.kind != 0 || vm->sp != 2 ||
-        vm->stack[0].d != 0 || vm->stack[1].d != 1 ||
+        SLOT_NUM_RAW(vm->stack[0]) != 0 || SLOT_NUM_RAW(vm->stack[1]) != 1 ||
         vm->frames[0].ip != reader_receipt.ip || vm->current_line != 71)
         reader_receipt.bad++;
     vm->sp -= 2;
@@ -169,11 +169,11 @@ static struct {
 void jit_helper_set_name(struct EigsChunk *chunk, int idx) {
     store_receipt.calls++;
     if (chunk != store_receipt.chunk || idx != 0 || g_vm.sp != 3 ||
-        g_vm.stack[0].d != 42 || g_vm.stack[1].d != 0 ||
-        g_vm.stack[2].d != 1 || g_vm.frames[0].ip != store_receipt.ip)
+        SLOT_NUM_RAW(g_vm.stack[0]) != 42 || SLOT_NUM_RAW(g_vm.stack[1]) != 0 ||
+        SLOT_NUM_RAW(g_vm.stack[2]) != 1 || g_vm.frames[0].ip != store_receipt.ip)
         store_receipt.bad = 1;
     for (int i = 0; i < 3; i++) {
-        if (store_receipt.values[i].d != 10 + i ||
+        if (SLOT_NUM_RAW(store_receipt.values[i]) != 10 + i ||
             store_receipt.counts[i] != 17)
             store_receipt.bad = 1;
     }
@@ -346,15 +346,15 @@ static int run_store_cases(void) {
             STORE_ASSERT(store_receipt.calls == cases[c].helper);
             STORE_ASSERT(store_receipt.bad == 0);
             STORE_ASSERT(vm->sp == 3);
-            STORE_ASSERT(vm->stack[0].d == 42 && vm->stack[1].d == 0);
-            STORE_ASSERT(vm->stack[2].d == 1);
+            STORE_ASSERT(SLOT_NUM_RAW(vm->stack[0]) == 42 && SLOT_NUM_RAW(vm->stack[1]) == 0);
+            STORE_ASSERT(SLOT_NUM_RAW(vm->stack[2]) == 1);
             STORE_ASSERT(vm->frames[0].ip == store_receipt.ip);
             STORE_ASSERT((osr ? chunk.jit_osr[0].advance : chunk.jit_advance) == 5);
             STORE_ASSERT((osr ? chunk.jit_advance : chunk.jit_osr[0].advance) == -99);
             STORE_ASSERT(state->builtin_env == &env[2]);
             for (int i = 0; i < 3; i++) {
                 int stored = !cases[c].helper && i == target;
-                STORE_ASSERT(values[i].d == (stored ? 1 : 10 + i));
+                STORE_ASSERT(SLOT_NUM_RAW(values[i]) == (stored ? 1 : 10 + i));
                 STORE_ASSERT(counts[i] == 17 + stored);
             }
             helpers += store_receipt.calls;
@@ -430,7 +430,7 @@ static int run_index_bail_cases(void) {
                 advance == expected && index_receipt.calls == 1 &&
                 index_receipt.bad == 0 && vm->sp == (status ? 1 : 2) &&
                 (status ? slot_is_null(vm->stack[0]) :
-                          vm->stack[0].d == 42 && vm->stack[1].d == 1);
+                          SLOT_NUM_RAW(vm->stack[0]) == 42 && SLOT_NUM_RAW(vm->stack[1]) == 1);
             rows++;
             if (!good) {
                 fprintf(stderr, "FAIL: index-bail %s status=%d r13=%" PRIx64
@@ -522,12 +522,12 @@ static int run_reader_bail_cases(void) {
                 int expected_sp = kind ? (status ? 2 : 4) : (status ? 1 : 2);
                 int expected_line = status ? 71 : 72;
                 int stack_ok = kind
-                    ? vm->stack[0].d == 0 &&
-                      (status ? vm->stack[1].d == 0 :
-                       vm->stack[1].d == 42 && vm->stack[2].d == 1 &&
-                       vm->stack[3].d == 0)
-                    : (status ? vm->stack[0].d == 0 :
-                       vm->stack[0].d == 42 && vm->stack[1].d == 1);
+                    ? SLOT_NUM_RAW(vm->stack[0]) == 0 &&
+                      (status ? SLOT_NUM_RAW(vm->stack[1]) == 0 :
+                       SLOT_NUM_RAW(vm->stack[1]) == 42 && SLOT_NUM_RAW(vm->stack[2]) == 1 &&
+                       SLOT_NUM_RAW(vm->stack[3]) == 0)
+                    : (status ? SLOT_NUM_RAW(vm->stack[0]) == 0 :
+                       SLOT_NUM_RAW(vm->stack[0]) == 42 && SLOT_NUM_RAW(vm->stack[1]) == 1);
                 int good = saved_r13 == UINT64_C(0x13579bdf2468ace0) &&
                     advance == expected && reader_receipt.calls == 1 &&
                     reader_receipt.bad == 0 && vm->sp == expected_sp && stack_ok &&
@@ -588,7 +588,7 @@ static int run_exit_cases(void) {
     eigs_current = thread;
     state->jit_entry_threshold = state->jit_iter_threshold = 1;
     Value limit = {.type = VAL_NUM};
-    limit.data.num = 4;
+    VAL_NUM_RAW(&limit) = 4;
     Value *constants[] = {&limit};
     uint8_t code[] = {OP_NULL, OP_POP, OP_NULL, OP_POP,
                       OP_NUM_ONE, OP_ADD, OP_DUP, OP_CONST, 0, 0,
@@ -623,12 +623,12 @@ static int run_exit_cases(void) {
             int advance = osr ? chunk.jit_osr[0].advance : chunk.jit_advance;
             int other = osr ? chunk.jit_advance : chunk.jit_osr[0].advance;
             int want_advance = (stop ? 10 : 13) + (osr ? 2 : 0);
-            int ok = vm->sp == 1 && vm->stack[0].d == (stop ? 1 : 4) &&
+            int ok = vm->sp == 1 && SLOT_NUM_RAW(vm->stack[0]) == (stop ? 1 : 4) &&
                      advance == want_advance && other == -99 &&
                      vm->frames[0].ip == chunk.code + entry;
             if (!ok) {
                 fprintf(stderr, "FAIL native_exit %s row=%d sp=%d value=%g advance=%d other=%d\n",
-                        osr ? "osr" : "entry", row, vm->sp, vm->stack[0].d, advance, other);
+                        osr ? "osr" : "entry", row, vm->sp, SLOT_NUM_RAW(vm->stack[0]), advance, other);
                 rc = 1;
             }
             if (ok && stop) bailed++;

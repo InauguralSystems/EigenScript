@@ -2287,8 +2287,8 @@ static uint8_t *emit_load_numeric_operand(uint8_t *w, int is_b,
     w = emit_jne_rel32(w, &lp[*lp_n]); (*lp_n)++;
     w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, refcount), 2);
     w = emit_jl_rel32(w, &lp[*lp_n]); (*lp_n)++;
-    w = is_b ? emit_mov_disp32_rdi_to_rax(w, (int32_t)offsetof(Value, data.num))
-             : emit_mov_disp32_rdi_to_rdx(w, (int32_t)offsetof(Value, data.num));
+    w = is_b ? emit_mov_disp32_rdi_to_rax(w, (int32_t)VAL_NUM_OFFSET)
+             : emit_mov_disp32_rdi_to_rdx(w, (int32_t)VAL_NUM_OFFSET);
     /* .imm: bits (immediate or loaded data.num) → xmm. */
     {
         int rel = (int)(w - imm_after);
@@ -2745,7 +2745,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             if (v->type == VAL_NUM) {
                 /* Immediate-num: same shape as NUM_ZERO. (#262 Step E: a
                  * constant num never carries observer state.) */
-                memcpy(&bits, &v->data.num, 8);
+                memcpy(&bits, &VAL_NUM_RAW(v), 8);
             } else {
                 /* Heap slot: TAG_HEAP | payload. Incref unless arena. */
                 bits = 0xFFFB000000000000ULL |
@@ -3029,7 +3029,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * local, cache miss, strcmp-equal key, non-num or observed
              * field) routes to the Stage 4m helper, which repopulates
              * the dict cache so the next iteration hits inline. The hit
-             * path pushes v->data.num's raw bits — for an untracked
+             * path pushes VAL_NUM_RAW(v)'s raw bits — for an untracked
              * number that IS the immediate slot encoding, so there is
              * no incref/decref or allocation. Guards precede all
              * mutation (the fast path mutates nothing but the stack). */
@@ -3059,7 +3059,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                                (uint32_t)VAL_NUM);
                 w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
                 /* #262 Step E: obs_age guard removed — nums are never tracked. */
-                w = emit_mov_disp32_rax_to_rax(w, (int32_t)offsetof(Value, data.num));
+                w = emit_mov_disp32_rax_to_rax(w, (int32_t)VAL_NUM_OFFSET);
                 w = emit_store_rax_at_stack(w, g_layout.off_stack);
                 w = emit_inc_ecx(w);
                 w = emit_jmp_rel32(w, &done_p);
@@ -3194,8 +3194,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 /* TOS must be an immediate num. */
                 w = emit_load_stack_to_rdx(w, g_layout.off_stack - 8);
                 w = emit_immediate_num_check_rdx(w, &slow_p[slow_n]); slow_n++;
-                /* existing->data.num = tos.d (raw bits). */
-                w = emit_mov_rdx_to_disp32_rax(w, (int32_t)offsetof(Value, data.num));
+                /* VAL_NUM_RAW(existing) = tos.d (raw bits). */
+                w = emit_mov_rdx_to_disp32_rax(w, (int32_t)VAL_NUM_OFFSET);
                 w = emit_jmp_rel32(w, &done_p);
                 for (int k = 0; k < slow_n; k++) patch_rel32(slow_p[k], w);
             }
@@ -3343,7 +3343,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *                                    incref+decref both no-op)
              *   old is VAL_NUM && rc==1 && obs_age==0 && !arena?
              *                    no  → .swap
-             *   in-place: old->data.num = tos bits; → .done
+             *   in-place: VAL_NUM_RAW(old) = tos bits; → .done
              *   .plain: values[slot] = tos; → .done
              *   .swap:  values[slot] = tos; incref tos; decref old
              *   .done:                                            */
@@ -3388,8 +3388,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* #262 Step E: obs_age guard removed — nums are never tracked. */
             w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
             w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
-            /* in-place: existing->data.num = tos bits. */
-            w = emit_mov_rax_to_disp32_rdi(w, (int32_t)offsetof(Value, data.num));
+            /* in-place: VAL_NUM_RAW(existing) = tos bits. */
+            w = emit_mov_rax_to_disp32_rdi(w, (int32_t)VAL_NUM_OFFSET);
             w = emit_jmp_rel32(w, &done_p[done_n]); done_n++;
             /* .plain: store only (both refcount sides are no-ops). */
             for (int k = 0; k < plain_n; k++) patch_rel32(plain_p[k], w);
@@ -3456,7 +3456,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             if (ab) {
                 JIT_BAIL_AND_RETURN();
             }
-            /* Divisor zero check. The VM compares `b->data.num != 0.0`,
+            /* Divisor zero check. The VM compares `VAL_NUM_RAW(b) != 0.0`,
              * which under IEEE-754 treats +0.0 and -0.0 as equal — so
              * we must also bail when b == -0.0 (bits = 0x8000…0).
              * Strategy: copy b's bits to %rsi (dead scratch after the

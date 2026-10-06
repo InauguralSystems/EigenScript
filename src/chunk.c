@@ -191,7 +191,7 @@ void chunk_patch_jump(EigsChunk *chunk, int offset) {
  * same and compare ==). Non-NUM/STR constants are never deduped. */
 static uint32_t const_hash_value(const Value *v) {
     if (v->type == VAL_NUM) {
-        double d = v->data.num;
+        double d = VAL_NUM_RAW(v);
         if (d == 0.0) d = 0.0;   /* fold -0.0 into +0.0, matching == */
         uint64_t bits;
         memcpy(&bits, &d, sizeof bits);
@@ -210,7 +210,7 @@ static uint32_t const_hash_value(const Value *v) {
 
 static int const_equal(const Value *a, const Value *b) {
     if (a->type == VAL_NUM && b->type == VAL_NUM)
-        return a->data.num == b->data.num;
+        return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
     if (a->type == VAL_STR && b->type == VAL_STR)
         return strcmp(a->data.str, b->data.str) == 0;
     return 0;
@@ -418,7 +418,7 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
                 if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
                     Value *v = chunk->constants[arg];
                     if (v->type == VAL_NUM)
-                        fprintf(stderr, " (%.6g)", v->data.num);
+                        fprintf(stderr, " (%.6g)", VAL_NUM_RAW(v));
                     else if (v->type == VAL_STR)
                         fprintf(stderr, " (\"%s\")", v->data.str);
                 }

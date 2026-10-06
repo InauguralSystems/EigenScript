@@ -261,12 +261,20 @@ typedef enum {
 typedef struct Value Value;
 typedef Value* (*BuiltinFn)(Value* arg);
 
+/* #1637 round 4: the ONE raw way into a Value's number (an lvalue: also the
+ * write). Only for a Value whose type is proven VAL_NUM, in a function listed
+ * in tools/num_read_allowlist.txt with its use count. Everything else uses
+ * eigs_num_arg / eigs_list_num / eigs_opt_num. VAL_NUM_OFFSET is the same
+ * member for JIT-emitted loads and stores. */
+#define VAL_NUM_RAW(v)  ((v)->data.num_)
+#define VAL_NUM_OFFSET  ((int32_t)offsetof(Value, data.num_))
+
 /* EigsSlot union — full inline helpers in value_slot.h, which is
  * included below after the Value struct is fully declared. We need the
  * raw union here because Env::values is EigsSlot*. */
 #ifndef EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
 #define EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
-typedef union { double d; uint64_t u; } EigsSlot;
+typedef union { double d_; uint64_t u; } EigsSlot;
 #endif
 
 /* Hash index for O(1) variable lookup.  Sits alongside the linear
@@ -388,7 +396,14 @@ struct Env {
 struct Value {
     ValType type;
     union {
-        double num;
+        /* #1637 round 4: renamed so no unchecked read compiles. A Value's
+         * number is read through the checking accessors (eigs_num_arg,
+         * eigs_list_num, eigs_opt_num), which raise on a bool or any other
+         * non-number, or through VAL_NUM_RAW where the type is already
+         * proven -- and every VAL_NUM_RAW use sits in a function on the
+         * reviewed list tools/num_read_allowlist.txt, pinned by count
+         * (tools/num_read_check.sh). */
+        double num_;
         int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
         /* VAL_STR / VAL_JSON_RAW payload: NUL-terminated bytes.
          *
@@ -1288,8 +1303,17 @@ int eigs_arg_has_bool(const Value *arg);
  *   eigs_opt_num(v, &d, who)   optional: absent/null -> 0 (use the default);
  *                              a number -> 1 with *d set; anything else raises
  *                              and returns 0 */
-double eigs_num_arg(const Value *v, const char *who);
+double eigs_num_arg_slow(const Value *v, const char *who);
+static inline double eigs_num_arg(const Value *v, const char *who) {
+    if (__builtin_expect(v && v->type == VAL_NUM, 1)) return VAL_NUM_RAW(v);
+    return eigs_num_arg_slow(v, who);
+}
 double eigs_list_num(const Value *list, int i, const char *who);
+/* #1637 round 4: an ELEMENT a builtin reads as a number (a tensor cell, a
+ * byte). A bool raises in every strict mode; any other non-number raises
+ * under EIGS_STRICT and reads as the documented 0.0 under EIGS_STRICT=0.
+ * The caller checks g_has_error. */
+double eigs_elem_num(const Value *v, const char *who);
 int eigs_opt_num(const Value *v, double *out, const char *who);
 /* #1637: the builtin-call bool gate -- the structural half of "a bool is
  * not a number". Every call of a C builtin goes through eigs_call_builtin

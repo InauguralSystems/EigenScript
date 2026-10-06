@@ -389,7 +389,7 @@ static const char* scancode_name(int sc) {
 
 /* ---- Builtins ---- */
 
-/* #1007: the drawing surface reads RUNS of list elements as `.data.num`
+/* #1007: the drawing surface reads RUNS of list elements as `eigs_num_arg(&(), __func__)`
  * with no type check. `Value`'s union overlaps `double num` with
  * `char *str`, so an unchecked read reinterprets a pointer as a double
  * and then `(int)`-casts it — the read itself is the defect, which is why
@@ -449,7 +449,7 @@ Value* builtin_gfx_open(Value *arg) {
      * same value. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
               "gfx_open", "[number width, number height, title]", make_bool(0));
-    /* #1007: width and height were read as `.data.num` with no type check
+    /* #1007: width and height were read as `eigs_num_arg(&(), __func__)` with no type check
      * while the title on the very next line WAS checked. Value's union
      * overlaps `double num` with `char *str`, so gfx_open of ["800","600",t]
      * reinterpreted a pointer as a double and int-cast it — in practice a
@@ -854,7 +854,7 @@ Value* builtin_gfx_ticks(Value *arg) {
 Value* builtin_gfx_delay(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "gfx_delay", "number milliseconds",
               make_null());
-    if (g_sdl_lib) p_SDL_Delay((Uint32)arg->data.num);
+    if (g_sdl_lib) p_SDL_Delay((Uint32)eigs_num_arg(arg, __func__));
     return make_null(); /* fs:VOID gfx_delay answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
@@ -985,7 +985,7 @@ Value* builtin_gfx_text(Value *arg) {
      * before #1007, so its wrong-typed scale is a COERCION and keeps
      * measuring at scale 1 (STRICT_REQUIRE there, byte-identical off the
      * flag). This one did not:
-     *     int scale = (count >= 7) ? (int)items[6]->data.num : 1;
+     *     int scale = (count >= 7) ? (int)eigs_num_arg(items[6], __func__) : 1;
      * reads the union unchecked, so a string scale drew the glyph from a
      * reinterpreted `char *` — a subnormal that truncates to 0 and is then
      * clamped to 1, which is why it LOOKED like scale 1 while being a pun.
@@ -1113,7 +1113,7 @@ Value* builtin_gfx_text_height(Value *arg) {
                         && arg->data.list.items[0]->type == VAL_NUM),
                    "gfx_text_height", "number scale, [number scale] or null");
     if (arg && arg->type == VAL_NUM) {
-        scale = (int)arg->data.num;
+        scale = (int)eigs_num_arg(arg, __func__);
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
                && arg->data.list.items[0]->type == VAL_NUM) {
         scale = (int)eigs_list_num(arg, 0, __func__);
@@ -1225,7 +1225,7 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
             free(buf);
             return NULL;
         }
-        double s = v->data.num;
+        double s = eigs_num_arg(v, __func__);
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
         buf[i] = (int16_t)(s * 32767);
@@ -1309,7 +1309,7 @@ Value* builtin_audio_open(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
                    "audio_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        /* The same unchecked `.data.num` type-pun as gfx_open. That it is an
+        /* The same unchecked `eigs_num_arg(&(), __func__)` type-pun as gfx_open. That it is an
          * oversight rather than a convention is settled 180 lines down:
          * audio_stream_open guards this identical pair with `type == VAL_NUM`
          * before reading it. */
@@ -1364,7 +1364,7 @@ Value* builtin_audio_pause(Value *arg) {
     STRICT_REQUIRE(arg && arg->type != VAL_NULL && arg->type != VAL_NUM,
                    "audio_pause", "number flag (1 = pause, 0 = unpause) or null");
     if (!g_audio_device) return make_null();  /* fs:VOID no device open: audio_pause answers null on every path -- the return value, not a rejected-argument stand-in */
-    int pause = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 1;
+    int pause = (arg && arg->type == VAL_NUM) ? (int)eigs_num_arg(arg, __func__) : 1;
     p_SDL_PauseAudioDevice(g_audio_device, pause);
     return make_null(); /* fs:VOID audio_pause answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -1747,7 +1747,7 @@ Value* builtin_audio_music_volume(Value *arg) {
                    "audio_music_volume", "number volume 0..128 or [number volume]");
     if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();  /* fs:VOID no mixer open: audio_music_volume answers null on every path -- the return value, not a rejected-argument stand-in */
     int v = 0;
-    if (arg && arg->type == VAL_NUM) v = (int)arg->data.num;
+    if (arg && arg->type == VAL_NUM) v = (int)eigs_num_arg(arg, __func__);
     else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
              && arg->data.list.items[0]->type == VAL_NUM)
         v = (int)eigs_list_num(arg, 0, __func__);
@@ -1862,7 +1862,7 @@ Value* builtin_audio_stop(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "audio_stop", "number channel",
               make_num(0));
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active", and with no device open none is */
-    int c = (int)arg->data.num - 1;
+    int c = (int)eigs_num_arg(arg, __func__) - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active" -- the same value line 1465 returns for an inactive in-range channel */
     p_SDL_LockAudioDevice(g_audio_device);
     int ok = g_audio_ch[c].active;
@@ -2112,8 +2112,8 @@ Value* builtin_audio_mix(Value *arg) {
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double sa = (i < a->data.list.count && a->data.list.items[i]->type == VAL_NUM) ? a->data.list.items[i]->data.num : 0;
-        double sb = (i < b->data.list.count && b->data.list.items[i]->type == VAL_NUM) ? b->data.list.items[i]->data.num : 0;
+        double sa = (i < a->data.list.count && a->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(a->data.list.items[i], __func__) : 0;
+        double sb = (i < b->data.list.count && b->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(b->data.list.items[i], __func__) : 0;
         double mixed = sa + sb;
         if (mixed > 1.0) mixed = 1.0;
         if (mixed < -1.0) mixed = -1.0;
@@ -2150,7 +2150,7 @@ Value* builtin_audio_gain(Value *arg) {
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double s = (samples->data.list.items[i]->type == VAL_NUM) ? samples->data.list.items[i]->data.num : 0;
+        double s = (samples->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(samples->data.list.items[i], __func__) : 0;
         s *= vol;
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
@@ -2220,7 +2220,7 @@ Value* builtin_audio_envelope(Value *arg) {
             double frac = (r_samples > 0) ? (double)(i - r_start) / r_samples : 1.0;
             env = sustain * (1.0 - frac);
         }
-        double s = (samples->data.list.items[i]->type == VAL_NUM) ? samples->data.list.items[i]->data.num : 0;
+        double s = (samples->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(samples->data.list.items[i], __func__) : 0;
         s *= env;
         list_append_owned(out, make_num(s));
     }

@@ -21,7 +21,7 @@ static Value *ordinary_descriptor(void) {
     if (chunk && !g_has_error && !g_parse_errors && chunk->code_len > 0 &&
         chunk->code_len <= 64 && !chunk->fn_count && !chunk->local_count &&
         !chunk->param_count && chunk->const_count == 1 &&
-        chunk->constants[0]->type == VAL_NUM && chunk->constants[0]->data.num == 42) {
+        chunk->constants[0]->type == VAL_NUM && VAL_NUM_RAW(chunk->constants[0]) == 42) {
         Value *code = make_list(chunk->code_len);
         Value *constants = make_list(1);
         for (int i = 0; i < chunk->code_len; i++)
@@ -62,14 +62,14 @@ int main(void) {
         Value *ok = out ? dict_get(out, "ok") : NULL;
         Value *result = out ? dict_get(out, "result") : NULL;
         REQUIRE(ok && ok->type == VAL_BOOL && ok->data.boolean == 1 &&
-                result && result->type == VAL_NUM && result->data.num == 42,
+                result && result->type == VAL_NUM && VAL_NUM_RAW(result) == 42,
                 "ordinary sandbox result");
         REQUIRE(!g_sandbox_active && g_sandbox_work_used == 13 &&
                 g_sandbox_work_max == 77, "sandbox restores caller accounting");
         val_decref(out);
         val_decref(args);
         Value *host = eigs_eval_string("return 7\n");
-        REQUIRE(host && host->type == VAL_NUM && host->data.num == 7,
+        REQUIRE(host && host->type == VAL_NUM && VAL_NUM_RAW(host) == 7,
                 "host work between sandbox calls");
         val_decref(host);
         REQUIRE(g_sandbox_work_used == 13 && g_sandbox_work_max == 77,
@@ -84,13 +84,13 @@ int main(void) {
     g_sandbox_work_max = 10000;
     g_sandbox_work_used = 0;
     Value *ordinary = eigs_eval_string("return 42\n");
-    REQUIRE(ordinary && ordinary->type == VAL_NUM && ordinary->data.num == 42,
+    REQUIRE(ordinary && ordinary->type == VAL_NUM && VAL_NUM_RAW(ordinary) == 42,
             "ordinary arithmetic result");
     val_decref(ordinary);
     REQUIRE(g_sandbox_work_used > 0, "ordinary dispatch charges shared account");
     uint64_t previous_work = g_sandbox_work_used;
     ordinary = eigs_eval_string("define work_identity(x) as:\n    return x\nreturn work_identity of 42\n");
-    REQUIRE(ordinary && ordinary->type == VAL_NUM && ordinary->data.num == 42,
+    REQUIRE(ordinary && ordinary->type == VAL_NUM && VAL_NUM_RAW(ordinary) == 42,
             "ordinary function result");
     val_decref(ordinary);
     REQUIRE(g_sandbox_work_used > previous_work, "re-entry preserves accounting");

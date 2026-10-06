@@ -30,7 +30,7 @@
 
 #ifndef EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
 #define EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
-typedef union { double d; uint64_t u; } EigsSlot;
+typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_NUM_RAW (#1637) */
 #endif
 
 #define SLOT_QNAN_MASK     0xFFF8000000000000ULL
@@ -60,14 +60,17 @@ static inline int slot_is_numeric(EigsSlot s) { return slot_is_num(s); }
 
 /* Accessors (caller must check the predicate first) */
 
-static inline double   slot_as_num(EigsSlot s)    { return s.d; }
+/* #1637 round 4: the ONE raw way into a slot's double (an lvalue), for a slot
+ * proven a number (slot_is_num). Every use sits in a function listed in
+ * tools/num_read_allowlist.txt with its count (tools/num_read_check.sh). */
+#define SLOT_NUM_RAW(s) ((s).d_)
 static inline int      slot_as_bool(EigsSlot s)   { return (int)(s.u & 1ULL); }
 static inline Value   *slot_as_ptr(EigsSlot s)    { return (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK); }
 #define slot_as_heap     slot_as_ptr
 
 /* Constructors */
 
-static inline EigsSlot slot_from_num(double d)       { EigsSlot s; s.d = d;                                              return s; }
+static inline EigsSlot slot_from_num(double d)       { EigsSlot s; SLOT_NUM_RAW(s) = d;                                              return s; }
 static inline EigsSlot slot_from_heap(Value *v)      { EigsSlot s; s.u = TAG_HEAP    | ((uint64_t)(uintptr_t)v & SLOT_PAYLOAD_MASK); return s; }
 static inline EigsSlot slot_null(void)               { EigsSlot s; s.u = SLOT_NULL_BITS;  return s; }
 static inline EigsSlot slot_true(void)               { EigsSlot s; s.u = SLOT_TRUE_BITS;  return s; }
@@ -127,7 +130,7 @@ static inline void slot_decref(EigsSlot s) {
  * are falsy; everything else (heap, tracked) defers to caller-side
  * is_truthy() for now (Phase A keeps semantics identical). */
 static inline int slot_truthy_immediate(EigsSlot s, int *out_decided) {
-    if (slot_is_num(s)) { *out_decided = 1; return s.d != 0.0; }
+    if (slot_is_num(s)) { *out_decided = 1; return SLOT_NUM_RAW(s) != 0.0; }
     if (slot_is_null(s) || s.u == SLOT_FALSE_BITS) { *out_decided = 1; return 0; }
     if (s.u == SLOT_TRUE_BITS) { *out_decided = 1; return 1; }
     *out_decided = 0;

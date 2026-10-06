@@ -104,6 +104,9 @@ raises of [(_) => max of [T, 3], "max", "max over a bool element"]
 # it as 0. The [0fb] section runs this file under EIGS_STRICT=0 as well; the
 # full enumeration is tests/test_bool_fuzz.sh.
 raises of [(_) => usleep of T, "usleep: does not take a bool argument", "usleep of a bool"]
+# Round 4 (#1637): a bool two and three levels deep, in a cell gather reads.
+raises of [(_) => gather of [[T, 3], 0], "gather: expected a number, got bool", "gather of a bool cell"]
+raises of [(_) => gather of [[[T, 3]], [0]], "gather: expected a number, got bool", "gather of a bool cell, depth 3"]
 raises of [(_) => zeros of T, "zeros", "zeros of a bool"]
 raises of [(_) => fill of [T, 3], "fill", "fill with a bool count"]
 raises of [(_) => sum of [T, T, 1], "bool", "sum counting bools"]

@@ -110,7 +110,7 @@ static double net_register_sock(int fd, EigsNetSockKind kind) {
 
 static EigsNetSock* net_lookup(Value *v, EigsNetSockKind kind) {
     if (!v || v->type != VAL_NUM) return NULL;
-    EigsNetSock *s = net_unpack(v->data.num, NULL, NULL);
+    EigsNetSock *s = net_unpack(eigs_num_arg(v, __func__), NULL, NULL);
     if (!s || s->kind != kind) return NULL;
     return s;
 }
@@ -161,7 +161,7 @@ Value* builtin_net_listen(Value *arg) {
         return make_null();
     }
     TRACE_NONDET_TAKE("net_listen");
-    int port = (int)arg->data.num;
+    int port = (int)eigs_num_arg(arg, __func__);
     if (port < 0 || port > 65535)
         TRACE_NONDET_RECORD("net_listen", make_null());
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -359,9 +359,7 @@ Value* builtin_net_send(Value *arg) {
         for (int i = 0; i < n; i++) {
             double dv = data->type == VAL_BUFFER
                 ? buffer_read_num(data, i)
-                : (data->data.list.items[i] &&
-                   data->data.list.items[i]->type == VAL_NUM
-                       ? data->data.list.items[i]->data.num : 0.0);
+                : eigs_elem_num(data->data.list.items[i], "net_send");   /* #1637 round 4 */
             if (g_has_error) { free(owned); return make_null(); }
             owned[i] = finite_num_to_byte(dv);
         }
@@ -384,7 +382,7 @@ Value* builtin_net_close(Value *arg) {
     }
     int nidx = 0;
     uint32_t ngen = 0;
-    EigsNetSock *s = net_unpack(arg->data.num, &nidx, &ngen);
+    EigsNetSock *s = net_unpack(eigs_num_arg(arg, __func__), &nidx, &ngen);
     if (s) {
         close(s->fd);
         free(s);

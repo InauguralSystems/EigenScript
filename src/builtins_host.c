@@ -264,12 +264,12 @@ Value* builtin_stream_open(Value *arg) {
     Value *count_val = arg->data.list.items[1];
     ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM,
               "stream_open", "[a string path, a number count]", make_bool(0));
-    if (count_val->data.num < 1 ||
-        count_val->data.num > EIGS_TENSOR_MAX_ELEMENTS ||
-        count_val->data.num != floor(count_val->data.num)) {
+    if (eigs_num_arg(count_val, __func__) < 1 ||
+        eigs_num_arg(count_val, __func__) > EIGS_TENSOR_MAX_ELEMENTS ||
+        eigs_num_arg(count_val, __func__) != floor(eigs_num_arg(count_val, __func__))) {
         rt_error(EK_LIMIT, 0,
                  "stream_open: '%s' count %.17g is outside the 1..%d element cap",
-                 path_val->data.str, count_val->data.num,
+                 path_val->data.str, eigs_num_arg(count_val, __func__),
                  EIGS_TENSOR_MAX_ELEMENTS);
         return make_bool(0);
     }
@@ -280,7 +280,7 @@ Value* builtin_stream_open(Value *arg) {
      * comment over this section documents stream_open as answering 1 — so 0
      * is the "could not open" answer, not a type mistake. */
     if (!g_stream_file) return make_bool(0);
-    uint32_t count = (uint32_t)count_val->data.num;
+    uint32_t count = (uint32_t)eigs_num_arg(count_val, __func__);
     uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
     if (fwrite(header, sizeof(uint32_t), 4, g_stream_file) != 4) {
         fclose(g_stream_file);
@@ -304,7 +304,7 @@ Value* builtin_stream_write(Value *arg) {
      * guard above already accepted); 0 is the failure bit paired with the
      * make_bool(1) success value below. */
     if (!g_stream_file) return make_bool(0);
-    double val = arg->data.num;
+    double val = eigs_num_arg(arg, __func__);
     if (fwrite(&val, sizeof(double), 1, g_stream_file) != 1) {
         fclose(g_stream_file);
         g_stream_file = NULL;
@@ -463,7 +463,7 @@ Value* builtin_build_corpus(Value *arg) {
     if (!stream_path_val || stream_path_val->type != VAL_STR) return make_null();
     if (!vocab_path_val || vocab_path_val->type != VAL_STR) return make_null();
 
-    int top_n = (int)topn_val->data.num;
+    int top_n = (int)eigs_num_arg(topn_val, __func__);
     int n_files = file_list->data.list.count;
 
     /* ---- SLOT MODE (optional 6th arg: slot_count > 0) --------------------
@@ -1147,14 +1147,14 @@ Value* builtin_read_bytes_buf(Value *arg) {
                 rt_error(EK_VALUE, 0, "read_bytes_buf: max_bytes must be a number");
                 return make_null();
             }
-            if (!(mv->data.num >= 1 &&
-                  mv->data.num <= (double)READ_BYTES_BUF_HARD_CAP)) {
+            if (!(eigs_num_arg(mv, __func__) >= 1 &&
+                  eigs_num_arg(mv, __func__) <= (double)READ_BYTES_BUF_HARD_CAP)) {
                 rt_error(EK_VALUE, 0,
                          "read_bytes_buf: max_bytes must be in 1..%lld (got %g)",
-                         READ_BYTES_BUF_HARD_CAP, mv ? mv->data.num : 0.0);
+                         READ_BYTES_BUF_HARD_CAP, mv ? eigs_num_arg(mv, __func__) : 0.0);
                 return make_null();
             }
-            cap = (long long)mv->data.num;
+            cap = (long long)eigs_num_arg(mv, __func__);
         }
     }
     if (!path || path->type != VAL_STR) return make_null();
@@ -1169,7 +1169,7 @@ Value* builtin_read_bytes_buf(Value *arg) {
         if (trace_replay_refuse_off_owner("read_bytes_buf")) return make_null();
         if (trace_replay_take("read_bytes_buf", &tv)) {
             if (tv && tv->type == VAL_NUM) {
-                long long len = (long long)tv->data.num;
+                long long len = (long long)eigs_num_arg(tv, __func__);
                 val_decref(tv);
                 read_bytes_buf_cap_raise(path->data.str, len, cap);
                 return make_null();
@@ -1570,7 +1570,7 @@ Value* builtin_proc_write(Value *arg) {
     Value *str_v = arg->data.list.items[1];
     ARG_GUARD(!fd_v || fd_v->type != VAL_NUM || !str_v || str_v->type != VAL_STR,
               "proc_write", "[number fd, string]", make_num(-1));
-    int fd = (int)fd_v->data.num;
+    int fd = (int)eigs_num_arg(fd_v, __func__);
     /* fs:ANSWER a negative descriptor is not a write that failed on its
      * arguments' TYPES — it is a descriptor that cannot be written, which is
      * the same -1 a closed fd produces below. Left soft deliberately: fds
@@ -1601,7 +1601,7 @@ Value* builtin_proc_write(Value *arg) {
 Value* builtin_proc_read_line(Value *arg) {
     if (replay_blocks("proc_read_line")) return make_null();
     if (!arg || arg->type != VAL_NUM) return make_null();
-    int fd = (int)arg->data.num;
+    int fd = (int)eigs_num_arg(arg, __func__);
     if (fd < 0) return make_null();
     size_t cap = 256, len = 0;
     char *buf = xmalloc(cap + 1);
@@ -1648,8 +1648,8 @@ Value* builtin_proc_read(Value *arg) {
     Value *max_v = arg->data.list.items[1];
     if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
         return make_null();
-    int fd = (int)fd_v->data.num;
-    int max = (int)max_v->data.num;
+    int fd = (int)eigs_num_arg(fd_v, __func__);
+    int max = (int)eigs_num_arg(max_v, __func__);
     if (fd < 0 || max <= 0) return make_null();
     if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
     char *buf = xmalloc((size_t)max + 1);
@@ -1678,8 +1678,8 @@ Value* builtin_proc_read_buf(Value *arg) {
     Value *max_v = arg->data.list.items[1];
     if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
         return make_null();
-    int fd = (int)fd_v->data.num;
-    int max = (int)max_v->data.num;
+    int fd = (int)eigs_num_arg(fd_v, __func__);
+    int max = (int)eigs_num_arg(max_v, __func__);
     if (fd < 0 || max <= 0) return make_null();
     if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
     unsigned char *buf = xmalloc((size_t)max);
@@ -1707,7 +1707,7 @@ Value* builtin_proc_read_buf(Value *arg) {
 Value* builtin_proc_close(Value *arg) {
     if (replay_blocks("proc_close")) return make_null();
     if (!arg || arg->type != VAL_NUM) return make_null();
-    int fd = (int)arg->data.num;
+    int fd = (int)eigs_num_arg(arg, __func__);
     if (fd >= 0) close(fd);
     return make_null();
 }
@@ -1717,7 +1717,7 @@ Value* builtin_proc_wait(Value *arg) {
      * status", and the refusal belongs to the replay layer. */
     if (replay_blocks("proc_wait")) return make_num(-1);
     ARG_GUARD(!arg || arg->type != VAL_NUM, "proc_wait", "a numeric pid", make_num(-1));
-    pid_t pid = (pid_t)arg->data.num;
+    pid_t pid = (pid_t)eigs_num_arg(arg, __func__);
     /* fs:ANSWER a non-positive pid names no process, so there is no exit
      * status to report. A pid is a runtime value from proc_open, not a
      * literal, so this is state rather than a type mistake. */
@@ -1745,7 +1745,7 @@ Value* builtin_random_hex(Value *arg) {
     /* #971 Phase D: a non-number length answered "" (as does a length of 0,
      * which stays the answer). Taped: the soft half records as before. */
     ARG_GUARD_TAPED(!arg || arg->type != VAL_NUM, "random_hex", "a number of hex digits", make_str(""));
-    int n = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 0;
+    int n = (arg && arg->type == VAL_NUM) ? (int)eigs_num_arg(arg, __func__) : 0;
     if (n <= 0 || n > 256) TRACE_NONDET_RET("random_hex", make_str(""));
     int bytes_needed = (n + 1) / 2;
     unsigned char raw[128];
@@ -1814,7 +1814,7 @@ Value* builtin_write_bytes(Value *arg) {
             rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
             return make_null();
         }
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
+        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? eigs_num_arg(items[i], __func__) : 0.0)
                           : buffer_read_num(data, i);
         if (g_has_error) { free(out); return make_null(); }
         out[i] = finite_num_to_byte(dv);

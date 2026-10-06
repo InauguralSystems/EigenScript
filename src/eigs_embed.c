@@ -333,7 +333,7 @@ int eigs_value_as_bool(EigsValue *v) {
 }
 
 double eigs_value_as_num(EigsValue *v) {
-    return (v && v->type == VAL_NUM) ? v->data.num : 0.0;
+    return (v && v->type == VAL_NUM) ? VAL_NUM_RAW(v) : 0.0;
 }
 
 const char *eigs_value_as_string(EigsValue *v) {

@@ -25,7 +25,7 @@ int main(void) {
         chunk->fn_count || chunk->local_count || chunk->param_count ||
         chunk->const_count != 1 || !chunk->constants[0] ||
         chunk->constants[0]->type != VAL_NUM ||
-        chunk->constants[0]->data.num != 42) goto done;
+        VAL_NUM_RAW(chunk->constants[0]) != 42) goto done;
 
     descriptor = make_list(3);
     Value *code = make_list(chunk->code_len);

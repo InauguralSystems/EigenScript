@@ -115,13 +115,13 @@ static void obs_dump_num(double n, char *buf, size_t nbuf) {
  * out-of-scope slot-value race class; a summary reads only the header
  * words). No allocation. */
 static void obs_dump_value(EigsSlot s, char *buf, size_t nbuf) {
-    if (slot_is_num(s)) { obs_dump_num(s.d, buf, nbuf); return; }
+    if (slot_is_num(s)) { obs_dump_num(SLOT_NUM_RAW(s), buf, nbuf); return; }
     if (slot_is_null(s)) { snprintf(buf, nbuf, "null"); return; }
     if (slot_is_bool(s)) { snprintf(buf, nbuf, "%s", slot_as_bool(s) ? "true" : "false"); return; }
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);
         switch (v->type) {
-            case VAL_NUM: obs_dump_num(v->data.num, buf, nbuf); break;
+            case VAL_NUM: obs_dump_num(VAL_NUM_RAW(v), buf, nbuf); break;
             case VAL_STR: {
                 size_t o = 0, i;
                 buf[o++] = '"';
@@ -211,7 +211,7 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
              * The band classifies the same refreshed view. */
             ObserverSlot qs = *os;
             if (slot_is_num(s)) {
-                qs.entropy = observer_entropy_of_num(s.d);
+                qs.entropy = observer_entropy_of_num(SLOT_NUM_RAW(s));
             } else if (slot_is_bool(s)) {
                 qs.entropy = compute_entropy(make_bool(slot_as_bool(s)));   /* #1637 */
             } else if (slot_is_ptr(s)) {
@@ -714,7 +714,7 @@ static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32
             if (existing && existing->type == VAL_NUM &&
                 existing->refcount == 1 &&
                 !existing->arena) {
-                existing->data.num = num;
+                VAL_NUM_RAW(existing) = num;
                 return 1;
             }
         }
@@ -798,7 +798,7 @@ static inline EigsSlot slot_bridge_wrap(Value *v) {
 static inline Value *slot_bridge_unwrap(EigsSlot s) {
     if (slot_is_num(s)) {
         /* Materialize immediate -> fresh Value. Caller owns one ref. */
-        return make_num(s.d);
+        return make_num(SLOT_NUM_RAW(s));
     }
     if (slot_is_null(s)) {
         return make_null();
@@ -841,7 +841,7 @@ static inline Value *vm_slot_lift(int idx) {
     EigsSlot s = g_vm.stack[idx];
     if (slot_is_ptr(s)) return slot_as_ptr(s);
     Value *v;
-    if (slot_is_num(s))       v = make_num(s.d);
+    if (slot_is_num(s))       v = make_num(SLOT_NUM_RAW(s));
     else if (slot_is_null(s)) v = make_null();
     else if (slot_is_bool(s)) v = make_bool(slot_as_bool(s));
     else                      v = make_null();
@@ -874,7 +874,7 @@ static inline void vm_push_slot(EigsSlot s) {
 /* Slot-aware truthiness — covers immediate num, null, bool, and falls
  * back to is_truthy() for heap/tracked. */
 static inline int slot_truthy(EigsSlot s) {
-    if (slot_is_num(s)) return s.d != 0.0;
+    if (slot_is_num(s)) return SLOT_NUM_RAW(s) != 0.0;
     if (slot_is_null(s)) return 0;
     if (slot_is_bool(s)) return slot_as_bool(s);
     return is_truthy(slot_as_ptr(s));
@@ -884,10 +884,10 @@ static inline int slot_truthy(EigsSlot s) {
  * immediate doubles and heap/tracked VAL_NUMs (which still appear from
  * env loads and from the constant pool until B-3 flips those). */
 static inline int slot_as_double(EigsSlot s, double *out) {
-    if (slot_is_num(s)) { *out = s.d; return 1; }
+    if (slot_is_num(s)) { *out = SLOT_NUM_RAW(s); return 1; }
     if (slot_is_ptr(s)) {
         Value *v = slot_as_ptr(s);
-        if (v->type == VAL_NUM) { *out = v->data.num; return 1; }
+        if (v->type == VAL_NUM) { *out = VAL_NUM_RAW(v); return 1; }
     }
     return 0;
 }
@@ -1176,7 +1176,7 @@ static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
             Value *existing = slot_as_ptr(ex_s);
             if (existing && existing->type == VAL_NUM &&
                 existing->refcount == 1 && !existing->arena) {
-                existing->data.num = tos.d;
+                VAL_NUM_RAW(existing) = SLOT_NUM_RAW(tos);
                 return;
             }
         }
@@ -1391,7 +1391,7 @@ int jit_helper_local_idx_get(int slot, int idx) {
             if (i < target->data.list.count) {
                 Value *item = target->data.list.items[i];
                 if (item && item->type == VAL_NUM) {
-                    vm_push_slot(slot_from_num(item->data.num));
+                    vm_push_slot(slot_from_num(VAL_NUM_RAW(item)));
                 } else {
                     val_incref(item);
                     vm_push(item);
@@ -1447,7 +1447,7 @@ int jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
         Value *v = dict_get_cached(target, key, h);
         if (v) {
             if (v->type == VAL_NUM) {
-                vm_push_slot(slot_from_num(v->data.num));
+                vm_push_slot(slot_from_num(VAL_NUM_RAW(v)));
             } else {
                 val_incref(v);
                 vm_push(v);
@@ -1501,7 +1501,7 @@ int jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                 Value *v = dict_get_cached(dict, key, h);
                 if (v) {
                     if (v->type == VAL_NUM) {
-                        vm_push_slot(slot_from_num(v->data.num));
+                        vm_push_slot(slot_from_num(VAL_NUM_RAW(v)));
                     } else {
                         val_incref(v);
                         vm_push(v);
@@ -1559,7 +1559,7 @@ void jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
     if (slot_is_num(val_s) && slot_is_ptr(tgt_s)) {
         Value *target = slot_as_ptr(tgt_s);
         if (target->type == VAL_DICT &&
-            dict_set_cached_immediate(target, key, h, val_s.d)) {
+            dict_set_cached_immediate(target, key, h, SLOT_NUM_RAW(val_s))) {
             /* Same net stack effect as the slow path: pop val + target,
              * push val (val is immediate — no refcount sides). */
             g_vm.sp -= 1;
@@ -1592,7 +1592,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
         Value *v = dict_get_cached(target, key, h);
         if (v) {
             if (v->type == VAL_NUM) {
-                double n = v->data.num;
+                double n = VAL_NUM_RAW(v);
                 val_decref(target);
                 vm_push_slot(slot_from_num(n));
                 return;
@@ -1633,7 +1633,7 @@ void jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
         }
         EigsSlot tos = g_vm.stack[g_vm.sp - 1];
         if (slot_is_num(tos) &&
-            dict_set_cached_immediate(target, key, h, tos.d)) {
+            dict_set_cached_immediate(target, key, h, SLOT_NUM_RAW(tos))) {
             return;
         }
         Value *val = vm_slot_lift(g_vm.sp - 1);
@@ -1724,12 +1724,12 @@ void jit_helper_observe_assign_local(int slot) {
     Env *e = frame->fn_env;
     if (g_unobserved_depth != 0) {
         /* #1049: elided — value-window sample only (mirrors the CASE body). */
-        if (slot_is_num(s))      jit_sample_num_gated(e, slot, s.d);
+        if (slot_is_num(s))      jit_sample_num_gated(e, slot, SLOT_NUM_RAW(s));
         else if (obs_slot_observable(s)) observer_slot_sample_gated(e, slot, obs_slot_value(s));
         return;
     }
     if (slot_is_num(s)) {
-        observer_slot_update_num(e, slot, s.d);
+        observer_slot_update_num(e, slot, SLOT_NUM_RAW(s));
         g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
     } else if (obs_slot_observable(s)) {
         observer_slot_update(e, slot, obs_slot_value(s));
@@ -1784,12 +1784,12 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     int oidx = -1, odepth = 0;
     Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
     if (oe && oidx >= 0 && g_unobserved_depth != 0) {
-        if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
+        if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, SLOT_NUM_RAW(s));
         else                observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
         return;
     }
     if (oe && oidx >= 0) {
-        if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
+        if (slot_is_num(s)) observer_slot_update_num(oe, oidx, SLOT_NUM_RAW(s));
         else observer_slot_update(oe, oidx, obs_slot_value(s));
         g_last_obs_slot_env = oe;
         g_last_obs_slot_idx = oidx;
@@ -1822,7 +1822,7 @@ int jit_helper_iter_next(void) {
     if (!iterable) return 1;
     Value *idx_v = state->data.list.items[1];
     if (!idx_v || idx_v->type != VAL_NUM) return 1;
-    int idx = (int)idx_v->data.num;
+    int idx = (int)VAL_NUM_RAW(idx_v);
     int len = 0;
     if (iterable->type == VAL_LIST)        len = iterable->data.list.count;
     else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -1832,7 +1832,7 @@ int jit_helper_iter_next(void) {
     if (state->data.list.count >= 3) {
         Value *snap_v = state->data.list.items[2];
         if (snap_v && snap_v->type == VAL_NUM) {
-            int snap = (int)snap_v->data.num;
+            int snap = (int)VAL_NUM_RAW(snap_v);
             if (snap < len) len = snap;
         }
     }
@@ -1847,7 +1847,7 @@ int jit_helper_iter_next(void) {
     /* In-place idx bump when the slot is an exclusive plain VAL_NUM
      * (matches the interpreter's NUM_REUSE fast path). */
     if (idx_v->type == VAL_NUM && idx_v->refcount == 1 && !idx_v->arena) {
-        idx_v->data.num = (double)(idx + 1);
+        VAL_NUM_RAW(idx_v) = (double)(idx + 1);
     } else {
         val_decref(idx_v);
         /* #873: heap-force when the state list must outlive an active
@@ -1925,7 +1925,7 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
         case OP_CONST: {
             uint16_t idx = read_u16(ip); ip += 2;
             /* Scanner guarantees VAL_NUM. */
-            mini[msp++] = slot_from_num(c->constants[idx]->data.num);
+            mini[msp++] = slot_from_num(VAL_NUM_RAW(c->constants[idx]));
             break;
         }
         case OP_NUM_ZERO:
@@ -1959,7 +1959,7 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
                  * null/num input — these are borrows, so wrap by hand. */
                 mini[msp++] = slot_null();
             } else if (v->type == VAL_NUM) {
-                mini[msp++] = slot_from_num(v->data.num);
+                mini[msp++] = slot_from_num(VAL_NUM_RAW(v));
             } else {
                 mini[msp++] = slot_from_heap(v);    /* borrow, no incref */
             }
@@ -1980,7 +1980,7 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
                 Value *r = target->data.list.items[i];
                 if (!r) return 0;
                 if (r->type == VAL_NUM)
-                    mini[msp++] = slot_from_num(r->data.num);
+                    mini[msp++] = slot_from_num(VAL_NUM_RAW(r));
                 else if (r->type == VAL_NULL)
                     mini[msp++] = slot_null();
                 else
@@ -2093,7 +2093,7 @@ static void loop_iter_store(Env *env, double n) {
     LoopIterCache *c = &g_loop_iter_cache;
     if (c->env == env && c->version == env->binding_version &&
         slot_is_num(env->values[c->slot])) {
-        env->values[c->slot].d = n;
+        SLOT_NUM_RAW(env->values[c->slot]) = n;
         if (env->assign_counts)
             env->assign_counts[c->slot]++;
         return;
@@ -2222,12 +2222,12 @@ void jit_helper_index_set(void) {
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
     if (slot_is_num(idx_s) && slot_is_ptr(tgt_s)) {
         Value *target = slot_as_ptr(tgt_s);
-        int i, _ok = vm_index_is_int(idx_s.d, &i);
+        int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
         if (target->type == VAL_BUFFER && slot_is_num(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                target->data.buffer.data[i] = val_s.d;
+                target->data.buffer.data[i] = SLOT_NUM_RAW(val_s);
             } else {
-                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                 else rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)",
                               i, target->data.buffer.count);
             }
@@ -2243,7 +2243,7 @@ void jit_helper_index_set(void) {
                 if (existing && existing->type == VAL_NUM &&
                     existing->refcount == 1 &&
                     !existing->arena) {
-                    existing->data.num = val_s.d;
+                    VAL_NUM_RAW(existing) = SLOT_NUM_RAW(val_s);
                 } else {
                     val_decref(existing);
                     /* #873: inside an arena window a plain make_num is
@@ -2251,11 +2251,11 @@ void jit_helper_index_set(void) {
                      * after arena_reset. Heap-force for heap targets. */
                     target->data.list.items[i] =
                         (g_arena.active && !target->arena)
-                            ? make_num_permanent(val_s.d)
-                            : make_num(val_s.d);
+                            ? make_num_permanent(SLOT_NUM_RAW(val_s))
+                            : make_num(SLOT_NUM_RAW(val_s));
                 }
             } else {
-                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                 else rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)",
                               i, target->data.list.count);
             }
@@ -2269,8 +2269,8 @@ void jit_helper_index_set(void) {
     Value *val = vm_pop(); Value *idx = vm_pop(); Value *target = vm_pop();
     if (target->type == VAL_LIST && idx->type == VAL_NUM) {
         int i;
-        if (!vm_index_is_int(idx->data.num, &i)) {
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+        if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             /* #873: promote an arena value stored into a heap list —
              * same contract as list_append / the env store paths. */
@@ -2291,12 +2291,12 @@ void jit_helper_index_set(void) {
         }
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
-        if (!vm_index_is_int(idx->data.num, &i)) {
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+        if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
             rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else if (val->type == VAL_NUM) {
-            target->data.buffer.data[i] = val->data.num;
+            target->data.buffer.data[i] = VAL_NUM_RAW(val);
         } else {
             /* #1061 -- mirror of CASE(INDEX_SET)'s buffer arm. */
             rt_error(EK_TYPE, g_vm.current_line, "cannot store %s in a buffer (buffers hold numbers)",
@@ -2317,15 +2317,15 @@ int jit_helper_index_get(void) {
     g_vm.sp -= 2;
     if (slot_is_num(idx_s) && slot_is_ptr(tgt_s)) {
         Value *target = slot_as_ptr(tgt_s);
-        int i, _ok = vm_index_is_int(idx_s.d, &i);
+        int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
         if (target->type == VAL_LIST) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 Value *r = target->data.list.items[i];
                 if (r && r->type == VAL_NUM) {
                     /* See CASE(INDEX_GET) for the use-after-free story —
-                     * snapshot r->data.num before slot_decref(tgt_s)
+                     * snapshot VAL_NUM_RAW(r) before slot_decref(tgt_s)
                      * potentially frees r via the num freelist. */
-                    double rv = r->data.num;
+                    double rv = VAL_NUM_RAW(r);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_from_num(rv));
                 } else {
@@ -2334,7 +2334,7 @@ int jit_helper_index_get(void) {
                     vm_push(r);
                 }
             } else {
-                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                 else rt_error(EK_INDEX, g_vm.current_line,
                     "index %d out of range (list length %d)",
                     i, target->data.list.count);
@@ -2349,7 +2349,7 @@ int jit_helper_index_get(void) {
                 slot_decref(tgt_s);
                 vm_push_slot(slot_from_num(v));
             } else {
-                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx_s.d);
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                 else rt_error(EK_INDEX, g_vm.current_line,
                     "buffer index %d out of range (length %d)",
                     i, target->data.buffer.count);
@@ -2367,8 +2367,8 @@ int jit_helper_index_get(void) {
     Value *result = make_null();
     if (target->type == VAL_LIST && idx->type == VAL_NUM) {
         int i;
-        if (!vm_index_is_int(idx->data.num, &i)) {
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+        if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             result = target->data.list.items[i];
             val_incref(result);
@@ -2382,8 +2382,8 @@ int jit_helper_index_get(void) {
         if (v) { result = v; val_incref(result); }
     } else if (target->type == VAL_STR && idx->type == VAL_NUM) {
         int i;
-        if (!vm_index_is_int(idx->data.num, &i)) {
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+        if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         } else if (vm_index_resolve(&i, (int)val_str_len(target))) {
             char buf[2] = { target->data.str[i], 0 };
             result = make_str_len(buf, 1);
@@ -2394,8 +2394,8 @@ int jit_helper_index_get(void) {
         }
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
-        if (!vm_index_is_int(idx->data.num, &i))
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", idx->data.num);
+        if (!vm_index_is_int(VAL_NUM_RAW(idx), &i))
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         else if (vm_index_resolve(&i, target->data.buffer.count))
             result = make_num(buffer_read_num(target, i));
         else
@@ -3286,7 +3286,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* Numeric constants without observer state ship as immediates —
          * skips an incref/decref pair on every push/pop. */
         if (v->type == VAL_NUM) {
-            vm_push_slot(slot_from_num(v->data.num));
+            vm_push_slot(slot_from_num(VAL_NUM_RAW(v)));
         } else {
             val_incref(v);
             vm_push(v);
@@ -3343,7 +3343,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (slot_is_ptr(_as)) { \
             Value *_a = slot_as_ptr(_as); \
             if (NUM_REUSE(_a)) { \
-                _a->data.num = _r; \
+                VAL_NUM_RAW(_a) = _r; \
                 slot_decref(_bs); \
                 g_vm.sp--; \
                 DISPATCH(); \
@@ -3352,7 +3352,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (slot_is_ptr(_bs)) { \
             Value *_b = slot_as_ptr(_bs); \
             if (NUM_REUSE(_b)) { \
-                _b->data.num = _r; \
+                VAL_NUM_RAW(_b) = _r; \
                 g_vm.stack[g_vm.sp - 2] = _bs; \
                 slot_decref(_as); \
                 g_vm.sp--; \
@@ -3371,9 +3371,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* Slow path: handles string concat etc */
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_NUM && b->type == VAL_NUM) {
-            double r = num_guard(a->data.num + b->data.num);
-            if (NUM_REUSE(a)) { a->data.num = r; vm_push(a); val_decref(b); DISPATCH(); }
-            if (NUM_REUSE(b)) { b->data.num = r; vm_push(b); val_decref(a); DISPATCH(); }
+            double r = num_guard(VAL_NUM_RAW(a) + VAL_NUM_RAW(b));
+            if (NUM_REUSE(a)) { VAL_NUM_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
+            if (NUM_REUSE(b)) { VAL_NUM_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
             vm_push(make_num(r));
         } else if (a->type == VAL_STR && b->type == VAL_STR) {
             int la = val_str_len(a), lb = val_str_len(b);
@@ -3424,11 +3424,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         ARITH_FAST(OP, UF); \
         Value *b = vm_pop(); Value *a = vm_pop(); \
         if (a->type == VAL_NUM && b->type == VAL_NUM) { \
-            double r = num_guard(a->data.num OP b->data.num); \
-            if ((UF) && r == 0.0 && a->data.num != 0.0 && b->data.num != 0.0) \
+            double r = num_guard(VAL_NUM_RAW(a) OP VAL_NUM_RAW(b)); \
+            if ((UF) && r == 0.0 && VAL_NUM_RAW(a) != 0.0 && VAL_NUM_RAW(b) != 0.0) \
                 g_math_flags |= EIGS_MATH_UNDERFLOW; \
-            if (NUM_REUSE(a)) { a->data.num = r; vm_push(a); val_decref(b); DISPATCH(); } \
-            if (NUM_REUSE(b)) { b->data.num = r; vm_push(b); val_decref(a); DISPATCH(); } \
+            if (NUM_REUSE(a)) { VAL_NUM_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); } \
+            if (NUM_REUSE(b)) { VAL_NUM_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); } \
             vm_push(make_num(r)); \
         } else { \
             rt_error(EK_TYPE, current_line, "cannot apply '%s' to %s and %s", \
@@ -3452,17 +3452,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(DIV): {
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_NUM && b->type == VAL_NUM) {
-            if (b->data.num == 0.0) {
+            if (VAL_NUM_RAW(b) == 0.0) {
                 rt_error(EK_VALUE, current_line, "division by zero");
                 vm_push(make_num(0));
             } else {
-                double r = num_guard(a->data.num / b->data.num);
+                double r = num_guard(VAL_NUM_RAW(a) / VAL_NUM_RAW(b));
                 /* divisor already known nonzero (the raise above), so a zero
                  * quotient from a nonzero dividend is underflow. */
-                if (r == 0.0 && a->data.num != 0.0)
+                if (r == 0.0 && VAL_NUM_RAW(a) != 0.0)
                     g_math_flags |= EIGS_MATH_UNDERFLOW;
-                if (NUM_REUSE(a)) { a->data.num = r; vm_push(a); val_decref(b); DISPATCH(); }
-                if (NUM_REUSE(b)) { b->data.num = r; vm_push(b); val_decref(a); DISPATCH(); }
+                if (NUM_REUSE(a)) { VAL_NUM_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
+                if (NUM_REUSE(b)) { VAL_NUM_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
                 vm_push(make_num(r));
             }
         } else {
@@ -3476,10 +3476,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(MOD): {
         Value *b = vm_pop(); Value *a = vm_pop();
-        if (a->type == VAL_NUM && b->type == VAL_NUM && b->data.num != 0.0) {
-            double r = num_guard(fmod(a->data.num, b->data.num));
-            if (NUM_REUSE(a)) { a->data.num = r; vm_push(a); val_decref(b); DISPATCH(); }
-            if (NUM_REUSE(b)) { b->data.num = r; vm_push(b); val_decref(a); DISPATCH(); }
+        if (a->type == VAL_NUM && b->type == VAL_NUM && VAL_NUM_RAW(b) != 0.0) {
+            double r = num_guard(fmod(VAL_NUM_RAW(a), VAL_NUM_RAW(b)));
+            if (NUM_REUSE(a)) { VAL_NUM_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
+            if (NUM_REUSE(b)) { VAL_NUM_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
             vm_push(make_num(r));
         } else {
             if (!(a->type == VAL_NUM && b->type == VAL_NUM))
@@ -3508,11 +3508,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             double _r = (double)((int64_t)_ad OP (RHS)); \
             if (slot_is_ptr(_as)) { \
                 Value *_a = slot_as_ptr(_as); \
-                if (NUM_REUSE(_a)) { _a->data.num = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); } \
+                if (NUM_REUSE(_a)) { VAL_NUM_RAW(_a) = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); } \
             } \
             if (slot_is_ptr(_bs)) { \
                 Value *_b = slot_as_ptr(_bs); \
-                if (NUM_REUSE(_b)) { _b->data.num = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); } \
+                if (NUM_REUSE(_b)) { VAL_NUM_RAW(_b) = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); } \
             } \
             slot_decref(_as); slot_decref(_bs); \
             g_vm.stack[g_vm.sp - 2] = slot_from_num(_r); \
@@ -3550,7 +3550,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (__builtin_expect(slot_as_double(s, &d), 1)) {
             if (slot_is_ptr(s)) {
                 Value *v = slot_as_ptr(s);
-                if (NUM_REUSE(v)) { v->data.num = -d; DISPATCH(); }
+                if (NUM_REUSE(v)) { VAL_NUM_RAW(v) = -d; DISPATCH(); }
             }
             slot_decref(s);
             g_vm.stack[g_vm.sp - 1] = slot_from_num(-d);
@@ -3577,7 +3577,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             double r = (double)(~(int64_t)d);
             if (slot_is_ptr(s)) {
                 Value *v = slot_as_ptr(s);
-                if (NUM_REUSE(v)) { v->data.num = r; DISPATCH(); }
+                if (NUM_REUSE(v)) { VAL_NUM_RAW(v) = r; DISPATCH(); }
             }
             slot_decref(s);
             g_vm.stack[g_vm.sp - 1] = slot_from_num(r);
@@ -4049,7 +4049,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 chunk_decref(chunk);
                 if (g_vm.frame_count <= base_frame) {
                     EigsSlot result_s = g_vm.stack[--g_vm.sp];
-                    if (slot_is_num(result_s))  return make_num(result_s.d);
+                    if (slot_is_num(result_s))  return make_num(SLOT_NUM_RAW(result_s));
                     if (slot_is_null(result_s)) return make_null();
                     if (slot_is_bool(result_s)) return make_bool(slot_as_bool(result_s));
                     return slot_as_ptr(result_s);
@@ -4415,7 +4415,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     chunk_decref(fn_chunk);
                     if (g_vm.frame_count <= base_frame) {
                         EigsSlot result_s = g_vm.stack[--g_vm.sp];
-                        if (slot_is_num(result_s))  return make_num(result_s.d);
+                        if (slot_is_num(result_s))  return make_num(SLOT_NUM_RAW(result_s));
                         if (slot_is_null(result_s)) return make_null();
                         if (slot_is_bool(result_s)) return make_bool(slot_as_bool(result_s));
                         return slot_as_ptr(result_s);
@@ -4497,7 +4497,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (g_vm.frame_count <= base_frame) {
             /* Return to C: transfer slot's owned ref into a Value*.
              * Immediate -> materialize; pointer -> reuse slot's ref. */
-            if (slot_is_num(result_s))       return make_num(result_s.d);
+            if (slot_is_num(result_s))       return make_num(SLOT_NUM_RAW(result_s));
             if (slot_is_null(result_s))      return make_null();
             if (slot_is_bool(result_s))      return make_bool(slot_as_bool(result_s));
             return slot_as_ptr(result_s);
@@ -4583,7 +4583,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         g_vm.sp -= 2;
         if (slot_is_num(idx_s) && slot_is_ptr(tgt_s)) {
             Value *target = slot_as_ptr(tgt_s);
-            int i, _ok = vm_index_is_int(idx_s.d, &i);
+            int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
             if (target->type == VAL_LIST) {
                 if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                     Value *r = target->data.list.items[i];
@@ -4592,13 +4592,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                          * if the stack slot was the sole owner, slot_decref
                          * frees the list and cascades into free_value(r),
                          * which memcpy's the num-freelist next pointer over
-                         * r->data. Reading r->data.num after that yields
+                         * r->data. Reading VAL_NUM_RAW(r) after that yields
                          * freelist garbage (denormal pointer-as-double, or
                          * the prior head — often 0 — for the first freed
                          * item). Surfaced by `(call())[i]` inline in an
                          * arg list; bound-to-local form hides the bug by
                          * keeping refcount > 1. */
-                        double rv = r->data.num;
+                        double rv = VAL_NUM_RAW(r);
                         slot_decref(tgt_s);
                         vm_push_slot(slot_from_num(rv));
                     } else {
@@ -4607,7 +4607,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         vm_push(r);
                     }
                 } else {
-                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                     else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                                   i, target->data.list.count);
                     slot_decref(tgt_s);
@@ -4621,7 +4621,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     slot_decref(tgt_s);
                     vm_push_slot(slot_from_num(v));
                 } else {
-                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                     else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
                     slot_decref(tgt_s);
@@ -4638,8 +4638,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *result = make_null();
         if (target->type == VAL_LIST && idx->type == VAL_NUM) {
             int i;
-            if (!vm_index_is_int(idx->data.num, &i)) {
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
+            if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 result = target->data.list.items[i];
                 val_incref(result);
@@ -4651,8 +4651,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (v) { result = v; val_incref(result); }
         } else if (target->type == VAL_STR && idx->type == VAL_NUM) {
             int i;
-            if (!vm_index_is_int(idx->data.num, &i)) {
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
+            if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             } else if (vm_index_resolve(&i, (int)val_str_len(target))) {
                 char buf[2] = { target->data.str[i], 0 };
                 result = make_str_len(buf, 1);
@@ -4661,8 +4661,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
-            if (!vm_index_is_int(idx->data.num, &i))
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
+            if (!vm_index_is_int(VAL_NUM_RAW(idx), &i))
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             else if (vm_index_resolve(&i, target->data.buffer.count))
                 result = make_num(buffer_read_num(target, i));
             else
@@ -4683,12 +4683,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
         if (slot_is_num(idx_s) && slot_is_ptr(tgt_s)) {
             Value *target = slot_as_ptr(tgt_s);
-            int i, _ok = vm_index_is_int(idx_s.d, &i);
+            int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
             if (target->type == VAL_BUFFER && slot_is_num(val_s)) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                    target->data.buffer.data[i] = val_s.d;
+                    target->data.buffer.data[i] = SLOT_NUM_RAW(val_s);
                 } else {
-                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                     else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
                 }
@@ -4705,7 +4705,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     if (existing && existing->type == VAL_NUM &&
                         existing->refcount == 1 &&
                         !existing->arena) {
-                        existing->data.num = val_s.d;
+                        VAL_NUM_RAW(existing) = SLOT_NUM_RAW(val_s);
                     } else {
                         val_decref(existing);
                         /* #873: heap-force into heap targets while an
@@ -4713,11 +4713,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                          * jit_helper_index_set). */
                         target->data.list.items[i] =
                             (g_arena.active && !target->arena)
-                                ? make_num_permanent(val_s.d)
-                                : make_num(val_s.d);
+                                ? make_num_permanent(SLOT_NUM_RAW(val_s))
+                                : make_num(SLOT_NUM_RAW(val_s));
                     }
                 } else {
-                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx_s.d);
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                     else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                                   i, target->data.list.count);
                 }
@@ -4731,8 +4731,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *val = vm_pop(); Value *idx = vm_pop(); Value *target = vm_pop();
         if (target->type == VAL_LIST && idx->type == VAL_NUM) {
             int i;
-            if (!vm_index_is_int(idx->data.num, &i)) {
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
+            if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 /* #873: promote an arena value stored into a heap list
                  * (mirror of jit_helper_index_set's general arm). */
@@ -4753,12 +4753,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
-            if (!vm_index_is_int(idx->data.num, &i)) {
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", idx->data.num);
+            if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
                 rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
             } else if (val->type == VAL_NUM) {
-                target->data.buffer.data[i] = val->data.num;
+                target->data.buffer.data[i] = VAL_NUM_RAW(val);
             } else {
                 /* #1061: the last fail-soft numeric context. A non-number
                  * store was silently DROPPED (the old element stayed), so
@@ -4790,7 +4790,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Value *v = dict_get_cached(target, key, h);
             if (v) {
                 if (v->type == VAL_NUM) {
-                    double n = v->data.num;
+                    double n = VAL_NUM_RAW(v);
                     val_decref(target);
                     vm_push_slot(slot_from_num(n));
                     DISPATCH();
@@ -4823,7 +4823,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (slot_is_num(val_s) && slot_is_ptr(tgt_s)) {
                 Value *t = slot_as_ptr(tgt_s);
                 if (t->type == VAL_DICT &&
-                    dict_set_cached_immediate(t, key, h, val_s.d)) {
+                    dict_set_cached_immediate(t, key, h, SLOT_NUM_RAW(val_s))) {
                     g_vm.sp -= 1;
                     g_vm.stack[g_vm.sp - 1] = val_s;
                     slot_decref(tgt_s);
@@ -4861,7 +4861,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 /* Hot DMG path: untracked VAL_NUM field -> push immediate,
                  * skipping the incref/decref pair on every register read. */
                 if (v->type == VAL_NUM) {
-                    vm_push_slot(slot_from_num(v->data.num));
+                    vm_push_slot(slot_from_num(VAL_NUM_RAW(v)));
                 } else {
                     val_incref(v);
                     vm_push(v);
@@ -4896,7 +4896,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
             EigsSlot tos = g_vm.stack[g_vm.sp - 1];
             if (slot_is_num(tos) &&
-                dict_set_cached_immediate(target, key, h, tos.d)) {
+                dict_set_cached_immediate(target, key, h, SLOT_NUM_RAW(tos))) {
                 DISPATCH();
             }
             Value *val = vm_slot_lift(g_vm.sp - 1);
@@ -4935,7 +4935,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     Value *item = target->data.list.items[i];
                     /* Plain VAL_NUM -> immediate; skip incref/decref pair. */
                     if (item && item->type == VAL_NUM) {
-                        vm_push_slot(slot_from_num(item->data.num));
+                        vm_push_slot(slot_from_num(VAL_NUM_RAW(item)));
                     } else {
                         val_incref(item);
                         vm_push(item);
@@ -4988,7 +4988,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         /* Hot DMG path: register dict[field] returning a
                          * plain VAL_NUM -> push immediate. */
                         if (v->type == VAL_NUM) {
-                            vm_push_slot(slot_from_num(v->data.num));
+                            vm_push_slot(slot_from_num(VAL_NUM_RAW(v)));
                         } else {
                             val_incref(v);
                             vm_push(v);
@@ -5034,7 +5034,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                      * and leave the stack slot as an immediate (no lift). */
                     EigsSlot tos = g_vm.stack[g_vm.sp - 1];
                     if (slot_is_num(tos) &&
-                        dict_set_cached_immediate(dict, key, h, tos.d)) {
+                        dict_set_cached_immediate(dict, key, h, SLOT_NUM_RAW(tos))) {
                         DISPATCH();
                     }
                     Value *val = vm_slot_lift(g_vm.sp - 1);
@@ -5074,7 +5074,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *state = vm_peek(0);
         /* The index slot must be a number: make_iter_state always builds one,
          * but an untrusted chunk (vm_run_bytecode / sandbox_run) can reach a
-         * bare ITER_NEXT with any list on TOS, and reading ->data.num off a
+         * bare ITER_NEXT with any list on TOS, and reading VAL_NUM_RAW() off a
          * VAL_STR is a type confusion whose result then indexes items[] (#721). */
         if (!state || state->type != VAL_LIST || state->data.list.count < 2 ||
             !state->data.list.items[1] ||
@@ -5083,7 +5083,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         Value *iterable = state->data.list.items[0];
-        int idx = (int)state->data.list.items[1]->data.num;
+        int idx = (int)VAL_NUM_RAW(state->data.list.items[1]);
         int len = 0;
         if (iterable->type == VAL_LIST) len = iterable->data.list.count;
         else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -5092,7 +5092,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * remove from reading past the end. See make_iter_state. */
         if (state->data.list.count >= 3 &&
             state->data.list.items[2]->type == VAL_NUM) {
-            int snap = (int)state->data.list.items[2]->data.num;
+            int snap = (int)VAL_NUM_RAW(state->data.list.items[2]);
             if (snap < len) len = snap;
         }
 
@@ -5107,7 +5107,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * an exclusive plain VAL_NUM (avoids per-iter make_num/free). */
             Value *idx_v = state->data.list.items[1];
             if (NUM_REUSE(idx_v)) {
-                idx_v->data.num = (double)(idx + 1);
+                VAL_NUM_RAW(idx_v) = (double)(idx + 1);
             } else {
                 val_decref(idx_v);
                 state->data.list.items[1] =
@@ -5277,7 +5277,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             Env *e = frame->fn_env;
             if (slot_is_num(s)) {
-                observer_slot_update_num(e, (int)slot, s.d);
+                observer_slot_update_num(e, (int)slot, SLOT_NUM_RAW(s));
                 g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
             } else if (obs_slot_observable(s)) {
                 observer_slot_update(e, (int)slot, obs_slot_value(s));
@@ -5291,7 +5291,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             Env *e = frame->fn_env;
             eigs_obs_count_call();
-            if (slot_is_num(s))      observer_slot_sample_num_gated(e, (int)slot, s.d);
+            if (slot_is_num(s))      observer_slot_sample_num_gated(e, (int)slot, SLOT_NUM_RAW(s));
             else if (obs_slot_observable(s)) observer_slot_sample_gated(e, (int)slot, obs_slot_value(s));
         }
         DISPATCH();
@@ -5529,10 +5529,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
                 if (oe && oidx >= 0 && g_unobserved_depth != 0) {
                     eigs_obs_count_call();
-                    if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
+                    if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, SLOT_NUM_RAW(s));
                     else                observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
                 } else if (oe && oidx >= 0) {
-                    if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
+                    if (slot_is_num(s)) observer_slot_update_num(oe, oidx, SLOT_NUM_RAW(s));
                     else observer_slot_update(oe, oidx, obs_slot_value(s));
                     g_last_obs_slot_env = oe;
                     g_last_obs_slot_idx = oidx;
@@ -5556,7 +5556,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *result = make_null();
         switch (kind) {
         case 0: /* what */
-            if (v && v->type == VAL_NUM) { result = make_num(v->data.num); }
+            if (v && v->type == VAL_NUM) { result = make_num(VAL_NUM_RAW(v)); }
             else if (v && v->type == VAL_STR) { result = make_num(val_str_len(v)); }
             else if (v && v->type == VAL_LIST) { result = make_num(v->data.list.count); }
             else if (v && v->type == VAL_BUFFER) { result = make_num(v->data.buffer.count); }
@@ -5657,7 +5657,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push(make_null());
             DISPATCH();
         }
-        int line = (int)line_v->data.num;
+        int line = (int)VAL_NUM_RAW(line_v);
         val_decref(line_v);
         Value *result = make_null();
         const char *name = chunk->const_interns[name_idx];
@@ -5678,7 +5678,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t name_idx = read_u16(ip); ip += 2;
         Value *ord_v = vm_pop();
         int ord_is_num = (ord_v && ord_v->type == VAL_NUM);
-        double ord_d = ord_is_num ? ord_v->data.num : 0.0;
+        double ord_d = ord_is_num ? VAL_NUM_RAW(ord_v) : 0.0;
         val_decref(ord_v);
         const char *name = chunk->const_interns[name_idx];
 
@@ -5827,9 +5827,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         #define READ_SLICE_BOUND(slot, defval, outvar)                        \
             do {                                                              \
                 if (slot_is_num(slot)) {                                      \
-                    if (!vm_index_is_int(slot.d, &(outvar))) {                \
+                    if (!vm_index_is_int(SLOT_NUM_RAW(slot), &(outvar))) {                \
                         rt_error(EK_VALUE, g_vm.current_line,                      \
-                            "slice bound must be an integer, got %g", slot.d);\
+                            "slice bound must be an integer, got %g", SLOT_NUM_RAW(slot));\
                         bound_err = 1;                                        \
                     }                                                         \
                 } else if (slot_is_ptr(slot)) {                               \
@@ -5837,10 +5837,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     if (bv->type == VAL_NULL) {                               \
                         (outvar) = (defval);                                  \
                     } else if (bv->type == VAL_NUM) {                         \
-                        if (!vm_index_is_int(bv->data.num, &(outvar))) {      \
+                        if (!vm_index_is_int(VAL_NUM_RAW(bv), &(outvar))) {      \
                             rt_error(EK_VALUE, g_vm.current_line,                  \
                                 "slice bound must be an integer, got %g",     \
-                                bv->data.num);                                \
+                                VAL_NUM_RAW(bv));                                \
                             bound_err = 1;                                    \
                         }                                                     \
                     } else {                                                  \
@@ -6438,10 +6438,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
         double key_d;
         if (slot_is_num(key_s)) {
-            key_d = key_s.d;
+            key_d = SLOT_NUM_RAW(key_s);
         } else if (slot_is_ptr(key_s) && slot_as_ptr(key_s)
                    && slot_as_ptr(key_s)->type == VAL_NUM) {
-            key_d = slot_as_ptr(key_s)->data.num;
+            key_d = VAL_NUM_RAW(slot_as_ptr(key_s));
         } else {
             slot_decref(arg_s); slot_decref(key_s); slot_decref(table_s);
             rt_error(EK_TYPE, current_line, "dispatch: key must be a number");
@@ -6583,7 +6583,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     chunk_decref(fn_chunk);
                     if (g_vm.frame_count <= base_frame) {
                         EigsSlot result_s = g_vm.stack[--g_vm.sp];
-                        if (slot_is_num(result_s))  return make_num(result_s.d);
+                        if (slot_is_num(result_s))  return make_num(SLOT_NUM_RAW(result_s));
                         if (slot_is_null(result_s)) return make_null();
                         if (slot_is_bool(result_s)) return make_bool(slot_as_bool(result_s));
                         return slot_as_ptr(result_s);

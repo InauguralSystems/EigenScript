@@ -30,7 +30,7 @@ static void check(int ok, const char *name) {
     if (ok) passed++; else failed++;
 }
 static int number(EigsSlot value, double want) {
-    return slot_is_num(value) && value.d == want;
+    return slot_is_num(value) && SLOT_NUM_RAW(value) == want;
 }
 static int host_values(const PrevEntry *e) {
     return e->has_current && number(e->current, 22) &&

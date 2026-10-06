@@ -151,7 +151,7 @@ Value* builtin_flush(Value *arg) {
 Value* builtin_usleep(Value *arg) {
     BOOL_REFUSE(arg, "usleep");
     if (!arg || arg->type != VAL_NUM) return make_null();
-    int us = (int)arg->data.num;
+    int us = (int)eigs_num_arg(arg, __func__);
     if (us > 0) {
         struct timespec deadline;
         clock_gettime(CLOCK_REALTIME, &deadline);
@@ -481,8 +481,8 @@ static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out) {
     Value *va = arg->data.list.items[0];
     Value *vb = arg->data.list.items[1];
     if (!va || va->type != VAL_NUM || !vb || vb->type != VAL_NUM) return 0;
-    *a_out = (int64_t)va->data.num;
-    *b_out = (int64_t)vb->data.num;
+    *a_out = (int64_t)eigs_num_arg(va, __func__);
+    *b_out = (int64_t)eigs_num_arg(vb, __func__);
     return 1;
 }
 
@@ -509,7 +509,7 @@ Value* builtin_bit_xor(Value *arg) {
 
 Value* builtin_bit_not(Value *arg) {
     if (!arg || arg->type != VAL_NUM) { rt_error(EK_TYPE, 0, "bit_not expects a number"); return make_null(); }
-    int64_t a = (int64_t)arg->data.num;
+    int64_t a = (int64_t)eigs_num_arg(arg, __func__);
     return make_num((double)(~a));
 }
 
@@ -760,7 +760,7 @@ static int obs_window_arg(Value *v, const char *who) {
         rt_error(EK_TYPE, 0, "%s: window depth must be a number", who);
         return -1;
     }
-    double d = v->data.num;
+    double d = eigs_num_arg(v, __func__);
     if (d != (int)d || d < OBSERVER_WINDOW_MIN || d > OBSERVER_WINDOW_MAX) {
         rt_error(EK_VALUE, 0, "%s: window depth must be an integer in [%d, %d], got %g",
                  who, OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX, d);
@@ -789,7 +789,7 @@ Value* builtin_set_observer_window(Value *arg) {
         const char *name = arg->data.list.items[0]->data.str;
         Value *nv = arg->data.list.items[1];
         int n;
-        if (nv && nv->type == VAL_NUM && nv->data.num == 0.0) {
+        if (nv && nv->type == VAL_NUM && eigs_num_arg(nv, __func__) == 0.0) {
             n = 0;   /* clear the override */
         } else {
             n = obs_window_arg(nv, "set_observer_window");
@@ -857,8 +857,8 @@ Value* builtin_get_observer_window(Value *arg) {
             snprintf(key, sizeof(key), "_#win:%s", name);
             Env *mod = builtin_window_module_env(start);
             Value *wv = mod ? env_get(mod, key) : NULL;
-            if (wv && wv->type == VAL_NUM && wv->data.num > 0)
-                return make_num(wv->data.num);
+            if (wv && wv->type == VAL_NUM && eigs_num_arg(wv, __func__) > 0)
+                return make_num(eigs_num_arg(wv, __func__));
             return make_num((double)observer_slot_window(NULL));
         }
         const ObserverSlot *s = (slot < target->obs_cap) ? env_obs_slot(target, slot) : NULL;
@@ -881,7 +881,7 @@ Value* builtin_set_observer_scale(Value *arg) {
         rt_error(EK_TYPE, 0, "set_observer_scale requires a number");
         return make_null();
     }
-    double sc = arg->data.num;
+    double sc = eigs_num_arg(arg, __func__);
     if (!(sc > 0.0) || sc > 1e300) {
         rt_error(EK_VALUE, 0, "observer scale must be positive and finite, got %g", sc);
         return make_null();
@@ -909,7 +909,7 @@ Value* builtin_exit(Value *arg) {
     STRICT_LIST_MAX(arg, 1, "exit");
     int code = 0;
     if (arg && arg->type == VAL_NUM) {
-        code = (int)arg->data.num;
+        code = (int)eigs_num_arg(arg, __func__);
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1 &&
                arg->data.list.items[0] &&
                arg->data.list.items[0]->type == VAL_NUM) {
@@ -1196,7 +1196,7 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
              * to %.15g, so integer IDs between 2^31 and 2^53 came back as a
              * different number. */
             char nb[32];
-            eigs_num_text(nb, sizeof(nb), v->data.num);
+            eigs_num_text(nb, sizeof(nb), eigs_num_arg(v, __func__));
             strbuf_append(out, nb);
             break;
         }
@@ -1760,7 +1760,7 @@ Value* builtin_json_build(Value *arg) {
         Value *val = arg->data.list.items[i + 1];
         if (val->type == VAL_NUM) {
             char nb[32];                              /* #875: the shared rule */
-            eigs_num_text(nb, sizeof(nb), val->data.num);
+            eigs_num_text(nb, sizeof(nb), eigs_num_arg(val, __func__));
             strbuf_append(&out, nb);
         } else if (val->type == VAL_NULL) {
             strbuf_append(&out, "null");
@@ -2267,7 +2267,7 @@ Value* builtin_char_at(Value *arg) {
     Value *idx_val = arg->data.list.items[1];
     ARG_GUARD(!str_val || str_val->type != VAL_STR || !idx_val || idx_val->type != VAL_NUM,
               "char_at", "[string, number]", make_str(""));
-    int idx = (int)idx_val->data.num;
+    int idx = (int)eigs_num_arg(idx_val, __func__);
     int len = val_str_len(str_val);
     if (idx < 0) idx += len;
     /* fs:ANSWER an index outside the string has no character; "" is the
@@ -2304,8 +2304,8 @@ Value* builtin_substr(Value *arg) {
     ARG_GUARD(!start_val || start_val->type != VAL_NUM, "substr", "a number as its start", make_str(""));
     ARG_GUARD(!len_val || len_val->type != VAL_NUM, "substr", "a number as its length", make_str(""));
     int slen = val_str_len(str_val);
-    int start = (int)start_val->data.num;
-    int rlen = (int)len_val->data.num;
+    int start = (int)eigs_num_arg(start_val, __func__);
+    int rlen = (int)eigs_num_arg(len_val, __func__);
     /* #504: a negative start counts from the end, matching char_at and the
      * [] operator (was a flat clamp-to-0 — inconsistent). A start still
      * negative after the adjustment (before the string) clamps to 0. */
@@ -2357,22 +2357,22 @@ Value* builtin_index_of(Value *arg) {
 
 Value* builtin_sin(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "sin", "a number", make_num(0));
-    return make_num(sin(arg->data.num));
+    return make_num(sin(eigs_num_arg(arg, __func__)));
 }
 
 Value* builtin_cos(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "cos", "a number", make_num(0));
-    return make_num(cos(arg->data.num));
+    return make_num(cos(eigs_num_arg(arg, __func__)));
 }
 
 Value* builtin_tan(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "tan", "a number", make_num(0));
-    return make_num(tan(arg->data.num));
+    return make_num(tan(eigs_num_arg(arg, __func__)));
 }
 
 Value* builtin_asin(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "asin", "a number", make_num(0));
-    double x = arg->data.num;
+    double x = eigs_num_arg(arg, __func__);
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
@@ -2386,7 +2386,7 @@ Value* builtin_asin(Value *arg) {
 
 Value* builtin_acos(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "acos", "a number", make_num(0));
-    double x = arg->data.num;
+    double x = eigs_num_arg(arg, __func__);
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
@@ -2400,7 +2400,7 @@ Value* builtin_acos(Value *arg) {
 
 Value* builtin_atan(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "atan", "a number", make_num(0));
-    return make_num(atan(arg->data.num));
+    return make_num(atan(eigs_num_arg(arg, __func__)));
 }
 
 Value* builtin_atan2(Value *arg) {
@@ -2409,27 +2409,27 @@ Value* builtin_atan2(Value *arg) {
     Value *y = arg->data.list.items[0];
     Value *x = arg->data.list.items[1];
     ARG_GUARD(!y || y->type != VAL_NUM || !x || x->type != VAL_NUM, "atan2", "two numbers", make_num(0));
-    return make_num(atan2(y->data.num, x->data.num));
+    return make_num(atan2(eigs_num_arg(y, __func__), eigs_num_arg(x, __func__)));
 }
 
 Value* builtin_floor(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "floor", "a number", make_num(0));
-    return make_num(floor(arg->data.num));
+    return make_num(floor(eigs_num_arg(arg, __func__)));
 }
 
 Value* builtin_ceil(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "ceil", "a number", make_num(0));
-    return make_num(ceil(arg->data.num));
+    return make_num(ceil(eigs_num_arg(arg, __func__)));
 }
 
 Value* builtin_round(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "round", "a number", make_num(0));
-    return make_num(round(arg->data.num));
+    return make_num(round(eigs_num_arg(arg, __func__)));
 }
 
 Value* builtin_abs(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "abs", "a number", make_num(0));
-    return make_num(fabs(arg->data.num));
+    return make_num(fabs(eigs_num_arg(arg, __func__)));
 }
 
 /* #317: min/max are N-ary reductions over a flat list of numbers — the old
@@ -2438,7 +2438,7 @@ Value* builtin_abs(Value *arg) {
  * an empty list or any non-number element keeps the old 0 fallback rather
  * than inventing a partial answer. */
 static Value* minmax_reduce(Value *arg, int want_max) {
-    if (arg && arg->type == VAL_NUM) return make_num(arg->data.num);
+    if (arg && arg->type == VAL_NUM) return make_num(eigs_num_arg(arg, __func__));
     /* Split from the empty-list case below: #317 chose the 0 fallback for BOTH
      * a wrong type and an empty list in one condition, and only the first half
      * is a type mistake. Splitting keeps the non-strict answer identical while
@@ -2451,8 +2451,8 @@ static Value* minmax_reduce(Value *arg, int want_max) {
     for (int i = 0; i < arg->data.list.count; i++) {
         Value *v = arg->data.list.items[i];
         ARG_GUARD(!v || v->type != VAL_NUM, want_max ? "max" : "min", "every element to be a number", make_num(0));
-        if (i == 0 || (want_max ? v->data.num > best : v->data.num < best))
-            best = v->data.num;
+        if (i == 0 || (want_max ? eigs_num_arg(v, __func__) > best : eigs_num_arg(v, __func__) < best))
+            best = eigs_num_arg(v, __func__);
     }
     return make_num(best);
 }
@@ -2536,8 +2536,8 @@ Value* builtin_random_int(Value *arg) {
     /* Range-check as doubles before any integer cast — a double outside the
      * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
      * same cast-before-range-check class in value_to_string). */
-    double lo_d = lo->data.num;
-    double hi_d = hi->data.num;
+    double lo_d = eigs_num_arg(lo, __func__);
+    double hi_d = eigs_num_arg(hi, __func__);
     if (!isfinite(lo_d) || !isfinite(hi_d) ||
         lo_d < -9223372036854775808.0 || hi_d < -9223372036854775808.0 ||
         lo_d >= 9223372036854775808.0 || hi_d >= 9223372036854775808.0) {
@@ -2566,7 +2566,7 @@ Value* builtin_random_int(Value *arg) {
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_bool(0));
     pthread_mutex_lock(&g_random_lock);
-    srand48((long)arg->data.num);
+    srand48((long)eigs_num_arg(arg, __func__));
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
     return make_bool(1);
@@ -2806,7 +2806,7 @@ Value* builtin_json_path(Value *arg) {
     }
     if (current->type == VAL_NUM) {
         char buf[64];
-        eigs_num_text(buf, sizeof(buf), current->data.num);   /* #875 */
+        eigs_num_text(buf, sizeof(buf), eigs_num_arg(current, __func__));   /* #875 */
         val_decref(root);
         return make_str(buf);
     }
@@ -3022,7 +3022,7 @@ Value* builtin_token_name(Value *arg) {
     /* #971 Phase D: "?" is the documented answer for an UNKNOWN id (below);
      * for a non-number it was laundering a type mistake into that answer. */
     ARG_GUARD(!arg || arg->type != VAL_NUM, "token_name", "a token id", make_str("?"));
-    int id = (int)arg->data.num;
+    int id = (int)eigs_num_arg(arg, __func__);
     static const char *names[] = {
         "NUM", "STR", "IDENT",
         "IS", "OF", "DEFINE", "AS",
@@ -3059,7 +3059,7 @@ Value* builtin_token_name(Value *arg) {
 Value* builtin_state_at(Value *arg) {
     BOOL_REFUSE(arg, "state_at");
     if (!arg || arg->type != VAL_NUM) return make_null();
-    Value *d = trace_state_at((int)arg->data.num);
+    Value *d = trace_state_at((int)eigs_num_arg(arg, __func__));
     return d ? d : make_null();
 }
 
@@ -3109,7 +3109,7 @@ Value* builtin_chr(Value *arg) {
         rt_error(EK_TYPE, 0, "chr requires a number");
         return make_null();
     }
-    double num = arg->data.num;
+    double num = eigs_num_arg(arg, __func__);
     if (num != (double)(long long)num || num < 1 || num > 255) {
         if (num == 0)
             rt_error(EK_VALUE, 0, "chr of 0: strings are NUL-terminated and cannot hold a NUL byte (use a buffer for binary with NULs)");
@@ -3134,7 +3134,7 @@ Value* builtin_hex(Value *arg) {
     double num;
     long long width = 0;
     if (arg && arg->type == VAL_NUM) {
-        num = arg->data.num;
+        num = eigs_num_arg(arg, __func__);
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
                arg->data.list.items[0] && arg->data.list.items[0]->type == VAL_NUM &&
                arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM) {
@@ -3295,12 +3295,12 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
                  EIGS_BYTECODE_ABI, rev ? val_type_name(rev->type) : "nothing");
         return buf;
     }
-    if ((int)rev->data.num != EIGS_BYTECODE_ABI) {
+    if ((int)eigs_num_arg(rev, __func__) != EIGS_BYTECODE_ABI) {
         snprintf(buf, buflen,
                  "chunk was produced for bytecode ABI revision %d, but this "
                  "runtime speaks revision %d — regenerate it with a matching "
                  "producer",
-                 (int)rev->data.num, EIGS_BYTECODE_ABI);
+                 (int)eigs_num_arg(rev, __func__), EIGS_BYTECODE_ABI);
         return buf;
     }
     return NULL;
@@ -3512,7 +3512,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
             vm_desc_error(why, whyn, "descriptor code must be a list of byte numbers");
             return NULL;
         }
-        chunk_emit(chunk, (uint8_t)((int)b->data.num & 0xFF), 1);
+        chunk_emit(chunk, (uint8_t)((int)eigs_num_arg(b, __func__) & 0xFF), 1);
     }
     /* Positional: the code stream indexes this pool by position, so neither
      * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
@@ -3558,8 +3558,15 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         }
     }
 
+    /* #1637 round 4: an absent/null param_count is 0; any other non-number
+     * (a bool) is refused rather than read as 0. */
+    if (n >= 4 && d[3] && d[3]->type != VAL_NUM && d[3]->type != VAL_NULL) {
+        chunk_free(chunk);
+        vm_desc_error(why, whyn, "descriptor param_count must be a number");
+        return NULL;
+    }
     int param_count = (n >= 4 && d[3] && d[3]->type == VAL_NUM)
-                      ? (int)d[3]->data.num : 0;
+                      ? (int)eigs_num_arg(d[3], __func__) : 0;
     chunk->param_count = param_count;
     chunk->first_default = param_count;        /* no defaults */
 
@@ -4210,7 +4217,7 @@ Value* builtin_record_history(Value *arg) {
         return make_null();
     }
     int prev = g_trace_hist;
-    int on = (arg->data.num != 0.0) ? 1 : 0;
+    int on = (eigs_num_arg(arg, __func__) != 0.0) ? 1 : 0;
     /* #827: no name to narrow on — a self-hosted compiler calling this is
      * standing in for the whole-program arming, so it gets the wildcard. */
     if (on) { trace_arm_history_all(); trace_flag_store(g_trace_obs_hist_storage, 1); }
@@ -4248,7 +4255,7 @@ Value* builtin_copy_into(Value *arg) {
                  offv ? val_type_name(offv->type) : "null");
         return make_null();
     }
-    int offset = (int)offv->data.num;
+    int offset = (int)eigs_num_arg(offv, __func__);
     if (offset < 0) { rt_error(EK_INDEX, 0, "copy_into: offset %d is negative", offset); return make_null(); }
     if (dest && dest->type == VAL_BUFFER) {
         /* buffer destination: numbers from a buffer or a list of numbers */
@@ -4265,7 +4272,7 @@ Value* builtin_copy_into(Value *arg) {
                              it ? val_type_name(it->type) : "null", i);
                     return make_null();
                 }
-                dest->data.buffer.data[offset + i] = it->data.num;
+                dest->data.buffer.data[offset + i] = eigs_num_arg(it, __func__);
             }
             return dest;   /* borrowed, like the list path below */
         }
@@ -4313,8 +4320,8 @@ Value* builtin_list_slice(Value *arg) {
     if (!start_v || start_v->type != VAL_NUM || !end_v || end_v->type != VAL_NUM)
         return make_null();
     int n = list->data.list.count;
-    int start = (int)start_v->data.num;
-    int end = (int)end_v->data.num;
+    int start = (int)eigs_num_arg(start_v, __func__);
+    int end = (int)eigs_num_arg(end_v, __func__);
     if (start < 0) start += n;
     if (end < 0) end += n;
     if (start < 0) start = 0;
@@ -4337,7 +4344,7 @@ Value* builtin_list_slice(Value *arg) {
 Value* builtin_num_copy(Value *arg) {
     BOOL_REFUSE(arg, "num_copy");
     if (!arg || arg->type != VAL_NUM) return make_null();
-    return make_num_permanent(arg->data.num);
+    return make_num_permanent(eigs_num_arg(arg, __func__));
 }
 
 /* ==== BUILTIN: concat ==== */
@@ -4372,7 +4379,7 @@ Value* builtin_range(Value *arg) {
 
     if (arg->type == VAL_NUM) {
         /* range of n */
-        end = (int)arg->data.num;
+        end = (int)eigs_num_arg(arg, __func__);
     } else if (arg->type == VAL_LIST) {
         int argc = arg->data.list.count;
         /* #497: every provided bound must be numeric. A non-number used to
@@ -4483,11 +4490,11 @@ static int at_index(Value *idx_val, int count, const char *what,
         rt_error(EK_VALUE, 0, "%s index must be an integer", what);
         return 0;
     }
-    int idx = (int)idx_val->data.num;
+    int idx = (int)eigs_num_arg(idx_val, __func__);
     if (idx < 0) idx += count;          /* #312: negative counts from end */
     if (idx < 0 || idx >= count) {
         rt_error(EK_INDEX, 0, "index %d out of range (list length %d)",
-                 (int)idx_val->data.num, count);
+                 (int)eigs_num_arg(idx_val, __func__), count);
         return 0;
     }
     *out = idx;
@@ -4503,11 +4510,11 @@ static int buf_at_index(Value *idx_val, int count, int *out) {
                  val_type_name(idx_val ? idx_val->type : VAL_NULL));
         return 0;
     }
-    int idx = (int)idx_val->data.num;
+    int idx = (int)eigs_num_arg(idx_val, __func__);
     if (idx < 0) idx += count;
     if (idx < 0 || idx >= count) {
         rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 (int)idx_val->data.num, count);
+                 (int)eigs_num_arg(idx_val, __func__), count);
         return 0;
     }
     *out = idx;
@@ -4553,7 +4560,7 @@ Value* builtin_set_at(Value *arg) {
                      val_type_name(val ? val->type : VAL_NULL));
             return make_null();
         }
-        buf->data.buffer.data[off] = val->data.num;
+        buf->data.buffer.data[off] = eigs_num_arg(val, __func__);
         /* Direct child of the arg vector — the borrow protocol (#720,
          * vm_borrow_compensate) compensates at the call site, exactly as for
          * the list path's `return list`. */
@@ -5053,8 +5060,8 @@ Value* builtin_thread_join(Value *arg) {
         rt_error(EK_TYPE, 0, "thread_join requires a thread handle");
         return make_null();
     }
-    int hid = (int)hv->data.num;
-    uint32_t hgen = (gv && gv->type == VAL_NUM) ? (uint32_t)gv->data.num : 0;
+    int hid = (int)eigs_num_arg(hv, __func__);
+    uint32_t hgen = (gv && gv->type == VAL_NUM) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
     int why = HANDLE_CLAIM_GONE;
     ThreadHandle *h = (ThreadHandle*)handle_claim(hid, hgen, HANDLE_THREAD, &why);
     if (!h) {
@@ -5135,9 +5142,9 @@ static Channel* get_channel_why(Value *v, int *why, int *out_id) {
     if (!v || v->type != VAL_DICT) return NULL;
     Value *cv = dict_get(v, "_channel_id");
     if (!cv || cv->type != VAL_NUM) return NULL;
-    *out_id = (int)cv->data.num;
+    *out_id = (int)eigs_num_arg(cv, __func__);
     Value *gv = dict_get(v, "_channel_gen");
-    uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)gv->data.num : 0;
+    uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
     return (Channel*)handle_lookup(*out_id, gen, HANDLE_CHANNEL, why);
 }
 
@@ -5309,7 +5316,7 @@ Value* builtin_recv_timeout(Value *arg) {
         rt_error(EK_TYPE, 0, "recv_timeout: ms must be a number");
         return make_null();
     }
-    double ms = ms_v->data.num;
+    double ms = eigs_num_arg(ms_v, __func__);
     /* Sanitize ms before the (long) cast (#151). NaN, +inf, or any value
      * above ~LONG_MAX is undefined behavior when cast to long, and in
      * practice produced a garbage deadline that fired immediately or
@@ -5501,7 +5508,7 @@ static Task *task_handle_resolve(Value *arg, const char *who, int *out_id) {
     int id = 0;
     uint32_t gen = 0;
     if (!arg || arg->type != VAL_NUM ||
-        !task_handle_unpack(arg->data.num, &id, &gen)) return NULL;
+        !task_handle_unpack(eigs_num_arg(arg, __func__), &id, &gen)) return NULL;
     int why = HANDLE_CLAIM_GONE;
     Task *t = (Task *)handle_lookup(id, gen, HANDLE_TASK, &why);
     if (!t && (why == HANDLE_CLAIM_STALE || why == HANDLE_CLAIM_TYPE))
@@ -5619,7 +5626,7 @@ Value* builtin_task_send(Value *arg) {
     int target = 0;
     /* Main is the reserved public id 0 and has no handle-table generation,
      * but it does have a scheduler mailbox (reply-to-supervisor pattern). */
-    if (idv->data.num != 0 &&
+    if (eigs_num_arg(idv, __func__) != 0 &&
         !task_handle_resolve(idv, "task_send", &target)) return make_bool(0);
     Value *copy = val_clone_for_send(arg->data.list.items[1]);   /* share-nothing */
     int sent = task_deliver(target, copy);
@@ -5706,7 +5713,7 @@ Value* builtin_task_sleep(Value *arg) {
     }
     if (!g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
     if (no_yield_forbidden("task_sleep")) return make_null();   /* #488 */
-    task_request_sleep(arg->data.num);
+    task_request_sleep(eigs_num_arg(arg, __func__));
     return make_null();   /* placeholder: execution resumes when the clock wakes it */
 }
 
@@ -5779,7 +5786,7 @@ Value* builtin_task_sched_seed(Value *arg) {
         rt_error(EK_TYPE, 0, "task_sched_seed requires a number (the seed)");
         return make_null();
     }
-    task_sched_set_seed(arg->data.num);
+    task_sched_set_seed(eigs_num_arg(arg, __func__));
     return make_null();
 }
 
@@ -5798,7 +5805,7 @@ Value* builtin_task_sched_trace(Value *arg) {
         rt_error(EK_TYPE, 0, "task_sched_trace takes null (read), 1 (arm) or 0 (disarm + clear)");
         return make_null();
     }
-    if (arg->data.num != 0) {
+    if (eigs_num_arg(arg, __func__) != 0) {
         g_task_trace_on = 1;
     } else {
         g_task_trace_on = 0;
@@ -6012,7 +6019,7 @@ Value* builtin_nearest_in_range(Value *arg) {
         }
         /* #1637: "active" is a bool (false skips); the older 1/0 number
          * still reads as before. */
-        if (av && ((av->type == VAL_NUM && av->data.num != 1.0)
+        if (av && ((av->type == VAL_NUM && eigs_num_arg(av, __func__) != 1.0)
                    || (av->type == VAL_BOOL && !av->data.boolean))) continue;
 
         Value *ex;
@@ -6035,8 +6042,8 @@ Value* builtin_nearest_in_range(Value *arg) {
 
         if (!ex || !ey || ex->type != VAL_NUM || ey->type != VAL_NUM) continue;
 
-        double dx = ex->data.num - px;
-        double dy = ey->data.num - py;
+        double dx = eigs_num_arg(ex, __func__) - px;
+        double dy = eigs_num_arg(ey, __func__) - py;
         double hw = ww * 0.5, hh = wh * 0.5;
         if (dx > hw) dx -= ww; else if (dx < -hw) dx += ww;
         if (dy > hh) dy -= wh; else if (dy < -hh) dy += wh;
@@ -6135,7 +6142,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         }
         /* active default: 1 (matches single-call behavior where missing/non-num
          * is treated as active). Explicit 0/non-1 value flips to inactive. */
-        active_arr[i] = (av && ((av->type == VAL_NUM && av->data.num != 1.0)
+        active_arr[i] = (av && ((av->type == VAL_NUM && eigs_num_arg(av, __func__) != 1.0)
                                 || (av->type == VAL_BOOL && !av->data.boolean))) ? 0 : 1;   /* #1637 */
 
         Value *ex;
@@ -6158,8 +6165,8 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             valid_arr[i] = 0;
             continue;
         }
-        px_arr[i] = ex->data.num;
-        py_arr[i] = ey->data.num;
+        px_arr[i] = eigs_num_arg(ex, __func__);
+        py_arr[i] = eigs_num_arg(ey, __func__);
         valid_arr[i] = 1;
     }
 
@@ -6226,15 +6233,15 @@ Value* builtin_sign_extend(Value *arg) {
     /* The ELEMENT type check below is new, and it is the one place in this
      * change where the non-strict result is not byte-identical to before.
      * It was not fail-softness — it was a union type-pun: both reads below
-     * took `.data.num` off items that were never checked, so
+     * took `eigs_num_arg(&(), __func__)` off items that were never checked, so
      * `sign_extend of ["x", 8]` reinterpreted a `char *` as a `double` and
      * sign-extended whatever that produced. There is no previous behaviour
      * to preserve, because the previous behaviour was undefined; 0 is the
      * same stand-in every sibling here uses. Filed as its own issue. */
     Value *v0 = arg->data.list.items[0], *v1 = arg->data.list.items[1];
     ARG_GUARD(!v0 || v0->type != VAL_NUM || !v1 || v1->type != VAL_NUM, "sign_extend", "two numbers", make_num(0));
-    double val = v0->data.num;
-    int bits = (int)v1->data.num;
+    double val = eigs_num_arg(v0, __func__);
+    int bits = (int)eigs_num_arg(v1, __func__);
     if (bits <= 0 || bits > 32) return make_num(val);
     int64_t mask = 1LL << (bits - 1);
     if ((int64_t)val & mask)
@@ -6260,7 +6267,7 @@ Value* builtin_list_truncate(Value *arg) {
         rt_error(EK_TYPE, 0, "list_truncate: new_len must be a number");
         return make_null();
     }
-    int new_len = (int)len_val->data.num;
+    int new_len = (int)eigs_num_arg(len_val, __func__);
     /* #503: a negative new_len used to silently empty the list (an
      * undocumented soft clamp to 0). Raise instead. */
     if (new_len < 0) {
@@ -6287,7 +6294,7 @@ Value* builtin_list_remove_at(Value *arg) {
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
     ARG_GUARD(!idx_val || idx_val->type != VAL_NUM, "list_remove_at", "a number index", list);
-    int idx = (int)idx_val->data.num;
+    int idx = (int)eigs_num_arg(idx_val, __func__);
     if (idx < 0 || idx >= list->data.list.count) return list;
     val_decref(list->data.list.items[idx]);
     int tail = list->data.list.count - idx - 1;
@@ -6311,7 +6318,7 @@ Value* builtin_list_insert_at(Value *arg) {
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
     ARG_GUARD(!idx_val || idx_val->type != VAL_NUM, "list_insert_at", "a number index", list);
-    int idx = (int)idx_val->data.num;
+    int idx = (int)eigs_num_arg(idx_val, __func__);
     int count = list->data.list.count;
     if (idx < 0 || idx > count) return list;
     if (idx == count) {
@@ -6437,7 +6444,7 @@ Value* builtin_sort_by(Value *arg) {
                 "gave %s)", i, kt);
             return make_null();
         }
-        pairs[i].key = kv->data.num;
+        pairs[i].key = eigs_num_arg(kv, __func__);
         pairs[i].index = i;
         val_decref(kv);
     }
@@ -6456,7 +6463,7 @@ Value* builtin_sort_by(Value *arg) {
  * with libc-dependent element order on top (qsort gives no stability
  * guarantee for all-equal elements). Record sorting is sort_by's job. */
 static int sort_cmp_num(const void *a, const void *b) {
-    double da = (*(Value**)a)->data.num, db = (*(Value**)b)->data.num;
+    double da = eigs_num_arg((*(Value**)a), __func__), db = eigs_num_arg((*(Value**)b), __func__);
     return (da > db) - (da < db);
 }
 
@@ -6506,10 +6513,10 @@ Value* builtin_dispatch(Value *arg) {
         rt_error(EK_TYPE, 0, "dispatch: key must be a number");
         return make_null();
     }
-    int key = (int)key_v->data.num;
-    if ((double)key != key_v->data.num) {
+    int key = (int)eigs_num_arg(key_v, __func__);
+    if ((double)key != eigs_num_arg(key_v, __func__)) {
         rt_error(EK_VALUE, 0, "dispatch key must be an integer, got %g",
-                      key_v->data.num);
+                      eigs_num_arg(key_v, __func__));
         return make_null();
     }
 

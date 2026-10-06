@@ -435,7 +435,7 @@ static double compute_entropy_impl(Value *v) {
     if (!v) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
-        case VAL_NUM: return entropy_of_num(v->data.num);
+        case VAL_NUM: return entropy_of_num(VAL_NUM_RAW(v));
         case VAL_STR:      return entropy_of_cstr(v->data.str);
         case VAL_JSON_RAW: return entropy_of_cstr(v->data.str);
         case VAL_LIST: {
@@ -786,7 +786,7 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
      * the relative-delta step is only defined for a scalar trajectory). */
     if (newval && newval->type == VAL_NUM) {
         ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) observer_slot_record_value(s, newval->data.num);
+        if (s) observer_slot_record_value(s, VAL_NUM_RAW(newval));
     } else {
         /* #861: a non-numeric assignment ends the numeric trajectory's claim
          * on this binding — predicates fall back to the entropy channel until
@@ -849,7 +849,7 @@ void observer_slot_sample_num_gated(Env *e, int idx, double num) {
 
 void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
     if (newval && newval->type == VAL_NUM) {
-        observer_slot_sample_num_gated(e, idx, newval->data.num);
+        observer_slot_sample_num_gated(e, idx, VAL_NUM_RAW(newval));
         return;
     }
     if (!e || idx < 0) return;
@@ -1382,7 +1382,7 @@ int observer_entropy_now(Env *e, int idx, double *out) {
         EigsSlot s = e->values[idx];
         if (slot_is_num(s)) {
             kind = 1;
-            num = s.d;
+            num = SLOT_NUM_RAW(s);
         } else if (slot_is_bool(s)) {
             held = make_bool(slot_as_bool(s));   /* #1637: immortal; incref no-op */
             kind = 2;
@@ -1470,10 +1470,10 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     {
         Value *w = dict_get(dict, "window");
         if (w) {
-            if (w->type != VAL_NUM || w->data.num < OBSERVER_WINDOW_MIN ||
-                w->data.num > OBSERVER_WINDOW_MAX || w->data.num != (int)w->data.num)
+            if (w->type != VAL_NUM || VAL_NUM_RAW(w) < OBSERVER_WINDOW_MIN ||
+                VAL_NUM_RAW(w) > OBSERVER_WINDOW_MAX || VAL_NUM_RAW(w) != (int)VAL_NUM_RAW(w))
                 return 0;
-            out->win_override = (uint8_t)(int)w->data.num;
+            out->win_override = (uint8_t)(int)VAL_NUM_RAW(w);
         }
     }
     const int N = observer_slot_window(out);
@@ -1492,8 +1492,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->v_window[out->v_window_count]  = a->data.num;
-        out->vr_window[out->v_window_count] = b->data.num;
+        out->v_window[out->v_window_count]  = VAL_NUM_RAW(a);
+        out->vr_window[out->v_window_count] = VAL_NUM_RAW(b);
         out->v_window_count++;
     }
     out->v_window_head = (uint8_t)(out->v_window_count % N);
@@ -1507,7 +1507,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->dh_window[out->dh_window_count++] = a->data.num;
+        out->dh_window[out->dh_window_count++] = VAL_NUM_RAW(a);
     }
     out->dh_window_head = (uint8_t)(out->dh_window_count % N);
     /* #1637: the scalar fields are numbers and the two flags are bools, as
@@ -1524,7 +1524,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
-        *dsts[k] = v->data.num;
+        *dsts[k] = VAL_NUM_RAW(v);
     }
     Value *fo = dict_get(dict, "observed"), *fn = dict_get(dict, "numeric");
     if ((fo && fo->type != VAL_BOOL) || (fn && fn->type != VAL_BOOL)) {
@@ -1746,7 +1746,7 @@ Value* make_num(double n) {
         v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     }
     v->type = VAL_NUM;
-    v->data.num = n;
+    VAL_NUM_RAW(v) = n;
     v->refcount = 1;
     v->arena = from_arena;
     return v;
@@ -1769,7 +1769,7 @@ Value* make_num_permanent(double n) {
     n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_NUM;
-    v->data.num = n;
+    VAL_NUM_RAW(v) = n;
     v->refcount = 1;
     v->arena = 0;
     return v;
@@ -1789,8 +1789,8 @@ static const char *num_who(const char *who) {
     return strncmp(who, "builtin_", 8) == 0 ? who + 8 : who;
 }
 
-double eigs_num_arg(const Value *v, const char *who) {
-    if (v && v->type == VAL_NUM) return v->data.num;
+double eigs_num_arg_slow(const Value *v, const char *who) {
+    if (v && v->type == VAL_NUM) return VAL_NUM_RAW(v);
     if (!g_has_error)
         rt_error(EK_TYPE, 0, "%s: expected a number, got %s", num_who(who),
                  v ? val_type_name(v->type) : "nothing");
@@ -1807,9 +1807,15 @@ double eigs_list_num(const Value *list, int i, const char *who) {
     return eigs_num_arg(list->data.list.items[i], who);
 }
 
+double eigs_elem_num(const Value *v, const char *who) {
+    if (v && v->type == VAL_NUM) return VAL_NUM_RAW(v);
+    if (g_strict || (v && v->type == VAL_BOOL)) return eigs_num_arg_slow(v, who);
+    return 0.0;
+}
+
 int eigs_opt_num(const Value *v, double *out, const char *who) {
     if (!v || v->type == VAL_NULL) return 0;
-    if (v->type == VAL_NUM) { *out = v->data.num; return 1; }
+    if (v->type == VAL_NUM) { *out = VAL_NUM_RAW(v); return 1; }
     eigs_num_arg(v, who);
     return 0;
 }
@@ -1854,7 +1860,7 @@ EigsSlot slot_from_value(Value *v) {
         /* #262 Step E: a number never carries observer state (it lives on the
          * Env slot), so every VAL_NUM ships as an immediate double. TAG_TRACKED
          * is dead. */
-        double n = v->data.num;
+        double n = VAL_NUM_RAW(v);
         val_decref(v);
         return slot_from_num(n);
     }
@@ -1869,7 +1875,7 @@ EigsSlot slot_from_value(Value *v) {
  *   - heap/tracked pointer -> incref and return
  */
 Value* slot_to_value(EigsSlot s) {
-    if (slot_is_num(s)) return make_num(s.d);
+    if (slot_is_num(s)) return make_num(SLOT_NUM_RAW(s));
     if (slot_is_null(s)) return &g_null_singleton;
     if (slot_is_bool(s)) return make_bool(slot_as_bool(s));
     if (slot_is_heap(s)) {
@@ -1901,7 +1907,7 @@ typedef struct {
 static Value *promote_arena_scalar(Value *v) {
     if (v->type == VAL_NUM) {
         if (!sandbox_charge(sizeof(Value))) return NULL;
-        return make_num_permanent(v->data.num);
+        return make_num_permanent(VAL_NUM_RAW(v));
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
         size_t n = val_str_len(v);
@@ -2565,7 +2571,7 @@ static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
             /* Exclusive untracked mirror — refresh in place, no allocation.
              * Same exclusivity test as dict_set_cached_immediate: a mirror
              * anyone else holds a ref to must not be mutated under them. */
-            cur->data.num = s.d;
+            VAL_NUM_RAW(cur) = SLOT_NUM_RAW(s);
             env_shared_unlock(e);
             slot_decref(s);
             return cur;
@@ -2801,7 +2807,7 @@ static Value *chan_clone_rec(Value *v, int depth) {
      * behavior) rather than overflow the stack. */
     if (depth > CHAN_CLONE_MAX_DEPTH) { val_incref(v); return v; }
     switch (v->type) {
-        case VAL_NUM:  return make_num(v->data.num);
+        case VAL_NUM:  return make_num(VAL_NUM_RAW(v));
         case VAL_NULL: return make_null();
         case VAL_BOOL: return make_bool(v->data.boolean);
         case VAL_STR:  return make_str(v->data.str);
@@ -3005,7 +3011,7 @@ int is_truthy(Value *v) {
     if (!v) return 0;
     switch (v->type) {
         case VAL_NULL: return 0;
-        case VAL_NUM: return v->data.num != 0.0;
+        case VAL_NUM: return VAL_NUM_RAW(v) != 0.0;
         case VAL_STR: return v->data.str && v->data.str[0] != '\0';
         case VAL_LIST: return v->data.list.count > 0;
         case VAL_FN: return 1;
@@ -3054,7 +3060,7 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
     }
     if (depth > 64) return a == b;
     switch (a->type) {
-        case VAL_NUM:  return a->data.num == b->data.num;
+        case VAL_NUM:  return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
         case VAL_STR:  return strcmp(a->data.str, b->data.str) == 0;
         case VAL_NULL: return 1;
         case VAL_BOOL: return a->data.boolean == b->data.boolean;
@@ -3145,7 +3151,7 @@ char* value_to_string(Value *v) {
     switch (v->type) {
         case VAL_NULL: return xstrdup("null");
         case VAL_NUM: {
-            eigs_num_text(buf, sizeof(buf), v->data.num);
+            eigs_num_text(buf, sizeof(buf), VAL_NUM_RAW(v));
             return xstrdup(buf);
         }
         case VAL_STR: return xstrdup(v->data.str);

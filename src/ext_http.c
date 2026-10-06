@@ -948,7 +948,7 @@ Value* builtin_shared_incr(Value *arg) {
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
-    double delta = delta_v->data.num;
+    double delta = eigs_num_arg(delta_v, __func__);
     long cap = shared_max_bytes();
 
     pthread_mutex_lock(&s->shared_mu);
@@ -961,7 +961,7 @@ Value* builtin_shared_incr(Value *arg) {
          * and drop it on the mismatch path too, which is the one an early
          * return makes easy to miss. */
         int bad = (!parsed || parsed->type != VAL_NUM);
-        if (!bad) cur = parsed->data.num;
+        if (!bad) cur = eigs_num_arg(parsed, __func__);
         val_decref(parsed);
         if (bad) {
             pthread_mutex_unlock(&s->shared_mu);

@@ -54,7 +54,7 @@ Value* builtin_buffer(Value *arg) {
     /* #971 Phase D: a non-number size (or a malformed [rows, cols]) made an
      * EMPTY buffer — a plausible object with nothing in it. */
     STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "buffer", "a size or [rows, cols]");
-    if (arg && arg->type == VAL_NUM) count = (int)arg->data.num;
+    if (arg && arg->type == VAL_NUM) count = (int)eigs_num_arg(arg, __func__);
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000;
     if (!sandbox_charge((size_t)count * sizeof(double))) return make_null();  /* #292 */
@@ -179,7 +179,7 @@ Value* builtin_buf_from_list(Value *arg) {
     v->refcount = 1;
     for (int i = 0; i < n; i++) {
         if (arg->data.list.items[i]->type == VAL_NUM) {
-            v->data.buffer.data[i] = arg->data.list.items[i]->data.num;
+            v->data.buffer.data[i] = eigs_num_arg(arg->data.list.items[i], __func__);
         } else {
             /* #1061: a non-number element silently stayed 0.0. */
             const char *tn = val_type_name(arg->data.list.items[i]->type);
@@ -203,7 +203,7 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
             rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
             return 0;
         }
-        if (nul_ends && finite_num_to_byte(item->data.num) == 0) break;
+        if (nul_ends && finite_num_to_byte(eigs_num_arg(item, __func__)) == 0) break;
     }
     return 1;
 }
@@ -229,7 +229,7 @@ Value* builtin_str_from_bytes(Value *arg) {
     char *s = xcalloc((size_t)(n > 0 ? n : 0) + 1, 1);
     int len = 0;
     for (int i = 0; i < n; i++) {
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
+        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? eigs_num_arg(items[i], __func__) : 0.0)
                           : buffer_read_num(arg, i);
         if (g_has_error) { free(s); return make_null(); }
         int b = finite_num_to_byte(dv);
@@ -251,7 +251,7 @@ Value* builtin_str_from_bytes(Value *arg) {
 Value* builtin_f64_to_bytes(Value *arg) {
     /* #971 Phase D: a non-number encoded as 0.0's eight bytes. */
     STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "f64_to_bytes", "a number");
-    double d = (arg && arg->type == VAL_NUM) ? arg->data.num : 0.0;
+    double d = (arg && arg->type == VAL_NUM) ? eigs_num_arg(arg, __func__) : 0.0;
     uint64_t bits;
     memcpy(&bits, &d, sizeof(bits));
     Value *list = make_list(8);
@@ -270,7 +270,7 @@ Value* builtin_f64_from_bytes(Value *arg) {
         int n = arg->data.list.count;
         for (int i = 0; i < 8 && i < n; i++)
             if (arg->data.list.items[i] && arg->data.list.items[i]->type == VAL_NUM)
-                bytes_in[i] = arg->data.list.items[i]->data.num;
+                bytes_in[i] = eigs_num_arg(arg->data.list.items[i], __func__);
     } else if (arg && arg->type == VAL_BUFFER) {
         int n = arg->data.buffer.count;
         for (int i = 0; i < 8 && i < n; i++) {
@@ -342,7 +342,7 @@ static int zlib_bytes_arg(Value *arg, const char *who,
     if (!strict_numeric_byte_list(arg, who, 0)) return 0;
     unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
     for (int i = 0; i < n; i++) {
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
+        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? eigs_num_arg(items[i], __func__) : 0.0)
                           : buffer_read_num(arg, i);
         if (g_has_error) { free(b); return 0; }
         b[i] = finite_num_to_byte(dv);
@@ -555,7 +555,7 @@ static int buf_count_arg(const char *who, Value *cnt_val, long long *out) {
         rt_error(EK_VALUE, 0, "%s: count must be a number", who);
         return 0;
     }
-    long long c = (long long)cnt_val->data.num;
+    long long c = (long long)eigs_num_arg(cnt_val, __func__);
     if (c < 0) {
         rt_error(EK_VALUE, 0, "%s: count must be non-negative (got %lld)",
                  who, c);
@@ -571,7 +571,7 @@ static int buf_num_arg(const char *who, const char *what, Value *v,
         rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
         return 0;
     }
-    *out = v->data.num;
+    *out = eigs_num_arg(v, __func__);
     return 1;
 }
 
@@ -588,7 +588,7 @@ static int buf_window_arg(const char *who, Value *buf, Value *off_val,
         rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
         return 0;
     }
-    long long off = (long long)off_val->data.num;
+    long long off = (long long)eigs_num_arg(off_val, __func__);
     long long n = buf->data.buffer.count;
     if (off < 0 || off > n - count) {
         rt_error(EK_INDEX, 0,
@@ -875,8 +875,8 @@ Value* builtin_buf_deinterleave(Value *arg) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: channel and nch must be numbers");
         return make_null();
     }
-    long long nch = (long long)nch_v->data.num;
-    long long channel = (long long)ch_v->data.num;
+    long long nch = (long long)eigs_num_arg(nch_v, __func__);
+    long long channel = (long long)eigs_num_arg(ch_v, __func__);
     if (nch < 1) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: nch must be >= 1 (got %lld)", nch);
         return make_null();

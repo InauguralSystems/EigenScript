@@ -134,7 +134,7 @@ int main(void) {
         free(diagnostic);
     }
     assert(escaped_value && escaped_value->type == VAL_NUM &&
-           escaped_value->data.num == 1.0);
+           VAL_NUM_RAW(escaped_value) == 1.0);
     fprintf(stderr,
             "sandbox intern growth: baseline=%zu retained=%zu sandbox_only=%zu\n",
             baseline, sandbox_retained, sandbox_prefix_retained);

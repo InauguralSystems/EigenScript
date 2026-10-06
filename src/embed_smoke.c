@@ -193,8 +193,8 @@ static void test_worker_exit_lifecycle(void) {
             EigsValue *handle = eigs_get_global("worker");
             CHECK(handle && handle->type == VAL_DICT, "exit fixture owns join handle");
             if (handle && handle->type == VAL_DICT) {
-                f.handle_id = (int)dict_get(handle, "_handle_id")->data.num;
-                f.handle_gen = (uint32_t)dict_get(handle, "_handle_gen")->data.num;
+                f.handle_id = (int)VAL_NUM_RAW(dict_get(handle, "_handle_id"));
+                f.handle_gen = (uint32_t)VAL_NUM_RAW(dict_get(handle, "_handle_gen"));
                 pthread_t requester;
                 int made = pthread_create(&requester, NULL, exit_after_join_claim, &f) == 0;
                 CHECK(made, "exit fixture starts request coordinator");
@@ -323,18 +323,18 @@ int main(void) {
         int line_save = g_trace_current_line;
 
         g_trace_current_line = 10;
-        s.d = 11.0; trace_assign(NM, s);
+        SLOT_NUM_RAW(s) = 11.0; trace_assign(NM, s);
         g_trace_current_line = 20;
-        s.d = 22.0; trace_assign(NM, s);
+        SLOT_NUM_RAW(s) = 22.0; trace_assign(NM, s);
 
-        CHECK(trace_query_prev(NM, &out) && out.d == 11.0,
+        CHECK(trace_query_prev(NM, &out) && SLOT_NUM_RAW(out) == 11.0,
               "#830: prev of a name recorded by a non-compiler producer");
         /* TEMPORAL-BACKWARD: at 15 the answer is the line-10 assignment. */
-        CHECK(trace_query_at(0, NM, 15, &out) && out.d == 11.0,
+        CHECK(trace_query_at(0, NM, 15, &out) && SLOT_NUM_RAW(out) == 11.0,
               "#830: what-at from a non-compiler producer (line-10 value)");
-        CHECK(trace_query_at(0, NM, 99, &out) && out.d == 22.0,
+        CHECK(trace_query_at(0, NM, 99, &out) && SLOT_NUM_RAW(out) == 22.0,
               "#830: what-at past the last non-compiler assignment");
-        CHECK(trace_query_at(2, NM, 99, &out) && out.d == 2.0,
+        CHECK(trace_query_at(2, NM, 99, &out) && SLOT_NUM_RAW(out) == 2.0,
               "#830: when-at counts non-compiler assignments");
 
         g_trace_current_line = line_save;
@@ -895,7 +895,7 @@ int main(void) {
     {
         static const char *const NM = "native_after_callback";
         EigsSlot s;
-        s.d = 1441.0;
+        SLOT_NUM_RAW(s) = 1441.0;
         trace_assign(NM, s);
         g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
         CHECK(strstr(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441\n") != NULL,

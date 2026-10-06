@@ -2835,7 +2835,7 @@ static void write_string(const char *s) {
 static void write_value_ptr(Value *v) {
     if (!v) { tp_puts("null"); return; }
     switch (v->type) {
-        case VAL_NUM:          tp_printf("%.17g", v->data.num); break;
+        case VAL_NUM:          tp_printf("%.17g", VAL_NUM_RAW(v)); break;
         case VAL_NULL:         tp_puts("null"); break;
         case VAL_STR:          write_string(v->data.str); break;
         case VAL_LIST:         tp_printf("<list:%d>", v->data.list.count); break;
@@ -2852,7 +2852,7 @@ static void write_value_ptr(Value *v) {
 }
 
 static void write_slot(EigsSlot s) {
-    if (slot_is_num(s))  { tp_printf("%.17g", s.d); return; }
+    if (slot_is_num(s))  { tp_printf("%.17g", SLOT_NUM_RAW(s)); return; }
     if (slot_is_null(s)) { tp_puts("null"); return; }
     if (slot_is_bool(s)) { tp_puts(slot_as_bool(s) ? "true" : "false"); return; }
     if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
@@ -2969,7 +2969,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
     if (*budget <= 0) return;
     if (!v) { wf_puts("null", budget); return; }
     switch (v->type) {
-        case VAL_NUM:  wf_printf(budget, "%.17g", v->data.num); break;
+        case VAL_NUM:  wf_printf(budget, "%.17g", VAL_NUM_RAW(v)); break;
         case VAL_NULL: wf_puts("null", budget); break;
         case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
         case VAL_STR:  write_string_full(v->data.str, budget); break;
