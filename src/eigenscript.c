@@ -236,6 +236,8 @@ const char* tok_type_name(TokType t) {
         case TOK_FOR: return "'for'";
         case TOK_IN: return "'in'";
         case TOK_NULL: return "'null'";
+        case TOK_TRUE: return "'true'";
+        case TOK_FALSE: return "'false'";
         case TOK_UNOBSERVED: return "'unobserved'";
         case TOK_REPORT: return "'report'";
         case TOK_REPORT_VALUE: return "'report_value'";

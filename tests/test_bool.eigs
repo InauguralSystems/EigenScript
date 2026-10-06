@@ -118,4 +118,29 @@ keyed[str of T] is "bool"
 keyed[str of 1] is "num"
 same of [len of (keys of keyed), 2, "str of true and str of 1 are distinct keys"]
 
+# ---- keywords (item 2): `true`/`false` are literals of the same values ----
+same of [true, T, "the true literal is the value a comparison produces"]
+same of [false, F, "the false literal is the value a comparison produces"]
+same of [type of true, "bool", "type of true"]
+same of [type of false, "bool", "type of false"]
+same of [str of true, "true", "str of the true literal"]
+same of [not false, true, "not false"]
+same of [[true, false] == [1 < 2, 2 < 1], true, "literals inside a list compare structurally"]
+raises of [(_) => true + 0, "bool", "true + 0 with the literal"]
+raises of [(_) => false == 0, "bool", "false == 0 with the literal"]
+# A keyword in the TOK_IS..TOK_LOCAL run stays a field name after `.`.
+fields is {"true": "yes", "false": "no"}
+same of [fields.true, "yes", "d.true still parses as a field"]
+same of [fields.false, "no", "d.false still parses as a field"]
+fields.true is "set"
+same of [fields["true"], "set", "d.true is assignable as a field"]
+# The self-interpreter (lib/eigen.eigs) agrees with the VM.
+load_file of "lib/eigen.eigs"
+same of [eigen_run of "true", true, "eigen_run: the true literal"]
+same of [eigen_run of "false", false, "eigen_run: the false literal"]
+same of [eigen_run of "1 < 2", true, "eigen_run: a comparison is a bool"]
+same of [eigen_run of "not 0", true, "eigen_run: not is a bool"]
+same of [eigen_run of "2 == 3", false, "eigen_run: == is a bool"]
+raises of [(_) => eigen_run of "true == 1", "bool", "eigen_run: bool == num raises"]
+
 test_summary of null

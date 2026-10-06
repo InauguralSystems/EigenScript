@@ -335,7 +335,7 @@ const char *op_name(uint8_t op) {
     if (op >= OP_COUNT) return "???";
     switch ((OpCode)op) {
 #define N(o) case o: return #o + 3;
-    N(OP_CONST) N(OP_NULL) N(OP_NUM_ZERO) N(OP_NUM_ONE)
+    N(OP_CONST) N(OP_NULL) N(OP_NUM_ZERO) N(OP_NUM_ONE) N(OP_TRUE) N(OP_FALSE)
     N(OP_ADD) N(OP_SUB) N(OP_MUL) N(OP_DIV) N(OP_MOD)
     N(OP_BAND) N(OP_BOR) N(OP_BXOR) N(OP_SHL) N(OP_SHR)
     N(OP_NEG) N(OP_NOT) N(OP_BNOT)
@@ -506,7 +506,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
         roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_NAME; return 3;
     /* Operand-free opcodes — every one listed, so a new opcode cannot
      * silently walk wrong. */
-    case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE: case OP_TRUE: case OP_FALSE:
     case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
     case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
     case OP_NEG: case OP_NOT: case OP_BNOT:
@@ -614,6 +614,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
     switch ((OpCode)op8) {
     /* Pushes, consuming nothing. */
     case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_TRUE: case OP_FALSE:
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_CLOSURE:
     case OP_LOCAL_DOT_GET: case OP_LOCAL_IDX_GET: case OP_LOCAL_IDX_DOT_GET:
     case OP_IMPORT: case OP_MATCH: case OP_LISTCOMP_BEGIN:

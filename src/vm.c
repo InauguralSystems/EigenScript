@@ -3123,6 +3123,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
     static void *dispatch_table[OP_COUNT] = {
         [OP_CONST] = &&lbl_CONST, [OP_NULL] = &&lbl_NULL,
         [OP_NUM_ZERO] = &&lbl_NUM_ZERO, [OP_NUM_ONE] = &&lbl_NUM_ONE,
+        [OP_TRUE] = &&lbl_TRUE, [OP_FALSE] = &&lbl_FALSE,
         [OP_ADD] = &&lbl_ADD, [OP_SUB] = &&lbl_SUB,
         [OP_MUL] = &&lbl_MUL, [OP_DIV] = &&lbl_DIV, [OP_MOD] = &&lbl_MOD,
         [OP_BAND] = &&lbl_BAND, [OP_BOR] = &&lbl_BOR, [OP_BXOR] = &&lbl_BXOR,
@@ -3292,6 +3293,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(NUM_ONE): {
         vm_push_slot(slot_from_num(1.0));
+        DISPATCH();
+    }
+
+    CASE(TRUE): {                       /* #1637 */
+        vm_push_slot(slot_true());
+        DISPATCH();
+    }
+
+    CASE(FALSE): {                      /* #1637 */
+        vm_push_slot(slot_false());
         DISPATCH();
     }
 

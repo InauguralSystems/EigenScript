@@ -59,8 +59,8 @@ static const char *keyword_docs[][2] = {
     {"match", "Pattern matching: match expr:"},
     {"case", "Match case: case pattern:"},
     {"unobserved", "Unobserved block (suppresses entropy tracking)"},
-    {"true", "Boolean true (1)"},
-    {"false", "Boolean false (0)"},
+    {"true", "Boolean true (type bool)"},
+    {"false", "Boolean false (type bool)"},
     {NULL, NULL}
 };
 
@@ -501,7 +501,7 @@ static void walk_ast_symbols(ASTNode *node, const TokenList *tokens,
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_LISTCOMP:
         case AST_INTERROGATE:
         case AST_PREDICATE:
@@ -637,7 +637,7 @@ static void collect_references(ASTNode *node, const char *name, Location *locs, 
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_INTERROGATE:
         case AST_PREDICATE:
         case AST_BREAK:

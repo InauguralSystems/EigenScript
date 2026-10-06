@@ -246,7 +246,7 @@ static void collect_refs(ASTNode *node, LintContext *ctx) {
          * error here instead of a silent no-op. */
         case AST_NUM:
         case AST_STR:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_PREDICATE:
         case AST_BREAK:
         case AST_CONTINUE:
@@ -311,7 +311,7 @@ static void collect_assigns(ASTNode *node, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_RELATION:
@@ -369,7 +369,7 @@ static int cond_has_bare_predicate(const ASTNode *n) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_ASSIGN:
         case AST_IF:
         case AST_LOOP:
@@ -431,7 +431,7 @@ static void collect_loop_assign_names(ASTNode *n, const char *seen[], int cap, i
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_RELATION:
@@ -531,7 +531,7 @@ static void check_empty_blocks(ASTNode *node, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -640,7 +640,7 @@ static void check_dup_keys(ASTNode *node, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_UNARY:
         case AST_RELATION:
         case AST_BLOCK:
@@ -740,7 +740,7 @@ static void check_builtin_shadow(ASTNode *node, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -870,7 +870,7 @@ static void check_disc_interrog(ASTNode *node, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -947,7 +947,7 @@ static void check_func_unreachable(ASTNode *node, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -1016,7 +1016,7 @@ static void check_is_conditions(ASTNode *node, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -1118,7 +1118,7 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -1228,7 +1228,7 @@ static void w015_collect_locals(ASTNode *n, char *locals[], int *count) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_RELATION:
@@ -1296,7 +1296,7 @@ static void w015_flag(ASTNode *n, char *const module[], int module_n,
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_RELATION:
@@ -1503,7 +1503,7 @@ static void w023_walk(ASTNode *n, int mode, const char *name, int *flags,
         break;
     case AST_IDENT: N(n->data.ident.name); break;
     case AST_IMPORT: N(n->data.import.module_name); break;
-    case AST_NUM: case AST_STR: case AST_NULL: case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: break;
+    case AST_NUM: case AST_STR: case AST_NULL: case AST_BOOL: case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: break;
     }
 #undef N
 #undef W
@@ -1565,7 +1565,7 @@ static void w023_collect_binders(ASTNode *n, W023Names *locals) {
     case AST_NUM:
     case AST_STR:
     case AST_IDENT:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_BINOP:
     case AST_UNARY:
     case AST_RELATION:
@@ -1723,7 +1723,7 @@ static void w023_scan_sequence(ASTNode **stmts, int count, W023Names *bound,
             }
             break;
         case AST_IMPORT: w023_record_current_scope_import(n, bound); break;
-        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BINOP: case AST_UNARY: case AST_RELATION: case AST_RETURN: case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_PROGRAM: case AST_INTERROGATE: case AST_PREDICATE: case AST_DICT: case AST_DOT: case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN: case AST_LAMBDA: case AST_INDEX_ASSIGN: case AST_SLICE: break;
+        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BOOL: case AST_BINOP: case AST_UNARY: case AST_RELATION: case AST_RETURN: case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_PROGRAM: case AST_INTERROGATE: case AST_PREDICATE: case AST_DICT: case AST_DOT: case AST_BREAK: case AST_CONTINUE: case AST_DOT_ASSIGN: case AST_LAMBDA: case AST_INDEX_ASSIGN: case AST_SLICE: break;
         }
     }
 }
@@ -1890,7 +1890,7 @@ static void w016_scan(ASTNode *n, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BREAK:
         case AST_CONTINUE:
         case AST_IMPORT:
@@ -2049,7 +2049,7 @@ static void w017_scan(ASTNode *n, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_PREDICATE:
         case AST_BREAK:
         case AST_CONTINUE:
@@ -2073,7 +2073,7 @@ static void check_one_element_arg_list(ASTNode *ast, LintContext *ctx) {
     int _lfe_i, _lfe_j;                                                      \
     (void)_lfe_i; (void)_lfe_j;                                              \
     switch ((n)->type) {                                                     \
-    case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL:               \
+    case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BOOL:               \
     case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: case AST_IMPORT:  \
         break;                                                               \
     case AST_BINOP:                                                          \
@@ -2292,7 +2292,7 @@ static void w022_collect_bindings(ASTNode *n, W022Table *t) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_RELATION:
@@ -2418,7 +2418,7 @@ static void w020_facts(ASTNode *n, W020Facts *f) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_IF:
@@ -2478,7 +2478,7 @@ static void w020_facts(ASTNode *n, W020Facts *f) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_ASSIGN:
         case AST_RELATION:
         case AST_FUNC:
@@ -2552,7 +2552,7 @@ static void w020_scan(ASTNode *n, LintContext *ctx) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -2814,7 +2814,7 @@ static void w018_scan(ASTNode *n, LintContext *ctx, W018Scope *sc) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_PREDICATE:
         case AST_BREAK:
         case AST_CONTINUE:
@@ -3092,7 +3092,7 @@ static void w024_collect(ASTNode *n, W024Loop *lp, int nested) {
             for (int i = 0; i < n->data.program.count; i++)
                 w024_collect(n->data.program.stmts[i], lp, nested);
             break;
-        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL:
+        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BOOL:
         case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: case AST_IMPORT:
             break;
     }
@@ -3117,7 +3117,7 @@ static int w024_index_varies(ASTNode *ix, W024Loop *lp) {
                    w024_index_varies(ix->data.binop.right, lp);
         case AST_UNARY:
             return w024_index_varies(ix->data.unary.operand, lp);
-        case AST_NUM: case AST_STR: case AST_NULL: case AST_ASSIGN: case AST_RELATION:
+        case AST_NUM: case AST_STR: case AST_NULL: case AST_BOOL: case AST_ASSIGN: case AST_RELATION:
         case AST_IF: case AST_LOOP: case AST_FUNC: case AST_RETURN: case AST_BLOCK:
         case AST_LIST: case AST_INDEX: case AST_LISTCOMP: case AST_FOR: case AST_PROGRAM:
         case AST_INTERROGATE: case AST_PREDICATE: case AST_TRY: case AST_DICT: case AST_DOT:
@@ -3147,7 +3147,7 @@ static int w024_elem_walks(ASTNode *n, W024Loop *lp) {
                    w024_elem_walks(n->data.index.target, lp);
         case AST_DOT:
             return w024_elem_walks(n->data.dot.target, lp);
-        case AST_NUM: case AST_STR: case AST_NULL: case AST_ASSIGN: case AST_RELATION:
+        case AST_NUM: case AST_STR: case AST_NULL: case AST_BOOL: case AST_ASSIGN: case AST_RELATION:
         case AST_IF: case AST_LOOP: case AST_FUNC: case AST_RETURN: case AST_BLOCK:
         case AST_LIST: case AST_LISTCOMP: case AST_FOR: case AST_PROGRAM: case AST_BINOP:
         case AST_UNARY: case AST_INTERROGATE: case AST_PREDICATE: case AST_TRY:
@@ -3183,7 +3183,7 @@ static ASTNode *w024_proj_node(ASTNode *n, W024Loop *lp);
  * other than one entity's quantity? */
 static int w024_operand_inert(ASTNode *n, W024Loop *lp) {
     if (!n) return 0;
-    if (n->type == AST_NUM || n->type == AST_STR || n->type == AST_NULL) return 1;
+    if (n->type == AST_NUM || n->type == AST_STR || n->type == AST_NULL || n->type == AST_BOOL) return 1;
     if (n->type == AST_IDENT) {
         if (lp->for_var && strcmp(n->data.ident.name, lp->for_var) == 0) return 0;
         for (int i = 0; i < lp->count; i++)
@@ -3534,7 +3534,7 @@ static void w024_walk(ASTNode *n, int fn_depth, LintContext *ctx) {
         case AST_INTERROGATE:
             w024_walk(n->data.interrogate.expr, fn_depth, ctx);
             break;
-        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL:
+        case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BOOL:
         case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: case AST_IMPORT:
             break;
     }

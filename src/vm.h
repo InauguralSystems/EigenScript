@@ -227,6 +227,8 @@ typedef enum {
 
     OP_SET_LOCAL_INTERNAL, /*obs:NONE*/ /* [slot:16] internal TOS store; no history/tape.
                            * Appended to preserve the public bytecode ABI. */
+    OP_TRUE,            /*obs:NONE*/ /* #1637: push the bool true immediate. Appended. */
+    OP_FALSE,           /*obs:NONE*/ /* #1637: push the bool false immediate. Appended. */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 

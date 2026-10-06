@@ -545,7 +545,7 @@ static void w021_collect_imports(ASTNode *n, W021Imports *im) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -634,7 +634,7 @@ static void w021_walk(ASTNode *node, LintContext *ctx, const W021Imports *im,
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_BINOP:
         case AST_UNARY:
         case AST_ASSIGN:
@@ -1092,7 +1092,7 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
          * error here instead of a silent no-op. */
         case AST_NUM:
         case AST_STR:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_PREDICATE:
         case AST_BREAK:
         case AST_CONTINUE:
