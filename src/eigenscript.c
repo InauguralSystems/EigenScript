@@ -1383,6 +1383,9 @@ int observer_entropy_now(Env *e, int idx, double *out) {
         if (slot_is_num(s)) {
             kind = 1;
             num = s.d;
+        } else if (slot_is_bool(s)) {
+            held = make_bool(slot_as_bool(s));   /* #1637: immortal; incref no-op */
+            kind = 2;
         } else if (slot_is_ptr(s)) {
             Value *v = slot_as_ptr(s);
             if (v && v->type != VAL_NULL) {

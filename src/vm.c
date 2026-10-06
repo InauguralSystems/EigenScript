@@ -212,6 +212,8 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
             ObserverSlot qs = *os;
             if (slot_is_num(s)) {
                 qs.entropy = observer_entropy_of_num(s.d);
+            } else if (slot_is_bool(s)) {
+                qs.entropy = compute_entropy(make_bool(slot_as_bool(s)));   /* #1637 */
             } else if (slot_is_ptr(s)) {
                 Value *sv0 = slot_as_ptr(s);
                 if (sv0 && sv0->type != VAL_NULL)
@@ -1671,6 +1673,17 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
  * so the JIT helper does not bounce through two more out-of-line functions on
  * every assignment.  The public routine owns allocation/window-growth and is
  * still the cold fallback. */
+/* #1637: the observer sees a bool binding through its immortal singleton
+ * (entropy: false 0.0, true 1.0 — compute_entropy's VAL_BOOL band). Callers
+ * test obs_slot_observable first: a heap pointer or a bool. Null is the only
+ * value still not observed. */
+static inline int obs_slot_observable(EigsSlot s) {
+    return slot_is_ptr(s) || slot_is_bool(s);
+}
+static inline Value *obs_slot_value(EigsSlot s) {
+    return slot_is_bool(s) ? make_bool(slot_as_bool(s)) : slot_as_ptr(s);
+}
+
 static inline void jit_sample_num_gated(Env *e, int slot, double v) {
     ObserverSlot *s = env_obs_slot(e, slot);
     int n = s && s->win_override ? s->win_override : g_obs_window;
@@ -1712,14 +1725,14 @@ void jit_helper_observe_assign_local(int slot) {
     if (g_unobserved_depth != 0) {
         /* #1049: elided — value-window sample only (mirrors the CASE body). */
         if (slot_is_num(s))      jit_sample_num_gated(e, slot, s.d);
-        else if (slot_is_ptr(s)) observer_slot_sample_gated(e, slot, slot_as_ptr(s));
+        else if (obs_slot_observable(s)) observer_slot_sample_gated(e, slot, obs_slot_value(s));
         return;
     }
     if (slot_is_num(s)) {
         observer_slot_update_num(e, slot, s.d);
         g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
-    } else if (slot_is_ptr(s)) {
-        observer_slot_update(e, slot, slot_as_ptr(s));
+    } else if (obs_slot_observable(s)) {
+        observer_slot_update(e, slot, obs_slot_value(s));
         g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
     }
 }
@@ -1763,8 +1776,8 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     /* #262 Phase-3 D: TOS may be an immediate num (the default path no longer
      * promotes observed names to tracked Values) or a heap value — observe the
-     * slot from whichever. Skip null/bool. */
-    if (!slot_is_num(s) && !slot_is_ptr(s)) return;
+     * slot from whichever (#1637: a bool too). Skip null. */
+    if (!slot_is_num(s) && !obs_slot_observable(s)) return;
     const char *name = chunk->const_interns[name_idx];
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
     if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
@@ -1772,12 +1785,12 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
     if (oe && oidx >= 0 && g_unobserved_depth != 0) {
         if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
-        else                observer_slot_sample_gated(oe, oidx, slot_as_ptr(s));
+        else                observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
         return;
     }
     if (oe && oidx >= 0) {
         if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
-        else observer_slot_update(oe, oidx, slot_as_ptr(s));
+        else observer_slot_update(oe, oidx, obs_slot_value(s));
         g_last_obs_slot_env = oe;
         g_last_obs_slot_idx = oidx;
         /* #262 Phase-3 D2: slot-source the temporal snapshot — mirror of the
@@ -5266,8 +5279,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (slot_is_num(s)) {
                 observer_slot_update_num(e, (int)slot, s.d);
                 g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
-            } else if (slot_is_ptr(s)) {
-                observer_slot_update(e, (int)slot, slot_as_ptr(s));
+            } else if (obs_slot_observable(s)) {
+                observer_slot_update(e, (int)slot, obs_slot_value(s));
                 g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
             }
         } else {
@@ -5279,7 +5292,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Env *e = frame->fn_env;
             eigs_obs_count_call();
             if (slot_is_num(s))      observer_slot_sample_num_gated(e, (int)slot, s.d);
-            else if (slot_is_ptr(s)) observer_slot_sample_gated(e, (int)slot, slot_as_ptr(s));
+            else if (obs_slot_observable(s)) observer_slot_sample_gated(e, (int)slot, obs_slot_value(s));
         }
         DISPATCH();
     }
@@ -5507,8 +5520,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             /* #262 Phase-3 D: TOS is now an immediate num for an observed name
              * (default path no longer promotes), or a heap value. Observe the
-             * slot from whichever; skip null/bool. */
-            if (slot_is_num(s) || slot_is_ptr(s)) {
+             * slot from whichever (#1637: a bool too); skip null. */
+            if (slot_is_num(s) || obs_slot_observable(s)) {
                 const char *name = chunk->const_interns[name_idx];
                 uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
                 if (h == 0) { h = env_hash_name(name); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
@@ -5517,10 +5530,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 if (oe && oidx >= 0 && g_unobserved_depth != 0) {
                     eigs_obs_count_call();
                     if (slot_is_num(s)) observer_slot_sample_num_gated(oe, oidx, s.d);
-                    else                observer_slot_sample_gated(oe, oidx, slot_as_ptr(s));
+                    else                observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
                 } else if (oe && oidx >= 0) {
                     if (slot_is_num(s)) observer_slot_update_num(oe, oidx, s.d);
-                    else observer_slot_update(oe, oidx, slot_as_ptr(s));
+                    else observer_slot_update(oe, oidx, obs_slot_value(s));
                     g_last_obs_slot_env = oe;
                     g_last_obs_slot_idx = oidx;
                     /* #262 Phase-3 D2: slot-source the temporal snapshot for

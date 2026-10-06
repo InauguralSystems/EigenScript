@@ -210,4 +210,29 @@ is_bool of [any of [[1, 2], (x) => x > 1], "list.any"]
 is_bool of [all of [[], (x) => x > 1], "list.all (empty)"]
 is_bool of [json_has of ["{\"a\": 1}", "a"], "json.json_has"]
 
+# ---- observer (item 6): a bool binding is observed in its own band ----
+# entropy false 0.0 / true 1.0 (compute_entropy's VAL_BOOL case); a bool is
+# not numeric, so the predicates read it on the entropy channel.
+define observe_flag(mode) as:
+    local flag is false
+    local i is 0
+    loop while i < 30:
+        if mode == "flip":
+            flag is (i % 2) == 0
+        else:
+            flag is i > 100
+        i is i + 1
+    return [trajectory of flag, (observe of flag)[1], report of flag]
+steady is observe_flag of "steady"
+flip is observe_flag of "flip"
+same of [steady[0].observed, true, "a bool binding is observed"]
+same of [steady[0].numeric, false, "a bool binding is not on the numeric channel"]
+same of [steady[1], 0, "observe of a false flag: entropy 0"]
+same of [flip[1], 0, "observe of a flipping flag ending false: entropy 0"]
+same of [steady[2], "converged", "a constant flag converges"]
+same of [flip[2], "oscillating", "a flipping flag oscillates"]
+held is true
+held is 1 < 2
+same of [(observe of held)[1], 1, "observe of a true flag: entropy 1"]
+
 test_summary of null
