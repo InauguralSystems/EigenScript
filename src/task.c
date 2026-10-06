@@ -604,7 +604,8 @@ static Value *task_start(Task *t) {
     Value *fn = t->entry_fn;
     if (fn->type == VAL_BUILTIN) {          /* builtins never suspend — run direct */
         Value *a = t->argc == 1 ? t->args[0] : make_null();
-        return fn->data.builtin(a);
+        Value *r = eigs_call_builtin(fn->data.builtin, a);   /* #1637 bool gate */
+        return r ? r : make_null();
     }
     Env *call_env = env_new(fn->data.fn.closure);
     /* #989: same re-collect carve-out as every other entry point — a

@@ -1340,8 +1340,8 @@ Value* builtin_tensor_zeros(Value *arg) {
     if (arg->type == VAL_LIST && arg->data.list.count >= 2
         && arg->data.list.items[0]->type == VAL_NUM
         && arg->data.list.items[1]->type == VAL_NUM) {
-        int64_t rows64 = (int64_t)arg->data.list.items[0]->data.num;
-        int64_t cols64 = (int64_t)arg->data.list.items[1]->data.num;
+        int64_t rows64 = (int64_t)eigs_list_num(arg, 0, __func__);
+        int64_t cols64 = (int64_t)eigs_list_num(arg, 1, __func__);
         if (rows64 < 0) rows64 = 0;
         if (cols64 < 0) cols64 = 0;
         /* #292: bound each dim before multiplying (no int64 overflow), then the
@@ -1562,10 +1562,10 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
          * read it below (the VM sites guard the same way). */
         if (fn->data.builtin == builtin_free_val) {
             if (arg) val_incref(arg);
-            Value *consumed = fn->data.builtin(arg);
+            Value *consumed = eigs_call_builtin(fn->data.builtin, arg);
             return consumed ? consumed : make_null();
         }
-        Value *result = fn->data.builtin(arg);
+        Value *result = eigs_call_builtin(fn->data.builtin, arg);
         if (!result) return make_null();
         vm_borrow_compensate(arg, result, 0, fn, NULL);
         return result;
@@ -1648,9 +1648,9 @@ Value* builtin_random_normal(Value *arg) {
     int argc = arg->data.list.count;
     if (argc == 3) {
         /* 2D: [rows, cols, scale] */
-        int rows = (int)arg->data.list.items[0]->data.num;
-        int cols = (int)arg->data.list.items[1]->data.num;
-        double scale = arg->data.list.items[2]->data.num;
+        int rows = (int)eigs_list_num(arg, 0, __func__);
+        int cols = (int)eigs_list_num(arg, 1, __func__);
+        double scale = eigs_list_num(arg, 2, __func__);
         Value *outer = make_list(rows);
         for (int r = 0; r < rows; r++) {
             Value *row = make_list(cols);
@@ -1668,8 +1668,8 @@ Value* builtin_random_normal(Value *arg) {
     }
     if (argc == 2) {
         /* 1D: [len, scale] */
-        int len = (int)arg->data.list.items[0]->data.num;
-        double scale = arg->data.list.items[1]->data.num;
+        int len = (int)eigs_list_num(arg, 0, __func__);
+        double scale = eigs_list_num(arg, 1, __func__);
         Value *out = make_list(len);
         for (int i = 0; i < len; i++) {
             double u1 = 1.0 - eigs_random_double(); /* (0, 1] — see the 2D branch */
@@ -1746,12 +1746,42 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
  * loss_fn is a VAL_FN that takes null and returns a scalar loss.
  * param is a 1D or 2D tensor (VAL_LIST).
  * Returns gradient tensor matching param shape. */
+/* #1637: the cells a numeric-gradient / SGD builtin reads (and, for the
+ * numerical_grad family, writes in place) must be numbers. A bool cell used
+ * to read as 0 -- and numerical_grad_rows/_cols wrote `cell->data.num` into
+ * it, i.e. into the immortal true/false singleton. Checked up front, in every
+ * strict mode, before anything is mutated; a non-list row of a 2-D operand
+ * keeps its old skip unless it is a bool. Index lists are checked too: a bool
+ * index is refused, never skipped as "-1". */
+static int tensor_cells_numeric(const Value *v, const char *who) {
+    if (!v || v->type != VAL_LIST) return 1;
+    for (int i = 0; i < v->data.list.count; i++) {
+        const Value *e = v->data.list.items[i];
+        if (e && e->type == VAL_LIST) {
+            for (int c = 0; c < e->data.list.count; c++)
+                if (!e->data.list.items[c] || e->data.list.items[c]->type != VAL_NUM) {
+                    eigs_num_arg(e->data.list.items[c], who);
+                    return 0;
+                }
+        } else if (!e || e->type != VAL_NUM) {
+            eigs_num_arg(e, who);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 Value* builtin_numerical_grad(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "numerical_grad");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *loss_fn = arg->data.list.items[0];
     Value *param = arg->data.list.items[1];
-    double eps = (arg->data.list.items[2]->type == VAL_NUM) ? arg->data.list.items[2]->data.num : 0.001;
+    /* #1637: the optional eps: null keeps the default, a number sets it,
+     * anything else (a bool) raises instead of silently meaning the default. */
+    double eps = 0.001;
+    eigs_opt_num(arg->data.list.items[2], &eps, __func__);
+    if (g_has_error) return make_null();
+    if (!tensor_cells_numeric(param, "numerical_grad")) return make_null();
     if (eps <= 0) eps = 0.001;
     int loss_valid = 1;
 
@@ -1786,7 +1816,7 @@ Value* builtin_numerical_grad(Value *arg) {
         Value *grad = make_list(len);
         for (int i = 0; i < len; i++) {
             Value *orig = param->data.list.items[i];
-            double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
+            double old_val = eigs_num_arg(orig, __func__);
             val_incref(orig);   /* guard while displaced from its slot */
             Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
             param->data.list.items[i] = pp;
@@ -1816,7 +1846,7 @@ Value* builtin_numerical_grad(Value *arg) {
         Value *grad_row = make_list(cols);
         for (int c = 0; c < cols; c++) {
             Value *orig = row->data.list.items[c];
-            double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
+            double old_val = eigs_num_arg(orig, __func__);
             val_incref(orig);   /* guard while displaced from its slot */
             Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
             row->data.list.items[c] = pp;
@@ -1844,7 +1874,12 @@ Value* builtin_sgd_update(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *param = arg->data.list.items[0];
     Value *grad = arg->data.list.items[1];
-    double lr = (arg->data.list.items[2]->type == VAL_NUM) ? arg->data.list.items[2]->data.num : 0.01;
+    /* #1637: the optional lr: null keeps the default, a number sets it,
+     * anything else (a bool) raises instead of silently meaning the default. */
+    double lr = 0.01;
+    eigs_opt_num(arg->data.list.items[2], &lr, __func__);
+    if (g_has_error) return make_null();
+    if (!tensor_cells_numeric(param, "sgd_update") || !tensor_cells_numeric(grad, "sgd_update")) return make_null();
 
     /* #1093: both operands flat buffers — update the doubles in place. */
     if (param->type == VAL_BUFFER && grad->type == VAL_BUFFER) {
@@ -1864,8 +1899,8 @@ Value* builtin_sgd_update(Value *arg) {
                 ? param->data.list.count : grad->data.list.count;
         for (int i = 0; i < len; i++) {
             Value *old = param->data.list.items[i];
-            double pv = (old->type == VAL_NUM) ? old->data.num : 0.0;
-            double gv = (grad->data.list.items[i]->type == VAL_NUM) ? grad->data.list.items[i]->data.num : 0.0;
+            double pv = eigs_num_arg(old, __func__);
+            double gv = eigs_num_arg(grad->data.list.items[i], __func__);
             param->data.list.items[i] = make_num_permanent(pv - lr * gv);
             val_decref(old);
         }
@@ -1881,8 +1916,8 @@ Value* builtin_sgd_update(Value *arg) {
                      ? pr->data.list.count : gr->data.list.count;
             for (int c = 0; c < cols; c++) {
                 Value *old = pr->data.list.items[c];
-                double pv = (old->type == VAL_NUM) ? old->data.num : 0.0;
-                double gv = (gr->data.list.items[c]->type == VAL_NUM) ? gr->data.list.items[c]->data.num : 0.0;
+                double pv = eigs_num_arg(old, __func__);
+                double gv = eigs_num_arg(gr->data.list.items[c], __func__);
                 pr->data.list.items[c] = make_num_permanent(pv - lr * gv);
                 val_decref(old);
             }
@@ -1902,7 +1937,12 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     Value *loss_fn = arg->data.list.items[0];
     Value *matrix = arg->data.list.items[1];
     Value *row_indices = arg->data.list.items[2];
-    double eps = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.001;
+    /* #1637: the optional eps: null keeps the default, a number sets it,
+     * anything else (a bool) raises instead of silently meaning the default. */
+    double eps = 0.001;
+    eigs_opt_num(arg->data.list.items[3], &eps, __func__);
+    if (g_has_error) return make_null();
+    if (!tensor_cells_numeric(matrix, "numerical_grad_rows") || !tensor_cells_numeric(row_indices, "numerical_grad_rows")) return make_null();
     if (eps <= 0) eps = 0.001;
     int loss_valid = 1;
 
@@ -1971,7 +2011,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
 
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
             Value *cell = row->data.list.items[c];
-            double old_val = (cell->type == VAL_NUM) ? cell->data.num : 0.0;
+            double old_val = eigs_num_arg(cell, __func__);
             cell->data.num = old_val + eps;
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
             cell->data.num = old_val - eps;
@@ -1996,7 +2036,12 @@ Value* builtin_sgd_update_rows(Value *arg) {
     Value *matrix = arg->data.list.items[0];
     Value *grad = arg->data.list.items[1];
     Value *row_indices = arg->data.list.items[2];
-    double lr = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.01;
+    /* #1637: the optional lr: null keeps the default, a number sets it,
+     * anything else (a bool) raises instead of silently meaning the default. */
+    double lr = 0.01;
+    eigs_opt_num(arg->data.list.items[3], &lr, __func__);
+    if (g_has_error) return make_null();
+    if (!tensor_cells_numeric(matrix, "sgd_update_rows") || !tensor_cells_numeric(grad, "sgd_update_rows") || !tensor_cells_numeric(row_indices, "sgd_update_rows")) return make_null();
 
     /* #1093: shaped-buffer matrix + shaped-buffer gradient, index vector as a
      * list or a buffer — update the named rows' doubles in place. */
@@ -2032,8 +2077,8 @@ Value* builtin_sgd_update_rows(Value *arg) {
                  ? mrow->data.list.count : grow->data.list.count;
         for (int c = 0; c < cols; c++) {
             Value *old = mrow->data.list.items[c];
-            double pv = (old->type == VAL_NUM) ? old->data.num : 0.0;
-            double gv = (grow->data.list.items[c]->type == VAL_NUM) ? grow->data.list.items[c]->data.num : 0.0;
+            double pv = eigs_num_arg(old, __func__);
+            double gv = eigs_num_arg(grow->data.list.items[c], __func__);
             mrow->data.list.items[c] = make_num_permanent(pv - lr * gv);
             val_decref(old);
         }
@@ -2052,7 +2097,12 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     Value *loss_fn = arg->data.list.items[0];
     Value *matrix = arg->data.list.items[1];
     Value *col_indices = arg->data.list.items[2];
-    double eps = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.001;
+    /* #1637: the optional eps: null keeps the default, a number sets it,
+     * anything else (a bool) raises instead of silently meaning the default. */
+    double eps = 0.001;
+    eigs_opt_num(arg->data.list.items[3], &eps, __func__);
+    if (g_has_error) return make_null();
+    if (!tensor_cells_numeric(matrix, "numerical_grad_cols") || !tensor_cells_numeric(col_indices, "numerical_grad_cols")) return make_null();
     if (eps <= 0) eps = 0.001;
     int loss_valid = 1;
 
@@ -2118,7 +2168,7 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             if (!row || row->type != VAL_LIST || col >= row->data.list.count) continue;
 
             Value *orig = row->data.list.items[col];
-            double old_val = (orig->type == VAL_NUM) ? orig->data.num : 0.0;
+            double old_val = eigs_num_arg(orig, __func__);
             val_incref(orig);   /* guard while displaced from its slot */
             /* +eps */
             Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
@@ -2152,7 +2202,12 @@ Value* builtin_sgd_update_cols(Value *arg) {
     Value *matrix = arg->data.list.items[0];
     Value *grad = arg->data.list.items[1];
     Value *col_indices = arg->data.list.items[2];
-    double lr = (arg->data.list.items[3]->type == VAL_NUM) ? arg->data.list.items[3]->data.num : 0.01;
+    /* #1637: the optional lr: null keeps the default, a number sets it,
+     * anything else (a bool) raises instead of silently meaning the default. */
+    double lr = 0.01;
+    eigs_opt_num(arg->data.list.items[3], &lr, __func__);
+    if (g_has_error) return make_null();
+    if (!tensor_cells_numeric(matrix, "sgd_update_cols") || !tensor_cells_numeric(grad, "sgd_update_cols") || !tensor_cells_numeric(col_indices, "sgd_update_cols")) return make_null();
 
     /* #1093: shaped-buffer matrix + gradient, list-or-buffer index vector. */
     if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER
@@ -2189,8 +2244,8 @@ Value* builtin_sgd_update_cols(Value *arg) {
             if (!grow || grow->type != VAL_LIST || col >= grow->data.list.count) continue;
 
             Value *old = mrow->data.list.items[col];
-            double pv = (old->type == VAL_NUM) ? old->data.num : 0.0;
-            double gv = (grow->data.list.items[col]->type == VAL_NUM) ? grow->data.list.items[col]->data.num : 0.0;
+            double pv = eigs_num_arg(old, __func__);
+            double gv = eigs_num_arg(grow->data.list.items[col], __func__);
             mrow->data.list.items[col] = make_num_permanent(pv - lr * gv);
             val_decref(old);
         }
@@ -2320,8 +2375,8 @@ Value* builtin_tensor_load(Value *arg) {
                 verdict->data.list.count == 2 &&
                 verdict->data.list.items[0]->type == VAL_NUM &&
                 verdict->data.list.items[1]->type == VAL_NUM) {
-                uint32_t rows = (uint32_t)verdict->data.list.items[0]->data.num;
-                uint32_t cols = (uint32_t)verdict->data.list.items[1]->data.num;
+                uint32_t rows = (uint32_t)eigs_list_num(verdict, 0, __func__);
+                uint32_t cols = (uint32_t)eigs_list_num(verdict, 1, __func__);
                 val_decref(verdict);
                 tensor_load_limit_raise(arg->data.str, rows, cols);
                 return make_null();

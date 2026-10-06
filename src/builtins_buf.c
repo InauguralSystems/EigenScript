@@ -34,8 +34,8 @@ Value* builtin_buffer(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
         arg->data.list.items[0]->type == VAL_NUM &&
         arg->data.list.items[1]->type == VAL_NUM) {
-        int r = (int)arg->data.list.items[0]->data.num;
-        int c = (int)arg->data.list.items[1]->data.num;
+        int r = (int)eigs_list_num(arg, 0, __func__);
+        int c = (int)eigs_list_num(arg, 1, __func__);
         if (r < 0) r = 0;
         if (c < 0) c = 0;
         long total = (long)r * (long)c;
@@ -76,8 +76,8 @@ Value* builtin_reshape(Value *arg) {
     BOOL_REFUSE(arg, "reshape");   /* rows/cols; the buffer is not a bool */
     if (arg->data.list.items[1]->type != VAL_NUM ||
         arg->data.list.items[2]->type != VAL_NUM) return make_null();
-    int r = (int)arg->data.list.items[1]->data.num;
-    int c = (int)arg->data.list.items[2]->data.num;
+    int r = (int)eigs_list_num(arg, 1, __func__);
+    int c = (int)eigs_list_num(arg, 2, __func__);
     if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
     /* Same buffer chokepoint as buf_from_list — reshape copies the payload. */
     if (!sandbox_charge((b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1) * sizeof(double)))
@@ -109,7 +109,8 @@ Value* builtin_buf_get(Value *arg) {
         /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
-    int idx = (int)arg->data.list.items[1]->data.num;
+    int idx = (int)eigs_list_num(arg, 1, __func__);
+    if (g_has_error) return make_num(0);   /* fs:CHANNEL #1637: a non-number index raised */
     if (idx < 0 || idx >= buf->data.buffer.count) {
         rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
                  idx, buf->data.buffer.count);
@@ -142,8 +143,9 @@ Value* builtin_buf_set(Value *arg) {
         rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(arg->data.list.items[2]->type));
         return make_null();
     }
-    int idx = (int)arg->data.list.items[1]->data.num;
-    double val = arg->data.list.items[2]->data.num;
+    int idx = (int)eigs_list_num(arg, 1, __func__);
+    double val = eigs_list_num(arg, 2, __func__);
+    if (g_has_error) return make_null();   /* #1637: a non-number index raised; nothing written */
     if (idx < 0 || idx >= buf->data.buffer.count) {
         rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
                  idx, buf->data.buffer.count);

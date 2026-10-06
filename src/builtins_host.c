@@ -493,7 +493,9 @@ Value* builtin_build_corpus(Value *arg) {
     int slot_count = 0;
     if (arg->data.list.count >= 6) {
         Value *sv = arg->data.list.items[5];
-        if (sv && sv->type == VAL_NUM) slot_count = (int)sv->data.num;
+        double d = 0;
+        if (eigs_opt_num(sv, &d, "build_corpus")) slot_count = (int)d;   /* #1637: a bool raises */
+        if (g_has_error) return make_null();
     }
     if (slot_count < 0) slot_count = 0;
 
@@ -519,7 +521,9 @@ Value* builtin_build_corpus(Value *arg) {
     int int_count = 0;
     if (arg->data.list.count >= 7) {
         Value *iv = arg->data.list.items[6];
-        if (iv && iv->type == VAL_NUM) int_count = (int)iv->data.num;
+        double d = 0;
+        if (eigs_opt_num(iv, &d, "build_corpus")) int_count = (int)d;    /* #1637: a bool raises */
+        if (g_has_error) return make_null();
     }
     if (int_count < 0) int_count = 0;
     /* Source of truth: the size of the TokType enum. Hardcoding 54 (which is
@@ -1324,7 +1328,7 @@ Value* builtin_exec_capture(Value *arg) {
         && arg->data.list.items[0] && arg->data.list.items[0]->type == VAL_LIST
         && arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM) {
         cmd_list = arg->data.list.items[0];
-        timeout_sec = arg->data.list.items[1]->data.num;
+        timeout_sec = eigs_list_num(arg, 1, __func__);
         ARG_GUARD(cmd_list->data.list.count < 1,
                   "exec_capture", "a non-empty command list", exec_capture_result(-1, ""));
     }
@@ -1772,10 +1776,15 @@ Value* builtin_write_bytes(Value *arg) {
     Value *data = arg->data.list.items[1];
     ARG_GUARD(!path_val || path_val->type != VAL_STR,
               "write_bytes", "a string path as its first argument", make_num(0));
+    /* #1637: append is a flag -- a bool, or the older nonzero number. Any
+     * other value raises rather than silently meaning "truncate". */
     int append = 0;
-    if (arg->data.list.count >= 3 && arg->data.list.items[2] &&
-        arg->data.list.items[2]->type == VAL_NUM)
-        append = (arg->data.list.items[2]->data.num != 0.0);
+    if (arg->data.list.count >= 3 && arg->data.list.items[2]) {
+        Value *fl = arg->data.list.items[2];
+        if (fl->type == VAL_BOOL) append = fl->data.boolean;
+        else if (fl->type != VAL_NULL) append = (eigs_num_arg(fl, "write_bytes") != 0.0);
+        if (g_has_error) return make_num(0);
+    }
 
     int n = 0;
     Value **items = NULL;
@@ -1799,7 +1808,8 @@ Value* builtin_write_bytes(Value *arg) {
          * two zero bytes and reported success. Same class as join/str_replace
          * — no stand-in return, so invisible to the classifier. The free()
          * matters: STRICT_REQUIRE returns, and `out` is already allocated. */
-        if (g_strict && items && (!items[i] || items[i]->type != VAL_NUM)) {
+        if (items && (!items[i] || items[i]->type != VAL_NUM)
+            && (g_strict || (items[i] && items[i]->type == VAL_BOOL))) {   /* #1637: a bool in every mode */
             free(out);
             rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
             return make_null();

@@ -589,7 +589,9 @@ Value* builtin_http_early_bind(Value *arg) {
         return make_null();
     }
     int port = 5000;
-    if (arg && arg->type == VAL_NUM) port = (int)arg->data.num;
+    double port_d = 0;
+    if (eigs_opt_num(arg, &port_d, "http_serve")) port = (int)port_d;   /* #1637: a bool raises */
+    if (g_has_error) return make_null();
     const char *env_port = getenv("PORT");
     if (env_port && atoi(env_port) > 0) {
         port = atoi(env_port);
@@ -655,7 +657,9 @@ Value* builtin_http_serve(Value *arg) {
         return make_null();
     }
     int port = 5000;
-    if (arg && arg->type == VAL_NUM) port = (int)arg->data.num;
+    double port_d = 0;
+    if (eigs_opt_num(arg, &port_d, "http_serve")) port = (int)port_d;   /* #1637: a bool raises */
+    if (g_has_error) return make_null();
     const char *env_port = getenv("PORT");
     if (env_port && atoi(env_port) > 0) {
         port = atoi(env_port);

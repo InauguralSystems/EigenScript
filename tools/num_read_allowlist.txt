@@ -1,0 +1,24 @@
+# tools/num_read_allowlist.txt -- reviewed raw number reads (#1637).
+# Format: file|function|operand|reason. tools/num_read_check.sh fails on an
+# entry that no longer matches a read (stale) or that has no reason.
+# Only reads whose operand is proven a number by code OUTSIDE the function
+# belong here; a script-supplied argument never does -- route it through
+# eigs_num_arg / eigs_list_num / eigs_opt_num instead.
+builtins.c|sort_cmp_num|(*(Value**)a)|qsort comparator; its only caller builtin_sort raises unless every element is VAL_NUM before choosing it
+builtins.c|sort_cmp_num|(*(Value**)b)|qsort comparator; its only caller builtin_sort raises unless every element is VAL_NUM before choosing it
+ext_store.c|builtin_store_put|rv|store catalog field "root", not a script argument; the catalog is written by the store itself (make_num)
+ext_store.c|builtin_store_put|nv|store catalog field "next_id", not a script argument; written by the store itself (make_num)
+ext_store.c|builtin_store_get|rv|store catalog field "root", not a script argument; written by the store itself (make_num)
+ext_store.c|store_locate|rv|store catalog field "root", not a script argument; written by the store itself (make_num)
+ext_store.c|builtin_store_query|rv|store catalog field "root", not a script argument; written by the store itself (make_num)
+ext_store.c|builtin_store_count|rv|store catalog field "root", not a script argument; written by the store itself (make_num)
+ext_store.c|builtin_store_drop|rv|store catalog field "root", not a script argument; written by the store itself (make_num)
+vm.c|vm_leaf_accessor_exec|c->constants[idx]|leaf-accessor scanner admits OP_CONST only for a VAL_NUM constant (chunk_scan_leaf_accessor, chunk.c)
+# Check-then-default reads (`soft:`): the default is the right answer for
+# a value the runtime itself wrote, never for a script-supplied argument.
+builtins.c|get_channel_why|soft:gv|channel handle dict field _channel_gen, written by the runtime; a forged or missing one fails the generation check in handle_lookup
+ext_store.c|get_store_why|soft:gv|store handle dict field written by the runtime; a forged or missing one fails the generation check in handle_lookup
+ext_store.c|builtin_store_close|soft:id_val|store handle dict field written by the runtime; -1 is no handle (handle_claim refuses it)
+ext_store.c|builtin_store_close|soft:g_val|store handle dict field written by the runtime; a forged or missing one fails the generation check
+ext_store.c|store_buffer_from_tag|soft:e|decoding the store's own on-disk tag: an element is a number or a nonfinite-sentinel string, never a script value
+eigs_embed.c|eigs_value_as_num|soft:v|C embedding API, documented in docs/EMBEDDING.md to answer 0.0 for a non-number; hosts test eigs_value_type first

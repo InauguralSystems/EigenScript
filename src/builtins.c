@@ -177,11 +177,16 @@ Value* builtin_usleep(Value *arg) {
 Value* builtin_screen_put(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "screen_put");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-    int row = (int)arg->data.list.items[0]->data.num;
-    int col = (int)arg->data.list.items[1]->data.num;
+    int row = (int)eigs_list_num(arg, 0, __func__);
+    int col = (int)eigs_list_num(arg, 1, __func__);
+    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *ch = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : " ";
-    int color = (arg->data.list.count >= 4 && arg->data.list.items[3]->type == VAL_NUM)
-                ? (int)arg->data.list.items[3]->data.num : 0;
+    /* #1637: an optional color; given, it must be a number (a bool raises
+     * instead of meaning "no color"). */
+    double color_d = 0;
+    if (arg->data.list.count >= 4) eigs_opt_num(arg->data.list.items[3], &color_d, "screen_put");
+    if (g_has_error) return make_null();
+    int color = (int)color_d;
     if (color > 0)
         printf("\033[%d;%dH\033[%dm%s", row, col, color, ch);
     else
@@ -212,12 +217,13 @@ Value* builtin_screen_render(Value *arg) {
     STRICT_LIST_MAX(arg, 7, "screen_render");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 7) return make_null();
     Value *entities = arg->data.list.items[0];
-    int sw = (int)arg->data.list.items[1]->data.num;
-    int sh = (int)arg->data.list.items[2]->data.num;
-    double px = arg->data.list.items[3]->data.num;
-    double py = arg->data.list.items[4]->data.num;
-    double ww = arg->data.list.items[5]->data.num;
-    double wh = arg->data.list.items[6]->data.num;
+    int sw = (int)eigs_list_num(arg, 1, __func__);
+    int sh = (int)eigs_list_num(arg, 2, __func__);
+    double px = eigs_list_num(arg, 3, __func__);
+    double py = eigs_list_num(arg, 4, __func__);
+    double ww = eigs_list_num(arg, 5, __func__);
+    double wh = eigs_list_num(arg, 6, __func__);
+    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
 
     if (!entities || entities->type != VAL_LIST) return make_null();
     if (sw <= 0 || sh <= 0 || sw > 10000 || sh > 10000) return make_null();
@@ -237,10 +243,11 @@ Value* builtin_screen_render(Value *arg) {
     for (int i = 0; i < entities->data.list.count; i++) {
         Value *ent = entities->data.list.items[i];
         if (!ent || ent->type != VAL_LIST || ent->data.list.count < 4) continue;
-        double ex = ent->data.list.items[0]->data.num;
-        double ey = ent->data.list.items[1]->data.num;
+        double ex = eigs_list_num(ent, 0, __func__);
+        double ey = eigs_list_num(ent, 1, __func__);
         const char *ch = ent->data.list.items[2]->type == VAL_STR ? ent->data.list.items[2]->data.str : " ";
-        int color = (int)ent->data.list.items[3]->data.num;
+        int color = (int)eigs_list_num(ent, 3, __func__);
+        if (g_has_error) { free(chars); free(cols); return make_null(); }
 
         /* Torus delta */
         double dx = ex - px;
@@ -698,9 +705,10 @@ Value* builtin_set_observer_thresholds(Value *arg) {
         rt_error(EK_TYPE, 0, "set_observer_thresholds requires [dh_zero, dh_small, h_low]");
         return make_null();
     }
-    double dh_zero  = arg->data.list.items[0]->data.num;
-    double dh_small = arg->data.list.items[1]->data.num;
-    double h_low    = arg->data.list.items[2]->data.num;
+    double dh_zero  = eigs_list_num(arg, 0, __func__);
+    double dh_small = eigs_list_num(arg, 1, __func__);
+    double h_low    = eigs_list_num(arg, 2, __func__);
+    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     if (dh_zero <= 0 || dh_small <= 0 || h_low <= 0) {
         rt_error(EK_VALUE, 0, "observer thresholds must be positive");
         return make_null();
@@ -905,7 +913,7 @@ Value* builtin_exit(Value *arg) {
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1 &&
                arg->data.list.items[0] &&
                arg->data.list.items[0]->type == VAL_NUM) {
-        code = (int)arg->data.list.items[0]->data.num;
+        code = (int)eigs_list_num(arg, 0, __func__);
     }
     g_exit_code = code;
     g_exit_requested = 1;      /* this thread's unwind: uncatchable */
@@ -3130,8 +3138,9 @@ Value* builtin_hex(Value *arg) {
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
                arg->data.list.items[0] && arg->data.list.items[0]->type == VAL_NUM &&
                arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM) {
-        num = arg->data.list.items[0]->data.num;
-        width = (long long)arg->data.list.items[1]->data.num;
+        num = eigs_list_num(arg, 0, __func__);
+        width = (long long)eigs_list_num(arg, 1, __func__);
+        if (g_has_error) return make_null();
     } else {
         rt_error(EK_TYPE, 0, "hex requires a number or [number, nibbles]");
         return make_null();
@@ -3496,8 +3505,14 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
 
     for (int i = 0; i < code->data.list.count; i++) {
         Value *b = code->data.list.items[i];
-        int byte = (b && b->type == VAL_NUM) ? ((int)b->data.num & 0xFF) : 0;
-        chunk_emit(chunk, (uint8_t)byte, 1);
+        /* #1637: a non-number code element (a bool) is refused, never
+         * emitted as byte 0 (OP_CONST's opcode). */
+        if (!b || b->type != VAL_NUM) {
+            chunk_free(chunk);
+            vm_desc_error(why, whyn, "descriptor code must be a list of byte numbers");
+            return NULL;
+        }
+        chunk_emit(chunk, (uint8_t)((int)b->data.num & 0xFF), 1);
     }
     /* Positional: the code stream indexes this pool by position, so neither
      * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
@@ -3864,15 +3879,15 @@ Value* builtin_sandbox_run(Value *arg) {
     int max_iter = 1000000;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
         arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM)
-        max_iter = (int)arg->data.list.items[1]->data.num;
+        max_iter = (int)eigs_list_num(arg, 1, __func__);
     /* #292: optional max_bytes (3rd element) — the allocation budget for this
      * run. Default 256 MiB: ample for the short generated snippets grade()
      * runs, small enough that even a few of them can't thrash a 4 GB box. */
     size_t max_bytes = (size_t)256 * 1024 * 1024;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3 &&
         arg->data.list.items[2] && arg->data.list.items[2]->type == VAL_NUM &&
-        arg->data.list.items[2]->data.num > 0)
-        max_bytes = (size_t)arg->data.list.items[2]->data.num;
+        eigs_list_num(arg, 2, __func__) > 0)
+        max_bytes = (size_t)eigs_list_num(arg, 2, __func__);
     /* VM instructions, cumulative across callback re-entry and function
      * frames.  This is intentionally distinct from the compatibility loop
      * limit.  Ten million keeps normal generated programs comfortable while
@@ -3880,7 +3895,7 @@ Value* builtin_sandbox_run(Value *arg) {
     uint64_t max_work = UINT64_C(10000000);
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 4 &&
         arg->data.list.items[3] && arg->data.list.items[3]->type == VAL_NUM) {
-        double requested = arg->data.list.items[3]->data.num;
+        double requested = eigs_list_num(arg, 3, __func__);
         /* A double rounds UINT64_MAX up to 2^64, so use a strict bound;
          * accepting equality and casting it would itself be undefined. */
         if (isfinite(requested) && requested >= 1.0 &&
@@ -4372,13 +4387,13 @@ Value* builtin_range(Value *arg) {
             }
         }
         if (argc >= 1)
-            start = (int)arg->data.list.items[0]->data.num;
+            start = (int)eigs_list_num(arg, 0, __func__);
         if (argc >= 2)
-            end = (int)arg->data.list.items[1]->data.num;
+            end = (int)eigs_list_num(arg, 1, __func__);
         else
             { end = start; start = 0; } /* single-element list: treat as range of n */
         if (argc >= 3) {
-            step = (int)arg->data.list.items[2]->data.num;
+            step = (int)eigs_list_num(arg, 2, __func__);
             /* The Euler-like update that feeds step can never produce
              * exactly zero — it trades the zero singularity for infinity.
              * This bound catches the infinity side: a step that would
@@ -4442,7 +4457,8 @@ Value* builtin_fill(Value *arg) {
         return make_list(0);
     }
     BOOL_REFUSE(arg->data.list.items[0], "fill");   /* the count; the value may be anything */
-    int count = (int)arg->data.list.items[0]->data.num;
+    int count = (int)eigs_list_num(arg, 0, __func__);
+    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     Value *val = arg->data.list.items[1];
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000; /* 10M cap */
@@ -4781,7 +4797,7 @@ static void *thread_entry(void *arg) {
             bin_arg = l;
         }
         int consumes_arg = (fn->data.builtin == builtin_free_val);
-        Value *result = fn->data.builtin(bin_arg);
+        Value *result = eigs_call_builtin(fn->data.builtin, bin_arg);
         /* #720: this site owns bin_arg (increfed above, or freshly built)
          * and drops it below, so it runs the VM's own contract —
          * caller_owns_arg=1, and `result == bin_arg` transfers rather than
@@ -5682,11 +5698,13 @@ Value* builtin_task_sleep(Value *arg) {
                  "(arena_mark…arena_reset)");
         return make_null();
     }
-    if (!g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
+    /* #1637: the type check comes before the no-scheduler short-circuit, so
+     * `task_sleep of true` raises with or without a scheduler. */
     if (!arg || arg->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "task_sleep requires a number of ticks");
         return make_null();
     }
+    if (!g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
     if (no_yield_forbidden("task_sleep")) return make_null();   /* #488 */
     task_request_sleep(arg->data.num);
     return make_null();   /* placeholder: execution resumes when the clock wakes it */
@@ -5934,11 +5952,12 @@ Value* builtin_nearest_in_range(Value *arg) {
     Value *entities = arg->data.list.items[0];
     if (!entities || entities->type != VAL_LIST) return make_null();
     BOOL_REFUSE(arg, "nearest_in_range");   /* x, y, range, world: numbers */
-    double px = arg->data.list.items[1]->data.num;
-    double py = arg->data.list.items[2]->data.num;
-    double range = arg->data.list.items[3]->data.num;
-    double ww = arg->data.list.items[4]->data.num;
-    double wh = arg->data.list.items[5]->data.num;
+    double px = eigs_list_num(arg, 1, __func__);
+    double py = eigs_list_num(arg, 2, __func__);
+    double range = eigs_list_num(arg, 3, __func__);
+    double ww = eigs_list_num(arg, 4, __func__);
+    double wh = eigs_list_num(arg, 5, __func__);
+    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
     if (arg->data.list.count >= 7 && arg->data.list.items[6]->type == VAL_STR)
         px_key = arg->data.list.items[6]->data.str;
@@ -5991,7 +6010,10 @@ Value* builtin_nearest_in_range(Value *arg) {
             if (idx >= 0 && hint_active < 0) hint_active = idx;
             av = (idx >= 0) ? vals[idx] : NULL;
         }
-        if (av && av->type == VAL_NUM && av->data.num != 1.0) continue;
+        /* #1637: "active" is a bool (false skips); the older 1/0 number
+         * still reads as before. */
+        if (av && ((av->type == VAL_NUM && av->data.num != 1.0)
+                   || (av->type == VAL_BOOL && !av->data.boolean))) continue;
 
         Value *ex;
         if (hint_px >= 0 && hint_px < kcount && keys[hint_px] == ipx) {
@@ -6056,9 +6078,10 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     Value *entities = arg->data.list.items[0];
     if (!entities || entities->type != VAL_LIST) return make_null();
     BOOL_REFUSE(arg, "nearest_in_range_all");   /* range, world: numbers */
-    double range = arg->data.list.items[1]->data.num;
-    double ww = arg->data.list.items[2]->data.num;
-    double wh = arg->data.list.items[3]->data.num;
+    double range = eigs_list_num(arg, 1, __func__);
+    double ww = eigs_list_num(arg, 2, __func__);
+    double wh = eigs_list_num(arg, 3, __func__);
+    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
     if (arg->data.list.count >= 5 && arg->data.list.items[4]->type == VAL_STR)
         px_key = arg->data.list.items[4]->data.str;
@@ -6112,7 +6135,8 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         }
         /* active default: 1 (matches single-call behavior where missing/non-num
          * is treated as active). Explicit 0/non-1 value flips to inactive. */
-        active_arr[i] = (av && av->type == VAL_NUM && av->data.num != 1.0) ? 0 : 1;
+        active_arr[i] = (av && ((av->type == VAL_NUM && av->data.num != 1.0)
+                                || (av->type == VAL_BOOL && !av->data.boolean))) ? 0 : 1;   /* #1637 */
 
         Value *ex;
         if (hint_px >= 0 && hint_px < kcount && keys[hint_px] == ipx) {
@@ -6260,7 +6284,9 @@ Value* builtin_list_remove_at(Value *arg) {
     Value *list = arg->data.list.items[0];
     Value *idx_val = arg->data.list.items[1];
     if (!list || list->type != VAL_LIST) return make_null();
-    if (!idx_val || idx_val->type != VAL_NUM) return list;
+    /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
+     * mode) instead of silently doing nothing. */
+    ARG_GUARD(!idx_val || idx_val->type != VAL_NUM, "list_remove_at", "a number index", list);
     int idx = (int)idx_val->data.num;
     if (idx < 0 || idx >= list->data.list.count) return list;
     val_decref(list->data.list.items[idx]);
@@ -6282,7 +6308,9 @@ Value* builtin_list_insert_at(Value *arg) {
     Value *idx_val = arg->data.list.items[1];
     Value *val = arg->data.list.items[2];
     if (!list || list->type != VAL_LIST) return make_null();
-    if (!idx_val || idx_val->type != VAL_NUM) return list;
+    /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
+     * mode) instead of silently doing nothing. */
+    ARG_GUARD(!idx_val || idx_val->type != VAL_NUM, "list_insert_at", "a number index", list);
     int idx = (int)idx_val->data.num;
     int count = list->data.list.count;
     if (idx < 0 || idx > count) return list;
@@ -6503,10 +6531,10 @@ Value* builtin_dispatch(Value *arg) {
          * making rather than the arg vector's (#720). */
         if (fn->data.builtin == builtin_free_val) {
             if (fn_arg) val_incref(fn_arg);
-            Value *consumed = fn->data.builtin(fn_arg);
+            Value *consumed = eigs_call_builtin(fn->data.builtin, fn_arg);
             return consumed ? consumed : make_null();
         }
-        Value *result = fn->data.builtin(fn_arg);
+        Value *result = eigs_call_builtin(fn->data.builtin, fn_arg);
         if (!result) return make_null();
         /* #720: the inner builtin may return a borrow of fn_arg, which is a
          * *grandchild* of our own arg vector — one level deeper than any
@@ -6605,6 +6633,111 @@ static Value* builtin_borrow_guard_selftest(Value *arg) {
     return NULL;   /* VM substitutes null: not enough args to violate */
 }
 #endif
+
+/* ==== #1637: the builtin-call bool gate (eigs_bool_gate, eigenscript.h) ====
+ * k_bool_policy is THE reviewed list of where a core builtin takes a bool.
+ * A position not declared here refuses a bool before the builtin runs, in
+ * every strict mode -- so a bool never reaches a builtin's own soft paths
+ * (`add of true` answering null, `exit of true` exiting 0, `pi of true`
+ * ignoring it). Positions: BA_ARG is the argument itself (`f of true`),
+ * BA_POS(i) is element i of the argument list (`f of [x, true]` is position
+ * 1; a one-argument builtin given a list sees the list's elements here).
+ * The gate scans the first EIGS_BOOL_GATE_SCAN positions; beyond that the
+ * builtin's own typed reads (eigs_num_arg family, ARG_GUARD) decide.
+ * tests/test_bool_fuzz.sh is the oracle: it puts true and false in every
+ * slot of every builtin and checks this table against its own reviewed
+ * any-value list (tests/bool_fuzz_anyvalue.txt). */
+#define BA_ARG      0x001u
+#define BA_POS(i)   (1u << ((i) + 1))
+#define BA_ELEMS    0x1FEu                /* every scanned list position */
+#define BA_ANY      (BA_ARG | BA_ELEMS)
+static const struct { const char *name; unsigned mask; const char *why; } k_bool_policy[] = {
+    {"print",          BA_ANY,  "renders any value"},
+    {"write",          BA_ANY,  "renders any value"},
+    {"str",            BA_ANY,  "converts any value to text (\"true\"/\"false\")"},
+    {"type",           BA_ANY,  "names any value's type"},
+    {"json_encode",    BA_ANY,  "JSON has true/false"},
+    {"observe",        BA_ANY,  "the observer measures bools (entropy 0/1)"},
+    {"classify",       BA_ANY,  "the observer classifies any value"},
+    {"free_val",       BA_ANY,  "releases any value"},
+    {"coalesce",       BA_ANY,  "picks the first non-null of any values"},
+    {"len",            BA_ELEMS, "counts a list's elements, whatever they are"},
+    {"assert",         BA_ARG | BA_POS(0), "the condition is a bool"},
+    {"append",         BA_POS(1), "a list element may be any value"},
+    {"set_at",         BA_POS(2), "a list element may be any value"},
+    {"list_insert_at", BA_POS(2), "a list element may be any value"},
+    {"fill",           BA_POS(1), "a list element may be any value"},
+    {"dict_set",       BA_POS(2), "a dict value may be any value"},
+    {"list_index_of",  BA_POS(1), "searches a list for any value"},
+    {"list_contains",  BA_POS(1), "searches a list for any value"},
+    {"json_build",     BA_POS(1) | BA_POS(3) | BA_POS(5) | BA_POS(7), "JSON values may be true/false (keys may not)"},
+    {"send",           BA_POS(1), "a channel carries any value"},
+    {"task_send",      BA_POS(1), "a mailbox carries any value"},
+    {"spawn",          BA_ELEMS & ~BA_POS(0), "arguments for the spawned function"},
+    {"task_spawn",     BA_ELEMS & ~BA_POS(0), "arguments for the spawned task"},
+    {"dispatch",       BA_POS(2), "the argument for the dispatched function"},
+    {"write_bytes",    BA_POS(2), "the append flag"},
+    {"shared_set",     BA_POS(1), "a shared value may be any value"},
+};
+
+typedef struct { BuiltinFn fn; unsigned mask; const char *name; } BoolGateEntry;
+static BoolGateEntry *g_bool_gate;
+static int g_bool_gate_n;
+static pthread_once_t g_bool_gate_once = PTHREAD_ONCE_INIT;
+static __thread Env *t_bool_gate_env;
+
+static int bool_gate_cmp(const void *a, const void *b) {
+    uintptr_t x = (uintptr_t)((const BoolGateEntry *)a)->fn;
+    uintptr_t y = (uintptr_t)((const BoolGateEntry *)b)->fn;
+    return (x > y) - (x < y);
+}
+
+/* Once per process, from the first fully registered builtin env: every core
+ * builtin's function pointer, its name, and its policy (default: no bool). */
+static void bool_gate_build(void) {
+    Env *env = t_bool_gate_env;
+    g_bool_gate = xcalloc_array((size_t)(env->count > 0 ? env->count : 1), sizeof(BoolGateEntry));
+    for (int i = 0; i < env->count; i++) {
+        if (!env->names[i] || !slot_is_ptr(env->values[i])) continue;
+        Value *v = slot_as_ptr(env->values[i]);
+        if (!v || v->type != VAL_BUILTIN) continue;
+        unsigned mask = 0;
+        for (size_t k = 0; k < sizeof k_bool_policy / sizeof k_bool_policy[0]; k++)
+            if (strcmp(k_bool_policy[k].name, env->names[i]) == 0) mask = k_bool_policy[k].mask;
+        BoolGateEntry *e = NULL;
+        for (int j = 0; j < g_bool_gate_n; j++)
+            if (g_bool_gate[j].fn == v->data.builtin) { e = &g_bool_gate[j]; break; }
+        if (e) { e->mask |= mask; continue; }   /* an alias (inflate/zlib_inflate) */
+        g_bool_gate[g_bool_gate_n].fn = v->data.builtin;
+        g_bool_gate[g_bool_gate_n].mask = mask;
+        g_bool_gate[g_bool_gate_n].name = xstrdup(env->names[i]);
+        g_bool_gate_n++;
+    }
+    qsort(g_bool_gate, (size_t)g_bool_gate_n, sizeof(BoolGateEntry), bool_gate_cmp);
+}
+
+int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg) {
+    if (!g_bool_gate) return 0;   /* no core registry yet: nothing to gate */
+    BoolGateEntry key = { fn, 0, NULL };
+    BoolGateEntry *e = bsearch(&key, g_bool_gate, (size_t)g_bool_gate_n,
+                               sizeof(BoolGateEntry), bool_gate_cmp);
+    if (!e) return 0;             /* a host function or compiled native */
+    if (arg->type == VAL_BOOL) {
+        if (e->mask & BA_ARG) return 0;
+        rt_error(EK_TYPE, 0, "%s: does not take a bool argument", e->name);
+        return 1;
+    }
+    int n = arg->data.list.count < EIGS_BOOL_GATE_SCAN ? arg->data.list.count
+                                                       : EIGS_BOOL_GATE_SCAN;
+    for (int i = 0; i < n; i++) {
+        const Value *it = arg->data.list.items[i];
+        if (!it || it->type != VAL_BOOL || (e->mask & BA_POS(i))) continue;
+        rt_error(EK_TYPE, 0, "%s: argument %d is a bool, which %s does not take there",
+                 e->name, i + 1, e->name);
+        return 1;
+    }
+    return 0;
+}
 
 void register_builtins(Env *env) {
     /* ---- Core language builtins (always available) ---- */
@@ -6872,6 +7005,11 @@ void register_builtins(Env *env) {
      * race under TSan (#1137). Relaxed atomics: the value is identical from
      * every writer and the reader only needs a consistent int. */
     __atomic_store_n(&g_builtin_binding_count, env->count, __ATOMIC_RELAXED);
+
+    /* #1637: the bool gate's registry, from the first complete builtin env. */
+    t_bool_gate_env = env;
+    pthread_once(&g_bool_gate_once, bool_gate_build);
+    t_bool_gate_env = NULL;
 }
 
 /* #1388: module code resolves builtin names against a PRISTINE layer, not the

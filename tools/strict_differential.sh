@@ -638,6 +638,8 @@ starts_with|print of (starts_with of [42, "x"])
 store_delete|print of (store_delete of [42, "col", "k"])|store_delete: invalid store
 index_of|print of (index_of of [42, "x"])
 list_index_of|print of (list_index_of of [42, 1])
+list_insert_at|print of (list_insert_at of [[1, 2], "i", 9])
+list_remove_at|print of (list_remove_at of [[1, 2], "i"])
 ord|print of (ord of 42)
 proc_write|print of (proc_write of [42, 99])
 exec_capture|print of (exec_capture of 42)

@@ -33,6 +33,18 @@ else
     printf '%s\n' "$BOOL_JIT_OUT" | eigs_failure_output
 fi
 unset BOOL_JIT_OUT BOOL_JIT_RC
+# The class gate (#1637 round 3): every raw number read in src/*.c is typed
+# or reviewed, no check-then-default read lacks a raising guard, and every
+# builtin call passes the bool gate (tools/num_read_check.sh).
+TOTAL=$((TOTAL + 1))
+BOOL_NR_OUT=$(bash "$TESTS_DIR/../tools/num_read_check.sh" 2>&1); BOOL_NR_RC=$?
+if [ "$BOOL_NR_RC" = 0 ] && grep -q '^num-read: PASS$' <<< "$BOOL_NR_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: number reads are typed ($(grep '^num-read: examined' <<< "$BOOL_NR_OUT"); $(grep '^bool-gate:' <<< "$BOOL_NR_OUT"))"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: number reads are typed (rc=$BOOL_NR_RC)"
+    printf '%s\n' "$BOOL_NR_OUT"
+fi
+unset BOOL_NR_OUT BOOL_NR_RC
 # Tape (#1637, format v6): a recorded bool replays as a bool, from the tape —
 # the probed file is deleted between record and replay, so a live re-probe
 # would answer false. A v5 header is refused (exit 3), never read as 1/0.

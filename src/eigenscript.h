@@ -1267,17 +1267,57 @@ extern __thread EigsThread *eigs_current;
  * Deliberately a macro rather than a helper: each call site keeps its own
  * early `return`, which is what makes the conversion reviewable one guard at
  * a time instead of a control-flow rewrite. */
-/* #1637: a bool where a number is wanted raises in EVERY strict mode. The
+/* #1637: a bool a builtin does not take raises in EVERY strict mode. The
  * EIGS_STRICT=0 opt-out keeps the soft stand-in for other wrong types, but a
  * soft answer for a bool is a silent wrong value (`abs of true` was 0, so true
- * read as 0). A guard counts as numeric when its `want` text names a number
- * (eigs_want_numeric: "num", "size", "integer", "index", "count", " id");
- * the bool may be the argument itself or a top-level element of the
- * argument list. The test is the binary's own: tests/test_bool_numeric.py
- * derives the numeric builtins by probing and requires the raise in both
- * modes. */
+ * read as 0 -- the old 1/0 idiom flipping without a word). So a failed guard
+ * raises under EIGS_STRICT=0 too when the argument, or a top-level element of
+ * the argument list, is a bool. The oracle is tests/test_bool_fuzz.sh: true
+ * and false in every argument slot of every builtin must raise unless the
+ * slot is on its reviewed any-value list. */
 int eigs_arg_has_bool(const Value *arg);
-int eigs_want_numeric(const char *want);
+/* #1637: THE checked number reads. C code turning a Value into a double goes
+ * through one of these (tools/num_read_check.sh enforces it: a raw
+ * `->data.num` read needs a VAL_NUM test in the same function, or a reviewed
+ * allowlist entry). A bool -- or any other non-number -- raises a type error
+ * naming `who` (a `builtin_` prefix is dropped) and reads as 0.0; the caller
+ * checks g_has_error before acting on the value.
+ *   eigs_num_arg(v, who)       v must be a number
+ *   eigs_list_num(l, i, who)   element i of the argument list must exist and
+ *                              be a number
+ *   eigs_opt_num(v, &d, who)   optional: absent/null -> 0 (use the default);
+ *                              a number -> 1 with *d set; anything else raises
+ *                              and returns 0 */
+double eigs_num_arg(const Value *v, const char *who);
+double eigs_list_num(const Value *list, int i, const char *who);
+int eigs_opt_num(const Value *v, double *out, const char *who);
+/* #1637: the builtin-call bool gate -- the structural half of "a bool is
+ * not a number". Every call of a C builtin goes through eigs_call_builtin
+ * (tools/num_read_check.sh refuses a bare `->data.builtin(` call). When the
+ * argument is a bool, or one of the first EIGS_BOOL_GATE_SCAN top-level
+ * elements of an argument list is, the builtin's declared bool policy
+ * (k_bool_policy in builtins.c: which positions may hold a bool) decides; an
+ * undeclared position raises a type error in every strict mode and the
+ * builtin is not called. Names outside the core registry (host functions
+ * from eigs_register_function, compiled natives) are not gated. The fast
+ * path is a type test, plus at most EIGS_BOOL_GATE_SCAN loads for a list. */
+#define EIGS_BOOL_GATE_SCAN 8
+int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg);
+static inline int eigs_bool_gate(BuiltinFn fn, const Value *arg) {
+    if (!arg) return 0;
+    if (arg->type == VAL_BOOL) return eigs_bool_gate_slow(fn, arg);
+    if (arg->type != VAL_LIST) return 0;
+    int n = arg->data.list.count < EIGS_BOOL_GATE_SCAN ? arg->data.list.count
+                                                       : EIGS_BOOL_GATE_SCAN;
+    for (int i = 0; i < n; i++) {
+        const Value *e = arg->data.list.items[i];
+        if (e && e->type == VAL_BOOL) return eigs_bool_gate_slow(fn, arg);
+    }
+    return 0;
+}
+static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
+    return eigs_bool_gate(fn, arg) ? NULL : fn(arg);
+}
 /* #1637: for a builtin that reads a number without a typed guard (its other
  * wrong types answer null): a bool there raises in every strict mode. */
 #define BOOL_REFUSE(v, who)                                                   \
@@ -1288,7 +1328,7 @@ int eigs_want_numeric(const char *want);
         }                                                                     \
     } while (0)
 #define EIGS_GUARD_RAISES(want)                                               \
-    (g_strict || (eigs_want_numeric(want) && eigs_arg_has_bool(arg)))
+    ((void)(want), g_strict || eigs_arg_has_bool(arg))
 
 #define ARG_GUARD(cond, who, want, soft)                                      \
     do {                                                                      \

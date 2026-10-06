@@ -2752,7 +2752,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     Env *saved = g_builtin_call_env;
     g_builtin_call_env = frame->env;
     int consumes_arg = (fn_val->data.builtin == builtin_free_val);
-    Value *result = fn_val->data.builtin(arg);
+    Value *result = eigs_call_builtin(fn_val->data.builtin, arg);
     g_builtin_call_env = saved;
     frame->ip = thunk_entry_ip;
 
@@ -4209,7 +4209,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Env *saved = g_builtin_call_env;
             g_builtin_call_env = frame->env;
             int consumes_arg = (fn_val->data.builtin == builtin_free_val);
-            Value *result = fn_val->data.builtin(arg);
+            Value *result = eigs_call_builtin(fn_val->data.builtin, arg);
             g_builtin_call_env = saved;
 
             if (!result) {
@@ -5648,8 +5648,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t kind = read_u16(ip); ip += 2;
         uint16_t name_idx = read_u16(ip); ip += 2;
         Value *line_v = vm_pop();
-        int line = 0;
-        if (line_v && line_v->type == VAL_NUM) line = (int)line_v->data.num;
+        /* #1637: the line is a number, as `when`'s ordinal is. A bool (or any
+         * other type) used to read as line 0 and answer null silently. */
+        if (!line_v || line_v->type != VAL_NUM) {
+            rt_error(EK_TYPE, current_line, "'at' line must be a number, got %s",
+                     line_v ? val_type_name(line_v->type) : "none");
+            val_decref(line_v);
+            vm_push(make_null());
+            DISPATCH();
+        }
+        int line = (int)line_v->data.num;
         val_decref(line_v);
         Value *result = make_null();
         const char *name = chunk->const_interns[name_idx];
@@ -5841,6 +5849,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                             val_type_name(bv->type));                         \
                         bound_err = 1;                                        \
                     }                                                         \
+                } else if (slot_is_null(slot)) {                              \
+                    (outvar) = (defval);   /* an omitted bound */             \
+                } else {                                                      \
+                    /* #1637: an immediate bool (or any other non-number     \
+                     * slot) is not a bound -- never the default one. */     \
+                    rt_error(EK_TYPE, g_vm.current_line,                      \
+                        "slice bound must be an integer or null, got %s",     \
+                        slot_type_name(slot));                                \
+                    bound_err = 1;                                            \
                 }                                                             \
             } while (0)
 
@@ -6473,7 +6490,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Env *saved = g_builtin_call_env;
             g_builtin_call_env = frame->env;
             int consumes_arg = (fn->data.builtin == builtin_free_val);
-            Value *result = fn->data.builtin(arg);
+            Value *result = eigs_call_builtin(fn->data.builtin, arg);
             g_builtin_call_env = saved;
             if (!result) {
                 result = make_null();

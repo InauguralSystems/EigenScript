@@ -143,7 +143,10 @@ static int net_num_at(Value *arg, int idx, int fallback) {
     if (!arg || arg->type != VAL_LIST || idx >= arg->data.list.count)
         return fallback;
     Value *v = arg->data.list.items[idx];
-    return (v && v->type == VAL_NUM) ? (int)v->data.num : fallback;
+    /* #1637: null keeps the fallback, a number is read, anything else (a
+     * bool) raises; callers check g_has_error after their reads. */
+    double d = 0;
+    return eigs_opt_num(v, &d, "net") ? (int)d : fallback;
 }
 
 /* ---- builtins ----------------------------------------------------- */
@@ -206,6 +209,7 @@ Value* builtin_net_accept(Value *arg) {
     if (arg && arg->type == VAL_LIST) {
         if (!net_require_list(arg, 2, 2, "net_accept")) return make_null();
         timeout_ms = net_num_at(arg, 1, -1);
+        if (g_has_error) return make_null();   /* #1637: a bool timeout raised */
         arg = arg->data.list.items[0];
     }
     if (!arg || arg->type != VAL_NUM) {
@@ -239,6 +243,7 @@ Value* builtin_net_dial(Value *arg) {
     }
     int port = net_num_at(arg, 1, -1);
     int timeout_ms = net_num_at(arg, 2, -1);
+    if (g_has_error) return make_null();   /* #1637: before the tape boundary */
     TRACE_NONDET_TAKE("net_dial");
     if (port < 0 || port > 65535) TRACE_NONDET_RECORD("net_dial", make_null());
 
@@ -288,6 +293,7 @@ Value* builtin_net_recv(Value *arg) {
     Value *conn = arg->data.list.items[0];
     int max = net_num_at(arg, 1, 0);
     int timeout_ms = net_num_at(arg, 2, -1);
+    if (g_has_error) return make_null();   /* #1637 */
     /* A zero-byte recv() returns 0 — indistinguishable from EOF — so a
      * senseless max is a shape error, decided before the tape boundary. */
     if (max < 1) {

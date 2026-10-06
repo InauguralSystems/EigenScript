@@ -1510,16 +1510,30 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         out->dh_window[out->dh_window_count++] = a->data.num;
     }
     out->dh_window_head = (uint8_t)(out->dh_window_count % N);
-    Value *v;
-    if ((v = dict_get(dict, "entropy"))      && v->type == VAL_NUM) out->entropy = v->data.num;
-    if ((v = dict_get(dict, "dH"))           && v->type == VAL_NUM) out->dH = v->data.num;
-    if ((v = dict_get(dict, "last_entropy")) && v->type == VAL_NUM) out->last_entropy = v->data.num;
-    if ((v = dict_get(dict, "last_value"))   && v->type == VAL_NUM) out->last_value = v->data.num;
-    v = dict_get(dict, "observed");
-    out->used = (v && v->type == VAL_NUM) ? (v->data.num != 0.0) : 1;
-    v = dict_get(dict, "numeric");
-    out->v_used = (v && v->type == VAL_NUM) ? (v->data.num != 0.0)
-                                            : (out->v_window_count > 0);
+    /* #1637: the scalar fields are numbers and the two flags are bools, as
+     * `trajectory of x` writes them. Absent keeps the default; any other
+     * type is not a snapshot (the old code read a bool flag as "not a
+     * number" and defaulted `observed: false` to observed). */
+    static const char *const nums[] = {"entropy", "dH", "last_entropy", "last_value"};
+    double *dsts[] = {&out->entropy, &out->dH, &out->last_entropy, &out->last_value};
+    for (int k = 0; k < 4; k++) {
+        Value *v = dict_get(dict, nums[k]);
+        if (!v) continue;
+        if (v->type != VAL_NUM) {
+            free(out->v_window); free(out->vr_window); free(out->dh_window);
+            memset(out, 0, sizeof *out);
+            return 0;
+        }
+        *dsts[k] = v->data.num;
+    }
+    Value *fo = dict_get(dict, "observed"), *fn = dict_get(dict, "numeric");
+    if ((fo && fo->type != VAL_BOOL) || (fn && fn->type != VAL_BOOL)) {
+        free(out->v_window); free(out->vr_window); free(out->dh_window);
+        memset(out, 0, sizeof *out);
+        return 0;
+    }
+    out->used = fo ? fo->data.boolean : 1;
+    out->v_used = fn ? fn->data.boolean : (out->v_window_count > 0);
     /* A full slot re-fed through the classifiers needs obs_age > 0 so the
      * partial-window fallbacks behave like a live slot's. */
     out->obs_age = out->dh_window_count + out->v_window_count;
@@ -1769,20 +1783,52 @@ static Value g_null_singleton;
 static Value g_true_singleton  = { .type = VAL_BOOL, .data = { .boolean = 1 }, .refcount = 1000000, .arena = 1 };
 static Value g_false_singleton = { .type = VAL_BOOL, .data = { .boolean = 0 }, .refcount = 1000000, .arena = 1 };
 Value* make_bool(int b) { return b ? &g_true_singleton : &g_false_singleton; }
-int eigs_want_numeric(const char *want) {
-    static const char *const words[] = {"num", "size", "integer", "index", "count", " id"};
-    for (size_t i = 0; i < sizeof words / sizeof words[0]; i++)
-        if (want && strstr(want, words[i])) return 1;
+
+static const char *num_who(const char *who) {
+    if (!who) return "builtin";
+    return strncmp(who, "builtin_", 8) == 0 ? who + 8 : who;
+}
+
+double eigs_num_arg(const Value *v, const char *who) {
+    if (v && v->type == VAL_NUM) return v->data.num;
+    if (!g_has_error)
+        rt_error(EK_TYPE, 0, "%s: expected a number, got %s", num_who(who),
+                 v ? val_type_name(v->type) : "nothing");
+    return 0.0;
+}
+
+double eigs_list_num(const Value *list, int i, const char *who) {
+    if (!list || list->type != VAL_LIST || i < 0 || i >= list->data.list.count) {
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "%s: expected a number as argument %d, got nothing",
+                     num_who(who), i);
+        return 0.0;
+    }
+    return eigs_num_arg(list->data.list.items[i], who);
+}
+
+int eigs_opt_num(const Value *v, double *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    if (v->type == VAL_NUM) { *out = v->data.num; return 1; }
+    eigs_num_arg(v, who);
     return 0;
 }
 
+/* Two levels: the argument, an element of the argument list, or an element
+ * of a list argument (`audio_mix of [[true, 1], [1]]`'s samples). Called on a
+ * failed guard only, so the walk is off the success path. */
 int eigs_arg_has_bool(const Value *arg) {
     if (!arg) return 0;
     if (arg->type == VAL_BOOL) return 1;
     if (arg->type == VAL_LIST)
         for (int i = 0; i < arg->data.list.count; i++) {
             const Value *e = arg->data.list.items[i];
-            if (e && e->type == VAL_BOOL) return 1;
+            if (!e) continue;
+            if (e->type == VAL_BOOL) return 1;
+            if (e->type == VAL_LIST)
+                for (int j = 0; j < e->data.list.count; j++)
+                    if (e->data.list.items[j] && e->data.list.items[j]->type == VAL_BOOL)
+                        return 1;
         }
     return 0;
 }
