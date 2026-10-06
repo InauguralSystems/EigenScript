@@ -6683,6 +6683,7 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
     {"json_encode",    BA_ANY,  "JSON has true/false"},
     {"observe",        BA_ANY,  "the observer measures bools (entropy 0/1)"},
     {"classify",       BA_ANY,  "the observer classifies any value"},
+    {"report",         BA_ANY,  "the bytecode twin of OP_REPORT_NAME, which reports any value"},
     {"free_val",       BA_ANY,  "releases any value"},
     {"coalesce",       BA_ANY,  "picks the first non-null of any values"},
     {"len",            BA_ELEMS, "counts a list's elements, whatever they are"},

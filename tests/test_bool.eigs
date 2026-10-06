@@ -235,6 +235,11 @@ raises of [(_) => sgd_update of [[[1, 2], null], [[1, 1], [1, 1]], 0.1], "sgd_up
 # means 0 parameters (round 4 refused it and broke test_vm_run_bytecode).
 raises of [(_) => vm_run_bytecode of [1, [0, 0, 0, 40], [7], [], true], "bool", "vm_run_bytecode bool param_count"]
 same of [vm_run_bytecode of [1, [0, 0, 0, 40], [7], [], []], 7, "vm_run_bytecode [] param_count placeholder"]
+# Round 5 (#1637): `report` has an opcode twin. The C compiler's
+# OP_REPORT_NAME and vm_run_bytecode's GET_NAME("report") + CALL must agree
+# on a bool (the bytecode path raised: report was not in k_bool_policy).
+r5_rep is 5 > 3
+same of [vm_run_bytecode of [1, [25,0,0, 0,1,0, 39,1,0, 40], ["report", true]], report of r5_rep, "report of a bool: bytecode path == compiled path"]
 # Round 5 (#1637): json_build writes a bool value as a JSON boolean and it
 # decodes back to a bool.
 same of [json_build of ["ok", true, "bad", 2 > 3], "{\"ok\": true, \"bad\": false}", "json_build of bools"]
