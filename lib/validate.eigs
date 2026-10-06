@@ -168,6 +168,6 @@ define validate_all(checks) as:
         val is checks[i][0]
         check_fn is checks[i][1]
         desc is checks[i][2]
-        if (check_fn of val) == 0:
+        if not (check_fn of val):   # #1637: predicates answer bools
             append of [errors, desc]
     return errors

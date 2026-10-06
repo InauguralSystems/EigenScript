@@ -49,3 +49,6 @@ x is 4|type of (stable of x)
 |[1, true] == [2, 1]
 |[10, 20][1 < 2]
 |range of true
+x is 0\nloop while x < 3:\n    x is x + 1|x
+z is 0\nloop while false:\n    z is 1|z
+|[y for y in [1, 2, 3] if y > 1]

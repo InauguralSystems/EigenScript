@@ -294,14 +294,10 @@ define _clear_hover_combobox(widget) as:
 
 define _handle_text_key(widget, ev) as:
     k is ev.key
-    shift is 0
-    if ev.shift != null:
-        shift is ev.shift
-    ctrl is 0
-    if ev.ctrl != null:
-        ctrl is ev.ctrl
+    shift is _ev_flag of ev.shift   # #1637: gfx_poll delivers bools
+    ctrl is _ev_flag of ev.ctrl
     # Ctrl+key shortcuts
-    if ctrl == 1:
+    if ctrl:
         if k == "a":
             widget.sel_start is 0
             widget.sel_end is len of widget.text
@@ -329,7 +325,7 @@ define _handle_text_key(widget, ev) as:
                     widget.on_change of widget
             return null
     # Shift+arrow extends selection
-    if shift == 1 and (k == "left" or k == "right" or k == "home" or k == "end"):
+    if shift and (k == "left" or k == "right" or k == "home" or k == "end"):
         if widget.sel_start == null or widget.sel_start < 0:
             widget.sel_start is widget.cursor
             widget.sel_end is widget.cursor
@@ -397,7 +393,7 @@ define _handle_text_key(widget, ev) as:
         _insert_char of [widget, " "]
     elif (len of k) == 1:
         ch is k
-        if shift == 1:
+        if shift:
             ch is str_upper of k
             # Shift+number -> symbol
             if k == "1":
@@ -546,11 +542,9 @@ define _handle_combobox_key(widget, ev) as:
         widget.filter_text is widget.filter_text + " "
         widget.cursor is len of widget.filter_text
     elif (len of k) == 1:
-        shift is 0
-        if ev.shift != null:
-            shift is ev.shift
+        shift is _ev_flag of ev.shift
         ch is k
-        if shift == 1:
+        if shift:
             ch is str_upper of k
         widget.filter_text is widget.filter_text + ch
         widget.cursor is len of widget.filter_text

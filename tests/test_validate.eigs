@@ -86,6 +86,10 @@ check of ["is_integer rejects '-'", validate.is_integer of "-", false]
 check of ["is_integer rejects letters", validate.is_integer of "abc", false]
 check of ["is_integer rejects two dots", validate.is_integer of "1.2.3", false]
 
+# #1637: validate_all consumes predicate answers (bools); `== 0` raised.
+check of ["validate_all reports a failed check", validate.validate_all of [[["", validate.is_nonempty, "name"], ["x", validate.is_nonempty, "ok"]]], ["name"]]
+check of ["validate_all with every check passing", validate.validate_all of [[["a@b.co", validate.is_email, "email"]]], []]
+
 if fails == 0:
     print of "VALIDATE_ALL_PASS"
 if fails > 0:

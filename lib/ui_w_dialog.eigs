@@ -96,7 +96,7 @@ define property_editor(id, x, y, w, h, properties, on_change) as:
             add_child of [sp, inp]
         elif prop.type == "bool":
             bval is 0
-            if prop.value == 1 or prop.value == "true":
+            if (_ev_flag of prop.value) or prop.value == "true":   # #1637: true, 1 or "true"
                 bval is 1
             cb is _make_prop_cb of [on_change, prop.key]
             inp is toggle of [f"{id}_inp_{pi}", input_x, row_y, bval, cb]

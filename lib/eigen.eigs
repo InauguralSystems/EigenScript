@@ -1729,9 +1729,9 @@ define eigen_eval(node, env) as:
         running is 1
         loop while (max_iter > 0) and (running == 1):
             cond is eigen_eval of [node[1], env]
-            if cond == 0:
-                running is 0
-            elif cond == null:
+            # #1637: the host's own truthiness (false, 0, null, "", [], {})
+            # -- `cond == 0` raised on a bool condition.
+            if not cond:
                 running is 0
             else:
                 result is _eval_block of [node[2], env]
@@ -1879,9 +1879,7 @@ define eigen_eval(node, env) as:
             _env_set_local of [comp_env, var_name, iter[i]]
             if filter_node != null:
                 cond is eigen_eval of [filter_node, comp_env]
-                if cond == 0:
-                    continue
-                if cond == null:
+                if not cond:   # #1637: host truthiness; `cond == 0` raised on a bool
                     continue
             val is eigen_eval of [expr_node, comp_env]
             _eigen_append of [result, val]

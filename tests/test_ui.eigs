@@ -4026,4 +4026,23 @@ coverage_button_start is len of _gfx_log
 assert_true of [(_draw_hover_shade of [coverage_render_button, 10, 20, 40, 24, 3]) == null and (str of _gfx_log[coverage_button_start]) == (str of ["rrect", [10, 20, 40, 24, 3, _theme.hover_shade[0], _theme.hover_shade[1], _theme.hover_shade[2], _theme.hover_shade[3]]]), "hover shade retains alpha and geometry"]
 _gfx_rec is coverage_button_record
 
+# #1637: gfx_poll delivers shift/ctrl/alt as bools. Hotkeys, text-input
+# shortcuts and an on_key answer of false must work with real bools.
+bh_hits is [0]
+define bh_on_save(_) as:
+    bh_hits[0] is bh_hits[0] + 1
+register_hotkey of ["ctrl+s", bh_on_save]
+bh_root is panel of ["bh_root", 0, 0, 200, 100]
+bh_inp is text_input of ["bh_t", 0, 0, 100, "ab", null]
+add_child of [bh_root, bh_inp]
+handle_key of [bh_root, {"type": "keydown", "key": "s", "ctrl": true, "shift": false, "alt": false}]
+assert_eq of [bh_hits[0], 1, "a ctrl+s hotkey fires on a bool ctrl modifier"]
+_handle_text_key of [bh_inp, {"type": "keydown", "key": "x", "ctrl": false, "shift": true, "alt": false}]
+assert_eq of [bh_inp.text, "abX", "shift as a bool upper-cases typed text"]
+assert_true of [_ev_stop of false, "an on_key answer of false stops the loop"]
+assert_true of [_ev_stop of 0, "an on_key answer of 0 still stops the loop"]
+assert_true of [not (_ev_stop of true), "an on_key answer of true keeps running"]
+assert_true of [not (_ev_stop of null), "an on_key answer of null keeps running"]
+unregister_hotkey of "ctrl+s"
+
 test_summary of null

@@ -87,6 +87,10 @@ sorted_desc is data.df_sort_by of [df, "score", 0]
 assert_eq of [sorted_desc[0]["name"], "Alice", "df_sort_by desc first"]
 assert_eq of [sorted_desc[2]["name"], "Bob", "df_sort_by desc last"]
 
+# #1637: the direction flag takes a bool
+assert_eq of [(data.df_sort_by of [df, "age", true])[0]["name"], "Bob", "df_sort_by asc with true"]
+assert_eq of [(data.df_sort_by of [df, "score", false])[0]["name"], "Alice", "df_sort_by desc with false"]
+
 # df_map
 define double_score(x) as:
     return x * 2

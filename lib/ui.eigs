@@ -29,6 +29,22 @@
 #   as key events; headless synthesized event dicts may omit them
 #   (absent keys read null).
 
+# #1637: an event modifier (shift/ctrl/alt) as a bool. gfx_poll delivers
+# bools; a hand-built event may still carry the older 1/0. Absent is false.
+define _ev_flag(v) as:
+    if (type of v) == "bool":
+        return v
+    if (type of v) == "num":
+        return v != 0
+    return false
+
+# #1637: an on_key answer that stops the loop: false, or the older 0.
+# `result == 0` raised when a handler returned a bool.
+define _ev_stop(r) as:
+    if (type of r) == "bool":
+        return not r
+    return ((type of r) == "num") and (r == 0)
+
 load_file of "lib/ui_theme.eigs"
 load_file of "lib/ui_draw.eigs"
 load_file of "lib/ui_layout.eigs"
@@ -456,39 +472,33 @@ define unregister_hotkey(combo) as:
 
 define _combo_matches(combo, ctrl, shift, alt, key) as:
     # Parse combo string like "ctrl+s", "ctrl+shift+z", "alt+f"
-    need_ctrl is 0
-    need_shift is 0
-    need_alt is 0
+    need_ctrl is false
+    need_shift is false
+    need_alt is false
     target_key is combo
     if (contains of [combo, "ctrl+"]):
-        need_ctrl is 1
+        need_ctrl is true
         target_key is str_replace of [target_key, "ctrl+", ""]
     if (contains of [combo, "shift+"]):
-        need_shift is 1
+        need_shift is true
         target_key is str_replace of [target_key, "shift+", ""]
     if (contains of [combo, "alt+"]):
-        need_alt is 1
+        need_alt is true
         target_key is str_replace of [target_key, "alt+", ""]
-    if ctrl != need_ctrl:
+    if (_ev_flag of ctrl) != need_ctrl:
         return false
-    if shift != need_shift:
+    if (_ev_flag of shift) != need_shift:
         return false
-    if alt != need_alt:
+    if (_ev_flag of alt) != need_alt:
         return false
     if key == target_key:
         return true
     return false
 
 define _match_hotkey(ev) as:
-    ctrl is 0
-    shift is 0
-    alt is 0
-    if ev.ctrl != null:
-        ctrl is ev.ctrl
-    if ev.shift != null:
-        shift is ev.shift
-    if ev.alt != null:
-        alt is ev.alt
+    ctrl is _ev_flag of ev.ctrl
+    shift is _ev_flag of ev.shift
+    alt is _ev_flag of ev.alt
     for i in range of (len of _ui.hotkeys):
         hk is _ui.hotkeys[i]
         if (_combo_matches of [hk.combo, ctrl, shift, alt, ev.key]):
@@ -908,12 +918,12 @@ define app_loop(root, on_key, on_tick) as:
                 handle_key of [root, ev]
                 if on_key != null:
                     result is on_key of ev
-                    if result == 0:
+                    if _ev_stop of result:
                         _running is 0
             elif ev.type == "keyup":
                 if on_key != null:
                     result is on_key of ev
-                    if result == 0:
+                    if _ev_stop of result:
                         _running is 0
             else:
                 dispatch of [root, ev]
