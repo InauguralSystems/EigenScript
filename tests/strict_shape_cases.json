@@ -215,7 +215,7 @@
     "backend": "mixer",
     "backend_absent": {
       "setup": "",
-      "valid_assert": "shape_result == 0",
+      "valid_assert": "shape_result == false",
       "observe": "print of shape_result",
       "unchanged": "# Entry rejection is checked before any absent-backend operation.",
       "outputs": {
@@ -1411,7 +1411,7 @@
     "backend": "sdl",
     "backend_absent": {
       "setup": "",
-      "valid_assert": "shape_result == 0",
+      "valid_assert": "shape_result == false",
       "observe": "print of shape_result",
       "unchanged": "# Entry rejection is checked before any absent-backend operation.",
       "outputs": {
