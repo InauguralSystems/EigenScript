@@ -812,7 +812,7 @@ int main(void) {
                                  "nf_matrix[0] == 10 and nf_matrix[1] == 20 and "
                                  "nf_matrix[2] == 30 and nf_matrix[3] == 40 and "
                                  "nf_list_matrix == [[10, 20], [30, 40]]");
-            CHECK(r != NULL && eigs_value_as_num(r) == 1.0 && !eigs_has_error(),
+            CHECK(r != NULL && eigs_value_as_bool(r) && !eigs_has_error(),
                   "#1417 failed index read performs no callback or matrix write");
             eigs_value_release(r);
         }
@@ -880,6 +880,7 @@ int main(void) {
 
     /* --- Trace tape seam: record via the sink, replay from memory. --- */
     eigs_register_function("host_sensor", host_sensor);
+    eigs_trace_declare_kind("host_sensor", EIGS_KIND(EIGS_TYPE_NUM));   /* #1637 */
     eigs_set_trace_sink(tape_sink, NULL);
     r = eigs_eval_string("s1 is host_sensor of []\n"
                          "s2 is host_sensor of []\n"

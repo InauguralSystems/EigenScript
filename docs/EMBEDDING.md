@@ -401,6 +401,8 @@ int  eigs_set_replay_tape(const char *bytes, size_t len, int strict); /* copied;
 int  eigs_replay_advance_session(void); /* explicit quiescent host boundary */
 int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served from tape */
 void eigs_trace_record_nondet(const char *name, EigsValue *v);
+#define EIGS_KIND(t) (1u << (unsigned)(t))
+int  eigs_trace_declare_kind(const char *name, unsigned kinds);  /* 0 = refused */
 ```
 
 The sink receives ONE complete newline-terminated record per call,
@@ -541,7 +543,7 @@ through lifetime metadata, never through repeated numeric IDs.
 An installed memory tape suspends the file replay context as a whole. Clearing
 memory restores the file's cursor, queued values, parser buffer, bindings and
 strictness; it neither rewinds nor takes data from the memory source. A refused
-memory replacement leaves the active context untouched. The version 5 grammar
+memory replacement leaves the active context untouched. The version 6 grammar
 and older-format refusal rule are documented in `docs/TRACE.md`.
 
 Host builtins participate with the take/record pair, the same contract
@@ -555,7 +557,18 @@ static EigsValue *my_sensor(EigsValue *arg) {
     eigs_trace_record_nondet("my_sensor", v);          /* onto the tape */
     return v;
 }
+
+/* at registration: the kinds a recorded my_sensor value can have */
+eigs_register_function("my_sensor", my_sensor);
+eigs_trace_declare_kind("my_sensor", EIGS_KIND(EIGS_TYPE_NUM));
 ```
+
+Replay checks every recorded value against its name's declared kinds and
+refuses (exit 3) a record of another kind -- a hand-edited
+`my_sensor=true` never reaches code that reads a number -- and a host name
+that was never declared. The runtime's own taped builtins are declared by
+the runtime; `eigs_trace_declare_kind` refuses their names, an empty name,
+`EIGS_TYPE_FN`/`EIGS_TYPE_OTHER` and an empty kind set (returns 0).
 
 ## FFI: calling host functions from script
 

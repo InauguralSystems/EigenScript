@@ -253,7 +253,11 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
  * logged-and-tolerated.
  *
  * Host builtins participate through the take/record pair — the same
- * contract the runtime's own nondet builtins use:
+ * contract the runtime's own nondet builtins use — after declaring their
+ * return kinds once, at registration:
+ *
+ *   eigs_register_function("my_sensor", my_sensor);
+ *   eigs_trace_declare_kind("my_sensor", EIGS_KIND(EIGS_TYPE_NUM));
  *
  *   EigsValue *my_sensor(EigsValue *arg) {
  *       EigsValue *v;
@@ -282,6 +286,15 @@ int  eigs_set_replay_tape(const char *bytes, size_t len, int strict);
 int  eigs_replay_advance_session(void);
 int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served */
 void eigs_trace_record_nondet(const char *name, EigsValue *v);
+/* #1637: declare, when registering a host nondet function, the kinds its
+ * recorded value can have: EIGS_KIND(EIGS_TYPE_NUM) | EIGS_KIND(EIGS_TYPE_NULL).
+ * Replay refuses (exit 3) a record of any other kind, and a host name that
+ * was never declared -- a hand-edited `my_sensor=true` cannot replay as a
+ * bool into code that reads a number. Returns 0 (nothing changed) for an
+ * empty name, no kinds, a FN/OTHER kind, or a runtime builtin's name (those
+ * are declared by the runtime). Declaring again replaces the kinds. */
+#define EIGS_KIND(t) (1u << (unsigned)(t))
+int  eigs_trace_declare_kind(const char *name, unsigned kinds);
 
 /* ---- Async abort -----------------------------------------------------
  * Register a flag the host may set from an interrupt/signal context (a

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 static int passed, failed, total;
 static void check(int ok, const char *name) {
@@ -45,6 +46,39 @@ static const char replacement[] =
     "B 0 201 21 0 root -\nB 1 202 22 0 host 70656572\n"
     "N 1 peer=302\nN 0 root=301\n";
 static const char refused[] = "V 5 " EIGENSCRIPT_VERSION "\n";   /* #1637: v5 predates bool values */
+
+/* #1637: a host-recorded name's record must be a kind it declared. A child
+ * installs `tape` and takes `name`; the refusal is _exit(3) with `want` on
+ * stderr, so it runs in a forked child. */
+static const char host_kind_tape[] =
+    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "B 0 401 41 0 root -\nN 0 root=true\n";
+static const char host_undeclared_tape[] =
+    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "B 0 501 51 0 root -\nN 0 ghost=7\n";
+static int child_refuses(const char *tape, size_t len, const char *name, const char *want) {
+    int fds[2];
+    if (pipe(fds) != 0) return 0;
+    fflush(stdout); fflush(stderr);
+    pid_t pid = fork();
+    if (pid < 0) { close(fds[0]); close(fds[1]); return 0; }
+    if (pid == 0) {
+        dup2(fds[1], 2); close(fds[0]); close(fds[1]);
+        if (!eigs_set_replay_tape(tape, len, 1)) _exit(4);
+        EigsValue *v = NULL;
+        eigs_replay_take(name, &v);
+        _exit(0);   /* served: the refusal did not happen */
+    }
+    close(fds[1]);
+    char buf[1024]; size_t got = 0; ssize_t r;
+    while (got < sizeof buf - 1 && (r = read(fds[0], buf + got, sizeof buf - 1 - got)) > 0)
+        got += (size_t)r;
+    buf[got] = 0;
+    close(fds[0]);
+    int status = 0;
+    if (waitpid(pid, &status, 0) != pid) return 0;
+    return WIFEXITED(status) && WEXITSTATUS(status) == 3 && strstr(buf, want) != NULL;
+}
 
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
@@ -110,6 +144,10 @@ static double finish_worker(Value *handle) {
 int main(void) {
     EigsState *root = eigs_open();
     if (!root) return 2;
+    /* #1637: a host-recorded name declares its return kinds before replay. */
+    const char *const host_names[] = {"root", "peer", "sample", "file_alias"};
+    for (size_t i = 0; i < sizeof host_names / sizeof host_names[0]; i++)
+        eigs_trace_declare_kind(host_names[i], EIGS_KIND(EIGS_TYPE_NUM));
     check(!eigs_replay_advance_session(), "advance without a source refuses");
     char path[] = "/tmp/eigs_trace_context_XXXXXX";
     int fd = mkstemp(path);
@@ -188,10 +226,21 @@ int main(void) {
     check(!eigs_replay_advance_session(), "child journal ends after its declared sessions");
     check(eigs_set_replay_tape(NULL, 0, 0), "memory clear disables replay when no file remains");
     check(!g_replay_enabled, "final memory source is fully released");
+    check(child_refuses(host_kind_tape, sizeof(host_kind_tape)-1, "root",
+                        "root returns a num, the tape holds a bool; refusing to replay"),
+          "a declared host name refuses a record of another kind (exit 3)");
+    check(child_refuses(host_undeclared_tape, sizeof(host_undeclared_tape)-1, "ghost",
+                        "ghost has no declared return kind"),
+          "an undeclared host name is refused at replay (exit 3)");
+    check(!eigs_trace_declare_kind("random", EIGS_KIND(EIGS_TYPE_BOOL)) &&
+          !eigs_trace_declare_kind("", EIGS_KIND(EIGS_TYPE_NUM)) &&
+          !eigs_trace_declare_kind("fnval", EIGS_KIND(EIGS_TYPE_FN)) &&
+          !eigs_trace_declare_kind("nokind", 0),
+          "a runtime name, an empty name, a FN kind and no kind are refused");
     if (!eigs_thread_switch(peer)) return 2;
     eigs_thread_detach(); eigs_state_destroy(peer);
     if (!eigs_thread_switch(root)) return 2;
     eigs_close(root);
-    printf("trace context: %d passed, %d failed (41 declared)\n", passed, failed);
-    return failed || total != 41;
+    printf("trace context: %d passed, %d failed (44 declared)\n", passed, failed);
+    return failed || total != 44;
 }

@@ -1931,20 +1931,119 @@ static void replay_malformed_value(const char *value) {
 #endif
 }
 
-/* #1637: what a taped builtin can return, for the kinds a v6 tape can confuse.
- * A recorded value of the other kind (a hand-edited `file_exists=1`, or a
- * `random=true`) would replay a number where the program gets a bool, or the
- * reverse, at exit 0 -- so it is refused instead. NULL: no constraint. */
-static const char *replay_expected_kind(const char *fn) {
-    static const char *const bools[] = {"file_exists", "is_dir", "is_file", "mkdir"};
-    static const char *const nums[] = {"monotonic_ns", "monotonic_ms", "clock_unix",
-                                       "random", "random_int", "heap_inuse"};
-    if (!fn) return NULL;
-    for (size_t i = 0; i < sizeof bools / sizeof bools[0]; i++)
-        if (strcmp(fn, bools[i]) == 0) return "bool";
-    for (size_t i = 0; i < sizeof nums / sizeof nums[0]; i++)
-        if (strcmp(fn, nums[i]) == 0) return "num";
-    return NULL;
+/* #1637: THE return-kind table of every taped builtin -- each name that
+ * records an N value (TRACE_NONDET_*, ARG_GUARD_TAPED/PRETAKE,
+ * trace_nondet_value). A replayed value of a kind its builtin cannot return
+ * (a hand-edited `file_exists=1`, a `random_normal=true`) would hand the
+ * program a value no live run could produce, at exit 0; it is refused
+ * instead. tools/tape_kinds_check.sh fails when a taped name is missing here
+ * or a row names nothing taped. Names a host records through the embedding
+ * API declare their kinds with eigs_trace_declare_kind; a name in neither
+ * table is refused at replay. Bits are ValType (TK below). */
+#define TK(t) (1u << (t))
+#define TK_NUM_  TK(VAL_NUM)
+#define TK_STR_  TK(VAL_STR)
+#define TK_BOOL_ TK(VAL_BOOL)
+#define TK_NULL_ TK(VAL_NULL)
+#define TK_LIST_ TK(VAL_LIST)
+#define TK_BUF_  TK(VAL_BUFFER)
+static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
+    {"args",                 TK_LIST_},
+    {"audio_capture_open",   TK_NUM_},
+    {"audio_capture_read",   TK_BUF_ | TK_NULL_},
+    {"audio_stream_queued",  TK_NUM_},
+    {"clock_unix",           TK_NUM_},
+    {"eigen_generate",       TK_LIST_ | TK_STR_},   /* str: the recorded over-length refusal */
+    {"env_get",              TK_STR_},
+    {"exe_path",             TK_STR_},
+    {"file_exists",          TK_BOOL_},
+    {"getcwd",               TK_STR_},
+    {"gfx_read",             TK_LIST_ | TK_NULL_},
+    {"heap_inuse",           TK_NUM_},
+    {"http_post",            TK_STR_},
+    {"http_request_body",    TK_STR_},
+    {"http_request_headers", TK_STR_},
+    {"http_session_id",      TK_STR_},
+    {"is_dir",               TK_BOOL_},
+    {"is_file",              TK_BOOL_},
+    {"ls",                   TK_LIST_},
+    {"mkdir",                TK_BOOL_},
+    {"monotonic_ms",         TK_NUM_},
+    {"monotonic_ns",         TK_NUM_},
+    {"net_accept",           TK_NUM_ | TK_NULL_},
+    {"net_dial",             TK_NUM_ | TK_NULL_},
+    {"net_listen",           TK_NUM_ | TK_NULL_},
+    {"net_port",             TK_NUM_ | TK_NULL_},
+    {"net_recv",             TK_BUF_ | TK_NULL_},
+    {"net_send",             TK_NUM_},
+    {"random",               TK_NUM_},
+    {"random_hex",           TK_STR_},
+    {"random_int",           TK_NUM_},
+    {"random_normal",        TK_LIST_ | TK_NULL_},
+    {"read_bytes",           TK_LIST_ | TK_NULL_},
+    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_},  /* num: the recorded over-cap size */
+    {"read_line",            TK_STR_ | TK_NULL_},
+    {"read_text",            TK_STR_},
+    {"tensor_load",          TK_LIST_ | TK_NULL_},  /* the [rows, cols] over-cap verdict */
+};
+
+/* Host-declared kinds (eigs_trace_declare_kind). Small, append-only. */
+static struct { char *name; unsigned kinds; } *g_host_kinds;
+static int g_host_kinds_n, g_host_kinds_cap;
+static pthread_mutex_t g_host_kinds_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static unsigned core_tape_kinds(const char *fn) {
+    for (size_t i = 0; i < sizeof k_tape_kinds / sizeof k_tape_kinds[0]; i++)
+        if (strcmp(fn, k_tape_kinds[i].name) == 0) return k_tape_kinds[i].kinds;
+    return 0;
+}
+
+int trace_declare_kind(const char *name, unsigned kinds) {
+    if (!name || !*name || !kinds || core_tape_kinds(name)) return 0;
+    pthread_mutex_lock(&g_host_kinds_mu);
+    for (int i = 0; i < g_host_kinds_n; i++)
+        if (strcmp(g_host_kinds[i].name, name) == 0) {
+            g_host_kinds[i].kinds = kinds;
+            pthread_mutex_unlock(&g_host_kinds_mu);
+            return 1;
+        }
+    if (g_host_kinds_n == g_host_kinds_cap) {
+        int nc = g_host_kinds_cap ? g_host_kinds_cap * 2 : 8;
+        void *nk = realloc(g_host_kinds, (size_t)nc * sizeof *g_host_kinds);
+        if (!nk) { pthread_mutex_unlock(&g_host_kinds_mu); return 0; }
+        g_host_kinds = nk; g_host_kinds_cap = nc;
+    }
+    g_host_kinds[g_host_kinds_n].name = xstrdup(name);
+    g_host_kinds[g_host_kinds_n].kinds = kinds;
+    g_host_kinds_n++;
+    pthread_mutex_unlock(&g_host_kinds_mu);
+    return 1;
+}
+
+static unsigned replay_expected_kinds(const char *fn) {
+    if (!fn) return 0;
+    unsigned k = core_tape_kinds(fn);
+    if (k) return k;
+    pthread_mutex_lock(&g_host_kinds_mu);
+    for (int i = 0; i < g_host_kinds_n; i++)
+        if (strcmp(g_host_kinds[i].name, fn) == 0) { k = g_host_kinds[i].kinds; break; }
+    pthread_mutex_unlock(&g_host_kinds_mu);
+    return k;
+}
+
+/* "a bool", "a list or null" */
+static void kinds_text(unsigned kinds, char *buf, size_t n) {
+    static const ValType order[] = {VAL_NUM, VAL_STR, VAL_BOOL, VAL_LIST, VAL_DICT,
+                                    VAL_BUFFER, VAL_NULL};
+    size_t used = 0; int first = 1;
+    buf[0] = '\0';
+    for (size_t i = 0; i < sizeof order / sizeof order[0]; i++) {
+        if (!(kinds & TK(order[i]))) continue;
+        int w = snprintf(buf + used, n - used, "%s%s", first ? "a " : " or ",
+                         val_type_name(order[i]));
+        if (w < 0 || (size_t)w >= n - used) break;
+        used += (size_t)w; first = 0;
+    }
 }
 
 static int replay_value_is_marker(const char *value) {
@@ -2574,13 +2673,22 @@ int trace_replay_take(const char *fn, Value **out) {
     int marker = replay_value_is_marker(hit->value);
     if (!v && !marker) replay_malformed_value(hit->value);
     {
-        const char *want = replay_expected_kind(fn ? fn : hit->name);
-        if (v && want && (v->type == VAL_BOOL) != (strcmp(want, "bool") == 0) &&
-            (v->type == VAL_BOOL || v->type == VAL_NUM)) {
-            fprintf(stderr, "trace: tape format v%d record 'N %llu %s=%s': %s returns a %s, "
-                    "the tape holds a %s; refusing to replay\n", TRACE_FORMAT_VERSION,
-                    (unsigned long long)hit->stream_id, hit->name, hit->value,
-                    fn ? fn : hit->name, want, val_type_name(v->type));
+        /* #1637: the record's kind must be one its builtin can return. */
+        const char *who = fn ? fn : hit->name;
+        unsigned want = replay_expected_kinds(who);
+        if (!want || (v && !(want & TK(v->type)))) {
+            char wtxt[96];
+            kinds_text(want, wtxt, sizeof wtxt);
+            if (!want)
+                fprintf(stderr, "trace: tape format v%d record 'N %llu %s=%s': %s has no "
+                        "declared return kind (a host name declares it with "
+                        "eigs_trace_declare_kind); refusing to replay\n", TRACE_FORMAT_VERSION,
+                        (unsigned long long)hit->stream_id, hit->name, hit->value, who);
+            else
+                fprintf(stderr, "trace: tape format v%d record 'N %llu %s=%s': %s returns %s, "
+                        "the tape holds a %s; refusing to replay\n", TRACE_FORMAT_VERSION,
+                        (unsigned long long)hit->stream_id, hit->name, hit->value,
+                        who, wtxt, val_type_name(v->type));
 #if EIGENSCRIPT_FREESTANDING
             abort();
 #else

@@ -435,6 +435,11 @@ int trace_replay_refuse_off_owner(const char *fn);
  * Hot-path cost when both disabled: two predicted-not-taken loads + branches.
  * Each call site must have `Value` defined (i.e. include eigenscript.h
  * before trace.h). */
+/* #1637: declare the return kinds (a ValType bit set, 1u << VAL_X) of a
+ * host-recorded nondet name; replay refuses a record of another kind, and a
+ * name declared nowhere. 0 = refused (empty name, no kinds, a core name). */
+int trace_declare_kind(const char *name, unsigned kinds);
+
 #define TRACE_NONDET_RET(name, expr) do {                            \
     Value *_tr_v;                                                    \
     if (__builtin_expect(g_replay_enabled, 0)) {                     \

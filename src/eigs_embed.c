@@ -425,6 +425,20 @@ void eigs_trace_record_nondet(const char *name, EigsValue *v) {
     if (g_trace_enabled) trace_nondet_value(name, (Value *)v);
 }
 
+/* #1637: EIGS_KIND(EIGS_TYPE_X) bits -> the runtime's ValType bits. */
+int eigs_trace_declare_kind(const char *name, unsigned kinds) {
+    static const struct { EigsValueType e; ValType v; } map[] = {
+        {EIGS_TYPE_NULL, VAL_NULL}, {EIGS_TYPE_NUM, VAL_NUM}, {EIGS_TYPE_STR, VAL_STR},
+        {EIGS_TYPE_LIST, VAL_LIST}, {EIGS_TYPE_DICT, VAL_DICT},
+        {EIGS_TYPE_BUFFER, VAL_BUFFER}, {EIGS_TYPE_BOOL, VAL_BOOL},
+    };
+    unsigned vk = 0, seen = 0;
+    for (size_t i = 0; i < sizeof map / sizeof map[0]; i++)
+        if (kinds & EIGS_KIND(map[i].e)) { vk |= 1u << map[i].v; seen |= EIGS_KIND(map[i].e); }
+    if (kinds & ~seen) return 0;   /* FN / OTHER cannot be on a tape */
+    return trace_declare_kind(name, vk);
+}
+
 /* ---- Async abort (see eigs_embed.h) -------------------------------- */
 
 void eigs_set_abort_flag(volatile int *flag) {

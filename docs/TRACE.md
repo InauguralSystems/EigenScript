@@ -716,11 +716,16 @@ everywhere else in the runtime (version-and-reject, never migrate).
   answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
   on a v6 binary would hand a number where the program now gets a bool; it is
   refused instead (`tests/test_tape_observer_config.sh`, section 7). Within a
-  v6 tape, replay also refuses a recorded value of the wrong kind for its
-  builtin -- a bool where `random`/`monotonic_*`/`clock_unix`/`random_int`/
-  `heap_inuse` return a number, or a number where `file_exists`/`is_dir`/
-  `is_file`/`mkdir` return a bool -- with exit 3 and a message naming the
-  record, the builtin and the tape version (suite section [0fb]).
+  v6 tape, replay also refuses a recorded value of a kind its builtin cannot
+  return, with exit 3 and a message naming the record, the builtin, the kinds
+  it returns and the tape version. Every taped builtin declares its return
+  kinds in one table (`k_tape_kinds` in `src/trace.c`; for example
+  `random_normal` returns a list or null, so `random_normal=true` is refused),
+  and `tools/tape_kinds_check.sh` fails when a taped builtin has no row. A
+  name a host records through the embedding API declares its kinds with
+  `eigs_trace_declare_kind` when it registers the function; replay refuses
+  a record of an undeclared kind and a name declared nowhere
+  (docs/EMBEDDING.md; suite sections [0fb] and [0f5]).
   A v2 tape cannot say what its knobs were — the calls simply are not on it
   — so the compat decision for the bump is the standing one, and it is the
   loud half: a v2 tape is **refused** by `--step`, by the DAP server and by

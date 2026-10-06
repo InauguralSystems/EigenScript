@@ -77,12 +77,14 @@ fi
 # Tamper: a v6 tape whose bool record was hand-edited to a number (and a
 # number record edited to a bool) is refused with exit 3, naming the builtin,
 # the record and the tape version -- never replayed as the other kind.
-printf 'x is file_exists of "%s"\nr is random of null\nprint of [x, type of x, type of r]\n' \
+printf 'x is file_exists of "%s"\nr is random of null\nn is random_normal of [2, 1.0]\nprint of [x, type of x, type of r, type of n]\n' \
     "$BOOL_TP_DIR/p.eigs" > "$BOOL_TP_DIR/t.eigs"
 EIGS_TRACE="$BOOL_TP_DIR/t.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/t.eigs" </dev/null >/dev/null 2>&1
 sed 's/^\(N [0-9]* file_exists=\)true$/\11/' "$BOOL_TP_DIR/t.tape" > "$BOOL_TP_DIR/t1.tape"
 sed 's/^\(N [0-9]* random=\).*$/\1true/' "$BOOL_TP_DIR/t.tape" > "$BOOL_TP_DIR/t2.tape"
-for BOOL_TP_CASE in "t1:file_exists returns a bool, the tape holds a num" "t2:random returns a num, the tape holds a bool"; do
+sed 's/^\(N [0-9]* random_normal=\).*$/\1true/' "$BOOL_TP_DIR/t.tape" > "$BOOL_TP_DIR/t3.tape"
+for BOOL_TP_CASE in "t1:file_exists returns a bool, the tape holds a num" "t2:random returns a num, the tape holds a bool" \
+                    "t3:random_normal returns a list or null, the tape holds a bool"; do
     TOTAL=$((TOTAL + 1))
     BOOL_TP_T=${BOOL_TP_CASE%%:*}; BOOL_TP_WANT=${BOOL_TP_CASE#*:}
     BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/$BOOL_TP_T.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/t.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
@@ -95,6 +97,17 @@ for BOOL_TP_CASE in "t1:file_exists returns a bool, the tape holds a num" "t2:ra
     fi
 done
 rm -rf "$BOOL_TP_DIR"
+# Completeness: every taped builtin has a k_tape_kinds row, and every row
+# names a taped builtin (tools/tape_kinds_check.sh).
+TOTAL=$((TOTAL + 1))
+BOOL_TK_OUT=$(bash "$TESTS_DIR/../tools/tape_kinds_check.sh" 2>&1); BOOL_TK_RC=$?
+if [ "$BOOL_TK_RC" = 0 ] && grep -q '^tape-kinds: PASS$' <<< "$BOOL_TK_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: every taped builtin declares its return kinds ($(grep '^tape-kinds: taped' <<< "$BOOL_TK_OUT"))"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: every taped builtin declares its return kinds (rc=$BOOL_TK_RC)"
+    printf '%s\n' "$BOOL_TK_OUT"
+fi
+unset BOOL_TK_OUT BOOL_TK_RC
 unset BOOL_TP_DIR BOOL_TP_REC BOOL_TP_REP BOOL_TP_OUT BOOL_TP_RC BOOL_TP_CASE BOOL_TP_T BOOL_TP_WANT
 # Every public lib predicate, run on a battery plus true/false cases, answers
 # with a bool (tests/test_bool_lib_predicates.py measures; it reads no code).
