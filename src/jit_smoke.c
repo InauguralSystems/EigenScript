@@ -645,6 +645,81 @@ static int run_exit_cases(void) {
     return rc;
 }
 
+/* #1637: the bool emitters, read off the native stack. Every comparison and
+ * NOT pushes the TAG_BOOL slot bits (never 0.0/1.0), NOT flips a bool, and
+ * JUMP_IF_FALSE decides on a bool without bailing — so the thunk must run to
+ * the end of the chunk (advance == code_len). Removing the JUMP_IF bool arm
+ * makes it stop at the first JUMP_IF_FALSE; a comparison emitting numbers
+ * fails the slot-bits rows. */
+static int run_bool_cases(void) {
+    int rc = 0, checked = 0;
+    EigsState *state = calloc(1, sizeof *state);
+    EigsThread *thread = calloc(1, sizeof *thread);
+    VM *vm = calloc(1, sizeof *vm);
+    if (!state || !thread || !vm) {
+        free(state); free(thread); free(vm);
+        fprintf(stderr, "FAIL bool allocation\n");
+        return 1;
+    }
+    EigsExitScope open = {.refs = 1};
+    thread->state = state;
+    thread->vm = vm;
+    vm->owner = thread;
+    eigs_current = thread;
+    thread->exit_scope = state->exit_scope = &open;
+    uint8_t code[] = {
+        OP_TRUE, OP_NOT,                         /* false */
+        OP_FALSE, OP_NOT,                        /* true  */
+        OP_NUM_ZERO, OP_NOT,                     /* true  */
+        OP_NUM_ONE, OP_NUM_ZERO, OP_LT,          /* 1 < 0: false */
+        OP_NUM_ZERO, OP_NUM_ONE, OP_LT,          /* 0 < 1: true  */
+        OP_TRUE, OP_JUMP_IF_FALSE, 1, 0, OP_NUM_ONE,   /* not taken: push 1 */
+        OP_FALSE, OP_JUMP_IF_FALSE, 1, 0, OP_NUM_ZERO, /* taken: skip */
+    };
+    const uint64_t want[] = {SLOT_FALSE_BITS, SLOT_TRUE_BITS, SLOT_TRUE_BITS,
+                             SLOT_FALSE_BITS, SLOT_TRUE_BITS, 0x3FF0000000000000ULL};
+    const int nwant = (int)(sizeof want / sizeof want[0]);
+    EigsChunk chunk = {0};
+    chunk.code = code;
+    chunk.code_len = sizeof code;
+    chunk.exec_count = 1;
+    jit_try_compile_chunk(&chunk);
+    if (!chunk.jit_code || chunk.jit_state != 2) {
+        fprintf(stderr, "FAIL bool: chunk did not compile\n");
+        rc = 1;
+    } else {
+        vm->sp = 1;
+        vm->stack[0] = slot_null();
+        vm->frame_count = 1;
+        vm->frames[0].chunk = &chunk;
+        vm->frames[0].ip = chunk.code;
+        chunk.jit_advance = -99;
+        ((JitChunkFn)chunk.jit_code)();
+        if (chunk.jit_advance != (int)sizeof code || vm->sp != 1 + nwant) {
+            fprintf(stderr, "FAIL bool: advance=%d (want %d) sp=%d (want %d)\n",
+                    chunk.jit_advance, (int)sizeof code, vm->sp, 1 + nwant);
+            rc = 1;
+        } else {
+            for (int k = 0; k < nwant; k++) {
+                checked++;
+                if (vm->stack[1 + k].u != want[k]) {
+                    fprintf(stderr, "FAIL bool: slot %d = %016llx, want %016llx\n", k,
+                            (unsigned long long)vm->stack[1 + k].u,
+                            (unsigned long long)want[k]);
+                    rc = 1;
+                }
+            }
+        }
+    }
+    if (checked != nwant) rc = 1;
+    printf("JIT bool: slots=%d/%d status=%s\n", checked, nwant, rc ? "FAIL" : "PASS");
+    jit_unregister_chunk(&chunk);
+    jit_thread_destroy(thread);
+    eigs_current = NULL;
+    free(vm); free(thread); free(state);
+    return rc;
+}
+
 int main(void) {
     int rc = 0;
     rc |= run_case(42);
@@ -656,6 +731,7 @@ int main(void) {
     rc |= run_index_bail_cases();
     rc |= run_reader_bail_cases();
     rc |= run_exit_cases();
+    rc |= run_bool_cases();
     if (rc == 0) printf("\nJIT smoke: all cases passed.\n");
     return rc;
 }

@@ -521,7 +521,8 @@ static void ensure_layout(void) {
  * thread an advance-tracker register.
  *
  * Stage 4 supported set:
- *   OP_NULL/NUM_ZERO/NUM_ONE — inline immediate push.
+ *   OP_NULL/NUM_ZERO/NUM_ONE/
+ *   OP_TRUE/OP_FALSE         — inline immediate push.
  *   OP_LINE                  — inline 32-bit store to current_line.
  *   OP_CONST [idx:16]        — pre-encoded slot push + inline incref for
  *                              heap (skipped statically when arena==1).
@@ -542,8 +543,8 @@ static void ensure_layout(void) {
  *                              check — no separate divisor guard.
  *   OP_EQ / OP_NE / OP_LT /
  *   OP_GT / OP_LE / OP_GE    — load both, type-check (immediate-num),
- *                              ucomisd + cmovcc to materialize 0.0 or
- *                              1.0 bits as the result slot. No output
+ *                              ucomisd + cmovcc to materialize the
+ *                              false/true bool slot bits (#1637). No output
  *                              overflow check needed (bounded). Type-
  *                              check is the only bail.
  *   OP_POP                   — peephole `dec %ecx`, valid only when the
@@ -573,7 +574,8 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
     *stop_offset = 0;
     while (i < chunk->code_len) {
         uint8_t op = chunk->code[i];
-        if (op == OP_NULL || op == OP_NUM_ZERO || op == OP_NUM_ONE) {
+        if (op == OP_NULL || op == OP_NUM_ZERO || op == OP_NUM_ONE ||
+            op == OP_TRUE || op == OP_FALSE) {
             i += 1; ops++; non_line_ops++;
         } else if (op == OP_CONST) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
@@ -740,7 +742,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
             *extra_size += 320;   /* Stage 5e loaders + decrefs */
-            /* Result is bit-exact 0.0 or 1.0 (an immediate-num), so
+            /* #1637: the result is the false/true TAG_BOOL immediate, so
              * OP_POP after a comparison remains a no-op peephole. */
         } else if (op == OP_BAND || op == OP_BOR || op == OP_BXOR ||
                    op == OP_SHL || op == OP_SHR) {
@@ -1492,10 +1494,6 @@ static uint8_t *emit_store_rdx_at_disp_stack(uint8_t *w, int32_t disp) {
     *w++ = 0x48; *w++ = 0x89; *w++ = 0x94; *w++ = 0xCB;
     return emit_u32(w, (uint32_t)disp);
 }
-/* xor %rdx, %rdx  (3 bytes: 48 31 D2) — clear %rdx (bits of +0.0). */
-static uint8_t *emit_xor_rdx_rdx(uint8_t *w) {
-    *w++ = 0x48; *w++ = 0x31; *w++ = 0xD2; return w;
-}
 
 /* ucomisd %xmm0, %xmm1  (4 bytes: 66 0F 2E C8) — AT&T order: compares
  * %xmm1 (= a) with %xmm0 (= b). Sets ZF/PF/CF per IEEE-754 ordered
@@ -1503,11 +1501,6 @@ static uint8_t *emit_xor_rdx_rdx(uint8_t *w) {
  * prevents NaN from reaching the stack in normal operation). */
 static uint8_t *emit_ucomisd_xmm0_xmm1(uint8_t *w) {
     *w++ = 0x66; *w++ = 0x0F; *w++ = 0x2E; *w++ = 0xC8; return w;
-}
-
-/* xor %rax, %rax  (3 bytes: 48 31 C0) — clears %rax (bits of +0.0). */
-static uint8_t *emit_xor_rax_rax(uint8_t *w) {
-    *w++ = 0x48; *w++ = 0x31; *w++ = 0xC0; return w;
 }
 
 /* movabs $imm64, %rdx  (10 bytes) */
@@ -1863,6 +1856,29 @@ static uint8_t *emit_je_rel8(uint8_t *w, uint8_t **patch) {
 /* jmp rel8 (2 bytes) */
 static uint8_t *emit_jmp_rel8(uint8_t *w, uint8_t **patch) {
     *w++ = 0xEB; *patch = w; *w++ = 0x00; return w;
+}
+/* #1637 bool fast paths. test $1, %al (2 bytes): ZF=1 iff the low bit is
+ * clear — for a TAG_BOOL slot, iff it is false. */
+static uint8_t *emit_test_1_al(uint8_t *w) {
+    *w++ = 0xA8; *w++ = 0x01; return w;
+}
+/* xor $1, %rax (4 bytes): flips a TAG_BOOL slot between false and true. */
+static uint8_t *emit_xor_1_rax(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x83; *w++ = 0xF0; *w++ = 0x01; return w;
+}
+/* Resolve a rel8 placeholder to `target`; sets *abort on overflow (the
+ * caller abandons the compile, as for every other rel8 site). */
+static void patch_rel8_to(uint8_t *p, uint8_t *target, int *abort_flag) {
+    long rel = (long)(target - (p + 1));
+    if (rel > 127 || rel < -128) { *abort_flag = 1; return; }
+    *p = (uint8_t)(int8_t)rel;
+}
+/* Branch to *patch unless %rax holds a TAG_BOOL slot. Clobbers %rsi. */
+static uint8_t *emit_jump_unless_bool_rax(uint8_t *w, uint8_t **patch) {
+    w = emit_mov_rax_rsi(w);
+    w = emit_shr_48_rsi(w);
+    w = emit_cmp_imm32_esi(w, 0xFFF9);           /* TAG_BOOL >> 48 */
+    return emit_jnz_rel8(w, patch);
 }
 /* jle rel8 (2 bytes) — jump if signed less-or-equal (take the free_value
  * arm when the decremented refcount reached zero). */
@@ -2701,10 +2717,15 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         /* Unconditional jumps suppress the trailing `mov $i, %r13d`
          * advance writeback because the next bytes are unreachable. */
         int skip_post_op_advance = 0;
-        if (op == OP_NULL || op == OP_NUM_ZERO || op == OP_NUM_ONE) {
+        if (op == OP_NULL || op == OP_NUM_ZERO || op == OP_NUM_ONE ||
+            op == OP_TRUE || op == OP_FALSE) {
             uint64_t bits;
             if (op == OP_NULL) {
                 bits = 0xFFF8000000000000ULL;       /* SLOT_NULL_BITS */
+            } else if (op == OP_TRUE) {
+                bits = SLOT_TRUE_BITS;               /* #1637 */
+            } else if (op == OP_FALSE) {
+                bits = SLOT_FALSE_BITS;
             } else if (op == OP_NUM_ZERO) {
                 bits = 0;                            /* IEEE-754 +0.0 */
             } else {
@@ -3578,23 +3599,15 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             if (ab) {
                 JIT_BAIL_AND_RETURN();
             }
-            /* Materialize the cmov operands (%rax=0.0 bits, %rdx=1.0
-             * bits) BEFORE ucomisd. The materialization uses
-             * `xor %rax,%rax` which clobbers ZF, so it must come before
-             * the comparison — otherwise cmove would always fire
-             * (ZF=1 from the xor). movabs does not touch flags, and
-             * ucomisd between the xor and cmovcc is the only
-             * flag-affecting op left — its flags are exactly what
-             * cmovcc sees. The operand bit registers are dead here
+            /* Materialize the cmov operands (%rax=false, %rdx=true)
+             * BEFORE ucomisd, so ucomisd is the only flag-affecting op
+             * between them and cmovcc. The operand bit registers are dead here
              * (values live in xmm; slots reload from the stack at
              * commit). */
-            w = emit_xor_rax_rax(w);     /* rax = 0.0 bits */
-            {
-                uint64_t one_bits;
-                double one = 1.0;
-                memcpy(&one_bits, &one, 8);
-                w = emit_movabs_rdx(w, one_bits); /* rdx = 1.0 bits */
-            }
+            /* #1637: the result is a bool, mirroring NUM_CMP/EQ/NE's
+             * slot_from_bool. movabs leaves the flags alone. */
+            w = emit_movabs_rax(w, SLOT_FALSE_BITS);  /* rax = false */
+            w = emit_movabs_rdx(w, SLOT_TRUE_BITS);   /* rdx = true */
             w = emit_ucomisd_xmm0_xmm1(w);
             /* cmovcc %rdx → %rax when condition holds. */
             uint8_t cc_byte;
@@ -3674,7 +3687,22 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 JIT_BAIL_AND_RETURN();
             }
             uint8_t *p_t;
+            uint8_t *not_num = NULL, *not_done = NULL;
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
+            if (op == OP_NOT) {
+                /* #1637: a bool operand flips its low bit (CASE(NOT):
+                 * slot_from_bool(!slot_truthy(s))). Anything else that is
+                 * not an immediate num bails below, as before. */
+                w = emit_jump_unless_bool_rax(w, &not_num);
+                w = emit_xor_1_rax(w);
+                w = emit_store_rax_at_disp_stack(w, g_layout.off_stack - 8);
+                w = emit_jmp_rel8(w, &not_done);
+                {
+                    int ab8 = 0;
+                    patch_rel8_to(not_num, w, &ab8);
+                    if (ab8) { JIT_BAIL_AND_RETURN(); }
+                }
+            }
             w = emit_immediate_num_check_rax(w, &p_t);
             bail_patches[bail_count++] = p_t;
             if (op == OP_NEG) {
@@ -3683,21 +3711,22 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 w = emit_xor_rdx_rax(w);
                 w = emit_store_rax_at_disp_stack(w, g_layout.off_stack - 8);
             } else if (op == OP_NOT) {
-                /* Logical not over an immediate num: result is 1.0 iff
-                 * the input is ±0.0, else 0.0. btr clears the sign bit
-                 * so -0.0 and +0.0 both test as zero. Materialize the
-                 * cmov operands BEFORE the test (xor clobbers ZF). */
+                /* Logical not over an immediate num: the result is true
+                 * iff the input is ±0.0, else false (#1637: bool bits).
+                 * btr clears the sign bit so -0.0 and +0.0 both test as
+                 * zero. movabs leaves the flags alone, so the test is
+                 * what cmove sees. */
                 w = emit_btr_63_rax(w);
-                w = emit_xor_rdx_rdx(w);          /* rdx = 0.0 bits */
-                {
-                    uint64_t one_bits;
-                    double one = 1.0;
-                    memcpy(&one_bits, &one, 8);
-                    w = emit_movabs_rsi(w, one_bits); /* rsi = 1.0 bits */
-                }
+                w = emit_movabs_rdx(w, SLOT_FALSE_BITS);  /* rdx = false */
+                w = emit_movabs_rsi(w, SLOT_TRUE_BITS);   /* rsi = true */
                 w = emit_test_rax_rax(w);         /* ZF=1 iff input was ±0 */
                 w = emit_cmove_rsi_rdx(w);        /* rdx = ZF ? rsi : rdx */
                 w = emit_store_rdx_at_disp_stack(w, g_layout.off_stack - 8);
+                {
+                    int ab8 = 0;
+                    patch_rel8_to(not_done, w, &ab8);
+                    if (ab8) { JIT_BAIL_AND_RETURN(); }
+                }
             } else { /* OP_BNOT */
                 /* (double)(~(int64_t)d): cvttsd2si, not, cvtsi2sd back. */
                 w = emit_movq_rax_xmm0(w);
@@ -3806,12 +3835,32 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             int target = i + 3 + (int)off;
 
             uint8_t *p_t;
+            uint8_t *jif_num, *jif_decide;
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
+            /* #1637 bool fast path: every comparison now yields a bool,
+             * so without this arm each compiled `if a < b` would bail.
+             * ZF=1 iff the bool is false, the same falsy sense the
+             * number arm computes. In both arms the pop (dec %ecx) comes
+             * before the flag-setting test, so jne/je read the test. */
+            w = emit_jump_unless_bool_rax(w, &jif_num);
+            if (!is_peek) w = emit_dec_ecx(w);
+            w = emit_test_1_al(w);
+            w = emit_jmp_rel8(w, &jif_decide);
+            {
+                int ab8 = 0;
+                patch_rel8_to(jif_num, w, &ab8);
+                if (ab8) { JIT_BAIL_AND_RETURN(); }
+            }
             w = emit_immediate_num_check_rax(w, &p_t);
             bail_patches[bail_count++] = p_t;
             if (!is_peek) w = emit_dec_ecx(w);
             w = emit_btr_63_rax(w);
             w = emit_test_rax_rax(w);
+            {
+                int ab8 = 0;
+                patch_rel8_to(jif_decide, w, &ab8);
+                if (ab8) { JIT_BAIL_AND_RETURN(); }
+            }
 
             uint8_t *skip_patch;
             if (take_on_falsy) {
@@ -4219,6 +4268,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
          * must also be handled here. */
         switch (op) {
         case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+        case OP_TRUE: case OP_FALSE:
         case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
         case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
         case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
