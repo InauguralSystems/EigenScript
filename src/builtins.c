@@ -6702,10 +6702,9 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
 };
 
 typedef struct { BuiltinFn fn; unsigned mask; const char *name; } BoolGateEntry;
-static BoolGateEntry *g_bool_gate;
+static BoolGateEntry *g_bool_gate;   /* published with release; read with acquire */
 static int g_bool_gate_n;
-static pthread_once_t g_bool_gate_once = PTHREAD_ONCE_INIT;
-static __thread Env *t_bool_gate_env;
+static pthread_mutex_t g_bool_gate_mu = PTHREAD_MUTEX_INITIALIZER;
 
 static int bool_gate_cmp(const void *a, const void *b) {
     uintptr_t x = (uintptr_t)((const BoolGateEntry *)a)->fn;
@@ -6713,34 +6712,64 @@ static int bool_gate_cmp(const void *a, const void *b) {
     return (x > y) - (x < y);
 }
 
-/* Once per process, from the first fully registered builtin env: every core
- * builtin's function pointer, its name, and its policy (default: no bool). */
-static void bool_gate_build(void) {
-    Env *env = t_bool_gate_env;
-    g_bool_gate = xcalloc_array((size_t)(env->count > 0 ? env->count : 1), sizeof(BoolGateEntry));
-    for (int i = 0; i < env->count; i++) {
+/* Built LAZILY, on the first call that hands a builtin a bool (round 4: the
+ * eager build at registration cost ~757k instructions on every process start,
+ * +56% of an empty program). Source: the running state's pristine builtin
+ * layer, whose first g_builtin_binding_count bindings are the core builtins
+ * (host functions registered later sit after them and stay ungated). Sort
+ * the function pointers once, merge aliases (inflate/zlib_inflate) as
+ * neighbours, then apply each policy row by one lookup. */
+static BoolGateEntry *bool_gate_build(int *out_n) {
+    Env *env = g_builtin_env;
+    if (!env) return NULL;
+    int limit = __atomic_load_n(&g_builtin_binding_count, __ATOMIC_RELAXED);
+    if (limit > env->count) limit = env->count;
+    BoolGateEntry *t = xcalloc_array((size_t)(limit > 0 ? limit : 1), sizeof(BoolGateEntry));
+    int n = 0;
+    for (int i = 0; i < limit; i++) {
         if (!env->names[i] || !slot_is_ptr(env->values[i])) continue;
         Value *v = slot_as_ptr(env->values[i]);
         if (!v || v->type != VAL_BUILTIN) continue;
-        unsigned mask = 0;
-        for (size_t k = 0; k < sizeof k_bool_policy / sizeof k_bool_policy[0]; k++)
-            if (strcmp(k_bool_policy[k].name, env->names[i]) == 0) mask = k_bool_policy[k].mask;
-        BoolGateEntry *e = NULL;
-        for (int j = 0; j < g_bool_gate_n; j++)
-            if (g_bool_gate[j].fn == v->data.builtin) { e = &g_bool_gate[j]; break; }
-        if (e) { e->mask |= mask; continue; }   /* an alias (inflate/zlib_inflate) */
-        g_bool_gate[g_bool_gate_n].fn = v->data.builtin;
-        g_bool_gate[g_bool_gate_n].mask = mask;
-        g_bool_gate[g_bool_gate_n].name = xstrdup(env->names[i]);
-        g_bool_gate_n++;
+        t[n].fn = v->data.builtin;
+        t[n].name = env->names[i];   /* replaced by a private copy below */
+        n++;
     }
-    qsort(g_bool_gate, (size_t)g_bool_gate_n, sizeof(BoolGateEntry), bool_gate_cmp);
+    qsort(t, (size_t)n, sizeof(BoolGateEntry), bool_gate_cmp);
+    int m = 0;
+    for (int i = 0; i < n; i++) {
+        if (m > 0 && t[m - 1].fn == t[i].fn) continue;   /* an alias */
+        t[m++] = t[i];
+    }
+    for (int i = 0; i < m; i++) t[i].name = xstrdup(t[i].name);
+    for (size_t k = 0; k < sizeof k_bool_policy / sizeof k_bool_policy[0]; k++) {
+        Value *v = env_get(env, k_bool_policy[k].name);
+        if (!v || v->type != VAL_BUILTIN) continue;   /* an extension this build lacks */
+        BoolGateEntry key = { v->data.builtin, 0, NULL };
+        BoolGateEntry *e = bsearch(&key, t, (size_t)m, sizeof(BoolGateEntry), bool_gate_cmp);
+        if (e) e->mask |= k_bool_policy[k].mask;
+    }
+    *out_n = m;
+    return t;
 }
 
 int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg) {
-    if (!g_bool_gate) return 0;   /* no core registry yet: nothing to gate */
+    BoolGateEntry *tab = __atomic_load_n(&g_bool_gate, __ATOMIC_ACQUIRE);
+    if (!tab) {
+        pthread_mutex_lock(&g_bool_gate_mu);
+        tab = g_bool_gate;
+        if (!tab) {
+            int n = 0;
+            tab = bool_gate_build(&n);
+            if (tab) {
+                g_bool_gate_n = n;
+                __atomic_store_n(&g_bool_gate, tab, __ATOMIC_RELEASE);
+            }
+        }
+        pthread_mutex_unlock(&g_bool_gate_mu);
+        if (!tab) return 0;   /* no builtin layer: not a script call */
+    }
     BoolGateEntry key = { fn, 0, NULL };
-    BoolGateEntry *e = bsearch(&key, g_bool_gate, (size_t)g_bool_gate_n,
+    BoolGateEntry *e = bsearch(&key, tab, (size_t)g_bool_gate_n,
                                sizeof(BoolGateEntry), bool_gate_cmp);
     if (!e) return 0;             /* a host function or compiled native */
     if (arg->type == VAL_BOOL) {
@@ -7027,10 +7056,6 @@ void register_builtins(Env *env) {
      * every writer and the reader only needs a consistent int. */
     __atomic_store_n(&g_builtin_binding_count, env->count, __ATOMIC_RELAXED);
 
-    /* #1637: the bool gate's registry, from the first complete builtin env. */
-    t_bool_gate_env = env;
-    pthread_once(&g_bool_gate_once, bool_gate_build);
-    t_bool_gate_env = NULL;
 }
 
 /* #1388: module code resolves builtin names against a PRISTINE layer, not the
