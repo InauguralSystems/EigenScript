@@ -12,3 +12,21 @@
   a v5 tape is refused, and so is a record of a kind its builtin cannot
   return. Embedding hosts declare a recorded name's kinds with
   `eigs_trace_declare_kind`.
+- **Wrong-typed numbers that used to be read as garbage now raise (#1637).** The
+  bool work routed every C number read through a checking accessor, which
+  also changes some non-bool cases:
+  - a string `at` line (`what is x at "s"`) raises; it answered null;
+  - a non-number net timeout (`net_accept`/`net_dial`/`net_recv`), a
+    non-number `http_serve` port, and a non-number byte or `param_count` in a
+    `vm_run_bytecode`/`sandbox_run` descriptor raise; they were read as
+    garbage or as 0;
+  - a non-number cell given to `numerical_grad*`/`sgd_update*` raises in every
+    strict mode; it was read as 0, and `numerical_grad_rows`/`_cols` wrote
+    into it in place;
+  - a non-number `screen_put` color and a non-number, non-bool
+    `write_bytes` append flag raise in every strict mode;
+  - a non-number cell `gather` selects raises under `EIGS_STRICT` (it was
+    0); `EIGS_STRICT=0` keeps the 0.
+  Embedders that include `eigenscript.h`: a Value's number is `VAL_NUM_RAW(v)`
+  and a slot's is `SLOT_NUM_RAW(s)` (the members were renamed so an unchecked
+  read does not compile).
