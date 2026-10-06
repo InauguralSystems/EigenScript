@@ -1912,8 +1912,8 @@ static int replay_record_prefix(ReplayContext *ctx, char kind, uint64_t *id, cha
 }
 
 static void replay_malformed_id(ReplayContext *ctx) {
-    fprintf(stderr, "trace: malformed v5 stream id in record '%s'; refusing to replay\n",
-            ctx->line ? ctx->line : "");
+    fprintf(stderr, "trace: malformed v%d stream id in record '%s'; refusing to replay\n",
+            TRACE_FORMAT_VERSION, ctx->line ? ctx->line : "");
 #if EIGENSCRIPT_FREESTANDING
     abort();
 #else
@@ -1922,13 +1922,29 @@ static void replay_malformed_id(ReplayContext *ctx) {
 }
 
 static void replay_malformed_value(const char *value) {
-    fprintf(stderr, "trace: malformed v5 stream id or N value '%s'; refusing to replay\n",
-            value ? value : "");
+    fprintf(stderr, "trace: malformed v%d stream id or N value '%s'; refusing to replay\n",
+            TRACE_FORMAT_VERSION, value ? value : "");
 #if EIGENSCRIPT_FREESTANDING
     abort();
 #else
     _exit(3);
 #endif
+}
+
+/* #1637: what a taped builtin can return, for the kinds a v6 tape can confuse.
+ * A recorded value of the other kind (a hand-edited `file_exists=1`, or a
+ * `random=true`) would replay a number where the program gets a bool, or the
+ * reverse, at exit 0 -- so it is refused instead. NULL: no constraint. */
+static const char *replay_expected_kind(const char *fn) {
+    static const char *const bools[] = {"file_exists", "is_dir", "is_file", "mkdir"};
+    static const char *const nums[] = {"monotonic_ns", "monotonic_ms", "clock_unix",
+                                       "random", "random_int", "heap_inuse"};
+    if (!fn) return NULL;
+    for (size_t i = 0; i < sizeof bools / sizeof bools[0]; i++)
+        if (strcmp(fn, bools[i]) == 0) return "bool";
+    for (size_t i = 0; i < sizeof nums / sizeof nums[0]; i++)
+        if (strcmp(fn, nums[i]) == 0) return "num";
+    return NULL;
 }
 
 static int replay_value_is_marker(const char *value) {
@@ -2557,6 +2573,21 @@ int trace_replay_take(const char *fn, Value **out) {
     Value *v = parse_value(hit->value);
     int marker = replay_value_is_marker(hit->value);
     if (!v && !marker) replay_malformed_value(hit->value);
+    {
+        const char *want = replay_expected_kind(fn ? fn : hit->name);
+        if (v && want && (v->type == VAL_BOOL) != (strcmp(want, "bool") == 0) &&
+            (v->type == VAL_BOOL || v->type == VAL_NUM)) {
+            fprintf(stderr, "trace: tape format v%d record 'N %llu %s=%s': %s returns a %s, "
+                    "the tape holds a %s; refusing to replay\n", TRACE_FORMAT_VERSION,
+                    (unsigned long long)hit->stream_id, hit->name, hit->value,
+                    fn ? fn : hit->name, want, val_type_name(v->type));
+#if EIGENSCRIPT_FREESTANDING
+            abort();
+#else
+            _exit(3);
+#endif
+        }
+    }
     free(hit->name); free(hit->value); free(hit);
     if (!v) { replay_take_unlock(); return 0; }
     *out = v;
