@@ -203,7 +203,11 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
             rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
             return 0;
         }
-        if (nul_ends && finite_num_to_byte(eigs_num_arg(item, __func__)) == 0) break;
+        /* EIGS_STRICT=0 legacy: a non-number element (a bool never reaches
+         * here) ends the string as a NUL would -- the documented truncation
+         * the compatibility mode keeps. It is never read as a number. */
+        if (nul_ends && (item->type != VAL_NUM
+                         || finite_num_to_byte(eigs_num_arg(item, __func__)) == 0)) break;
     }
     return 1;
 }
