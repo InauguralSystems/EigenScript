@@ -37,6 +37,17 @@ trap 'rm -rf "$WORK"' EXIT
 if command -v timeout >/dev/null 2>&1; then TMO="timeout 60"
 elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 60"
 else TMO="env"; fi
+# The address-space cap keeps a gfx probe from swamping a 4 GB box. A
+# sanitizer build cannot run under it: ASan reserves ~15 TB of shadow
+# address space at startup, so every probe aborted ("ReserveShadowMemoryRange
+# failed ... ulimit -v") and each abort cost ~1.5 s -- the round-8 ASan shard
+# overran its 55-minute limit on exactly this. Under a sanitizer build the
+# cap is lifted; video and audio stay on SDL's dummy drivers.
+export VCAP=1500000
+if grep -qa -e __asan_init -e __tsan_init -e __msan_init "$BIN" 2>/dev/null; then
+    VCAP=unlimited
+    echo "  NOTE: sanitizer build: probes run without the ulimit -v cap"
+fi
 
 PRED='^((is_|has_|can_)[a-z0-9_]*|[a-z0-9_]*_has|[a-z0-9_]*_empty|[a-z0-9_]*_equal|[a-z0-9_]*s_intersect|point_in_[a-z0-9_]*|polygon_is_[a-z0-9_]*|any|all|collinear|on_segment|in_range|eq_near|get_flag|is_one_of|utf8_validate|sm_can_send|sm_is|json_has|map_has|set_has|is_subset|is_superset|set_equal|git_worktree_clean|check_openai)$'
 "$BIN" --api > "$WORK/api.txt" || { echo "BOOL_LIB_PREDICATES: FAIL (--api)"; exit 1; }
@@ -117,7 +128,7 @@ while IFS='|' read -r mod name k; do
     while IFS= read -r t; do emit_call "$name" "$k" "$t" >> "$prog"; done < "$WORK/extra.txt"
     printf 'print of "@END"\n' >> "$prog"
     out=$(cd "$WORK" && env -u DISPLAY -u WAYLAND_DISPLAY SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
-          EIGS_STRICT=1 bash -c 'ulimit -v 1500000; exec $0 "$1" "$2"' "$TMO" "$BIN" "$prog" </dev/null 2>/dev/null)
+          EIGS_STRICT=1 bash -c 'ulimit -v $VCAP; exec $0 "$1" "$2"' "$TMO" "$BIN" "$prog" </dev/null 2>/dev/null)
     if ! grep -q '^@END$' <<< "$out"; then
         echo "  FAIL: $mod.$name: probe program did not complete"; failures=$((failures + 1)); continue
     fi

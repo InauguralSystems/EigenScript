@@ -32,6 +32,17 @@ head -c 64 /dev/zero >> "$WORK/t.wav"
 if command -v timeout >/dev/null 2>&1; then TMO="timeout 20"
 elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 20"
 else TMO="env"; echo "BOOL_FUZZ: NOTE no timeout(1); programs run unbounded"; fi
+# The address-space cap keeps a gfx probe from swamping a 4 GB box. A
+# sanitizer build cannot run under it: ASan reserves ~15 TB of shadow
+# address space at startup, so every probe aborted ("ReserveShadowMemoryRange
+# failed ... ulimit -v") and each abort cost ~1.5 s -- the round-8 ASan shard
+# overran its 55-minute limit on exactly this. Under a sanitizer build the
+# cap is lifted; video and audio stay on SDL's dummy drivers.
+export VCAP=1500000
+if grep -qa -e __asan_init -e __tsan_init -e __msan_init "$BIN" 2>/dev/null; then
+    VCAP=unlimited
+    echo "  NOTE: sanitizer build: probes run without the ulimit -v cap"
+fi
 
 "$BIN" --api --json > "$WORK/api.json" || { echo "BOOL_FUZZ: FAIL (--api --json)"; exit 1; }
 GEN_OUT=$("$BIN" "$HERE/bool_fuzz_gen.eigs" "$WORK/api.json" "$HERE/strict_shape_cases.json" \
@@ -49,7 +60,7 @@ for p in "$WORK"/gen/p*.eigs; do
     for strict in 1 0; do
         out=$(cd "$WORK/run" && env -u DISPLAY -u WAYLAND_DISPLAY SDL_VIDEODRIVER=dummy \
               SDL_AUDIODRIVER=dummy EIGS_STRICT=$strict \
-              bash -c 'ulimit -v 1500000; exec $0 "$1" "$2"' "$TMO" "$BIN" "$p" \
+              bash -c 'ulimit -v $VCAP; exec $0 "$1" "$2"' "$TMO" "$BIN" "$p" \
               </dev/null 2>/dev/null)
         rc=$?
         # Markers may follow a builtin's own unterminated output on a line
