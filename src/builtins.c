@@ -6703,6 +6703,9 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
     {"dispatch",       BA_POS(2), "the argument for the dispatched function"},
     {"write_bytes",    BA_POS(2), "the append flag"},
     {"shared_set",     BA_POS(1), "a shared value may be any value"},
+    {"db_query_value", BA_ELEMS & ~BA_POS(0), "SQL parameters: a bool binds as an SQL boolean"},
+    {"db_execute",     BA_ELEMS & ~BA_POS(0), "SQL parameters: a bool binds as an SQL boolean"},
+    {"db_query_json",  BA_ELEMS & ~BA_POS(0), "SQL parameters: a bool binds as an SQL boolean"},
 };
 
 typedef struct { BuiltinFn fn; unsigned mask; const char *name; } BoolGateEntry;

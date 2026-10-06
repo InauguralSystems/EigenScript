@@ -10,8 +10,18 @@
 
 #define DB_MAX_PARAMS 16
 
+/* Postgres's boolean type OID (pinned by the wire protocol; see the
+ * DB_OID_* block below, which carries the same value). */
+#define DB_PARAM_OID_BOOL 16
+
+/* types[i] is each parameter's type OID: 0 lets the server infer it from the
+ * SQL (strings and numbers, text format), DB_PARAM_OID_BOOL binds a bool as
+ * an SQL boolean (#1637: a bool read from a boolean column must be writable
+ * back, and must not become the text 'true'/'false' an untyped context
+ * would keep). */
 static int db_build_query(Value *arg, const char **sql, int *nparams,
-                          const char **params, char numbuf[DB_MAX_PARAMS][64]) {
+                          const char **params, char numbuf[DB_MAX_PARAMS][64],
+                          unsigned int types[DB_MAX_PARAMS]) {
     if (arg && arg->type == VAL_STR) {
         *sql = arg->data.str;
         *nparams = 0;
@@ -38,13 +48,17 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
     }
     for (int i = 0; i < *nparams; i++) {
         Value *v = arg->data.list.items[i + 1];
-        if (v && v->type == VAL_STR) {
+        types[i] = 0;
+        if (v && v->type == VAL_BOOL) {
+            params[i] = v->data.boolean ? "true" : "false";
+            types[i] = DB_PARAM_OID_BOOL;
+        } else if (v && v->type == VAL_STR) {
             params[i] = v->data.str;
         } else if (v && v->type == VAL_NUM) {
             snprintf(numbuf[i], 64, "%g", eigs_num_arg(v, __func__));
             params[i] = numbuf[i];
         } else {
-            rt_error(EK_TYPE, 0, "db: parameter %d is not a string or number (got %s)",
+            rt_error(EK_TYPE, 0, "db: parameter %d is not a string, number or bool (got %s)",
                           i + 1, v ? val_type_name(v->type) : "null");
             return 0;
         }
@@ -56,11 +70,12 @@ static PGresult* db_exec_from_arg(Value *arg) {
     const char *sql = "";
     const char *params[DB_MAX_PARAMS];
     char numbuf[DB_MAX_PARAMS][64];
+    unsigned int types[DB_MAX_PARAMS];
     int nparams = 0;
 
-    if (!db_build_query(arg, &sql, &nparams, params, numbuf)) return NULL;
+    if (!db_build_query(arg, &sql, &nparams, params, numbuf, types)) return NULL;
     if (nparams == 0) return PQexec(g_db_conn, sql);
-    return PQexecParams(g_db_conn, sql, nparams, NULL, params, NULL, NULL, 0);
+    return PQexecParams(g_db_conn, sql, nparams, (const Oid *)types, params, NULL, NULL, 0);
 }
 
 Value* builtin_db_connect(Value *arg) {
