@@ -1327,6 +1327,7 @@ int eigs_opt_num(const Value *v, double *out, const char *who);
  * path is a type test, plus at most EIGS_BOOL_GATE_SCAN loads for a list. */
 #define EIGS_BOOL_GATE_SCAN 8
 int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg);
+void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
 static inline int eigs_bool_gate(BuiltinFn fn, const Value *arg) {
     if (!arg) return 0;
     if (arg->type == VAL_BOOL) return eigs_bool_gate_slow(fn, arg);

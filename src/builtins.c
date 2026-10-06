@@ -6708,89 +6708,87 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
     {"db_query_json",  BA_ELEMS & ~BA_POS(0), "SQL parameters: a bool binds as an SQL boolean"},
 };
 
-typedef struct { BuiltinFn fn; unsigned mask; const char *name; } BoolGateEntry;
-static BoolGateEntry *g_bool_gate;   /* published with release; read with acquire */
-static int g_bool_gate_n;
+/* The policy rows resolved to function pointers, once, from the running
+ * state's pristine builtin layer: ~30 env lookups, no allocation (round 6:
+ * the round-4 lazy table build qsort'ed ~350 entries, and the free of
+ * qsort's work buffer made glibc consolidate every fastbin of a hot loop's
+ * garbage -- +7% instructions on bench/unobserved_loop, whose only bool is
+ * the final `print of (x > 0)`). */
+#define BOOL_POLICY_N (sizeof k_bool_policy / sizeof k_bool_policy[0])
+static BuiltinFn g_bool_policy_fn[BOOL_POLICY_N];
+static int g_bool_policy_ready;   /* release-published after the fill */
 static pthread_mutex_t g_bool_gate_mu = PTHREAD_MUTEX_INITIALIZER;
 
-static int bool_gate_cmp(const void *a, const void *b) {
-    uintptr_t x = (uintptr_t)((const BoolGateEntry *)a)->fn;
-    uintptr_t y = (uintptr_t)((const BoolGateEntry *)b)->fn;
-    return (x > y) - (x < y);
+/* Host functions (eigs_register_function) are not gated; neither are
+ * compiled natives (eigs_native_fn_name) nor the sandbox's blocked stub. */
+static BuiltinFn g_bool_gate_host[64];
+static int g_bool_gate_host_n;   /* under g_bool_gate_mu */
+static int g_bool_gate_host_overflow;
+
+void eigs_bool_gate_exempt(BuiltinFn fn) {
+    pthread_mutex_lock(&g_bool_gate_mu);
+    int seen = 0;
+    for (int i = 0; i < g_bool_gate_host_n; i++) if (g_bool_gate_host[i] == fn) seen = 1;
+    if (!seen) {
+        if (g_bool_gate_host_n < (int)(sizeof g_bool_gate_host / sizeof g_bool_gate_host[0]))
+            g_bool_gate_host[g_bool_gate_host_n++] = fn;
+        else g_bool_gate_host_overflow = 1;   /* past 64 hosts: gate no host fn */
+    }
+    pthread_mutex_unlock(&g_bool_gate_mu);
 }
 
-/* Built LAZILY, on the first call that hands a builtin a bool (round 4: the
- * eager build at registration cost ~757k instructions on every process start,
- * +56% of an empty program). Source: the running state's pristine builtin
- * layer, whose first g_builtin_binding_count bindings are the core builtins
- * (host functions registered later sit after them and stay ungated). Sort
- * the function pointers once, merge aliases (inflate/zlib_inflate) as
- * neighbours, then apply each policy row by one lookup. */
-static BoolGateEntry *bool_gate_build(int *out_n) {
+static int bool_gate_is_host(BuiltinFn fn) {
+    if (fn == builtin_sandbox_blocked || eigs_native_fn_name(fn)) return 1;
+    pthread_mutex_lock(&g_bool_gate_mu);
+    int host = g_bool_gate_host_overflow;
+    for (int i = 0; !host && i < g_bool_gate_host_n; i++) host = (g_bool_gate_host[i] == fn);
+    pthread_mutex_unlock(&g_bool_gate_mu);
+    return host;
+}
+
+/* The builtin's script name, for the error only (off every success path). */
+static const char *bool_gate_name(BuiltinFn fn) {
     Env *env = g_builtin_env;
-    if (!env) return NULL;
-    int limit = __atomic_load_n(&g_builtin_binding_count, __ATOMIC_RELAXED);
-    if (limit > env->count) limit = env->count;
-    BoolGateEntry *t = xcalloc_array((size_t)(limit > 0 ? limit : 1), sizeof(BoolGateEntry));
-    int n = 0;
-    for (int i = 0; i < limit; i++) {
+    for (int i = 0; env && i < env->count; i++) {
         if (!env->names[i] || !slot_is_ptr(env->values[i])) continue;
         Value *v = slot_as_ptr(env->values[i]);
-        if (!v || v->type != VAL_BUILTIN) continue;
-        t[n].fn = v->data.builtin;
-        t[n].name = env->names[i];   /* replaced by a private copy below */
-        n++;
+        if (v && v->type == VAL_BUILTIN && v->data.builtin == fn) return env->names[i];
     }
-    qsort(t, (size_t)n, sizeof(BoolGateEntry), bool_gate_cmp);
-    int m = 0;
-    for (int i = 0; i < n; i++) {
-        if (m > 0 && t[m - 1].fn == t[i].fn) continue;   /* an alias */
-        t[m++] = t[i];
-    }
-    for (int i = 0; i < m; i++) t[i].name = xstrdup(t[i].name);
-    for (size_t k = 0; k < sizeof k_bool_policy / sizeof k_bool_policy[0]; k++) {
-        Value *v = env_get(env, k_bool_policy[k].name);
-        if (!v || v->type != VAL_BUILTIN) continue;   /* an extension this build lacks */
-        BoolGateEntry key = { v->data.builtin, 0, NULL };
-        BoolGateEntry *e = bsearch(&key, t, (size_t)m, sizeof(BoolGateEntry), bool_gate_cmp);
-        if (e) e->mask |= k_bool_policy[k].mask;
-    }
-    *out_n = m;
-    return t;
+    return "builtin";
 }
 
 int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg) {
-    BoolGateEntry *tab = __atomic_load_n(&g_bool_gate, __ATOMIC_ACQUIRE);
-    if (!tab) {
+    if (!__atomic_load_n(&g_bool_policy_ready, __ATOMIC_ACQUIRE)) {
+        Env *env = g_builtin_env;
+        if (!env) return 0;   /* no builtin layer: not a script call */
         pthread_mutex_lock(&g_bool_gate_mu);
-        tab = g_bool_gate;
-        if (!tab) {
-            int n = 0;
-            tab = bool_gate_build(&n);
-            if (tab) {
-                g_bool_gate_n = n;
-                __atomic_store_n(&g_bool_gate, tab, __ATOMIC_RELEASE);
+        if (!g_bool_policy_ready) {
+            for (size_t k = 0; k < BOOL_POLICY_N; k++) {
+                Value *v = env_get(env, k_bool_policy[k].name);
+                g_bool_policy_fn[k] = (v && v->type == VAL_BUILTIN) ? v->data.builtin : NULL;
             }
+            __atomic_store_n(&g_bool_policy_ready, 1, __ATOMIC_RELEASE);
         }
         pthread_mutex_unlock(&g_bool_gate_mu);
-        if (!tab) return 0;   /* no builtin layer: not a script call */
     }
-    BoolGateEntry key = { fn, 0, NULL };
-    BoolGateEntry *e = bsearch(&key, tab, (size_t)g_bool_gate_n,
-                               sizeof(BoolGateEntry), bool_gate_cmp);
-    if (!e) return 0;             /* a host function or compiled native */
+    unsigned mask = 0;
+    int listed = 0;
+    for (size_t k = 0; k < BOOL_POLICY_N; k++)
+        if (g_bool_policy_fn[k] == fn) { mask |= k_bool_policy[k].mask; listed = 1; }
+    if (!listed && bool_gate_is_host(fn)) return 0;
     if (arg->type == VAL_BOOL) {
-        if (e->mask & BA_ARG) return 0;
-        rt_error(EK_TYPE, 0, "%s: does not take a bool argument", e->name);
+        if (mask & BA_ARG) return 0;
+        rt_error(EK_TYPE, 0, "%s: does not take a bool argument", bool_gate_name(fn));
         return 1;
     }
     int n = arg->data.list.count < EIGS_BOOL_GATE_SCAN ? arg->data.list.count
                                                        : EIGS_BOOL_GATE_SCAN;
     for (int i = 0; i < n; i++) {
         const Value *it = arg->data.list.items[i];
-        if (!it || it->type != VAL_BOOL || (e->mask & BA_POS(i))) continue;
+        if (!it || it->type != VAL_BOOL || (mask & BA_POS(i))) continue;
+        const char *nm = bool_gate_name(fn);
         rt_error(EK_TYPE, 0, "%s: argument %d is a bool, which %s does not take there",
-                 e->name, i + 1, e->name);
+                 nm, i + 1, nm);
         return 1;
     }
     return 0;

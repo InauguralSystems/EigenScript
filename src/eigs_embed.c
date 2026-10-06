@@ -463,6 +463,7 @@ void eigs_register_function(const char *name, EigsHostFn fn) {
      * refuses to enter opaque host code with incomplete history. */
     obs_flag_store(eval_host_callbacks, 1);
     eigs_obs_enable_runtime();
+    eigs_bool_gate_exempt((BuiltinFn)fn);   /* #1637: host functions are not bool-gated */
     Value *bv = make_builtin((BuiltinFn)fn);
     /* #1388: a registered function joins the builtin layer too, so module
      * code sees it (and the host's own rebinding of the name stays out of

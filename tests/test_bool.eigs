@@ -240,6 +240,10 @@ same of [vm_run_bytecode of [1, [0, 0, 0, 40], [7], [], []], 7, "vm_run_bytecode
 # on a bool (the bytecode path raised: report was not in k_bool_policy).
 r5_rep is 5 > 3
 same of [vm_run_bytecode of [1, [25,0,0, 0,1,0, 39,1,0, 40], ["report", true]], report of r5_rep, "report of a bool: bytecode path == compiled path"]
+# Round 6: the sandbox's blocked stub stays ungated -- a bool argument to a
+# blocked builtin still reports the sandbox refusal, not a type error.
+r6_sb is sandbox_run of [[1, [25,0,0, 0,1,0, 39,1,0, 40], ["read_text", true]], 1000]
+same of [r6_sb["error"]["kind"], "sandbox", "a blocked builtin given a bool reports the sandbox refusal"]
 # Round 5 (#1637): json_build writes a bool value as a JSON boolean and it
 # decodes back to a bool.
 same of [json_build of ["ok", true, "bad", 2 > 3], "{\"ok\": true, \"bad\": false}", "json_build of bools"]
