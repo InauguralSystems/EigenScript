@@ -1,0 +1,203 @@
+# bool_fuzz_gen.eigs -- writes the #1637 bool fuzz probe programs.
+#
+# Run by tests/test_bool_fuzz.sh; never on its own. For EVERY builtin and
+# extension name the binary's `--api --json` lists, it writes one probe
+# program that puts `true`, then `false`, into every argument slot it can
+# name, each call inside try/catch with a marker line:
+#   u      the whole argument:            f of true
+#   e0 e1  an element of a list argument: f of ([true, 1]), f of ([1, true])
+#   aN     argument N of the reviewed valid call in
+#          tests/strict_shape_cases.json, replaced whole
+#   aNe0   the first element of argument N, when that argument is a list
+#          literal that starts with a number: [1, 2] -> [true, 2]
+# plus one program of VM operand positions (index, slice bounds, range,
+# for-in, arithmetic). The runner decides which calls are violations.
+#
+# usage: eigenscript bool_fuzz_gen.eigs API_JSON CASES_JSON TMPDIR WAV OUTDIR
+# writes OUTDIR/p<N>.eigs and OUTDIR/manifest.txt, one line per probe call:
+#   <program>|<call index>|<name>|<slot>|<value>
+
+argv is args of null
+api is json_decode of (read_text of argv[0])
+cases is json_decode of (read_text of argv[1])
+tmp is argv[2]
+wav is argv[3]
+outdir is argv[4]
+
+# @DESCRIPTOR@ (sandbox_run's chunk) is produced by a C helper that only
+# tools/strict_differential.sh builds; null stands in -- every bool slot of
+# sandbox_run is refused before the descriptor is read.
+define subst(s) as:
+    local a is str_replace of [s, "@TMP@", tmp]
+    a is str_replace of [a, "@DESCRIPTOR@", "null"]
+    return str_replace of [a, "@WAV@", wav]
+
+define is_numlit(s) as:
+    local t is trim of s
+    if (len of t) == 0:
+        return false
+    local i is 0
+    local seen is false
+    if (char_at of [t, 0]) == "-":
+        i is 1
+    loop while i < (len of t):
+        local c is char_at of [t, i]
+        if (c >= "0") and (c <= "9"):
+            seen is true
+        else:
+            if c != ".":
+                return false
+        i is i + 1
+    return seen
+
+# "[1, 2]" -> "[@V@, 2]" when the first element is a numeric literal; "" when not.
+define first_elem_template(s) as:
+    local t is trim of s
+    if (len of t) < 3:
+        return ""
+    if (char_at of [t, 0]) != "[":
+        return ""
+    local i is 1
+    loop while i < (len of t):
+        local c is char_at of [t, i]
+        if (c == ",") or (c == "]"):
+            local head is substr of [t, 1, i - 1]
+            if is_numlit of head:
+                return "[@V@" + (substr of [t, i, (len of t) - i])
+            return ""
+        if (c == "[") or (c == "(") or (c == "\"") or (c == "{"):
+            return ""
+        i is i + 1
+    return ""
+
+names is []
+for n in api["builtins"]:
+    append of [names, n]
+for grp in keys of api["extensions"]:
+    for n in api["extensions"][grp]:
+        append of [names, n]
+
+rows is {}
+for c in cases:
+    rows[c["name"]] is c
+
+manifest is []
+pidx is 0
+
+define wrap(lines, k, call) as:
+    append of [lines, "try:"]
+    append of [lines, "    __r" + (str of k) + " is " + call]
+    append of [lines, "    print of \"@" + (str of k) + ":V\""]
+    append of [lines, "catch __x:"]
+    append of [lines, "    print of (\"@" + (str of k) + ":R:\" + __x.kind)"]
+
+# `report` is a reserved form, not a function (`report of <name>` only; a
+# literal there is a compile error, E005), so no call of it can be written.
+skip is ["report"]
+
+for f in names:
+    if list_contains of [skip, f]:
+        append of [manifest, "skip|0|" + f + "|reserved-form|-"]
+        continue
+    lines is []
+    calls is []
+    # presence: a name of a capability this binary was built without is
+    # undefined; the runner counts it absent, never as a raise.
+    append of [lines, "try:"]
+    append of [lines, "    print of (\"@P:\" + (type of " + f + "))"]
+    append of [lines, "catch __x:"]
+    append of [lines, "    print of \"@P:absent\""]
+    for v in ["true", "false"]:
+        append of [calls, [f + " of " + v, "u", v]]
+    has_row is has_key of [rows, f]
+    if not has_row:
+        for v in ["true", "false"]:
+            append of [calls, [f + " of ([" + v + ", 1])", "e0", v]]
+            append of [calls, [f + " of ([1, " + v + "])", "e1", v]]
+    if has_row:
+        row is rows[f]
+        setup is subst of row["setup"]
+        if (len of setup) > 0:
+            # A setup that needs a capability this build lacks must not end
+            # the program before its markers: it runs inside try.
+            append of [lines, "try:"]
+            for sl in split of [setup, "\n"]:
+                append of [lines, "    " + sl]
+            append of [lines, "    __setup_ok is 1"]
+            append of [lines, "catch __x:"]
+            append of [lines, "    print of \"@S:failed\""]
+        a is []
+        for x in row["args"]:
+            append of [a, subst of x]
+        i is 0
+        loop while i < (len of a):
+            tmpl is first_elem_template of a[i]
+            for v in ["true", "false"]:
+                b is []
+                for x in a:
+                    append of [b, x]
+                b[i] is v
+                append of [calls, [f + " of [" + (join of [b, ", "]) + "]", "a" + (str of i), v]]
+                if (len of tmpl) > 0:
+                    b[i] is str_replace of [tmpl, "@V@", v]
+                    append of [calls, [f + " of [" + (join of [b, ", "]) + "]", "a" + (str of i) + "e0", v]]
+            i is i + 1
+    k is 0
+    for c in calls:
+        wrap of [lines, k, c[0]]
+        append of [manifest, "p" + (str of pidx) + "|" + (str of k) + "|" + f + "|" + c[1] + "|" + c[2]]
+        k is k + 1
+    append of [lines, "print of \"@END\""]
+    write_text of [outdir + "/p" + (str of pidx) + ".eigs", (join of [lines, "\n"]) + "\n"]
+    pidx is pidx + 1
+
+# VM operand positions: one program, setup first.
+vm_setup is "xs is [10, 20, 30, 40]\ns is \"abcd\"\nb is buffer of 4\nd is {\"k\": 1}\n"
+vm_calls is []
+for v in ["true", "false"]:
+    append of [vm_calls, ["xs[" + v + "]", "index-list", v]]
+    append of [vm_calls, ["s[" + v + "]", "index-str", v]]
+    append of [vm_calls, ["b[" + v + "]", "index-buffer", v]]
+    append of [vm_calls, ["d[" + v + "]", "index-dict", v]]
+    append of [vm_calls, ["xs[" + v + ":]", "slice-start", v]]
+    append of [vm_calls, ["xs[:" + v + "]", "slice-end", v]]
+    append of [vm_calls, ["s[" + v + ":]", "slice-str-start", v]]
+    append of [vm_calls, ["s[:" + v + "]", "slice-str-end", v]]
+    append of [vm_calls, ["range of " + v, "range-unary", v]]
+    append of [vm_calls, ["range of [" + v + ", 3]", "range-start", v]]
+    append of [vm_calls, ["range of [0, " + v + "]", "range-end", v]]
+    append of [vm_calls, ["range of [0, 3, " + v + "]", "range-step", v]]
+    append of [vm_calls, [v + " + 1", "arith-add", v]]
+    append of [vm_calls, ["1 - " + v, "arith-sub", v]]
+    append of [vm_calls, [v + " * 2", "arith-mul", v]]
+    append of [vm_calls, ["2 / " + v, "arith-div", v]]
+    append of [vm_calls, [v + " % 2", "arith-mod", v]]
+    append of [vm_calls, ["0 - " + v, "arith-neg", v]]
+    append of [vm_calls, [v + " < 1", "order", v]]
+    append of [vm_calls, [v + " == 1", "eq-num", v]]
+    append of [vm_calls, ["xs * " + v, "repeat-list", v]]
+    append of [vm_calls, ["s * " + v, "repeat-str", v]]
+    append of [vm_calls, ["what is xs at " + v, "at-line", v]]
+    append of [vm_calls, ["what is xs when " + v, "when-ordinal", v]]
+lines is [vm_setup]
+k is 0
+for c in vm_calls:
+    wrap of [lines, k, c[0]]
+    append of [manifest, "p" + (str of pidx) + "|" + (str of k) + "|@vm|" + c[1] + "|" + c[2]]
+    k is k + 1
+# Statement forms: an index store, a slice store and a for-in over a bool.
+for v in ["true", "false"]:
+    for stmt in [["xs[" + v + "] is 9", "store-list"], ["b[" + v + "] is 9", "store-buffer"], ["for __i in " + v + ":\n        __z is __i", "for-in"]]:
+        append of [lines, "try:"]
+        append of [lines, "    " + stmt[0]]
+        append of [lines, "    print of \"@" + (str of k) + ":V\""]
+        append of [lines, "catch __x:"]
+        append of [lines, "    print of (\"@" + (str of k) + ":R:\" + __x.kind)"]
+        append of [manifest, "p" + (str of pidx) + "|" + (str of k) + "|@vm|" + stmt[1] + "|" + v]
+        k is k + 1
+append of [lines, "print of \"@END\""]
+write_text of [outdir + "/p" + (str of pidx) + ".eigs", (join of [lines, "\n"]) + "\n"]
+pidx is pidx + 1
+
+write_text of [outdir + "/manifest.txt", (join of [manifest, "\n"]) + "\n"]
+print of ("GEN: names=" + (str of (len of names)) + " programs=" + (str of pidx) + " calls=" + (str of (len of manifest)))

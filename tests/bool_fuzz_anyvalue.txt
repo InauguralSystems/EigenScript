@@ -1,0 +1,48 @@
+# tests/bool_fuzz_anyvalue.txt -- reviewed slots that TAKE a bool (#1637).
+# name|slot|reason. tests/test_bool_fuzz.sh: a bool in any slot not listed
+# here must raise, in both strict modes; an entry that no call reaches with a
+# return is stale and fails the run. The C side of the same decision is
+# k_bool_policy in src/builtins.c (the builtin-call bool gate); container
+# ELEMENTS (slot aNe0) are not gated there and are listed only here.
+# Slots: u = the whole argument, eN = element N of a list argument,
+# aN = argument N of the reviewed call, aNe0 = first element of argument N.
+print|u|renders any value
+print|e0|renders any value
+print|e1|renders any value
+write|u|renders any value
+write|e0|renders any value
+write|e1|renders any value
+str|u|converts any value to text
+str|e0|converts any value to text
+str|e1|converts any value to text
+type|u|names any value's type
+type|e0|names any value's type
+type|e1|names any value's type
+json_encode|u|JSON has true and false
+json_encode|e0|JSON has true and false
+json_encode|e1|JSON has true and false
+observe|u|the observer measures bools (entropy 0 or 1)
+observe|e0|the observer measures any value
+observe|e1|the observer measures any value
+free_val|u|releases any value
+free_val|e0|releases any value
+free_val|e1|releases any value
+coalesce|u|picks the first non-null of any values
+coalesce|a0|picks the first non-null of any values
+coalesce|a1|picks the first non-null of any values
+len|e0|counts elements whatever they are
+len|e1|counts elements whatever they are
+assert|u|the condition is a bool
+assert|a0|the condition is a bool
+append|a1|a list element may be any value
+list_insert_at|a2|a list element may be any value
+fill|a1|a list element may be any value
+dict_set|a2|a dict value may be any value
+send|a1|a channel carries any value
+task_send|a1|a mailbox carries any value
+json_build|e1|JSON values may be true and false (position 1 is a value)
+write_bytes|a2|the append flag is a bool (or the older nonzero number)
+concat|a0e0|joins two lists; elements may be any value
+concat|a1e0|joins two lists; elements may be any value
+list_slice|a0e0|slices a list; elements may be any value
+copy_into|a2e0|copies list elements; elements may be any value

@@ -102,7 +102,7 @@ raises of [(_) => sqrt of F, "sqrt", "sqrt of a bool"]
 raises of [(_) => max of [T, 3], "max", "max over a bool element"]
 # Round 2 (#1637): numeric builtins that answered a bool with null/[] or read
 # it as 0. The [0fb] section runs this file under EIGS_STRICT=0 as well; the
-# full enumeration is tests/test_bool_numeric.py.
+# full enumeration is tests/test_bool_fuzz.sh.
 raises of [(_) => usleep of T, "usleep: does not take a bool argument", "usleep of a bool"]
 raises of [(_) => zeros of T, "zeros", "zeros of a bool"]
 raises of [(_) => fill of [T, 3], "fill", "fill with a bool count"]

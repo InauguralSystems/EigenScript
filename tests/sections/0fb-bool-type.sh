@@ -1,20 +1,22 @@
 echo "[0fb] Boolean type (#1637)"
 check_eigs_suite "bool type: semantics 1-7, default tier" test_bool.eigs "All tests passed"
 EIGS_JIT_OFF=1 check_eigs_suite "bool type: semantics 1-7, interpreter tier" test_bool.eigs "All tests passed"
-# A bool never takes a numeric builtin's EIGS_STRICT=0 soft path (#1637).
+# A bool never takes a builtin's EIGS_STRICT=0 soft path (#1637).
 EIGS_STRICT=0 check_eigs_suite "bool type: semantics 1-7, EIGS_STRICT=0" test_bool.eigs "All tests passed"
-# Every numeric builtin, derived by probing the binary, refuses a bool in both
-# strict modes (tests/test_bool_numeric.py). The tool prints its own verdict.
+# true and false in every argument slot of every builtin `--api --json` lists,
+# and in the VM operand positions, raise in both strict modes unless the slot
+# is on the reviewed any-value list (tests/test_bool_fuzz.sh; it prints its
+# own verdict and examined counts).
 check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
-BOOL_NUM_OUT=$($EIGS_TMO python3 "$TESTS_DIR/test_bool_numeric.py" ./eigenscript 2>&1); BOOL_NUM_RC=$?
-if [ "$BOOL_NUM_RC" = 0 ] && grep -q "^BOOL_NUMERIC: .* PASS$" <<< "$BOOL_NUM_OUT"; then
-    PASS=$((PASS + 1)); echo "  PASS: numeric builtins refuse a bool in both strict modes ($(grep '^BOOL_NUMERIC' <<< "$BOOL_NUM_OUT"))"
+BOOL_FZ_OUT=$(bash "$TESTS_DIR/test_bool_fuzz.sh" ./eigenscript 2>&1); BOOL_FZ_RC=$?
+if [ "$BOOL_FZ_RC" = 0 ] && grep -q "^BOOL_FUZZ: examined=.* PASS$" <<< "$BOOL_FZ_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: a bool in any builtin slot or VM operand raises ($(grep '^BOOL_FUZZ: examined' <<< "$BOOL_FZ_OUT"))"
 else
-    FAIL=$((FAIL + 1)); echo "  FAIL: numeric builtins refuse a bool in both strict modes (rc=$BOOL_NUM_RC)"
-    printf '%s\n' "$BOOL_NUM_OUT" | eigs_failure_output
+    FAIL=$((FAIL + 1)); echo "  FAIL: a bool in any builtin slot or VM operand raises (rc=$BOOL_FZ_RC)"
+    printf '%s\n' "$BOOL_FZ_OUT"
 fi
-unset BOOL_NUM_OUT BOOL_NUM_RC
+unset BOOL_FZ_OUT BOOL_FZ_RC
 # Forced JIT: every chunk compiles on first entry and every loop OSRs at once,
 # so the comparison/NOT/JUMP_IF bool emitters run. A row that compiled nothing
 # measured the interpreter, so it must also show compiled=N>0.
