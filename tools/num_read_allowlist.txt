@@ -31,7 +31,7 @@ eigenscript.c|value_to_string|1|printing, switch case VAL_NUM
 eigenscript.h|#define VAL_NUM_OFFSET|1|the raw member offset definition (JIT)
 eigenscript.h|#define VAL_NUM_RAW|1|the raw read definition
 eigenscript.h|eigs_num_arg|1|inline fast path of the checking accessor: reads only after type == VAL_NUM
-eigs_embed.c|eigs_value_as_num|1|embedding API documented in docs/EMBEDDING.md to answer 0.0 for a non-number; hosts test eigs_value_type first
+eigs_embed.c|eigs_value_as_num|1|embedding API: reads only after type == VAL_NUM; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
 embed_smoke.c|main|7|C test program: builds and inspects slots it constructed as numbers
 embed_smoke.c|test_worker_exit_lifecycle|2|C test program: inspects slots it constructed as numbers
 jit.c|emit_load_numeric_operand|2|emits the load of data.num_ after the emitted type == VAL_NUM / refcount guard

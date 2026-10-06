@@ -332,7 +332,12 @@ int eigs_value_as_bool(EigsValue *v) {
     return (v && v->type == VAL_BOOL) ? v->data.boolean : 0;
 }
 
+/* #1637: a bool answers NaN, not 0.0, so a host that reads a bool as a
+ * number sees the mistake propagate (NaN poisons the arithmetic) instead of a
+ * plausible false-as-zero. Other non-numbers keep the documented 0.0. Hosts
+ * test eigs_value_type first, or read a bool with eigs_value_as_bool. */
 double eigs_value_as_num(EigsValue *v) {
+    if (v && v->type == VAL_BOOL) return NAN;
     return (v && v->type == VAL_NUM) ? VAL_NUM_RAW(v) : 0.0;
 }
 

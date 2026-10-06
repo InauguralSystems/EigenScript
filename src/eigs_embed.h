@@ -168,7 +168,7 @@ void           eigs_value_retain(EigsValue *v);
 void           eigs_value_release(EigsValue *v);
 
 EigsValueType  eigs_value_type(EigsValue *v);
-double         eigs_value_as_num(EigsValue *v);     /* 0.0 if not num */
+double         eigs_value_as_num(EigsValue *v);     /* NaN for a bool (#1637), 0.0 for any other non-num */
 int            eigs_value_as_bool(EigsValue *v);    /* #1637: 1 for true, 0 for false or not a bool */
 const char    *eigs_value_as_string(EigsValue *v);  /* NULL if not str; borrowed */
 

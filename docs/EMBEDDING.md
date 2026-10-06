@@ -360,7 +360,7 @@ Inspection:
 
 ```c
 EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _BUFFER, _OTHER, _BOOL */
-double        eigs_value_as_num(EigsValue *v);     /* 0.0 if wrong type (a bool is not a num) */
+double        eigs_value_as_num(EigsValue *v);     /* NaN for a bool (#1637); 0.0 for any other non-num */
 int           eigs_value_as_bool(EigsValue *v);    /* 1 for true; 0 for false or wrong type */
 const char   *eigs_value_as_string(EigsValue *v);  /* NULL if wrong type; borrowed pointer */
 int           eigs_value_list_len(EigsValue *v);
@@ -593,17 +593,25 @@ static EigsValue *host_add(EigsValue *arg) {
     if (eigs_value_list_len(arg) != 2)          return eigs_value_new_null();
     EigsValue *a = eigs_value_list_get(arg, 0);
     EigsValue *b = eigs_value_list_get(arg, 1);
-    double sum = eigs_value_as_num(a) + eigs_value_as_num(b);
+    /* Check the types: eigs_value_as_num answers NaN for a bool and 0.0 for
+     * other non-numbers, so an unchecked read turns `host_add of [true, 1]`
+     * into a wrong number. */
+    EigsValue *r = (eigs_value_type(a) == EIGS_TYPE_NUM && eigs_value_type(b) == EIGS_TYPE_NUM)
+        ? eigs_value_new_num(eigs_value_as_num(a) + eigs_value_as_num(b))
+        : eigs_value_new_null();
     eigs_value_release(a);
     eigs_value_release(b);
-    return eigs_value_new_num(sum);
+    return r;
 }
 
 eigs_register_function("host_add", host_add);
 ```
 
 After registration, the script side calls it the same way as any
-builtin: `host_add of [3, 4]`.
+builtin: `host_add of [3, 4]`. Check argument types with `eigs_value_type`
+before reading them: `eigs_value_as_num` answers NaN for a bool -- so a bool
+read as a number poisons the host's arithmetic visibly instead of passing for
+0 -- and 0.0 for any other non-number. Read a bool with `eigs_value_as_bool`.
 
 A registered function joins the state's builtin layer as well as its global
 scope (#1388): imported module code sees it, and a later host rebinding of

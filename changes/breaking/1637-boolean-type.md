@@ -14,7 +14,8 @@
   `eigs_trace_declare_kind`. `db_execute`/`db_query_value`/`db_query_json` take a bool
   parameter and bind it as an SQL boolean, so a bool read from a boolean
   column can be written back. `json_build` writes a bool value as JSON
-  `true`/`false`, and `what is` a bool answers the bool.
+  `true`/`false`, and `what is` a bool answers the bool. The embedding API's
+  `eigs_value_as_num` answers NaN for a bool (0.0 for any other non-number).
 - **Wrong-typed numbers that used to be read as garbage now raise (#1637).** The
   bool work routed every C number read through a checking accessor, which
   also changes some non-bool cases:

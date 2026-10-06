@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <signal.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -278,10 +279,15 @@ static EigsValue *host_add(EigsValue *arg) {
     if (eigs_value_list_len(arg) != 2)          return eigs_value_new_null();
     EigsValue *a = eigs_value_list_get(arg, 0);
     EigsValue *b = eigs_value_list_get(arg, 1);
-    double sum = eigs_value_as_num(a) + eigs_value_as_num(b);
+    /* Check the types: eigs_value_as_num answers NaN for a bool and 0.0 for
+     * other non-numbers, so an unchecked read turns `host_add of [true, 1]`
+     * into a wrong number. */
+    EigsValue *r = (eigs_value_type(a) == EIGS_TYPE_NUM && eigs_value_type(b) == EIGS_TYPE_NUM)
+        ? eigs_value_new_num(eigs_value_as_num(a) + eigs_value_as_num(b))
+        : eigs_value_new_null();
     eigs_value_release(a);
     eigs_value_release(b);
-    return eigs_value_new_num(sum);
+    return r;
 }
 
 /* #1434: runs an eval that raises on its line 5, swallows that error, then
@@ -476,6 +482,19 @@ int main(void) {
     CHECK(r != NULL, "FFI eval returns value");
     CHECK(r && eigs_value_type(r) == EIGS_TYPE_NUM, "FFI result is num");
     CHECK(r && eigs_value_as_num(r) == 7.0, "host_add(3,4) == 7");
+    eigs_value_release(r);
+    /* #1637: a bool reads as NaN through eigs_value_as_num (never 0.0); the
+     * typed host function refuses it; other non-numbers keep 0.0. */
+    r = eigs_eval_string("5 > 3");
+    CHECK(r && eigs_value_type(r) == EIGS_TYPE_BOOL && isnan(eigs_value_as_num(r)),
+          "eigs_value_as_num of a bool is NaN");
+    CHECK(r && eigs_value_as_bool(r) == 1, "eigs_value_as_bool reads the bool");
+    eigs_value_release(r);
+    r = eigs_eval_string("\"s\"");
+    CHECK(r && eigs_value_as_num(r) == 0.0, "eigs_value_as_num of a string stays 0.0");
+    eigs_value_release(r);
+    r = eigs_eval_string("host_add of [true, 1]");
+    CHECK(r && eigs_value_type(r) == EIGS_TYPE_NULL, "host_add refuses a bool operand");
     eigs_value_release(r);
 
     /* --- #1387: embed API errors do not inherit an eval's last line. -- */
