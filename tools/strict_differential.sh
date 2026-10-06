@@ -974,7 +974,7 @@ cap_contract() {
         http) name=http_route; op='http_route of ["GET", "/strict-capability-probe", "ok"]'; answer='result == "route registered"' ;;
         net) name=net_close; op='net_close of -1'; answer='result == null' ;;
         db) name=db_connect; op='db_connect of null'; answer='(json_path of [result, "status"]) == "no_database"' ;;
-        model) name=eigen_model_loaded; op='eigen_model_loaded of null'; answer='result == 0' ;;
+        model) name=eigen_model_loaded; op='eigen_model_loaded of null'; answer='result == false' ;;   # #1637: a bool
         gfx) name=gfx_text_width; op='gfx_text_width of ["m", 1]'; answer='(type of result) == "num" and result > 0' ;;
     esac
     message="$(cap_message "$cap")"

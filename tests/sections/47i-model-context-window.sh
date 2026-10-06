@@ -12,7 +12,8 @@ if [ "$CW_PROBE_RC" -eq 1 ] &&
     section_skip "binary built without EIGENSCRIPT_EXT_MODEL"
 else
     TOTAL=$((TOTAL + 1))
-    if ! rc_ok "$CW_PROBE_RC" "$CW_PROBE_OUT" || [ "$CW_PROBE_OUT" != 0 ]; then
+    # #1637: eigen_model_loaded answers a bool (`false` before a load).
+    if ! rc_ok "$CW_PROBE_RC" "$CW_PROBE_OUT" || [ "$CW_PROBE_OUT" != false ]; then
         FAIL=$((FAIL + 1))
         echo "  FAIL: model capability probe (rc=$CW_PROBE_RC)"
         printf '%s\n' "$CW_PROBE_OUT"
