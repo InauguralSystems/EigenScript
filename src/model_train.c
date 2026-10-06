@@ -1437,6 +1437,9 @@ Value* builtin_native_train_step(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         return make_str("{\"status\": \"error\", \"error\": \"requires [input_ids, output_ids, lr]\"}");
     }
+    /* #1637: a bool id or rate raises in every mode, before the no-model
+     * answer (the ids were only read once a model was loaded). */
+    BOOL_REFUSE(arg, "native_train_step");
     if (!g_model.loaded) {
         return make_str("{\"status\": \"error\", \"error\": \"Model not loaded\"}");
     }

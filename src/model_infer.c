@@ -524,6 +524,10 @@ Value* builtin_eigen_model_loaded(Value *arg) {
 
 Value* builtin_eigen_generate(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "eigen_generate");
+    /* #1637: a bool token id (or option) raises in every mode, before the
+     * tape and before the no-model answer -- the ids were only read, and the
+     * bool only refused, once a model was loaded. */
+    BOOL_REFUSE(arg, "eigen_generate");
     /* Input: [prompt_ids_list, temperature, max_tokens]
      * Output: list of generated token IDs
      *
@@ -637,6 +641,7 @@ Value* builtin_eigen_eval_loss(Value *arg) {
      * Forward only -- no backward, no weight update, no requantise, no observer
      * state, and g_model_age/g_training_samples are untouched, so scoring a
      * checkpoint never mutates it. */
+    BOOL_REFUSE(arg, "eigen_eval_loss");   /* #1637: before the no-model answer */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         fprintf(stderr, "eigen_eval_loss: requires [prompt_ids, target_id]\n");
         /* #1008: guarded in place with a constant condition so the stderr

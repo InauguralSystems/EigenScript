@@ -73,3 +73,4 @@ monotonic_ns|e0.d2|nullary and nondeterministic: the argument is ignored and two
 monotonic_ns|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 random|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 random|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+shared_set|a1|the http shared store holds any JSON value; a bool round-trips through shared_get as a bool
