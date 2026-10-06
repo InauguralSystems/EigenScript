@@ -1,1 +1,1 @@
-first=STALE stale=ERR:value fresh=FRESH same_slot=1
+first=STALE stale=ERR:value fresh=FRESH same_slot=true

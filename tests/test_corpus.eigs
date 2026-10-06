@@ -79,7 +79,7 @@ check of ["histogram sorted descending", first_count >= last_count]
 write_text of ["/tmp/eigs_corpus_f.eigs", "x is 5\ny is f\"a{x}b\"\n"]
 rf is build_corpus of [["/tmp/eigs_corpus_f.eigs"], 8, "/tmp/eigs_corpus_f.bin", "/tmp/eigs_corpus_fv.json", "/tmp/eigs_corpus_fh.json"]
 fh_text is read_text of "/tmp/eigs_corpus_fh.json"
-check of ["f-string corpus names carry no reserved name", (contains of [fh_text, "#"]) == 0]
+check of ["f-string corpus names carry no reserved name", (not (contains of [fh_text, "#"]))]
 check of ["f-string corpus counts the conversion as str", contains of [fh_text, "\"str\""]]
 
 # --- Bad args return null ---

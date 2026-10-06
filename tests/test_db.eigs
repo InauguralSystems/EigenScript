@@ -15,9 +15,9 @@
 # "no_database" path or the "connected"/"error" path.
 conn is db_connect of null
 has_status is (contains of [conn, "status"])
-assert of [has_status == 1, "DB01 db_connect returns JSON containing 'status'"]
+assert of [has_status, "DB01 db_connect returns JSON containing 'status'"]
 
-live is (contains of [conn, "connected"]) == 1
+live is (contains of [conn, "connected"])
 
 # ---- #888: a query without a connection RAISES. It used to return "",
 # which is also what a successful query over an empty table returns.
@@ -32,7 +32,7 @@ if not live:
         m02 is e.message
         k02 is e.kind
     assert of [c02 == 1, "DB02 db_query_value without a connection raises"]
-    assert of [(contains of [m02, "not connected"]) == 1, "DB02 message names the cause"]
+    assert of [(contains of [m02, "not connected"]), "DB02 message names the cause"]
     assert of [k02 == "io", "DB02 kind is io"]
 
     c04 is 0
@@ -43,7 +43,7 @@ if not live:
         c04 is 1
         m04 is e.message
     assert of [c04 == 1, "DB04 db_query_json without a connection raises"]
-    assert of [(contains of [m04, "not connected"]) == 1, "DB04 message names the cause"]
+    assert of [(contains of [m04, "not connected"]), "DB04 message names the cause"]
 
     c08 is 0
     try:
@@ -87,7 +87,7 @@ if live:
     v_param is db_query_value of ["SELECT $1::text", "safe-param"]
     assert of [v_param == "safe-param", "DB06 db_query_value supports params"]
     j_param is db_query_json of ["SELECT $1::text AS value", "safe-json"]
-    assert of [(contains of [j_param, "safe-json"]) == 1, "DB07 db_query_json supports params"]
+    assert of [(contains of [j_param, "safe-json"]), "DB07 db_query_json supports params"]
 
 # ---- Live-DB table round-trip. Covers db_execute's COMMAND_OK path,
 # parameterized INSERT, multi-row db_query_json assembly, db_query_value
@@ -122,7 +122,7 @@ if live:
         k15 is e.kind
     assert of [c15 == 1, "DB15 malformed SQL raises"]
     assert of [k15 == "io", "DB15 kind is io"]
-    assert of [(contains of [m15, "syntax error"]) == 1, "DB15 message carries libpq's text"]
+    assert of [(contains of [m15, "syntax error"]), "DB15 message carries libpq's text"]
 
     # ---- #356: param validation raises instead of silently proceeding ----
     q17 is ["SELECT $1", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
@@ -134,7 +134,7 @@ if live:
         c16a is 1
         m16a is e
     assert of [c16a == 1, "DB16 17-param query raises"]
-    assert of [(contains of [m16a.message, "too many parameters"]) == 1, "DB16 message names the cap"]
+    assert of [(contains of [m16a.message, "too many parameters"]), "DB16 message names the cap"]
 
     qbad is ["SELECT $1::text", [1, 2]]
     c17a is 0
@@ -145,7 +145,7 @@ if live:
         c17a is 1
         m17a is e
     assert of [c17a == 1, "DB17 list param raises"]
-    assert of [(contains of [m17a.message, "not a string or number"]) == 1, "DB17 message names the type rule"]
+    assert of [(contains of [m17a.message, "not a string or number"]), "DB17 message names the type rule"]
 
     # ---- #888: a failed query is distinguishable from an empty result ----
     empty is db_query_json of "SELECT id FROM eigs_ci_smoke WHERE id = 999"
@@ -159,7 +159,7 @@ if live:
         c19 is 1
         m19 is e.message
     assert of [c19 == 1, "DB19 a missing table raises rather than returning []"]
-    assert of [(contains of [m19, "does not exist"]) == 1, "DB19 message names the missing relation"]
+    assert of [(contains of [m19, "does not exist"]), "DB19 message names the missing relation"]
 
     c20 is 0
     try:
@@ -191,8 +191,8 @@ if live:
     assert of [d.empty == "", "DB22 an empty string stays an empty string"]
     assert of [(type of d.empty) == "str", "DB22 an empty string is still a str"]
     # The claim in its plainest form: the two used to be one value.
-    assert of [(d.ntext == d.empty) == 0, "DB22 a NULL text column is NOT the empty string"]
-    assert of [(d.ntext == null) == 1, "DB22 a NULL column compares equal to null"]
+    assert of [(not (d.ntext == d.empty)), "DB22 a NULL text column is NOT the empty string"]
+    assert of [(d.ntext == null), "DB22 a NULL column compares equal to null"]
 
     # 3. Numbers are numbers — ordering and arithmetic, not text.
     assert of [(type of d.n) == "num", "DB23 an int column decodes to num"]
@@ -227,8 +227,8 @@ if live:
         c26 is 1
         m26 is e.message
     assert of [c26 == 1, "DB26 a bigint past 2^53 raises instead of rounding"]
-    assert of [(contains of [m26, "big"]) == 1, "DB26 message names the column"]
-    assert of [(contains of [m26, "::text"]) == 1, "DB26 message names the fix"]
+    assert of [(contains of [m26, "big"]), "DB26 message names the column"]
+    assert of [(contains of [m26, "::text"]), "DB26 message names the fix"]
     # ...and the boundary itself is fine.
     ok53 is (json_decode of (db_query_json of "SELECT 9007199254740992::bigint AS big"))[0]
     assert of [ok53.big == 9007199254740992, "DB26 2^53 itself is representable"]

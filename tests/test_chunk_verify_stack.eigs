@@ -36,13 +36,13 @@ LOOP_ENV_END is 51
 # [OP_ADD, OP_RETURN]: passes passes 1-3 (known opcode, no operands, ends in
 # RETURN) and pops two operands off an empty stack.
 add_repro is sandbox_run of [[ABI, [ADD, RETURN], []], 1000]
-assert_eq of [add_repro["ok"], 0, "bare ADD is refused"]
+assert_eq of [add_repro["ok"], false, "bare ADD is refused"]
 assert_eq of [add_repro["error"]["message"], "invalid chunk descriptor",
               "bare ADD refused by the verifier, not at runtime"]
 
 # One operand is still one short of two.
 half_fed is sandbox_run of [[ABI, [CONST,0,0, ADD, RETURN], [1]], 1000]
-assert_eq of [half_fed["ok"], 0, "ADD with one operand is refused"]
+assert_eq of [half_fed["ok"], false, "ADD with one operand is refused"]
 
 # ---- 1b. The "guarded" opcodes are refused too --------------------------
 # DIV and MOD have no fast path — both operands come off vm_pop(), which
@@ -56,9 +56,9 @@ assert_eq of [half_fed["ok"], 0, "ADD with one operand is refused"]
 DIV is 7
 LIST is 42
 div_under is sandbox_run of [[ABI, [DIV, RETURN], []], 1000]
-assert_eq of [div_under["ok"], 0, "under-fed DIV (a guarded pop) is refused"]
+assert_eq of [div_under["ok"], false, "under-fed DIV (a guarded pop) is refused"]
 list_over is sandbox_run of [[ABI, [CONST,0,0, LIST,9,0, RETURN], [1]], 1000]
-assert_eq of [list_over["ok"], 0, "LIST claiming more than the stack holds is refused"]
+assert_eq of [list_over["ok"], false, "LIST claiming more than the stack holds is refused"]
 div_ok is sandbox_run of [[ABI, [CONST,0,0, CONST,1,0, DIV, RETURN], [84, 2]], 1000]
 assert_eq of [div_ok["result"], 42, "a fed DIV still divides"]
 
@@ -66,7 +66,7 @@ assert_eq of [div_ok["result"], 42, "a fed DIV still divides"]
 # The pass must reject underflow, not arithmetic. Fed correctly, the same
 # opcode runs — a verifier that rejected everything would pass section 1.
 fed is sandbox_run of [[ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 1000]
-assert_eq of [fed["ok"], 1, "a balanced ADD still runs"]
+assert_eq of [fed["ok"], true, "a balanced ADD still runs"]
 assert_eq of [fed["result"], 5, "a balanced ADD still computes"]
 
 # Height bookkeeping across the stack shufflers.
@@ -83,7 +83,7 @@ JUMP_IF_FALSE is 31
 branch_ok is sandbox_run of [[ABI,
     [CONST,0,0, JUMP_IF_FALSE,6,0, CONST,1,0, JUMP,3,0, CONST,2,0, RETURN],
     [1, 7, 9]], 1000]
-assert_eq of [branch_ok["ok"], 1, "a balanced if/else verifies"]
+assert_eq of [branch_ok["ok"], true, "a balanced if/else verifies"]
 assert_eq of [branch_ok["result"], 7, "the taken arm is the one that ran"]
 
 # A join where the two edges DISAGREE on depth is refused. Here the taken edge
@@ -93,7 +93,7 @@ assert_eq of [branch_ok["result"], 7, "the taken arm is the one that ran"]
 # balanced shape above. Compiler output already does; this is the contract an
 # external bytecode producer is held to.
 lopsided is sandbox_run of [[ABI, [CONST,0,0, JUMP_IF_FALSE,3,0, CONST,1,0, RETURN], [1, 7]], 1000]
-assert_eq of [lopsided["ok"], 0, "a join at mismatched depth is refused"]
+assert_eq of [lopsided["ok"], false, "a join at mismatched depth is refused"]
 
 # ---- 3. LOOP_ENV_END with no matching FRESH ------------------------------
 # A distinct mechanism from the stack pass: the env chain, not the operand
@@ -103,7 +103,7 @@ assert_eq of [lopsided["ok"], 0, "a join at mismatched depth is refused"]
 # settled statically (an error unwinding into a catch does not restore
 # frame->env), so the VM refuses it at the instruction.
 env_under is sandbox_run of [[ABI, [LOOP_ENV_END, LOOP_ENV_END, LOOP_ENV_END, RETURN], []], 1000]
-assert_eq of [env_under["ok"], 0, "unmatched LOOP_ENV_END is refused"]
+assert_eq of [env_under["ok"], false, "unmatched LOOP_ENV_END is refused"]
 assert_true of [(index_of of [env_under["error"]["message"], "loop-env underflow"]) >= 0,
                 "unmatched LOOP_ENV_END names itself"]
 
@@ -143,7 +143,7 @@ for op in range of 256:
             append of [code, RETURN]
             local r is sandbox_run of [[ABI, code, [1]], 200]
             sweep_runs is sweep_runs + 1
-            if r["ok"] == 1:
+            if r["ok"]:
                 sweep_ran is sweep_ran + 1
             else:
                 sweep_refused is sweep_refused + 1

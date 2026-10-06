@@ -194,7 +194,10 @@ positives is 0
 for id in range of 27:
     i is id + 1
     r is run_case of i
-    got is r[1]
+    # #1637: converged is a bool; TRUTH holds 0/1, so convert explicitly.
+    got is 0
+    if r[1]:
+        got is 1
     vgot is 0
     if r[3] == "converged":
         vgot is 1

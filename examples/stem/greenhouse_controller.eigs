@@ -151,13 +151,13 @@ define choose_decision(final_state, temp_window, temp_spikes, config) as:
 
     if temp_ok and ph_ok and nutrient_ok and biomass_ok and stable_ok and clean_signal:
         return "APPROVE RUN"
-    if nutrient_ok == 0:
+    if (not nutrient_ok):
         return "REFEED NUTRIENT"
-    if stable_ok == 0:
+    if (not stable_ok):
         return "HOLD FOR THERMAL STABILITY"
-    if ph_ok == 0:
+    if (not ph_ok):
         return "ADJUST PH"
-    if biomass_ok == 0:
+    if (not biomass_ok):
         return "CONTINUE GROW-OUT"
     return "REVIEW SENSOR TRACE"
 

@@ -76,7 +76,7 @@ big_ints is [1234567890123456, 9007199254740992, 9007199254740991,
              1000000000000000, 100000000000000000 / 100, 4000000000]
 for n in big_ints:
     enc is json_encode of n
-    assert of [(contains of [enc, "e+"]) == 0, "an exact integer never encodes in exponent form"]
+    assert of [(not (contains of [enc, "e+"])), "an exact integer never encodes in exponent form"]
     assert of [(json_decode of enc) == n, "an exact integer round-trips"]
     assert of [enc == (str of n), "integer encoding agrees with str of"]
 

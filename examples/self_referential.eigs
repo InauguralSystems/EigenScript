@@ -71,7 +71,7 @@ for i in range of (len of candidates):
     code is make_function of candidates[i]
     valid is try_parse of code
     label is candidates[i][0]
-    if valid == 1:
+    if valid:
         print of ("  " + label + ": VALID")
     else:
         print of ("  " + label + ": INVALID")

@@ -175,8 +175,8 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 | `flatten` | `flatten of list` | Flatten one level of nesting |
 | `take` | `take of [list, n]` | First n elements (clamps to length) |
 | `drop` | `drop of [list, n]` | All but the first n elements |
-| `any` | `any of [list, fn]` | 1 if fn is truthy for some element, else 0 (empty: 0) |
-| `all` | `all of [list, fn]` | 1 if fn is truthy for every element, else 0 (empty: 1) |
+| `any` | `any of [list, fn]` | `true` if fn is truthy for some element, else `false` (empty: `false`) |
+| `all` | `all of [list, fn]` | `true` if fn is truthy for every element, else `false` (empty: `true`) |
 | `find_index` | `find_index of [list, fn]` | Index of first element where fn is truthy, or -1 |
 | `partition` | `partition of [list, fn]` | Split into `[passing, failing]` in one pass |
 | `group_by` | `group_by of [list, key_fn]` | Bucket elements into a dict by stringified key |
@@ -254,9 +254,9 @@ iteration.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `sanitize_text` | `sanitize_text of string` | Trim whitespace |
-| `is_garble` | `is_garble of string` | 1 if text looks like nonsense |
+| `is_garble` | `is_garble of string` | `true` if text looks like nonsense |
 | `clean_response` | `clean_response of string` | Trim at "User:" marker |
-| `check_openai` | `check_openai of null` | 1 if OpenAI API key available |
+| `check_openai` | `check_openai of null` | `true` if OpenAI API key available |
 
 ### lib/auth.eigs — Token Authentication
 
@@ -277,11 +277,11 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 | `entropy_of` | `entropy_of of value` | Current entropy |
 | `delta_of` | `delta_of of value` | Current dH (rate of change) |
 | `prev_delta_of` | `prev_delta_of of value` | Previous dH |
-| `is_converged` | `is_converged of value` | 1 if converged |
-| `is_stable` | `is_stable of value` | 1 if stable or converged |
-| `is_improving` | `is_improving of value` | 1 if entropy decreasing |
-| `is_diverging` | `is_diverging of value` | 1 if entropy increasing |
-| `is_oscillating` | `is_oscillating of value` | 1 if dH sign-flipping |
+| `is_converged` | `is_converged of value` | `true` if converged |
+| `is_stable` | `is_stable of value` | `true` if stable or converged |
+| `is_improving` | `is_improving of value` | `true` if entropy decreasing |
+| `is_diverging` | `is_diverging of value` | `true` if entropy increasing |
+| `is_oscillating` | `is_oscillating of value` | `true` if dH sign-flipping |
 | `wait_until_converged` | `wait_until_converged of [val, fn, max]` | Run fn until convergence |
 | `track_regimes` | `track_regimes of [val, fn, max]` | Log regime transitions |
 | `threshold_alert` | `threshold_alert of [val, lo, hi]` | "below", "above", or "ok" |
@@ -489,7 +489,7 @@ registers into epoch seconds with these and no host clock.
 |----------|-----------|-------------|
 | `json_get` | `json_get of [json, "key"]` | Extract top-level value |
 | `json_get_path` | `json_get_path of [json, "a.b"]` | Extract nested value |
-| `json_has` | `json_has of [json, "key"]` | 1 if key exists |
+| `json_has` | `json_has of [json, "key"]` | `true` if key exists |
 | `json_from_pairs` | `json_from_pairs of pairs` | [[k,v],...] to JSON |
 | `json_merge` | `json_merge of [json_a, json_b]` | Flat-merge two objects (keys of `json_b` win; nested values replace whole); raises if either is not an object |
 | `json_pretty` | `json_pretty of json_str` | Indented output; layout is added only outside string tokens, so string values come through byte-for-byte |
@@ -547,7 +547,7 @@ success on the first attempt costs none.
 | `sort_desc` | `sort_desc of list` | Sort descending |
 | `sort_by` | `sort_by of [list, key_fn]` | Sort by key function |
 | `sorted_indices` | `sorted_indices of list` | Indices that would sort the list |
-| `is_sorted` | `is_sorted of list` | 1 if ascending order |
+| `is_sorted` | `is_sorted of list` | `true` if ascending order |
 | `unique` | `unique of list` | Sorted, deduplicated list |
 
 ### lib/map.eigs — Key-Value Data Structure
@@ -559,7 +559,7 @@ Maps are lists of `[key, value]` pairs. Keys are compared with `==`.
 | `map_new` | `map_new of null` | Create empty map |
 | `map_get` | `map_get of [map, key]` | Get value or null |
 | `map_get_default` | `map_get_default of [map, key, default]` | Get value or default |
-| `map_has` | `map_has of [map, key]` | 1 if key exists |
+| `map_has` | `map_has of [map, key]` | `true` if key exists |
 | `map_set` | `map_set of [map, key, value]` | Set key (returns new map) |
 | `map_remove` | `map_remove of [map, key]` | Remove key (returns new map) |
 | `map_keys` | `map_keys of map` | List all keys |
@@ -942,7 +942,7 @@ semantics when you need them, decoding UTF-8 over the byte primitives.
 | `utf8_codepoints` | `utf8_codepoints of s` | List of codepoint numbers |
 | `utf8_at` | `utf8_at of [s, i]` | i-th codepoint (0-indexed), or -1 |
 | `utf8_char_at` | `utf8_char_at of [s, i]` | i-th character as a (multi-byte) string, or "" |
-| `utf8_validate` | `utf8_validate of s` | 1 if structurally valid UTF-8, else 0 |
+| `utf8_validate` | `utf8_validate of s` | `true` if structurally valid UTF-8, else `false` |
 | `utf8_encode` | `utf8_encode of cp` | Codepoint → UTF-8 byte string ("" if unencodable) |
 | `utf8_from_codepoints` | `utf8_from_codepoints of cps` | List of codepoints → UTF-8 string (inverse of `utf8_codepoints`) |
 
@@ -961,7 +961,7 @@ per-file and total tallies.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `parse_args` | `parse_args of null` | Parse CLI args into map |
-| `get_flag` | `get_flag of [parsed, "--flag"]` | 1 if flag present |
+| `get_flag` | `get_flag of [parsed, "--flag"]` | `true` if flag present |
 | `get_opt` | `get_opt of [parsed, "--key", default]` | Get option or default |
 | `get_positional` | `get_positional of parsed` | List of positional args |
 | `has_flag` | `has_flag of [parsed, "--flag"]` | Alias for get_flag |
@@ -971,7 +971,7 @@ per-file and total tallies.
 load_file of "lib/args.eigs"
 # eigenscript myscript.eigs --verbose --output=result.txt input.csv
 parsed is parse_args of null
-if (get_flag of [parsed, "--verbose"]) == 1:
+if get_flag of [parsed, "--verbose"]:
     print of "Verbose mode on"
 outfile is get_opt of [parsed, "--output", "out.txt"]
 files is get_positional of parsed    # ["input.csv"]
@@ -996,7 +996,7 @@ Sets are sorted lists with no duplicates.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `set_from` | `set_from of list` | Create set from list |
-| `set_has` | `set_has of [set, value]` | 1 if member |
+| `set_has` | `set_has of [set, value]` | `true` if member |
 | `set_add` | `set_add of [set, value]` | Add element |
 | `set_remove` | `set_remove of [set, value]` | Remove element |
 | `set_size` | `set_size of set` | Element count |
@@ -1004,9 +1004,9 @@ Sets are sorted lists with no duplicates.
 | `intersect` | `intersect of [a, b]` | Common elements |
 | `difference` | `difference of [a, b]` | In a, not in b |
 | `symmetric_diff` | `symmetric_diff of [a, b]` | In one, not both |
-| `is_subset` | `is_subset of [a, b]` | 1 if a ⊆ b |
-| `is_superset` | `is_superset of [a, b]` | 1 if a ⊇ b |
-| `set_equal` | `set_equal of [a, b]` | 1 if same elements |
+| `is_subset` | `is_subset of [a, b]` | `true` if a ⊆ b |
+| `is_superset` | `is_superset of [a, b]` | `true` if a ⊇ b |
+| `set_equal` | `set_equal of [a, b]` | `true` if same elements |
 
 ### lib/log.eigs — Structured Logging
 
@@ -1082,7 +1082,7 @@ All structures are immutable — operations return new structures.
 | `sm_add_transition` | `sm_add_transition of [sm, from, event, to]` | Add rule |
 | `sm_send` | `sm_send of [sm, event]` | Trigger transition |
 | `sm_try_send` | `sm_try_send of [sm, event]` | Trigger or no-op |
-| `sm_can_send` | `sm_can_send of [sm, event]` | 1 if valid |
+| `sm_can_send` | `sm_can_send of [sm, event]` | `true` if valid |
 | `sm_state` | `sm_state of sm` | Current state |
 | `sm_history` | `sm_history of sm` | State history |
 | `sm_is` | `sm_is of [sm, "state"]` | Check current state |
@@ -1102,7 +1102,7 @@ print of (sm_can_send of [sm, "stop"]) # 1
 ```
 ```output
 running
-1
+true
 ```
 
 ### lib/template.eigs — String Templating
@@ -1771,7 +1771,7 @@ Experiment management composing EigenStore, observer semantics, stats, and the e
 | `record_batch` | `record_batch of [exp, variable, vals]` | Record a list of measurements |
 | `record_with_tag` | `record_with_tag of [exp, variable, value, tag]` | Record a measurement with a tag |
 | `status` | `status of [exp, variable]` | Current observer status for a variable |
-| `is_stable` | `is_stable of [exp, variable]` | 1 if the variable's measurements are stable |
+| `is_stable` | `is_stable of [exp, variable]` | `true` if the variable's measurements are stable |
 | `wait_for_stable` | `wait_for_stable of [exp, variable, collect_fn, interval, timeout]` | Poll collect_fn until the variable stabilizes or times out |
 | `measurements` | `measurements of [exp, variable]` | All measurement records for a variable |
 | `values` | `values of [exp, variable]` | Flat list of a variable's values |

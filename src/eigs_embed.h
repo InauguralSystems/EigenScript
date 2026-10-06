@@ -161,6 +161,7 @@ typedef enum {
 EigsValue     *eigs_value_new_num(double n);
 EigsValue     *eigs_value_new_string(const char *s);
 EigsValue     *eigs_value_new_null(void);
+EigsValue     *eigs_value_new_bool(int b);         /* #1637: the true/false value */
 EigsValue     *eigs_value_new_list(int capacity);
 EigsValue     *eigs_value_new_dict(int capacity);
 void           eigs_value_retain(EigsValue *v);
@@ -168,6 +169,7 @@ void           eigs_value_release(EigsValue *v);
 
 EigsValueType  eigs_value_type(EigsValue *v);
 double         eigs_value_as_num(EigsValue *v);     /* 0.0 if not num */
+int            eigs_value_as_bool(EigsValue *v);    /* #1637: 1 for true, 0 for false or not a bool */
 const char    *eigs_value_as_string(EigsValue *v);  /* NULL if not str; borrowed */
 
 int            eigs_value_list_len(EigsValue *v);

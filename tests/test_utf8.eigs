@@ -26,12 +26,12 @@ check of ["char_at returns the whole character", utf8_char_at of [s, 2], "€"]
 check of ["char_at 4-byte", utf8_char_at of [s, 4], "𐍈"]
 
 # validation — invalid sequences built by slicing a real multi-byte char
-check of ["valid ascii", utf8_validate of "hello", 1]
-check of ["valid mixed", utf8_validate of s, 1]
-check of ["empty is valid", utf8_validate of "", 1]
-check of ["lone lead byte (truncated)", utf8_validate of (substr of ["€", 0, 1]), 0]
-check of ["lone continuation byte", utf8_validate of (substr of ["€", 1, 1]), 0]
-check of ["truncated 2-of-3", utf8_validate of (substr of ["€", 0, 2]), 0]
+check of ["valid ascii", utf8_validate of "hello", true]
+check of ["valid mixed", utf8_validate of s, true]
+check of ["empty is valid", utf8_validate of "", true]
+check of ["lone lead byte (truncated)", utf8_validate of (substr of ["€", 0, 1]), false]
+check of ["lone continuation byte", utf8_validate of (substr of ["€", 1, 1]), false]
+check of ["truncated 2-of-3", utf8_validate of (substr of ["€", 0, 2]), false]
 
 # encoding — the same published vectors, driven backwards (#435)
 check of ["encode ascii", utf8_encode of 65, "A"]
@@ -51,8 +51,8 @@ check of ["past the ceiling is empty", utf8_encode of 1114112, ""]
 check of ["negative is empty", utf8_encode of (0 - 1), ""]
 check of ["NUL is empty (strings can't hold it)", utf8_encode of 0, ""]
 # every encoded boundary is structurally valid and round-trips
-check of ["0x80 validates", utf8_validate of (utf8_encode of 128), 1]
-check of ["0x10FFFF validates", utf8_validate of (utf8_encode of 1114111), 1]
+check of ["0x80 validates", utf8_validate of (utf8_encode of 128), true]
+check of ["0x10FFFF validates", utf8_validate of (utf8_encode of 1114111), true]
 check of ["0x10FFFF round-trips", utf8_at of [(utf8_encode of 1114111), 0], 1114111]
 # list form: utf8_from_codepoints inverts utf8_codepoints
 check of ["from_codepoints rebuilds the string", utf8_from_codepoints of (utf8_codepoints of s), s]

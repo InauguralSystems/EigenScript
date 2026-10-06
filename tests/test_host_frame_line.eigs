@@ -7,4 +7,4 @@ x is 1
 y is 2
 z is 3
 r2 is sandbox_run of [desc, 100000]
-print of (r1["ok"] + r2["ok"])
+print of [r1["ok"], r2["ok"]]

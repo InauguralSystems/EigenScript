@@ -58,15 +58,15 @@ if ok != 0:
     short_clip is audio_sine of [440, 0.01, 0.5]
     # 3 loops × 441 samples = 1323
     n is audio_play_loop of [short_clip, 3]
-    assert_eq of [(n > 0), 1, "audio_play_loop returns a channel id"]
+    assert_eq of [(n > 0), true, "audio_play_loop returns a channel id"]
     # 1 loop is the no-op identity
     n1 is audio_play_loop of [short_clip, 1]
-    assert_eq of [(n1 > 0), 1, "audio_play_loop 1 loop plays"]
+    assert_eq of [(n1 > 0), true, "audio_play_loop 1 loop plays"]
     # Invalid: 0 loops, non-number, empty samples — all 0. loops=-1 is
     # now the infinite form (GAP-002) — the mixer rewinds, no memory cost.
     assert_eq of [audio_play_loop of [short_clip, 0], 0, "loops=0 rejected"]
     ch_inf is audio_play_loop of [short_clip, -1]
-    assert_eq of [(ch_inf > 0), 1, "loops=-1 plays forever on a channel (GAP-002)"]
+    assert_eq of [(ch_inf > 0), true, "loops=-1 plays forever on a channel (GAP-002)"]
     assert_eq of [audio_stop of ch_inf, 1, "infinite channel stoppable"]
     assert_eq of [audio_play_loop of [short_clip, "many"], 0, "non-number loops rejected"]
     assert_eq of [audio_play_loop of [[], 5], 0, "empty samples rejected"]
@@ -78,9 +78,9 @@ if ok != 0:
     # longer multiplies memory, so 800 loops of a 5s clip now just plays
     # (the old queue mode had to reject it at the 256 MiB byte budget).
     big_clip is audio_sine of [220, 5, 0.5]
-    assert_eq of [(audio_play_loop of [big_clip, 800]) > 0, 1, "800 loops of a 5s clip plays (one copy + rewind)"]
+    assert_eq of [(audio_play_loop of [big_clip, 800]) > 0, true, "800 loops of a 5s clip plays (one copy + rewind)"]
     # Loops at the very edge still succeed.
-    assert_eq of [(audio_play_loop of [short_clip, 10000]) > 0, 1, "loops=10000 at the ceiling still plays (#152)"]
+    assert_eq of [(audio_play_loop of [short_clip, 10000]) > 0, true, "loops=10000 at the ceiling still plays (#152)"]
     audio_clear of null
     audio_close of null
 else:
@@ -181,7 +181,7 @@ else:
 # ---- F-DS-17: live audio stream (push/queue playback for musical typing).
 # Ungated safety first: with no stream open, push/queued are 0 and
 # clear/close are safe no-ops (mirrors the capture "no device" contract).
-assert_eq of [audio_stream_push of (audio_sine of [440, 0.01, 0.5]), 0, "push with no stream open returns 0"]
+assert_eq of [audio_stream_push of (audio_sine of [440, 0.01, 0.5]), false, "push with no stream open returns 0"]
 assert_eq of [audio_stream_queued of null, 0, "queued with no stream open is 0"]
 assert_eq of [audio_stream_clear of null, null, "clear with no stream is safe"]
 assert_eq of [audio_stream_close of null, null, "close with no stream is safe"]
@@ -194,7 +194,7 @@ if sdev != 0:
     # Push a ~50ms block; the device drains at real time, so essentially
     # all of it is still buffered microseconds later.
     blk is audio_sine of [220, 0.05, 0.5]
-    assert_eq of [audio_stream_push of blk, 1, "push a float-list block returns 1"]
+    assert_eq of [audio_stream_push of blk, true, "push a float-list block returns 1"]
     assert_true of [(audio_stream_queued of null) >= 1, "queued reflects the pushed block"]
     # Buffer blocks accepted too (the bulk-render fast path, like #578).
     bb is buffer of 441
@@ -202,10 +202,10 @@ if sdev != 0:
     loop while bbi < 441:
         bb[bbi] is 0.1
         bbi += 1
-    assert_eq of [audio_stream_push of bb, 1, "push a buffer block returns 1"]
+    assert_eq of [audio_stream_push of bb, true, "push a buffer block returns 1"]
     # Bad shapes rejected while open; the device stays usable.
-    assert_eq of [audio_stream_push of [], 0, "empty block rejected"]
-    assert_eq of [audio_stream_push of 42, 0, "non-list/buffer block rejected"]
+    assert_eq of [audio_stream_push of [], false, "empty block rejected"]
+    assert_eq of [audio_stream_push of 42, false, "non-list/buffer block rejected"]
     # Clear flushes the queue.
     audio_stream_clear of null
     assert_eq of [audio_stream_queued of null, 0, "clear empties the stream queue"]
@@ -235,11 +235,11 @@ d is audio_open of [44100, 1]
 if d != 0:
     clip is audio_sine of [440, 0.05, 0.5]
     ch1 is audio_play of clip
-    assert_eq of [(ch1 > 0), 1, "audio_play returns a channel id"]
+    assert_eq of [(ch1 > 0), true, "audio_play returns a channel id"]
     chinf is audio_play_loop of [clip, 0 - 1]
-    assert_eq of [(chinf > 0), 1, "loops == -1 (infinite) accepted"]
+    assert_eq of [(chinf > 0), true, "loops == -1 (infinite) accepted"]
     ch3 is audio_play_loop of [clip, 3]
-    assert_eq of [(ch3 > 0) and (ch3 != ch1) and (ch3 != chinf), 1, "channels are distinct"]
+    assert_eq of [(ch3 > 0) and (ch3 != ch1) and (ch3 != chinf), true, "channels are distinct"]
     q is audio_queue_size of null
     assert_eq of [q, (len of clip) * 2 * 4, "queue counts finite channels only (1 + 3 passes)"]
     assert_eq of [audio_volume of [chinf, 0.25], 1, "live volume on an active channel"]
@@ -260,10 +260,10 @@ if d != 0:
         bclip[bi] is 0.1
         bi += 1
     chb is audio_play of bclip
-    assert_eq of [(chb > 0), 1, "audio_play accepts a buffer (#578)"]
+    assert_eq of [(chb > 0), true, "audio_play accepts a buffer (#578)"]
     assert_eq of [audio_queue_size of null, nb * 2, "buffer clip queued at full length"]
     chbl is audio_play_loop of [bclip, 3]
-    assert_eq of [(chbl > 0), 1, "audio_play_loop accepts a buffer (#578)"]
+    assert_eq of [(chbl > 0), true, "audio_play_loop accepts a buffer (#578)"]
     assert_eq of [audio_stop of chbl, 1, "buffer loop channel stoppable"]
     # Buffer values are clamped like list values (out-of-range -> +/-1).
     hot is buffer of 100
@@ -272,7 +272,7 @@ if d != 0:
         hot[hi] is 9.5
         hi += 1
     chh is audio_play of hot
-    assert_eq of [(chh > 0), 1, "out-of-range buffer samples clamp, still play"]
+    assert_eq of [(chh > 0), true, "out-of-range buffer samples clamp, still play"]
     # Empty buffer is still rejected (0), matching the empty-list rule.
     assert_eq of [audio_play of (buffer of 0), 0, "empty buffer rejected"]
 

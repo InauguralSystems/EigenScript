@@ -13,7 +13,7 @@
 fails is 0
 
 define check(name, ok) as:
-    if ok == 0:
+    if not ok:
         print of f"FAIL: {name}"
         fails is fails + 1
 

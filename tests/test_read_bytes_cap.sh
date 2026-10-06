@@ -52,7 +52,7 @@ catch e:
 has_size is contains of [msg, \"12582912 bytes\"]
 has_cap is contains of [msg, \"10485760-byte cap\"]
 print of f\"kind={caught} size={has_size} cap={has_cap}\"" \
-"kind=io size=1 cap=1"
+"kind=io size=true cap=true"
 
 # 2. Opt-in max_bytes reads the >10 MB file fully.
 run_case "opt-in [path, max_bytes] reads a >10MB file" \
@@ -108,7 +108,7 @@ print of caught" \
 run_case "missing file still returns null" \
 "b is read_bytes_buf of \"$TMPDIR/nope.bin\"
 print of f\"isnull={b == null}\"" \
-"isnull=1"
+"isnull=true"
 
 # 7. Record/replay: the over-cap raise is re-derived from the tape with
 #    the file DELETED — byte-identical output, no live fs dependence.

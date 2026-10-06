@@ -25,8 +25,8 @@ catch oa974_e:
     oa974_err is oa974_e
 assert of [oa974_same == 1, "#974 same-module over-arity raises"]
 assert of [oa974_err.kind == "value", "#974 over-arity error kind is value"]
-assert of [(contains of [oa974_err.message, "passes 3"]) == 1, "#974 message reports passed count"]
-assert of [(contains of [oa974_err.message, "takes 2"]) == 1, "#974 message reports callee arity"]
+assert of [(contains of [oa974_err.message, "passes 3"]), "#974 message reports passed count"]
+assert of [(contains of [oa974_err.message, "takes 2"]), "#974 message reports callee arity"]
 
 # #974 cross-module: W022 is same-file-only, so the runtime raise is the
 # only guard here (clamp is defined in lib/math.eigs and takes 3).
@@ -62,13 +62,13 @@ catch oa989_e:
     oa989_msg is oa989_e.message
 assert of [oa989_hit == 1, "#989 sort_by key callback over-arity raises"]
 assert of [oa989_kind == "value", "#989 sort_by callback error kind is value"]
-assert of [(contains of [oa989_msg, "passes 3"]) == 1, "#989 callback message reports passed count"]
-assert of [(contains of [oa989_msg, "takes 2"]) == 1, "#989 callback message reports callee arity"]
+assert of [(contains of [oa989_msg, "passes 3"]), "#989 callback message reports passed count"]
+assert of [(contains of [oa989_msg, "takes 2"]), "#989 callback message reports callee arity"]
 
 # The key function's own error must survive: sort_by used to inspect the
 # returned value and report "must return a number", burying the raise that
 # actually happened under a symptom of it.
-assert of [(contains of [oa989_msg, "must return a number"]) == 0, "#989 real error is not masked by sort_by's return-type check"]
+assert of [(not (contains of [oa989_msg, "must return a number"])), "#989 real error is not masked by sort_by's return-type check"]
 
 # Carve-out preserved through the callback path: a 1-param key still
 # re-collects the whole element, and a matched-arity key still sorts.

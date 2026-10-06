@@ -30,8 +30,8 @@ define to_list(x) as:          # returns a non-num after the seed
 print of "=== Contracts (lib/contract.eigs) ==="
 
 # ---- require / ensure: plain predicates ----
-check of ["require truthy passes", require of [1, "n/a"], 1]
-check of ["ensure truthy passes", ensure of [5 > 2, "n/a"], 1]
+check of ["require truthy passes", require of [1, "n/a"], true]
+check of ["ensure truthy passes", ensure of [5 > 2, "n/a"], true]
 
 caught is 0
 try:
@@ -49,10 +49,10 @@ check of ["ensure falsy throws", caught, 1]
 
 # ---- expect_converging ----
 r is expect_converging of [1.0, halve, 60, "halving must converge"]
-check of ["expect_converging halve -> settled", r < 0.01, 1]
+check of ["expect_converging halve -> settled", r < 0.01, true]
 
 r is expect_converging of [2.0, newton2, 60, "newton must converge"]
-check of ["expect_converging newton -> sqrt(2)", (r > 1.41) and (r < 1.42), 1]
+check of ["expect_converging newton -> sqrt(2)", (r > 1.41) and (r < 1.42), true]
 
 caught is 0
 try:
@@ -63,7 +63,7 @@ check of ["expect_converging on divergent throws", caught, 1]
 
 # ---- expect_monotone (value channel, #294) ----
 r is expect_monotone of [64.0, halve, 60, "halving is monotone"]
-check of ["expect_monotone halve passes", r < 1.0, 1]
+check of ["expect_monotone halve passes", r < 1.0, true]
 
 caught is 0
 try:

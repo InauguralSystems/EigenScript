@@ -7,15 +7,15 @@
 
 # ---- listen on an ephemeral port ----
 lid is net_listen of 0
-assert of [(lid == null) == 0, "NET01 net_listen returns a handle"]
+assert of [(not (lid == null)), "NET01 net_listen returns a handle"]
 port is net_port of lid
 assert of [port > 0, "NET02 net_port reports the kernel's ephemeral pick"]
 
 # ---- dial + accept ----
 cid is net_dial of ["127.0.0.1", port]
-assert of [(cid == null) == 0, "NET03 net_dial connects via the backlog"]
+assert of [(not (cid == null)), "NET03 net_dial connects via the backlog"]
 sid is net_accept of [lid, 2000]
-assert of [(sid == null) == 0, "NET04 net_accept returns a connection"]
+assert of [(not (sid == null)), "NET04 net_accept returns a connection"]
 
 # ---- string send, byte-buffer recv, round-trip ----
 n1 is net_send of [cid, "hello, tape"]

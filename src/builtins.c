@@ -602,6 +602,14 @@ Value* builtin_str(Value *arg) {
 Value* builtin_num(Value *arg) {
     if (!arg) return make_num(0);       /* fs:ANSWER coercion contract, see above */
     if (arg->type == VAL_NUM) return arg;
+    /* #1637: a bool is not a number, and the coercion contract's 0 for a
+     * non-string would make `num of true` answer 0 -- a silent wrong value.
+     * Whether `num of b` should convert is open (#1637 leaves it undecided),
+     * so it raises in every mode rather than pick an answer. */
+    if (arg->type == VAL_BOOL) {
+        rt_error(EK_TYPE, 0, "num: cannot convert a bool to a number (use `if b:` to choose one)");
+        return make_num(0);
+    }
     if (arg->type == VAL_STR) {
         /* Hex strings are converted HERE, never by strtod — same contract
          * as the lexer (#378/#381): glibc's strtod reads hex floats

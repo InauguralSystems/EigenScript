@@ -22,7 +22,7 @@ _target_path is "examples/fibonacci.eigs"
 
 # Fallback if file doesn't exist
 _target_exists is file_exists of _target_path
-if _target_exists == 0:
+if (not _target_exists):
     _target_path is "examples/hello.eigs"
 
 _dbg_source is read_text of _target_path
@@ -65,7 +65,7 @@ define _capture_env_snapshot(env) as:
         for i in range of (len of bindings):
             b is bindings[i]
             name is b[0]
-            if (has_key of [snap, name]) == 0:
+            if (not (has_key of [snap, name])):
                 val is b[1]
                 skip is 0
                 if (type of val) == "list":
@@ -101,7 +101,7 @@ define _debug_hook(info) as:
     if _dbg_step_mode == 1:
         should_pause is 1
     key is str of line
-    if (has_key of [_dbg_breakpoints, key]) == 1:
+    if (has_key of [_dbg_breakpoints, key]):
         if _dbg_breakpoints[key] == 1:
             should_pause is 1
 
@@ -142,7 +142,7 @@ define _snapshot_entropy(env) as:
     for i in range of (len of bindings):
         b is bindings[i]
         name is b[0]
-        if (has_key of [_eigen_obs, name]) == 1:
+        if (has_key of [_eigen_obs, name]):
             obs is _eigen_obs[name]
             total is total + obs[1]
             count is count + 1
@@ -281,7 +281,7 @@ define _paint_source(widget, ax, ay) as:
 
         # Breakpoint marker (red circle in gutter)
         bp_key is str of line_num
-        if (has_key of [_dbg_breakpoints, bp_key]) == 1:
+        if (has_key of [_dbg_breakpoints, bp_key]):
             if _dbg_breakpoints[bp_key] == 1:
                 gfx_circle of [ax + 12, ly + 9, 5, 200, 50, 50]
 
@@ -317,7 +317,7 @@ define _on_source_mouse(widget, ev) as:
                 # Only toggle if clicked in gutter region
                 if ev.x < (gutter_w + 20):
                     bp_key is str of line_num
-                    if (has_key of [_dbg_breakpoints, bp_key]) == 1:
+                    if (has_key of [_dbg_breakpoints, bp_key]):
                         if _dbg_breakpoints[bp_key] == 1:
                             dict_set of [_dbg_breakpoints, bp_key, 0]
                         else:
@@ -436,7 +436,7 @@ define _update_var_table() as:
             entropy_str is ""
             dh_str is ""
             status is ""
-            if (has_key of [_eigen_obs, name]) == 1:
+            if (has_key of [_eigen_obs, name]):
                 obs is _eigen_obs[name]
                 obs_count is str of obs[0]
                 ent is obs[1]

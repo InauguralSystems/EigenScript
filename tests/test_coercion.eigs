@@ -28,10 +28,10 @@ assert of [f"n={42}" == "n=42", "f-string mixes types"]
 assert of [f"v={1 / 2}" == "v=0.5", "f-string number round-trips"]
 
 # Ordering: same-type works
-assert of [(2 < 5) == 1, "num < num"]
-assert of [(5 > 2) == 1, "num > num"]
-assert of [("a" < "b") == 1, "str < str"]
-assert of [("b" >= "a") == 1, "str >= str"]
+assert of [(2 < 5), "num < num"]
+assert of [(5 > 2), "num > num"]
+assert of [("a" < "b"), "str < str"]
+assert of [("b" >= "a"), "str >= str"]
 
 # Ordering: mixed types raise (not a silent false)
 ord_caught is 0
@@ -49,9 +49,9 @@ catch e:
 assert of [ord2_caught == 1, "mixed ordering raises (other direction)"]
 
 # Equality: cross-type is safely not-equal, never an error
-assert of [("3" == 3) == 0, "str vs num not equal"]
-assert of [(3 == 3) == 1, "num == num"]
-assert of [([1] == 1) == 0, "list vs num not equal"]
-assert of [("3" != 3) == 1, "str != num true"]
+assert of [(not ("3" == 3)), "str vs num not equal"]
+assert of [(3 == 3), "num == num"]
+assert of [(not ([1] == 1)), "list vs num not equal"]
+assert of [("3" != 3), "str != num true"]
 
 print of "All tests passed"

@@ -57,7 +57,7 @@ define _focus_next(root, reverse) as:
 
 define _handle_focus_key(root, ev) as:
     if ev.key == "tab":
-        if ev.shift == 1:
+        if ev.shift:
             _focus_next of [root, 1]
         else:
             _focus_next of [root, 0]

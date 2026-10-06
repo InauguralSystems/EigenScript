@@ -2,7 +2,7 @@
 # numeric context. Before: the store was silently dropped (the old element
 # stayed) at rc 0, and the same value died one line later in arithmetic.
 # Every store shape -- the opcode path (b[i] is v), buf_set, buf_from_list --
-# and every non-number kind; booleans are numbers and stay accepted.
+# and every non-number kind, bools included (#1637: a bool is not a number).
 load_file of "lib/test.eigs"
 
 define store_fails(v) as:
@@ -25,12 +25,11 @@ assert_true of [(index_of of [r[0], "cannot store dict in a buffer"]) >= 0, "b[i
 r is store_fails of null
 assert_true of [(index_of of [r[0], "cannot store null in a buffer"]) >= 0, "b[i] is null raises"]
 
+# #1637: a comparison is a bool, not a number, so a buffer refuses it too.
+r is store_fails of (1 == 1)
+assert_true of [(index_of of [r[0], "cannot store bool in a buffer"]) >= 0, "b[i] is a comparison raises (#1637)"]
 b is buffer of 3
-b[0] is (1 == 1)
-b[1] is (1 == 2)
 b[2] is 2.5
-assert_eq of [b[0], 1, "a true comparison stores 1 (booleans are numbers)"]
-assert_eq of [b[1], 0, "a false comparison stores 0"]
 assert_eq of [b[2], 2.5, "a number stores as itself"]
 
 # the hot-loop shape: the JIT's inline buffer write bails to its helper on a

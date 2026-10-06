@@ -250,7 +250,7 @@ EOF
 MKT_LIVE=$("$EIGS" "$TMPDIR/p_mktemp_live.eigs" 2>&1); MKT_LIVE_RC=$?
 MKT_PATH=$(printf '%s\n' "$MKT_LIVE" | sed -n '1p')
 MKT_STATE=$(printf '%s\n' "$MKT_LIVE" | sed -n '2,4p')
-if [ "$MKT_LIVE_RC" -eq 0 ] && [ "$MKT_STATE" = $'1\n1\n0' ] \
+if [ "$MKT_LIVE_RC" -eq 0 ] && [ "$MKT_STATE" = $'true\ntrue\nfalse' ] \
    && [ ! -e "$MKT_PATH" ]; then
     ok "mktemp ordinary lifecycle: create, print, and rm"
 else
@@ -402,7 +402,7 @@ REC_ID=$(EIGS_TRACE="$TAPE_D" "$EIGS" "$TMPDIR/p_isdir.eigs" 2>&1)
 rmdir "$TMPDIR/probe_dir"
 REP_ID=$(EIGS_REPLAY="$TAPE_D" "$EIGS" "$TMPDIR/p_isdir.eigs" 2>&1)
 
-if [ "$REC_ID" = "1" ] && [ "$REP_ID" = "1" ]; then
+if [ "$REC_ID" = "true" ] && [ "$REP_ID" = "true" ]; then
     ok "is_dir replay: recorded answer wins after the directory is deleted"
 else
     fail "is_dir replay" "rec='$REC_ID' rep='$REP_ID'"
@@ -419,7 +419,7 @@ REC_IF=$(EIGS_TRACE="$TAPE_F" "$EIGS" "$TMPDIR/p_isfile.eigs" 2>&1)
 rm -f "$TMPDIR/probe_file"
 REP_IF=$(EIGS_REPLAY="$TAPE_F" "$EIGS" "$TMPDIR/p_isfile.eigs" 2>&1)
 LIVE_IF=$("$EIGS" "$TMPDIR/p_isfile.eigs" 2>&1)
-if [ "$REC_IF" = "1" ] && [ "$REP_IF" = "1" ] && [ "$LIVE_IF" = "0" ]; then
+if [ "$REC_IF" = "true" ] && [ "$REP_IF" = "true" ] && [ "$LIVE_IF" = "false" ]; then
     ok "is_file replay: recorded answer wins after the file is deleted (live says 0)"
 else
     fail "is_file replay" "rec='$REC_IF' rep='$REP_IF' live='$LIVE_IF'"
@@ -439,7 +439,7 @@ EOF
 FE_REC=$(EIGS_TRACE="$TMPDIR/fe.tape" "$EIGS" "$TMPDIR/p_fe.eigs" 2>&1)
 rm -f "$TMPDIR/fe585/probe"
 FE_REP=$(EIGS_REPLAY="$TMPDIR/fe.tape" "$EIGS" "$TMPDIR/p_fe.eigs" 2>&1)
-if [ "$FE_REC" = "1" ] && [ "$FE_REP" = "1" ]; then
+if [ "$FE_REC" = "true" ] && [ "$FE_REP" = "true" ]; then
     ok "file_exists replay: recorded 1 wins after the file is deleted (#585)"
 else
     fail "file_exists replay (#585)" "rec='$FE_REC' rep='$FE_REP'"
@@ -467,7 +467,7 @@ EOF
 MK_REC=$(EIGS_TRACE="$TMPDIR/mk.tape" "$EIGS" "$TMPDIR/p_mk.eigs" 2>&1)
 rm -rf "$TMPDIR/mk585"
 MK_REP=$(EIGS_REPLAY="$TMPDIR/mk.tape" "$EIGS" "$TMPDIR/p_mk.eigs" 2>&1)
-if [ "$MK_REC" = "1" ] && [ "$MK_REP" = "1" ] && [ ! -d "$TMPDIR/mk585/sub" ]; then
+if [ "$MK_REC" = "true" ] && [ "$MK_REP" = "true" ] && [ ! -d "$TMPDIR/mk585/sub" ]; then
     ok "mkdir replay: serves recorded bit, does NOT re-create the directory (#585)"
 else
     fail "mkdir replay (#585)" "rec='$MK_REC' rep='$MK_REP' recreated=$([ -d "$TMPDIR/mk585/sub" ] && echo yes || echo no)"
@@ -566,7 +566,7 @@ EOF
     REP_C=$(SDL_AUDIODRIVER=doesnotexist EIGS_REPLAY="$TAPE_C" "$EIGS" "$TMPDIR/p_cap.eigs" 2>&1)
     REC_LEN=$(echo "$REC_C" | sed -n '2p')
 
-    if [ "$REC_C" = "$REP_C" ] && [ "$(echo "$REC_C" | sed -n '1p')" = "1" ] \
+    if [ "$REC_C" = "$REP_C" ] && [ "$(echo "$REC_C" | sed -n '1p')" = "true" ] \
        && [ "${REC_LEN:-0}" -gt 0 ] && grep -q '^N [0-9][0-9]* audio_capture_read=b\[' "$TAPE_C"; then
         ok "capture replay: recorded mic session replays without a device (#579)"
     else

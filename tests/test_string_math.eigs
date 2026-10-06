@@ -15,9 +15,9 @@ assert of [(char_at of ["hello", 5]) == "", "CA3 out of range"]
 assert of [(char_at of ["hello", -1]) == "o", "CA4 negative index counts from the end (#312)"]
 
 # ---- ends_with ----
-assert of [(ends_with of ["hello.eigs", ".eigs"]) == 1, "EW1 match"]
-assert of [(ends_with of ["hello.eigs", ".py"]) == 0, "EW2 no match"]
-assert of [(ends_with of ["hi", "hello"]) == 0, "EW3 suffix longer"]
+assert of [(ends_with of ["hello.eigs", ".eigs"]), "EW1 match"]
+assert of [(not (ends_with of ["hello.eigs", ".py"])), "EW2 no match"]
+assert of [(not (ends_with of ["hi", "hello"])), "EW3 suffix longer"]
 
 # ---- substr ----
 assert of [(substr of ["hello world", 6, 5]) == "world", "SS1 basic"]

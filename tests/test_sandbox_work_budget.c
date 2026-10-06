@@ -61,7 +61,7 @@ int main(void) {
         Value *out = builtin_sandbox_run(args);
         Value *ok = out ? dict_get(out, "ok") : NULL;
         Value *result = out ? dict_get(out, "result") : NULL;
-        REQUIRE(ok && ok->type == VAL_NUM && ok->data.num == 1 &&
+        REQUIRE(ok && ok->type == VAL_BOOL && ok->data.boolean == 1 &&
                 result && result->type == VAL_NUM && result->data.num == 42,
                 "ordinary sandbox result");
         REQUIRE(!g_sandbox_active && g_sandbox_work_used == 13 &&

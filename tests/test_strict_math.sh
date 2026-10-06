@@ -149,8 +149,8 @@ run "SM17 strict leaves valid args alone" 1 0 "1"                          'prin
 # The exclusions matter as much as the conversions: these 0s are DOCUMENTED
 # RETURN VALUES, not fail-soft guards, so strict must NOT make them raise.
 # A sed over `return make_num(0)` would have broken both.
-run "SM18 strict: try_parse(bad) still answers 0" 1 0 "0"  'print of (try_parse of "!!!")'
-run "SM19 strict: unknown task id still not alive" 1 0 "0" 'print of (task_alive of 99999)'
+run "SM18 strict: try_parse(bad) still answers false" 1 0 "false"  'print of (try_parse of "!!!")'
+run "SM19 strict: unknown task id still not alive" 1 0 "false" 'print of (task_alive of 99999)'
 
 # --- #971 Phase B: the ELEMENT-type guards -----------------------------------
 # Phase A converted the outer ARITY guards and left the inner element-type
@@ -187,7 +187,7 @@ run "SM29 strict str_replace coercion raises"  1 1 "str_replace: expected a stri
 # More exclusion pins. These grew with the conversion set on purpose: without
 # them, converting EVERYTHING would score a perfect "raises under strict" and
 # the reform would have no failure mode at all.
-run "SM30 strict: ends_with, suffix too long, still 0" 1 0 "0" 'print of (ends_with of ["ab", "abc"])'
+run "SM30 strict: ends_with, suffix too long, still false" 1 0 "false" 'print of (ends_with of ["ab", "abc"])'
 run "SM31 strict: char_at past the end still empty"    1 0 "[]" \
 'local r is char_at of ["ab", 9]
 print of f"[{r}]"'
@@ -195,8 +195,8 @@ run "SM32 strict: join of an empty list still empty"   1 0 "[]" \
 'local r is join of [[], ","]
 print of f"[{r}]"'
 run "SM33 strict: num still COERCES a list to 0"       1 0 "0" 'print of (num of ([1, 2]))'
-run "SM34 strict: list_contains finding nothing is 0"  1 0 "0" 'print of (list_contains of [[1, 2], 9])'
-run "SM35 strict: JSON false still decodes to 0"       1 0 "0" \
+run "SM34 strict: list_contains finding nothing is false"  1 0 "false" 'print of (list_contains of [[1, 2], 9])'
+run "SM35 strict: JSON false decodes to false (#1637)" 1 0 "false" \
     'print of (json_path of ["{\"a\": false}", "a"])'
 
 # --- #971 Phase C: JSON parse failure in json_path ----------------------------
@@ -223,7 +223,7 @@ run "SM42 strict json_path raise is catchable as value" 1 0 "caught value" \
     x is json_path of ["{bad", "a"]
 catch e:
     print of f"caught {e.kind}"'
-run "SM43 strict: JSON false is still 0"                1 0 "0"  'print of (json_path of ["{\"a\": false}", "a"])'
+run "SM43 strict: JSON false is still false"            1 0 "false"  'print of (json_path of ["{\"a\": false}", "a"])'
 run "SM44 strict: absent key is still empty"            1 0 "[]" 'print of f"[{json_path of ["{\"a\": 1}", "b"]}]"'
 run "SM45 strict: JSON null still renders empty"        1 0 "[]" 'print of f"[{json_path of ["{\"a\": null}", "a"]}]"'
 run "SM46 strict: valid nested path still resolves"     1 0 "x"  'print of (json_path of ["{\"a\": [1, {\"b\": \"x\"}]}", "a.1.b"])'
@@ -237,16 +237,16 @@ run "SM46 strict: valid nested path still resolves"     1 0 "x"  'print of (json
 # elementwise `divide` by zero (pre-collapsed to 0 where `/` raises). EIGS_STRICT=0
 # collapses to 0 + math_flags.invalid exactly as before (SM47-SM49 pin it).
 run "SM47 opt-out pow(-8, 0.5) still 0"            0 0 "0"  'print of (pow of [0 - 8, 0.5])'
-run "SM48 opt-out num(\"nan\") still 0 + invalid"  0 0 "0 1" \
+run "SM48 opt-out num(\"nan\") still 0 + invalid"  0 0 "0 true" \
 'local v is num of "nan"
 print of f"{v} {(math_flags of null).invalid}"'
-run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0 "[0] 1" \
+run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0 "[0] true" \
 'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
 print of f"{r} {(math_flags of null).invalid}"'
 # #1417 applies the same scalar-read rule to buffer and list results. The
 # kernel may retain a raw NaN internally, but exposing it collapses it to 0 and
 # sets invalid just as make_num does on the boxed path.
-run "SM49b opt-out matmul(inf-inf) BUFFER read collapses to 0 + invalid" 0 0 "0 1" \
+run "SM49b opt-out matmul(inf-inf) BUFFER read collapses to 0 + invalid" 0 0 "0 true" \
 'local m1 is buffer of [1, 2]
 m1[0] is 1e200
 m1[1] is 1e200
@@ -257,7 +257,7 @@ local r is matmul of [m1, m2]
 print of f"{r[0]} {(math_flags of null).invalid}"'
 # #1131: canonicalization must visit every NaN and preserve intervening
 # finite results. On ARM the kernel's invalid-operation NaNs are positive.
-run "SM49c opt-out matmul buffer guards each NaN and preserves finite neighbor" 0 0 "0 2e+200 0 1" \
+run "SM49c opt-out matmul buffer guards each NaN and preserves finite neighbor" 0 0 "0 2e+200 0 true" \
 'local a is buffer of [1, 2]
 a[0] is 1e200
 a[1] is 1e200
@@ -353,8 +353,8 @@ run_jitoff "SM61c opt-out pow -> 0 with the JIT off" 0 0 "0" \
 # The documented sentinel for a valid-but-absent input is pinned in BOTH modes;
 # only a wrong-typed argument raises.
 run "SM62 strict: index_of miss is still -1"            1 0 "-1" 'print of (index_of of ["abc", "z"])'
-run "SM63 strict: file_exists of an absent path is 0"   1 0 "0"  'print of (file_exists of "/nonexistent/eigs_971_probe")'
-run "SM64 strict: is_dir of an absent path is 0"        1 0 "0"  'print of (is_dir of "/nonexistent/eigs_971_probe")'
+run "SM63 strict: file_exists of an absent path is false" 1 0 "false"  'print of (file_exists of "/nonexistent/eigs_971_probe")'
+run "SM64 strict: is_dir of an absent path is false"    1 0 "false"  'print of (is_dir of "/nonexistent/eigs_971_probe")'
 run "SM65 strict: read_text of an absent path is empty" 1 0 "[]" 'print of f"[{read_text of "/nonexistent/eigs_971_probe"}]"'
 run "SM66 strict index_of(num, str) raises"             1 1 "index_of: expected"    'print of (index_of of [42, "x"])'
 run "SM67 strict file_exists(num) raises"               1 1 "file_exists: expected" 'print of (file_exists of 42)'
@@ -368,7 +368,7 @@ run "SM70 strict split with a non-string delimiter raises" 1 1 "split: expected 
 run "SM71 strict scan_ints(dict) raises"                1 1 "scan_ints: expected"   'print of (scan_ints of ({"k": 1}))'
 run "SM72 strict buffer(str) raises"                    1 1 "buffer: expected"      'print of (buffer of "x")'
 run "SM73 strict channel_closed(num) raises"            1 1 "channel_closed: expected" 'print of (channel_closed of 42)'
-run "SM74 strict: unknown channel is still closed (1)"  1 0 "1"  'print of (channel_closed of ({"_channel_id": 99999}))'
+run "SM74 strict: unknown channel is still closed (true)" 1 0 "true"  'print of (channel_closed of ({"_channel_id": 99999}))'
 run "SM75 strict f64_to_bytes(str) raises"              1 1 "f64_to_bytes: expected" 'print of (f64_to_bytes of "x")'
 run "SM76 strict random_int(bad bounds) raises"         1 1 "random_int: expected" 'print of (random_int of ["a", 3])'
 run "SM77 strict json_build(dict) raises"               1 1 "json_build: expected" 'print of (json_build of ({"a": 1}))'
@@ -396,10 +396,10 @@ run "SM88 opt-out scan_int_tokens(num) is still []" 0 0 "[]" 'print of f"[{scan_
 # this witness stays finite, so a NaN/overflow special case cannot satisfy it.
 # Pin all three shared kernels, each on both storage roads and in both modes.
 for strict_mode in 0 1; do
-    run "SM89 mode=$strict_mode matmul list rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+    run "SM89 mode=$strict_mode matmul list rounds product before sum" "$strict_mode" 0 "zero:true:end" \
 'local r is matmul of [[[-1, 1.0000000074505806]], [[1], [0.9999999925494194]]]
 print of f"zero:{r[0] == 0}:end"'
-    run "SM90 mode=$strict_mode matmul buffer rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+    run "SM90 mode=$strict_mode matmul buffer rounds product before sum" "$strict_mode" 0 "zero:true:end" \
 'local a is buffer of [1, 2]
 a[0] is -1
 a[1] is 1.0000000074505806
@@ -408,10 +408,10 @@ b[0] is 1
 b[1] is 0.9999999925494194
 local r is matmul of [a, b]
 print of f"zero:{r[0] == 0}:end"'
-    run "SM91 mode=$strict_mode matmul_at list rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+    run "SM91 mode=$strict_mode matmul_at list rounds product before sum" "$strict_mode" 0 "zero:true:end" \
 'local r is matmul_at of [[[-1], [1.0000000074505806]], [[1], [0.9999999925494194]]]
 print of f"zero:{r[0][0] == 0}:end"'
-    run "SM92 mode=$strict_mode matmul_at buffer rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+    run "SM92 mode=$strict_mode matmul_at buffer rounds product before sum" "$strict_mode" 0 "zero:true:end" \
 'local a is buffer of [2, 1]
 a[0] is -1
 a[1] is 1.0000000074505806
@@ -420,10 +420,10 @@ b[0] is 1
 b[1] is 0.9999999925494194
 local r is matmul_at of [a, b]
 print of f"zero:{r[0] == 0}:end"'
-    run "SM93 mode=$strict_mode matmul_bt list rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+    run "SM93 mode=$strict_mode matmul_bt list rounds product before sum" "$strict_mode" 0 "zero:true:end" \
 'local r is matmul_bt of [[[-1, 1.0000000074505806]], [[1, 0.9999999925494194]]]
 print of f"zero:{r[0] == 0}:end"'
-    run "SM94 mode=$strict_mode matmul_bt buffer rounds product before sum" "$strict_mode" 0 "zero:1:end" \
+    run "SM94 mode=$strict_mode matmul_bt buffer rounds product before sum" "$strict_mode" 0 "zero:true:end" \
 'local a is buffer of [1, 2]
 a[0] is -1
 a[1] is 1.0000000074505806

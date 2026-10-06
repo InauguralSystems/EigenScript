@@ -104,11 +104,11 @@ assert_eq of [with_col[1]["name_len"], 3, "df_add_column Bob len"]
 # df_rename
 renamed is data.df_rename of [df, "name", "person"]
 assert_eq of [renamed[0]["person"], "Alice", "df_rename new key"]
-assert_eq of [has_key of [renamed[0], "name"], 0, "df_rename old key gone"]
+assert_eq of [has_key of [renamed[0], "name"], false, "df_rename old key gone"]
 
 # df_drop
 dropped is data.df_drop of [df, ["age"]]
-assert_eq of [has_key of [dropped[0], "age"], 0, "df_drop removes column"]
+assert_eq of [has_key of [dropped[0], "age"], false, "df_drop removes column"]
 assert_eq of [dropped[0]["name"], "Alice", "df_drop keeps other columns"]
 
 # df_sum, df_mean, df_min, df_max

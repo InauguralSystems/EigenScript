@@ -350,7 +350,7 @@ print of (bit_shl of [1, 40])                # exact past 2^32
 ```
 ```output
 9007199254740992
-1
+true
 1e+308
 255
 1099511627776
@@ -448,14 +448,14 @@ print of (len of "hello")     # 5 — all ASCII, 1 byte each
 print of (len of "héllo")     # 6 — é is 2 UTF-8 bytes
 euro is "€"
 print of (len of euro)        # 3 — one character, three bytes
-print of (euro == "€")        # 1 — bytes round-trip exactly
+print of (euro == "€")        # true — bytes round-trip exactly
 print of ("price: " + euro)   # f-strings / concat are byte-wise, multibyte-safe
 ```
 ```output
 5
 6
 3
-1
+true
 price: €
 ```
 
@@ -469,10 +469,16 @@ the VM, JIT, AOT, and every tool, for a bill this scale doesn't need.
 
 ## Booleans, comparison, and logic
 
-There is no separate boolean type: comparisons produce `1` (true) or
-`0` (false), and any value can be tested for truthiness (0, `null`,
-empty string/list/dict are falsy). Logical operators are the words
-`and`, `or`, `not`.
+`bool` is a type of its own with two values, the keywords `true` and `false`
+(#1637). Comparisons (`== != < <= > >=`), `not`, the observer predicates, and
+every predicate builtin and `lib/` predicate return a `bool`. `print` and
+`str` give `true`/`false`; `json_encode` writes JSON's `true`/`false` and
+`json_decode` reads them back as bools. Logical operators are the words `and`,
+`or`, `not`; `and`/`or` return one of their operands (not necessarily a bool),
+and `not` always returns a bool.
+
+Truthiness is unchanged: `0`, `0.0`, `null`, `""`, `[]`, `{}` and `false` are
+falsy; every other value, including `true`, is truthy.
 
 ```eigenscript
 print of (3 > 2)
@@ -483,15 +489,46 @@ print of (3 >= 3)
 print of (1 and 0)
 print of (1 or 0)
 print of (not 0)
+print of (type of true)
 ```
 ```output
-1
+true
+false
+true
+false
+true
 0
 1
-0
-1
-0
-1
+true
+bool
+```
+
+A bool is not a number. Arithmetic on a bool raises, and so do `==` and `!=`
+between a bool and a number, so a check written against the old `1`/`0`
+answers fails loudly instead of quietly flipping: write `if pred of x:` or
+`(pred of x) == true`. Every other mixed-type pair is simply unequal
+(`null == false` is `false`, `"true" == true` is `false`). A bool converts to
+a number only explicitly, by branching on it; `num of b` raises.
+
+```eigenscript
+try:
+    print of (true + 1)
+catch e:
+    print of e.message
+try:
+    print of ((1 < 2) == 1)
+catch e:
+    print of e.message
+print of (null == false)
+n is 0
+if 2 > 1:
+    n is 1
+print of n
+```
+```output
+cannot apply '+' to bool and num
+cannot compare bool and num with '=='
+false
 1
 ```
 
@@ -503,9 +540,9 @@ print of ({"a": 1} == {"a": 1})
 print of ({"a": 1} == {"a": 2})
 ```
 ```output
-1
-1
-0
+true
+true
+false
 ```
 
 ## Bitwise operators
@@ -1041,7 +1078,7 @@ expressions match too
 
 ## Error handling
 
-`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
+`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
 
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
@@ -1501,8 +1538,8 @@ print of (e < 0.001)
 print of converged
 ```
 ```output
-1
-1
+true
+true
 ```
 
 For a **numeric** binding the predicates classify the value's own
@@ -1587,7 +1624,7 @@ print of ((where is d) == (where is e))
 print of why is d
 ```
 ```output
-1
+true
 0
 ```
 
@@ -1614,7 +1651,7 @@ print of (equilibrium of f)
 ```
 ```output
 opaque
-0
+false
 ```
 
 **The saturation ceiling is not a rest state** (#861). Overflow saturates
@@ -1640,7 +1677,7 @@ print of (converged of z)
 ```
 ```output
 diverging
-0
+false
 ```
 
 **The value channel** (`report_value of x`) is, since #861, the same

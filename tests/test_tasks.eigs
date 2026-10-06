@@ -32,17 +32,17 @@ define worker() as:
     return 42
 tid is task_spawn of worker
 assert_eq of [type of tid, "num", "task_spawn returns a numeric id"]
-assert_eq of [task_alive of tid, 1, "a freshly spawned task is alive"]
+assert_eq of [task_alive of tid, true, "a freshly spawned task is alive"]
 
 # --- unknown id is not alive (no crash, no false positive) ---
-assert_eq of [task_alive of 99999, 0, "unknown task id is not alive"]
-assert_eq of [task_alive of 0, 0, "id 0 (reserved/invalid) is not alive"]
+assert_eq of [task_alive of 99999, false, "unknown task id is not alive"]
+assert_eq of [task_alive of 0, false, "id 0 (reserved/invalid) is not alive"]
 
 # --- args form: [fn, arg1, ...] spawns and stays alive ---
 define adder(a, b) as:
     return a + b
 tid2 is task_spawn of [adder, 3, 4]
-assert_eq of [task_alive of tid2, 1, "spawn with args is alive"]
+assert_eq of [task_alive of tid2, true, "spawn with args is alive"]
 
 # --- distinct ids per spawn ---
 assert_true of [tid2 != tid, "each spawn gets a distinct id"]
@@ -65,7 +65,7 @@ define lister(xs) as:
 shared is [1, 2, 3]
 tid3 is task_spawn of [lister, shared]
 shared is append of [shared, 4]   # mutate caller's list post-spawn
-assert_eq of [task_alive of tid3, 1, "spawn with a compound arg is alive"]
+assert_eq of [task_alive of tid3, true, "spawn with a compound arg is alive"]
 assert_eq of [len of shared, 4, "caller's list still mutable post-spawn"]
 # the task saw the deep copy (len 3), not the caller's later-mutated list (len 4)
 assert_eq of [task_join of tid3, 3, "task got the deep-copied arg, not the mutation"]
@@ -101,7 +101,7 @@ assert_eq of [r1, 42, "task_join returns the worker result"]
 # --- joining an already-finished task returns its result immediately ---
 r1b is task_join of d1
 assert_eq of [r1b, 42, "re-join of a finished task returns the result"]
-assert_eq of [task_alive of d1, 0, "a finished task is not alive"]
+assert_eq of [task_alive of d1, false, "a finished task is not alive"]
 
 # --- an uncaught error in a task is rethrown at the join, as its #406 kind ---
 define crasher() as:
@@ -215,8 +215,8 @@ define fast() as:
     return 1
 f1 is task_spawn of fast
 jr is task_join of f1                        # f1 finishes
-assert_eq of [task_send of [f1, 99], 0, "send to a finished task drops (returns 0)"]
-assert_eq of [task_send of [88888, 1], 0, "send to an unknown task drops (returns 0)"]
+assert_eq of [task_send of [f1, 99], false, "send to a finished task drops (returns 0)"]
+assert_eq of [task_send of [88888, 1], false, "send to an unknown task drops (returns 0)"]
 
 # --- messages cross the boundary deep-copied (share-nothing) ---
 echo_id is 0
@@ -235,8 +235,8 @@ define victim() as:
     return 1
 vk is task_spawn of victim
 task_yield of null
-assert_eq of [task_kill of vk, 1, "task_kill of a live task returns 1"]
-assert_eq of [task_alive of vk, 0, "a killed task is not alive"]
+assert_eq of [task_kill of vk, true, "task_kill of a live task returns 1"]
+assert_eq of [task_alive of vk, false, "a killed task is not alive"]
 kthrew is 0
 try:
     kr is task_join of vk
@@ -474,7 +474,7 @@ _det_t2 is task_spawn of _det_w
 task_yield of null
 assert_eq of [task_detach of _det_t2, 1, "detach of a finished task reaps it"]
 assert_eq of [task_join of _det_t2, null, "joining a reaped id is null"]
-assert_eq of [task_alive of _det_t2, 0, "a reaped id is not alive"]
+assert_eq of [task_alive of _det_t2, false, "a reaped id is not alive"]
 
 # task_kill of a detached live task reaps too: 300 spawn/detach/kill cycles.
 define _det_block() as:

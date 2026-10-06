@@ -17,7 +17,7 @@
 load_file of "lib/test.eigs"
 
 opened is gfx_open of [400, 300, "containment-oracle-823"]
-if opened == 0:
+if (not opened):
     print of "SKIP: gfx_open failed (no SDL2)"
     exit of 0
 

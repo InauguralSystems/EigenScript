@@ -150,12 +150,12 @@ shape_abort() {
 shape_backend_classify() { # kind, captured rc+output, actual platform
     shape_receipt_ok "$2" || return 1
     case "$1" in sdl|mixer) ;; *) return 1 ;; esac
-    if [ "$2" = $'0\nshape-backend: 1' ]; then echo present; return 0; fi
+    if [ "$2" = $'0\nshape-backend: true' ]; then echo present; return 0; fi
     [ "$3" = Darwin ] || return 1
-    if [ "$1" = sdl ] && [ "$2" = $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' ]; then
+    if [ "$1" = sdl ] && [ "$2" = $'0\ngfx_open: cannot load libSDL2\nshape-backend: false' ]; then
         echo absent-sdl; return 0
     fi
-    if [ "$1" = mixer ] && [ "$2" = $'0\naudio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\nshape-backend: 0' ]; then
+    if [ "$1" = mixer ] && [ "$2" = $'0\naudio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\nshape-backend: false' ]; then
         echo absent-mixer; return 0
     fi
     return 1
@@ -349,162 +349,162 @@ shape_selftest() {
         fi
     }
     backend_case sdl-present-Darwin 0 present sdl '0
-shape-backend: 1' Darwin
+shape-backend: true' Darwin
     backend_case sdl-present-Linux 0 present sdl '0
-shape-backend: 1' Linux
+shape-backend: true' Linux
     backend_case sdl-exact-absent-Darwin 0 absent-sdl sdl '0
 gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-absence-Linux-is-failure 1 '' sdl '0
 gfx_open: cannot load libSDL2
-shape-backend: 0' Linux
+shape-backend: false' Linux
     backend_case sdl-other-backend-diagnostic 1 '' sdl '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-wrong-child-rc-1 1 '' sdl '1
 gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-wrong-child-rc-3 1 '' sdl '3
 gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-wrong-child-rc-124 1 '' sdl '124
 gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-wrong-child-rc--9 1 '' sdl '-9
 gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-altered-diagnostic 1 '' sdl '0
 gfx_open: cannot load libSDL2 changed
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-unrelated-first-line 1 '' sdl '0
 unrelated diagnostic
 gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-unrelated-last-line 1 '' sdl '0
 gfx_open: cannot load libSDL2
-shape-backend: 0
+shape-backend: false
 unrelated diagnostic' Darwin
     backend_case sdl-duplicate-diagnostic 1 '' sdl '0
 gfx_open: cannot load libSDL2
 gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-arbitrary-zero 1 '' sdl '0
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-success-with-absence-diagnostic 1 '' sdl '0
 gfx_open: cannot load libSDL2
-shape-backend: 1' Darwin
+shape-backend: true' Darwin
     backend_case sdl-wrong-result-marker 1 '' sdl '0
 gfx_open: cannot load libSDL2
 shape-backend: 2' Darwin
     backend_case sdl-missing-child-rc 1 '' sdl 'gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-duplicate-result-marker 1 '' sdl '0
 gfx_open: cannot load libSDL2
-shape-backend: 0
-shape-backend: 0' Darwin
+shape-backend: false
+shape-backend: false' Darwin
     backend_case sdl-missing-result-marker 1 '' sdl '0
 gfx_open: cannot load libSDL2' Darwin
     backend_case sdl-asan-veto 1 '' sdl '0
 gfx_open: cannot load libSDL2
 ERROR: AddressSanitizer: inert classifier text
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-lsan-veto 1 '' sdl '0
 gfx_open: cannot load libSDL2
 ERROR: LeakSanitizer: detected memory leaks
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-ubsan-veto 1 '' sdl '0
 gfx_open: cannot load libSDL2
 runtime error: inert classifier text
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case sdl-tsan-veto 1 '' sdl '0
 gfx_open: cannot load libSDL2
 WARNING: ThreadSanitizer: data race (inert text only)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-present-Darwin 0 present mixer '0
-shape-backend: 1' Darwin
+shape-backend: true' Darwin
     backend_case mixer-present-Linux 0 present mixer '0
-shape-backend: 1' Linux
+shape-backend: true' Linux
     backend_case mixer-exact-absent-Darwin 0 absent-mixer mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-absence-Linux-is-failure 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Linux
+shape-backend: false' Linux
     backend_case mixer-other-backend-diagnostic 1 '' mixer '0
 gfx_open: cannot load libSDL2
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-wrong-child-rc-1 1 '' mixer '1
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-wrong-child-rc-3 1 '' mixer '3
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-wrong-child-rc-124 1 '' mixer '124
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-wrong-child-rc--9 1 '' mixer '-9
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-altered-diagnostic 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0) changed
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-unrelated-first-line 1 '' mixer '0
 unrelated diagnostic
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-unrelated-last-line 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0
+shape-backend: false
 unrelated diagnostic' Darwin
     backend_case mixer-duplicate-diagnostic 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-arbitrary-zero 1 '' mixer '0
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-success-with-absence-diagnostic 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 1' Darwin
+shape-backend: true' Darwin
     backend_case mixer-wrong-result-marker 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
 shape-backend: 2' Darwin
     backend_case mixer-missing-child-rc 1 '' mixer 'audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-duplicate-result-marker 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
-shape-backend: 0
-shape-backend: 0' Darwin
+shape-backend: false
+shape-backend: false' Darwin
     backend_case mixer-missing-result-marker 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)' Darwin
     backend_case mixer-asan-veto 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
 ERROR: AddressSanitizer: inert classifier text
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-lsan-veto 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
 ERROR: LeakSanitizer: detected memory leaks
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-ubsan-veto 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
 runtime error: inert classifier text
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case mixer-tsan-veto 1 '' mixer '0
 audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)
 WARNING: ThreadSanitizer: data race (inert text only)
-shape-backend: 0' Darwin
+shape-backend: false' Darwin
     backend_case unknown-kind-Darwin 1 '' other '0
-shape-backend: 1' Darwin
+shape-backend: true' Darwin
     backend_case unknown-kind-Linux 1 '' other '0
-shape-backend: 1' Linux
+shape-backend: true' Linux
     # Private inert calibration: removing platform ownership admits Linux
     # absence. Restore the actual classifier before the following control.
     saved=$(declare -f shape_backend_classify)
     eval "${saved/shape_backend_classify/shape_backend_original}"
     shape_backend_classify() { shape_backend_original "$1" "$2" Darwin; }
-    backend_case 'removed Linux-positive policy is detected (expected RED)' 0 absent-sdl sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' Linux
+    backend_case 'removed Linux-positive policy is detected (expected RED)' 0 absent-sdl sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: false' Linux
     eval "$saved"
     unset -f shape_backend_original
-    backend_case 'restored Linux-positive policy refuses absence' 1 '' sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: 0' Linux
+    backend_case 'restored Linux-positive policy refuses absence' 1 '' sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: false' Linux
     echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 88 declared"
     [ "$failed" = 0 ] && [ "$passed" = 88 ]
 }
@@ -798,7 +798,7 @@ token_name of an unknown id is "?"|print of (token_name of 9999)
 channel_closed of a reclaimed/unknown channel is 1|print of (channel_closed of ({"_channel_id": 99999}))
 json_build of null is the empty object|print of (json_build of null)
 random_hex of 0 is ""|print of f"[{random_hex of 0}]"
-tensor_save preserves a zero-column tensor|assert of [(tensor_save of [[[], []], "@TMP@/zero-cols.tensor"]) == 1, "zero-column tensor_save"]
+tensor_save preserves a zero-column tensor|assert of [(tensor_save of [[[], []], "@TMP@/zero-cols.tensor"]), "zero-column tensor_save"]
 EOF
 )
 PINS="${PINS//@TMP@/$TMP}"

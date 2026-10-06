@@ -109,7 +109,7 @@ int main(void) {
         Value *out = sandbox_call(i);
         assert(out != NULL);
         Value *ok = dict_get(out, "ok");
-        assert(ok && ok->type == VAL_NUM && ok->data.num == 1.0);
+        assert(ok && ok->type == VAL_BOOL && ok->data.boolean == 1);   /* #1637 */
         Value *result = dict_get(out, "result");
         assert(result && result->type == VAL_DICT);
         if (i == 0) {
@@ -161,8 +161,8 @@ int main(void) {
     Value *invalid_out = invalid_sandbox_call();
     assert(invalid_out != NULL);
     Value *invalid_ok = dict_get(invalid_out, "ok");
-    assert(invalid_ok && invalid_ok->type == VAL_NUM &&
-           invalid_ok->data.num == 0.0);
+    assert(invalid_ok && invalid_ok->type == VAL_BOOL &&
+           invalid_ok->data.boolean == 0);   /* #1637: ok is a bool */
     val_decref(invalid_out);
     assert(g_gc_val_count == 0);
     /* Candidate-only boundary collection must not scan the unrelated captured

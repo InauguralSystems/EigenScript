@@ -34,7 +34,7 @@ define _pre1235_is_number(value) as:
             if has_dot == 1:
                 return 0
             has_dot is 1
-        elif (contains of ["0123456789", c]) == 0:
+        elif (not (contains of ["0123456789", c])):
             return 0
     return 1
 
@@ -46,45 +46,45 @@ define _pre1235_is_integer(value) as:
 
 check of ["pre-fix scan accepts '.'", _pre1235_is_number of ".", 1]
 check of ["pre-fix scan accepts '-.'", _pre1235_is_number of "-.", 1]
-check of ["pre-fix is_integer accepts '.' as zero", _pre1235_is_integer of ".", 1]
-check of ["pre-fix is_integer accepts '-.' as zero", _pre1235_is_integer of "-.", 1]
+check of ["pre-fix is_integer accepts '.' as zero", _pre1235_is_integer of ".", true]
+check of ["pre-fix is_integer accepts '-.' as zero", _pre1235_is_integer of "-.", true]
 
-check of ["is_number rejects '.'", validate.is_number of ".", 0]
-check of ["is_number rejects '-.'", validate.is_number of "-.", 0]
-check of ["is_integer rejects '.'", validate.is_integer of ".", 0]
-check of ["is_integer rejects '-.'", validate.is_integer of "-.", 0]
+check of ["is_number rejects '.'", validate.is_number of ".", false]
+check of ["is_number rejects '-.'", validate.is_number of "-.", false]
+check of ["is_integer rejects '.'", validate.is_integer of ".", false]
+check of ["is_integer rejects '-.'", validate.is_integer of "-.", false]
 
-check of ["is_number accepts '0'", validate.is_number of "0", 1]
-check of ["is_number accepts '-1'", validate.is_number of "-1", 1]
-check of ["is_number accepts '.5'", validate.is_number of ".5", 1]
-check of ["is_number accepts '1.'", validate.is_number of "1.", 1]
-check of ["is_integer accepts '0'", validate.is_integer of "0", 1]
-check of ["is_integer accepts '-1'", validate.is_integer of "-1", 1]
-check of ["is_integer accepts '1.'", validate.is_integer of "1.", 1]
-check of ["is_integer rejects '.5'", validate.is_integer of ".5", 0]
+check of ["is_number accepts '0'", validate.is_number of "0", true]
+check of ["is_number accepts '-1'", validate.is_number of "-1", true]
+check of ["is_number accepts '.5'", validate.is_number of ".5", true]
+check of ["is_number accepts '1.'", validate.is_number of "1.", true]
+check of ["is_integer accepts '0'", validate.is_integer of "0", true]
+check of ["is_integer accepts '-1'", validate.is_integer of "-1", true]
+check of ["is_integer accepts '1.'", validate.is_integer of "1.", true]
+check of ["is_integer rejects '.5'", validate.is_integer of ".5", false]
 
-check of ["is_number rejects empty", validate.is_number of "", 0]
-check of ["is_number rejects '-'", validate.is_number of "-", 0]
-check of ["is_number rejects two dots", validate.is_number of "1.2.3", 0]
-check of ["is_number rejects letters", validate.is_number of "abc", 0]
-check of ["is_number rejects an exponent", validate.is_number of "1e2", 0]
-check of ["is_number rejects whitespace", validate.is_number of " 1", 0]
-check of ["is_number rejects hex", validate.is_number of "0x10", 0]
+check of ["is_number rejects empty", validate.is_number of "", false]
+check of ["is_number rejects '-'", validate.is_number of "-", false]
+check of ["is_number rejects two dots", validate.is_number of "1.2.3", false]
+check of ["is_number rejects letters", validate.is_number of "abc", false]
+check of ["is_number rejects an exponent", validate.is_number of "1e2", false]
+check of ["is_number rejects whitespace", validate.is_number of " 1", false]
+check of ["is_number rejects hex", validate.is_number of "0x10", false]
 
-check of ["is_number accepts a number", validate.is_number of 3.5, 1]
-check of ["is_number accepts a negative number", validate.is_number of (0 - 2), 1]
-check of ["is_integer accepts an integer", validate.is_integer of 4, 1]
-check of ["is_integer accepts a negative integer", validate.is_integer of (0 - 3), 1]
-check of ["is_integer rejects a fraction", validate.is_integer of 3.5, 0]
-check of ["is_number accepts '.0'", validate.is_number of ".0", 1]
-check of ["is_integer accepts '.0'", validate.is_integer of ".0", 1]
-check of ["is_number accepts '-.5'", validate.is_number of "-.5", 1]
-check of ["is_integer rejects '-.5'", validate.is_integer of "-.5", 0]
+check of ["is_number accepts a number", validate.is_number of 3.5, true]
+check of ["is_number accepts a negative number", validate.is_number of (0 - 2), true]
+check of ["is_integer accepts an integer", validate.is_integer of 4, true]
+check of ["is_integer accepts a negative integer", validate.is_integer of (0 - 3), true]
+check of ["is_integer rejects a fraction", validate.is_integer of 3.5, false]
+check of ["is_number accepts '.0'", validate.is_number of ".0", true]
+check of ["is_integer accepts '.0'", validate.is_integer of ".0", true]
+check of ["is_number accepts '-.5'", validate.is_number of "-.5", true]
+check of ["is_integer rejects '-.5'", validate.is_integer of "-.5", false]
 
-check of ["is_integer rejects empty", validate.is_integer of "", 0]
-check of ["is_integer rejects '-'", validate.is_integer of "-", 0]
-check of ["is_integer rejects letters", validate.is_integer of "abc", 0]
-check of ["is_integer rejects two dots", validate.is_integer of "1.2.3", 0]
+check of ["is_integer rejects empty", validate.is_integer of "", false]
+check of ["is_integer rejects '-'", validate.is_integer of "-", false]
+check of ["is_integer rejects letters", validate.is_integer of "abc", false]
+check of ["is_integer rejects two dots", validate.is_integer of "1.2.3", false]
 
 if fails == 0:
     print of "VALIDATE_ALL_PASS"

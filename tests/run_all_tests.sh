@@ -640,8 +640,8 @@ check_binary_fingerprint
 HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>"$TMPDIR/eigs-host-frame.err"); HFL_RC=$?
 HFL_ERR=$(cat "$TMPDIR/eigs-host-frame.err")
 TOTAL=$((TOTAL + 1))
-if [ "$HFL_RC" -eq 0 ] && [ "$HFL_OUT" = "0" ] && [ -z "$HFL_ERR" ]; then
-    PASS=$((PASS + 1)); echo "  PASS: sandbox policy errors return ok=0 without stderr"
+if [ "$HFL_RC" -eq 0 ] && [ "$HFL_OUT" = "[false, false]" ] && [ -z "$HFL_ERR" ]; then
+    PASS=$((PASS + 1)); echo "  PASS: sandbox policy errors return ok=false without stderr"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: sandbox policy error containment (rc=$HFL_RC, stdout=$HFL_OUT)"
     [ -n "$HFL_ERR" ] && echo "$HFL_ERR"
@@ -844,13 +844,13 @@ check "T06 Division" "$(echo "$OUTPUT" | grep -A1 'T06' | tail -1)" "25"
 check "T07 String Concat" "$(echo "$OUTPUT" | grep -A1 'T07' | tail -1)" "hello world"
 check "T08 Boolean And" "$(echo "$OUTPUT" | grep -A1 'T08' | tail -1)" "1"
 check "T09 Boolean Or" "$(echo "$OUTPUT" | grep -A1 'T09' | tail -1)" "1"
-check "T10 Boolean Not" "$(echo "$OUTPUT" | grep -A1 'T10' | tail -1)" "1"
-check "T11 Greater Than" "$(echo "$OUTPUT" | grep -A1 'T11' | tail -1)" "1"
-check "T12 Less Than" "$(echo "$OUTPUT" | grep -A1 'T12' | tail -1)" "1"
-check "T13 Equality (42==42)" "$(echo "$OUTPUT" | grep -A1 'T13:' | tail -1)" "1"
-check "T13b Inequality (42==99)" "$(echo "$OUTPUT" | grep -A1 'T13b' | tail -1)" "0"
-check "T13c String Equality" "$(echo "$OUTPUT" | grep -A1 'T13c' | tail -1)" "1"
-check "T13d String Inequality" "$(echo "$OUTPUT" | grep -A1 'T13d' | tail -1)" "0"
+check "T10 Boolean Not" "$(echo "$OUTPUT" | grep -A1 'T10' | tail -1)" "true"
+check "T11 Greater Than" "$(echo "$OUTPUT" | grep -A1 'T11' | tail -1)" "true"
+check "T12 Less Than" "$(echo "$OUTPUT" | grep -A1 'T12' | tail -1)" "true"
+check "T13 Equality (42==42)" "$(echo "$OUTPUT" | grep -A1 'T13:' | tail -1)" "true"
+check "T13b Inequality (42==99)" "$(echo "$OUTPUT" | grep -A1 'T13b' | tail -1)" "false"
+check "T13c String Equality" "$(echo "$OUTPUT" | grep -A1 'T13c' | tail -1)" "true"
+check "T13d String Inequality" "$(echo "$OUTPUT" | grep -A1 'T13d' | tail -1)" "false"
 check "T14 If Statement" "$(echo "$OUTPUT" | grep -A1 'T14' | tail -1)" "big"
 check "T15 If-Else" "$(echo "$OUTPUT" | grep -A1 'T15' | tail -1)" "small"
 check "T16 While Loop" "$(echo "$OUTPUT" | grep -A1 'T16' | tail -1)" "5"
@@ -963,27 +963,27 @@ RA_OUTPUT=$(./eigenscript ../tests/test_report_alignment.eigs 2>&1)
 
 RA1_D=$(echo "$RA_OUTPUT" | grep -A2 'RA1:' | tail -2 | head -1)
 RA1_R=$(echo "$RA_OUTPUT" | grep -A2 'RA1:' | tail -1)
-check "RA1 diverging predicate" "$RA1_D" "1"     # #861: linear runaway, raw same-sign
+check "RA1 diverging predicate" "$RA1_D" "true"     # #861: linear runaway, raw same-sign
 check "RA1 report=diverging" "$RA1_R" "diverging"
 
 RA2_I=$(echo "$RA_OUTPUT" | grep -A2 'RA2:' | tail -2 | head -1)
 RA2_R=$(echo "$RA_OUTPUT" | grep -A2 'RA2:' | tail -1)
-check "RA2 improving predicate" "$RA2_I" "1"
+check "RA2 improving predicate" "$RA2_I" "true"
 check "RA2 report=improving" "$RA2_R" "improving"
 
 RA3_C=$(echo "$RA_OUTPUT" | grep -A2 'RA3:' | tail -2 | head -1)
 RA3_R=$(echo "$RA_OUTPUT" | grep -A2 'RA3:' | tail -1)
-check "RA3 converged predicate" "$RA3_C" "1"
+check "RA3 converged predicate" "$RA3_C" "true"
 check "RA3 report=converged" "$RA3_R" "converged"
 
 RA4_O=$(echo "$RA_OUTPUT" | grep -A2 'RA4:' | tail -2 | head -1)
 RA4_R=$(echo "$RA_OUTPUT" | grep -A2 'RA4:' | tail -1)
-check "RA4 oscillating predicate" "$RA4_O" "1"
+check "RA4 oscillating predicate" "$RA4_O" "true"
 check "RA4 report=oscillating" "$RA4_R" "oscillating"
 
 RA5_E=$(echo "$RA_OUTPUT" | grep -A2 'RA5:' | tail -2 | head -1)
 RA5_R=$(echo "$RA_OUTPUT" | grep -A2 'RA5:' | tail -1)
-check "RA5 equilibrium predicate" "$RA5_E" "1"   # #861: balanced jitter, NOT converged
+check "RA5 equilibrium predicate" "$RA5_E" "true"   # #861: balanced jitter, NOT converged
 check "RA5 report=equilibrium" "$RA5_R" "equilibrium"
 echo ""
 
@@ -1024,10 +1024,10 @@ echo "[7/15] Halting: Settled Constant (#861)"
 HS_OUTPUT=$(./eigenscript ../tests/test_halting_stall.eigs 2>&1)
 
 HS_CONV=$(echo "$HS_OUTPUT" | grep -A1 'HS1:' | tail -1)
-check "HS1 converged=1 at moderate H (#861: dead zone gone)" "$HS_CONV" "1"
+check "HS1 converged=true at moderate H (#861: dead zone gone)" "$HS_CONV" "true"
 
 HS_EQ=$(echo "$HS_OUTPUT" | grep -A2 'HS1:' | tail -1)
-check "HS2 equilibrium=1 at dH~0" "$HS_EQ" "1"
+check "HS2 equilibrium=true at dH~0" "$HS_EQ" "true"
 
 HS_H=$(echo "$HS_OUTPUT" | grep -A1 'HS2:' | tail -1)
 TOTAL=$((TOTAL + 1))
@@ -1050,13 +1050,13 @@ echo "[8/15] Stable Band"
 SB_OUTPUT=$(./eigenscript ../tests/test_stable_band.eigs 2>&1)
 
 SB1_S=$(echo "$SB_OUTPUT" | grep -A1 'SB1:' | tail -1)
-check "SB1 stable=0 (#861: linear drift is diverging)" "$SB1_S" "0"
+check "SB1 stable=false (#861: linear drift is diverging)" "$SB1_S" "false"
 
 SB1_R=$(echo "$SB_OUTPUT" | grep -A2 'SB1:' | tail -1)
 check "SB1 report=diverging (#861)" "$SB1_R" "diverging"
 
 SB2_S=$(echo "$SB_OUTPUT" | grep -A1 'SB2:' | tail -1)
-check "SB2 stable=1 (#861: converged implies stable)" "$SB2_S" "1"
+check "SB2 stable=true (#861: converged implies stable)" "$SB2_S" "true"
 
 SB2_R=$(echo "$SB_OUTPUT" | grep -A2 'SB2:' | tail -1)
 check "SB2 report=converged" "$SB2_R" "converged"
@@ -1065,15 +1065,15 @@ echo ""
 echo "[8b] Windowed Converged"
 WC_OUTPUT=$(./eigenscript ../tests/test_windowed_converged.eigs 2>&1)
 WC1=$(echo "$WC_OUTPUT" | grep -A1 'WC1:' | tail -1)
-check "WC1 short trajectory cannot converge" "$WC1" "0"
+check "WC1 short trajectory cannot converge" "$WC1" "false"
 WC2=$(echo "$WC_OUTPUT" | grep -A1 'WC2:' | tail -1)
-check "WC2 full N quiet window converges" "$WC2" "1"
+check "WC2 full N quiet window converges" "$WC2" "true"
 WC3=$(echo "$WC_OUTPUT" | grep -A1 'WC3:' | tail -1)
-check "WC3 single transient breaks convergence" "$WC3" "0"
+check "WC3 single transient breaks convergence" "$WC3" "false"
 WC4=$(echo "$WC_OUTPUT" | grep -A2 'WC4:' | tail -1)
-check "WC4 newton sqrt CERTIFIES converged (#861: dead zone gone)" "$WC4" "converged=1 equilibrium=1"
+check "WC4 newton sqrt CERTIFIES converged (#861: dead zone gone)" "$WC4" "converged=true equilibrium=true"
 WC5=$(echo "$WC_OUTPUT" | grep -A1 'WC5:' | tail -1)
-check "WC5 rebind-from-temp loop converges (issue #260)" "$WC5" "converged=1 equilibrium=1"
+check "WC5 rebind-from-temp loop converges (issue #260)" "$WC5" "converged=true equilibrium=true"
 echo ""
 
 echo "[8c] Predicate Matrix"
@@ -1317,17 +1317,17 @@ echo ""
 echo "[15/15] try_parse Validation"
 TP_OUTPUT=$(./eigenscript ../tests/test_try_parse.eigs 2>&1)
 
-check "TP_V1 valid assignment" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V1:' | tail -1)" "1"
-check "TP_V2 valid define" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V2:' | tail -1)" "1"
-check "TP_V3 valid if" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V3:' | tail -1)" "1"
-check "TP_V4 valid for" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V4:' | tail -1)" "1"
-check "TP_I1 rejects x is )" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I1:' | tail -1)" "0"
-check "TP_I2 rejects if without colon" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I2:' | tail -1)" "0"
-check "TP_I3 rejects empty string" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I3:' | tail -1)" "0"
-check "TP_I4 rejects bracket garbage" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I4:' | tail -1)" "0"
-check "TP_I5 rejects unknown char @" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I5:' | tail -1)" "0"
-check "TP_I6 rejects unterminated string" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I6:' | tail -1)" "0"
-check "TP_I7 rejects lone !" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I7:' | tail -1)" "0"
+check "TP_V1 valid assignment" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V1:' | tail -1)" "true"
+check "TP_V2 valid define" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V2:' | tail -1)" "true"
+check "TP_V3 valid if" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V3:' | tail -1)" "true"
+check "TP_V4 valid for" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V4:' | tail -1)" "true"
+check "TP_I1 rejects x is )" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I1:' | tail -1)" "false"
+check "TP_I2 rejects if without colon" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I2:' | tail -1)" "false"
+check "TP_I3 rejects empty string" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I3:' | tail -1)" "false"
+check "TP_I4 rejects bracket garbage" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I4:' | tail -1)" "false"
+check "TP_I5 rejects unknown char @" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I5:' | tail -1)" "false"
+check "TP_I6 rejects unterminated string" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I6:' | tail -1)" "false"
+check "TP_I7 rejects lone !" "$(echo "$TP_OUTPUT" | grep -A1 'TP_I7:' | tail -1)" "false"
 echo ""
 
 echo "[16/16] Error Messages"

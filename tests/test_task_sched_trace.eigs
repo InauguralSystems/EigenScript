@@ -91,7 +91,7 @@ define receiver() as:
 r is task_spawn of receiver
 dict_set of [names, str of r, "r"]
 task_yield of null
-assert_eq of [task_send of [r, "hi"], 1, "recv-wake: message delivered"]
+assert_eq of [task_send of [r, "hi"], true, "recv-wake: message delivered"]
 assert_eq of [task_join of r, "hi", "recv-wake: receiver returns the message"]
 same_trace of [fmt_trace of [task_sched_trace of null, names, base],
                ["0:r:spawn", "0:main:yield", "0:r:recv-wake", "0:main:join-release"],
@@ -194,7 +194,7 @@ SB_CALL is 39
 SB_RETURN is 40
 sb is sandbox_run of [[SB_ABI, [SB_GET_NAME, 0, 0, SB_CONST, 1, 0, SB_CALL, 1, 0, SB_RETURN],
                        ["task_sched_trace", 1]], 1000]
-assert_eq of [sb["ok"], 0, "sandbox: task_sched_trace is denied inside sandbox_run"]
+assert_eq of [sb["ok"], false, "sandbox: task_sched_trace is denied inside sandbox_run"]
 lo3 is task_spawn of lone
 assert_eq of [task_join of lo3, 3, "sandbox: the host keeps running normally"]
 assert_eq of [len of (task_sched_trace of null), 0,

@@ -21,13 +21,13 @@ load_file of "lib/test.eigs"
 
 # The old reader's per-dimension 1,000,000 cap rejected this file with null.
 regression is zeros of 1000001
-assert_eq of [tensor_save of [regression, "$tmp/regression.tensor"], 1, "save old-over-cap tensor"]
+assert_eq of [tensor_save of [regression, "$tmp/regression.tensor"], true, "save old-over-cap tensor"]
 regression_back is tensor_load of "$tmp/regression.tensor"
 assert_eq of [len of regression_back, 1000001, "load dimension above old cap"]
 
 # Pin writer/reader symmetry at the shared construction/file limit.
 at_limit is zeros of 10000000
-assert_eq of [tensor_save of [at_limit, "$tmp/limit.tensor"], 1, "save tensor at limit"]
+assert_eq of [tensor_save of [at_limit, "$tmp/limit.tensor"], true, "save tensor at limit"]
 limit_back is tensor_load of "$tmp/limit.tensor"
 assert_eq of [len of limit_back, 10000000, "load tensor at limit"]
 assert_eq of [limit_back[9999999], 0, "last element survives limit round trip"]
@@ -42,12 +42,12 @@ assert of [contains of [caught.message, "$tmp/over.tensor"], "over-cap error nam
 assert of [contains of [caught.message, "columns=10000001"], "over-cap error names dimension"]
 assert of [contains of [caught.message, "10000000-element cap"], "over-cap error names cap"]
 
-writer_caught is 0
+writer_caught is false
 try:
     stream_open of ["$tmp/writer.tensor", 10000001]
 catch e:
     writer_caught is (e.kind == "limit")
-assert_eq of [writer_caught, 1, "stream writer refuses above reader cap"]
+assert_eq of [writer_caught, true, "stream writer refuses above reader cap"]
 
 test_summary of null
 EOF
@@ -96,7 +96,7 @@ fi
 # Replace the absent file with an ordinary complete tensor for a second replay.
 cat >"$tmp/small.eigs" <<EOF
 load_file of "lib/test.eigs"
-assert_eq of [tensor_save of [[4, 7, -2, 1.5], "$tmp/over.tensor"], 1, "write ordinary replay fixture"]
+assert_eq of [tensor_save of [[4, 7, -2, 1.5], "$tmp/over.tensor"], true, "write ordinary replay fixture"]
 test_summary of null
 EOF
 if ! "$EIGENSCRIPT" "$tmp/small.eigs"; then

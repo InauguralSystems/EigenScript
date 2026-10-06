@@ -54,7 +54,7 @@ print of ("sign-flip:  entropy=" + ent1 + " report=" + rep1 + " oscillating=" + 
 if not (rep1 == "oscillating"):
     pass is 0
     print of ("FAIL: `report` missed a sign-flip oscillator on the level set, got " + rep1)
-if not (osc1 == 1):
+if not (osc1 == true):
     pass is 0
     print of "FAIL: `oscillating of x` did not fire on a sign-flip oscillator"
 
@@ -67,7 +67,7 @@ print of ("reciprocal: entropy=" + ent2 + " report=" + rep2 + " oscillating=" + 
 if not (rep2 == "oscillating"):
     pass is 0
     print of ("FAIL: `report` missed a reciprocal oscillator on the level set, got " + rep2)
-if not (osc2 == 1):
+if not (osc2 == true):
     pass is 0
     print of "FAIL: `oscillating of y` did not fire on a reciprocal oscillator"
 

@@ -86,7 +86,7 @@ sandboxcode is [LINE,10,0,0,0, CONST,0,0, SET_NAME_LOCAL,1,0, POP,
                CONST,2,0, RETURN]
 sandboxed is sandbox_run of [[ABI, sandboxcode, [33, "tmp830sandbox", null]],
                              1000, 1000000]
-assert_eq of [sandboxed["ok"], 1, "sandbox history: assignment run succeeds"]
+assert_eq of [sandboxed["ok"], true, "sandbox history: assignment run succeeds"]
 sandboxread is [CONST,0,0, INTERROGATE_NAMED_AT,0,0,1,0, RETURN]
 escaped is vm_run_bytecode of [ABI, sandboxread, [99, "tmp830sandbox"]]
 assert_eq of [escaped, null, "sandbox history: unqueried value is not retained past run"]

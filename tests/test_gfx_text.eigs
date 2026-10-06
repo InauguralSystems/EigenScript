@@ -60,7 +60,7 @@ else:
 # ---- Windowed render smoke (SDL dummy driver in the runner) ----
 # gfx_text must not crash in either mode; skipped when no video driver.
 opened is gfx_open of [64, 48, "ttf-smoke"]
-if opened == 1:
+if opened:
     gfx_clear of [0, 0, 0]
     gfx_text of [2, 2, "Smoke", 255, 255, 255, 2]
     gfx_text of [2, 20, "", 255, 255, 255, 1]

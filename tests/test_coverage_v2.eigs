@@ -110,10 +110,10 @@ assert of [(len of jd_arr) == 3, "CV2-24 json_decode array length"]
 assert of [jd_arr[0] == 1, "CV2-25 json_decode array elem"]
 
 jd_bool_t is json_decode of "true"
-assert of [jd_bool_t == 1, "CV2-26 json_decode true"]
+assert of [jd_bool_t, "CV2-26 json_decode true"]
 
 jd_bool_f is json_decode of "false"
-assert of [jd_bool_f == 0, "CV2-27 json_decode false"]
+assert of [(not jd_bool_f), "CV2-27 json_decode false"]
 
 jd_null is json_decode of "null"
 assert of [(type of jd_null) == "none", "CV2-28 json_decode null"]
@@ -136,18 +136,18 @@ assert of [(type of jd_esc5) == "str", "CV2-33 json_decode slash escape"]
 
 # --- json_build: num, null, list values ---
 jb1 is json_build of ["count", 42]
-assert of [contains of [jb1, "\"count\": 42"] == 1, "CV2-34 json_build num value"]
+assert of [contains of [jb1, "\"count\": 42"], "CV2-34 json_build num value"]
 
 jb2 is json_build of ["val", null]
-assert of [contains of [jb2, "null"] == 1, "CV2-35 json_build null value"]
+assert of [contains of [jb2, "null"], "CV2-35 json_build null value"]
 
 jb3 is json_build of ["big", 1234567890.123]
-assert of [contains of [jb3, "1234567890"] == 1, "CV2-36 json_build large num"]
+assert of [contains of [jb3, "1234567890"], "CV2-36 json_build large num"]
 
 # --- json_build with json_raw ---
 raw is json_raw of "[1,2,3]"
 jb4 is json_build of ["items", raw]
-assert of [contains of [jb4, "[1,2,3]"] == 1, "CV2-37 json_build json_raw"]
+assert of [contains of [jb4, "[1,2,3]"], "CV2-37 json_build json_raw"]
 
 # --- type of json_raw ---
 assert of [(type of raw) == "json_raw", "CV2-38 type of json_raw"]
@@ -247,7 +247,7 @@ expect_error of [() => store_delete of null, "CV2-68 store_delete null arg raise
 
 # store_delete of a missing key is not an error: returns 0
 sd_nk is store_delete of [tmp_store, "coll", 123]
-assert of [sd_nk == 0, "CV2-69 store_delete numeric key"]
+assert of [(not sd_nk), "CV2-69 store_delete numeric key"]
 
 expect_error of [() => store_query of null, "CV2-70 store_query null arg raises"]
 expect_error of [() => store_count of null, "CV2-71 store_count null arg raises"]
@@ -274,14 +274,14 @@ assert of [cnt > 0, "CV2-79 store_count positive"]
 
 # --- Store: update ---
 upd is store_update of [tmp_store, "items", key, {"name": "updated", "value": 99}]
-assert of [upd == 1, "CV2-80 store_update success"]
+assert of [upd, "CV2-80 store_update success"]
 
 got2 is store_get of [tmp_store, "items", key]
 assert of [got2.name == "updated", "CV2-81 store_update verified"]
 
 # --- Store: delete ---
 del is store_delete of [tmp_store, "items", key]
-assert of [del == 1, "CV2-82 store_delete success"]
+assert of [del, "CV2-82 store_delete success"]
 
 got3 is store_get of [tmp_store, "items", key]
 assert of [(type of got3) == "none", "CV2-83 store_delete verified"]
@@ -293,7 +293,7 @@ assert of [(type of cols) == "list", "CV2-84 store_collections type"]
 # --- Store: drop collection ---
 store_put of [tmp_store, "todrop", {"x": 1}]
 drp is store_drop of [tmp_store, "todrop"]
-assert of [drp == 1, "CV2-85 store_drop success"]
+assert of [drp, "CV2-85 store_drop success"]
 
 # --- Store: open with bad arg (raises) ---
 expect_error of [() => store_open of 42, "CV2-86 store_open bad arg raises"]
@@ -328,7 +328,7 @@ expect_error of [() => json_decode of 42, "CV2-89 json_decode non-string raises"
 
 # --- json_encode with %.15g path (non-integer float) ---
 je_float is json_encode of 3.141592653589793
-assert of [contains of [je_float, "3.14159"] == 1, "CV2-90 json_encode float precision"]
+assert of [contains of [je_float, "3.14159"], "CV2-90 json_encode float precision"]
 
 # --- Concurrency error paths (strict model: bad args raise; caught here) ---
 tj_caught is 0
@@ -445,7 +445,7 @@ assert of [1 == 1, "CV2-106 dot access on non-dict handled"]
 # BUILTINS.C: json_encode with float needing %.15g precision
 # ================================================================
 je_pi is json_encode of 3.141592653589793
-assert of [contains of [je_pi, "3.14159"] == 1, "CV2-107 json_encode %.15g"]
+assert of [contains of [je_pi, "3.14159"], "CV2-107 json_encode %.15g"]
 
 # ================================================================
 # BUILTINS.C: type of dict and fn

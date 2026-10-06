@@ -88,7 +88,7 @@ define _is_alpha(c) as:
 
 define _is_alnum(c) as:
     if (_is_alpha of c):
-        return 1
+        return true
     return _is_digit of c
 
 # f-string interpolation extent (#1252/#1253 parity with src/lexer.c's

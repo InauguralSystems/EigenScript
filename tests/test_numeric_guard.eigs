@@ -82,33 +82,33 @@ assert of [unobserved_inf == CAP, "NG19 unobserved reassignment literal caps"]
 
 clear_math_flags of null
 f0 is math_flags of null
-assert of [f0.overflow == 0, "NG20 flags start clear"]
-assert of [f0.invalid == 0, "NG20 invalid starts clear"]
+assert of [(not f0.overflow), "NG20 flags start clear"]
+assert of [(not f0.invalid), "NG20 invalid starts clear"]
 
 # Ordinary arithmetic never sets them.
 ordinary is (2.5 * 4.0) + (1.0 / 8.0)
 f1 is math_flags of null
-assert of [f1.overflow == 0, "NG21 ordinary arithmetic sets no flag"]
-assert of [f1.invalid == 0, "NG21 ordinary arithmetic sets no invalid flag"]
+assert of [(not f1.overflow), "NG21 ordinary arithmetic sets no flag"]
+assert of [(not f1.invalid), "NG21 ordinary arithmetic sets no invalid flag"]
 
 # Saturation sets overflow.
 clear_math_flags of null
 sat is 1e308 * 10
 assert of [sat == CAP, "NG22 saturation still saturates (result unchanged)"]
-assert of [(math_flags of null).overflow == 1, "NG22 saturation is now detectable"]
+assert of [(math_flags of null).overflow, "NG22 saturation is now detectable"]
 
 # The associativity case from the issue: the RESULT is unchanged and still
 # implausible-looking-but-plausible, and it is now flagged.
 clear_math_flags of null
 reassoc is (1e300 * 1e300) / 1e300
 assert of [reassoc == 100000000, "NG23 reassociated result is unchanged"]
-assert of [(math_flags of null).overflow == 1, "NG23 but the contamination is visible"]
+assert of [(math_flags of null).overflow, "NG23 but the contamination is visible"]
 
 # The other association order neither overflows nor flags.
 clear_math_flags of null
 other is 1e300 * (1e300 / 1e300)
 assert of [other == 1e300, "NG24 the other order is exact"]
-assert of [(math_flags of null).overflow == 0, "NG24 and sets no flag"]
+assert of [not (math_flags of null).overflow, "NG24 and sets no flag"]
 
 # Flags are STICKY across statements until cleared — that is what makes
 # clear/compute/check work the way it does on an FPU.
@@ -117,9 +117,9 @@ sticky is 1e308 * 10
 a is 1
 b is 2
 c is a + b
-assert of [(math_flags of null).overflow == 1, "NG25 the flag survives later clean arithmetic"]
+assert of [(math_flags of null).overflow, "NG25 the flag survives later clean arithmetic"]
 clear_math_flags of null
-assert of [(math_flags of null).overflow == 0, "NG25 and clears on request"]
+assert of [not (math_flags of null).overflow, "NG25 and clears on request"]
 
 # A NaN cannot be produced by ARITHMETIC here — there is no way to obtain an
 # Inf to combine (an over-range literal is capped before it is ever an
@@ -128,7 +128,7 @@ assert of [(math_flags of null).overflow == 0, "NG25 and clears on request"]
 clear_math_flags of null
 capped_operand is 0.0 * 1e400
 assert of [capped_operand == 0, "NG26 an over-range literal is capped before use"]
-assert of [(math_flags of null).invalid == 0, "NG26 and produces no NaN to collapse"]
+assert of [not (math_flags of null).invalid, "NG26 and produces no NaN to collapse"]
 
 # But a NaN DOES arrive from outside arithmetic — string conversion is the
 # in-language route, and it was the quietest case of all: `num of "nan"` is 0
@@ -138,23 +138,23 @@ assert of [(math_flags of null).invalid == 0, "NG26 and produces no NaN to colla
 clear_math_flags of null
 parsed_nan is num of "nan"
 assert of [parsed_nan == 0, "NG30 num of \"nan\" still collapses to 0"]
-assert of [(math_flags of null).invalid == 1, "NG30 and is no longer confusable with a real 0"]
+assert of [(math_flags of null).invalid, "NG30 and is no longer confusable with a real 0"]
 
 clear_math_flags of null
 parsed_inf is num of "inf"
 assert of [parsed_inf == CAP, "NG30 num of \"inf\" still saturates"]
-assert of [(math_flags of null).overflow == 1, "NG30 and is no longer confusable with a real 1e308"]
+assert of [(math_flags of null).overflow, "NG30 and is no longer confusable with a real 1e308"]
 
 # A plain unparseable string is 0 by the documented parse rule, not a clamp.
 clear_math_flags of null
 parsed_junk is num of "abc"
 assert of [parsed_junk == 0, "NG30 num of a non-numeric string is 0"]
-assert of [(math_flags of null).invalid == 0, "NG30 which is a parse result, not a clamp"]
+assert of [not (math_flags of null).invalid, "NG30 which is a parse result, not a clamp"]
 
 clear_math_flags of null
 parsed_ok is num of "42"
 assert of [parsed_ok == 42, "NG30 an ordinary parse is exact"]
-assert of [(math_flags of null).invalid + (math_flags of null).overflow == 0, "NG30 and clean"]
+assert of [not ((math_flags of null).invalid or (math_flags of null).overflow), "NG30 and clean"]
 
 # The domain clamps are substitutions, not the two clamps the contract named.
 # Each keeps its value and each now says so.
@@ -165,32 +165,32 @@ lt is log of 1e-15
 assert of [(abs of (lt - (0 - 34.538776394910684))) < 1e-9, "NG27a log of 1e-15 is exact, not floored"]
 l10 is log of 1e-10
 assert of [(abs of (l10 - (0 - 23.025850929940457))) < 1e-9, "NG27b log of 1e-10 is exact"]
-assert of [(math_flags of null).invalid == 0, "NG27c a tiny positive input does not flag invalid"]
+assert of [not (math_flags of null).invalid, "NG27c a tiny positive input does not flag invalid"]
 l0 is log of 0
-assert of [(math_flags of null).invalid == 1, "NG27 log of 0 flags invalid"]
+assert of [(math_flags of null).invalid, "NG27 log of 0 flags invalid"]
 clear_math_flags of null
 lok is log of 1
 assert of [lok == 0, "NG27 log of 1 is 0"]
-assert of [(math_flags of null).invalid == 0, "NG27 an in-domain log is clean"]
+assert of [not (math_flags of null).invalid, "NG27 an in-domain log is clean"]
 
 clear_math_flags of null
 s_neg is sqrt of (0 - 1)
 assert of [s_neg == 0, "NG28 sqrt of a negative still returns 0"]
-assert of [(math_flags of null).invalid == 1, "NG28 and is no longer confusable with sqrt of 0"]
+assert of [(math_flags of null).invalid, "NG28 and is no longer confusable with sqrt of 0"]
 clear_math_flags of null
 s_ok is sqrt of 4
 assert of [s_ok == 2, "NG28 an in-domain sqrt is exact"]
-assert of [(math_flags of null).invalid == 0, "NG28 and clean"]
+assert of [not (math_flags of null).invalid, "NG28 and clean"]
 
 clear_math_flags of null
 a5 is asin of 5
-assert of [(math_flags of null).invalid == 1, "NG29 asin of an out-of-domain argument flags"]
+assert of [(math_flags of null).invalid, "NG29 asin of an out-of-domain argument flags"]
 clear_math_flags of null
 ah is asin of 0.5
-assert of [(math_flags of null).invalid == 0, "NG29 an in-domain asin is clean"]
+assert of [not (math_flags of null).invalid, "NG29 an in-domain asin is clean"]
 clear_math_flags of null
 ac is acos of (0 - 9)
-assert of [(math_flags of null).invalid == 1, "NG29 acos clamps and flags"]
+assert of [(math_flags of null).invalid, "NG29 acos clamps and flags"]
 
 # #1417: tensor kernels may hold an intermediate IEEE infinity in their
 # unboxed result buffer.  Every language-level read must expose the numeric
@@ -223,17 +223,17 @@ nan_right[1] is 0 - 1e200
 raw_nan_product is matmul of [nan_left, nan_right]
 clear_math_flags of null
 assert of [raw_nan_product[0] == 0, "NG32 indexed NaN read collapses to zero"]
-assert of [(math_flags of null).invalid == 1, "NG32 indexed NaN read sets invalid"]
+assert of [(math_flags of null).invalid, "NG32 indexed NaN read sets invalid"]
 clear_math_flags of null
 assert of [(buf_get of [raw_nan_product, 0]) == 0, "NG33 buf_get NaN read collapses to zero"]
-assert of [(math_flags of null).invalid == 1, "NG33 buf_get NaN read sets invalid"]
+assert of [(math_flags of null).invalid, "NG33 buf_get NaN read sets invalid"]
 clear_math_flags of null
 assert of [(get_at of [raw_nan_product, 0]) == 0, "NG34 get_at NaN read collapses to zero"]
-assert of [(math_flags of null).invalid == 1, "NG34 get_at NaN read sets invalid"]
+assert of [(math_flags of null).invalid, "NG34 get_at NaN read sets invalid"]
 clear_math_flags of null
 nan_gathered is gather of [raw_nan_product, [0]]
 assert of [nan_gathered[0] == 0, "NG35 gather NaN read collapses to zero"]
-assert of [(math_flags of null).invalid == 1, "NG35 gather NaN read sets invalid"]
+assert of [(math_flags of null).invalid, "NG35 gather NaN read sets invalid"]
 
 # #1417: structural comparisons and scalar reductions read normalized inputs.
 pair_left is buffer of [1, 1]
@@ -246,27 +246,27 @@ finite_pair is buffer of 2
 finite_pair[0] is CAP
 finite_pair[1] is 0 - CAP
 assert of [raw_pair == finite_pair, "NG36 structural equality normalizes infinities"]
-assert of [(list_contains of [[raw_pair], finite_pair]) == 1, "NG36 list_contains shares normalized equality"]
+assert of [(list_contains of [[raw_pair], finite_pair]), "NG36 list_contains shares normalized equality"]
 assert of [(list_index_of of [[raw_pair], finite_pair]) == 0, "NG36 list_index_of shares normalized equality"]
 assert of [(sum of raw_pair) == 0, "NG37 sum normalizes before cancellation"]
 assert of [(mean of raw_pair) == 0, "NG37 mean normalizes before cancellation"]
 clear_math_flags of null
 assert of [raw_nan_product == raw_nan_product, "NG38 same-buffer equality normalizes NaN"]
-assert of [(math_flags of null).invalid == 1, "NG38 equality exposes invalid"]
+assert of [(math_flags of null).invalid, "NG38 equality exposes invalid"]
 zero_one is buffer of 1
 clear_math_flags of null
 assert of [raw_nan_product == zero_one, "NG39 distinct-buffer equality normalizes NaN"]
-assert of [(math_flags of null).invalid == 1, "NG39 equality sets invalid"]
+assert of [(math_flags of null).invalid, "NG39 equality sets invalid"]
 zero_pair is buffer of 2
 clear_math_flags of null
 assert of [(dot of [raw_pair, zero_pair]) == 0, "NG40 dot normalizes before multiplying by zero"]
-assert of [(math_flags of null).invalid == 0, "NG40 normalized dot does not create NaN"]
+assert of [not (math_flags of null).invalid, "NG40 normalized dot does not create NaN"]
 clear_math_flags of null
 assert of [(buf_dot of [raw_pair, zero_pair, 0, 0, 2]) == 0, "NG41 buf_dot normalizes each operand"]
-assert of [(math_flags of null).invalid == 0, "NG41 normalized buf_dot does not create NaN"]
+assert of [not (math_flags of null).invalid, "NG41 normalized buf_dot does not create NaN"]
 clear_math_flags of null
 assert of [(buf_peak of [raw_nan_product, 0, 1]) == 0, "NG42 buf_peak reads NaN as zero"]
-assert of [(math_flags of null).invalid == 1, "NG42 buf_peak does not ignore NaN"]
+assert of [(math_flags of null).invalid, "NG42 buf_peak does not ignore NaN"]
 
 # Ordinary finite/empty controls preserve the pre-existing reduction policies.
 finite is buffer of 2
@@ -301,13 +301,13 @@ assert of [(mean of ([raw_pair])) == 0, "NG49 nested mean normalizes before canc
 assert of [(norm of ([raw_pair])) == (norm of raw_pair), "NG49 nested norm uses normalized inputs"]
 clear_math_flags of null
 assert of [(sum of ([raw_nan_product])) == 0, "NG50 nested NaN sum is zero"]
-assert of [(math_flags of null).invalid == 1, "NG50 nested sum sets invalid"]
+assert of [(math_flags of null).invalid, "NG50 nested sum sets invalid"]
 clear_math_flags of null
 assert of [(mean of ([raw_nan_product])) == 0, "NG50 nested NaN mean is zero"]
-assert of [(math_flags of null).invalid == 1, "NG50 nested mean sets invalid"]
+assert of [(math_flags of null).invalid, "NG50 nested mean sets invalid"]
 clear_math_flags of null
 assert of [(norm of ([raw_nan_product])) == 0, "NG50 nested NaN norm is zero"]
-assert of [(math_flags of null).invalid == 1, "NG50 nested norm sets invalid"]
+assert of [(math_flags of null).invalid, "NG50 nested norm sets invalid"]
 assert of [(sum of ([finite])) == 7, "NG51 nested finite sum"]
 assert of [(mean of ([finite])) == 3.5, "NG51 nested finite mean"]
 assert of [(norm of ([finite])) == 5, "NG51 nested finite norm"]
@@ -321,13 +321,13 @@ index_dst[0] is 10
 clear_math_flags of null
 scatter_add of [index_dst, raw_nan_product, 5]
 assert of [index_dst[0] == 15, "NG52 non-strict scatter NaN index selects zero"]
-assert of [(math_flags of null).invalid == 1, "NG52 scatter index read sets invalid"]
+assert of [(math_flags of null).invalid, "NG52 scatter index read sets invalid"]
 index_matrix is buffer of [1, 1]
 index_matrix[0] is 7
 clear_math_flags of null
 index_selected is gather of [index_matrix, raw_nan_product]
 assert of [index_selected[0] == 7, "NG53 non-strict gather NaN index selects zero"]
-assert of [(math_flags of null).invalid == 1, "NG53 gather index read sets invalid"]
+assert of [(math_flags of null).invalid, "NG53 gather index read sets invalid"]
 
 # Numeric byte decoders normalize before converting, preserving finite byte
 # truncation/modulo behavior and the buffer's raw work-area representation.
@@ -335,21 +335,21 @@ assert of [(str_from_bytes of (buf_from_list of [65.75, 321, -191])) == "AAA", "
 assert of [(f64_from_bytes of (buf_from_list of (f64_to_bytes of 12.5))) == 12.5, "NG54 finite f64 byte round trip"]
 clear_math_flags of null
 assert of [(str_from_bytes of raw_nan_product) == "", "NG55 non-strict NaN byte is NUL"]
-assert of [(math_flags of null).invalid == 1, "NG55 string decoder observes invalid read"]
+assert of [(math_flags of null).invalid, "NG55 string decoder observes invalid read"]
 clear_math_flags of null
 assert of [(f64_from_bytes of raw_nan_product) == 0, "NG56 non-strict NaN byte decodes zero"]
-assert of [(math_flags of null).invalid == 1, "NG56 f64 decoder observes invalid read"]
+assert of [(math_flags of null).invalid, "NG56 f64 decoder observes invalid read"]
 clear_math_flags of null
 assert of [(str_from_bytes of raw_pair) == "", "NG57 normalized infinity wraps to byte zero"]
-assert of [(math_flags of null).overflow == 1, "NG57 byte decoder observes overflow read"]
+assert of [(math_flags of null).overflow, "NG57 byte decoder observes overflow read"]
 clear_math_flags of null
 encoded_nan is buf_to_pcm16le of [raw_nan_product, 0, 1]
 assert of [encoded_nan == (buf_from_list of [0, 0]), "NG58 non-strict NaN PCM sample is silence"]
-assert of [(math_flags of null).invalid == 1, "NG58 PCM encoder observes invalid read"]
+assert of [(math_flags of null).invalid, "NG58 PCM encoder observes invalid read"]
 clear_math_flags of null
 encoded_infinity is buf_to_pcm16le of [raw_pair, 0, 2]
 assert of [encoded_infinity == (buf_from_list of [255, 127, 1, 128]), "NG59 normalized PCM infinities clamp to samples"]
-assert of [(math_flags of null).overflow == 1, "NG59 PCM encoder observes overflow read"]
+assert of [(math_flags of null).overflow, "NG59 PCM encoder observes overflow read"]
 
 # Mixed buffer/list results box each buffer element before arithmetic.
 # Shaped buffers keep their matrix rows when boxed into nested lists.
@@ -365,7 +365,7 @@ assert of [(add of [[1, 2], finite]) == [4, 6], "NG60 finite mixed tensor right"
 assert of [(add of [empty, []]) == [], "NG60 empty mixed tensor"]
 clear_math_flags of null
 assert of [(add of [raw_nan_product, [2]]) == [[2]], "NG61 non-strict mixed NaN is zero"]
-assert of [(math_flags of null).invalid == 1, "NG61 mixed materialization observes invalid"]
+assert of [(math_flags of null).invalid, "NG61 mixed materialization observes invalid"]
 assert of [(add of [raw_pair, [0, 0]]) == [[CAP, 0 - CAP]], "NG62 mixed materialization clamps both infinity signs"]
 
 print of "All numeric-guard tests passed"

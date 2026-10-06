@@ -65,7 +65,7 @@ assert_eq of [f"{"#}" + "x"}", "#}x", "hash and brace inside a string"]
 assert_eq of [f"n#{w}#", "n#5#", "hash in literal text is text"]
 assert_eq of [f"{ {"k": w}["k"] }", "5", "genuine nested braces still balance"]
 # same-line comment swallows the closing brace and quote: loud, like `(x # c)`
-assert_eq of [try_parse of "print of f\"{w # c}\"", 0, "same-line comment is not a silent value"]
+assert_eq of [try_parse of "print of f\"{w # c}\"", false, "same-line comment is not a silent value"]
 # the two scanners must agree: a `#` or quote inside a NESTED f-string's
 # interpolation (review of #1324 — each worked on main and broke when only
 # one of the two scans learned comments)
@@ -77,7 +77,7 @@ assert_eq of [f"{f"{1 # }
 assert_eq of [f"{f"n#{w}"}", "n#5", "hash in nested literal text is text"]
 # a same-line comment inside a NESTED interpolation is loud too (review of
 # #1325: it swallows the rest of the line, as at top level and in `(x # c)`)
-assert_eq of [try_parse of "print of f\"{f\"{w #c}\"}\"\nprint of 1", 0, "same-line comment in a nested interpolation is loud"]
+assert_eq of [try_parse of "print of f\"{f\"{w #c}\"}\"\nprint of 1", false, "same-line comment in a nested interpolation is loud"]
 
 # --- #1253: a brace-bearing string inside a NESTED f-string's interpolation.
 # The outer scanner used to treat the nested f"..." as a plain string, stop at
@@ -91,7 +91,7 @@ assert_eq of [f"{f"\\{w}"}", "\\5", "escaped backslash before nested interpolati
 assert_eq of [f"{f"\{x\}"}", "{x}", "escaped braces in nested literal text"]
 assert_eq of [f"{f"{ {"k}": w}["k}"] }"}", "5", "dict with brace-bearing keys in nested f-string"]
 # malformed nesting still fails with a diagnostic
-assert_eq of [try_parse of "print of f\"outer:{f\"inner:{\"a}b\"}\"}", 0, "unterminated nested f-string is loud"]
+assert_eq of [try_parse of "print of f\"outer:{f\"inner:{\"a}b\"}\"}", false, "unterminated nested f-string is loud"]
 
 # --- #1251 / #1337: a physical newline inside a string literal, inside
 # f-string literal text, or inside an f-string interpolation is still a
@@ -156,7 +156,7 @@ assert_eq of [eval of "define f() as:\n    for i in [1,\n 2]:\n        x is i\n 
 assert_eq of [eval of "i is 0\nz is [i for i in\n [5]]\nwhat is i at 2", 5, "comprehension spanning lines: variable at its first line"]
 assert_eq of [eval of "define f(a, b is [1,\n 2]) as:\n    return (what is b at 1)\nf of 5", [1, 2], "default spanning lines: parameter at its first line"]
 assert_eq of [eval of "e is 0\ntry:\n    q is 1 / 0\ncatch e:\n    y is 1\nwhat is e at 3", 0, "catch binding is not filed under the faulting line"]
-assert_eq of [eval of "import log\nhas_key of [(what is log at 1), \"log_info\"]", 1, "import binding at the import line"]
+assert_eq of [eval of "import log\nhas_key of [(what is log at 1), \"log_info\"]", true, "import binding at the import line"]
 # #1384: the #1064 binder restore after a function-scope `for` is compiler
 # bookkeeping, not assignment history. Normal exit and break therefore expose
 # the same temporal history as module scope's loop-env tier.
@@ -257,7 +257,7 @@ for _fs_t in (tokenize_with_names of _fs_tsrc):
         append of [_fs_names, _fs_t[1]]
 assert_eq of [_fs_names, ["x", "y", "str", "x"], "#1322: tokenize_with_names spells the f-string conversion `str`"]
 _fs_round is _fs_detok of _fs_tsrc
-assert_eq of [try_parse of _fs_round, 1, "#1322: a detokenized f-string parses"]
-assert_eq of [contains of [_fs_round, "#"], 0, "#1322: a detokenized f-string carries no `#`"]
+assert_eq of [try_parse of _fs_round, true, "#1322: a detokenized f-string parses"]
+assert_eq of [contains of [_fs_round, "#"], false, "#1322: a detokenized f-string carries no `#`"]
 
 test_summary of null

@@ -301,6 +301,7 @@ EigsValue *eigs_get_global(const char *name) {
 EigsValue *eigs_value_new_num(double n)         { return make_num(n); }
 EigsValue *eigs_value_new_string(const char *s) { return make_str(s ? s : ""); }
 EigsValue *eigs_value_new_null(void)            { return make_null(); }
+EigsValue *eigs_value_new_bool(int b)           { return make_bool(b != 0); }
 EigsValue *eigs_value_new_list(int capacity)    { return make_list(capacity > 0 ? capacity : 0); }
 EigsValue *eigs_value_new_dict(int capacity)    { return make_dict(capacity > 0 ? capacity : 0); }
 
@@ -325,6 +326,10 @@ EigsValueType eigs_value_type(EigsValue *v) {
         case VAL_TEXT_BUILDER: return EIGS_TYPE_OTHER;
     }
     return EIGS_TYPE_OTHER;   /* unreachable for valid ValType values */
+}
+
+int eigs_value_as_bool(EigsValue *v) {
+    return (v && v->type == VAL_BOOL) ? v->data.boolean : 0;
 }
 
 double eigs_value_as_num(EigsValue *v) {

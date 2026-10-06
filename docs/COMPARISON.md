@@ -24,7 +24,7 @@ asking the running program about its own state and history.
 | assignment | `x = 1` | `let x = 1` | `let x = 1;` | `(define x 1)` | `x is 1` |
 | call | `f(x)` | `f(x)` | `f(x)` | `(f x)` | `f of x` |
 | blocks | indentation | braces | braces | parens | indentation |
-| booleans | `True/False` | `true/false` | `bool` | `#t/#f` | `1`/`0` |
+| booleans | `True/False` | `true/false` | `bool` | `#t/#f` | `true`/`false` (`bool`) |
 | null | `None` | `null/undefined` | `Option` | `nil` | `null` |
 | errors | exceptions | exceptions | `Result` | conditions | `try`/`catch` |
 | self-inspection | none | none | none | macros | interrogatives + observer |
@@ -35,7 +35,7 @@ an integral count from 1 through that cap, and `build_corpus` includes file
 separators in its capped token count. These limits also raise under
 `EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
 
-`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
+`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
 
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
@@ -505,7 +505,7 @@ print of (e < 0.001)
 x
 3
 20
-1
+true
 ```
 
 The past is addressable per **assignment**, not just as a single step back —
@@ -589,7 +589,7 @@ print of (converged of r)
 ```
 ```output
 diverging
-0
+false
 ```
 
 ## Before / after: porting checklist
@@ -602,7 +602,7 @@ Transformations you will apply constantly when porting Python code:
 | `f(a)` | `f of a` | application keyword |
 | `f(a, b)` | `f of [a, b]` | bare literal list = argument list |
 | `f([a])` (pass a 1-element list) | `f of ([a])` | parentheses = one argument |
-| `True` / `False` / `None` | `1` / `0` / `null` | no boolean type |
+| `True` / `False` / `None` | `true` / `false` / `null` | `bool` is not a number: `true + 1` and `true == 1` raise |
 | `x ** y` | `pow of [x, y]` | `^` is XOR |
 | `len(x)` | `len of x` | builtin, same name |
 | `xs.append(v)` | `append of [xs, v]` | builtins, not methods |

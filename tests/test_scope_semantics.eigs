@@ -221,7 +221,7 @@ define catch_leak as:
     catch ev633:
         noop633 is 1
     return ev633 == 100
-assert of [catch_leak of null == 0, "SS18 catch name leaks over an earlier plain assignment"]
+assert of [(not catch_leak of null), "SS18 catch name leaks over an earlier plain assignment"]
 
 define catch_leak_dead_closure as:
     ev633 is 100
@@ -232,7 +232,7 @@ define catch_leak_dead_closure as:
     stale633 is ev633 == 100
     dead633 is () => ev633
     return stale633
-assert of [catch_leak_dead_closure of null == 0, "SS19 a never-called closure does not change an earlier catch read"]
+assert of [not (catch_leak_dead_closure of null), "SS19 a never-called closure does not change an earlier catch read"]
 
 # SS20 (#642): the OTHER half of the double-binding defect #633's fix closed —
 # and the one SS16-SS19 cannot see. Those all read the name AFTER the

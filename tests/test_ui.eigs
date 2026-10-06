@@ -168,9 +168,9 @@ assert_eq of [_widget_registry["label"].focusable, 0, "label not focusable"]
 assert_eq of [_widget_registry["separator"].focusable, 0, "separator not focusable"]
 
 # _is_container uses registry
-assert_eq of [_is_container of "panel", 1, "_is_container panel"]
-assert_eq of [_is_container of "vbox", 1, "_is_container vbox"]
-assert_eq of [_is_container of "button", 0, "_is_container button"]
+assert_eq of [_is_container of "panel", true, "_is_container panel"]
+assert_eq of [_is_container of "vbox", true, "_is_container vbox"]
+assert_eq of [_is_container of "button", false, "_is_container button"]
 
 # ============================================================
 # 3. Layout tests
@@ -645,24 +645,24 @@ define hk_cb() as:
 register_hotkey of ["ctrl+s", hk_cb]
 consumed is dispatch of [kroot, {"type": "keydown", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
 assert_eq of [hk_fired[0], 1, "hotkey fires through the public dispatch door"]
-assert_eq of [consumed, 1, "dispatch reports the hotkey as consumed"]
+assert_eq of [consumed, true, "dispatch reports the hotkey as consumed"]
 
 # A key the toolkit does not claim is reported free for the app. Focus
 # navigation reports its own consumption, so an unbound letter is free
 # even while a widget holds focus.
 free is dispatch of [kroot, {"type": "keydown", "key": "j", "ctrl": 0, "shift": 0, "alt": 0}]
-assert_eq of [free, 0, "unclaimed key reported unconsumed"]
+assert_eq of [free, false, "unclaimed key reported unconsumed"]
 
 # handle_key is the same door app_loop uses — priority is pinned here
 # rather than duplicated inside the loop.
 hk2 is handle_key of [kroot, {"type": "keydown", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
-assert_eq of [hk2, 1, "handle_key consumes a registered hotkey"]
+assert_eq of [hk2, true, "handle_key consumes a registered hotkey"]
 assert_eq of [hk_fired[0], 2, "handle_key fired the hotkey callback"]
 unregister_hotkey of "ctrl+s"
 
 # keyup is not a toolkit key event — it stays free for the app
 ku is dispatch of [kroot, {"type": "keyup", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
-assert_eq of [ku, 0, "keyup reported unconsumed"]
+assert_eq of [ku, false, "keyup reported unconsumed"]
 
 # Escape pops the modal stack through dispatch
 mdlg is dialog of ["mdlg", 200, 100, "T", "M", ["OK"], null]
@@ -670,7 +670,7 @@ push_modal of [mdlg, 800, 600]
 assert_eq of [len of _ui.modal_stack, 1, "modal pushed"]
 esc is dispatch of [kroot, {"type": "keydown", "key": "escape", "ctrl": 0, "shift": 0, "alt": 0}]
 assert_eq of [len of _ui.modal_stack, 0, "escape pops modal through dispatch"]
-assert_eq of [esc, 1, "escape-pops-modal reported consumed"]
+assert_eq of [esc, true, "escape-pops-modal reported consumed"]
 
 # Focused text input takes keys ahead of focus navigation
 ti is text_input of ["ti", 0, 0, 100, "", null]
@@ -1749,7 +1749,7 @@ old_theme is {}
 for k in ["bg", "text_color", "text_dim", "accent", "font_scale", "char_h", "char_w", "focus_ring", "radius_sm", "disabled_overlay"]:
     old_theme[k] is dt[k]
 set_theme of old_theme
-assert_eq of [_record_render of [mk_ch, 0, 0] > 0, 1, "#820 a theme dict without the plot keys falls back instead of crashing"]
+assert_eq of [_record_render of [mk_ch, 0, 0] > 0, true, "#820 a theme dict without the plot keys falls back instead of crashing"]
 set_theme of saved_theme
 
 # ---- The two in-repo consumers of the old y-vs-index chart still work ----
@@ -1760,7 +1760,7 @@ for i in range of 5:
 lb is chart_bounds of legacy
 assert_eq of [lb.x0, 0, "a bare y-list series still spans index 0..n-1"]
 assert_eq of [lb.x1, 4, "a bare y-list series upper index bound"]
-assert_eq of [_record_render of [legacy, 0, 0] > 0, 1, "a bare y-list series still renders"]
+assert_eq of [_record_render of [legacy, 0, 0] > 0, true, "a bare y-list series still renders"]
 assert_eq of [_outside of [0, 0, 200, 100], 0, "a bare y-list series stays inside its rect too"]
 
 _gfx_log is []
@@ -2132,7 +2132,7 @@ old_theme2 is {}
 for k in ["bg", "text_color", "text_dim", "accent", "font_scale", "char_h", "char_w", "focus_ring", "radius_sm", "disabled_overlay"]:
     old_theme2[k] is dt2[k]
 set_theme of old_theme2
-assert_eq of [_record_render_tl of [tl_theme, 0, 0] > 0, 1, "#842 a theme dict without the tl keys falls back instead of crashing"]
+assert_eq of [_record_render_tl of [tl_theme, 0, 0] > 0, true, "#842 a theme dict without the tl keys falls back instead of crashing"]
 set_theme of saved_theme
 
 # ---- Consumer contract 1: a liferaft-shaped record list maps in ----
@@ -3132,12 +3132,12 @@ assert_ui_result1 of [_ease_in, 0.5, 0.25, "ease-in half"]
 assert_ui_result1 of [_ease_out, 0.5, 0.75, "ease-out half"]
 assert_ui_result1 of [_ease_in_out, 0.25, 0.125, "ease-in-out first half"]
 assert_ui_result1 of [_ease_in_out, 0.75, 0.875, "ease-in-out second half"]
-assert_eq of [_point_in_rect of [11, 21, 10, 20, 4, 5], 1, "point inside rectangle"]
-assert_eq of [_point_in_rect of [14, 21, 10, 20, 4, 5], 0, "right rectangle edge excluded"]
+assert_eq of [_point_in_rect of [11, 21, 10, 20, 4, 5], true, "point inside rectangle"]
+assert_eq of [_point_in_rect of [14, 21, 10, 20, 4, 5], false, "right rectangle edge excluded"]
 assert_eq of [text_width of ["ab", 2], 24, "bitmap text advance"]
 assert_ui_result1 of [text_height, 2, 14, "bitmap text height"]
-assert_eq of [_combo_matches of ["ctrl+shift+x", 1, 1, 0, "x"], 1, "hotkey exact modifiers"]
-assert_eq of [_combo_matches of ["ctrl+shift+x", 1, 0, 0, "x"], 0, "hotkey missing shift"]
+assert_eq of [_combo_matches of ["ctrl+shift+x", 1, 1, 0, "x"], true, "hotkey exact modifiers"]
+assert_eq of [_combo_matches of ["ctrl+shift+x", 1, 0, 0, "x"], false, "hotkey missing shift"]
 
 # Basic constructors: meaningful geometry and content, not bound-name presence.
 assert_ui_fields of [label of ["probe-label", 2, 3, "ab"], {"type": "label", "text": "ab", "x": 2, "y": 3, "auto_size": 1}, "label constructor"]
@@ -3413,7 +3413,7 @@ assert_eq of [coverage_fd.dir_label.text, coverage_fd_dir, "refresh updates disp
 assert_eq of [coverage_fd.listing.items[0], "..", "refresh prefixes parent entry"]
 assert_eq of [coverage_fd.listing.selected, -1, "refresh resets selection"]
 assert_eq of [coverage_fd.listing.scroll_y, 0, "refresh resets scroll"]
-assert_eq of [_fd_is_dir of [coverage_fd_dir, "."], 1, "file dialog directory predicate reaches real cwd"]
+assert_eq of [_fd_is_dir of [coverage_fd_dir, "."], true, "file dialog directory predicate reaches real cwd"]
 _gfx_rec is coverage_dialog_saved.record
 _ui.drag_widget is coverage_dialog_saved.drag
 
@@ -3445,7 +3445,7 @@ b1263._ax is 10
 b1263._ay is 20
 e1263 is {"type": "mousedown", "x": 60, "y": 45, "button": 1}
 assert_ui_transition5 of [_mousedown_slider, s1263, s1263, 60, 45, e1263, {"dragging": 1, "value": 50}, "slider press starts positioned drag"]
-assert_eq of [_ui.drag_widget == s1263, 1, "slider press owns capture"]
+assert_eq of [_ui.drag_widget == s1263, true, "slider press owns capture"]
 assert_ui_transition5 of [_mousedown_vslider, v1263, v1263, 60, 45, e1263, {"dragging": 1, "value": 75}, "vertical press reverses axis"]
 assert_ui_transition5 of [_mousedown_knob, k1263, k1263, 60, 45, e1263, {"dragging": 1, "drag_start_y": 45, "drag_start_val": 25}, "knob press snapshots baseline"]
 assert_ui_transition5 of [_mousedown_scrollbar, b1263, b1263, 60, 45, e1263, {"dragging": 1, "value": 0.5}, "scrollbar press centers thumb"]
@@ -3577,9 +3577,9 @@ coverage_dock_panel.collapsed is 0
 _layout_dock of coverage_dock
 _gfx_rec is 1
 assert_ui_render of [_render_dock, coverage_dock, "rrect", [10, 20, 400, 1, 0, (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[0], (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[1], (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[2]], "dock top border geometry"]
-assert_eq of [_dock_in of [[10, 20, 200, 200], 11, 21], 1, "dock rectangle contains point"]
-assert_eq of [_dock_in of [null, 11, 21], 0, "absent region rejects point"]
-assert_eq of [_dock_in_handle of [[210, 20, 5, 200], 208, 21, 0], 1, "vertical handle includes three-pixel slop"]
+assert_eq of [_dock_in of [[10, 20, 200, 200], 11, 21], true, "dock rectangle contains point"]
+assert_eq of [_dock_in of [null, 11, 21], false, "absent region rejects point"]
+assert_eq of [_dock_in_handle of [[210, 20, 5, 200], 208, 21, 0], true, "vertical handle includes three-pixel slop"]
 assert_eq of [(_hit_test_dock of [coverage_dock, 10, 20, 211, 21]).id, "cov-dock", "handle hit belongs to dock"]
 assert_ui_transition5 of [_mousedown_dock, coverage_dock, coverage_dock, 211, 21, {"type": "mousedown"}, {"_drag_region": "west"}, "west handle starts drag"]
 assert_eq of [_ui.drag_widget.id, "cov-dock", "dock holds drag ownership"]
@@ -3824,12 +3824,12 @@ set_theme of coverage_core_theme
 
 coverage_opts is {"container": 1, "focusable": 1}
 assert_true of [(_register_widget of ["coverage-custom", coverage_opts]) == null and _widget_registry["coverage-custom"].container == 1, "registry stores custom options"]
-assert_eq of [_is_container of "coverage-custom", 1, "registered custom container"]
-assert_eq of [_is_container of "coverage-absent", 0, "unregistered type is not container"]
+assert_eq of [_is_container of "coverage-custom", true, "registered custom container"]
+assert_eq of [_is_container of "coverage-absent", false, "unregistered type is not container"]
 coverage_focus_button is button of ["coverage-focus", 0, 0, 20, 10, "F", null]
-assert_ui_result1 of [_is_focusable, coverage_focus_button, 1, "enabled visible button focusable"]
+assert_ui_result1 of [_is_focusable, coverage_focus_button, true, "enabled visible button focusable"]
 coverage_focus_button.enabled is 0
-assert_ui_result1 of [_is_focusable, coverage_focus_button, 0, "disabled button not focusable"]
+assert_ui_result1 of [_is_focusable, coverage_focus_button, false, "disabled button not focusable"]
 coverage_focus_button.enabled is 1
 dict_remove of [_widget_registry, "coverage-custom"]
 
@@ -3904,7 +3904,7 @@ _ui.focus_list is []
 assert_true of [(_build_focus_list of coverage_focus_root) == null and (len of _ui.focus_list) == 2 and _ui.focus_list[1].id == "coverage-focus-toggle", "focus walk includes ordered visible controls"]
 assert_true of [(_sync_focus_to of coverage_focus_button) == null and _ui.focus_index == 0 and _ui.focused_widget.id == "coverage-focus", "focus sync locates actual widget"]
 assert_true of [(_focus_next of [coverage_focus_root, 0]) == null and _ui.focus_index == 1 and _ui.focused_widget.id == "coverage-focus-toggle", "focus next follows tree order"]
-assert_true of [(_handle_focus_key of [coverage_focus_root, {"key": "space", "shift": 0}]) == 1 and coverage_focus_toggle.value == 1, "focus activation changes toggle"]
+assert_true of [(_handle_focus_key of [coverage_focus_root, {"key": "space", "shift": 0}]) and coverage_focus_toggle.value == 1, "focus activation changes toggle"]
 _ui.focus_list is coverage_focus_saved.list
 _ui.focus_index is coverage_focus_saved.index
 _ui.focused_widget is coverage_focus_saved.widget
@@ -3982,9 +3982,9 @@ coverage_main_dialog is dialog of ["coverage-main-dialog", 80, 40, "D", "M", ["O
 coverage_main_dialog.visible is 1
 assert_eq of [(_find_visible_dialog of coverage_main_dialog).id, "coverage-main-dialog", "visible dialog discovery"]
 assert_true of [(register_hotkey of ["ctrl+q", coverage_main_hotkey]) == null and _ui.hotkeys[0].combo == "ctrl+q", "hotkey registration records requested combo"]
-assert_true of [(_match_hotkey of {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}) == 1 and coverage_main_log.hotkeys == 1, "matching hotkey invokes callback"]
-assert_true of [(handle_key of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) == 1 and coverage_main_log.hotkeys == 2, "public key handler preserves hotkey priority"]
-assert_true of [(dispatch of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) == 1 and coverage_main_log.hotkeys == 3, "public dispatch routes keyboard callback"]
+assert_true of [(_match_hotkey of {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}) and coverage_main_log.hotkeys == 1, "matching hotkey invokes callback"]
+assert_true of [(handle_key of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) and coverage_main_log.hotkeys == 2, "public key handler preserves hotkey priority"]
+assert_true of [(dispatch of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) and coverage_main_log.hotkeys == 3, "public dispatch routes keyboard callback"]
 assert_true of [(unregister_hotkey of "ctrl+q") == null and (len of _ui.hotkeys) == 0, "unregister removes exact combo"]
 assert_true of [(push_modal of [coverage_main_dialog, 200, 100]) == null and _ui.modal_stack[0].id == "coverage-main-dialog" and coverage_main_dialog.x == 60 and coverage_main_dialog.y == 30, "modal push centers and mounts dialog"]
 assert_true of [(pop_modal of null).id == "coverage-main-dialog" and coverage_main_dialog.visible == 0 and (len of _ui.modal_stack) == 0, "modal pop hides and returns same dialog"]
@@ -3994,7 +3994,7 @@ coverage_main_menu is menu of ["coverage-main-menu", ["A"], null]
 assert_true of [(show_menu of [coverage_main_menu, 7, 9]) == null and coverage_main_menu.x == 7 and coverage_main_menu.y == 9 and coverage_main_menu.visible == 1, "show menu stamps requested origin"]
 coverage_main_popup is dropdown of ["coverage-main-popup", 0, 0, 100, ["A"], 0, null]
 coverage_main_popup.open is 1
-assert_eq of [_has_open_popup of coverage_main_popup, 1, "open dropdown reports overlay state"]
+assert_eq of [_has_open_popup of coverage_main_popup, true, "open dropdown reports overlay state"]
 assert_true of [(claim_drag of coverage_main_canvas) == null and _ui.drag_widget.id == "coverage-main-canvas", "claim drag records exact owner"]
 assert_true of [(release_drag of null) == null and _ui.drag_widget == null, "release drag clears owner"]
 assert_true of [(request_quit of null) == null and _ui.quit_requested == 1, "quit request latches UI flag"]

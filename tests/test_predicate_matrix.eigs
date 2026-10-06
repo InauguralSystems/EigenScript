@@ -42,7 +42,7 @@ a is 19.0
 a is 99.0
 pa is [converged, stable, improving, diverging, oscillating, equilibrium, report of a]
 # #861: growth 2->99 is a runaway on the value route (raw same-sign non-vanishing); "improving" was the entropy channel reading its own descent
-expect of ["improving", pa, 0, 0, 0, 1, 0, 0, "diverging"]
+expect of ["improving", pa, false, false, false, true, false, false, "diverging"]
 
 # --- diverging only: entropy rising fast (decreasing |x| toward 1) ---
 b is 99.0
@@ -54,7 +54,7 @@ b is 3.0
 b is 2.0
 pb is [converged, stable, improving, diverging, oscillating, equilibrium, report of b]
 # #861: decay 99->2 contracts its steps toward a limit — improving; "diverging" was the entropy-rising artifact
-expect of ["diverging", pb, 0, 0, 1, 0, 0, 0, "improving"]
+expect of ["diverging", pb, false, false, true, false, false, false, "improving"]
 
 # --- oscillating only: small-amplitude sign flips, |dH|~0.0057 in the gray band
 #     (dh_zero < |dH| < dh_small). Needs >=4 flips for windowed `oscillating`
@@ -68,7 +68,7 @@ c is 70.0
 c is 75.0
 c is 70.0
 pc is [converged, stable, improving, diverging, oscillating, equilibrium, report of c]
-expect of ["oscillating", pc, 0, 0, 0, 0, 1, 0, "oscillating"]
+expect of ["oscillating", pc, false, false, false, false, true, false, "oscillating"]
 
 # --- stable only (#205): FULL window of steady small drift at high entropy.
 #     Each |dH|~0.006 is in the gray band (< dh_small, > dh_zero), same sign, no
@@ -87,7 +87,7 @@ e is 48.0
 e is 50.0
 pe is [converged, stable, improving, diverging, oscillating, equilibrium, report of e]
 # #861: a steady drift is a linear runaway on the value route (the #422 additive class the entropy gray band hid)
-expect of ["stable", pe, 0, 0, 0, 1, 0, 0, "diverging"]
+expect of ["stable", pe, false, false, false, true, false, false, "diverging"]
 
 # --- equilibrium + stable (#209/#205): FULL window at rest, HIGH entropy.
 #     Zero-mean low-variance -> equilibrium; quiet + high entropy + no flips ->
@@ -107,7 +107,7 @@ g is 2.0
 g is 2.0
 pg is [converged, stable, improving, diverging, oscillating, equilibrium, report of g]
 # #861: quiescent lattice — a settled value certifies converged, which implies equilibrium AND stable
-expect of ["equilibrium+stable", pg, 1, 1, 0, 0, 0, 1, "converged"]
+expect of ["equilibrium+stable", pg, true, true, false, false, false, true, "converged"]
 
 # --- converged: low-entropy value, FULL window (>= N=10). converged is a
 #     strict subset of equilibrium, so BOTH fire; report resolves to converged. ---
@@ -124,7 +124,7 @@ k is 1000000.0
 k is 1000000.0
 pk is [converged, stable, improving, diverging, oscillating, equilibrium, report of k]
 # #861: converged implies stable now (all-under-deadband satisfies both)
-expect of ["converged", pk, 1, 1, 0, 0, 0, 1, "converged"]
+expect of ["converged", pk, true, true, false, false, false, true, "converged"]
 
 # --- EDGE: large-amplitude oscillation is `oscillating` only. Under the
 #     pointwise rule it ALSO co-fired diverging (last dH > dh_small); windowed
@@ -140,7 +140,7 @@ d is 2.0
 d is 10.0
 d is 2.0
 pd is [converged, stable, improving, diverging, oscillating, equilibrium, report of d]
-expect of ["osc-only (no longer co-fires diverging)", pd, 0, 0, 0, 0, 1, 0, "oscillating"]
+expect of ["osc-only (no longer co-fires diverging)", pd, false, false, false, false, true, false, "oscillating"]
 
 # --- EDGE: converged at the entropy boundary. FULL window at rest with entropy
 #     JUST BELOW h_low (|x|=100 -> H~0.080 < 0.1) -> converged (and equilibrium,
@@ -159,7 +159,7 @@ h is 100.0
 h is 100.0
 ph is [converged, stable, improving, diverging, oscillating, equilibrium, report of h]
 # #861: same lattice at the h_low boundary value — the boundary is meaningless on the value route
-expect of ["converged-at-boundary", ph, 1, 1, 0, 0, 0, 1, "converged"]
+expect of ["converged-at-boundary", ph, true, true, false, false, false, true, "converged"]
 
 # --- THRESHOLD KNOB (#861 semantics): dh_zero is the settle deadband on
 #     RELATIVE steps. A decay whose tail steps sit between the default
@@ -174,11 +174,11 @@ define tail_decay as:
         k is k + 1
     return converged of x
 kd is tail_decay of 0
-assert of [kd == 0, f"knob-default: tail steps (~0.0034..0.0096 rel) exceed dh_zero=0.001, converged expected 0 got {kd}"]
+assert of [not kd, f"knob-default: tail steps (~0.0034..0.0096 rel) exceed dh_zero=0.001, converged expected 0 got {kd}"]
 print of "  PASS: knob-default (tail decay not yet converged at 0.001)"
 set_observer_thresholds of [0.01, 0.05, 0.5]
 kr is tail_decay of 0
-assert of [kr == 1, f"knob-raised: same tail under dh_zero=0.01, converged expected 1 got {kr}"]
+assert of [kr, f"knob-raised: same tail under dh_zero=0.01, converged expected 1 got {kr}"]
 print of "  PASS: knob-raised dh_zero -> converged (caller-chosen tolerance)"
 
 # --- Perpetual-motion STRUCTURE is threshold-free (#422): a +/-5 swing is
@@ -197,8 +197,8 @@ ts is 70.0
 ts is 75.0
 ts is 70.0
 tsr is [oscillating, equilibrium]
-assert of [tsr[0] == 1, f"structure-threshold-free: oscillating expected 1 got {tsr[0]}"]
-assert of [tsr[1] == 0, f"structure-threshold-free: equilibrium expected 0 got {tsr[1]}"]
+assert of [tsr[0], f"structure-threshold-free: oscillating expected 1 got {tsr[0]}"]
+assert of [not tsr[1], f"structure-threshold-free: equilibrium expected 0 got {tsr[1]}"]
 print of "  PASS: perpetual swing stays oscillating at raised thresholds (#422)"
 set_observer_thresholds of [0.001, 0.01, 0.1]
 
@@ -223,13 +223,13 @@ pm20 is [converged of m, stable of m, improving of m, diverging of m, oscillatin
 # geometric decay is never certified merely for being small). The old
 # Δv/(1+|v|) certified it here because 8.8e-4 < dh_zero in ABSOLUTE terms —
 # the same decay stored in millis would have read improving.
-expect of ["mid-decay toward zero (#1045)", pm20, 0, 0, 1, 0, 0, 0, "improving"]
+expect of ["mid-decay toward zero (#1045)", pm20, false, false, true, false, false, false, "improving"]
 loop while mi < 30:
     m is m * 0.5
     mi is mi + 1
 pm is [converged of m, stable of m, improving of m, diverging of m, oscillating of m, equilibrium of m, report of m]
 # #861: the value route CERTIFIES this settle — a decay toward zero is exactly what converged should claim once a full window of steps sits under the floor (ten more halvings: steps 4e-7 .. 8e-10). The #735 no-band gray state remains constructible only on the entropy channel (non-numeric bindings)
-expect of ["full-window residual drift (#735)", pm, 1, 1, 0, 0, 0, 1, "converged"]
+expect of ["full-window residual drift (#735)", pm, true, true, false, false, false, true, "converged"]
 
 # --- The full-window agreement guarantee (PREDICATES.md "The report builtin"),
 #     asserted directly instead of in prose. At a full window `report of x` must
@@ -242,8 +242,13 @@ define agrees(tag, p) as:
     local names is ["oscillating", "diverging", "improving", "converged", "equilibrium", "stable"]
     local idx is [4, 3, 2, 0, 5, 1]     # each band's index in p
     local r is p[6]
-    local ok is 0
-    local n_true is p[0] + p[1] + p[2] + p[3] + p[4] + p[5]
+    local ok is false
+    local n_true is 0
+    local j is 0
+    loop while j < 6:
+        if p[j]:
+            n_true is n_true + 1
+        j is j + 1
     local i is 0
     loop while i < 6:
         if names[i] == r:
@@ -251,8 +256,8 @@ define agrees(tag, p) as:
         i is i + 1
     if r == "moving":
         if n_true == 0:
-            ok is 1
-    assert of [ok == 1, f"{tag}: report={r} is not backed by a true predicate (p={p})"]
+            ok is true
+    assert of [ok, f"{tag}: report={r} is not backed by a true predicate (p={p})"]
     print of f"  PASS: full-window agreement {tag} (report={r})"
 
 agrees of ["stable", pe]

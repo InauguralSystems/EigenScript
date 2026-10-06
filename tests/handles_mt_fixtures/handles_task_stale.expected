@@ -1,1 +1,1 @@
-same_slot=1 alive=ERR-stale join=ERR-stale kill=ERR-stale fresh=7
+same_slot=true alive=ERR-stale join=ERR-stale kill=ERR-stale fresh=7

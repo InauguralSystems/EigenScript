@@ -82,7 +82,7 @@ catch e:
     m13 is e
 check of ["D13 corrupt stream caught", c13, 1]
 check of ["D14 corrupt kind=value", m13.kind, "value"]
-check of ["D15 corrupt message", contains of [m13.message, "invalid or truncated"], 1]
+check of ["D15 corrupt message", contains of [m13.message, "invalid or truncated"], true]
 
 # ---- truncated stream: valid stream minus its last byte ----
 c16 is 0
@@ -103,7 +103,7 @@ catch e3:
     m17 is e3
 check of ["D17 string arg caught", c17, 1]
 check of ["D18 wrong-type kind", m17.kind, "type_mismatch"]
-check of ["D19 wrong-type message", contains of [m17.message, "requires a list of byte values"], 1]
+check of ["D19 wrong-type message", contains of [m17.message, "requires a list of byte values"], true]
 
 c20 is 0
 try:
@@ -145,7 +145,7 @@ sb_desc is [SB_ABI, [SB_GET_NAME,0,0, SB_CONST,1,0, SB_CALL,1,0, SB_RETURN], ["i
 
 # Refused under a budget far smaller than the decompressed result...
 sb_small is sandbox_run of [sb_desc, 1000000, 65536]
-check of ["D23 sandboxed inflate charged against max_bytes", sb_small["ok"], 0]
+check of ["D23 sandboxed inflate charged against max_bytes", sb_small["ok"], false]
 
 # ...and the codecs are untouched outside a budgeted sandbox.
 sb_round is inflate of sb_blob

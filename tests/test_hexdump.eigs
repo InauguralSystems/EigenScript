@@ -26,7 +26,7 @@ d is hexdump of long
 lines is split of [d, "\n"]
 check of ["two rows", len of lines, 2]
 check of ["second row offset", char_at of [lines[1], 7], "0"]
-check of ["second row starts at byte 16", contains of [lines[1], "2D 74 61 69 6C"], 1]
+check of ["second row starts at byte 16", contains of [lines[1], "2D 74 61 69 6C"], true]
 
 # buffer input equals string input
 b is buffer of 6

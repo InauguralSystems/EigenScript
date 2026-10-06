@@ -12,9 +12,9 @@ define check(label, got, want) as:
 # 1. proc_spawn returns a 3-element [pid, in_fd, out_fd] handle for echo.
 h is proc_spawn of ["/bin/echo", "hello"]
 check of ["1a", len of h, 3]
-check of ["1b", h[0] > 0, 1]
-check of ["1c", h[1] >= 0, 1]
-check of ["1d", h[2] >= 0, 1]
+check of ["1b", h[0] > 0, true]
+check of ["1c", h[1] >= 0, true]
+check of ["1d", h[2] >= 0, true]
 
 # 2. proc_read_line yields the line without the trailing newline.
 line is proc_read_line of h[2]
@@ -59,14 +59,14 @@ chunk is proc_read of [h[2], 3]
 check of ["6a", chunk, "abc"]
 rest is proc_read of [h[2], 16]
 # rest should be "def\n" or whatever remains (read may return fewer than max).
-check of ["6b", rest != null, 1]
+check of ["6b", rest != null, true]
 proc_close of h[2]
 code is proc_wait of h[0]
 check of ["6c", code, 0]
 
 # 7. Nonexistent program: spawn succeeds, child _exit(127) → exit code 127.
 h is proc_spawn of (["/no/such/binary/anywhere"])
-check of ["7a", h[0] > 0, 1]
+check of ["7a", h[0] > 0, true]
 proc_close of h[1]
 proc_close of h[2]
 code is proc_wait of h[0]

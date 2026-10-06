@@ -131,8 +131,8 @@ li2 is line_intersection of [[0,0], [1,0], [0,1], [1,1]]
 assert_eq of [li2, null, "parallel lines -> null"]
 
 # Segment intersection
-assert_eq of [segments_intersect of [[0,0], [1,1], [0,1], [1,0]], 1, "X segments intersect"]
-assert_eq of [segments_intersect of [[0,0], [1,0], [0,1], [1,1]], 0, "parallel segments don't"]
+assert_eq of [segments_intersect of [[0,0], [1,1], [0,1], [1,0]], true, "X segments intersect"]
+assert_eq of [segments_intersect of [[0,0], [1,0], [0,1], [1,1]], false, "parallel segments don't"]
 
 # ============================================================
 # Geometric Predicates
@@ -144,11 +144,11 @@ assert_eq of [orientation of [[0,0], [1,0], [0,1]], 1, "CCW orientation"]
 assert_eq of [orientation of [[0,0], [0,1], [1,0]], -1, "CW orientation"]
 assert_eq of [orientation of [[0,0], [1,1], [2,2]], 0, "collinear orientation"]
 
-assert_eq of [collinear of [[0,0], [1,1], [2,2]], 1, "collinear points"]
-assert_eq of [collinear of [[0,0], [1,0], [0,1]], 0, "non-collinear points"]
+assert_eq of [collinear of [[0,0], [1,1], [2,2]], true, "collinear points"]
+assert_eq of [collinear of [[0,0], [1,0], [0,1]], false, "non-collinear points"]
 
-assert_eq of [on_segment of [[0,0], [1,1], [2,2]], 1, "on segment middle"]
-assert_eq of [on_segment of [[0,0], [3,3], [2,2]], 0, "off segment"]
+assert_eq of [on_segment of [[0,0], [1,1], [2,2]], true, "on segment middle"]
+assert_eq of [on_segment of [[0,0], [3,3], [2,2]], false, "off segment"]
 
 # ============================================================
 # Triangle Operations
@@ -168,8 +168,8 @@ assert_near of [tc[0], 1, 0.001, "centroid x"]
 assert_near of [tc[1], 1, 0.001, "centroid y"]
 
 # Point in triangle
-assert_eq of [point_in_triangle of [[1,1], [0,0], [4,0], [0,4]], 1, "point inside"]
-assert_eq of [point_in_triangle of [[5,5], [0,0], [4,0], [0,4]], 0, "point outside"]
+assert_eq of [point_in_triangle of [[1,1], [0,0], [4,0], [0,4]], true, "point inside"]
+assert_eq of [point_in_triangle of [[5,5], [0,0], [4,0], [0,4]], false, "point outside"]
 
 # Circumcenter of right triangle (0,0), (4,0), (0,4): should be at (2,2)
 cc is triangle_circumcenter of [[0,0], [4,0], [0,4]]
@@ -222,13 +222,13 @@ assert_eq of [point_in_polygon of [[0.5, 0.5], [[0,0], [1,0], [1,1], [0,1]]], 1,
 assert_eq of [point_in_polygon of [[2, 2], [[0,0], [1,0], [1,1], [0,1]]], 0, "point outside square"]
 
 # Convex check
-assert_eq of [polygon_is_convex of [[0,0], [1,0], [1,1], [0,1]], 1, "square is convex"]
+assert_eq of [polygon_is_convex of [[0,0], [1,0], [1,1], [0,1]], true, "square is convex"]
 # L-shape is not convex
-assert_eq of [polygon_is_convex of [[0,0], [2,0], [2,1], [1,1], [1,2], [0,2]], 0, "L-shape not convex"]
+assert_eq of [polygon_is_convex of [[0,0], [2,0], [2,1], [1,1], [1,2], [0,2]], false, "L-shape not convex"]
 
 # Winding order
-assert_eq of [polygon_is_clockwise of [[0,0], [1,0], [1,1], [0,1]], 0, "CCW not clockwise"]
-assert_eq of [polygon_is_clockwise of [[0,0], [0,1], [1,1], [1,0]], 1, "CW is clockwise"]
+assert_eq of [polygon_is_clockwise of [[0,0], [1,0], [1,1], [0,1]], false, "CCW not clockwise"]
+assert_eq of [polygon_is_clockwise of [[0,0], [0,1], [1,1], [1,0]], true, "CW is clockwise"]
 
 # ============================================================
 # Convex Hull
@@ -257,14 +257,14 @@ print of "--- Circle Operations ---"
 assert_near of [circle_area of 5, 78.54, 0.01, "circle area r=5"]
 assert_near of [circle_circumference of 1, 6.2832, 0.001, "circumference r=1"]
 
-assert_eq of [point_in_circle of [1, 1, 0, 0, 2], 1, "point in circle"]
-assert_eq of [point_in_circle of [3, 3, 0, 0, 2], 0, "point outside circle"]
-assert_eq of [point_in_circle of [0, 0, 0, 0, 1], 1, "center in circle"]
+assert_eq of [point_in_circle of [1, 1, 0, 0, 2], true, "point in circle"]
+assert_eq of [point_in_circle of [3, 3, 0, 0, 2], false, "point outside circle"]
+assert_eq of [point_in_circle of [0, 0, 0, 0, 1], true, "center in circle"]
 
 # Two circles intersecting
-assert_eq of [circles_intersect of [0, 0, 2, 3, 0, 2], 1, "overlapping circles"]
-assert_eq of [circles_intersect of [0, 0, 1, 5, 0, 1], 0, "distant circles"]
-assert_eq of [circles_intersect of [0, 0, 1, 0, 0, 0.5], 0, "contained circle"]
+assert_eq of [circles_intersect of [0, 0, 2, 3, 0, 2], true, "overlapping circles"]
+assert_eq of [circles_intersect of [0, 0, 1, 5, 0, 1], false, "distant circles"]
+assert_eq of [circles_intersect of [0, 0, 1, 0, 0, 0.5], false, "contained circle"]
 
 # Circle intersection points
 cip is circle_intersection_points of [0, 0, 1, 1, 0, 1]

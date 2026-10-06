@@ -78,15 +78,15 @@ if not (r[0] == "diverging"):
     fail of ("entropy channel: expected 'diverging', got " + r[0])
 if not (r[1] == "diverging"):
     fail of ("value channel: expected 'diverging', got " + r[1])
-if not (r[2] == 0):
+if not (r[2] == false):
     fail of "converged certified a saturated value"
-if not (r[3] == 1):
+if not (r[3] == true):
     fail of "diverging did not claim a saturated value"
-if not (r[4] == 0):
+if not (r[4] == false):
     fail of "stable certified a saturated value"
-if not (r[5] == 0):
+if not (r[5] == false):
     fail of "equilibrium certified a saturated value"
-if not (r[6] == 0):
+if not (r[6] == false):
     fail of "improving claimed a saturated value"
 
 # --- Case 2: the negative ceiling behaves identically.
@@ -96,7 +96,7 @@ if not (n[2] == (0 - 1e308)):
     fail of "negative runaway did not reach -1e308"
 if not (n[0] == "diverging"):
     fail of ("negative ceiling: expected 'diverging', got " + n[0])
-if not (n[1] == 1):
+if not (n[1] == true):
     fail of "diverging did not claim the negative ceiling"
 
 # --- Case 3: genuine convergence is untouched (the non-regression half).
@@ -104,7 +104,7 @@ c is run_converge of null
 print of ("decay: report=" + c[0])
 if not (c[0] == "converged"):
     fail of ("geometric decay lost its 'converged' verdict, got " + c[0])
-if not (c[1] == 1):
+if not (c[1] == true):
     fail of "converged predicate lost a genuine convergence"
 
 # --- Case 4: the gate is tight to the ceiling and does not fire below it.
@@ -124,7 +124,7 @@ if not (c[1] == 1):
 # measurement of what the predicate actually gets right.
 b is run_below_ceiling of null
 print of ("below-ceiling: report=" + b[0] + " (verdict not asserted — #861)")
-if not (b[2] == 0):
+if not (b[2] == false):
     fail of "the saturation gate fired below the ceiling — it must be tight to 1e308"
 
 # --- Case 5: a literal at the ceiling reads diverging, by design.
@@ -132,7 +132,7 @@ l is run_literal_ceiling of null
 print of ("literal-ceiling: report=" + l[0])
 if not (l[0] == "diverging"):
     fail of ("literal at the ceiling: expected 'diverging', got " + l[0])
-if not (l[1] == 0):
+if not (l[1] == false):
     fail of "converged certified a literal at the ceiling"
 
 if pass == 1:

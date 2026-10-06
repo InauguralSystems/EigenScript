@@ -28,8 +28,8 @@ v_list is values of d
 assert_eq of [v_list[0], "eigen", "values first"]
 
 # has_key
-assert_eq of [has_key of [d, "name"], 1, "has_key true"]
-assert_eq of [has_key of [d, "missing"], 0, "has_key false"]
+assert_eq of [has_key of [d, "name"], true, "has_key true"]
+assert_eq of [has_key of [d, "missing"], false, "has_key false"]
 
 # dict_set (mutates)
 dict_set of [d, "lang", "C"]
@@ -42,7 +42,7 @@ assert_eq of [d.version, 7, "dict_set overwrite"]
 
 # dict_remove
 dict_remove of [d, "lang"]
-assert_eq of [has_key of [d, "lang"], 0, "dict_remove"]
+assert_eq of [has_key of [d, "lang"], false, "dict_remove"]
 assert_eq of [len of d, 2, "dict_remove decreases len"]
 
 # Empty dict

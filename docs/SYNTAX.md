@@ -312,7 +312,11 @@ This works for factory patterns, callbacks, and higher-order programming.
   compare by value; lists and dicts compare *structurally* (so
   `[1,2] == [1,2]` is true and `match` works on list/dict patterns);
   functions compare by identity. Operands of different types are simply
-  not equal — `"3" == 3` is `false`, never an error.
+  not equal — `"3" == 3` is `false`, never an error — with one exception:
+  a `bool` against a number raises (`true == 1`, #1637), because a bool is
+  not a number.
+- **Bools** (`true`/`false`) are what comparisons, `not` and predicates
+  return. Arithmetic on a bool raises; test a bool directly (`if ok:`).
 
 ### `of` binds tighter than arithmetic
 

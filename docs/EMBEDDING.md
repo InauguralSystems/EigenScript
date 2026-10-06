@@ -342,6 +342,7 @@ embed API refuses it too: `eigs_set_global`, `eigs_get_global` and
 EigsValue *eigs_value_new_num(double n);
 EigsValue *eigs_value_new_string(const char *s);
 EigsValue *eigs_value_new_null(void);
+EigsValue *eigs_value_new_bool(int b);           /* true/false (#1637) */
 EigsValue *eigs_value_new_list(int capacity);
 EigsValue *eigs_value_new_dict(int capacity);
 EigsValue *eigs_value_new_buffer(int count);   /* zeroed, 1-D; the binary carrier */
@@ -358,8 +359,9 @@ void eigs_value_release(EigsValue *v);
 Inspection:
 
 ```c
-EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _BUFFER, _OTHER */
-double        eigs_value_as_num(EigsValue *v);     /* 0.0 if wrong type */
+EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _BUFFER, _OTHER, _BOOL */
+double        eigs_value_as_num(EigsValue *v);     /* 0.0 if wrong type (a bool is not a num) */
+int           eigs_value_as_bool(EigsValue *v);    /* 1 for true; 0 for false or wrong type */
 const char   *eigs_value_as_string(EigsValue *v);  /* NULL if wrong type; borrowed pointer */
 int           eigs_value_list_len(EigsValue *v);
 EigsValue    *eigs_value_list_get(EigsValue *v, int i);    /* counted ref */

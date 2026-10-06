@@ -593,18 +593,18 @@ define request_quit() as:
 
 define handle_key(root, ev) as:
     if ev.type != "keydown":
-        return 0
+        return false
     if (_match_hotkey of ev):
-        return 1
+        return true
     if ev.key == "escape" and (len of _ui.modal_stack) > 0:
         pop_modal of null
-        return 1
+        return true
     if _ui.focused_widget != null and _ui.focused_widget.type == "combobox" and _ui.focused_widget.open == 1:
         _handle_combobox_key of [_ui.focused_widget, ev]
-        return 1
+        return true
     if _ui.focused_input != null:
         _handle_text_key of [_ui.focused_input, ev]
-        return 1
+        return true
     # Focus navigation reports its own consumption, so a key it ignores
     # (an unbound letter with a widget merely focused) stays free for the
     # app rather than being silently swallowed.
@@ -612,7 +612,7 @@ define handle_key(root, ev) as:
         return _handle_focus_key of [root, ev]
     if _ui.focused_widget != null and _ui.focused_input == null:
         return _handle_focus_key of [root, ev]
-    return 0
+    return false
 
 # Event dispatch — registry-driven
 

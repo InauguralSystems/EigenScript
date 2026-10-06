@@ -141,8 +141,8 @@ define both_reject(label, src) as:
         eigen_run of src
     catch me:
         meta_msg is me
-    check of [f"meta rejects: {label}", contains of [meta_msg, "is a reserved observer form"], 1]
-    check of [f"meta names E005: {label}", contains of [meta_msg, "[E005]"], 1]
+    check of [f"meta rejects: {label}", contains of [meta_msg, "is a reserved observer form"], true]
+    check of [f"meta names E005: {label}", contains of [meta_msg, "[E005]"], true]
 
 # binding positions (the issue's two probes first)
 both_reject of ["report is 4 / print of report", "report is 4\nprint of report"]
@@ -174,7 +174,7 @@ try:
     eigen_run of "report of nope_report_operand"
 catch ume:
     unb_meta is ume
-check of ["meta: report of unbound raises", contains of [unb_meta, "undefined variable"], 1]
+check of ["meta: report of unbound raises", contains of [unb_meta, "undefined variable"], true]
 
 # positive controls: a bound identifier operand still works on both sides.
 # Values are the documented divergence (the meta bridge classifies the VALUE
@@ -187,7 +187,7 @@ check of ["meta: report_value of bound ident (bridge fallback)", eigen_run of "p
 check of ["meta: parenthesised identifier operand", eigen_run of "pv4 is 1\nreport of (pv4)", "equilibrium"]
 check of ["meta: report_value of ((x))", eigen_run of "pv5 is 1\nreport_value of ((pv5))", "equilibrium"]
 check of ["meta: `of` binds the identifier only (report of x + \"!\")", eigen_run of "pv6 is 1\nreport of pv6 + \"!\"", "equilibrium!"]
-check of ["native: `of` binds the identifier only", ends_with of [eval of "pv7 is 1\nreport of pv7 + \"!\"", "!"], 1]
+check of ["native: `of` binds the identifier only", ends_with of [eval of "pv7 is 1\nreport of pv7 + \"!\"", "!"], true]
 check of ["meta: host function operand is opaque", eigen_run of "report of print", "opaque"]
 check of ["meta: dict fields named report/report_value stay data keys", eigen_run of "rdk is {\"report\": 7, \"report_value\": 8}\nrdk.report is 9\nrdk.report + rdk.report_value", 17]
 check of ["native: dict fields named report/report_value stay data keys", eval of "rdn is {\"report\": 7, \"report_value\": 8}\nrdn.report is 9\nrdn.report + rdn.report_value", 17]
@@ -265,15 +265,15 @@ define parity(label, src, want) as:
     check of [f"VM: {label}", vm_probe of src, want]
 
 parity of ["a public module binding is in the namespace",
-    "import log\nhas_key of [log, \"log_info\"]", ["ok", 1]]
+    "import log\nhas_key of [log, \"log_info\"]", ["ok", true]]
 parity of ["a `_` module binding reads as null through the namespace",
     "import log\nlog._log_min_level", ["ok", null]]
 parity of ["a `_` module binding is not a namespace key",
-    "import log\nhas_key of [log, \"_log_min_level\"]", ["ok", 0]]
+    "import log\nhas_key of [log, \"_log_min_level\"]", ["ok", false]]
 parity of ["a key written through the namespace reads back",
     "import map\nmap.probe1057 is 7\nmap.probe1057", ["ok", 7]]
 parity of ["a key written through the namespace becomes a namespace key",
-    "import map\nmap.probe1057 is 7\nhas_key of [map, \"probe1057\"]", ["ok", 1]]
+    "import map\nmap.probe1057 is 7\nhas_key of [map, \"probe1057\"]", ["ok", true]]
 parity of ["a `_` key written through the namespace reads back (stays private)",
     "import log\nlog._log_min_level is 3\nlog._log_min_level", ["ok", 3]]
 parity of ["an unresolvable module raises, it does not import empty",
@@ -287,7 +287,7 @@ parity of ["an unresolvable module raises, it does not import empty",
 parity of ["rebinding the name drops the module view",
     "import log\nlog is {}\nlog.log_info", ["ok", null]]
 parity of ["rebinding the name drops the module keys",
-    "import log\nlog is {}\nhas_key of [log, \"log_info\"]", ["ok", 0]]
+    "import log\nlog is {}\nhas_key of [log, \"log_info\"]", ["ok", false]]
 
 # The cwd gate. Run the same import from a directory that has no `lib/`: both
 # evaluators must still answer the stdlib module beside the binary. Done in a
@@ -304,8 +304,8 @@ _mp_meta_elsewhere is meta_probe of "import log\nhas_key of [log, \"log_info\"]"
 _mp_vm_elsewhere is vm_probe of "import log\nhas_key of [log, \"log_info\"]"
 chdir of _mp_cwd
 exec_capture of ["rm", "-rf", _mp_tmp_cwd]
-check of ["meta: import resolves from a cwd with no lib/", _mp_meta_elsewhere, ["ok", 1]]
-check of ["VM: import resolves from a cwd with no lib/", _mp_vm_elsewhere, ["ok", 1]]
+check of ["meta: import resolves from a cwd with no lib/", _mp_meta_elsewhere, ["ok", true]]
+check of ["VM: import resolves from a cwd with no lib/", _mp_vm_elsewhere, ["ok", true]]
 
 # GAP CANARY (a real gap, asserted as it behaves today). The live half of the
 # rule — a module FUNCTION mutating a module global and the importer seeing it
@@ -383,15 +383,15 @@ define meta_err_msg(src) as:
         m is mm
     return m
 check of ["meta: line after a multi-line string",
-    contains of [meta_err_msg of "s is \"a\nb\"\nx is $", "at line 3"], 1]
+    contains of [meta_err_msg of "s is \"a\nb\"\nx is $", "at line 3"], true]
 check of ["meta: line after a multi-line f-string with an interpolation",
-    contains of [meta_err_msg of "s is f\"a\nb{1 +\n2}\"\nx is $", "at line 4"], 1]
+    contains of [meta_err_msg of "s is f\"a\nb{1 +\n2}\"\nx is $", "at line 4"], true]
 check of ["meta: backslash before a physical newline in a string advances the line",
-    contains of [meta_err_msg of "s is \"a\\\nb\"\nx is $", "at line 3"], 1]
+    contains of [meta_err_msg of "s is \"a\\\nb\"\nx is $", "at line 3"], true]
 check of ["meta: backslash before a physical newline in f-string text advances the line",
-    contains of [meta_err_msg of "s is f\"a\\\nb\"\nx is $", "at line 3"], 1]
+    contains of [meta_err_msg of "s is f\"a\\\nb\"\nx is $", "at line 3"], true]
 check of ["meta: escaped newline does not advance the line",
-    contains of [meta_err_msg of "s is \"a\\nb\"\nx is $", "at line 2"], 1]
+    contains of [meta_err_msg of "s is \"a\\nb\"\nx is $", "at line 2"], true]
 
 # --- #1254: parameters are comma-separated in define and in lambdas; a
 # missing comma is a parse error on both sides, not a silent second parameter ---

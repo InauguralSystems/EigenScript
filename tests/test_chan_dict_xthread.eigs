@@ -38,7 +38,7 @@ check of ["len", len of msg, 4]
 check of ["id", msg.id, 7]            # interned-key lookup must still resolve
 check of ["total", msg.total, 42]
 check of ["name", msg.name, "abc"]    # owned string value survives
-check of ["has_key", has_key of [msg, "total"], 1]
+check of ["has_key", has_key of [msg, "total"], true]
 check of ["nested", msg.inner.k, 9]   # nested dict keys rehomed too
 
 if passed == checks:
