@@ -93,7 +93,7 @@ print of f"{v}"
 '
 
 # Observer semantics intact.
-check_line "observer predicates run" 0 "1" '
+check_line "observer predicates run" 0 "true" '
 e is 5
 loop while not converged:
     e is e * 0.5
