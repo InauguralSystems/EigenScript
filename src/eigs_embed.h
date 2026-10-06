@@ -154,7 +154,8 @@ typedef enum {
     EIGS_TYPE_DICT,
     EIGS_TYPE_FN,
     EIGS_TYPE_BUFFER,
-    EIGS_TYPE_OTHER
+    EIGS_TYPE_OTHER,
+    EIGS_TYPE_BOOL      /* #1637; appended so the earlier values keep their numbers */
 } EigsValueType;
 
 EigsValue     *eigs_value_new_num(double n);

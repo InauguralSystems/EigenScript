@@ -149,6 +149,7 @@ static void obs_dump_value(EigsSlot s, char *buf, size_t nbuf) {
             /* No `default:` — -Werror=switch (Makefile CFLAGS) forces a new
              * ValType to choose its observer-dump rendering here. */
             case VAL_NULL:   snprintf(buf, nbuf, "null"); break;
+            case VAL_BOOL:   snprintf(buf, nbuf, "%s", v->data.boolean ? "true" : "false"); break;
         }
         return;
     }
@@ -785,6 +786,9 @@ static inline EigsSlot slot_bridge_wrap(Value *v) {
         val_decref(v);
         return slot_null();
     }
+    /* #1637: a bool is always one of the two immortal singletons, so the
+     * pointer can be dropped for the TAG_BOOL immediate with no decref. */
+    if (v->type == VAL_BOOL) return slot_from_bool(v->data.boolean);
     /* #262 Step E: nums never carry observer state → never TAG_TRACKED. */
     return slot_from_heap(v);
 }
@@ -798,7 +802,7 @@ static inline Value *slot_bridge_unwrap(EigsSlot s) {
         return make_null();
     }
     if (slot_is_bool(s)) {
-        return make_num(slot_as_bool(s) ? 1.0 : 0.0);
+        return make_bool(slot_as_bool(s));
     }
     /* Heap or tracked: just unwrap the pointer (ref already in slot). */
     return slot_as_ptr(s);
@@ -837,7 +841,7 @@ static inline Value *vm_slot_lift(int idx) {
     Value *v;
     if (slot_is_num(s))       v = make_num(s.d);
     else if (slot_is_null(s)) v = make_null();
-    else if (slot_is_bool(s)) v = make_num(slot_as_bool(s) ? 1.0 : 0.0);
+    else if (slot_is_bool(s)) v = make_bool(slot_as_bool(s));
     else                      v = make_null();
     g_vm.stack[idx] = slot_from_heap(v);
     return v;
@@ -3035,7 +3039,8 @@ static int vm_handler_in_range(int base) {
 static const char *slot_type_name(EigsSlot s) {
     if (slot_is_null(s)) return "none";
     if (slot_is_ptr(s)) { Value *v = slot_as_ptr(s); return v ? val_type_name(v->type) : "none"; }
-    return "num"; /* immediate double / bool */
+    if (slot_is_bool(s)) return "bool";   /* #1637 */
+    return "num"; /* immediate double */
 }
 
 /* #408: forward decls — the copying-stack save/restore and the "who is
@@ -3527,7 +3532,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             g_vm.stack[g_vm.sp - 1] = slot_from_num(-d);
             DISPATCH();
         }
-        rt_error(EK_TYPE, current_line, "cannot negate non-numeric");
+        rt_error(EK_TYPE, current_line, "cannot negate %s", slot_type_name(s));   /* #1637: names bool */
         slot_decref(s);
         g_vm.stack[g_vm.sp - 1] = slot_from_num(0.0);
         DISPATCH();
@@ -3537,7 +3542,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
         int t = slot_truthy(s);
         slot_decref(s);
-        g_vm.stack[g_vm.sp - 1] = slot_from_num(t ? 0.0 : 1.0);
+        g_vm.stack[g_vm.sp - 1] = slot_from_bool(!t);   /* #1637 */
         DISPATCH();
     }
 
@@ -3570,23 +3575,18 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot _as = g_vm.stack[g_vm.sp - 2];
         double _ad, _bd;
         if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) {
-            double _r = (_ad == _bd) ? 1.0 : 0.0;
-            if (slot_is_ptr(_as)) {
-                Value *_a = slot_as_ptr(_as);
-                if (NUM_REUSE(_a)) { _a->data.num = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); }
-            }
-            if (slot_is_ptr(_bs)) {
-                Value *_b = slot_as_ptr(_bs);
-                if (NUM_REUSE(_b)) { _b->data.num = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); }
-            }
+            /* #1637: the result is a bool immediate. The old NUM_REUSE
+             * branches wrote a 0/1 result INTO a heap-number operand; a bool
+             * cannot live there, so they are gone, not retagged. */
+            int _r = (_ad == _bd);
             slot_decref(_as); slot_decref(_bs);
-            g_vm.stack[g_vm.sp - 2] = slot_from_num(_r);
+            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r);
             g_vm.sp--;
             DISPATCH();
         }
         Value *b = vm_pop(); Value *a = vm_pop();
-        int eq = values_equal(a, b);
-        vm_push(make_num(eq ? 1.0 : 0.0));
+        int eq = values_equal_op(a, b, "==");   /* raises on bool vs num */
+        vm_push_slot(slot_from_bool(eq));
         val_decref(a); val_decref(b);
         DISPATCH();
     }
@@ -3596,23 +3596,18 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot _as = g_vm.stack[g_vm.sp - 2];
         double _ad, _bd;
         if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) {
-            double _r = (_ad != _bd) ? 1.0 : 0.0;
-            if (slot_is_ptr(_as)) {
-                Value *_a = slot_as_ptr(_as);
-                if (NUM_REUSE(_a)) { _a->data.num = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); }
-            }
-            if (slot_is_ptr(_bs)) {
-                Value *_b = slot_as_ptr(_bs);
-                if (NUM_REUSE(_b)) { _b->data.num = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); }
-            }
+            /* #1637: the result is a bool immediate. The old NUM_REUSE
+             * branches wrote a 0/1 result INTO a heap-number operand; a bool
+             * cannot live there, so they are gone, not retagged. */
+            int _r = (_ad != _bd);
             slot_decref(_as); slot_decref(_bs);
-            g_vm.stack[g_vm.sp - 2] = slot_from_num(_r);
+            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r);
             g_vm.sp--;
             DISPATCH();
         }
         Value *b = vm_pop(); Value *a = vm_pop();
-        int eq = values_equal(a, b);
-        vm_push(make_num(eq ? 0.0 : 1.0));
+        int eq = values_equal_op(a, b, "!=");   /* raises on bool vs num */
+        vm_push_slot(slot_from_bool(!eq));
         val_decref(a); val_decref(b);
         DISPATCH();
     }
@@ -3623,17 +3618,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
         double _ad, _bd; \
         if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) { \
-            double _r = (_ad OP _bd) ? 1.0 : 0.0; \
-            if (slot_is_ptr(_as)) { \
-                Value *_a = slot_as_ptr(_as); \
-                if (NUM_REUSE(_a)) { _a->data.num = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); } \
-            } \
-            if (slot_is_ptr(_bs)) { \
-                Value *_b = slot_as_ptr(_bs); \
-                if (NUM_REUSE(_b)) { _b->data.num = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); } \
-            } \
+            /* #1637: a bool immediate; no NUM_REUSE (see CASE(EQ)). */ \
+            int _r = (_ad OP _bd); \
             slot_decref(_as); slot_decref(_bs); \
-            g_vm.stack[g_vm.sp - 2] = slot_from_num(_r); \
+            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r); \
             g_vm.sp--; \
             DISPATCH(); \
         } \
@@ -3642,9 +3630,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Value *_a = slot_as_ptr(_as), *_b = slot_as_ptr(_bs); \
             if (_a->type == VAL_STR && _b->type == VAL_STR) { \
                 int _cmp = strcmp(_a->data.str ? _a->data.str : "", _b->data.str ? _b->data.str : ""); \
-                double _r = (_cmp OP 0) ? 1.0 : 0.0; \
+                int _r = (_cmp OP 0); \
                 slot_decref(_as); slot_decref(_bs); \
-                g_vm.stack[g_vm.sp - 2] = slot_from_num(_r); \
+                g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r); \
                 g_vm.sp--; \
                 DISPATCH(); \
             } \
@@ -3658,7 +3646,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             rt_error(EK_TYPE, current_line, "cannot compare %s and %s with '%s'", \
                 _tna, _tnb, OPNAME); \
         } \
-        g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
+        g_vm.stack[g_vm.sp - 2] = slot_from_bool(0); \
         g_vm.sp--; \
         DISPATCH(); \
     }
@@ -4039,7 +4027,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     EigsSlot result_s = g_vm.stack[--g_vm.sp];
                     if (slot_is_num(result_s))  return make_num(result_s.d);
                     if (slot_is_null(result_s)) return make_null();
-                    if (slot_is_bool(result_s)) return make_num(slot_as_bool(result_s) ? 1.0 : 0.0);
+                    if (slot_is_bool(result_s)) return make_bool(slot_as_bool(result_s));
                     return slot_as_ptr(result_s);
                 }
                 frame = &g_vm.frames[g_vm.frame_count - 1];
@@ -4405,7 +4393,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         EigsSlot result_s = g_vm.stack[--g_vm.sp];
                         if (slot_is_num(result_s))  return make_num(result_s.d);
                         if (slot_is_null(result_s)) return make_null();
-                        if (slot_is_bool(result_s)) return make_num(slot_as_bool(result_s) ? 1.0 : 0.0);
+                        if (slot_is_bool(result_s)) return make_bool(slot_as_bool(result_s));
                         return slot_as_ptr(result_s);
                     }
                     frame = &g_vm.frames[g_vm.frame_count - 1];
@@ -4487,7 +4475,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * Immediate -> materialize; pointer -> reuse slot's ref. */
             if (slot_is_num(result_s))       return make_num(result_s.d);
             if (slot_is_null(result_s))      return make_null();
-            if (slot_is_bool(result_s))      return make_num(slot_as_bool(result_s) ? 1.0 : 0.0);
+            if (slot_is_bool(result_s))      return make_bool(slot_as_bool(result_s));
             return slot_as_ptr(result_s);
         }
         frame = &g_vm.frames[g_vm.frame_count - 1];
@@ -5559,6 +5547,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 v->type == VAL_FN ? "function" :
                 v->type == VAL_BUILTIN ? "builtin" :
                 v->type == VAL_BUFFER ? "buffer" :
+                v->type == VAL_BOOL ? "bool" :
                 v->type == VAL_NULL ? "none" : "unknown");
             break;
         /* #262 Step E: when/where/why/how on a value-based operand have no
@@ -5726,7 +5715,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!slot_is_ptr(tgt_s) || slot_as_ptr(tgt_s)->type != VAL_LIST) {
             rt_error(EK_TYPE, current_line,
                 "destructuring requires a list, got %s",
-                slot_is_ptr(tgt_s) ? val_type_name(slot_as_ptr(tgt_s)->type) : "number");
+                slot_type_name(tgt_s));   /* #1637: names bool/none, not "number" */
             slot_decref(tgt_s);
             for (int i = 0; i < n; i++) vm_push_slot(slot_null());
             DISPATCH();
@@ -5764,7 +5753,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         g_vm.sp -= 3;
 
         if (!slot_is_ptr(tgt_s)) {
-            rt_error(EK_TYPE, g_vm.current_line, "cannot slice number");
+            rt_error(EK_TYPE, g_vm.current_line, "cannot slice %s", slot_type_name(tgt_s));   /* #1637 */
             slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);
             vm_push_slot(slot_null());
             DISPATCH();
@@ -5789,7 +5778,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             /* Not sliceable. Enumerated rather than covered by a `default:`
              * so -Werror=switch forces a new ValType to choose here. */
             case VAL_NUM: case VAL_FN: case VAL_BUILTIN: case VAL_NULL:
-            case VAL_JSON_RAW: case VAL_DICT: case VAL_TEXT_BUILDER:
+            case VAL_JSON_RAW: case VAL_DICT: case VAL_TEXT_BUILDER: case VAL_BOOL:
                 rt_error(EK_TYPE, g_vm.current_line, "cannot slice %s",
                               val_type_name(target->type));
                 slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);
@@ -5916,7 +5905,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         int result = observer_predicate_at(g_last_obs_slot_env,
                                            g_last_obs_slot_idx, kind, 0);
-        vm_push(make_num(result ? 1.0 : 0.0));
+        vm_push_slot(slot_from_bool(result));   /* #1637 */
         DISPATCH();
     }
 
@@ -5937,7 +5926,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 vm_desc_unrecorded(chunk, current_line, "slot")) { vm_push_slot(slot_null()); DISPATCH(); }
         }
         int result = observer_predicate_at(e, (int)slot, kind, 1);
-        vm_push(make_num(result ? 1.0 : 0.0));
+        vm_push_slot(slot_from_bool(result));   /* #1637 */
         DISPATCH();
     }
 
@@ -5966,7 +5955,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 vm_desc_unrecorded(chunk, current_line, name)) { vm_push_slot(slot_null()); DISPATCH(); }
         }
         int result = observer_predicate_at(oe, oidx, kind, 1);
-        vm_push(make_num(result ? 1.0 : 0.0));
+        vm_push_slot(slot_from_bool(result));   /* #1637 */
         DISPATCH();
     }
 
@@ -6555,7 +6544,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         EigsSlot result_s = g_vm.stack[--g_vm.sp];
                         if (slot_is_num(result_s))  return make_num(result_s.d);
                         if (slot_is_null(result_s)) return make_null();
-                        if (slot_is_bool(result_s)) return make_num(slot_as_bool(result_s) ? 1.0 : 0.0);
+                        if (slot_is_bool(result_s)) return make_bool(slot_as_bool(result_s));
                         return slot_as_ptr(result_s);
                     }
                     frame = &g_vm.frames[g_vm.frame_count - 1];

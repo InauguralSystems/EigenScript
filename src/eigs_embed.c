@@ -318,6 +318,7 @@ EigsValueType eigs_value_type(EigsValue *v) {
         case VAL_FN:
         case VAL_BUILTIN: return EIGS_TYPE_FN;
         case VAL_BUFFER:  return EIGS_TYPE_BUFFER;
+        case VAL_BOOL:    return EIGS_TYPE_BOOL;   /* #1637 */
         /* No public embed-API mapping. Enumerated rather than covered by a
          * `default:` so -Werror=switch forces a new ValType to choose one. */
         case VAL_JSON_RAW:

@@ -1,0 +1,121 @@
+# #1637: the boolean type. Each block pins one of the decided semantics
+# (issue #1637, "Decided semantics" 1-7). Every row compares TYPE as well as
+# value, so a comparison that silently produces the number 1 again is a FAIL,
+# not a pass by coincidence of truthiness.
+load_file of "lib/test.eigs"
+
+# same: equal type AND equal value. A plain `==` would raise on bool vs num
+# (semantics 6), which is right for programs and wrong for a test oracle that
+# must REPORT the mismatch.
+define same(actual, expected, desc) as:
+    local ta is type of actual
+    local te is type of expected
+    if ta != te:
+        assert_eq of [f"{ta}:{actual}", f"{te}:{expected}", desc]
+        return null
+    assert_eq of [actual, expected, desc]
+
+# raises: the thunk must raise, and the message must contain `needle`.
+define raises(thunk, needle, desc) as:
+    local got is "<no error>"
+    try:
+        local r is thunk of null
+        got is f"<no error, returned {r}>"
+    catch e:
+        got is e.message
+    assert_true of [(index_of of [got, needle]) >= 0, f"{desc}: {got}"]
+
+T is 1 == 1
+F is 1 == 2
+
+# ---- 1. a distinct type ----
+same of [type of T, "bool", "type of a comparison is bool"]
+same of [type of F, "bool", "type of a false comparison is bool"]
+
+# ---- 2. comparisons, not, and observer predicates produce bool on EVERY path ----
+same of [1 < 2, T, "number < (immediate path)"]
+same of [2 <= 1, F, "number <= (immediate path)"]
+same of [3 > 2, T, ">"]
+same of [3 >= 4, F, ">="]
+same of [5 == 5, T, "== numbers"]
+same of [5 != 5, F, "!= numbers"]
+same of ["a" < "b", T, "string < (lex path)"]
+same of ["b" <= "a", F, "string <= (lex path)"]
+same of ["x" == "x", T, "== strings (slow path)"]
+same of ["x" != "y", T, "!= strings (slow path)"]
+same of [[1, 2] == [1, 2], T, "== lists (structural path)"]
+same of [{"a": 1} != {"a": 1}, F, "!= dicts (structural path)"]
+same of [null == null, T, "null == null"]
+# A builtin's result is a heap number with refcount 1 — the operand the old
+# NUM_REUSE branch overwrote with the 0/1 result in place.
+same of [(len of [1, 2, 3]) < 5, T, "heap-number operand < (old NUM_REUSE path)"]
+same of [(len of [1, 2, 3]) == 3, T, "heap-number operand == (old NUM_REUSE path)"]
+same of [(len of [1, 2, 3]) != 3, F, "heap-number operand != (old NUM_REUSE path)"]
+same of [4 > (len of [1, 2]), T, "heap-number right operand >"]
+same of [not 0, T, "not 0"]
+same of [not 7, F, "not 7"]
+same of [not T, F, "not true"]
+same of [not F, T, "not false"]
+same of [not "", T, "not empty string"]
+same of [not null, T, "not null"]
+
+obs is 100
+i is 0
+loop while i < 30:
+    obs is 5
+    i is i + 1
+same of [type of (converged of obs), "bool", "a named observer predicate returns a bool"]
+same of [type of (stable of obs), "bool", "named stable returns a bool"]
+
+# ---- 3. printing and strings ----
+same of [str of T, "true", "str of true"]
+same of [str of F, "false", "str of false"]
+same of [f"{T}/{F}", "true/false", "f-string interpolation"]
+same of [str of [T, F], "[true, false]", "a list of bools prints as true/false"]
+
+# ---- 4. truthiness is unchanged; and/or return an operand ----
+seen is "none"
+if T:
+    seen is "then"
+same of [seen, "then", "true is truthy"]
+seen is "none"
+if F:
+    seen is "then"
+else:
+    seen is "else"
+same of [seen, "else", "false is falsy"]
+same of [F or 5, 5, "false or 5 returns the operand 5"]
+same of [T and 7, 7, "true and 7 returns the operand 7"]
+same of [0 or F, F, "0 or false returns false"]
+same of [T or 9, T, "true or 9 returns true"]
+
+# ---- 5. arithmetic on a bool raises, naming the type ----
+raises of [(_) => T + 1, "bool", "true + 1"]
+raises of [(_) => 1 + T, "bool", "1 + true"]
+raises of [(_) => T - F, "bool", "true - false"]
+raises of [(_) => T * 2, "bool", "true * 2"]
+raises of [(_) => 2 / T, "bool", "2 / true"]
+raises of [(_) => -T, "bool", "-true"]
+raises of [(_) => sum of [1 < 2, 3 < 4], "bool", "sum of a list of comparisons"]
+raises of [(_) => abs of T, "abs", "abs of a bool"]
+raises of [(_) => sqrt of F, "sqrt", "sqrt of a bool"]
+raises of [(_) => max of [T, 3], "max", "max over a bool element"]
+
+# ---- 6. equality between a bool and a number raises; other mixes unequal ----
+raises of [(_) => T == 1, "cannot compare bool and num with '=='", "true == 1"]
+raises of [(_) => F != 0, "cannot compare bool and num with '!='", "false != 0"]
+raises of [(_) => 1 == T, "cannot compare num and bool with '=='", "1 == true"]
+raises of [(_) => (1 < 2) == 1, "bool", "the old (cmp) == 1 idiom"]
+raises of [(_) => [T] == [1], "bool", "a bool meets a number inside a list"]
+same of [null == F, F, "null == false is false"]
+same of ["true" == T, F, "\"true\" == true is false"]
+same of [T == T, T, "true == true"]
+same of [T != F, T, "true != false"]
+same of [F == (3 < 2), T, "false == false"]
+# Bools stay distinct from 1/0 wherever a value is keyed by its text.
+keyed is {}
+keyed[str of T] is "bool"
+keyed[str of 1] is "num"
+same of [len of (keys of keyed), 2, "str of true and str of 1 are distinct keys"]
+
+test_summary of null

@@ -178,6 +178,9 @@ static void store_json_encode(Value *v, strbuf *out) {
             eigs_json_escape_string(out, v->data.str);
             break;
         }
+        case VAL_BOOL:   /* #1637: JSON's own literal; decodes back to a bool */
+            strbuf_append(out, v->data.boolean ? "true" : "false");
+            break;
         case VAL_LIST: {
             strbuf_append_char(out, '[');
             for (int i = 0; i < v->data.list.count; i++) {

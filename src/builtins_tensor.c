@@ -354,6 +354,12 @@ static Value* flat_to_like(Value *src, double *data, int rows, int cols) {
 static int tensor_total(Value *v) {
     if (!v) return 0;
     if (v->type == VAL_NUM) return 1;
+    /* #1637: arithmetic on a bool raises. Other non-number elements keep
+     * their old (counted-as-absent) reading; a bool is the one that used to
+     * BE a number, so letting it vanish from `sum of [a < b, ...]` would turn
+     * a count into a silent 0. Strict-gated like ARG_GUARD. */
+    if (v->type == VAL_BOOL && g_strict && !g_has_error)
+        rt_error(EK_TYPE, 0, "cannot use a bool as a number (convert explicitly, e.g. `if b: 1 else: 0`)");
     if (v->type == VAL_BUFFER) return v->data.buffer.count;   /* #1093 */
     if (v->type != VAL_LIST) return 0;
     int total = 0;

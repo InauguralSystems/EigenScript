@@ -250,7 +250,11 @@ struct ASTNode {
 /* ---- Value types ---- */
 
 typedef enum {
-    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER
+    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER,
+    /* #1637: a distinct boolean. Two immortal singletons (make_bool); the
+     * slot layer carries it as the TAG_BOOL immediate. Arithmetic on it and
+     * `==` against a number raise. */
+    VAL_BOOL
 } ValType;
 
 typedef struct Value Value;
@@ -384,6 +388,7 @@ struct Value {
     ValType type;
     union {
         double num;
+        int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
         /* VAL_STR / VAL_JSON_RAW payload: NUL-terminated bytes.
          *
          * #1183: the member is `char *const` on purpose. Every other sequence
@@ -1624,6 +1629,8 @@ Value* make_str_len(const char *s, size_t n);   /* #1183: caller knows strlen(s)
 Value* make_str_owned(char *s);
 Value* make_str_owned_len(char *s, size_t n);   /* #1183: caller knows strlen(s) */
 Value* make_null(void);
+/* #1637: the immortal true/false singletons (refcount no-ops, like null). */
+Value* make_bool(int b);
 Value* make_list(int capacity);
 Value* make_list_heap(int capacity);
 Value* make_text_builder(void);
@@ -2056,6 +2063,8 @@ int is_truthy(Value *v);
 /* Structural equality for == / != (recursive for lists/dicts/buffers;
  * identity for functions/builtins; no cross-type coercion). */
 int values_equal(Value *a, Value *b);
+/* #1637: the `==`/`!=` operator form — raises on a bool meeting a number. */
+int values_equal_op(Value *a, Value *b, const char *op);
 char* value_to_string(Value *v);
 /* #875: THE number->text rule. Every producer of number text calls this —
  * `str of`, all three JSON encoders, the SIGUSR1 observer dump — so a copy

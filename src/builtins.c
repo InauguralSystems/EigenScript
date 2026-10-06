@@ -1134,6 +1134,7 @@ Value* builtin_type(Value *arg) {
         case VAL_DICT: return make_str("dict");
         case VAL_BUFFER: return make_str("buffer");
         case VAL_TEXT_BUILDER: return make_str("text_builder");
+        case VAL_BOOL: return make_str("bool");
     }
     return make_str("none");
 }
@@ -3376,6 +3377,7 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
     case VAL_STR:
     case VAL_NULL:
     case VAL_JSON_RAW:
+    case VAL_BOOL:
         val_incref(v);
         return v;
     case VAL_BUFFER: {

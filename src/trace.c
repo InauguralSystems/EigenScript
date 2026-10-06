@@ -2703,6 +2703,7 @@ static void write_value_ptr(Value *v) {
         case VAL_BUFFER:       tp_printf("<buffer:%d>", v->data.buffer.count); break;
         case VAL_JSON_RAW:     tp_puts("<json>"); break;
         case VAL_TEXT_BUILDER: tp_puts("<text>"); break;
+        case VAL_BOOL:         tp_puts(v->data.boolean ? "true" : "false"); break;
         /* No `default:` — -Werror=switch (Makefile CFLAGS) forces a new
          * ValType to choose its tape rendering here. */
     }
@@ -2828,6 +2829,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
     switch (v->type) {
         case VAL_NUM:  wf_printf(budget, "%.17g", v->data.num); break;
         case VAL_NULL: wf_puts("null", budget); break;
+        case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
         case VAL_STR:  write_string_full(v->data.str, budget); break;
         case VAL_LIST: {
             wf_putc('[', budget);
