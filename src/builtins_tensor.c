@@ -1758,11 +1758,14 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
  * Returns gradient tensor matching param shape. */
 /* #1637: the cells a numeric-gradient / SGD builtin reads (and, for the
  * numerical_grad family, writes in place) must be numbers. A bool cell used
- * to read as 0 -- and numerical_grad_rows/_cols wrote `eigs_num_arg(cell, __func__)` into
- * it, i.e. into the immortal true/false singleton. Checked up front, in every
- * strict mode, before anything is mutated; a non-list row of a 2-D operand
- * keeps its old skip unless it is a bool. Index lists are checked too: a bool
- * index is refused, never skipped as "-1". */
+ * to read as 0, and numerical_grad_rows/_cols then wrote the perturbed value
+ * into it in place -- into the immortal true/false singleton. So every cell
+ * and every row is checked up front, before anything is mutated, and ANY
+ * non-number -- a bool, a string, or a null where a row or cell belongs --
+ * raises a type error in EVERY strict mode, EIGS_STRICT=0 included (owner
+ * decision, round 5: fail loud, the #975 direction; v0.44.0 skipped null
+ * rows and read non-number cells as 0). Index lists get the same check, so
+ * a bool index is refused, never skipped as "-1". */
 static int tensor_cells_numeric(const Value *v, const char *who) {
     if (!v || v->type != VAL_LIST) return 1;
     for (int i = 0; i < v->data.list.count; i++) {

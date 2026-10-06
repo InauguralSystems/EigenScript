@@ -20,13 +20,18 @@
     non-number `http_serve` port, and a non-number byte or `param_count` in a
     `vm_run_bytecode`/`sandbox_run` descriptor raise; they were read as
     garbage or as 0;
-  - a non-number cell given to `numerical_grad*`/`sgd_update*` raises in every
-    strict mode; it was read as 0, and `numerical_grad_rows`/`_cols` wrote
-    into it in place;
+  - the tensor mutators `numerical_grad*`/`sgd_update*` raise on a non-number
+    cell or row in every strict mode, `EIGS_STRICT=0` included: v0.44.0 read
+    a non-number cell as 0 (and `numerical_grad_rows`/`_cols` wrote into it
+    in place) and skipped a null row;
   - a non-number `screen_put` color and a non-number, non-bool
-    `write_bytes` append flag raise in every strict mode;
+    `write_bytes` append flag raise in every strict mode (neither had a
+    documented `EIGS_STRICT=0` answer);
   - a non-number cell `gather` selects raises under `EIGS_STRICT` (it was
     0); `EIGS_STRICT=0` keeps the 0.
+  `EIGS_STRICT=0` keeps every answer it documents for non-bool values:
+  `str_from_bytes`, `inflate`/`deflate` and the other byte-list builtins
+  still read a non-number element as 0 there (a bool raises in every mode).
   Embedders that include `eigenscript.h`: a Value's number is `VAL_NUM_RAW(v)`
   and a slot's is `SLOT_NUM_RAW(s)` (the members were renamed so an unchecked
   read does not compile).
