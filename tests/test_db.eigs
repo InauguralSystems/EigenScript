@@ -174,8 +174,8 @@ if live:
 
     # 1. false is FALSY. It used to arrive as "f" — a non-empty string, and
     # every non-empty string is truthy, so `if row.flag:` was inverted.
-    assert of [d.yes == 1, "DB21 SQL true decodes to 1"]
-    assert of [d.no == 0, "DB21 SQL false decodes to 0"]
+    assert of [d.yes == true, "DB21 SQL true decodes to true (#1637)"]
+    assert of [d.no == false, "DB21 SQL false decodes to false (#1637)"]
     took is 0
     if d.no:
         took is 1
@@ -201,7 +201,7 @@ if live:
     assert of [ord_rows[0].a < ord_rows[0].b, "DB23 numbers order numerically, not lexicographically"]
 
     # db_query_value applies the SAME mapping (one classifier, no drift).
-    assert of [(db_query_value of "SELECT false") == 0, "DB24 db_query_value types booleans"]
+    assert of [(db_query_value of "SELECT false") == false, "DB24 db_query_value types booleans"]
     assert of [(type of (db_query_value of "SELECT null::int")) == "none", "DB24 db_query_value returns null for SQL NULL"]
     assert of [(type of (db_query_value of "SELECT ''")) == "str", "DB24 db_query_value keeps '' a str"]
     assert of [(db_query_value of "SELECT 7::float8") == 7, "DB24 db_query_value types floats"]

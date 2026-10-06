@@ -885,7 +885,7 @@ Values carry their column's SQL type rather than arriving as strings:
 | SQL type | Arrives as | Note |
 |---|---|---|
 | NULL (any column type) | `null` | Distinct from `""` — checked before the type |
-| `boolean` | `true` / `false` → `1` / `0` | `if row.is_admin:` means what it reads as |
+| `boolean` | `true` / `false` → `true` / `false` (bool) | `if row.is_admin:` means what it reads as |
 | `smallint`, `integer`, `bigint`, `oid` | number | `bigint` past 2^53 **raises** — see below |
 | `real`, `double precision` | number | `NaN`/`Infinity` arrive as strings; JSON has no literal for them |
 | `numeric` | **string** | Deliberate — see below |
