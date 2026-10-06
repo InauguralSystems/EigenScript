@@ -11,7 +11,10 @@
   bool/number pair raises when the walk reaches it. Trace tapes are format v6;
   a v5 tape is refused, and so is a record of a kind its builtin cannot
   return. Embedding hosts declare a recorded name's kinds with
-  `eigs_trace_declare_kind`.
+  `eigs_trace_declare_kind`. `db_execute`/`db_query_value`/`db_query_json` take a bool
+  parameter and bind it as an SQL boolean, so a bool read from a boolean
+  column can be written back. `json_build` writes a bool value as JSON
+  `true`/`false`, and `what is` a bool answers the bool.
 - **Wrong-typed numbers that used to be read as garbage now raise (#1637).** The
   bool work routed every C number read through a checking accessor, which
   also changes some non-bool cases:
