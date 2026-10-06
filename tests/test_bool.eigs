@@ -143,4 +143,71 @@ same of [eigen_run of "not 0", true, "eigen_run: not is a bool"]
 same of [eigen_run of "2 == 3", false, "eigen_run: == is a bool"]
 raises of [(_) => eigen_run of "true == 1", "bool", "eigen_run: bool == num raises"]
 
+# ---- builtins and lib (item 4): predicates and two-state statuses are bools ----
+define is_bool(v, desc) as:
+    same of [type of v, "bool", desc]
+is_bool of [has_key of [{"a": 1}, "a"], "has_key"]
+is_bool of [has_key of [{"a": 1}, "b"], "has_key (absent)"]
+is_bool of [contains of ["abc", "b"], "contains"]
+is_bool of [starts_with of ["abc", "a"], "starts_with"]
+is_bool of [ends_with of ["abc", "x"], "ends_with"]
+is_bool of [list_contains of [[1, 2], 2], "list_contains"]
+is_bool of [secure_equals of ["a", "a"], "secure_equals"]
+is_bool of [try_parse of "x is 1", "try_parse (valid)"]
+is_bool of [try_parse of "x is is", "try_parse (invalid)"]
+is_bool of [try_parse of "", "try_parse (empty)"]
+is_bool of [task_alive of 987654, "task_alive (unknown id)"]
+is_bool of [task_send of [987654, 1], "task_send (unknown id)"]
+is_bool of [task_kill of 987654, "task_kill (unknown id)"]
+ch is channel of null
+is_bool of [channel_closed of ch, "channel_closed"]
+is_bool of [file_exists of "lib/test.eigs", "file_exists"]
+is_bool of [is_dir of "lib", "is_dir"]
+is_bool of [is_file of "lib/test.eigs", "is_file"]
+is_bool of [seed_random of 7, "seed_random"]
+scratch_file is mktemp of null
+scratch is scratch_file + "_d"
+is_bool of [mkdir of scratch, "mkdir"]
+is_bool of [write_text of [scratch + "/a.txt", "x"], "write_text"]
+is_bool of [rename of [scratch + "/a.txt", scratch + "/b.txt"], "rename"]
+is_bool of [remove_file of (scratch + "/b.txt"), "remove_file"]
+is_bool of [rm of (scratch + "/nothing"), "rm (missing file)"]
+exec_capture of ["rm", "-rf", scratch, scratch_file]
+mf is math_flags of null
+is_bool of [mf.overflow, "math_flags.overflow"]
+is_bool of [mf.invalid, "math_flags.invalid"]
+is_bool of [mf.underflow, "math_flags.underflow"]
+sb is sandbox_run of [[1, [0, 0], [], []]]
+is_bool of [sb.ok, "sandbox_run ok (refused descriptor)"]
+same of [sb.ok, false, "sandbox_run ok is false for a refused descriptor"]
+# JSON: encode emits true/false; decode gives the bools back; round trip.
+same of [json_encode of [[true, false, 1 < 2]], "[true,false,true]", "json_encode of bools"]
+same of [json_encode of {"t": true}, "{\"t\":true}", "json_encode of a bool field"]
+decoded is json_decode of "[true, false, 1, 0]"
+same of [decoded[0], true, "json_decode true"]
+same of [decoded[1], false, "json_decode false"]
+same of [decoded[2], 1, "json_decode 1 stays a number"]
+same of [json_decode of (json_encode of {"a": [true, {"b": false}]}), {"a": [true, {"b": false}]}, "json round trip keeps bools"]
+# lib predicates return a bool on every path, including the early-out paths.
+load_file of "lib/set.eigs"
+load_file of "lib/validate.eigs"
+load_file of "lib/sort.eigs"
+load_file of "lib/list.eigs"
+load_file of "lib/json.eigs"
+load_file of "lib/map.eigs"
+s1 is set_from of [1, 2]
+is_bool of [set_has of [s1, 1], "set_has (present)"]
+is_bool of [set_has of [s1, 9], "set_has (absent)"]
+is_bool of [is_subset of [s1, s1], "is_subset"]
+is_bool of [set_equal of [s1, s1], "set_equal"]
+is_bool of [is_number of "12", "validate.is_number"]
+is_bool of [is_nonempty of "", "validate.is_nonempty (empty)"]
+is_bool of [in_range of [5, 1, 3], "validate.in_range"]
+is_bool of [is_email of "a@b.c", "validate.is_email"]
+is_bool of [is_sorted of [1, 2, 3], "sort.is_sorted"]
+is_bool of [is_sorted of [], "sort.is_sorted (empty)"]
+is_bool of [any of [[1, 2], (x) => x > 1], "list.any"]
+is_bool of [all of [[], (x) => x > 1], "list.all (empty)"]
+is_bool of [json_has of ["{\"a\": 1}", "a"], "json.json_has"]
+
 test_summary of null

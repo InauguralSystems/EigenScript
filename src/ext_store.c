@@ -430,10 +430,11 @@ static Value* store_json_parse_value(const char *s, int *pos) {
     if (s[*pos] == '{') return store_json_parse_object(s, pos);
     if (s[*pos] == '-' || isdigit(s[*pos])) return store_json_parse_number(s, pos);
     if (strncmp(s + *pos, "null", 4) == 0) { *pos += 4; return make_null(); }
-    if (strncmp(s + *pos, "true", 4) == 0) { *pos += 4; return make_num(1); }
-    /* fs:LITERAL the JSON token `false` decodes to the number 0 — this is the
+    /* #1637: JSON true/false decode to the bool values. */
+    if (strncmp(s + *pos, "true", 4) == 0) { *pos += 4; return make_bool(1); }
+    /* fs:LITERAL the JSON token `false` decodes to the bool false — this is the
      * value being constructed, not a guard; no argument is being rejected. */
-    if (strncmp(s + *pos, "false", 5) == 0) { *pos += 5; return make_num(0); }
+    if (strncmp(s + *pos, "false", 5) == 0) { *pos += 5; return make_bool(0); }
     return NULL;  /* unknown token */
 }
 
@@ -1295,7 +1296,7 @@ static Value* builtin_store_delete(Value *arg) {
         /* fs:CHANNEL the arity/type failure is already signalled by the
          * unconditional rt_error above (EK_TYPE latch, catchable — asserted by
          * CV2-68); this return is the post-raise placeholder, not the answer. */
-        return make_num(0);
+        return make_bool(0);
     }
     Store *store = store_arg(arg->data.list.items[0], "store_delete");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
@@ -1303,12 +1304,12 @@ static Value* builtin_store_delete(Value *arg) {
      * closed" — by the time it returns NULL, and rt_error LATCHES rather
      * than unwinding, so this return is the post-raise placeholder, not
      * "deleted nothing". Same shape as the arity guard above. */
-    if (!store) return make_num(0);
-    if (store_replay_blocks("store_delete")) return make_num(0);
+    if (!store) return make_bool(0);
+    if (store_replay_blocks("store_delete")) return make_bool(0);
     Value *col_val = arg->data.list.items[1];
     Value *key_val = arg->data.list.items[2];
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
-              "store_delete", "[store handle, string collection, key]", make_num(0));
+              "store_delete", "[store handle, string collection, key]", make_bool(0));
 
     const char *collection = col_val->data.str;
     char key_buf[STORE_MAX_KEY_LEN];
@@ -1321,7 +1322,7 @@ static Value* builtin_store_delete(Value *arg) {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
          * if/else chain's control flow is provably unchanged. */
-        ARG_GUARD(1, "store_delete", "a string or number key", make_num(0));
+        ARG_GUARD(1, "store_delete", "a string or number key", make_bool(0));
     }
 
     StoreLoc loc;
@@ -1330,7 +1331,7 @@ static Value* builtin_store_delete(Value *arg) {
      * to the end, or on-disk corruption that aborted the scan without having
      * marked anything deleted) — 0 is store_delete's documented "deleted
      * nothing", the value CV2-69 pins for a missing key. */
-    if (!store_locate(store, collection, key_buf, &loc)) return make_num(0);
+    if (!store_locate(store, collection, key_buf, &loc)) return make_bool(0);
 
     if (store_tombstone(store, &loc) != 0) {
         /* The record is still live on disk; answering 1 would report a
@@ -1339,9 +1340,9 @@ static Value* builtin_store_delete(Value *arg) {
         /* fs:CHANNEL the IO failure is signalled by the unconditional rt_error
          * above (EK_IO latch, catchable); this return is the post-raise
          * placeholder, not "deleted nothing". */
-        return make_num(0);
+        return make_bool(0);
     }
-    return make_num(1);
+    return make_bool(1);
 }
 
 /* store_query([handle, collection]) -> list of all records */
@@ -1448,7 +1449,7 @@ static Value* builtin_store_update(Value *arg) {
         /* fs:CHANNEL the arity/type failure is already signalled by the
          * unconditional rt_error above (EK_TYPE latch, catchable); this return
          * is the post-raise placeholder, not "updated nothing". */
-        return make_num(0);
+        return make_bool(0);
     }
     Value *handle = arg->data.list.items[0];
     Value *col_val = arg->data.list.items[1];
@@ -1460,11 +1461,11 @@ static Value* builtin_store_update(Value *arg) {
      * rt_error'd by the time it returns NULL, and rt_error latches rather
      * than unwinding, so this return is the post-raise placeholder, not
      * "no record updated". */
-    if (!store) return make_num(0);
-    if (store_replay_blocks("store_update")) return make_num(0);
+    if (!store) return make_bool(0);
+    if (store_replay_blocks("store_update")) return make_bool(0);
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_update", "[store handle, string collection, key, record]",
-              make_num(0));
+              make_bool(0));
     const char *collection = col_val->data.str;
 
     char key_buf[STORE_MAX_KEY_LEN];
@@ -1477,7 +1478,7 @@ static Value* builtin_store_update(Value *arg) {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
          * if/else chain's control flow is provably unchanged. */
-        ARG_GUARD(1, "store_update", "a string or number key", make_num(0));
+        ARG_GUARD(1, "store_update", "a string or number key", make_bool(0));
     }
 
     /* Locate the old record before touching it. #1006: the replace below is
@@ -1488,7 +1489,7 @@ static Value* builtin_store_update(Value *arg) {
     /* fs:ANSWER no live record carries this key, so there was nothing to
      * update — 0 is store_update's documented "no row updated"; 1 is produced
      * only when the replacement actually landed. */
-    if (!store_locate(store, collection, key_buf, &loc)) return make_num(0);
+    if (!store_locate(store, collection, key_buf, &loc)) return make_bool(0);
 
     /* Reject a non-dict record BEFORE anything is removed. store_put raises
      * the same EK_TYPE for it, but by then the old record was already gone
@@ -1504,7 +1505,7 @@ static Value* builtin_store_update(Value *arg) {
         /* fs:CHANNEL the type failure is signalled by the unconditional
          * rt_error above (EK_TYPE latch, catchable); this return is the
          * post-raise placeholder, not "no row updated". */
-        return make_num(0);
+        return make_bool(0);
     }
 
     if (store_tombstone(store, &loc) != 0) {
@@ -1513,7 +1514,7 @@ static Value* builtin_store_update(Value *arg) {
          * above (EK_IO latch, catchable); this return is the post-raise
          * placeholder, not "no row updated". Nothing was written, so the
          * record is untouched. */
-        return make_num(0);
+        return make_bool(0);
     }
 
     /* Set _id on new record so store_put reuses the same key. */
@@ -1564,10 +1565,10 @@ static Value* builtin_store_update(Value *arg) {
          * error, the un-restorable case, or the `!g_has_error` backstop just
          * above — so this return is the post-raise placeholder. It is
          * deliberately not 1: the replacement did not land. */
-        return make_num(0);
+        return make_bool(0);
     }
     val_decref(put_result);
-    return make_num(1);
+    return make_bool(1);
 }
 
 /* store_collections(handle) -> list of collection names */
@@ -1590,7 +1591,7 @@ static Value* builtin_store_drop(Value *arg) {
         /* fs:CHANNEL the arity/type failure is already signalled by the
          * unconditional rt_error above (EK_TYPE latch, catchable — asserted by
          * CV2-74); this return is the post-raise placeholder, not "not dropped". */
-        return make_num(0);
+        return make_bool(0);
     }
     Store *store = store_arg(arg->data.list.items[0], "store_drop");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
@@ -1598,17 +1599,17 @@ static Value* builtin_store_drop(Value *arg) {
      * than unwinding, so this return is the post-raise placeholder, not
      * store_drop's documented "no" (that is the documented-answer zero
      * below). */
-    if (!store) return make_num(0);
-    if (store_replay_blocks("store_drop")) return make_num(0);
+    if (!store) return make_bool(0);
+    if (store_replay_blocks("store_drop")) return make_bool(0);
     Value *col_val = arg->data.list.items[1];
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
-              "store_drop", "[store handle, string collection]", make_num(0));
+              "store_drop", "[store handle, string collection]", make_bool(0));
 
     const char *collection = col_val->data.str;
     Value *col_info = dict_get(store->catalog, collection);
     /* fs:ANSWER there is no such collection to drop, so nothing was dropped —
      * 0 is store_drop's documented "no" against the 1 produced on success. */
-    if (!col_info || col_info->type != VAL_DICT) return make_num(0);
+    if (!col_info || col_info->type != VAL_DICT) return make_bool(0);
 
     /* Mark all pages in chain as free */
     Value *rv = dict_get(col_info, "root");
@@ -1641,7 +1642,7 @@ static Value* builtin_store_drop(Value *arg) {
     store->catalog = new_catalog;
     store->dirty = 1;
     store_flush_catalog(store);
-    return make_num(1);
+    return make_bool(1);
 }
 
 /* ================================================================

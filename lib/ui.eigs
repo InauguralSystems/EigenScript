@@ -460,24 +460,24 @@ define _combo_matches(combo, ctrl, shift, alt, key) as:
     need_shift is 0
     need_alt is 0
     target_key is combo
-    if (contains of [combo, "ctrl+"]) == 1:
+    if (contains of [combo, "ctrl+"]):
         need_ctrl is 1
         target_key is str_replace of [target_key, "ctrl+", ""]
-    if (contains of [combo, "shift+"]) == 1:
+    if (contains of [combo, "shift+"]):
         need_shift is 1
         target_key is str_replace of [target_key, "shift+", ""]
-    if (contains of [combo, "alt+"]) == 1:
+    if (contains of [combo, "alt+"]):
         need_alt is 1
         target_key is str_replace of [target_key, "alt+", ""]
     if ctrl != need_ctrl:
-        return 0
+        return false
     if shift != need_shift:
-        return 0
+        return false
     if alt != need_alt:
-        return 0
+        return false
     if key == target_key:
-        return 1
-    return 0
+        return true
+    return false
 
 define _match_hotkey(ev) as:
     ctrl is 0
@@ -491,10 +491,10 @@ define _match_hotkey(ev) as:
         alt is ev.alt
     for i in range of (len of _ui.hotkeys):
         hk is _ui.hotkeys[i]
-        if (_combo_matches of [hk.combo, ctrl, shift, alt, ev.key]) == 1:
+        if (_combo_matches of [hk.combo, ctrl, shift, alt, ev.key]):
             hk.callback of null
-            return 1
-    return 0
+            return true
+    return false
 
 # Modal stack
 
@@ -565,11 +565,11 @@ define show_dialog(dlg, parent_w, parent_h) as:
 define _has_open_popup(widget) as:
     if widget.type == "combobox" or widget.type == "dropdown":
         if widget.open == 1:
-            return 1
+            return true
     if widget.type == "menu_bar":
         if widget.open_index >= 0:
-            return 1
-    return 0
+            return true
+    return false
 
 define claim_drag(widget) as:
     _ui.drag_widget is widget
@@ -594,7 +594,7 @@ define request_quit() as:
 define handle_key(root, ev) as:
     if ev.type != "keydown":
         return 0
-    if (_match_hotkey of ev) == 1:
+    if (_match_hotkey of ev):
         return 1
     if ev.key == "escape" and (len of _ui.modal_stack) > 0:
         pop_modal of null
@@ -806,7 +806,7 @@ define dispatch(root, ev) as:
         # through to the registry on_mousedown below.
         if dbl_ok == 1 and hit.type != "editable_label" and hit.on_dblclick == null:
             dbl_ok is 0
-        if dbl_ok == 1 and (_has_open_popup of hit) == 0 and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
+        if dbl_ok == 1 and (not (_has_open_popup of hit)) and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
             if hit.type == "editable_label":
                 _start_editing of hit
             else:

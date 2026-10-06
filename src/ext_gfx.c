@@ -448,7 +448,7 @@ Value* builtin_gfx_open(Value *arg) {
      * so "you called it wrong" and "this machine has no SDL" were the
      * same value. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
-              "gfx_open", "[number width, number height, title]", make_num(0));
+              "gfx_open", "[number width, number height, title]", make_bool(0));
     /* #1007: width and height were read as `.data.num` with no type check
      * while the title on the very next line WAS checked. Value's union
      * overlaps `double num` with `char *str`, so gfx_open of ["800","600",t]
@@ -456,23 +456,23 @@ Value* builtin_gfx_open(Value *arg) {
      * tiny denormal, so the window opened 0x0 and gfx_open answered 1. */
     ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
               arg->data.list.items[1]->type != VAL_NUM,
-              "gfx_open", "[number width, number height, title]", make_num(0));
+              "gfx_open", "[number width, number height, title]", make_bool(0));
     int w = (int)arg->data.list.items[0]->data.num;
     int h = (int)arg->data.list.items[1]->data.num;
     const char *title = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : "EigenScript";
 
     if (!load_sdl2()) {
         fprintf(stderr, "gfx_open: cannot load libSDL2\n");
-        return make_num(0);  /* fs:ANSWER 0 is gfx_open's open-failed result -- line 422 returns 1 only after a renderer exists; libSDL2 absent is environment state, not a bad argument */
+        return make_bool(0);  /* fs:ANSWER 0 is gfx_open's open-failed result -- line 422 returns 1 only after a renderer exists; libSDL2 absent is environment state, not a bad argument */
     }
     if (p_SDL_Init(MY_SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "gfx_open: SDL_Init failed: %s\n", p_SDL_GetError());
-        return make_num(0);  /* fs:ANSWER SDL_Init failed -- same 0-vs-1 open result as line 422, detail printed on stderr above */
+        return make_bool(0);  /* fs:ANSWER SDL_Init failed -- same 0-vs-1 open result as line 422, detail printed on stderr above */
     }
     g_window = p_SDL_CreateWindow(title, MY_SDL_WINDOWPOS_CENTERED, MY_SDL_WINDOWPOS_CENTERED, w, h, MY_SDL_WINDOW_RESIZABLE);
     if (!g_window) {
         fprintf(stderr, "gfx_open: SDL_CreateWindow failed: %s\n", p_SDL_GetError());
-        return make_num(0);  /* fs:ANSWER SDL_CreateWindow failed -- 0 open result; g_window stays NULL so every later gfx builtin no-ops */
+        return make_bool(0);  /* fs:ANSWER SDL_CreateWindow failed -- 0 open result; g_window stays NULL so every later gfx builtin no-ops */
     }
     g_renderer = p_SDL_CreateRenderer(g_window, -1, MY_SDL_RENDERER_ACCELERATED | MY_SDL_RENDERER_PRESENTVSYNC);
     if (!g_renderer) {
@@ -482,10 +482,10 @@ Value* builtin_gfx_open(Value *arg) {
         fprintf(stderr, "gfx_open: SDL_CreateRenderer failed\n");
         p_SDL_DestroyWindow(g_window);
         g_window = NULL;
-        return make_num(0);  /* fs:ANSWER SDL_CreateRenderer failed on both attempts -- 0 open result; the window is destroyed and g_window NULLed first */
+        return make_bool(0);  /* fs:ANSWER SDL_CreateRenderer failed on both attempts -- 0 open result; the window is destroyed and g_window NULLed first */
     }
     p_SDL_SetRenderDrawBlendMode(g_renderer, MY_SDL_BLENDMODE_BLEND);
-    return make_num(1);
+    return make_bool(1);
 }
 
 /* gfx_close of null */
@@ -743,14 +743,14 @@ Value* builtin_gfx_present(Value *arg) {
     return make_null(); /* fs:VOID gfx_present answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
-/* Attach keyboard modifier state as shift/ctrl/alt (0/1) dict fields.
+/* Attach keyboard modifier state as shift/ctrl/alt bool dict fields (#1637).
  * KMOD_SHIFT = 0x0003, KMOD_CTRL = 0x00C0, KMOD_ALT = 0x0300.
  * Key events read the mask from keysym.mod; mouse/wheel events (#568)
  * pass SDL_GetModState() — SDL keeps it current at mouse-event time. */
 static void poll_set_mods(Value *d, int mod) {
-    dict_set_owned(d, "shift", make_num((mod & 0x03) ? 1 : 0));
-    dict_set_owned(d, "ctrl", make_num((mod & 0xC0) ? 1 : 0));
-    dict_set_owned(d, "alt", make_num((mod & 0x300) ? 1 : 0));
+    dict_set_owned(d, "shift", make_bool((mod & 0x03) != 0));
+    dict_set_owned(d, "ctrl", make_bool((mod & 0xC0) != 0));
+    dict_set_owned(d, "alt", make_bool((mod & 0x300) != 0));
 }
 
 static int poll_mod_state(void) {
@@ -1632,7 +1632,7 @@ Value* builtin_audio_stream_push(Value *arg) {
     /* #1007 round 3: above the device check, for the reason audio_play's is. */
     STRICT_REQUIRE(gfx_bad_samples(arg), "audio_stream_push",
                    "a list or buffer of samples, or null");
-    if (!g_stream_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_stream_push: "0 on a closed device"; g_stream_device == 0 is device state, not an argument */
+    if (!g_stream_device) return make_bool(0);  /* fs:ANSWER BUILTINS.md audio_stream_push: "0 on a closed device"; g_stream_device == 0 is device state, not an argument */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
     if (!buf) {
@@ -1641,15 +1641,15 @@ Value* builtin_audio_stream_push(Value *arg) {
          * audio_convert_samples, while an empty or over-64MB clip has not and
          * is a documented "nothing to play". */
         /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
-        if (g_has_error) return make_num(0);
+        if (g_has_error) return make_bool(0);
         /* fs:ANSWER an empty or over-64MB clip plays nothing, so 0 (no
          * channel) is the result, not a laundered argument mistake. */
-        return make_num(0);
+        return make_bool(0);
     }
     int rc = p_SDL_QueueAudio(g_stream_device, buf,
                               (Uint32)((size_t)n * sizeof(int16_t)));
     free(buf);
-    return make_num(rc == 0 ? 1 : 0);
+    return make_bool(rc == 0);
 }
 
 /* audio_stream_queued of null — samples still buffered (not yet played)
@@ -1698,7 +1698,7 @@ Value* builtin_audio_music_play(Value *arg) {
     /* #1007: both #971 deferral markers converted. Above load_sdl2(), the [135] rule. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1
               || arg->data.list.items[0]->type != VAL_STR,
-              "audio_music_play", "[string path, number loops]", make_num(0));
+              "audio_music_play", "[string path, number loops]", make_bool(0));
     /* A wrong-typed `loops` is the COERCION shape: it fell back to -1
      * (forever), so a typo made the track loop rather than play once. */
     STRICT_REQUIRE(arg->data.list.count >= 2
@@ -1707,9 +1707,9 @@ Value* builtin_audio_music_play(Value *arg) {
     const char *path = arg->data.list.items[0]->data.str;
     int loops = (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
                 ? (int)arg->data.list.items[1]->data.num : -1;
-    if (!load_sdl2()) return make_num(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
+    if (!load_sdl2()) return make_bool(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
-    if (!load_sdl_mixer()) return make_num(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
+    if (!load_sdl_mixer()) return make_bool(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
     if (!g_mixer_open) {
         p_Mix_Init(MY_MIX_INIT_MP3);
         /* Mix_OpenAudioDevice (not the legacy Mix_OpenAudio) so the music
@@ -1717,7 +1717,7 @@ Value* builtin_audio_music_play(Value *arg) {
         if (p_Mix_OpenAudioDevice(44100, MY_AUDIO_S16SYS, 2, 2048, NULL, 0) < 0) {
             fprintf(stderr, "audio_music: Mix_OpenAudioDevice failed: %s\n",
                     p_SDL_GetError ? p_SDL_GetError() : "?");
-            return make_num(0);  /* fs:ANSWER Mix_OpenAudioDevice failed (no audio device) -- documented 0, detail on stderr above */
+            return make_bool(0);  /* fs:ANSWER Mix_OpenAudioDevice failed (no audio device) -- documented 0, detail on stderr above */
         }
         g_mixer_open = 1;
     }
@@ -1726,14 +1726,14 @@ Value* builtin_audio_music_play(Value *arg) {
     if (!g_music) {
         fprintf(stderr, "audio_music: cannot load '%s': %s\n", path,
                 p_SDL_GetError ? p_SDL_GetError() : "?");
-        return make_num(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
+        return make_bool(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
     }
     if (p_Mix_PlayMusic(g_music, loops) < 0) {
         fprintf(stderr, "audio_music: play failed: %s\n",
                 p_SDL_GetError ? p_SDL_GetError() : "?");
-        return make_num(0);  /* fs:ANSWER Mix_PlayMusic failed -- documented 0; line 1378 returns 1 only when the track is actually playing */
+        return make_bool(0);  /* fs:ANSWER Mix_PlayMusic failed -- documented 0; line 1378 returns 1 only when the track is actually playing */
     }
-    return make_num(1);
+    return make_bool(1);
 }
 
 /* audio_music_volume of v — music volume 0..128 */

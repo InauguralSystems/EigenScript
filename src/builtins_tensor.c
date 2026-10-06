@@ -2189,12 +2189,12 @@ Value* builtin_sgd_update_cols(Value *arg) {
 Value* builtin_tensor_save(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "tensor_save");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "tensor_save", "[tensor, path]", make_num(0));
+              "tensor_save", "[tensor, path]", make_bool(0));
     Value *tensor = arg->data.list.items[0];
     Value *path_val = arg->data.list.items[1];
     ARG_GUARD(!tensor || (tensor->type != VAL_LIST && tensor->type != VAL_BUFFER)
               || !path_val || path_val->type != VAL_STR,   /* #1093 */
-              "tensor_save", "[a list or buffer tensor, a string path]", make_num(0));
+              "tensor_save", "[a list or buffer tensor, a string path]", make_bool(0));
 
     int rows, cols;
     int ndim = tensor_dims(tensor, &rows, &cols);
@@ -2202,13 +2202,13 @@ Value* builtin_tensor_save(Value *arg) {
      * neither a number nor a list — i.e. the argument is a list but not a 1D
      * or 2D tensor, which is a shape/type mistake in the tensor argument and
      * not an I/O failure (no file has been opened yet at this point). */
-    ARG_GUARD(ndim == 0, "tensor_save", "a non-empty 1D or 2D tensor", make_num(0));
+    ARG_GUARD(ndim == 0, "tensor_save", "a non-empty 1D or 2D tensor", make_bool(0));
     if ((int64_t)rows * (int64_t)cols > EIGS_TENSOR_MAX_ELEMENTS) {
         rt_error(EK_LIMIT, 0,
                  "tensor_save: '%s' has %lld elements, over the %d-element cap",
                  path_val->data.str, (long long)rows * cols,
                  EIGS_TENSOR_MAX_ELEMENTS);
-        return make_num(0);
+        return make_bool(0);
     }
 
     /* Flatten before opening the file: a strict #1416 rejection must not
@@ -2220,14 +2220,14 @@ Value* builtin_tensor_save(Value *arg) {
      * to return for that shape. Preserve the historical save format: write
      * its header and the empty data/observer sections. A NULL for any other
      * shape remains a conversion failure. */
-    if (!flat && cols != 0) return make_num(0);
-    if (!flat && g_has_error) return make_num(0);
+    if (!flat && cols != 0) return make_bool(0);
+    if (!flat && g_has_error) return make_bool(0);
 
     FILE *f = xfopen_write(path_val->data.str, "wb");
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
      * is xfopen_write failing, and 0 is this builtin's failure bit (the success
-     * path ends in make_num(1)). */
-    if (!f) { free(flat); return make_num(0); }
+     * path ends in make_bool(1)). */
+    if (!f) { free(flat); return make_bool(0); }
 
     uint32_t header[4] = { (uint32_t)ndim, (uint32_t)rows, (uint32_t)cols, 1 /* flags: has observer */ };
     fwrite(header, sizeof(uint32_t), 4, f);
@@ -2248,7 +2248,7 @@ Value* builtin_tensor_save(Value *arg) {
     }
 
     fclose(f);
-    return make_num(1);
+    return make_bool(1);
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 

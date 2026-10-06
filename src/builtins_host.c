@@ -259,11 +259,11 @@ Value* builtin_regex_replace(Value *arg) {
 Value* builtin_stream_open(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "stream_open");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "stream_open", "[path, count]", make_num(0));
+              "stream_open", "[path, count]", make_bool(0));
     Value *path_val = arg->data.list.items[0];
     Value *count_val = arg->data.list.items[1];
     ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM,
-              "stream_open", "[a string path, a number count]", make_num(0));
+              "stream_open", "[a string path, a number count]", make_bool(0));
     if (count_val->data.num < 1 ||
         count_val->data.num > EIGS_TENSOR_MAX_ELEMENTS ||
         count_val->data.num != floor(count_val->data.num)) {
@@ -271,7 +271,7 @@ Value* builtin_stream_open(Value *arg) {
                  "stream_open: '%s' count %.17g is outside the 1..%d element cap",
                  path_val->data.str, count_val->data.num,
                  EIGS_TENSOR_MAX_ELEMENTS);
-        return make_num(0);
+        return make_bool(0);
     }
     if (g_stream_file) { fclose(g_stream_file); g_stream_file = NULL; }
     g_stream_file = xfopen_write(path_val->data.str, "wb");
@@ -279,7 +279,7 @@ Value* builtin_stream_open(Value *arg) {
      * reaching here with a NULL FILE* is xfopen_write failing, and the block
      * comment over this section documents stream_open as answering 1 — so 0
      * is the "could not open" answer, not a type mistake. */
-    if (!g_stream_file) return make_num(0);
+    if (!g_stream_file) return make_bool(0);
     uint32_t count = (uint32_t)count_val->data.num;
     uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
     if (fwrite(header, sizeof(uint32_t), 4, g_stream_file) != 4) {
@@ -287,32 +287,32 @@ Value* builtin_stream_open(Value *arg) {
         g_stream_file = NULL;
         /* fs:ANSWER a short fwrite(3) of the header — an I/O failure after the
          * file was already opened; 0 is the failure bit paired with the
-         * make_num(1) success value below. */
-        return make_num(0);
+         * make_bool(1) success value below. */
+        return make_bool(0);
     }
-    return make_num(1);
+    return make_bool(1);
 }
 
 Value* builtin_stream_write(Value *arg) {
     /* The two halves of the original single condition are separated because
      * only one of them is about the ARGUMENT: `!g_stream_file` is a stream
      * state, and strict must not report it as a type error. Both halves still
-     * answer make_num(0) with strict off, in either order, so the non-strict
+     * answer make_bool(0) with strict off, in either order, so the non-strict
      * result is unchanged. */
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "stream_write", "a number", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "stream_write", "a number", make_bool(0));
     /* fs:ANSWER no stream is open — the state, not the argument (which the
      * guard above already accepted); 0 is the failure bit paired with the
-     * make_num(1) success value below. */
-    if (!g_stream_file) return make_num(0);
+     * make_bool(1) success value below. */
+    if (!g_stream_file) return make_bool(0);
     double val = arg->data.num;
     if (fwrite(&val, sizeof(double), 1, g_stream_file) != 1) {
         fclose(g_stream_file);
         g_stream_file = NULL;
         /* fs:ANSWER a short fwrite(3) of one float64 — an I/O failure, not an
          * argument mistake; 0 is this builtin's documented failure bit. */
-        return make_num(0);
+        return make_bool(0);
     }
-    return make_num(1);
+    return make_bool(1);
 }
 
 Value* builtin_stream_close(Value *arg) {
@@ -320,10 +320,10 @@ Value* builtin_stream_close(Value *arg) {
     /* fs:ANSWER stream_close ignores `arg` entirely ((void)arg above), so this
      * cannot be an argument guard: no stream is open, and 0 is the failure bit
      * paired with the ok?1:0 value below. */
-    if (!g_stream_file) return make_num(0);
+    if (!g_stream_file) return make_bool(0);
     int ok = (fclose(g_stream_file) == 0);
     g_stream_file = NULL;
-    return make_num(ok ? 1 : 0);
+    return make_bool(ok);
 }
 
 /* ---- Filesystem ---- */
@@ -337,7 +337,7 @@ Value* builtin_stream_close(Value *arg) {
  * rule as the proc-star / audio-capture boundary. Its return IS pinnable by
  * the tape (unlike a proc fd), so it is Recorded, not #148-non-replayable. */
 Value* builtin_mkdir(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "mkdir", "a string path", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "mkdir", "a string path", make_bool(0));
     TRACE_NONDET_TAKE("mkdir");
     /* Simple recursive mkdir */
     char *path = xstrdup(arg->data.str);
@@ -353,7 +353,7 @@ Value* builtin_mkdir(Value *arg) {
     free(path);
     struct stat st;
     TRACE_NONDET_RECORD("mkdir",
-        make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
+        make_bool(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode)));
 }
 
 static int ls_entry_cmp(const void *a, const void *b) {
@@ -411,8 +411,8 @@ Value* builtin_exe_path(Value *arg) {
 
 /* chdir of "path" → 1 on success, 0 on failure */
 Value* builtin_chdir(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "chdir", "a string path", make_num(0));
-    return make_num(chdir(arg->data.str) == 0 ? 1 : 0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "chdir", "a string path", make_bool(0));
+    return make_bool(chdir(arg->data.str) == 0);
 }
 
 /* mktemp of null → path to a new temporary file */
@@ -437,8 +437,8 @@ Value* builtin_mktemp(Value *arg) {
 
 /* rm of "path" → 1 on success, 0 on failure */
 Value* builtin_rm(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "rm", "a string path", make_num(0));
-    return make_num(unlink(arg->data.str) == 0 ? 1 : 0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "rm", "a string path", make_bool(0));
+    return make_bool(unlink(arg->data.str) == 0);
 }
 
 /* Identifier frequency entry */
@@ -1005,7 +1005,7 @@ Value* builtin_load_file(Value *arg) {
 }
 
 Value* builtin_file_exists(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "file_exists", "a string path", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "file_exists", "a string path", make_bool(0));
     /* #585: fs-dependent read — taped so replay serves the recorded answer.
      * TAKE short-circuits before the fopen probe under EIGS_REPLAY. */
     TRACE_NONDET_TAKE("file_exists");
@@ -1016,7 +1016,7 @@ Value* builtin_file_exists(Value *arg) {
      * devices stay 1 as before. */
     struct stat st;
     int ex = (stat(arg->data.str, &st) == 0);
-    TRACE_NONDET_RECORD("file_exists", make_num(ex));
+    TRACE_NONDET_RECORD("file_exists", make_bool(ex));
 }
 
 /* is_dir of path — 1 if path names a directory, 0 for a plain file, a
@@ -1026,10 +1026,10 @@ Value* builtin_file_exists(Value *arg) {
  * file_exists, ls, mkdir, getcwd — predate the tape and are untraced;
  * that inconsistency is flagged on the PR, not silently copied here). */
 Value* builtin_is_dir(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_dir", "a string path", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_dir", "a string path", make_bool(0));
     struct stat st;
     TRACE_NONDET_RET("is_dir",
-        make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
+        make_bool(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode)));
 }
 
 /* #1058: `is_file of path` -- 1 iff the path names a REGULAR file (S_ISREG).
@@ -1039,10 +1039,10 @@ Value* builtin_is_dir(Value *arg) {
  * non-regular non-directory class passed both and read as "", so /dev/null
  * compiled to the empty program. Taped like is_dir. */
 Value* builtin_is_file(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_file", "a string path", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_file", "a string path", make_bool(0));
     struct stat st;
     TRACE_NONDET_RET("is_file",
-        make_num(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode) ? 1 : 0));
+        make_bool(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode)));
 }
 
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
@@ -1052,18 +1052,18 @@ Value* builtin_is_file(Value *arg) {
 Value* builtin_rename(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "rename");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "rename", "[old_path, new_path]", make_num(0));
+              "rename", "[old_path, new_path]", make_bool(0));
     Value *from = arg->data.list.items[0];
     Value *to = arg->data.list.items[1];
     ARG_GUARD(!from || from->type != VAL_STR || !to || to->type != VAL_STR,
-              "rename", "two string paths", make_num(0));
-    return make_num(rename(from->data.str, to->data.str) == 0 ? 1 : 0);
+              "rename", "two string paths", make_bool(0));
+    return make_bool(rename(from->data.str, to->data.str) == 0);
 }
 
 /* remove_file of path — delete a file. Returns 1 on success, 0 on failure. */
 Value* builtin_remove_file(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_num(0));
-    return make_num(remove(arg->data.str) == 0 ? 1 : 0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_bool(0));
+    return make_bool(remove(arg->data.str) == 0);
 }
 
 /* ==== BUILTIN: read_text ==== */
@@ -1261,21 +1261,21 @@ Value* builtin_read_line(Value *arg) {
 Value* builtin_write_text(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "write_text");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "write_text", "[path, text]", make_num(0));
+              "write_text", "[path, text]", make_bool(0));
     Value *path_val = arg->data.list.items[0];
     Value *text_val = arg->data.list.items[1];
     ARG_GUARD(!path_val || path_val->type != VAL_STR ||
               !text_val || text_val->type != VAL_STR,
-              "write_text", "two strings", make_num(0));
+              "write_text", "two strings", make_bool(0));
     FILE *f = xfopen_write(path_val->data.str, "w");
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
      * is xfopen_write failing (missing directory, permissions, sandbox), and
      * the header comment documents write_text as "1 on success, 0 on failure". */
-    if (!f) return make_num(0);
+    if (!f) return make_bool(0);
     size_t len = val_str_len(text_val);
     size_t written = fwrite(text_val->data.str, 1, len, f);
     int close_ok = (fclose(f) == 0);
-    return make_num(written == len && close_ok ? 1 : 0);
+    return make_bool(written == len && close_ok);
 }
 
 /* ==== BUILTIN: exec_capture ==== */

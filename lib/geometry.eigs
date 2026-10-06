@@ -174,8 +174,8 @@ define orientation(p, q, r) as:
 # Are three points collinear?
 define collinear(p, q, r) as:
     if (orientation of [p, q, r]) == 0:
-        return 1
-    return 0
+        return true
+    return false
 
 # Is q on segment pr? (assuming collinear)
 define on_segment(p, q, r) as:
@@ -192,8 +192,8 @@ define on_segment(p, q, r) as:
     if r[1] > max_y:
         max_y is r[1]
     if q[0] >= min_x and q[0] <= max_x and q[1] >= min_y and q[1] <= max_y:
-        return 1
-    return 0
+        return true
+    return false
 
 # Do two line segments intersect?
 define segments_intersect(a1, a2, b1, b2) as:
@@ -203,17 +203,17 @@ define segments_intersect(a1, a2, b1, b2) as:
     o4 is orientation of [b1, b2, a2]
     # General case
     if o1 != o2 and o3 != o4:
-        return 1
+        return true
     # Collinear special cases
-    if o1 == 0 and (on_segment of [a1, b1, a2]) == 1:
-        return 1
-    if o2 == 0 and (on_segment of [a1, b2, a2]) == 1:
-        return 1
-    if o3 == 0 and (on_segment of [b1, a1, b2]) == 1:
-        return 1
-    if o4 == 0 and (on_segment of [b1, a2, b2]) == 1:
-        return 1
-    return 0
+    if o1 == 0 and (on_segment of [a1, b1, a2]):
+        return true
+    if o2 == 0 and (on_segment of [a1, b2, a2]):
+        return true
+    if o3 == 0 and (on_segment of [b1, a1, b2]):
+        return true
+    if o4 == 0 and (on_segment of [b1, a2, b2]):
+        return true
+    return false
 
 # Find intersection point of two lines (defined by point pairs)
 # Returns point or null if parallel
@@ -287,8 +287,8 @@ define point_in_triangle(p, a, b, c) as:
     v is bc[1]
     w is bc[2]
     if u >= 0 and v >= 0 and w >= 0:
-        return 1
-    return 0
+        return true
+    return false
 
 # Returns [u, v, w] barycentric coordinates
 define barycentric_coords(p, a, b, c) as:
@@ -403,7 +403,7 @@ define point_in_polygon(point, vertices) as:
 define polygon_is_convex(vertices) as:
     n is len of vertices
     if n < 3:
-        return 0
+        return false
     sign is 0
     for i in range of n:
         i1 is i + 1
@@ -417,15 +417,15 @@ define polygon_is_convex(vertices) as:
             if sign == 0:
                 sign is o
             elif o != sign:
-                return 0
-    return 1
+                return false
+    return true
 
 # Check winding order via signed area
 define polygon_is_clockwise(vertices) as:
     a is polygon_area of vertices
     if a < 0:
-        return 1
-    return 0
+        return true
+    return false
 
 # ============================================================
 # Convex Hull — Andrew's Monotone Chain Algorithm
@@ -527,13 +527,13 @@ define circles_intersect(c1x, c1y, c1r, c2x, c2y, c2r) as:
     dy is c2y - c1y
     d is sqrt of (dx * dx + dy * dy)
     if d > c1r + c2r:
-        return 0
+        return false
     diff is c1r - c2r
     if diff < 0:
         diff is 0 - diff
     if d < diff:
-        return 0
-    return 1
+        return false
+    return true
 
 # Returns list of intersection points (0, 1, or 2 points)
 define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
@@ -567,8 +567,8 @@ define point_in_circle(px, py, cx, cy, r) as:
     dx is px - cx
     dy is py - cy
     if dx * dx + dy * dy <= r * r:
-        return 1
-    return 0
+        return true
+    return false
 
 define circle_area(r) as:
     return _PI * r * r

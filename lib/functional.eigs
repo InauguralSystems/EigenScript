@@ -48,11 +48,11 @@ define apply_all(fns, val) as:
 
 # ---- complement: negate a predicate function ----
 # Since EigenScript lacks closures, this takes [pred, value] at call time.
-# complement of [pred, value] -> 1 if pred returns falsy, else 0
+# complement of [pred, value] -> true if pred returns falsy, else false
 define complement(pred, val) as:
     if pred of val:
-        return 0
-    return 1
+        return false
+    return true
 
 # ---- times: call function n times with index ----
 # times of [count, fn] -> list of results
@@ -109,8 +109,8 @@ define wait_until(pred, tries, sleep_fn) as:
     local i is 0
     loop while i < tries:
         if pred of []:
-            return 1
+            return true
         i is i + 1
         if sleep_fn != null and i < tries:
             sleep_fn of []
-    return 0
+    return false

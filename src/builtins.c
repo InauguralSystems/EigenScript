@@ -993,11 +993,11 @@ Value* builtin_values(Value *arg) {
 
 Value* builtin_has_key(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "has_key");
-    ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2, "has_key", "[dict, key]", make_num(0));
+    ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2, "has_key", "[dict, key]", make_bool(0));
     Value *d = arg->data.list.items[0];
     Value *key = arg->data.list.items[1];
-    ARG_GUARD(d->type != VAL_DICT || key->type != VAL_STR, "has_key", "[dict, string]", make_num(0));
-    return make_num(dict_has(d, key->data.str) ? 1 : 0);
+    ARG_GUARD(d->type != VAL_DICT || key->type != VAL_STR, "has_key", "[dict, string]", make_bool(0));
+    return make_bool(dict_has(d, key->data.str));
 }
 
 Value* builtin_dict_set(Value *arg) {
@@ -1105,9 +1105,10 @@ Value* builtin_classify(Value *arg) {
 Value* builtin_math_flags(Value *arg) {
     (void)arg;
     Value *d = make_dict(3);
-    Value *ov = make_num((g_math_flags & EIGS_MATH_OVERFLOW) ? 1 : 0);
-    Value *iv = make_num((g_math_flags & EIGS_MATH_INVALID) ? 1 : 0);
-    Value *uv = make_num((g_math_flags & EIGS_MATH_UNDERFLOW) ? 1 : 0);
+    /* #1637: each flag is a bool. */
+    Value *ov = make_bool((g_math_flags & EIGS_MATH_OVERFLOW) != 0);
+    Value *iv = make_bool((g_math_flags & EIGS_MATH_INVALID) != 0);
+    Value *uv = make_bool((g_math_flags & EIGS_MATH_UNDERFLOW) != 0);
     dict_set_owned(d, "overflow", ov);
     dict_set_owned(d, "invalid", iv);
     dict_set_owned(d, "underflow", uv);
@@ -1206,6 +1207,9 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
             eigs_json_escape_string(out, v->data.text_builder.data ? v->data.text_builder.data : "");
             break;
         }
+        case VAL_BOOL:   /* #1637: JSON's own literals; json_decode gives the bool back */
+            strbuf_append(out, v->data.boolean ? "true" : "false");
+            break;
         case VAL_LIST: {
             strbuf_append_char(out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
@@ -1650,11 +1654,11 @@ Value* eigs_json_parse_value(const char *s, int *pos) {
     }
     if (s[*pos] == '-' || isdigit(s[*pos])) return eigs_json_parse_number(s, pos);
     if (strncmp(s + *pos, "null", 4) == 0) { *pos += 4; return make_null(); }
-    if (strncmp(s + *pos, "true", 4) == 0) { *pos += 4; return make_num(1); }
-    /* fs:LITERAL this IS how JSON `false` is returned — 0 is the parsed VALUE,
-     * not a stand-in for a rejected argument. A sweep over `return
-     * make_num(0)` would have made every `false` in parsed JSON raise. */
-    if (strncmp(s + *pos, "false", 5) == 0) { *pos += 5; return make_num(0); }
+    /* #1637: JSON's true/false decode to the bool values. */
+    if (strncmp(s + *pos, "true", 4) == 0) { *pos += 4; return make_bool(1); }
+    /* fs:LITERAL this IS how JSON `false` is returned — the parsed VALUE,
+     * not a stand-in for a rejected argument. */
+    if (strncmp(s + *pos, "false", 5) == 0) { *pos += 5; return make_bool(0); }
     g_json_parse_err = 1;   /* #495: unrecognized token */
     return make_null();
 }
@@ -1787,18 +1791,18 @@ Value* builtin_str_lower(Value *arg) {
  * everything, so `contains of [[1,2,3], 2]` reported a spurious hit. */
 Value* builtin_contains(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "contains");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "contains", "[haystack, needle]", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "contains", "[haystack, needle]", make_bool(0));
     Value *h = arg->data.list.items[0], *n = arg->data.list.items[1];
-    ARG_GUARD(!h || h->type != VAL_STR || !n || n->type != VAL_STR, "contains", "two strings", make_num(0));
-    return make_num(strstr(h->data.str, n->data.str) != NULL ? 1 : 0);
+    ARG_GUARD(!h || h->type != VAL_STR || !n || n->type != VAL_STR, "contains", "two strings", make_bool(0));
+    return make_bool(strstr(h->data.str, n->data.str) != NULL);
 }
 
 Value* builtin_starts_with(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "starts_with");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "starts_with", "[string, prefix]", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "starts_with", "[string, prefix]", make_bool(0));
     Value *s = arg->data.list.items[0], *p = arg->data.list.items[1];
-    ARG_GUARD(!s || s->type != VAL_STR || !p || p->type != VAL_STR, "starts_with", "two strings", make_num(0));
-    return make_num(strncmp(s->data.str, p->data.str, val_str_len(p)) == 0 ? 1 : 0);
+    ARG_GUARD(!s || s->type != VAL_STR || !p || p->type != VAL_STR, "starts_with", "two strings", make_bool(0));
+    return make_bool(strncmp(s->data.str, p->data.str, val_str_len(p)) == 0);
 }
 
 Value* builtin_split(Value *arg) {
@@ -2260,15 +2264,15 @@ Value* builtin_char_at(Value *arg) {
 /* ==== BUILTIN: ends_with ==== */
 Value* builtin_ends_with(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "ends_with");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "ends_with", "[string, suffix]", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "ends_with", "[string, suffix]", make_bool(0));
     Value *sv = arg->data.list.items[0], *xv = arg->data.list.items[1];
-    ARG_GUARD(!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR, "ends_with", "two strings", make_num(0));
+    ARG_GUARD(!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR, "ends_with", "two strings", make_bool(0));
     const char *str = sv->data.str, *suffix = xv->data.str;
     int slen = strlen(str), xlen = strlen(suffix);
     /* fs:ANSWER a suffix longer than the string is not a suffix of it; 0 is
      * the predicate's answer, not a stand-in for a rejected argument. */
-    if (xlen > slen) return make_num(0);
-    return make_num(strcmp(str + slen - xlen, suffix) == 0 ? 1 : 0);
+    if (xlen > slen) return make_bool(0);
+    return make_bool(strcmp(str + slen - xlen, suffix) == 0);
 }
 
 /* ==== BUILTIN: substr ==== */
@@ -2543,12 +2547,12 @@ Value* builtin_random_int(Value *arg) {
 
 /* seed_random of n → seeds the RNG, returns 1 */
 Value* builtin_seed_random(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_bool(0));
     pthread_mutex_lock(&g_random_lock);
     srand48((long)arg->data.num);
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
-    return make_num(1);
+    return make_bool(1);
 }
 
 
@@ -3051,10 +3055,10 @@ Value* builtin_state_at(Value *arg) {
  * loop runs over the longer operand.) */
 Value* builtin_secure_equals(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "secure_equals");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "secure_equals", "[string, string]", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "secure_equals", "[string, string]", make_bool(0));
     Value *a = arg->data.list.items[0];
     Value *b = arg->data.list.items[1];
-    ARG_GUARD(!a || !b || a->type != VAL_STR || b->type != VAL_STR, "secure_equals", "two strings", make_num(0));
+    ARG_GUARD(!a || !b || a->type != VAL_STR || b->type != VAL_STR, "secure_equals", "two strings", make_bool(0));
     const char *sa = a->data.str ? a->data.str : "";
     const char *sb = b->data.str ? b->data.str : "";
     size_t la = strlen(sa), lb = strlen(sb);
@@ -3066,7 +3070,7 @@ Value* builtin_secure_equals(Value *arg) {
         unsigned char cb = i < lb ? (unsigned char)sb[i] : 0;
         diff |= (unsigned char)(ca ^ cb);
     }
-    return make_num(diff == 0 ? 1.0 : 0.0);
+    return make_bool(diff == 0);
 }
 
 /* ==== BUILTIN: http_request_headers ==== */
@@ -3158,12 +3162,12 @@ Value* builtin_try_parse(Value *arg) {
      * documented answer. Phase A's writeup used `try_parse of "!!!"` as its
      * example of a 0 that is an answer — that is the string path, which is
      * untouched here. Handing `try_parse` a number is not that. */
-    ARG_GUARD(!arg || arg->type != VAL_STR, "try_parse", "a string", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_STR, "try_parse", "a string", make_bool(0));
     const char *src = arg->data.str;
     /* fs:ANSWER empty source is not valid EigenScript syntax; 0 is the
      * documented result ("1 if valid, 0 if not"), the same channel a
      * syntactically bad program uses. */
-    if (!src || !src[0]) return make_num(0);
+    if (!src || !src[0]) return make_bool(0);
 
     /* Suppress stderr during parse attempt (needs fd plumbing — parse
      * diagnostics print unsuppressed in the freestanding profile) */
@@ -3195,7 +3199,7 @@ Value* builtin_try_parse(Value *arg) {
     /* make_node zero-initializes children, so free_ast walks partial
      * parses safely (NULL children are no-ops). */
     free_ast(ast);
-    return make_num(valid);
+    return make_bool(valid);
 }
 
 /* ==== BUILTIN: eval ==== */
@@ -3836,7 +3840,7 @@ static Value *sandbox_finish_run(Value *out) {
  * builtins are shadowed by a blocked stub, and loops are capped at
  * max_iterations (default 1,000,000). A separate cumulative instruction
  * limit bounds VM work, but does not bound time inside a native builtin. Runtime errors
- * are caught (not propagated). Returns {"ok": 1/0, "result": value} — the graded
+ * are caught (not propagated). Returns {"ok": true/false, "result": value} — the graded
  * "does it run?" rung for a self-hosted compiler validating generated code. */
 Value* builtin_sandbox_run(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "sandbox_run");
@@ -3900,9 +3904,7 @@ Value* builtin_sandbox_run(Value *arg) {
          * rejecting the graph. Restore the caller's scope before constructing
          * the host-owned diagnostic dictionary, then release this run's names. */
         env_intern_scope_end(intern_scope, saved_intern_scope);
-        Value *zero = make_num(0);
-        dict_set(out, "ok", zero);   /* dict_set increfs; drop our ref */
-        val_decref(zero);
+        dict_set(out, "ok", make_bool(0));   /* #1637: ok is a bool */
         /* #406: surface the build failure structurally — a descriptor
          * that doesn't verify is a bad argument value, same shape as a
          * runtime failure's error field. */
@@ -4155,9 +4157,7 @@ Value* builtin_sandbox_run(Value *arg) {
         dict_set_owned(out, "error", ev);
     }
 
-    Value *okv = make_num((double)ok);
-    dict_set(out, "ok", okv);   /* dict_set increfs; drop our ref */
-    val_decref(okv);
+    dict_set(out, "ok", make_bool(ok != 0));   /* #1637: ok is a bool (immortal) */
     if (result) { dict_set(out, "result", result); val_decref(result); }
     chunk_free(chunk);
     env_decref(sbox);
@@ -5334,9 +5334,9 @@ Value* builtin_channel_closed(Value *arg) {
      * channel". The second is the documented answer (a reclaimed channel is
      * closed); the first is a type mistake reading as closed. Split. */
     int not_a_handle = !arg || arg->type != VAL_DICT || !dict_get(arg, "_channel_id");
-    ARG_GUARD(not_a_handle, "channel_closed", "a channel", make_num(1));
+    ARG_GUARD(not_a_handle, "channel_closed", "a channel", make_bool(1));
     Channel *ch = get_channel(arg);
-    if (!ch) return make_num(1);   /* fs:ANSWER an unknown/reclaimed channel is closed */
+    if (!ch) return make_bool(1);   /* fs:ANSWER an unknown/reclaimed channel is closed */
     /* Read ch->closed under the mutex: close_channel writes it while holding
      * the lock, so a bare read here is a data race (caught by the #401 TSan
      * gate — it fired in CI where two workers polled channel_closed against a
@@ -5344,7 +5344,7 @@ Value* builtin_channel_closed(Value *arg) {
     pthread_mutex_lock(&ch->mutex);
     int closed = ch->closed;
     pthread_mutex_unlock(&ch->mutex);
-    return make_num(closed ? 1 : 0);
+    return make_bool(closed);
 }
 
 /* ==== #408 cooperative task layer (increment 1a: spawn + alive) ====
@@ -5573,7 +5573,7 @@ Value* builtin_task_join(Value *arg) {
  * dropped. Never blocks (the mailbox is unbounded in v1). */
 Value* builtin_task_send(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "task_send");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "task_send", "[id, value]", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "task_send", "[id, value]", make_bool(0));
     Value *idv = arg->data.list.items[0];
     /* The type guard precedes the scheduler-state check deliberately. With the
      * state check first, `task_send of ["x", 1]` outside a task context
@@ -5581,20 +5581,20 @@ Value* builtin_task_send(Value *arg) {
      * trigger, and the differential's probe (which spawns a task first) could
      * not see it. `task_kill` and `stream_write` already order it this way.
      * Non-strict is unchanged: both halves answer 0. */
-    ARG_GUARD(!idv || idv->type != VAL_NUM, "task_send", "a task id (number)", make_num(0));
+    ARG_GUARD(!idv || idv->type != VAL_NUM, "task_send", "a task id (number)", make_bool(0));
     /* fs:ANSWER no scheduler means there is no task to deliver to, which is
      * the dead-letter drop this function's contract documents ("0 if
      * dropped") — split out of the arity guard above, which is a mistake. */
-    if (!g_task_sched) return make_num(0);
+    if (!g_task_sched) return make_bool(0);
     int target = 0;
     /* Main is the reserved public id 0 and has no handle-table generation,
      * but it does have a scheduler mailbox (reply-to-supervisor pattern). */
     if (idv->data.num != 0 &&
-        !task_handle_resolve(idv, "task_send", &target)) return make_num(0);
+        !task_handle_resolve(idv, "task_send", &target)) return make_bool(0);
     Value *copy = val_clone_for_send(arg->data.list.items[1]);   /* share-nothing */
     int sent = task_deliver(target, copy);
     if (!sent) val_decref(copy);   /* dropped to a dead task — release the copy */
-    return make_num(sent ? 1 : 0);
+    return make_bool(sent);
 }
 
 /* task_recv of null — return the next message from this task's mailbox, or
@@ -5630,28 +5630,28 @@ Value* builtin_task_try_recv(Value *arg) {
  * and suspended slice, wake any joiner with an `interrupt` error, mark it
  * dead. Returns 1 if killed, 0 for a bad/self/finished target. */
 Value* builtin_task_kill(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "task_kill", "a task id (number)", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "task_kill", "a task id (number)", make_bool(0));
     /* fs:ANSWER no scheduler means no such target; 0 is the documented
      * "bad/self/finished target" answer, split from the type guard above. */
-    if (!g_task_sched) return make_num(0);
+    if (!g_task_sched) return make_bool(0);
     int target = 0;
-    if (!task_handle_resolve(arg, "task_kill", &target)) return make_num(0);
-    return make_num(task_do_kill(target) ? 1 : 0);
+    if (!task_handle_resolve(arg, "task_kill", &target)) return make_bool(0);
+    return make_bool(task_do_kill(target));
 }
 
 /* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
  * (DONE, DEAD, or an unknown id). */
 Value* builtin_task_alive(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "task_alive", "a task id (number)", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "task_alive", "a task id (number)", make_bool(0));
     Task *t = task_handle_resolve(arg, "task_alive", NULL);
     /* fs:ANSWER an unknown id is NOT alive; 0 is this function's documented
-     * answer. Four lines above, an identical `return make_num(0)` is a type
+     * answer. Four lines above, an identical `return make_bool(0)` is a type
      * guard that DID convert — the pair Phase A pinned as the reason this
      * phase is read by hand and not swept. Do not convert this one. */
-    if (!t) return make_num(0);
+    if (!t) return make_bool(0);
     int alive = (t->state == TASK_READY || t->state == TASK_RUNNING ||
                  t->state == TASK_SUSPENDED);
-    return make_num(alive ? 1 : 0);
+    return make_bool(alive);
 }
 
 /* task_sleep of ticks — suspend the current task until the virtual clock
@@ -6330,19 +6330,19 @@ Value* builtin_list_index_of(Value *arg) {
  * mirroring contains. */
 Value* builtin_list_contains(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "list_contains");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "list_contains", "[list, value]", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "list_contains", "[list, value]", make_bool(0));
     Value *list = arg->data.list.items[0];
     Value *needle = arg->data.list.items[1];
-    ARG_GUARD(!list || list->type != VAL_LIST, "list_contains", "a list as its first argument", make_num(0));
+    ARG_GUARD(!list || list->type != VAL_LIST, "list_contains", "a list as its first argument", make_bool(0));
     for (int i = 0; i < list->data.list.count; i++) {
         int equal = values_equal(list->data.list.items[i], needle);
         /* #1417: structural buffer comparison can raise on a strict NaN. */
         if (g_has_error) return make_null();
-        if (equal) return make_num(1);
+        if (equal) return make_bool(1);
     }
     /* fs:ANSWER the scan completed and found nothing; 0 is the predicate's
      * answer, not a stand-in for a rejected argument. */
-    return make_num(0);
+    return make_bool(0);
 }
 
 /* sort_by of [list, key_fn] — sort list by numeric keys from key_fn.

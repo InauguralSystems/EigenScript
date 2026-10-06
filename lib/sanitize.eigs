@@ -17,19 +17,19 @@ define sanitize_text(text) as:
 # Heuristics: too short, no spaces in long text, too few words
 define is_garble(text) as:
     if (len of text) < 2:
-        return 1
+        return true
     if (len of text) > 20:
-        if (contains of [text, " "]) == 0:
-            return 1
+        if (not (contains of [text, " "])):
+            return true
     words is split of [text, " "]
     wcount is len of words
     if wcount < 1:
-        return 1
-    return 0
+        return true
+    return false
 
 # ---- Clean response: trim at "User:" marker, find sentence boundary ----
 define clean_response(text) as:
-    if (contains of [text, "User:"]) == 1:
+    if (contains of [text, "User:"]):
         parts is split of [text, "User:"]
         text is parts[0]
     text is trim of text
@@ -43,5 +43,5 @@ define check_openai(_x) as:
     if key == "":
         key is env_get of "OPENAI_API_KEY"
     if key == "":
-        return 0
-    return 1
+        return false
+    return true

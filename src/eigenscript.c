@@ -1436,8 +1436,8 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     dict_set_owned(out, "dH",           make_num(s ? s->dH : 0.0));
     dict_set_owned(out, "last_entropy", make_num(s ? s->last_entropy : 0.0));
     dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? s->last_value : 0.0));
-    dict_set_owned(out, "observed",     make_num(s ? (s->used != 0) : 0));
-    dict_set_owned(out, "numeric",      make_num(s ? (s->v_used != 0) : 0));
+    dict_set_owned(out, "observed",     make_bool(s && s->used != 0));     /* #1637 */
+    dict_set_owned(out, "numeric",      make_bool(s && s->v_used != 0));
     /* #1044: the depth this slot classifies over travels with the snapshot,
      * so `classify of (trajectory of x)` agrees with `report of x` for a
      * binding carrying a per-binding override. */

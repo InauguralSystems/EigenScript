@@ -58,7 +58,7 @@
 define _num_guard(a, who) as:
     t is type of a
     if t == "num":
-        return 1
+        return true
     throw of (who + ": trajectory must be a scalar (num), got " + t + " — return a residual/estimate from step_fn, not the raw state")
 
 # ---- _budget_guard: reject a budget too small to classify ----
@@ -68,14 +68,14 @@ define _num_guard(a, who) as:
 define _budget_guard(max_obs, who) as:
     if max_obs < 10:
         throw of (who + ": max_obs must be >= 10 (the observer window); got " + (str of max_obs))
-    return 1
+    return true
 
 # ---- require of [cond, msg] — precondition; throw unless cond is truthy ----
 define require(n) as:
     cond is n[0]
     msg is n[1]
     if cond:
-        return 1
+        return true
     throw of ("require failed: " + msg)
 
 # ---- ensure of [cond, msg] — postcondition; throw unless cond is truthy ----
@@ -85,7 +85,7 @@ define ensure(n) as:
     cond is n[0]
     msg is n[1]
     if cond:
-        return 1
+        return true
     throw of ("ensure failed: " + msg)
 
 # ---- expect_converging of [x0, step_fn, max_obs, msg] ----

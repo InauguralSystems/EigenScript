@@ -557,7 +557,7 @@ define _handle_combobox_key(widget, ev) as:
     # Re-filter
     widget.filtered is []
     for i in range of (len of widget.items):
-        if (len of widget.filter_text) == 0 or (contains of [str_lower of widget.items[i], str_lower of widget.filter_text]) == 1:
+        if (len of widget.filter_text) == 0 or (contains of [str_lower of widget.items[i], str_lower of widget.filter_text]):
             append of [widget.filtered, widget.items[i]]
     widget.hover_index is 0
 

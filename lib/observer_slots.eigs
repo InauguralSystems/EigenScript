@@ -59,7 +59,7 @@ define feed(i, v) as:
         _s7 is v + 0.0
     else:
         throw of "observer_slots: slot out of range (8 slots)"
-    return 1
+    return true
 
 define is_stable(i) as:
     if i == 0:

@@ -362,7 +362,7 @@ define save(exp) as:
         meta.variables is exp.variables
         meta.notes is exp.notes
         store_update of [exp.db, "experiments", exp.id, meta]
-    return 1
+    return true
 
 define load(name) as:
     # `local` on every internal binding: without it, `name is expr` updates an
@@ -426,7 +426,7 @@ define delete_experiment(name) as:
             # Delete experiment metadata
             store_delete of [db, "experiments", id]
     store_close of db
-    return 1
+    return true
 
 # ---- Analysis Helpers ----
 

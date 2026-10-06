@@ -100,22 +100,22 @@ define drop(items, n) as:
     return result
 
 # ---- any: does any element satisfy the predicate? (short-circuit) ----
-# any of [list, fn] -> 1 if fn is truthy for some element, else 0
+# any of [list, fn] -> true if fn is truthy for some element, else false
 # Empty list -> 0.
 define any(items, fn) as:
     for i in range of (len of items):
         if fn of items[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 # ---- all: do all elements satisfy the predicate? (short-circuit) ----
-# all of [list, fn] -> 1 if fn is truthy for every element, else 0
+# all of [list, fn] -> true if fn is truthy for every element, else false
 # Empty list -> 1 (vacuous truth).
 define all(items, fn) as:
     for i in range of (len of items):
         if not (fn of items[i]):
-            return 0
-    return 1
+            return false
+    return true
 
 # ---- find_index: index of first element where fn is truthy ----
 # find_index of [list, fn] -> number (index, or -1 if none match)
@@ -148,7 +148,7 @@ define group_by(items, key_fn) as:
     for i in range of (len of items):
         item is items[i]
         k is str of (key_fn of item)
-        if (has_key of [result, k]) == 1:
+        if (has_key of [result, k]):
             bucket is result[k]
             append of [bucket, item]
         else:
@@ -189,7 +189,7 @@ define frequencies(items) as:
     result is {}
     for i in range of (len of items):
         k is str of items[i]
-        if (has_key of [result, k]) == 1:
+        if (has_key of [result, k]):
             dict_set of [result, k, result[k] + 1]
         else:
             dict_set of [result, k, 1]

@@ -87,7 +87,7 @@ define _is_alpha(c) as:
     return _eigen_contains of ["abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ", c]
 
 define _is_alnum(c) as:
-    if (_is_alpha of c) == 1:
+    if (_is_alpha of c):
         return 1
     return _is_digit of c
 
@@ -104,7 +104,7 @@ define _fstr_interp_end(source, pos) as:
     local c is ""
     loop while pos < n:
         c is _eigen_char_at of [source, pos]
-        if (c == "f") and ((pos + 1) < n) and ((_eigen_char_at of [source, pos + 1]) == "\"") and ((pos == start) or ((_is_alnum of (_eigen_char_at of [source, pos - 1])) == 0)):
+        if (c == "f") and ((pos + 1) < n) and ((_eigen_char_at of [source, pos + 1]) == "\"") and ((pos == start) or ((not (_is_alnum of (_eigen_char_at of [source, pos - 1]))))):
             pos is _fstr_skip_fstring of [source, pos]
         elif c == "\"":
             pos is pos + 1
@@ -150,10 +150,10 @@ define _fstr_skip_fstring(source, pos) as:
 
 define _is_space(c) as:
     if c == " ":
-        return 1
+        return true
     if c == "\t":
-        return 1
-    return 0
+        return true
+    return false
 
 # Full keyword list matching C lexer
 _keywords is ["is", "of", "define", "as", "if", "else", "elif", "loop", "while", "return", "and", "or", "not", "for", "in", "null", "try", "catch", "break", "continue", "import", "match", "case", "unobserved", "what", "who", "when", "where", "why", "how", "converged", "stable", "improving", "oscillating", "diverging", "equilibrium", "true", "false"]
@@ -171,26 +171,26 @@ _reserved_forms is ["report", "report_value"]
 define _is_keyword(word) as:
     for i in _eigen_range of (_eigen_len of _keywords):
         if word == _keywords[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 define _is_interrogative(word) as:
     for i in _eigen_range of (_eigen_len of _interrogatives):
         if word == _interrogatives[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 define _is_predicate(word) as:
     for i in _eigen_range of (_eigen_len of _predicates):
         if word == _predicates[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 define _is_reserved_form(word) as:
     for i in _eigen_range of (_eigen_len of _reserved_forms):
         if word == _reserved_forms[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 define _predicate_index(word) as:
     for i in _eigen_range of (_eigen_len of _predicates):
@@ -278,7 +278,7 @@ define _eigen_tokenize_at(source, line, check_layout) as:
             c is _eigen_char_at of [source, pos]
             handled is 0
             # Skip inline spaces
-            if (_is_space of c) == 1:
+            if (_is_space of c):
                 pos is pos + 1
                 handled is 1
             # Comments
@@ -433,13 +433,13 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                 _eigen_append of [tokens, ["str", buf, str_line]]
                 handled is 1
             # Numbers
-            if (handled == 0) and ((_is_digit of c) == 1):
+            if (handled == 0) and ((_is_digit of c)):
                 buf is ""
                 has_dot is 0
                 reading_num is 1
                 loop while (pos < src_len) and (reading_num == 1):
                     ch is _eigen_char_at of [source, pos]
-                    if (_is_digit of ch) == 1:
+                    if (_is_digit of ch):
                         buf is buf + ch
                         pos is pos + 1
                     elif (ch == ".") and (has_dot == 0):
@@ -451,12 +451,12 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                 _eigen_append of [tokens, ["num", _eigen_num of buf, line]]
                 handled is 1
             # Identifiers and keywords
-            if (handled == 0) and ((_is_alpha of c) == 1):
+            if (handled == 0) and ((_is_alpha of c)):
                 buf is ""
                 reading_id is 1
                 loop while (pos < src_len) and (reading_id == 1):
                     ch is _eigen_char_at of [source, pos]
-                    if (_is_alnum of ch) == 1:
+                    if (_is_alnum of ch):
                         buf is buf + ch
                         pos is pos + 1
                     else:
@@ -467,13 +467,13 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                     _eigen_append of [tokens, ["true", true, line]]
                 elif buf == "false":
                     _eigen_append of [tokens, ["false", false, line]]
-                elif (_is_interrogative of buf) == 1:
+                elif (_is_interrogative of buf):
                     _eigen_append of [tokens, ["interrogative", buf, line]]
-                elif (_is_predicate of buf) == 1:
+                elif (_is_predicate of buf):
                     _eigen_append of [tokens, ["predicate", buf, line]]
-                elif (_is_reserved_form of buf) == 1:
+                elif (_is_reserved_form of buf):
                     _eigen_append of [tokens, ["report", buf, line]]
-                elif (_is_keyword of buf) == 1:
+                elif (_is_keyword of buf):
                     _eigen_append of [tokens, ["kw", buf, line]]
                 else:
                     _eigen_append of [tokens, ["ident", buf, line]]
@@ -508,7 +508,7 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                     handled is 1
             # Single-character operators and punctuation
             if handled == 0:
-                if (_eigen_contains of ["+-*/%<>", c]) == 1:
+                if (_eigen_contains of ["+-*/%<>", c]):
                     _eigen_append of [tokens, ["op", c, line]]
                     pos is pos + 1
                     handled is 1
@@ -1279,7 +1279,7 @@ define _ns_env_for(target_node, key, target) as:
         if (_eigen_char_at of [key, 0]) == "_":
             return null
     mod_name is target_node[1]
-    if (_eigen_has_key of [_eigen_module_envs, mod_name]) == 0:
+    if (not (_eigen_has_key of [_eigen_module_envs, mod_name])):
         return null
     if target != _eigen_module_ns[mod_name]:
         return null
@@ -1339,8 +1339,8 @@ define _env_has_local(env, name) as:
     bindings is env[0]
     for i in _eigen_range of (_eigen_len of bindings):
         if bindings[i][0] == name:
-            return 1
-    return 0
+            return true
+    return false
 
 define _env_unset_local(env, name) as:
     bindings is env[0]
@@ -1370,7 +1370,7 @@ define _eigen_module_path(name) as:
         exedir + "/../lib/" + name + ".eigs",
         exedir + "/../lib/eigenscript/" + name + ".eigs"]
     for ci in _eigen_range of (_eigen_len of cands):
-        if (_eigen_file_exists of cands[ci]) == 1:
+        if (_eigen_file_exists of cands[ci]):
             return cands[ci]
     return null
 
@@ -1451,7 +1451,7 @@ define _compute_entropy(val) as:
 
 define _update_observer(name, val) as:
     new_entropy is _compute_entropy of val
-    if (_eigen_has_key of [_eigen_obs, name]) == 1:
+    if (_eigen_has_key of [_eigen_obs, name]):
         old is _eigen_obs[name]
         obs_count is old[0] + 1
         prev_ent is old[1]
@@ -1462,7 +1462,7 @@ define _update_observer(name, val) as:
     return null
 
 define _get_observer(name) as:
-    if (_eigen_has_key of [_eigen_obs, name]) == 1:
+    if (_eigen_has_key of [_eigen_obs, name]):
         return _eigen_obs[name]
     return [0, 0, 0, 0]
 
@@ -1669,7 +1669,7 @@ define eigen_eval(node, env) as:
                 for mi in _eigen_range of (_eigen_len of mbind):
                     if mbind[mi][0] == key:
                         return mbind[mi][1]
-            if (_eigen_has_key of [target, key]) == 1:
+            if (_eigen_has_key of [target, key]):
                 return target[key]
             return null
         _eigen_throw of f"cannot access .{key} on {_eigen_type of target}"
@@ -1748,7 +1748,7 @@ define eigen_eval(node, env) as:
         # own binding (if any) and restoring or removing it on every exit.
         had_prior is _env_has_local of [env, var_name]
         prior_val is null
-        if had_prior == 1:
+        if had_prior:
             prior_val is _env_get of [env, var_name]
         try:
             for i in _eigen_range of (_eigen_len of iter):
@@ -1762,12 +1762,12 @@ define eigen_eval(node, env) as:
                 if _eigen_continuing == 1:
                     _eigen_continuing is 0
         catch _for_error:
-            if had_prior == 1:
+            if had_prior:
                 _env_set_local of [env, var_name, prior_val]
             else:
                 _env_unset_local of [env, var_name]
             _eigen_throw of _for_error
-        if had_prior == 1:
+        if had_prior:
             _env_set_local of [env, var_name, prior_val]
         else:
             _env_unset_local of [env, var_name]

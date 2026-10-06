@@ -82,8 +82,8 @@ define sm_can_send(sm, event) as:
         t is transitions[i]
         if t[0] == current:
             if t[1] == event:
-                return 1
-    return 0
+                return true
+    return false
 
 # ---- sm_available_events: list valid events from current state ----
 define sm_available_events(sm) as:

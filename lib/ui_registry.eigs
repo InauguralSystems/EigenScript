@@ -11,15 +11,15 @@ define _register_widget(type_name, opts) as:
 define _is_container(t) as:
     entry is _widget_registry[t]
     if entry != null and entry.container == 1:
-        return 1
-    return 0
+        return true
+    return false
 
 define _is_focusable(widget) as:
     entry is _widget_registry[widget.type]
     if entry != null and entry.focusable == 1:
         if widget.enabled != null and widget.enabled == 0:
-            return 0
+            return false
         if widget.visible == 0:
-            return 0
-        return 1
-    return 0
+            return false
+        return true
+    return false

@@ -519,7 +519,7 @@ int g_training_samples = 0;
 
 Value* builtin_eigen_model_loaded(Value *arg) {
     (void)arg;
-    return make_num(g_model.loaded ? 1 : 0);
+    return make_bool(g_model.loaded);
 }
 
 Value* builtin_eigen_generate(Value *arg) {

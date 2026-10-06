@@ -279,7 +279,7 @@ Value* builtin_db_query_value(Value *arg) {
     Value *result = NULL;
     switch (db_classify(oid)) {
         case DBT_BOOL:
-            result = make_num(text[0] == 't' ? 1 : 0);
+            result = make_bool(text[0] == 't');   /* #1637 */
             break;
         case DBT_NUM:
             if (!db_check_exact_int(oid, text, colname)) { PQclear(res); return make_str(""); }  /* fs:STRICT db_check_exact_int raised EK_VALUE for a past-2^53 integer (ext_db.c:211) */

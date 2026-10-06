@@ -6,7 +6,7 @@
 define _build_focus_list(widget) as:
     if widget.visible == 0:
         return null
-    if (_is_focusable of widget) == 1:
+    if (_is_focusable of widget):
         append of [_ui.focus_list, widget]
     if _is_container of widget.type:
         for i in range of (len of widget.children):
@@ -22,7 +22,7 @@ define _build_focus_list(widget) as:
             _build_focus_list of widget.panel_b
 
 define _sync_focus_to(widget) as:
-    if (_is_focusable of widget) == 1:
+    if (_is_focusable of widget):
         _ui.focused_widget is widget
         # Try to find index in current focus list
         for i in range of (len of _ui.focus_list):
@@ -61,16 +61,16 @@ define _handle_focus_key(root, ev) as:
             _focus_next of [root, 1]
         else:
             _focus_next of [root, 0]
-        return 1
+        return true
     # Activation keys
     if _ui.focused_widget == null:
-        return 0
+        return false
     w is _ui.focused_widget
     if ev.key == "return" or ev.key == "space":
         if w.type == "button" and w.enabled == 1:
             if w.on_click != null:
                 w.on_click of w
-            return 1
+            return true
         if w.type == "toggle" or w.type == "checkbox":
             if w.value == 1:
                 w.value is 0
@@ -78,7 +78,7 @@ define _handle_focus_key(root, ev) as:
                 w.value is 1
             if w.on_change != null:
                 w.on_change of w
-            return 1
+            return true
         if w.type == "toggle_button":
             if w.value == 1:
                 w.value is 0
@@ -86,7 +86,7 @@ define _handle_focus_key(root, ev) as:
                 w.value is 1
             if w.on_click != null:
                 w.on_click of w
-            return 1
+            return true
     # Arrow keys for sliders/knobs
     if ev.key == "left" or ev.key == "right" or ev.key == "up" or ev.key == "down":
         if w.type == "slider" or w.type == "vslider" or w.type == "knob":
@@ -101,7 +101,7 @@ define _handle_focus_key(root, ev) as:
                 w.value is w.max_val
             if w.on_change != null:
                 w.on_change of w
-            return 1
+            return true
         if w.type == "radio_group":
             if ev.key == "left" or ev.key == "up":
                 w.selected is w.selected - 1
@@ -113,7 +113,7 @@ define _handle_focus_key(root, ev) as:
                     w.selected is 0
             if w.on_change != null:
                 w.on_change of w
-            return 1
+            return true
         if w.type == "item_list":
             if ev.key == "up":
                 w.selected is w.selected - 1
@@ -125,7 +125,7 @@ define _handle_focus_key(root, ev) as:
                     w.selected is (len of w.items) - 1
             if w.on_select != null:
                 w.on_select of w
-            return 1
+            return true
     # Tree navigation with arrow keys
     if ev.key == "up" or ev.key == "down" or ev.key == "left" or ev.key == "right":
         if w != null and w.type == "tree":
@@ -150,7 +150,7 @@ define _handle_focus_key(root, ev) as:
             elif ev.key == "right" and cur_fi >= 0:
                 if flat[cur_fi].has_children == 1:
                     flat[cur_fi].node.expanded is 1
-            return 1
+            return true
     # Grid: arrow keys move hover, space toggles cell
     if w.type == "grid":
         if ev.key == "left" or ev.key == "right" or ev.key == "up" or ev.key == "down":
@@ -166,7 +166,7 @@ define _handle_focus_key(root, ev) as:
                 w.hover_row is w.hover_row - 1
             elif ev.key == "down" and w.hover_row < w.rows - 1:
                 w.hover_row is w.hover_row + 1
-            return 1
+            return true
         if ev.key == "space" or ev.key == "return":
             if w.hover_row >= 0 and w.hover_col >= 0:
                 # Mirror the mouse path's ownership rule (#572), or
@@ -178,7 +178,7 @@ define _handle_focus_key(root, ev) as:
                         w.cells[w.hover_row][w.hover_col] is 1
                 if w.on_cell != null:
                     w.on_cell of [w, w.hover_row, w.hover_col]
-            return 1
+            return true
     # Chart: left/right move hover_index
     if w.type == "chart":
         if ev.key == "left" or ev.key == "right":
@@ -192,19 +192,19 @@ define _handle_focus_key(root, ev) as:
                         max_n is len of w.series[si].data
                 if w.hover_index >= max_n:
                     w.hover_index is max_n - 1
-            return 1
+            return true
     # Bar chart: left/right move hover, enter triggers on_click
     if w.type == "bar_chart":
         if ev.key == "left" and w.hover_index > 0:
             w.hover_index is w.hover_index - 1
-            return 1
+            return true
         elif ev.key == "right" and w.hover_index < (len of w.values) - 1:
             w.hover_index is w.hover_index + 1
-            return 1
+            return true
         elif (ev.key == "return" or ev.key == "space") and w.hover_index >= 0:
             if w.on_click != null:
                 w.on_click of [w, w.hover_index]
-            return 1
+            return true
     # Color picker: arrows adjust hue/saturation/value
     if w.type == "color_picker":
         if ev.key == "left":
@@ -224,59 +224,59 @@ define _handle_focus_key(root, ev) as:
             if w.val < 0:
                 w.val is 0
         else:
-            return 0
+            return false
         w.color is _hsv_to_rgb of [w.hue, w.sat, w.val]
         if w.on_change != null:
             w.on_change of w
-        return 1
+        return true
     # Editable label: enter starts editing
     if w.type == "editable_label":
         if ev.key == "return":
             _start_editing of w
-            return 1
+            return true
     # Code view: up/down scroll
     if w.type == "code_view":
         if ev.key == "up":
             w.scroll_y is w.scroll_y - 18
             if w.scroll_y < 0:
                 w.scroll_y is 0
-            return 1
+            return true
         elif ev.key == "down":
             w.scroll_y is w.scroll_y + 18
-            return 1
+            return true
     # Waveform view: left/right adjust offset
     if w.type == "waveform_view":
         if ev.key == "left":
             w.offset is w.offset - floor of (w.w * w.zoom)
             if w.offset < 0:
                 w.offset is 0
-            return 1
+            return true
         elif ev.key == "right":
             w.offset is w.offset + floor of (w.w * w.zoom)
-            return 1
+            return true
     # Piano keyboard: arrows select note, enter triggers
     if w.type == "piano_kb":
         if ev.key == "left" and w.hover_note > 0:
             w.hover_note is w.hover_note - 1
-            return 1
+            return true
         elif ev.key == "right" and w.hover_note < w.octaves * 12:
             w.hover_note is w.hover_note + 1
-            return 1
+            return true
         elif ev.key == "return" or ev.key == "space":
             if w.hover_note >= 0 and w.on_note != null:
                 w.on_note of [w, w.hover_note, 1]
-            return 1
+            return true
     # Canvas: enter fires synthetic click at center
     if w.type == "canvas":
         if ev.key == "return" or ev.key == "space":
             if w.on_mouse != null:
                 w.on_mouse of [w, {"type": "mousedown", "x": floor of (w.w / 2), "y": floor of (w.h / 2), "button": 1}]
-            return 1
+            return true
     # Escape closes dropdowns/menus
     if ev.key == "escape":
         _close_dropdowns of root
         _close_menus of root
         if (len of _ui.modal_stack) > 0:
             pop_modal of null
-        return 1
-    return 0
+        return true
+    return false
