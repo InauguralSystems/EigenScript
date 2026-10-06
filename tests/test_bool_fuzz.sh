@@ -58,7 +58,7 @@ for p in "$WORK"/gen/p*.eigs; do
             echo "$id|$strict|rc=$rc" >> "$WORK/broken"
             continue
         fi
-        awk -v P="$id|$strict|" '{ if (match($0, /@(P:[a-z]+|[0-9]+:(V|R:[a-z_]+))$/)) print P substr($0, RSTART + 1) }' <<< "$out" >> "$WORK/marks"
+        awk -v P="$id|$strict|" '{ if (match($0, /@(P:[a-z]+|[0-9]+:(V:[0-9a-z]+|R:[a-z_]+))$/)) print P substr($0, RSTART + 1) }' <<< "$out" >> "$WORK/marks"
     done
 done
 
@@ -79,9 +79,10 @@ FNR == NR {                      # marks: prog|strict|P:type  or  prog|strict|k:
     if ($3 ~ /^P:/) { pres[$1 "|" $2] = substr($3, 3); next }
     split($3, m, ":"); mark[$1 "|" $2 "|" m[1]] = m[2] (m[3] != "" ? ":" m[3] : ""); next
 }
-{                                # manifest: prog|k|name|slot|value
-    prog = $1; k = $2; name = $3; slot = $4; val = $5
+{                                # manifest: prog|k|name|slot|value|control
+    prog = $1; k = $2; name = $3; slot = $4; val = $5; cref = $6
     if (prog == "skip") { skipped[name] = slot; next }
+    if (slot ~ /^ctl:/) { controls++; next }
     calls++
     if (!(prog in seenprog)) { seenprog[prog] = name; nprog++ }
     for (s = 1; s >= 0; s--) {
@@ -95,8 +96,11 @@ FNR == NR {                      # marks: prog|strict|P:type  or  prog|strict|k:
         v = mark[prog "|" s "|" k]
         probes++
         if (v == "") { printf "  FAIL: %s %s=%s (EIGS_STRICT=%d): no marker\n", name, slot, val, s; nomark++; continue }
-        if (v == "V") {
+        if (v ~ /^V/) {
             if ((name "|" slot) in anyv) { anyok++; usedany[name "|" slot] = 1; continue }
+            # a bool two or three brackets deep that left the result equal to
+            # its control (the same call with the number) was not read
+            if (slot ~ /[.]d[23]/ && cref != "-" && mark[prog "|" s "|" cref] == v) { unread++; continue }
             printf "  VIOLATION: %s slot %s given %s returned without raising (EIGS_STRICT=%d)\n", name, slot, val, s
             viol++
         } else {
@@ -117,7 +121,7 @@ END {
     printf "BOOL_FUZZ: raise kinds: %s\n", kstr
     # the runner #988 rule wants a PASS:/FAIL: marker from a test_* child
     printf "  %s: a bool in every builtin slot and VM operand\n", ok ? "PASS" : "FAIL"
-    printf "BOOL_FUZZ: examined=%d/%d absent=%d skipped=%d core=%d programs=%d calls=%d probes=%d raised=%d anyvalue=%d violations=%d broken=%d unused_anyvalue=%d %s\n", \
-        nex, DECLARED, nab, nsk, CORE, nprog, calls, probes, raised, anyok, viol + nomark + badpres, nb, bad_any, ok ? "PASS" : "FAIL"
+    printf "BOOL_FUZZ: examined=%d/%d absent=%d skipped=%d core=%d programs=%d calls=%d controls=%d probes=%d raised=%d anyvalue=%d unread=%d violations=%d broken=%d unused_anyvalue=%d %s\n", \
+        nex, DECLARED, nab, nsk, CORE, nprog, calls, controls, probes, raised, anyok, unread, viol + nomark + badpres, nb, bad_any, ok ? "PASS" : "FAIL"
     exit ok ? 0 : 1
 }' "$WORK/marks" "$WORK/gen/manifest.txt"

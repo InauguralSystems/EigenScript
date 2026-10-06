@@ -6040,6 +6040,12 @@ Value* builtin_nearest_in_range(Value *arg) {
             ey = (idx >= 0) ? vals[idx] : NULL;
         }
 
+        /* #1637 round 4: a bool coordinate raises (any other non-number
+         * keeps the documented skip). */
+        if ((ex && ex->type == VAL_BOOL) || (ey && ey->type == VAL_BOOL)) {
+            eigs_num_arg_slow((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range");
+            return make_null();
+        }
         if (!ex || !ey || ex->type != VAL_NUM || ey->type != VAL_NUM) continue;
 
         double dx = eigs_num_arg(ex, __func__) - px;
@@ -6161,6 +6167,10 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             if (idx >= 0 && hint_py < 0) hint_py = idx;
             ey = (idx >= 0) ? vals[idx] : NULL;
         }
+        if ((ex && ex->type == VAL_BOOL) || (ey && ey->type == VAL_BOOL)) {   /* #1637 round 4 */
+            eigs_num_arg_slow((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range_all");
+            break;
+        }
         if (!ex || !ey || ex->type != VAL_NUM || ey->type != VAL_NUM) {
             valid_arr[i] = 0;
             continue;
@@ -6168,6 +6178,10 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         px_arr[i] = eigs_num_arg(ex, __func__);
         py_arr[i] = eigs_num_arg(ey, __func__);
         valid_arr[i] = 1;
+    }
+    if (g_has_error) {   /* #1637 round 4: a bool coordinate raised above */
+        free(px_arr); free(py_arr); free(active_arr); free(valid_arr);
+        return make_null();
     }
 
     Value *result = make_list(n);
