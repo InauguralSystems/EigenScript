@@ -17,9 +17,10 @@
   also changes some non-bool cases:
   - a string `at` line (`what is x at "s"`) raises; it answered null;
   - a non-number net timeout (`net_accept`/`net_dial`/`net_recv`), a
-    non-number `http_serve` port, and a non-number byte or `param_count` in a
+    non-number `http_serve` port, and a non-number code byte in a
     `vm_run_bytecode`/`sandbox_run` descriptor raise; they were read as
-    garbage or as 0;
+    garbage or as 0 (a non-number `param_count` placeholder such as `[]`
+    still means 0 parameters; only a bool there raises);
   - the tensor mutators `numerical_grad*`/`sgd_update*` raise on a non-number
     cell or row in every strict mode, `EIGS_STRICT=0` included: v0.44.0 read
     a non-number cell as 0 (and `numerical_grad_rows`/`_cols` wrote into it
