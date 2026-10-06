@@ -3560,9 +3560,10 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         }
     }
 
-    /* #1637 round 4: an absent/null param_count is 0; any other non-number
-     * (a bool) is refused rather than read as 0. */
-    if (n >= 4 && d[3] && d[3]->type != VAL_NUM && d[3]->type != VAL_NULL) {
+    /* #1637: a bool param_count is refused rather than read as 0. Any other
+     * non-number keeps its documented placeholder meaning, 0 parameters
+     * (producers pass [] there; test_vm_run_bytecode's #1030 rows). */
+    if (n >= 4 && d[3] && d[3]->type == VAL_BOOL) {
         chunk_free(chunk);
         vm_desc_error(why, whyn, "descriptor param_count must be a number");
         return NULL;

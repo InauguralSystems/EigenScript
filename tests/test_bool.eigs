@@ -231,6 +231,10 @@ same of [who is (1 < 2), "bool", "who names a bool"]
 # Round 5 (#1637, owner decision): the tensor mutators raise on any
 # non-number cell or row in every strict mode (v0.44.0 skipped a null row).
 raises of [(_) => sgd_update of [[[1, 2], null], [[1, 1], [1, 1]], 0.1], "sgd_update: expected a number, got null", "sgd_update of a null row"]
+# A descriptor's param_count: a bool is refused, the [] placeholder still
+# means 0 parameters (round 4 refused it and broke test_vm_run_bytecode).
+raises of [(_) => vm_run_bytecode of [1, [0, 0, 0, 40], [7], [], true], "bool", "vm_run_bytecode bool param_count"]
+same of [vm_run_bytecode of [1, [0, 0, 0, 40], [7], [], []], 7, "vm_run_bytecode [] param_count placeholder"]
 # Round 5 (#1637): json_build writes a bool value as a JSON boolean and it
 # decodes back to a bool.
 same of [json_build of ["ok", true, "bad", 2 > 3], "{\"ok\": true, \"bad\": false}", "json_build of bools"]
