@@ -20,7 +20,7 @@
  * with the same sentinel value_slot.h uses to avoid a re-typedef. */
 #ifndef EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
 #define EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
-typedef union { double d; uint64_t u; } EigsSlot;
+typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_NUM_RAW (#1637) */
 #endif
 
 /* Tape format version (#411). Every tape's first line is a header record:
