@@ -24,7 +24,7 @@ define load_env_file(path) as:
         line is trim of lines[i]
         if (len of line) == 0:
             i is i
-        elif (starts_with of [line, "#"]) == 1:
+        elif (starts_with of [line, "#"]):
             i is i
         else:
             eq_pos is index_of of [line, "="]
@@ -57,11 +57,11 @@ define load_ini(path) as:
         line is trim of lines[i]
         if (len of line) == 0:
             i is i
-        elif (starts_with of [line, "#"]) == 1:
+        elif (starts_with of [line, "#"]):
             i is i
-        elif (starts_with of [line, ";"]) == 1:
+        elif (starts_with of [line, ";"]):
             i is i
-        elif (starts_with of [line, "["]) == 1:
+        elif (starts_with of [line, "["]):
             # Section header
             end is index_of of [line, "]"]
             if end > 1:
@@ -114,7 +114,7 @@ define config_section(cfg, prefix_name) as:
     result is []
     for i in range of (len of cfg):
         key is cfg[i][0]
-        if (starts_with of [key, prefix]) == 1:
+        if (starts_with of [key, prefix]):
             short_key is substr of [key, len of prefix, (len of key) - (len of prefix)]
             append of [result, [short_key, cfg[i][1]]]
     return result

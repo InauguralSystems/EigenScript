@@ -53,8 +53,8 @@ assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 
 # string concat "a" + "b" -> "ab"
 assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], ["a", "b"]], "ab", "string concat via ADD"]
 
-# comparison 10 > 3 -> 1
-assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, GT, RETURN], [10, 3]], 1, "comparison GT"]
+# comparison 10 > 3 -> true (#1637: a comparison yields a bool)
+assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, GT, RETURN], [10, 3]], true, "comparison GT"]
 
 # builtin call: len of "hello" -> 5  (GET_NAME resolves "len" in the global env)
 assert_eq of [vm_run_bytecode of [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["len", "hello"]], 5, "builtin call via GET_NAME+CALL"]
@@ -116,7 +116,7 @@ record_history of 0
 # [descriptor, max_iter] where descriptor is [ABI, code, constants].
 safe_desc is [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]]
 sr_safe is sandbox_run of [safe_desc, 100000]
-assert_eq of [sr_safe["ok"], 1, "sandbox: safe code ok"]
+assert_eq of [sr_safe["ok"], true, "sandbox: safe code ok"]
 assert_eq of [sr_safe["result"], 5, "sandbox: safe result"]
 
 # sandbox_run: a dangerous builtin (write_text) is shadowed -> blocked, ok=0,
@@ -124,8 +124,8 @@ assert_eq of [sr_safe["result"], 5, "sandbox: safe result"]
 remove_file of "/tmp/eigs_sandbox_breach"
 block_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["write_text", "/tmp/eigs_sandbox_breach"]]
 sr_block is sandbox_run of [block_desc, 100000]
-assert_eq of [sr_block["ok"], 0, "sandbox: dangerous builtin blocked"]
-assert_eq of [file_exists of "/tmp/eigs_sandbox_breach", 0, "sandbox: nothing written"]
+assert_eq of [sr_block["ok"], false, "sandbox: dangerous builtin blocked"]
+assert_eq of [file_exists of "/tmp/eigs_sandbox_breach", false, "sandbox: nothing written"]
 
 # sandbox_run: BLOCKING builtins are denied too. The g_sandbox_loop_max bound
 # counts loop back-edges, not time inside one builtin, so a single blocking call
@@ -134,13 +134,13 @@ assert_eq of [file_exists of "/tmp/eigs_sandbox_breach", 0, "sandbox: nothing wr
 # is the backstop): usleep would sleep 30s, raw_key would read() stdin, recv
 # would wait on a channel condvar forever.
 usleep_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["usleep", 30000000]]
-assert_eq of [(sandbox_run of [usleep_desc, 100000])["ok"], 0, "sandbox: usleep blocked (no 30s hang)"]
+assert_eq of [(sandbox_run of [usleep_desc, 100000])["ok"], false, "sandbox: usleep blocked (no 30s hang)"]
 rawkey_desc is [ABI, [GET_NAME,0,0, CALL,0,0, RETURN], ["raw_key"]]
-assert_eq of [(sandbox_run of [rawkey_desc, 100000])["ok"], 0, "sandbox: raw_key blocked (no stdin read)"]
+assert_eq of [(sandbox_run of [rawkey_desc, 100000])["ok"], false, "sandbox: raw_key blocked (no stdin read)"]
 recv_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["recv", 0]]
-assert_eq of [(sandbox_run of [recv_desc, 100000])["ok"], 0, "sandbox: recv blocked (no channel-wait hang)"]
+assert_eq of [(sandbox_run of [recv_desc, 100000])["ok"], false, "sandbox: recv blocked (no channel-wait hang)"]
 send_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["send", 0]]
-assert_eq of [(sandbox_run of [send_desc, 100000])["ok"], 0, "sandbox: send blocked"]
+assert_eq of [(sandbox_run of [send_desc, 100000])["ok"], false, "sandbox: send blocked"]
 
 # sandbox_run: a runaway loop is bounded by the iteration cap — it RETURNS
 # (no hang) but reports ok:0: a cap-truncated run produced partial results,
@@ -149,9 +149,9 @@ assert_eq of [(sandbox_run of [send_desc, 100000])["ok"], 0, "sandbox: send bloc
 # NUM_ONE; JUMP_IF_FALSE +6; LOOP_CAP_CHECK +3; JUMP_BACK 10; RETURN_NULL
 loopcode is [3, 31,6,0, 63,3,0, 30,10,0, 41]
 sr_loop is sandbox_run of [[ABI, loopcode, []], 1000]
-assert_eq of [sr_loop["ok"], 0, "sandbox: runaway loop bounded (returns, reports capped)"]
+assert_eq of [sr_loop["ok"], false, "sandbox: runaway loop bounded (returns, reports capped)"]
 sr_partial is index_of of [sr_loop["error"]["message"], "partial run"]
-assert_eq of [sr_partial >= 0, 1, "sandbox: capped loop names the partial run"]
+assert_eq of [sr_partial >= 0, true, "sandbox: capped loop names the partial run"]
 
 # --- bytecode verifier: out-of-range operands are rejected, not run ---
 # Untrusted/hand-assembled descriptors must never reach the VM with an
@@ -170,7 +170,7 @@ assert_bad_descriptor of [[ABI, [CONST], [42]], "truncated operand", "verify: tr
 assert_bad_descriptor of [[ABI, [254, RETURN], []], "unknown opcode 254", "verify: unknown opcode raises with its reason"]
 # same, through the sandbox: a bad descriptor returns ok=0, no crash
 sr_bad is sandbox_run of [[ABI, [CONST,255,255, RETURN], [42]], 1000]
-assert_eq of [sr_bad["ok"], 0, "verify: sandbox rejects OOB const (ok=0)"]
+assert_eq of [sr_bad["ok"], false, "verify: sandbox rejects OOB const (ok=0)"]
 
 # a name-consuming opcode (GET_NAME) whose constant index points at a NUMERIC
 # constant — the interned-name pointer is NULL for non-strings, so the VM
@@ -275,14 +275,14 @@ assert_eq of [abi_notlist, 1, "#704: non-list descriptor raises (was a silent nu
 # message distinct from a malformed chunk's, so a grading ladder can tell
 # "your producer is stale" from "your bytecode is wrong" without re-running.
 sr_stale is sandbox_run of [[ABI + 1, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 1000]
-assert_eq of [sr_stale["ok"], 0, "#704: sandbox_run rejects a stale-revision chunk"]
+assert_eq of [sr_stale["ok"], false, "#704: sandbox_run rejects a stale-revision chunk"]
 assert_eq of [sr_stale["error"]["kind"], "value", "#704: sandbox_run reports kind=value"]
 assert of [sr_stale["error"]["message"] != "invalid chunk descriptor", "#704: stale revision is distinguishable from a malformed chunk"]
 assert of [contains of [sr_stale["error"]["message"], "ABI revision"], "#704: the message names the ABI revision"]
 
 # and the current revision still runs through the sandbox unchanged.
 sr_ok is sandbox_run of [[ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 1000]
-assert_eq of [sr_ok["ok"], 1, "#704: current-revision chunk still runs in the sandbox"]
+assert_eq of [sr_ok["ok"], true, "#704: current-revision chunk still runs in the sandbox"]
 assert_eq of [sr_ok["result"], 5, "#704: current-revision sandbox result"]
 
 # ---- #721: chunk_verify is the boundary, so it must reject a chunk that can
@@ -302,7 +302,7 @@ assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, RETURN], [7]], 7, "#721: the 
 assert_eq of [vm_run_bytecode of [ABI, [RETURN_NULL], []], null, "#721: RETURN_NULL terminates too"]
 
 sr_fall is sandbox_run of [[ABI, [1], []], 1000]
-assert_eq of [sr_fall["ok"], 0, "#721: sandbox_run refuses an unterminated chunk"]
+assert_eq of [sr_fall["ok"], false, "#721: sandbox_run refuses an unterminated chunk"]
 
 # ---- #737: the verifier's operand-layout table had DRIFTED. OP_TRAJECTORY_SLOT
 # (91) was missing from op_verify_operands while its NAME sibling was present,

@@ -13,6 +13,7 @@
     { "include": "#interrogatives" },
     { "include": "#predicates" },
     { "include": "#constants" },
+    { "include": "#booleans" },
     { "include": "#call" },
     { "include": "#operators" }
   ],
@@ -87,6 +88,10 @@
     "constants": {
       "match": "\\bnull\\b",
       "name": "constant.language.null.eigenscript"
+    },
+    "booleans": {
+      "match": "\\b(true|false)\\b",
+      "name": "constant.language.boolean.eigenscript"
     },
     "call": {
       "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s+(?=of\\b)",

@@ -1,0 +1,76 @@
+# tests/bool_fuzz_anyvalue.txt -- reviewed slots that TAKE a bool (#1637).
+# name|slot|reason. tests/test_bool_fuzz.sh: a bool in any slot not listed
+# here must raise, in both strict modes; an entry that no call reaches with a
+# return is stale and fails the run. The C side of the same decision is
+# k_bool_policy in src/builtins.c (the builtin-call bool gate); container
+# ELEMENTS (slot aNe0) are not gated there and are listed only here.
+# Slots: u = the whole argument, eN = element N of a list argument,
+# e0.dD = a bool D brackets deep, aN = argument N of the reviewed call,
+# aN.dD[.key] = a numeric literal D brackets deep in argument N (the dict key
+# when it is a dict value).
+print|u|renders any value
+print|e0|renders any value
+print|e1|renders any value
+write|u|renders any value
+write|e0|renders any value
+write|e1|renders any value
+str|u|converts any value to text
+str|e0|converts any value to text
+str|e1|converts any value to text
+type|u|names any value's type
+type|e0|names any value's type
+type|e1|names any value's type
+json_encode|u|JSON has true and false
+json_encode|e0|JSON has true and false
+json_encode|e1|JSON has true and false
+observe|u|the observer measures bools (entropy 0 or 1)
+observe|e0|the observer measures any value
+observe|e1|the observer measures any value
+free_val|u|releases any value
+free_val|e0|releases any value
+free_val|e1|releases any value
+coalesce|u|picks the first non-null of any values
+coalesce|a0|picks the first non-null of any values
+coalesce|a1|picks the first non-null of any values
+len|e0|counts elements whatever they are
+len|e1|counts elements whatever they are
+assert|u|the condition is a bool
+assert|a0|the condition is a bool
+append|a1|a list element may be any value
+list_insert_at|a2|a list element may be any value
+fill|a1|a list element may be any value
+dict_set|a2|a dict value may be any value
+send|a1|a channel carries any value
+task_send|a1|a mailbox carries any value
+json_build|e1|JSON values may be true and false (position 1 is a value)
+write_bytes|a2|the append flag is a bool (or the older nonzero number)
+concat|a0.d1|joins two lists; elements may be any value
+concat|a1.d1|joins two lists; elements may be any value
+list_slice|a0.d1|slices a list; elements may be any value
+copy_into|a2.d1|copies list elements; elements may be any value
+str|e0.d2|converts any value to text
+str|e0.d3|converts any value to text
+json_encode|e0.d2|JSON has true and false
+json_encode|e0.d3|JSON has true and false
+json_build|e0.d2|a JSON value may be a list holding true/false
+json_build|e0.d3|a JSON value may be a list holding true/false
+has_key|a0.d1.k|a dict value may be any value
+store_put|a2.d1.value|a stored record value may be any value
+store_update|a3.d1.value|a stored record value may be any value
+nearest_in_range|a0.d2.active|the entity's active flag is a bool (false skips it)
+nearest_in_range_all|a0.d2.active|the entity's active flag is a bool (false skips it)
+channel|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+channel|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+clock_unix|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+clock_unix|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+heap_inuse|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+heap_inuse|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+mktemp|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+mktemp|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+monotonic_ms|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+monotonic_ms|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+monotonic_ns|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+monotonic_ns|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+random|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+random|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
+shared_set|a1|the http shared store holds any JSON value; a bool round-trips through shared_get as a bool

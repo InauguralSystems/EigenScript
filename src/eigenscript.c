@@ -236,6 +236,8 @@ const char* tok_type_name(TokType t) {
         case TOK_FOR: return "'for'";
         case TOK_IN: return "'in'";
         case TOK_NULL: return "'null'";
+        case TOK_TRUE: return "'true'";
+        case TOK_FALSE: return "'false'";
         case TOK_UNOBSERVED: return "'unobserved'";
         case TOK_REPORT: return "'report'";
         case TOK_REPORT_VALUE: return "'report_value'";
@@ -314,6 +316,7 @@ const char* val_type_name(ValType t) {
         case VAL_DICT: return "dict";
         case VAL_BUFFER: return "buffer";
         case VAL_TEXT_BUILDER: return "text_builder";
+        case VAL_BOOL: return "bool";
         /* No `default:` — -Werror=switch (Makefile CFLAGS) makes a new
          * ValType a build error here instead of printing "?". */
     }
@@ -432,7 +435,7 @@ static double compute_entropy_impl(Value *v) {
     if (!v) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
-        case VAL_NUM: return entropy_of_num(v->data.num);
+        case VAL_NUM: return entropy_of_num(VAL_NUM_RAW(v));
         case VAL_STR:      return entropy_of_cstr(v->data.str);
         case VAL_JSON_RAW: return entropy_of_cstr(v->data.str);
         case VAL_LIST: {
@@ -459,6 +462,11 @@ static double compute_entropy_impl(Value *v) {
             return eigs_native_fn_name(v->data.builtin) ? 1.0 : 0.0;
         case VAL_BUFFER: return log2((double)v->data.buffer.count + 1.0);
         case VAL_TEXT_BUILDER: return log2((double)v->data.text_builder.len + 1.0);
+        /* #1637: a bool is one bit. false sits at 0.0 and true at 1.0, the
+         * binary-entropy floor and ceiling — the values entropy_of_num gave
+         * the 0/1 a comparison used to produce, so a flag binding's entropy
+         * trajectory is unchanged. No existing constant moves. */
+        case VAL_BOOL: return v->data.boolean ? 1.0 : 0.0;
     }
     /* No `default:` above, and no fallthrough value here: with -Werror=switch a
      * new ValType is a BUILD failure at this switch rather than a silent 0.0.
@@ -778,7 +786,7 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
      * the relative-delta step is only defined for a scalar trajectory). */
     if (newval && newval->type == VAL_NUM) {
         ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) observer_slot_record_value(s, newval->data.num);
+        if (s) observer_slot_record_value(s, VAL_NUM_RAW(newval));
     } else {
         /* #861: a non-numeric assignment ends the numeric trajectory's claim
          * on this binding — predicates fall back to the entropy channel until
@@ -841,7 +849,7 @@ void observer_slot_sample_num_gated(Env *e, int idx, double num) {
 
 void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
     if (newval && newval->type == VAL_NUM) {
-        observer_slot_sample_num_gated(e, idx, newval->data.num);
+        observer_slot_sample_num_gated(e, idx, VAL_NUM_RAW(newval));
         return;
     }
     if (!e || idx < 0) return;
@@ -1374,7 +1382,10 @@ int observer_entropy_now(Env *e, int idx, double *out) {
         EigsSlot s = e->values[idx];
         if (slot_is_num(s)) {
             kind = 1;
-            num = s.d;
+            num = SLOT_NUM_RAW(s);
+        } else if (slot_is_bool(s)) {
+            held = make_bool(slot_as_bool(s));   /* #1637: immortal; incref no-op */
+            kind = 2;
         } else if (slot_is_ptr(s)) {
             Value *v = slot_as_ptr(s);
             if (v && v->type != VAL_NULL) {
@@ -1428,8 +1439,8 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     dict_set_owned(out, "dH",           make_num(s ? s->dH : 0.0));
     dict_set_owned(out, "last_entropy", make_num(s ? s->last_entropy : 0.0));
     dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? s->last_value : 0.0));
-    dict_set_owned(out, "observed",     make_num(s ? (s->used != 0) : 0));
-    dict_set_owned(out, "numeric",      make_num(s ? (s->v_used != 0) : 0));
+    dict_set_owned(out, "observed",     make_bool(s && s->used != 0));     /* #1637 */
+    dict_set_owned(out, "numeric",      make_bool(s && s->v_used != 0));
     /* #1044: the depth this slot classifies over travels with the snapshot,
      * so `classify of (trajectory of x)` agrees with `report of x` for a
      * binding carrying a per-binding override. */
@@ -1459,10 +1470,10 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     {
         Value *w = dict_get(dict, "window");
         if (w) {
-            if (w->type != VAL_NUM || w->data.num < OBSERVER_WINDOW_MIN ||
-                w->data.num > OBSERVER_WINDOW_MAX || w->data.num != (int)w->data.num)
+            if (w->type != VAL_NUM || VAL_NUM_RAW(w) < OBSERVER_WINDOW_MIN ||
+                VAL_NUM_RAW(w) > OBSERVER_WINDOW_MAX || VAL_NUM_RAW(w) != (int)VAL_NUM_RAW(w))
                 return 0;
-            out->win_override = (uint8_t)(int)w->data.num;
+            out->win_override = (uint8_t)(int)VAL_NUM_RAW(w);
         }
     }
     const int N = observer_slot_window(out);
@@ -1481,8 +1492,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->v_window[out->v_window_count]  = a->data.num;
-        out->vr_window[out->v_window_count] = b->data.num;
+        out->v_window[out->v_window_count]  = VAL_NUM_RAW(a);
+        out->vr_window[out->v_window_count] = VAL_NUM_RAW(b);
         out->v_window_count++;
     }
     out->v_window_head = (uint8_t)(out->v_window_count % N);
@@ -1496,19 +1507,33 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->dh_window[out->dh_window_count++] = a->data.num;
+        out->dh_window[out->dh_window_count++] = VAL_NUM_RAW(a);
     }
     out->dh_window_head = (uint8_t)(out->dh_window_count % N);
-    Value *v;
-    if ((v = dict_get(dict, "entropy"))      && v->type == VAL_NUM) out->entropy = v->data.num;
-    if ((v = dict_get(dict, "dH"))           && v->type == VAL_NUM) out->dH = v->data.num;
-    if ((v = dict_get(dict, "last_entropy")) && v->type == VAL_NUM) out->last_entropy = v->data.num;
-    if ((v = dict_get(dict, "last_value"))   && v->type == VAL_NUM) out->last_value = v->data.num;
-    v = dict_get(dict, "observed");
-    out->used = (v && v->type == VAL_NUM) ? (v->data.num != 0.0) : 1;
-    v = dict_get(dict, "numeric");
-    out->v_used = (v && v->type == VAL_NUM) ? (v->data.num != 0.0)
-                                            : (out->v_window_count > 0);
+    /* #1637: the scalar fields are numbers and the two flags are bools, as
+     * `trajectory of x` writes them. Absent keeps the default; any other
+     * type is not a snapshot (the old code read a bool flag as "not a
+     * number" and defaulted `observed: false` to observed). */
+    static const char *const nums[] = {"entropy", "dH", "last_entropy", "last_value"};
+    double *dsts[] = {&out->entropy, &out->dH, &out->last_entropy, &out->last_value};
+    for (int k = 0; k < 4; k++) {
+        Value *v = dict_get(dict, nums[k]);
+        if (!v) continue;
+        if (v->type != VAL_NUM) {
+            free(out->v_window); free(out->vr_window); free(out->dh_window);
+            memset(out, 0, sizeof *out);
+            return 0;
+        }
+        *dsts[k] = VAL_NUM_RAW(v);
+    }
+    Value *fo = dict_get(dict, "observed"), *fn = dict_get(dict, "numeric");
+    if ((fo && fo->type != VAL_BOOL) || (fn && fn->type != VAL_BOOL)) {
+        free(out->v_window); free(out->vr_window); free(out->dh_window);
+        memset(out, 0, sizeof *out);
+        return 0;
+    }
+    out->used = fo ? fo->data.boolean : 1;
+    out->v_used = fn ? fn->data.boolean : (out->v_window_count > 0);
     /* A full slot re-fed through the classifiers needs obs_age > 0 so the
      * partial-window fallbacks behave like a live slot's. */
     out->obs_age = out->dh_window_count + out->v_window_count;
@@ -1701,6 +1726,7 @@ void free_value(Value *v) {
         case VAL_NUM:
         case VAL_BUILTIN:
         case VAL_NULL:
+        case VAL_BOOL:
             break;
     }
     free(v);
@@ -1720,7 +1746,7 @@ Value* make_num(double n) {
         v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
     }
     v->type = VAL_NUM;
-    v->data.num = n;
+    VAL_NUM_RAW(v) = n;
     v->refcount = 1;
     v->arena = from_arena;
     return v;
@@ -1743,7 +1769,7 @@ Value* make_num_permanent(double n) {
     n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_NUM;
-    v->data.num = n;
+    VAL_NUM_RAW(v) = n;
     v->refcount = 1;
     v->arena = 0;
     return v;
@@ -1751,6 +1777,67 @@ Value* make_num_permanent(double n) {
 
 /* Forward decl of the VAL_NULL singleton — defined below near make_null. */
 static Value g_null_singleton;
+/* #1637: the two VAL_BOOL singletons — immortal like null (arena=1 makes
+ * every incref/decref a no-op). make_bool hands out one of these; no other
+ * VAL_BOOL Value is ever allocated. */
+static Value g_true_singleton  = { .type = VAL_BOOL, .data = { .boolean = 1 }, .refcount = 1000000, .arena = 1 };
+static Value g_false_singleton = { .type = VAL_BOOL, .data = { .boolean = 0 }, .refcount = 1000000, .arena = 1 };
+Value* make_bool(int b) { return b ? &g_true_singleton : &g_false_singleton; }
+
+static const char *num_who(const char *who) {
+    if (!who) return "builtin";
+    return strncmp(who, "builtin_", 8) == 0 ? who + 8 : who;
+}
+
+double eigs_num_arg_slow(const Value *v, const char *who) {
+    if (v && v->type == VAL_NUM) return VAL_NUM_RAW(v);
+    if (!g_has_error)
+        rt_error(EK_TYPE, 0, "%s: expected a number, got %s", num_who(who),
+                 v ? val_type_name(v->type) : "nothing");
+    return 0.0;
+}
+
+double eigs_list_num(const Value *list, int i, const char *who) {
+    if (!list || list->type != VAL_LIST || i < 0 || i >= list->data.list.count) {
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "%s: expected a number as argument %d, got nothing",
+                     num_who(who), i);
+        return 0.0;
+    }
+    return eigs_num_arg(list->data.list.items[i], who);
+}
+
+double eigs_elem_num(const Value *v, const char *who) {
+    if (v && v->type == VAL_NUM) return VAL_NUM_RAW(v);
+    if (g_strict || (v && v->type == VAL_BOOL)) return eigs_num_arg_slow(v, who);
+    return 0.0;
+}
+
+int eigs_opt_num(const Value *v, double *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    if (v->type == VAL_NUM) { *out = VAL_NUM_RAW(v); return 1; }
+    eigs_num_arg(v, who);
+    return 0;
+}
+
+/* Two levels: the argument, an element of the argument list, or an element
+ * of a list argument (`audio_mix of [[true, 1], [1]]`'s samples). Called on a
+ * failed guard only, so the walk is off the success path. */
+int eigs_arg_has_bool(const Value *arg) {
+    if (!arg) return 0;
+    if (arg->type == VAL_BOOL) return 1;
+    if (arg->type == VAL_LIST)
+        for (int i = 0; i < arg->data.list.count; i++) {
+            const Value *e = arg->data.list.items[i];
+            if (!e) continue;
+            if (e->type == VAL_BOOL) return 1;
+            if (e->type == VAL_LIST)
+                for (int j = 0; j < e->data.list.count; j++)
+                    if (e->data.list.items[j] && e->data.list.items[j]->type == VAL_BOOL)
+                        return 1;
+        }
+    return 0;
+}
 
 /* ---- NaN-boxing boundary shims ----
  *
@@ -1773,22 +1860,24 @@ EigsSlot slot_from_value(Value *v) {
         /* #262 Step E: a number never carries observer state (it lives on the
          * Env slot), so every VAL_NUM ships as an immediate double. TAG_TRACKED
          * is dead. */
-        double n = v->data.num;
+        double n = VAL_NUM_RAW(v);
         val_decref(v);
         return slot_from_num(n);
     }
+    if (v->type == VAL_BOOL) return slot_from_bool(v->data.boolean); /* singleton: borrowed */
     return slot_from_heap(v);
 }
 
 /* slot_to_value: produces a Value* the caller owns a ref to.
- *   - immediate number/bool -> make_num
+ *   - immediate number -> make_num
  *   - immediate null -> g_null_singleton
+ *   - immediate bool -> the true/false singleton (#1637)
  *   - heap/tracked pointer -> incref and return
  */
 Value* slot_to_value(EigsSlot s) {
-    if (slot_is_num(s)) return make_num(s.d);
+    if (slot_is_num(s)) return make_num(SLOT_NUM_RAW(s));
     if (slot_is_null(s)) return &g_null_singleton;
-    if (slot_is_bool(s)) return make_num(slot_as_bool(s) ? 1.0 : 0.0);
+    if (slot_is_bool(s)) return make_bool(slot_as_bool(s));
     if (slot_is_heap(s)) {
         Value *v = slot_as_ptr(s);
         val_incref(v);
@@ -1818,7 +1907,7 @@ typedef struct {
 static Value *promote_arena_scalar(Value *v) {
     if (v->type == VAL_NUM) {
         if (!sandbox_charge(sizeof(Value))) return NULL;
-        return make_num_permanent(v->data.num);
+        return make_num_permanent(VAL_NUM_RAW(v));
     }
     if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
         size_t n = val_str_len(v);
@@ -1845,8 +1934,9 @@ Value* promote_if_arena(Value *v) {
          * preserves callers' non-NULL contract without another allocation. */
         return h ? h : &g_null_singleton;
     }
-    if (v->type == VAL_NULL) {
-        /* VAL_NULL has a single immortal singleton (g_null_singleton, arena=1).
+    if (v->type == VAL_NULL || v->type == VAL_BOOL) {
+        /* VAL_NULL has a single immortal singleton (g_null_singleton, arena=1);
+         * VAL_BOOL has two (#1637).
          * Don't allocate a heap copy — incref/decref are already no-ops on it,
          * and a heap VAL_NULL leaks via slot_bridge_wrap's pointer-drop. */
         return v;
@@ -2481,7 +2571,7 @@ static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
             /* Exclusive untracked mirror — refresh in place, no allocation.
              * Same exclusivity test as dict_set_cached_immediate: a mirror
              * anyone else holds a ref to must not be mutated under them. */
-            cur->data.num = s.d;
+            VAL_NUM_RAW(cur) = SLOT_NUM_RAW(s);
             env_shared_unlock(e);
             slot_decref(s);
             return cur;
@@ -2717,8 +2807,9 @@ static Value *chan_clone_rec(Value *v, int depth) {
      * behavior) rather than overflow the stack. */
     if (depth > CHAN_CLONE_MAX_DEPTH) { val_incref(v); return v; }
     switch (v->type) {
-        case VAL_NUM:  return make_num(v->data.num);
+        case VAL_NUM:  return make_num(VAL_NUM_RAW(v));
         case VAL_NULL: return make_null();
+        case VAL_BOOL: return make_bool(v->data.boolean);
         case VAL_STR:  return make_str(v->data.str);
         case VAL_LIST: {
             int n = v->data.list.count;
@@ -2920,7 +3011,7 @@ int is_truthy(Value *v) {
     if (!v) return 0;
     switch (v->type) {
         case VAL_NULL: return 0;
-        case VAL_NUM: return v->data.num != 0.0;
+        case VAL_NUM: return VAL_NUM_RAW(v) != 0.0;
         case VAL_STR: return v->data.str && v->data.str[0] != '\0';
         case VAL_LIST: return v->data.list.count > 0;
         case VAL_FN: return 1;
@@ -2929,6 +3020,7 @@ int is_truthy(Value *v) {
         case VAL_DICT: eigs_module_ns_sync(v); return v->data.dict.count > 0;
         case VAL_BUFFER: return v->data.buffer.count > 0;
         case VAL_TEXT_BUILDER: return v->data.text_builder.len > 0;
+        case VAL_BOOL: return v->data.boolean;
     }
     return 0;
 }
@@ -2941,22 +3033,42 @@ int is_truthy(Value *v) {
  * (no coercion — consistent with the comparison operators). The depth
  * guard prevents runaway recursion on self-referential containers; beyond
  * it we fall back to identity. */
-static int values_equal_impl(Value *a, Value *b, int depth) {
+/* #1637 item 6: a bool met by a number — at any depth of the two values —
+ * RAISES instead of answering "not equal", so `(pred of x) == 1` written
+ * against the old 1/0 predicates fails loudly rather than silently flipping.
+ * There is NO non-raising mode: the membership builtins (list_contains,
+ * list_index_of) search with this same comparison and raise the same way, or
+ * an old 1/0 membership check would flip from found to not-found. `op` names
+ * the operator (`==`, `!=`) or the builtin, for the message. Every other
+ * mixed-type pair stays unequal. */
+static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
     /* #1417: a buffer compared with itself still exposes its elements. Do
      * not bypass normalization (or a strict NaN raise) through identity. */
     if (a == b && (!a || a->type != VAL_BUFFER)) return 1;
     if (!a || !b) return 0;
-    if (a->type != b->type) return 0;
+    if (a->type != b->type) {
+        if ((a->type == VAL_BOOL && b->type == VAL_NUM) ||
+            (a->type == VAL_NUM && b->type == VAL_BOOL)) {
+            if (op[0] == '=' || op[0] == '!')
+                rt_error(EK_TYPE, 0, "cannot compare %s and %s with '%s'",
+                         val_type_name(a->type), val_type_name(b->type), op);
+            else
+                rt_error(EK_TYPE, 0, "%s: cannot compare %s and %s (a bool is not a number)",
+                         op, val_type_name(a->type), val_type_name(b->type));
+        }
+        return 0;
+    }
     if (depth > 64) return a == b;
     switch (a->type) {
-        case VAL_NUM:  return a->data.num == b->data.num;
+        case VAL_NUM:  return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
         case VAL_STR:  return strcmp(a->data.str, b->data.str) == 0;
         case VAL_NULL: return 1;
+        case VAL_BOOL: return a->data.boolean == b->data.boolean;
         case VAL_LIST: {
             if (a->data.list.count != b->data.list.count) return 0;
             for (int i = 0; i < a->data.list.count; i++)
                 if (!values_equal_impl(a->data.list.items[i],
-                                       b->data.list.items[i], depth + 1))
+                                       b->data.list.items[i], depth + 1, op))
                     return 0;
             return 1;
         }
@@ -2967,7 +3079,7 @@ static int values_equal_impl(Value *a, Value *b, int depth) {
             for (int i = 0; i < a->data.dict.count; i++) {
                 Value *bv = dict_get(b, a->data.dict.keys[i]);
                 if (!bv) return 0;
-                if (!values_equal_impl(a->data.dict.vals[i], bv, depth + 1))
+                if (!values_equal_impl(a->data.dict.vals[i], bv, depth + 1, op))
                     return 0;
             }
             return 1;
@@ -2997,7 +3109,8 @@ static int values_equal_impl(Value *a, Value *b, int depth) {
     return a == b;   /* unreachable for valid ValType values */
 }
 
-int values_equal(Value *a, Value *b) { return values_equal_impl(a, b, 0); }
+int values_equal(Value *a, Value *b) { return values_equal_impl(a, b, 0, "=="); }
+int values_equal_op(Value *a, Value *b, const char *op) { return values_equal_impl(a, b, 0, op); }
 
 /* THE number->text rule, in one place (#875).
  *
@@ -3038,7 +3151,7 @@ char* value_to_string(Value *v) {
     switch (v->type) {
         case VAL_NULL: return xstrdup("null");
         case VAL_NUM: {
-            eigs_num_text(buf, sizeof(buf), v->data.num);
+            eigs_num_text(buf, sizeof(buf), VAL_NUM_RAW(v));
             return xstrdup(buf);
         }
         case VAL_STR: return xstrdup(v->data.str);
@@ -3093,6 +3206,7 @@ char* value_to_string(Value *v) {
             return xstrdup(buf);
         case VAL_TEXT_BUILDER:
             return xstrdup(v->data.text_builder.data ? v->data.text_builder.data : "");
+        case VAL_BOOL: return xstrdup(v->data.boolean ? "true" : "false");
     }
     return xstrdup("?");
 }
@@ -4289,6 +4403,7 @@ static int gc_value_is_node(Value *v) {
     case VAL_BUILTIN:
     case VAL_BUFFER:
     case VAL_TEXT_BUILDER:
+    case VAL_BOOL:
         return 0;
     }
     return 0;   /* unreachable for valid ValType values */

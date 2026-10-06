@@ -1437,6 +1437,9 @@ Value* builtin_native_train_step(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         return make_str("{\"status\": \"error\", \"error\": \"requires [input_ids, output_ids, lr]\"}");
     }
+    /* #1637: a bool id or rate raises in every mode, before the no-model
+     * answer (the ids were only read once a model was loaded). */
+    BOOL_REFUSE(arg, "native_train_step");
     if (!g_model.loaded) {
         return make_str("{\"status\": \"error\", \"error\": \"Model not loaded\"}");
     }
@@ -1448,7 +1451,8 @@ Value* builtin_native_train_step(Value *arg) {
     }
 
     float lr = 0.001f;
-    if (arg->data.list.items[2]->type == VAL_NUM) lr = arg->data.list.items[2]->data.num;
+    if (arg->data.list.items[2]->type == VAL_BOOL) { eigs_num_arg(arg->data.list.items[2], __func__); return make_null(); }  /* #1637 */
+    if (arg->data.list.items[2]->type == VAL_NUM) lr = eigs_list_num(arg, 2, __func__);
     else if (arg->data.list.items[2]->type == VAL_STR) lr = strtod(arg->data.list.items[2]->data.str, NULL);
     if (lr <= 0 || lr > 1) lr = 0.001f;
 
@@ -1465,12 +1469,13 @@ Value* builtin_native_train_step(Value *arg) {
     int *output_ids = xcalloc(output_len > 0 ? output_len : 1, sizeof(int));
     for (int i = 0; i < input_len; i++) {
         Value *v = in_list->data.list.items[i];
-        input_ids[i] = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+        input_ids[i] = (int)eigs_num_arg(v, "native_train_step");   /* #1637: a bool raises */
     }
     for (int i = 0; i < output_len; i++) {
         Value *v = out_list->data.list.items[i];
-        output_ids[i] = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+        output_ids[i] = (int)eigs_num_arg(v, "native_train_step");
     }
+    if (g_has_error) { free(input_ids); free(output_ids); return make_null(); }
 
     float loss = 0.0f;
     int tokens_trained = 0;

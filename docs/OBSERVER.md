@@ -62,6 +62,10 @@ Two of these are the load-bearing pair:
   is a trajectory of *assignments*: mutation does not move it, and
   asking never writes anything back.) For a
   number it is, in spirit, *how many bits it takes to pin the value down*.
+  A bool (#1637) is one bit: `false` sits at 0 and `true` at 1, the two
+  ends of the binary-entropy range (the values the old `1`/`0` comparison
+  results had), and since a bool is not a number the predicates read a bool
+  binding on the entropy channel, not the value channel.
   For a string it is the Shannon entropy of its characters; for a list or
   dict it is the average of its elements plus a size term, and the walk
   **stops at a reference** — an element that is itself a container

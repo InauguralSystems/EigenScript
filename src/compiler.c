@@ -305,6 +305,7 @@ static int op_stack_effect(uint8_t op8) {
     switch ((OpCode)op8) {
     /* Push 1 */
     case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_TRUE: case OP_FALSE:
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_DUP:
     case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
     case OP_REPORT_SLOT: case OP_REPORT_NAME:
@@ -789,7 +790,7 @@ static void collect_referenced_names_skip(ASTNode *node, ASTNode *skip, NameSet 
      * error here instead of a silent no-op. */
     case AST_NUM:
     case AST_STR:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_PREDICATE:
     case AST_BREAK:
     case AST_CONTINUE:
@@ -933,7 +934,7 @@ static void collect_referenced_names(ASTNode *node, NameSet *out) {
      * error here instead of a silent no-op. */
     case AST_NUM:
     case AST_STR:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_BREAK:
     case AST_CONTINUE:
     case AST_IMPORT:
@@ -1073,7 +1074,7 @@ static void scan_for_captures(ASTNode *node, NameSet *out) {
     case AST_NUM:
     case AST_STR:
     case AST_IDENT:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_PROGRAM:
     case AST_INTERROGATE:
     case AST_PREDICATE:
@@ -1180,7 +1181,7 @@ static int ast_has_closure(ASTNode *node) {
     case AST_NUM:
     case AST_STR:
     case AST_IDENT:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_PROGRAM:
     case AST_PREDICATE:
     case AST_BREAK:
@@ -1255,7 +1256,7 @@ static int subtree_overwrite_safe(ASTNode *n, NameSet *bound, Env *env) {
     case AST_INTERROGATE:  SAFE(n->data.interrogate.expr); SAFE(n->data.interrogate.at_expr);
                            SAFE(n->data.interrogate.when_expr); break;
     /* Leaves with no binding effect. */
-    case AST_IDENT: case AST_NUM: case AST_STR: case AST_NULL:
+    case AST_IDENT: case AST_NUM: case AST_STR: case AST_NULL: case AST_BOOL:
     case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE:
         break;
     /* These take the fallback the deleted `default:` supplied. Enumerated
@@ -1468,7 +1469,7 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
     case AST_NUM:
     case AST_STR:
     case AST_IDENT:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_FUNC:
     case AST_PROGRAM:
     case AST_PREDICATE:
@@ -1590,7 +1591,7 @@ static void scan_for_env_bound(ASTNode *node, NameSet *out) {
     case AST_NUM:
     case AST_STR:
     case AST_IDENT:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_FUNC:
     case AST_PROGRAM:
     case AST_INTERROGATE:
@@ -1657,7 +1658,7 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
     case AST_NUM:
     case AST_STR:
     case AST_IDENT:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_BINOP:
     case AST_UNARY:
     case AST_RELATION:
@@ -1794,7 +1795,7 @@ static int scan_dispatch_rebind(ASTNode *n) {
      * CFLAGS) makes a new ASTType a build error here. */
     case AST_NUM:
     case AST_STR:
-    case AST_NULL:
+    case AST_NULL: case AST_BOOL:
     case AST_PREDICATE:
     case AST_BREAK:
     case AST_CONTINUE:
@@ -1982,7 +1983,7 @@ static int cond_is_observer_based(const ASTNode *n) {
         case AST_NUM:
         case AST_STR:
         case AST_IDENT:
-        case AST_NULL:
+        case AST_NULL: case AST_BOOL:
         case AST_ASSIGN:
         case AST_IF:
         case AST_LOOP:
@@ -2083,6 +2084,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
     case AST_NULL:
         emit(c, OP_NULL, node->line);
+        break;
+
+    case AST_BOOL:   /* #1637 */
+        emit(c, node->data.num != 0.0 ? OP_TRUE : OP_FALSE, node->line);
         break;
 
     case AST_IDENT: {
@@ -3836,7 +3841,7 @@ static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth) {
             for (int j = 0; j < n->data.match.body_counts[i]; j++) if (obs_ast_scan_d(n->data.match.bodies[i][j], L, depth + 1)) return 1;
         }
         return 0;
-    case AST_NUM: case AST_STR: case AST_NULL: case AST_BREAK: case AST_CONTINUE: return 0;
+    case AST_NUM: case AST_STR: case AST_NULL: case AST_BOOL: case AST_BREAK: case AST_CONTINUE: return 0;
     }
     return 1;   /* an unknown node kind arms the gate, never the reverse */
 }

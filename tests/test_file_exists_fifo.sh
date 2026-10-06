@@ -20,7 +20,7 @@ for i in $(seq 1 50); do
 done
 if [ -z "$rc" ]; then kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; echo "FAIL: file_exists on a reader-less fifo BLOCKED (killed after 5s)"; exit 1; fi
 out=$(cat "$T/out")
-want=$'1\n1\n1\n0\n0'
+want=$'true\ntrue\ntrue\nfalse\nfalse'
 if [ "$rc" -eq 0 ] && [ "$out" = "$want" ]; then
     echo "PASS: file_exists answers fifo=1 file=1 dir=1 missing=0 without blocking; is_file(fifo)=0"
 else

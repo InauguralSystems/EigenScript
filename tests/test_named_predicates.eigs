@@ -12,8 +12,8 @@ loop while i < 40:
     x is x * 0.5
     i is i + 1
 y is 999.0
-assert_eq of [converged of x, 1, "converged of x reads x (settled)"]
-assert_eq of [converged, 0, "bare converged reads the last-observed binding (y)"]
+assert_eq of [converged of x, true, "converged of x reads x (settled)"]
+assert_eq of [converged, false, "bare converged reads the last-observed binding (y)"]
 
 # 2. A named-predicate loop condition is rate-dependent and self-terminating —
 #    no global-alias auto-stall hijack from the trailing counter `k`.
@@ -28,10 +28,10 @@ assert of [(settle of 0.5) != (settle of 0.95), "settle is rate-dependent (named
 
 # 3. all six predicates accept the named form
 a is 1.0
-assert_eq of [type of (stable of a), "num", "stable of x"]
-assert_eq of [type of (improving of a), "num", "improving of x"]
-assert_eq of [type of (oscillating of a), "num", "oscillating of x"]
-assert_eq of [type of (diverging of a), "num", "diverging of x"]
-assert_eq of [type of (equilibrium of a), "num", "equilibrium of x"]
+assert_eq of [type of (stable of a), "bool", "stable of x"]
+assert_eq of [type of (improving of a), "bool", "improving of x"]
+assert_eq of [type of (oscillating of a), "bool", "oscillating of x"]
+assert_eq of [type of (diverging of a), "bool", "diverging of x"]
+assert_eq of [type of (equilibrium of a), "bool", "equilibrium of x"]
 
 test_summary of null

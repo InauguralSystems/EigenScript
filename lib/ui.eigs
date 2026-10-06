@@ -29,6 +29,22 @@
 #   as key events; headless synthesized event dicts may omit them
 #   (absent keys read null).
 
+# #1637: an event modifier (shift/ctrl/alt) as a bool. gfx_poll delivers
+# bools; a hand-built event may still carry the older 1/0. Absent is false.
+define _ev_flag(v) as:
+    if (type of v) == "bool":
+        return v
+    if (type of v) == "num":
+        return v != 0
+    return false
+
+# #1637: an on_key answer that stops the loop: false, or the older 0.
+# `result == 0` raised when a handler returned a bool.
+define _ev_stop(r) as:
+    if (type of r) == "bool":
+        return not r
+    return ((type of r) == "num") and (r == 0)
+
 load_file of "lib/ui_theme.eigs"
 load_file of "lib/ui_draw.eigs"
 load_file of "lib/ui_layout.eigs"
@@ -456,45 +472,39 @@ define unregister_hotkey(combo) as:
 
 define _combo_matches(combo, ctrl, shift, alt, key) as:
     # Parse combo string like "ctrl+s", "ctrl+shift+z", "alt+f"
-    need_ctrl is 0
-    need_shift is 0
-    need_alt is 0
+    need_ctrl is false
+    need_shift is false
+    need_alt is false
     target_key is combo
-    if (contains of [combo, "ctrl+"]) == 1:
-        need_ctrl is 1
+    if (contains of [combo, "ctrl+"]):
+        need_ctrl is true
         target_key is str_replace of [target_key, "ctrl+", ""]
-    if (contains of [combo, "shift+"]) == 1:
-        need_shift is 1
+    if (contains of [combo, "shift+"]):
+        need_shift is true
         target_key is str_replace of [target_key, "shift+", ""]
-    if (contains of [combo, "alt+"]) == 1:
-        need_alt is 1
+    if (contains of [combo, "alt+"]):
+        need_alt is true
         target_key is str_replace of [target_key, "alt+", ""]
-    if ctrl != need_ctrl:
-        return 0
-    if shift != need_shift:
-        return 0
-    if alt != need_alt:
-        return 0
+    if (_ev_flag of ctrl) != need_ctrl:
+        return false
+    if (_ev_flag of shift) != need_shift:
+        return false
+    if (_ev_flag of alt) != need_alt:
+        return false
     if key == target_key:
-        return 1
-    return 0
+        return true
+    return false
 
 define _match_hotkey(ev) as:
-    ctrl is 0
-    shift is 0
-    alt is 0
-    if ev.ctrl != null:
-        ctrl is ev.ctrl
-    if ev.shift != null:
-        shift is ev.shift
-    if ev.alt != null:
-        alt is ev.alt
+    ctrl is _ev_flag of ev.ctrl
+    shift is _ev_flag of ev.shift
+    alt is _ev_flag of ev.alt
     for i in range of (len of _ui.hotkeys):
         hk is _ui.hotkeys[i]
-        if (_combo_matches of [hk.combo, ctrl, shift, alt, ev.key]) == 1:
+        if (_combo_matches of [hk.combo, ctrl, shift, alt, ev.key]):
             hk.callback of null
-            return 1
-    return 0
+            return true
+    return false
 
 # Modal stack
 
@@ -565,11 +575,11 @@ define show_dialog(dlg, parent_w, parent_h) as:
 define _has_open_popup(widget) as:
     if widget.type == "combobox" or widget.type == "dropdown":
         if widget.open == 1:
-            return 1
+            return true
     if widget.type == "menu_bar":
         if widget.open_index >= 0:
-            return 1
-    return 0
+            return true
+    return false
 
 define claim_drag(widget) as:
     _ui.drag_widget is widget
@@ -593,18 +603,18 @@ define request_quit() as:
 
 define handle_key(root, ev) as:
     if ev.type != "keydown":
-        return 0
-    if (_match_hotkey of ev) == 1:
-        return 1
+        return false
+    if (_match_hotkey of ev):
+        return true
     if ev.key == "escape" and (len of _ui.modal_stack) > 0:
         pop_modal of null
-        return 1
+        return true
     if _ui.focused_widget != null and _ui.focused_widget.type == "combobox" and _ui.focused_widget.open == 1:
         _handle_combobox_key of [_ui.focused_widget, ev]
-        return 1
+        return true
     if _ui.focused_input != null:
         _handle_text_key of [_ui.focused_input, ev]
-        return 1
+        return true
     # Focus navigation reports its own consumption, so a key it ignores
     # (an unbound letter with a widget merely focused) stays free for the
     # app rather than being silently swallowed.
@@ -612,7 +622,7 @@ define handle_key(root, ev) as:
         return _handle_focus_key of [root, ev]
     if _ui.focused_widget != null and _ui.focused_input == null:
         return _handle_focus_key of [root, ev]
-    return 0
+    return false
 
 # Event dispatch — registry-driven
 
@@ -806,7 +816,7 @@ define dispatch(root, ev) as:
         # through to the registry on_mousedown below.
         if dbl_ok == 1 and hit.type != "editable_label" and hit.on_dblclick == null:
             dbl_ok is 0
-        if dbl_ok == 1 and (_has_open_popup of hit) == 0 and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
+        if dbl_ok == 1 and (not (_has_open_popup of hit)) and hit.id == _ui.last_click_id and (now - _ui.last_click_time) < 400:
             if hit.type == "editable_label":
                 _start_editing of hit
             else:
@@ -908,12 +918,12 @@ define app_loop(root, on_key, on_tick) as:
                 handle_key of [root, ev]
                 if on_key != null:
                     result is on_key of ev
-                    if result == 0:
+                    if _ev_stop of result:
                         _running is 0
             elif ev.type == "keyup":
                 if on_key != null:
                     result is on_key of ev
-                    if result == 0:
+                    if _ev_stop of result:
                         _running is 0
             else:
                 dispatch of [root, ev]

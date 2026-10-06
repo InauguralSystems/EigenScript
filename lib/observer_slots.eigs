@@ -6,7 +6,7 @@
 #   import observer_slots
 #
 #   observer_slots.feed of [w.slot, w.progress]    # each frame/step
-#   if (observer_slots.is_stable of (w.slot)) == 1:
+#   if (observer_slots.is_stable of (w.slot)):
 #       mark_stalled of w                          # wedged: value stopped moving
 #
 # Feed BOUNDED signatures (e.g. 1.5 + (raw % 8)), not raw counters —
@@ -59,7 +59,7 @@ define feed(i, v) as:
         _s7 is v + 0.0
     else:
         throw of "observer_slots: slot out of range (8 slots)"
-    return 1
+    return true
 
 define is_stable(i) as:
     if i == 0:

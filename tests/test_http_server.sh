@@ -519,7 +519,7 @@ fi
 
 # ---- Shared-store: delete clears the entry ----
 RESP=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/sdel")
-if [ "$RESP" = "0" ]; then
+if [ "$RESP" = "false" ]; then
     ok "HS19 shared_delete removes the key"
 else
     fail "HS19 shared_delete" "got '$RESP'"
@@ -562,10 +562,10 @@ fi
 # /sbig writes an 8 KiB string under a 4 KiB cap; shared_set must
 # reject the write and leave the store unchanged.
 RESP=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/sbig")
-if [ "$RESP" = "0" ]; then
+if [ "$RESP" = "false" ]; then
     ok "HS22 shared_set rejects writes past EIGS_HTTP_SHARED_MAX_BYTES"
 else
-    fail "HS22 shared store bounds" "got '$RESP' (expected 0)"
+    fail "HS22 shared store bounds" "got '$RESP' (expected false)"
 fi
 
 # ---- Shared-store: atomic increment (single-lock RMW) ----
@@ -793,12 +793,12 @@ print of ("ARR:" + (str of (contains of [arr, "X-Shape: array"])))
 EIGSCLI
 SHAPES=$("$EIGS" "$CLI" 2>/dev/null | tr -d '\r')
 rm -f "$CLI"
-if echo "$SHAPES" | grep -q "^OBJ:1$"; then
+if echo "$SHAPES" | grep -q "^OBJ:true$"; then
     ok "HS34 http_post sends headers given as a JSON object"
 else
     fail "HS34 http_post object headers" "header did not reach the wire ($(echo "$SHAPES" | tr '\n' ' '))"
 fi
-if echo "$SHAPES" | grep -q "^ARR:1$"; then
+if echo "$SHAPES" | grep -q "^ARR:true$"; then
     ok "HS34 http_post still sends headers given as a flat array"
 else
     fail "HS34 http_post array headers" "regressed ($(echo "$SHAPES" | tr '\n' ' '))"

@@ -110,7 +110,7 @@ static double net_register_sock(int fd, EigsNetSockKind kind) {
 
 static EigsNetSock* net_lookup(Value *v, EigsNetSockKind kind) {
     if (!v || v->type != VAL_NUM) return NULL;
-    EigsNetSock *s = net_unpack(v->data.num, NULL, NULL);
+    EigsNetSock *s = net_unpack(eigs_num_arg(v, __func__), NULL, NULL);
     if (!s || s->kind != kind) return NULL;
     return s;
 }
@@ -143,7 +143,10 @@ static int net_num_at(Value *arg, int idx, int fallback) {
     if (!arg || arg->type != VAL_LIST || idx >= arg->data.list.count)
         return fallback;
     Value *v = arg->data.list.items[idx];
-    return (v && v->type == VAL_NUM) ? (int)v->data.num : fallback;
+    /* #1637: null keeps the fallback, a number is read, anything else (a
+     * bool) raises; callers check g_has_error after their reads. */
+    double d = 0;
+    return eigs_opt_num(v, &d, "net") ? (int)d : fallback;
 }
 
 /* ---- builtins ----------------------------------------------------- */
@@ -158,7 +161,7 @@ Value* builtin_net_listen(Value *arg) {
         return make_null();
     }
     TRACE_NONDET_TAKE("net_listen");
-    int port = (int)arg->data.num;
+    int port = (int)eigs_num_arg(arg, __func__);
     if (port < 0 || port > 65535)
         TRACE_NONDET_RECORD("net_listen", make_null());
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -206,6 +209,7 @@ Value* builtin_net_accept(Value *arg) {
     if (arg && arg->type == VAL_LIST) {
         if (!net_require_list(arg, 2, 2, "net_accept")) return make_null();
         timeout_ms = net_num_at(arg, 1, -1);
+        if (g_has_error) return make_null();   /* #1637: a bool timeout raised */
         arg = arg->data.list.items[0];
     }
     if (!arg || arg->type != VAL_NUM) {
@@ -239,6 +243,7 @@ Value* builtin_net_dial(Value *arg) {
     }
     int port = net_num_at(arg, 1, -1);
     int timeout_ms = net_num_at(arg, 2, -1);
+    if (g_has_error) return make_null();   /* #1637: before the tape boundary */
     TRACE_NONDET_TAKE("net_dial");
     if (port < 0 || port > 65535) TRACE_NONDET_RECORD("net_dial", make_null());
 
@@ -288,6 +293,7 @@ Value* builtin_net_recv(Value *arg) {
     Value *conn = arg->data.list.items[0];
     int max = net_num_at(arg, 1, 0);
     int timeout_ms = net_num_at(arg, 2, -1);
+    if (g_has_error) return make_null();   /* #1637 */
     /* A zero-byte recv() returns 0 — indistinguishable from EOF — so a
      * senseless max is a shape error, decided before the tape boundary. */
     if (max < 1) {
@@ -353,9 +359,7 @@ Value* builtin_net_send(Value *arg) {
         for (int i = 0; i < n; i++) {
             double dv = data->type == VAL_BUFFER
                 ? buffer_read_num(data, i)
-                : (data->data.list.items[i] &&
-                   data->data.list.items[i]->type == VAL_NUM
-                       ? data->data.list.items[i]->data.num : 0.0);
+                : eigs_elem_num(data->data.list.items[i], "net_send");   /* #1637 round 4 */
             if (g_has_error) { free(owned); return make_null(); }
             owned[i] = finite_num_to_byte(dv);
         }
@@ -378,7 +382,7 @@ Value* builtin_net_close(Value *arg) {
     }
     int nidx = 0;
     uint32_t ngen = 0;
-    EigsNetSock *s = net_unpack(arg->data.num, &nidx, &ngen);
+    EigsNetSock *s = net_unpack(eigs_num_arg(arg, __func__), &nidx, &ngen);
     if (s) {
         close(s->fd);
         free(s);

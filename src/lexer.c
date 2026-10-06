@@ -162,6 +162,7 @@ static TokType keyword_type(const char *word) {
         break;
     case 'f':
         if (strcmp(word, "for") == 0) return TOK_FOR;
+        if (strcmp(word, "false") == 0) return TOK_FALSE;   /* #1637 */
         break;
     case 'h':
         if (strcmp(word, "how") == 0) return TOK_HOW;
@@ -202,6 +203,7 @@ static TokType keyword_type(const char *word) {
         break;
     case 't':
         if (strcmp(word, "try") == 0) return TOK_TRY;
+        if (strcmp(word, "true") == 0) return TOK_TRUE;     /* #1637 */
         break;
     case 'u':
         if (strcmp(word, "unobserved") == 0) return TOK_UNOBSERVED;
@@ -322,6 +324,8 @@ const char* tok_base_string(TokType t) {
         case TOK_FOR:        return "for ";
         case TOK_IN:         return "in ";
         case TOK_NULL:       return "null ";
+        case TOK_TRUE:       return "true ";
+        case TOK_FALSE:      return "false ";
         case TOK_WHAT:       return "what ";
         case TOK_WHO:        return "who ";
         case TOK_WHEN:       return "when ";

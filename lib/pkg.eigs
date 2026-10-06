@@ -49,7 +49,7 @@ MODULES_DIR is "eigs_modules"
 # of sprinkling `--` separators and hoping each new one remembers.
 GIT_ALLOWED_FLAGS is ["-C", "--depth", "--branch", "--porcelain"]
 
-# Returns 1 on success, 0 on failure. Streams git's stderr+stdout to
+# Returns true on success, false on failure. Streams git's stderr+stdout to
 # stdout on failure so the user sees what went wrong.
 define run_git(arg_list) as:
     argn is len of arg_list
@@ -58,7 +58,7 @@ define run_git(arg_list) as:
         if (type of a) != "str":
             throw of "git argument must be a string"
         if (len of a) > 0:
-            if a[0] == "-" and (list_contains of [GIT_ALLOWED_FLAGS, a]) == 0:
+            if a[0] == "-" and (not (list_contains of [GIT_ALLOWED_FLAGS, a])):
                 throw of f"refusing option-shaped git argument '{a}' — a value from eigs.json/eigs.lock.json in an option position can execute code (--upload-pack)"
     cmd is concat of [["git"], arg_list]
     result is exec_capture of cmd
@@ -71,8 +71,8 @@ define run_git(arg_list) as:
         joined is join of [cmd, " "]
         print of f"  {joined}"
         print of result[1]
-        return 0
-    return 1
+        return false
+    return true
 
 # Resolved commit SHA at HEAD of the given working tree, or "" on
 # failure. We strip the trailing newline git rev-parse always prints.
@@ -108,16 +108,16 @@ define git_tree_hash(work_dir) as:
             break
     return s[0:n]
 
-# Returns 1 if the working tree at <work_dir> matches HEAD exactly
-# (no unstaged edits, no untracked files), 0 if it's been tampered
-# with, and 0 if git itself failed.
+# Returns true if the working tree at <work_dir> matches HEAD exactly
+# (no unstaged edits, no untracked files), false if it's been tampered
+# with, and false if git itself failed.
 define git_worktree_clean(work_dir) as:
     result is exec_capture of ["git", "-C", work_dir, "status", "--porcelain"]
     if result[0] != 0:
-        return 0
+        return false
     if result[1] == "":
-        return 1
-    return 0
+        return true
+    return false
 
 # Remove a directory tree. exec_capture's exit code is ignored — if the
 # tree wasn't there, that's still the desired post-state.
@@ -131,13 +131,13 @@ define rmtree(path) as:
 define is_valid_name_part(part) as:
     n is len of part
     if n == 0:
-        return 0
+        return false
     if part == "." or part == "..":
-        return 0
+        return false
     first is part[0]
     if first == "-" or first == ".":
-        return 0
-    ok is 1
+        return false
+    ok is true
     for i in range of n:
         c is part[i]
         c_ok is 0
@@ -150,7 +150,7 @@ define is_valid_name_part(part) as:
         if c == "-" or c == "_" or c == ".":
             c_ok is 1
         if c_ok == 0:
-            ok is 0
+            ok is false
             break
     return ok
 
@@ -173,9 +173,9 @@ define validate_pkg_name(name) as:
         return "package name must be <owner>/<name> — bare names like '" + name + "' are reserved. Use a namespace, e.g. 'alice/" + name + "'."
     owner is name[0:slash_idx]
     leaf is name[slash_idx + 1:n]
-    if (is_valid_name_part of owner) == 0:
+    if not (is_valid_name_part of owner):
         return "invalid <owner> '" + owner + "' in '" + name + "' (alphanumerics + - _ ., not starting with - or .)."
-    if (is_valid_name_part of leaf) == 0:
+    if not (is_valid_name_part of leaf):
         return "invalid <name> '" + leaf + "' in '" + name + "' (alphanumerics + - _ ., not starting with - or .)."
     return ""
 
@@ -208,11 +208,11 @@ define read_manifest() as:
     parsed is json_decode of text
     if (type of parsed) != "dict":
         throw of "eigs.json is malformed (not a JSON object)"
-    if (has_key of [parsed, "name"]) == 0:
+    if (not (has_key of [parsed, "name"])):
         parsed.name is ""
-    if (has_key of [parsed, "version"]) == 0:
+    if (not (has_key of [parsed, "version"])):
         parsed.version is "0.0.0"
-    if (has_key of [parsed, "deps"]) == 0:
+    if (not (has_key of [parsed, "deps"])):
         parsed.deps is {}
     return parsed
 
@@ -252,13 +252,13 @@ define cmd_list() as:
         name is names[i]
         spec is deps[name]
         git_url is "(missing url)"
-        if (has_key of [spec, "git"]) == 1:
+        if (has_key of [spec, "git"]):
             git_url is spec.git
         tag is "(no tag)"
-        if (has_key of [spec, "tag"]) == 1:
+        if (has_key of [spec, "tag"]):
             tag is spec.tag
         marker is ""
-        if (has_key of [lock, name]) == 1:
+        if (has_key of [lock, name]):
             short_commit is lock[name].commit[0:8]
             marker is "  [locked @ " + short_commit + "]"
         print of f"  {name}  {git_url}  {tag}{marker}"
@@ -298,7 +298,7 @@ define fetch_dep(name, git_url, tag) as:
     target is MODULES_DIR + "/" + (pkg_leaf of name)
     rmtree of target
     ok is run_git of (clone_args of [git_url, target, tag])
-    if ok == 0:
+    if not ok:
         return {}
     commit is git_head_commit of target
     if commit == "":
@@ -330,7 +330,7 @@ define cmd_add(arg_list) as:
     # Write manifest first — the source-of-truth update is what makes
     # `add` recoverable if the network step fails (re-run `install`).
     manifest is read_manifest of null
-    if (has_key of [manifest, "deps"]) == 0:
+    if (not (has_key of [manifest, "deps"])):
         manifest.deps is {}
     # An omitted tag is recorded as omitted — the manifest carries the
     # REQUESTED ref, the lockfile carries the resolved commit. Writing a
@@ -398,23 +398,23 @@ define cmd_install() as:
         # Clone with depth 1 at the tag, then if we have a locked
         # commit, fetch that specific commit and check it out.
         ok is run_git of (clone_args of [git_url, target, tag])   # #879
-        if ok == 0:
+        if not ok:
             throw of f"install failed: clone for {name} failed"
 
         locked_commit is ""
-        if (has_key of [lock, name]) == 1:
+        if (has_key of [lock, name]):
             locked_entry is lock[name]
-            if (has_key of [locked_entry, "commit"]) == 1:
+            if (has_key of [locked_entry, "commit"]):
                 locked_commit is locked_entry.commit
 
         if locked_commit != "":
             # Re-fetch the exact pinned commit. A tag move would
             # otherwise be invisible.
             ok2 is run_git of ["-C", target, "fetch", "--depth", "1", "origin", locked_commit]
-            if ok2 == 0:
+            if not ok2:
                 throw of f"install failed: fetch of locked commit for {name} failed"
             ok3 is run_git of ["-C", target, "checkout", locked_commit]
-            if ok3 == 0:
+            if not ok3:
                 throw of f"install failed: checkout of locked commit for {name} failed"
 
         current is git_head_commit of target
@@ -457,7 +457,7 @@ define cmd_verify() as:
     for i in range of n:
         name is names[i]
         target is MODULES_DIR + "/" + (pkg_leaf of name)
-        if (has_key of [lock, name]) == 0:
+        if (not (has_key of [lock, name])):
             print of f"  MISSING LOCK: {name} (run --pkg install)"
             failed is failed + 1
             continue
@@ -477,13 +477,13 @@ define cmd_verify() as:
             continue
 
         # Working tree clean?
-        if (git_worktree_clean of target) == 0:
+        if (not (git_worktree_clean of target)):
             print of f"  TREE DRIFT: {name} working tree was edited"
             failed is failed + 1
             continue
 
         # Tree hash matches (catches case where lockfile pre-dates 1c)?
-        if (has_key of [entry, "tree"]) == 1:
+        if (has_key of [entry, "tree"]):
             current_tree is git_tree_hash of target
             if current_tree != entry.tree:
                 print of f"  TREE HASH DRIFT: {name} tree={current_tree[0:8]} locked={entry.tree[0:8]}"
@@ -505,7 +505,7 @@ define cmd_update(arg_list) as:
     names is keys of deps
     if (len of arg_list) >= 1:
         only is arg_list[0]
-        if (has_key of [deps, only]) == 0:
+        if (not (has_key of [deps, only])):
             throw of f"update: '{only}' is not in eigs.json"
         names is [only]
     n is len of names
@@ -523,9 +523,9 @@ define cmd_update(arg_list) as:
         git_url is spec.git
         tag is spec.tag
         prev_commit is ""
-        if (has_key of [lock, name]) == 1:
+        if (has_key of [lock, name]):
             prev_entry is lock[name]
-            if (has_key of [prev_entry, "commit"]) == 1:
+            if (has_key of [prev_entry, "commit"]):
                 prev_commit is prev_entry.commit
 
         fetched is fetch_dep of [name, git_url, tag]

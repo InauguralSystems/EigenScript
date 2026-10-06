@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <signal.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -193,8 +194,8 @@ static void test_worker_exit_lifecycle(void) {
             EigsValue *handle = eigs_get_global("worker");
             CHECK(handle && handle->type == VAL_DICT, "exit fixture owns join handle");
             if (handle && handle->type == VAL_DICT) {
-                f.handle_id = (int)dict_get(handle, "_handle_id")->data.num;
-                f.handle_gen = (uint32_t)dict_get(handle, "_handle_gen")->data.num;
+                f.handle_id = (int)VAL_NUM_RAW(dict_get(handle, "_handle_id"));
+                f.handle_gen = (uint32_t)VAL_NUM_RAW(dict_get(handle, "_handle_gen"));
                 pthread_t requester;
                 int made = pthread_create(&requester, NULL, exit_after_join_claim, &f) == 0;
                 CHECK(made, "exit fixture starts request coordinator");
@@ -278,10 +279,15 @@ static EigsValue *host_add(EigsValue *arg) {
     if (eigs_value_list_len(arg) != 2)          return eigs_value_new_null();
     EigsValue *a = eigs_value_list_get(arg, 0);
     EigsValue *b = eigs_value_list_get(arg, 1);
-    double sum = eigs_value_as_num(a) + eigs_value_as_num(b);
+    /* Check the types: eigs_value_as_num answers NaN for a bool and 0.0 for
+     * other non-numbers, so an unchecked read turns `host_add of [true, 1]`
+     * into a wrong number. */
+    EigsValue *r = (eigs_value_type(a) == EIGS_TYPE_NUM && eigs_value_type(b) == EIGS_TYPE_NUM)
+        ? eigs_value_new_num(eigs_value_as_num(a) + eigs_value_as_num(b))
+        : eigs_value_new_null();
     eigs_value_release(a);
     eigs_value_release(b);
-    return eigs_value_new_num(sum);
+    return r;
 }
 
 /* #1434: runs an eval that raises on its line 5, swallows that error, then
@@ -323,18 +329,18 @@ int main(void) {
         int line_save = g_trace_current_line;
 
         g_trace_current_line = 10;
-        s.d = 11.0; trace_assign(NM, s);
+        SLOT_NUM_RAW(s) = 11.0; trace_assign(NM, s);
         g_trace_current_line = 20;
-        s.d = 22.0; trace_assign(NM, s);
+        SLOT_NUM_RAW(s) = 22.0; trace_assign(NM, s);
 
-        CHECK(trace_query_prev(NM, &out) && out.d == 11.0,
+        CHECK(trace_query_prev(NM, &out) && SLOT_NUM_RAW(out) == 11.0,
               "#830: prev of a name recorded by a non-compiler producer");
         /* TEMPORAL-BACKWARD: at 15 the answer is the line-10 assignment. */
-        CHECK(trace_query_at(0, NM, 15, &out) && out.d == 11.0,
+        CHECK(trace_query_at(0, NM, 15, &out) && SLOT_NUM_RAW(out) == 11.0,
               "#830: what-at from a non-compiler producer (line-10 value)");
-        CHECK(trace_query_at(0, NM, 99, &out) && out.d == 22.0,
+        CHECK(trace_query_at(0, NM, 99, &out) && SLOT_NUM_RAW(out) == 22.0,
               "#830: what-at past the last non-compiler assignment");
-        CHECK(trace_query_at(2, NM, 99, &out) && out.d == 2.0,
+        CHECK(trace_query_at(2, NM, 99, &out) && SLOT_NUM_RAW(out) == 2.0,
               "#830: when-at counts non-compiler assignments");
 
         g_trace_current_line = line_save;
@@ -476,6 +482,19 @@ int main(void) {
     CHECK(r != NULL, "FFI eval returns value");
     CHECK(r && eigs_value_type(r) == EIGS_TYPE_NUM, "FFI result is num");
     CHECK(r && eigs_value_as_num(r) == 7.0, "host_add(3,4) == 7");
+    eigs_value_release(r);
+    /* #1637: a bool reads as NaN through eigs_value_as_num (never 0.0); the
+     * typed host function refuses it; other non-numbers keep 0.0. */
+    r = eigs_eval_string("5 > 3");
+    CHECK(r && eigs_value_type(r) == EIGS_TYPE_BOOL && isnan(eigs_value_as_num(r)),
+          "eigs_value_as_num of a bool is NaN");
+    CHECK(r && eigs_value_as_bool(r) == 1, "eigs_value_as_bool reads the bool");
+    eigs_value_release(r);
+    r = eigs_eval_string("\"s\"");
+    CHECK(r && eigs_value_as_num(r) == 0.0, "eigs_value_as_num of a string stays 0.0");
+    eigs_value_release(r);
+    r = eigs_eval_string("host_add of [true, 1]");
+    CHECK(r && eigs_value_type(r) == EIGS_TYPE_NULL, "host_add refuses a bool operand");
     eigs_value_release(r);
 
     /* --- #1387: embed API errors do not inherit an eval's last line. -- */
@@ -812,7 +831,7 @@ int main(void) {
                                  "nf_matrix[0] == 10 and nf_matrix[1] == 20 and "
                                  "nf_matrix[2] == 30 and nf_matrix[3] == 40 and "
                                  "nf_list_matrix == [[10, 20], [30, 40]]");
-            CHECK(r != NULL && eigs_value_as_num(r) == 1.0 && !eigs_has_error(),
+            CHECK(r != NULL && eigs_value_as_bool(r) && !eigs_has_error(),
                   "#1417 failed index read performs no callback or matrix write");
             eigs_value_release(r);
         }
@@ -880,6 +899,7 @@ int main(void) {
 
     /* --- Trace tape seam: record via the sink, replay from memory. --- */
     eigs_register_function("host_sensor", host_sensor);
+    eigs_trace_declare_kind("host_sensor", EIGS_KIND(EIGS_TYPE_NUM));   /* #1637 */
     eigs_set_trace_sink(tape_sink, NULL);
     r = eigs_eval_string("s1 is host_sensor of []\n"
                          "s2 is host_sensor of []\n"
@@ -894,7 +914,7 @@ int main(void) {
     {
         static const char *const NM = "native_after_callback";
         EigsSlot s;
-        s.d = 1441.0;
+        SLOT_NUM_RAW(s) = 1441.0;
         trace_assign(NM, s);
         g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
         CHECK(strstr(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441\n") != NULL,

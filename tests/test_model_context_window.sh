@@ -41,7 +41,7 @@ EXPECTED_ERR="[model-load] No live weights, using locked baseline: $MODEL"
 
 cat > "$HARNESS" <<EIGS
 eigen_model_load of "$MODEL"
-assert of [(eigen_model_loaded of null) == 1, "tiny model loaded"]
+assert of [(eigen_model_loaded of null), "tiny model loaded"]
 for n in [15, 16]:
     prompt is [i % 8 for i in range of n]
     generated is eigen_generate of [prompt, 0, 4]

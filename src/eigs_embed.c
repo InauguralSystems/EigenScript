@@ -301,6 +301,7 @@ EigsValue *eigs_get_global(const char *name) {
 EigsValue *eigs_value_new_num(double n)         { return make_num(n); }
 EigsValue *eigs_value_new_string(const char *s) { return make_str(s ? s : ""); }
 EigsValue *eigs_value_new_null(void)            { return make_null(); }
+EigsValue *eigs_value_new_bool(int b)           { return make_bool(b != 0); }
 EigsValue *eigs_value_new_list(int capacity)    { return make_list(capacity > 0 ? capacity : 0); }
 EigsValue *eigs_value_new_dict(int capacity)    { return make_dict(capacity > 0 ? capacity : 0); }
 
@@ -318,6 +319,7 @@ EigsValueType eigs_value_type(EigsValue *v) {
         case VAL_FN:
         case VAL_BUILTIN: return EIGS_TYPE_FN;
         case VAL_BUFFER:  return EIGS_TYPE_BUFFER;
+        case VAL_BOOL:    return EIGS_TYPE_BOOL;   /* #1637 */
         /* No public embed-API mapping. Enumerated rather than covered by a
          * `default:` so -Werror=switch forces a new ValType to choose one. */
         case VAL_JSON_RAW:
@@ -326,8 +328,17 @@ EigsValueType eigs_value_type(EigsValue *v) {
     return EIGS_TYPE_OTHER;   /* unreachable for valid ValType values */
 }
 
+int eigs_value_as_bool(EigsValue *v) {
+    return (v && v->type == VAL_BOOL) ? v->data.boolean : 0;
+}
+
+/* #1637: a bool answers NaN, not 0.0, so a host that reads a bool as a
+ * number sees the mistake propagate (NaN poisons the arithmetic) instead of a
+ * plausible false-as-zero. Other non-numbers keep the documented 0.0. Hosts
+ * test eigs_value_type first, or read a bool with eigs_value_as_bool. */
 double eigs_value_as_num(EigsValue *v) {
-    return (v && v->type == VAL_NUM) ? v->data.num : 0.0;
+    if (v && v->type == VAL_BOOL) return NAN;
+    return (v && v->type == VAL_NUM) ? VAL_NUM_RAW(v) : 0.0;
 }
 
 const char *eigs_value_as_string(EigsValue *v) {
@@ -419,6 +430,20 @@ void eigs_trace_record_nondet(const char *name, EigsValue *v) {
     if (g_trace_enabled) trace_nondet_value(name, (Value *)v);
 }
 
+/* #1637: EIGS_KIND(EIGS_TYPE_X) bits -> the runtime's ValType bits. */
+int eigs_trace_declare_kind(const char *name, unsigned kinds) {
+    static const struct { EigsValueType e; ValType v; } map[] = {
+        {EIGS_TYPE_NULL, VAL_NULL}, {EIGS_TYPE_NUM, VAL_NUM}, {EIGS_TYPE_STR, VAL_STR},
+        {EIGS_TYPE_LIST, VAL_LIST}, {EIGS_TYPE_DICT, VAL_DICT},
+        {EIGS_TYPE_BUFFER, VAL_BUFFER}, {EIGS_TYPE_BOOL, VAL_BOOL},
+    };
+    unsigned vk = 0, seen = 0;
+    for (size_t i = 0; i < sizeof map / sizeof map[0]; i++)
+        if (kinds & EIGS_KIND(map[i].e)) { vk |= 1u << map[i].v; seen |= EIGS_KIND(map[i].e); }
+    if (kinds & ~seen) return 0;   /* FN / OTHER cannot be on a tape */
+    return trace_declare_kind(name, vk);
+}
+
 /* ---- Async abort (see eigs_embed.h) -------------------------------- */
 
 void eigs_set_abort_flag(volatile int *flag) {
@@ -438,6 +463,7 @@ void eigs_register_function(const char *name, EigsHostFn fn) {
      * refuses to enter opaque host code with incomplete history. */
     obs_flag_store(eval_host_callbacks, 1);
     eigs_obs_enable_runtime();
+    eigs_bool_gate_exempt((BuiltinFn)fn);   /* #1637: host functions are not bool-gated */
     Value *bv = make_builtin((BuiltinFn)fn);
     /* #1388: a registered function joins the builtin layer too, so module
      * code sees it (and the host's own rebinding of the name stays out of

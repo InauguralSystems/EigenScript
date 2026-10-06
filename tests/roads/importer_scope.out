@@ -1,2 +1,2 @@
 ["outer", 1, 1]
-["helper_has_outer", 1, 1]
+["helper_has_outer", 1, true]

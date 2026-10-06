@@ -5,14 +5,14 @@
 # How to use:
 #   load_file of "lib/validate.eigs"
 #
-#   is_nonempty of value                    # 1 if non-empty string/list
-#   is_number of value                      # 1 if numeric
-#   is_integer of value                     # 1 if whole number
-#   in_range of [value, lo, hi]             # 1 if lo <= value <= hi
-#   is_one_of of [value, allowed_list]      # 1 if value in list
+#   is_nonempty of value                    # true if non-empty string/list
+#   is_number of value                      # true if numeric
+#   is_integer of value                     # true if whole number
+#   in_range of [value, lo, hi]             # true if lo <= value <= hi
+#   is_one_of of [value, allowed_list]      # true if value in list
 #   is_email of "user@example.com"          # basic email check
-#   is_alpha of "hello"                     # 1 if only letters
-#   is_alphanumeric of "abc123"             # 1 if letters and digits
+#   is_alpha of "hello"                     # true if only letters
+#   is_alphanumeric of "abc123"             # true if letters and digits
 #   validate_all of [[check1, check2, ...]] # run multiple checks
 
 # ---- is_nonempty: check if value is non-empty ----
@@ -22,16 +22,16 @@ define is_nonempty(value) as:
     if (type of value) == "list":
         return (len of value) > 0
     if (type of value) == "null":
-        return 0
-    return 1
+        return false
+    return true
 
 # ---- is_number: check if value is numeric or parseable as number ----
 define is_number(value) as:
     if (type of value) == "num":
-        return 1
+        return true
     if (type of value) == "str":
         if (len of value) == 0:
-            return 0
+            return false
         # Optional leading '-', at most one '.', and at least one digit.
         # A dot alone ('.' / '-.') used to pass this scan; is_integer then
         # treated num-of-that as zero (#1235).
@@ -40,13 +40,13 @@ define is_number(value) as:
         local start is 0
         if (char_at of [value, 0]) == "-":
             if (len of value) == 1:
-                return 0
+                return false
             start is 1
         for i in range of ((len of value) - start):
             c is char_at of [value, i + start]
             if c == ".":
                 if has_dot == 1:
-                    return 0
+                    return false
                 has_dot is 1
             elif c == "0":
                 has_digit is 1
@@ -69,96 +69,96 @@ define is_number(value) as:
             elif c == "9":
                 has_digit is 1
             else:
-                return 0
+                return false
         if has_digit == 0:
-            return 0
-        return 1
-    return 0
+            return false
+        return true
+    return false
 
 # ---- is_integer: check if value is a whole number ----
 define is_integer(value) as:
     if (type of value) == "num":
         return value == (floor of value)
     if (type of value) == "str":
-        if (is_number of value) == 0:
-            return 0
+        if (not (is_number of value)):
+            return false
         val is num of value
         return val == (floor of val)
-    return 0
+    return false
 
 # ---- in_range: check if value is within [lo, hi] ----
 # in_range of [value, lo, hi]
 define in_range(val, lo, hi) as:
     if val < lo:
-        return 0
+        return false
     if val > hi:
-        return 0
-    return 1
+        return false
+    return true
 
 # ---- is_one_of: check if value is in an allowed list ----
 # is_one_of of [value, [allowed1, allowed2, ...]]
 define is_one_of(val, allowed) as:
     for i in range of (len of allowed):
         if val == allowed[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 # ---- is_email: basic email format check ----
 # Checks for: non-empty local part, @, non-empty domain with dot
 define is_email(value) as:
     if (type of value) != "str":
-        return 0
+        return false
     at_pos is index_of of [value, "@"]
     if at_pos < 1:
-        return 0
+        return false
     domain is substr of [value, at_pos + 1, (len of value) - at_pos - 1]
     if (len of domain) < 3:
-        return 0
+        return false
     dot_pos is index_of of [domain, "."]
     if dot_pos < 1:
-        return 0
+        return false
     if dot_pos >= ((len of domain) - 1):
-        return 0
-    return 1
+        return false
+    return true
 
 # ---- is_alpha: check if string contains only letters ----
 define is_alpha(value) as:
     if (type of value) != "str":
-        return 0
+        return false
     if (len of value) == 0:
-        return 0
+        return false
     lc is str_lower of value
     for i in range of (len of lc):
         c is char_at of [lc, i]
         code is num of c
         # a-z check via lowercase comparison
-        if (contains of ["abcdefghijklmnopqrstuvwxyz", c]) == 0:
-            return 0
-    return 1
+        if (not (contains of ["abcdefghijklmnopqrstuvwxyz", c])):
+            return false
+    return true
 
 # ---- is_alphanumeric: check if string is letters and digits only ----
 define is_alphanumeric(value) as:
     if (type of value) != "str":
-        return 0
+        return false
     if (len of value) == 0:
-        return 0
+        return false
     lc is str_lower of value
     allowed is "abcdefghijklmnopqrstuvwxyz0123456789"
     for i in range of (len of lc):
         c is char_at of [lc, i]
-        if (contains of [allowed, c]) == 0:
-            return 0
-    return 1
+        if (not (contains of [allowed, c])):
+            return false
+    return true
 
 # ---- is_url: basic URL format check ----
 define is_url(value) as:
     if (type of value) != "str":
-        return 0
-    if (starts_with of [value, "http://"]) == 1:
+        return false
+    if (starts_with of [value, "http://"]):
         return (len of value) > 10
-    if (starts_with of [value, "https://"]) == 1:
+    if (starts_with of [value, "https://"]):
         return (len of value) > 11
-    return 0
+    return false
 
 # ---- validate_all: run a list of [value, check_fn, description] triples ----
 # Returns list of failed descriptions. Empty list = all passed.
@@ -168,6 +168,6 @@ define validate_all(checks) as:
         val is checks[i][0]
         check_fn is checks[i][1]
         desc is checks[i][2]
-        if (check_fn of val) == 0:
+        if not (check_fn of val):   # #1637: predicates answer bools
             append of [errors, desc]
     return errors

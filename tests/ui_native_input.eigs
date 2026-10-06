@@ -1,6 +1,6 @@
 # Real X11 input reaches gfx_poll, toolkit dispatch and rendered slider pixels.
 load_file of "lib/ui.eigs"
-assert of [(gfx_open of [320, 240, "ui-native-1263"]) == 1, "native fixture window"]
+assert of [(gfx_open of [320, 240, "ui-native-1263"]), "native fixture window"]
 native_root is panel of ["native-root", 0, 0, 320, 240]
 native_slider is slider of ["native-slider", 20, 30, 200, 0, 100, 0, null]
 add_child of [native_root, native_slider]

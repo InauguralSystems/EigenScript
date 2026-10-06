@@ -200,6 +200,7 @@ int main(void) {
     EigsState *root = eigs_open();
     check(root != NULL, "root state opens");
     if (!root) return 2;
+    eigs_trace_declare_kind("ordinary_sensor", EIGS_KIND(EIGS_TYPE_NUM));   /* #1637 */
     check(!eigs_trace_bind_stream(""), "empty key refused before any event");
     eigs_set_trace_sink(sink, NULL);
     check(!eigs_trace_bind_stream("late-root"), "key after opener declaration refused");

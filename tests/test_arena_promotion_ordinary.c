@@ -28,7 +28,7 @@ int main(void) {
     int source_cap = source->data.list.capacity, child_cap = child->data.list.capacity;
     Value *copy_num = promote_if_arena(number), *copy_text = promote_if_arena(text);
     CHECK("number is a distinct heap copy", copy_num != number && !copy_num->arena && copy_num->type == VAL_NUM);
-    CHECK("number retains finite value", copy_num->data.num == 3);
+    CHECK("number retains finite value", VAL_NUM_RAW(copy_num) == 3);
     CHECK("string is a distinct heap copy", copy_text != text && !copy_text->arena && copy_text->type == VAL_STR);
     CHECK("string retains exact bytes and length", val_str_len(copy_text) == 4 && !memcmp(copy_text->data.str,"tiny",4));
     Value *copy = promote_if_arena(source);
@@ -38,7 +38,7 @@ int main(void) {
     CHECK("repeated child keeps one copied identity", inner == copy->data.list.items[1] && inner != child);
     CHECK("child is a heap list", !inner->arena && inner->type == VAL_LIST && inner->data.list.count == 2);
     CHECK("copied child owns two root edges", inner->refcount == 2);
-    CHECK("nested number retains value", inner->data.list.items[0]->type == VAL_NUM && inner->data.list.items[0]->data.num == 3);
+    CHECK("nested number retains value", inner->data.list.items[0]->type == VAL_NUM && VAL_NUM_RAW(inner->data.list.items[0]) == 3);
     CHECK("nested string retains bytes", val_str_len(inner->data.list.items[1]) == 4 && !memcmp(inner->data.list.items[1]->data.str,"tiny",4));
     CHECK("heap child preserves identity", copy->data.list.items[2] == heap);
     CHECK("heap child acquires one copied edge", heap->refcount == 2);
@@ -57,7 +57,7 @@ int main(void) {
     g_gc_enabled = 0;
     val_decref(copy_num); val_decref(copy_text); val_decref(copy);
     CHECK("copied graph releases heap edge", heap->refcount == 1);
-    CHECK("independently owned heap child remains valid", heap->data.list.count == 1 && heap->data.list.items[0]->data.num == 7);
+    CHECK("independently owned heap child remains valid", heap->data.list.count == 1 && VAL_NUM_RAW(heap->data.list.items[0]) == 7);
     val_decref(heap);
     arena_reset_to_mark(); /* No arena pointer is inspected afterward. */
     g_gc_enabled = old_gc;

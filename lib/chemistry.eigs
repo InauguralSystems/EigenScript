@@ -86,45 +86,45 @@ define atomic_mass(symbol) as:
 # Stoichiometry — formula parsing & conversions
 # ============================================================
 
-# _is_upper of char -> 1 if A-Z, else 0
+# _is_upper of char -> true if A-Z, else false
 define _is_upper(ch) as:
     if ch == "A" or ch == "B" or ch == "C" or ch == "D" or ch == "E":
-        return 1
+        return true
     if ch == "F" or ch == "G" or ch == "H" or ch == "I" or ch == "J":
-        return 1
+        return true
     if ch == "K" or ch == "L" or ch == "M" or ch == "N" or ch == "O":
-        return 1
+        return true
     if ch == "P" or ch == "Q" or ch == "R" or ch == "S" or ch == "T":
-        return 1
+        return true
     if ch == "U" or ch == "V" or ch == "W" or ch == "X" or ch == "Y":
-        return 1
+        return true
     if ch == "Z":
-        return 1
-    return 0
+        return true
+    return false
 
-# _is_lower of char -> 1 if a-z, else 0
+# _is_lower of char -> true if a-z, else false
 define _is_lower(ch) as:
     if ch == "a" or ch == "b" or ch == "c" or ch == "d" or ch == "e":
-        return 1
+        return true
     if ch == "f" or ch == "g" or ch == "h" or ch == "i" or ch == "j":
-        return 1
+        return true
     if ch == "k" or ch == "l" or ch == "m" or ch == "n" or ch == "o":
-        return 1
+        return true
     if ch == "p" or ch == "q" or ch == "r" or ch == "s" or ch == "t":
-        return 1
+        return true
     if ch == "u" or ch == "v" or ch == "w" or ch == "x" or ch == "y":
-        return 1
+        return true
     if ch == "z":
-        return 1
-    return 0
+        return true
+    return false
 
-# _is_digit of char -> 1 if 0-9, else 0
+# _is_digit of char -> true if 0-9, else false
 define _is_digit(ch) as:
     if ch == "0" or ch == "1" or ch == "2" or ch == "3" or ch == "4":
-        return 1
+        return true
     if ch == "5" or ch == "6" or ch == "7" or ch == "8" or ch == "9":
-        return 1
-    return 0
+        return true
+    return false
 
 # molecular_weight of formula -> g/mol
 # Parses simple formulas: "H2O", "NaCl", "H2SO4", "C6H12O6"
@@ -135,13 +135,13 @@ define molecular_weight(formula) as:
     n is len of formula
     loop while i < n:
         ch is char_at of [formula, i]
-        if (_is_upper of ch) == 1:
+        if (_is_upper of ch):
             sym is ch
             i is i + 1
             # Collect lowercase letters
             loop while i < n:
                 nch is char_at of [formula, i]
-                if (_is_lower of nch) == 1:
+                if (_is_lower of nch):
                     sym is sym + nch
                     i is i + 1
                 else:
@@ -152,7 +152,7 @@ define molecular_weight(formula) as:
             count_str is ""
             loop while i < n:
                 dch is char_at of [formula, i]
-                if (_is_digit of dch) == 1:
+                if (_is_digit of dch):
                     count_str is count_str + dch
                     i is i + 1
                 else:

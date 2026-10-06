@@ -35,7 +35,7 @@ LOOP_CAP_CHECK is 63
 # ---- 1. The reported reproducer -------------------------------------------
 # [OP_JUMP_BACK 3, OP_RETURN] jumps to itself. Pre-fix: infinite loop.
 spin is sandbox_run of [[ABI, [JUMP_BACK,3,0, RETURN], []], 10]
-assert_eq of [spin["ok"], 0, "bare back edge returns a cap error, not a hang"]
+assert_eq of [spin["ok"], false, "bare back edge returns a cap error, not a hang"]
 assert_eq of [spin["error"]["kind"], "sandbox",
               "bare back edge names the sandbox budget"]
 
@@ -43,7 +43,7 @@ assert_eq of [spin["error"]["kind"], "sandbox",
 # Same shape under a generous budget must trip too — the point is that SOME
 # bound exists where none did, not the particular max_iterations value.
 spin_big is sandbox_run of [[ABI, [JUMP_BACK,3,0, RETURN], []], 100000]
-assert_eq of [spin_big["ok"], 0, "bare back edge trips under a large budget too"]
+assert_eq of [spin_big["ok"], false, "bare back edge trips under a large budget too"]
 
 # ---- 3. A compiler-shaped loop still trips at the CAP CHECK -----------------
 # [LOOP_CAP_CHECK +3, JUMP_BACK 6, RETURN]: one cap check AND one back edge
@@ -57,10 +57,10 @@ assert_eq of [spin_big["ok"], 0, "bare back edge trips under a large budget too"
 # counter would count 20 and die at the back edge with the raise message
 # ("back-edge iterations") instead.
 capped is sandbox_run of [[ABI, [LOOP_CAP_CHECK,3,0, JUMP_BACK,6,0, RETURN], []], 10]
-assert_eq of [capped["ok"], 0,
+assert_eq of [capped["ok"], false,
               "compiler-shaped capped loop reports NOT ok (partial run)"]
 has_partial is index_of of [capped["error"]["message"], "partial run"]
-assert_eq of [has_partial >= 0, 1,
+assert_eq of [has_partial >= 0, true,
               "cap-check trip names the partial run, not the back-edge raise"]
 
 # ---- 3b. An untripped run under an armed budget still reports ok ------------
@@ -69,7 +69,7 @@ assert_eq of [has_partial >= 0, 1,
 CONST is 0
 POP is 35
 small is sandbox_run of [[ABI, [CONST,0,0, POP, RETURN], [7]], 100]
-assert_eq of [small["ok"], 1, "a non-looping run under an armed budget stays ok"]
+assert_eq of [small["ok"], true, "a non-looping run under an armed budget stays ok"]
 
 # ---- 4. The trip leaves the host untripped ----------------------------------
 # The counter is armed only inside sandbox_run: after a tripped run, the
@@ -86,7 +86,7 @@ assert_eq of [total, 4950, "host loops run normally after a tripped sandbox"]
 # function). A tripped budget must not leak into the next run: the same chunk
 # trips on its own ten back edges, not on an inherited count.
 again is sandbox_run of [[ABI, [JUMP_BACK,3,0, RETURN], []], 10]
-assert_eq of [again["ok"], 0, "a second run trips on its own fresh budget"]
+assert_eq of [again["ok"], false, "a second run trips on its own fresh budget"]
 
 # ---- 6. The back-edge budget is CUMULATIVE ACROSS CALL FRAMES (#948) --------
 # The two counters are scoped differently, on purpose. The per-frame loop
@@ -112,24 +112,24 @@ xf_two is [CLOSURE,0,0, SET_NAME_LOCAL,0,0, GET_NAME,0,0, CALL,0,0, POP,
 # One call: the frame's own cap check trips, the loop exits gracefully, and the
 # run is reported as a capped PARTIAL run.
 xf_r1 is sandbox_run of [[ABI, xf_one, ["f"], [xf_fn], 0, "m", []], 10]
-assert_eq of [xf_r1["ok"], 0, "#948 one call: capped run is not ok"]
+assert_eq of [xf_r1["ok"], false, "#948 one call: capped run is not ok"]
 xf_p1 is index_of of [xf_r1["error"]["message"], "partial run"]
-assert_eq of [xf_p1 >= 0, 1, "#948 one call trips the per-frame CAP CHECK"]
+assert_eq of [xf_p1 >= 0, true, "#948 one call trips the per-frame CAP CHECK"]
 
 # Two calls: the second frame's cap check starts fresh, but the back-edge
 # total does not — so the run dies at the back-edge RAISE instead. Same loop,
 # same per-call iteration count, different verdict.
 xf_r2 is sandbox_run of [[ABI, xf_two, ["f"], [xf_fn], 0, "m", []], 10]
-assert_eq of [xf_r2["ok"], 0, "#948 two calls: still not ok"]
+assert_eq of [xf_r2["ok"], false, "#948 two calls: still not ok"]
 xf_p2 is index_of of [xf_r2["error"]["message"], "back-edge iterations"]
-assert_eq of [xf_p2 >= 0, 1,
+assert_eq of [xf_p2 >= 0, true,
               "#948 two calls trip the CUMULATIVE back-edge budget, not the per-frame cap"]
 
 # Both negatives, so neither assertion above can pass merely because the two
 # messages happen to be the same string.
-assert_eq of [(index_of of [xf_r1["error"]["message"], "back-edge iterations"]) < 0, 1,
+assert_eq of [(index_of of [xf_r1["error"]["message"], "back-edge iterations"]) < 0, true,
               "#948 one call does NOT reach the back-edge budget"]
-assert_eq of [(index_of of [xf_r2["error"]["message"], "partial run"]) < 0, 1,
+assert_eq of [(index_of of [xf_r2["error"]["message"], "partial run"]) < 0, true,
               "#948 two calls do NOT report a graceful partial run"]
 
 test_summary of null

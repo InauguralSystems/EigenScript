@@ -29,7 +29,7 @@ try:
     harness.finish of []
 catch err:
     threw is 1
-    check of ["throw names the marker and tally", contains of [err, "INNER_BAD"], 1]
+    check of ["throw names the marker and tally", contains of [err, "INNER_BAD"], true]
 check of ["finish throws on failures", threw, 1]
 
 # start resets state: a fresh run is clean after the failing one

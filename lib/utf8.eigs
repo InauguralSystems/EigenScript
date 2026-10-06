@@ -14,7 +14,7 @@
 #   utf8_codepoints of s          # list of codepoint numbers
 #   utf8_at of [s, i]             # i-th codepoint (0-indexed), or -1 if out of range
 #   utf8_char_at of [s, i]        # i-th character as a (multi-byte) string, or ""
-#   utf8_validate of s            # 1 if structurally valid UTF-8, else 0
+#   utf8_validate of s            # true if structurally valid UTF-8, else false
 #   utf8_encode of cp             # codepoint -> UTF-8 byte string ("" if unencodable)
 #   utf8_from_codepoints of cps   # list of codepoints -> UTF-8 string
 #
@@ -116,7 +116,7 @@ define utf8_char_at(n) as:
         j is j + 1
     return ""
 
-# ---- utf8_validate: 1 if structurally valid UTF-8, else 0 ----
+# ---- utf8_validate: true if structurally valid UTF-8, else false ----
 # Checks lead bytes and that each sequence has its full run of 0x80..0xBF
 # continuation bytes. (Structural: does not reject overlong encodings or
 # surrogate-range codepoints.)
@@ -127,19 +127,19 @@ define utf8_validate(s) as:
         local b0 is ord of (char_at of [s, i])
         local nb is _u8_lead_len of b0
         if nb == 0:
-            return 0
+            return false
         if (i + nb) > slen:
-            return 0
+            return false
         local k is 1
         loop while k < nb:
             local cb is ord of (char_at of [s, i + k])
             if cb < 128:
-                return 0
+                return false
             if cb > 191:
-                return 0
+                return false
             k is k + 1
         i is i + nb
-    return 1
+    return true
 
 # ---- utf8_encode: codepoint -> UTF-8 bytes as a string ----
 # Structural like the rest of the module: any codepoint in 1..0x10FFFF encodes

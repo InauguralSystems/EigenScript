@@ -9,8 +9,8 @@
 
 define _point_in_rect(px, py, x, y, w, h) as:
     if px >= x and px < x + w and py >= y and py < y + h:
-        return 1
-    return 0
+        return true
+    return false
 
 # ---- Theme lookup ----
 # Apps build custom themes by copying a built-in dict and overwriting

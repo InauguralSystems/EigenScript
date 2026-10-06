@@ -76,6 +76,6 @@ define file_copy(src, dst) as:
 # ---- slurp: read file with existence check ----
 # slurp of "path" -> string (exits with error if file not found)
 define slurp(path) as:
-    if (file_exists of path) == 0:
+    if (not (file_exists of path)):
         assert of [0, "slurp: file not found: " + path]
     return read_text of path

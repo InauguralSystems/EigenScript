@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -297,6 +297,16 @@ build/$(TRACE_CORRESPONDENCE_VARIANT)/test_trace_correspondence: tests/test_trac
 .PHONY: trace-correspondence-test
 trace-correspondence-test: build/$(TRACE_CORRESPONDENCE_VARIANT)/test_trace_correspondence
 	@echo "Trace correspondence test built: $<"
+
+# #1637: db parameter binding without a PostgreSQL server -- the test
+# includes src/ext_db.c (static db_build_query) and links the server-db
+# variant's other objects.
+DB_PARAMS_OBJ := $(filter-out build/server-db/main.o build/server-db/ext_db.o,$(OBJ_server-db))
+build/server-db/test_db_params: tests/test_db_params.c $(SRC_DIR)/ext_db.c $(DB_PARAMS_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_server-db) -I$(SRC_DIR) -o $@ $< $(DB_PARAMS_OBJ) $(LIBS_server-db)
+.PHONY: db-params-test
+db-params-test: build/server-db/test_db_params
+	@echo "DB params test built: $<"
 
 TRACE_CONTEXT_VARIANT ?= release
 TRACE_CONTEXT_OBJ := $(filter-out build/$(TRACE_CONTEXT_VARIANT)/main.o,$(OBJ_$(TRACE_CONTEXT_VARIANT)))

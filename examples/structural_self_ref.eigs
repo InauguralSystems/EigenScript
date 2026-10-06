@@ -63,10 +63,10 @@ print of count
 
 # ---- Check if generated code is valid before use ----
 candidate is "x is 5"
-if (try_parse of candidate) == 1:
+if (try_parse of candidate):
     print of "valid"
 
 # ---- Guard pattern for self-modification ----
 new_code is "result is 100"
-if (try_parse of new_code) == 1:
+if (try_parse of new_code):
     write_text of ["/tmp/gen.eigs", new_code]

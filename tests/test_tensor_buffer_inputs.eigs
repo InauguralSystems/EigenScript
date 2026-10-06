@@ -149,7 +149,7 @@ assert_eq of [(str of (shape of rs)), "[2, 2]", "reshape: shape applied"]
 
 # ============ tensor_save / tensor_load ============
 tpath is "/tmp/eigs_1093_tensor_buffer.bin"
-assert_eq of [(tensor_save of [ba, tpath]), 1, "tensor_save accepts a buffer"]
+assert_eq of [(tensor_save of [ba, tpath]), true, "tensor_save accepts a buffer"]
 reloaded is tensor_load of tpath
 assert_eq of [(flat_str of reloaded), (flat_str of la), "tensor_save/load buffer round trip"]
 remove_file of tpath

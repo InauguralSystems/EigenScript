@@ -135,7 +135,7 @@ int jit_helper_iter_next(void) {
     VM *vm = eigs_current->vm;
     reader_receipt.calls++;
     if (reader_receipt.kind != 1 || vm->sp != 1 ||
-        vm->stack[0].d != 0 || vm->frames[0].ip != reader_receipt.ip ||
+        SLOT_NUM_RAW(vm->stack[0]) != 0 || vm->frames[0].ip != reader_receipt.ip ||
         vm->current_line != 71)
         reader_receipt.bad++;
     if (reader_receipt.status != 1)
@@ -146,7 +146,7 @@ int jit_helper_index_get(void) {
     VM *vm = eigs_current->vm;
     reader_receipt.calls++;
     if (reader_receipt.kind != 0 || vm->sp != 2 ||
-        vm->stack[0].d != 0 || vm->stack[1].d != 1 ||
+        SLOT_NUM_RAW(vm->stack[0]) != 0 || SLOT_NUM_RAW(vm->stack[1]) != 1 ||
         vm->frames[0].ip != reader_receipt.ip || vm->current_line != 71)
         reader_receipt.bad++;
     vm->sp -= 2;
@@ -169,11 +169,11 @@ static struct {
 void jit_helper_set_name(struct EigsChunk *chunk, int idx) {
     store_receipt.calls++;
     if (chunk != store_receipt.chunk || idx != 0 || g_vm.sp != 3 ||
-        g_vm.stack[0].d != 42 || g_vm.stack[1].d != 0 ||
-        g_vm.stack[2].d != 1 || g_vm.frames[0].ip != store_receipt.ip)
+        SLOT_NUM_RAW(g_vm.stack[0]) != 42 || SLOT_NUM_RAW(g_vm.stack[1]) != 0 ||
+        SLOT_NUM_RAW(g_vm.stack[2]) != 1 || g_vm.frames[0].ip != store_receipt.ip)
         store_receipt.bad = 1;
     for (int i = 0; i < 3; i++) {
-        if (store_receipt.values[i].d != 10 + i ||
+        if (SLOT_NUM_RAW(store_receipt.values[i]) != 10 + i ||
             store_receipt.counts[i] != 17)
             store_receipt.bad = 1;
     }
@@ -346,15 +346,15 @@ static int run_store_cases(void) {
             STORE_ASSERT(store_receipt.calls == cases[c].helper);
             STORE_ASSERT(store_receipt.bad == 0);
             STORE_ASSERT(vm->sp == 3);
-            STORE_ASSERT(vm->stack[0].d == 42 && vm->stack[1].d == 0);
-            STORE_ASSERT(vm->stack[2].d == 1);
+            STORE_ASSERT(SLOT_NUM_RAW(vm->stack[0]) == 42 && SLOT_NUM_RAW(vm->stack[1]) == 0);
+            STORE_ASSERT(SLOT_NUM_RAW(vm->stack[2]) == 1);
             STORE_ASSERT(vm->frames[0].ip == store_receipt.ip);
             STORE_ASSERT((osr ? chunk.jit_osr[0].advance : chunk.jit_advance) == 5);
             STORE_ASSERT((osr ? chunk.jit_advance : chunk.jit_osr[0].advance) == -99);
             STORE_ASSERT(state->builtin_env == &env[2]);
             for (int i = 0; i < 3; i++) {
                 int stored = !cases[c].helper && i == target;
-                STORE_ASSERT(values[i].d == (stored ? 1 : 10 + i));
+                STORE_ASSERT(SLOT_NUM_RAW(values[i]) == (stored ? 1 : 10 + i));
                 STORE_ASSERT(counts[i] == 17 + stored);
             }
             helpers += store_receipt.calls;
@@ -430,7 +430,7 @@ static int run_index_bail_cases(void) {
                 advance == expected && index_receipt.calls == 1 &&
                 index_receipt.bad == 0 && vm->sp == (status ? 1 : 2) &&
                 (status ? slot_is_null(vm->stack[0]) :
-                          vm->stack[0].d == 42 && vm->stack[1].d == 1);
+                          SLOT_NUM_RAW(vm->stack[0]) == 42 && SLOT_NUM_RAW(vm->stack[1]) == 1);
             rows++;
             if (!good) {
                 fprintf(stderr, "FAIL: index-bail %s status=%d r13=%" PRIx64
@@ -522,12 +522,12 @@ static int run_reader_bail_cases(void) {
                 int expected_sp = kind ? (status ? 2 : 4) : (status ? 1 : 2);
                 int expected_line = status ? 71 : 72;
                 int stack_ok = kind
-                    ? vm->stack[0].d == 0 &&
-                      (status ? vm->stack[1].d == 0 :
-                       vm->stack[1].d == 42 && vm->stack[2].d == 1 &&
-                       vm->stack[3].d == 0)
-                    : (status ? vm->stack[0].d == 0 :
-                       vm->stack[0].d == 42 && vm->stack[1].d == 1);
+                    ? SLOT_NUM_RAW(vm->stack[0]) == 0 &&
+                      (status ? SLOT_NUM_RAW(vm->stack[1]) == 0 :
+                       SLOT_NUM_RAW(vm->stack[1]) == 42 && SLOT_NUM_RAW(vm->stack[2]) == 1 &&
+                       SLOT_NUM_RAW(vm->stack[3]) == 0)
+                    : (status ? SLOT_NUM_RAW(vm->stack[0]) == 0 :
+                       SLOT_NUM_RAW(vm->stack[0]) == 42 && SLOT_NUM_RAW(vm->stack[1]) == 1);
                 int good = saved_r13 == UINT64_C(0x13579bdf2468ace0) &&
                     advance == expected && reader_receipt.calls == 1 &&
                     reader_receipt.bad == 0 && vm->sp == expected_sp && stack_ok &&
@@ -588,7 +588,7 @@ static int run_exit_cases(void) {
     eigs_current = thread;
     state->jit_entry_threshold = state->jit_iter_threshold = 1;
     Value limit = {.type = VAL_NUM};
-    limit.data.num = 4;
+    VAL_NUM_RAW(&limit) = 4;
     Value *constants[] = {&limit};
     uint8_t code[] = {OP_NULL, OP_POP, OP_NULL, OP_POP,
                       OP_NUM_ONE, OP_ADD, OP_DUP, OP_CONST, 0, 0,
@@ -623,12 +623,12 @@ static int run_exit_cases(void) {
             int advance = osr ? chunk.jit_osr[0].advance : chunk.jit_advance;
             int other = osr ? chunk.jit_advance : chunk.jit_osr[0].advance;
             int want_advance = (stop ? 10 : 13) + (osr ? 2 : 0);
-            int ok = vm->sp == 1 && vm->stack[0].d == (stop ? 1 : 4) &&
+            int ok = vm->sp == 1 && SLOT_NUM_RAW(vm->stack[0]) == (stop ? 1 : 4) &&
                      advance == want_advance && other == -99 &&
                      vm->frames[0].ip == chunk.code + entry;
             if (!ok) {
                 fprintf(stderr, "FAIL native_exit %s row=%d sp=%d value=%g advance=%d other=%d\n",
-                        osr ? "osr" : "entry", row, vm->sp, vm->stack[0].d, advance, other);
+                        osr ? "osr" : "entry", row, vm->sp, SLOT_NUM_RAW(vm->stack[0]), advance, other);
                 rc = 1;
             }
             if (ok && stop) bailed++;
@@ -638,6 +638,81 @@ static int run_exit_cases(void) {
     if (rows != 6 || bailed != 2 || completed != 4) rc = 1;
     printf("JIT native_exit: rows=%d backedge=%d completed=%d status=%s\n",
            rows, bailed, completed, rc ? "FAIL" : "PASS");
+    jit_unregister_chunk(&chunk);
+    jit_thread_destroy(thread);
+    eigs_current = NULL;
+    free(vm); free(thread); free(state);
+    return rc;
+}
+
+/* #1637: the bool emitters, read off the native stack. Every comparison and
+ * NOT pushes the TAG_BOOL slot bits (never 0.0/1.0), NOT flips a bool, and
+ * JUMP_IF_FALSE decides on a bool without bailing — so the thunk must run to
+ * the end of the chunk (advance == code_len). Removing the JUMP_IF bool arm
+ * makes it stop at the first JUMP_IF_FALSE; a comparison emitting numbers
+ * fails the slot-bits rows. */
+static int run_bool_cases(void) {
+    int rc = 0, checked = 0;
+    EigsState *state = calloc(1, sizeof *state);
+    EigsThread *thread = calloc(1, sizeof *thread);
+    VM *vm = calloc(1, sizeof *vm);
+    if (!state || !thread || !vm) {
+        free(state); free(thread); free(vm);
+        fprintf(stderr, "FAIL bool allocation\n");
+        return 1;
+    }
+    EigsExitScope open = {.refs = 1};
+    thread->state = state;
+    thread->vm = vm;
+    vm->owner = thread;
+    eigs_current = thread;
+    thread->exit_scope = state->exit_scope = &open;
+    uint8_t code[] = {
+        OP_TRUE, OP_NOT,                         /* false */
+        OP_FALSE, OP_NOT,                        /* true  */
+        OP_NUM_ZERO, OP_NOT,                     /* true  */
+        OP_NUM_ONE, OP_NUM_ZERO, OP_LT,          /* 1 < 0: false */
+        OP_NUM_ZERO, OP_NUM_ONE, OP_LT,          /* 0 < 1: true  */
+        OP_TRUE, OP_JUMP_IF_FALSE, 1, 0, OP_NUM_ONE,   /* not taken: push 1 */
+        OP_FALSE, OP_JUMP_IF_FALSE, 1, 0, OP_NUM_ZERO, /* taken: skip */
+    };
+    const uint64_t want[] = {SLOT_FALSE_BITS, SLOT_TRUE_BITS, SLOT_TRUE_BITS,
+                             SLOT_FALSE_BITS, SLOT_TRUE_BITS, 0x3FF0000000000000ULL};
+    const int nwant = (int)(sizeof want / sizeof want[0]);
+    EigsChunk chunk = {0};
+    chunk.code = code;
+    chunk.code_len = sizeof code;
+    chunk.exec_count = 1;
+    jit_try_compile_chunk(&chunk);
+    if (!chunk.jit_code || chunk.jit_state != 2) {
+        fprintf(stderr, "FAIL bool: chunk did not compile\n");
+        rc = 1;
+    } else {
+        vm->sp = 1;
+        vm->stack[0] = slot_null();
+        vm->frame_count = 1;
+        vm->frames[0].chunk = &chunk;
+        vm->frames[0].ip = chunk.code;
+        chunk.jit_advance = -99;
+        ((JitChunkFn)chunk.jit_code)();
+        if (chunk.jit_advance != (int)sizeof code || vm->sp != 1 + nwant) {
+            fprintf(stderr, "FAIL bool: advance=%d (want %d) sp=%d (want %d)\n",
+                    chunk.jit_advance, (int)sizeof code, vm->sp, 1 + nwant);
+            rc = 1;
+        } else {
+            for (int k = 0; k < nwant; k++) {
+                checked++;
+                if (vm->stack[1 + k].u != want[k]) {
+                    fprintf(stderr, "FAIL bool: slot %d = %016llx, want %016llx\n", k,
+                            (unsigned long long)vm->stack[1 + k].u,
+                            (unsigned long long)want[k]);
+                    rc = 1;
+                }
+            }
+        }
+    }
+    if (checked != nwant) rc = 1;
+    printf("JIT bool: slots=%d/%d status=%s\n", checked, nwant, rc ? "FAIL" : "PASS");
     jit_unregister_chunk(&chunk);
     jit_thread_destroy(thread);
     eigs_current = NULL;
@@ -656,6 +731,7 @@ int main(void) {
     rc |= run_index_bail_cases();
     rc |= run_reader_bail_cases();
     rc |= run_exit_cases();
+    rc |= run_bool_cases();
     if (rc == 0) printf("\nJIT smoke: all cases passed.\n");
     return rc;
 }

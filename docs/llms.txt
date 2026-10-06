@@ -56,7 +56,7 @@ two of [1]
 ```
 ```output
 []
-1
+true
 ```
 
 - **Parentheses always mean exactly one argument**: `f of ([a, b])` passes the
@@ -197,6 +197,18 @@ sqrt(2) = 1.414213562373095
 
 ## Values and strings
 
+- `bool` is its own type: `true`/`false`. Comparisons, `not`, the observer
+  predicates and every predicate builtin/lib function return a bool; `and`/`or`
+  return an operand. A bool is NOT a number: `true + 1`, `abs of true`,
+  `xs[true]`, `xs[(n > 1):]` and `range of true` raise (even under
+  `EIGS_STRICT=0`), and so does `(pred of x) == 1` (bool vs number). Any
+  builtin raises on a bool where it does not take one -- the few slots that
+  do (print/str/type/json_encode, assert's condition, container element
+  slots like `append of [xs, true]`) are listed in
+  `tests/bool_fuzz_anyvalue.txt`. Test a bool directly (`if pred of x:`) or
+  compare with `== true`. Deep `==` on lists/dicts stops at the first
+  unequal pair, so a bool/number pair raises only if the walk reaches it.
+  `false`, `0`, `null`, `""`, `[]`, `{}` are falsy.
 - `+` concatenates **strings only**. List concatenation is `append of [xs, v]`
   (in place) or a comprehension — `xs + ys` is a runtime error.
 - Numbers are f64 and finite by construction: overflow saturates at ±1e308.
@@ -315,7 +327,7 @@ match x:
         print of "other"
 ```
 
-`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: 0, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
+`vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
 
 Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 

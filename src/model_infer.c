@@ -519,11 +519,15 @@ int g_training_samples = 0;
 
 Value* builtin_eigen_model_loaded(Value *arg) {
     (void)arg;
-    return make_num(g_model.loaded ? 1 : 0);
+    return make_bool(g_model.loaded);
 }
 
 Value* builtin_eigen_generate(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "eigen_generate");
+    /* #1637: a bool token id (or option) raises in every mode, before the
+     * tape and before the no-model answer -- the ids were only read, and the
+     * bool only refused, once a model was loaded. */
+    BOOL_REFUSE(arg, "eigen_generate");
     /* Input: [prompt_ids_list, temperature, max_tokens]
      * Output: list of generated token IDs
      *
@@ -563,10 +567,13 @@ Value* builtin_eigen_generate(Value *arg) {
      * fixed top-k=40 path, so every existing caller and recorded number is
      * unchanged -- decoding policy is opt-in, not a silent default flip. */
     double top_p = 0.0;
-    if (arg->data.list.items[1]->type == VAL_NUM) temperature = arg->data.list.items[1]->data.num;
-    if (arg->data.list.items[2]->type == VAL_NUM) max_tokens = (int)arg->data.list.items[2]->data.num;
-    if (arg->data.list.count >= 4 && arg->data.list.items[3]->type == VAL_NUM)
-        top_p = arg->data.list.items[3]->data.num;
+    /* #1637: optional numbers -- null keeps the default, a bool raises. */
+    double mt = max_tokens;
+    eigs_opt_num(arg->data.list.items[1], &temperature, __func__);
+    eigs_opt_num(arg->data.list.items[2], &mt, __func__);
+    if (arg->data.list.count >= 4) eigs_opt_num(arg->data.list.items[3], &top_p, __func__);
+    if (g_has_error) return make_null();
+    max_tokens = (int)mt;
 
     if (!g_model.loaded) TRACE_NONDET_RECORD("eigen_generate", make_list(0));
 
@@ -601,8 +608,9 @@ Value* builtin_eigen_generate(Value *arg) {
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
         Value *v = prompt_list->data.list.items[i];
-        prompt_ids[i] = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+        prompt_ids[i] = (int)eigs_num_arg(v, "eigen_generate");   /* #1637: a bool raises */
     }
+    if (g_has_error) { free(prompt_ids); return make_null(); }
 
     int out_len = 0;
     int *output_ids = generate_response(prompt_ids, prompt_len, &g_model, temperature, max_tokens, top_p, &out_len);
@@ -633,6 +641,7 @@ Value* builtin_eigen_eval_loss(Value *arg) {
      * Forward only -- no backward, no weight update, no requantise, no observer
      * state, and g_model_age/g_training_samples are untouched, so scoring a
      * checkpoint never mutates it. */
+    BOOL_REFUSE(arg, "eigen_eval_loss");   /* #1637: before the no-model answer */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         fprintf(stderr, "eigen_eval_loss: requires [prompt_ids, target_id]\n");
         /* #1008: guarded in place with a constant condition so the stderr
@@ -651,7 +660,7 @@ Value* builtin_eigen_eval_loss(Value *arg) {
         fprintf(stderr, "eigen_eval_loss: target_id must be a number\n");
         ARG_GUARD(1, "eigen_eval_loss", "a numeric target_id", make_num(-1.0));
     }
-    int target_id = (int)arg->data.list.items[1]->data.num;
+    int target_id = (int)eigs_list_num(arg, 1, __func__);
 
     /* fs:ANSWER no model is loaded, so there is no loss to compute. Model
      * state, not an argument mistake — the identical call scores fine once a
@@ -684,10 +693,11 @@ Value* builtin_eigen_eval_loss(Value *arg) {
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
         Value *v = prompt_list->data.list.items[i];
-        int t = (v->type == VAL_NUM) ? (int)v->data.num : 0;
+        int t = (int)eigs_num_arg(v, "eigen_eval_loss");          /* #1637: a bool raises */
         if (t < 0 || t >= vocab_size) t = 0;
         prompt_ids[i] = t;
     }
+    if (g_has_error) { free(prompt_ids); return make_null(); }
 
     float *logits = xcalloc(vocab_size, sizeof(float));
     native_forward(prompt_ids, prompt_len, &g_model, logits);

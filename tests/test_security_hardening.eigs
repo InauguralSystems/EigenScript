@@ -4,11 +4,11 @@
 #     input) must produce a parse error, not a stack-overflow crash.
 
 # --- secure_equals ---
-assert of [(secure_equals of ["token123", "token123"]) == 1, "equal strings"]
-assert of [(secure_equals of ["token123", "token124"]) == 0, "differing content"]
-assert of [(secure_equals of ["abc", "abcd"]) == 0, "differing length"]
-assert of [(secure_equals of ["", ""]) == 1, "both empty"]
-assert of [(secure_equals of ["x", ""]) == 0, "one empty"]
+assert of [(secure_equals of ["token123", "token123"]), "equal strings"]
+assert of [(not (secure_equals of ["token123", "token124"])), "differing content"]
+assert of [(not (secure_equals of ["abc", "abcd"])), "differing length"]
+assert of [(secure_equals of ["", ""]), "both empty"]
+assert of [(not (secure_equals of ["x", ""])), "one empty"]
 
 # --- parser depth guard via eval ---
 # Build valid but very deeply nested source: ((((...1...)))) — 2000 deep,

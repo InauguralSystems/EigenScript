@@ -154,17 +154,17 @@ define _ag_reduce_to(who, pv, g) as:
 # same four cases, asked BEFORE the node is pushed.
 define _ag_reducible(pv, g) as:
     if (type of pv) == "num":
-        return 1
+        return true
     if (type of g) == "num":
-        return 1
+        return true
     if (len of pv) == (len of g):
-        return 1
+        return true
     local dp is _ag_dims of pv
     local dg is _ag_dims of g
     if dp[0] == 1:
         if dp[1] == dg[1]:
-            return 1
-    return 0
+            return true
+    return false
 
 # _ag_check_bin of [who, av, bv, v]: the forward guard for the elementwise
 # rules. The four arithmetic BUILTINS share the list path's shape algebra, so
@@ -178,7 +178,7 @@ define _ag_reducible(pv, g) as:
 define _ag_check_bin(who, av, bv, v) as:
     local oka is _ag_reducible of [av, v]
     local okb is _ag_reducible of [bv, v]
-    if oka == 0 or okb == 0:
+    if (not oka) or (not okb):
         local sa is str of (shape of av)
         local sb is str of (shape of bv)
         local sv is str of (shape of v)
@@ -194,8 +194,8 @@ define _ag_push(t, value, op, parents, saved, track) as:
 
 define _ag_tracked(a, b) as:
     if a.track or b.track:
-        return 1
-    return 0
+        return true
+    return false
 
 # Accumulate `delta` into node `id`'s gradient. Copies on first arrival so a
 # gradient passed through unchanged (ag_add's vjp) is never shared between two

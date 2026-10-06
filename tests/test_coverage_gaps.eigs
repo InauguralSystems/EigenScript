@@ -12,8 +12,8 @@ assert of [parts[2] == "c", "CG2 split element"]
 single is split of ["no-delim-here", ","]
 assert of [(len of single) == 1, "CG3 split no-delim"]
 
-assert of [(starts_with of ["hello world", "hello"]) == 1, "CG4 starts_with hit"]
-assert of [(starts_with of ["hello world", "world"]) == 0, "CG5 starts_with miss"]
+assert of [(starts_with of ["hello world", "hello"]), "CG4 starts_with hit"]
+assert of [(not (starts_with of ["hello world", "world"])), "CG5 starts_with miss"]
 
 rep is str_replace of ["foo bar foo", "foo", "baz"]
 assert of [rep == "baz bar baz", "CG6 str_replace all"]
@@ -35,7 +35,7 @@ assert of [(len of hex) == 16, "CG10 random_hex length"]
 # /private/tmp, so getcwd may report either spelling — accept both.
 original is getcwd of null
 ok is chdir of "/tmp"
-assert of [ok == 1, "CG11 chdir succeeds"]
+assert of [ok, "CG11 chdir succeeds"]
 now is getcwd of null
 assert of [now == "/tmp" or now == "/private/tmp", "CG12 chdir moved us"]
 chdir of original
@@ -111,14 +111,14 @@ assert of [(len of toks) > 0, "CG36 tokenize_with_names non-empty"]
 # --- stream_open/write/close: write 3 doubles to a temp file ---
 sfile is mktemp of null
 ok is stream_open of [sfile, 3]
-assert of [ok == 1, "CG37 stream_open"]
+assert of [ok, "CG37 stream_open"]
 w1 is stream_write of 1.5
 w2 is stream_write of 2.5
 w3 is stream_write of 3.5
-assert of [w1 == 1, "CG38 stream_write 1"]
-assert of [w3 == 1, "CG39 stream_write 3"]
+assert of [w1, "CG38 stream_write 1"]
+assert of [w3, "CG39 stream_write 3"]
 closed is stream_close of null
-assert of [closed == 1, "CG40 stream_close"]
+assert of [closed, "CG40 stream_close"]
 rm of sfile
 
 # --- numerical_grad_rows + sgd_update_rows ---
@@ -207,7 +207,7 @@ assert of [p2d[0][0] < 1.0, "CG60 sgd_update 2D moved"]
 t_orig is [[1.5, 2.5], [3.5, 4.5]]
 tfile is mktemp of null
 save_ok is tensor_save of [t_orig, tfile]
-assert of [save_ok == 1, "CG61 tensor_save ok"]
+assert of [save_ok, "CG61 tensor_save ok"]
 t_back is tensor_load of tfile
 assert of [t_back[0][0] == 1.5, "CG62 tensor_load round-trip 0,0"]
 assert of [t_back[1][1] == 4.5, "CG63 tensor_load round-trip 1,1"]
@@ -284,8 +284,8 @@ assert of [big_dict["25"] == 50, "CG91 dict lookup after growth"]
 # --- dict_remove ---
 remove_test is {"keep": 1, "drop": 2, "also_keep": 3}
 dict_remove of [remove_test, "drop"]
-assert of [(has_key of [remove_test, "drop"]) == 0, "CG92 dict_remove worked"]
-assert of [(has_key of [remove_test, "keep"]) == 1, "CG93 dict_remove left others"]
+assert of [(not (has_key of [remove_test, "drop"])), "CG92 dict_remove worked"]
+assert of [(has_key of [remove_test, "keep"]), "CG93 dict_remove left others"]
 
 # --- arena_track_string + arena_alloc growth ---
 # When the arena is active, make_str calls arena_track_string.

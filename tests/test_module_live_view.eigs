@@ -54,12 +54,12 @@ assert_eq of [fn of null, 3, "function value extracted from the namespace"]
 # ---- Control: enumeration still lists the bindings ---------------------
 k is keys of modlive_counter
 assert_true of [(len of k) >= 5, "keys lists the module's public bindings"]
-assert_eq of [has_key of [modlive_counter, "ctr"], 1, "has_key sees ctr"]
-assert_eq of [has_key of [modlive_counter, "peek"], 1, "has_key sees peek"]
+assert_eq of [has_key of [modlive_counter, "ctr"], true, "has_key sees ctr"]
+assert_eq of [has_key of [modlive_counter, "peek"], true, "has_key sees peek"]
 assert_eq of [len of modlive_counter, len of k, "len agrees with keys"]
 
 # ---- Control: `_`-private module bindings stay private ------------------
-assert_eq of [has_key of [modlive_counter, "_hidden"], 0, "_name stays private"]
+assert_eq of [has_key of [modlive_counter, "_hidden"], false, "_name stays private"]
 assert_eq of [modlive_counter._hidden, null, "_name unreadable through namespace"]
 
 # ---- Control: whole-dict readers see the CURRENT value -----------------
@@ -75,7 +75,7 @@ assert_eq of [modlive_counter.ctr, 3, "re-import yields the same live state"]
 # ---- Control: a new key written through the namespace binds in the module
 modlive_plain.fresh is 7
 assert_eq of [modlive_plain.fresh, 7, "new namespace key reads back"]
-assert_eq of [has_key of [modlive_plain, "fresh"], 1, "new key enumerates"]
+assert_eq of [has_key of [modlive_plain, "fresh"], true, "new key enumerates"]
 
 # ---- Control: nested imports stay live ---------------------------------
 import modlive_outer

@@ -73,7 +73,7 @@ static void duplicate_and_leaf(void) {
     collect(4,2,4,0,0);
     CHECK(traversal_skips>before,"numeric-leaf mark traversal skipped");
     CHECK(root->data.list.items[0]==root->data.list.items[1],"live duplicate aliases retained");
-    CHECK(root->data.list.items[0]->data.list.items[63]->data.num==63,"live leaf contents retained");
+    CHECK(VAL_NUM_RAW(root->data.list.items[0]->data.list.items[63])==63,"live leaf contents retained");
     duplicate_child=NULL;
     val_decref(root); gc_collect_cycles();
     ++cases;

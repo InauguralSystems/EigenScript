@@ -150,22 +150,22 @@ int main(void) {
     static const char *const NM = "errline_1434";
     EigsSlot sl, out;
     g_has_error = 0;   /* a pending error halts the callback before it runs */
-    g_trace_current_line = 70; sl.d = 1.0; trace_assign(NM, sl);
+    g_trace_current_line = 70; SLOT_NUM_RAW(sl) = 1.0; trace_assign(NM, sl);
     g_trace_current_line = 80;
     r = builtin_sort_by(args_good);
     check(!g_has_error && r && r->type == VAL_LIST && r->data.list.count == 6001,
           "#1434 the history row's sort_by ran its callbacks");
     if (r) val_decref(r);
-    sl.d = 2.0; trace_assign(NM, sl);
+    SLOT_NUM_RAW(sl) = 2.0; trace_assign(NM, sl);
     trace_line(95);   /* a stop right after the store, for [0b]'s `--step` query */
-    check(trace_query_at(0, NM, 75, &out) && out.d == 1.0 &&
-          trace_query_at(0, NM, 85, &out) && out.d == 2.0,
+    check(trace_query_at(0, NM, 75, &out) && SLOT_NUM_RAW(out) == 1.0 &&
+          trace_query_at(0, NM, 85, &out) && SLOT_NUM_RAW(out) == 2.0,
           "#1434 a store after the callbacks is filed under the call's stamp");
     /* The line live history filed the second store under, for [0b] to compare
      * with the tape stepper's `t` row over the same run's EIGS_TRACE tape. */
     int filed = 0;
     for (int ln = 1; ln <= 100 && !filed; ln++)
-        if (trace_query_at(0, NM, ln, &out) && out.d == 2.0) filed = ln;
+        if (trace_query_at(0, NM, ln, &out) && SLOT_NUM_RAW(out) == 2.0) filed = ln;
     printf("LIVE: %s=2 line %d\n", NM, filed);
 
     g_has_error = 0;

@@ -20,8 +20,8 @@ define stale_history_probe() as:
 
 local stale_first is stale_history_probe of null
 local stale_second is stale_history_probe of null
-assert_eq of [stale_first, 0, "stale-history first cached-path call"]
-assert_eq of [stale_second, 0, "stale-history/override actual cached-call path"]
+assert_eq of [stale_first, false, "stale-history first cached-path call"]
+assert_eq of [stale_second, false, "stale-history/override actual cached-call path"]
 
 local probe_mode is 0
 local probe_seed is 0
@@ -43,7 +43,14 @@ define probe(x) as:
     x is seed
     y is seed + 100
     y is seed + 100
-    return (converged of x) * 1000 + (converged of y) * 100 + (get_observer_window of "x")
+    # #1637: converged is a bool; encode it as a digit explicitly.
+    local cx is 0
+    if converged of x:
+        cx is 1
+    local cy is 0
+    if converged of y:
+        cy is 1
+    return cx * 1000 + cy * 100 + (get_observer_window of "x")
 
 # First fill a short overridden window. The next two calls are the named
 # stale-history/override assertion: each has fewer than ten observed x samples, so a fresh
@@ -88,7 +95,10 @@ define unwind_probe(a) as:
     a is seed
     if should_throw:
         throw of "ordinary unwind"
-    return (converged of a) * 100 + (get_observer_window of "a")
+    local ca is 0
+    if converged of a:
+        ca is 1
+    return ca * 100 + (get_observer_window of "a")
 
 # Park a real normal call first. The next throwing call must take that cache;
 # after the throw destroys its env, the following normal call starts fresh.

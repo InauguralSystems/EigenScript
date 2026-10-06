@@ -66,7 +66,7 @@ define punnett_square(parent1, parent2) as:
         g is x + y
         if x > y:
             g is y + x
-        if (has_key of [result, g]) == 1:
+        if (has_key of [result, g]):
             cur is result[g]
             dict_set of [result, g, cur + 0.25]
         else:

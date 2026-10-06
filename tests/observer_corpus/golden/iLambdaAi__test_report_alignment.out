@@ -2,23 +2,23 @@
 Verifies report of x agrees with predicate vocabulary
 
 --- RA1: Diverging (low H -> high H) ---
-0
+false
 moving
 
 --- RA2: Improving (primed, high H -> low H) ---
-0
+false
 moving
 
 --- RA3: Converged (low H basin, dH~0) ---
-0
+false
 stable
 
 --- RA4: Oscillating (sign change in dH) ---
-0
+false
 moving
 
 --- RA5: Equilibrium (dH~0, moderate H) ---
-0
+false
 stable
 
 === REPORT-PREDICATE ALIGNMENT COMPLETE ===

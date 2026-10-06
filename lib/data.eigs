@@ -127,7 +127,7 @@ define df_slice(df, start, cnt) as:
 
 # ---- Sorting ----
 
-# df_sort_by: sort by column value. asc=1 ascending, asc=0 descending.
+# df_sort_by: sort by column value. asc true (or 1) ascending, false (or 0) descending.
 define df_sort_by(df, column, asc) as:
     n is len of df
     if n == 0:
@@ -141,7 +141,7 @@ define df_sort_by(df, column, asc) as:
         j is i
         loop while j > 0:
             do_swap is 0
-            if asc == 1:
+            if asc:   # #1637: true/false, or the older 1/0
                 if pairs[j][0] < pairs[j - 1][0]:
                     do_swap is 1
             else:

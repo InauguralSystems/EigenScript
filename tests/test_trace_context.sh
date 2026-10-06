@@ -37,10 +37,10 @@ if [[ "$rc" -ne 0 || "$classification" -ne 2 ]]; then
     echo "FAIL: trace context child rc=$rc sanitizer=$classification"
     exit 1
 fi
-summaries=$(grep -Fxc 'trace context: 41 passed, 0 failed (41 declared)' "$out" || true)
+summaries=$(grep -Fxc 'trace context: 44 passed, 0 failed (44 declared)' "$out" || true)
 [[ "$summaries" -eq 1 ]] || exit 1
 passes=$(grep -c '^PASS:' "$out" || true)
-[[ "$passes" -eq 41 ]] || exit 1
+[[ "$passes" -eq 44 ]] || exit 1
 if grep -q '^FAIL:' "$out"; then
     exit 1
 fi

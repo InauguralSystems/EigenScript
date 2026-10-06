@@ -15,7 +15,7 @@ static void check(int ok, const char *what) {
     if (!ok) fail = 1;
 }
 static Value *probe_add1(Value *a) {
-    double d = (a && a->type == VAL_NUM) ? a->data.num : 0.0;
+    double d = (a && a->type == VAL_NUM) ? VAL_NUM_RAW(a) : 0.0;
     return make_num(d + 1);
 }
 static Value *probe_plain(Value *a) { (void)a; return make_num(0); }

@@ -87,8 +87,8 @@ define _is_alpha(c) as:
     return _eigen_contains of ["abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ", c]
 
 define _is_alnum(c) as:
-    if (_is_alpha of c) == 1:
-        return 1
+    if (_is_alpha of c):
+        return true
     return _is_digit of c
 
 # f-string interpolation extent (#1252/#1253 parity with src/lexer.c's
@@ -104,7 +104,7 @@ define _fstr_interp_end(source, pos) as:
     local c is ""
     loop while pos < n:
         c is _eigen_char_at of [source, pos]
-        if (c == "f") and ((pos + 1) < n) and ((_eigen_char_at of [source, pos + 1]) == "\"") and ((pos == start) or ((_is_alnum of (_eigen_char_at of [source, pos - 1])) == 0)):
+        if (c == "f") and ((pos + 1) < n) and ((_eigen_char_at of [source, pos + 1]) == "\"") and ((pos == start) or ((not (_is_alnum of (_eigen_char_at of [source, pos - 1]))))):
             pos is _fstr_skip_fstring of [source, pos]
         elif c == "\"":
             pos is pos + 1
@@ -150,10 +150,10 @@ define _fstr_skip_fstring(source, pos) as:
 
 define _is_space(c) as:
     if c == " ":
-        return 1
+        return true
     if c == "\t":
-        return 1
-    return 0
+        return true
+    return false
 
 # Full keyword list matching C lexer
 _keywords is ["is", "of", "define", "as", "if", "else", "elif", "loop", "while", "return", "and", "or", "not", "for", "in", "null", "try", "catch", "break", "continue", "import", "match", "case", "unobserved", "what", "who", "when", "where", "why", "how", "converged", "stable", "improving", "oscillating", "diverging", "equilibrium", "true", "false"]
@@ -171,26 +171,26 @@ _reserved_forms is ["report", "report_value"]
 define _is_keyword(word) as:
     for i in _eigen_range of (_eigen_len of _keywords):
         if word == _keywords[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 define _is_interrogative(word) as:
     for i in _eigen_range of (_eigen_len of _interrogatives):
         if word == _interrogatives[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 define _is_predicate(word) as:
     for i in _eigen_range of (_eigen_len of _predicates):
         if word == _predicates[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 define _is_reserved_form(word) as:
     for i in _eigen_range of (_eigen_len of _reserved_forms):
         if word == _reserved_forms[i]:
-            return 1
-    return 0
+            return true
+    return false
 
 define _predicate_index(word) as:
     for i in _eigen_range of (_eigen_len of _predicates):
@@ -278,7 +278,7 @@ define _eigen_tokenize_at(source, line, check_layout) as:
             c is _eigen_char_at of [source, pos]
             handled is 0
             # Skip inline spaces
-            if (_is_space of c) == 1:
+            if (_is_space of c):
                 pos is pos + 1
                 handled is 1
             # Comments
@@ -433,13 +433,13 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                 _eigen_append of [tokens, ["str", buf, str_line]]
                 handled is 1
             # Numbers
-            if (handled == 0) and ((_is_digit of c) == 1):
+            if (handled == 0) and ((_is_digit of c)):
                 buf is ""
                 has_dot is 0
                 reading_num is 1
                 loop while (pos < src_len) and (reading_num == 1):
                     ch is _eigen_char_at of [source, pos]
-                    if (_is_digit of ch) == 1:
+                    if (_is_digit of ch):
                         buf is buf + ch
                         pos is pos + 1
                     elif (ch == ".") and (has_dot == 0):
@@ -451,12 +451,12 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                 _eigen_append of [tokens, ["num", _eigen_num of buf, line]]
                 handled is 1
             # Identifiers and keywords
-            if (handled == 0) and ((_is_alpha of c) == 1):
+            if (handled == 0) and ((_is_alpha of c)):
                 buf is ""
                 reading_id is 1
                 loop while (pos < src_len) and (reading_id == 1):
                     ch is _eigen_char_at of [source, pos]
-                    if (_is_alnum of ch) == 1:
+                    if (_is_alnum of ch):
                         buf is buf + ch
                         pos is pos + 1
                     else:
@@ -464,16 +464,16 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                 if buf == "null":
                     _eigen_append of [tokens, ["null", null, line]]
                 elif buf == "true":
-                    _eigen_append of [tokens, ["true", 1, line]]
+                    _eigen_append of [tokens, ["true", true, line]]
                 elif buf == "false":
-                    _eigen_append of [tokens, ["false", 0, line]]
-                elif (_is_interrogative of buf) == 1:
+                    _eigen_append of [tokens, ["false", false, line]]
+                elif (_is_interrogative of buf):
                     _eigen_append of [tokens, ["interrogative", buf, line]]
-                elif (_is_predicate of buf) == 1:
+                elif (_is_predicate of buf):
                     _eigen_append of [tokens, ["predicate", buf, line]]
-                elif (_is_reserved_form of buf) == 1:
+                elif (_is_reserved_form of buf):
                     _eigen_append of [tokens, ["report", buf, line]]
-                elif (_is_keyword of buf) == 1:
+                elif (_is_keyword of buf):
                     _eigen_append of [tokens, ["kw", buf, line]]
                 else:
                     _eigen_append of [tokens, ["ident", buf, line]]
@@ -508,7 +508,7 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                     handled is 1
             # Single-character operators and punctuation
             if handled == 0:
-                if (_eigen_contains of ["+-*/%<>", c]) == 1:
+                if (_eigen_contains of ["+-*/%<>", c]):
                     _eigen_append of [tokens, ["op", c, line]]
                     pos is pos + 1
                     handled is 1
@@ -1092,13 +1092,14 @@ define _p_parse_primary(p) as:
         _p_advance of p
         return ["null"]
 
+    # #1637: true/false are the host's bool values, not 1/0.
     if tt == "true":
         _p_advance of p
-        return ["num", 1]
+        return ["bool", true]
 
     if tt == "false":
         _p_advance of p
-        return ["num", 0]
+        return ["bool", false]
 
     # Interrogatives: what of x, who of x, etc.
     if tt == "interrogative":
@@ -1119,6 +1120,11 @@ define _p_parse_primary(p) as:
         tok is _p_cur of p
         _p_advance of p
         kind is _predicate_index of tok[1]
+        # #1637: the named form `converged of x`, as the C parser accepts.
+        if (_p_peek_type of p) == "kw":
+            if (_p_peek_val of p) == "of":
+                _p_advance of p
+                return ["predicate_of", kind, _p_parse_primary of p]
         return ["predicate", kind]
 
     if tt == "ident":
@@ -1278,7 +1284,7 @@ define _ns_env_for(target_node, key, target) as:
         if (_eigen_char_at of [key, 0]) == "_":
             return null
     mod_name is target_node[1]
-    if (_eigen_has_key of [_eigen_module_envs, mod_name]) == 0:
+    if (not (_eigen_has_key of [_eigen_module_envs, mod_name])):
         return null
     if target != _eigen_module_ns[mod_name]:
         return null
@@ -1338,8 +1344,8 @@ define _env_has_local(env, name) as:
     bindings is env[0]
     for i in _eigen_range of (_eigen_len of bindings):
         if bindings[i][0] == name:
-            return 1
-    return 0
+            return true
+    return false
 
 define _env_unset_local(env, name) as:
     bindings is env[0]
@@ -1369,7 +1375,7 @@ define _eigen_module_path(name) as:
         exedir + "/../lib/" + name + ".eigs",
         exedir + "/../lib/eigenscript/" + name + ".eigs"]
     for ci in _eigen_range of (_eigen_len of cands):
-        if (_eigen_file_exists of cands[ci]) == 1:
+        if (_eigen_file_exists of cands[ci]):
             return cands[ci]
     return null
 
@@ -1414,9 +1420,17 @@ define eigen_set_hook(hook) as:
 # Observer state per binding: [name, value, obs_count, entropy, prev_entropy, dH]
 # For simplicity, we store observer metadata in a separate dict keyed by name.
 _eigen_obs is {}
+# #1637: the value of the most recently observed assignment, for the bare
+# predicates' bridge (a dict so module functions update it by mutation).
+_eigen_last is {"v": null}
 
 define _compute_entropy(val) as:
     t is _eigen_type of val
+    # #1637: a bool is one bit — false 0, true 1, as the C observer.
+    if t == "bool":
+        if val:
+            return 1
+        return 0
     if t == "num":
         x is _eigen_abs of val
         if (x == 0) or (x == 1):
@@ -1444,8 +1458,9 @@ define _compute_entropy(val) as:
     return 0
 
 define _update_observer(name, val) as:
+    _eigen_last.v is val
     new_entropy is _compute_entropy of val
-    if (_eigen_has_key of [_eigen_obs, name]) == 1:
+    if (_eigen_has_key of [_eigen_obs, name]):
         old is _eigen_obs[name]
         obs_count is old[0] + 1
         prev_ent is old[1]
@@ -1456,7 +1471,7 @@ define _update_observer(name, val) as:
     return null
 
 define _get_observer(name) as:
-    if (_eigen_has_key of [_eigen_obs, name]) == 1:
+    if (_eigen_has_key of [_eigen_obs, name]):
         return _eigen_obs[name]
     return [0, 0, 0, 0]
 
@@ -1476,6 +1491,8 @@ define eigen_eval(node, env) as:
         return node[1]
     if ntype == "null":
         return null
+    if ntype == "bool":
+        return node[1]
 
     if ntype == "ident":
         # #306: the C VM RAISES on an unbound name (it does not silently return
@@ -1548,39 +1565,27 @@ define eigen_eval(node, env) as:
             if right == 0:
                 _eigen_throw of "modulo by zero"
             return left % right
+        # #1637: the host's own comparison — a bool result, and the same
+        # raise on bool-vs-number equality the C VM performs.
         if op == "==":
-            if left == right:
-                return 1
-            return 0
+            return left == right
         if op == "!=":
-            if left != right:
-                return 1
-            return 0
+            return left != right
         if op == "<":
-            if left < right:
-                return 1
-            return 0
+            return left < right
         if op == ">":
-            if left > right:
-                return 1
-            return 0
+            return left > right
         if op == "<=":
-            if left <= right:
-                return 1
-            return 0
+            return left <= right
         if op == ">=":
-            if left >= right:
-                return 1
-            return 0
+            return left >= right
 
     if ntype == "unary":
         operand is eigen_eval of [node[2], env]
         if node[1] == "-":
             return 0 - operand
         if node[1] == "not":
-            if operand:
-                return 0
-            return 1
+            return not operand
 
     if ntype == "call":
         fn is eigen_eval of [node[1], env]
@@ -1673,7 +1678,7 @@ define eigen_eval(node, env) as:
                 for mi in _eigen_range of (_eigen_len of mbind):
                     if mbind[mi][0] == key:
                         return mbind[mi][1]
-            if (_eigen_has_key of [target, key]) == 1:
+            if (_eigen_has_key of [target, key]):
                 return target[key]
             return null
         _eigen_throw of f"cannot access .{key} on {_eigen_type of target}"
@@ -1724,9 +1729,9 @@ define eigen_eval(node, env) as:
         running is 1
         loop while (max_iter > 0) and (running == 1):
             cond is eigen_eval of [node[1], env]
-            if cond == 0:
-                running is 0
-            elif cond == null:
+            # #1637: the host's own truthiness (false, 0, null, "", [], {})
+            # -- `cond == 0` raised on a bool condition.
+            if not cond:
                 running is 0
             else:
                 result is _eval_block of [node[2], env]
@@ -1752,7 +1757,7 @@ define eigen_eval(node, env) as:
         # own binding (if any) and restoring or removing it on every exit.
         had_prior is _env_has_local of [env, var_name]
         prior_val is null
-        if had_prior == 1:
+        if had_prior:
             prior_val is _env_get of [env, var_name]
         try:
             for i in _eigen_range of (_eigen_len of iter):
@@ -1766,12 +1771,12 @@ define eigen_eval(node, env) as:
                 if _eigen_continuing == 1:
                     _eigen_continuing is 0
         catch _for_error:
-            if had_prior == 1:
+            if had_prior:
                 _env_set_local of [env, var_name, prior_val]
             else:
                 _env_unset_local of [env, var_name]
             _eigen_throw of _for_error
-        if had_prior == 1:
+        if had_prior:
             _env_set_local of [env, var_name, prior_val]
         else:
             _env_unset_local of [env, var_name]
@@ -1874,9 +1879,7 @@ define eigen_eval(node, env) as:
             _env_set_local of [comp_env, var_name, iter[i]]
             if filter_node != null:
                 cond is eigen_eval of [filter_node, comp_env]
-                if cond == 0:
-                    continue
-                if cond == null:
+                if not cond:   # #1637: host truthiness; `cond == 0` raised on a bool
                     continue
             val is eigen_eval of [expr_node, comp_env]
             _eigen_append of [result, val]
@@ -1893,6 +1896,8 @@ define eigen_eval(node, env) as:
         if kind == 0:
             # what: value / magnitude
             if (_eigen_type of target) == "num":
+                return target
+            if (_eigen_type of target) == "bool":   # #1637: its own value, as in the VM
                 return target
             if (_eigen_type of target) == "str":
                 return _eigen_len of target
@@ -1937,51 +1942,16 @@ define eigen_eval(node, env) as:
             return 1.0
         return 0
 
+    # #1637: observer predicates answer a bool, through the same value-only
+    # bridge `report` uses (#1102/#1111): this interpreter keeps no host
+    # trajectory, so the host predicate is asked about a fresh parameter
+    # binding holding the value -- the bare form the last observed value, the
+    # named form its operand. That is the VM's answer for a binding without a
+    # full window (false), and always a bool, never the old 1/0 heuristic.
     if ntype == "predicate":
-        kind is node[1]
-        # Look at last observer state
-        # kind: 0=converged, 1=stable, 2=improving, 3=oscillating, 4=diverging, 5=equilibrium
-        h is 0
-        dh is 0
-        prev_dh is 0
-        # Try to get the latest observer state from __observer__ binding
-        last_obs is _env_get of [env, "__observer__"]
-        if last_obs != null:
-            h is _compute_entropy of last_obs
-        if kind == 0:
-            # converged: low dH and low entropy
-            if (_eigen_abs of dh) < 0.001:
-                if h < 0.1:
-                    return 1
-            return 0
-        if kind == 1:
-            # stable: low dH, moderate entropy
-            if (_eigen_abs of dh) < 0.01:
-                if h >= 0.1:
-                    return 1
-            return 0
-        if kind == 2:
-            # improving: negative dH
-            if dh < (0 - 0.001):
-                return 1
-            return 0
-        if kind == 3:
-            # oscillating: sign change in dH
-            if (dh * prev_dh) < 0:
-                if (_eigen_abs of dh) > 0.001:
-                    return 1
-            return 0
-        if kind == 4:
-            # diverging: positive dH
-            if dh > 0.001:
-                return 1
-            return 0
-        if kind == 5:
-            # equilibrium: very low dH
-            if (_eigen_abs of dh) < 0.001:
-                return 1
-            return 0
-        return 0
+        return (_pred_bridges[node[1]]) of _eigen_last.v
+    if ntype == "predicate_of":
+        return (_pred_bridges[node[1]]) of (eigen_eval of [node[2], env])
 
     return null
 
@@ -2018,6 +1988,9 @@ define _eval_block(stmts, env) as:
 # opaque) — without exposing the host's named binding history to the meta env.
 _report_bridge is (v) => report of v
 _report_value_bridge is (v) => report_value of v
+# #1637: the predicate bridges, in _predicates order (converged, stable,
+# improving, oscillating, diverging, equilibrium).
+_pred_bridges is [(v) => converged of v, (v) => stable of v, (v) => improving of v, (v) => oscillating of v, (v) => diverging of v, (v) => equilibrium of v]
 
 # #1322: the builtin string conversion, unhijackable. An f-string HERE lowers to the host's
 # reserved `_#fstr` binding, which no source, module, embedder or bytecode can

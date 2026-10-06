@@ -268,7 +268,7 @@ static int tape_parse(Tape *t, long len) {
         uint64_t stream_id = 0;
         if (p[0] != 'V' && strchr("BLASNO", p[0])) {
             if (p[1] != ' ' || *body < '0' || *body > '9') {
-                fprintf(stderr, "step: malformed v5 stream id in '%s'; refusing to step\n", p);
+                fprintf(stderr, "step: malformed v%d stream id in '%s'; refusing to step\n", TRACE_FORMAT_VERSION, p);
                 free(streams); return 0;
             }
             char *id_end = body;
@@ -280,7 +280,7 @@ static int tape_parse(Tape *t, long len) {
                 id_end++;
             }
             if (id == UINT64_MAX || *id_end != ' ' || !id_end[1]) {
-                fprintf(stderr, "step: malformed v5 stream id in '%s'; refusing to step\n", p);
+                fprintf(stderr, "step: malformed v%d stream id in '%s'; refusing to step\n", TRACE_FORMAT_VERSION, p);
                 free(streams); return 0;
             }
             body = id_end + 1;

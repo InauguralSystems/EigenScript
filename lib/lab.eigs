@@ -63,7 +63,7 @@ define _cache_get(key) as:
     return null
 
 define _cache_ensure(key) as:
-    if has_key of [_variable_data, key] == 0:
+    if (not has_key of [_variable_data, key]):
         dict_set of [_variable_data, key, []]
 
 # ---- Experiment Lifecycle ----
@@ -245,10 +245,10 @@ define is_stable(exp, variable) as:
     key is _tracker_key of [exp, variable]
     vals is _cache_get of key
     if vals == null:
-        return 0
+        return false
     n is len of vals
     if n < 3:
-        return 0
+        return false
     return is_measurement_stable of [vals, 3]
 
 define wait_for_stable(exp, variable, collect_fn, interval, timeout) as:
@@ -340,7 +340,7 @@ define tagged_groups(exp, variable) as:
     for i in range of (len of recs):
         tag is recs[i].tag
         if tag != "":
-            if has_key of [groups, tag] == 0:
+            if (not has_key of [groups, tag]):
                 dict_set of [groups, tag, []]
             append of [groups[tag], recs[i].value]
     return groups
@@ -362,7 +362,7 @@ define save(exp) as:
         meta.variables is exp.variables
         meta.notes is exp.notes
         store_update of [exp.db, "experiments", exp.id, meta]
-    return 1
+    return true
 
 define load(name) as:
     # `local` on every internal binding: without it, `name is expr` updates an
@@ -426,7 +426,7 @@ define delete_experiment(name) as:
             # Delete experiment metadata
             store_delete of [db, "experiments", id]
     store_close of db
-    return 1
+    return true
 
 # ---- Analysis Helpers ----
 

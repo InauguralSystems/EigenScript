@@ -79,7 +79,7 @@ loop while li < 3:
     lv is lv + 1
     li is li + 1
 st is state_at of 999
-check of ["state_at hides __loop_exit__", (has_key of [st, "__loop_exit__"]) == 0]
+check of ["state_at hides __loop_exit__", (not (has_key of [st, "__loop_exit__"]))]
 check of ["state_at keeps user bindings", st["lv"] == 4]
 
 if fail_count == 0:

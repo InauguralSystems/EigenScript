@@ -342,6 +342,7 @@ embed API refuses it too: `eigs_set_global`, `eigs_get_global` and
 EigsValue *eigs_value_new_num(double n);
 EigsValue *eigs_value_new_string(const char *s);
 EigsValue *eigs_value_new_null(void);
+EigsValue *eigs_value_new_bool(int b);           /* true/false (#1637) */
 EigsValue *eigs_value_new_list(int capacity);
 EigsValue *eigs_value_new_dict(int capacity);
 EigsValue *eigs_value_new_buffer(int count);   /* zeroed, 1-D; the binary carrier */
@@ -358,8 +359,9 @@ void eigs_value_release(EigsValue *v);
 Inspection:
 
 ```c
-EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _BUFFER, _OTHER */
-double        eigs_value_as_num(EigsValue *v);     /* 0.0 if wrong type */
+EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _BUFFER, _OTHER, _BOOL */
+double        eigs_value_as_num(EigsValue *v);     /* NaN for a bool (#1637); 0.0 for any other non-num */
+int           eigs_value_as_bool(EigsValue *v);    /* 1 for true; 0 for false or wrong type */
 const char   *eigs_value_as_string(EigsValue *v);  /* NULL if wrong type; borrowed pointer */
 int           eigs_value_list_len(EigsValue *v);
 EigsValue    *eigs_value_list_get(EigsValue *v, int i);    /* counted ref */
@@ -399,6 +401,8 @@ int  eigs_set_replay_tape(const char *bytes, size_t len, int strict); /* copied;
 int  eigs_replay_advance_session(void); /* explicit quiescent host boundary */
 int  eigs_replay_take(const char *name, EigsValue **out);   /* 1 = served from tape */
 void eigs_trace_record_nondet(const char *name, EigsValue *v);
+#define EIGS_KIND(t) (1u << (unsigned)(t))
+int  eigs_trace_declare_kind(const char *name, unsigned kinds);  /* 0 = refused */
 ```
 
 The sink receives ONE complete newline-terminated record per call,
@@ -539,7 +543,7 @@ through lifetime metadata, never through repeated numeric IDs.
 An installed memory tape suspends the file replay context as a whole. Clearing
 memory restores the file's cursor, queued values, parser buffer, bindings and
 strictness; it neither rewinds nor takes data from the memory source. A refused
-memory replacement leaves the active context untouched. The version 5 grammar
+memory replacement leaves the active context untouched. The version 6 grammar
 and older-format refusal rule are documented in `docs/TRACE.md`.
 
 Host builtins participate with the take/record pair, the same contract
@@ -553,7 +557,18 @@ static EigsValue *my_sensor(EigsValue *arg) {
     eigs_trace_record_nondet("my_sensor", v);          /* onto the tape */
     return v;
 }
+
+/* at registration: the kinds a recorded my_sensor value can have */
+eigs_register_function("my_sensor", my_sensor);
+eigs_trace_declare_kind("my_sensor", EIGS_KIND(EIGS_TYPE_NUM));
 ```
+
+Replay checks every recorded value against its name's declared kinds and
+refuses (exit 3) a record of another kind -- a hand-edited
+`my_sensor=true` never reaches code that reads a number -- and a host name
+that was never declared. The runtime's own taped builtins are declared by
+the runtime; `eigs_trace_declare_kind` refuses their names, an empty name,
+`EIGS_TYPE_FN`/`EIGS_TYPE_OTHER` and an empty kind set (returns 0).
 
 ## FFI: calling host functions from script
 
@@ -578,17 +593,25 @@ static EigsValue *host_add(EigsValue *arg) {
     if (eigs_value_list_len(arg) != 2)          return eigs_value_new_null();
     EigsValue *a = eigs_value_list_get(arg, 0);
     EigsValue *b = eigs_value_list_get(arg, 1);
-    double sum = eigs_value_as_num(a) + eigs_value_as_num(b);
+    /* Check the types: eigs_value_as_num answers NaN for a bool and 0.0 for
+     * other non-numbers, so an unchecked read turns `host_add of [true, 1]`
+     * into a wrong number. */
+    EigsValue *r = (eigs_value_type(a) == EIGS_TYPE_NUM && eigs_value_type(b) == EIGS_TYPE_NUM)
+        ? eigs_value_new_num(eigs_value_as_num(a) + eigs_value_as_num(b))
+        : eigs_value_new_null();
     eigs_value_release(a);
     eigs_value_release(b);
-    return eigs_value_new_num(sum);
+    return r;
 }
 
 eigs_register_function("host_add", host_add);
 ```
 
 After registration, the script side calls it the same way as any
-builtin: `host_add of [3, 4]`.
+builtin: `host_add of [3, 4]`. Check argument types with `eigs_value_type`
+before reading them: `eigs_value_as_num` answers NaN for a bool -- so a bool
+read as a number poisons the host's arithmetic visibly instead of passing for
+0 -- and 0.0 for any other non-number. Read a bool with `eigs_value_as_bool`.
 
 A registered function joins the state's builtin layer as well as its global
 scope (#1388): imported module code sees it, and a later host rebinding of

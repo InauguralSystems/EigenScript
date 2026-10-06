@@ -589,7 +589,9 @@ Value* builtin_http_early_bind(Value *arg) {
         return make_null();
     }
     int port = 5000;
-    if (arg && arg->type == VAL_NUM) port = (int)arg->data.num;
+    double port_d = 0;
+    if (eigs_opt_num(arg, &port_d, "http_serve")) port = (int)port_d;   /* #1637: a bool raises */
+    if (g_has_error) return make_null();
     const char *env_port = getenv("PORT");
     if (env_port && atoi(env_port) > 0) {
         port = atoi(env_port);
@@ -655,7 +657,9 @@ Value* builtin_http_serve(Value *arg) {
         return make_null();
     }
     int port = 5000;
-    if (arg && arg->type == VAL_NUM) port = (int)arg->data.num;
+    double port_d = 0;
+    if (eigs_opt_num(arg, &port_d, "http_serve")) port = (int)port_d;   /* #1637: a bool raises */
+    if (g_has_error) return make_null();
     const char *env_port = getenv("PORT");
     if (env_port && atoi(env_port) > 0) {
         port = atoi(env_port);
@@ -944,7 +948,7 @@ Value* builtin_shared_incr(Value *arg) {
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
-    double delta = delta_v->data.num;
+    double delta = eigs_num_arg(delta_v, __func__);
     long cap = shared_max_bytes();
 
     pthread_mutex_lock(&s->shared_mu);
@@ -957,7 +961,7 @@ Value* builtin_shared_incr(Value *arg) {
          * and drop it on the mismatch path too, which is the one an early
          * return makes easy to miss. */
         int bad = (!parsed || parsed->type != VAL_NUM);
-        if (!bad) cur = parsed->data.num;
+        if (!bad) cur = eigs_num_arg(parsed, __func__);
         val_decref(parsed);
         if (bad) {
             pthread_mutex_unlock(&s->shared_mu);
@@ -1017,13 +1021,13 @@ Value* builtin_shared_get(Value *arg) {
 }
 
 Value* builtin_shared_has(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);  /* fs:TODO #971 guards a non-string key; deferred: ext_http is a variant-only build (make http) */
+    if (!arg || arg->type != VAL_STR) return make_bool(0);  /* fs:TODO #971 guards a non-string key; deferred: ext_http is a variant-only build (make http) */
     Server *s = eigs_http_active;
-    if (!s) return make_num(0);  /* fs:ANSWER 0 means "key not present" -- the same value line 739 returns when shared_find misses; with no active server there is no shared store, so nothing is present */
+    if (!s) return make_bool(0);  /* fs:ANSWER 0 means "key not present" -- the same value line 739 returns when shared_find misses; with no active server there is no shared store, so nothing is present */
     pthread_mutex_lock(&s->shared_mu);
     int idx = shared_find(s, arg->data.str);
     pthread_mutex_unlock(&s->shared_mu);
-    return make_num(idx >= 0 ? 1 : 0);
+    return make_bool(idx >= 0);
 }
 
 Value* builtin_shared_delete(Value *arg) {

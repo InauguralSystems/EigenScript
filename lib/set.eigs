@@ -10,13 +10,13 @@
 #   intersect of [set_a, set_b]             # elements in both
 #   difference of [set_a, set_b]            # in a but not b
 #   symmetric_diff of [set_a, set_b]        # in one but not both
-#   is_subset of [set_a, set_b]             # 1 if a ⊆ b
-#   is_superset of [set_a, set_b]           # 1 if a ⊇ b
-#   set_has of [set, value]                 # 1 if value in set
+#   is_subset of [set_a, set_b]             # true if a ⊆ b
+#   is_superset of [set_a, set_b]           # true if a ⊇ b
+#   set_has of [set, value]                 # true if value in set
 #   set_add of [set, value]                 # add element
 #   set_remove of [set, value]              # remove element
 #   set_size of set                         # number of elements
-#   set_equal of [set_a, set_b]             # 1 if same elements
+#   set_equal of [set_a, set_b]             # true if same elements
 #
 # Sets are sorted lists with no duplicates.
 
@@ -50,14 +50,14 @@ define set_from(items) as:
 define set_has(s, val) as:
     for i in range of (len of s):
         if s[i] == val:
-            return 1
+            return true
         if s[i] > val:
-            return 0
-    return 0
+            return false
+    return false
 
 # ---- set_add: add element to set ----
 define set_add(s, val) as:
-    if (set_has of [s, val]) == 1:
+    if (set_has of [s, val]):
         return s
     result is []
     inserted is 0
@@ -143,22 +143,22 @@ define symmetric_diff(a, b) as:
     right is difference of [b, a]
     return union of [left, right]
 
-# ---- is_subset: 1 if a ⊆ b ----
+# ---- is_subset: true if a ⊆ b ----
 define is_subset(a, b) as:
     for i in range of (len of a):
-        if (set_has of [b, a[i]]) == 0:
-            return 0
-    return 1
+        if (not (set_has of [b, a[i]])):
+            return false
+    return true
 
-# ---- is_superset: 1 if a ⊇ b ----
+# ---- is_superset: true if a ⊇ b ----
 define is_superset(a, b) as:
     return is_subset of [b, a]
 
-# ---- set_equal: 1 if same elements ----
+# ---- set_equal: true if same elements ----
 define set_equal(a, b) as:
     if (len of a) != (len of b):
-        return 0
+        return false
     for i in range of (len of a):
         if a[i] != b[i]:
-            return 0
-    return 1
+            return false
+    return true

@@ -43,7 +43,7 @@ define many() as:
 local b1 is many of null
 local b2 is many of null
 
-if (a1 == 0) and (a2 == 0) and (a3 == 0) and (b1 == 1) and (b2 == 1):
+if (not a1) and (not a2) and (not a3) and b1 and b2:
     print of "OBS_PARK_OK"
 else:
     print of "OBS_PARK_FAIL a="

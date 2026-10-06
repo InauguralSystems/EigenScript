@@ -1,0 +1,76 @@
+# tools/num_read_allowlist.txt -- every raw number token, reviewed (#1637 round 4).
+# file|function|count|reason. tools/num_read_check.sh counts VAL_NUM_RAW /
+# SLOT_NUM_RAW / VAL_NUM_OFFSET tokens per function and fails when a count
+# differs (a new raw read, however it is spelled across lines, changes the
+# count), when a function with raw tokens is missing here, or a row is stale.
+# Builtins never belong here: they read through eigs_num_arg / eigs_list_num /
+# eigs_opt_num / eigs_elem_num, which raise on a bool.
+builtins_tensor.c|builtin_numerical_grad_rows|3|in-place writes of a matrix cell that tensor_cells_numeric proved a number before any mutation
+builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel into a result buffer cell (EIGS_STRICT=0 path); a write, no Value is read
+chunk.c|chunk_disassemble|1|debug disassembly prints a constant behind its own type == VAL_NUM test
+chunk.c|const_equal|2|constant-pool dedup compares two constants after testing both are VAL_NUM
+chunk.c|const_hash_value|1|constant-pool hash of a constant inside its type == VAL_NUM branch
+eigenscript.c|chan_clone_rec|1|channel deep-copy, switch case VAL_NUM
+eigenscript.c|compute_entropy_impl|1|observer entropy, switch case VAL_NUM
+eigenscript.c|eigs_elem_num|1|checking accessor itself: reads only after type == VAL_NUM
+eigenscript.c|eigs_num_arg_slow|1|checking accessor itself: reads only after type == VAL_NUM, raises otherwise
+eigenscript.c|eigs_opt_num|1|checking accessor itself: reads only after type == VAL_NUM, raises on non-null non-numbers
+eigenscript.c|is_truthy|1|truthiness, switch case VAL_NUM (a bool has its own case)
+eigenscript.c|make_num|1|constructor: writes the number of a Value it just typed VAL_NUM
+eigenscript.c|make_num_permanent|1|constructor: writes the number of a Value it just typed VAL_NUM
+eigenscript.c|module_ns_project|2|mirror refresh: reads a slot after slot_is_num and writes a VAL_NUM mirror it owns exclusively
+eigenscript.c|observer_entropy_now|1|observer entropy of a slot after slot_is_num
+eigenscript.c|observer_slot_from_trajectory|9|trajectory snapshot fields each read right after its own type != VAL_NUM refusal
+eigenscript.c|observer_slot_sample_gated|1|observer sample after newval->type == VAL_NUM
+eigenscript.c|observer_slot_update|1|observer update after newval->type == VAL_NUM
+eigenscript.c|promote_arena_scalar|1|arena promotion, inside its type == VAL_NUM branch
+eigenscript.c|slot_from_value|1|NaN-boxing boundary, inside its VAL_NUM branch
+eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_num
+eigenscript.c|values_equal_impl|2|equality, switch case VAL_NUM after the bool/num pair raised
+eigenscript.c|value_to_string|1|printing, switch case VAL_NUM
+eigenscript.h|#define VAL_NUM_OFFSET|1|the raw member offset definition (JIT)
+eigenscript.h|#define VAL_NUM_RAW|1|the raw read definition
+eigenscript.h|eigs_num_arg|1|inline fast path of the checking accessor: reads only after type == VAL_NUM
+eigs_embed.c|eigs_value_as_num|1|embedding API: reads only after type == VAL_NUM; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
+embed_smoke.c|main|7|C test program: builds and inspects slots it constructed as numbers
+embed_smoke.c|test_worker_exit_lifecycle|2|C test program: inspects slots it constructed as numbers
+jit.c|emit_load_numeric_operand|2|emits the load of data.num_ after the emitted type == VAL_NUM / refcount guard
+jit.c|jit_compile_to_thunk|4|emits loads/stores of data.num_ behind emitted immediate-number checks; reads a VAL_NUM constant
+jit_smoke.c|jit_helper_index_get|2|JIT smoke test program (stubbed helpers over slots it built as numbers)
+jit_smoke.c|jit_helper_iter_next|1|JIT smoke test program (stubbed helpers over slots it built as numbers)
+jit_smoke.c|jit_helper_set_name|4|JIT smoke test program (stubbed helpers over slots it built as numbers)
+jit_smoke.c|run_exit_cases|3|JIT smoke test program (stubbed helpers over slots it built as numbers)
+jit_smoke.c|run_index_bail_cases|2|JIT smoke test program (stubbed helpers over slots it built as numbers)
+jit_smoke.c|run_reader_bail_cases|8|JIT smoke test program (stubbed helpers over slots it built as numbers)
+jit_smoke.c|run_store_cases|4|JIT smoke test program (stubbed helpers over slots it built as numbers)
+trace.c|write_slot|1|tape writer after slot_is_num
+trace.c|write_value_ptr|1|tape writer, switch case VAL_NUM
+trace.c|write_value_ptr_full|1|tape writer, switch case VAL_NUM
+value_slot.h|#define SLOT_NUM_RAW|1|the raw slot read definition
+value_slot.h|slot_from_num|1|constructor: writes a number into a fresh slot
+value_slot.h|slot_truthy_immediate|1|truthiness after slot_is_num
+vm.c|#define ARITH_FAST|2|arithmetic fast path after both operands tested VAL_NUM; NUM_REUSE writes
+vm.c|#define INT_BINOP_R|2|integer op fast path after both slots slot_is_num
+vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_NUM && b->type == VAL_NUM; NUM_REUSE writes
+vm.c|dict_set_cached_immediate|1|in-place dict value update, writes a VAL_NUM it exclusively owns
+vm.c|jit_helper_dot_get|1|JIT helper: pushes a field value after its VAL_NUM test
+vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_num
+vm.c|jit_helper_index_get|10|JIT helper: index read after slot_is_num / VAL_NUM tests on index and element
+vm.c|jit_helper_index_set|13|JIT helper: index store after slot_is_num / VAL_NUM tests on index and value
+vm.c|jit_helper_iter_next|3|JIT helper: loop state list [iterable, idx, snap] built by the VM, each read behind a VAL_NUM test
+vm.c|jit_helper_local_dot_get|1|JIT helper: field value after its VAL_NUM test
+vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_num
+vm.c|jit_helper_local_idx_dot_get|1|JIT helper: field value after its VAL_NUM test
+vm.c|jit_helper_local_idx_get|1|JIT helper: element after its VAL_NUM test
+vm.c|jit_helper_observe_assign_local|2|JIT helper: observer update after slot_is_num
+vm.c|jit_helper_observe_name_post|2|JIT helper: observer update after slot_is_num
+vm.c|loop_iter_store|1|writes the loop counter slot after slot_is_num
+vm.c|obs_dump_scope|1|SIGUSR1 observer dump after slot_is_num
+vm.c|obs_dump_value|2|SIGUSR1 observer dump after slot_is_num / case VAL_NUM
+vm.c|slot_as_double|2|VM numeric operand read: returns 0 (not a number) unless slot_is_num or VAL_NUM
+vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_num
+vm.c|slot_truthy|1|truthiness after slot_is_num
+vm.c|vm_leaf_accessor_exec|3|leaf-accessor fast path: constants the scanner admitted only as VAL_NUM (chunk_scan_leaf_accessor) and values behind VAL_NUM tests
+vm.c|vm_run_ex|68|the interpreter loop: every opcode reads numbers behind slot_is_num / type == VAL_NUM dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
+vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_num
+vm.c|vm_store_local_slot|2|in-place local number store after slot_is_num

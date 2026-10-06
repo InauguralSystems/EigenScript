@@ -40,7 +40,7 @@ assert_eq of [abs of -10, 10, "global abs unchanged"]
 # keys shows module contents
 k is keys of math
 assert_true of [(len of k) > 0, "import has keys"]
-assert_eq of [has_key of [math, "abs"], 1, "math has abs"]
+assert_eq of [has_key of [math, "abs"], true, "math has abs"]
 
 # Import format
 import format
@@ -60,8 +60,8 @@ rm of (_module_test_dir + "/tmp_user_module.eigs")
 # Names starting with _ are module-private: omitted from the dict.
 write_text of [(_module_test_dir + "/tmp_priv_module.eigs"), "_secret is 1\nvisible is 2\n"]
 import tmp_priv_module
-assert_eq of [has_key of [tmp_priv_module, "visible"], 1, "public name exported"]
-assert_eq of [has_key of [tmp_priv_module, "_secret"], 0, "_name stays private"]
+assert_eq of [has_key of [tmp_priv_module, "visible"], true, "public name exported"]
+assert_eq of [has_key of [tmp_priv_module, "_secret"], false, "_name stays private"]
 rm of (_module_test_dir + "/tmp_priv_module.eigs")
 
 # --- #821: a project file with a stdlib module's name wins (project-first).
@@ -71,7 +71,7 @@ rm of (_module_test_dir + "/tmp_priv_module.eigs")
 # the shell level in run_all_tests.sh (it goes to stderr).
 write_text of [(_module_test_dir + "/physics.eigs"), "SHADOW_MARKER is 821\n"]
 import physics
-assert_eq of [has_key of [physics, "SHADOW_MARKER"], 1, "project file shadows stdlib (#821)"]
+assert_eq of [has_key of [physics, "SHADOW_MARKER"], true, "project file shadows stdlib (#821)"]
 assert_eq of [physics.SHADOW_MARKER, 821, "shadowing module's own binding read"]
 rm of (_module_test_dir + "/physics.eigs")
 

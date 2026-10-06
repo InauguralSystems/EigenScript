@@ -47,8 +47,8 @@ define map_get_default(m, key, default) as:
 define map_has(m, key) as:
     for i in range of (len of m):
         if m[i][0] == key:
-            return 1
-    return 0
+            return true
+    return false
 
 # ---- map_set: set a key-value pair (returns new map) ----
 # map_set of [map, key, value] -> map

@@ -42,7 +42,7 @@ define worker_pool(n, work_fn, ch) as:
     handles is []
     for i in range of n:
         define worker() as:
-            loop while (channel_closed of ch) == 0:
+            loop while (not (channel_closed of ch)):
                 item is recv of ch
                 if item != null:
                     work_fn of item

@@ -283,10 +283,10 @@ define _render_dock(widget, ax, ay) as:
 
 define _dock_in(r, mx, my) as:
     if r == null:
-        return 0
+        return false
     if mx >= r[0] and mx < r[0] + r[2] and my >= r[1] and my < r[1] + r[3]:
-        return 1
-    return 0
+        return true
+    return false
 
 # Handle hit-test with slop: the visual bar is handle_w (~5px) thin, a
 # hard target for a real pointer (found by real-input acceptance — the
@@ -294,37 +294,37 @@ define _dock_in(r, mx, my) as:
 # stay thin.
 define _dock_in_handle(r, mx, my, horiz) as:
     if r == null:
-        return 0
+        return false
     local sx is 3
     local sy is 0
     if horiz == 1:
         sx is 0
         sy is 3
     if mx >= r[0] - sx and mx < r[0] + r[2] + sx and my >= r[1] - sy and my < r[1] + r[3] + sy:
-        return 1
-    return 0
+        return true
+    return false
 
 # Hit-testing: handles and title bars belong to the dock itself (so the
 # press routes to _mousedown_dock); a point in a visible body or the
 # center recurses into the hosted widget.
 define _hit_test_dock(widget, ax, ay, mx, my) as:
-    if (_point_in_rect of [mx, my, ax, ay, widget.w, widget.h]) == 0:
+    if (not (_point_in_rect of [mx, my, ax, ay, widget.w, widget.h])):
         return null
     local v is dock_view of widget
-    if (_dock_in_handle of [v.hw, mx, my, 0]) == 1 or (_dock_in_handle of [v.he, mx, my, 0]) == 1 or (_dock_in_handle of [v.hs, mx, my, 1]) == 1:
+    if (_dock_in_handle of [v.hw, mx, my, 0]) or (_dock_in_handle of [v.he, mx, my, 0]) or (_dock_in_handle of [v.hs, mx, my, 1]):
         return widget
     for reg in ["west", "east", "south"]:
         local pes is v.panels[reg]
         for i in range of (len of pes):
             local pe is pes[i]
-            if (_dock_in of [pe.title, mx, my]) == 1:
+            if (_dock_in of [pe.title, mx, my]):
                 return widget
-            if pe.body != null and (_dock_in of [pe.body, mx, my]) == 1:
+            if pe.body != null and (_dock_in of [pe.body, mx, my]):
                 local r is _hit_test of [pe.p.widget, ax, ay, mx, my]
                 if r != null:
                     return r
                 return widget
-    if widget.center != null and (_dock_in of [v.center, mx, my]) == 1:
+    if widget.center != null and (_dock_in of [v.center, mx, my]):
         local rc is _hit_test of [widget.center, ax, ay, mx, my]
         if rc != null:
             return rc
@@ -334,15 +334,15 @@ define _mousedown_dock(hit, root, mx, my, ev) as:
     if hit.interactive == 0:
         return null
     local v is dock_view of hit
-    if (_dock_in_handle of [v.hw, mx, my, 0]) == 1:
+    if (_dock_in_handle of [v.hw, mx, my, 0]):
         hit._drag_region is "west"
         _ui.drag_widget is hit
         return null
-    if (_dock_in_handle of [v.he, mx, my, 0]) == 1:
+    if (_dock_in_handle of [v.he, mx, my, 0]):
         hit._drag_region is "east"
         _ui.drag_widget is hit
         return null
-    if (_dock_in_handle of [v.hs, mx, my, 1]) == 1:
+    if (_dock_in_handle of [v.hs, mx, my, 1]):
         hit._drag_region is "south"
         _ui.drag_widget is hit
         return null
@@ -350,7 +350,7 @@ define _mousedown_dock(hit, root, mx, my, ev) as:
         local pes is v.panels[reg]
         for i in range of (len of pes):
             local pe is pes[i]
-            if (_dock_in of [pe.title, mx, my]) == 1:
+            if (_dock_in of [pe.title, mx, my]):
                 pe.p.collapsed is 1 - pe.p.collapsed
                 if hit.on_layout != null:
                     hit.on_layout of hit

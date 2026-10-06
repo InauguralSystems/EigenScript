@@ -44,7 +44,7 @@ loop while not converged:
     e is e * 0.5
 print of f"{converged}"
 EOF
-if [ "$("$EIGS" "$TMP/conv.eigs" 2>/dev/null | tail -1)" = "1" ]; then
+if [ "$("$EIGS" "$TMP/conv.eigs" 2>/dev/null | tail -1)" = "true" ]; then
     echo "PASS: observer loop (loop while not converged) still halts"
 else
     echo "FAIL: observer loop did not halt as before"

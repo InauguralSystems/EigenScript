@@ -30,6 +30,11 @@ ABI_ASSERT(OP_RETURN_NULL, 41);
 ABI_ASSERT(OP_DICT, 43);
 ABI_ASSERT(OP_LOOP_CAP_CHECK, 63);
 ABI_ASSERT(OP_LINE, 68);
+/* #1637: the bool literals were appended after OP_SET_LOCAL_INTERNAL (94).
+ * External producers (ouroboros codegen) emit these numbers directly. */
+ABI_ASSERT(OP_SET_LOCAL_INTERNAL, 94);
+ABI_ASSERT(OP_TRUE, 95);
+ABI_ASSERT(OP_FALSE, 96);
 
 /* #704: the revision the ABI-stamped descriptors in the .eigs fixtures under
  * tests/ declare. Those

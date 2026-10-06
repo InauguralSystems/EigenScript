@@ -1,0 +1,46 @@
+# tests/bool_lib_predicates_cases.txt -- data for tests/test_bool_lib_predicates.sh (#1637).
+# Three record kinds, one per line, fields split on '|':
+#   case|module.name|setup|arg1;;arg2;;...   an argument tuple that reaches an
+#        answer the generic battery misses (setup: one EigenScript line; a
+#        literal \n separates lines; may be empty)
+#   one_sided|module.name|reason             answers only one of true/false
+#   skip|name|reason                         the battery cannot call it
+skip|wait_until|sleeps between polls by design
+skip|git_worktree_clean|lib/pkg.eigs is a CLI script: loading it runs the dispatcher
+skip|is_valid_name_part|lib/pkg.eigs is a CLI script: loading it runs the dispatcher
+case|complex.eq_near||[1, 2];;[1, 2];;0.001
+case|complex.eq_near||[1, 2];;[3, 2];;0.001
+case|experiment.is_measurement_stable||[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];;3
+case|experiment.is_measurement_stable||[1, 9, 2, 8, 3, 7, 4, 6, 5, 5];;3
+case|args.get_flag||[["--v", 1]];;"--v"
+case|args.has_flag||[["--v", 1]];;"--v"
+case|functional.complement||(x) => x > 1;;0
+case|functional.complement||(x) => x > 1;;5
+case|geometry.collinear||[0, 0];;[1, 1];;[3, 1]
+case|geometry.on_segment||[0, 0];;[5, 5];;[1, 1]
+case|geometry.segments_intersect||[0, 0];;[1, 0];;[0, 1];;[1, 1]
+case|geometry.point_in_triangle||[5, 5];;[0, 0];;[1, 0];;[0, 1]
+case|geometry.point_in_polygon||[0.5, 0.5];;[[0, 0], [1, 0], [1, 1], [0, 1]]
+case|geometry.point_in_polygon||[2, 2];;[[0, 0], [1, 0], [1, 1], [0, 1]]
+case|geometry.polygon_is_clockwise||[[0, 0], [0, 1], [1, 1], [1, 0]]
+case|geometry.point_in_circle||5;;5;;0;;0;;1
+case|json.json_has||"{\"a\": 1}";;"a"
+case|json.json_has||"{\"a\": 1}";;"b"
+case|lab.is_stable|__x is new_experiment of "t"\nfor __i in range of 12:\n    record of [__x, "v", 1.0]|__x;;"v"
+case|list.any||[1, 2, 3];;(x) => x > 1
+case|list.all||[1, 2, 3];;(x) => x > 1
+case|map.map_has|__m is map_set of [map_new of null, "k", 1]|__m;;"k"
+case|observer_slots.is_stable|for __i in range of 12:\n    feed of [0, 5]|0
+case|set.set_has|__s is set_from of ([1, 2])|__s;;1
+case|state.sm_can_send|__sm is sm_add_transition of [sm_new of "idle", "idle", "go", "run"]|__sm;;"go"
+case|state.sm_is|__sm is sm_new of "idle"|__sm;;"idle"
+case|test_runner.is_test_file||"test_x.eigs"
+case|utf8.utf8_validate||(str_from_bytes of ([255]))
+one_sided|json.json_has|pre-existing bug, not #1637: it tests `type of val == "null"` but that type is "none", so it always answers true
+one_sided|observer.is_converged|the argument is a fresh parameter binding with no trajectory (#262)
+one_sided|observer.is_stable|the argument is a fresh parameter binding with no trajectory (#262)
+one_sided|observer.is_improving|the argument is a fresh parameter binding with no trajectory (#262)
+one_sided|observer.is_diverging|the argument is a fresh parameter binding with no trajectory (#262)
+one_sided|observer.is_oscillating|the argument is a fresh parameter binding with no trajectory (#262)
+one_sided|observer_slots.is_diverging|a slot fed a bounded constant cannot read diverging
+one_sided|sanitize.check_openai|true only with an OpenAI key in the environment

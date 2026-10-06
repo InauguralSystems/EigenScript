@@ -28,7 +28,7 @@ define auth_login(password) as:
     if admin_pw == "":
         return json_build of ["error", "ADMIN_PASSWORD not set"]
     # constant-time compare so timing can't leak how much of the password matched
-    if (secure_equals of [password, admin_pw]) == 0:
+    if (not (secure_equals of [password, admin_pw])):
         return json_build of ["error", "invalid password"]
     _auth_token is "eigen_" + (random_hex of 32)
     return json_build of ["status", "ok", "token", _auth_token]

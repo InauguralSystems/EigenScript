@@ -7,7 +7,7 @@ define worker(n) as:
     local ok is 0
     loop while i < 200:
         local r is sandbox_run of [[1, [0,0,0, 40], [7]], 1000]
-        if r["ok"] == 1:
+        if r["ok"]:
             ok is ok + 1
         i is i + 1
     return ok

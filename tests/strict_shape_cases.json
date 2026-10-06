@@ -183,7 +183,7 @@
       "\"@WAV@\"",
       "0"
     ],
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "setup": "",
     "observe": "print of shape_result",
     "cleanup": "audio_music_stop of null",
@@ -215,12 +215,12 @@
     "backend": "mixer",
     "backend_absent": {
       "setup": "",
-      "valid_assert": "shape_result == 0",
+      "valid_assert": "shape_result == false",
       "observe": "print of shape_result",
       "unchanged": "# Entry rejection is checked before any absent-backend operation.",
       "outputs": {
-        "absent-sdl": "0\nshape-complete",
-        "absent-mixer": "audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\n0\nshape-complete"
+        "absent-sdl": "false\nshape-complete",
+        "absent-mixer": "audio_music: cannot load libSDL2_mixer (install libsdl2-mixer-2.0-0)\nfalse\nshape-complete"
       },
       "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
     }
@@ -230,7 +230,7 @@
       "32"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_music is audio_music_play of [\"@WAV@\", 0 - 1]\nassert of [shape_music == 1, \"shape control\"]",
+    "setup": "shape_music is audio_music_play of [\"@WAV@\", 0 - 1]\nassert of [shape_music == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "audio_music_stop of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -835,9 +835,9 @@
     ],
     "valid_assert": "(len of shape_result) == 3 and shape_result[0] > 0 and shape_result[2] == 1",
     "setup": "write_text of [\"@TMP@/input.eigs\", \"x is 1\\n\"]",
-    "observe": "assert of [(file_exists of \"@TMP@/tokens\") == 1, \"shape control\"]\nassert of [(file_exists of \"@TMP@/vocab\") == 1, \"shape control\"]\nprint of \"observed\"",
+    "observe": "assert of [(file_exists of \"@TMP@/tokens\"), \"shape control\"]\nassert of [(file_exists of \"@TMP@/vocab\"), \"shape control\"]\nprint of \"observed\"",
     "cleanup": "",
-    "unchanged": "assert of [(file_exists of \"@TMP@/tokens\") == 0, \"shape control\"]\nassert of [(file_exists of \"@TMP@/vocab\") == 0, \"shape control\"]",
+    "unchanged": "assert of [(not (file_exists of \"@TMP@/tokens\")), \"shape control\"]\nassert of [(not (file_exists of \"@TMP@/vocab\")), \"shape control\"]",
     "optional_args": [
       [
         "[\"@TMP@/input.eigs\"]",
@@ -932,7 +932,7 @@
       "\"b\""
     ],
     "setup": "",
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "observe": "print of shape_result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
@@ -961,7 +961,7 @@
       "\"k\""
     ],
     "setup": "d is {\"k\": 2}",
-    "valid_assert": "(has_key of [d, \"k\"]) == 0",
+    "valid_assert": "(not (has_key of [d, \"k\"]))",
     "observe": "print of d",
     "unchanged": "assert of [d.k == 2, \"dictionary mutated on rejection\"]",
     "cleanup": "",
@@ -1032,7 +1032,7 @@
       "1"
     ],
     "valid_assert": "shape_result == (0 - 1)",
-    "setup": "assert of [(eigen_model_loaded of null) == 0, \"shape control\"]",
+    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1061,7 +1061,7 @@
       "0"
     ],
     "valid_assert": "(len of shape_result) == 0",
-    "setup": "assert of [(eigen_model_loaded of null) == 0, \"shape control\"]",
+    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1095,7 +1095,7 @@
       "\"bc\""
     ],
     "setup": "",
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "observe": "print of shape_result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
@@ -1158,7 +1158,7 @@
       "255"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1208,7 +1208,7 @@
       "0"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1253,7 +1253,7 @@
       "8"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1300,7 +1300,7 @@
       "1"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]\nshape_pixels is buffer of 1",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]\nshape_pixels is buffer of 1",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1345,7 +1345,7 @@
       "30"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1385,7 +1385,7 @@
       "16",
       "\"shape\""
     ],
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "setup": "",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
@@ -1411,11 +1411,11 @@
     "backend": "sdl",
     "backend_absent": {
       "setup": "",
-      "valid_assert": "shape_result == 0",
+      "valid_assert": "shape_result == false",
       "observe": "print of shape_result",
       "unchanged": "# Entry rejection is checked before any absent-backend operation.",
       "outputs": {
-        "absent-sdl": "gfx_open: cannot load libSDL2\n0\nshape-complete"
+        "absent-sdl": "gfx_open: cannot load libSDL2\nfalse\nshape-complete"
       },
       "claim": "Documented missing-backend or closed-device outcome, not a device-operation positive."
     }
@@ -1429,7 +1429,7 @@
       "30"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1469,7 +1469,7 @@
       "0"
     ],
     "valid_assert": "(len of shape_result) == 3",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]\ngfx_clear of [10, 20, 30]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]\ngfx_clear of [10, 20, 30]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1515,7 +1515,7 @@
       "255"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1572,7 +1572,7 @@
       "255"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1628,7 +1628,7 @@
       "1"
     ],
     "valid_assert": "shape_result == null",
-    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == 1, \"shape control\"]",
+    "setup": "shape_window is gfx_open of [16, 16, \"shape\"]\nassert of [shape_window == true, \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "gfx_close of null",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -1734,7 +1734,7 @@
       "\"k\""
     ],
     "setup": "",
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "observe": "print of shape_result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
@@ -1956,7 +1956,7 @@
       "2"
     ],
     "setup": "",
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "observe": "print of shape_result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
@@ -2098,7 +2098,7 @@
       "0.001"
     ],
     "valid_assert": "shape_result == \"{\\\"status\\\": \\\"error\\\", \\\"error\\\": \\\"Model not loaded\\\"}\"",
-    "setup": "assert of [(eigen_model_loaded of null) == 0, \"shape control\"]",
+    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
     "observe": "print of shape_result",
     "cleanup": "",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
@@ -2561,11 +2561,11 @@
       "\"@TMP@/from\"",
       "\"@TMP@/to\""
     ],
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "setup": "write_text of [\"@TMP@/from\", \"abc\"]",
     "observe": "assert of [(read_text of \"@TMP@/to\") == \"abc\", \"shape control\"]\nprint of \"observed\"",
     "cleanup": "",
-    "unchanged": "assert of [(read_text of \"@TMP@/from\") == \"abc\", \"shape control\"]\nassert of [(file_exists of \"@TMP@/to\") == 0, \"shape control\"]",
+    "unchanged": "assert of [(read_text of \"@TMP@/from\") == \"abc\", \"shape control\"]\nassert of [(not (file_exists of \"@TMP@/to\")), \"shape control\"]",
     "optional_args": [],
     "requirements": [
       "owned_temp"
@@ -2605,7 +2605,7 @@
       "10000"
     ],
     "setup": "descriptor is @DESCRIPTOR@",
-    "valid_assert": "shape_result.ok == 1 and shape_result.result == 42",
+    "valid_assert": "shape_result.ok == true and shape_result.result == 42",
     "observe": "print of shape_result.result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
@@ -2760,7 +2760,7 @@
       "\"same\""
     ],
     "setup": "",
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "observe": "print of shape_result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
@@ -2879,7 +2879,7 @@
     "setup": "",
     "observe": "assert of [(shared_get of \"shape-key\") == 3, \"shape control\"]\nprint of \"observed\"",
     "cleanup": "",
-    "unchanged": "assert of [(shared_has of \"shape-key\") == 0, \"shape control\"]",
+    "unchanged": "assert of [(not (shared_has of \"shape-key\")), \"shape control\"]",
     "optional_args": [],
     "requirements": [
       "http_compiled",
@@ -2952,7 +2952,7 @@
       "\"ab\""
     ],
     "setup": "",
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "observe": "print of shape_result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
@@ -2991,7 +2991,7 @@
       "\"items\"",
       "shape_key"
     ],
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
     "observe": "assert of [(store_count of [shape_store, \"items\"]) == 0, \"shape control\"]\nprint of \"observed\"",
     "cleanup": "store_close of shape_store",
@@ -3017,7 +3017,7 @@
       "shape_store",
       "\"items\""
     ],
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
     "observe": "assert of [(store_count of [shape_store, \"items\"]) == 0, \"shape control\"]\nprint of \"observed\"",
     "cleanup": "store_close of shape_store",
@@ -3125,7 +3125,7 @@
       "shape_key",
       "{\"value\": 2}"
     ],
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "setup": "shape_store is store_open of \"@TMP@/store\"\nassert of [(type of shape_store) == \"dict\", \"shape control\"]\nshape_key is store_put of [shape_store, \"items\", {\"value\": 1}]\nassert of [(type of shape_key) == \"str\", \"shape control\"]",
     "observe": "shape_after is store_get of [shape_store, \"items\", shape_key]\nassert of [shape_after[\"value\"] == 2, \"shape control\"]\nprint of \"observed\"",
     "cleanup": "store_close of shape_store",
@@ -3166,11 +3166,11 @@
       "\"@TMP@/stream\"",
       "1"
     ],
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "setup": "",
     "observe": "print of shape_result",
     "cleanup": "stream_close of null",
-    "unchanged": "assert of [(file_exists of \"@TMP@/stream\") == 0, \"shape control\"]",
+    "unchanged": "assert of [(not (file_exists of \"@TMP@/stream\")), \"shape control\"]",
     "optional_args": [],
     "requirements": [
       "owned_temp"
@@ -3222,7 +3222,7 @@
       "7"
     ],
     "setup": "define completed(n) as:\n    return 3\ntask_id is task_spawn of completed",
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "observe": "print of shape_result\nprint of (task_try_recv of null)",
     "unchanged": "assert of [(task_try_recv of null) == null, \"task send enqueued on rejection\"]",
     "cleanup": "assert of [(task_join of task_id) == 3, \"owned task join\"]",
@@ -3236,9 +3236,9 @@
       "\"@TMP@/tensor\""
     ],
     "setup": "",
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "observe": "assert of [(tensor_load of \"@TMP@/tensor\") == [[2, 3]], \"tensor round trip\"]\nprint of \"observed\"",
-    "unchanged": "assert of [(file_exists of \"@TMP@/tensor\") == 0, \"tensor file created on rejection\"]",
+    "unchanged": "assert of [(not (file_exists of \"@TMP@/tensor\")), \"tensor file created on rejection\"]",
     "cleanup": "",
     "requirements": [
       "owned_temp"
@@ -3297,7 +3297,7 @@
     "setup": "",
     "observe": "assert of [(read_text of \"@TMP@/bytes\") == \"AB\", \"shape control\"]\nprint of \"observed\"",
     "cleanup": "",
-    "unchanged": "assert of [(file_exists of \"@TMP@/bytes\") == 0, \"shape control\"]",
+    "unchanged": "assert of [(not (file_exists of \"@TMP@/bytes\")), \"shape control\"]",
     "optional_args": [
       [
         "\"@TMP@/bytes\"",
@@ -3323,11 +3323,11 @@
       "\"@TMP@/text\"",
       "\"abc\""
     ],
-    "valid_assert": "shape_result == 1",
+    "valid_assert": "shape_result == true",
     "setup": "",
     "observe": "assert of [(read_text of \"@TMP@/text\") == \"abc\", \"shape control\"]\nprint of \"observed\"",
     "cleanup": "",
-    "unchanged": "assert of [(file_exists of \"@TMP@/text\") == 0, \"shape control\"]",
+    "unchanged": "assert of [(not (file_exists of \"@TMP@/text\")), \"shape control\"]",
     "optional_args": [],
     "requirements": [
       "owned_temp"

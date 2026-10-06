@@ -7,10 +7,10 @@
 #
 #   entropy_of of x                         # current entropy
 #   delta_of of x                           # current dH (rate of change)
-#   is_converged of x                       # 1 if converged, else 0
-#   is_stable of x                          # 1 if stable or converged
-#   is_improving of x                       # 1 if improving
-#   is_oscillating of x                     # 1 if oscillating
+#   is_converged of x                       # true if converged, else false
+#   is_stable of x                          # true if stable or converged
+#   is_improving of x                       # true if improving
+#   is_oscillating of x                     # true if oscillating
 #   wait_until_converged of [x, update_fn, max_steps]
 #   track_regimes of [x, update_fn, max_steps]
 #   threshold_alert of [x, lo, hi]
@@ -38,10 +38,10 @@ define is_converged(x) as:
 define is_stable(x) as:
     status is report of x
     if status == "stable":
-        return 1
+        return true
     if status == "converged":
-        return 1
-    return 0
+        return true
+    return false
 
 # ---- is_improving: check if entropy is decreasing ----
 define is_improving(x) as:

@@ -145,7 +145,7 @@ typedef enum {
     TOK_IS, TOK_OF, TOK_DEFINE, TOK_AS,
     TOK_IF, TOK_ELSE, TOK_ELIF, TOK_LOOP, TOK_WHILE,
     TOK_RETURN, TOK_AND, TOK_OR, TOK_NOT,
-    TOK_FOR, TOK_IN, TOK_NULL,
+    TOK_FOR, TOK_IN, TOK_NULL, TOK_TRUE, TOK_FALSE,   /* #1637: inside the run, so `d.true` stays a field */
     TOK_WHAT, TOK_WHO, TOK_WHEN, TOK_WHERE, TOK_WHY, TOK_HOW,
     TOK_PREV, TOK_AT,
     TOK_CONVERGED, TOK_STABLE, TOK_IMPROVING, TOK_OSCILLATING, TOK_DIVERGING, TOK_EQUILIBRIUM,
@@ -195,7 +195,8 @@ typedef enum {
     AST_INTERROGATE, AST_PREDICATE,
     AST_TRY, AST_DICT, AST_DOT, AST_BREAK, AST_CONTINUE, AST_DOT_ASSIGN, AST_IMPORT,
     AST_MATCH, AST_LAMBDA, AST_UNOBSERVED, AST_INDEX_ASSIGN, AST_LIST_PATTERN_ASSIGN,
-    AST_SLICE
+    AST_SLICE,
+    AST_BOOL      /* #1637: `true`/`false`; the value is data.num (1 or 0) */
 } ASTType;
 
 typedef struct ASTNode ASTNode;
@@ -250,18 +251,30 @@ struct ASTNode {
 /* ---- Value types ---- */
 
 typedef enum {
-    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER
+    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER,
+    /* #1637: a distinct boolean. Two immortal singletons (make_bool); the
+     * slot layer carries it as the TAG_BOOL immediate. Arithmetic on it and
+     * `==` against a number raise. */
+    VAL_BOOL
 } ValType;
 
 typedef struct Value Value;
 typedef Value* (*BuiltinFn)(Value* arg);
+
+/* #1637 round 4: the ONE raw way into a Value's number (an lvalue: also the
+ * write). Only for a Value whose type is proven VAL_NUM, in a function listed
+ * in tools/num_read_allowlist.txt with its use count. Everything else uses
+ * eigs_num_arg / eigs_list_num / eigs_opt_num. VAL_NUM_OFFSET is the same
+ * member for JIT-emitted loads and stores. */
+#define VAL_NUM_RAW(v)  ((v)->data.num_)
+#define VAL_NUM_OFFSET  ((int32_t)offsetof(Value, data.num_))
 
 /* EigsSlot union — full inline helpers in value_slot.h, which is
  * included below after the Value struct is fully declared. We need the
  * raw union here because Env::values is EigsSlot*. */
 #ifndef EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
 #define EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
-typedef union { double d; uint64_t u; } EigsSlot;
+typedef union { double d_; uint64_t u; } EigsSlot;
 #endif
 
 /* Hash index for O(1) variable lookup.  Sits alongside the linear
@@ -383,7 +396,15 @@ struct Env {
 struct Value {
     ValType type;
     union {
-        double num;
+        /* #1637 round 4: renamed so no unchecked read compiles. A Value's
+         * number is read through the checking accessors (eigs_num_arg,
+         * eigs_list_num, eigs_opt_num), which raise on a bool or any other
+         * non-number, or through VAL_NUM_RAW where the type is already
+         * proven -- and every VAL_NUM_RAW use sits in a function on the
+         * reviewed list tools/num_read_allowlist.txt, pinned by count
+         * (tools/num_read_check.sh). */
+        double num_;
+        int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
         /* VAL_STR / VAL_JSON_RAW payload: NUL-terminated bytes.
          *
          * #1183: the member is `char *const` on purpose. Every other sequence
@@ -1261,10 +1282,83 @@ extern __thread EigsThread *eigs_current;
  * Deliberately a macro rather than a helper: each call site keeps its own
  * early `return`, which is what makes the conversion reviewable one guard at
  * a time instead of a control-flow rewrite. */
+/* #1637: a bool a builtin does not take raises in EVERY strict mode. The
+ * EIGS_STRICT=0 opt-out keeps the soft stand-in for other wrong types, but a
+ * soft answer for a bool is a silent wrong value (`abs of true` was 0, so true
+ * read as 0 -- the old 1/0 idiom flipping without a word). So a failed guard
+ * raises under EIGS_STRICT=0 too when the argument, or a top-level element of
+ * the argument list, is a bool. The oracle is tests/test_bool_fuzz.sh: true
+ * and false in every argument slot of every builtin must raise unless the
+ * slot is on its reviewed any-value list. */
+int eigs_arg_has_bool(const Value *arg);
+/* #1637: THE checked number reads. C code turning a Value into a double goes
+ * through one of these (tools/num_read_check.sh enforces it: a raw
+ * `->data.num` read needs a VAL_NUM test in the same function, or a reviewed
+ * allowlist entry). A bool -- or any other non-number -- raises a type error
+ * naming `who` (a `builtin_` prefix is dropped) and reads as 0.0; the caller
+ * checks g_has_error before acting on the value.
+ *   eigs_num_arg(v, who)       v must be a number
+ *   eigs_list_num(l, i, who)   element i of the argument list must exist and
+ *                              be a number
+ *   eigs_opt_num(v, &d, who)   optional: absent/null -> 0 (use the default);
+ *                              a number -> 1 with *d set; anything else raises
+ *                              and returns 0 */
+double eigs_num_arg_slow(const Value *v, const char *who);
+static inline double eigs_num_arg(const Value *v, const char *who) {
+    if (__builtin_expect(v && v->type == VAL_NUM, 1)) return VAL_NUM_RAW(v);
+    return eigs_num_arg_slow(v, who);
+}
+double eigs_list_num(const Value *list, int i, const char *who);
+/* #1637 round 4: an ELEMENT a builtin reads as a number (a tensor cell, a
+ * byte). A bool raises in every strict mode; any other non-number raises
+ * under EIGS_STRICT and reads as the documented 0.0 under EIGS_STRICT=0.
+ * The caller checks g_has_error. */
+double eigs_elem_num(const Value *v, const char *who);
+int eigs_opt_num(const Value *v, double *out, const char *who);
+/* #1637: the builtin-call bool gate -- the structural half of "a bool is
+ * not a number". Every call of a C builtin goes through eigs_call_builtin
+ * (tools/num_read_check.sh refuses a bare `->data.builtin(` call). When the
+ * argument is a bool, or one of the first EIGS_BOOL_GATE_SCAN top-level
+ * elements of an argument list is, the builtin's declared bool policy
+ * (k_bool_policy in builtins.c: which positions may hold a bool) decides; an
+ * undeclared position raises a type error in every strict mode and the
+ * builtin is not called. Names outside the core registry (host functions
+ * from eigs_register_function, compiled natives) are not gated. The fast
+ * path is a type test, plus at most EIGS_BOOL_GATE_SCAN loads for a list. */
+#define EIGS_BOOL_GATE_SCAN 8
+int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg);
+void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
+static inline int eigs_bool_gate(BuiltinFn fn, const Value *arg) {
+    if (!arg) return 0;
+    if (arg->type == VAL_BOOL) return eigs_bool_gate_slow(fn, arg);
+    if (arg->type != VAL_LIST) return 0;
+    int n = arg->data.list.count < EIGS_BOOL_GATE_SCAN ? arg->data.list.count
+                                                       : EIGS_BOOL_GATE_SCAN;
+    for (int i = 0; i < n; i++) {
+        const Value *e = arg->data.list.items[i];
+        if (e && e->type == VAL_BOOL) return eigs_bool_gate_slow(fn, arg);
+    }
+    return 0;
+}
+static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
+    return eigs_bool_gate(fn, arg) ? NULL : fn(arg);
+}
+/* #1637: for a builtin that reads a number without a typed guard (its other
+ * wrong types answer null): a bool there raises in every strict mode. */
+#define BOOL_REFUSE(v, who)                                                   \
+    do {                                                                      \
+        if (eigs_arg_has_bool(v)) {                                           \
+            rt_error(EK_TYPE, 0, "%s: expected a number, got a bool", (who)); \
+            return make_null();                                               \
+        }                                                                     \
+    } while (0)
+#define EIGS_GUARD_RAISES(want)                                               \
+    ((void)(want), g_strict || eigs_arg_has_bool(arg))
+
 #define ARG_GUARD(cond, who, want, soft)                                      \
     do {                                                                      \
         if (cond) {                                                           \
-            if (g_strict) {                                                   \
+            if (EIGS_GUARD_RAISES(want)) {                                    \
                 rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
                 return make_null();                                           \
             }                                                                 \
@@ -1283,7 +1377,7 @@ extern __thread EigsThread *eigs_current;
 #define ARG_GUARD_TAPED(cond, who, want, soft)                                \
     do {                                                                      \
         if (cond) {                                                           \
-            if (g_strict) {                                                   \
+            if (EIGS_GUARD_RAISES(want)) {                                                   \
                 rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
                 return make_null();                                           \
             }                                                                 \
@@ -1298,7 +1392,7 @@ extern __thread EigsThread *eigs_current;
 #define ARG_GUARD_PRETAKE(cond, who, want, soft)                              \
     do {                                                                      \
         if (cond) {                                                           \
-            if (g_strict) {                                                   \
+            if (EIGS_GUARD_RAISES(want)) {                                                   \
                 rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
                 return make_null();                                           \
             }                                                                 \
@@ -1353,7 +1447,7 @@ extern __thread EigsThread *eigs_current;
 
 #define STRICT_REQUIRE(cond, who, want)                                       \
     do {                                                                      \
-        if (g_strict && (cond)) {                                             \
+        if ((cond) && EIGS_GUARD_RAISES(want)) {                              \
             rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));           \
             return make_null();                                               \
         }                                                                     \
@@ -1624,6 +1718,8 @@ Value* make_str_len(const char *s, size_t n);   /* #1183: caller knows strlen(s)
 Value* make_str_owned(char *s);
 Value* make_str_owned_len(char *s, size_t n);   /* #1183: caller knows strlen(s) */
 Value* make_null(void);
+/* #1637: the immortal true/false singletons (refcount no-ops, like null). */
+Value* make_bool(int b);
 Value* make_list(int capacity);
 Value* make_list_heap(int capacity);
 Value* make_text_builder(void);
@@ -2056,6 +2152,9 @@ int is_truthy(Value *v);
 /* Structural equality for == / != (recursive for lists/dicts/buffers;
  * identity for functions/builtins; no cross-type coercion). */
 int values_equal(Value *a, Value *b);
+/* #1637: both raise on a bool meeting a number; `op` names the operator or
+ * builtin in the message. */
+int values_equal_op(Value *a, Value *b, const char *op);
 char* value_to_string(Value *v);
 /* #875: THE number->text rule. Every producer of number text calls this —
  * `str of`, all three JSON encoders, the SIGUSR1 observer dump — so a copy

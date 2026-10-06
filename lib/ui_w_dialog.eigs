@@ -96,7 +96,7 @@ define property_editor(id, x, y, w, h, properties, on_change) as:
             add_child of [sp, inp]
         elif prop.type == "bool":
             bval is 0
-            if prop.value == 1 or prop.value == "true":
+            if (_ev_flag of prop.value) or prop.value == "true":   # #1637: true, 1 or "true"
                 bval is 1
             cb is _make_prop_cb of [on_change, prop.key]
             inp is toggle of [f"{id}_inp_{pi}", input_x, row_y, bval, cb]
@@ -368,7 +368,7 @@ define _fd_join(dir, name) as:
     if name == "..":
         return _fd_parent of dir
     base is dir
-    if (ends_with of [base, "/"]) == 1:
+    if (ends_with of [base, "/"]):
         base is substr of [base, 0, (len of base) - 1]
     if base == "":
         return "/" + name
@@ -376,7 +376,7 @@ define _fd_join(dir, name) as:
 
 define _fd_parent(dir) as:
     base is dir
-    if (len of base) > 1 and (ends_with of [base, "/"]) == 1:
+    if (len of base) > 1 and (ends_with of [base, "/"]):
         base is substr of [base, 0, (len of base) - 1]
     cut is 0 - 1
     for i in range of (len of base):
@@ -400,7 +400,7 @@ define file_dialog_refresh(fd) as:
     if entries != null:
         for i in range of (len of entries):
             name is entries[i]
-            if (_fd_is_dir of [fd.dir, name]) == 1:
+            if (_fd_is_dir of [fd.dir, name]):
                 append of [dirs, name + "/"]
             else:
                 append of [files, name]
@@ -438,9 +438,9 @@ define file_dialog(id, w, h, title, start_dir, on_ok) as:
         if lst.selected < 0 or lst.selected >= (len of lst.items):
             return null
         name is lst.items[lst.selected]
-        if name == ".." or (ends_with of [name, "/"]) == 1:
+        if name == ".." or (ends_with of [name, "/"]):
             entry is name
-            if (ends_with of [entry, "/"]) == 1:
+            if (ends_with of [entry, "/"]):
                 entry is substr of [entry, 0, (len of entry) - 1]
             fd.dir is _fd_join of [fd.dir, entry]
             file_dialog_refresh of fd

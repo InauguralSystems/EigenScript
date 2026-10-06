@@ -40,7 +40,7 @@ print of (args.get_flag of [p, "--verbose"])
 print of (args.get_positional of p)' --output b --verbose 2>&1)
 RC=$?
 set -e
-if [ "$RC" -eq 0 ] && str_has_line "$OUT" 'b' && str_has_line "$OUT" '1' && str_has_line "$OUT" '[]'; then
+if [ "$RC" -eq 0 ] && str_has_line "$OUT" 'b' && str_has_line "$OUT" 'true' && str_has_line "$OUT" '[]'; then
   ok "import args: --key value + boolean flag"
 else
   bad "import args: --key value + boolean flag" "rc=$RC out=$OUT"

@@ -52,8 +52,8 @@ assert of [tmpdir_result[0] == 0, "MK0 mktemp directory"]
 tmpdir is trim of tmpdir_result[1]
 test_dir is tmpdir + "/system"
 ok is mkdir of test_dir
-assert of [ok == 1, "MK1 mkdir"]
-assert of [(file_exists of test_dir) == 1, "MK2 dir exists"]
+assert of [ok, "MK1 mkdir"]
+assert of [(file_exists of test_dir), "MK2 dir exists"]
 
 # ---- ls ----
 write_text of [test_dir + "/e.txt", "e"]
@@ -72,11 +72,11 @@ assert of [(len of cwd) > 0, "GC1 getcwd non-empty"]
 # ---- mktemp ----
 tmp is mktemp of null
 assert of [(len of tmp) > 0, "MT1 mktemp non-empty"]
-assert of [(file_exists of tmp) == 1, "MT2 temp file exists"]
+assert of [(file_exists of tmp), "MT2 temp file exists"]
 
 # ---- rm ----
 rm of tmp
-assert of [(file_exists of tmp) == 0, "RM1 rm removes file"]
+assert of [(not (file_exists of tmp)), "RM1 rm removes file"]
 
 # ---- cleanup ----
 rm of (test_dir + "/a.txt")

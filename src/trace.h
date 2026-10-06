@@ -20,7 +20,7 @@
  * with the same sentinel value_slot.h uses to avoid a re-typedef. */
 #ifndef EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
 #define EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
-typedef union { double d; uint64_t u; } EigsSlot;
+typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_NUM_RAW (#1637) */
 #endif
 
 /* Tape format version (#411). Every tape's first line is a header record:
@@ -29,7 +29,7 @@ typedef union { double d; uint64_t u; } EigsSlot;
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 5   /* v5: stream/state/correspondence declarations */
+#define TRACE_FORMAT_VERSION 6   /* v6: true/false are bool values (#1637) */
 #define TRACE_STREAM_KEY_MAX 1024
 
 /* B payload parser shared with the non-executing tape reader. key_hex points
@@ -435,6 +435,11 @@ int trace_replay_refuse_off_owner(const char *fn);
  * Hot-path cost when both disabled: two predicted-not-taken loads + branches.
  * Each call site must have `Value` defined (i.e. include eigenscript.h
  * before trace.h). */
+/* #1637: declare the return kinds (a ValType bit set, 1u << VAL_X) of a
+ * host-recorded nondet name; replay refuses a record of another kind, and a
+ * name declared nowhere. 0 = refused (empty name, no kinds, a core name). */
+int trace_declare_kind(const char *name, unsigned kinds);
+
 #define TRACE_NONDET_RET(name, expr) do {                            \
     Value *_tr_v;                                                    \
     if (__builtin_expect(g_replay_enabled, 0)) {                     \

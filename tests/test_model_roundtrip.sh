@@ -79,8 +79,8 @@ SAVE_QUOTED_STATUS=$(echo "$OUT" | grep -A1 '^SAVE_QUOTED:$' | tail -1)
 SAVE_BIN_QUOTED_STATUS=$(echo "$OUT" | grep -A1 '^SAVE_BIN_QUOTED:$' | tail -1)
 BIN_INFO=$(echo "$OUT" | grep -A1 '^BIN_INFO:$' | tail -1)
 
-if [ "$LOADED" = "1" ]; then
-    ok "MRT02 generated model loads (eigen_model_loaded == 1)"
+if [ "$LOADED" = "true" ]; then
+    ok "MRT02 generated model loads (eigen_model_loaded is true)"
 else
     fail "MRT02 load" "loaded='$LOADED'"
 fi
@@ -107,7 +107,7 @@ EIGS
     WIDE_OUT=$("$EIGS" "$WIDE_SCRIPT" 2>&1)
     WIDE_LOADED=$(echo "$WIDE_OUT" | grep -A1 '^WIDE_LOAD:$' | tail -1)
     WIDE_INFO=$(echo "$WIDE_OUT" | grep -A1 '^WIDE_INFO:$' | tail -1)
-    if [ "$WIDE_LOADED" = "1" ] && echo "$WIDE_INFO" | grep -q '"vocab_size": 118'; then
+    if [ "$WIDE_LOADED" = "true" ] && echo "$WIDE_INFO" | grep -q '"vocab_size": 118'; then
         ok "MRT03b wide vocab model loads"
     else
         fail "MRT03b wide vocab load" "loaded='$WIDE_LOADED' info='$WIDE_INFO'"
@@ -174,7 +174,7 @@ OUT2=$("$EIGS" "$SCRIPT2" 2>&1)
 RELOADED=$(echo "$OUT2" | grep -A1 '^RELOAD:$' | tail -1)
 INFO2=$(echo "$OUT2" | grep -A1 '^INFO_AFTER:$' | tail -1)
 
-if [ "$RELOADED" = "1" ]; then
+if [ "$RELOADED" = "true" ]; then
     ok "MRT06 saved model reloads in fresh process"
 else
     fail "MRT06 reload" "reloaded='$RELOADED'"
@@ -200,7 +200,7 @@ OUT2B=$("$EIGS" "$SCRIPT2B" 2>&1)
 RELOADED_BIN=$(echo "$OUT2B" | grep -A1 '^RELOAD_BIN:$' | tail -1)
 INFO2B=$(echo "$OUT2B" | grep -A1 '^INFO_BIN_AFTER:$' | tail -1)
 
-if [ "$RELOADED_BIN" = "1" ]; then
+if [ "$RELOADED_BIN" = "true" ]; then
     ok "MRT07b binary .eigen reloads in fresh process"
 else
     fail "MRT07b binary reload" "reloaded='$RELOADED_BIN'"

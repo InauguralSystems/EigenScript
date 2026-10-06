@@ -124,7 +124,7 @@ if json_mode:
     parts is []
     for rec in results:
         status is "fail"
-        if rec.ok == 1:
+        if rec.ok:
             status is "pass"
         item is "{" + (json_str of "file") + ":" + (json_str of rec.file)
         item is item + "," + (json_str of "status") + ":" + (json_str of status)
@@ -151,15 +151,15 @@ else:
         print of ""
         for rec in results:
             tag is "FAIL"
-            if rec.ok == 1:
+            if rec.ok:
                 tag is "PASS"
             detail is ""
             if rec.ap >= 0:
                 detail is "  (" + (str of rec.ap) + " pass, " + (str of rec.af) + " fail)"
-            elif rec.ok != 1:
+            elif (not rec.ok):
                 detail is "  (exit " + (str of rec.code) + ")"
             print of ("  " + tag + "  " + rec.file + detail)
-            if rec.ok != 1:
+            if (not rec.ok):
                 # show the failing file's captured output, indented
                 for ln in (split of [rec.output, "\n"]):
                     if (len of (trim of ln)) > 0:

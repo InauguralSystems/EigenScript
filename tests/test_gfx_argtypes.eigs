@@ -193,7 +193,7 @@ if env_get of "EIGS_STRICT" == "1":
     assert_eq of [strict_kind of ((_) => gfx_text of [0, 0, "H", 255, 255, 255, 2]), "none", "#1007 strict: a well-typed gfx_text scale does not raise"]
     print of "strict-pass: 1"
 else:
-    assert_eq of [gfx_open of ["800", "600", "t"], 0, "#1007: string w/h no longer opens a window"]
+    assert_eq of [gfx_open of ["800", "600", "t"], false, "#1007: string w/h no longer opens a window"]
     assert_eq of [audio_open of ["44100", "1"], 0, "#1007: string freq/channels no longer opens a device"]
     assert_eq of [audio_capture_open of ["44100", "1"], 0, "#1007: string freq/channels no longer opens a capture device"]
     # audio_stream_open never type-punned — its checks are inside the condition
@@ -272,7 +272,7 @@ else:
     # missing one, and silent in both modes. Post-fix the call is refused
     # before the read, so the cleared colour survives. Needs a real renderer,
     # so it is gated and says when it did not run.
-    if sdl_open == 1:
+    if sdl_open:
         ignore is gfx_clear of [7, 8, 9]
         ignore is gfx_rect of [0, 0, 32, 32, "255", 0, 0]
         px is gfx_read of [4, 4]

@@ -99,11 +99,11 @@ assert_near of [r[1], 4, 1e-12, "from_polar im"]
 
 # ---- Comparison ----
 print of "--- Comparison ---"
-assert_eq of [complex.eq_near of [[3, 4], [3, 4], 1e-9], 1, "eq_near identical"]
-assert_eq of [complex.eq_near of [[3, 4], [3.0000000001, 4], 1e-6], 1, "eq_near within tol"]
-assert_eq of [complex.eq_near of [[3, 4], [3, 4.1], 1e-6], 0, "eq_near differs in im"]
+assert_eq of [complex.eq_near of [[3, 4], [3, 4], 1e-9], true, "eq_near identical"]
+assert_eq of [complex.eq_near of [[3, 4], [3.0000000001, 4], 1e-6], true, "eq_near within tol"]
+assert_eq of [complex.eq_near of [[3, 4], [3, 4.1], 1e-6], false, "eq_near differs in im"]
 # Two axes, not one: 3+4i and 5+0i have the SAME modulus and are not equal.
-assert_eq of [complex.eq_near of [[3, 4], [5, 0], 1e-6], 0, "eq_near is not a modulus comparison"]
+assert_eq of [complex.eq_near of [[3, 4], [5, 0], 1e-6], false, "eq_near is not a modulus comparison"]
 
 # ---- Polynomials ----
 print of "--- Polynomials ---"

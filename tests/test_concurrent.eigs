@@ -77,7 +77,7 @@ loop while done == 0:
     item is recv of ch2
     if item != null:
         append of [collected, item]
-    if (channel_closed of ch2) == 1 and item == null:
+    if (channel_closed of ch2) and item == null:
         done is 1
 
 thread_join of h_prod
@@ -95,7 +95,7 @@ ch3 is channel of null
 c1 is channel_closed of ch3
 close_channel of ch3
 c2 is channel_closed of ch3
-if c1 == 0 and c2 == 1:
+if (not c1) and c2:
     pass is pass + 1
     print of "PASS: T5 close_channel/channel_closed"
 else:

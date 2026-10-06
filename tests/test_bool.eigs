@@ -1,0 +1,298 @@
+# #1637: the boolean type. Each block pins one of the decided semantics
+# (issue #1637, "Decided semantics" 1-7). Every row compares TYPE as well as
+# value, so a comparison that silently produces the number 1 again is a FAIL,
+# not a pass by coincidence of truthiness.
+load_file of "lib/test.eigs"
+
+# same: equal type AND equal value. A plain `==` would raise on bool vs num
+# (semantics 6), which is right for programs and wrong for a test oracle that
+# must REPORT the mismatch.
+define same(actual, expected, desc) as:
+    local ta is type of actual
+    local te is type of expected
+    if ta != te:
+        assert_eq of [f"{ta}:{actual}", f"{te}:{expected}", desc]
+        return null
+    assert_eq of [actual, expected, desc]
+
+# raises: the thunk must raise, and the message must contain `needle`.
+define raises(thunk, needle, desc) as:
+    local got is "<no error>"
+    try:
+        local r is thunk of null
+        got is f"<no error, returned {r}>"
+    catch e:
+        got is e.message
+    assert_true of [(index_of of [got, needle]) >= 0, f"{desc}: {got}"]
+
+T is 1 == 1
+F is 1 == 2
+
+# ---- 1. a distinct type ----
+same of [type of T, "bool", "type of a comparison is bool"]
+same of [type of F, "bool", "type of a false comparison is bool"]
+
+# ---- 2. comparisons, not, and observer predicates produce bool on EVERY path ----
+same of [1 < 2, T, "number < (immediate path)"]
+same of [2 <= 1, F, "number <= (immediate path)"]
+same of [3 > 2, T, ">"]
+same of [3 >= 4, F, ">="]
+same of [5 == 5, T, "== numbers"]
+same of [5 != 5, F, "!= numbers"]
+same of ["a" < "b", T, "string < (lex path)"]
+same of ["b" <= "a", F, "string <= (lex path)"]
+same of ["x" == "x", T, "== strings (slow path)"]
+same of ["x" != "y", T, "!= strings (slow path)"]
+same of [[1, 2] == [1, 2], T, "== lists (structural path)"]
+same of [{"a": 1} != {"a": 1}, F, "!= dicts (structural path)"]
+same of [null == null, T, "null == null"]
+# A builtin's result is a heap number with refcount 1 — the operand the old
+# NUM_REUSE branch overwrote with the 0/1 result in place.
+same of [(len of [1, 2, 3]) < 5, T, "heap-number operand < (old NUM_REUSE path)"]
+same of [(len of [1, 2, 3]) == 3, T, "heap-number operand == (old NUM_REUSE path)"]
+same of [(len of [1, 2, 3]) != 3, F, "heap-number operand != (old NUM_REUSE path)"]
+same of [4 > (len of [1, 2]), T, "heap-number right operand >"]
+same of [not 0, T, "not 0"]
+same of [not 7, F, "not 7"]
+same of [not T, F, "not true"]
+same of [not F, T, "not false"]
+same of [not "", T, "not empty string"]
+same of [not null, T, "not null"]
+
+obs is 100
+i is 0
+loop while i < 30:
+    obs is 5
+    i is i + 1
+same of [type of (converged of obs), "bool", "a named observer predicate returns a bool"]
+same of [type of (stable of obs), "bool", "named stable returns a bool"]
+
+# ---- 3. printing and strings ----
+same of [str of T, "true", "str of true"]
+same of [str of F, "false", "str of false"]
+same of [f"{T}/{F}", "true/false", "f-string interpolation"]
+same of [str of [T, F], "[true, false]", "a list of bools prints as true/false"]
+
+# ---- 4. truthiness is unchanged; and/or return an operand ----
+seen is "none"
+if T:
+    seen is "then"
+same of [seen, "then", "true is truthy"]
+seen is "none"
+if F:
+    seen is "then"
+else:
+    seen is "else"
+same of [seen, "else", "false is falsy"]
+same of [F or 5, 5, "false or 5 returns the operand 5"]
+same of [T and 7, 7, "true and 7 returns the operand 7"]
+same of [0 or F, F, "0 or false returns false"]
+same of [T or 9, T, "true or 9 returns true"]
+
+# ---- 5. arithmetic on a bool raises, naming the type ----
+raises of [(_) => T + 1, "bool", "true + 1"]
+raises of [(_) => 1 + T, "bool", "1 + true"]
+raises of [(_) => T - F, "bool", "true - false"]
+raises of [(_) => T * 2, "bool", "true * 2"]
+raises of [(_) => 2 / T, "bool", "2 / true"]
+raises of [(_) => -T, "bool", "-true"]
+raises of [(_) => sum of [1 < 2, 3 < 4], "bool", "sum of a list of comparisons"]
+raises of [(_) => abs of T, "abs", "abs of a bool"]
+raises of [(_) => sqrt of F, "sqrt", "sqrt of a bool"]
+raises of [(_) => max of [T, 3], "max", "max over a bool element"]
+# Round 2 (#1637): numeric builtins that answered a bool with null/[] or read
+# it as 0. The [0fb] section runs this file under EIGS_STRICT=0 as well; the
+# full enumeration is tests/test_bool_fuzz.sh.
+raises of [(_) => usleep of T, "usleep: does not take a bool argument", "usleep of a bool"]
+# Round 4 (#1637): a bool two and three levels deep, in a cell gather reads.
+raises of [(_) => gather of [[T, 3], 0], "gather: expected a number, got bool", "gather of a bool cell"]
+raises of [(_) => gather of [[[T, 3]], [0]], "gather: expected a number, got bool", "gather of a bool cell, depth 3"]
+raises of [(_) => nearest_in_range of [[{"px": T, "py": 0}], 0, 0, 4, 8, 8, "px", "py", "active"], "nearest_in_range: expected a number, got bool", "nearest_in_range of a bool coordinate"]
+raises of [(_) => nearest_in_range_all of [[{"px": 1, "py": F}], 4, 8, 8, "px", "py", "active"], "nearest_in_range_all: expected a number, got bool", "nearest_in_range_all of a bool coordinate"]
+raises of [(_) => zeros of T, "zeros", "zeros of a bool"]
+raises of [(_) => fill of [T, 3], "fill", "fill with a bool count"]
+raises of [(_) => sum of [T, T, 1], "bool", "sum counting bools"]
+raises of [(_) => abs of T, "abs", "abs of a bool (no soft 0)"]
+same of [len of (fill of [2, T]), 2, "fill with a bool VALUE is fine"]
+
+# ---- 6. equality between a bool and a number raises; other mixes unequal ----
+raises of [(_) => T == 1, "cannot compare bool and num with '=='", "true == 1"]
+raises of [(_) => F != 0, "cannot compare bool and num with '!='", "false != 0"]
+raises of [(_) => 1 == T, "cannot compare num and bool with '=='", "1 == true"]
+raises of [(_) => (1 < 2) == 1, "bool", "the old (cmp) == 1 idiom"]
+raises of [(_) => [T] == [1], "bool", "a bool meets a number inside a list"]
+# Ordering is defined for numbers and strings only; bools are not ordered.
+raises of [(_) => T < F, "cannot compare bool and bool with '<'", "true < false"]
+raises of [(_) => F >= 0, "cannot compare bool and num with '>='", "false >= 0"]
+same of [null == F, F, "null == false is false"]
+same of ["true" == T, F, "\"true\" == true is false"]
+same of [T == T, T, "true == true"]
+same of [T != F, T, "true != false"]
+same of [F == (3 < 2), T, "false == false"]
+# Membership searches with the `==` comparison, so it raises the same way
+# (#1637 item 6): an old 1/0 membership check must not flip found -> not-found.
+raises of [(_) => list_contains of [[1], 1 == 1], "list_contains: cannot compare num and bool", "list_contains of a bool in a number list"]
+raises of [(_) => list_contains of [[0], 1 == 2], "list_contains: cannot compare num and bool", "list_contains of false in [0]"]
+raises of [(_) => list_contains of [[true], 1], "list_contains: cannot compare bool and num", "list_contains of a number in a bool list"]
+raises of [(_) => list_index_of of [[1, 2], 1 == 1], "list_index_of: cannot compare num and bool", "list_index_of of a bool in a number list"]
+raises of [(_) => list_contains of [[[1]], [true]], "list_contains", "list_contains: bool vs num inside a nested element"]
+same of [list_contains of [[true, false], false], true, "list_contains finds a bool among bools"]
+same of [list_index_of of [["x", false], false], 1, "list_index_of finds a bool past a string"]
+same of [list_contains of [["true", null], true], false, "list_contains: other mixed types stay unequal"]
+same of [list_contains of [[null], false], false, "list_contains: null is not false"]
+same of [list_index_of of [["1"], 1], -1, "list_index_of: a string is not a number"]
+# Bools stay distinct from 1/0 wherever a value is keyed by its text.
+keyed is {}
+keyed[str of T] is "bool"
+keyed[str of 1] is "num"
+same of [len of (keys of keyed), 2, "str of true and str of 1 are distinct keys"]
+
+# ---- keywords (item 2): `true`/`false` are literals of the same values ----
+same of [true, T, "the true literal is the value a comparison produces"]
+same of [false, F, "the false literal is the value a comparison produces"]
+same of [type of true, "bool", "type of true"]
+same of [type of false, "bool", "type of false"]
+same of [str of true, "true", "str of the true literal"]
+same of [not false, true, "not false"]
+same of [[true, false] == [1 < 2, 2 < 1], true, "literals inside a list compare structurally"]
+raises of [(_) => true + 0, "bool", "true + 0 with the literal"]
+raises of [(_) => false == 0, "bool", "false == 0 with the literal"]
+# A keyword in the TOK_IS..TOK_LOCAL run stays a field name after `.`.
+fields is {"true": "yes", "false": "no"}
+same of [fields.true, "yes", "d.true still parses as a field"]
+same of [fields.false, "no", "d.false still parses as a field"]
+fields.true is "set"
+same of [fields["true"], "set", "d.true is assignable as a field"]
+# The self-interpreter (lib/eigen.eigs) agrees with the VM.
+load_file of "lib/eigen.eigs"
+same of [eigen_run of "true", true, "eigen_run: the true literal"]
+same of [eigen_run of "false", false, "eigen_run: the false literal"]
+same of [eigen_run of "1 < 2", true, "eigen_run: a comparison is a bool"]
+same of [eigen_run of "not 0", true, "eigen_run: not is a bool"]
+same of [eigen_run of "2 == 3", false, "eigen_run: == is a bool"]
+raises of [(_) => eigen_run of "true == 1", "bool", "eigen_run: bool == num raises"]
+
+# ---- builtins and lib (item 4): predicates and two-state statuses are bools ----
+define is_bool(v, desc) as:
+    same of [type of v, "bool", desc]
+is_bool of [has_key of [{"a": 1}, "a"], "has_key"]
+is_bool of [has_key of [{"a": 1}, "b"], "has_key (absent)"]
+is_bool of [contains of ["abc", "b"], "contains"]
+is_bool of [starts_with of ["abc", "a"], "starts_with"]
+is_bool of [ends_with of ["abc", "x"], "ends_with"]
+is_bool of [list_contains of [[1, 2], 2], "list_contains"]
+is_bool of [secure_equals of ["a", "a"], "secure_equals"]
+is_bool of [try_parse of "x is 1", "try_parse (valid)"]
+is_bool of [try_parse of "x is is", "try_parse (invalid)"]
+is_bool of [try_parse of "", "try_parse (empty)"]
+is_bool of [task_alive of 987654, "task_alive (unknown id)"]
+is_bool of [task_send of [987654, 1], "task_send (unknown id)"]
+is_bool of [task_kill of 987654, "task_kill (unknown id)"]
+ch is channel of null
+is_bool of [channel_closed of ch, "channel_closed"]
+is_bool of [file_exists of "lib/test.eigs", "file_exists"]
+is_bool of [is_dir of "lib", "is_dir"]
+is_bool of [is_file of "lib/test.eigs", "is_file"]
+is_bool of [seed_random of 7, "seed_random"]
+scratch_file is mktemp of null
+scratch is scratch_file + "_d"
+is_bool of [mkdir of scratch, "mkdir"]
+is_bool of [write_text of [scratch + "/a.txt", "x"], "write_text"]
+is_bool of [rename of [scratch + "/a.txt", scratch + "/b.txt"], "rename"]
+is_bool of [remove_file of (scratch + "/b.txt"), "remove_file"]
+is_bool of [rm of (scratch + "/nothing"), "rm (missing file)"]
+exec_capture of ["rm", "-rf", scratch, scratch_file]
+mf is math_flags of null
+is_bool of [mf.overflow, "math_flags.overflow"]
+is_bool of [mf.invalid, "math_flags.invalid"]
+is_bool of [mf.underflow, "math_flags.underflow"]
+sb is sandbox_run of [[1, [0, 0], [], []]]
+is_bool of [sb.ok, "sandbox_run ok (refused descriptor)"]
+same of [sb.ok, false, "sandbox_run ok is false for a refused descriptor"]
+# JSON: encode emits true/false; decode gives the bools back; round trip.
+same of [json_encode of [[true, false, 1 < 2]], "[true,false,true]", "json_encode of bools"]
+same of [json_encode of {"t": true}, "{\"t\":true}", "json_encode of a bool field"]
+decoded is json_decode of "[true, false, 1, 0]"
+same of [decoded[0], true, "json_decode true"]
+same of [decoded[1], false, "json_decode false"]
+same of [decoded[2], 1, "json_decode 1 stays a number"]
+same of [json_decode of (json_encode of {"a": [true, {"b": false}]}), {"a": [true, {"b": false}]}, "json round trip keeps bools"]
+# Round 5 (#1637): `what` of a bool is the bool (it answered 0), on a bound
+# name and on an expression; the history forms already answered bools.
+r5_flag is 5 > 3
+r5_flag is 2 > 3
+r5_flag is 5 > 3
+same of [what is r5_flag, true, "what is a bool binding"]
+same of [what is (2 > 3), false, "what is a bool expression"]
+same of [prev of r5_flag, false, "prev of a bool binding"]
+same of [what is r5_flag when 2, false, "what is a bool binding when 2"]
+same of [when is r5_flag, 3, "when counts a bool binding's assignments"]
+same of [who is (1 < 2), "bool", "who names a bool"]
+# Round 5 (#1637, owner decision): the tensor mutators raise on any
+# non-number cell or row in every strict mode (v0.44.0 skipped a null row).
+raises of [(_) => sgd_update of [[[1, 2], null], [[1, 1], [1, 1]], 0.1], "sgd_update: expected a number, got null", "sgd_update of a null row"]
+# A descriptor's param_count: a bool is refused, the [] placeholder still
+# means 0 parameters (round 4 refused it and broke test_vm_run_bytecode).
+raises of [(_) => vm_run_bytecode of [1, [0, 0, 0, 40], [7], [], true], "bool", "vm_run_bytecode bool param_count"]
+same of [vm_run_bytecode of [1, [0, 0, 0, 40], [7], [], []], 7, "vm_run_bytecode [] param_count placeholder"]
+# Round 5 (#1637): `report` has an opcode twin. The C compiler's
+# OP_REPORT_NAME and vm_run_bytecode's GET_NAME("report") + CALL must agree
+# on a bool (the bytecode path raised: report was not in k_bool_policy).
+r5_rep is 5 > 3
+same of [vm_run_bytecode of [1, [25,0,0, 0,1,0, 39,1,0, 40], ["report", true]], report of r5_rep, "report of a bool: bytecode path == compiled path"]
+# Round 6: the sandbox's blocked stub stays ungated -- a bool argument to a
+# blocked builtin still reports the sandbox refusal, not a type error.
+r6_sb is sandbox_run of [[1, [25,0,0, 0,1,0, 39,1,0, 40], ["read_text", true]], 1000]
+same of [r6_sb["error"]["kind"], "sandbox", "a blocked builtin given a bool reports the sandbox refusal"]
+# Round 5 (#1637): json_build writes a bool value as a JSON boolean and it
+# decodes back to a bool.
+same of [json_build of ["ok", true, "bad", 2 > 3], "{\"ok\": true, \"bad\": false}", "json_build of bools"]
+same of [json_decode of (json_build of ["ok", true]), {"ok": true}, "json_build bool round trip"]
+# lib predicates return a bool on every path, including the early-out paths.
+load_file of "lib/set.eigs"
+load_file of "lib/validate.eigs"
+load_file of "lib/sort.eigs"
+load_file of "lib/list.eigs"
+load_file of "lib/json.eigs"
+load_file of "lib/map.eigs"
+s1 is set_from of [1, 2]
+is_bool of [set_has of [s1, 1], "set_has (present)"]
+is_bool of [set_has of [s1, 9], "set_has (absent)"]
+is_bool of [is_subset of [s1, s1], "is_subset"]
+is_bool of [set_equal of [s1, s1], "set_equal"]
+is_bool of [is_number of "12", "validate.is_number"]
+is_bool of [is_nonempty of "", "validate.is_nonempty (empty)"]
+is_bool of [in_range of [5, 1, 3], "validate.in_range"]
+is_bool of [is_email of "a@b.c", "validate.is_email"]
+is_bool of [is_sorted of [1, 2, 3], "sort.is_sorted"]
+is_bool of [is_sorted of [], "sort.is_sorted (empty)"]
+is_bool of [any of [[1, 2], (x) => x > 1], "list.any"]
+is_bool of [all of [[], (x) => x > 1], "list.all (empty)"]
+is_bool of [json_has of ["{\"a\": 1}", "a"], "json.json_has"]
+
+# ---- observer (item 6): a bool binding is observed in its own band ----
+# entropy false 0.0 / true 1.0 (compute_entropy's VAL_BOOL case); a bool is
+# not numeric, so the predicates read it on the entropy channel.
+define observe_flag(mode) as:
+    local flag is false
+    local i is 0
+    loop while i < 30:
+        if mode == "flip":
+            flag is (i % 2) == 0
+        else:
+            flag is i > 100
+        i is i + 1
+    return [trajectory of flag, (observe of flag)[1], report of flag]
+steady is observe_flag of "steady"
+flip is observe_flag of "flip"
+same of [steady[0].observed, true, "a bool binding is observed"]
+same of [steady[0].numeric, false, "a bool binding is not on the numeric channel"]
+same of [steady[1], 0, "observe of a false flag: entropy 0"]
+same of [flip[1], 0, "observe of a flipping flag ending false: entropy 0"]
+same of [steady[2], "converged", "a constant flag converges"]
+same of [flip[2], "oscillating", "a flipping flag oscillates"]
+held is true
+held is 1 < 2
+same of [(observe of held)[1], 1, "observe of a true flag: entropy 1"]
+
+test_summary of null

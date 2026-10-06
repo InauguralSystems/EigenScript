@@ -389,7 +389,7 @@ static const char* scancode_name(int sc) {
 
 /* ---- Builtins ---- */
 
-/* #1007: the drawing surface reads RUNS of list elements as `.data.num`
+/* #1007: the drawing surface reads RUNS of list elements as `eigs_num_arg(&(), __func__)`
  * with no type check. `Value`'s union overlaps `double num` with
  * `char *str`, so an unchecked read reinterprets a pointer as a double
  * and then `(int)`-casts it — the read itself is the defect, which is why
@@ -448,31 +448,31 @@ Value* builtin_gfx_open(Value *arg) {
      * so "you called it wrong" and "this machine has no SDL" were the
      * same value. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
-              "gfx_open", "[number width, number height, title]", make_num(0));
-    /* #1007: width and height were read as `.data.num` with no type check
+              "gfx_open", "[number width, number height, title]", make_bool(0));
+    /* #1007: width and height were read as `eigs_num_arg(&(), __func__)` with no type check
      * while the title on the very next line WAS checked. Value's union
      * overlaps `double num` with `char *str`, so gfx_open of ["800","600",t]
      * reinterpreted a pointer as a double and int-cast it — in practice a
      * tiny denormal, so the window opened 0x0 and gfx_open answered 1. */
     ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
               arg->data.list.items[1]->type != VAL_NUM,
-              "gfx_open", "[number width, number height, title]", make_num(0));
-    int w = (int)arg->data.list.items[0]->data.num;
-    int h = (int)arg->data.list.items[1]->data.num;
+              "gfx_open", "[number width, number height, title]", make_bool(0));
+    int w = (int)eigs_list_num(arg, 0, __func__);
+    int h = (int)eigs_list_num(arg, 1, __func__);
     const char *title = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : "EigenScript";
 
     if (!load_sdl2()) {
         fprintf(stderr, "gfx_open: cannot load libSDL2\n");
-        return make_num(0);  /* fs:ANSWER 0 is gfx_open's open-failed result -- line 422 returns 1 only after a renderer exists; libSDL2 absent is environment state, not a bad argument */
+        return make_bool(0);  /* fs:ANSWER 0 is gfx_open's open-failed result -- line 422 returns 1 only after a renderer exists; libSDL2 absent is environment state, not a bad argument */
     }
     if (p_SDL_Init(MY_SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "gfx_open: SDL_Init failed: %s\n", p_SDL_GetError());
-        return make_num(0);  /* fs:ANSWER SDL_Init failed -- same 0-vs-1 open result as line 422, detail printed on stderr above */
+        return make_bool(0);  /* fs:ANSWER SDL_Init failed -- same 0-vs-1 open result as line 422, detail printed on stderr above */
     }
     g_window = p_SDL_CreateWindow(title, MY_SDL_WINDOWPOS_CENTERED, MY_SDL_WINDOWPOS_CENTERED, w, h, MY_SDL_WINDOW_RESIZABLE);
     if (!g_window) {
         fprintf(stderr, "gfx_open: SDL_CreateWindow failed: %s\n", p_SDL_GetError());
-        return make_num(0);  /* fs:ANSWER SDL_CreateWindow failed -- 0 open result; g_window stays NULL so every later gfx builtin no-ops */
+        return make_bool(0);  /* fs:ANSWER SDL_CreateWindow failed -- 0 open result; g_window stays NULL so every later gfx builtin no-ops */
     }
     g_renderer = p_SDL_CreateRenderer(g_window, -1, MY_SDL_RENDERER_ACCELERATED | MY_SDL_RENDERER_PRESENTVSYNC);
     if (!g_renderer) {
@@ -482,10 +482,10 @@ Value* builtin_gfx_open(Value *arg) {
         fprintf(stderr, "gfx_open: SDL_CreateRenderer failed\n");
         p_SDL_DestroyWindow(g_window);
         g_window = NULL;
-        return make_num(0);  /* fs:ANSWER SDL_CreateRenderer failed on both attempts -- 0 open result; the window is destroyed and g_window NULLed first */
+        return make_bool(0);  /* fs:ANSWER SDL_CreateRenderer failed on both attempts -- 0 open result; the window is destroyed and g_window NULLed first */
     }
     p_SDL_SetRenderDrawBlendMode(g_renderer, MY_SDL_BLENDMODE_BLEND);
-    return make_num(1);
+    return make_bool(1);
 }
 
 /* gfx_close of null */
@@ -528,9 +528,9 @@ Value* builtin_gfx_clear(Value *arg) {
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
     int r = 0, g = 0, b = 0;
     if (shaped) {
-        r = (int)arg->data.list.items[0]->data.num;
-        g = (int)arg->data.list.items[1]->data.num;
-        b = (int)arg->data.list.items[2]->data.num;
+        r = (int)eigs_list_num(arg, 0, __func__);
+        g = (int)eigs_list_num(arg, 1, __func__);
+        b = (int)eigs_list_num(arg, 2, __func__);
     }
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderClear(g_renderer);
@@ -547,14 +547,14 @@ Value* builtin_gfx_rect(Value *arg) {
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rect answers null on every path -- the return value, not a rejected-argument stand-in */
     SDL_Rect rect;
-    rect.x = (int)arg->data.list.items[0]->data.num;
-    rect.y = (int)arg->data.list.items[1]->data.num;
-    rect.w = (int)arg->data.list.items[2]->data.num;
-    rect.h = (int)arg->data.list.items[3]->data.num;
-    int r = (int)arg->data.list.items[4]->data.num;
-    int g = (int)arg->data.list.items[5]->data.num;
-    int b = (int)arg->data.list.items[6]->data.num;
-    int a = (arg->data.list.count >= 8) ? (int)arg->data.list.items[7]->data.num : 255;
+    rect.x = (int)eigs_list_num(arg, 0, __func__);
+    rect.y = (int)eigs_list_num(arg, 1, __func__);
+    rect.w = (int)eigs_list_num(arg, 2, __func__);
+    rect.h = (int)eigs_list_num(arg, 3, __func__);
+    int r = (int)eigs_list_num(arg, 4, __func__);
+    int g = (int)eigs_list_num(arg, 5, __func__);
+    int b = (int)eigs_list_num(arg, 6, __func__);
+    int a = (arg->data.list.count >= 8) ? (int)eigs_list_num(arg, 7, __func__) : 255;
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
     p_SDL_RenderFillRect(g_renderer, &rect);
     return make_null(); /* fs:VOID gfx_rect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
@@ -569,13 +569,13 @@ Value* builtin_gfx_line(Value *arg) {
               "[number x1, number y1, number x2, number y2, number r, number g, number b]",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_line answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x1 = (int)arg->data.list.items[0]->data.num;
-    int y1 = (int)arg->data.list.items[1]->data.num;
-    int x2 = (int)arg->data.list.items[2]->data.num;
-    int y2 = (int)arg->data.list.items[3]->data.num;
-    int r = (int)arg->data.list.items[4]->data.num;
-    int g = (int)arg->data.list.items[5]->data.num;
-    int b = (int)arg->data.list.items[6]->data.num;
+    int x1 = (int)eigs_list_num(arg, 0, __func__);
+    int y1 = (int)eigs_list_num(arg, 1, __func__);
+    int x2 = (int)eigs_list_num(arg, 2, __func__);
+    int y2 = (int)eigs_list_num(arg, 3, __func__);
+    int r = (int)eigs_list_num(arg, 4, __func__);
+    int g = (int)eigs_list_num(arg, 5, __func__);
+    int b = (int)eigs_list_num(arg, 6, __func__);
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderDrawLine(g_renderer, x1, y1, x2, y2);
     return make_null(); /* fs:VOID gfx_line answers null on every path -- this is the return value, not a stand-in for a rejected argument */
@@ -589,11 +589,11 @@ Value* builtin_gfx_point(Value *arg) {
               "gfx_point", "[number x, number y, number r, number g, number b]",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_point answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)arg->data.list.items[0]->data.num;
-    int y = (int)arg->data.list.items[1]->data.num;
-    int r = (int)arg->data.list.items[2]->data.num;
-    int g = (int)arg->data.list.items[3]->data.num;
-    int b = (int)arg->data.list.items[4]->data.num;
+    int x = (int)eigs_list_num(arg, 0, __func__);
+    int y = (int)eigs_list_num(arg, 1, __func__);
+    int r = (int)eigs_list_num(arg, 2, __func__);
+    int g = (int)eigs_list_num(arg, 3, __func__);
+    int b = (int)eigs_list_num(arg, 4, __func__);
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderDrawPoint(g_renderer, x, y);
     return make_null(); /* fs:VOID gfx_point answers null on every path -- this is the return value, not a stand-in for a rejected argument */
@@ -608,13 +608,13 @@ Value* builtin_gfx_circle(Value *arg) {
               "[number cx, number cy, number radius, number r, number g, number b] and an optional number alpha",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_circle answers null on every path -- the return value, not a rejected-argument stand-in */
-    int cx = (int)arg->data.list.items[0]->data.num;
-    int cy = (int)arg->data.list.items[1]->data.num;
-    int radius = (int)arg->data.list.items[2]->data.num;
-    int r = (int)arg->data.list.items[3]->data.num;
-    int g = (int)arg->data.list.items[4]->data.num;
-    int b = (int)arg->data.list.items[5]->data.num;
-    int a = (arg->data.list.count >= 7) ? (int)arg->data.list.items[6]->data.num : 255;
+    int cx = (int)eigs_list_num(arg, 0, __func__);
+    int cy = (int)eigs_list_num(arg, 1, __func__);
+    int radius = (int)eigs_list_num(arg, 2, __func__);
+    int r = (int)eigs_list_num(arg, 3, __func__);
+    int g = (int)eigs_list_num(arg, 4, __func__);
+    int b = (int)eigs_list_num(arg, 5, __func__);
+    int a = (arg->data.list.count >= 7) ? (int)eigs_list_num(arg, 6, __func__) : 255;
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
     /* Filled circle via horizontal lines */
     for (int dy = -radius; dy <= radius; dy++) {
@@ -635,15 +635,15 @@ Value* builtin_gfx_rrect(Value *arg) {
               "[number x, number y, number w, number h, number radius, number r, number g, number b] and an optional number alpha",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rrect answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)arg->data.list.items[0]->data.num;
-    int y = (int)arg->data.list.items[1]->data.num;
-    int w = (int)arg->data.list.items[2]->data.num;
-    int h = (int)arg->data.list.items[3]->data.num;
-    int rad = (int)arg->data.list.items[4]->data.num;
-    int r = (int)arg->data.list.items[5]->data.num;
-    int g = (int)arg->data.list.items[6]->data.num;
-    int b = (int)arg->data.list.items[7]->data.num;
-    int a = (arg->data.list.count >= 9) ? (int)arg->data.list.items[8]->data.num : 255;
+    int x = (int)eigs_list_num(arg, 0, __func__);
+    int y = (int)eigs_list_num(arg, 1, __func__);
+    int w = (int)eigs_list_num(arg, 2, __func__);
+    int h = (int)eigs_list_num(arg, 3, __func__);
+    int rad = (int)eigs_list_num(arg, 4, __func__);
+    int r = (int)eigs_list_num(arg, 5, __func__);
+    int g = (int)eigs_list_num(arg, 6, __func__);
+    int b = (int)eigs_list_num(arg, 7, __func__);
+    int a = (arg->data.list.count >= 9) ? (int)eigs_list_num(arg, 8, __func__) : 255;
     if (w <= 0 || h <= 0) return make_null(); /* fs:EMPTY a rectangle with no width or height covers no pixels, so drawing nothing IS the answer -- the degenerate-geometry identity, not a laundered argument (lib/ui layout produces zero-size rects routinely) */
     /* Clamp radius to half the smaller dimension */
     if (rad > w / 2) rad = w / 2;
@@ -689,10 +689,10 @@ Value* builtin_gfx_clip(Value *arg) {
         return make_null();  /* fs:VOID the clip was cleared -- gfx_clip's normal successful answer */
     }
     SDL_Rect clip;
-    clip.x = (int)arg->data.list.items[0]->data.num;
-    clip.y = (int)arg->data.list.items[1]->data.num;
-    clip.w = (int)arg->data.list.items[2]->data.num;
-    clip.h = (int)arg->data.list.items[3]->data.num;
+    clip.x = (int)eigs_list_num(arg, 0, __func__);
+    clip.y = (int)eigs_list_num(arg, 1, __func__);
+    clip.w = (int)eigs_list_num(arg, 2, __func__);
+    clip.h = (int)eigs_list_num(arg, 3, __func__);
     p_SDL_RenderSetClipRect(g_renderer, &clip);
     return make_null(); /* fs:VOID gfx_clip answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -721,8 +721,8 @@ Value* builtin_gfx_read(Value *arg) {
     if (!g_renderer || !p_SDL_RenderReadPixels)
         TRACE_NONDET_RECORD("gfx_read", make_null());
     SDL_Rect r;
-    r.x = (int)arg->data.list.items[0]->data.num;
-    r.y = (int)arg->data.list.items[1]->data.num;
+    r.x = (int)eigs_list_num(arg, 0, __func__);
+    r.y = (int)eigs_list_num(arg, 1, __func__);
     r.w = 1;
     r.h = 1;
     Uint32 px = 0;
@@ -743,14 +743,14 @@ Value* builtin_gfx_present(Value *arg) {
     return make_null(); /* fs:VOID gfx_present answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
-/* Attach keyboard modifier state as shift/ctrl/alt (0/1) dict fields.
+/* Attach keyboard modifier state as shift/ctrl/alt bool dict fields (#1637).
  * KMOD_SHIFT = 0x0003, KMOD_CTRL = 0x00C0, KMOD_ALT = 0x0300.
  * Key events read the mask from keysym.mod; mouse/wheel events (#568)
  * pass SDL_GetModState() — SDL keeps it current at mouse-event time. */
 static void poll_set_mods(Value *d, int mod) {
-    dict_set_owned(d, "shift", make_num((mod & 0x03) ? 1 : 0));
-    dict_set_owned(d, "ctrl", make_num((mod & 0xC0) ? 1 : 0));
-    dict_set_owned(d, "alt", make_num((mod & 0x300) ? 1 : 0));
+    dict_set_owned(d, "shift", make_bool((mod & 0x03) != 0));
+    dict_set_owned(d, "ctrl", make_bool((mod & 0xC0) != 0));
+    dict_set_owned(d, "alt", make_bool((mod & 0x300) != 0));
 }
 
 static int poll_mod_state(void) {
@@ -854,7 +854,7 @@ Value* builtin_gfx_ticks(Value *arg) {
 Value* builtin_gfx_delay(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "gfx_delay", "number milliseconds",
               make_null());
-    if (g_sdl_lib) p_SDL_Delay((Uint32)arg->data.num);
+    if (g_sdl_lib) p_SDL_Delay((Uint32)eigs_num_arg(arg, __func__));
     return make_null(); /* fs:VOID gfx_delay answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
@@ -985,7 +985,7 @@ Value* builtin_gfx_text(Value *arg) {
      * before #1007, so its wrong-typed scale is a COERCION and keeps
      * measuring at scale 1 (STRICT_REQUIRE there, byte-identical off the
      * flag). This one did not:
-     *     int scale = (count >= 7) ? (int)items[6]->data.num : 1;
+     *     int scale = (count >= 7) ? (int)eigs_num_arg(items[6], __func__) : 1;
      * reads the union unchecked, so a string scale drew the glyph from a
      * reinterpreted `char *` — a subnormal that truncates to 0 and is then
      * clamped to 1, which is why it LOOKED like scale 1 while being a pun.
@@ -1002,13 +1002,13 @@ Value* builtin_gfx_text(Value *arg) {
               "[number x, number y, string text, number r, number g, number b] and an optional number scale",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_text answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)arg->data.list.items[0]->data.num;
-    int y = (int)arg->data.list.items[1]->data.num;
+    int x = (int)eigs_list_num(arg, 0, __func__);
+    int y = (int)eigs_list_num(arg, 1, __func__);
     const char *text = arg->data.list.items[2]->data.str;
-    int r = (int)arg->data.list.items[3]->data.num;
-    int g = (int)arg->data.list.items[4]->data.num;
-    int b = (int)arg->data.list.items[5]->data.num;
-    int scale = (arg->data.list.count >= 7) ? (int)arg->data.list.items[6]->data.num : 1;
+    int r = (int)eigs_list_num(arg, 3, __func__);
+    int g = (int)eigs_list_num(arg, 4, __func__);
+    int b = (int)eigs_list_num(arg, 5, __func__);
+    int scale = (arg->data.list.count >= 7) ? (int)eigs_list_num(arg, 6, __func__) : 1;
     if (scale < 1) scale = 1;
 
     if (*text && ttf_available() && p_SDL_CreateTextureFromSurface
@@ -1075,7 +1075,7 @@ Value* builtin_gfx_text_width(Value *arg) {
         text = arg->data.list.items[0]->data.str;
         if (arg->data.list.count >= 2) {
             if (arg->data.list.items[1]->type == VAL_NUM)
-                scale = (int)arg->data.list.items[1]->data.num;
+                scale = (int)eigs_list_num(arg, 1, __func__);
             else
                 bad_scale = 1;
         }
@@ -1113,10 +1113,10 @@ Value* builtin_gfx_text_height(Value *arg) {
                         && arg->data.list.items[0]->type == VAL_NUM),
                    "gfx_text_height", "number scale, [number scale] or null");
     if (arg && arg->type == VAL_NUM) {
-        scale = (int)arg->data.num;
+        scale = (int)eigs_num_arg(arg, __func__);
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
                && arg->data.list.items[0]->type == VAL_NUM) {
-        scale = (int)arg->data.list.items[0]->data.num;
+        scale = (int)eigs_list_num(arg, 0, __func__);
     }
     if (scale < 1) scale = 1;
     if (ttf_available()) {
@@ -1225,7 +1225,7 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
             free(buf);
             return NULL;
         }
-        double s = v->data.num;
+        double s = eigs_num_arg(v, __func__);
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
         buf[i] = (int16_t)(s * 32767);
@@ -1309,7 +1309,7 @@ Value* builtin_audio_open(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
                    "audio_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        /* The same unchecked `.data.num` type-pun as gfx_open. That it is an
+        /* The same unchecked `eigs_num_arg(&(), __func__)` type-pun as gfx_open. That it is an
          * oversight rather than a convention is settled 180 lines down:
          * audio_stream_open guards this identical pair with `type == VAL_NUM`
          * before reading it. */
@@ -1333,8 +1333,8 @@ Value* builtin_audio_open(Value *arg) {
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         /* Type-checked at the top of the function, before the SDL load. */
-        want.freq = (int)arg->data.list.items[0]->data.num;
-        want.channels = (int)arg->data.list.items[1]->data.num;
+        want.freq = (int)eigs_list_num(arg, 0, __func__);
+        want.channels = (int)eigs_list_num(arg, 1, __func__);
     }
 
     g_audio_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
@@ -1364,7 +1364,7 @@ Value* builtin_audio_pause(Value *arg) {
     STRICT_REQUIRE(arg && arg->type != VAL_NULL && arg->type != VAL_NUM,
                    "audio_pause", "number flag (1 = pause, 0 = unpause) or null");
     if (!g_audio_device) return make_null();  /* fs:VOID no device open: audio_pause answers null on every path -- the return value, not a rejected-argument stand-in */
-    int pause = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 1;
+    int pause = (arg && arg->type == VAL_NUM) ? (int)eigs_num_arg(arg, __func__) : 1;
     p_SDL_PauseAudioDevice(g_audio_device, pause);
     return make_null(); /* fs:VOID audio_pause answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -1479,8 +1479,8 @@ Value* builtin_audio_capture_open(Value *arg) {
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         /* Type-checked at the top of the function, before the SDL load. */
-        want.freq = (int)arg->data.list.items[0]->data.num;
-        want.channels = (int)arg->data.list.items[1]->data.num;
+        want.freq = (int)eigs_list_num(arg, 0, __func__);
+        want.channels = (int)eigs_list_num(arg, 1, __func__);
     }
 
     if (g_capture_device) {
@@ -1606,8 +1606,8 @@ Value* builtin_audio_stream_open(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
         && arg->data.list.items[0]->type == VAL_NUM
         && arg->data.list.items[1]->type == VAL_NUM) {
-        want.freq = (int)arg->data.list.items[0]->data.num;
-        want.channels = (int)arg->data.list.items[1]->data.num;
+        want.freq = (int)eigs_list_num(arg, 0, __func__);
+        want.channels = (int)eigs_list_num(arg, 1, __func__);
     }
 
     if (g_stream_device) {
@@ -1632,7 +1632,7 @@ Value* builtin_audio_stream_push(Value *arg) {
     /* #1007 round 3: above the device check, for the reason audio_play's is. */
     STRICT_REQUIRE(gfx_bad_samples(arg), "audio_stream_push",
                    "a list or buffer of samples, or null");
-    if (!g_stream_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_stream_push: "0 on a closed device"; g_stream_device == 0 is device state, not an argument */
+    if (!g_stream_device) return make_bool(0);  /* fs:ANSWER BUILTINS.md audio_stream_push: "0 on a closed device"; g_stream_device == 0 is device state, not an argument */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
     if (!buf) {
@@ -1641,15 +1641,15 @@ Value* builtin_audio_stream_push(Value *arg) {
          * audio_convert_samples, while an empty or over-64MB clip has not and
          * is a documented "nothing to play". */
         /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
-        if (g_has_error) return make_num(0);
+        if (g_has_error) return make_bool(0);
         /* fs:ANSWER an empty or over-64MB clip plays nothing, so 0 (no
          * channel) is the result, not a laundered argument mistake. */
-        return make_num(0);
+        return make_bool(0);
     }
     int rc = p_SDL_QueueAudio(g_stream_device, buf,
                               (Uint32)((size_t)n * sizeof(int16_t)));
     free(buf);
-    return make_num(rc == 0 ? 1 : 0);
+    return make_bool(rc == 0);
 }
 
 /* audio_stream_queued of null — samples still buffered (not yet played)
@@ -1698,7 +1698,7 @@ Value* builtin_audio_music_play(Value *arg) {
     /* #1007: both #971 deferral markers converted. Above load_sdl2(), the [135] rule. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1
               || arg->data.list.items[0]->type != VAL_STR,
-              "audio_music_play", "[string path, number loops]", make_num(0));
+              "audio_music_play", "[string path, number loops]", make_bool(0));
     /* A wrong-typed `loops` is the COERCION shape: it fell back to -1
      * (forever), so a typo made the track loop rather than play once. */
     STRICT_REQUIRE(arg->data.list.count >= 2
@@ -1706,10 +1706,10 @@ Value* builtin_audio_music_play(Value *arg) {
                    "audio_music_play", "[string path, number loops]");
     const char *path = arg->data.list.items[0]->data.str;
     int loops = (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
-                ? (int)arg->data.list.items[1]->data.num : -1;
-    if (!load_sdl2()) return make_num(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
+                ? (int)eigs_list_num(arg, 1, __func__) : -1;
+    if (!load_sdl2()) return make_bool(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
-    if (!load_sdl_mixer()) return make_num(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
+    if (!load_sdl_mixer()) return make_bool(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
     if (!g_mixer_open) {
         p_Mix_Init(MY_MIX_INIT_MP3);
         /* Mix_OpenAudioDevice (not the legacy Mix_OpenAudio) so the music
@@ -1717,7 +1717,7 @@ Value* builtin_audio_music_play(Value *arg) {
         if (p_Mix_OpenAudioDevice(44100, MY_AUDIO_S16SYS, 2, 2048, NULL, 0) < 0) {
             fprintf(stderr, "audio_music: Mix_OpenAudioDevice failed: %s\n",
                     p_SDL_GetError ? p_SDL_GetError() : "?");
-            return make_num(0);  /* fs:ANSWER Mix_OpenAudioDevice failed (no audio device) -- documented 0, detail on stderr above */
+            return make_bool(0);  /* fs:ANSWER Mix_OpenAudioDevice failed (no audio device) -- documented 0, detail on stderr above */
         }
         g_mixer_open = 1;
     }
@@ -1726,14 +1726,14 @@ Value* builtin_audio_music_play(Value *arg) {
     if (!g_music) {
         fprintf(stderr, "audio_music: cannot load '%s': %s\n", path,
                 p_SDL_GetError ? p_SDL_GetError() : "?");
-        return make_num(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
+        return make_bool(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
     }
     if (p_Mix_PlayMusic(g_music, loops) < 0) {
         fprintf(stderr, "audio_music: play failed: %s\n",
                 p_SDL_GetError ? p_SDL_GetError() : "?");
-        return make_num(0);  /* fs:ANSWER Mix_PlayMusic failed -- documented 0; line 1378 returns 1 only when the track is actually playing */
+        return make_bool(0);  /* fs:ANSWER Mix_PlayMusic failed -- documented 0; line 1378 returns 1 only when the track is actually playing */
     }
-    return make_num(1);
+    return make_bool(1);
 }
 
 /* audio_music_volume of v — music volume 0..128 */
@@ -1747,10 +1747,10 @@ Value* builtin_audio_music_volume(Value *arg) {
                    "audio_music_volume", "number volume 0..128 or [number volume]");
     if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();  /* fs:VOID no mixer open: audio_music_volume answers null on every path -- the return value, not a rejected-argument stand-in */
     int v = 0;
-    if (arg && arg->type == VAL_NUM) v = (int)arg->data.num;
+    if (arg && arg->type == VAL_NUM) v = (int)eigs_num_arg(arg, __func__);
     else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
              && arg->data.list.items[0]->type == VAL_NUM)
-        v = (int)arg->data.list.items[0]->data.num;
+        v = (int)eigs_list_num(arg, 0, __func__);
     if (v < 0) v = 0;
     if (v > MY_MIX_MAX_VOLUME) v = MY_MIX_MAX_VOLUME;
     p_Mix_VolumeMusic(v);
@@ -1800,7 +1800,7 @@ Value* builtin_audio_play_loop(Value *arg) {
               || arg->data.list.items[1]->type != VAL_NUM,
               "audio_play_loop", "[samples, number loops]", make_num(0));
     /* #152: NaN/huge casts are UB; -1 is the one negative with meaning. */
-    double loops_d = arg->data.list.items[1]->data.num;
+    double loops_d = eigs_list_num(arg, 1, __func__);
     int loops;
     if (loops_d == -1.0) loops = -1;
     else {
@@ -1812,8 +1812,12 @@ Value* builtin_audio_play_loop(Value *arg) {
     }
     /* #1007 round 3: the samples slot, beside the loops slot and above the
      * device check for the same reachability reason. */
-    STRICT_REQUIRE(gfx_bad_samples(arg->data.list.items[0]), "audio_play_loop",
-                   "[list or buffer of samples, number loops]");
+    /* #1637: a non-number sample element is refused here too, above the
+     * device check (a bool in every strict mode, through STRICT_REQUIRE). */
+    STRICT_REQUIRE(gfx_bad_samples(arg->data.list.items[0])
+                   || (arg->data.list.items[0]->type == VAL_LIST
+                       && !gfx_list_all_num(arg->data.list.items[0])),
+                   "audio_play_loop", "[list or buffer of samples, number loops]");
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play_loop: "0 on ... closed device"; channel ids are slot+1 >= 1, so 0 is not a channel */
     Value *samples = arg->data.list.items[0];
     int n = 0;
@@ -1839,9 +1843,9 @@ Value* builtin_audio_volume(Value *arg) {
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing", and with no device open no channel is */
     Value *ch_v = arg->data.list.items[0];
     Value *vol_v = arg->data.list.items[1];
-    int c = (int)ch_v->data.num - 1;
+    int c = (int)eigs_num_arg(ch_v, "audio_volume") - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing" -- the same value line 1452 returns for an inactive in-range channel; an out-of-range id is definitionally inactive */
-    double vol = vol_v->data.num;
+    double vol = eigs_num_arg(vol_v, "audio_volume");
     if (isnan(vol) || vol < 0.0) vol = 0.0;
     if (vol > 4.0) vol = 4.0;
     p_SDL_LockAudioDevice(g_audio_device);
@@ -1858,7 +1862,7 @@ Value* builtin_audio_stop(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "audio_stop", "number channel",
               make_num(0));
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active", and with no device open none is */
-    int c = (int)arg->data.num - 1;
+    int c = (int)eigs_num_arg(arg, __func__) - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active" -- the same value line 1465 returns for an inactive in-range channel */
     p_SDL_LockAudioDevice(g_audio_device);
     int ok = g_audio_ch[c].active;
@@ -1921,9 +1925,9 @@ Value* builtin_audio_sine(Value *arg) {
               arg->data.list.items[1]->type != VAL_NUM ||
               arg->data.list.items[2]->type != VAL_NUM,
               "audio_sine", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = arg->data.list.items[0]->data.num;
-    double dur = arg->data.list.items[1]->data.num;
-    double amp = arg->data.list.items[2]->data.num;
+    double freq = eigs_list_num(arg, 0, __func__);
+    double dur = eigs_list_num(arg, 1, __func__);
+    double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = (int)(dur * rate);
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -1956,9 +1960,9 @@ Value* builtin_audio_saw(Value *arg) {
               arg->data.list.items[1]->type != VAL_NUM ||
               arg->data.list.items[2]->type != VAL_NUM,
               "audio_saw", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = arg->data.list.items[0]->data.num;
-    double dur = arg->data.list.items[1]->data.num;
-    double amp = arg->data.list.items[2]->data.num;
+    double freq = eigs_list_num(arg, 0, __func__);
+    double dur = eigs_list_num(arg, 1, __func__);
+    double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = (int)(dur * rate);
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -1991,9 +1995,9 @@ Value* builtin_audio_square(Value *arg) {
               arg->data.list.items[1]->type != VAL_NUM ||
               arg->data.list.items[2]->type != VAL_NUM,
               "audio_square", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = arg->data.list.items[0]->data.num;
-    double dur = arg->data.list.items[1]->data.num;
-    double amp = arg->data.list.items[2]->data.num;
+    double freq = eigs_list_num(arg, 0, __func__);
+    double dur = eigs_list_num(arg, 1, __func__);
+    double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = (int)(dur * rate);
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -2029,11 +2033,11 @@ Value* builtin_audio_sweep(Value *arg) {
               arg->data.list.items[3]->type != VAL_NUM ||
               arg->data.list.items[4]->type != VAL_NUM,
               "audio_sweep", "[number freq_start, number freq_end, number duration, number amplitude, number waveform]", make_list(0));
-    double f0 = arg->data.list.items[0]->data.num;
-    double f1 = arg->data.list.items[1]->data.num;
-    double dur = arg->data.list.items[2]->data.num;
-    double amp = arg->data.list.items[3]->data.num;
-    int wave = (int)arg->data.list.items[4]->data.num;
+    double f0 = eigs_list_num(arg, 0, __func__);
+    double f1 = eigs_list_num(arg, 1, __func__);
+    double dur = eigs_list_num(arg, 2, __func__);
+    double amp = eigs_list_num(arg, 3, __func__);
+    int wave = (int)eigs_list_num(arg, 4, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = (int)(dur * rate);
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -2073,8 +2077,8 @@ Value* builtin_audio_noise(Value *arg) {
     ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
               arg->data.list.items[1]->type != VAL_NUM,
               "audio_noise", "[number duration, number amplitude]", make_list(0));
-    double dur = arg->data.list.items[0]->data.num;
-    double amp = arg->data.list.items[1]->data.num;
+    double dur = eigs_list_num(arg, 0, __func__);
+    double amp = eigs_list_num(arg, 1, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = (int)(dur * rate);
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -2108,8 +2112,8 @@ Value* builtin_audio_mix(Value *arg) {
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double sa = (i < a->data.list.count && a->data.list.items[i]->type == VAL_NUM) ? a->data.list.items[i]->data.num : 0;
-        double sb = (i < b->data.list.count && b->data.list.items[i]->type == VAL_NUM) ? b->data.list.items[i]->data.num : 0;
+        double sa = (i < a->data.list.count && a->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(a->data.list.items[i], __func__) : 0;
+        double sb = (i < b->data.list.count && b->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(b->data.list.items[i], __func__) : 0;
         double mixed = sa + sb;
         if (mixed > 1.0) mixed = 1.0;
         if (mixed < -1.0) mixed = -1.0;
@@ -2141,12 +2145,12 @@ Value* builtin_audio_gain(Value *arg) {
      * beside it was not, which is the same next-line asymmetry as gfx_open. */
     ARG_GUARD(arg->data.list.items[1]->type != VAL_NUM,
               "audio_gain", "[samples, number volume]", make_list(0));
-    double vol = arg->data.list.items[1]->data.num;
+    double vol = eigs_list_num(arg, 1, __func__);
     int n = samples->data.list.count;
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double s = (samples->data.list.items[i]->type == VAL_NUM) ? samples->data.list.items[i]->data.num : 0;
+        double s = (samples->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(samples->data.list.items[i], __func__) : 0;
         s *= vol;
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
@@ -2184,10 +2188,10 @@ Value* builtin_audio_envelope(Value *arg) {
      * nothing. */
     STRICT_REQUIRE(!gfx_list_all_num(samples), "audio_envelope",
                    "[list of numbers, number attack, number decay, number sustain, number release]");
-    double attack = arg->data.list.items[1]->data.num;
-    double decay = arg->data.list.items[2]->data.num;
-    double sustain = arg->data.list.items[3]->data.num;
-    double release = arg->data.list.items[4]->data.num;
+    double attack = eigs_list_num(arg, 1, __func__);
+    double decay = eigs_list_num(arg, 2, __func__);
+    double sustain = eigs_list_num(arg, 3, __func__);
+    double release = eigs_list_num(arg, 4, __func__);
 
     int n = samples->data.list.count;
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
@@ -2216,7 +2220,7 @@ Value* builtin_audio_envelope(Value *arg) {
             double frac = (r_samples > 0) ? (double)(i - r_start) / r_samples : 1.0;
             env = sustain * (1.0 - frac);
         }
-        double s = (samples->data.list.items[i]->type == VAL_NUM) ? samples->data.list.items[i]->data.num : 0;
+        double s = (samples->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(samples->data.list.items[i], __func__) : 0;
         s *= env;
         list_append_owned(out, make_num(s));
     }
@@ -2240,11 +2244,11 @@ Value* builtin_gfx_fb(Value *arg) {
               "[buffer fb, number w, number h, number x, number y, number scale]",
               make_null());
     Value *buf  = arg->data.list.items[0];
-    int    w    = (int)arg->data.list.items[1]->data.num;
-    int    h    = (int)arg->data.list.items[2]->data.num;
-    int    dx   = (int)arg->data.list.items[3]->data.num;
-    int    dy   = (int)arg->data.list.items[4]->data.num;
-    int    sc   = (int)arg->data.list.items[5]->data.num;
+    int    w    = (int)eigs_list_num(arg, 1, __func__);
+    int    h    = (int)eigs_list_num(arg, 2, __func__);
+    int    dx   = (int)eigs_list_num(arg, 3, __func__);
+    int    dy   = (int)eigs_list_num(arg, 4, __func__);
+    int    sc   = (int)eigs_list_num(arg, 5, __func__);
     /* A non-positive dimension is DEGENERATE geometry (nothing to blit),
      * the same verdict gfx_rrect gives a zero-size rectangle. A buffer
      * SHORTER than w * h is an argument mismatch and is loud -- still above

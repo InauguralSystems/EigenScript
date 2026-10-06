@@ -79,8 +79,9 @@ static void direct(void) {
     chunk_emit_u16(c, (uint16_t)name, 1);
     chunk_emit(c, OP_RETURN, 1);
     Value *r = vm_execute(c, env);
-    printf("assembled improving=%g\n", eigs_value_as_num(r));
-    check(r && !eigs_has_error() && eigs_value_as_num(r) == 1,
+    printf("assembled improving=%d\n", eigs_value_as_bool(r));
+    check(r && !eigs_has_error() && eigs_value_type(r) == EIGS_TYPE_BOOL &&
+          eigs_value_as_bool(r) == 1,
           "assembled writes and predicate match native improving=1");
     eigs_value_release(r);
     chunk_free(c);
@@ -89,6 +90,7 @@ static void direct(void) {
 
 #ifndef EIGS_OBS_BASELINE_ONLY
 static void eval_num(const char *source, double want, const char *name);
+static void eval_bool(const char *source, int want, const char *name);
 static void *arm_from_worker(void *arg) {
     EigsState *st = arg;
     if (!eigs_thread_attach(st)) return NULL;
@@ -179,6 +181,13 @@ static void eval_num(const char *source, double want, const char *name) {
     EigsValue *r = eigs_eval_string(source);
     check(r && !eigs_has_error() && eigs_value_type(r) == EIGS_TYPE_NUM &&
           eigs_value_as_num(r) == want, name);
+    eigs_value_release(r);
+}
+/* #1637: a predicate answers a bool. */
+static void eval_bool(const char *source, int want, const char *name) {
+    EigsValue *r = eigs_eval_string(source);
+    check(r && !eigs_has_error() && eigs_value_type(r) == EIGS_TYPE_BOOL &&
+          eigs_value_as_bool(r) == want, name);
     eigs_value_release(r);
 }
 static void gap(const char *source, const char *name) {
@@ -277,12 +286,12 @@ static void eval_contract(void) {
     EigsState *st = eigs_open();
     eval_ok(series, "default: first unit records assignments");
     check(g_obs_needed, "default: read-free unit is observed");
-    eval_num("improving of x", 1, "default: later unit reads correct history");
+    eval_bool("improving of x", 1, "default: later unit reads correct history");
     eigs_close(st);
 
     st = eigs_open();
     eigs_set_eval_observer_isolated(1);
-    eval_num("z is 8\nz is 4\nz is 2\nz is 1\nz is 0.5\nimproving of z", 1,
+    eval_bool("z is 8\nz is 4\nz is 2\nz is 1\nz is 0.5\nimproving of z", 1,
              "opt-in: observer-reading first unit is observed");
     eval_ok(series, "opt-in: read-free unit executes");
     printf("embed obs-gate: %s\n", g_obs_needed ? "observed" : "unobserved");
@@ -302,7 +311,7 @@ static void eval_contract(void) {
             "    local y is 16\n    y is 8\n    y is 4\n"
             "    y is 2\n    y is 1\n    return improving of y\n",
             "retained function: compile reader in first unit");
-    eval_num("local_reader of 0", 1,
+    eval_bool("local_reader of 0", 1,
              "retained function: later read-free call site preserves recording");
     check(g_obs_needed, "retained function: conservative observed verdict");
     eigs_close(st);
@@ -327,13 +336,13 @@ static void eval_contract(void) {
     eigs_set_eval_observer_isolated(1);
     eval_ok(series, "FORCE: first isolated unit records history");
     check(g_obs_needed, "FORCE: read-free unit is observed");
-    eval_num("improving of x", 1, "FORCE: cross-unit read has complete history");
+    eval_bool("improving of x", 1, "FORCE: cross-unit read has complete history");
     eigs_close(st);
     unsetenv("EIGS_OBS_FORCE");
 
     st = eigs_open();
     eval_ok(series, "fresh state: opt-in does not leak between states");
-    eval_num("improving of x", 1, "fresh state: complete history still available");
+    eval_bool("improving of x", 1, "fresh state: complete history still available");
     eigs_close(st);
 }
 #endif

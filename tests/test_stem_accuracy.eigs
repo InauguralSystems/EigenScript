@@ -216,7 +216,7 @@ psq is punnett_square of ["Aa", "Aa"]
 approx of [psq["AA"], 0.25, "punnett AA (#639)"]
 approx of [psq["Aa"], 0.5, "punnett Aa heterozygote folds aA in (#639)"]
 approx of [psq["aa"], 0.25, "punnett aa (#639)"]
-exact of [has_key of [psq, "aA"], 0, "punnett has no separate aA key (#639)"]
+exact of [has_key of [psq, "aA"], false, "punnett has no separate aA key (#639)"]
 
 # #640 power_iteration: the dominant eigenvalue of diag(-5, 1) is -5, not |−5|.
 neg_pit is power_iteration of [[[0 - 5, 0], [0, 1]], 200]

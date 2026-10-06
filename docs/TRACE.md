@@ -27,7 +27,7 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 5 0.43.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 6 0.44.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
@@ -181,7 +181,8 @@ identity: `what is x at N`, `e.line` and error headers.
 `N` records are written with full fidelity so they can be parsed back
 into real values on replay:
 
-- Numbers, `null`, and booleans are written verbatim.
+- Numbers and `null` are written verbatim; a bool is written `true` or
+  `false` and read back as a bool (format v6, #1637).
 - Strings are double-quoted; `\"`, `\\`, `\n`, `\r` are escaped, other
   control/non-printable bytes become `\xNN`.
 - Lists and dicts are emitted recursively: `[1, 2, 3]`,
@@ -707,9 +708,24 @@ everywhere else in the runtime (version-and-reject, never migrate).
   tape encoding; the runtime string is the recording binary's version.
   History: **v2** (#539) added the scope-transition `S` records; **v3**
   (#1044/#1045 follow-up) added the observer-configuration `O` records.
-  **v4** added flat stream IDs; **v5** adds the mandatory `B` associations.
+  **v4** added flat stream IDs; **v5** added the mandatory `B` associations.
   A v4 tape cannot establish host/causal correspondence and is refused by
   replay, stepping and DAP under the same version-and-reject rule.
+  **v6** (#1637) gives `true`/`false` their own type: the value encoding
+  writes and reads them as bools. A v5 tape recorded a predicate builtin's
+  answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
+  on a v6 binary would hand a number where the program now gets a bool; it is
+  refused instead (`tests/test_tape_observer_config.sh`, section 7). Within a
+  v6 tape, replay also refuses a recorded value of a kind its builtin cannot
+  return, with exit 3 and a message naming the record, the builtin, the kinds
+  it returns and the tape version. Every taped builtin declares its return
+  kinds in one table (`k_tape_kinds` in `src/trace.c`; for example
+  `random_normal` returns a list or null, so `random_normal=true` is refused),
+  and `tools/tape_kinds_check.sh` fails when a taped builtin has no row. A
+  name a host records through the embedding API declares its kinds with
+  `eigs_trace_declare_kind` when it registers the function; replay refuses
+  a record of an undeclared kind and a name declared nowhere
+  (docs/EMBEDDING.md; suite sections [0fb] and [0f5]).
   A v2 tape cannot say what its knobs were — the calls simply are not on it
   — so the compat decision for the bump is the standing one, and it is the
   loud half: a v2 tape is **refused** by `--step`, by the DAP server and by

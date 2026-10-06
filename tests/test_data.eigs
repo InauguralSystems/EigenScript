@@ -87,6 +87,10 @@ sorted_desc is data.df_sort_by of [df, "score", 0]
 assert_eq of [sorted_desc[0]["name"], "Alice", "df_sort_by desc first"]
 assert_eq of [sorted_desc[2]["name"], "Bob", "df_sort_by desc last"]
 
+# #1637: the direction flag takes a bool
+assert_eq of [(data.df_sort_by of [df, "age", true])[0]["name"], "Bob", "df_sort_by asc with true"]
+assert_eq of [(data.df_sort_by of [df, "score", false])[0]["name"], "Alice", "df_sort_by desc with false"]
+
 # df_map
 define double_score(x) as:
     return x * 2
@@ -104,11 +108,11 @@ assert_eq of [with_col[1]["name_len"], 3, "df_add_column Bob len"]
 # df_rename
 renamed is data.df_rename of [df, "name", "person"]
 assert_eq of [renamed[0]["person"], "Alice", "df_rename new key"]
-assert_eq of [has_key of [renamed[0], "name"], 0, "df_rename old key gone"]
+assert_eq of [has_key of [renamed[0], "name"], false, "df_rename old key gone"]
 
 # df_drop
 dropped is data.df_drop of [df, ["age"]]
-assert_eq of [has_key of [dropped[0], "age"], 0, "df_drop removes column"]
+assert_eq of [has_key of [dropped[0], "age"], false, "df_drop removes column"]
 assert_eq of [dropped[0]["name"], "Alice", "df_drop keeps other columns"]
 
 # df_sum, df_mean, df_min, df_max

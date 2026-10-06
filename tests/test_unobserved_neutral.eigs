@@ -151,7 +151,7 @@ assert_eq of [str of th_u.rel, str of th_o.rel, "J hot loop: rel window identica
 assert_eq of [str of th_u.raw, str of th_o.raw, "J hot loop: raw window identical"]
 assert_eq of [th_u.last_value, th_o.last_value, "J hot loop: last value identical"]
 assert_eq of [classify of th_u, classify of th_o, "J hot loop: snapshot classifies identically"]
-assert_eq of [th_u.observed, 1, "J the sampled binding counts as observed"]
+assert_eq of [th_u.observed, true, "J the sampled binding counts as observed"]
 assert_eq of [len of th_o.dh, 10, "J control: the observed dH window is full"]
 assert_eq of [len of th_u.dh, 0, "J the ENTROPY channel is still elided: no dH window"]
 assert_eq of [th_u.dH, 0, "J the ENTROPY channel is still elided: dH never computed"]
@@ -210,6 +210,6 @@ define alias_probe() as:
         scratch is 50.0
     return converged  # lint: allow W016 -- the bare alias is exactly what is under test
 
-assert_eq of [alias_probe of 0, 1, "A bare predicate still reads the last OBSERVED binding after the block"]
+assert_eq of [alias_probe of 0, true, "A bare predicate still reads the last OBSERVED binding after the block"]
 
 test_summary of null

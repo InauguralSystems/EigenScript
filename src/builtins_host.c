@@ -259,19 +259,19 @@ Value* builtin_regex_replace(Value *arg) {
 Value* builtin_stream_open(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "stream_open");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "stream_open", "[path, count]", make_num(0));
+              "stream_open", "[path, count]", make_bool(0));
     Value *path_val = arg->data.list.items[0];
     Value *count_val = arg->data.list.items[1];
     ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM,
-              "stream_open", "[a string path, a number count]", make_num(0));
-    if (count_val->data.num < 1 ||
-        count_val->data.num > EIGS_TENSOR_MAX_ELEMENTS ||
-        count_val->data.num != floor(count_val->data.num)) {
+              "stream_open", "[a string path, a number count]", make_bool(0));
+    if (eigs_num_arg(count_val, __func__) < 1 ||
+        eigs_num_arg(count_val, __func__) > EIGS_TENSOR_MAX_ELEMENTS ||
+        eigs_num_arg(count_val, __func__) != floor(eigs_num_arg(count_val, __func__))) {
         rt_error(EK_LIMIT, 0,
                  "stream_open: '%s' count %.17g is outside the 1..%d element cap",
-                 path_val->data.str, count_val->data.num,
+                 path_val->data.str, eigs_num_arg(count_val, __func__),
                  EIGS_TENSOR_MAX_ELEMENTS);
-        return make_num(0);
+        return make_bool(0);
     }
     if (g_stream_file) { fclose(g_stream_file); g_stream_file = NULL; }
     g_stream_file = xfopen_write(path_val->data.str, "wb");
@@ -279,40 +279,40 @@ Value* builtin_stream_open(Value *arg) {
      * reaching here with a NULL FILE* is xfopen_write failing, and the block
      * comment over this section documents stream_open as answering 1 — so 0
      * is the "could not open" answer, not a type mistake. */
-    if (!g_stream_file) return make_num(0);
-    uint32_t count = (uint32_t)count_val->data.num;
+    if (!g_stream_file) return make_bool(0);
+    uint32_t count = (uint32_t)eigs_num_arg(count_val, __func__);
     uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
     if (fwrite(header, sizeof(uint32_t), 4, g_stream_file) != 4) {
         fclose(g_stream_file);
         g_stream_file = NULL;
         /* fs:ANSWER a short fwrite(3) of the header — an I/O failure after the
          * file was already opened; 0 is the failure bit paired with the
-         * make_num(1) success value below. */
-        return make_num(0);
+         * make_bool(1) success value below. */
+        return make_bool(0);
     }
-    return make_num(1);
+    return make_bool(1);
 }
 
 Value* builtin_stream_write(Value *arg) {
     /* The two halves of the original single condition are separated because
      * only one of them is about the ARGUMENT: `!g_stream_file` is a stream
      * state, and strict must not report it as a type error. Both halves still
-     * answer make_num(0) with strict off, in either order, so the non-strict
+     * answer make_bool(0) with strict off, in either order, so the non-strict
      * result is unchanged. */
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "stream_write", "a number", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_NUM, "stream_write", "a number", make_bool(0));
     /* fs:ANSWER no stream is open — the state, not the argument (which the
      * guard above already accepted); 0 is the failure bit paired with the
-     * make_num(1) success value below. */
-    if (!g_stream_file) return make_num(0);
-    double val = arg->data.num;
+     * make_bool(1) success value below. */
+    if (!g_stream_file) return make_bool(0);
+    double val = eigs_num_arg(arg, __func__);
     if (fwrite(&val, sizeof(double), 1, g_stream_file) != 1) {
         fclose(g_stream_file);
         g_stream_file = NULL;
         /* fs:ANSWER a short fwrite(3) of one float64 — an I/O failure, not an
          * argument mistake; 0 is this builtin's documented failure bit. */
-        return make_num(0);
+        return make_bool(0);
     }
-    return make_num(1);
+    return make_bool(1);
 }
 
 Value* builtin_stream_close(Value *arg) {
@@ -320,10 +320,10 @@ Value* builtin_stream_close(Value *arg) {
     /* fs:ANSWER stream_close ignores `arg` entirely ((void)arg above), so this
      * cannot be an argument guard: no stream is open, and 0 is the failure bit
      * paired with the ok?1:0 value below. */
-    if (!g_stream_file) return make_num(0);
+    if (!g_stream_file) return make_bool(0);
     int ok = (fclose(g_stream_file) == 0);
     g_stream_file = NULL;
-    return make_num(ok ? 1 : 0);
+    return make_bool(ok);
 }
 
 /* ---- Filesystem ---- */
@@ -337,7 +337,7 @@ Value* builtin_stream_close(Value *arg) {
  * rule as the proc-star / audio-capture boundary. Its return IS pinnable by
  * the tape (unlike a proc fd), so it is Recorded, not #148-non-replayable. */
 Value* builtin_mkdir(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "mkdir", "a string path", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "mkdir", "a string path", make_bool(0));
     TRACE_NONDET_TAKE("mkdir");
     /* Simple recursive mkdir */
     char *path = xstrdup(arg->data.str);
@@ -353,7 +353,7 @@ Value* builtin_mkdir(Value *arg) {
     free(path);
     struct stat st;
     TRACE_NONDET_RECORD("mkdir",
-        make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
+        make_bool(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode)));
 }
 
 static int ls_entry_cmp(const void *a, const void *b) {
@@ -411,8 +411,8 @@ Value* builtin_exe_path(Value *arg) {
 
 /* chdir of "path" → 1 on success, 0 on failure */
 Value* builtin_chdir(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "chdir", "a string path", make_num(0));
-    return make_num(chdir(arg->data.str) == 0 ? 1 : 0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "chdir", "a string path", make_bool(0));
+    return make_bool(chdir(arg->data.str) == 0);
 }
 
 /* mktemp of null → path to a new temporary file */
@@ -437,8 +437,8 @@ Value* builtin_mktemp(Value *arg) {
 
 /* rm of "path" → 1 on success, 0 on failure */
 Value* builtin_rm(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "rm", "a string path", make_num(0));
-    return make_num(unlink(arg->data.str) == 0 ? 1 : 0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "rm", "a string path", make_bool(0));
+    return make_bool(unlink(arg->data.str) == 0);
 }
 
 /* Identifier frequency entry */
@@ -458,11 +458,12 @@ Value* builtin_build_corpus(Value *arg) {
     Value *vocab_path_val = arg->data.list.items[3];
 
     if (!file_list || file_list->type != VAL_LIST) return make_null();
+    BOOL_REFUSE(topn_val, "build_corpus");
     if (!topn_val || topn_val->type != VAL_NUM) return make_null();
     if (!stream_path_val || stream_path_val->type != VAL_STR) return make_null();
     if (!vocab_path_val || vocab_path_val->type != VAL_STR) return make_null();
 
-    int top_n = (int)topn_val->data.num;
+    int top_n = (int)eigs_num_arg(topn_val, __func__);
     int n_files = file_list->data.list.count;
 
     /* ---- SLOT MODE (optional 6th arg: slot_count > 0) --------------------
@@ -492,7 +493,9 @@ Value* builtin_build_corpus(Value *arg) {
     int slot_count = 0;
     if (arg->data.list.count >= 6) {
         Value *sv = arg->data.list.items[5];
-        if (sv && sv->type == VAL_NUM) slot_count = (int)sv->data.num;
+        double d = 0;
+        if (eigs_opt_num(sv, &d, "build_corpus")) slot_count = (int)d;   /* #1637: a bool raises */
+        if (g_has_error) return make_null();
     }
     if (slot_count < 0) slot_count = 0;
 
@@ -518,7 +521,9 @@ Value* builtin_build_corpus(Value *arg) {
     int int_count = 0;
     if (arg->data.list.count >= 7) {
         Value *iv = arg->data.list.items[6];
-        if (iv && iv->type == VAL_NUM) int_count = (int)iv->data.num;
+        double d = 0;
+        if (eigs_opt_num(iv, &d, "build_corpus")) int_count = (int)d;    /* #1637: a bool raises */
+        if (g_has_error) return make_null();
     }
     if (int_count < 0) int_count = 0;
     /* Source of truth: the size of the TokType enum. Hardcoding 54 (which is
@@ -1005,7 +1010,7 @@ Value* builtin_load_file(Value *arg) {
 }
 
 Value* builtin_file_exists(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "file_exists", "a string path", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "file_exists", "a string path", make_bool(0));
     /* #585: fs-dependent read — taped so replay serves the recorded answer.
      * TAKE short-circuits before the fopen probe under EIGS_REPLAY. */
     TRACE_NONDET_TAKE("file_exists");
@@ -1016,7 +1021,7 @@ Value* builtin_file_exists(Value *arg) {
      * devices stay 1 as before. */
     struct stat st;
     int ex = (stat(arg->data.str, &st) == 0);
-    TRACE_NONDET_RECORD("file_exists", make_num(ex));
+    TRACE_NONDET_RECORD("file_exists", make_bool(ex));
 }
 
 /* is_dir of path — 1 if path names a directory, 0 for a plain file, a
@@ -1026,10 +1031,10 @@ Value* builtin_file_exists(Value *arg) {
  * file_exists, ls, mkdir, getcwd — predate the tape and are untraced;
  * that inconsistency is flagged on the PR, not silently copied here). */
 Value* builtin_is_dir(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_dir", "a string path", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_dir", "a string path", make_bool(0));
     struct stat st;
     TRACE_NONDET_RET("is_dir",
-        make_num(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode) ? 1 : 0));
+        make_bool(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode)));
 }
 
 /* #1058: `is_file of path` -- 1 iff the path names a REGULAR file (S_ISREG).
@@ -1039,10 +1044,10 @@ Value* builtin_is_dir(Value *arg) {
  * non-regular non-directory class passed both and read as "", so /dev/null
  * compiled to the empty program. Taped like is_dir. */
 Value* builtin_is_file(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_file", "a string path", make_num(0));
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "is_file", "a string path", make_bool(0));
     struct stat st;
     TRACE_NONDET_RET("is_file",
-        make_num(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode) ? 1 : 0));
+        make_bool(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode)));
 }
 
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
@@ -1052,18 +1057,18 @@ Value* builtin_is_file(Value *arg) {
 Value* builtin_rename(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "rename");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "rename", "[old_path, new_path]", make_num(0));
+              "rename", "[old_path, new_path]", make_bool(0));
     Value *from = arg->data.list.items[0];
     Value *to = arg->data.list.items[1];
     ARG_GUARD(!from || from->type != VAL_STR || !to || to->type != VAL_STR,
-              "rename", "two string paths", make_num(0));
-    return make_num(rename(from->data.str, to->data.str) == 0 ? 1 : 0);
+              "rename", "two string paths", make_bool(0));
+    return make_bool(rename(from->data.str, to->data.str) == 0);
 }
 
 /* remove_file of path — delete a file. Returns 1 on success, 0 on failure. */
 Value* builtin_remove_file(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_num(0));
-    return make_num(remove(arg->data.str) == 0 ? 1 : 0);
+    ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_bool(0));
+    return make_bool(remove(arg->data.str) == 0);
 }
 
 /* ==== BUILTIN: read_text ==== */
@@ -1142,14 +1147,14 @@ Value* builtin_read_bytes_buf(Value *arg) {
                 rt_error(EK_VALUE, 0, "read_bytes_buf: max_bytes must be a number");
                 return make_null();
             }
-            if (!(mv->data.num >= 1 &&
-                  mv->data.num <= (double)READ_BYTES_BUF_HARD_CAP)) {
+            if (!(eigs_num_arg(mv, __func__) >= 1 &&
+                  eigs_num_arg(mv, __func__) <= (double)READ_BYTES_BUF_HARD_CAP)) {
                 rt_error(EK_VALUE, 0,
                          "read_bytes_buf: max_bytes must be in 1..%lld (got %g)",
-                         READ_BYTES_BUF_HARD_CAP, mv ? mv->data.num : 0.0);
+                         READ_BYTES_BUF_HARD_CAP, mv ? eigs_num_arg(mv, __func__) : 0.0);
                 return make_null();
             }
-            cap = (long long)mv->data.num;
+            cap = (long long)eigs_num_arg(mv, __func__);
         }
     }
     if (!path || path->type != VAL_STR) return make_null();
@@ -1164,7 +1169,7 @@ Value* builtin_read_bytes_buf(Value *arg) {
         if (trace_replay_refuse_off_owner("read_bytes_buf")) return make_null();
         if (trace_replay_take("read_bytes_buf", &tv)) {
             if (tv && tv->type == VAL_NUM) {
-                long long len = (long long)tv->data.num;
+                long long len = (long long)eigs_num_arg(tv, __func__);
                 val_decref(tv);
                 read_bytes_buf_cap_raise(path->data.str, len, cap);
                 return make_null();
@@ -1261,21 +1266,21 @@ Value* builtin_read_line(Value *arg) {
 Value* builtin_write_text(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "write_text");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "write_text", "[path, text]", make_num(0));
+              "write_text", "[path, text]", make_bool(0));
     Value *path_val = arg->data.list.items[0];
     Value *text_val = arg->data.list.items[1];
     ARG_GUARD(!path_val || path_val->type != VAL_STR ||
               !text_val || text_val->type != VAL_STR,
-              "write_text", "two strings", make_num(0));
+              "write_text", "two strings", make_bool(0));
     FILE *f = xfopen_write(path_val->data.str, "w");
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
      * is xfopen_write failing (missing directory, permissions, sandbox), and
      * the header comment documents write_text as "1 on success, 0 on failure". */
-    if (!f) return make_num(0);
+    if (!f) return make_bool(0);
     size_t len = val_str_len(text_val);
     size_t written = fwrite(text_val->data.str, 1, len, f);
     int close_ok = (fclose(f) == 0);
-    return make_num(written == len && close_ok ? 1 : 0);
+    return make_bool(written == len && close_ok);
 }
 
 /* ==== BUILTIN: exec_capture ==== */
@@ -1323,7 +1328,7 @@ Value* builtin_exec_capture(Value *arg) {
         && arg->data.list.items[0] && arg->data.list.items[0]->type == VAL_LIST
         && arg->data.list.items[1] && arg->data.list.items[1]->type == VAL_NUM) {
         cmd_list = arg->data.list.items[0];
-        timeout_sec = arg->data.list.items[1]->data.num;
+        timeout_sec = eigs_list_num(arg, 1, __func__);
         ARG_GUARD(cmd_list->data.list.count < 1,
                   "exec_capture", "a non-empty command list", exec_capture_result(-1, ""));
     }
@@ -1565,7 +1570,7 @@ Value* builtin_proc_write(Value *arg) {
     Value *str_v = arg->data.list.items[1];
     ARG_GUARD(!fd_v || fd_v->type != VAL_NUM || !str_v || str_v->type != VAL_STR,
               "proc_write", "[number fd, string]", make_num(-1));
-    int fd = (int)fd_v->data.num;
+    int fd = (int)eigs_num_arg(fd_v, __func__);
     /* fs:ANSWER a negative descriptor is not a write that failed on its
      * arguments' TYPES — it is a descriptor that cannot be written, which is
      * the same -1 a closed fd produces below. Left soft deliberately: fds
@@ -1596,7 +1601,7 @@ Value* builtin_proc_write(Value *arg) {
 Value* builtin_proc_read_line(Value *arg) {
     if (replay_blocks("proc_read_line")) return make_null();
     if (!arg || arg->type != VAL_NUM) return make_null();
-    int fd = (int)arg->data.num;
+    int fd = (int)eigs_num_arg(arg, __func__);
     if (fd < 0) return make_null();
     size_t cap = 256, len = 0;
     char *buf = xmalloc(cap + 1);
@@ -1643,8 +1648,8 @@ Value* builtin_proc_read(Value *arg) {
     Value *max_v = arg->data.list.items[1];
     if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
         return make_null();
-    int fd = (int)fd_v->data.num;
-    int max = (int)max_v->data.num;
+    int fd = (int)eigs_num_arg(fd_v, __func__);
+    int max = (int)eigs_num_arg(max_v, __func__);
     if (fd < 0 || max <= 0) return make_null();
     if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
     char *buf = xmalloc((size_t)max + 1);
@@ -1673,8 +1678,8 @@ Value* builtin_proc_read_buf(Value *arg) {
     Value *max_v = arg->data.list.items[1];
     if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
         return make_null();
-    int fd = (int)fd_v->data.num;
-    int max = (int)max_v->data.num;
+    int fd = (int)eigs_num_arg(fd_v, __func__);
+    int max = (int)eigs_num_arg(max_v, __func__);
     if (fd < 0 || max <= 0) return make_null();
     if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
     unsigned char *buf = xmalloc((size_t)max);
@@ -1702,7 +1707,7 @@ Value* builtin_proc_read_buf(Value *arg) {
 Value* builtin_proc_close(Value *arg) {
     if (replay_blocks("proc_close")) return make_null();
     if (!arg || arg->type != VAL_NUM) return make_null();
-    int fd = (int)arg->data.num;
+    int fd = (int)eigs_num_arg(arg, __func__);
     if (fd >= 0) close(fd);
     return make_null();
 }
@@ -1712,7 +1717,7 @@ Value* builtin_proc_wait(Value *arg) {
      * status", and the refusal belongs to the replay layer. */
     if (replay_blocks("proc_wait")) return make_num(-1);
     ARG_GUARD(!arg || arg->type != VAL_NUM, "proc_wait", "a numeric pid", make_num(-1));
-    pid_t pid = (pid_t)arg->data.num;
+    pid_t pid = (pid_t)eigs_num_arg(arg, __func__);
     /* fs:ANSWER a non-positive pid names no process, so there is no exit
      * status to report. A pid is a runtime value from proc_open, not a
      * literal, so this is state rather than a type mistake. */
@@ -1740,7 +1745,7 @@ Value* builtin_random_hex(Value *arg) {
     /* #971 Phase D: a non-number length answered "" (as does a length of 0,
      * which stays the answer). Taped: the soft half records as before. */
     ARG_GUARD_TAPED(!arg || arg->type != VAL_NUM, "random_hex", "a number of hex digits", make_str(""));
-    int n = (arg && arg->type == VAL_NUM) ? (int)arg->data.num : 0;
+    int n = (arg && arg->type == VAL_NUM) ? (int)eigs_num_arg(arg, __func__) : 0;
     if (n <= 0 || n > 256) TRACE_NONDET_RET("random_hex", make_str(""));
     int bytes_needed = (n + 1) / 2;
     unsigned char raw[128];
@@ -1771,10 +1776,15 @@ Value* builtin_write_bytes(Value *arg) {
     Value *data = arg->data.list.items[1];
     ARG_GUARD(!path_val || path_val->type != VAL_STR,
               "write_bytes", "a string path as its first argument", make_num(0));
+    /* #1637: append is a flag -- a bool, or the older nonzero number. Any
+     * other value raises rather than silently meaning "truncate". */
     int append = 0;
-    if (arg->data.list.count >= 3 && arg->data.list.items[2] &&
-        arg->data.list.items[2]->type == VAL_NUM)
-        append = (arg->data.list.items[2]->data.num != 0.0);
+    if (arg->data.list.count >= 3 && arg->data.list.items[2]) {
+        Value *fl = arg->data.list.items[2];
+        if (fl->type == VAL_BOOL) append = fl->data.boolean;
+        else if (fl->type != VAL_NULL) append = (eigs_num_arg(fl, "write_bytes") != 0.0);
+        if (g_has_error) return make_num(0);
+    }
 
     int n = 0;
     Value **items = NULL;
@@ -1798,12 +1808,13 @@ Value* builtin_write_bytes(Value *arg) {
          * two zero bytes and reported success. Same class as join/str_replace
          * — no stand-in return, so invisible to the classifier. The free()
          * matters: STRICT_REQUIRE returns, and `out` is already allocated. */
-        if (g_strict && items && (!items[i] || items[i]->type != VAL_NUM)) {
+        if (items && (!items[i] || items[i]->type != VAL_NUM)
+            && (g_strict || (items[i] && items[i]->type == VAL_BOOL))) {   /* #1637: a bool in every mode */
             free(out);
             rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
             return make_null();
         }
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? items[i]->data.num : 0.0)
+        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? eigs_num_arg(items[i], __func__) : 0.0)
                           : buffer_read_num(data, i);
         if (g_has_error) { free(out); return make_null(); }
         out[i] = finite_num_to_byte(dv);

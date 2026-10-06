@@ -523,6 +523,7 @@ void free_ast(ASTNode *node) {
          * error here instead of a silently leaked child. */
         case AST_NUM:
         case AST_NULL:
+        case AST_BOOL:
         case AST_PREDICATE:
         case AST_BREAK:
         case AST_CONTINUE:
@@ -812,6 +813,13 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type == TOK_NULL) {
         p_advance(p);
         return make_node(AST_NULL, t->line);
+    }
+
+    if (t->type == TOK_TRUE || t->type == TOK_FALSE) {   /* #1637 */
+        p_advance(p);
+        ASTNode *b = make_node(AST_BOOL, t->line);
+        b->data.num = (t->type == TOK_TRUE) ? 1.0 : 0.0;
+        return b;
     }
 
     if (tok_is_report(t->type)) {

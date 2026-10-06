@@ -24,14 +24,14 @@ print of ("  last status: " + tracked[12].status)
 print of "--- is_measurement_stable (stable) ---"
 stable_data is [5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
 result is is_measurement_stable of [stable_data, 3]
-assert_eq of [result, 1, "stable data is stable"]
+assert_eq of [result, true, "stable data is stable"]
 print of ("  stable: " + (str of result))
 
 # ---- is_measurement_stable on noisy data ----
 print of "--- is_measurement_stable (noisy) ---"
 noisy_data is [1, 10, 2, 9, 3, 8, 4, 7, 5, 6]
 result2 is is_measurement_stable of [noisy_data, 5]
-assert_eq of [result2, 0, "noisy data not stable for 5"]
+assert_eq of [result2, false, "noisy data not stable for 5"]
 print of ("  stable: " + (str of result2))
 
 # ---- detect_entropy_spikes finds outliers ----

@@ -43,7 +43,7 @@ assert_eq of [r2.age, 31, "update works"]
 
 # Delete
 d is store_delete of [db, "users", k2]
-assert_eq of [d, 1, "delete returns 1"]
+assert_eq of [d, true, "delete returns 1"]
 c2 is store_count of [db, "users"]
 assert_eq of [c2, 1, "count after delete"]
 
@@ -311,7 +311,7 @@ assert_eq of [u_kind, "limit", "#1006: an oversized update raises, catchably"]
 # reports 1" is not assertable from EigenScript and an assertion that looks
 # like it is true of HEAD too. The 0 that IS observable is the locate miss,
 # which the refactor rewrote, so pin that instead.
-assert_eq of [store_update of [udb, "docs", "no-such-key", {"body": "x"}], 0, "#1006: updating an absent key reports 0 and raises nothing"]
+assert_eq of [store_update of [udb, "docs", "no-such-key", {"body": "x"}], false, "#1006: updating an absent key reports 0 and raises nothing"]
 assert_eq of [store_count of [udb, "docs"], 3, "#1006: an absent-key update inserts nothing"]
 
 # The record and both neighbours are exactly as they were.
@@ -352,7 +352,7 @@ assert of [contains of [u_msg, "store_update:"], "#1006: the error names store_u
 # record check above the locate would raise on an argument shape that used to
 # be quiet, with the strict flag off. Nothing else in the suite pins this — a
 # build with the check hoisted passes every other assertion in this file.
-assert_eq of [store_update of [udb, "docs", "no-such-key", "not-a-dict"], 0, "#1006: an absent key with a non-dict record stays a silent 0"]
+assert_eq of [store_update of [udb, "docs", "no-such-key", "not-a-dict"], false, "#1006: an absent key with a non-dict record stays a silent 0"]
 assert_eq of [(store_get of [udb, "docs", "doc1"]).body, "original", "#1006: non-dict update leaves the record"]
 
 store_close of udb
@@ -361,7 +361,7 @@ assert_eq of [after_bytes, before_bytes, "#1006: rejected updates leave the file
 
 # The store is not wedged: a legitimate update still replaces the record.
 udb is store_open of "/tmp/eigs1006_update.db"
-assert_eq of [store_update of [udb, "docs", "doc1", {"body": "replaced"}], 1, "#1006: a valid update still reports 1"]
+assert_eq of [store_update of [udb, "docs", "doc1", {"body": "replaced"}], true, "#1006: a valid update still reports 1"]
 assert_eq of [(store_get of [udb, "docs", "doc1"]).body, "replaced", "#1006: a valid update still replaces"]
 assert_eq of [store_count of [udb, "docs"], 3, "#1006: a valid update does not duplicate the row"]
 store_close of udb

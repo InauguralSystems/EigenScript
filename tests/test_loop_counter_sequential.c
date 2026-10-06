@@ -42,8 +42,8 @@ static void step(Env *env, const char *label, int stall,
     EigsSlot value = env_get_hashed_slot(env, counter, 0, &found);
     int numeric = slot_is_num(value) ||
         (slot_is_ptr(value) && slot_as_ptr(value)->type == VAL_NUM);
-    double actual = slot_is_num(value) ? value.d :
-        (numeric ? slot_as_ptr(value)->data.num : -1);
+    double actual = slot_is_num(value) ? SLOT_NUM_RAW(value) :
+        (numeric ? VAL_NUM_RAW(slot_as_ptr(value)) : -1);
     int assignments = env_get_assign_count(env, counter, 0);
     int ok = rc == 0 && !g_has_error && found && numeric &&
         actual == (double)expected_iterations &&

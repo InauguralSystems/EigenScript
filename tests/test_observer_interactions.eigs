@@ -11,9 +11,9 @@ loop while not converged:
     x is x * 0.1
 
 # Check mutual exclusion of predicates
-assert of [converged == 1, "OI1 converged after descent"]
-assert of [diverging == 0, "OI2 converged implies not diverging"]
-assert of [improving == 0, "OI3 converged implies not improving (dH~0)"]
+assert of [converged, "OI1 converged after descent"]
+assert of [(not diverging), "OI2 converged implies not diverging"]
+assert of [(not improving), "OI3 converged implies not improving (dH~0)"]
 
 # === OBSERVER STATE THROUGH FUNCTION CALLS ===
 
@@ -105,7 +105,7 @@ assert of [ob == null, "OI15 freed observed value cleared safely"]
 ob2 is buffer of 2
 ob2 is null
 p is converged
-assert of [(p == 0) or (p == 1), "OI16 predicate after observed free"]
+assert of [(p == false) or (p == true), "OI16 predicate after observed free"]
 
 # === REGRESSION FOR #187 ===
 # `report` switches improving/diverging at dh_small; the bare predicates
@@ -144,13 +144,13 @@ stb_g is preds[2]
 rep_g is preds[3]
 
 # Mutual exclusion within {stable, improving, diverging}.
-assert of [not (stb_g == 1 and imp_g == 1), "OI17 stable + improving must not collide in gray band (#187)"]
-assert of [not (stb_g == 1 and div_g == 1), "OI18 stable + diverging must not collide in gray band (#187)"]
+assert of [not (stb_g and imp_g), "OI17 stable + improving must not collide in gray band (#187)"]
+assert of [not (stb_g and div_g), "OI18 stable + diverging must not collide in gray band (#187)"]
 
 # Predicates must agree with `report`.
 if rep_g == "stable":
-    assert of [imp_g == 0, "OI19 report=stable => improving=0 (#187)"]
-    assert of [div_g == 0, "OI20 report=stable => diverging=0 (#187)"]
+    assert of [not imp_g, "OI19 report=stable => improving=0 (#187)"]
+    assert of [not div_g, "OI20 report=stable => diverging=0 (#187)"]
 
 
 
@@ -181,7 +181,7 @@ unobserved:  # lint: allow W020 -- promotion of a block-local name is the point
 assert of [plain895 == 4.5, "OI-895 the plain read still works"]
 assert of [rep895 == "moving", "OI-895 report of a promoted name resolves"]
 assert of [repv895 == "moving", "OI-895 report_value of a promoted name resolves"]
-assert of [traj895.observed == 1, "OI-895 trajectory of a promoted name resolves"]
+assert of [traj895.observed, "OI-895 trajectory of a promoted name resolves"]
 assert of [obs895[0] == "moving", "OI-895 observe of a promoted name resolves"]
 
 # Same block, but the name escapes it, so nothing is promoted and the

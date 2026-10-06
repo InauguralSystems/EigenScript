@@ -12,6 +12,7 @@ syn keyword eigsOperatorWord is of and or not at
 syn keyword eigsInterrogative what who when where why how prev state_at report report_value
 syn keyword eigsPredicate converged stable improving oscillating diverging equilibrium
 syn keyword eigsNull null
+syn keyword eigsBoolean true false
 
 syn match eigsComment "#.*$"
 " Hex integers, leading/trailing-dot decimals, exponents (docs/SPEC.md, Numbers)
@@ -31,6 +32,7 @@ hi def link eigsOperatorWord Operator
 hi def link eigsInterrogative Special
 hi def link eigsPredicate Constant
 hi def link eigsNull Constant
+hi def link eigsBoolean Boolean
 hi def link eigsComment Comment
 hi def link eigsNumber Number
 hi def link eigsString String

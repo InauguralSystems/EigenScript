@@ -165,7 +165,7 @@ static const char *builtin_docs[][2] = {
     {"keys", "keys — builtin; see docs/BUILTINS.md"},
     {"leaky_relu", "leaky_relu of tensor → element-wise max(0.01*x, x). Works on 1D or 2D."},
     {"len", "len — builtin; see docs/BUILTINS.md"},
-    {"list_contains", "list_contains of [list, value] — 1 if any element structurally equals"},
+    {"list_contains", "list_contains of [list, value] — true if any element structurally equals"},
     {"list_index_of", "list_index_of of [list, value] — index of the first element structurally"},
     {"list_insert_at", "list_insert_at of [list, index, value] — insert value at index, shift tail"},
     {"list_remove_at", "list_remove_at of [list, index] — remove element at index, shift tail down."},

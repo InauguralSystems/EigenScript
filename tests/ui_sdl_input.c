@@ -37,14 +37,14 @@ int main(void) {
     EigsState *state = eigs_open();
     if (!state) return 2;
     int passed = 0;
-    int ok = eval_ok("assert of [(gfx_open of [80, 60, \"ui-input-1263\"]) == 1, \"open\"]\n");
+    int ok = eval_ok("assert of [(gfx_open of [80, 60, \"ui-input-1263\"]) == true, \"open\"]\n");
     const char *checks[] = {
-        "e.type == \"keydown\" and e.key == \"up\" and e.scancode == 82 and e.shift == 1 and e.ctrl == 0 and e.alt == 0",
-        "e.type == \"keyup\" and e.key == \"a\" and e.scancode == 4 and e.shift == 0 and e.ctrl == 1 and e.alt == 1",
-        "e.type == \"mousemove\" and e.x == 321 and e.y == 654 and e.shift == 0 and e.ctrl == 1 and e.alt == 1",
-        "e.type == \"mousedown\" and e.button == 3 and e.x == 111 and e.y == 222 and e.shift == 0 and e.ctrl == 1 and e.alt == 1",
-        "e.type == \"mouseup\" and e.button == 3 and e.x == 112 and e.y == 223 and e.shift == 0 and e.ctrl == 1 and e.alt == 1",
-        "e.type == \"wheel\" and e.x == -2 and e.y == 5 and e.mx == 17 and e.my == 23 and e.shift == 0 and e.ctrl == 1 and e.alt == 1",
+        "e.type == \"keydown\" and e.key == \"up\" and e.scancode == 82 and e.shift == true and e.ctrl == false and e.alt == false",
+        "e.type == \"keyup\" and e.key == \"a\" and e.scancode == 4 and e.shift == false and e.ctrl == true and e.alt == true",
+        "e.type == \"mousemove\" and e.x == 321 and e.y == 654 and e.shift == false and e.ctrl == true and e.alt == true",
+        "e.type == \"mousedown\" and e.button == 3 and e.x == 111 and e.y == 222 and e.shift == false and e.ctrl == true and e.alt == true",
+        "e.type == \"mouseup\" and e.button == 3 and e.x == 112 and e.y == 223 and e.shift == false and e.ctrl == true and e.alt == true",
+        "e.type == \"wheel\" and e.x == -2 and e.y == 5 and e.mx == 17 and e.my == 23 and e.shift == false and e.ctrl == true and e.alt == true",
         "e.type == \"resize\" and e.w == 640 and e.h == 480",
         "e.type == \"quit\""
     };

@@ -49,8 +49,8 @@ print of ("done=" + (getcwd of null))
             if path is not None:
                 env["PATH"] = path
             expected = [
-                f"before={BINARY}", "chdir=1", f"cwd={elsewhere}",
-                f"after={BINARY}", "meta=1", "vm=1", "restore=1",
+                f"before={BINARY}", "chdir=true", f"cwd={elsewhere}",
+                f"after={BINARY}", "meta=true", "vm=true", "restore=true",
                 f"done={cwd}",
             ]
             try:

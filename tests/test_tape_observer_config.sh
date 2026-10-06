@@ -228,29 +228,29 @@ RC=$?
     || fail "multiplicative observer replay work is refused with exit 3" \
             "rc=$RC $(head -1 "$TMPDIR/work-limit.err")"
 
-# ---- 7. #411 version/compat path. The `O` records are an ENCODING change,
-# so TRACE_FORMAT_VERSION is now 5 for correspondence declarations.
-# Version-and-reject, never migrate: a v4 tape has stream IDs but no
-# host/causal associations and is refused by both the stepper and replay.
-head -1 "$TMPDIR/thr.tape" | grep -q '^V 5 ' \
-    && ok "tapes written by this build stamp format v5" \
-    || fail "tapes written by this build stamp format v5" \
+# ---- 7. #411 version/compat path. A value-encoding change bumps
+# TRACE_FORMAT_VERSION: v6 (#1637) writes true/false as bool values where a v5
+# tape held a predicate's answer as 1/0. Version-and-reject, never migrate: a
+# v5 tape is refused by both the stepper and replay, never read as numbers.
+head -1 "$TMPDIR/thr.tape" | grep -q '^V 6 ' \
+    && ok "tapes written by this build stamp format v6" \
+    || fail "tapes written by this build stamp format v6" \
             "$(head -1 "$TMPDIR/thr.tape")"
 
-V2="$TMPDIR/v4.tape"
-sed "1s/^V 5 /V 4 /" "$TMPDIR/thr.tape" > "$V2"
+V2="$TMPDIR/v5.tape"
+sed "1s/^V 6 /V 5 /" "$TMPDIR/thr.tape" > "$V2"
 echo q | "$EIGS" --step "$V2" "$TMPDIR/thr.eigs" >/dev/null 2>"$TMPDIR/v2.err"
 RC=$?
-[ "$RC" -eq 3 ] && grep -q "tape format v4" "$TMPDIR/v2.err" \
-    && ok "a v4 (pre-association) tape is refused by --step with exit 3" \
-    || fail "a v4 (pre-association) tape is refused by --step with exit 3" \
+[ "$RC" -eq 3 ] && grep -q "tape format v5" "$TMPDIR/v2.err" \
+    && ok "a v5 (pre-bool) tape is refused by --step with exit 3" \
+    || fail "a v5 (pre-bool) tape is refused by --step with exit 3" \
             "rc=$RC $(head -1 "$TMPDIR/v2.err")"
 
 EIGS_REPLAY="$V2" "$EIGS" "$TMPDIR/thr.eigs" >/dev/null 2>"$TMPDIR/v2r.err"
 RC=$?
-[ "$RC" -eq 3 ] && grep -q "format v4" "$TMPDIR/v2r.err" \
-    && ok "a v4 (pre-association) tape is refused by EIGS_REPLAY with exit 3" \
-    || fail "a v4 (pre-association) tape is refused by EIGS_REPLAY with exit 3" \
+[ "$RC" -eq 3 ] && grep -q "format v5" "$TMPDIR/v2r.err" \
+    && ok "a v5 (pre-bool) tape is refused by EIGS_REPLAY with exit 3" \
+    || fail "a v5 (pre-bool) tape is refused by EIGS_REPLAY with exit 3" \
             "rc=$RC $(head -1 "$TMPDIR/v2r.err")"
 
 # The two checks above rewrite this build's own header, which proves the

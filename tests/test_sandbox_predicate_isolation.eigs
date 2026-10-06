@@ -24,7 +24,7 @@ for i in range of 12:
     r is report of secret
 for k in range of 6:
     res is sandbox_run of [[1, [59, k, 0, 40], []], 100000]
-    check of ["ramping host: bare predicate kind " + (str of k) + " reads 0 in the sandbox", res["result"], 0]
+    check of ["ramping host: bare predicate kind " + (str of k) + " reads 0 in the sandbox", res["result"], false]
 
 flat is 5.0
 for i in range of 12:
@@ -32,7 +32,7 @@ for i in range of 12:
     r is report of flat
 for k in range of 6:
     res is sandbox_run of [[1, [59, k, 0, 40], []], 100000]
-    check of ["flat host: bare predicate kind " + (str of k) + " reads 0 in the sandbox", res["result"], 0]
+    check of ["flat host: bare predicate kind " + (str of k) + " reads 0 in the sandbox", res["result"], false]
 
 # the host's tracker survives the run: its own view of `flat` is unchanged
 check of ["host report after the sandbox runs still names the host binding", report of flat, "converged"]

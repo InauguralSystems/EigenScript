@@ -32,7 +32,7 @@ a is 5.0
 a is 3.0
 d1 is diverging
 # #861 re-pin: value route: 499->3 with steps contracting 400->2 is a genuine approach -> improving; the ENTROPY ascent reads "diverging" only on the entropy channel (pinned via classify below)
-want of ["WD1 monotone clean ascent fires", d1, 0]
+want of ["WD1 monotone clean ascent fires", d1, false]
 
 # WD2: noisy ascent with down-ticks still fires — net up AND majority (4/6)
 #      genuine ascents. Proportional vote tolerates the bounces.
@@ -45,7 +45,7 @@ b is 5.0
 b is 3.0
 d2 is diverging
 # #861 re-pin: value route: bouncing -> oscillating
-want of ["WD2 noisy ascent, net+majority, fires", d2, 0]
+want of ["WD2 noisy ascent, net+majority, fires", d2, false]
 
 # WD3: net entropy FELL despite several ascent steps -> does NOT fire.
 #      Magnitude mirror of the anti-lie guard: most steps tick up but the value
@@ -57,7 +57,7 @@ c is 5.0
 c is 4.0
 c is 3.0
 d3 is diverging
-want of ["WD3 net-down despite ascents does not fire", d3, 0]
+want of ["WD3 net-down despite ascents does not fire", d3, false]
 
 # WD4: steady ascent INSIDE the gray band (dh_zero <= |dH| < dh_small) does
 #      NOT fire — it reads `stable`. #187 mutual-exclusivity guard.
@@ -69,7 +69,7 @@ e is 52.0
 e is 50.0
 d4 is diverging
 # #861 re-pin: value route AGREES here for the right reason: -2/step is a linear runaway toward -inf (raw non-vanishing same-sign), where the entropy channel called it gray-band "stable"
-want of ["WD4 gray-band steady ascent does not fire", d4, 1]
+want of ["WD4 gray-band steady ascent does not fire", d4, true]
 
 # WD5: net UP but only a MINORITY (2/5) of steps are genuine ascents -> does
 #      NOT fire. Proves the proportional vote gates independently of sum>0.
@@ -80,7 +80,7 @@ f is 60.0
 f is 200.0
 f is 2.0
 d5 is diverging
-want of ["WD5 net-up but sub-majority does not fire", d5, 0]
+want of ["WD5 net-up but sub-majority does not fire", d5, false]
 
 # WD6: flat sequence (all dH ~ 0) does not fire
 g is 5.0
@@ -89,7 +89,7 @@ g is 5.0
 g is 5.0
 g is 5.0
 d6 is diverging
-want of ["WD6 flat does not fire", d6, 0]
+want of ["WD6 flat does not fire", d6, false]
 
 # WD7: slow descent (falling entropy, sum < 0) does not fire
 h is 25.0
@@ -97,14 +97,14 @@ h is 40.0
 h is 60.0
 h is 99.0
 d7 is diverging
-want of ["WD7 slow descent does not fire", d7, 0]
+want of ["WD7 slow descent does not fire", d7, false]
 
 # WD8: fewer than 3 samples (count == 2) does not fire (partial-window rule)
 k is 9999.0
 k is 50.0
 k is 3.0
 d8 is diverging
-want of ["WD8 count < 3 does not fire", d8, 0]
+want of ["WD8 count < 3 does not fire", d8, false]
 
 
 # #861: entropy-window mechanics — WD1 is the canonical entropy-ascent (value
