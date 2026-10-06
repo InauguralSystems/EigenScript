@@ -1880,6 +1880,8 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `text_width(text, scale)` | Measures active-backend text; bitmap fallback advances six pixels per character per scale. |
 | `text_height(scale)` | Measures active-backend font height; bitmap fallback is seven pixels per scale. |
 | `_combo_matches(combo, ctrl, shift, alt, key)` | Internal hotkey match requires exact modifiers and key. |
+| `_ev_flag(v)` | Internal: an event modifier as a bool; accepts a bool or the older 1/0 number, anything else is false. |
+| `_ev_stop(r)` | Internal: whether an on_key answer stops the loop; false or the older 0 stops, anything else continues. |
 | `label(id, x, y, text)` | Creates a visible automatically measured text widget with theme color and scale. |
 | `separator(id, x, y, length, vertical)` | Creates a one-pixel line whose requested length is its height when vertical. |
 | `section(id, x, y, w, text)` | Creates a 20-pixel-high section caption with the requested width. |
