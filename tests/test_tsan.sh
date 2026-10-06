@@ -194,7 +194,7 @@ if [ -f "$RP_EIGS" ]; then
     EIGS_TRACE="$RP_HDR" timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" \
         "$TESTS_DIR/../build/tsan_one.eigs" >/dev/null 2>&1 || header_rc=$?
     vline=$(head -1 "$RP_HDR" 2>/dev/null || true)
-    if [ "$header_rc" -ne 0 ] || ! printf '%s\n' "$vline" | grep -q '^V 5 '; then
+    if [ "$header_rc" -ne 0 ] || ! printf '%s\n' "$vline" | grep -q '^V 6 '; then
         echo "  FAIL: replay-workers header setup rc=$header_rc"
         FAIL=$((FAIL + 1))
     else

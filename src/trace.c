@@ -2192,11 +2192,14 @@ static Value *parse_value_p(const char **p) {
     if (strncmp(*p, "null", 4) == 0 && at_token_boundary((*p)[4])) {
         *p += 4; return make_null();
     }
+    /* #1637 (format v6): true/false are the bool values. A v5 tape wrote
+     * a predicate's answer as 1/0; it is refused by the version check, never
+     * read as a number here. */
     if (strncmp(*p, "true", 4) == 0 && at_token_boundary((*p)[4])) {
-        *p += 4; return make_num(1.0);
+        *p += 4; return make_bool(1);
     }
     if (strncmp(*p, "false", 5) == 0 && at_token_boundary((*p)[5])) {
-        *p += 5; return make_num(0.0);
+        *p += 5; return make_bool(0);
     }
 
     if (c == '"') {

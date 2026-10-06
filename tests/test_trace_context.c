@@ -28,23 +28,23 @@ static EigsValue *advance_callback(EigsValue *arg) {
 }
 
 static const char file_tape[] =
-    "V 5 " EIGENSCRIPT_VERSION "\n"
+    "V 6 " EIGENSCRIPT_VERSION "\n"
     "B 0 1 1 0 root -\nB 1 2 2 0 host 70656572\n"
     "N 1 peer=12\nN 0 root=11\nN 0 root=13\n"
-    "V 5 " EIGENSCRIPT_VERSION "\n"
+    "V 6 " EIGENSCRIPT_VERSION "\n"
     "B 0 1 1 0 root -\nB 1 2 2 0 host 70656572\n"
     "N 0 root=21\nN 1 peer=22\n";
 static const char memory_tape[] =
-    "V 5 " EIGENSCRIPT_VERSION "\n"
+    "V 6 " EIGENSCRIPT_VERSION "\n"
     "B 0 101 11 0 root -\nB 1 102 12 0 host 70656572\n"
     "N 1 peer=102\nN 0 root=101\nN 0 root=103\n"
-    "V 5 " EIGENSCRIPT_VERSION "\n"
+    "V 6 " EIGENSCRIPT_VERSION "\n"
     "B 0 101 11 0 root -\nN 0 root=201\n";
 static const char replacement[] =
-    "V 5 " EIGENSCRIPT_VERSION "\n"
+    "V 6 " EIGENSCRIPT_VERSION "\n"
     "B 0 201 21 0 root -\nB 1 202 22 0 host 70656572\n"
     "N 1 peer=302\nN 0 root=301\n";
-static const char refused[] = "V 4 " EIGENSCRIPT_VERSION "\n";
+static const char refused[] = "V 5 " EIGENSCRIPT_VERSION "\n";   /* #1637: v5 predates bool values */
 
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
