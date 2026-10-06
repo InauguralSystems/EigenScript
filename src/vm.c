@@ -5557,6 +5557,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         switch (kind) {
         case 0: /* what */
             if (v && v->type == VAL_NUM) { result = make_num(VAL_NUM_RAW(v)); }
+            /* #1637: a bool is its own value -- it fell to the else arm and
+             * answered 0, so `what is (5 > 3)` read as false. */
+            else if (v && v->type == VAL_BOOL) { result = make_bool(v->data.boolean); }
             else if (v && v->type == VAL_STR) { result = make_num(val_str_len(v)); }
             else if (v && v->type == VAL_LIST) { result = make_num(v->data.list.count); }
             else if (v && v->type == VAL_BUFFER) { result = make_num(v->data.buffer.count); }

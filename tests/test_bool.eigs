@@ -217,6 +217,17 @@ same of [decoded[0], true, "json_decode true"]
 same of [decoded[1], false, "json_decode false"]
 same of [decoded[2], 1, "json_decode 1 stays a number"]
 same of [json_decode of (json_encode of {"a": [true, {"b": false}]}), {"a": [true, {"b": false}]}, "json round trip keeps bools"]
+# Round 5 (#1637): `what` of a bool is the bool (it answered 0), on a bound
+# name and on an expression; the history forms already answered bools.
+r5_flag is 5 > 3
+r5_flag is 2 > 3
+r5_flag is 5 > 3
+same of [what is r5_flag, true, "what is a bool binding"]
+same of [what is (2 > 3), false, "what is a bool expression"]
+same of [prev of r5_flag, false, "prev of a bool binding"]
+same of [what is r5_flag when 2, false, "what is a bool binding when 2"]
+same of [when is r5_flag, 3, "when counts a bool binding's assignments"]
+same of [who is (1 < 2), "bool", "who names a bool"]
 # Round 5 (#1637): json_build writes a bool value as a JSON boolean and it
 # decodes back to a bool.
 same of [json_build of ["ok", true, "bad", 2 > 3], "{\"ok\": true, \"bad\": false}", "json_build of bools"]

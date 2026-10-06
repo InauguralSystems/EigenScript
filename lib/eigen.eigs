@@ -1897,6 +1897,8 @@ define eigen_eval(node, env) as:
             # what: value / magnitude
             if (_eigen_type of target) == "num":
                 return target
+            if (_eigen_type of target) == "bool":   # #1637: its own value, as in the VM
+                return target
             if (_eigen_type of target) == "str":
                 return _eigen_len of target
             if (_eigen_type of target) == "list":
