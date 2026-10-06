@@ -217,6 +217,10 @@ same of [decoded[0], true, "json_decode true"]
 same of [decoded[1], false, "json_decode false"]
 same of [decoded[2], 1, "json_decode 1 stays a number"]
 same of [json_decode of (json_encode of {"a": [true, {"b": false}]}), {"a": [true, {"b": false}]}, "json round trip keeps bools"]
+# Round 5 (#1637): json_build writes a bool value as a JSON boolean and it
+# decodes back to a bool.
+same of [json_build of ["ok", true, "bad", 2 > 3], "{\"ok\": true, \"bad\": false}", "json_build of bools"]
+same of [json_decode of (json_build of ["ok", true]), {"ok": true}, "json_build bool round trip"]
 # lib predicates return a bool on every path, including the early-out paths.
 load_file of "lib/set.eigs"
 load_file of "lib/validate.eigs"

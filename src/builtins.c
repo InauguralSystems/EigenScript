@@ -1764,6 +1764,8 @@ Value* builtin_json_build(Value *arg) {
             strbuf_append(&out, nb);
         } else if (val->type == VAL_NULL) {
             strbuf_append(&out, "null");
+        } else if (val->type == VAL_BOOL) {   /* #1637: a JSON boolean, not the string "true" */
+            strbuf_append(&out, val->data.boolean ? "true" : "false");
         } else if (val->type == VAL_JSON_RAW) {
             strbuf_append(&out, val->data.str);
         } else if (val->type == VAL_STR) {
