@@ -115,6 +115,8 @@ END {
     ok = (viol == 0 && nb == 0 && nomark == 0 && badpres == 0 && bad_any == 0 && \
           nex + nab + nsk == DECLARED && nex + nsk >= CORE && nex > 0 && ("@vm" in examined_name))
     printf "BOOL_FUZZ: raise kinds: %s\n", kstr
+    # the runner #988 rule wants a PASS:/FAIL: marker from a test_* child
+    printf "  %s: a bool in every builtin slot and VM operand\n", ok ? "PASS" : "FAIL"
     printf "BOOL_FUZZ: examined=%d/%d absent=%d skipped=%d core=%d programs=%d calls=%d probes=%d raised=%d anyvalue=%d violations=%d broken=%d unused_anyvalue=%d %s\n", \
         nex, DECLARED, nab, nsk, CORE, nprog, calls, probes, raised, anyok, viol + nomark + badpres, nb, bad_any, ok ? "PASS" : "FAIL"
     exit ok ? 0 : 1

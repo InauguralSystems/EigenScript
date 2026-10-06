@@ -110,10 +110,10 @@ fi
 unset BOOL_TK_OUT BOOL_TK_RC
 unset BOOL_TP_DIR BOOL_TP_REC BOOL_TP_REP BOOL_TP_OUT BOOL_TP_RC BOOL_TP_CASE BOOL_TP_T BOOL_TP_WANT
 # Every public lib predicate, run on a battery plus true/false cases, answers
-# with a bool (tests/test_bool_lib_predicates.py measures; it reads no code).
+# with a bool (tests/test_bool_lib_predicates.sh measures; it reads no code).
 check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
-BOOL_LIB_OUT=$($EIGS_TMO python3 "$TESTS_DIR/test_bool_lib_predicates.py" ./eigenscript 2>&1); BOOL_LIB_RC=$?
+BOOL_LIB_OUT=$(bash "$TESTS_DIR/test_bool_lib_predicates.sh" ./eigenscript 2>&1); BOOL_LIB_RC=$?
 if [ "$BOOL_LIB_RC" = 0 ] && grep -q "^BOOL_LIB_PREDICATES: .* PASS$" <<< "$BOOL_LIB_OUT"; then
     PASS=$((PASS + 1)); echo "  PASS: lib predicates answer bools ($(grep '^BOOL_LIB_PREDICATES' <<< "$BOOL_LIB_OUT"))"
 else
@@ -122,10 +122,10 @@ else
 fi
 unset BOOL_LIB_OUT BOOL_LIB_RC
 # lib/eigen.eigs's eigen_run agrees with the VM on every bool-producing form
-# (tests/test_bool_meta_diff.py runs each snippet through both).
+# (tests/test_bool_meta_diff.sh runs each snippet through both).
 check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
-BOOL_META_OUT=$($EIGS_TMO python3 "$TESTS_DIR/test_bool_meta_diff.py" ./eigenscript 2>&1); BOOL_META_RC=$?
+BOOL_META_OUT=$(bash "$TESTS_DIR/test_bool_meta_diff.sh" ./eigenscript 2>&1); BOOL_META_RC=$?
 if [ "$BOOL_META_RC" = 0 ] && grep -q "^BOOL_META_DIFF: .* PASS$" <<< "$BOOL_META_OUT"; then
     PASS=$((PASS + 1)); echo "  PASS: eigen_run matches the VM on bools ($(grep '^BOOL_META_DIFF' <<< "$BOOL_META_OUT"))"
 else
