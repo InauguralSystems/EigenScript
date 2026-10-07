@@ -1,0 +1,57 @@
+# #1661: every call entry binds every parameter. An unsent parameter is
+# null-filled BY NAME, with or without defaults, so a closure over it reads
+# null, never an outer variable of the same name. Before the fix the direct
+# call, task_spawn and dispatch left it unbound (the closure read "outer"),
+# and a JIT-compiled callee read a stale slot (stale_slot below).
+b is "outer"
+
+define two(a, b) as:
+    peek is () => b
+    return peek of []
+
+define three(a, b, c) as:
+    peek is () => [b, c]
+    return peek of []
+
+define with_def(a, b, c is 3) as:
+    peek is () => [b, c]
+    return peek of []
+
+assert of [(two of [1]) == null, "direct call, argc 1: unsent b is null"]
+assert of [(two of []) == null, "direct call, argc 0: unsent b is null"]
+assert of [(three of [1]) == [null, null], "direct call: unsent b and c are null"]
+assert of [(with_def of [1]) == [null, 3], "defaults: b is null, c takes 3"]
+
+h is spawn of [two, 1]
+assert of [(thread_join of h) == null, "spawn: unsent b is null"]
+t is task_spawn of [two, 1]
+assert of [(task_join of t) == null, "task_spawn: unsent b is null"]
+t3 is task_spawn of [with_def, 1]
+assert of [(task_join of t3) == [null, 3], "task_spawn: b is null, default c fires"]
+tbl is [two, three]
+assert of [(dispatch of [tbl, 0, 1]) == null, "dispatch: unsent b is null"]
+assert of [(dispatch of [tbl, 1, 1]) == [null, null], "dispatch: unsent b, c are null"]
+
+seen is []
+define key2(x, b) as:
+    peek is () => b
+    append of [seen, peek of []]
+    return x
+sort_by of [[3, 1, 2], key2]
+for v in seen:
+    assert of [v == null, "sort_by key: unsent b is null"]
+
+# A hot callee whose only body is the unsent-param read: the JIT compiles it
+# and its GET_LOCAL reads the slot with no bounds check.
+define stale_slot(A, Q) as:
+    return Q
+define churn(a, b) as:
+    h is (x) => x
+    return 0
+i is 0
+loop while i < 50:
+    churn of [1, [i, "stale"]]
+    assert of [(stale_slot of ([1])) == null, "a JIT-read unsent param is null"]
+    i is i + 1
+
+print of "underarity bind: all passed"

@@ -1,0 +1,22 @@
+# #1661: the try/catch variant — the same under-arity recursion inside a
+# try, then a raise and catch. The stale slot read was freed again on the
+# way out (release: "free(): double free detected in tcache 2").
+n is {"d": 0}
+define g(A, Q) as:
+    if Q == 1:
+        return 0
+    n.d is n.d + 1
+    if n.d > 3000:
+        throw of "deep"
+    local args is [A]
+    return g of (args)
+
+caught is 0
+for round in [1, 2, 3]:
+    n.d is 0
+    try:
+        g of ([1])
+    catch err:
+        caught is caught + 1
+assert of [caught == 3, "each descent raised and was caught"]
+print of "underarity try/catch: all passed"

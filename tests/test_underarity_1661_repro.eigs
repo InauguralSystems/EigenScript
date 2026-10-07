@@ -1,0 +1,17 @@
+# #1661: the issue's reproducer, verbatim. A 2-param callee called
+# under-arity reads its unsent param at recursion depth 3000; the JIT read a
+# stale freelist slot (heap-use-after-free; release aborted in malloc).
+n is {"d": 0}
+define g(A, Q) as:
+    if Q == 1:
+        return 0
+    n.d is n.d + 1
+    if n.d > 3000:
+        return 0
+    local args is [A]
+    return g of (args)
+
+g of ([1])
+n.d is 0
+g of ([1])
+print of "ok"

@@ -1,0 +1,19 @@
+# #1661: the unsent-param read reached JIT-to-JIT. With every chunk compiled
+# (EIGS_JIT_ENTRY_THRESHOLD=1), drive's thunk calls stale_q through
+# jit_helper_call, which carries its own copy of the frame push and of the
+# under-arity null-fill. churn frees a captured env, holding a heap value in
+# slot 1, to the env freelist; the next call env recycles it. Kept in a file
+# of its own: other calls before it change which env is recycled.
+define stale_q(A, Q) as:
+    return Q
+define drive(x) as:
+    return stale_q of (x)
+define churn(a, b) as:
+    h is (x) => x
+    return 0
+i is 0
+loop while i < 50:
+    churn of [1, [i, "stale"]]
+    assert of [(drive of (i)) == null, "a JIT-to-JIT unsent param is null"]
+    i is i + 1
+print of "underarity jit call: all passed"
