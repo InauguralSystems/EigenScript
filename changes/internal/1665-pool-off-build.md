@@ -1,0 +1,1 @@
+- Added the `EIGS_POOL_OFF` build flag and `make pool-off` / `make asan-pool-off` variants (#1665): a measurement/oracle build that bypasses the per-thread Value/Env freelists, the call-env recycler and the bump arena so every object is a real `malloc`/`free`. Internal — the default build is unchanged.
