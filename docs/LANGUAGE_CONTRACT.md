@@ -17,7 +17,7 @@ is what forces you to notice the decisions you haven't made.
 
 **Promise:** Structural for collections, by-value for scalars, by-identity
 for functions. No cross-type coercion: operands of different types are
-never equal (and it is never an error to compare them).
+never equal (and it is never an error to compare them, except bool vs number, below).
 
 - Numbers, strings, null: by value (`3 == 3.0`, `"a" == "a"`).
 - Lists: equal iff same length and elementwise-equal (recursive).
@@ -25,6 +25,8 @@ never equal (and it is never an error to compare them).
 - Buffers / text-builders: by contents.
 - Functions, builtins: by identity.
 - Mixed types: `"3" == 3` is `false`, never an error.
+- The one exception: `bool` vs number raises at any depth, e.g. `true == 1` and `[true] == [1]` (#1637). A bool
+  is never numerically equal to anything, and the raise keeps `(pred of x) == 1` from silently going false.
 
 **Status:** Enforced — `tests/test_equality.eigs`, `values_equal()` in
 `eigenscript.c`.
