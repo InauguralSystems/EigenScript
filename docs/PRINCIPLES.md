@@ -4,6 +4,15 @@ The rules every design decision is checked against. When a decision issue,
 PR or review cites one, it cites it by name. A principle changes only by an
 explicit decision recorded in an issue, never by drift.
 
+## 0. One novel thing, deterministic replay, standard everywhere else
+
+These are the owner's decisions; everything below elaborates them. EigenScript has **one novel thing: the
+observer**, i.e. measurement as a language primitive. Its open questions are the signal (distance vs entropy)
+and opt-in observation (#1667). **Deterministic replay** (the trace tape) is a product guarantee (principle 3).
+**Everything else is standard**: where mature languages agree, EigenScript does what they do (principle 1).
+Owner intent lives in this file, in `kind:decision` issues and in the language contract. A design found only in
+the code is not owner intent (principle 8). (2026-10-07)
+
 ## 1. Best practice by default; depart only by measurement
 
 For any question mature languages have already answered, their consensus is
@@ -71,3 +80,10 @@ carries no authority from seniority. When a design looks forced, ask
 whether it is a law (language semantics, an external contract) or a
 decision, and price the alternative. Gaps go upstream as issues; they are
 not worked around silently. (See CLAUDE.md.)
+
+## 9. It runs on a small machine
+
+EigenScript, its toolchain and its suites must build and run on the reference dev box: 2 cores, 4 GB RAM. A
+feature, default or test that only works on a bigger machine is a defect, not a hardware excuse. Heavy jobs may
+run elsewhere (CI, cloud), but nothing may *require* more than the box to use the language. (2026-10-07)
+
