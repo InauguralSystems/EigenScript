@@ -474,8 +474,9 @@ _bind_store:
  *     frame's own ref — that ref transfers to the chunk);
  *   - count == max(param_count, local_count): a binding created
  *     mid-call (e.g. SET_NAME_LOCAL of a new name, __loop_exit__)
- *     must NOT resolve in the next invocation, and an underfed call
- *     (argc < param_count) leaves params unhashed — both park-reject.
+ *     must NOT resolve in the next invocation, so it park-rejects.
+ *     (An underfed call, argc < param_count, null-binds its unsent
+ *     params by name since #1661, so it parks like a full call.)
  * Parked slots are dropped to slot_null (no value pinning) with
  * assign_counts zeroed; param names/hash/binding_version survive.
  * The parked env keeps its owned parent ref, so the callee's closure
@@ -517,8 +518,9 @@ static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
     if (env->count != expected) return 0;
     /* Every param must be name-bound, or the recycled env would
      * resolve params by slot but not by name. A single-arg OP_DISPATCH
-     * to a multi-param fn binds only param 0 (slots 1+ come from
-     * env_reserve_slots, nameless) — reject those. */
+     * to a multi-param fn used to bind only param 0 (slots 1+ came from
+     * env_reserve_slots, nameless); every entry null-binds by name since
+     * #1661, and this stays as the guard. */
     for (int i = 0; i < chunk->param_count; i++)
         if (!env->names[i]) return 0;
     for (int i = 0; i < env->count; i++) {
@@ -2665,13 +2667,12 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
                 val_decref(arg_list);
             }
         }
-        if (can_default) {
-            for (int i = argc; i < param_count; i++) {
-                uint32_t ph = phashes ? phashes[i]
-                                      : env_hash_name(fn_val->data.fn.params[i]);
-                env_bind_fresh_param_slot(call_env,
-                    fn_val->data.fn.params[i], fn_val->data.fn.param_intern_tbl, ph, slot_null());
-            }
+        /* #1661: null-fill every unsent param, defaults or not (as CASE(CALL)). */
+        for (int i = call_env->count; i < param_count; i++) {
+            uint32_t ph = phashes ? phashes[i]
+                                  : env_hash_name(fn_val->data.fn.params[i]);
+            env_bind_fresh_param_slot(call_env,
+                fn_val->data.fn.params[i], fn_val->data.fn.param_intern_tbl, ph, slot_null());
         }
         if (fn_chunk->local_count > param_count)
             env_reserve_slots(call_env, fn_chunk->local_count);
@@ -3693,12 +3694,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             slot_incref(s);
             vm_push_slot(s);
         } else {
-            /* Out-of-range read -> null. This is LOAD-BEARING, not a bug
+            /* Out-of-range read -> null. Until #1661 this was LOAD-BEARING
              * (#348 tried to make it an error and 18 call-semantics checks
-             * failed): an underfed call to a defaults-free function binds
-             * only argc slots, and reading a missing parameter resolves
-             * HERE — this null IS the "missing parameters bind to null"
-             * semantics (SPEC.md). Only SET is a hard error (below). */
+             * failed): an underfed call to a defaults-free function bound
+             * only argc slots, and a missing parameter read resolved HERE.
+             * The JIT's GET_LOCAL has no such bounds check and read a stale
+             * freelist slot instead — a use-after-free. Every call entry now
+             * null-fills [argc, param_count), so compiler-emitted reads stay
+             * in range; this null remains the interpreter's guard for
+             * hand-built bytecode. Only SET is a hard error (below). */
             vm_push_slot(slot_null());
         }
         DISPATCH();
@@ -4304,11 +4308,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             call_env = env_new(fn_val->data.fn.closure);
 
             uint32_t *phashes = fn_val->data.fn.param_hashes;
-            /* When this chunk has trailing defaults and the caller is
-             * underfed, bind null placeholders for every unsent slot
-             * in [argc, param_count); OP_DEFAULT_PARAM later fills the
-             * defaulted ones. Non-defaulted underfed slots stay null,
-             * matching the no-default underfed semantics. */
+            /* An underfed caller leaves [argc, param_count) unsent; the
+             * fill after the binds gives every one a null binding, and
+             * OP_DEFAULT_PARAM later fills the defaulted ones. */
             int can_default = (fn_chunk->first_default < param_count) &&
                               ((int)argc < param_count);
             if (param_count > 1 && argc > 0) {
@@ -4335,13 +4337,18 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     val_decref(arg_list);
                 }
             }
-            if (can_default) {
-                for (int i = (int)argc; i < param_count; i++) {
-                    uint32_t ph = phashes ? phashes[i]
-                                          : env_hash_name(fn_val->data.fn.params[i]);
-                    env_bind_fresh_param_slot(call_env,
-                        fn_val->data.fn.params[i], fn_val->data.fn.param_intern_tbl, ph, slot_null());
-                }
+            /* #1661: null-fill EVERY unsent param, defaults or not. This
+             * fill used to run only `if (can_default)`, so a defaults-free
+             * callee left them unbound: env->count stayed below
+             * param_count (and below local_count when it equals
+             * param_count, so no reserve ran), the JIT's unchecked
+             * GET_LOCAL read a stale freelist slot — a heap-use-after-free —
+             * and a closure resolved the unsent name in an outer scope. */
+            for (int i = call_env->count; i < param_count; i++) {
+                uint32_t ph = phashes ? phashes[i]
+                                      : env_hash_name(fn_val->data.fn.params[i]);
+                env_bind_fresh_param_slot(call_env,
+                    fn_val->data.fn.params[i], fn_val->data.fn.param_intern_tbl, ph, slot_null());
             }
 
             /* Pre-allocate slots for non-captured locals (compiler-assigned slots
@@ -6540,8 +6547,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             /* DISPATCH always feeds argc=1; underfed tail slots
              * [1..param_count) get null placeholders, then
-             * OP_DEFAULT_PARAM fills the defaulted ones. */
-            if (dpc > 1 && fn_chunk->first_default < dpc) {
+             * OP_DEFAULT_PARAM fills the defaulted ones. #1661: with or
+             * without defaults — see CASE(CALL). */
+            if (dpc > 1) {
                 uint32_t *phashes = fn->data.fn.param_hashes;
                 for (int i = 1; i < dpc; i++) {
                     uint32_t ph = phashes ? phashes[i]

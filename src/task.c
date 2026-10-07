@@ -620,6 +620,11 @@ static Value *task_start(Task *t) {
     } else {
         for (int i = 0; i < fn->data.fn.param_count && i < t->argc; i++)
             env_set_local(call_env, fn->data.fn.params[i], t->args[i]);
+        /* #1661: under-arity null-fill, as at every other entry point. An
+         * unbound param resolved through the CLOSURE, so a closure in the
+         * task read an outer variable of the same name instead of null. */
+        for (int i = t->argc; i < fn->data.fn.param_count; i++)
+            env_set_local_owned(call_env, fn->data.fn.params[i], make_null());
     }
     t->run_env = call_env;                  /* Task owns it; base frame borrows */
     t->started = 1;

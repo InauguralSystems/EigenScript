@@ -1,0 +1,11 @@
+# #1661: the C fallback of `dispatch` — the compiler takes it instead of
+# OP_DISPATCH whenever the unit mentions eval (#459). It bound only the first
+# parameter and left the rest nameless, so a closure read an outer variable.
+b is "outer"
+define two(a, b) as:
+    peek is () => b
+    return peek of []
+tbl is [two]
+assert of [(eval of "1 + 1") == 2, "eval is mentioned, so dispatch falls back"]
+assert of [(dispatch of [tbl, 0, 1]) == null, "dispatch fallback: unsent b is null"]
+print of "underarity dispatch fallback: all passed"

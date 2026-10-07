@@ -1,0 +1,35 @@
+# #1661: an unsent parameter reads null at depth 1000 and 3000, on a callee
+# without defaults (no_def) and one with (with_def), whose unsent param takes
+# its default. Each depth runs twice: the first descent fills the env
+# freelist that the second one recycles.
+n is {"d": 0, "limit": 0, "bad": 0}
+
+define no_def(A, Q) as:
+    if Q != null:
+        n.bad is n.bad + 1
+    n.d is n.d + 1
+    if n.d > n.limit:
+        return 0
+    local args is [A]
+    return no_def of (args)
+
+define with_def(A, Q is 7) as:
+    if Q != 7:
+        n.bad is n.bad + 1
+    n.d is n.d + 1
+    if n.d > n.limit:
+        return 0
+    local args is [A]
+    return with_def of (args)
+
+for depth in [1000, 3000]:
+    n.limit is depth
+    for round in [1, 2]:
+        n.d is 0
+        no_def of ([1])
+        assert of [n.d == depth + 1, "no_def descended to depth " + (str of depth)]
+        n.d is 0
+        with_def of ([1])
+        assert of [n.d == depth + 1, "with_def descended to depth " + (str of depth)]
+assert of [n.bad == 0, "an unsent param read a non-default value"]
+print of "underarity depth: all passed"

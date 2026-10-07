@@ -6578,6 +6578,11 @@ Value* builtin_dispatch(Value *arg) {
         if (dpc > 0) {
             env_set_local(call_env, fn->data.fn.params[0], fn_arg);
         }
+        /* #1661: under-arity null-fill of [1, param_count), as CASE(DISPATCH)
+         * does. The entry reserve below makes the slots exist, but leaves them
+         * nameless, so a closure resolved an unsent param in an outer scope. */
+        for (int i = 1; i < dpc; i++)
+            env_set_local_owned(call_env, fn->data.fn.params[i], make_null());
         if (fn->data.fn.body_count == -1) {
             /* Bytecode function */
             EigsChunk *fn_chunk = (EigsChunk *)fn->data.fn.body;
@@ -6590,16 +6595,13 @@ Value* builtin_dispatch(Value *arg) {
              * MENTIONS eval (#459), so an unrelated eval reference silently
              * changed parameter binding.
              *
-             * CASE(DISPATCH) additionally null-fills slots [1, param_count)
-             * before running the prologue. That is NOT needed here and is
-             * deliberately omitted: this path enters through vm_run_ex, whose
-             * first act is `if (chunk->local_count > env->count)
-             * env_reserve_slots(...)`, so the slots exist by the time
-             * OP_DEFAULT_PARAM writes them. CASE(DISPATCH) is a mid-execution
-             * frame push and gets no such entry reserve, which is why it
-             * carries its own fill. Verified by removing the fill here: all
-             * repros still pass (mechanical-gates §42 — a mutation that
-             * survives may mean redundant, so prove which and delete it). */
+             * This path enters through vm_run_ex, whose first act is
+             * `if (chunk->local_count > env->count) env_reserve_slots(...)`,
+             * so OP_DEFAULT_PARAM always has a slot to write. That reserve
+             * leaves the slots NAMELESS, though, which is why the null-fill
+             * above binds [1, param_count) by name (#1661: the fill was once
+             * judged redundant here because no repro read the unsent param
+             * through a closure). */
             if (fn_chunk->local_count > dpc)
                 env_reserve_slots(call_env, fn_chunk->local_count);
             Value *result = vm_execute_argc(fn_chunk, call_env, dpc > 0 ? 1 : 0);
