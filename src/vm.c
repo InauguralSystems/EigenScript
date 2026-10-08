@@ -508,7 +508,7 @@ _rebind_store:
 }
 
 static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
-#ifdef EIGS_POOL_OFF
+#ifdef EIGS_POOL_OFF_CALLENV
     /* #1665: call-env recycling off — the frame's env is env_decref'd (and
      * really free()d) on every return. This is the code path behind #1661. */
     (void)chunk; (void)env;
@@ -544,7 +544,7 @@ static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
     observer_slot_reset_bounded(env, obs_retain_cap);
     chunk->env_cache = env;
     return 1;
-#endif  /* EIGS_POOL_OFF */
+#endif  /* EIGS_POOL_OFF_CALLENV */
 }
 
 /* Take side, shared by CASE(CALL), jit_helper_call, and CASE(DISPATCH).
@@ -552,14 +552,14 @@ static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
  * env_rebind_param_slot) or NULL → caller runs the fresh env_new path. */
 static inline Env *vm_take_call_env(EigsChunk *fn_chunk, Env *closure,
                                     int param_count, int argc) {
-#ifndef EIGS_POOL_OFF
+#ifndef EIGS_POOL_OFF_CALLENV
     Env *e = fn_chunk->env_cache;
     if (e && !g_vm_multithreaded && e->parent == closure &&
         (param_count <= 1 || argc >= param_count)) {
         fn_chunk->env_cache = NULL;
         return e;
     }
-#else
+#else  /* EIGS_POOL_OFF_CALLENV */
     /* #1665: never recycle a call env (nothing is ever parked). */
     (void)fn_chunk; (void)closure; (void)param_count; (void)argc;
 #endif

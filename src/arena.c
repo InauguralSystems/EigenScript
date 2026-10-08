@@ -320,7 +320,7 @@ void arena_init(void) {
 void* arena_alloc(size_t size) {
     size = (size + 7) & ~(size_t)7;
 
-#ifdef EIGS_POOL_OFF
+#ifdef EIGS_POOL_OFF_ARENA
     /* #1665: bypass the bump blocks entirely. Each arena allocation is a real
      * xcalloc tracked in the fallback list, so arena_reset_to_mark / arena_destroy
      * free it at the system-allocator boundary and ASan sees the lifetime of an
@@ -434,7 +434,7 @@ void arena_destroy(void) {
 
 void free_weight_val(Value *v) {
     if (!v || v->type != VAL_NUM) return;
-#ifdef EIGS_POOL_OFF
+#ifdef EIGS_POOL_OFF_ARENA
     /* #1665: arena values are no longer inside blocks (they are individual
      * fallback mallocs freed by arena_reset_to_mark/arena_destroy). The block
      * scan below would therefore miss them and double-free. Protect any
@@ -449,5 +449,5 @@ void free_weight_val(Value *v) {
         if ((char*)v >= block_start && (char*)v < block_end) return;
     }
     eigs_alloc_stats_free(v);
-#endif  /* EIGS_POOL_OFF */
+#endif  /* EIGS_POOL_OFF_ARENA */
 }

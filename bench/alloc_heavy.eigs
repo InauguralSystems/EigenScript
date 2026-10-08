@@ -1,0 +1,19 @@
+# alloc_heavy — maximal Value / Env / string / call churn.
+# Reconstruction of #1675's workload of the same name (its scratch file was
+# never committed; see poollayers-REPORT.md "alloc_heavy reconstruction").
+# Each call allocates a fresh env (Env freelist + call-env recycling), short-lived
+# NUMs (Value freelist), and a short string. Driven 20000x for a heavy churn.
+define work(n) as:
+    s is 0
+    j is 0
+    loop while j < n:
+        local a is (j * 3) + 1
+        local b is (a - j) * 2
+        local t is "v" + (str of (j % 100))
+        s is s + a + b + (len of t)
+        j is j + 1
+    return s
+total is 0
+for i in range of 20000:
+    total is total + (work of 50)
+print of total
