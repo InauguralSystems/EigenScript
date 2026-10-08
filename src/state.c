@@ -1,7 +1,6 @@
 /*
  * EigsState / EigsThread implementation — see state.h.
  */
-#include <errno.h>
 #include "eigenscript.h"
 #include "env_flag.h"
 #include "state.h"
@@ -300,10 +299,12 @@ EigsThread *eigs_thread_attach(EigsState *st) {
          * wrap and reopen the ABA this counter closes (critic, #1674 r2). */
         const char *vseed = getenv("EIGS_ENV_VERSION_SEED");
         if (vseed && *vseed) {
-            char *end = NULL;
-            errno = 0;
-            unsigned long long v = strtoull(vseed, &end, 10);
-            if (errno == 0 && end && *end == '\0' && v <= (1ULL << 40))
+            /* Hand-parsed: strtoull is outside the freestanding allowlist. */
+            uint64_t v = 0;
+            const char *p = vseed;
+            while (*p >= '0' && *p <= '9' && v <= (1ULL << 40))
+                v = v * 10 + (uint64_t)(*p++ - '0');
+            if (*p == '\0' && v <= (1ULL << 40))
                 env_version_seed_floor(v);
         }
     }
