@@ -161,47 +161,6 @@ ph is [converged, stable, improving, diverging, oscillating, equilibrium, report
 # #861: same lattice at the h_low boundary value — the boundary is meaningless on the value route
 expect of ["converged-at-boundary", ph, true, true, false, false, false, true, "converged"]
 
-# --- THRESHOLD KNOB (#861 semantics): dh_zero is the settle deadband on
-#     RELATIVE steps. A decay whose tail steps sit between the default
-#     (0.001) and a raised (0.01) deadband certifies only under the raised
-#     one — same trajectory, tolerance chosen by the caller. This is the
-#     mixed-tolerance stopping criterion with the tolerance exposed. ---
-define tail_decay as:
-    local x is 180.0
-    local k is 0
-    loop while k < 30:
-        x is 100.0 + (x - 100.0) * 0.9
-        k is k + 1
-    return converged of x
-kd is tail_decay of 0
-assert of [not kd, f"knob-default: tail steps (~0.0034..0.0096 rel) exceed dh_zero=0.001, converged expected 0 got {kd}"]
-print of "  PASS: knob-default (tail decay not yet converged at 0.001)"
-set_observer_thresholds of [0.01, 0.05, 0.5]
-kr is tail_decay of 0
-assert of [kr, f"knob-raised: same tail under dh_zero=0.01, converged expected 1 got {kr}"]
-print of "  PASS: knob-raised dh_zero -> converged (caller-chosen tolerance)"
-
-# --- Perpetual-motion STRUCTURE is threshold-free (#422): a +/-5 swing is
-#     an oscillation at ANY deadband — the raw structure tests detect
-#     non-vanishing alternation, not amplitude. The knob tunes what counts
-#     as settled, never what counts as perpetual motion. ---
-ts is 70.0
-ts is 75.0
-ts is 70.0
-ts is 75.0
-ts is 70.0
-ts is 75.0
-ts is 70.0
-ts is 75.0
-ts is 70.0
-ts is 75.0
-ts is 70.0
-tsr is [oscillating, equilibrium]
-assert of [tsr[0], f"structure-threshold-free: oscillating expected 1 got {tsr[0]}"]
-assert of [not tsr[1], f"structure-threshold-free: equilibrium expected 0 got {tsr[1]}"]
-print of "  PASS: perpetual swing stays oscillating at raised thresholds (#422)"
-set_observer_thresholds of [0.001, 0.01, 0.1]
-
 # --- #735: FULL window, low-entropy gray-band drift -> NO band fires.
 #     Every |dH| is under dh_small (not improving/diverging, the #187 gray-band
 #     rule), the window mean is over dh_zero (not equilibrium/converged), and

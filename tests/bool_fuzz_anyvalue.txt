@@ -26,9 +26,6 @@ json_encode|e1|JSON has true and false
 observe|u|the observer measures bools (entropy 0 or 1)
 observe|e0|the observer measures any value
 observe|e1|the observer measures any value
-free_val|u|releases any value
-free_val|e0|releases any value
-free_val|e1|releases any value
 coalesce|u|picks the first non-null of any values
 coalesce|a0|picks the first non-null of any values
 coalesce|a1|picks the first non-null of any values
@@ -63,8 +60,6 @@ channel|e0.d2|nullary and nondeterministic: the argument is ignored and two call
 channel|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 clock_unix|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 clock_unix|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
-heap_inuse|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
-heap_inuse|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 mktemp|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 mktemp|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 monotonic_ms|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with

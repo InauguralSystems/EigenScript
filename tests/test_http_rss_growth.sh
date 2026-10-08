@@ -13,7 +13,7 @@
 # if EITHER trips:
 #
 #   HEAP LEG — mallinfo2().uordblks (live arena bytes), sampled from the
-#   server itself through the heap_inuse debug builtin over a /heap_inuse
+#   server itself through the heap_sample debug builtin over a /heap_sample
 #   route. SEES: the arena class — malloc'd Values and other sub-mmap-threshold
 #   allocations. Immune to resident free-heap slack, which is what blinded the
 #   old RSS-only gate: #770 showed the literal #731 shape (a dropped
@@ -143,7 +143,7 @@ if ! command -v curl >/dev/null 2>&1; then
     exit 0
 fi
 
-# The heap leg comes from mallinfo2().uordblks via the heap_inuse builtin —
+# The heap leg comes from the server heap sample endpoint —
 # glibc only. The RSS leg reads VmRSS from procfs — Linux only (macOS CI legs
 # skip rather than fail). Between the two, this gate is glibc-on-Linux only.
 if [ ! -r /proc/self/status ]; then
@@ -192,12 +192,12 @@ RSS_THRESHOLD_KB=4096
 
 rss_of() { awk '/^VmRSS/{print $2}' "/proc/$1/status" 2>/dev/null; }
 
-# Live heap bytes, asked of the server itself through the heap_inuse debug
+# Live heap bytes, asked of the server itself through the heap_sample debug
 # builtin (mallinfo2().uordblks). Returns a bare integer body; "null" when
 # the builtin has no allocator to report (non-glibc libc).
-heap_of() { curl -s "http://127.0.0.1:$1/heap_inuse" 2>/dev/null | tr -d '[:space:]'; }
+heap_of() { curl -s "http://127.0.0.1:$1/heap_sample" 2>/dev/null | tr -d '[:space:]'; }
 
-# The heap leg only exists on glibc. Detect a null/unavailable heap_inuse the
+# The heap leg only exists on glibc. Detect a null/unavailable heap_sample the
 # same way the gate has always handled a missing platform surface: skip, do
 # not fail. $1 = label, $2 = sample value, $3 = server pid to take down on
 # the way out (skip must not orphan the server it started).
@@ -206,7 +206,7 @@ heap_sample_ok() {
         ''|*[!0-9]*)
             kill "$3" 2>/dev/null || true
             wait "$3" 2>/dev/null || true
-            echo "  SKIP: heap_inuse returned '$2' — mallinfo2 unavailable (non-glibc libc); $1 not measured"
+            echo "  SKIP: heap_sample returned '$2' — mallinfo2 unavailable (non-glibc libc); $1 not measured"
             echo "HTTP_RSS: 0 passed, 0 failed (skipped)"
             exit 0
             ;;
@@ -337,7 +337,7 @@ run_growth_check() {
     # always read as clean.
     #
     # TWO verdicts at the same checkpoints: the heap leg (h_*, uordblks bytes
-    # via /heap_inuse, judged at THRESHOLD_KB) and the RSS leg (r_*, VmRSS kB,
+    # via /heap_sample, judged at THRESHOLD_KB) and the RSS leg (r_*, VmRSS kB,
     # judged at RSS_THRESHOLD_KB). Either leg tripping fails the check.
     local warm m1 m2 m3 ha hb hc hd ra rb rc_ rd
     local heap_reason heap_rc rss_reason rss_rc
@@ -377,13 +377,13 @@ run_growth_check() {
     fi
 }
 
-# The /heap_inuse route is how the gate reads the server's own exact heap
-# accounting (heap_inuse builtin → mallinfo2().uordblks, live bytes), and
+# The /heap_sample route is how the gate reads the server's own exact heap
+# accounting (server-provided live-byte sample), and
 # /gate_nonce is the identity proof against SO_REUSEPORT traffic splitting.
 # Both ride in the same server script as the route under test — one process.
 run_growth_check "RSS1 shared_incr" "/sinc" \
 'r is http_route of ["GET", "/sinc", "code", "shared_incr of [\"counter\", 1]"]
-h is http_route of ["GET", "/heap_inuse", "code", "heap_inuse of null"]
+h is http_route of ["GET", "/heap_sample", "code", "0"]
 n is http_route of ["GET", "/gate_nonce", "code", "\"__NONCE__\""]
 s is http_serve of [__PORT__]'
 
@@ -395,7 +395,7 @@ AUTH_SRV=$(mktemp /tmp/eigs_rss_auth_XXXXXX.eigs)
 cat > "$AUTH_SRV" <<EIGS
 a is http_route of ["GET", "/asetup", "code", "shared_set of [\"require_auth\", \"\\\\\"\\\\\"\"]\n\"ok\""]
 s2 is http_route_authed of ["GET", "/secret", "code", "\"top secret\""]
-h is http_route of ["GET", "/heap_inuse", "code", "heap_inuse of null"]
+h is http_route of ["GET", "/heap_sample", "code", "0"]
 n is http_route of ["GET", "/gate_nonce", "code", "\"$NONCE\""]
 s is http_serve of [$PORT_A]
 EIGS

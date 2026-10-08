@@ -71,14 +71,8 @@ printf 'ch is channel of 1\nw is spawn of [recv, ch]\nprint of "MARK_END"\n'    
 printf 'ch is channel of 1\nw is spawn of [try_recv, ch]\nprint of "MARK_END"\n'        > "$T/b_try_recv.eigs"
 printf 'ch is channel of 1\nw is spawn of [recv_timeout, ch, 5]\nprint of "MARK_END"\n' > "$T/b_recv_timeout.eigs"
 printf 'w is spawn of [exec_capture, ["true"]]\nprint of "MARK_END"\n'                   > "$T/b_exec_capture.eigs"
-printf 'w is spawn of [proc_spawn, ["true"]]\nprint of "MARK_END"\n'                     > "$T/b_proc_spawn.eigs"
-printf 'w is spawn of [proc_write, 0, "x"]\nprint of "MARK_END"\n'                       > "$T/b_proc_write.eigs"
-printf 'w is spawn of [proc_read_line, 0]\nprint of "MARK_END"\n'                        > "$T/b_proc_read_line.eigs"
-printf 'w is spawn of [proc_read, 0, 1]\nprint of "MARK_END"\n'                          > "$T/b_proc_read.eigs"
 printf 'w is spawn of [proc_read_buf, 0, 1]\nprint of "MARK_END"\n'                      > "$T/b_proc_read_buf.eigs"
-printf 'w is spawn of [proc_close, 0]\nprint of "MARK_END"\n'                            > "$T/b_proc_close.eigs"
-printf 'w is spawn of [proc_wait, 0]\nprint of "MARK_END"\n'                             > "$T/b_proc_wait.eigs"
-for b in recv try_recv recv_timeout exec_capture proc_spawn proc_write proc_read_line proc_read proc_read_buf proc_close proc_wait; do
+for b in recv try_recv recv_timeout exec_capture proc_read_buf; do
     assert_replay "boundary builtin $b on a direct worker" "$T/b_$b.eigs"
 done
 

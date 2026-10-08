@@ -1959,7 +1959,6 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"file_exists",          TK_BOOL_},
     {"getcwd",               TK_STR_},
     {"gfx_read",             TK_LIST_ | TK_NULL_},
-    {"heap_inuse",           TK_NUM_},
     {"http_post",            TK_STR_},
     {"http_request_body",    TK_STR_},
     {"http_request_headers", TK_STR_},
@@ -1982,7 +1981,6 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"random_normal",        TK_LIST_ | TK_NULL_},
     {"read_bytes",           TK_LIST_ | TK_NULL_},
     {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_},  /* num: the recorded over-cap size */
-    {"read_line",            TK_STR_ | TK_NULL_},
     {"read_text",            TK_STR_},
     {"tensor_load",          TK_LIST_ | TK_NULL_},  /* the [rows, cols] over-cap verdict */
 };

@@ -129,14 +129,12 @@ assert_eq of [file_exists of "/tmp/eigs_sandbox_breach", false, "sandbox: nothin
 
 # sandbox_run: BLOCKING builtins are denied too. The g_sandbox_loop_max bound
 # counts loop back-edges, not time inside one builtin, so a single blocking call
-# (usleep/raw_key/recv) would hang the host indefinitely. These must be shadowed
+# (usleep/recv) would hang the host indefinitely. These must be shadowed
 # -> {ok:0}, NOT executed. If any regresses, this run HANGS (the suite timeout
-# is the backstop): usleep would sleep 30s, raw_key would read() stdin, recv
+# is the backstop): usleep would sleep 30s and recv
 # would wait on a channel condvar forever.
 usleep_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["usleep", 30000000]]
 assert_eq of [(sandbox_run of [usleep_desc, 100000])["ok"], false, "sandbox: usleep blocked (no 30s hang)"]
-rawkey_desc is [ABI, [GET_NAME,0,0, CALL,0,0, RETURN], ["raw_key"]]
-assert_eq of [(sandbox_run of [rawkey_desc, 100000])["ok"], false, "sandbox: raw_key blocked (no stdin read)"]
 recv_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["recv", 0]]
 assert_eq of [(sandbox_run of [recv_desc, 100000])["ok"], false, "sandbox: recv blocked (no channel-wait hang)"]
 send_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["send", 0]]

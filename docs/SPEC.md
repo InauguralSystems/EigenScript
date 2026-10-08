@@ -2175,7 +2175,7 @@ lands on the last wake time.
 log is []
 define nap(tag, ticks) as:
     task_sleep of ticks
-    log is append of [log, f"{tag}@{t}"]
+    log is append of [log, tag]
     return tag
 
 a is task_spawn of [nap, "a", 30]
@@ -2187,8 +2187,7 @@ task_join of c
 print of log
 ```
 ```output
-["b@10", "c@20", "a@30"]
-30
+["b", "c", "a"]
 ```
 
 ### Seeded scheduling
@@ -2227,43 +2226,6 @@ print of order
 The same program with no seed prints the round-robin order
 `["a", "b", "c", "a", "b", "c"]`; a different seed prints a different — but
 equally reproducible — permutation.
-
-### Scheduler trace
-
-default; `EIGS_TASK_TRACE=1` arms it from the environment). While armed, every
-task **resume** appends one entry — `{seq, tick, task, cause}`: the entry's
-index, the virtual clock, the resumed task's id (`0` is the main task), and
-why it became runnable: `spawn` (its first run), `yield` (a `task_yield`
-re-enqueue), `sleep-wake` (the clock reached its `task_sleep` deadline),
-`join-release` (the task it joined finished), `kill-release` (the task it
-joined was killed), `recv-wake` (a message reached its empty mailbox), or
-`deadlock` (main re-enqueued to receive the catchable deadlock error).
-it and discards it. The trace is a **pure reader**: arming it changes no pick,
-no clock and no seed — a traced run is byte-identical to the untraced one —
-and its entries are derived from the deterministic schedule rather than
-recorded on the trace tape, so a replayed run reproduces the same history.
-
-```eigenscript
-define step(tag) as:
-    task_yield of null
-    task_sleep of 10
-    return tag
-
-a is task_spawn of [step, "a"]
-b is task_spawn of [step, "b"]
-task_join of a
-task_join of b
-    print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"
-```
-```output
-0 t=0 task=257 spawn
-1 t=0 task=258 spawn
-2 t=0 task=257 yield
-3 t=0 task=258 yield
-4 t=10 task=257 sleep-wake
-5 t=10 task=258 sleep-wake
-6 t=10 task=0 join-release
-```
 
 ## Buffers
 

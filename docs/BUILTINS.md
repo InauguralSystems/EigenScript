@@ -45,6 +45,14 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_capture_close`, `audio_stream_open`, `audio_stream_push`,
 `audio_stream_queued`, `audio_stream_clear`, `audio_stream_close`), and
 
+## Runtime status and control
+
+| Function | Usage | Description |
+|---|---|---|
+| `math_flags` | `math_flags of null` | Return sticky `overflow`, `invalid`, and `underflow` numeric-status booleans. |
+| `must_not_yield` | `must_not_yield of fn` | Run a callback while rejecting cooperative suspension. |
+| `inflate` | `inflate of bytes` | Decode raw DEFLATE bytes when zlib support is enabled. |
+
 ## Core Language
 
 ### Type System

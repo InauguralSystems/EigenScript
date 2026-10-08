@@ -250,9 +250,7 @@ check of ["VM: parameter binder restored",
 # namespace came back silently EMPTY from every cwd but the repo root, and a
 # misspelt module name produced an empty namespace, not a raise.
 # `_eigen_module_path` now mirrors the C resolver's chain (cwd, then the
-# stdlib root beside the binary) and raises when nothing resolves; the `chdir`
-# row below is the gate on the cwd half, since this file is run from `src/` by
-# the suite and from the repo root by hand.
+# stdlib root beside the binary) and raises when nothing resolves; tests/test_exe_path.py gates the cwd half from host-launched processes.
 
 define meta_probe(src) as:
     try:
@@ -288,24 +286,6 @@ parity of ["rebinding the name drops the module view",
     "import log\nlog is {}\nlog.log_info", ["ok", null]]
 parity of ["rebinding the name drops the module keys",
     "import log\nlog is {}\nhas_key of [log, \"log_info\"]", ["ok", false]]
-
-# The cwd gate. Run the same import from a directory that has no `lib/`: both
-# evaluators must still answer the stdlib module beside the binary. Done in a
-# private, freshly-created temp cwd and restored immediately.  A fixed shared
-# directory such as /tmp would let another user plant log.eigs before this
-# trusted test imports it.
-_mp_cwd is getcwd of null
-_mp_tmp_result is exec_capture of ["mktemp", "-d"]
-if _mp_tmp_result[0] != 0:
-    throw of "could not create private temporary directory"
-_mp_tmp_cwd is trim of _mp_tmp_result[1]
-chdir of _mp_tmp_cwd
-_mp_meta_elsewhere is meta_probe of "import log\nhas_key of [log, \"log_info\"]"
-_mp_vm_elsewhere is vm_probe of "import log\nhas_key of [log, \"log_info\"]"
-chdir of _mp_cwd
-exec_capture of ["rm", "-rf", _mp_tmp_cwd]
-check of ["meta: import resolves from a cwd with no lib/", _mp_meta_elsewhere, ["ok", true]]
-check of ["VM: import resolves from a cwd with no lib/", _mp_vm_elsewhere, ["ok", true]]
 
 # GAP CANARY (a real gap, asserted as it behaves today). The live half of the
 # rule — a module FUNCTION mutating a module global and the importer seeing it

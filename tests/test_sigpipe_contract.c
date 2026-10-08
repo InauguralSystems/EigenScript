@@ -112,8 +112,6 @@ int main(int argc, char **argv) {
     /* Bound a stalled control without a platform-specific timeout tool. */
     alarm(10);
 
-    if (strcmp(argv[1], "proc") == 0)
-        return run_eval("p is proc_spawn of ([\"true\"])\n", NULL) ? 0 : 1;
     if (strcmp(argv[1], "write") == 0) return io_contract(0) ? 0 : 1;
     if (strcmp(argv[1], "send") == 0) return io_contract(1) ? 0 : 1;
     if (strcmp(argv[1], "early") == 0)

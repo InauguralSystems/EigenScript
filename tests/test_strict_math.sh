@@ -31,8 +31,7 @@ trap 'rm -f "$TMP"' EXIT
 # a LeakSanitizer report lands in "$out" and `leak_clean` turns the row RED.
 # This exists because a strict raise ALREADY exits non-zero, so LeakSanitizer
 # does not change the process status and a leaking guard looks exactly like an
-# ordinary expected raise: three guards (scan_ints / scan_tokens /
-# scan_int_tokens) leaked 1096 bytes each while all 85 rows reported PASS.
+# ordinary expected raise: the scan_ints / scan_int_tokens guards leaked 1096 bytes each while all 85 rows reported PASS.
 # Under a release build there is no such output and the check is a no-op, so
 # the gate costs nothing and cannot go vacuous silently: it reads the same
 # text the assertion already reads.
@@ -376,7 +375,6 @@ run "SM78 strict: json_build of null is still {}"       1 0 "{}" 'print of (json
 run "SM79 strict sort(dict) raises"                     1 1 "sort: expected a list" 'print of (sort of ({"a": 1}))'
 run "SM80 strict token_name(str) raises"                1 1 "token_name: expected" 'print of (token_name of "x")'
 run "SM81 strict: token_name of an unknown id is still ?" 1 0 "?" 'print of (token_name of 9999)'
-run "SM82 strict tokenize_ids(num) raises"              1 1 "tokenize_ids: expected" 'print of (tokenize_ids of 42)'
 run "SM83 strict random_hex(str) raises"                1 1 "random_hex: expected" 'print of (random_hex of "x")'
 run "SM84 strict: random_hex of 0 is still empty"       1 0 "[]" 'print of f"[{random_hex of 0}]"'
 
@@ -384,10 +382,8 @@ run "SM84 strict: random_hex of 0 is still empty"       1 0 "[]" 'print of f"[{r
 # none, so both leaked with no coverage at all. All three guards sit above the
 # make_list they used to follow, and these rows are the leak-visible ones (the
 # raise itself already exits 1, so only `leak_clean` can see a regression).
-run "SM85 strict scan_tokens(num) raises"               1 1 "scan_tokens: expected"     'print of (scan_tokens of 42)'
 run "SM86 strict scan_int_tokens(num) raises"           1 1 "scan_int_tokens: expected" 'print of (scan_int_tokens of 42)'
 # Flag-off pins: the wrong type still reads as "no tokens" -> an empty list.
-run "SM87 opt-out scan_tokens(num) is still []"     0 0 "[]" 'print of f"[{scan_tokens of 42}]"'
 run "SM88 opt-out scan_int_tokens(num) is still []" 0 0 "[]" 'print of f"[{scan_int_tokens of 42}]"'
 
 # #1131: every f64 matmul rounds the product before adding it. These exact

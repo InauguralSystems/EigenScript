@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the actual CLI's executable anchor across launch forms and chdir.
+"""Exercise the actual CLI's executable anchor across launch forms and working directories.
 
 Runs the host platform's resolver; macOS behavior is exercised on macOS CI.
 """
@@ -22,21 +22,17 @@ def main():
         elsewhere.mkdir()
         linked = work / "linked-eigenscript"
         linked.symlink_to(BINARY)
+        inner = json.dumps('import log\nhas_key of [log, "log_info"]')
         program = f'''load_file of {json.dumps(str(ROOT / "lib" / "eigen.eigs"))}
-print of ("before=" + (exe_path of null))
-old_cwd is getcwd of null
-print of ("chdir=" + (str of (chdir of {json.dumps(str(elsewhere))})))
+print of ("path=" + (exe_path of null))
 print of ("cwd=" + (getcwd of null))
-print of ("after=" + (exe_path of null))
-print of ("meta=" + (str of (eigen_run of "import log\\nhas_key of [log, \\\"log_info\\\"]")))
-print of ("vm=" + (str of (eval of "import log\\nhas_key of [log, \\\"log_info\\\"]")))
-print of ("restore=" + (str of (chdir of old_cwd)))
-print of ("done=" + (getcwd of null))
+print of ("meta=" + (str of (eigen_run of {inner})))
+print of ("vm=" + (str of (eval of {inner})))
 '''
         # subprocess's bare executable invokes PATH lookup, including a relative
         # PATH component. No shell rewrites argv[0] into an absolute path.
         cases = [
-            ("relative", "./eigenscript", BINARY.parent, None),
+            ("relative", "src/eigenscript", ROOT, None),
             ("absolute", str(BINARY), work, None),
             ("PATH absolute", "eigenscript", work, str(BINARY.parent)),
             ("PATH relative", "eigenscript", ROOT, "src"),
@@ -49,9 +45,7 @@ print of ("done=" + (getcwd of null))
             if path is not None:
                 env["PATH"] = path
             expected = [
-                f"before={BINARY}", "chdir=true", f"cwd={elsewhere}",
-                f"after={BINARY}", "meta=true", "vm=true", "restore=true",
-                f"done={cwd}",
+                f"path={BINARY}", f"cwd={cwd}", "meta=true", "vm=true",
             ]
             try:
                 result = subprocess.run(
@@ -59,7 +53,7 @@ print of ("done=" + (getcwd of null))
                     text=True, capture_output=True, timeout=30,
                 )
                 if result.returncode == 0 and result.stdout.splitlines() == expected and not result.stderr:
-                    print(f"PASS: {label}: absolute stable path and both imports after chdir")
+                    print(f"PASS: {label}: absolute stable path and both imports from the launch directory")
                     passed += 1
                 else:
                     print(f"FAIL: {label}: rc={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}")

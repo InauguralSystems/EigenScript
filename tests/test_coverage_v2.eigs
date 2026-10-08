@@ -144,14 +144,6 @@ assert of [contains of [jb2, "null"], "CV2-35 json_build null value"]
 jb3 is json_build of ["big", 1234567890.123]
 assert of [contains of [jb3, "1234567890"], "CV2-36 json_build large num"]
 
-# --- json_build with json_raw ---
-raw is json_raw of "[1,2,3]"
-jb4 is json_build of ["items", raw]
-assert of [contains of [jb4, "[1,2,3]"], "CV2-37 json_build json_raw"]
-
-# --- type of json_raw ---
-assert of [(type of raw) == "json_raw", "CV2-38 type of json_raw"]
-
 # --- range with step ---
 r_step is range of [0, 10, 2]
 assert of [(len of r_step) == 5, "CV2-39 range with step length"]

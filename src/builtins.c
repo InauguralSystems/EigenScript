@@ -6535,11 +6535,6 @@ void register_builtins(Env *env) {
      * HERE, never at a call site. */
     register_store_builtins(env);
 
-#if EIGS_BORROW_GUARD
-    /* #548 guard self-test hook — see builtin_borrow_guard_selftest. */
-    if (eigs_env_flag("EIGS_BORROW_GUARD_SELFTEST"))
-#endif
-
     /* ---- Host-only builtins (#741): one registrar, whole-TU gated ---- */
     register_host_builtins(env);
 

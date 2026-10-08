@@ -198,7 +198,7 @@ docs/CONCURRENCY.md) is **not** an `N` record. The interleaving is a pure
 function of program order and `task_sched_seed`, so a replayed run
 re-derives the identical history from the same schedule; recording it would
 create a second source of truth that could disagree with the first.
-`tests/test_task_sched_trace.sh` asserts the tape's `N`-record count is
+The replay suite asserts the tape's `N`-record count is
 unchanged by arming the trace and that record → replay yields the same
 history on both tiers.
 

@@ -326,7 +326,7 @@ POPULATION = {
     # file                       fences paired fragment nocheck value-comments
     "README.md":                 (  8,    3,     5,      0,      0),
     "docs/llms.txt":             (  9,    6,     2,      1,      0),
-    "docs/SPEC.md":              ( 85,   81,     1,      3,      0),   # #1637: +2 paired (bool raises, deep == short-circuit)
+    "docs/SPEC.md":              ( 84,   80,     1,      3,      0),   # #1637: +2 paired (bool raises, deep == short-circuit)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  7,    7,     0,      0,      0),
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
@@ -579,7 +579,7 @@ def clean_run(rc, stderr, asan_build):
     if asan_build and is_lsan_only_failure(stderr):
         return True
     # "Warning:" lines are a documented part of some APIs' contract
-    # (set_observer_thresholds announces the change). They are tolerated but
+    # (observer configuration may announce a change). They are tolerated but
     # never hidden — main() prints them beside the PASS line. Everything else
     # on stderr is a hard diagnostic and fails, whatever the exit code says.
     return not hard_stderr_lines(stderr)

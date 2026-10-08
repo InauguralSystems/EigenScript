@@ -13,39 +13,6 @@
 # single list (dispatch) are fed a list held in a variable to avoid the
 # spread.
 
-# ---- set_observer_thresholds: wrong arity ----
-c1 is 0
-m1 is ""
-try:
-    set_observer_thresholds of 5
-catch e:
-    c1 is 1
-    m1 is e
-assert of [c1 == 1, "BE01 set_observer_thresholds wrong arity caught"]
-assert of [(contains of [m1.message, "set_observer_thresholds requires"]), "BE01 message"]
-
-# ---- set_observer_thresholds: non-positive threshold ----
-c2 is 0
-m2 is ""
-try:
-    set_observer_thresholds of [-1.0, 0.5, 0.2]
-catch e:
-    c2 is 1
-    m2 is e
-assert of [c2 == 1, "BE02 non-positive threshold caught"]
-assert of [(contains of [m2.message, "must be positive"]), "BE02 message"]
-
-# ---- set_observer_thresholds: dh_zero >= dh_small ----
-c3 is 0
-m3 is ""
-try:
-    set_observer_thresholds of [0.9, 0.1, 0.2]
-catch e:
-    c3 is 1
-    m3 is e
-assert of [c3 == 1, "BE03 dh_zero>=dh_small caught"]
-assert of [(contains of [m3.message, "dh_zero must be less than dh_small"]), "BE03 message"]
-
 # ---- load_file: non-string path ----
 c4 is 0
 m4 is ""

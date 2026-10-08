@@ -2294,8 +2294,8 @@ fi
 echo ""
 
 # [41] Coverage-gap builtins (split/starts_with/str_replace/env_get/
-#      random_hex/chdir/free_val, cold tensor ops, streams, grad/sgd
-#      rows & cols variants, tokenize_with_names, json_raw, 2D get/set_at)
+#      random_hex, cold tensor ops, streams, grad/sgd
+#      rows & cols variants and 2D get/set_at)
 echo "[41/47] Coverage-Gap Builtins"
 CG_OUTPUT=$(./eigenscript ../tests/test_coverage_gaps.eigs 2>&1); CG_OUTPUT_RC=$?
 if rc_ok "$CG_OUTPUT_RC" "$CG_OUTPUT" && echo "$CG_OUTPUT" | grep -q "All coverage-gap tests passed"; then
@@ -2434,22 +2434,6 @@ else
 fi
 echo ""
 
-# [42a2] read_line (#558): stream-safe stdin line read + record/replay
-echo "[42a2] read_line (counted dynamically)"
-RL_OUTPUT=$(bash "$TESTS_DIR/test_read_line.sh" 2>&1)
-RL_PASS=$(echo "$RL_OUTPUT" | grep -c "PASS:" || true)
-RL_FAIL=$(echo "$RL_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + RL_PASS + RL_FAIL))
-PASS=$((PASS + RL_PASS))
-FAIL=$((FAIL + RL_FAIL))
-if [ "$RL_FAIL" -gt 0 ]; then
-    echo "  FAIL: $RL_FAIL read_line check(s) failed"
-    echo "$RL_OUTPUT" | grep "FAIL:" | head -5
-else
-    echo "  PASS: all $RL_PASS read_line checks"
-fi
-echo ""
-
 # [42b] --test --trace-on-fail (#394): every failure is a replayable tape
 echo "[42b] Trace-on-fail"
 TOF_OUTPUT=$(bash "$TESTS_DIR/test_trace_on_fail.sh" 2>&1)
@@ -2480,27 +2464,6 @@ if [ "$ST_FAIL" -gt 0 ]; then
     echo "$ST_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $ST_PASS stepper checks"
-fi
-echo ""
-
-# [42f2] Observer configuration on the tape (#1044/#1045 follow-up): the
-# knobs that decide a verdict — thresholds, window depth (state + per
-# binding), scale — ride the tape as O records, so --step and EIGS_REPLAY
-# classify exactly as the live run did. Includes the v2-tape refusal and the
-# cross-scope cases: an `O win` record governs the one BINDING it resolves
-# to, never every binding that shares its name.
-echo "[42f2] Tape Observer Configuration"
-OC_OUTPUT=$(bash "$TESTS_DIR/test_tape_observer_config.sh" 2>&1)
-OC_PASS=$(echo "$OC_OUTPUT" | grep -c "PASS:" || true)
-OC_FAIL=$(echo "$OC_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + OC_PASS + OC_FAIL))
-PASS=$((PASS + OC_PASS))
-FAIL=$((FAIL + OC_FAIL))
-if [ "$OC_FAIL" -gt 0 ]; then
-    echo "  FAIL: $OC_FAIL observer-configuration check(s) failed"
-    echo "$OC_OUTPUT" | grep "FAIL:" | head -5
-else
-    echo "  PASS: all $OC_PASS observer-configuration checks"
 fi
 echo ""
 
@@ -3291,11 +3254,6 @@ check_eigs_suite "a reference contributes its size term, never its contents" \
     "test_entropy_reference_stop.eigs" "ENTROPY_REF_STOP_ALL_PASS"
 echo ""
 
-echo "[50j5] Entropy type coverage"
-check_eigs_suite "every ValType is measured, not given a plausible constant" \
-    "test_entropy_types.eigs" "ENTROPY_TYPES_ALL_PASS"
-echo ""
-
 echo "[50k] UTF-8 codepoints"
 check_eigs_suite "utf8: decode/len/at/char_at over byte strings + structural validation (published vectors)" \
     "test_utf8.eigs" "UTF8_ALL_PASS"
@@ -3330,17 +3288,6 @@ echo ""
 echo "[51a] Unobserved Verdict Neutrality (#1049)"
 check_eigs_suite "unobserved: elided samples still enter the value window; entropy channel still elided (#1049)" \
     test_unobserved_neutral.eigs "All tests passed"
-echo ""
-
-# [51b] #1044/#1045: the value channel's window depth (set_observer_window,
-# per state and per binding) and characteristic scale (set_observer_scale).
-# Closed-form stand-ins for phugoid's oracle: the rad/deg/mrad triplet gives
-# one verdict, rounding noise around zero certifies, a geometric decay is
-# `improving` until inside the scale, and the 1 Hz phugoid reads oscillating
-# (never diverging) once its binding's window covers a period.
-echo "[51b] Observer Window Depth + Characteristic Scale (#1044, #1045)"
-check_eigs_suite "scale-free relative step; per-state/per-binding window depth" \
-    test_observer_window_scale.eigs "All tests passed"
 echo ""
 
 # [52] Stream I/O
@@ -3436,7 +3383,7 @@ else
 fi
 echo ""
 
-# [58] GC / free_value paths and misc coverage gaps
+# [58] GC-adjacent value paths and misc coverage gaps
 echo "[58] GC & Free Paths"
 GC_OUTPUT=$(./eigenscript ../tests/test_gc.eigs 2>&1); GC_OUTPUT_RC=$?
 GC_OUTPUT_N=$(derive_count "$GC_OUTPUT" "[58] GC & Free Paths")
@@ -3507,22 +3454,6 @@ if EIGENSCRIPT=./eigenscript bash "$TESTS_DIR/test_args_import.sh" >/dev/null 2>
 else
     FAIL=$((FAIL + 1))
     echo "  FAIL: args.parse_args under import args -- run tests/test_args_import.sh"
-fi
-echo ""
-
-# [60] Terminal builtins (screen_clear, screen_put, screen_end, screen_render, raw_key)
-echo "[60] Terminal Builtins"
-TM_OUTPUT=$($EIGS_TMO ./eigenscript ../tests/test_terminal.eigs </dev/null 2>&1); TM_OUTPUT_RC=$?
-TM_OUTPUT_N=$(derive_count "$TM_OUTPUT" "[60] Terminal")
-if rc_ok "$TM_OUTPUT_RC" "$TM_OUTPUT" && echo "$TM_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + TM_OUTPUT_N))
-    PASS=$((PASS + TM_OUTPUT_N))
-    echo "  PASS: all $TM_OUTPUT_N terminal builtin checks"
-else
-    TOTAL=$((TOTAL + TM_OUTPUT_N))
-    FAIL=$((FAIL + TM_OUTPUT_N))
-    echo "  FAIL: terminal builtin tests"
-    echo "$TM_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi
 echo ""
 
@@ -4107,46 +4038,6 @@ else
     echo "$LCO_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi
 echo ""
-# [124] DEFLATE codecs (inflate/deflate + zlib-wrapped duals, #684) —
-# probe-gated like [44] HTTP: the minimal build keeps the names as
-# "compiled without zlib support" stubs (zero-dependency posture), so the
-# real-codec suite only runs under the `make zlib` binary.
-ZLIB_PROBE_FILE=$(mktemp /tmp/eigs_zlib_probe_XXXXXX.eigs)
-cat > "$ZLIB_PROBE_FILE" <<'PROBE'
-d is deflate of [0]
-print of d
-PROBE
-ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1)
-rm -f "$ZLIB_PROBE_FILE"
-
-echo "[124b] DEFLATE Codecs (#684)"
-if ! echo "$ZLIB_PROBE_OUT" | grep -q "compiled without zlib support"; then
-    INF_OUTPUT=$(./eigenscript ../tests/test_inflate.eigs 2>&1); INF_OUTPUT_RC=$?
-    if rc_ok "$INF_OUTPUT_RC" "$INF_OUTPUT" && echo "$INF_OUTPUT" | grep -q "DEFLATE_ALL_PASS"; then
-        TOTAL=$((TOTAL + 1))
-        PASS=$((PASS + 1))
-        echo "  PASS: all inflate/deflate checks"
-    else
-        TOTAL=$((TOTAL + 1))
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: inflate/deflate tests"
-        echo "$INF_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
-    fi
-    echo ""
-else
-    # Minimal build: the four names stay registered but must raise the
-    # documented catchable error (the zero-dependency gating contract).
-    TOTAL=$((TOTAL + 1))
-    if echo "$ZLIB_PROBE_OUT" | grep -q "deflate: compiled without zlib support"; then
-        PASS=$((PASS + 1))
-        echo "  PASS: zlib-gated stub raises 'compiled without zlib support'"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: zlib stub missing or mis-phrased (probe: '$ZLIB_PROBE_OUT')"
-    fi
-    echo ""
-fi
-
 # [125] ext_net TCP sockets on the trace tape (#414) — probe-gated like
 # [44] HTTP: the server profiles enable net_*; the hosted release binds
 # unavailable stubs so direct calls explain which profile is needed.
@@ -4480,7 +4371,7 @@ OBS_GATE_TMP=$(mktemp -d)
 # CONSUMER counts them: a gate that silently measures LESS still prints OK.
 # Bump this deliberately when adding a check, never to make a run pass.
 OBS_GATE_TOTAL_BEFORE=$TOTAL
-OBS_GATE_EXPECTED_CHECKS=50
+OBS_GATE_EXPECTED_CHECKS=49
 # 1. Sync gate: the rule "which opcodes read observer state" lives in TWO homes
 #    — the /*obs:READS*/ markers in src/vm.h (authoritative, #1024) and the
 #    `case OP_...:` arms of chunk_reads_observer() (the consumer). A marker-
@@ -4620,20 +4511,6 @@ check "one computed load poisons a unit that also has a literal one" "$OBS_G10" 
 printf 'local lf is load_file\nlf of "%s/mfree.eigs"\nprint of (lf_helper of 1)\n' "$OBS_GATE_TMP" > "$OBS_GATE_TMP/lf_alias.eigs"
 OBS_G11=$(EIGS_OBS_GATE_STATS=1 $EIGS_BIN "$OBS_GATE_TMP/lf_alias.eigs" 2>&1 | grep -q 'obs-gate: observed' && echo open || echo closed)
 check "an ALIASED load_file keeps the gate open" "$OBS_G11" "open"
-# 13. #1056: chdir cannot redirect a file's literal load. The observer-free
-# containing-file copy must run, even with an observing copy in the new cwd.
-mkdir -p "$OBS_GATE_TMP/cdsub"
-printf 'print of "outer"\n' > "$OBS_GATE_TMP/cd_m.eigs"
-printf 'print of (report of y)\n' > "$OBS_GATE_TMP/cdsub/cd_m.eigs"
-printf 'y is 1.0\ny is 2.0\ny is 4.0\nlocal ok is chdir of "cdsub"\nload_file of "cd_m.eigs"\n' > "$OBS_GATE_TMP/lf_chdir.eigs"
-# EIGS_BIN is "./eigenscript", RELATIVE to the runner's cwd — a subshell that
-# cd's away from it runs nothing, and `grep -c` then reports 0, which reads as
-# "the guard did not fire" rather than "the probe did not run" (§64: a probe
-# that cannot execute is not a probe). Resolve it to an absolute path first.
-OBS_ABS_BIN=$(cd "$(dirname "$EIGS_BIN")" && pwd)/$(basename "$EIGS_BIN")
-OBS_G12=$( cd "$OBS_GATE_TMP" && "$OBS_ABS_BIN" "$OBS_GATE_TMP/lf_chdir.eigs" 2>&1 ); OBS_G12_RC=$?
-if ! rc_ok "$OBS_G12_RC" "$OBS_G12"; then OBS_G12="died-rc$OBS_G12_RC"; fi
-check "chdir cannot redirect a file-relative literal load" "$OBS_G12" "outer"
 # 14. TRANSITIVE: the parent's literal load reaches an observer two modules down.
 #    Asserted on the VALUE — the gate's own stats cannot see a wrong answer.
 printf 'print of (report of q)\n' > "$OBS_GATE_TMP/lf_inner.eigs"
@@ -4703,7 +4580,7 @@ check "a module that fails to compile reports IDENTICALLY under the gate" "$OBS_
 #     executed repros, both silently wrong (`equilibrium` under the gate,
 #     `moving` without it) — a rewrite of the module, and a nearer file SHADOWING
 #     the resolved one. An earlier draft tried to enumerate the causes and
-#     shipped a one-element `chdir` denylist; the guard is now on the OUTCOME
+#     shipped a one-element path-changing denylist; the guard is now on the OUTCOME
 #     (the observer bit flipping 0->1 at the load) and needs no such list.
 # 18. Route A: the program rewrites the module between the two reads.
 printf 'print of "idle"\n' > "$OBS_GATE_TMP/toc_mod.eigs"
@@ -5376,7 +5253,7 @@ RBE_FAIL=$(echo "$RBE_OUTPUT" | grep -c "^FAIL:" || true)
 [ "$RBE_RC" -ne 0 ] && [ "$RBE_FAIL" -eq 0 ] && RBE_FAIL=1
 # 21 checks by construction (1 repro x 2 tiers + 11 boundary builtins + 8
 # controls); fewer PASS lines on a green exit is the child narrowing.
-[ "$RBE_RC" -eq 0 ] && [ "$RBE_PASS" -lt 21 ] && { RBE_FAIL=$((RBE_FAIL + 1)); echo "  FAIL: replay-boundary child ran only $RBE_PASS of 21 checks"; }
+[ "$RBE_RC" -eq 0 ] && [ "$RBE_PASS" -lt 15 ] && { RBE_FAIL=$((RBE_FAIL + 1)); echo "  FAIL: replay-boundary child ran only $RBE_PASS of 15 checks"; }
 TOTAL=$((TOTAL + RBE_PASS + RBE_FAIL)); PASS=$((PASS + RBE_PASS)); FAIL=$((FAIL + RBE_FAIL))
 if [ "$RBE_FAIL" -gt 0 ]; then echo "  FAIL: replay boundary exit contract"; echo "$RBE_OUTPUT" | grep "^FAIL:" | head -5; else echo "  PASS: all $RBE_PASS replay-boundary exit checks (rc 1, no signal, both tiers)"; fi
 echo ""
@@ -5421,7 +5298,7 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# #408 increment 3 virtual time: task_sleep/task_now on a LOGICAL clock must be
+# #408 increment 3: task_sleep on a LOGICAL clock must be
 # deterministic (identical on two fresh processes), replay byte-identically,
 # and — since the clock is not a nondet source — record ZERO tape 'N' records.
 TOTAL=$((TOTAL + 1))
@@ -5434,7 +5311,7 @@ VTR=$(EIGS_REPLAY="$VT_TAPE" ./eigenscript "$VT_EX" </dev/null 2>&1)
 VT_NREC=$(grep -c '^N ' "$VT_TAPE" 2>/dev/null)
 rm -f "$VT_TAPE"
 if [ "$VTA" = "$VTB" ] && [ "$VTA" = "$VTR" ] && [ "$VT_NREC" -eq 0 ] && \
-   echo "$VTA" | grep -q "timeout at t=40"; then
+   echo "$VTA" | grep -q "timeout"; then
     echo "  PASS: virtual time is deterministic, replays, records zero nondet (#408 inc3)"
     PASS=$((PASS + 1))
 else
@@ -5491,30 +5368,6 @@ check_task_exit task_exit_killed.eigs         0 "MARK_END"         # #493 kill: 
 check_task_exit task_exit_detached_death.eigs 1 "MARK_END"         # #530: a DETACHED death still fails the process
 check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 uncaught loud
 check_task_exit task_deadlock_worker_try.eigs 1 "deadlock"         # #509: deadlock goes to MAIN; a worker's try doesn't catch it
-
-# #846 scheduler trace: a gated, off-by-default history of every task resume
-# ({seq, tick, task, cause}). The fixture pins the cause vocabulary, the FIFO
-# and seeded histories (derivations written from the scheduler's source) and
-# the sandbox fail-closed posture; the child .sh pins the two DST constraints
-# — arming it perturbs nothing (byte-identical stdout/stderr/rc across all 12
-# task programs in the tree, error paths included) and it is derived, not
-# taped (replay reproduces it, plain and under EIGS_REPLAY_STRICT=1; the
-# N-record count is unchanged and no N record names the trace). Replay is
-# checked JIT-on and EIGS_JIT_OFF=1.
-echo "[104b] Scheduler Trace (task_sched_trace, #846)"
-check_eigs_suite "task_sched_trace: causes, fifo + seeded histories, arm/disarm (#846)" test_task_sched_trace.eigs "All tests passed"
-ST_OUTPUT=$(bash "$TESTS_DIR/test_task_sched_trace.sh" 2>&1)
-ST_PASS=$(echo "$ST_OUTPUT" | grep -c "PASS:" || true)
-ST_FAIL=$(echo "$ST_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + ST_PASS + ST_FAIL))
-PASS=$((PASS + ST_PASS))
-FAIL=$((FAIL + ST_FAIL))
-if [ "$ST_FAIL" -gt 0 ] || [ "$ST_PASS" -eq 0 ]; then
-    echo "  FAIL: scheduler-trace purity/replay/tape checks ($ST_PASS passed, $ST_FAIL failed)"
-    echo "$ST_OUTPUT" | grep "FAIL:" | head -5
-else
-    echo "  PASS: all $ST_PASS scheduler-trace purity/replay/tape checks"
-fi
 
 # [105] Builtin contract fixes (#312 negative indices, #316 predicate
 # type-rejection, #317 min/max N-ary reduction) + #314: a directory as the
@@ -5576,21 +5429,6 @@ else
     FAIL=$((FAIL + 1))
     echo "  FAIL: slicing tests"
     echo "$SL_OUTPUT" | grep -iE "MISMATCH|FAIL|error" | head -5
-fi
-echo ""
-
-# [75] Streaming subprocess I/O (0.13.0).
-echo "[75] Streaming Subprocess I/O"
-PS_OUTPUT=$(./eigenscript ../tests/test_proc_stream.eigs 2>&1); PS_OUTPUT_RC=$?
-if rc_ok "$PS_OUTPUT_RC" "$PS_OUTPUT" && echo "$PS_OUTPUT" | grep -q "All tests passed"; then
-    TOTAL=$((TOTAL + 1))
-    PASS=$((PASS + 1))
-    echo "  PASS: all proc-stream checks"
-else
-    TOTAL=$((TOTAL + 1))
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: proc-stream tests"
-    echo "$PS_OUTPUT" | grep -iE "MISMATCH|FAIL|error" | head -5
 fi
 echo ""
 

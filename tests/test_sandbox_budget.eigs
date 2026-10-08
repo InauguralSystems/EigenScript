@@ -452,26 +452,6 @@ assert_eq of [sr_srep["ok"], false, "budget: expanding str_replace -> {ok:0}"]
 sr_srep_ok is sandbox_run of [srep_desc, 100000, 4000000]
 assert_eq of [sr_srep_ok["ok"], true, "budget: same str_replace within budget stays ok"]
 
-# --- text_builder growth is charged at its chokepoint ------------------------
-# Uncharged, a 50000-append loop reached the uncatchable x_oom abort from
-# inside grade()'s own generation vocabulary. One extend over a host-built
-# list exercises the same growth path without a bytecode loop.
-SET_NAME_LOCAL is 27
-blist is []
-for i in range of 300:
-    append of [blist, "xxxxxxxx"]
-tb_code is [GET_NAME,0,0, CALL,0,0, SET_NAME_LOCAL,1,0, POP,
-            GET_NAME,2,0, GET_NAME,1,0, CONST,3,0, CALL,2,0, RETURN]
-tb_desc is [ABI, tb_code, ["text_builder_new", "tb", "text_builder_extend", blist]]
-sr_tb is sandbox_run of [tb_desc, 100000, 1000]
-assert_eq of [sr_tb["ok"], false, "budget: text_builder growth -> {ok:0}, not abort"]
-tb_kind is sr_tb["error"]["kind"]
-assert_eq of [tb_kind, "sandbox", "budget: text_builder refusal names the sandbox"]
-small_list is ["a", "b", "c"]
-tb_small is [ABI, tb_code, ["text_builder_new", "tb", "text_builder_extend", small_list]]
-sr_tb_ok is sandbox_run of [tb_small, 100000, 1000000]
-assert_eq of [sr_tb_ok["ok"], true, "budget: small text_builder within budget stays ok"]
-
 # --- split is charged (counted output: input bytes + per-part overhead) ------
 split_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CONST,2,0, CALL,2,0, RETURN], ["split", big, "x"]]
 sr_split is sandbox_run of [split_desc, 100000, 1000]

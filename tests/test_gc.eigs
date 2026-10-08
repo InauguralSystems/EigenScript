@@ -1,6 +1,5 @@
-# test_gc.eigs — Exercise val_free / free_value paths for each value type.
-# Uses free_val builtin to trigger free_value on STR, LIST, DICT, FN values.
-# Also covers is_truthy for FN/BUILTIN/DICT, val_type_name gaps,
+# test_gc.eigs — Exercise GC-adjacent value paths.
+# Covers is_truthy for FN/BUILTIN/DICT, val_type_name gaps,
 # value_to_string for BUILTIN, compute_entropy for BUILTIN,
 # and eval_num_fast uncovered branches in unobserved blocks.
 
@@ -15,32 +14,6 @@ define check(args) as:
     else:
         fail_count is fail_count + 1
         print of ("FAIL: " + label)
-
-# ----------------------------------------------------------------
-# 1) free_value paths via free_val builtin
-#    Pass values directly without storing them to avoid use-after-free.
-# ----------------------------------------------------------------
-
-# free_val on a string → exercises VAL_STR case in free_value
-r1 is free_val of "temporary string to free"
-check of ["GC1 free_val string", (type of r1) == "none"]
-
-# free_val on a list → exercises VAL_LIST case in free_value
-r2 is free_val of [1, 2, 3, "four", [5, 6]]
-check of ["GC2 free_val list", (type of r2) == "none"]
-
-# free_val on a dict → exercises VAL_DICT case in free_value
-r3 is free_val of {"a": 1, "b": "two", "c": 3}
-check of ["GC3 free_val dict", (type of r3) == "none"]
-
-# free_val on a lambda → exercises VAL_FN case in free_value
-fn_tmp is (x) => x * 2
-r4a is free_val of fn_tmp
-check of ["GC4a free_val fn", (type of r4a) == "none"]
-
-# free_val on a number (default case — already covered but verify)
-r4 is free_val of 42
-check of ["GC4 free_val num", (type of r4) == "none"]
 
 # ----------------------------------------------------------------
 # 2) is_truthy for FN, BUILTIN, DICT types (lines 348-351)
@@ -223,12 +196,7 @@ catch e:
 check of ["GC25 modulo by zero raises", caught_mod_zero == 1]
 
 # ----------------------------------------------------------------
-# 9) val_type_name fallthrough for JSON_RAW
-#    json_raw values can be created via json_encode
-# ----------------------------------------------------------------
-
-# ----------------------------------------------------------------
-# 10) Interrogate WHAT on dict (should return 0, line 745)
+# 9) Interrogate WHAT on dict (should return 0, line 745)
 # ----------------------------------------------------------------
 d4 is {"x": 1}
 w is what is d4

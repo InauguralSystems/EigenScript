@@ -100,7 +100,7 @@ lsan_classify() {
     _lc_marker='^(==[0-9]+==)?(ERROR: )?LeakSanitizer: detected memory leaks[[:space:]]*$'
 
     # LC_ALL=C and grep -a: a test program's own stdout can contain invalid
-    # UTF-8 (the bytes/base64/deflate suites produce it). Without -a, GNU grep
+    # UTF-8 (the bytes/base64 suites produce it). Without -a, GNU grep
     # switches to binary mode, prints "binary file matches" to the caller's
     # stderr and reports a whole-input match rather than a line match; without
     # LC_ALL=C the bracket expressions are locale-dependent. Both would make

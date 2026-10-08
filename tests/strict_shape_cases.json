@@ -2257,36 +2257,6 @@
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
   },
   {
-    "args": [
-      "shape_proc[2]",
-      "3"
-    ],
-    "valid_assert": "(len of shape_result) == 3 and (buf_get of [shape_result, 1]) == 98",
-    "setup": "shape_proc is proc_spawn of [\"@PRINTF@\", \"abc\"]\nassert of [shape_proc[0] > 0, \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "proc_close of shape_proc[1]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"shape control\"]",
-    "unchanged": "shape_remaining is proc_read of [shape_proc[2], 3]\nassert of [shape_remaining == \"abc\", \"buffer read consumed bytes on rejection\"]",
-    "optional_args": [],
-    "requirements": [
-      "owned_process_group",
-      "printf_executable",
-      "parent_deadline"
-    ],
-    "legacy_surplus_null": true,
-    "legacy_surplus_assert": "shape_result == null",
-    "source": {
-      "file": "src/builtins_host.c",
-      "line": 1653,
-      "function": "builtin_proc_read_buf",
-      "body_sha256": "5f68a8c97f24e4dfdc644839c9d0d49eee5363ea0e0cce1e5eceb1f8270a54fd"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "proc_read_buf",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "legacy_surplus_observe": "shape_legacy_remaining is proc_read of [shape_proc[2], 3]\nassert of [shape_legacy_remaining == \"abc\", \"legacy surplus did not preserve unread bytes\"]\nprint of shape_result"
-  },
-  {
     "name": "random_int",
     "args": [
       "2",
@@ -3061,8 +3031,8 @@
     ],
     "setup": "define completed(n) as:\n    return 3\ntask_id is task_spawn of completed",
     "valid_assert": "shape_result == true",
-    "observe": "print of shape_result\nprint of (task_try_recv of null)",
-    "unchanged": "assert of [(task_try_recv of null) == null, \"task send enqueued on rejection\"]",
+    "observe": "print of shape_result\ntask_send of [0, 9]\nprint of (task_recv of null)\nprint of (task_recv of null)",
+    "unchanged": "task_send of [0, 9]\nassert of [(task_recv of null) == 9, \"task send enqueued on rejection\"]",
     "cleanup": "assert of [(task_join of task_id) == 3, \"owned task join\"]",
     "requirements": [],
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
@@ -3186,5 +3156,33 @@
     "form_asserts": {
       "scalar:0": "(type of shape_result) == \"buffer\" and (shape_snapshot of shape_result) == [0, 0]"
     }
+  },
+  {
+    "args": [
+      "0",
+      "3"
+    ],
+    "valid_assert": "(len of shape_result) == 3 and (buf_get of [shape_result, 1]) == 98",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "shape_remaining is proc_read_buf of [0, 3]\nassert of [(len of shape_remaining) == 3 and (buf_get of [shape_remaining, 1]) == 98, \"buffer read consumed bytes on rejection\"]",
+    "optional_args": [],
+    "requirements": [
+      "stdin_bytes"
+    ],
+    "legacy_surplus_null": true,
+    "legacy_surplus_assert": "shape_result == null",
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1653,
+      "function": "builtin_proc_read_buf",
+      "body_sha256": "5f68a8c97f24e4dfdc644839c9d0d49eee5363ea0e0cce1e5eceb1f8270a54fd"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "proc_read_buf",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "legacy_surplus_observe": "shape_legacy_remaining is proc_read_buf of [0, 3]\nassert of [(len of shape_legacy_remaining) == 3 and (buf_get of [shape_legacy_remaining, 1]) == 98, \"legacy surplus consumed bytes\"]\nprint of shape_result"
   }
 ]

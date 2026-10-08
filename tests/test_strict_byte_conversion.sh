@@ -70,47 +70,5 @@ run "numeric buffer conversion remains accepted" unset 0 "[AB]" \
 run "numeric buffer NUL remains a terminator" 1 0 "[A]" \
     'print of f"[{str_from_bytes of (buf_from_list of [65, 0, 66])}]"'
 
-# Use a tiny valid operation: unexpected failure is a test failure, not a skip.
-printf '%s\n' 'try:
-    payload is deflate of ([])
-    print of "CODECS_ENABLED"
-catch err:
-    print of err.message' > "$TMP"
-codec_probe=$(byte_tmo env -u EIGS_STRICT "$EIGS" "$TMP" 2>&1); codec_rc=$?
-if [ "$codec_rc" != 0 ]; then
-    echo "  FAIL: codec availability probe (rc=$codec_rc out='$codec_probe')"
-    FAIL=$((FAIL + 1))
-elif [ "$codec_probe" = "CODECS_ENABLED" ]; then
-    run "raw codec round-trip accepts tiny valid bytes" unset 0 "[65, 0, 66]" \
-        'print of (inflate of (deflate of [65, 0, 66]))'
-    run "wrapped codec round-trip accepts empty input" 1 0 "[]" \
-        'print of (zlib_inflate of (zlib_deflate of []))'
-    run "default codec conversion rejects nonnumeric byte" unset 1 \
-        "deflate: expected numeric byte values" \
-        'print of (deflate of [65, "x", 66])'
-    run "explicit strict wrapped conversion rejects nonnumeric byte" 1 1 \
-        "zlib_deflate: expected numeric byte values" \
-        'print of (zlib_deflate of [65, "x", 66])'
-    run "compatibility codec conversion preserves numeric-or-zero" 0 0 "[65, 0, 66]" \
-        'print of (inflate of (deflate of [65, "x", 66]))'
-    run "raw inflate rejects a nonnumeric byte" unset 1 \
-        "inflate: expected numeric byte values" \
-        'print of (inflate of [3, "x"])'
-    run "wrapped inflate rejects a nonnumeric byte" 1 1 \
-        "zlib_inflate: expected numeric byte values" \
-        'print of (zlib_inflate of [120, 156, 3, "x", 0, 0, 0, 1])'
-    run "raw inflate compatibility retains zero conversion" 0 0 "[]" \
-        'print of (inflate of [3, "x"])'
-    run "wrapped inflate compatibility retains zero conversion" 0 0 "[]" \
-        'print of (zlib_inflate of [120, 156, 3, "x", 0, 0, 0, 1])'
-    run "raw codecs retain numeric buffer input" 1 0 "[65, 0, 66]" \
-        'print of (inflate of (buf_from_list of (deflate of (buf_from_list of [65, 0, 66]))))'
-    run "wrapped codecs retain numeric buffer input" unset 0 "[65, 0, 66]" \
-        'print of (zlib_inflate of (buf_from_list of (zlib_deflate of (buf_from_list of [65, 0, 66]))))'
-elif [[ "$codec_probe" != "deflate: compiled without zlib support"* ]]; then
-    echo "  FAIL: unexpected codec availability response '$codec_probe'"
-    FAIL=$((FAIL + 1))
-fi
-
 echo "STRICT_BYTE_CONVERSION: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

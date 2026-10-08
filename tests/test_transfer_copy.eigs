@@ -31,7 +31,6 @@ got_nested is recv of c
 check of [buffer_value of got_b, 1.5, "channel copies buffer payload"]
 check of [shape of got_b, [1, 1], "channel copies buffer shape"]
 check of [builder_value of got_t, "before", "channel copies builder bytes"]
-check of [text_builder_part_count of got_t, 1, "channel copies builder part count"]
 check of [buffer_value of got_nested["buffer"], 1.5, "channel copies nested buffer"]
 check of [builder_value of got_nested["builder"], "before", "channel copies nested builder"]
 
