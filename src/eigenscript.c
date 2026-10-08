@@ -1645,7 +1645,7 @@ void free_value(Value *v) {
     if (!v || v->arena) return;
     env_intern_release_value(v);
     if (v->type == VAL_NUM) {
-#ifndef EIGS_POOL_OFF
+#ifndef EIGS_POOL_OFF_NUM
         /* Route freed NUMs to freelist for reuse by make_num */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {
             memcpy(&v->data, &g_num_freelist, sizeof(Value *));
@@ -1654,7 +1654,7 @@ void free_value(Value *v) {
             EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));  /* #297/#298 */
             return;
         }
-#endif  /* EIGS_POOL_OFF (#1665): never park — a refcount-0 NUM is free()d so
+#endif  /* EIGS_POOL_OFF_NUM (#1665): never park — a refcount-0 NUM is free()d so
          * ASan sees its lifetime end at the real system-allocator boundary. */
         free(v);
         return;
@@ -1739,7 +1739,7 @@ Value* make_num(double n) {
     n = num_guard(n);
     int from_arena = g_arena.active;
     Value *v;
-#ifndef EIGS_POOL_OFF
+#ifndef EIGS_POOL_OFF_NUM
     if (!from_arena && g_num_freelist) {
         v = g_num_freelist;
         memcpy(&g_num_freelist, &v->data, sizeof(Value *));
@@ -1747,7 +1747,7 @@ Value* make_num(double n) {
         EIGS_VG_DEFINED(&v->refcount, sizeof(v->refcount));  /* un-poison before reuse */
         memset(v, 0, sizeof(Value));
     } else
-#endif  /* EIGS_POOL_OFF (#1665): never satisfy a make_num from the freelist —
+#endif  /* EIGS_POOL_OFF_NUM (#1665): never satisfy a make_num from the freelist —
          * every heap NUM is a fresh xcalloc (arena path unchanged here; see
          * arena_alloc). */
     {
@@ -1762,7 +1762,7 @@ Value* make_num(double n) {
 
 void recycle_intermediate(Value *v) {
     if (!v || v->type != VAL_NUM || v->arena || v->refcount > 1) return;
-#ifdef EIGS_POOL_OFF
+#ifdef EIGS_POOL_OFF_NUM
     /* #1665: no freelist — a discarded intermediate NUM is freed outright
      * (the pooled path already free()s it when the cap is hit, so callers
      * already treat the value as gone after this returns). */
@@ -3696,7 +3696,7 @@ char *env_intern_name(const char *name) {
 
 Env* env_new(Env *parent) {
     Env *e = NULL;
-#ifndef EIGS_POOL_OFF
+#ifndef EIGS_POOL_OFF_ENV
     if (g_env_freelist) {
         e = g_env_freelist;
         g_env_freelist = e->parent;
@@ -3707,7 +3707,7 @@ Env* env_new(Env *parent) {
          * Hash slots from the prior occupant are dormant by virtue of
          * generations[i] != current generation. */
     } else
-#endif  /* EIGS_POOL_OFF (#1665): every Env is a fresh xcalloc; nothing is
+#endif  /* EIGS_POOL_OFF_ENV (#1665): every Env is a fresh xcalloc; nothing is
          * ever taken from the env freelist (which stays empty). */
     {
         e = xcalloc(1, sizeof(Env));
@@ -4146,7 +4146,7 @@ void env_decref(Env *env) {
      * recycled env never carries another binding's trajectory. */
     observer_slot_reset(env);
     intern_refs_release(&env->intern_refs);
-#ifndef EIGS_POOL_OFF
+#ifndef EIGS_POOL_OFF_ENV
     if (env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
         g_env_freelist_count < ENV_FREELIST_CAP) {
         env->count = 0;
@@ -4178,7 +4178,7 @@ void env_decref(Env *env) {
         g_env_freelist_count++;
         EIGS_VG_NOACCESS(&env->env_refcount, sizeof(env->env_refcount));  /* #297/#298 */
     } else
-#endif  /* EIGS_POOL_OFF (#1665): never park an Env — every env is really
+#endif  /* EIGS_POOL_OFF_ENV (#1665): never park an Env — every env is really
          * free()d, so ASan sees its values[]/names[] arrays die too (the
          * exact arrays a stale read like #1661 lands in). */
     {

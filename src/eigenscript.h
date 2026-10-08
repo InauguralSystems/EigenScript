@@ -7,6 +7,32 @@
 #ifndef EIGENSCRIPT_H
 #define EIGENSCRIPT_H
 
+/* Recycling-layer switches (#1665). Each bypasses exactly one pool so a
+ * measurement can price it in isolation (the per-layer decision in #1665's
+ * pre-registered rule). The union flag EIGS_POOL_OFF defines all four, so a
+ * build with -DEIGS_POOL_OFF is byte-identical to the original #1675 pool-off
+ * build; the default build (none defined) is byte-identical to the pooled
+ * baseline. The call sites below test the per-layer macros only — never
+ * EIGS_POOL_OFF directly — so this is the single point of truth for the union.
+ *   EIGS_POOL_OFF_NUM     — Value NUM freelist (free_value/make_num/recycle_intermediate)
+ *   EIGS_POOL_OFF_ENV     — Env freelist (env_new/env_decref)
+ *   EIGS_POOL_OFF_CALLENV — call-env recycling (vm_park_call_env/vm_take_call_env)
+ *   EIGS_POOL_OFF_ARENA   — bump arena (arena_alloc/free_weight_val) */
+#ifdef EIGS_POOL_OFF
+#  ifndef EIGS_POOL_OFF_NUM
+#    define EIGS_POOL_OFF_NUM
+#  endif
+#  ifndef EIGS_POOL_OFF_ENV
+#    define EIGS_POOL_OFF_ENV
+#  endif
+#  ifndef EIGS_POOL_OFF_CALLENV
+#    define EIGS_POOL_OFF_CALLENV
+#  endif
+#  ifndef EIGS_POOL_OFF_ARENA
+#    define EIGS_POOL_OFF_ARENA
+#  endif
+#endif
+
 /* Extension flags — set to 0 to compile a minimal language-only binary.
  * Override at compile time: gcc -DEIGENSCRIPT_EXT_HTTP=0 ... */
 #ifndef EIGENSCRIPT_EXT_HTTP
