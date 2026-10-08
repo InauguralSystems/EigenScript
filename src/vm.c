@@ -2076,10 +2076,27 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
  * same value as before. */
 typedef struct {
     Env     *env;
-    uint32_t version;
+    uint64_t version;   /* #1674 round 2: 64-bit, matches Env.binding_version */
     int      slot;
 } LoopIterCache;
 static __thread LoopIterCache g_loop_iter_cache;
+
+/* #1674 round 2: the env version token is 64-bit everywhere so the birth
+ * counter cannot wrap within any process lifetime (uint32 wrapped at ~2^32
+ * births, ~1.7h under EIGS_ENV_FREELIST_OFF, reopening the stale-IC ABA). These
+ * three fields are compared against each other by the interpreter ICs, the
+ * loop-iter cache, and the JIT-emitted sequences (which emit REX.W 64-bit
+ * loads/compares of offsetof(Env, binding_version)); narrowing any one back to
+ * 32 bits is a silent-wrong truncation, so pin the width at compile time. The
+ * matching emitter width has runtime teeth in jit_smoke's wide-start/wide-target
+ * rows. */
+_Static_assert(sizeof(((Env *)0)->binding_version) == 8,
+               "#1674 round 2: Env.binding_version must stay 64-bit");
+_Static_assert(sizeof(((EnvIC *)0)->starting_ver) == 8 &&
+               sizeof(((EnvIC *)0)->target_ver) == 8,
+               "#1674 round 2: EnvIC version fields must stay 64-bit");
+_Static_assert(sizeof(((LoopIterCache *)0)->version) == 8,
+               "#1674 round 2: loop-iter cache version must stay 64-bit");
 
 /* Phase 9: zero the file-static __thread caches so a state reattach on
  * the same OS thread can't witness a prior state's dict/env pointers.

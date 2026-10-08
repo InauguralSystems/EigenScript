@@ -289,6 +289,15 @@ EigsThread *eigs_thread_attach(EigsState *st) {
      * still be traced); `task_sched_trace of 1` arms it from a program. */
     th->task_trace_on = eigs_env_flag("EIGS_TASK_TRACE");
     th->env_freelist_off = eigs_env_flag("EIGS_ENV_FREELIST_OFF");   /* #1674 test seam */
+    /* #1674 round 2 test seam: start the process-wide env-version counter near
+     * a chosen value (e.g. just below the old uint32 boundary 4294967296) so a
+     * test can show binding_version stays correct as births cross 2^32. Read
+     * once per attach (not hot); no effect unless EIGS_ENV_VERSION_SEED is set. */
+    {
+        const char *vseed = getenv("EIGS_ENV_VERSION_SEED");
+        if (vseed && *vseed)
+            env_version_seed_floor(strtoull(vseed, NULL, 10));
+    }
     th->loop_exit_reason = "normal";
     th->last_obs_slot_idx = -1;   /* #262 Phase-2: no observed slot yet */
 

@@ -395,8 +395,13 @@ struct Env {
     int env_refcount;   /* honest owner count: creator/frame + closures
                          * (make_fn) + child envs (parent link) + a chunk's
                          * parked env_cache. 0 -> destroyed. */
-    uint32_t binding_version; /* bumped on every new-binding add or env recycle;
-                               * used by VM inline caches to detect shadowing */
+    uint64_t binding_version; /* bumped on every new-binding add or env recycle;
+                               * used by VM inline caches to detect shadowing.
+                               * #1674 round 2: 64-bit (was uint32). Seeded at
+                               * birth from a process-wide monotonic counter
+                               * (see env_new / env_decref in eigenscript.c); the
+                               * width removes the uint32-wrap ABA the round-1
+                               * seed left as residual (~2^32 env births). */
     /* Cycle-collector registry of captured envs (intrusive list; see
      * gc_collect_cycles in eigenscript.c and docs/CLOSURE_CYCLE_GC.md). */
     Env *gc_next;
@@ -1138,18 +1143,12 @@ struct EigsThread {
     int                  num_freelist_count;
     Env                 *env_freelist;
     int                  env_freelist_count;
-    /* #1674: monotonic per-thread env birth counter. Every env created on this
-     * thread (fresh xcalloc OR recycled from env_freelist) seeds its
-     * binding_version from ++this, so a freed env's address handed back to a
-     * new env carries a STRICTLY GREATER binding_version than any inline cache
-     * cached against the prior occupant. The IC validity checks
-     * (starting_ver/target_ver == binding_version) then miss on address reuse
-     * instead of firing on a version collision — the stale-read hazard the env
-     * freelist was masking (#1661 family). Per-thread, not atomic: ICs are
-     * populated/read on one thread (#297 gates MT population), and frame->env
-     * is always a thread-local env, so a cross-thread version coincidence can
-     * never satisfy the pointer-identity half of an IC hit. */
-    uint32_t             env_version_ctr;
+    /* #1674 round 2: the env birth counter is no longer here. Round 1 kept a
+     * per-thread uint32 `env_version_ctr`; two per-thread counters could mint
+     * EQUAL versions, and a uint32 wrapped at ~2^32 births (reachable in ~1.7h
+     * under EIGS_ENV_FREELIST_OFF) which reopened the ABA. It is now ONE
+     * process-wide relaxed-atomic uint64 `g_env_version_global` in
+     * eigenscript.c, read via __atomic_*; binding_version is uint64 too. */
     /* #1674: test seam — when set (EIGS_ENV_FREELIST_OFF), env_decref never
      * parks; every dead env is freed, forcing the address reuse the pool masks
      * so the regression gate can see the stale-read class on the default build.
@@ -1546,7 +1545,6 @@ static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
 #define g_num_freelist_count  (eigs_current->num_freelist_count)
 #define g_env_freelist        (eigs_current->env_freelist)
 #define g_env_freelist_count  (eigs_current->env_freelist_count)
-#define g_env_version_ctr     (eigs_current->env_version_ctr)
 #define g_env_freelist_off    (eigs_current->env_freelist_off)
 #define g_env_name_interns    (eigs_current->intern_tbl->buckets)
 #define g_sandbox_intern_scope (eigs_current->sandbox_intern_scope)
@@ -2045,6 +2043,12 @@ static inline void eigs_obs_count_call(void) {
 void eigs_obs_gate_stats_report(void);   /* prints `obs-gate: observe-calls N` */
 
 Env* env_new(Env *parent);
+/* #1674 round 2 test seam: raise the process-wide env-version counter to at
+ * least `v` (atomic max; never lowers it). Called once at thread attach when
+ * EIGS_ENV_VERSION_SEED is set, so a test can start births near 2^32 and show
+ * correctness across the old uint32 boundary. No effect unless the env var is
+ * set; not on any hot path. */
+void env_version_seed_floor(uint64_t v);
 void env_global_shared_lock(void);    /* #1035: module-env lock for external readers */
 void env_global_shared_unlock(void);
 /* #1161: mark an env as reachable from more than one thread (see Env::mt_shared).

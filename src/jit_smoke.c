@@ -292,6 +292,15 @@ static int run_store_cases(void) {
         {"stale-identity", 1, 1, 1, 1},
         {"stale-start",    1, 1, 2, 1},
         {"stale-target",   1, 1, 3, 1},
+        /* #1674 round 2: binding_version / EnvIC.*_ver are 64-bit. These two
+         * rows set the IC version to match in the LOW 32 bits but differ in the
+         * HIGH 32 (fault 4 = starting_ver, fault 5 = target_ver). The emitted
+         * load+compare MUST be 64-bit (REX.W) and MISS → helper. An emitter that
+         * dropped REX.W would truncate to the matching low 32 bits and wrongly
+         * HIT (storing into the slot, helper not called) — this row catches that
+         * silent-wrong regression, which small-valued rows cannot. */
+        {"wide-start",     1, 1, 4, 1},
+        {"wide-target",    1, 1, 5, 1},
     };
     uint8_t code[] = {OP_NULL, OP_POP, OP_NUM_ZERO, OP_NUM_ONE,
                       OP_SET_NAME, 0, 0};
@@ -324,8 +333,10 @@ static int run_store_cases(void) {
             int target = cases[c].depth ? cases[c].parent : 0;
             ic.starting_env = cases[c].fault == 1 ? &env[1] : &env[0];
             ic.starting_ver = env[0].binding_version + (cases[c].fault == 2);
+            if (cases[c].fault == 4) ic.starting_ver += (uint64_t)1 << 32; /* high-32 differ */
             ic.target_ver = target < 0 ? 0 : env[target].binding_version;
             ic.target_ver += cases[c].fault == 3;
+            if (cases[c].fault == 5) ic.target_ver += (uint64_t)1 << 32;   /* high-32 differ */
             ic.walk_depth = cases[c].depth;
             ic.slot_idx = 0;
             vm->sp = 1;
@@ -362,7 +373,7 @@ static int run_store_cases(void) {
         }
     }
     row = "population";
-    STORE_ASSERT(rows == 16 && native == 6 && helpers == 10);
+    STORE_ASSERT(rows == 20 && native == 6 && helpers == 14);
     printf("JIT native_store: rows=%d native=%d helpers=%d assertions=%d status=%s\n",
            rows, native, helpers, store_checks, rc ? "FAIL" : "PASS");
     jit_unregister_chunk(&chunk);

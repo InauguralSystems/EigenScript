@@ -3694,6 +3694,32 @@ char *env_intern_name(const char *name) {
     return it->name;
 }
 
+/* #1674 round 2: ONE process-wide monotonic env-birth counter. Every fresh
+ * (xcalloc) env seeds its binding_version from a relaxed-atomic increment of
+ * this; env_decref's free path raises it (atomic max) past a dying env's final
+ * binding_version before the struct can be reused. A reborn env at a reused
+ * address therefore always carries a STRICTLY GREATER binding_version than any
+ * inline cache (EnvIC / g_loop_iter_cache) cached against the prior occupant,
+ * so the cache misses on address reuse instead of firing on a version
+ * collision. uint64: at this box's measured ~715k env births/s under
+ * EIGS_ENV_FREELIST_OFF, 2^64 is ~800,000 years away — the uint32-wrap residual
+ * round 1 accepted is gone. RELAXED ordering is justified at the two use sites;
+ * the allocator's free→reuse edge supplies the happens-before. */
+static uint64_t g_env_version_global = 0;
+
+/* Test seam (#1674 round 2): raise the counter to at least `v`, atomically,
+ * never lowering it. Lets a test start env births near the old 2^32 boundary
+ * (EIGS_ENV_VERSION_SEED, read once at thread attach) and show the version
+ * check stays correct across it. Harmless if never called. */
+void env_version_seed_floor(uint64_t v) {
+    uint64_t cur = __atomic_load_n(&g_env_version_global, __ATOMIC_RELAXED);
+    while (v > cur) {
+        if (__atomic_compare_exchange_n(&g_env_version_global, &cur, v,
+                                        0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+            break;   /* cur reloaded with the current value on CAS failure */
+    }
+}
+
 Env* env_new(Env *parent) {
     Env *e = NULL;
 #ifndef EIGS_POOL_OFF_ENV
@@ -3732,7 +3758,7 @@ Env* env_new(Env *parent) {
          * 0,1,2,… through exactly the small values an inline cache (and
          * g_loop_iter_cache) cached against the prior occupant — the stale
          * read the env freelist was masking (#1661 family). Seed from the
-         * per-thread monotonic env counter, which env_decref's free path
+         * process-wide monotonic env counter, which env_decref's free path
          * carries up past every freed env's final binding_version: so this
          * seed is STRICTLY GREATER than any version this address ever held,
          * and the env only climbs further from here. The IC/version checks
@@ -3743,8 +3769,21 @@ Env* env_new(Env *parent) {
          * already climbs monotonically — reseeding it would collide with its
          * own earlier seed+bumps). Under -DEIGS_POOL_OFF and the
          * EIGS_ENV_FREELIST_OFF gate every env takes THIS path, so the fix
-         * covers the measurement build that exposes #1674. */
-        e->binding_version = ++g_env_version_ctr;
+         * covers the measurement build that exposes #1674.
+         *
+         * Round 2 (#1674): the counter is ONE process-wide uint64 advanced with
+         * a relaxed atomic add (not a per-thread uint32). This removes two
+         * round-1 residuals: uint32 wrap at ~2^32 births (the ABA could reopen
+         * after the counter wrapped back through the cached low values) and the
+         * cross-thread case where two per-thread counters minted equal versions
+         * for an address aliased across threads. RELAXED is sufficient: the
+         * only consumer that must observe this seed is a LATER env born at the
+         * same address, and address handoff (free on one thread → malloc reuse
+         * on any thread) carries the allocator's own release/acquire edge, so
+         * everything sequenced before the freeing env_decref — including its
+         * high-water store below — happens-before this add_fetch. */
+        e->binding_version =
+            __atomic_add_fetch(&g_env_version_global, 1, __ATOMIC_RELAXED);
     }
     e->parent = parent;
     if (parent) env_incref(parent);   /* the parent link is an owned ref */
@@ -4220,15 +4259,32 @@ void env_decref(Env *env) {
          * exact arrays a stale read like #1661 lands in). */
     {
         /* #1674: this struct's address may be handed to a fresh env_new next.
-         * Carry the per-thread env-version counter up to at least this env's
-         * final binding_version, so the reborn env's seed (++counter) is
+         * Carry the process-wide env-version counter up to at least this env's
+         * final binding_version, so the reborn env's seed (add_fetch) is
          * STRICTLY GREATER than every version this address ever held — hence
          * greater than anything an inline cache or g_loop_iter_cache cached
          * against it. Without this high-water step the fresh seed only exceeds
          * the prior occupant's SEED, not its seed+per-binding bumps, leaving a
-         * narrow reuse collision; this closes it. */
-        if (env->binding_version > g_env_version_ctr)
-            g_env_version_ctr = env->binding_version;
+         * narrow reuse collision; this closes it.
+         *
+         * Round 2 (#1674): an atomic max (CAS loop), since the counter is now
+         * process-wide. Correct under concurrency without a stronger order: the
+         * store completes before free() releases the struct's address, and the
+         * next occupant can only be minted by a malloc() that reuses that
+         * address, which acquires the allocator edge free() released — so this
+         * max is visible to that occupant's seeding add_fetch. RELAXED on both
+         * ends is therefore enough (the allocator, not g_env_version_global,
+         * carries the happens-before for address handoff). */
+        {
+            uint64_t cur =
+                __atomic_load_n(&g_env_version_global, __ATOMIC_RELAXED);
+            while (env->binding_version > cur) {
+                if (__atomic_compare_exchange_n(&g_env_version_global, &cur,
+                        env->binding_version, 0,
+                        __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+                    break;   /* cur reloaded on CAS failure */
+            }
+        }
         env_free_retired(env);   /* #607 */
         free(env->names);
         free(env->values);
