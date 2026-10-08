@@ -288,6 +288,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
      * thread from the first resume (a program that cannot be edited can
      * still be traced); `task_sched_trace of 1` arms it from a program. */
     th->task_trace_on = eigs_env_flag("EIGS_TASK_TRACE");
+    th->env_freelist_off = eigs_env_flag("EIGS_ENV_FREELIST_OFF");   /* #1674 test seam */
     th->loop_exit_reason = "normal";
     th->last_obs_slot_idx = -1;   /* #262 Phase-2: no observed slot yet */
 
