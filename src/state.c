@@ -288,6 +288,26 @@ EigsThread *eigs_thread_attach(EigsState *st) {
      * thread from the first resume (a program that cannot be edited can
      * still be traced); `task_sched_trace of 1` arms it from a program. */
     th->task_trace_on = eigs_env_flag("EIGS_TASK_TRACE");
+    th->env_freelist_off = eigs_env_flag("EIGS_ENV_FREELIST_OFF");   /* #1674 test seam */
+    /* #1674 round 2 test seam: start the process-wide env-version counter near
+     * a chosen value (e.g. just below the old uint32 boundary 4294967296) so a
+     * test can show binding_version stays correct as births cross 2^32. Read
+     * once per attach (not hot); no effect unless EIGS_ENV_VERSION_SEED is set. */
+    {
+        /* Capped at 2^40: far past the 2^32 boundary the test needs, and it
+         * leaves ~2^64 births of headroom, so no seed can make the counter
+         * wrap and reopen the ABA this counter closes (critic, #1674 r2). */
+        const char *vseed = getenv("EIGS_ENV_VERSION_SEED");
+        if (vseed && *vseed) {
+            /* Hand-parsed: strtoull is outside the freestanding allowlist. */
+            uint64_t v = 0;
+            const char *p = vseed;
+            while (*p >= '0' && *p <= '9' && v <= (1ULL << 40))
+                v = v * 10 + (uint64_t)(*p++ - '0');
+            if (*p == '\0' && v <= (1ULL << 40))
+                env_version_seed_floor(v);
+        }
+    }
     th->loop_exit_reason = "normal";
     th->last_obs_slot_idx = -1;   /* #262 Phase-2: no observed slot yet */
 

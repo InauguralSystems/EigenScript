@@ -268,8 +268,8 @@ typedef enum {
  * the normal chain walk so we don't have to validate intermediate envs. */
 typedef struct {
     struct Env *starting_env; /* NULL = empty entry */
-    uint32_t starting_ver;
-    uint32_t target_ver;
+    uint64_t starting_ver;    /* #1674 round 2: 64-bit, matches Env.binding_version */
+    uint64_t target_ver;
     int      slot_idx;
     uint8_t  walk_depth;      /* 0 = local, 1 = parent */
 } EnvIC;

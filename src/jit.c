@@ -1725,14 +1725,19 @@ static uint8_t *emit_cmp_rdx_disp32_r15(uint8_t *w, int32_t disp) {
     *w++ = 0x49; *w++ = 0x39; *w++ = 0x97;
     return emit_u32(w, (uint32_t)disp);
 }
-/* mov disp32(%rdx), %esi  (6 bytes) — env->binding_version load. */
-static uint8_t *emit_mov_disp32_rdx_to_esi(uint8_t *w, int32_t disp) {
-    *w++ = 0x8B; *w++ = 0xB2;
+/* mov disp32(%rdx), %rsi  (7 bytes) — env->binding_version load.
+ * #1674 round 2: binding_version is uint64 now, so this is a REX.W 64-bit load
+ * (was a 32-bit `mov …, %esi`). A 32-bit load + compare against the widened
+ * EnvIC.{starting,target}_ver would be a silent-wrong truncation. */
+static uint8_t *emit_mov_disp32_rdx_to_rsi(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x8B; *w++ = 0xB2;
     return emit_u32(w, (uint32_t)disp);
 }
-/* cmp %esi, disp32(%rax)  (6 bytes) — IC version compare. */
-static uint8_t *emit_cmp_esi_disp32_rax(uint8_t *w, int32_t disp) {
-    *w++ = 0x39; *w++ = 0xB0;
+/* cmp %rsi, disp32(%rax)  (7 bytes) — IC version compare.
+ * #1674 round 2: REX.W 64-bit compare against EnvIC.{starting,target}_ver
+ * (uint64), matching the 64-bit binding_version load above. */
+static uint8_t *emit_cmp_rsi_disp32_rax(uint8_t *w, int32_t disp) {
+    *w++ = 0x48; *w++ = 0x39; *w++ = 0xB0;
     return emit_u32(w, (uint32_t)disp);
 }
 /* cmpb $imm8, disp32(%rax)  (8 bytes) — IC walk_depth check. */
@@ -2800,8 +2805,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)ic);
             w = emit_cmp_rdx_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_env));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
-            w = emit_mov_disp32_rdx_to_esi(w, (int32_t)offsetof(Env, binding_version));
-            w = emit_cmp_esi_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_ver));
+            w = emit_mov_disp32_rdx_to_rsi(w, (int32_t)offsetof(Env, binding_version));
+            w = emit_cmp_rsi_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             /* target = walk_depth ? start->parent : start */
             w = emit_cmpb_imm8_disp32_rax(w, (int32_t)offsetof(EnvIC, walk_depth), 0);
@@ -2812,8 +2817,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_test_rdx_rdx(w);
             w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
             *depth0_p = (uint8_t)(w - depth0_after);
-            w = emit_mov_disp32_rdx_to_esi(w, (int32_t)offsetof(Env, binding_version));
-            w = emit_cmp_esi_disp32_rax(w, (int32_t)offsetof(EnvIC, target_ver));
+            w = emit_mov_disp32_rdx_to_rsi(w, (int32_t)offsetof(Env, binding_version));
+            w = emit_cmp_rsi_disp32_rax(w, (int32_t)offsetof(EnvIC, target_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             /* Hit: load slot, incref, push. */
             w = emit_mov_disp32_rax_to_esi(w, (int32_t)offsetof(EnvIC, slot_idx));
@@ -2901,8 +2906,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)ic);
             w = emit_cmp_rdx_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_env));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
-            w = emit_mov_disp32_rdx_to_esi(w, (int32_t)offsetof(Env, binding_version));
-            w = emit_cmp_esi_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_ver));
+            w = emit_mov_disp32_rdx_to_rsi(w, (int32_t)offsetof(Env, binding_version));
+            w = emit_cmp_rsi_disp32_rax(w, (int32_t)offsetof(EnvIC, starting_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             if (op == OP_SET_NAME) {
                 /* target = walk_depth ? start->parent : start.  GET_NAME
@@ -2919,15 +2924,15 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 w = emit_movabs_rsi(w, (uint64_t)(uintptr_t)g_builtin_env);
                 w = emit_cmp_rsi_rdx(w);
                 w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
-                w = emit_mov_disp32_rdx_to_esi(w, (int32_t)offsetof(Env, binding_version));
+                w = emit_mov_disp32_rdx_to_rsi(w, (int32_t)offsetof(Env, binding_version));
                 *depth0_p = (uint8_t)(w - depth0_after);
             } else {
                 /* LOCAL variants pin walk_depth == 0; target == start and
-                 * %esi still holds start->binding_version. */
+                 * %rsi still holds start->binding_version. */
                 w = emit_cmpb_imm8_disp32_rax(w, (int32_t)offsetof(EnvIC, walk_depth), 0);
                 w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             }
-            w = emit_cmp_esi_disp32_rax(w, (int32_t)offsetof(EnvIC, target_ver));
+            w = emit_cmp_rsi_disp32_rax(w, (int32_t)offsetof(EnvIC, target_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             /* Hit. %rdx = target env, %rax = ic. */
             w = emit_mov_disp32_rax_to_r9d(w, (int32_t)offsetof(EnvIC, slot_idx));

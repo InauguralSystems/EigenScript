@@ -3694,6 +3694,32 @@ char *env_intern_name(const char *name) {
     return it->name;
 }
 
+/* #1674 round 2: ONE process-wide monotonic env-birth counter. Every fresh
+ * (xcalloc) env seeds its binding_version from a relaxed-atomic increment of
+ * this; env_decref's free path raises it (atomic max) past a dying env's final
+ * binding_version before the struct can be reused. A reborn env at a reused
+ * address therefore always carries a STRICTLY GREATER binding_version than any
+ * inline cache (EnvIC / g_loop_iter_cache) cached against the prior occupant,
+ * so the cache misses on address reuse instead of firing on a version
+ * collision. uint64: at this box's measured ~715k env births/s under
+ * EIGS_ENV_FREELIST_OFF, 2^64 is ~800,000 years away — the uint32-wrap residual
+ * round 1 accepted is gone. RELAXED ordering is justified at the two use sites;
+ * the allocator's free→reuse edge supplies the happens-before. */
+static uint64_t g_env_version_global = 0;
+
+/* Test seam (#1674 round 2): raise the counter to at least `v`, atomically,
+ * never lowering it. Lets a test start env births near the old 2^32 boundary
+ * (EIGS_ENV_VERSION_SEED, read once at thread attach) and show the version
+ * check stays correct across it. Harmless if never called. */
+void env_version_seed_floor(uint64_t v) {
+    uint64_t cur = __atomic_load_n(&g_env_version_global, __ATOMIC_RELAXED);
+    while (v > cur) {
+        if (__atomic_compare_exchange_n(&g_env_version_global, &cur, v,
+                                        0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+            break;   /* cur reloaded with the current value on CAS failure */
+    }
+}
+
 Env* env_new(Env *parent) {
     Env *e = NULL;
 #ifndef EIGS_POOL_OFF_ENV
@@ -3705,7 +3731,18 @@ Env* env_new(Env *parent) {
         e->count = 0;
         /* Generation already bumped in env_decref's freelist branch.
          * Hash slots from the prior occupant are dormant by virtue of
-         * generations[i] != current generation. */
+         * generations[i] != current generation. #1674: binding_version is
+         * NOT reseeded here — the park branch bumped it (env_decref), and this
+         * is the SAME struct, so its version climbs monotonically across every
+         * park/reuse cycle and can never return to a value an inline cache
+         * cached against an earlier occupancy of it. Reseeding it from the
+         * global counter would instead land it on seed+bumps of a prior
+         * occupancy (versions climb with per-binding bumps, not just the
+         * seed) and fire a stale IC/g_loop_iter_cache hit — an env_store_slot
+         * into a freed value (ASan heap-use-after-free, caught before commit).
+         * The reuse hazard #1674 is about a FREED env's address handed to a
+         * fresh xcalloc below; a parked env keeps its own struct, so only the
+         * fresh path needs the seed. */
     } else
 #endif  /* EIGS_POOL_OFF_ENV (#1665): every Env is a fresh xcalloc; nothing is
          * ever taken from the env freelist (which stays empty). */
@@ -3716,6 +3753,37 @@ Env* env_new(Env *parent) {
         e->values = xcalloc(ENV_INIT_CAP, sizeof(EigsSlot));
         e->assign_counts = xcalloc(ENV_INIT_CAP, sizeof(int));
         env_hash_init(&e->hash, ENV_HASH_INIT_CAP);
+        /* #1674: a fresh xcalloc may land on a just-free()d env's address.
+         * calloc zeroes binding_version to 0, so without this it would climb
+         * 0,1,2,… through exactly the small values an inline cache (and
+         * g_loop_iter_cache) cached against the prior occupant — the stale
+         * read the env freelist was masking (#1661 family). Seed from the
+         * process-wide monotonic env counter, which env_decref's free path
+         * carries up past every freed env's final binding_version: so this
+         * seed is STRICTLY GREATER than any version this address ever held,
+         * and the env only climbs further from here. The IC/version checks
+         * therefore MISS on address reuse and fall to the correct chain walk.
+         * A persisted loop env is xcalloc'd once and keeps climbing from its
+         * seed, so its hot IC survives across iterations; the freelist-reuse
+         * branch above is deliberately left untouched (same struct, version
+         * already climbs monotonically — reseeding it would collide with its
+         * own earlier seed+bumps). Under -DEIGS_POOL_OFF and the
+         * EIGS_ENV_FREELIST_OFF gate every env takes THIS path, so the fix
+         * covers the measurement build that exposes #1674.
+         *
+         * Round 2 (#1674): the counter is ONE process-wide uint64 advanced with
+         * a relaxed atomic add (not a per-thread uint32). This removes two
+         * round-1 residuals: uint32 wrap at ~2^32 births (the ABA could reopen
+         * after the counter wrapped back through the cached low values) and the
+         * cross-thread case where two per-thread counters minted equal versions
+         * for an address aliased across threads. RELAXED is sufficient: the
+         * only consumer that must observe this seed is a LATER env born at the
+         * same address, and address handoff (free on one thread → malloc reuse
+         * on any thread) carries the allocator's own release/acquire edge, so
+         * everything sequenced before the freeing env_decref — including its
+         * high-water store below — happens-before this add_fetch. */
+        e->binding_version =
+            __atomic_add_fetch(&g_env_version_global, 1, __ATOMIC_RELAXED);
     }
     e->parent = parent;
     if (parent) env_incref(parent);   /* the parent link is an owned ref */
@@ -4147,7 +4215,15 @@ void env_decref(Env *env) {
     observer_slot_reset(env);
     intern_refs_release(&env->intern_refs);
 #ifndef EIGS_POOL_OFF_ENV
-    if (env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
+    /* #1674: EIGS_ENV_FREELIST_OFF forces the hazardous reuse the pool hides —
+     * every dead env is really free()d (as under -DEIGS_POOL_OFF), so a later
+     * env lands on a freed address and the #1661-family stale-IC read is
+     * reachable on the DEFAULT build. The regression gate (suite [0fe]) runs
+     * test_bool_fuzz.sh with this set; it FAILS without the env_new
+     * binding_version seeding above and PASSES with it. One predictable branch
+     * on the env-teardown path, never on the IC fast path. */
+    if (!g_env_freelist_off &&
+        env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
         g_env_freelist_count < ENV_FREELIST_CAP) {
         env->count = 0;
         env->captured = 0;
@@ -4182,6 +4258,33 @@ void env_decref(Env *env) {
          * free()d, so ASan sees its values[]/names[] arrays die too (the
          * exact arrays a stale read like #1661 lands in). */
     {
+        /* #1674: this struct's address may be handed to a fresh env_new next.
+         * Carry the process-wide env-version counter up to at least this env's
+         * final binding_version, so the reborn env's seed (add_fetch) is
+         * STRICTLY GREATER than every version this address ever held — hence
+         * greater than anything an inline cache or g_loop_iter_cache cached
+         * against it. Without this high-water step the fresh seed only exceeds
+         * the prior occupant's SEED, not its seed+per-binding bumps, leaving a
+         * narrow reuse collision; this closes it.
+         *
+         * Round 2 (#1674): an atomic max (CAS loop), since the counter is now
+         * process-wide. Correct under concurrency without a stronger order: the
+         * store completes before free() releases the struct's address, and the
+         * next occupant can only be minted by a malloc() that reuses that
+         * address, which acquires the allocator edge free() released — so this
+         * max is visible to that occupant's seeding add_fetch. RELAXED on both
+         * ends is therefore enough (the allocator, not g_env_version_global,
+         * carries the happens-before for address handoff). */
+        {
+            uint64_t cur =
+                __atomic_load_n(&g_env_version_global, __ATOMIC_RELAXED);
+            while (env->binding_version > cur) {
+                if (__atomic_compare_exchange_n(&g_env_version_global, &cur,
+                        env->binding_version, 0,
+                        __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+                    break;   /* cur reloaded on CAS failure */
+            }
+        }
         env_free_retired(env);   /* #607 */
         free(env->names);
         free(env->values);
