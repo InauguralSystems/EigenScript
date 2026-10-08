@@ -173,12 +173,6 @@ Value* builtin_usleep(Value *arg) {
     return make_null();
 }
 
-/* screen_put of [row, col, char, color_code] — write a character at terminal position */
-/* screen_clear of null — clear terminal and hide cursor */
-/* screen_end of null — show cursor and reset */
-/* screen_render of [entities_list, screen_w, screen_h, player_x, player_y, world_w, world_h]
- * entities_list: [[wx, wy, char, color], ...]
- * Clears screen, projects all entities, flushes once. All in C. */
 /* join of [list, separator] — concatenate list elements into a string.
  * C-backed for performance — single allocation instead of O(n²) concat. */
 Value* builtin_join(Value *arg) {
@@ -823,12 +817,7 @@ Value* builtin_classify(Value *arg) {
  * These are IEEE-754's sticky exception flags. The results are unchanged —
  * the finite invariant is load-bearing for the JIT's bail comparison, the
  * observer's entropy, `str of`, and the JSON encoders — but the clamp is no
- * longer undetectable. Bracket a computation the way you would an FPU:
- *
- *     clear_math_flags of null
- *     result is risky_computation of xs
- *     if (math_flags of null).overflow:
- *         ...
+ * longer undetectable. `math_flags` exposes the state-lifetime sticky bits.
  */
 Value* builtin_math_flags(Value *arg) {
     (void)arg;
@@ -2510,26 +2499,6 @@ Value* builtin_arena_stats(Value *arg) {
     return make_num((double)g_arena.total_allocated);
 }
 
-/* ==== BUILTIN: heap_inuse ==== */
-/* heap_inuse of null — bytes currently in use by the C allocator
- * (glibc mallinfo2().uordblks): LIVE allocated bytes, so unlike RSS it is
- * immune to resident free-heap slack — a fresh leak shows up in the very
- * first batch, not only after the slack is exhausted (#770). Debug
- * surface; exists so the per-request leak gate
- * (tests/test_http_rss_growth.sh) can watch exact accounting instead of
- * the RSS proxy.
- *
- * Constraints, both inherited by that gate (which is already Linux-only
- * because it reads /proc):
- *   - glibc only. Returns null where mallinfo2 does not exist (musl,
- *     macOS, freestanding libc). The freestanding profile is carved out
- *     explicitly (not just by __GLIBC__): it compiles on a glibc host,
- *     so the host's mallinfo2 would otherwise leak into its import
- *     surface and no HAL/mini-libc provides it (tools/freestanding_check.sh).
- *   - mallinfo2 reports the MAIN arena only. Sequential request traffic
- *     (what the gate drives) is served on the main arena, so per-request
- *     leaks on that path are fully counted; allocations pinned to a
- *     contended per-thread arena are not. */
 /* Free a TokenList's malloc'd storage (token array and str_vals) */
 void free_tokenlist(TokenList *tl) {
     if (!tl->tokens) return;
@@ -2560,16 +2529,6 @@ void tokenlist_user_spelling(TokenList *tl) {
     }
 }
 
-/* ==== BUILTIN: tokenize_ids ==== */
-/* tokenize_ids of string → list of token type IDs (integers).
- * Exposes the runtime's own tokenizer to .eigs code.
- * The learner sees its world the way the runtime does. */
-/* ==== BUILTIN: tokenize_with_names ==== */
-/* tokenize_with_names of string → list of [type_id, name_str] pairs.
- * Like tokenize_ids, but preserves the identifier name (for IDENT), the
- * string content (for STR), and the number as a string (for NUM). Other
- * token types get an empty string. Used by corpus builders that need
- * per-identifier information for vocabulary enrichment. */
 /* ==== BUILTIN: token_name ==== */
 /* token_name of id → string name of token type (for display) */
 Value* builtin_token_name(Value *arg) {
@@ -5207,8 +5166,6 @@ Value* builtin_task_recv(Value *arg) {
     return make_null();   /* placeholder: the scheduler delivers the message on resume */
 }
 
-/* task_try_recv of null — non-blocking receive: the next message, or null if
- * the mailbox is empty. Never suspends. */
 /* task_kill of id — deterministically tear down task `id`: drop its mailbox
  * and suspended slice, wake any joiner with an `interrupt` error, mark it
  * dead. Returns 1 if killed, 0 for a bad/self/finished target. */
@@ -5284,9 +5241,6 @@ Value* builtin_must_not_yield(Value *arg) {
     return r ? r : make_null();
 }
 
-/* task_now of null → the current virtual-clock value (a number, 0 before any
- * task_sleep and 0 when no scheduler is active). Deterministic; reads a logical
- * counter, so it records no tape nondet. */
 /* task_self of null → the running task's id (a number, in the same integer
  * space task_spawn returns; the main task is 0, including before any task has
  * been spawned). Lets a worker hand out its own id as a reply address — the
@@ -5331,15 +5285,6 @@ Value* builtin_task_sched_seed(Value *arg) {
     return make_null();
 }
 
-/* task_sched_trace of null — the cooperative scheduler's decision history
- * (#846): a list of {seq, tick, task, cause} dicts, one per task RESUME since
- * the trace was armed, in schedule order. `task_sched_trace of 1` arms it,
- * `task_sched_trace of 0` disarms it and discards the history; EIGS_TASK_TRACE=1
- * arms it from the environment. Off by default. A PURE READER of the schedule:
- * arming changes no pick, no clock, no seed — a traced run is byte-identical
- * to the untraced one — and the entries derive from the deterministic
- * schedule, so they are not tape records and replay reproduces them. Arming
- * never creates a scheduler (see EigsThread.task_trace_on). */
 /* Deterministic teardown of OS-resource handles, run once the program has
  * finished executing (the full value world is still alive, so buffered-message
  * decrefs are safe). Channels and thread handles live in the process handle

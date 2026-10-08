@@ -2637,15 +2637,20 @@ echo ""
 echo "[42c/47] Numeric Guard"
 # #1361 EIGS_STRICT=0: pins the finite-by-construction domain stand-ins (sqrt/asin/acos/log clamps, num "nan" -> 0 + math_flags.invalid).
 NG_OUTPUT=$(suite_program_run test_numeric_guard.eigs ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
-if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
-    TOTAL=$((TOTAL + 1))
+NGF_OUTPUT=$(bash "$TESTS_DIR/test_numeric_guard_flags.sh" 2>&1); NGF_OUTPUT_RC=$?
+NGF_PASS=$(echo "$NGF_OUTPUT" | grep -c "PASS:" || true)
+NGF_FAIL=$(echo "$NGF_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + 1 + NGF_PASS + NGF_FAIL))
+PASS=$((PASS + NGF_PASS))
+FAIL=$((FAIL + NGF_FAIL))
+if rc_ok "$NG_OUTPUT_RC" "$NG_OUTPUT" && [ "$NGF_OUTPUT_RC" -eq 0 ] && echo "$NG_OUTPUT" | grep -q "All numeric-guard tests passed"; then
     PASS=$((PASS + 1))
-    echo "  PASS: all numeric-guard checks"
+    echo "  PASS: all numeric-guard checks ($NGF_PASS fresh-process flag probes)"
 else
-    TOTAL=$((TOTAL + 1))
     FAIL=$((FAIL + 1))
     echo "  FAIL: numeric-guard tests"
     echo "$NG_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+    echo "$NGF_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi
 echo ""
 
@@ -4040,11 +4045,11 @@ fi
 echo ""
 # [124b] Raw DEFLATE inflate (#684). The surviving name is registered in all
 # builds; release uses a catchable no-zlib stub and `make zlib` runs vectors.
-echo "[124b] Raw DEFLATE Inflate (#684)"
 ZLIB_PROBE_FILE=$(mktemp /tmp/eigs_zlib_probe_XXXXXX.eigs)
 printf '%s\n' 'inflate of [0]' > "$ZLIB_PROBE_FILE"
 ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1); ZLIB_PROBE_RC=$?
 rm -f "$ZLIB_PROBE_FILE"
+echo "[124b] Raw DEFLATE Inflate (#684)"
 TOTAL=$((TOTAL + 1))
 if echo "$ZLIB_PROBE_OUT" | grep -q "inflate: compiled without zlib support"; then
     PASS=$((PASS + 1))

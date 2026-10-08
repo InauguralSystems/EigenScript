@@ -198,9 +198,8 @@ docs/CONCURRENCY.md) is **not** an `N` record. The interleaving is a pure
 function of program order and `task_sched_seed`, so a replayed run
 re-derives the identical history from the same schedule; recording it would
 create a second source of truth that could disagree with the first.
-The replay suite asserts the tape's `N`-record count is
-unchanged by arming the trace and that record → replay yields the same
-history on both tiers.
+That `N`-record-count invariant is currently untested; restoration of the
+scheduler-trace/observer-configuration machinery is tracked by #1688.
 
 ## Recorded Builtins
 
@@ -424,9 +423,8 @@ one tape: two invocations of a function are two frame instances, and a
 function-local can share a name with a module-level global. Matching by name
 made `--step` print `oscillating` for a binding whose live run said
 `diverging`, which is the same fail-soft shape the `O` records exist to
-remove. The trace replay suite section 8 pins all four shapes
-(leak forward, correct application, a parameter widened before its frame
-assigns, and a module-level binding assigned after the call).
+remove. These four replay shapes are currently untested pending restoration of the
+observer-configuration machinery in #1688.
 
 **Residual — a name the call chain cannot reach.** The reader walks the
 frame's `S`-record parents, which is the *call* chain; a closure's
@@ -704,7 +702,8 @@ everywhere else in the runtime (version-and-reject, never migrate).
   writes and reads them as bools. A v5 tape recorded a predicate builtin's
   answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
   on a v6 binary would hand a number where the program now gets a bool; it is
-  refused instead (the trace replay suite, section 7). Within a
+  refused instead (covered by the existing replay kind-validation cases in
+  `tests/test_replay.sh`). Within a
   v6 tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return
@@ -719,8 +718,7 @@ everywhere else in the runtime (version-and-reject, never migrate).
   — so the compat decision for the bump is the standing one, and it is the
   loud half: a v2 tape is **refused** by `--step`, by the DAP server and by
   `EIGS_REPLAY` with exit 3, never classified at the defaults and presented
-  as the recorded run. Coverage: the `v2 (pre-O-record) tape is refused`
-  cases in the trace replay suite.
+  as the recorded run. This pre-`O` compatibility case is currently untested pending #1688.
 - On replay, a missing header, a malformed (torn) header, a different
   format version, a different runtime version, an empty tape, or an
   unopenable `EIGS_REPLAY` path each refuse loudly — hosted replay exits
@@ -754,10 +752,9 @@ boundaries are enforced; dev builds are on their honor.
 
 Regression coverage: the `version refuse` cases in `tests/test_replay.sh`
 plant each mismatch class (format, runtime, missing header, empty file)
-and require the exit-3 refusal. the trace replay suite
-additionally carries a REAL pre-v3 tape — `tests/fixtures/tape_v2_baseline.tape`,
-recorded by the v0.43.0 release binary — and requires the same exit-3 refusal
-from both `--step` and `EIGS_REPLAY`. That refusal is the deliberate answer to
+and require the exit-3 refusal. Refusal of a real pre-v3 tape by both `--step`
+and `EIGS_REPLAY` is currently untested pending #1688. That refusal remains the
+deliberate answer to
 "an old tape should still step": a v2 tape carries no `O` records, so stepping
 it would classify at the defaults and print a verdict the recorded run never
 gave. The knobs are exactly what the format bump exists for, so a tape that

@@ -210,7 +210,7 @@ static const char *builtin_docs[][2] = {
     {"pow", "pow — builtin; see docs/BUILTINS.md"},
     {"ppu_render_frame", "ppu_render_frame of [mem_buf, fb_buf]"},
     {"print", "print — builtin; see docs/BUILTINS.md"},
-    {"proc_read_buf", "proc_read_buf of [out_fd, max_bytes]   → VAL_BUFFER (binary-safe) | null EOF"},
+    {"proc_read_buf", "proc_read_buf — builtin; see docs/BUILTINS.md"},
     {"random", "random of null → float in [0, 1)"},
     {"random_hex", "random_hex of n → string of n random hex characters from /dev/urandom."},
     {"random_int", "random_int of [lo, hi] → integer in [lo, hi] inclusive"},

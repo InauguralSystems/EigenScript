@@ -3,6 +3,8 @@
 
 CAP is 1e308
 
+# Sticky math_flags coverage runs in fresh processes via test_numeric_guard_flags.sh.
+
 caught_zdiv is 0
 try:
     zdiv is 10 / 0

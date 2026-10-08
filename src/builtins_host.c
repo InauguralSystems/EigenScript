@@ -34,10 +34,6 @@ void register_host_builtins(Env *env) { (void)env; }
 
 #include <termios.h>
 
-/* ---- Terminal: raw_key of null — non-blocking single keypress read.
- * Returns the key as a string, or "" if no key pressed.
- * Sets terminal to raw mode on first call, restores on exit. ---- */
-
 /* ==== BUILTIN: match — regex match, return list of groups ==== */
 /* match of [string, pattern] -> [full_match, group1, ...] or [] */
 Value* builtin_match(Value *arg) {
@@ -364,7 +360,6 @@ Value* builtin_exe_path(Value *arg) {
     TRACE_NONDET_RECORD("exe_path", make_str(g_exe_path ? g_exe_path : "eigenscript"));
 }
 
-/* chdir of "path" → 1 on success, 0 on failure */
 /* mktemp of null → path to a new temporary file */
 Value* builtin_mktemp(Value *arg) {
     (void)arg;
@@ -1184,16 +1179,6 @@ Value* builtin_read_text(Value *arg) {
     TRACE_NONDET_RECORD("read_text", result);
 }
 
-/* ==== BUILTIN: read_line ==== */
-/* read_line of null — blocking line read from stdin via getline(3):
- * returns the next line without its trailing newline (a "\r\n"
- * terminator is stripped as one unit), or null at EOF. An empty line is
- * "" — distinguishable from EOF. The stream-safe stdin primitive
- * (#558): read_text of "/dev/stdin" sizes with fseek/ftell, which fails
- * on an unseekable fd, so a PIPE silently reads as "" — any CLI meant to
- * sit in a shell pipeline needs this instead. Nondeterministic input →
- * tape-first: TAKE/RECORD like read_bytes, so under EIGS_REPLAY the
- * recorded lines are served and no live stdin read runs. */
 /* ==== BUILTIN: write_text ==== */
 /* write_text of ["path", text] → 1 on success, 0 on failure. */
 Value* builtin_write_text(Value *arg) {
@@ -1397,27 +1382,6 @@ Value* builtin_exec_capture(Value *arg) {
     free(buf);
     return result;
 }
-
-/* ==== BUILTIN: proc_spawn / proc_write / proc_read_line / proc_read /
- *               proc_close / proc_wait — streaming subprocess I/O (0.13.0) ====
- *
- * Sibling API to exec_capture for cases where you need to interact with a
- * child process over time instead of waiting for it to terminate.
- *
- *   proc_spawn of ["cmd", "arg1", ...]     → [pid, in_fd, out_fd]  | [-1,-1,-1]
- *   proc_write of [in_fd, "text"]          → bytes_written | -1 on broken pipe
- *   proc_read_line of out_fd               → string (no trailing \n) | null EOF
- *   proc_read of [out_fd, max_bytes]       → string (raw bytes; NUL-truncates) | null EOF
- *   proc_read_buf of [out_fd, max_bytes]   → VAL_BUFFER (binary-safe) | null EOF
- *   proc_close of fd                       → null (idempotent on EBADF)
- *   proc_wait of pid                       → exit_code | -1 on error
- *
- * Pipes are raw read(2)/write(2); no stdio buffering on the parent side.
- * Children using stdio block-buffer their own stdout when not on a tty —
- * wrap unbuffered programs with stdbuf -oL / -o0 if you need line streaming.
- *
- * proc_write suppresses SIGPIPE around only its own write, leaving the host's
- * process-wide disposition untouched. */
 
 /* #159: binary-safe variant of proc_read. Returns a VAL_BUFFER (no
  * NUL-truncation), null on EOF. Same 10 MB cap as proc_read. */

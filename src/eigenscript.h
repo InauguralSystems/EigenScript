@@ -1040,7 +1040,7 @@ struct EigsThread {
      * Saturation and NaN-collapse keep a program running with a plausible
      * number and no way to tell it happened; these bits make it detectable.
      * Set only on the clamp branches, so the arithmetic fast path is
-     * unchanged. Sticky until clear_math_flags. */
+     * unchanged. Sticky for the lifetime of the interpreter state. */
     unsigned      math_flags;
     /* Dynamic caller scope for env-aware builtins (env_get/env_set
      * polymorphic dispatch needs to know "who called me"). */
@@ -1832,9 +1832,8 @@ void free_value(Value *v);
  * (1e300 * 1e300) / 1e300 is 1e8, which passes any sanity check a caller
  * applies, and a NaN collapses to 0, which is indistinguishable from a real
  * zero. IEEE-754 solved exactly this with sticky exception flags, so these
- * are those: set on the clamp, readable with `math_flags`, reset with
- * `clear_math_flags`. Bracket a computation with clear/check the way you
- * would an FPU. */
+ * are those: set on the clamp and readable with `math_flags`. They remain
+ * sticky for the lifetime of the interpreter state. */
 #define EIGS_MATH_OVERFLOW 1u   /* a value saturated at +/-EIGS_NUM_MAX */
 #define EIGS_MATH_INVALID  2u   /* a NaN was collapsed, or a domain clamp fired */
 #define EIGS_MATH_UNDERFLOW 4u  /* #971: a product/quotient of two NONZERO operands
