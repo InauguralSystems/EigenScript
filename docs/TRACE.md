@@ -34,7 +34,6 @@ The tape is plain text, one record per line:
 | `A <stream_id> <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
 | `N <stream_id> <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
 | `O <stream_id> cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-1044-1045). |
-| `O <stream_id> win <name> <n>` | Per-binding observer window override (v3) — `set_observer_window of ["name", n]`; `n == 0` clears it. |
 
 ### Stream identity and correspondence (v5, #1286)
 
@@ -195,7 +194,6 @@ into real values on replay:
 
 ## Derived, Not Recorded: The Scheduler Trace (#846)
 
-The cooperative task scheduler's decision history (`task_sched_trace`, see
 docs/CONCURRENCY.md) is **not** an `N` record. The interleaving is a pure
 function of program order and `task_sched_seed`, so a replayed run
 re-derives the identical history from the same schedule; recording it would
@@ -212,7 +210,6 @@ perspective lands on the tape as an `N` record:
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_bytes_buf`, `read_line` (stdin, #558), `is_dir` (#576),
   `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585).
   `mkdir` is a *write* whose return (a success bit) is filesystem-dependent:
   it is Recorded rather than #148-non-replayable because that bit **is**
@@ -256,7 +253,6 @@ perspective lands on the tape as an `N` record:
   replay the send is **suppressed** (recorded count served, nothing
   written) and the replayed world stays consistent. That is the
   deliberate contrast with the #148 subprocess family below: a
-  `proc_write` feeds a live child whose behavior the tape does not pin,
   so suppressing it would be meaningless. (`net_close` is deterministic
   and untraced — under replay no socket exists and it is a natural
   no-op, the `audio_capture_close` shape.)
@@ -329,15 +325,12 @@ construction is neither run nor leaked.
 A trajectory verdict — `report of x`, the six predicates, the trajectory
 labels `--step` and the DAP server print — is a function of the
 **assignments** and of the **observer configuration**: three thresholds
-(`set_observer_thresholds`), the window depth (`set_observer_window`, per
 state and per binding), and the characteristic scale
-(`set_observer_scale`). The tape carried the assignments and not the
 configuration, so a recorded run stepped back classified at the *state
 defaults* and printed a verdict the live run never gave:
 
 ```
 u is 0.0
-set_observer_window of ["u", 50]        # a 46.9-sample period needs 50
 loop while t < 200:  u is 272.4 + 10.0 * (cos of (6.28318 * t / 46.9)) …
 print of (report of u)                  # live: oscillating
 ```
@@ -359,7 +352,6 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   no `O` records at all. The record shape is unchanged (no format bump).
 - **`O win`** carries the per-binding window override, which lives on an
   `Env` slot rather than on the state and so has no cheap diff. It is
-  written from `set_observer_window` at the point of the call, preceded by
   its own frame's `S` record — the override belongs to the frame that
   *resolved the name*, and that frame may not have assigned anything yet
   (widening a parameter's window before the body writes it), so the scope
@@ -383,7 +375,6 @@ fail-soft shape this language refuses, so the configuration rides the tape:
 
   ```
   x is 1000.0 / d is 5.0 … loop 30x: x is x + d ; d is d * 0.99
-  set_observer_thresholds of [0.01, 0.02, 0.1]
   print of (report of x)                    # live: converged
   ```
   ```
@@ -457,8 +448,6 @@ the host-side causal structure the call depends on — re-running the
 underlying source under replay would re-execute real side effects
 that the original tape neither captured nor re-creates:
 
-- **Subprocess streaming I/O:** `proc_spawn`, `proc_write`,
-  `proc_read_line`, `proc_read`, `proc_close`, `proc_wait`.
   Replaying a recorded fd is meaningless — the child process from
   the recorded run does not exist; forking a fresh one would change
   the world a second time.

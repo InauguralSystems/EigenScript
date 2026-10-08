@@ -422,8 +422,7 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
  * copies that used to sit here were free to drift from it (one still claimed
  * `observer_ensure_fresh` came from eval.c, a TU the bytecode VM replaced, and
  * `val_incref`/`val_decref`/`num_guard` are `static inline` in the header, so
- * the extern was inert). The last two — `builtin_free_val` and
- * `env_get_assign_count` — were homed in vm.h and eigenscript.h respectively,
+ * `env_get_assign_count` is declared in eigenscript.h,
  * so the definitions are now checked against the declaration their callers
  * see. Do not add a new extern here; give the symbol a header. */
 
@@ -2545,8 +2544,7 @@ static inline void vm_borrow_scan(Value *arg, Value *result,
  *   element it keeps). `result == arg` then needs an incref like any other
  *   borrow.
  *
- * Callers must NOT invoke this for a consuming builtin (builtin_free_val),
- * which may already have freed `arg`. */
+ */
 void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
                           Value *fn_val, Env *env) {
     if (!result || !arg) return;
@@ -2781,19 +2779,17 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
     frame->ip = caller_chunk->code + resume_off;
     Env *saved = g_builtin_call_env;
     g_builtin_call_env = frame->env;
-    int consumes_arg = (fn_val->data.builtin == builtin_free_val);
     Value *result = eigs_call_builtin(fn_val->data.builtin, arg);
     g_builtin_call_env = saved;
     frame->ip = thunk_entry_ip;
 
     if (!result) {
         result = make_null();
-    } else if (!consumes_arg) {
-        /* Borrow protocol (#546/#720) — see vm_borrow_compensate;
-         * !consumes_arg guard: free_val may have already freed arg. */
+    } else {
+        /* Borrow protocol (#546/#720) — see vm_borrow_compensate. */
         vm_borrow_compensate(arg, result, 1, fn_val, frame->env);
     }
-    if (!consumes_arg && result != arg) val_decref(arg);
+    if (result != arg) val_decref(arg);
     vm_push(result);
     /* A builtin such as spawn can turn a formerly single-threaded state into
      * a multithreaded one while this thunk is already executing. Import a
@@ -4241,20 +4237,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             frame->ip = ip;
             Env *saved = g_builtin_call_env;
             g_builtin_call_env = frame->env;
-            int consumes_arg = (fn_val->data.builtin == builtin_free_val);
             Value *result = eigs_call_builtin(fn_val->data.builtin, arg);
             g_builtin_call_env = saved;
 
             if (!result) {
                 result = make_null();
-            } else if (!consumes_arg) {
-                /* Borrow protocol (#546/#720) — see vm_borrow_compensate
-                 * for the full rationale. Guarded by !consumes_arg: a
-                 * consuming builtin like free_val may have already freed
-                 * arg, so reading arg here would be a use-after-free. */
+            } else {
+                /* Borrow protocol (#546/#720) — see vm_borrow_compensate. */
                 vm_borrow_compensate(arg, result, 1, fn_val, frame->env);
             }
-            if (!consumes_arg && result != arg) val_decref(arg);
+            if (result != arg) val_decref(arg);
             /* If result == arg, the arg's refcount transfers to the result */
             vm_push(result);
 
@@ -6528,19 +6520,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             frame->ip = ip;   /* host-frame line for traces, as CASE(CALL) */
             Env *saved = g_builtin_call_env;
             g_builtin_call_env = frame->env;
-            int consumes_arg = (fn->data.builtin == builtin_free_val);
             Value *result = eigs_call_builtin(fn->data.builtin, arg);
             g_builtin_call_env = saved;
             if (!result) {
                 result = make_null();
-            } else if (!consumes_arg) {
-                /* Borrow protocol (#546/#720) — see vm_borrow_compensate.
-                 * Must run before val_decref(arg) so the items array is
-                 * still valid, and skipped when the builtin already
-                 * consumed arg (free_val). */
+            } else {
+                /* Borrow protocol (#546/#720) — run before val_decref(arg). */
                 vm_borrow_compensate(arg, result, 1, fn, frame->env);
             }
-            if (!consumes_arg && result != arg) val_decref(arg);
+            if (result != arg) val_decref(arg);
             slot_decref(table_s);
             vm_push(result);
             /* A blocking builtin can return because a peer requested exit. */

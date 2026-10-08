@@ -50,7 +50,6 @@ verdicts. The value channel scores 25/27; the two misses are the
 irreducible tolerance floor, not defects (see the honesty bound below).
 
 **The numeric definitions** (window `N` relative steps — `N = 10` by
-default, per state or per binding via `set_observer_window`, see [The
 window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
 steps `Δv` kept alongside — #422):
 
@@ -71,7 +70,6 @@ diverging → improving → converged → equilibrium → stable → moving`.
 
 **The relative step is scale-free (#1045).** `rel` divides the raw step
 by the step's own local scale, `max(|v|, |v_prev|)`, floored at the
-state's **characteristic scale** (`set_observer_scale of s`, default
 `0.001`). Above the scale a verdict is **unit-free**: one physical
 trajectory stored in radians, degrees or milliradians reads the same
 (phugoid's spiral mode — bank angle `0.0124 rad = 0.71 deg = 12.4 mrad`,
@@ -88,7 +86,6 @@ below `|v| ~ 1` it was just `Δv`, an absolute deadband, and the unit the
 consumer stored the value in decided the verdict. The scale is the one
 number a unit choice still touches — choose it in the unit the binding
 is stored in (a bank angle kept in radians with milliradian relevance
-wants `set_observer_scale of 1e-6`; `set_observer_scale of 1` restores the
 old absolute shape for values under 1). Why the local scale and not the
 window's running maximum: for a monotone decay that maximum is the
 *oldest* sample, so `rel = (1−r)·r^(N−1)` and any ratio under ~0.5 would
@@ -104,7 +101,6 @@ its sum does not), so a slow-enough divergence will eventually read
 `stable` and, at extreme patience, `converged`; and a slowly-converging
 sequence reads `converged` while still `~1e-2` from its limit (corpus
 cases 6 and 8). The deadband is the tolerance knob:
-`set_observer_thresholds of [dh_zero, dh_small, h_low]` — `dh_zero` is
 the settle tolerance, `dh_small` the small-motion band; the raw
 STRUCTURE tests are deliberately threshold-free (a perpetual ±5 swing is
 an oscillation at any tolerance). `h_low` affects only the entropy
@@ -188,7 +184,6 @@ dh_small = 0.01    |dH| below this is "small but nonzero change"
 h_low    = 0.1     entropy below this is "low information content"
 ```
 
-Override with `set_observer_thresholds of [dh_zero, dh_small, h_low]`.
 
 A fourth number, the value channel's characteristic scale (#1045):
 
@@ -196,7 +191,6 @@ A fourth number, the value channel's characteristic scale (#1045):
 scale    = 0.001   |v| below this counts as "at zero": rel = Δv / max(|v|, |v_prev|, scale)
 ```
 
-Override with `set_observer_scale of s` (`get_observer_scale of null`
 reads it). See "The relative step is scale-free" above for what it means.
 
 Two derived window constants (functions of the window depth `N`, 10 by
@@ -213,11 +207,6 @@ Every predicate classifies over the last `N` **samples** — observed
 assignments, not seconds. The depth is configurable:
 
 ```eigenscript fragment u=1
-set_observer_window of 30           # the state default (4..64; 10 at start)
-set_observer_window of ["u", 50]    # one binding, by name — only that slot
-set_observer_window of ["u", 0]     # clear the override, back to the default
-get_observer_window of null         # -> 30
-get_observer_window of "u"          # -> 50
 ```
 
 Both forms take effect **live**, like the thresholds: a binding already
@@ -241,7 +230,6 @@ rising quarter-cycles and `stable`/`improving` elsewhere; the same signal
 decimated to 5 s (9.4 samples per cycle) reads `oscillating` at every
 probe. The folding rule (≥ 2 reversals, net travel ≤ 0.3× path) is the
 right test; it just never saw a fold. Widened to cover a period —
-`set_observer_window of ["u", 50]` — the same 1 Hz replay reads
 `oscillating` at every full-window sample and `diverging` never appears
 (`tests/test_observer_window_scale.eigs`; phugoid's
 `observer_check.eigs` rows `O.ph1s.*`). The rule of thumb: **the
@@ -270,7 +258,6 @@ its forms, and the scale — **rides the trace tape**, so a recorded run
 replayed or stepped classifies exactly as the live run did. It is carried
 as an event at the point the knob takes effect (`O cfg` / `O win` records,
 tape format v3), which is what makes a **mid-run** change reconstruct
-correctly: a binding that reads `moving` before a `set_observer_scale` and
 `converged` after reads exactly that at both stops under `--step` and in
 the DAP server. `EIGS_REPLAY` re-executes the program, so its knob calls
 run again by themselves.
@@ -764,7 +751,6 @@ report of x               # "converged"  — settled AT THE DEADBAND; x is ~98, 
 This is the tolerance semantics, not a defect: `converged` means every
 recent step is below the tolerance, and per-step motion of 0.1% at the
 default `dh_zero = 0.001` is exactly the boundary. Tighten the deadband
-(`set_observer_thresholds`) or fix the cadence:
 
 The lesson is about **observation cadence**: observe at a rate matched to
 the dynamics, not once per micro-step. The robust pattern is to advance the
@@ -846,7 +832,6 @@ loop while not (converged of x):
 
 - **Tolerance tighter than the default.** `converged` fires at the
   deadband (`dh_zero`, default 0.1% relative). For a tighter answer,
-  lower it first: `set_observer_thresholds of [1e-6, 1e-5, 0.1]`.
 
 ## What carries a trajectory
 

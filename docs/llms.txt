@@ -173,11 +173,8 @@ sqrt(2) = 1.414213562373095
   bindings, entropy channel otherwise); `report_value of x` uses the value
   channel explicitly. Both read the named binding's trajectory.
 - Numeric verdicts are over the value's RELATIVE step, `Δv / max(|v|, |v_prev|,
-  scale)`, N samples deep: unit-free above `scale` (`set_observer_scale`,
   default 1e-3), an absolute floor `dh_zero*scale` below it; a decay toward
   zero reads `improving` until inside the scale. A mode slower than N samples
-  of your cadence cannot fold in the window — `set_observer_window of ["x", n]`
-  (4..64; default 10, `set_observer_window of n`) so N >= period/step.
 - Trajectory is keyed to a binding's env slot, never to a value: a dict field,
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint
@@ -224,7 +221,6 @@ sqrt(2) = 1.414213562373095
   byte/sample/device conversions normalize their buffer inputs too and stop at
   the first raised read. Numeric bytes truncate and wrap modulo 256 afterward;
   raw copies, serialization and buffer-only work areas preserve representation.
-  `str_from_bytes` and the `inflate`/`deflate` codecs (including their `zlib_*` forms) reject nonnumeric list elements with a builtin-named
   `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
   substitution. `str_from_bytes` stops at numeric NUL without inspecting later
   elements; byte codecs consume the complete list.

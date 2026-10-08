@@ -38,51 +38,6 @@ void register_host_builtins(Env *env) { (void)env; }
  * Returns the key as a string, or "" if no key pressed.
  * Sets terminal to raw mode on first call, restores on exit. ---- */
 
-static struct termios g_orig_termios;
-static int g_raw_mode = 0;
-
-static void restore_terminal(void) {
-    if (g_raw_mode) {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_orig_termios);
-        g_raw_mode = 0;
-    }
-}
-
-static void enable_raw_mode(void) {
-    if (g_raw_mode) return;
-    tcgetattr(STDIN_FILENO, &g_orig_termios);
-    atexit(restore_terminal);
-    struct termios raw = g_orig_termios;
-    raw.c_lflag &= ~(ECHO | ICANON);
-    raw.c_cc[VMIN] = 0;   /* non-blocking */
-    raw.c_cc[VTIME] = 0;
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-    g_raw_mode = 1;
-}
-
-Value* builtin_raw_key(Value *arg) {
-    (void)arg;
-    enable_raw_mode();
-    char buf[4] = {0};
-    ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
-    /* fs:ANSWER raw_key ignores `arg` entirely ((void)arg above), so this
-     * cannot be an argument guard: VMIN=0/VTIME=0 makes read(2) hand back 0
-     * when no key is waiting, and "" is that no-key answer (docs/BUILTINS.md:388
-     * documents `""` if none). */
-    if (n <= 0) return make_str("");
-    buf[n] = '\0';
-    /* Arrow keys come as ESC [ A/B/C/D */
-    if (buf[0] == 27 && n >= 3 && buf[1] == '[') {
-        switch (buf[2]) {
-            case 'A': return make_str("up");
-            case 'B': return make_str("down");
-            case 'C': return make_str("right");
-            case 'D': return make_str("left");
-        }
-    }
-    return make_str(buf);
-}
-
 /* ==== BUILTIN: match — regex match, return list of groups ==== */
 /* match of [string, pattern] -> [full_match, group1, ...] or [] */
 Value* builtin_match(Value *arg) {
@@ -410,11 +365,6 @@ Value* builtin_exe_path(Value *arg) {
 }
 
 /* chdir of "path" → 1 on success, 0 on failure */
-Value* builtin_chdir(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "chdir", "a string path", make_bool(0));
-    return make_bool(chdir(arg->data.str) == 0);
-}
-
 /* mktemp of null → path to a new temporary file */
 Value* builtin_mktemp(Value *arg) {
     (void)arg;
@@ -1244,23 +1194,6 @@ Value* builtin_read_text(Value *arg) {
  * sit in a shell pipeline needs this instead. Nondeterministic input →
  * tape-first: TAKE/RECORD like read_bytes, so under EIGS_REPLAY the
  * recorded lines are served and no live stdin read runs. */
-Value* builtin_read_line(Value *arg) {
-    (void)arg;
-    TRACE_NONDET_TAKE("read_line");
-    char *line = NULL;
-    size_t cap = 0;
-    ssize_t n = getline(&line, &cap, stdin);
-    if (n < 0) {
-        free(line);
-        TRACE_NONDET_RECORD("read_line", make_null());
-    }
-    if (n > 0 && line[n - 1] == '\n') line[--n] = '\0';
-    if (n > 0 && line[n - 1] == '\r') line[--n] = '\0';
-    Value *v = make_str(line);
-    free(line);
-    TRACE_NONDET_RECORD("read_line", v);
-}
-
 /* ==== BUILTIN: write_text ==== */
 /* write_text of ["path", text] → 1 on success, 0 on failure. */
 Value* builtin_write_text(Value *arg) {
@@ -1486,187 +1419,6 @@ Value* builtin_exec_capture(Value *arg) {
  * proc_write suppresses SIGPIPE around only its own write, leaving the host's
  * process-wide disposition untouched. */
 
-static Value* proc_spawn_fail(void) {
-    Value *r = make_list(3);
-    r->data.list.items[0] = make_num(-1);
-    r->data.list.items[1] = make_num(-1);
-    r->data.list.items[2] = make_num(-1);
-    r->data.list.count = 3;
-    return r;
-}
-
-Value* builtin_proc_spawn(Value *arg) {
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1)
-        return proc_spawn_fail();
-    if (replay_blocks("proc_spawn")) return proc_spawn_fail();   /* #1072: after validation */
-
-    int total = arg->data.list.count;
-    char **argv = xmalloc_array((size_t)total + 1, sizeof(char*));
-    if (!argv) return proc_spawn_fail();
-    for (int i = 0; i < total; i++) {
-        Value *v = arg->data.list.items[i];
-        if (!v || v->type != VAL_STR) { free(argv); return proc_spawn_fail(); }
-        argv[i] = v->data.str;
-    }
-    argv[total] = NULL;
-
-    /* FD_CLOEXEC on both ends of both pipes so subsequent proc_spawn /
-     * exec_capture children don't inherit the parent's open pipes (#149).
-     * The child re-dup2s these into stdin/stdout, which clears FD_CLOEXEC
-     * on the destination, so the child's own stdin/stdout survives exec. */
-    int in_pipe[2], out_pipe[2];
-    if (eigs_pipe_no_sigpipe(in_pipe) != 0) { free(argv); return proc_spawn_fail(); }
-    if (pipe(out_pipe) != 0) { close(in_pipe[0]); close(in_pipe[1]);
-                               free(argv); return proc_spawn_fail(); }
-    (void)fcntl(in_pipe[0],  F_SETFD, FD_CLOEXEC);
-    (void)fcntl(in_pipe[1],  F_SETFD, FD_CLOEXEC);
-    (void)fcntl(out_pipe[0], F_SETFD, FD_CLOEXEC);
-    (void)fcntl(out_pipe[1], F_SETFD, FD_CLOEXEC);
-
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(in_pipe[0]); close(in_pipe[1]);
-        close(out_pipe[0]); close(out_pipe[1]);
-        free(argv);
-        return proc_spawn_fail();
-    }
-
-    if (pid == 0) {
-        /* Child: stdin from in_pipe read end, stdout to out_pipe write end.
-         * Reset SIGPIPE to SIG_DFL — a host may ignore it, but the child
-         * should die silently on broken pipe like
-         * a conventional Unix process. */
-        signal(SIGPIPE, SIG_DFL);
-        dup2(in_pipe[0],  STDIN_FILENO);
-        dup2(out_pipe[1], STDOUT_FILENO);
-        close(in_pipe[0]);  close(in_pipe[1]);
-        close(out_pipe[0]); close(out_pipe[1]);
-        execvp(argv[0], argv);
-        _exit(127);
-    }
-
-    /* Parent: keep in_pipe[1] (write to child) and out_pipe[0] (read from child). */
-    close(in_pipe[0]);
-    close(out_pipe[1]);
-    free(argv);
-
-    Value *r = make_list(3);
-    r->data.list.items[0] = make_num((double)pid);
-    r->data.list.items[1] = make_num((double)in_pipe[1]);
-    r->data.list.items[2] = make_num((double)out_pipe[0]);
-    r->data.list.count = 3;
-    return r;
-}
-
-Value* builtin_proc_write(Value *arg) {
-    STRICT_LIST_MAX(arg, 2, "proc_write");
-    /* fs:CHANNEL replay refuses the write; the refusal is the replay layer's
-     * to report, and -1 is proc_write's documented "wrote nothing". Not an
-     * argument verdict — the same call is fine outside replay. */
-    if (replay_blocks("proc_write")) return make_num(-1);
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count != 2,
-              "proc_write", "[fd, string]", make_num(-1));
-    Value *fd_v  = arg->data.list.items[0];
-    Value *str_v = arg->data.list.items[1];
-    ARG_GUARD(!fd_v || fd_v->type != VAL_NUM || !str_v || str_v->type != VAL_STR,
-              "proc_write", "[number fd, string]", make_num(-1));
-    int fd = (int)eigs_num_arg(fd_v, __func__);
-    /* fs:ANSWER a negative descriptor is not a write that failed on its
-     * arguments' TYPES — it is a descriptor that cannot be written, which is
-     * the same -1 a closed fd produces below. Left soft deliberately: fds
-     * come from proc_open, so a negative one is state, not a typo. */
-    if (fd < 0) return make_num(-1);
-    const char *buf = str_v->data.str;
-    size_t total = strlen(buf);
-    size_t off = 0;
-    while (off < total) {
-        ssize_t n = eigs_write_no_sigpipe(fd, buf + off, total - off);
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            /* #159: return partial bytes-written instead of -1 so a
-             * caller retrying on short-write doesn't double-send the
-             * delivered prefix. -1 only when nothing was written. */
-            /* fs:ANSWER a write that delivered nothing. #1008 note: this is a
-             * third spelling the classifier cannot enumerate — the -1 is a
-             * ternary arm, not a literal `return make_num(-1)`. Tagged so a
-             * reader finds a decision here, but the GATE is not what put the
-             * tag on it. */
-            return make_num(off > 0 ? (double)off : -1);
-        }
-        off += (size_t)n;
-    }
-    return make_num((double)off);
-}
-
-Value* builtin_proc_read_line(Value *arg) {
-    if (replay_blocks("proc_read_line")) return make_null();
-    if (!arg || arg->type != VAL_NUM) return make_null();
-    int fd = (int)eigs_num_arg(arg, __func__);
-    if (fd < 0) return make_null();
-    size_t cap = 256, len = 0;
-    char *buf = xmalloc(cap + 1);
-    if (!buf) return make_null();
-    for (;;) {
-        if (len >= cap) {
-            size_t newcap = cap * 2;
-            char *nb = xrealloc(buf, newcap + 1);
-            if (!nb) { free(buf); return make_null(); }
-            buf = nb; cap = newcap;
-        }
-        char c;
-        ssize_t n = read(fd, &c, 1);
-        if (n == 0) break;        /* EOF */
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            /* #159: mid-stream read error — return the partial line
-             * we already buffered (mirrors the EOF-with-partial path
-             * just below). null is reserved for "EOF, nothing read". */
-            if (len == 0) { free(buf); return make_null(); }
-            break;
-        }
-        if (c == '\n') {
-            buf[len] = '\0';
-            Value *s = make_str(buf);
-            free(buf);
-            return s;
-        }
-        buf[len++] = c;
-    }
-    if (len == 0) { free(buf); return make_null(); }
-    buf[len] = '\0';
-    Value *s = make_str(buf);
-    free(buf);
-    return s;
-}
-
-Value* builtin_proc_read(Value *arg) {
-    STRICT_LIST_MAX(arg, 2, "proc_read");
-    if (replay_blocks("proc_read")) return make_null();
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
-        return make_null();
-    Value *fd_v  = arg->data.list.items[0];
-    Value *max_v = arg->data.list.items[1];
-    if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
-        return make_null();
-    int fd = (int)eigs_num_arg(fd_v, __func__);
-    int max = (int)eigs_num_arg(max_v, __func__);
-    if (fd < 0 || max <= 0) return make_null();
-    if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
-    char *buf = xmalloc((size_t)max + 1);
-    if (!buf) return make_null();
-    ssize_t n;
-    for (;;) {
-        n = read(fd, buf, (size_t)max);
-        if (n >= 0) break;
-        if (errno == EINTR) continue;
-        free(buf);
-        return make_null();
-    }
-    if (n == 0) { free(buf); return make_null(); }
-    buf[n] = '\0';
-    return make_str_owned(buf);
-}
-
 /* #159: binary-safe variant of proc_read. Returns a VAL_BUFFER (no
  * NUL-truncation), null on EOF. Same 10 MB cap as proc_read. */
 Value* builtin_proc_read_buf(Value *arg) {
@@ -1702,40 +1454,6 @@ Value* builtin_proc_read_buf(Value *arg) {
         v->data.buffer.data[i] = (double)buf[i];
     free(buf);
     return v;
-}
-
-Value* builtin_proc_close(Value *arg) {
-    if (replay_blocks("proc_close")) return make_null();
-    if (!arg || arg->type != VAL_NUM) return make_null();
-    int fd = (int)eigs_num_arg(arg, __func__);
-    if (fd >= 0) close(fd);
-    return make_null();
-}
-
-Value* builtin_proc_wait(Value *arg) {
-    /* fs:CHANNEL replay refuses the wait; -1 is the documented "no exit
-     * status", and the refusal belongs to the replay layer. */
-    if (replay_blocks("proc_wait")) return make_num(-1);
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "proc_wait", "a numeric pid", make_num(-1));
-    pid_t pid = (pid_t)eigs_num_arg(arg, __func__);
-    /* fs:ANSWER a non-positive pid names no process, so there is no exit
-     * status to report. A pid is a runtime value from proc_open, not a
-     * literal, so this is state rather than a type mistake. */
-    if (pid <= 0) return make_num(-1);
-    int status = 0;
-    for (;;) {
-        pid_t r = waitpid(pid, &status, 0);
-        if (r == pid) break;
-        if (r < 0 && errno == EINTR) continue;
-        /* fs:ANSWER waitpid failed for a reason that is not a retryable
-         * interrupt (ECHILD, ESRCH) — there is no exit status, which is what
-         * -1 reports. Nothing about the argument is wrong here. */
-        return make_num(-1);
-    }
-    int code = WIFEXITED(status) ? WEXITSTATUS(status)
-             : WIFSIGNALED(status) ? (128 + WTERMSIG(status))
-             : -1;
-    return make_num((double)code);
 }
 
 /* ==== BUILTIN: random_hex ==== */
@@ -1831,12 +1549,10 @@ Value* builtin_write_bytes(Value *arg) {
 }
 
 void register_host_builtins(Env *env) {
-    env_set_local_owned(env, "raw_key", make_builtin(builtin_raw_key));
     env_set_local_owned(env, "mkdir", make_builtin(builtin_mkdir));
     env_set_local_owned(env, "ls", make_builtin(builtin_ls));
     env_set_local_owned(env, "getcwd", make_builtin(builtin_getcwd));
     env_set_local_owned(env, "exe_path", make_builtin(builtin_exe_path));
-    env_set_local_owned(env, "chdir", make_builtin(builtin_chdir));
     env_set_local_owned(env, "mktemp", make_builtin(builtin_mktemp));
     env_set_local_owned(env, "rm", make_builtin(builtin_rm));
     env_set_local_owned(env, "stream_open", make_builtin(builtin_stream_open));
@@ -1855,17 +1571,10 @@ void register_host_builtins(Env *env) {
     env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));
     env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
     env_set_local_owned(env, "read_text", make_builtin(builtin_read_text));
-    env_set_local_owned(env, "read_line", make_builtin(builtin_read_line));
     env_set_local_owned(env, "write_text", make_builtin(builtin_write_text));
     env_set_local_owned(env, "write_bytes", make_builtin(builtin_write_bytes));
     env_set_local_owned(env, "exec_capture", make_builtin(builtin_exec_capture));
-    env_set_local_owned(env, "proc_spawn", make_builtin(builtin_proc_spawn));
-    env_set_local_owned(env, "proc_write", make_builtin(builtin_proc_write));
-    env_set_local_owned(env, "proc_read_line", make_builtin(builtin_proc_read_line));
-    env_set_local_owned(env, "proc_read", make_builtin(builtin_proc_read));
     env_set_local_owned(env, "proc_read_buf", make_builtin(builtin_proc_read_buf));
-    env_set_local_owned(env, "proc_close", make_builtin(builtin_proc_close));
-    env_set_local_owned(env, "proc_wait", make_builtin(builtin_proc_wait));
     env_set_local_owned(env, "random_hex", make_builtin(builtin_random_hex));
     env_set_local_owned(env, "tensor_save", make_builtin(builtin_tensor_save));
     env_set_local_owned(env, "tensor_load", make_builtin(builtin_tensor_load));

@@ -47,18 +47,11 @@ typedef struct ASTNode ASTNode;
  * sites and the out-of-VM ones (call_eigs_fn, builtin_dispatch,
  * thread_entry) so they cannot drift apart again. caller_owns_arg=1 means
  * `result == arg` transfers the caller's ref; 0 means the caller only
- * borrows `arg` and identity needs an incref too. Never call this for a
- * consuming builtin (builtin_free_val) — it may have freed `arg`. Full
- * rationale at the definition in vm.c. */
+ * borrows `arg` and identity needs an incref too. Full rationale is at the
+ * definition in vm.c. */
 void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
                           Value *fn_val, Env *env);
 
-/* The one CONSUMING builtin (builtins.c). Declared here — not re-externed in
- * each consumer — because every site that must special-case it (vm.c's three
- * call sites, builtins.c's builtin_dispatch, builtins_tensor.c's
- * call_eigs_fn) compares `fn->data.builtin` against it, and hand-written
- * copies of one signature in three TUs are free to drift (#744). */
-Value* builtin_free_val(Value *arg);
 
 /* ---- Opcodes ---- */
 typedef enum {

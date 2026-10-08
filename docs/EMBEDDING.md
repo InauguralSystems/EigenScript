@@ -665,7 +665,6 @@ between minor releases.
     operations share one process-wide stream; thread scheduling determines
     draw order.
   - The process's SIGPIPE disposition — **shared: the host must serialize**
-    changes to its process-wide setting. `proc_write` suppresses SIGPIPE only
     around its own write without changing that disposition; spawned child
     setup resets only the child's disposition.
   - The pointer installed by `eigs_set_abort_flag` — **shared: the host must

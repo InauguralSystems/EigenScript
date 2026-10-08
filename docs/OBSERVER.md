@@ -3,7 +3,6 @@
 > This is the long answer — the model underneath EigenScript's six
 > interrogatives (`what`, `who`, `when`, `where`, `why`, `how`), the
 > trajectory words (`converged`, `improving`, …), and the
-> `set_observer_thresholds` knob. You do not need any of it to *use* the
 > feature; the [README](../README.md#ask-your-code) is enough for that.
 > Read this if you want to know what the words actually mean — and why
 > they sometimes disagree with your intuition.
@@ -113,15 +112,10 @@ drawing lines on it — and a line is a decision made from outside. Those
 lines are the three thresholds:
 
 ```eigenscript fragment dh_zero=0.001 dh_small=0.01 h_low=0.1 scale=0.001 n=10
-set_observer_thresholds of [dh_zero, dh_small, h_low]
 # defaults: 0.001, 0.01, 0.1
-set_observer_scale of scale      # the value channel's "what counts as zero" (#1045)
 # default: 0.001
-set_observer_window of n         # how many samples a verdict spans (#1044)
-# default: 10; per binding: set_observer_window of ["x", n]
 ```
 
-So `set_observer_thresholds` is not a minor tuning footnote. **It is the
 act of naming.** The engine even refuses to let you collapse it
 (`dh_zero` must be `< dh_small`): you cannot configure an observer that
 has *no* ambiguous middle. Naming always leaves a gray zone.
@@ -195,11 +189,9 @@ in the flat-entropy plateau around 5 — see #294.)
 the identical windowed logic and thresholds on the value's relative step
 `Δv / max(|x|, |x_prev|, scale)` (#1045 — relative to the step's own local
 scale, so the bands mean the same across value scales *and units*; `scale`,
-`set_observer_scale`, default `0.001`, is the magnitude below which a value
 counts as zero and the deadband turns absolute). On the
 same oracle it answers `moving`/`oscillating` — correctly never `converged`.
 The window the bands read is `N` samples deep — 10 by default,
-`set_observer_window` per state or per binding (#1044): a mode slower than
 `N` samples of the observation cadence cannot fold inside it, so size the
 window to the slowest mode you expect (PREDICATES.md "The window").
 Its vocabulary is `oscillating` (sign of `Δv` keeps flipping), `diverging`
@@ -422,7 +414,6 @@ Two long-standing caveats were decided and closed by #412:
 - **`how` is a real gradient now.** It reads the deadband-normalized
   settledness of the last observed step: `1 - min(1, |dH| / dh_zero)`,
   where `dh_zero` is the same settle threshold the `converged` window
-  uses (`set_observer_thresholds`). `1.0` = the last assignment left the
   entropy unmoved; `0.0` = it moved by the deadband or more; linear in
   between. It is a pure function of the recorded `dH`, so
   `how is x at L` reads identically from tape history, and it measures
@@ -462,7 +453,6 @@ Per assignment the entropy costs:
 | value | cost |
 |---|---|
 | number | O(1) |
-| string / `json_raw` | O(length) — 256-bin frequency count |
 | buffer / text builder | O(1) — the size term alone |
 | list / dict | **O(its own element count)** — a nested container contributes only its size term and is not entered (#685) |
 

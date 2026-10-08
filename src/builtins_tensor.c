@@ -13,8 +13,6 @@
 
 /* Forward decls for helpers shared with the arena/observer machinery. */
 Value* make_num_permanent(double n);
-/* builtin_free_val — the one consuming builtin, call_eigs_fn must not touch
- * `arg` after it — is declared in vm.h (#744). */
 
 /* Shared double-precision tensor kernels. These live in this always-compiled
  * translation unit so model-enabled and model-disabled builds execute the
@@ -1570,11 +1568,6 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
          * caller's, and `sort_by of [xs, free_val]` leaves xs pointing at
          * freed elements. `arg` is gone afterwards either way, so never
          * read it below (the VM sites guard the same way). */
-        if (fn->data.builtin == builtin_free_val) {
-            if (arg) val_incref(arg);
-            Value *consumed = eigs_call_builtin(fn->data.builtin, arg);
-            return consumed ? consumed : make_null();
-        }
         Value *result = eigs_call_builtin(fn->data.builtin, arg);
         if (!result) return make_null();
         vm_borrow_compensate(arg, result, 0, fn, NULL);

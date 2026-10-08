@@ -271,34 +271,6 @@ Value* builtin_md5(Value *arg) {
 }
 
 #if !EIGENSCRIPT_FREESTANDING
-Value* builtin_sha256_file(Value *arg) {
-    if (!arg || arg->type != VAL_STR) {              /* #511 */
-        rt_error(EK_TYPE, 0, "sha256_file requires a string path");
-/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
-         * file loud); this is only the C return value. */
-        return make_str("");
-    }
-    FILE *f = fopen(arg->data.str, "rb");
-    if (!f) {
-        rt_error(EK_IO, 0, "sha256_file: cannot open '%s'", arg->data.str);
-/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
-         * file loud); this is only the C return value. */
-        return make_str("");
-    }
-    SHA256_CTX ctx;
-    sha256_init(&ctx);
-    uint8_t buf[4096];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
-        sha256_update(&ctx, buf, n);
-    fclose(f);
-    uint8_t hash[32];
-    sha256_final(&ctx, hash);
-    char hex[65];
-    bytes_to_hex(hash, 32, hex, sizeof(hex));
-    return make_str(hex);
-}
-
 Value* builtin_md5_file(Value *arg) {
     if (!arg || arg->type != VAL_STR) {              /* #511 */
         rt_error(EK_TYPE, 0, "md5_file requires a string path");
@@ -328,71 +300,6 @@ Value* builtin_md5_file(Value *arg) {
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
-Value* builtin_hmac_sha256(Value *arg) {
-    STRICT_LIST_MAX(arg, 2, "hmac_sha256");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {  /* #511 */
-        rt_error(EK_TYPE, 0, "hmac_sha256 requires [key, message]");
-/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
-         * file loud); this is only the C return value. */
-        return make_str("");
-    }
-    Value *key_val = arg->data.list.items[0];
-    Value *msg_val = arg->data.list.items[1];
-    if (!key_val || key_val->type != VAL_STR || !msg_val || msg_val->type != VAL_STR) {
-        rt_error(EK_TYPE, 0, "hmac_sha256: key and message must be strings");
-/* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
-         * file loud); this is only the C return value. */
-        return make_str("");
-    }
-
-    const uint8_t *key = (const uint8_t*)key_val->data.str;
-    size_t key_len = val_str_len(key_val);
-    const uint8_t *msg = (const uint8_t*)msg_val->data.str;
-    size_t msg_len = val_str_len(msg_val);
-
-    uint8_t key_block[64];
-    memset(key_block, 0, 64);
-
-    if (key_len > 64) {
-        /* Hash the key first */
-        SHA256_CTX kctx;
-        sha256_init(&kctx);
-        sha256_update(&kctx, key, key_len);
-        uint8_t kh[32];
-        sha256_final(&kctx, kh);
-        memcpy(key_block, kh, 32);
-    } else {
-        memcpy(key_block, key, key_len);
-    }
-
-    /* ipad = key XOR 0x36, opad = key XOR 0x5c */
-    uint8_t ipad[64], opad[64];
-    for (int i = 0; i < 64; i++) {
-        ipad[i] = key_block[i] ^ 0x36;
-        opad[i] = key_block[i] ^ 0x5c;
-    }
-
-    /* inner = H(ipad || message) */
-    SHA256_CTX inner;
-    sha256_init(&inner);
-    sha256_update(&inner, ipad, 64);
-    sha256_update(&inner, msg, msg_len);
-    uint8_t inner_hash[32];
-    sha256_final(&inner, inner_hash);
-
-    /* outer = H(opad || inner) */
-    SHA256_CTX outer;
-    sha256_init(&outer);
-    sha256_update(&outer, opad, 64);
-    sha256_update(&outer, inner_hash, 32);
-    uint8_t final_hash[32];
-    sha256_final(&outer, final_hash);
-
-    char hex[65];
-    bytes_to_hex(final_hash, 32, hex, sizeof(hex));
-    return make_str(hex);
-}
-
 /* ================================================================
  *  Registration
  * ================================================================ */
@@ -401,8 +308,6 @@ void register_hash_builtins(Env *env) {
     env_set_local_owned(env, "sha256",      make_builtin(builtin_sha256));
     env_set_local_owned(env, "md5",         make_builtin(builtin_md5));
 #if !EIGENSCRIPT_FREESTANDING
-    env_set_local_owned(env, "sha256_file", make_builtin(builtin_sha256_file));
     env_set_local_owned(env, "md5_file",    make_builtin(builtin_md5_file));
 #endif /* !EIGENSCRIPT_FREESTANDING */
-    env_set_local_owned(env, "hmac_sha256", make_builtin(builtin_hmac_sha256));
 }

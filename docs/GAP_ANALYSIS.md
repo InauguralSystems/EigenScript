@@ -212,6 +212,4 @@ most of these have shipped:
 Gaps still without roadmap entries beyond ecosystem placeholders:
 crypto (AEAD/TLS), raw TCP/UDP sockets, additional database drivers
 (SQLite/MySQL/NoSQL), compression, decimal/bigint. Streaming
-subprocess I/O **shipped 0.13.0** (`proc_spawn` / `proc_write` /
-`proc_read_line` / `proc_read` / `proc_close` / `proc_wait`). Regex
 was added in 0.7.0 (POSIX ERE).

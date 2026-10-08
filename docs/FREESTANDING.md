@@ -93,7 +93,6 @@ through the new heap.
 `open` `read` `write` `close` `lseek` `fopen` `fdopen` `fclose` `fread` `fwrite`
 `fgets` `fgetc` `fputs` `fputc` `fflush` `fseek` `ftell` `setvbuf` `putc`
 `putchar` `puts` `snprintf` `stat` `opendir` `readdir` `closedir` `mkdir`
-`rmdir`-class `unlink` `remove` `rename` `access` `getcwd` `chdir` `readlink`
 `mkstemp` `dup` `dup2` `pipe` `fcntl` `poll` `tcgetattr` `tcsetattr` `isatty`
 The bulk of the surface, but mostly *not* reimplemented:
 - **`HAL`**: `print`/console output → VGA + COM1 serial; `read_char` → PS/2
