@@ -1,6 +1,7 @@
 /*
  * EigsState / EigsThread implementation — see state.h.
  */
+#include <errno.h>
 #include "eigenscript.h"
 #include "env_flag.h"
 #include "state.h"
@@ -294,9 +295,17 @@ EigsThread *eigs_thread_attach(EigsState *st) {
      * test can show binding_version stays correct as births cross 2^32. Read
      * once per attach (not hot); no effect unless EIGS_ENV_VERSION_SEED is set. */
     {
+        /* Capped at 2^40: far past the 2^32 boundary the test needs, and it
+         * leaves ~2^64 births of headroom, so no seed can make the counter
+         * wrap and reopen the ABA this counter closes (critic, #1674 r2). */
         const char *vseed = getenv("EIGS_ENV_VERSION_SEED");
-        if (vseed && *vseed)
-            env_version_seed_floor(strtoull(vseed, NULL, 10));
+        if (vseed && *vseed) {
+            char *end = NULL;
+            errno = 0;
+            unsigned long long v = strtoull(vseed, &end, 10);
+            if (errno == 0 && end && *end == '\0' && v <= (1ULL << 40))
+                env_version_seed_floor(v);
+        }
     }
     th->loop_exit_reason = "normal";
     th->last_obs_slot_idx = -1;   /* #262 Phase-2: no observed slot yet */
