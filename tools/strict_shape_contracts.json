@@ -328,26 +328,6 @@
     "disposition": "guarded"
   },
   {
-    "function": "builtin_borrow_guard_selftest",
-    "file": "src/builtins.c",
-    "category": "test_only_data",
-    "minimum": null,
-    "maximum": null,
-    "reason": "Internal borrow-scanner probe consumes arbitrary list data; no public fixed-arity contract.",
-    "public_names": [
-      "__borrow_guard_selftest"
-    ],
-    "disposition": "exempt",
-    "body_sha256": [
-      "8697da35faaaa94b45f90d980bb58097fdb4bbfdcd6238a5617e29112334194c"
-    ],
-    "source_sha256": {
-      "builtin_borrow_guard_selftest": [
-        "8697da35faaaa94b45f90d980bb58097fdb4bbfdcd6238a5617e29112334194c"
-      ]
-    }
-  },
-  {
     "function": "builtin_buf_copy",
     "file": "src/builtins_buf.c",
     "category": "fixed",
@@ -693,37 +673,6 @@
       ],
       "db_exec_from_arg": [
         "cbcf24fbb55c5a6f9bfdbb6535dc22a89086dab2ed311d0fc0892eb6eb287145"
-      ]
-    }
-  },
-  {
-    "function": "builtin_deflate",
-    "file": "src/builtins_buf.c",
-    "category": "unary_data",
-    "minimum": null,
-    "maximum": null,
-    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
-    "public_names": [
-      "deflate"
-    ],
-    "disposition": "exempt",
-    "body_sha256": [
-      "b84d1eecab6982800b3777935dc650338d310c93c30a622eea3135c962bdb3c8",
-      "e629cded8eb8323555969d974904261b1396e093245f761f50c45e3b62f8a6b3"
-    ],
-    "source_sha256": {
-      "builtin_deflate": [
-        "b84d1eecab6982800b3777935dc650338d310c93c30a622eea3135c962bdb3c8",
-        "e629cded8eb8323555969d974904261b1396e093245f761f50c45e3b62f8a6b3"
-      ],
-      "strict_numeric_byte_list": [
-        "792de1634e3cda6e5ab40f7bef4d6d29d38ed5b6b9704a2e53d12332e560c892"
-      ],
-      "zlib_bytes_arg": [
-        "4aeca3a4d6fc6d62d3304c832e8ecaf9061af1884b7106e9ef1381f21ded3f4f"
-      ],
-      "zlib_deflate_impl": [
-        "374d09087d4f62c26f227e4b4708db3b6a06ddc42c7f973b129fc44f0a47c90f"
       ]
     }
   },
@@ -1075,18 +1024,6 @@
     "reason": "Numeric scalar or number/width tuple.",
     "public_names": [
       "hex"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_hmac_sha256",
-    "file": "src/hash.c",
-    "category": "fixed",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
-    "public_names": [
-      "hmac_sha256"
     ],
     "disposition": "guarded"
   },
@@ -1518,7 +1455,7 @@
         "b38ee26c123f3a682f61cfacc3cd75d7dd6423aa2eafbceb49e64b2e63ee47bf"
       ],
       "call_eigs_fn": [
-        "dc81f6eda5eb6cb98ddd06c771f66f9d07fe79c59b825aab5ae8db00a2042138"
+        "9604a4454984737e42957fbff8165dc2e8d3f6a809584a024f3d30b4d0abf481"
       ],
       "env_set_local": [
         "bde886fc51cd3b927e7c8c487a7a0d270453133c4e598506927a2d549788afbf"
@@ -1527,7 +1464,7 @@
         "cab31d774010bcc6b59ae3d4de9f380592fae037878071700a560932bb4f80d3"
       ],
       "vm_borrow_scan": [
-        "33aa89750645b9b1dadb29a2ad84ef752ef8ca677e9428f7adcdb33229eabba9"
+        "2ae1adca5ccdeb3419fb14b52073dfac112a5dccb14348050cab2719a1cee8d0"
       ]
     }
   },
@@ -1755,18 +1692,6 @@
     }
   },
   {
-    "function": "builtin_proc_read",
-    "file": "src/builtins_host.c",
-    "category": "exact_soft_rejection",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "count != 2 returns null, not a catchable shape error. Never prefix-consumes; full strict-shape policy should add surplus diagnostic without changing strict-off.",
-    "public_names": [
-      "proc_read"
-    ],
-    "disposition": "guarded"
-  },
-  {
     "function": "builtin_proc_read_buf",
     "file": "src/builtins_host.c",
     "category": "exact_soft_rejection",
@@ -1775,38 +1700,6 @@
     "reason": "count != 2 returns null, not a catchable shape error. Never prefix-consumes; full strict-shape policy should add surplus diagnostic without changing strict-off.",
     "public_names": [
       "proc_read_buf"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_proc_spawn",
-    "file": "src/builtins_host.c",
-    "category": "variadic",
-    "minimum": null,
-    "maximum": null,
-    "reason": "Tail operands are all forwarded to function/process; no fixed tuple maximum.",
-    "public_names": [
-      "proc_spawn"
-    ],
-    "disposition": "exempt",
-    "body_sha256": [
-      "a32288436f231fbe09cacbe2bff4680ac16fce8cf599ab7489c0fa5cc6f6effb"
-    ],
-    "source_sha256": {
-      "builtin_proc_spawn": [
-        "a32288436f231fbe09cacbe2bff4680ac16fce8cf599ab7489c0fa5cc6f6effb"
-      ]
-    }
-  },
-  {
-    "function": "builtin_proc_write",
-    "file": "src/builtins_host.c",
-    "category": "exact_strict_rejection",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "Existing ARG_GUARD count != 2 already rejects strict surplus; candidate adds named max guard before replay refusal.",
-    "public_names": [
-      "proc_write"
     ],
     "disposition": "guarded"
   },
@@ -1943,42 +1836,6 @@
     "disposition": "guarded"
   },
   {
-    "function": "builtin_scan_tokens",
-    "file": "src/builtins.c",
-    "category": "optional_or_scalar",
-    "minimum": 1,
-    "maximum": 2,
-    "reason": "Text scalar or text plus optional delimiter/comment marker in list.",
-    "public_names": [
-      "scan_tokens"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_screen_put",
-    "file": "src/builtins.c",
-    "category": "optional",
-    "minimum": 3,
-    "maximum": 4,
-    "reason": "Row/column/text plus optional color.",
-    "public_names": [
-      "screen_put"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_screen_render",
-    "file": "src/builtins.c",
-    "category": "fixed",
-    "minimum": 7,
-    "maximum": 7,
-    "reason": "Consumes the first seven tuple operands; trailing operands have no role.",
-    "public_names": [
-      "screen_render"
-    ],
-    "disposition": "guarded"
-  },
-  {
     "function": "builtin_secure_equals",
     "file": "src/builtins.c",
     "category": "fixed",
@@ -2019,41 +1876,6 @@
     "source_sha256": {
       "builtin_set_at": [
         "71ae5b5c45df5188d25dc54707bb1024a2efc96f53f8505796b082827a4dc5f7"
-      ]
-    }
-  },
-  {
-    "function": "builtin_set_observer_thresholds",
-    "file": "src/builtins.c",
-    "category": "fixed",
-    "minimum": 3,
-    "maximum": 3,
-    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
-    "public_names": [
-      "set_observer_thresholds"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_set_observer_window",
-    "file": "src/builtins.c",
-    "category": "exact_rejection",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "List branch count != 2 raises; scalar default-window overload retained.",
-    "public_names": [
-      "set_observer_window"
-    ],
-    "disposition": "exempt",
-    "body_sha256": [
-      "062be569d9375f1d5f273c7ed35fc2c30152e927c0cc1bbca272a0caadba4905"
-    ],
-    "source_sha256": {
-      "builtin_set_observer_window": [
-        "062be569d9375f1d5f273c7ed35fc2c30152e927c0cc1bbca272a0caadba4905"
-      ],
-      "obs_window_arg": [
-        "ae8de783a839a1b33081a93645adbe2b9277228152fa384a9956b1d2bd7d5cc5"
       ]
     }
   },
@@ -2912,18 +2734,6 @@
     "disposition": "guarded"
   },
   {
-    "function": "builtin_text_builder_extend",
-    "file": "src/builtins.c",
-    "category": "fixed",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
-    "public_names": [
-      "text_builder_extend"
-    ],
-    "disposition": "guarded"
-  },
-  {
     "function": "builtin_throw",
     "file": "src/builtins.c",
     "category": "unary_data",
@@ -3061,67 +2871,5 @@
       "write_text"
     ],
     "disposition": "guarded"
-  },
-  {
-    "function": "builtin_zlib_deflate",
-    "file": "src/builtins_buf.c",
-    "category": "unary_data",
-    "minimum": null,
-    "maximum": null,
-    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
-    "public_names": [
-      "zlib_deflate"
-    ],
-    "disposition": "exempt",
-    "body_sha256": [
-      "14cb07e809e8d01e4276b86ddebae8accaf2e2415d9034f76bc5ee312955a74a",
-      "b68fb4aca23a1abfe47935e6c9e0cf8907e704a5b8621a19837643c7a27c4289"
-    ],
-    "source_sha256": {
-      "builtin_zlib_deflate": [
-        "14cb07e809e8d01e4276b86ddebae8accaf2e2415d9034f76bc5ee312955a74a",
-        "b68fb4aca23a1abfe47935e6c9e0cf8907e704a5b8621a19837643c7a27c4289"
-      ],
-      "strict_numeric_byte_list": [
-        "792de1634e3cda6e5ab40f7bef4d6d29d38ed5b6b9704a2e53d12332e560c892"
-      ],
-      "zlib_bytes_arg": [
-        "4aeca3a4d6fc6d62d3304c832e8ecaf9061af1884b7106e9ef1381f21ded3f4f"
-      ],
-      "zlib_deflate_impl": [
-        "374d09087d4f62c26f227e4b4708db3b6a06ddc42c7f973b129fc44f0a47c90f"
-      ]
-    }
-  },
-  {
-    "function": "builtin_zlib_inflate",
-    "file": "src/builtins_buf.c",
-    "category": "unary_data",
-    "minimum": null,
-    "maximum": null,
-    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
-    "public_names": [
-      "zlib_inflate"
-    ],
-    "disposition": "exempt",
-    "body_sha256": [
-      "7f0b3ff95423b1e1073140cd4f4fd0f682f0aefe6aee8b0b9045b744161313cc",
-      "ede1e56b7d6bb385970e70743e836ed5d1c161d35f447ffad6b5c4a6b9115ddb"
-    ],
-    "source_sha256": {
-      "builtin_zlib_inflate": [
-        "7f0b3ff95423b1e1073140cd4f4fd0f682f0aefe6aee8b0b9045b744161313cc",
-        "ede1e56b7d6bb385970e70743e836ed5d1c161d35f447ffad6b5c4a6b9115ddb"
-      ],
-      "strict_numeric_byte_list": [
-        "792de1634e3cda6e5ab40f7bef4d6d29d38ed5b6b9704a2e53d12332e560c892"
-      ],
-      "zlib_bytes_arg": [
-        "4aeca3a4d6fc6d62d3304c832e8ecaf9061af1884b7106e9ef1381f21ded3f4f"
-      ],
-      "zlib_inflate_impl": [
-        "a54f1d8a2b596ca7c363f20303516358bf5992479e5aadc7ea6f2536e2089914"
-      ]
-    }
   }
 ]

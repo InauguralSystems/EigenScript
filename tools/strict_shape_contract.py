@@ -320,6 +320,8 @@ def render(directory, cases):
                         (owned / 'case.eigs').write_text(source)
                         if active.get('http_context'):
                             (owned / 'http-context').write_text(active['http_context'] + '\n')
+                        if 'stdin_bytes' in active.get('requirements', []):
+                            (owned / 'stdin-context').write_text('abc')
         legacy = int(bool(row.get('legacy_surplus_null') or row.get('legacy_surplus_assert')))
         manifest.append('|'.join([name, str(len(row['args'])), ','.join(f[0] for f in forms), str(legacy), str(int(bool(row.get('exits')))), str(int(bool(pending))), row.get('backend', 'none')]))
     (directory / 'rows').write_text('\n'.join(manifest) + '\n')

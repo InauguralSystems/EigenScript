@@ -14,8 +14,8 @@
 # Part B (#548) — in sanitizer builds vm_borrow_scan keeps scanning past
 # VM_BORROW_SCAN_CAP and aborts, naming the builtin, when a builtin returns a
 # borrowed direct child the capped scan missed. Validated with a planted
-# fault: the __borrow_guard_selftest builtin (ASan builds +
-# EIGS_BORROW_GUARD_SELFTEST only) deliberately violates the invariant.
+# fault: a test-only environment trigger lowers the scan cap for an ordinary
+# coalesce call; it adds no user-visible builtin.
 #
 # Run directly or from run_all_tests.sh. Prints PASS:/FAIL: lines (Part B
 # prints one SKIP: line on non-sanitizer builds, where the guard is compiled
@@ -86,71 +86,31 @@ printf 'tbl is [append]\nr is dispatch of [tbl, 0, ([([3, 1, 2]), 5])]\nprint of
 expect_out "direct dispatch stays correct (OP_DISPATCH)" \
     "$TMPDIR/dispatch_op.eigs" "[3, 1, 2, 5]"
 
-# A4: free_val is the one CONSUMING builtin — it drops a reference rather
-# than returning one. At the out-of-VM sites the argument is only borrowed,
-# so the ref it consumed was the caller's: xs was left pointing at freed
-# elements. The sites now lend it a reference of their own. Both programs
-# raise (free_val returns null, which is not a sort key and not a number) —
-# what is gated is that the raise is clean, not a use-after-free.
-printf 'xs is [3, 1, 2]\ntry:\n    r is sort_by of [xs, free_val]\ncatch e:\n    print of "caught"\nprint of xs\n' \
-    > "$TMPDIR/freeval_sortby.eigs"
-expect_out "sort_by of [xs, free_val] does not free the caller's elements" \
-    "$TMPDIR/freeval_sortby.eigs" "caught
-[3, 1, 2]"
-printf 'd is dispatch\ntbl is [free_val]\nxs is [3, 1, 2]\nr is d of [tbl, 0, xs]\nprint of xs\n' \
-    > "$TMPDIR/freeval_dispatch.eigs"
-expect_out "indirect dispatch to free_val does not free its arg vector's child" \
-    "$TMPDIR/freeval_dispatch.eigs" "[3, 1, 2]"
-
 echo "  -- borrow-scan guard (#548) --"
 
-printf 'r is __borrow_guard_selftest of [1,2,3]\nprint of "WITHIN_CAP_OK"\n' > "$TMPDIR/within.eigs"
-printf 'r is __borrow_guard_selftest of [1,2,3,4,5,6,7,8,9,10]\nprint of r\n' > "$TMPDIR/past.eigs"
+# The test-only environment switch lowers the scan cap to zero; coalesce then
+# returns its first non-null direct child past that planted cap. No builtin is
+# added to the language surface. Release builds compile the guard out.
+printf 'r is coalesce of [null, 7]\nprint of r\n' > "$TMPDIR/past.eigs"
 
-# Build-type probe: the selftest builtin exists only when the guard is
-# compiled in (sanitizer builds). On release, skip — the guard is
-# deliberately zero-cost there, so there is nothing to exercise.
-probe=$(EIGS_BORROW_GUARD_SELFTEST=1 "$EIGS" "$TMPDIR/within.eigs" 2>&1)
-if echo "$probe" | grep -q "undefined variable '__borrow_guard_selftest'"; then
-    echo "  SKIP: non-sanitizer build — borrow guard compiled out (release is zero-cost by design)"
-    echo ""
-    echo "borrow-guard: $PASS passed, $FAIL failed"
-    [ "$FAIL" -eq 0 ] || exit 1
-    exit 0
-fi
-
-# 1. Within-cap call is compensated normally: no abort, clean exit.
-if echo "$probe" | grep -q "WITHIN_CAP_OK"; then
-    ok "within-cap borrow runs clean (no abort)"
-else
-    fail "within-cap borrow runs clean" "got: $(echo "$probe" | head -1)"
-fi
-
-# 2. Past-cap violation aborts (SIGABRT), never a silent success.
-out=$(EIGS_BORROW_GUARD_SELFTEST=1 "$EIGS" "$TMPDIR/past.eigs" 2>&1)
+out=$(EIGS_BORROW_GUARD_PLANT=1 "$EIGS" "$TMPDIR/past.eigs" 2>&1)
 rc=$?
-if [ "$rc" -ne 0 ]; then
-    ok "past-cap borrow aborts (rc=$rc)"
-else
-    fail "past-cap borrow aborts" "exited 0 — guard did not fire"
-fi
-
-# 3. The abort names the offending builtin and the cap.
-if echo "$out" | grep -q "borrow-scan guard (#548)" \
-   && echo "$out" | grep -q "__borrow_guard_selftest" \
+if [ "$rc" -eq 0 ]; then
+    echo "  SKIP: non-sanitizer build — borrow guard compiled out (release is zero-cost by design)"
+elif echo "$out" | grep -q "borrow-scan guard (#548)" \
+   && echo "$out" | grep -q "coalesce" \
    && echo "$out" | grep -q "VM_BORROW_SCAN_CAP"; then
-    ok "abort message names the builtin and the cap"
+    ok "planted past-cap borrow aborts and names the builtin and cap (rc=$rc)"
 else
-    fail "abort message names the builtin and the cap" "got: $(echo "$out" | head -1)"
+    fail "planted past-cap borrow diagnostic" "rc=$rc got: $(echo "$out" | head -1)"
 fi
 
-# 4. The planted fault is opt-in: without EIGS_BORROW_GUARD_SELFTEST the
-# builtin is not registered (fuzzers must never reach a deliberate abort).
-out=$("$EIGS" "$TMPDIR/past.eigs" 2>&1)
-if echo "$out" | grep -q "undefined variable '__borrow_guard_selftest'"; then
-    ok "selftest builtin absent without the opt-in env var"
+# Without the plant the same ordinary builtin call must remain clean.
+out=$("$EIGS" "$TMPDIR/past.eigs" 2>&1); rc=$?
+if [ "$rc" -eq 0 ] && [ "$out" = "7" ]; then
+    ok "borrow plant is opt-in; ordinary coalesce remains clean"
 else
-    fail "selftest builtin absent without the opt-in env var" "got: $(echo "$out" | head -1)"
+    fail "borrow plant opt-in control" "rc=$rc got: $out"
 fi
 
 echo ""

@@ -247,7 +247,6 @@ Python or JS hand-rolls — see
 > `improving` means the steps are contracting toward a limit. For
 > non-numeric values the observer's entropy reading applies — a value
 > locating itself *from the inside*, with no external goal. The full
-> model, including the resolution knob (`set_observer_thresholds`), is in
 > [docs/OBSERVER.md](docs/OBSERVER.md); the precise predicate semantics
 > (what `converged` requires, how it differs from `equilibrium`, the
 > N-step window) are in [docs/PREDICATES.md](docs/PREDICATES.md).
@@ -332,7 +331,6 @@ result is read from a `buffer`; one stored element never changes meaning with
 the operator that consumes it. Structural buffer equality and scalar reductions
 normalize each input by this rule too, as do mixed buffer/list materialization
 and numeric byte or sample conversion. A raised read stops subsequent work.
-`str_from_bytes` and the `inflate`/`deflate` codecs (including their `zlib_*` forms) reject nonnumeric list elements with a builtin-named
 `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL, without inspecting later
 elements; byte codecs consume the complete list.

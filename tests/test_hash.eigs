@@ -12,12 +12,8 @@ assert_eq of [md5 of "hello world", "5eb63bbbe01eeed093cb22bb8f5acdc3", "md5 hel
 
 # File hashing
 write_text of ["/tmp/test_hash.txt", "hello world"]
-assert_eq of [sha256_file of "/tmp/test_hash.txt", "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", "sha256_file"]
 assert_eq of [md5_file of "/tmp/test_hash.txt", "5eb63bbbe01eeed093cb22bb8f5acdc3", "md5_file"]
 rm of "/tmp/test_hash.txt"
-
-# HMAC-SHA256
-assert_eq of [hmac_sha256 of ["key", "hello"], "9307b3b915efb5171ff14d8cb55fbcc798c6c0ef1456d66ded1a6aa723a58b7b", "hmac-sha256"]
 
 # Edge cases — #511: non-string input and a missing file now RAISE (were the
 # empty-string sentinel, i.e. a silent wrong/absent digest).
@@ -36,14 +32,5 @@ try:
 catch e:
     md5_null is 1
 assert_true of [md5_null == 1, "md5 of null raises"]
-
-sfile_miss is 0
-sfile_miss_k is ""
-try:
-    ig is sha256_file of "/nonexistent"
-catch e:
-    sfile_miss is 1
-    sfile_miss_k is e.kind
-assert_true of [sfile_miss == 1 and sfile_miss_k == "io", "sha256_file missing raises io"]
 
 test_summary of null

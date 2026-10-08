@@ -385,7 +385,7 @@ http: server
 net: server
 	@echo "NOTE: 'make net' is a compatibility alias for 'make server'."
 
-# Build with the DEFLATE codecs (inflate/deflate builtins, #684) linked
+# Build raw DEFLATE decompression (`inflate`, #684) with zlib linked
 # against the system zlib. Same opt-in pattern as `make http`: the
 # default build stays zero-dependency and the four builtins raise
 # "compiled without zlib support" there.

@@ -1763,29 +1763,6 @@
   },
   {
     "args": [
-      "\"key\"",
-      "\"message\""
-    ],
-    "valid_assert": "(len of shape_result) == 64",
-    "setup": "",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
-    "optional_args": [],
-    "requirements": [],
-    "source": {
-      "file": "src/hash.c",
-      "line": 331,
-      "function": "builtin_hmac_sha256",
-      "body_sha256": "3b8b4760aa9af6ce36fe05fd7c5ead90b41bac05afb68d6f02515503e04c0180"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "hmac_sha256",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
-  },
-  {
-    "args": [
       "\"@HTTP_URL@\"",
       "\"{}\"",
       "\"abc\""
@@ -2280,96 +2257,6 @@
     "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
   },
   {
-    "args": [
-      "shape_proc[2]",
-      "3"
-    ],
-    "valid_assert": "shape_result == \"abc\"",
-    "setup": "shape_proc is proc_spawn of [\"@PRINTF@\", \"abc\"]\nassert of [shape_proc[0] > 0, \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "proc_close of shape_proc[1]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"shape control\"]",
-    "unchanged": "assert of [(proc_read of [shape_proc[2], 3]) == \"abc\", \"read consumed bytes on rejection\"]",
-    "optional_args": [],
-    "requirements": [
-      "owned_process_group",
-      "printf_executable",
-      "parent_deadline"
-    ],
-    "legacy_surplus_null": true,
-    "legacy_surplus_assert": "shape_result == null",
-    "source": {
-      "file": "src/builtins_host.c",
-      "line": 1624,
-      "function": "builtin_proc_read",
-      "body_sha256": "50572234ed2aa6636259b68bb347f0fcccad9bf5879d7d4146fd166bc6266378"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "proc_read",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "legacy_surplus_observe": "shape_legacy_remaining is proc_read of [shape_proc[2], 3]\nassert of [shape_legacy_remaining == \"abc\", \"legacy surplus did not preserve unread bytes\"]\nprint of shape_result"
-  },
-  {
-    "args": [
-      "shape_proc[2]",
-      "3"
-    ],
-    "valid_assert": "(len of shape_result) == 3 and (buf_get of [shape_result, 1]) == 98",
-    "setup": "shape_proc is proc_spawn of [\"@PRINTF@\", \"abc\"]\nassert of [shape_proc[0] > 0, \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "proc_close of shape_proc[1]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"shape control\"]",
-    "unchanged": "shape_remaining is proc_read of [shape_proc[2], 3]\nassert of [shape_remaining == \"abc\", \"buffer read consumed bytes on rejection\"]",
-    "optional_args": [],
-    "requirements": [
-      "owned_process_group",
-      "printf_executable",
-      "parent_deadline"
-    ],
-    "legacy_surplus_null": true,
-    "legacy_surplus_assert": "shape_result == null",
-    "source": {
-      "file": "src/builtins_host.c",
-      "line": 1653,
-      "function": "builtin_proc_read_buf",
-      "body_sha256": "5f68a8c97f24e4dfdc644839c9d0d49eee5363ea0e0cce1e5eceb1f8270a54fd"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "proc_read_buf",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "legacy_surplus_observe": "shape_legacy_remaining is proc_read of [shape_proc[2], 3]\nassert of [shape_legacy_remaining == \"abc\", \"legacy surplus did not preserve unread bytes\"]\nprint of shape_result"
-  },
-  {
-    "args": [
-      "shape_proc[1]",
-      "\"abc\""
-    ],
-    "valid_assert": "shape_result == 3",
-    "setup": "shape_proc is proc_spawn of ([\"@CAT@\"])\nassert of [shape_proc[0] > 0, \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "proc_close of shape_proc[1]\nshape_drain is proc_read of [shape_proc[2], 3]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"shape control\"]",
-    "unchanged": "proc_close of shape_proc[1]\nshape_rejected_data is proc_read of [shape_proc[2], 3]\nassert of [shape_rejected_data == null, \"write emitted bytes on rejection\"]\nproc_close of shape_proc[2]\nassert of [(proc_wait of shape_proc[0]) == 0, \"owned child joined\"]",
-    "optional_args": [],
-    "requirements": [
-      "owned_process_group",
-      "cat_executable",
-      "parent_deadline"
-    ],
-    "legacy_surplus_assert": "shape_result == (0 - 1)",
-    "resource_notes": "Close stdin before drain: cat returns data or EOF for accepted/rejected calls. Drain never waits with stdin open. At most three bytes. Parent must terminate/reap group on any failed assertion.",
-    "source": {
-      "file": "src/builtins_host.c",
-      "line": 1543,
-      "function": "builtin_proc_write",
-      "body_sha256": "0484d5631e62dc029e769092ed139218a9857aa83cd29cb6f25e3efb28529e17"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "proc_write",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "strict_cleanup": ""
-  },
-  {
     "name": "random_int",
     "args": [
       "2",
@@ -2675,28 +2562,6 @@
     ]
   },
   {
-    "name": "scan_tokens",
-    "args": [
-      "\"2 3\"",
-      "\"#\""
-    ],
-    "setup": "",
-    "valid_assert": "(len of shape_result) == 2",
-    "observe": "print of shape_result",
-    "unchanged": "# Pure input: no mutable argument or external state.",
-    "cleanup": "",
-    "requirements": [],
-    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
-    "scalar_forms": [
-      "\"2 3\""
-    ],
-    "optional_args": [
-      [
-        "\"2 3\""
-      ]
-    ]
-  },
-  {
     "name": "scatter_add",
     "args": [
       "a",
@@ -2707,48 +2572,6 @@
     "valid_assert": "(shape_snapshot of a) == [1, 5]",
     "observe": "print of (shape_snapshot of a)",
     "unchanged": "assert of [(shape_snapshot of a) == [1, 2], \"scatter mutated on rejection\"]",
-    "cleanup": "",
-    "requirements": [],
-    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
-  },
-  {
-    "name": "screen_put",
-    "args": [
-      "1",
-      "1",
-      "\"x\"",
-      "0"
-    ],
-    "setup": "",
-    "valid_assert": "shape_result == null",
-    "observe": "print of shape_result",
-    "unchanged": "# Pure input: no mutable argument or external state.",
-    "cleanup": "",
-    "requirements": [],
-    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes.",
-    "optional_args": [
-      [
-        "1",
-        "1",
-        "\"x\""
-      ]
-    ]
-  },
-  {
-    "name": "screen_render",
-    "args": [
-      "[[0, 0, \"x\", 0]]",
-      "2",
-      "2",
-      "0",
-      "0",
-      "4",
-      "4"
-    ],
-    "setup": "",
-    "valid_assert": "shape_result == null",
-    "observe": "print of shape_result",
-    "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
     "requirements": [],
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
@@ -2778,21 +2601,6 @@
     "observe": "print of (try_recv of ch)",
     "unchanged": "assert of [(try_recv of ch) == null, \"send enqueued on rejection\"]",
     "cleanup": "close_channel of ch",
-    "requirements": [],
-    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
-  },
-  {
-    "name": "set_observer_thresholds",
-    "args": [
-      "0.001",
-      "0.01",
-      "0.1"
-    ],
-    "setup": "",
-    "valid_assert": "shape_result == null",
-    "observe": "print of shape_result",
-    "unchanged": "# Warning is emitted only on successful threshold mutation; rejected stdout/stderr must contain solely the exact guard witness.",
-    "cleanup": "",
     "requirements": [],
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
   },
@@ -3223,8 +3031,8 @@
     ],
     "setup": "define completed(n) as:\n    return 3\ntask_id is task_spawn of completed",
     "valid_assert": "shape_result == true",
-    "observe": "print of shape_result\nprint of (task_try_recv of null)",
-    "unchanged": "assert of [(task_try_recv of null) == null, \"task send enqueued on rejection\"]",
+    "observe": "print of shape_result\ntask_send of [0, 9]\nprint of (task_recv of null)\nprint of (task_recv of null)",
+    "unchanged": "task_send of [0, 9]\nassert of [(task_recv of null) == 9, \"task send enqueued on rejection\"]",
     "cleanup": "assert of [(task_join of task_id) == 3, \"owned task join\"]",
     "requirements": [],
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
@@ -3267,20 +3075,6 @@
     ],
     "setup": "tb is text_builder_new of null\ntext_builder_append of [tb, \"a\"]",
     "valid_assert": "(text_builder_to_string of tb) == \"ab\\n\"",
-    "observe": "print of (text_builder_to_string of tb)",
-    "unchanged": "assert of [(text_builder_to_string of tb) == \"a\", \"builder changed on rejection\"]",
-    "cleanup": "",
-    "requirements": [],
-    "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
-  },
-  {
-    "name": "text_builder_extend",
-    "args": [
-      "tb",
-      "[\"b\", \"c\"]"
-    ],
-    "setup": "tb is text_builder_new of null\ntext_builder_append of [tb, \"a\"]",
-    "valid_assert": "(text_builder_to_string of tb) == \"abc\"",
     "observe": "print of (text_builder_to_string of tb)",
     "unchanged": "assert of [(text_builder_to_string of tb) == \"a\", \"builder changed on rejection\"]",
     "cleanup": "",
@@ -3362,5 +3156,33 @@
     "form_asserts": {
       "scalar:0": "(type of shape_result) == \"buffer\" and (shape_snapshot of shape_result) == [0, 0]"
     }
+  },
+  {
+    "args": [
+      "0",
+      "3"
+    ],
+    "valid_assert": "(len of shape_result) == 3 and (buf_get of [shape_result, 1]) == 98",
+    "setup": "",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "shape_remaining is proc_read_buf of [0, 3]\nassert of [(len of shape_remaining) == 3 and (buf_get of [shape_remaining, 1]) == 98, \"buffer read consumed bytes on rejection\"]",
+    "optional_args": [],
+    "requirements": [
+      "stdin_bytes"
+    ],
+    "legacy_surplus_null": true,
+    "legacy_surplus_assert": "shape_result == null",
+    "source": {
+      "file": "src/builtins_host.c",
+      "line": 1653,
+      "function": "builtin_proc_read_buf",
+      "body_sha256": "5f68a8c97f24e4dfdc644839c9d0d49eee5363ea0e0cce1e5eceb1f8270a54fd"
+    },
+    "maximum": 2,
+    "execution": "UNRUN",
+    "name": "proc_read_buf",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "legacy_surplus_observe": "shape_legacy_remaining is proc_read_buf of [0, 3]\nassert of [(len of shape_legacy_remaining) == 3 and (buf_get of [shape_legacy_remaining, 1]) == 98, \"legacy surplus consumed bytes\"]\nprint of shape_result"
   }
 ]

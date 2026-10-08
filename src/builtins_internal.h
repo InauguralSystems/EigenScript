@@ -67,9 +67,6 @@ Value* builtin_buf_to_pcm16le(Value *arg);
 Value* builtin_buf_deinterleave(Value *arg);
 Value* builtin_buf_resample_linear(Value *arg);
 Value* builtin_inflate(Value *arg);
-Value* builtin_zlib_inflate(Value *arg);
-Value* builtin_deflate(Value *arg);
-Value* builtin_zlib_deflate(Value *arg);
 
 /* builtins_host.c (#741) — every builtin needing a real OS underneath.
  * Whole-TU gated: under EIGENSCRIPT_FREESTANDING this registers nothing. */

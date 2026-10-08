@@ -38,7 +38,7 @@ A name enters the set only from an INVOCATION POSITION:
       or the default of `os.environ.get("X", "eigenscript-y")`. A
       shell=True / os.system string is re-scanned as shell text.
   (c) `.eigs` -- the first string literal of an exec-family builtin call:
-      `exec_capture of ["cmd", ...]` / `proc_spawn of ["cmd", ...]`
+      `exec_capture of ["cmd", ...]`
       (docs/BUILTINS.md), including the timeout form
       `exec_capture of [["cmd", ...], seconds]`.
 
@@ -124,7 +124,7 @@ SHELL_SHEBANG = re.compile(r"^#!.*\b(ba|da|k|z|a)?sh\b")
 DEFAULT_EXPANSION = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?::?[-=])([^}]*)\}")
 ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 EIGS_CALL_RE = re.compile(
-    r"\b(?:exec_capture|proc_spawn)\s+of\s*\(?\s*\[\s*\[?\s*[\"']([^\"']*)[\"']"
+    r"\bexec_capture\s+of\s*\(?\s*\[\s*\[?\s*[\"']([^\"']*)[\"']"
 )
 
 
@@ -1011,11 +1011,10 @@ def selftest():
              "eigenscript-p4", "eigenscript-p5"}),
         ("eigs-exec-family", {"run.eigs": (
             "let r is exec_capture of [\"eigenscript-e1\", \"x\"]\n"
-            "let p is proc_spawn of [\"eigenscript-e2\", \"x\"]\n"
             "let t is exec_capture of [[\"eigenscript-e3\", \"x\"], 5]\n"
             "# eigenscript-ecomment\n"
             "let s is \"eigenscript-estring\"\n"
-        )}, {"eigenscript-e1", "eigenscript-e2", "eigenscript-e3"}),
+        )}, {"eigenscript-e1", "eigenscript-e3"}),
         ("yaml-runcmd-only", {".github/workflows/ci.yml": (
             "name: eigenscript-wfname\n"
             "jobs:\n"

@@ -37,7 +37,6 @@ SKIP_WAIVERS='
 d8bbaacdbda76484|(b) the [99n] classifier-gate FAIL line, which QUOTES its own skipped tally; that section fails on any skip
 e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check there is coverage loss
 69614d3ef6dc2f30|(c) sub-check: [17] TR6/TR7 have no old model to reject; the rest of the transformer section still asserts
-3f50de963077a3a2|(b) the [119] section TITLE, which names the sanitizer-only half in its own heading
 86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
 459741ca98fe2fc5|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
 23bf2806c94855bb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
@@ -703,7 +702,7 @@ sp_token_re() {
 # test script or tool that does: a helper (test_lsp.py, lint_fixtures/) selects
 # through the script that uses it (test_lsp.sh, test_lint.sh), and a program
 # the runner names in one section still selects the other section whose
-# script re-runs it (test_tasks.eigs -> test_task_sched_trace.sh, [104b]).
+# script re-runs it (test_spawn_channel_exit.eigs -> test_replay_boundary_exit.sh, [103a]).
 sp_select() {
     sp_refs "$RUNNER" "$1"
     # shellcheck disable=SC2086
@@ -1083,8 +1082,8 @@ selftest() {
     expect_plan 'changed: a src/ file is always reported as runtime' 'runtime: src/lint.c'
     printf '\n' >> "$dir/cl/tests/failure_output.sh"
     expect_plan 'changed: a file the preamble sources selects the whole suite' 'full=yes'
-    printf '\n' >> "$dir/cl/tests/test_tasks.eigs"
-    expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[104b]'
+    printf '\n' >> "$dir/cl/tests/test_spawn_channel_exit.eigs"
+    expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[103a]'
     printf '\n' >> "$dir/cl/examples/functional.eigs"
     expect_plan 'changed: a file shares a name elsewhere; the section globbing its dir is selected' '[97]'
     # Inert runner with the real dispatch/timer preamble. Every source header

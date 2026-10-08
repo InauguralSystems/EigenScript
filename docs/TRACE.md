@@ -34,7 +34,6 @@ The tape is plain text, one record per line:
 | `A <stream_id> <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
 | `N <stream_id> <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
 | `O <stream_id> cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-1044-1045). |
-| `O <stream_id> win <name> <n>` | Per-binding observer window override (v3) — `set_observer_window of ["name", n]`; `n == 0` clears it. |
 
 ### Stream identity and correspondence (v5, #1286)
 
@@ -195,14 +194,12 @@ into real values on replay:
 
 ## Derived, Not Recorded: The Scheduler Trace (#846)
 
-The cooperative task scheduler's decision history (`task_sched_trace`, see
 docs/CONCURRENCY.md) is **not** an `N` record. The interleaving is a pure
 function of program order and `task_sched_seed`, so a replayed run
 re-derives the identical history from the same schedule; recording it would
 create a second source of truth that could disagree with the first.
-`tests/test_task_sched_trace.sh` asserts the tape's `N`-record count is
-unchanged by arming the trace and that record → replay yields the same
-history on both tiers.
+That `N`-record-count invariant is currently untested; restoration of the
+scheduler-trace/observer-configuration machinery is tracked by #1688.
 
 ## Recorded Builtins
 
@@ -212,7 +209,6 @@ perspective lands on the tape as an `N` record:
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_bytes_buf`, `read_line` (stdin, #558), `is_dir` (#576),
   `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585).
   `mkdir` is a *write* whose return (a success bit) is filesystem-dependent:
   it is Recorded rather than #148-non-replayable because that bit **is**
@@ -256,7 +252,6 @@ perspective lands on the tape as an `N` record:
   replay the send is **suppressed** (recorded count served, nothing
   written) and the replayed world stays consistent. That is the
   deliberate contrast with the #148 subprocess family below: a
-  `proc_write` feeds a live child whose behavior the tape does not pin,
   so suppressing it would be meaningless. (`net_close` is deterministic
   and untraced — under replay no socket exists and it is a natural
   no-op, the `audio_capture_close` shape.)
@@ -329,15 +324,12 @@ construction is neither run nor leaked.
 A trajectory verdict — `report of x`, the six predicates, the trajectory
 labels `--step` and the DAP server print — is a function of the
 **assignments** and of the **observer configuration**: three thresholds
-(`set_observer_thresholds`), the window depth (`set_observer_window`, per
 state and per binding), and the characteristic scale
-(`set_observer_scale`). The tape carried the assignments and not the
 configuration, so a recorded run stepped back classified at the *state
 defaults* and printed a verdict the live run never gave:
 
 ```
 u is 0.0
-set_observer_window of ["u", 50]        # a 46.9-sample period needs 50
 loop while t < 200:  u is 272.4 + 10.0 * (cos of (6.28318 * t / 46.9)) …
 print of (report of u)                  # live: oscillating
 ```
@@ -359,7 +351,6 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   no `O` records at all. The record shape is unchanged (no format bump).
 - **`O win`** carries the per-binding window override, which lives on an
   `Env` slot rather than on the state and so has no cheap diff. It is
-  written from `set_observer_window` at the point of the call, preceded by
   its own frame's `S` record — the override belongs to the frame that
   *resolved the name*, and that frame may not have assigned anything yet
   (widening a parameter's window before the body writes it), so the scope
@@ -383,7 +374,6 @@ fail-soft shape this language refuses, so the configuration rides the tape:
 
   ```
   x is 1000.0 / d is 5.0 … loop 30x: x is x + d ; d is d * 0.99
-  set_observer_thresholds of [0.01, 0.02, 0.1]
   print of (report of x)                    # live: converged
   ```
   ```
@@ -433,9 +423,8 @@ one tape: two invocations of a function are two frame instances, and a
 function-local can share a name with a module-level global. Matching by name
 made `--step` print `oscillating` for a binding whose live run said
 `diverging`, which is the same fail-soft shape the `O` records exist to
-remove. `tests/test_tape_observer_config.sh` section 8 pins all four shapes
-(leak forward, correct application, a parameter widened before its frame
-assigns, and a module-level binding assigned after the call).
+remove. These four replay shapes are currently untested pending restoration of the
+observer-configuration machinery in #1688.
 
 **Residual — a name the call chain cannot reach.** The reader walks the
 frame's `S`-record parents, which is the *call* chain; a closure's
@@ -457,8 +446,6 @@ the host-side causal structure the call depends on — re-running the
 underlying source under replay would re-execute real side effects
 that the original tape neither captured nor re-creates:
 
-- **Subprocess streaming I/O:** `proc_spawn`, `proc_write`,
-  `proc_read_line`, `proc_read`, `proc_close`, `proc_wait`.
   Replaying a recorded fd is meaningless — the child process from
   the recorded run does not exist; forking a fresh one would change
   the world a second time.
@@ -715,7 +702,8 @@ everywhere else in the runtime (version-and-reject, never migrate).
   writes and reads them as bools. A v5 tape recorded a predicate builtin's
   answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
   on a v6 binary would hand a number where the program now gets a bool; it is
-  refused instead (`tests/test_tape_observer_config.sh`, section 7). Within a
+  refused instead (covered by the existing replay kind-validation cases in
+  `tests/test_replay.sh`). Within a
   v6 tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return
@@ -730,8 +718,7 @@ everywhere else in the runtime (version-and-reject, never migrate).
   — so the compat decision for the bump is the standing one, and it is the
   loud half: a v2 tape is **refused** by `--step`, by the DAP server and by
   `EIGS_REPLAY` with exit 3, never classified at the defaults and presented
-  as the recorded run. Coverage: the `v2 (pre-O-record) tape is refused`
-  cases in `tests/test_tape_observer_config.sh`.
+  as the recorded run. This pre-`O` compatibility case is currently untested pending #1688.
 - On replay, a missing header, a malformed (torn) header, a different
   format version, a different runtime version, an empty tape, or an
   unopenable `EIGS_REPLAY` path each refuse loudly — hosted replay exits
@@ -765,10 +752,9 @@ boundaries are enforced; dev builds are on their honor.
 
 Regression coverage: the `version refuse` cases in `tests/test_replay.sh`
 plant each mismatch class (format, runtime, missing header, empty file)
-and require the exit-3 refusal. `tests/test_tape_observer_config.sh`
-additionally carries a REAL pre-v3 tape — `tests/fixtures/tape_v2_baseline.tape`,
-recorded by the v0.43.0 release binary — and requires the same exit-3 refusal
-from both `--step` and `EIGS_REPLAY`. That refusal is the deliberate answer to
+and require the exit-3 refusal. Refusal of a real pre-v3 tape by both `--step`
+and `EIGS_REPLAY` is currently untested pending #1688. That refusal remains the
+deliberate answer to
 "an old tape should still step": a v2 tape carries no `O` records, so stepping
 it would classify at the defaults and print a verdict the recorded run never
 gave. The knobs are exactly what the format bump exists for, so a tape that

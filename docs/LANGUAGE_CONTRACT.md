@@ -150,7 +150,6 @@ examples (executed by the suite).
   (`fetestexcept`) — rather than being undetectable (#865):
 
   ```eigenscript fragment risky='(vs) => vs[0]' xs=[1,2]
-  clear_math_flags of null
   result is risky of xs
   if (math_flags of null).overflow:
       print of "a value saturated; this result is contaminated"
@@ -172,7 +171,6 @@ examples (executed by the suite).
   NaN bytes collapse the same way. A buffer may retain the raw kernel value
   internally, but every scalar read applies this same collapse (or raises in
   strict mode), including structural equality and scalar reductions. Both bits are sticky until
-  `clear_math_flags`, so bracket a computation the way you would on an
   FPU. In strict mode, the default, every one of those out-of-domain
   calls and NaN sources raises a catchable `value` error naming the
   builtin instead of substituting (SPEC.md, *Strict mode*).
@@ -411,58 +409,11 @@ order.
 
 **Status:** Enforced — `tests/test_destructuring.eigs`.
 
-## Streaming subprocess I/O (0.13.0)
+## Streaming subprocess I/O (removed in #1677)
 
-**Promise:** A six-builtin surface for interacting with a child process
-over time, sibling to the all-at-once `exec_capture`. The child runs
-with its stdin and stdout connected to anonymous pipes that the parent
-reads/writes directly with `read(2)`/`write(2)` — no parent-side stdio
-buffering, no shell.
-
-- `proc_spawn of ["cmd", "arg1", ...]` — fork+execvp; returns
-  `[pid, in_fd, out_fd]`. On failure returns `[-1, -1, -1]`. The
-  child's stderr is inherited from the parent. Empty argv is the
-  failure sentinel.
-- `proc_write of [in_fd, "text"]` — full blocking write to the child's
-  stdin. Returns bytes written. After a partial write that hits an
-  error (e.g. EPIPE mid-stream), returns the partial byte count so a
-  caller retrying doesn't double-send the delivered prefix. Returns
-  `-1` only when the very first write failed (nothing delivered).
-  SIGPIPE is masked process-wide on first spawn so writes get EPIPE
-  instead of killing the parent.
-- `proc_read_line of out_fd` — reads bytes from the child's stdout
-  until `\n` or EOF. Returns the line without the trailing newline.
-  Returns `null` only when nothing was buffered before the
-  EOF-or-error; a mid-stream error or EOF that follows a partial line
-  returns the partial line (matches the EOF-with-partial path).
-- `proc_read of [out_fd, max_bytes]` — single `read(2)` of up to
-  `max_bytes` bytes (capped internally at 10 MB). Returns a **string**;
-  may return fewer bytes than requested. Returns `null` on EOF.
-  Text-only: EigenScript strings are C-terminated, so a NUL in the
-  child's output truncates the returned string at the first one. For
-  binary or possibly-NUL output use `proc_read_buf`.
-- `proc_read_buf of [out_fd, max_bytes]` — same semantics as
-  `proc_read` but returns a **VAL_BUFFER** (binary-safe; one
-  byte-as-double per element, indexable like any buffer). Returns
-  `null` on EOF. Use this for any byte stream that isn't guaranteed
-  to be NUL-free.
-- `proc_close of fd` — `close(2)`; idempotent (a bad fd is a no-op).
-- `proc_wait of pid` — blocking `waitpid`; returns the exit code,
-  `128 + signal` if the child was killed by a signal, or `-1` on
-  error.
-
-**Buffering note:** EigenScript's reads are unbuffered, but a child
-that uses stdio block-buffers its own output when stdout is not a
-tty. To get line-streaming behavior from such a child, invoke it via
-`stdbuf -oL` or `stdbuf -o0` (or use a child that flushes after every
-line). The runtime cannot change the child's stdio mode for it.
-
-**No automatic cleanup:** the returned fds and pid are raw OS
-resources, not GC-managed handles. Callers must `proc_close` both
-fds and `proc_wait` the pid to avoid zombies and fd leaks. A future
-revision may add a `with`-style scoped form; v1 stays explicit.
-
-**Status:** Enforced — `tests/test_proc_stream.eigs`.
+The former streaming child-process surface was removed in #1677 because no
+ecosystem consumer used it. `exec_capture` remains the supported all-at-once
+subprocess interface; the removed streaming contract has no executable test.
 
 ## Operator precedence
 

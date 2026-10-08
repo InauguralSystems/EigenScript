@@ -326,12 +326,10 @@ consequences are contracts you can rely on:
     `mkdir`/`env_get` (`0`/`""`), and the wrong-type launderers the sweep
     found (`split`, `scan_ints`, `buffer`, `channel_closed`, `f64_to_bytes`,
     `json_build`, `sort`, `random_int`, `random_hex`, `token_name`,
-    `tokenize_ids`...) raise on a wrong-typed argument; the documented
     sentinel for a valid-but-absent input — `index_of` miss `-1`,
     `file_exists` of a missing path `0` — is unchanged in both modes.
   Overflow saturation is the same in both modes. (Division and modulo by zero
   raise in *both* modes — no defined value.)
-  `str_from_bytes` and the `inflate`/`deflate` codecs (including their
   `zlib_*` forms) likewise reject a nonnumeric list element with a
   builtin-named `type_mismatch` error by default; `EIGS_STRICT=0` retains the
   numeric-zero substitution. `str_from_bytes` ends at a numeric byte that
@@ -1595,7 +1593,6 @@ trajectory (#861): the observed signal is the relative step
 `Δv / max(|v|, |v_prev|, scale)` (#1045) — the standard mixed-tolerance
 stopping criterion `|Δx| ≤ rtol·|x|` with the settle deadband as `rtol`
 and `dh_zero · scale` as the absolute floor (`scale` is
-`set_observer_scale`, default `0.001`) — so the starting value, the
 limit's magnitude and the **unit** the value is stored in do not matter.
 A loop converging to `5`, `5000` or `0.005` certifies identically, and a
 bank angle reads the same in radians and degrees. Non-numeric bindings (strings,
@@ -1732,8 +1729,6 @@ false
 classifier the predicate words and `report` use on numeric bindings —
 the two surfaces cannot disagree about one trajectory. Over a window of
 relative steps `Δv / max(|v|, |v_prev|, scale)` — `N` samples deep, 10
-by default, `set_observer_window of n` per state or
-`set_observer_window of ["x", n]` per binding (#1044; a mode slower than
 `N` samples of the observation cadence cannot fold inside the window) —
 `converged` is a full window all
 under the settle deadband; `stable` all under the small-motion band;
@@ -1749,9 +1744,6 @@ path length — a sinusoid sampled slower than its half-period).
 not imply a limit (the harmonic series' steps vanish; its sum does not
 converge), so it means *settled at the deadband* — the strongest claim a
 finite window supports. The deadband is the tolerance knob
-(`set_observer_thresholds`), the characteristic scale
-(`set_observer_scale`) is where the tolerance turns absolute, and the
-window depth (`set_observer_window`) is how many samples a verdict
 spans; the structure rules are deliberately threshold-free.
 
 **Trajectories cross call boundaries as snapshots** (#421). Observer state
@@ -2135,7 +2127,6 @@ error, and does not by itself fail the process.
 Tasks communicate through **mailboxes**. `task_send of [id, value]`
 appends a deep-copied message to task `id`'s FIFO mailbox (share-
 nothing, like channel sends); `task_recv of null` returns the next
-message or blocks cooperatively until one arrives. `task_try_recv`
 is the non-blocking form.
 
 A task learns its **own** id with `task_self of null` — the same
@@ -2173,7 +2164,6 @@ print of (task_join of worker_id)
 ### Virtual time
 
 `task_sleep of ticks` suspends a task until a **virtual clock** advances by
-`ticks`; `task_now of null` reads that clock. The clock is *logical*, not
 wall-clock: it starts at 0 and only ever jumps **forward to the earliest
 sleeper** when nothing else is runnable. So a program that sleeps runs in
 zero real time and — like the rest of the task layer — replays identically,
@@ -2185,8 +2175,7 @@ lands on the last wake time.
 log is []
 define nap(tag, ticks) as:
     task_sleep of ticks
-    t is task_now of null
-    log is append of [log, f"{tag}@{t}"]
+    log is append of [log, tag]
     return tag
 
 a is task_spawn of [nap, "a", 30]
@@ -2196,11 +2185,9 @@ task_join of a
 task_join of b
 task_join of c
 print of log
-print of (task_now of null)
 ```
 ```output
-["b@10", "c@20", "a@30"]
-30
+["b", "c", "a"]
 ```
 
 ### Seeded scheduling
@@ -2239,47 +2226,6 @@ print of order
 The same program with no seed prints the round-robin order
 `["a", "b", "c", "a", "b", "c"]`; a different seed prints a different — but
 equally reproducible — permutation.
-
-### Scheduler trace
-
-`task_sched_trace of 1` arms a trace of the scheduler's decisions (off by
-default; `EIGS_TASK_TRACE=1` arms it from the environment). While armed, every
-task **resume** appends one entry — `{seq, tick, task, cause}`: the entry's
-index, the virtual clock, the resumed task's id (`0` is the main task), and
-why it became runnable: `spawn` (its first run), `yield` (a `task_yield`
-re-enqueue), `sleep-wake` (the clock reached its `task_sleep` deadline),
-`join-release` (the task it joined finished), `kill-release` (the task it
-joined was killed), `recv-wake` (a message reached its empty mailbox), or
-`deadlock` (main re-enqueued to receive the catchable deadlock error).
-`task_sched_trace of null` reads the history; `task_sched_trace of 0` disarms
-it and discards it. The trace is a **pure reader**: arming it changes no pick,
-no clock and no seed — a traced run is byte-identical to the untraced one —
-and its entries are derived from the deterministic schedule rather than
-recorded on the trace tape, so a replayed run reproduces the same history.
-
-```eigenscript
-task_sched_trace of 1
-define step(tag) as:
-    task_yield of null
-    task_sleep of 10
-    return tag
-
-a is task_spawn of [step, "a"]
-b is task_spawn of [step, "b"]
-task_join of a
-task_join of b
-for e in task_sched_trace of null:
-    print of f"{e.seq} t={e.tick} task={e.task} {e.cause}"
-```
-```output
-0 t=0 task=257 spawn
-1 t=0 task=258 spawn
-2 t=0 task=257 yield
-3 t=0 task=258 yield
-4 t=10 task=257 sleep-wake
-5 t=10 task=258 sleep-wake
-6 t=10 task=0 join-release
-```
 
 ## Buffers
 

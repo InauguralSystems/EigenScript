@@ -173,125 +173,6 @@ Value* builtin_usleep(Value *arg) {
     return make_null();
 }
 
-/* screen_put of [row, col, char, color_code] — write a character at terminal position */
-Value* builtin_screen_put(Value *arg) {
-    STRICT_LIST_MAX(arg, 4, "screen_put");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-    int row = (int)eigs_list_num(arg, 0, __func__);
-    int col = (int)eigs_list_num(arg, 1, __func__);
-    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
-    const char *ch = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : " ";
-    /* #1637: an optional color; given, it must be a number (a bool raises
-     * instead of meaning "no color"). */
-    double color_d = 0;
-    if (arg->data.list.count >= 4) eigs_opt_num(arg->data.list.items[3], &color_d, "screen_put");
-    if (g_has_error) return make_null();
-    int color = (int)color_d;
-    if (color > 0)
-        printf("\033[%d;%dH\033[%dm%s", row, col, color, ch);
-    else
-        printf("\033[%d;%dH%s", row, col, ch);
-    return make_null();
-}
-
-/* screen_clear of null — clear terminal and hide cursor */
-Value* builtin_screen_clear(Value *arg) {
-    (void)arg;
-    printf("\033[2J\033[H\033[?25l");
-    fflush(stdout);
-    return make_null();
-}
-
-/* screen_end of null — show cursor and reset */
-Value* builtin_screen_end(Value *arg) {
-    (void)arg;
-    printf("\033[?25h\033[0m\n");
-    fflush(stdout);
-    return make_null();
-}
-
-/* screen_render of [entities_list, screen_w, screen_h, player_x, player_y, world_w, world_h]
- * entities_list: [[wx, wy, char, color], ...]
- * Clears screen, projects all entities, flushes once. All in C. */
-Value* builtin_screen_render(Value *arg) {
-    STRICT_LIST_MAX(arg, 7, "screen_render");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 7) return make_null();
-    Value *entities = arg->data.list.items[0];
-    int sw = (int)eigs_list_num(arg, 1, __func__);
-    int sh = (int)eigs_list_num(arg, 2, __func__);
-    double px = eigs_list_num(arg, 3, __func__);
-    double py = eigs_list_num(arg, 4, __func__);
-    double ww = eigs_list_num(arg, 5, __func__);
-    double wh = eigs_list_num(arg, 6, __func__);
-    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
-
-    if (!entities || entities->type != VAL_LIST) return make_null();
-    if (sw <= 0 || sh <= 0 || sw > 10000 || sh > 10000) return make_null();
-
-    double vw = sw * 0.5;
-    double vh = sh * 0.5;
-    double hvw = vw / 2.0;
-    double hvh = vh / 2.0;
-
-    /* Allocate screen buffer */
-    size_t buf_size = (size_t)sw * (size_t)sh;
-    char *chars = xcalloc_array(buf_size, 1);
-    int *cols = xcalloc_array(buf_size, sizeof(int));
-    memset(chars, ' ', buf_size);
-
-    /* Project entities */
-    for (int i = 0; i < entities->data.list.count; i++) {
-        Value *ent = entities->data.list.items[i];
-        if (!ent || ent->type != VAL_LIST || ent->data.list.count < 4) continue;
-        double ex = eigs_list_num(ent, 0, __func__);
-        double ey = eigs_list_num(ent, 1, __func__);
-        const char *ch = ent->data.list.items[2]->type == VAL_STR ? ent->data.list.items[2]->data.str : " ";
-        int color = (int)eigs_list_num(ent, 3, __func__);
-        if (g_has_error) { free(chars); free(cols); return make_null(); }
-
-        /* Torus delta */
-        double dx = ex - px;
-        double half_ww = ww * 0.5;
-        if (dx > half_ww) dx -= ww;
-        else if (dx < -half_ww) dx += ww;
-        double dy = ey - py;
-        double half_wh = wh * 0.5;
-        if (dy > half_wh) dy -= wh;
-        else if (dy < -half_wh) dy += wh;
-
-        int col = (int)((dx + hvw) / vw * sw);
-        int row = (int)((dy + hvh) / vh * sh);
-        if (col >= 0 && col < sw && row >= 0 && row < sh) {
-            int idx = row * sw + col;
-            chars[idx] = ch[0];
-            cols[idx] = color;
-        }
-    }
-
-    /* Dump to terminal */
-    printf("\033[H"); /* home */
-    int prev_color = 0;
-    for (int row = 0; row < sh; row++) {
-        for (int col = 0; col < sw; col++) {
-            int idx = row * sw + col;
-            int c = cols[idx];
-            if (c != prev_color) {
-                if (c > 0) printf("\033[%dm", c);
-                else printf("\033[0m");
-                prev_color = c;
-            }
-            putchar(chars[idx]);
-        }
-        putchar('\n');
-    }
-    printf("\033[0m");
-    fflush(stdout);
-
-    free(chars);
-    free(cols);
-    return make_null();
-}
-
 /* join of [list, separator] — concatenate list elements into a string.
  * C-backed for performance — single allocation instead of O(n²) concat. */
 Value* builtin_join(Value *arg) {
@@ -428,30 +309,6 @@ Value* builtin_text_builder_append_line(Value *arg) {
     text_builder_append_value(builder, arg->data.list.items[1]);
     text_builder_append_raw(builder, "\n", 1);
     return builder;
-}
-
-Value* builtin_text_builder_extend(Value *arg) {
-    STRICT_LIST_MAX(arg, 2, "text_builder_extend");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *builder = arg->data.list.items[0];
-    Value *values = arg->data.list.items[1];
-    if (!builder || builder->type != VAL_TEXT_BUILDER || !values || values->type != VAL_LIST) return make_null();
-    for (int i = 0; i < values->data.list.count; i++)
-        text_builder_append_value(builder, values->data.list.items[i]);
-    return builder;
-}
-
-Value* builtin_text_builder_part_count(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_TEXT_BUILDER, "text_builder_part_count", "a text builder", make_num(0));
-    return make_num(arg->data.text_builder.parts);
-}
-
-Value* builtin_text_builder_clear(Value *arg) {
-    if (!arg || arg->type != VAL_TEXT_BUILDER) return make_null();
-    arg->data.text_builder.len = 0;
-    arg->data.text_builder.parts = 0;
-    if (arg->data.text_builder.data) arg->data.text_builder.data[0] = '\0';
-    return arg;
 }
 
 Value* builtin_text_builder_to_string(Value *arg) {
@@ -699,32 +556,6 @@ Value* builtin_report(Value *arg) {
  * improving, oscillating, diverging, equilibrium) and the report builtin.
  * The defaults are precisely tuned. Only adjust for studying slow convergence
  * or when working with values whose entropy changes are unusually small. */
-Value* builtin_set_observer_thresholds(Value *arg) {
-    STRICT_LIST_MAX(arg, 3, "set_observer_thresholds");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        rt_error(EK_TYPE, 0, "set_observer_thresholds requires [dh_zero, dh_small, h_low]");
-        return make_null();
-    }
-    double dh_zero  = eigs_list_num(arg, 0, __func__);
-    double dh_small = eigs_list_num(arg, 1, __func__);
-    double h_low    = eigs_list_num(arg, 2, __func__);
-    if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
-    if (dh_zero <= 0 || dh_small <= 0 || h_low <= 0) {
-        rt_error(EK_VALUE, 0, "observer thresholds must be positive");
-        return make_null();
-    }
-    if (dh_zero >= dh_small) {
-        rt_error(EK_VALUE, 0, "dh_zero must be less than dh_small");
-        return make_null();
-    }
-    fprintf(stderr, "Warning: observer thresholds changed — dh_zero=%.6f dh_small=%.6f h_low=%.6f\n",
-            dh_zero, dh_small, h_low);
-    g_obs_dh_zero  = dh_zero;
-    g_obs_dh_small = dh_small;
-    g_obs_h_low    = h_low;
-    return make_null();
-}
-
 /* Get current observer thresholds.
  * Returns [dh_zero, dh_small, h_low]. */
 Value* builtin_get_observer_thresholds(Value *arg) {
@@ -755,118 +586,11 @@ Value* builtin_get_observer_thresholds(Value *arg) {
  * cycles with the fixed 10. Widening the binding's window to cover a
  * period lets the folding rule see the fold. The ceiling is the ring
  * counters' width; the floor is the motion bands' two-samples-per-half. */
-static int obs_window_arg(Value *v, const char *who) {
-    if (!v || v->type != VAL_NUM) {
-        rt_error(EK_TYPE, 0, "%s: window depth must be a number", who);
-        return -1;
-    }
-    double d = eigs_num_arg(v, __func__);
-    if (d != (int)d || d < OBSERVER_WINDOW_MIN || d > OBSERVER_WINDOW_MAX) {
-        rt_error(EK_VALUE, 0, "%s: window depth must be an integer in [%d, %d], got %g",
-                 who, OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX, d);
-        return -1;
-    }
-    return (int)d;
-}
-
 /* #1388: the module namespace env on `start`'s chain -- the env whose parent
  * is the builtin layer. Only module code can resolve a name into the layer,
  * so a caller that reached it always has one. */
-static Env *builtin_window_module_env(Env *start) {
-    for (Env *e = start; e; e = e->parent)
-        if (e->parent == g_builtin_env) return e;
-    return NULL;
-}
-
 /* set_observer_window of n | ["x", n] — set the default (n) or one binding's (["x", n]) observer window depth, 4..64 samples. */
-Value* builtin_set_observer_window(Value *arg) {
-    if (arg && arg->type == VAL_LIST) {
-        if (arg->data.list.count != 2 || !arg->data.list.items[0] ||
-            arg->data.list.items[0]->type != VAL_STR) {
-            rt_error(EK_TYPE, 0, "set_observer_window requires n or [\"name\", n]");
-            return make_null();
-        }
-        const char *name = arg->data.list.items[0]->data.str;
-        Value *nv = arg->data.list.items[1];
-        int n;
-        if (nv && nv->type == VAL_NUM && eigs_num_arg(nv, __func__) == 0.0) {
-            n = 0;   /* clear the override */
-        } else {
-            n = obs_window_arg(nv, "set_observer_window");
-            if (n < 0) return make_null();
-        }
-        Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
-        int slot = -1, depth = 0;
-        Env *target = eigs_name_is_reserved(name) ? NULL   /* #1322 */
-            : env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
-        if (!target || slot < 0) {
-            rt_error(EK_UNDEFINED_NAME, 0, "set_observer_window: no binding named '%s'", name);
-            return make_null();
-        }
-        /* #1388: the builtin layer is sealed -- no builtin writes into it.
-         * A module naming a builtin gets a per-MODULE override instead: a
-         * hidden `_#win:<name>` number in the module's namespace env (the
-         * `_` keeps it out of the snapshot, the `#` out of the live view and
-         * out of source). Every function of that module sees it; no other
-         * module, the host, or the layer does. */
-        if (target == g_builtin_env) {
-            Env *mod = builtin_window_module_env(start);
-            if (!mod) {
-                rt_error(EK_LIMIT, 0, "set_observer_window: no module scope for '%s'", name);
-                return make_null();
-            }
-            char key[256];
-            snprintf(key, sizeof(key), "_#win:%s", name);
-            Value *wv = make_num((double)n);
-            env_set_local(mod, key, wv);
-            val_decref(wv);
-            trace_obs_window_binding(name, n);
-            return make_null();
-        }
-        if (!observer_slot_set_window(target, slot, n)) {
-            rt_error(EK_LIMIT, 0, "set_observer_window: observer slot table full");
-            return make_null();
-        }
-        /* The override lives on an Env slot, so the tape writer's
-         * state-configuration diff cannot see it — record it explicitly, or a
-         * stepped tape classifies this binding at the default depth and
-         * prints a verdict the live run never gave (docs/TRACE.md). */
-        trace_obs_window_binding(name, n);
-        return make_null();
-    }
-    int n = obs_window_arg(arg, "set_observer_window");
-    if (n < 0) return make_null();
-    g_obs_window = n;
-    return make_null();
-}
-
 /* get_observer_window of null | "x" — the default window depth, or the depth in force on binding "x". */
-Value* builtin_get_observer_window(Value *arg) {
-    if (arg && arg->type == VAL_STR) {
-        const char *name = arg->data.str;
-        Env *start = g_builtin_call_env ? g_builtin_call_env : g_global_env;
-        int slot = -1, depth = 0;
-        Env *target = eigs_name_is_reserved(name) ? NULL   /* #1322 */
-            : env_resolve_chain(start, name, env_hash_name(name), &slot, &depth);
-        if (!target || slot < 0) {
-            rt_error(EK_UNDEFINED_NAME, 0, "get_observer_window: no binding named '%s'", name);
-            return make_null();
-        }
-        if (target == g_builtin_env) {   /* #1388: the module's own override */
-            char key[256];
-            snprintf(key, sizeof(key), "_#win:%s", name);
-            Env *mod = builtin_window_module_env(start);
-            Value *wv = mod ? env_get(mod, key) : NULL;
-            if (wv && wv->type == VAL_NUM && eigs_num_arg(wv, __func__) > 0)
-                return make_num(eigs_num_arg(wv, __func__));
-            return make_num((double)observer_slot_window(NULL));
-        }
-        const ObserverSlot *s = (slot < target->obs_cap) ? env_obs_slot(target, slot) : NULL;
-        return make_num((double)observer_slot_window(s));
-    }
-    return make_num((double)observer_slot_window(NULL));
-}
-
 /* #1045: the characteristic scale of the value channel — the magnitude
  * below which a value counts as "at zero". The relative step is
  * Δv / max(|v|, |v_prev|, scale): above the scale a verdict is unit-free
@@ -876,26 +600,7 @@ Value* builtin_get_observer_window(Value *arg) {
  * in the unit the binding is stored in — it is the one number a unit
  * choice still touches. */
 /* set_observer_scale of s — set the value channel's characteristic scale (the |v| below which a value counts as zero), s > 0. */
-Value* builtin_set_observer_scale(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) {
-        rt_error(EK_TYPE, 0, "set_observer_scale requires a number");
-        return make_null();
-    }
-    double sc = eigs_num_arg(arg, __func__);
-    if (!(sc > 0.0) || sc > 1e300) {
-        rt_error(EK_VALUE, 0, "observer scale must be positive and finite, got %g", sc);
-        return make_null();
-    }
-    g_obs_scale = sc;
-    return make_null();
-}
-
 /* get_observer_scale of null — the value channel's characteristic scale. */
-Value* builtin_get_observer_scale(Value *arg) {
-    (void)arg;
-    return make_num(g_obs_scale);
-}
-
 /* exit of N — request a clean process exit with code N (default 0). Sets the
  * unwind flag (g_has_error) so vm_run returns to main, plus g_exit_requested so
  * the unwind is UNCATCHABLE (a `try` must not swallow `exit`) and main exits
@@ -1112,12 +817,7 @@ Value* builtin_classify(Value *arg) {
  * These are IEEE-754's sticky exception flags. The results are unchanged —
  * the finite invariant is load-bearing for the JIT's bail comparison, the
  * observer's entropy, `str of`, and the JSON encoders — but the clamp is no
- * longer undetectable. Bracket a computation the way you would an FPU:
- *
- *     clear_math_flags of null
- *     result is risky_computation of xs
- *     if (math_flags of null).overflow:
- *         ...
+ * longer undetectable. `math_flags` exposes the state-lifetime sticky bits.
  */
 Value* builtin_math_flags(Value *arg) {
     (void)arg;
@@ -1130,12 +830,6 @@ Value* builtin_math_flags(Value *arg) {
     dict_set_owned(d, "invalid", iv);
     dict_set_owned(d, "underflow", uv);
     return d;
-}
-
-Value* builtin_clear_math_flags(Value *arg) {
-    (void)arg;
-    g_math_flags = 0;
-    return make_null();
 }
 
 Value* builtin_type(Value *arg) {
@@ -1783,15 +1477,6 @@ Value* builtin_json_build(Value *arg) {
     return result;
 }
 
-Value* builtin_json_raw(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_null();
-    /* #965: route the copy through the charging constructor (the xmalloc +
-     * xstrdup pair here was an uncharged payload of the same class). */
-    Value *v = make_str(arg->data.str);
-    v->type = VAL_JSON_RAW;
-    return v;
-}
-
 /* ================================================================
  * GENERIC STRING PRIMITIVES — language-level, no product logic
  * ================================================================ */
@@ -1985,96 +1670,6 @@ static int scan_integer_token_value(const char *start, size_t len, double *out_v
     if (neg) value = -value;
     if (out_value) *out_value = value;
     return 1;
-}
-
-/* scan_tokens of text
- * scan_tokens of [text, comment_marker]
- *
- * Scans whitespace-delimited tokens directly in C and returns rows of
- * [token_text, line, col, start_offset, end_offset]. Lines are 1-based,
- * columns and offsets are 0-based, and end_offset is exclusive. If
- * comment_marker is non-empty, lines whose first non-whitespace character
- * matches its first byte are skipped. */
-Value* builtin_scan_tokens(Value *arg) {
-    STRICT_LIST_MAX(arg, 2, "scan_tokens");
-    const char *str = NULL;
-    char comment_marker = '\0';
-
-    if (arg && arg->type == VAL_STR) {
-        str = arg->data.str;
-    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        Value *text_val = arg->data.list.items[0];
-        if (text_val && text_val->type == VAL_STR) str = text_val->data.str;
-        if (arg->data.list.count >= 2) {
-            Value *comment_val = arg->data.list.items[1];
-            if (comment_val && comment_val->type == VAL_STR && comment_val->data.str[0])
-                comment_marker = comment_val->data.str[0];
-        }
-    }
-
-    /* #971 Phase D: no string in the argument — a wrong type read as
-     * "no tokens". Coercion shape: raise under strict, unchanged otherwise.
-     * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
-     * allocated first would be abandoned by the raise (see write_bytes in
-     * builtins_host.c, which frees instead because its buffer is raw). */
-    STRICT_REQUIRE(!str, "scan_tokens", "a string or [string, comment_marker]");
-
-    Value *out = make_list(128);
-    if (!str) return out;
-
-    const char *base = str;
-    const char *p = str;
-    int line = 1;
-    int col = 0;
-    int line_leading = 1;
-
-    while (*p) {
-        unsigned char ch = (unsigned char)*p;
-        if (isspace(ch)) {
-            if (*p == '\n') {
-                line++;
-                col = 0;
-                line_leading = 1;
-            } else {
-                col++;
-            }
-            p++;
-            continue;
-        }
-
-        if (comment_marker && line_leading && *p == comment_marker) {
-            while (*p && *p != '\n') {
-                p++;
-                col++;
-            }
-            continue;
-        }
-
-        line_leading = 0;
-        const char *start = p;
-        int token_line = line;
-        int token_col = col;
-        while (*p && !isspace((unsigned char)*p)) {
-            p++;
-            col++;
-        }
-
-        size_t len = (size_t)(p - start);
-        char *token = xmalloc(len + 1);
-        memcpy(token, start, len);
-        token[len] = '\0';
-
-        Value *row = make_list(5);
-        list_append_owned(row, make_str(token));
-        list_append_owned(row, make_num((double)token_line));
-        list_append_owned(row, make_num((double)token_col));
-        list_append_owned(row, make_num((double)(start - base)));
-        list_append_owned(row, make_num((double)(p - base)));
-        list_append_owned(out, row);  /* adopt the freshly-built row */
-        free(token);
-    }
-
-    return out;
 }
 
 /* scan_int_tokens of text
@@ -2665,15 +2260,6 @@ Value* builtin_path_ext(Value *arg) {
 }
 
 
-/* free_val of value → frees a heap-allocated Value tree. Returns null.
- * Use this to release large temporary results (e.g. tokenize_with_names output)
- * when the arena is not active. No-op on arena-allocated values. */
-Value* builtin_free_val(Value *arg) {
-    if (arg && !g_arena.active) val_decref(arg);
-    return make_null();
-}
-
-
 /* ================================================================
  * BUILTIN: build_corpus — 3-pass corpus builder in C
  * ================================================================
@@ -2902,35 +2488,6 @@ Value* builtin_arena_stats(Value *arg) {
     return make_num((double)g_arena.total_allocated);
 }
 
-/* ==== BUILTIN: heap_inuse ==== */
-/* heap_inuse of null — bytes currently in use by the C allocator
- * (glibc mallinfo2().uordblks): LIVE allocated bytes, so unlike RSS it is
- * immune to resident free-heap slack — a fresh leak shows up in the very
- * first batch, not only after the slack is exhausted (#770). Debug
- * surface; exists so the per-request leak gate
- * (tests/test_http_rss_growth.sh) can watch exact accounting instead of
- * the RSS proxy.
- *
- * Constraints, both inherited by that gate (which is already Linux-only
- * because it reads /proc):
- *   - glibc only. Returns null where mallinfo2 does not exist (musl,
- *     macOS, freestanding libc). The freestanding profile is carved out
- *     explicitly (not just by __GLIBC__): it compiles on a glibc host,
- *     so the host's mallinfo2 would otherwise leak into its import
- *     surface and no HAL/mini-libc provides it (tools/freestanding_check.sh).
- *   - mallinfo2 reports the MAIN arena only. Sequential request traffic
- *     (what the gate drives) is served on the main arena, so per-request
- *     leaks on that path are fully counted; allocations pinned to a
- *     contended per-thread arena are not. */
-Value* builtin_heap_inuse(Value *arg) {
-    (void)arg;
-#if defined(__GLIBC__) && !EIGENSCRIPT_FREESTANDING
-    TRACE_NONDET_RET("heap_inuse", make_num((double)mallinfo2().uordblks));
-#else
-    return make_null();
-#endif
-}
-
 /* Free a TokenList's malloc'd storage (token array and str_vals) */
 void free_tokenlist(TokenList *tl) {
     if (!tl->tokens) return;
@@ -2959,63 +2516,6 @@ void tokenlist_user_spelling(TokenList *tl) {
             t->str_val = xstrdup("str");
         }
     }
-}
-
-/* ==== BUILTIN: tokenize_ids ==== */
-/* tokenize_ids of string → list of token type IDs (integers).
- * Exposes the runtime's own tokenizer to .eigs code.
- * The learner sees its world the way the runtime does. */
-Value* builtin_tokenize_ids(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "tokenize_ids", "a source string", make_list(0));  /* #971 Phase D */
-    const char *src = arg->data.str;
-    if (!src || !src[0]) return make_list(0);
-
-    TokenList tl = tokenize(src);
-    Value *result = make_list(tl.count);
-    for (int i = 0; i < tl.count; i++) {
-        list_append_owned(result, make_num((double)tl.tokens[i].type));
-    }
-    free_tokenlist(&tl);
-    return result;
-}
-
-/* ==== BUILTIN: tokenize_with_names ==== */
-/* tokenize_with_names of string → list of [type_id, name_str] pairs.
- * Like tokenize_ids, but preserves the identifier name (for IDENT), the
- * string content (for STR), and the number as a string (for NUM). Other
- * token types get an empty string. Used by corpus builders that need
- * per-identifier information for vocabulary enrichment. */
-Value* builtin_tokenize_with_names(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "tokenize_with_names", "a source string", make_list(0));  /* #971 Phase D */
-    const char *src = arg->data.str;
-    if (!src || !src[0]) return make_list(0);
-
-    TokenList tl = tokenize(src);
-    tokenlist_user_spelling(&tl);
-    Value *result = make_list(tl.count);
-    char numbuf[64];
-    for (int i = 0; i < tl.count; i++) {
-        Value *pair = make_list(2);
-        list_append_owned(pair, make_num((double)tl.tokens[i].type));
-        const char *name = "";
-        if (tl.tokens[i].type == TOK_IDENT && tl.tokens[i].str_val) {
-            name = tl.tokens[i].str_val;
-        } else if (tl.tokens[i].type == TOK_STR && tl.tokens[i].str_val) {
-            name = tl.tokens[i].str_val;
-        } else if (tl.tokens[i].type == TOK_NUM) {
-            double d = tl.tokens[i].num_val;
-            if (d == (double)(long)d) {
-                snprintf(numbuf, sizeof(numbuf), "%ld", (long)d);
-            } else {
-                snprintf(numbuf, sizeof(numbuf), "%g", d);
-            }
-            name = numbuf;
-        }
-        list_append_owned(pair, make_str(name)); /* make_str copies the string */
-        list_append_owned(result, pair);  /* adopt the freshly-built pair */
-    }
-    free_tokenlist(&tl);
-    return result;
 }
 
 /* ==== BUILTIN: token_name ==== */
@@ -3764,12 +3264,11 @@ static const char *SANDBOX_ALLOW[] = {
     "buf_peak", "buf_resample_linear", "buf_scale_range", "buf_set",
     "buf_to_pcm16le",
     "str_from_bytes", "text_builder_new", "text_builder_append",
-    "text_builder_append_line", "text_builder_extend", "text_builder_clear",
-    "text_builder_to_string", "text_builder_part_count",
+    "text_builder_append_line", "text_builder_to_string",
     /* json (string <-> value, pure) */
-    "json_build", "json_decode", "json_encode", "json_path", "json_raw",
+    "json_build", "json_decode", "json_encode", "json_path",
     /* DEFLATE codecs (pure bytes <-> bytes; #684) */
-    "deflate", "inflate", "zlib_deflate", "zlib_inflate",
+    "inflate",
     /* path string manipulation (no fs access) */
     "path_base", "path_dir", "path_ext", "path_join",
     /* type / value utilities */
@@ -3780,8 +3279,7 @@ static const char *SANDBOX_ALLOW[] = {
      * not the sealed sandbox environment. */
     "observe", "report", "get_observer_thresholds", "classify",
     /* tokenizer / parser introspection (pure over strings) */
-    "tokenize_ids", "tokenize_with_names", "token_name", "scan_ints",
-    "scan_int_tokens", "scan_tokens", "try_parse",
+    "token_name", "scan_ints", "scan_int_tokens", "try_parse",
     /* spatial queries (pure over lists) */
     "nearest_in_range", "nearest_in_range_all",
     /* control / output */
@@ -4806,7 +4304,6 @@ static void *thread_entry(void *arg) {
                 list_append(l, h->fn_args[i]);
             bin_arg = l;
         }
-        int consumes_arg = (fn->data.builtin == builtin_free_val);
         Value *result = eigs_call_builtin(fn->data.builtin, bin_arg);
         /* #720: this site owns bin_arg (increfed above, or freshly built)
          * and drops it below, so it runs the VM's own contract —
@@ -4815,10 +4312,10 @@ static void *thread_entry(void *arg) {
          * direct child and used to hand the handle a ref it never held. */
         if (!result) {
             result = make_null();
-        } else if (!consumes_arg) {
+        } else {
             vm_borrow_compensate(bin_arg, result, 1, fn, NULL);
         }
-        if (!consumes_arg && result != bin_arg) val_decref(bin_arg);
+        if (result != bin_arg) val_decref(bin_arg);
         /* The handle takes over the now-owned ref (see the VAL_FN path
          * above) — no extra incref, which would leak. */
         h->result = result;
@@ -5658,14 +5155,6 @@ Value* builtin_task_recv(Value *arg) {
     return make_null();   /* placeholder: the scheduler delivers the message on resume */
 }
 
-/* task_try_recv of null — non-blocking receive: the next message, or null if
- * the mailbox is empty. Never suspends. */
-Value* builtin_task_try_recv(Value *arg) {
-    (void)arg;
-    if (!g_task_sched || !task_mbox_has()) return make_null();
-    return task_mbox_pop();
-}
-
 /* task_kill of id — deterministically tear down task `id`: drop its mailbox
  * and suspended slice, wake any joiner with an `interrupt` error, mark it
  * dead. Returns 1 if killed, 0 for a bad/self/finished target. */
@@ -5741,14 +5230,6 @@ Value* builtin_must_not_yield(Value *arg) {
     return r ? r : make_null();
 }
 
-/* task_now of null → the current virtual-clock value (a number, 0 before any
- * task_sleep and 0 when no scheduler is active). Deterministic; reads a logical
- * counter, so it records no tape nondet. */
-Value* builtin_task_now(Value *arg) {
-    (void)arg;
-    return make_num(task_virtual_now());
-}
-
 /* task_self of null → the running task's id (a number, in the same integer
  * space task_spawn returns; the main task is 0, including before any task has
  * been spawned). Lets a worker hand out its own id as a reply address — the
@@ -5790,30 +5271,6 @@ Value* builtin_task_sched_seed(Value *arg) {
         return make_null();
     }
     task_sched_set_seed(eigs_num_arg(arg, __func__));
-    return make_null();
-}
-
-/* task_sched_trace of null — the cooperative scheduler's decision history
- * (#846): a list of {seq, tick, task, cause} dicts, one per task RESUME since
- * the trace was armed, in schedule order. `task_sched_trace of 1` arms it,
- * `task_sched_trace of 0` disarms it and discards the history; EIGS_TASK_TRACE=1
- * arms it from the environment. Off by default. A PURE READER of the schedule:
- * arming changes no pick, no clock, no seed — a traced run is byte-identical
- * to the untraced one — and the entries derive from the deterministic
- * schedule, so they are not tape records and replay reproduces them. Arming
- * never creates a scheduler (see EigsThread.task_trace_on). */
-Value* builtin_task_sched_trace(Value *arg) {
-    if (!arg || arg->type == VAL_NULL) return task_sched_trace_read();
-    if (arg->type != VAL_NUM) {
-        rt_error(EK_TYPE, 0, "task_sched_trace takes null (read), 1 (arm) or 0 (disarm + clear)");
-        return make_null();
-    }
-    if (eigs_num_arg(arg, __func__) != 0) {
-        g_task_trace_on = 1;
-    } else {
-        g_task_trace_on = 0;
-        task_sched_trace_clear();
-    }
     return make_null();
 }
 
@@ -6553,11 +6010,6 @@ Value* builtin_dispatch(Value *arg) {
         /* free_val CONSUMES a reference, and fn_arg is a child of our own
          * arg vector, which still points at it — lend it a ref of our own
          * making rather than the arg vector's (#720). */
-        if (fn->data.builtin == builtin_free_val) {
-            if (fn_arg) val_incref(fn_arg);
-            Value *consumed = eigs_call_builtin(fn->data.builtin, fn_arg);
-            return consumed ? consumed : make_null();
-        }
         Value *result = eigs_call_builtin(fn->data.builtin, fn_arg);
         if (!result) return make_null();
         /* #720: the inner builtin may return a borrow of fn_arg, which is a
@@ -6652,12 +6104,6 @@ static Value* builtin_dot(Value *arg) {
  * checker nobody has watched fail is not a checker. Registered only in
  * sanitizer builds AND under EIGS_BORROW_GUARD_SELFTEST, so fuzzers
  * (whose harnesses are ASan builds) can never reach a deliberate abort. */
-static Value* builtin_borrow_guard_selftest(Value *arg) {
-    if (arg && arg->type == VAL_LIST &&
-        arg->data.list.count > VM_BORROW_SCAN_CAP)
-        return arg->data.list.items[arg->data.list.count - 1];
-    return NULL;   /* VM substitutes null: not enough args to violate */
-}
 #endif
 
 /* ==== #1637: the builtin-call bool gate (eigs_bool_gate, eigenscript.h) ====
@@ -6686,7 +6132,6 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
     {"observe",        BA_ANY,  "the observer measures bools (entropy 0/1)"},
     {"classify",       BA_ANY,  "the observer classifies any value"},
     {"report",         BA_ANY,  "the bytecode twin of OP_REPORT_NAME, which reports any value"},
-    {"free_val",       BA_ANY,  "releases any value"},
     {"coalesce",       BA_ANY,  "picks the first non-null of any values"},
     {"len",            BA_ELEMS, "counts a list's elements, whatever they are"},
     {"assert",         BA_ARG | BA_POS(0), "the condition is a bool"},
@@ -6809,9 +6254,6 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "text_builder_new", make_builtin(builtin_text_builder_new));
     env_set_local_owned(env, "text_builder_append", make_builtin(builtin_text_builder_append));
     env_set_local_owned(env, "text_builder_append_line", make_builtin(builtin_text_builder_append_line));
-    env_set_local_owned(env, "text_builder_extend", make_builtin(builtin_text_builder_extend));
-    env_set_local_owned(env, "text_builder_part_count", make_builtin(builtin_text_builder_part_count));
-    env_set_local_owned(env, "text_builder_clear", make_builtin(builtin_text_builder_clear));
     env_set_local_owned(env, "text_builder_to_string", make_builtin(builtin_text_builder_to_string));
     env_set_local_owned(env, "bit_and", make_builtin(builtin_bit_and));
     env_set_local_owned(env, "bit_or", make_builtin(builtin_bit_or));
@@ -6819,10 +6261,6 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "bit_not", make_builtin(builtin_bit_not));
     env_set_local_owned(env, "bit_shl", make_builtin(builtin_bit_shift_left));
     env_set_local_owned(env, "bit_shr", make_builtin(builtin_bit_shift_right));
-    env_set_local_owned(env, "screen_put", make_builtin(builtin_screen_put));
-    env_set_local_owned(env, "screen_clear", make_builtin(builtin_screen_clear));
-    env_set_local_owned(env, "screen_end", make_builtin(builtin_screen_end));
-    env_set_local_owned(env, "screen_render", make_builtin(builtin_screen_render));
     env_set_local_owned(env, "len", make_builtin(builtin_len));
     env_set_local_owned(env, "str", make_builtin(builtin_str));
     /* f-string conversion (#1322): unspellable in source, so never shadowed. */
@@ -6830,12 +6268,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "num", make_builtin(builtin_num));
     env_set_local_owned(env, "append", make_builtin(builtin_append));
     env_set_local_owned(env, "report", make_builtin(builtin_report));
-    env_set_local_owned(env, "set_observer_thresholds", make_builtin(builtin_set_observer_thresholds));
     env_set_local_owned(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
-    env_set_local_owned(env, "set_observer_window", make_builtin(builtin_set_observer_window));
-    env_set_local_owned(env, "get_observer_window", make_builtin(builtin_get_observer_window));
-    env_set_local_owned(env, "set_observer_scale", make_builtin(builtin_set_observer_scale));
-    env_set_local_owned(env, "get_observer_scale", make_builtin(builtin_get_observer_scale));
     env_set_local_owned(env, "assert", make_builtin(builtin_assert));
     env_set_local_owned(env, "exit", make_builtin(builtin_exit));
     env_set_local_owned(env, "throw", make_builtin(builtin_throw));
@@ -6848,12 +6281,10 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "classify", make_builtin(builtin_classify));
     env_set_local_owned(env, "type", make_builtin(builtin_type));
     env_set_local_owned(env, "math_flags", make_builtin(builtin_math_flags));            /* #865 */
-    env_set_local_owned(env, "clear_math_flags", make_builtin(builtin_clear_math_flags));
     env_set_local_owned(env, "json_encode", make_builtin(builtin_json_encode));
     env_set_local_owned(env, "json_decode", make_builtin(builtin_json_decode));
     env_set_local_owned(env, "coalesce", make_builtin(builtin_coalesce));
     env_set_local_owned(env, "json_build", make_builtin(builtin_json_build));
-    env_set_local_owned(env, "json_raw", make_builtin(builtin_json_raw));
     env_set_local_owned(env, "json_path", make_builtin(builtin_json_path));
     env_set_local_owned(env, "str_lower", make_builtin(builtin_str_lower));
     env_set_local_owned(env, "str_upper", make_builtin(builtin_str_upper));
@@ -6883,12 +6314,10 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "path_dir", make_builtin(builtin_path_dir));
     env_set_local_owned(env, "path_base", make_builtin(builtin_path_base));
     env_set_local_owned(env, "path_ext", make_builtin(builtin_path_ext));
-    env_set_local_owned(env, "free_val", make_builtin(builtin_free_val));
     env_set_local_owned(env, "contains", make_builtin(builtin_contains));
     env_set_local_owned(env, "starts_with", make_builtin(builtin_starts_with));
     env_set_local_owned(env, "split", make_builtin(builtin_split));
     env_set_local_owned(env, "scan_ints", make_builtin(builtin_scan_ints));
-    env_set_local_owned(env, "scan_tokens", make_builtin(builtin_scan_tokens));
     env_set_local_owned(env, "scan_int_tokens", make_builtin(builtin_scan_int_tokens));
     env_set_local_owned(env, "trim", make_builtin(builtin_trim));
     env_set_local_owned(env, "str_replace", make_builtin(builtin_str_replace));
@@ -6929,8 +6358,6 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "sgd_update_rows", make_builtin(builtin_sgd_update_rows));
     env_set_local_owned(env, "numerical_grad_cols", make_builtin(builtin_numerical_grad_cols));
     env_set_local_owned(env, "sgd_update_cols", make_builtin(builtin_sgd_update_cols));
-    env_set_local_owned(env, "tokenize_ids", make_builtin(builtin_tokenize_ids));
-    env_set_local_owned(env, "tokenize_with_names", make_builtin(builtin_tokenize_with_names));
     env_set_local_owned(env, "token_name", make_builtin(builtin_token_name));
     env_set_local_owned(env, "chr", make_builtin(builtin_chr));
     env_set_local_owned(env, "hex", make_builtin(builtin_hex));
@@ -6950,7 +6377,6 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "arena_mark", make_builtin(builtin_arena_mark));
     env_set_local_owned(env, "arena_reset", make_builtin(builtin_arena_reset));
     env_set_local_owned(env, "arena_stats", make_builtin(builtin_arena_stats));
-    env_set_local_owned(env, "heap_inuse", make_builtin(builtin_heap_inuse));
 
     /* ---- Concurrency builtins ---- */
     env_set_local_owned(env, "spawn", make_builtin(builtin_spawn));
@@ -6963,12 +6389,9 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "task_join", make_builtin(builtin_task_join));
     env_set_local_owned(env, "task_send", make_builtin(builtin_task_send));
     env_set_local_owned(env, "task_recv", make_builtin(builtin_task_recv));
-    env_set_local_owned(env, "task_try_recv", make_builtin(builtin_task_try_recv));
     env_set_local_owned(env, "task_kill", make_builtin(builtin_task_kill));
     env_set_local_owned(env, "task_sleep", make_builtin(builtin_task_sleep));
-    env_set_local_owned(env, "task_now", make_builtin(builtin_task_now));
     env_set_local_owned(env, "task_sched_seed", make_builtin(builtin_task_sched_seed));
-    env_set_local_owned(env, "task_sched_trace", make_builtin(builtin_task_sched_trace));
     env_set_local_owned(env, "thread_join", make_builtin(builtin_thread_join));
     env_set_local_owned(env, "channel", make_builtin(builtin_channel));
     env_set_local_owned(env, "send", make_builtin(builtin_send));
@@ -6991,9 +6414,6 @@ void register_builtins(Env *env) {
     /* DEFLATE codecs (#684) — registered unconditionally; the bodies
      * raise "compiled without zlib support" when EIGENSCRIPT_EXT_ZLIB=0. */
     env_set_local_owned(env, "inflate", make_builtin(builtin_inflate));
-    env_set_local_owned(env, "zlib_inflate", make_builtin(builtin_zlib_inflate));
-    env_set_local_owned(env, "deflate", make_builtin(builtin_deflate));
-    env_set_local_owned(env, "zlib_deflate", make_builtin(builtin_zlib_deflate));
     env_set_local_owned(env, "buf_copy", make_builtin(builtin_buf_copy));
     env_set_local_owned(env, "buf_mix", make_builtin(builtin_buf_mix));
     env_set_local_owned(env, "buf_scale_range", make_builtin(builtin_buf_scale_range));
@@ -7045,12 +6465,6 @@ void register_builtins(Env *env) {
      * composes the global env through this one seam — new registrars go
      * HERE, never at a call site. */
     register_store_builtins(env);
-
-#if EIGS_BORROW_GUARD
-    /* #548 guard self-test hook — see builtin_borrow_guard_selftest. */
-    if (eigs_env_flag("EIGS_BORROW_GUARD_SELFTEST"))
-        env_set_local_owned(env, "__borrow_guard_selftest", make_builtin(builtin_borrow_guard_selftest));
-#endif
 
     /* ---- Host-only builtins (#741): one registrar, whole-TU gated ---- */
     register_host_builtins(env);

@@ -55,7 +55,7 @@ ledger_count() {
     case "$count" in ''|*[!0-9]*) return 1;; esac
     printf '%s' "$count"
 }
-# stdin is pinned to /dev/null: test_terminal's raw_key reads it, and with the
+# stdin is pinned to /dev/null: terminal input probes read it, and with the
 # harness's inherited stdin the record arm hung (rc 124) while the replay arm
 # exited 3 -- a phantom row from the environment, not the tape.
 run() {

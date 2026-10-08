@@ -157,43 +157,17 @@ else
     fail "strict replay" "rc=$STRICT_RC err='$STRICT_ERR'"
 fi
 
-# ---- Non-replayable boundary (#148): subprocess/concurrency builtins ----
-# Each of the seven builtins below must refuse to run under EIGS_REPLAY and
+# ---- Non-replayable boundary (#148): execution/concurrency builtins ----
+# Each builtin below must refuse to run under EIGS_REPLAY and
 # raise a catchable runtime error rather than silently re-executing real
 # side effects against a tape that has no host-side causal structure.
 # #1072: the boundary check runs AFTER argument validation now (a wrong-typed
 # call must be the same error in both modes), so every probe passes a
-# WELL-FORMED argument. `proc_spawn of ["true"]` hands the STRING "true" (#405:
-# a bare literal list after `of` is the argument list), which the old order
-# refused only because the block ran first; `[["true"]]` is the one-list call.
+# WELL-FORMED argument; `[["true"]]` passes the command list as one argument.
 cat > "$TMPDIR/p_block.eigs" <<'EOF'
 caught is 0
 try:
     r is exec_capture of [["true"]]
-catch e:
-    caught is caught + 1
-try:
-    r is proc_spawn of [["true"]]
-catch e:
-    caught is caught + 1
-try:
-    r is proc_write of [1, "x"]
-catch e:
-    caught is caught + 1
-try:
-    r is proc_read_line of 0
-catch e:
-    caught is caught + 1
-try:
-    r is proc_read of [0, 16]
-catch e:
-    caught is caught + 1
-try:
-    r is proc_close of 0
-catch e:
-    caught is caught + 1
-try:
-    r is proc_wait of 1
 catch e:
     caught is caught + 1
 ch is channel of null
@@ -217,16 +191,16 @@ EOF
 # is consumed. The script just counts how many calls raised.
 echo "$VHDR" > "$TMPDIR/block.tape"
 BLOCK_OUT=$(EIGS_REPLAY="$TMPDIR/block.tape" "$EIGS" "$TMPDIR/p_block.eigs" 2>/dev/null)
-if [ "$BLOCK_OUT" = "10" ]; then
-    ok "replay-block: all 10 subprocess/channel builtins refuse under EIGS_REPLAY (#148)"
+if [ "$BLOCK_OUT" = "4" ]; then
+    ok "replay-block: all 4 exec/channel builtins refuse under EIGS_REPLAY (#148)"
 else
-    fail "replay-block" "caught=$BLOCK_OUT (expected 10)"
+    fail "replay-block" "caught=$BLOCK_OUT (expected 4)"
 fi
 
 # And the error text identifies the boundary so the user can find docs/TRACE.md.
 cat > "$TMPDIR/p_block_msg.eigs" <<'EOF'
 try:
-    r is proc_spawn of [["true"]]
+    r is exec_capture of [["true"]]
 catch e:
     print of e
 EOF
@@ -505,31 +479,6 @@ else
     fail "clock_unix replay" "rec='$REC_CU' rep='$REP_CU'"
 fi
 
-# ---- heap_inuse is a taped nondeterminism source ----
-# Allocator usage varies with process state. Replace its recorded value with a
-# sentinel so replay can prove it consumes the tape rather than sampling the
-# replay process's live allocator.
-cat > "$TMPDIR/p_heap_inuse.eigs" <<'EOF'
-print of (heap_inuse of null)
-EOF
-
-TAPE_HI="$TMPDIR/heap_inuse.tape"
-REC_HI=$(EIGS_TRACE="$TAPE_HI" "$EIGS" "$TMPDIR/p_heap_inuse.eigs" 2>&1)
-if [ "$REC_HI" = "null" ]; then
-    echo "  SKIP: heap_inuse replay (mallinfo2 unavailable)"
-elif grep -q '^N [0-9][0-9]* heap_inuse=' "$TAPE_HI"; then
-    sed -E 's/^N ([0-9][0-9]*) heap_inuse=.*/N \1 heap_inuse=424242/' "$TAPE_HI" > "$TMPDIR/heap_inuse-edited.tape"
-    mv "$TMPDIR/heap_inuse-edited.tape" "$TAPE_HI"
-    REP_HI=$(EIGS_REPLAY="$TAPE_HI" "$EIGS" "$TMPDIR/p_heap_inuse.eigs" 2>&1)
-    if [ "$REP_HI" = "424242" ]; then
-        ok "heap_inuse replay: recorded allocator usage wins on replay"
-    else
-        fail "heap_inuse replay" "rec='$REC_HI' rep='$REP_HI'"
-    fi
-else
-    fail "heap_inuse trace" "missing N record (value='$REC_HI')"
-fi
-
 # ---- #579: audio capture is a taped nondeterminism source ----
 # Gated: needs a gfx build AND a working capture device (the dummy SDL
 # driver provides a silent one; the CI dev image has no libSDL2, so this
@@ -575,6 +524,61 @@ EOF
     fi
 else
     echo "  SKIP: capture replay (no gfx build / no capture device)"
+fi
+
+# The tape format and its defensive reader survive the observer-configuration
+# setters removed in #1677. Keep these checks with the general replay contract.
+cat > "$TMPDIR/p_tape_contract.eigs" <<'EOF'
+x is 1
+print of x
+EOF
+CONTRACT_TAPE="$TMPDIR/contract.tape"
+EIGS_TRACE="$CONTRACT_TAPE" "$EIGS" "$TMPDIR/p_tape_contract.eigs" >/dev/null 2>&1
+if head -1 "$CONTRACT_TAPE" | grep -q '^V 6 '; then
+    ok "tapes written by this build stamp format v6"
+else
+    fail "format stamp" "$(head -1 "$CONTRACT_TAPE")"
+fi
+
+# A minimal old header is sufficient: version refusal precedes record parsing.
+OLD_TAPE="$TMPDIR/old-v2.tape"
+printf 'V 2 0.43.0\n' > "$OLD_TAPE"
+echo q | "$EIGS" --step "$OLD_TAPE" "$TMPDIR/p_tape_contract.eigs" \
+    >/dev/null 2>"$TMPDIR/old-step.err"
+OLD_STEP_RC=$?
+if [ "$OLD_STEP_RC" -eq 3 ] && grep -q 'tape format v2' "$TMPDIR/old-step.err"; then
+    ok "a handcrafted pre-v3 tape is refused by --step with exit 3"
+else
+    fail "pre-v3 --step refusal" "rc=$OLD_STEP_RC $(cat "$TMPDIR/old-step.err")"
+fi
+EIGS_REPLAY="$OLD_TAPE" "$EIGS" "$TMPDIR/p_tape_contract.eigs" \
+    >/dev/null 2>"$TMPDIR/old-replay.err"
+OLD_REPLAY_RC=$?
+if [ "$OLD_REPLAY_RC" -eq 3 ] && grep -q 'format v2' "$TMPDIR/old-replay.err"; then
+    ok "a handcrafted pre-v3 tape is refused by EIGS_REPLAY with exit 3"
+else
+    fail "pre-v3 replay refusal" "rc=$OLD_REPLAY_RC $(cat "$TMPDIR/old-replay.err")"
+fi
+
+# O records remain part of v6 tapes and the stepper still folds them. Bound the
+# multiplicative configuration-record x binding work even though programs can
+# no longer create those records through observer setter builtins.
+WORK_TAPE="$TMPDIR/observer-work-limit.tape"
+head -2 "$CONTRACT_TAPE" > "$WORK_TAPE"
+for _ in $(seq 1 1000); do
+    echo 'O 0 cfg 0.001 0.01 0.1 10 0.001' >> "$WORK_TAPE"
+done
+echo 'L 0 1' >> "$WORK_TAPE"
+for i in $(seq 1 1001); do
+    echo "A 0 x$i=1" >> "$WORK_TAPE"
+done
+echo q | "$EIGS" --step "$WORK_TAPE" "$TMPDIR/p_tape_contract.eigs" \
+    >/dev/null 2>"$TMPDIR/work-limit.err"
+WORK_RC=$?
+if [ "$WORK_RC" -eq 3 ] && grep -q 'observer replay exceeds the .*work limit' "$TMPDIR/work-limit.err"; then
+    ok "multiplicative observer replay work is refused with exit 3"
+else
+    fail "observer replay work limit" "rc=$WORK_RC $(cat "$TMPDIR/work-limit.err")"
 fi
 
 # EigenStore's live file/handle family is an explicit replay boundary (#1242).

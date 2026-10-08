@@ -178,7 +178,7 @@ compile override while each file executes.
 | `builtins_host.c` load_file override | Saved/set/restored around compile_ast; embed loaded-helper probes and f30_eval_dir. |
 | `vm.c` import override | Restored before vm_execute; embed imported-wrapper probe and f30_eval_dir's nested import. |
 | `eigs_embed.c` file override | Shared eval_source scopes it around compile_ast; embed file/string and execution probes. No script_dir mutation remains. |
-| `main.c` script_dir | Entry-file base for the state, with canonical file provenance captured in chunks; shadow/chdir/nested_load and the native fixtures. |
+| `main.c` script_dir | Entry-file base for the state, with canonical file provenance captured in chunks; shadow/nested_load and the native fixtures. |
 | `state.c` initial script_dir | No-file `.` base; embed string eval before and after file eval checks its cwd peer. |
 | `lint_host.c` E003.base_dir | Private lint traversal context, not a runtime global override. |
 | `bundle.c` | Rewrites argv to the extracted entry; main establishes its base. No resolver-global writes. Existing bundle suite covers execution. |

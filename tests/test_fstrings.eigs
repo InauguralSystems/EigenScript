@@ -206,58 +206,5 @@ catch _fs_bc_error:
     _fs_bc_message is _fs_bc_error["message"]
 assert of [_fs_bc_raised == 1 and (contains of [_fs_bc_message, "reserved name"]), "#1322/#1386: assembled bytecode that SETs the reserved name raises with its reason"]
 assert_eq of [f"<{5}>", "<5>", "#1322: f-strings after the refused SET_NAME"]
-# the observer-window builtins resolve a binding by STRING name: refused too
-define _fs_ow_kind(args) as:
-    try:
-        set_observer_window of args
-        return "unrefused"
-    catch e:
-        return e.kind
-define _fs_owg_kind(nm) as:
-    try:
-        get_observer_window of nm
-        return "unrefused"
-    catch e:
-        return e.kind
-assert_eq of [_fs_ow_kind of ["_#fstr", 8], "undefined_name", "#1322: set_observer_window refuses the reserved name"]
-assert_eq of [_fs_owg_kind of "_#fstr", "undefined_name", "#1322: get_observer_window refuses the reserved name"]
-
-# tokenize_with_names exposes the lexer's token stream to user code (corpus
-# builders detokenize it). The f-string lowering's conversion token must come
-# back in its round-trip-valid spelling `str`, never the unspellable `_#fstr`
-# (whose `#` would comment out the rest of a detokenized line).
-_fs_tid_ident is (tokenize_ids of "q")[0]
-_fs_tid_str is (tokenize_ids of "\"q\"")[0]
-_fs_tid_num is (tokenize_ids of "7")[0]
-_fs_tid_nl is (tokenize_ids of "q\nq")[1]
-define _fs_detok(src) as:
-    local out is ""
-    local ids is tokenize_ids of src
-    local named is tokenize_with_names of src
-    for i in range of (len of named):
-        local tid is named[i][0]
-        local nm is named[i][1]
-        if tid == _fs_tid_str:
-            out is out + (json_encode of nm) + " "
-        elif (tid == _fs_tid_ident) or (tid == _fs_tid_num):
-            out is out + nm + " "
-        elif tid == _fs_tid_nl:
-            out is out + "\n"
-        else:
-            local piece is ""
-            for probe in ["(", ")", "+", "of", "is"]:
-                if ((tokenize_ids of probe)[0]) == tid:
-                    piece is probe
-            out is out + piece + " "
-    return out
-_fs_tsrc is "x is 5\ny is f\"a{x}b\"\n"
-_fs_names is []
-for _fs_t in (tokenize_with_names of _fs_tsrc):
-    if _fs_t[0] == _fs_tid_ident:
-        append of [_fs_names, _fs_t[1]]
-assert_eq of [_fs_names, ["x", "y", "str", "x"], "#1322: tokenize_with_names spells the f-string conversion `str`"]
-_fs_round is _fs_detok of _fs_tsrc
-assert_eq of [try_parse of _fs_round, true, "#1322: a detokenized f-string parses"]
-assert_eq of [contains of [_fs_round, "#"], false, "#1322: a detokenized f-string carries no `#`"]
 
 test_summary of null

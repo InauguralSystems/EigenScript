@@ -243,7 +243,6 @@ association contracts remain unchanged. Mixed buffer/list tensor operations and
 numeric byte/sample/device conversions also normalize reads and stop on the
 first error. Byte conversion truncates and wraps modulo 256 after normalization.
 Raw copies, typed serialization and buffer-only work areas preserve their data.
-`str_from_bytes` and the `inflate`/`deflate` codecs (including their `zlib_*` forms) reject nonnumeric list elements with a builtin-named
 `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL and does not inspect later
 elements, while compression codecs consume and validate the complete list.
@@ -461,7 +460,6 @@ the unit the value is stored in does not matter) sits under the settle
 deadband — the standard mixed-tolerance stopping criterion, built in
 (#861). This run exits
 through the predicate itself in 13 iterations; the deadband is the
-tolerance (`set_observer_thresholds`), and an input that genuinely
 diverges ends via the observer's stall backstop with
 `__loop_exit__ == "stalled"` instead of hanging or lying. (Use the loop
 inside a function so it gets a fresh binding to watch — see

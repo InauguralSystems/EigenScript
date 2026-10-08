@@ -1,7 +1,7 @@
 # sandbox_run is fail-CLOSED: only the pure-compute allowlist is visible; every
 # other builtin is shadowed by the blocked stub. Guards (a) the residual escape
-# that motivated the flip — set_observer_thresholds mutating PROCESS-GLOBAL
-# observer thresholds from inside the sandbox — and (b) that the allowlist still
+# that motivated the fail-closed policy — process-global mutation from inside
+# the sandbox — and that the allowlist still
 # lets legitimate pure compute run (no over-block). Descriptors are the same
 # [ABI, code, constants] shape as vm_run_bytecode; opcodes per src/vm.h.
 GET_NAME is 25
@@ -17,17 +17,9 @@ INTERROGATE_NAMED is 76
 # pass for the WRONG reason (rejected as stale, not denied by the allowlist).
 ABI is 1
 
-# (a) ESCAPE BLOCKED: set_observer_thresholds must not change host globals.
-before is get_observer_thresholds of null
-desc_set is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["set_observer_thresholds", [0.5, 0.7, 0.9]]]
-r_set is sandbox_run of [desc_set, 1000]
-after is get_observer_thresholds of null
-escape_blocked is ((not r_set["ok"])) and (after[0] == before[0]) and (after[1] == before[1]) and (after[2] == before[2])
-
 # (b) Other newly-denied dangerous builtins -> blocked (ok == 0). If `exit` were
 # NOT blocked it would terminate THIS process (uncatchable) — the test reaching
 # the end is itself proof exit is shadowed.
-screen_blk is (sandbox_run of [[ABI, [GET_NAME,0,0, CALL,0,0, RETURN], ["screen_clear"]], 1000])["ok"] == false
 exit_blk   is (sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["exit", 0]], 1000])["ok"] == false
 seed_blk   is (sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["seed_random", 1]], 1000])["ok"] == false
 close_blk  is (sandbox_run of [[ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN], ["close_channel", 0]], 1000])["ok"] == false
@@ -112,14 +104,11 @@ r_fn is sandbox_run of [[ABI, [GET_NAME,0,0, RETURN], ["len"]], 1000]
 fn_msg is r_fn["error"]["message"]
 fn_named is ((not r_fn["ok"])) and ((index_of of [fn_msg, "contains a callable"]) >= 0)
 
-if escape_blocked and screen_blk and exit_blk and seed_blk and close_blk and rbb_blk and state_at_blk and temporal_nested_blk and allow_ok and allow_973 and no_writethrough and no_fn_escape and no_import and big_unscannable and fn_named:
+if exit_blk and seed_blk and close_blk and rbb_blk and state_at_blk and temporal_nested_blk and allow_ok and allow_973 and no_writethrough and no_fn_escape and no_import and big_unscannable and fn_named:
     print of "SANDBOX_ALLOW_OK"
 else:
     print of "SANDBOX_ALLOW_FAIL"
-    print of "escape_blocked="
-    print of escape_blocked
-    print of "screen/exit/seed/close/rbb="
-    print of screen_blk
+    print of "exit/seed/close/rbb="
     print of exit_blk
     print of seed_blk
     print of close_blk

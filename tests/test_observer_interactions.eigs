@@ -68,16 +68,6 @@ assert of [len of saved == 3, "OI9 get_observer_thresholds returns 3 values"]
 assert of [saved[0] > 0, "OI10a dh_zero is positive"]
 assert of [saved[0] < saved[1], "OI10b dh_zero < dh_small"]
 
-# Set and verify
-set_observer_thresholds of [0.005, 0.05, 0.5]
-updated is get_observer_thresholds of null
-assert of [updated[0] == 0.005, "OI10c threshold set correctly"]
-
-# Restore
-set_observer_thresholds of [saved[0], saved[1], saved[2]]
-restored is get_observer_thresholds of null
-assert of [restored[0] == saved[0], "OI10d thresholds restored"]
-
 # === INTERROGATIVES CHECK VALUES ===
 
 test_val is [1, 2, 3, 4, 5]
@@ -106,53 +96,6 @@ ob2 is buffer of 2
 ob2 is null
 p is converged
 assert of [(p == false) or (p == true), "OI16 predicate after observed free"]
-
-# === REGRESSION FOR #187 ===
-# `report` switches improving/diverging at dh_small; the bare predicates
-# used to switch at dh_zero, so in the gray band (dh_zero < |dH| < dh_small)
-# `stable` and `improving` (or `diverging`) were both true at once, and
-# `report` disagreed with `improving`/`diverging`. The fix aligns the
-# direction predicates to dh_small; `oscillating` stays on dh_zero
-# (it's a deadband escape, not a direction verdict).
-saved2 is get_observer_thresholds of null
-# Widen so any nonzero dH lands in the gray band; allow stable to fire.
-# Windowed stable (#205) needs a FULL window (count==N), so drive g with a full
-# monotone window of gray-band steps: stable fires, improving/diverging cannot
-# (their "down"/"up" steps must clear dh_small=1e9, which nothing does here).
-set_observer_thresholds of [0.0000001, 1.0e9, 0.0000001]
-
-g is 100
-g is 120
-g is 140
-g is 160
-g is 180
-g is 200
-g is 220
-g is 240
-g is 260
-g is 280
-g is 300
-# Evaluate all four reads against g before any intervening assignment
-# repoints the last-observer alias.
-preds is [improving, diverging, stable, report of g]
-
-set_observer_thresholds of [saved2[0], saved2[1], saved2[2]]
-
-imp_g is preds[0]
-div_g is preds[1]
-stb_g is preds[2]
-rep_g is preds[3]
-
-# Mutual exclusion within {stable, improving, diverging}.
-assert of [not (stb_g and imp_g), "OI17 stable + improving must not collide in gray band (#187)"]
-assert of [not (stb_g and div_g), "OI18 stable + diverging must not collide in gray band (#187)"]
-
-# Predicates must agree with `report`.
-if rep_g == "stable":
-    assert of [not imp_g, "OI19 report=stable => improving=0 (#187)"]
-    assert of [not div_g, "OI20 report=stable => diverging=0 (#187)"]
-
-
 
 # === #895: OBSERVER CALL-FORMS ON A MODULE-SLOT-PROMOTED NAME ===
 # A name assigned only inside an `unobserved:` block and never referenced

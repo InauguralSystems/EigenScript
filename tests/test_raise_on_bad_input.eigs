@@ -27,7 +27,7 @@ assert_true of [mm_type == 1 and mm_type_k == "type_mismatch", "matmul non-matri
 mm_ok is matmul of [[[1, 2], [3, 4]], [[1, 0], [0, 1]]]
 assert_true of [mm_ok[0][0] == 1 and mm_ok[1][1] == 4, "matmul identity still works"]
 
-# ---- #511 sha256 / md5 / hmac: non-string raises (was "") ----
+# ---- #511 sha256 / md5: non-string raises (was "") ----
 sha_bad is 0
 try:
     ig is sha256 of 123
@@ -41,13 +41,6 @@ try:
 catch e:
     md5_bad is 1
 assert_true of [md5_bad == 1, "md5 of non-string raises"]
-
-hmac_bad is 0
-try:
-    ig is hmac_sha256 of [123, "msg"]
-catch e:
-    hmac_bad is 1
-assert_true of [hmac_bad == 1, "hmac_sha256 non-string key raises"]
 
 assert_eq of [sha256 of "abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "sha256 of a string still works"]
 

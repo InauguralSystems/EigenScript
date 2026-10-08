@@ -269,7 +269,7 @@ def names(docs, api):
     if len(keywords) < 10:
         red('lexer keyword resolver has no population')
     known.update(keywords)
-    known.update(('host_add', 'host_fn', '__borrow_guard_selftest', 'fn',
+    known.update(('host_add', 'host_fn', 'fn',
                   'trajectory', 'observe', 'report', 'report_value'))
     for file in docs:
         text = Path(file).read_text()

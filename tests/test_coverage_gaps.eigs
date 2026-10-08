@@ -1,6 +1,6 @@
 # Tests for builtins that had 0% coverage in gcov:
 # string: split, starts_with, str_replace
-# system: env_get, random_hex, chdir, free_val
+# system: env_get, random_hex
 # tensor: subtract, divide, exp, log, mean, zeros, zeros_like,
 #         leaky_relu, log_softmax
 
@@ -30,19 +30,6 @@ assert of [missing == "", "CG9 env_get missing returns empty"]
 
 hex is random_hex of 16
 assert of [(len of hex) == 16, "CG10 random_hex length"]
-
-# chdir to /tmp and back. macOS resolves /tmp through a symlink to
-# /private/tmp, so getcwd may report either spelling — accept both.
-original is getcwd of null
-ok is chdir of "/tmp"
-assert of [ok, "CG11 chdir succeeds"]
-now is getcwd of null
-assert of [now == "/tmp" or now == "/private/tmp", "CG12 chdir moved us"]
-chdir of original
-
-# free_val no-op on null
-r is free_val of null
-assert of [(type of r) == "none", "CG13 free_val returns null-typed value"]
 
 # --- tensor builtins ---
 a is [1.0, 2.0, 3.0, 4.0]
@@ -98,15 +85,6 @@ assert of [(get_at of [mut, 0, 1]) == 7.5, "CG32 set/get_at 2D"]
 flat is zeros of 3
 set_at of [flat, 2, 99.0]
 assert of [(get_at of [flat, 2]) == 99.0, "CG33 set/get_at 1D"]
-
-# --- json_raw: JSON passthrough ---
-jr is json_raw of "{\"raw\": true}"
-assert of [(type of jr) == "json_raw", "CG34 json_raw type"]
-
-# --- tokenize_with_names: returns a list of name+id pairs ---
-toks is tokenize_with_names of "x is 42"
-assert of [(type of toks) == "list", "CG35 tokenize_with_names returns list"]
-assert of [(len of toks) > 0, "CG36 tokenize_with_names non-empty"]
 
 # --- stream_open/write/close: write 3 doubles to a temp file ---
 sfile is mktemp of null

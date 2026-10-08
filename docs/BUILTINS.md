@@ -30,19 +30,13 @@ gfx, audio) require a full build or the `gfx` target.
 
 New since 0.8.1: concurrency (`spawn`, `thread_join`, `channel`, `send`,
 `recv`, `try_recv`, `recv_timeout`, `close_channel`, `channel_closed`),
-streaming subprocess I/O (`proc_spawn`, `proc_write`, `proc_read_line`,
-`proc_read`, `proc_close`, `proc_wait`), spatial queries
 (`nearest_in_range`), hashing (`sha256`, `md5`,
-`sha256_file`, `md5_file`, `hmac_sha256`), EigenStore (`store_open`,
 `store_close`, `store_put`, `store_get`, `store_delete`, `store_query`,
 `store_count`, `store_update`, `store_collections`, `store_drop` — every one
 of which **raises** a catchable `value` error on a handle it cannot resolve:
 not a handle, already closed, or stale because its table slot was recycled.
 They do **not** answer `null`/`0`/`[]` for a bad handle, which they did before
 #1146; see docs/CONCURRENCY.md, "Thread handles"),
-observer tuning (`set_observer_thresholds`, `get_observer_thresholds`,
-`set_observer_scale`, `get_observer_scale`, `set_observer_window`,
-`get_observer_window`),
 audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_play_loop`, `audio_volume`, `audio_stop`, `audio_queue_size`, `audio_clear`, `audio_sine`,
 `audio_saw`, `audio_sweep`,
@@ -50,7 +44,14 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_envelope`, `audio_capture_open`, `audio_capture_read`,
 `audio_capture_close`, `audio_stream_open`, `audio_stream_push`,
 `audio_stream_queued`, `audio_stream_clear`, `audio_stream_close`), and
-`free_val` for memory management.
+
+## Runtime status and control
+
+| Function | Usage | Description |
+|---|---|---|
+| `math_flags` | `math_flags of null` | Return sticky `overflow`, `invalid`, and `underflow` numeric-status booleans. |
+| `must_not_yield` | `must_not_yield of fn` | Run a callback while rejecting cooperative suspension. |
+| `inflate` | `inflate of bytes` | Decode raw DEFLATE bytes when zlib support is enabled. |
 
 ## Core Language
 
@@ -63,8 +64,6 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `str` | `str of value` | Convert to string representation |
 | `num` | `num of value` | Convert to number (parse string or coerce). `num of "inf"` saturates to `1e308`; `num of "nan"` raises a `value` error naming `num` by default, while under `EIGS_STRICT=0` it is `0` and sets `math_flags.invalid` (#971). |
 | `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "none" (the null value — SPEC.md is normative and its gated example prints `none`; the string `"null"` is never produced) |
-| `math_flags` | `math_flags of null` | Sticky numeric status: `{overflow, invalid}` — `true` when a clamp has fired since the last `clear_math_flags` (#865) |
-| `clear_math_flags` | `clear_math_flags of null` | Reset both status bits |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
 | `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
@@ -111,8 +110,6 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `index_of` | `index_of of [haystack, needle]` | First index of needle in haystack, or -1 (non-string operands are -1) |
 | `substr` | `substr of [s, start, length]` | Extract substring |
 | `split` | `split of [s, delim]` | Split string by delimiter into list. A non-string `s` or `delim` raises by default; under `EIGS_STRICT=0`, `s` splits as `""` (so answers `[""]`) and `delim` falls back to `" "` (#971). |
-| `scan_ints` | `scan_ints of s` or `scan_ints of [s, comment_marker]` | C-backed scan of whitespace-delimited signed integer tokens, optionally skipping comment lines. No string in the argument raises by default; under `EIGS_STRICT=0` it answers `[]` (#971, same for `scan_tokens`/`scan_int_tokens`). |
-| `scan_tokens` | `scan_tokens of s` or `scan_tokens of [s, comment_marker]` | C-backed scan of whitespace-delimited token rows `[text, line, col, start, end]` |
 | `scan_int_tokens` | `scan_int_tokens of s` or `scan_int_tokens of [s, comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]` |
 | `trim` | `trim of s` | Strip leading/trailing whitespace |
 | `str_replace` | `str_replace of [s, old, new]` | Replace all occurrences of old with new |
@@ -121,9 +118,6 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `text_builder_new` | `text_builder_new of null` | Create a native growable text builder |
 | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
 | `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
-| `text_builder_extend` | `text_builder_extend of [builder, values]` | Append each item in a list |
-| `text_builder_part_count` | `text_builder_part_count of builder` | Count appended parts |
-| `text_builder_clear` | `text_builder_clear of builder` | Empty a builder for reuse |
 | `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text |
 | `secure_equals` | `secure_equals of [a, b]` | Constant-time string equality (`true`/`false`). Compares every byte regardless of where a mismatch occurs, so comparison time doesn't leak how much of a secret matched. Non-strings → `false` |
 
@@ -194,7 +188,6 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 |------|-----------|-------------|
 | `vm_run_bytecode` | `vm_run_bytecode of <descriptor>` | Assemble a chunk from a descriptor and run it on the C VM, returning the result. Descriptor: `[abi, code, constants, functions?, param_count?, name?, local_names?]` — `abi` is the **bytecode ABI revision** the producer was built against (currently `1`; see below); `code` is a list of byte ints (opcodes + little-endian operands, 16-bit except `OP_LINE`'s, which is 32-bit since #630); `constants` is the pool; `functions` is a list of nested descriptors referenced by `OP_CLOSURE` (nested descriptors carry **no** `abi` element); `local_names` (slot order) sizes the call frame and names parameters. The minimal `[abi, code, constants]` form is a flat module chunk. The bridge for an EigenScript-written compiler: emit bytecode as data, execute it on the same VM (and JIT) the C compiler's output uses. Caller supplies a well-formed chunk ending in `OP_RETURN`. **The chunk must also be stack-balanced**. `vm_run_bytecode` rejects an invalid chunk by raising a catchable `value` error whose diagnostic names the malformed field or stack-verification failure; `sandbox_run` returns its structured rejection `{ok: false, error: {kind: "value", message: "invalid chunk descriptor", line: 0}}` instead. No instruction may be reached with fewer operands on the stack than it consumes, and the stack depth must be the same on every path into a given instruction — the JVM/Wasm rule, which keeps verification linear. So an `if`/`else` whose two arms leave different depths is rejected, as is a `CALL` that cannot see its own callee; the depth an instruction runs at is measured from the chunk's own frame base, and consuming below it would reach the caller's operands. This is the shape the C compiler already emits — a conditional's arms each push their value before the join — so a producer that mirrors compiler output needs no change. **A descriptor whose `abi` is missing or does not match the runtime raises (kind `value`) rather than executing** — #704: opcode numbers *and* operand widths are the bytecode ABI, and before the stamp a producer built against an older revision ran misaligned garbage at exit 0 with no error. Producers must hardcode the revision as a literal; a producer that reads the runtime's current value back would always agree and the check would be decoration. A non-list descriptor also raises (it silently returned `null` before #704). |
 | `record_history` | `record_history of flag` | Enable (nonzero) / disable (0) per-assignment history recording that `prev of x` and `<kw> is x at <line>` temporal queries read (sets both value- and observer-state history). The C compiler auto-enables it when compiling a temporal query; a self-hosted compiler calls this. The flag must be a number — a non-numeric flag raises (it is not silently treated as disable). Returns the previous setting. |
-| `sandbox_run` | `sandbox_run of [descriptor, max_iterations?, max_bytes?, max_work?]` | Run a chunk (same ABI-stamped descriptor as `vm_run_bytecode`) under safety bounds. Surplus outer call operands raise a catchable error by default; `EIGS_STRICT=0` ignores them. Descriptor failures are structured results. An ABI-revision mismatch comes back as `{ok: false, error: {kind, message, line}}` with a message naming the revision, distinct from a malformed chunk's `invalid chunk descriptor`, so a grading ladder can tell "your producer is stale" from "your bytecode is wrong" without re-running. **Fail-closed**: only a pure-compute *allowlist* (math, bit, list/dict/string ops, buffers, json, regex, observer reads, parse/tokenize, `print`/`assert`) is visible — every other builtin (file/process/network/db, code-exec, threads, channels, terminal, `exit`, global-state mutators like `set_observer_thresholds`, and the whole extension surface) is shadowed by a blocked stub, so a new builtin is denied by default. The sandbox env is a **sealed root**, not a child of the host global env: the allowlist is copied in, so an outward assignment (`x is v`, `OP_SET_NAME`) has no outer binding to write through to and a name the host defines later is not reachable. `import` is gated at the opcode — it is not a name, so the allowlist never covered it. A **callable cannot cross the boundary**: a `fn` in the result closes over the sandbox env and would run in the host after the caps are restored, so it comes back as `{ok: false, error: {kind: "sandbox", ...}}` instead. That scan is node/depth budgeted and fails closed, so a result too large to scan is also refused — with a message saying so, distinct from the one naming an actual callable. `max_iterations` bounds loops through **two** counters, whichever trips first, and they are scoped differently. The compiler-emitted cap check (`OP_LOOP_CAP_CHECK`) is **per call frame** — each invocation starts fresh, and tripping it exits the loop gracefully and reports the run as a capped *partial run*. The back-edge counter (`OP_JUMP_BACK`) is a **cumulative total for the whole `sandbox_run`**, deliberately not restored per frame so an assembled chunk cannot reset its own DoS budget by calling a function; tripping it raises. So the same loop called twice within one run can trip the cumulative budget even though each call is individually well inside `max_iterations` — the bound is on the run, not on any one loop. In addition, `max_work` (default 10,000,000) charges each interpreted VM instruction cumulatively across function frames and bytecode callback re-entry; exhaustion is an uncatchable-within-the-sandbox structured `sandbox` refusal. It does not meter time spent inside a native builtin, so a blocking native callback must return before the VM can enforce this budget. **A chunk that could underflow the operand stack is refused before it runs** (see `vm_run_bytecode` for the balance rule): the interpreter's arithmetic fast paths index the value stack directly rather than through the guarded pop, so an opcode reached with too few operands read and wrote below the stack's base — `[OP_ADD, OP_RETURN]` was enough. The equivalent env-chain fault is caught at the instruction instead, since it cannot be settled statically: an `OP_LOOP_ENV_END` with no matching `OP_LOOP_ENV_FRESH` raises `loop-env underflow` rather than walking the frame off the end of its scope chain. **Memory is capped at `max_bytes` (default 256 MiB)**: the size-controlled allocators (`zeros`/`fill`/`buffer`/`range`/`concat`) and the zlib codecs (`inflate`/`deflate` and their `zlib_*` duals — both the codec buffer and the list of values built from it) charge a per-run budget, so a single huge allocation *or* an aggregate across a loop raises a caught error (→ `{ok: false}`) instead of an uncatchable out-of-memory `abort()`. The codecs matter here because every other allocator makes the caller *name* a size, which is what the charge reads, while a compressed blob names nothing and amplifies ~1000x. **The descriptor itself is verified as untrusted data, under one bounded context for the whole graph**: a single work allowance covering the root chunk, every nested function chunk, code, constants, function lists and local names — nested chunks share it rather than each declaring their own — plus an explicit recursion-depth bound and back-edge (cycle) refusal. A graph that cannot be verified within that allowance comes back as `{ok: false, "invalid chunk descriptor"}`. **Descriptor constants are data-only and ISOLATED**: a callable (or text builder) anywhere in the pool is refused at any depth, and each mutable constant (list/dict/buffer) is deep-copied, so the sandbox mutates its own copy — an allowlisted `append`/`set_at`/`dict_set`/`buf_set` on a constant cannot be seen by the host, and the host cannot change a constant mid-run. For the same reason the allowlist copies only the pure C builtin each allowed name actually holds: if the host has rebound one of those names, the sandbox gets the blocked stub rather than the host's value. Runtime errors are caught. Returns `{ok: true/false, result: value}`. For validating untrusted/generated code. |
 
 ### Bytes ↔ values
 
@@ -227,10 +220,6 @@ Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `inflate` | `inflate of <list\|buffer>` | Raw DEFLATE decompression (windowBits −15) — the ZIP member format, so `.xlsx`/`.ods` entries are readable. Dual of `deflate`. Byte lists must be numeric by default; `EIGS_STRICT=0` converts nonnumbers to zero. |
-| `deflate` | `deflate of <list\|buffer>` | Raw DEFLATE compression (windowBits −15, default level). Dual of `inflate`. Byte lists must be numeric by default; `EIGS_STRICT=0` converts nonnumbers to zero. |
-| `zlib_inflate` | `zlib_inflate of <list\|buffer>` | Wrapped decompression with windowBits 15+32: auto-detects **zlib AND gzip** headers — this is what makes plain `.gz` files readable (`read_bytes of path` then `zlib_inflate`). Dual of `zlib_deflate`. Byte lists must be numeric by default; `EIGS_STRICT=0` converts nonnumbers to zero. |
-| `zlib_deflate` | `zlib_deflate of <list\|buffer>` | zlib-wrapped compression (RFC 1950 header, default level). Dual of `zlib_inflate`. Byte lists must be numeric by default; `EIGS_STRICT=0` converts nonnumbers to zero. |
 
 ### JSON
 
@@ -239,7 +228,6 @@ Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
 | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
 | `json_decode` | `json_decode of s` | Parse JSON string to value. Raises past the same 200-level limit, so a document that decodes always re-encodes. `\uXXXX` surrogate pairs are combined into one code point; unpaired surrogates, an escaped NUL, and malformed `\u` escapes raise (strict decode — lenient callers such as `json_path` receive the complete document with U+FFFD in place of the bad scalar). |
 | `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs. `json_build of null` is `{}`; any other non-list raises by default and answers `{}` under `EIGS_STRICT=0` (#971). |
-| `json_raw` | `json_raw of s` | Wrap raw JSON string (skip encoding) |
 | `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value by dot-notation path; `""` when there is no value at that path (absent key, index out of range, JSON `null`). The document is parsed leniently: a malformed document is walked as far as it parsed, so a parse failure also answers `""` or a partial value. By default, a document that `json_decode` would reject (structural error, a repaired `\u` scalar, trailing garbage) raises a catchable `value` error `json_path: invalid JSON at position N` instead (#971 Phase C); JSON `false`/`null`/absent keys stay answers in both modes. |
 
 ## Dictionaries
@@ -285,12 +273,7 @@ Query a binding's assignment history. Always on for top-level bindings;
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
-| `set_observer_thresholds` | `set_observer_thresholds of [dh_zero, dh_small, h_low]` | Set the classification thresholds (defaults 0.001 / 0.01 / 0.1); `dh_zero < dh_small`, all positive, else raises. Process-global for the state; blocked in the sandbox |
 | `get_observer_thresholds` | `get_observer_thresholds of null` | `[dh_zero, dh_small, h_low]` |
-| `set_observer_scale` | `set_observer_scale of s` | #1045: the value channel's characteristic scale — the magnitude below which a value counts as zero. The relative step is `Δv / max(\|v\|, \|v_prev\|, s)`: unit-free above `s`, an absolute deadband `dh_zero·s` below it. Default `0.001`; choose it in the unit the binding is stored in. Non-positive raises |
-| `get_observer_scale` | `get_observer_scale of null` | The characteristic scale |
-| `set_observer_window` | `set_observer_window of n` / `set_observer_window of ["x", n]` | #1044: the window depth (samples) every verdict classifies over, `4..64`. The bare form sets the state default (10 at start), live; the list form overrides one binding, resolved by name from the call site (a string literal also marks a function local interrogated so plain locals are reachable), `n = 0` clears it. A mode slower than `n` samples of the observation cadence cannot fold inside the window — size it to the slowest mode. Unbound name / out-of-range depth raise |
-| `get_observer_window` | `get_observer_window of null` / `get_observer_window of "x"` | The default depth, or the depth in force on binding `x` |
 | `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default, entropy-channel with `"entropy"`. Raises `type_mismatch` on a non-snapshot — a bare value never silently classifies |
 
 **`report` and `report_value` are reserved** (#1102). They cannot be bound or
@@ -342,17 +325,9 @@ Boolean keywords that check the most recently observed value:
 | `is_dir` | `is_dir of "path"` | `true` if the path names a directory, `false` for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic |
 | `is_file` | `is_file of "path"` | `true` iff the path names a REGULAR file (`S_ISREG`); `false` for a directory, a device/fifo/socket, a missing path, or a non-string. `read_file_util` admits only regular files, so this is the probe a driver uses to match that contract (#1058). Trace-recorded, so replay is deterministic |
 | `read_text` | `read_text of "path"` | Read file contents as string ("" on failure, 10 MB cap) |
-| `read_line` | `read_line of null` | Blocking line read from **stdin**: next line without its trailing newline (`\r\n` stripped as one unit), `null` at EOF; an empty line is `""`. Works on pipes — the stream-safe primitive `read_text of "/dev/stdin"` can't be (fseek fails on unseekable fds, #558). Trace-recorded, so replay is deterministic |
 | `read_bytes` | `read_bytes of "path"` | Read a file's raw bytes as a list of integers 0–255 (`null` on failure, 10 MB cap). Trace-recorded, so replay is deterministic |
-| `proc_read_buf` | `proc_read_buf of [out_fd, max]` | Single `read(2)` of up to `max` bytes from a child fd, returned as a list of integers 0–255 — the byte-list twin of `proc_read`. `null` on EOF / error, 10 MB cap. Replay-gated |
 | `write_text` | `write_text of ["path", text]` | Write string to file (`true` on success, `false` on failure) |
 | `exec_capture` | `exec_capture of ["cmd", "arg1", ...]` | Run subprocess, return [exit_code, stdout_text]. No shell (direct exec). Child stdin is /dev/null. Returns [-1, ""] on failure, [-2, partial] on timeout. 10 MB output cap. Timeout form: `exec_capture of [["cmd", ...], seconds]` |
-| `proc_spawn` | `proc_spawn of ["cmd", "arg1", ...]` | Fork+execvp a child with stdin/stdout connected to anonymous pipes. Returns `[pid, in_fd, out_fd]` (or `[-1,-1,-1]` on failure). Caller is responsible for `proc_close` on both fds and `proc_wait` on the pid. SIGPIPE is set to `SIG_IGN` process-wide on first spawn so the parent gets `EPIPE` from `proc_write` instead of dying; child resets to `SIG_DFL` post-fork. |
-| `proc_write` | `proc_write of [in_fd, text]` | Write bytes to child's stdin pipe (raw `write(2)`, no parent-side buffering). Returns bytes written, or `-1` on error (including `EPIPE` when the child has closed its stdin). |
-| `proc_read_line` | `proc_read_line of out_fd` | Read up to the next `\n` from the child's stdout (raw `read(2)`). Returns the line without the trailing newline, or `""` at EOF. Line streaming relies on the child not block-buffering its stdout — wrap with `stdbuf -oL` when in doubt. |
-| `proc_read` | `proc_read of [out_fd, max_bytes]` | Single non-line-oriented `read(2)` of up to `max_bytes`. Returns the bytes (possibly shorter than asked), or `""` at EOF. |
-| `proc_close` | `proc_close of fd` | Idempotent `close(2)`. Returns 1 on success, 0 if already closed / invalid. |
-| `proc_wait` | `proc_wait of pid` | Block on `waitpid(pid, ...)` and return the exit code (or `128 + signum` if killed by a signal). Answers `-1` when the pid is not a positive number or `waitpid` reports no such child — there is no exit status to give. |
 | `env_get` | `env_get of "VAR_NAME"` | Get environment variable (empty string if unset) |
 | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` raises by default; under `EIGS_STRICT=0` it answers `""` (#971). |
 | `try_parse` | `try_parse of code_string` | `true` if string is valid EigenScript syntax, `false` otherwise |
@@ -360,7 +335,6 @@ Boolean keywords that check the most recently observed value:
 | `ls` | `ls of "path"` | List non-hidden directory entries as bytewise-sorted strings (the order of `LC_ALL=C ls -1`). Trace-recorded, so replay is deterministic (#585) |
 | `getcwd` | `getcwd of null` | Current working directory as string. Trace-recorded, so replay is deterministic (#585) |
 | `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH. Trace-recorded, so replay is deterministic (#585) |
-| `chdir` | `chdir of "path"` | Change working directory. `true` on success, `false` on failure |
 | `mktemp` | `mktemp of null` | Create a temporary file and return its path. Under `EIGS_REPLAY`, raises a catchable filesystem-boundary error before creating a file |
 | `rm` | `rm of "path"` | Remove a file. `true` on success, `false` on failure |
 | `write` | `write of value` | Write to stdout without newline |
@@ -433,11 +407,6 @@ automatically at exit.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `raw_key` | `raw_key of null` | Non-blocking single keypress. Returns key as string, arrow keys as `"up"`/`"down"`/`"left"`/`"right"`, or `""` if none |
-| `screen_clear` | `screen_clear of null` | Clear screen and hide cursor |
-| `screen_end` | `screen_end of null` | Show cursor, reset attributes, newline |
-| `screen_put` | `screen_put of [row, col, char, color]` | Write single character with optional ANSI color code |
-| `screen_render` | `screen_render of [entities, sw, sh, px, py, ww, wh]` | Project a list of `[wx, wy, char, color]` entities onto a `sw×sh` viewport centred on player `(px, py)` in a toroidal `ww×wh` world |
 
 ## Command-Line Arguments
 
@@ -577,15 +546,11 @@ either way, so the numbers are byte-identical.
 | `arena_mark` | `arena_mark of null` | Snapshot arena allocation point |
 | `arena_reset` | `arena_reset of null` | Reclaim all allocations since mark |
 | `arena_stats` | `arena_stats of null` | Return total bytes allocated |
-| `heap_inuse` | `heap_inuse of null` | Return bytes currently in use by the C allocator (glibc `mallinfo2().uordblks`, main arena; null on non-glibc). Debug surface |
-| `free_val` | `free_val of value` | Free a heap-allocated value tree (no-op while arena is active). Advanced use only |
 
 ## Tokenizer Introspection
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `tokenize_ids` | `tokenize_ids of code_string` | Return list of token type IDs. A non-string raises by default; under `EIGS_STRICT=0` it answers `[]` (#971, same for `tokenize_with_names`). |
-| `tokenize_with_names` | `tokenize_with_names of code_string` | Return list of `[id, name]` pairs |
 | `token_name` | `token_name of id` | Return token type name by ID (`"?"` for an unknown id). A non-number raises by default; under `EIGS_STRICT=0` it answers `"?"` too (#971). |
 
 ## Corpus Preparation
@@ -948,16 +913,12 @@ Requires full build. Transformer model inference and training.
 | `task_alive` | `task_alive of id` | Returns `true` while the task is runnable or suspended, `false` once it has finished (or for an unknown id). |
 | `task_self` | `task_self of null` | The **running task's own id** (a number, in the same integer space `task_spawn` returns; the main task is 0, including before any task has been spawned). Lets a worker hand out its own id as a reply address — the message-link pattern a mailbox otherwise cannot express (#526). Deterministic — reads scheduler state, records no nondeterminism. |
 | `task_yield` | `task_yield of null` | Cooperatively hand control to the next ready task; this task resumes round-robin. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
-| `must_not_yield` | `must_not_yield of fn` | Run `fn of null` as an **atomic** critical section, asserting it issues no scheduler yield (#488). Any *suspending* task builtin inside — `task_yield`, a blocking `task_recv`/`task_join`, `task_sleep` — raises `value` instead of suspending, so a yield introduced into a region that relies on cooperative atomicity fails loudly rather than corrupting under a rare interleaving. Non-suspending ops (`task_try_recv`, `task_send`, joining an already-finished task) are allowed. Returns `fn`'s result (or propagates its error); the region depth is balanced even if the body raises. Nestable. |
 | `task_join` | `task_join of id` | Block until task `id` finishes, then return its deep-copied result — or re-raise its uncaught error (as the same `{kind, message, line}` it died with). Joining an already-finished task returns immediately; an unknown id (or self) returns null. All tasks blocked with none runnable is a `deadlock` error, not a hang — catchable by a `try`/`catch` around the join on the main task (`e.kind == "deadlock"`); terminal only if unhandled. |
 | `task_send` | `task_send of [id, value]` | Append a deep-copied message to task `id`'s unbounded FIFO mailbox, waking it if it waits in `task_recv`. Returns `true` if delivered, 0 if `id` is finished/unknown (a silent drop — send-to-dead is never an error). Never blocks. |
 | `task_recv` | `task_recv of null` | Return the next message from this task's mailbox, or block cooperatively until one arrives. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
-| `task_try_recv` | `task_try_recv of null` | Non-blocking receive: the next mailbox message, or `null` if empty. Never suspends. |
 | `task_kill` | `task_kill of id` | Tear down task `id`: drop its mailbox, mark it dead, wake any joiner with an `interrupt` error. Returns `true` if killed, 0 for a finished/unknown/self target. |
 | `task_detach` | `task_detach of id` | Mark task `id` **fire-and-forget** (the pthread-detach precedent, #530): it is reaped the moment it finishes — or immediately if already finished — releasing its handle slot for reuse, so task-per-message workloads are bounded by *concurrent* tasks, not lifetime spawns. A detached task's uncaught death still prints its trace and still fails the process at exit (#493). A reaped id reads as unknown afterwards (`task_join` null, `task_alive` 0). A task may detach itself: `task_detach of (task_self of null)`. Returns 1, or 0 for main/unknown. |
 | `task_sleep` | `task_sleep of ticks` | Suspend this task until the **virtual clock** advances by `ticks`. The clock is logical (discrete-event): it only jumps forward — to the earliest sleeper — when nothing else is runnable, so sleeping stays deterministic, not wall-clock. A negative sleep is treated as 0. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope. |
-| `task_now` | `task_now of null` | The current virtual-clock value (a number; 0 before any `task_sleep`). Deterministic — reads a logical counter, records no nondeterminism. |
-| `task_sched_trace` | `task_sched_trace of null` · `task_sched_trace of 1` · `task_sched_trace of 0` | The scheduler's decision history (#846), **off by default**. `of 1` arms it (so does `EIGS_TASK_TRACE=1` in the environment); `of null` returns a list of `{seq, tick, task, cause}` dicts — one per task **resume** since arming, in schedule order: `seq` the entry index, `tick` the virtual clock (`task_now`), `task` the resumed id (`0` = main), `cause` one of `spawn`, `yield`, `sleep-wake`, `join-release`, `kill-release`, `recv-wake`, `deadlock`; `of 0` disarms and discards. A **pure reader**: arming changes no pick, clock or seed (a traced run is byte-identical to the untraced one), and the entries derive from the deterministic schedule — they are not tape `N` records, so `EIGS_REPLAY` reproduces them. Unbounded while armed (one small entry per resume). Arming never creates a scheduler; the main task's initial run is implicit (it precedes every entry). Not sandbox-visible. |
 | `task_sched_seed` | `task_sched_seed of n` | Install a scheduling **seed**: the scheduler switches from FIFO round-robin to picking the next ready task from a seeded, platform-independent PRNG. Same seed ⇒ same interleaving (byte-identical run + replay, zero tape nondeterminism); a different seed explores a different ordering — the lever a deterministic simulation tester uses to search interleavings. No seed ⇒ unchanged FIFO. Typically called once at program start. Returns null. |
 
 **Thread safety:** Values sent through a channel (or returned through
@@ -999,4 +960,3 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `__borrow_guard_selftest` | `__borrow_guard_selftest of [args...]` | **Not a user builtin.** A planted fault validating the #548 borrow-scan guard: registered only in ASan builds when `EIGS_BORROW_GUARD_SELFTEST` is set, it deliberately returns a borrowed direct child past `VM_BORROW_SCAN_CAP` so the suite can prove the guard aborts loudly (naming the builtin) instead of letting a missed compensating incref become a silent use-after-free. Absent from release builds and from sanitizer builds without the opt-in env var (fuzzers must never reach a deliberate abort). |

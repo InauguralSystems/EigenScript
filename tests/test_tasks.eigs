@@ -194,22 +194,6 @@ cons_id is task_spawn of consumer
 pr is task_spawn of producer
 assert_eq of [task_join of cons_id, 100, "mailbox FIFO delivery (10+20+30+40)"]
 
-# --- task_try_recv is non-blocking: null when empty, the message when present ---
-box_id is 0
-define boxed() as:
-    e1 is task_try_recv of null            # empty → null
-    task_yield of null                     # (main sends 7 meanwhile)
-    v is task_try_recv of null             # → 7
-    e2 is task_try_recv of null            # empty again → null
-    return [e1, v, e2]
-box_id is task_spawn of boxed
-task_yield of null
-task_send of [box_id, 7]
-tr is task_join of box_id
-assert_eq of [tr[0], null, "try_recv on empty mailbox is null"]
-assert_eq of [tr[1], 7, "try_recv returns the queued message"]
-assert_eq of [tr[2], null, "try_recv empty after draining is null"]
-
 # --- send to a finished/unknown task is a silent drop returning 0 ---
 define fast() as:
     return 1
@@ -246,74 +230,49 @@ catch e:
 assert_eq of [kthrew, 1, "join of a killed task raises"]
 
 # ============================================================================
-# Increment 3: virtual time (task_sleep / task_now).
-# The virtual clock is logical: it starts at 0 and only jumps FORWARD to the
-# earliest sleeper when nothing else is runnable, so sleeps stay deterministic
-# (no wall clock). The scheduler is per-run, so `now` is monotonic across the
-# whole file — these checks reason from a captured baseline, not absolutes.
-# ============================================================================
-
-# --- sleepers wake in virtual-time order, not spawn order; each observes the
-#     clock advanced by exactly its own sleep; the clock rests at the last wake ---
-base is task_now of null
+# Increment 3: deterministic task_sleep behavior.
 woke is []
 define sleeper(tag, ticks) as:
     task_sleep of ticks
     woke is append of [woke, tag]
-    return task_now of null
+    return tag
 sa is task_spawn of [sleeper, "a", 30]
 sb is task_spawn of [sleeper, "b", 10]
 sc is task_spawn of [sleeper, "c", 20]
-ra is task_join of sa
-rb is task_join of sb
-rc is task_join of sc
-assert_eq of [woke, ["b", "c", "a"], "sleepers wake in virtual-time order, not spawn order"]
-assert_eq of [rb - base, 10, "b observes now advanced by exactly its sleep"]
-assert_eq of [rc - base, 20, "c observes now advanced by exactly its sleep"]
-assert_eq of [ra - base, 30, "a observes now advanced by exactly its sleep"]
-assert_eq of [(task_now of null) - base, 30, "the clock rests at the last wake and holds"]
+task_join of sa
+task_join of sb
+task_join of sc
+assert_eq of [woke, ["b", "c", "a"], "sleepers wake in virtual-time order"]
 
-# --- task_sleep of 0 is a same-tick yield: both run, clock does not advance ---
-b0 is task_now of null
 tick0 is []
 define zzz(tag) as:
     task_sleep of 0
     tick0 is append of [tick0, tag]
-    return null
 z1 is task_spawn of [zzz, "x"]
 z2 is task_spawn of [zzz, "y"]
 task_join of z1
 task_join of z2
 assert_eq of [tick0, ["x", "y"], "sleep(0) tasks both run"]
-assert_eq of [task_now of null, b0, "sleep(0) does not advance the virtual clock"]
 
-# --- a negative sleep is clamped to 0 (no time travel) ---
-bn is task_now of null
 define nap_neg() as:
     task_sleep of (0 - 5)
-    return task_now of null
-rn is task_join of (task_spawn of nap_neg)
-assert_eq of [rn, bn, "a negative sleep is clamped to 0"]
+    return 7
+assert_eq of [task_join of (task_spawn of nap_neg), 7, "negative sleep is clamped and resumes"]
 
-# --- main itself can sleep to let an earlier-waking worker run first ---
-bm is task_now of null
 mlog is []
 define bg() as:
     task_sleep of 5
     mlog is append of [mlog, "worker"]
-    return null
 bgid is task_spawn of bg
-task_sleep of 15                             # main sleeps PAST the worker's wake
+task_sleep of 15
 mlog is append of [mlog, "main"]
 task_join of bgid
-assert_eq of [mlog, ["worker", "main"], "a sleeping main lets an earlier-waking worker run first"]
-assert_eq of [(task_now of null) - bm, 15, "main's own sleep advances the clock"]
+assert_eq of [mlog, ["worker", "main"], "a sleeping main lets an earlier worker run"]
 
-# --- a lone sleeper is woken by the clock, not reported as a deadlock ---
 define lone() as:
     task_sleep of 100
     return 7
-assert_eq of [task_join of (task_spawn of lone), 7, "a lone sleeper is woken by the clock, not a deadlock"]
+assert_eq of [task_join of (task_spawn of lone), 7, "a lone sleeper wakes without deadlock"]
 
 # ============================================================================
 # Increment 4: the seeded scheduling strategy (task_sched_seed).
@@ -410,9 +369,10 @@ define _mny_clean() as:
     return _mny_acc
 assert_eq of [must_not_yield of _mny_clean, 10, "non-yielding region returns its body result"]
 
-# Non-blocking ops (task_try_recv) inside a region do NOT trip the assertion.
+# Non-blocking channel operations inside a region do NOT trip the assertion.
+_mny_channel is channel of 1
 define _mny_nonblock() as:
-    m is task_try_recv of null
+    m is try_recv of _mny_channel
     return 1
 assert_eq of [must_not_yield of _mny_nonblock, 1, "non-suspending ops are allowed in a region"]
 

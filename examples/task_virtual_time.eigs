@@ -16,12 +16,11 @@ define watchdog(target) as:
     task_sleep of deadline
     if task_alive of target:
         task_kill of target                # timed out first — cancel the worker
-        return f"timeout at t={task_now of null}"
-    return f"worker finished by t={task_now of null}"
+        return "timeout"
+    return "worker finished"
 
 w is task_spawn of worker
 d is task_spawn of [watchdog, w]
 
 verdict is task_join of d
 print of verdict
-print of f"clock rests at t={task_now of null}"

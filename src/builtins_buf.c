@@ -294,7 +294,7 @@ Value* builtin_f64_from_bytes(Value *arg) {
     return make_num(num_guard_named(d, "f64_from_bytes"));
 }
 
-/* ---- DEFLATE codecs (inflate/deflate, #684) ----
+/* ---- DEFLATE codec implementation (#684) ----
  * Thin wrappers over the system zlib (-lz), gated behind
  * EIGENSCRIPT_EXT_ZLIB — the same EIGENSCRIPT_EXT_* mechanism the http
  * variant uses. Default OFF so the minimal build stays zero-dependency;
@@ -307,9 +307,8 @@ Value* builtin_f64_from_bytes(Value *arg) {
  * always a fresh list of ints 0-255. Strict mode rejects nonnumeric list
  * elements; compatibility mode retains their numeric-zero conversion.
  *
- * inflate/deflate are the RAW DEFLATE pair (windowBits -15) — the ZIP
- * member format, so .xlsx/.ods entries are readable. zlib_inflate/
- * zlib_deflate are the zlib-wrapped pair; zlib_inflate uses windowBits
+ * The raw codec uses windowBits -15 — the ZIP member format, so
+ * .xlsx/.ods entries are readable. The wrapped implementation uses windowBits
  * 15+32, which auto-detects zlib AND gzip headers — that is what makes
  * plain .gz files readable.
  */
@@ -461,71 +460,9 @@ static Value *zlib_inflate_impl(const char *who, int window_bits, Value *arg) {
     return result;
 }
 
-/* Shared deflate core (dual of zlib_inflate_impl). The output buffer is
+/* Shared compression core (dual of the decompression implementation). The output buffer is
  * deflateBound-sized up front, so a single Z_FINISH pass always fits. */
-static Value *zlib_deflate_impl(const char *who, int window_bits, Value *arg) {
-    unsigned char *src;
-    size_t src_n;
-    if (!zlib_bytes_arg(arg, who, &src, &src_n)) return make_null();
-
-    z_stream zs;
-    memset(&zs, 0, sizeof(zs));
-    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, window_bits,
-                     8, Z_DEFAULT_STRATEGY) != Z_OK) {
-        free(src);
-        rt_error(EK_INTERNAL, 0, "%s: deflateInit2 failed", who);
-        return make_null();
-    }
-    uLong bound = deflateBound(&zs, (uLong)src_n);
-    /* #292: deflate amplifies far less than inflate (bound ~= src_n), but the
-     * budget should account for every codec buffer, not just the dangerous
-     * one — an uncharged allocator is a gap whether or not it is exploitable. */
-    if (!sandbox_charge((size_t)bound)) {
-        deflateEnd(&zs);
-        free(src);
-        return make_null();
-    }
-    unsigned char *out = xmalloc(bound > 0 ? bound : 1);
-    size_t pos = 0;
-    int zrc = Z_OK;
-    for (;;) {
-        if (zs.avail_in == 0 && pos < src_n) {
-            unsigned long rem = src_n - pos;
-            uInt chunk = (uInt)(rem > UINT_MAX ? UINT_MAX : rem);
-            zs.next_in = src + pos;
-            zs.avail_in = chunk;
-            pos += chunk;
-        }
-        int flush = (pos == src_n && zs.avail_in == 0) ? Z_FINISH : Z_NO_FLUSH;
-        zs.next_out = out + zs.total_out;
-        zs.avail_out = (uInt)(bound - zs.total_out);
-        zrc = deflate(&zs, flush);
-        if (zrc == Z_STREAM_END) break;
-        if (zrc != Z_OK && zrc != Z_BUF_ERROR) break;
-        if (flush == Z_FINISH) break; /* cannot happen with bound space */
-    }
-    if (zrc != Z_STREAM_END) {
-        const char *msg = zs.msg;
-        deflateEnd(&zs);
-        free(out);
-        free(src);
-        rt_error(EK_INTERNAL, 0, "%s: deflate failed (%s)",
-                 who, msg ? msg : "unknown zlib error");
-        return make_null();
-    }
-    unsigned long n = zs.total_out;
-    deflateEnd(&zs);
-    free(src);
-    Value *result = zlib_bytes_result(out, n);
-    free(out);
-    return result;
-}
-
 Value* builtin_inflate(Value *arg)      { return zlib_inflate_impl("inflate", -15, arg); }
-Value* builtin_zlib_inflate(Value *arg) { return zlib_inflate_impl("zlib_inflate", 15 + 32, arg); }
-Value* builtin_deflate(Value *arg)      { return zlib_deflate_impl("deflate", -15, arg); }
-Value* builtin_zlib_deflate(Value *arg) { return zlib_deflate_impl("zlib_deflate", 15, arg); }
-
 #else /* !EIGENSCRIPT_EXT_ZLIB */
 
 /* Minimal build: the names exist so scripts can feature-detect (and the
@@ -539,10 +476,6 @@ static Value *zlib_unavailable(const char *who) {
 }
 
 Value* builtin_inflate(Value *arg)      { (void)arg; return zlib_unavailable("inflate"); }
-Value* builtin_zlib_inflate(Value *arg) { (void)arg; return zlib_unavailable("zlib_inflate"); }
-Value* builtin_deflate(Value *arg)      { (void)arg; return zlib_unavailable("deflate"); }
-Value* builtin_zlib_deflate(Value *arg) { (void)arg; return zlib_unavailable("zlib_deflate"); }
-
 #endif /* EIGENSCRIPT_EXT_ZLIB */
 
 
