@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -147,7 +147,20 @@ SRC_V_poison := $(HOSTED_SOURCES)
 FLAGS_poison := $(WERROR_FLAGS) -g -O1 -DEIGS_POISON $(STRLEN_CHECK) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_poison  := -lm -lpthread -ldl
 
-VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison
+# #1665 pool-off: release build with every recycling pool bypassed
+# (-DEIGS_POOL_OFF). Same flags/libs as release otherwise, so a measurement
+# against release isolates the pools alone. The default build is unchanged.
+SRC_V_pool-off := $(HOSTED_SOURCES)
+FLAGS_pool-off := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF $(VERDEF)
+LIBS_pool-off  := $(LDFLAGS) -ldl
+
+# #1665 pool-off under ASan+UBSan: every Value/Env/string/arena slice is a real
+# malloc/free, so ASan sees lifetimes the pools used to hide (the #1661 class).
+SRC_V_asan-pool-off := $(HOSTED_SOURCES)
+FLAGS_asan-pool-off := $(ASAN_FLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF $(VERDEF)
+LIBS_asan-pool-off  := -lm -lpthread -ldl
+
+VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -589,6 +602,22 @@ valgrind: build/valgrind/eigenscript
 poison: build/poison/eigenscript
 	$(call RELINK,poison)
 	@echo "EigenScript $(VERSION) (poison 0xAA -O1 -g) built. Binary: $(BINARY)"
+
+# #1665: the pool-off oracle build. Every per-thread Value/Env freelist, the
+# call-env recycler and the bump arena are bypassed so each object is a real
+# malloc/free. Release-equivalent flags otherwise (measure the pools alone):
+#   make pool-off && cd tests && bash run_all_tests.sh
+pool-off: build/pool-off/eigenscript
+	$(call RELINK,pool-off)
+	@echo "EigenScript $(VERSION) (pool-off, no freelists/arena/call-env recycle) built. Binary: $(BINARY)"
+
+# #1665: pool-off under ASan+UBSan. ASan now sees the lifetime of every object
+# the pools used to keep "allocated" — run the suite here to surface the
+# hidden-UAF class (#1661):
+#   make asan-pool-off && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh
+asan-pool-off: build/asan-pool-off/eigenscript
+	$(call RELINK,asan-pool-off)
+	@echo "EigenScript $(VERSION) (asan+ubsan, pool-off) built. Binary: $(BINARY)"
 
 # Profile-guided optimization. Builds an instrumented binary, runs the
 # DMG cpu_instrs workload to collect branch/edge counters, then rebuilds

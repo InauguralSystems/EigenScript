@@ -320,6 +320,25 @@ void arena_init(void) {
 void* arena_alloc(size_t size) {
     size = (size + 7) & ~(size_t)7;
 
+#ifdef EIGS_POOL_OFF
+    /* #1665: bypass the bump blocks entirely. Each arena allocation is a real
+     * xcalloc tracked in the fallback list, so arena_reset_to_mark / arena_destroy
+     * free it at the system-allocator boundary and ASan sees the lifetime of an
+     * arena value that escapes its mark/reset scope (the #873/#1184/#1588 class).
+     * mark/reset semantics are preserved: mark_fallback_count parallels the
+     * mark_block/mark_offset high-water the pooled path restores. */
+    {
+        void *p = xcalloc(1, size);
+        if (g_arena.fallback_count >= g_arena.fallback_capacity) {
+            int new_cap = g_arena.fallback_capacity < 64 ? 64 : g_arena.fallback_capacity * 2;
+            g_arena.fallbacks = xrealloc_array(g_arena.fallbacks, new_cap, sizeof(char*));
+            g_arena.fallback_capacity = new_cap;
+        }
+        g_arena.fallbacks[g_arena.fallback_count++] = p;
+        g_arena.total_allocated += size;
+        return p;
+    }
+#endif
     if (g_arena.offset + size > ARENA_BLOCK_SIZE) {
         g_arena.current_block++;
         if (g_arena.current_block >= g_arena.block_count) {
@@ -415,10 +434,20 @@ void arena_destroy(void) {
 
 void free_weight_val(Value *v) {
     if (!v || v->type != VAL_NUM) return;
+#ifdef EIGS_POOL_OFF
+    /* #1665: arena values are no longer inside blocks (they are individual
+     * fallback mallocs freed by arena_reset_to_mark/arena_destroy). The block
+     * scan below would therefore miss them and double-free. Protect any
+     * arena-owned value explicitly; a permanent heap NUM (arena==0) is freed. */
+    if (v->arena) return;
+    eigs_alloc_stats_free(v);
+    return;
+#else
     for (int i = 0; i < g_arena.block_count; i++) {
         char *block_start = g_arena.blocks[i];
         char *block_end = block_start + ARENA_BLOCK_SIZE;
         if ((char*)v >= block_start && (char*)v < block_end) return;
     }
     eigs_alloc_stats_free(v);
+#endif  /* EIGS_POOL_OFF */
 }
