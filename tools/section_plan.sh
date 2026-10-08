@@ -702,7 +702,7 @@ sp_token_re() {
 # test script or tool that does: a helper (test_lsp.py, lint_fixtures/) selects
 # through the script that uses it (test_lsp.sh, test_lint.sh), and a program
 # the runner names in one section still selects the other section whose
-# script re-runs it (test_tasks.eigs -> test_task_sched_trace.sh, [104b]).
+# script re-runs it (test_spawn_channel_exit.eigs -> test_replay_boundary_exit.sh, [103a]).
 sp_select() {
     sp_refs "$RUNNER" "$1"
     # shellcheck disable=SC2086
@@ -1082,8 +1082,8 @@ selftest() {
     expect_plan 'changed: a src/ file is always reported as runtime' 'runtime: src/lint.c'
     printf '\n' >> "$dir/cl/tests/failure_output.sh"
     expect_plan 'changed: a file the preamble sources selects the whole suite' 'full=yes'
-    printf '\n' >> "$dir/cl/tests/test_tasks.eigs"
-    expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[104b]'
+    printf '\n' >> "$dir/cl/tests/test_spawn_channel_exit.eigs"
+    expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[103a]'
     printf '\n' >> "$dir/cl/examples/functional.eigs"
     expect_plan 'changed: a file shares a name elsewhere; the section globbing its dir is selected' '[97]'
     # Inert runner with the real dispatch/timer preamble. Every source header
