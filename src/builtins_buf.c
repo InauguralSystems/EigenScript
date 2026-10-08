@@ -294,7 +294,7 @@ Value* builtin_f64_from_bytes(Value *arg) {
     return make_num(num_guard_named(d, "f64_from_bytes"));
 }
 
-/* ---- DEFLATE codecs (inflate/deflate, #684) ----
+/* ---- DEFLATE codec implementation (#684) ----
  * Thin wrappers over the system zlib (-lz), gated behind
  * EIGENSCRIPT_EXT_ZLIB — the same EIGENSCRIPT_EXT_* mechanism the http
  * variant uses. Default OFF so the minimal build stays zero-dependency;
@@ -307,9 +307,8 @@ Value* builtin_f64_from_bytes(Value *arg) {
  * always a fresh list of ints 0-255. Strict mode rejects nonnumeric list
  * elements; compatibility mode retains their numeric-zero conversion.
  *
- * inflate/deflate are the RAW DEFLATE pair (windowBits -15) — the ZIP
- * member format, so .xlsx/.ods entries are readable. zlib_inflate/
- * zlib_deflate are the zlib-wrapped pair; zlib_inflate uses windowBits
+ * The raw codec uses windowBits -15 — the ZIP member format, so
+ * .xlsx/.ods entries are readable. The wrapped implementation uses windowBits
  * 15+32, which auto-detects zlib AND gzip headers — that is what makes
  * plain .gz files readable.
  */
@@ -461,7 +460,7 @@ static Value *zlib_inflate_impl(const char *who, int window_bits, Value *arg) {
     return result;
 }
 
-/* Shared deflate core (dual of zlib_inflate_impl). The output buffer is
+/* Shared compression core (dual of the decompression implementation). The output buffer is
  * deflateBound-sized up front, so a single Z_FINISH pass always fits. */
 Value* builtin_inflate(Value *arg)      { return zlib_inflate_impl("inflate", -15, arg); }
 #else /* !EIGENSCRIPT_EXT_ZLIB */

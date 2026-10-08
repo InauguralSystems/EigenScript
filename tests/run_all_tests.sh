@@ -1988,14 +1988,14 @@ check_eigs_suite "all keywords + chains/json/paren/literal as dot keys" \
 # live values. Runs on EVERY build; the wrong answers are visible without a
 # sanitizer. Part B (#548): sanitizer builds full-scan past
 # VM_BORROW_SCAN_CAP and abort naming the builtin on a missed borrow —
-# validated by a planted fault (opt-in selftest builtin). Part B SKIPs on
+# validated by a test-build-only planted fault. Part B SKIPs on
 # release builds, where the guard is compiled out by design.
 #
 # The tally is derived from the block's own PASS:/FAIL: lines, never a
 # hand-synced literal (#654), and a SKIP is reported WITHOUT short-
 # circuiting the count — Part B's skip used to discard Part A's results,
 # so a release-build protocol regression would have gone untallied.
-echo "[119] Borrow Protocol (#720 all builds, #548 guard SKIPs on release)"
+echo "[119] Borrow Protocol (#720 all builds, #548 debug guard)"
 BG_OUTPUT=$(bash "$TESTS_DIR/test_borrow_guard.sh" 2>&1)
 echo "$BG_OUTPUT" | grep "SKIP:" || true
 BG_PASS=$(echo "$BG_OUTPUT" | grep -c "PASS:" || true)
@@ -4038,6 +4038,30 @@ else
     echo "$LCO_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
 fi
 echo ""
+# [124b] Raw DEFLATE inflate (#684). The surviving name is registered in all
+# builds; release uses a catchable no-zlib stub and `make zlib` runs vectors.
+echo "[124b] Raw DEFLATE Inflate (#684)"
+ZLIB_PROBE_FILE=$(mktemp /tmp/eigs_zlib_probe_XXXXXX.eigs)
+printf '%s\n' 'inflate of [0]' > "$ZLIB_PROBE_FILE"
+ZLIB_PROBE_OUT=$(./eigenscript "$ZLIB_PROBE_FILE" 2>&1); ZLIB_PROBE_RC=$?
+rm -f "$ZLIB_PROBE_FILE"
+TOTAL=$((TOTAL + 1))
+if echo "$ZLIB_PROBE_OUT" | grep -q "inflate: compiled without zlib support"; then
+    PASS=$((PASS + 1))
+    echo "  PASS: inflate stub raises 'compiled without zlib support'"
+else
+    INF_OUTPUT=$(./eigenscript ../tests/test_inflate.eigs 2>&1); INF_OUTPUT_RC=$?
+    if rc_ok "$INF_OUTPUT_RC" "$INF_OUTPUT" && echo "$INF_OUTPUT" | grep -q "INFLATE_ALL_PASS"; then
+        PASS=$((PASS + 1))
+        echo "  PASS: all inflate checks"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: inflate tests (probe rc=$ZLIB_PROBE_RC)"
+        echo "$INF_OUTPUT" | grep -iE "assert|error|FAIL" | head -5
+    fi
+fi
+echo ""
+
 # [125] ext_net TCP sockets on the trace tape (#414) — probe-gated like
 # [44] HTTP: the server profiles enable net_*; the hosted release binds
 # unavailable stubs so direct calls explain which profile is needed.

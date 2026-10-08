@@ -3316,12 +3316,11 @@ static const char *SANDBOX_ALLOW[] = {
     "buf_peak", "buf_resample_linear", "buf_scale_range", "buf_set",
     "buf_to_pcm16le",
     "str_from_bytes", "text_builder_new", "text_builder_append",
-    "text_builder_append_line", "text_builder_extend", "text_builder_clear",
-    "text_builder_to_string", "text_builder_part_count",
+    "text_builder_append_line", "text_builder_to_string",
     /* json (string <-> value, pure) */
-    "json_build", "json_decode", "json_encode", "json_path", "json_raw",
+    "json_build", "json_decode", "json_encode", "json_path",
     /* DEFLATE codecs (pure bytes <-> bytes; #684) */
-    "deflate", "inflate", "zlib_deflate", "zlib_inflate",
+    "inflate",
     /* path string manipulation (no fs access) */
     "path_base", "path_dir", "path_ext", "path_join",
     /* type / value utilities */
@@ -3332,8 +3331,7 @@ static const char *SANDBOX_ALLOW[] = {
      * not the sealed sandbox environment. */
     "observe", "report", "get_observer_thresholds", "classify",
     /* tokenizer / parser introspection (pure over strings) */
-    "tokenize_ids", "tokenize_with_names", "token_name", "scan_ints",
-    "scan_int_tokens", "scan_tokens", "try_parse",
+    "token_name", "scan_ints", "scan_int_tokens", "try_parse",
     /* spatial queries (pure over lists) */
     "nearest_in_range", "nearest_in_range_all",
     /* control / output */
@@ -6200,7 +6198,6 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
     {"observe",        BA_ANY,  "the observer measures bools (entropy 0/1)"},
     {"classify",       BA_ANY,  "the observer classifies any value"},
     {"report",         BA_ANY,  "the bytecode twin of OP_REPORT_NAME, which reports any value"},
-    {"free_val",       BA_ANY,  "releases any value"},
     {"coalesce",       BA_ANY,  "picks the first non-null of any values"},
     {"len",            BA_ELEMS, "counts a list's elements, whatever they are"},
     {"assert",         BA_ARG | BA_POS(0), "the condition is a bool"},

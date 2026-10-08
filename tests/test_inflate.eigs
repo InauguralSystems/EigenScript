@@ -1,0 +1,49 @@
+# Raw DEFLATE inflate (#684). The compressor-side and wrapped-codec names were
+# removed in #1677; fixed Python-zlib vectors keep this an independent oracle.
+fails is 0
+define check(tag, got, want) as:
+    if got == want:
+        print of f"  PASS: {tag}"
+    if got != want:
+        print of f"  FAIL: {tag} (got {str of got}, want {str of want})"
+        fails is fails + 1
+
+payload is [69, 105, 103, 101, 110, 83, 99, 114, 105, 112, 116, 32, 35, 54, 56, 52, 58, 32, 100, 101, 102, 108, 97, 116, 101, 47, 105, 110, 102, 108, 97, 116, 101, 32, 118, 105, 97, 32, 122, 108, 105, 98]
+rawvec is [115, 205, 76, 79, 205, 11, 78, 46, 202, 44, 40, 81, 80, 54, 179, 48, 177, 82, 72, 73, 77, 203, 73, 44, 73, 213, 207, 204, 3, 211, 10, 101, 153, 137, 10, 85, 57, 153, 73, 0]
+check of ["known raw vector", inflate of rawvec, payload]
+check of ["buffer input", inflate of (buf_from_list of rawvec), payload]
+
+caught is 0
+message is ""
+try:
+    inflate of [1, 2, 3, 4, 5]
+catch e:
+    caught is 1
+    message is e
+check of ["corrupt stream caught", caught, 1]
+check of ["corrupt kind", message.kind, "value"]
+check of ["corrupt message", contains of [message.message, "invalid or truncated"], true]
+
+truncated is 0
+truncvec is list_slice of [rawvec, 0, (len of rawvec) - 1]
+try:
+    inflate of truncvec
+catch e2:
+    truncated is 1
+check of ["truncated stream caught", truncated, 1]
+
+wrong is 0
+wrong_message is ""
+try:
+    inflate of "not bytes"
+catch e3:
+    wrong is 1
+    wrong_message is e3
+check of ["string arg caught", wrong, 1]
+check of ["wrong-type kind", wrong_message.kind, "type_mismatch"]
+check of ["wrong-type message", contains of [wrong_message.message, "requires a list of byte values"], true]
+
+if fails == 0:
+    print of "INFLATE_ALL_PASS"
+if fails > 0:
+    throw of "inflate tests failed"

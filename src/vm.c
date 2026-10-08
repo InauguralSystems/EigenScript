@@ -2489,6 +2489,11 @@ static inline void vm_borrow_scan(Value *arg, Value *result,
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
         if (n > VM_BORROW_SCAN_CAP) n = VM_BORROW_SCAN_CAP;
+#if EIGS_BORROW_GUARD
+        /* #548 planted-fault oracle: test builds can force an ordinary direct
+         * borrow beyond the effective cap without exposing a builtin. */
+        if (getenv("EIGS_BORROW_GUARD_PLANT")) n = 0;
+#endif
         Value **items = arg->data.list.items;
         for (int i = 0; i < n; i++) {
             if (items[i] == result) { val_incref(result); return; }

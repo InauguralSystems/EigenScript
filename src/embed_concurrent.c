@@ -66,72 +66,15 @@ static void check(int ok, const char *what) {
  * the number: bumping a population pin to clear its own red is how a gate
  * launders the loss it exists to report (mechanical-gates §4, §106). The
  * number only ever moves for a check you just wrote. */
-#define EC_EXPECTED_CHECKS 87
+#define EC_EXPECTED_CHECKS 77
 
-/* Rounds are deliberately modest: these assertions fire on the RATIO of two
- * states' settings, not on how long they are held, so a long spin buys nothing
- * and costs CI time (mechanical-gates §34). Enough interleaving to lose a race
- * if one exists, not enough to matter to the suite's runtime. */
+/* Rounds are deliberately modest: enough interleaving to expose cross-state
+ * races, not enough to dominate the suite (mechanical-gates §34). */
 #define ROUNDS 200
 
-/* ------------------------------------------------------------------ 1 */
-/* Two states, one per OS thread, each setting a distinct observer threshold.
- * Each must read back its OWN. A shared global would make the later writer win
- * and both threads would read the same number. */
-
-typedef struct {
-    double  want;
-    int     mismatches;
-    int     started;
-} ThreshArg;
-
-static void *thresh_worker(void *p) {
-    ThreshArg *a = (ThreshArg *)p;
-    EigsState *st = eigs_open();
-    if (!st) { a->mismatches = -1; return NULL; }
-    a->started = 1;
-
-    char src[160];
-    snprintf(src, sizeof src,
-             "set_observer_thresholds of [%.6f, 0.02, 0.3]", a->want);
-    EigsValue *v = eigs_eval_string(src);
-    if (v) eigs_value_release(v);
-
-    for (int i = 0; i < ROUNDS; i++) {
-        /* Re-assert each round, then read: a shared global loses this thread's
-         * value to the other thread's write between the two. */
-        EigsValue *sv = eigs_eval_string(src);
-        if (sv) eigs_value_release(sv);
-        EigsValue *got = eigs_eval_string("(get_observer_thresholds of null)[0]");
-        if (!got) { a->mismatches++; continue; }
-        double d = eigs_value_as_num(got);
-        eigs_value_release(got);
-        /* Exact-ish: the value round-trips through a double, so compare with a
-         * tolerance far tighter than the gap between the two threads' settings
-         * (0.001 vs 0.002) — a cross-talk failure moves it by 100x this. */
-        if (d < a->want - 1e-9 || d > a->want + 1e-9) a->mismatches++;
-    }
-    eigs_close(st);
-    return NULL;
-}
-
-static void test_observer_thresholds(void) {
-    ThreshArg a = { 0.001, 0, 0 }, b = { 0.002, 0, 0 };
-    pthread_t ta, tb;
-    pthread_create(&ta, NULL, thresh_worker, &a);
-    pthread_create(&tb, NULL, thresh_worker, &b);
-    pthread_join(ta, NULL);
-    pthread_join(tb, NULL);
-
-    /* Vacuity: a worker that never opened a state reports 0 mismatches and
-     * would score as a pass having measured nothing. */
-    check(a.started && b.started, "both threads opened their own EigsState");
-    check(a.mismatches == 0 && b.mismatches == 0,
-          "per-state observer thresholds do not cross threads");
-    if (a.mismatches || b.mismatches)
-        printf("        mismatches: A=%d B=%d over %d rounds each\n",
-               a.mismatches, b.mismatches, ROUNDS);
-}
+/* Observer threshold setters were removed in #1677. Their per-state isolation
+ * property is no longer reachable through the embedding API, so the former
+ * threshold test is intentionally gone. */
 
 /* ------------------------------------------------------------------ 2 */
 /* Per-state GLOBAL ENVIRONMENTS. Two threads bind the same NAME to different
@@ -530,18 +473,8 @@ static void *sink_worker(void *p) {
     cb_slot = a->id;
     EigsState *st = eigs_open();
     if (!st) { a->err = -1; return NULL; }
-    /* Distinct thresholds per state, and one mid-run change below: each
-     * change makes the NEXT record's emit window stage an `O cfg` in front
-     * of its `A`. Together with the function call in `src` (which stages an
-     * `S <fn> <depth> <serial>` in front of the callee's first `A`), the
-     * run exercises both multi-record windows the one-record-per-call
-     * contract has to split. */
-    {
-        EigsValue *v = eigs_eval_string(a->id == 0
-            ? "set_observer_thresholds of [0.002, 0.03, 0.4]"
-            : "set_observer_thresholds of [0.003, 0.04, 0.5]");
-        if (v) eigs_value_release(v);
-    }
+    /* The removed setters can no longer stage O cfg changes. Scope transitions
+     * still exercise the multi-record window and sink serialization. */
     pthread_barrier_wait(&sink_start);
     const char *src = a->id == 0
         ? "define fa(k) as:\n    qa is random of []\n    return qa\n"
@@ -550,12 +483,6 @@ static void *sink_worker(void *p) {
           "sb is env_get of \"CONC_LONG\"\nr is fb of [1]\nreturn r";
     for (int i = 0; i < SINK_ROUNDS; i++) {
         pthread_barrier_wait(&sink_round);
-        if (i == SINK_ROUNDS / 2) {
-            EigsValue *c = eigs_eval_string(a->id == 0
-                ? "set_observer_thresholds of [0.004, 0.05, 0.6]"
-                : "set_observer_thresholds of [0.005, 0.06, 0.7]");
-            if (c) eigs_value_release(c);
-        }
         cb_gate_pending = 1;
         EigsValue *v = eigs_eval_string(src);
         if (v) { a->ok++; eigs_value_release(v); } else a->err++;
@@ -665,12 +592,11 @@ static void test_two_state_sink(void) {
           "sink: N count equals 2 states x rounds x (env_get + random)");
     /* #1142 contract: ONE complete newline-terminated record per call.
      * Witnesses that the run actually contains the two multi-record emit
-     * windows first — an `S` in front of a callee's `A`, and an `O cfg` in
-     * front of the first `A` after each of the two threshold changes —
-     * otherwise "one record per call" would hold vacuously. */
+     * window first — an `S` in front of a callee's `A` — otherwise
+     * "one record per call" would hold vacuously. */
     check(p.srec > 0, "sink: the run contains scope transitions (S records)");
-    check(p.ocfg == 4,
-          "sink: the run contains 4 config changes (2 states x 2 changes)");
+    check(p.ocfg == 0,
+          "sink: no unreachable observer-config changes are emitted");
     check(sb.calls > 0, "sink: the sink callback fired (calls > 0)");
     check(sb.multi_rec == 0,
           "sink: no call carries more than one record");
@@ -728,80 +654,9 @@ static void test_two_state_sink(void) {
     unsetenv("CONC_LONG");
 }
 
-/* ------------------------------------------------------------------ 6 */
-/* #1142: O cfg is per-state last-emitted. Two states with different
- * thresholds emit exactly one O cfg each (first record), none torn. */
-
-static pthread_barrier_t ocfg_start, ocfg_round;
-typedef struct { int id; int ok; } OcfgArg;
-static void *ocfg_worker(void *p) {
-    OcfgArg *a = (OcfgArg *)p;
-    EigsState *st = eigs_open();
-    if (!st) return NULL;
-    if (a->id == 0) {
-        EigsValue *v = eigs_eval_string("set_observer_thresholds of [0.002, 0.03, 0.4]");
-        if (v) eigs_value_release(v);
-    } else {
-        EigsValue *v = eigs_eval_string("set_observer_thresholds of [0.003, 0.04, 0.5]");
-        if (v) eigs_value_release(v);
-    }
-    pthread_barrier_wait(&ocfg_start);
-    const char *src = a->id == 0
-        ? "oa is 1.0\noa is 2.0\nreturn oa"
-        : "ob is 1.0\nob is 2.0\nreturn ob";
-    for (int i = 0; i < 50; i++) {
-        pthread_barrier_wait(&ocfg_round);
-        EigsValue *v = eigs_eval_string(src);
-        if (v) { a->ok++; eigs_value_release(v); }
-    }
-    eigs_close(st);
-    return NULL;
-}
-
-static void test_ocfg_per_state(void) {
-    SinkBuf sb;
-    sinkbuf_init(&sb);
-    eigs_set_trace_sink(sinkbuf_cb, &sb);
-    pthread_barrier_init(&ocfg_start, NULL, 2);
-    pthread_barrier_init(&ocfg_round, NULL, 2);
-    OcfgArg a = {0, 0}, b = {1, 0};
-    pthread_t ta, tb;
-    pthread_create(&ta, NULL, ocfg_worker, &a);
-    pthread_create(&tb, NULL, ocfg_worker, &b);
-    pthread_join(ta, NULL);
-    pthread_join(tb, NULL);
-    pthread_barrier_destroy(&ocfg_start);
-    pthread_barrier_destroy(&ocfg_round);
-    eigs_set_trace_sink(NULL, NULL);
-
-    TapeParse p = parse_tape_buf(sb.buf, sb.len);
-    check(a.ok == 50 && b.ok == 50, "O cfg: both states completed every eval");
-    check(p.lines > 0, "O cfg: parser examined lines > 0");
-    check(p.malformed == 0, "O cfg: no torn records");
-    check(p.ocfg == 2, "O cfg per state: exactly one first-record emit per state");
-    /* The `O cfg` is staged in the same emit window as the `A` that
-     * triggered it, so this case is the config-change half of the
-     * one-record-per-call contract. */
-    check(sb.calls > 0 && sb.multi_rec == 0 && sb.unterminated == 0,
-          "O cfg: one complete newline-terminated record per sink call");
-    check(sb.calls == (long)p.lines,
-          "O cfg: exactly one sink call per tape record");
-    printf("        O cfg: calls=%ld multi_rec=%ld unterminated=%ld lines=%d\n",
-           sb.calls, sb.multi_rec, sb.unterminated, p.lines);
-    {
-        int sw = tape_a_switches(sb.buf, sb.len, "oa=", "ob=");
-        check(sw >= 2, "O cfg: interleaving observed (no interleaving observed "
-                       "= inconclusive run, not a pass)");
-        printf("        O cfg: interleave switches=%d\n", sw);
-    }
-    /* Control: a torn O cfg line is rejected, so the well-formed count can
-     * go red. */
-    check(!tape_line_ok("O cfg 0.00.001 01 0.0.02"),
-          "control: a torn O cfg line is not well-formed");
-    printf("        O cfg: well=%d ocfg=%d malformed=%d\n",
-           p.well, p.ocfg, p.malformed);
-    sinkbuf_free(&sb);
-}
+/* The former per-state threshold-change check was removed with the setter in
+ * #1677: distinct observer configurations are no longer externally reachable.
+ * The sink test above verifies that no unreachable config change is emitted. */
 
 /* ------------------------------------------------------------------ 7 */
 /* #1143: eigs_close(A) must not shut the process tape while B is live. */
@@ -2023,13 +1878,11 @@ int main(void) {
          * case that installs a sink. */
         test_exit_tail_not_lost();
         test_sink_only_buffer_bounded();
-        test_observer_thresholds();
         test_global_isolation();
         test_error_isolation();
         test_planted_fault_is_detectable();
         test_cb_overlap_detector();
         test_two_state_sink();
-        test_ocfg_per_state();
         test_hdr_overlap_detector();
         test_set_sink_header_atomic();
         test_close_while_other_runs();

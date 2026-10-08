@@ -424,7 +424,7 @@ one tape: two invocations of a function are two frame instances, and a
 function-local can share a name with a module-level global. Matching by name
 made `--step` print `oscillating` for a binding whose live run said
 `diverging`, which is the same fail-soft shape the `O` records exist to
-remove. `tests/test_tape_observer_config.sh` section 8 pins all four shapes
+remove. The trace replay suite section 8 pins all four shapes
 (leak forward, correct application, a parameter widened before its frame
 assigns, and a module-level binding assigned after the call).
 
@@ -704,7 +704,7 @@ everywhere else in the runtime (version-and-reject, never migrate).
   writes and reads them as bools. A v5 tape recorded a predicate builtin's
   answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
   on a v6 binary would hand a number where the program now gets a bool; it is
-  refused instead (`tests/test_tape_observer_config.sh`, section 7). Within a
+  refused instead (the trace replay suite, section 7). Within a
   v6 tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return
@@ -720,7 +720,7 @@ everywhere else in the runtime (version-and-reject, never migrate).
   loud half: a v2 tape is **refused** by `--step`, by the DAP server and by
   `EIGS_REPLAY` with exit 3, never classified at the defaults and presented
   as the recorded run. Coverage: the `v2 (pre-O-record) tape is refused`
-  cases in `tests/test_tape_observer_config.sh`.
+  cases in the trace replay suite.
 - On replay, a missing header, a malformed (torn) header, a different
   format version, a different runtime version, an empty tape, or an
   unopenable `EIGS_REPLAY` path each refuse loudly — hosted replay exits
@@ -754,7 +754,7 @@ boundaries are enforced; dev builds are on their honor.
 
 Regression coverage: the `version refuse` cases in `tests/test_replay.sh`
 plant each mismatch class (format, runtime, missing header, empty file)
-and require the exit-3 refusal. `tests/test_tape_observer_config.sh`
+and require the exit-3 refusal. the trace replay suite
 additionally carries a REAL pre-v3 tape — `tests/fixtures/tape_v2_baseline.tape`,
 recorded by the v0.43.0 release binary — and requires the same exit-3 refusal
 from both `--step` and `EIGS_REPLAY`. That refusal is the deliberate answer to

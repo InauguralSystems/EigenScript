@@ -43,7 +43,7 @@ make asan       # ASan+UBSan build — extensions OFF
 make asan-http  # ASan+UBSan *with* ext_http+model (CI gate; leaks still need RSS, see #731)
 make tsan-http  # TSan *with* ext_http+model+net (CI gate: EIGS_SUITE_SECTIONS='44 45a 45b', #1139)
 make http       # http+model variant — run tests/test_http_server.sh
-make zlib       # DEFLATE codecs (inflate/deflate builtins) via system zlib (-lz)
+make zlib       # DEFLATE decompression (`inflate`) via system zlib (-lz)
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 bash tools/jit_diff.sh  # JIT vs INTERPRETER differential over the corpus (tape-replayed; CI job)
 make freestanding-check  # 2-stage symbol gate for the EigenOS profile (docs/FREESTANDING.md)

@@ -37,7 +37,6 @@ SKIP_WAIVERS='
 d8bbaacdbda76484|(b) the [99n] classifier-gate FAIL line, which QUOTES its own skipped tally; that section fails on any skip
 e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check there is coverage loss
 69614d3ef6dc2f30|(c) sub-check: [17] TR6/TR7 have no old model to reject; the rest of the transformer section still asserts
-3f50de963077a3a2|(b) the [119] section TITLE, which names the sanitizer-only half in its own heading
 86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
 459741ca98fe2fc5|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
 23bf2806c94855bb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red

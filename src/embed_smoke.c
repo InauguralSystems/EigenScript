@@ -666,8 +666,7 @@ int main(void) {
             "add of [[[nf_raw], [nf_later]], [[[0, 0]], [[0, 0]]]]",
             "add of [[[[0, 0]], [[0, 0]]], [[nf_raw], [nf_later]]]"
 #if EIGENSCRIPT_EXT_ZLIB
-            , "deflate of nf_raw", "inflate of nf_raw",
-            "zlib_deflate of nf_raw", "zlib_inflate of nf_raw"
+            , "inflate of nf_raw"
 #endif
 #if EIGENSCRIPT_EXT_NET
             , "net_send of [0, nf_raw]"

@@ -11,6 +11,12 @@
 # ASan. Runs on every build: the wrong answers are visible without a
 # sanitizer, and rc is gated so an ASan report fails too.
 #
+# Part B (#548) — in sanitizer builds vm_borrow_scan keeps scanning past
+# VM_BORROW_SCAN_CAP and aborts, naming the builtin, when a builtin returns a
+# borrowed direct child the capped scan missed. Validated with a planted
+# fault: a test-only environment trigger lowers the scan cap for an ordinary
+# coalesce call; it adds no user-visible builtin.
+#
 # Run directly or from run_all_tests.sh. Prints PASS:/FAIL: lines (Part B
 # prints one SKIP: line on non-sanitizer builds, where the guard is compiled
 # out). Exit code: 0 if all pass or skipped, 1 if any fail.
@@ -79,6 +85,33 @@ printf 'tbl is [append]\nr is dispatch of [tbl, 0, ([([3, 1, 2]), 5])]\nprint of
     > "$TMPDIR/dispatch_op.eigs"
 expect_out "direct dispatch stays correct (OP_DISPATCH)" \
     "$TMPDIR/dispatch_op.eigs" "[3, 1, 2, 5]"
+
+echo "  -- borrow-scan guard (#548) --"
+
+# The test-only environment switch lowers the scan cap to zero; coalesce then
+# returns its first non-null direct child past that planted cap. No builtin is
+# added to the language surface. Release builds compile the guard out.
+printf 'r is coalesce of [null, 7]\nprint of r\n' > "$TMPDIR/past.eigs"
+
+out=$(EIGS_BORROW_GUARD_PLANT=1 "$EIGS" "$TMPDIR/past.eigs" 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ]; then
+    echo "  SKIP: non-sanitizer build — borrow guard compiled out (release is zero-cost by design)"
+elif echo "$out" | grep -q "borrow-scan guard (#548)" \
+   && echo "$out" | grep -q "coalesce" \
+   && echo "$out" | grep -q "VM_BORROW_SCAN_CAP"; then
+    ok "planted past-cap borrow aborts and names the builtin and cap (rc=$rc)"
+else
+    fail "planted past-cap borrow diagnostic" "rc=$rc got: $(echo "$out" | head -1)"
+fi
+
+# Without the plant the same ordinary builtin call must remain clean.
+out=$("$EIGS" "$TMPDIR/past.eigs" 2>&1); rc=$?
+if [ "$rc" -eq 0 ] && [ "$out" = "7" ]; then
+    ok "borrow plant is opt-in; ordinary coalesce remains clean"
+else
+    fail "borrow plant opt-in control" "rc=$rc got: $out"
+fi
 
 echo ""
 echo "borrow-guard: $PASS passed, $FAIL failed"

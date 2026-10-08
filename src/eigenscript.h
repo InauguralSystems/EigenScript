@@ -55,7 +55,7 @@
 #ifndef EIGENSCRIPT_EXT_NET
 #define EIGENSCRIPT_EXT_NET 0
 #endif
-/* DEFLATE codecs (inflate/deflate via the system zlib, -lz). Default OFF
+/* DEFLATE decompression (`inflate` via the system zlib, -lz). Default OFF
  * like GFX: the minimal build stays zero-dependency — the four builtins
  * stay registered but raise "compiled without zlib support" until
  * `make zlib` opts in (same EIGENSCRIPT_EXT_* gating mechanism as http). */
