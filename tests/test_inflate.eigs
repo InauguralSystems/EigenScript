@@ -43,7 +43,7 @@ check of ["string arg caught", wrong, 1]
 check of ["wrong-type kind", wrong_message.kind, "type_mismatch"]
 check of ["wrong-type message", contains of [wrong_message.message, "requires a list of byte values"], true]
 
-# D23/D24 (#292): a precomputed raw-DEFLATE bomb expands to 2 MB. The
+# D23/D24 (#292): a precomputed raw-DEFLATE bomb expands to 1,000,000 bytes. The
 # compressed fixture avoids relying on the removed deflate builtin.
 SB_GET_NAME is 25
 SB_CONST is 0

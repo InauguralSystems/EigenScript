@@ -526,6 +526,61 @@ else
     echo "  SKIP: capture replay (no gfx build / no capture device)"
 fi
 
+# The tape format and its defensive reader survive the observer-configuration
+# setters removed in #1677. Keep these checks with the general replay contract.
+cat > "$TMPDIR/p_tape_contract.eigs" <<'EOF'
+x is 1
+print of x
+EOF
+CONTRACT_TAPE="$TMPDIR/contract.tape"
+EIGS_TRACE="$CONTRACT_TAPE" "$EIGS" "$TMPDIR/p_tape_contract.eigs" >/dev/null 2>&1
+if head -1 "$CONTRACT_TAPE" | grep -q '^V 6 '; then
+    ok "tapes written by this build stamp format v6"
+else
+    fail "format stamp" "$(head -1 "$CONTRACT_TAPE")"
+fi
+
+# A minimal old header is sufficient: version refusal precedes record parsing.
+OLD_TAPE="$TMPDIR/old-v2.tape"
+printf 'V 2 0.43.0\n' > "$OLD_TAPE"
+echo q | "$EIGS" --step "$OLD_TAPE" "$TMPDIR/p_tape_contract.eigs" \
+    >/dev/null 2>"$TMPDIR/old-step.err"
+OLD_STEP_RC=$?
+if [ "$OLD_STEP_RC" -eq 3 ] && grep -q 'tape format v2' "$TMPDIR/old-step.err"; then
+    ok "a handcrafted pre-v3 tape is refused by --step with exit 3"
+else
+    fail "pre-v3 --step refusal" "rc=$OLD_STEP_RC $(cat "$TMPDIR/old-step.err")"
+fi
+EIGS_REPLAY="$OLD_TAPE" "$EIGS" "$TMPDIR/p_tape_contract.eigs" \
+    >/dev/null 2>"$TMPDIR/old-replay.err"
+OLD_REPLAY_RC=$?
+if [ "$OLD_REPLAY_RC" -eq 3 ] && grep -q 'format v2' "$TMPDIR/old-replay.err"; then
+    ok "a handcrafted pre-v3 tape is refused by EIGS_REPLAY with exit 3"
+else
+    fail "pre-v3 replay refusal" "rc=$OLD_REPLAY_RC $(cat "$TMPDIR/old-replay.err")"
+fi
+
+# O records remain part of v6 tapes and the stepper still folds them. Bound the
+# multiplicative configuration-record x binding work even though programs can
+# no longer create those records through observer setter builtins.
+WORK_TAPE="$TMPDIR/observer-work-limit.tape"
+head -2 "$CONTRACT_TAPE" > "$WORK_TAPE"
+for _ in $(seq 1 1000); do
+    echo 'O 0 cfg 0.001 0.01 0.1 10 0.001' >> "$WORK_TAPE"
+done
+echo 'L 0 1' >> "$WORK_TAPE"
+for i in $(seq 1 1001); do
+    echo "A 0 x$i=1" >> "$WORK_TAPE"
+done
+echo q | "$EIGS" --step "$WORK_TAPE" "$TMPDIR/p_tape_contract.eigs" \
+    >/dev/null 2>"$TMPDIR/work-limit.err"
+WORK_RC=$?
+if [ "$WORK_RC" -eq 3 ] && grep -q 'observer replay exceeds the .*work limit' "$TMPDIR/work-limit.err"; then
+    ok "multiplicative observer replay work is refused with exit 3"
+else
+    fail "observer replay work limit" "rc=$WORK_RC $(cat "$TMPDIR/work-limit.err")"
+fi
+
 # EigenStore's live file/handle family is an explicit replay boundary (#1242).
 if bash "$TESTS_DIR/test_store_replay.sh" "$EIGS"; then
     PASS=$((PASS + 1))

@@ -1672,14 +1672,6 @@ static int scan_integer_token_value(const char *start, size_t len, double *out_v
     return 1;
 }
 
-/* scan_tokens of text
- * scan_tokens of [text, comment_marker]
- *
- * Scans whitespace-delimited tokens directly in C and returns rows of
- * [token_text, line, col, start_offset, end_offset]. Lines are 1-based,
- * columns and offsets are 0-based, and end_offset is exclusive. If
- * comment_marker is non-empty, lines whose first non-whitespace character
- * matches its first byte are skipped. */
 /* scan_int_tokens of text
  * scan_int_tokens of [text, comment_marker]
  *
@@ -2268,9 +2260,6 @@ Value* builtin_path_ext(Value *arg) {
 }
 
 
-/* free_val of value → frees a heap-allocated Value tree. Returns null.
- * Use this to release large temporary results (e.g. tokenize_with_names output)
- * when the arena is not active. No-op on arena-allocated values. */
 /* ================================================================
  * BUILTIN: build_corpus — 3-pass corpus builder in C
  * ================================================================

@@ -22,6 +22,8 @@ run "NG23 reassociation overflow" 'x is (1e200 * 1e200) / 1e200
 assert of [(math_flags of null).overflow, "reassociation sets overflow"]'
 run "NG24 other association clean" 'x is 1e200 * (1e200 / 1e200)
 assert of [not (math_flags of null).overflow, "other order clean"]'
+run "NG26 capped literal stays valid" 'x is 0.0 * 1e400
+assert of [x == 0 and not (math_flags of null).invalid, "capped literal is valid"]'
 run "NG30 num nan" 'x is num of "nan"
 assert of [x == 0 and (math_flags of null).invalid, "num nan invalid"]'
 run "NG30 num inf" 'x is num of "inf"
@@ -32,6 +34,8 @@ run "NG30 num 42" 'x is num of "42"
 assert of [x == 42 and not ((math_flags of null).invalid or (math_flags of null).overflow), "42 clean"]'
 run "NG27 log controls/zero" 'a is log of 1e-15
 b is log of 1e-10
+assert of [a == (0 - 34.538776394910684), "tiny log exact"]
+assert of [b == (0 - 23.025850929940457), "boundary log exact"]
 assert of [not (math_flags of null).invalid, "positive logs clean"]
 c is log of 0
 assert of [(math_flags of null).invalid, "log zero invalid"]'
@@ -60,6 +64,7 @@ for spec in \
  'NG34 get_at|x is get_at of [raw, 0]' \
  'NG35 gather|x is (gather of [raw, [0]])[0]' \
  'NG38 equality|x is raw == raw' \
+ 'NG39 distinct equality|zero is buffer of 1; x is raw == zero' \
  'NG42 buf_peak|x is buf_peak of [raw, 0, 1]' \
  'NG50 nested sum|x is sum of ([raw])' \
  'NG50 nested mean|x is mean of ([raw])' \
@@ -74,6 +79,9 @@ for spec in \
 $op
 assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
 done
+run "NG61 mixed materialization invalid" "$nan_setup
+x is add of [raw, [2]]
+assert of [x == [[2]] and (math_flags of null).invalid, \"mixed materialization observes invalid\"]"
 inf_setup='a is buffer of [1, 2]
 a[0] is 1e200
 a[1] is 1e200
@@ -83,6 +91,14 @@ b[1] is 0 - 1e200
 b[2] is 1e200
 b[3] is 0 - 1e200
 raw is matmul of [a, b]'
+run "NG40 normalized dot stays valid" "$inf_setup
+zero is buffer of 2
+x is dot of [raw, zero]
+assert of [x == 0 and not (math_flags of null).invalid, \"normalized dot stays valid\"]"
+run "NG41 normalized buf_dot stays valid" "$inf_setup
+zero is buffer of 2
+x is buf_dot of [raw, zero, 0, 0, 2]
+assert of [x == 0 and not (math_flags of null).invalid, \"normalized buf_dot stays valid\"]"
 run "NG57 byte decoder overflow" "$inf_setup
 x is str_from_bytes of raw
 assert of [(math_flags of null).overflow, \"infinity byte read sets overflow\"]"

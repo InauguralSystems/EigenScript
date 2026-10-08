@@ -5,6 +5,18 @@ CAP is 1e308
 
 # Sticky math_flags coverage runs in fresh processes via test_numeric_guard_flags.sh.
 
+# Values themselves are not sticky and belong in this shared program.
+reassoc is (1e300 * 1e300) / 1e300
+assert of [reassoc == 100000000, "NG23 reassociated result is unchanged"]
+other is 1e300 * (1e300 / 1e300)
+assert of [other == 1e300, "NG24 the other order is exact"]
+capped_operand is 0.0 * 1e400
+assert of [capped_operand == 0, "NG26 an over-range literal is capped before use"]
+lt is log of 1e-15
+assert of [lt == (0 - 34.538776394910684), "NG27a log of 1e-15 is exact, not floored"]
+l10 is log of 1e-10
+assert of [l10 == (0 - 23.025850929940457), "NG27b log of 1e-10 is exact"]
+
 caught_zdiv is 0
 try:
     zdiv is 10 / 0
