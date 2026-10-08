@@ -1179,6 +1179,33 @@ Value* builtin_read_text(Value *arg) {
     TRACE_NONDET_RECORD("read_text", result);
 }
 
+/* ==== BUILTIN: read_line ==== */
+/* read_line of null — blocking line read from stdin via getline(3):
+ * returns the next line without its trailing newline (a "\r\n"
+ * terminator is stripped as one unit), or null at EOF. An empty line is
+ * "" — distinguishable from EOF. The stream-safe stdin primitive
+ * (#558): read_text of "/dev/stdin" sizes with fseek/ftell, which fails
+ * on an unseekable fd, so a PIPE silently reads as "" — any CLI meant to
+ * sit in a shell pipeline needs this instead. Nondeterministic input →
+ * tape-first: TAKE/RECORD like read_bytes, so under EIGS_REPLAY the
+ * recorded lines are served and no live stdin read runs. */
+Value* builtin_read_line(Value *arg) {
+    (void)arg;
+    TRACE_NONDET_TAKE("read_line");
+    char *line = NULL;
+    size_t cap = 0;
+    ssize_t n = getline(&line, &cap, stdin);
+    if (n < 0) {
+        free(line);
+        TRACE_NONDET_RECORD("read_line", make_null());
+    }
+    if (n > 0 && line[n - 1] == '\n') line[--n] = '\0';
+    if (n > 0 && line[n - 1] == '\r') line[--n] = '\0';
+    Value *v = make_str(line);
+    free(line);
+    TRACE_NONDET_RECORD("read_line", v);
+}
+
 /* ==== BUILTIN: write_text ==== */
 /* write_text of ["path", text] → 1 on success, 0 on failure. */
 Value* builtin_write_text(Value *arg) {
@@ -1535,6 +1562,7 @@ void register_host_builtins(Env *env) {
     env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));
     env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
     env_set_local_owned(env, "read_text", make_builtin(builtin_read_text));
+    env_set_local_owned(env, "read_line", make_builtin(builtin_read_line));
     env_set_local_owned(env, "write_text", make_builtin(builtin_write_text));
     env_set_local_owned(env, "write_bytes", make_builtin(builtin_write_bytes));
     env_set_local_owned(env, "exec_capture", make_builtin(builtin_exec_capture));

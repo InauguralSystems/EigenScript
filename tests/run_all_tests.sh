@@ -2434,6 +2434,22 @@ else
 fi
 echo ""
 
+# [42a2] read_line (#558): stream-safe stdin line read + record/replay
+echo "[42a2] read_line (counted dynamically)"
+RL_OUTPUT=$(bash "$TESTS_DIR/test_read_line.sh" 2>&1)
+RL_PASS=$(echo "$RL_OUTPUT" | grep -c "PASS:" || true)
+RL_FAIL=$(echo "$RL_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + RL_PASS + RL_FAIL))
+PASS=$((PASS + RL_PASS))
+FAIL=$((FAIL + RL_FAIL))
+if [ "$RL_FAIL" -gt 0 ]; then
+    echo "  FAIL: $RL_FAIL read_line check(s) failed"
+    echo "$RL_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $RL_PASS read_line checks"
+fi
+echo ""
+
 # [42b] --test --trace-on-fail (#394): every failure is a replayable tape
 echo "[42b] Trace-on-fail"
 TOF_OUTPUT=$(bash "$TESTS_DIR/test_trace_on_fail.sh" 2>&1)

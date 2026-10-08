@@ -209,7 +209,7 @@ perspective lands on the tape as an `N` record:
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585).
+  `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585).
   `mkdir` is a *write* whose return (a success bit) is filesystem-dependent:
   it is Recorded rather than #148-non-replayable because that bit **is**
   pinnable by the tape (unlike a subprocess fd). Under `EIGS_REPLAY` the

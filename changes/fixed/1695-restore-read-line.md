@@ -1,0 +1,1 @@
+- Restore the trace-recorded `read_line` builtin used by EigenLua's `io.read` implementation.

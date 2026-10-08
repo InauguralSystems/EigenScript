@@ -218,6 +218,7 @@ static const char *builtin_docs[][2] = {
     {"range", "range of n → [0, 1, ..., n-1]"},
     {"read_bytes", "read_bytes of path — read binary file, return list of byte values (0-255)"},
     {"read_bytes_buf", "read_bytes_buf of path — read binary file, return VAL_BUFFER of byte values."},
+    {"read_line", "read_line of null — blocking line read from stdin via getline(3):"},
     {"read_text", "read_text of \"path\" → file contents as string, or \"\" on failure."},
     {"record_history", "record_history of flag — enable (nonzero) or disable (0) per-assignment"},
     {"recv", "recv — builtin; see docs/BUILTINS.md"},
