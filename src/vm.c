@@ -2697,9 +2697,8 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         arg = STK_AS_VAL(g_vm.sp - 1);
         val_incref(arg);
     } else {
-        /* Wrapper must be heap: val_decref(arg) below has to actually
-         * release the list_append increfs on heap items, which a transient wrapper
-         * list silently swallows. */
+        /* Uncharged VM-internal wrapper (see make_list_heap); val_decref(arg)
+         * below releases the list_append increfs on its items. */
         arg = make_list_heap(argc);
         for (int i = 0; i < argc; i++) {
             list_append(arg, STK_AS_VAL(g_vm.sp - argc + i));
@@ -4664,9 +4663,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         VAL_NUM_RAW(existing) = SLOT_NUM_RAW(val_s);
                     } else {
                         val_decref(existing);
-                        /* #873: heap-force into heap targets while an
-                         * fast path is active (mirror of
-                         * jit_helper_index_set). */
                         target->data.list.items[i] =
                             make_num(SLOT_NUM_RAW(val_s));
                     }

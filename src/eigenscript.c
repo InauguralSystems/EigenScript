@@ -1754,7 +1754,8 @@ void recycle_intermediate(Value *v) {
 #endif
 }
 
-/* Unpooled make_num — for values that must bypass the NUM freelist. */
+/* Unpooled make_num: never touches the per-thread NUM freelist, so it is
+ * safe without a current VM thread (C-level fixtures, tests/test_intern_owners.c). */
 Value* make_num_permanent(double n) {
     n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
@@ -3487,7 +3488,6 @@ Env* env_new(Env *parent) {
         __atomic_add_fetch(&g_env_version_global, 1, __ATOMIC_RELAXED);
     e->parent = parent;
     if (parent) env_incref(parent);   /* the parent link is an owned ref */
-    e->heap_allocated = 1;
     e->captured = 0;
     e->is_loop_env = 0;
     /* #1161: same reason as is_loop_env — a recycled env must not inherit the
@@ -3716,7 +3716,7 @@ void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot 
 }
 
 /* Bind a parameter into a freshly-created call env. Caller guarantees:
- *   - env was just returned by env_new (heap_allocated=1, count=N with N<param)
+ *   - env was just returned by env_new (count=N with N<param)
  *   - `interned` came from env_intern_name (or VAL_FN.params, now interned)
  *   - the param name does not collide with any earlier param in this env
  *     (compiler rejects duplicate params)
@@ -3836,7 +3836,7 @@ void env_set_local_owned(Env *env, const char *name, Value *val) {
 static void gc_unregister_env(Env *env);
 
 void env_decref(Env *env) {
-    if (!env || !env->heap_allocated) return;
+    if (!env) return;
     int newrc;
     if (__builtin_expect(g_vm_multithreaded, 0))
         newrc = __atomic_sub_fetch(&env->env_refcount, 1, __ATOMIC_ACQ_REL);
@@ -3906,7 +3906,7 @@ void env_decref(Env *env) {
  * env_clear + gc_collect_cycles + env_decref instead; this remains for
  * paths that must hard-destroy an env regardless of live references.) */
 void env_destroy_final(Env *env) {
-    if (!env || !env->heap_allocated) return;
+    if (!env) return;
     gc_unregister_env(env);
     EigsSlot *vals = env->values;
     int count = env->count;
@@ -4134,7 +4134,7 @@ static int gc_value_is_node(Value *v) {
 /* An env child edge worth traversing: real, heap, and not the global
  * stop node. */
 static int gc_env_is_node(Env *e) {
-    return e && e->heap_allocated && e != g_global_env;
+    return e && e != g_global_env;
 }
 
 /* =========================================================================
@@ -4576,10 +4576,6 @@ void gc_note_possible_root(Value *v) {
     gc_buffer_possible_root(v);
 }
 
-void gc_note_possible_root_deferred(Value *v) {
-    gc_buffer_possible_root(v);
-}
-
 static void gc_drain_value_candidates(int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
     /* Feed the value-candidate buffer in as pinned seeds (each holds exactly
@@ -4848,26 +4844,22 @@ void env_reserve_slots(Env *env, int total) {
      * unless the env is a sealed root AND the state is multithreaded. */
     env_shared_lock(env);
     if (total <= env->count) { env_shared_unlock(env); return; }
-    /* Grow capacity if needed. Mirrors env_set_local_hashed's grow path
-     * for heap_allocated envs. Call-time envs are always heap-allocated
-     * (env_new sets heap_allocated=1). Reserve ENV_LOOP_BIND_HEADROOM extra
-     * CAPACITY (count still ends at `total`) so the runtime loop bindings
-     * don't realloc values[] out from under a live JIT %r12 cache (#291). */
+    /* Grow capacity if needed. Mirrors env_set_local_hashed's grow path.
+     * Reserve ENV_LOOP_BIND_HEADROOM extra CAPACITY (count still ends at
+     * `total`) so the runtime loop bindings don't realloc values[] out from
+     * under a live JIT %r12 cache (#291). */
     int want_cap = total + ENV_LOOP_BIND_HEADROOM;
     if (want_cap > env->capacity) {
         int new_cap = env->capacity ? env->capacity : ENV_INIT_CAP;
         while (new_cap < want_cap) new_cap *= 2;
         size_t nsz = new_cap * sizeof(char *);
         size_t vsz = new_cap * sizeof(EigsSlot);
-        if (env->heap_allocated && env_mt_shared(env)) {
+        if (env_mt_shared(env)) {
             env_grow_retire(env, new_cap);   /* #607: publish + retire */
-        } else if (env->heap_allocated) {
+        } else {
             env->names  = xrealloc(env->names,  nsz);
             env->values = xrealloc(env->values, vsz);
             env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
-        } else {
-            env->names  = xrealloc(env->names, nsz);
-            env->values = xrealloc(env->values, vsz);
         }
         env->capacity = new_cap;
     }

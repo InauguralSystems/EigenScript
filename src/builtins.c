@@ -118,7 +118,6 @@ int eigs_is_registered_builtin(const char *name) {
 }
 
 /* Internal helpers defined in eigenscript.c. */
-Value* make_num_permanent(double n);
 const char* val_type_name(ValType t);
 int dict_has(Value *dict, const char *key);
 void dict_remove(Value *dict, const char *key);
@@ -3811,7 +3810,7 @@ Value* builtin_list_slice(Value *arg) {
 Value* builtin_num_copy(Value *arg) {
     BOOL_REFUSE(arg, "num_copy");
     if (!arg || arg->type != VAL_NUM) return make_null();
-    return make_num_permanent(eigs_num_arg(arg, __func__));
+    return make_num(eigs_num_arg(arg, __func__));
 }
 
 /* ==== BUILTIN: concat ==== */

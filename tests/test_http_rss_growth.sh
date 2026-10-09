@@ -12,22 +12,22 @@
 # TWO METRICS, TWO COMPLEMENTARY BLIND SPOTS — the gate checks BOTH and fails
 # if EITHER trips:
 #
-#   HEAP LEG — mallinfo2().uordblks (live allocator bytes), sampled from the
+#   HEAP LEG — mallinfo2().uordblks (live arena bytes), sampled from the
 #   server itself through the heap_sample debug builtin over a /heap_sample
-#   route. SEES: the allocator class — malloc'd Values and other sub-mmap-threshold
+#   route. SEES: the arena class — malloc'd Values and other sub-mmap-threshold
 #   allocations. Immune to resident free-heap slack, which is what blinded the
 #   old RSS-only gate: #770 showed the literal #731 shape (a dropped
 #   val_decref in builtin_shared_incr, 72 heap B/req) passing the RSS gate at
 #   0 kB over the whole 1000 + 3x2000 window, while uordblks shows ~144 kB in
-#   the very first 2000-request batch. BLIND TO: non-allocator memory — direct
+#   the very first 2000-request batch. BLIND TO: non-arena memory — direct
 #   mmap allocations (at/above glibc's dynamic mmap threshold) and thread
 #   stacks. Measured: a 512 kB/req direct-mmap leak moves uordblks 0/0/0 kB.
 #
-#   RSS LEG — VmRSS from /proc. SEES: exactly the non-allocator class the heap leg
+#   RSS LEG — VmRSS from /proc. SEES: exactly the non-arena class the heap leg
 #   misses — the same 512 kB/req direct-mmap leak is ~1 GB per batch of 2000
 #   (measured 1024024/1024000/1024000 kB); a plain malloc(512kB) leak is also
 #   caught because glibc's dynamic mmap threshold pulls those chunks back into
-#   the allocator. BLIND TO: small allocator-class leaks inside the heap-slack
+#   the arena. BLIND TO: small arena-class leaks inside the heap-slack
 #   absorption window (the #770 case above: 72 B/req invisible for tens of
 #   thousands of requests) — that is the heap leg's job, at a 64 kB threshold.
 #
@@ -45,7 +45,7 @@
 #
 # METHOD: measure between two STEADY-STATE checkpoints, never baseline-to-end.
 # The first requests against a fresh server also carry one-time live
-# allocations (allocator warmup, ~1.4 MB when #731 was measured; ~20 MB of
+# allocations (arena warmup, ~1.4 MB when #731 was measured; ~20 MB of
 # first-request allocator setup visible in uordblks), which dwarfs the real
 # leak rate and would make any baseline-to-end threshold meaningless. So: warm
 # up, sample A, drive a measured batch, sample B, and assert B-A.
@@ -95,7 +95,7 @@ if [ "${1:-}" = --selftest ]; then
     # healthy binary: #765 shipped a rule that was green here and false-failed CI
     # within a day. These are the real numbers — the two leak rates this gate was
     # built to catch, the one-off step that produced run 30439602640's phantom
-    # leak, and the non-allocator mmap class that is the heap leg's documented blind
+    # leak, and the non-arena mmap class that is the heap leg's documented blind
     # spot (#770).
     st_fail=0
     expect_verdict() { # $1 = threshold kB, $2 = clean|leak, $3 = label, $4 $5 $6 = batch kB
@@ -106,25 +106,25 @@ if [ "${1:-}" = --selftest ]; then
             st_fail=$((st_fail + 1))
         fi
     }
-    # Heap leg (threshold 64 kB): the allocator class it must catch, and the one-off
+    # Heap leg (threshold 64 kB): the arena class it must catch, and the one-off
     # growth it must absorb.
     expect_verdict 64 clean "flat, leak-free"                          0 0 0
     expect_verdict 64 clean "sub-threshold page jitter"                8 0 16
-    expect_verdict 64 clean "allocator step in batch 1"                 2856 0 0
-    expect_verdict 64 clean "allocator step in batch 2 (run 30439602640)"  0 2876 0
-    expect_verdict 64 clean "allocator step in batch 3"                   0 0 2668
+    expect_verdict 64 clean "arena step in batch 1"                 2856 0 0
+    expect_verdict 64 clean "arena step in batch 2 (run 30439602640)"  0 2876 0
+    expect_verdict 64 clean "arena step in batch 3"                   0 0 2668
     expect_verdict 64 clean "RSS can fall as well as rise"         -1204 0 1204
     expect_verdict 64 leak  "#731 shared_incr, 160 B/req"            312 312 312
     expect_verdict 64 leak  "#752 authed route, 136 B/req"           265 265 265
     expect_verdict 64 leak  "a real leak WITH a step on top"         312 3000 312
     expect_verdict 64 leak  "leak at 1472 B/req sustained"          2876 2876 2876
-    # RSS leg (threshold 4096 kB): the non-allocator class it must catch, and the
-    # allocator-step class it must NOT catch even when steps land in two batches.
-    expect_verdict 4096 clean "allocator steps in two batches"          2876 2876 0
+    # RSS leg (threshold 4096 kB): the non-arena class it must catch, and the
+    # arena-step class it must NOT catch even when steps land in two batches.
+    expect_verdict 4096 clean "arena steps in two batches"          2876 2876 0
     expect_verdict 4096 clean "sub-threshold RSS drift"             1000 2000 500
-    expect_verdict 4096 clean "single allocator step"                      0 2856 0
+    expect_verdict 4096 clean "single arena step"                      0 2856 0
     expect_verdict 4096 leak  "512 kB/req direct-mmap leak (#770)"  1024000 1024000 1024000
-    expect_verdict 4096 leak  "mmap leak with an allocator step on top" 1024000 2876 1024000
+    expect_verdict 4096 leak  "mmap leak with an arena step on top" 1024000 2876 1024000
     if [ "$st_fail" -eq 0 ]; then
         ok "verdict self-test: 15 planted faults classified correctly (9 clean, 6 leak)"
     else
@@ -166,7 +166,7 @@ if grep -qaE "__asan_init|__tsan_init" "$EIGS" 2>/dev/null; then
     exit 0
 fi
 
-WARMUP=1000     # discarded: absorbs one-time live allocations (allocator/setup)
+WARMUP=1000     # discarded: absorbs one-time live allocations (arena/setup)
 MEASURE=2000    # the batch B-A is measured over
 # HEAP leg threshold. Pre-fix leak rates were ~160 B/req (RSS1) and ~136 B/req
 # (RSS2) — i.e. ~320 kB and ~270 kB of LIVE heap per MEASURE batch, and
@@ -177,17 +177,17 @@ MEASURE=2000    # the batch B-A is measured over
 # (per-checkpoint samples are single integers read between batches, with no
 # request in flight).
 THRESHOLD_KB=64
-# RSS leg threshold. This leg exists for the NON-ALLOCATOR class the heap leg
+# RSS leg threshold. This leg exists for the NON-ARENA class the heap leg
 # cannot see (direct mmap, thread stacks); per-request leaks of that class are
 # megabytes per batch (a 512 kB/req direct-mmap probe: ~1,024,000 kB per
 # 2000-req batch), so the threshold's only job is to stay clear of the ONE-OFF
-# per-thread-allocator step: ~2.7 MB, largest observed 2876 kB (CI run
+# per-thread-arena step: ~2.7 MB, largest observed 2876 kB (CI run
 # 30439602640), reproduced on a clean binary as VmRSS 28/1396/0 kB while
 # uordblks read 0/0/0. The median-of-three absorbs a step landing in ONE
 # batch; 4096 kB adds ~1.4x headroom over the largest observed step in case
-# steps land in TWO of the three batches, while any non-allocator leak above
+# steps land in TWO of the three batches, while any non-arena leak above
 # ~2 B/req still trips it. Do NOT lower this to sharpen the RSS leg against
-# allocator-class leaks — that is the heap leg's job, at 64 kB.
+# arena-class leaks — that is the heap leg's job, at 64 kB.
 RSS_THRESHOLD_KB=4096
 
 rss_of() { awk '/^VmRSS/{print $2}' "/proc/$1/status" 2>/dev/null; }
@@ -252,7 +252,7 @@ check_identity() { # $1 = label, $2 = port, $3 = server pid
 #
 # A single warmup-then-measure is only valid if the warmup actually reached
 # steady state, and it cannot tell whether it did. When it doesn't, B-A
-# re-absorbs the one-time live allocations of startup (allocator warmup, ~1.4 MB
+# re-absorbs the one-time live allocations of startup (arena warmup, ~1.4 MB
 # when #731 was measured) and reports them as a leak — forcing WARMUP=5 on a
 # leak-free binary reproduces CI's exact figures to within ~1% on both checks
 # (RSS1 2880 kB/1474 B-per-req vs 2852/1460; RSS2 1532/784 vs 1516/776).
@@ -269,8 +269,8 @@ check_identity() { # $1 = label, $2 = port, $3 = server pid
 # Each connection is served by a fresh EigsState on its own thread
 # (ext_http.c:~1400), and worker setup costs land when wall-clock scheduling
 # overlaps two workers' lifetimes, not at a fixed request count: the classic
-# case under the old RSS metric was glibc mmap'ing a second per-thread allocator
-# (~2.7 MB, once) — invisible to uordblks, since a fresh allocator is FREE heap,
+# case under the old RSS metric was glibc mmap'ing a second per-thread arena
+# (~2.7 MB, once) — invisible to uordblks, since a fresh arena is FREE heap,
 # but the live worker allocations that come with overlapping workers are not,
 # and they land wherever the scheduler puts them: measured on the dev box the
 # step lands at request 400, 500, 600 and 700 across four otherwise identical

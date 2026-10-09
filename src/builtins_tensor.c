@@ -12,7 +12,6 @@
 /* TRACE_NONDET_RET lives in trace.h. */
 
 /* Forward decls for helpers shared with the allocation/observer machinery. */
-Value* make_num_permanent(double n);
 
 /* Shared double-precision tensor kernels. These live in this always-compiled
  * translation unit so model-enabled and model-disabled builds execute the
@@ -1907,7 +1906,7 @@ Value* builtin_sgd_update(Value *arg) {
             Value *old = param->data.list.items[i];
             double pv = eigs_num_arg(old, __func__);
             double gv = eigs_num_arg(grad->data.list.items[i], __func__);
-            param->data.list.items[i] = make_num_permanent(pv - lr * gv);
+            param->data.list.items[i] = make_num(pv - lr * gv);
             val_decref(old);
         }
     } else {
@@ -1924,7 +1923,7 @@ Value* builtin_sgd_update(Value *arg) {
                 Value *old = pr->data.list.items[c];
                 double pv = eigs_num_arg(old, __func__);
                 double gv = eigs_num_arg(gr->data.list.items[c], __func__);
-                pr->data.list.items[c] = make_num_permanent(pv - lr * gv);
+                pr->data.list.items[c] = make_num(pv - lr * gv);
                 val_decref(old);
             }
         }
@@ -2085,7 +2084,7 @@ Value* builtin_sgd_update_rows(Value *arg) {
             Value *old = mrow->data.list.items[c];
             double pv = eigs_num_arg(old, __func__);
             double gv = eigs_num_arg(grow->data.list.items[c], __func__);
-            mrow->data.list.items[c] = make_num_permanent(pv - lr * gv);
+            mrow->data.list.items[c] = make_num(pv - lr * gv);
             val_decref(old);
         }
     }
@@ -2252,7 +2251,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
             Value *old = mrow->data.list.items[col];
             double pv = eigs_num_arg(old, __func__);
             double gv = eigs_num_arg(grow->data.list.items[col], __func__);
-            mrow->data.list.items[col] = make_num_permanent(pv - lr * gv);
+            mrow->data.list.items[col] = make_num(pv - lr * gv);
             val_decref(old);
         }
     }

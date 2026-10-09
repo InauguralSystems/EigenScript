@@ -358,7 +358,6 @@ struct Env {
     int capacity;
     Env *parent;        /* lexical parent; an OWNED reference (env_incref'd
                          * by env_new, dropped by env_decref's destructor) */
-    int heap_allocated;
     int captured;
     /* #959: set on a per-iteration `for`-loop env (OP_LOOP_ENV_FRESH). `is`
      * is outward-mutable — a name not bound in any enclosing scope creates
@@ -1694,7 +1693,6 @@ void   strbuf_free(strbuf *b);
 /* ---- Value constructors ---- */
 
 Value* make_num(double n);
-Value* make_num_permanent(double n);   /* heap-only make_num (#873 store paths) */
 void recycle_intermediate(Value *v);
 Value* make_str(const char *s);
 Value* make_str_len(const char *s, size_t n);   /* #1183: caller knows strlen(s) */
@@ -1704,6 +1702,7 @@ Value* make_null(void);
 /* #1637: the immortal true/false singletons (refcount no-ops, like null). */
 Value* make_bool(int b);
 Value* make_list(int capacity);
+Value* make_num_permanent(double n);   /* unpooled make_num; needs no VM thread */
 Value* make_list_heap(int capacity);
 Value* make_text_builder(void);
 Value* make_fn(const char *name, char **params, int param_count, Env *closure);
@@ -1875,8 +1874,6 @@ static inline double num_guard_named(double x, const char *who) {
  * cycle collection. Out-of-line (keeps val_decref/slot_decref lean) and gated
  * inside on GC-enabled / not-collecting / single-threaded. */
 void gc_note_possible_root(Value *v);
-/* Preserve sandbox cycle candidates even while collection is deferred under MT. */
-void gc_note_possible_root_deferred(Value *v);
 
 static inline void val_incref(Value *v) {
     if (v && v->type != VAL_NULL && v->type != VAL_BOOL) {
