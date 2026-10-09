@@ -435,20 +435,8 @@ static inline void vm_bind_fresh_param(Env *env, int slot_idx,
                                        uint32_t h, EigsSlot s) {
     env_retain_intern_table(env, owner);
     env->names[slot_idx] = (char *)interned;
-    EigsSlot stored = s;
-    if (__builtin_expect(slot_is_ptr(s), 0)) {
-        Value *v = slot_as_ptr(s);
-        if (__builtin_expect(v && v->arena, 0)) {
-            Value *promoted = promote_if_arena(v);
-            if (promoted && promoted != v) {
-                stored = slot_from_value(promoted);
-                goto _bind_store;
-            }
-        }
-    }
     slot_incref(s);
-_bind_store:
-    env->values[slot_idx] = stored;
+    env->values[slot_idx] = s;
     if (env->assign_counts) env->assign_counts[slot_idx] = 1;
     env->count = slot_idx + 1;
     env->binding_version++;
@@ -488,21 +476,9 @@ _bind_store:
  * slot is always bound). */
 static inline void env_rebind_param_slot(Env *env, int slot, EigsSlot s) {
     /* Parked slot holds slot_null — no decref of the old value. Same
-     * incref/arena-promotion contract as env_bind_fresh_param_slot. */
-    EigsSlot stored = s;
-    if (__builtin_expect(slot_is_ptr(s), 0)) {
-        Value *v = slot_as_ptr(s);
-        if (__builtin_expect(v && v->arena, 0)) {
-            Value *promoted = promote_if_arena(v);
-            if (promoted && promoted != v) {
-                stored = slot_from_value(promoted);
-                goto _rebind_store;
-            }
-        }
-    }
+     * incref contract as env_bind_fresh_param_slot. */
     slot_incref(s);
-_rebind_store:
-    env->values[slot] = stored;
+    env->values[slot] = s;
     if (env->assign_counts) env->assign_counts[slot] = 1;
 }
 
@@ -695,15 +671,9 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             /* Cache hit — update in place */
-            Value *promoted = promote_if_arena(val);
-            if (promoted != val) {
-                val_decref(dict->data.dict.vals[ce->index]);
-                dict->data.dict.vals[ce->index] = promoted;
-            } else {
-                val_incref(val);
-                val_decref(dict->data.dict.vals[ce->index]);
-                dict->data.dict.vals[ce->index] = val;
-            }
+            val_incref(val);
+            val_decref(dict->data.dict.vals[ce->index]);
+            dict->data.dict.vals[ce->index] = val;
             return;
         }
     }
@@ -725,8 +695,7 @@ static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32
         if (stored == key || strcmp(stored, key) == 0) {
             Value *existing = dict->data.dict.vals[ce->index];
             if (existing && existing->type == VAL_NUM &&
-                existing->refcount == 1 &&
-                !existing->arena) {
+                existing->refcount == 1) {
                 VAL_NUM_RAW(existing) = num;
                 return 1;
             }
@@ -796,8 +765,8 @@ static inline EigsSlot slot_bridge_wrap(Value *v) {
     if (!v) return slot_null();
     if (v->type == VAL_NULL) {
         /* Caller passes an owned ref. Slot-encoded null drops the pointer,
-         * so heap VAL_NULL (rare but possible — see promote_if_arena) must
-         * be decref'd here. Singleton/arena nulls no-op the decref. */
+         * so a heap VAL_NULL (rare but possible) must
+         * be decref'd here. Singleton nulls no-op the decref. */
         val_decref(v);
         return slot_null();
     }
@@ -1179,28 +1148,15 @@ static inline Env *env_resolve_store(Env *start, const char *name, uint32_t h,
  * CASE(SET_LOCAL) and the JIT's out-of-line path (jit_helper_set_local), so
  * the two can never disagree. The in-place branch is load-bearing beyond
  * speed: g_last_observer may alias the exclusive VAL_NUM being overwritten,
- * and a swap+decref would free it under the observer. #873: an arena value is
- * promoted before it lands in an env slot (module slots are immortal, fn-local
- * slots can outlive the arena window via parked envs/closures). */
+ * and a swap+decref would free it under the observer. */
 static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
     if (slot_is_num(tos)) {
         EigsSlot ex_s = e->values[slot];
         if (slot_is_heap(ex_s)) {
             Value *existing = slot_as_ptr(ex_s);
             if (existing && existing->type == VAL_NUM &&
-                existing->refcount == 1 && !existing->arena) {
+                existing->refcount == 1) {
                 VAL_NUM_RAW(existing) = SLOT_NUM_RAW(tos);
-                return;
-            }
-        }
-    }
-    if (__builtin_expect(slot_is_ptr(tos), 0)) {
-        Value *tv = slot_as_ptr(tos);
-        if (__builtin_expect(tv && tv->arena, 0)) {
-            Value *promoted = promote_if_arena(tv);
-            if (promoted && promoted != tv) {
-                slot_decref(e->values[slot]);
-                e->values[slot] = slot_from_value(promoted);
                 return;
             }
         }
@@ -1859,15 +1815,14 @@ int jit_helper_iter_next(void) {
     }
     /* In-place idx bump when the slot is an exclusive plain VAL_NUM
      * (matches the interpreter's NUM_REUSE fast path). */
-    if (idx_v->type == VAL_NUM && idx_v->refcount == 1 && !idx_v->arena) {
+    if (idx_v->type == VAL_NUM && idx_v->refcount == 1) {
         VAL_NUM_RAW(idx_v) = (double)(idx + 1);
     } else {
         val_decref(idx_v);
         /* #873: heap-force when the state list must outlive an active
-         * arena window (mark left open across the loop back-edge). */
+         * loop state. */
         state->data.list.items[1] =
-            (g_arena.active && !state->arena) ? make_num_permanent(idx + 1)
-                                              : make_num(idx + 1);
+            make_num(idx + 1);
     }
     vm_push(elem);
     return g_has_error ? 2 : 0;
@@ -2271,18 +2226,12 @@ void jit_helper_index_set(void) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 Value *existing = target->data.list.items[i];
                 if (existing && existing->type == VAL_NUM &&
-                    existing->refcount == 1 &&
-                    !existing->arena) {
+                    existing->refcount == 1) {
                     VAL_NUM_RAW(existing) = SLOT_NUM_RAW(val_s);
                 } else {
                     val_decref(existing);
-                    /* #873: inside an arena window a plain make_num is
-                     * arena-backed — stored into a HEAP list it dangles
-                     * after arena_reset. Heap-force for heap targets. */
                     target->data.list.items[i] =
-                        (g_arena.active && !target->arena)
-                            ? make_num_permanent(SLOT_NUM_RAW(val_s))
-                            : make_num(SLOT_NUM_RAW(val_s));
+                        make_num(SLOT_NUM_RAW(val_s));
                 }
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
@@ -2302,20 +2251,9 @@ void jit_helper_index_set(void) {
         if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
-            /* #873: promote an arena value stored into a heap list —
-             * same contract as list_append / the env store paths. */
-            if (__builtin_expect(val->arena && !target->arena, 0)) {
-                Value *promoted = promote_if_arena(val);
-                if (promoted != val) {
-                    val_decref(target->data.list.items[i]);
-                    target->data.list.items[i] = promoted;
-                    goto _idx_assign_stored;
-                }
-            }
             val_incref(val);
             val_decref(target->data.list.items[i]);
             target->data.list.items[i] = val;
-            _idx_assign_stored:;
         } else {
             rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
         }
@@ -2612,7 +2550,6 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
             return 0;
         if (fn_chunk->jit_state != 2 || !fn_chunk->jit_code) return 1;
         if (g_task_sched) return 1;   /* #533: task code runs interpreted */
-        if (g_arena.active) return 1; /* #873: arena scopes run interpreted */
         /* #728: a running thunk can flip the flag mid-flight (spawn is a
          * builtin, reachable via the VAL_BUILTIN path below) — after that,
          * don't enter NESTED thunks: their epilogues write the shared
@@ -2760,9 +2697,8 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         arg = STK_AS_VAL(g_vm.sp - 1);
         val_incref(arg);
     } else {
-        /* Wrapper must be heap: val_decref(arg) below has to actually
-         * release the list_append increfs on heap items, which an arena
-         * list silently swallows. */
+        /* Uncharged VM-internal wrapper (see make_list_heap); val_decref(arg)
+         * below releases the list_append increfs on its items. */
         arg = make_list_heap(argc);
         for (int i = 0; i < argc; i++) {
             list_append(arg, STK_AS_VAL(g_vm.sp - argc + i));
@@ -2803,15 +2739,6 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
                                                    &g_exit_code), 0)) {
         g_exit_requested = 1;
         g_has_error = 1;
-        g_vm.frames[g_vm.frame_count - 1].ip = caller_chunk->code + resume_off;
-        return 2;
-    }
-    if (__builtin_expect(g_arena.active, 0)) {
-        /* #873: the builtin just opened an arena window (arena_mark).
-         * The caller thunk's inline stores don't arena-promote, so hand
-         * the rest of this chunk to the interpreter. The call completed
-         * and the top frame is the caller — fix its ip past the CALL
-         * and deep-bail, mirroring the g_has_error path above. */
         g_vm.frames[g_vm.frame_count - 1].ip = caller_chunk->code + resume_off;
         return 2;
     }
@@ -3356,7 +3283,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
      * make_num then realize they could have mutated in place. The hot
      * arith fast path no longer needs it: immediate doubles have no
      * refcount and heap-num results are emitted as immediates. */
-#define NUM_REUSE(v) ((v)->type == VAL_NUM && (v)->refcount == 1 && !(v)->arena)
+#define NUM_REUSE(v) ((v)->type == VAL_NUM && (v)->refcount == 1)
 
     /* Stack-top fast path: read two slots, extract doubles from either
      * immediate or heap VAL_NUM form, compute. Result is wrapped as a
@@ -4025,10 +3952,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * received message and the leaked suspend flag fired at a random
          * later call site — state corruption after ~OSR-threshold
          * iterations (first seen as liferaft node tasks dying en masse).
-         * #873: nor inside an open arena window — thunk stores don't
-         * arena-promote (see the fresh-entry gate).
          * #940: nor inside sandbox_run — sandboxed code runs interpreted. */
-        if (!g_vm_multithreaded && !g_task_sched && !g_arena.active &&
+        if (!g_vm_multithreaded && !g_task_sched &&
             !g_sandbox_active) {
         chunk->back_edge_count++;
 
@@ -4429,16 +4354,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * twins are #297-gated. Two workers running one warm thunk raced
              * write/write on both (TSan gate: test_spawn_jit_warm.eigs).
              * Workers interpret shared chunks instead, matching the OSR
-             * gate at CASE(JUMP_BACK). */
-            /* #873: nor inside an open arena window — emitted stores
-             * don't arena-promote; arena scopes run interpreted.
+             * gate at CASE(JUMP_BACK).
              * #940: nor inside sandbox_run — sandboxed code runs
              * interpreted; JIT-compiling attacker-controlled bytecode is
              * attack surface (and removes any "the native tier disagrees
              * with the interpreter's guard on attacker-supplied bytecode"
              * class). */
             if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
-                !g_arena.active && !g_sandbox_active) {
+                !g_sandbox_active) {
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* jit_helper_return popped fn_chunk's frame but left
@@ -4736,18 +4659,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     Value *existing = target->data.list.items[i];
                     /* In-place mutate when slot is an exclusive untracked VAL_NUM. */
                     if (existing && existing->type == VAL_NUM &&
-                        existing->refcount == 1 &&
-                        !existing->arena) {
+                        existing->refcount == 1) {
                         VAL_NUM_RAW(existing) = SLOT_NUM_RAW(val_s);
                     } else {
                         val_decref(existing);
-                        /* #873: heap-force into heap targets while an
-                         * arena window is open (mirror of
-                         * jit_helper_index_set). */
                         target->data.list.items[i] =
-                            (g_arena.active && !target->arena)
-                                ? make_num_permanent(SLOT_NUM_RAW(val_s))
-                                : make_num(SLOT_NUM_RAW(val_s));
+                            make_num(SLOT_NUM_RAW(val_s));
                     }
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
@@ -4767,20 +4684,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             } else if (vm_index_resolve(&i, target->data.list.count)) {
-                /* #873: promote an arena value stored into a heap list
-                 * (mirror of jit_helper_index_set's general arm). */
-                if (__builtin_expect(val->arena && !target->arena, 0)) {
-                    Value *promoted = promote_if_arena(val);
-                    if (promoted != val) {
-                        val_decref(target->data.list.items[i]);
-                        target->data.list.items[i] = promoted;
-                        goto _interp_idx_stored;
-                    }
-                }
                 val_incref(val);
                 val_decref(target->data.list.items[i]);
                 target->data.list.items[i] = val;
-                _interp_idx_stored:;
             } else {
                 rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
             }
@@ -5144,9 +5050,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             } else {
                 val_decref(idx_v);
                 state->data.list.items[1] =
-                    (g_arena.active && !state->arena)
-                        ? make_num_permanent(idx + 1)   /* #873 */
-                        : make_num(idx + 1);
+                    make_num(idx + 1);
             }
             if (iterable->type == VAL_BUFFER) {
                 /* Push number immediate directly — skip make_num + immediate-
@@ -6608,7 +6512,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 !g_sandbox_active)
                 jit_try_compile_chunk(fn_chunk);
             if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
-                !g_arena.active && !g_sandbox_active) {   /* #873, #940: see the OP_CALL hook */
+                !g_sandbox_active) {   /* #873, #940: see the OP_CALL hook */
                 ((JitChunkFn)fn_chunk->jit_code)();
                 if (fn_chunk->jit_advance == -1) {
                     /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook.

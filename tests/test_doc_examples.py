@@ -324,7 +324,7 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (  8,    3,     5,      0,      0),
+    "README.md":                 (  7,    3,     4,      0,      0),
     "docs/llms.txt":             (  9,    6,     2,      1,      0),
     "docs/SPEC.md":              ( 84,   80,     1,      3,      0),   # #1637: +2 paired (bool raises, deep == short-circuit)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),

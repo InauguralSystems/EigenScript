@@ -9,12 +9,12 @@
  *                 cache, handle table, ext singletons. Currently holds
  *                 only the attached-threads registry.
  *   - EigsThread: one per OS thread that has entered a state. Owns the
- *                 arena and the error/return/control-flow state
+ *                 error/return/control-flow state
  *                 (Phase 3). Will grow to own the VM, observer-current
  *                 pointer, JIT caches, allocator freelists.
  *
  * EigsThread is transparent (struct definition in eigenscript.h) so the
- * legacy `g_arena`, `g_returning`, `g_error_msg`, ... identifiers can be
+ * legacy `g_returning`, `g_error_msg`, ... identifiers can be
  * macros that expand to `eigs_current->field` — same single-indirection
  * cost as the original `__thread X g_X` direct access. EigsState stays
  * opaque to internal TUs.
@@ -37,13 +37,11 @@ EigsState *eigs_state_new(void);
  * attachments are reported to stderr (leak indicator). Safe on NULL. */
 void eigs_state_destroy(EigsState *st);
 
-/* Attach the calling OS thread to `st`. Allocates the EigsThread, runs
- * arena_init on its arena, links into st, sets eigs_current. Returns
+/* Attach the calling OS thread to `st`. Allocates the EigsThread, links it into st, and sets eigs_current. Returns
  * NULL on re-attach or NULL st. */
 EigsThread *eigs_thread_attach(EigsState *st);
 
-/* Detach the calling OS thread. Runs arena_destroy, unlinks from the
- * owning state, frees the EigsThread, clears eigs_current. No-op if
+/* Detach the calling OS thread. Unlinks from the owning state, frees the EigsThread, and clears eigs_current. No-op if
  * not attached. */
 void eigs_thread_detach(void);
 

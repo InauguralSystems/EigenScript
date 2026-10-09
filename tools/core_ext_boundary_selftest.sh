@@ -40,15 +40,15 @@ grep -q 'OK: no core -> extension-private include edge' "$T/green.log" || {
     cat "$T/green.log"; echo "core-ext selftest: RED: compiler invocations never overlapped"; exit 1;
 }
 
-cp "$T/src/arena.c" "$T/arena.c.saved"
-printf '\n#include "ext_http_internal.h"\n' >> "$T/src/arena.c"
+cp "$T/src/alloc.c" "$T/alloc.c.saved"
+printf '\n#include "ext_http_internal.h"\n' >> "$T/src/alloc.c"
 if run_gate planted; then
     cat "$T/planted.log"; echo "core-ext selftest: planted private-header edge passed"; exit 1
 fi
-grep -q 'FAIL\[A\]: core TU src/arena.c includes extension private header "ext_http_internal.h"' "$T/planted.log" || {
+grep -q 'FAIL\[A\]: core TU src/alloc.c includes extension private header "ext_http_internal.h"' "$T/planted.log" || {
     cat "$T/planted.log"; echo "core-ext selftest: planted failure was not attributed"; exit 1;
 }
-cp "$T/arena.c.saved" "$T/src/arena.c"
+cp "$T/alloc.c.saved" "$T/src/alloc.c"
 run_gate restored || { cat "$T/restored.log"; echo "core-ext selftest: restored gate did not pass"; exit 1; }
 
 echo "PASS: core-ext boundary: 28 TUs and poisoned-header verdict preserved; parallel overlap observed; planted edge rejected; restore green"

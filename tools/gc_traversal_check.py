@@ -127,7 +127,7 @@ def main():
         classify+='case "$c" in 0|2) exit 0;; *) exit 1;; esac' if label=='duplicate-count' else 'test "$c" -eq 2'
         run('sanitizer-'+label,['bash','-c',classify,'gc-traversal',ROOT/'tests/lsan_classify.sh',combined])
         rows=re.findall(r'^gc-traversal: cases=3 checks=(\d+) failures=(\d+)$',stdout,re.M)
-        assert len(rows)==1 and int(rows[0][0])==2455,'changed total check population'
+        assert len(rows)==1 and int(rows[0][0])==2452,'changed total check population'
         case_rows=re.findall(r'^gc-case: name=(\w+) checks=(\d+) collections=(\d+) skips=(\d+) failures=(\d+)$',stdout,re.M)
         expected_failures={'positive':[0,0,0],'duplicate-count':[2,0,3],'skip-disabled':[1,0,0]}[label]
         # Undercounting makes the module cycle look externally owned after

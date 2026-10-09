@@ -66,7 +66,7 @@ iteration, or a collector that quietly stops working).
   bug) but not leaks. The gate for this class is
   `tests/test_http_rss_growth.sh` (suite [45c]): RSS growth between two
   **steady-state** checkpoints, never baseline-to-end (the first requests carry
-  ~1.4 MB of one-time arena warmup, ~18x the real rate). Add a check there when
+  ~1.4 MB of one-time allocator warmup, ~18x the real rate). Add a check there when
   you add a request path that allocates. It **skips on sanitizer builds** by
   design — ASan's redzones/quarantine grow RSS 567 B/req on a leak-free binary.
 - **A builtin's failure signal is a VALUE, not a C NULL — check the type, not

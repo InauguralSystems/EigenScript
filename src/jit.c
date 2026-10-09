@@ -525,7 +525,7 @@ static void ensure_layout(void) {
  *   OP_TRUE/OP_FALSE         — inline immediate push.
  *   OP_LINE                  — inline 32-bit store to current_line.
  *   OP_CONST [idx:16]        — pre-encoded slot push + inline incref for
- *                              heap (skipped statically when arena==1).
+ *                              heap.
  *   OP_GET_LOCAL [slot:16]   — load fn_env->values[slot]; inline
  *                              conditional incref.
  *   OP_SET_LOCAL [slot:16]   — load old, store new, conditional incref
@@ -1255,7 +1255,6 @@ static uint8_t *emit_call_rax(uint8_t *w) { *w++ = 0xFF; *w++ = 0xD0; return w; 
  *   mov %rax, %rdx;  shr $48, %rdx;
  *   cmp $0xFFFB, %edx;  jb .skip       // immediate (num/null/bool)
  *   mov %rax, %rdi;  shl $16, %rdi;  shr $16, %rdi   // mask payload
- *   testb $1, off_arena(%rdi);  jnz .skip            // arena-owned
  *   lock addl $1, off_refcount(%rdi)
  *  .skip:
  *
@@ -1271,16 +1270,10 @@ static uint8_t *emit_conditional_incref_rax(uint8_t *w, int *bail) {
     w = emit_mov_rax_rdi(w);
     w = emit_shl_16_rdi(w);
     w = emit_shr_16_rdi(w);
-    w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
-    uint8_t *jnz_patch;
-    w = emit_jnz_rel8(w, &jnz_patch);
-    uint8_t *jnz_after = w;
     w = emit_lock_addl_1_disp32_rdi(w, (int32_t)offsetof(Value, refcount));
     int jb_rel = (int)(w - jb_after);
-    int jnz_rel = (int)(w - jnz_after);
-    if (jb_rel > 127 || jnz_rel > 127) { *bail = 1; return w; }
+    if (jb_rel > 127) { *bail = 1; return w; }
     *jb_patch = (uint8_t)jb_rel;
-    *jnz_patch = (uint8_t)jnz_rel;
     return w;
 }
 
@@ -1909,7 +1902,6 @@ static uint8_t *emit_jle_rel8(uint8_t *w, uint8_t **patch) {
  * on bench_dmg_shape when emitted unconditionally).
  *
  * Sequence (~76 bytes worst case with the hook arm):
- *   testb $1, off_arena(%rdi);  jnz .skip
  *   lock subl $1, off_refcount(%rdi);  jle .free
  *   cmpl $VAL_LIST, off_type(%rdi);  je .note
  *   cmpl $VAL_DICT, off_type(%rdi);  jne .skip
@@ -1927,10 +1919,6 @@ static uint8_t *emit_jle_rel8(uint8_t *w, uint8_t **patch) {
  * arms use the free_value push-%rcx alignment wrapper. Clobbers
  * %rax/%rdx/%rdi/%rsi. Sets *bail=1 on rel8 overflow. */
 static uint8_t *emit_decref_tail_rdi(uint8_t *w, int *bail, int with_hook) {
-    uint8_t *jnz_arena_p;
-    w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
-    w = emit_jnz_rel8(w, &jnz_arena_p);
-    uint8_t *jnz_arena_after = w;
     w = emit_lock_subl_1_disp32_rdi(w, (int32_t)offsetof(Value, refcount));
 
     if (!with_hook) {
@@ -1943,10 +1931,8 @@ static uint8_t *emit_decref_tail_rdi(uint8_t *w, int *bail, int with_hook) {
         w = emit_call_rax(w);
         w = emit_pop_rcx(w);
         int jg_rel = (int)(w - jg_after);
-        int jnz_rel = (int)(w - jnz_arena_after);
-        if (jg_rel > 127 || jnz_rel > 127) { *bail = 1; return w; }
+        if (jg_rel > 127) { *bail = 1; return w; }
         *jg_p = (uint8_t)jg_rel;
-        *jnz_arena_p = (uint8_t)jnz_rel;
         return w;
     }
 
@@ -1980,15 +1966,13 @@ static uint8_t *emit_decref_tail_rdi(uint8_t *w, int *bail, int with_hook) {
     w = emit_call_rax(w);
     w = emit_pop_rcx(w);
     /* .skip: */
-    int jnz_arena_rel = (int)(w - jnz_arena_after);
     int jne_rel  = (int)(w - jne_after);
     int jnz_buf_rel = (int)(w - jnz_buf_after);
     int jmp_rel  = (int)(w - jmp_after);
-    if (jnz_arena_rel > 127 || jle_rel > 127 || je_rel > 127 ||
+    if (jle_rel > 127 || je_rel > 127 ||
         jne_rel > 127 || jnz_buf_rel > 127 || jmp_rel > 127) {
         *bail = 1; return w;
     }
-    *jnz_arena_p = (uint8_t)jnz_arena_rel;
     *jle_p = (uint8_t)jle_rel;
     *je_p  = (uint8_t)je_rel;
     *jne_p = (uint8_t)jne_rel;
@@ -2105,13 +2089,6 @@ static uint8_t *emit_cmpl_imm32_disp32_rax(uint8_t *w, int32_t disp,
     *w++ = 0x81; *w++ = 0xB8;
     w = emit_u32(w, (uint32_t)disp);
     return emit_u32(w, imm);
-}
-/* testb $1, disp32(%rax)  (7 bytes) — arena flag. */
-static uint8_t *emit_testb_1_disp32_rax(uint8_t *w, int32_t disp) {
-    *w++ = 0xF6; *w++ = 0x80;
-    w = emit_u32(w, (uint32_t)disp);
-    *w++ = 0x01;
-    return w;
 }
 /* mov disp32(%rax), %rax  (7 bytes) — load data.num bits (== the
  * immediate slot encoding for an untracked number). */
@@ -2752,10 +2729,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                  * constant num never carries observer state.) */
                 memcpy(&bits, &VAL_NUM_RAW(v), 8);
             } else {
-                /* Heap slot: TAG_HEAP | payload. Incref unless arena. */
+                /* Heap slot: TAG_HEAP | payload. */
                 bits = 0xFFFB000000000000ULL |
                        ((uint64_t)(uintptr_t)v & 0x0000FFFFFFFFFFFFULL);
-                needs_incref = !v->arena;
+                needs_incref = 1;
             }
             w = emit_movabs_rax(w, bits);
             w = emit_store_rax_at_stack(w, g_layout.off_stack);
@@ -2862,7 +2839,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *               (NULL-checked), target->bv == ic->target_ver
              *   *_LOCAL:    walk_depth == 0, ic->target_ver == start->bv
              *   env_store_slot(target, ic->slot_idx, s):
-             *     - s arena-pointer → helper (promotion stays out of line)
+             *     - s heap pointer → helper
              *     - slot_incref(s); old = values[idx]; values[idx] = s;
              *       slot_decref(old)  [decref last so free_value can't
              *       observe a half-done store; equivalent order]
@@ -2937,9 +2914,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* Hit. %rdx = target env, %rax = ic. */
             w = emit_mov_disp32_rax_to_r9d(w, (int32_t)offsetof(EnvIC, slot_idx));
             w = emit_load_stack_to_r8(w, g_layout.off_stack - 8);   /* s */
-            /* slot_incref(s) with the arena-promotion case guarded out:
-             * immediates skip, arena pointers go to the helper BEFORE any
-             * mutation, plain pointers get the lock-incref. */
+            /* slot_incref(s): immediates skip, pointers get the lock-incref. */
             w = emit_mov_r8_rsi(w);
             w = emit_shr_48_rsi(w);
             w = emit_cmp_imm32_esi(w, 0xFFFB);
@@ -2949,8 +2924,6 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_r8_rdi(w);
             w = emit_shl_16_rdi(w);
             w = emit_shr_16_rdi(w);
-            w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
-            w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             w = emit_lock_addl_1_disp32_rdi(w, (int32_t)offsetof(Value, refcount));
             {
                 int imm_rel = (int)(w - imm_after);
@@ -2978,7 +2951,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint8_t *nb1_after = w;
             w = emit_incl_rdi_r9_4(w);
             *nb1_p = (uint8_t)(w - nb1_after);
-            /* Old-slot decref (immediate no-op / arena skip / free at 0).
+            /* Old-slot decref (immediate no-op / free at 0).
              * with_hook: the old binding can be any type (#728). */
             int set_bail = 0;
             w = emit_conditional_decref_rsi_hook(w, &set_bail, 1);
@@ -3166,7 +3139,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* Stage 5d: inline the dict_set_cached_immediate path of
              * CASE(LOCAL_DOT_SET) — cache hit where the existing field
              * is an exclusive untracked VAL_NUM (type num, refcount 1,
-             * obs_age 0, non-arena) and the incoming TOS is an
+             * obs_age 0) and the incoming TOS is an
              * immediate num: mutate data.num in place. No refcounts, no
              * allocation, sp and TOS untouched. Everything else (cache
              * miss, shared/observed/non-num field, heap TOS, non-dict
@@ -3187,15 +3160,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint8_t *done_p = NULL;
             if (g_layout.sizeof_dcache_entry == 16 && g_layout.dcache_ways == 2) {
                 w = emit_dict_cache_probe(w, slot, h, key, slow_p, &slow_n);
-                /* existing field: exclusive untracked num. */
+                /* existing field: exclusive num. */
                 w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, type),
                                                (uint32_t)VAL_NUM);
                 w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
                 w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, refcount), 1);
                 w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
                 /* #262 Step E: obs_age guard removed — nums are never tracked. */
-                w = emit_testb_1_disp32_rax(w, (int32_t)offsetof(Value, arena));
-                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
                 /* TOS must be an immediate num. */
                 w = emit_load_stack_to_rdx(w, g_layout.off_stack - 8);
                 w = emit_immediate_num_check_rdx(w, &slow_p[slow_n]); slow_n++;
@@ -3346,7 +3317,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *   tos imm?         no  → .swap
              *   old slot ptr?    no  → .plain   (imm/sentinel old:
              *                                    incref+decref both no-op)
-             *   old is VAL_NUM && rc==1 && obs_age==0 && !arena?
+             *   old is VAL_NUM && rc==1 && obs_age==0?
              *                    no  → .swap
              *   in-place: VAL_NUM_RAW(old) = tos bits; → .done
              *   .plain: values[slot] = tos; → .done
@@ -3391,8 +3362,6 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, refcount), 1);
             w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
             /* #262 Step E: obs_age guard removed — nums are never tracked. */
-            w = emit_testb_1_disp32_rdi(w, (int32_t)offsetof(Value, arena));
-            w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
             /* in-place: VAL_NUM_RAW(existing) = tos bits. */
             w = emit_mov_rax_to_disp32_rdi(w, (int32_t)VAL_NUM_OFFSET);
             w = emit_jmp_rel32(w, &done_p[done_n]); done_n++;
@@ -4038,7 +4007,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_store_rax_at_disp_stack(w, g_layout.off_stack - 24);
             w = emit_sub_imm8_ecx(w, 2);
             /* slot_decref(tgt): idx and val are immediates (no-ops);
-             * tgt is a proven heap pointer — arena-checked dec with
+             * tgt is a proven heap pointer — refcounted decrement with
              * free_value at zero, matching the interpreter. */
             int ixs_bail = 0;
             w = emit_decref_value_rdi(w, &ixs_bail);

@@ -854,7 +854,7 @@ Value* builtin_http_request_headers(Value *arg) {
  * SHARED STORE
  *
  * In-process key/value store keyed by string, scoped to the main HTTP
- * Server. Each worker code route runs in its own EigsState (arenas die
+ * Server. Each worker code route runs in its own EigsState (thread state dies
  * with the worker), so values are JSON-serialized on set and re-parsed
  * on get — there's no live cross-state Value* pointer. pthread_mutex
  * guards every operation. Functions/builtins encode as "null", matching

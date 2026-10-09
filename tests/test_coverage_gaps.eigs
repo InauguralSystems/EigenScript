@@ -265,20 +265,4 @@ dict_remove of [remove_test, "drop"]
 assert of [(not (has_key of [remove_test, "drop"])), "CG92 dict_remove worked"]
 assert of [(has_key of [remove_test, "keep"]), "CG93 dict_remove left others"]
 
-# --- arena_track_string + arena_alloc growth ---
-# When the arena is active, make_str calls arena_track_string.
-# Allocate many strings under the arena to exercise the track-string
-# growth path and bump arena_alloc utilization.
-arena_mark of null
-for i in range of 200:
-    s is "string_" + str of i
-arena_reset of null
-# After reset the arena is no longer active; just verify we survived.
-post is "ok"
-assert of [post == "ok", "CG94 arena-active string loop survived"]
-
-# arena_stats returns total bytes allocated as a number
-stats is arena_stats of null
-assert of [(type of stats) == "num", "CG95 arena_stats returns number"]
-
 print of "All coverage-gap tests passed"

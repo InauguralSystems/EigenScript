@@ -118,7 +118,6 @@ int eigs_is_registered_builtin(const char *name) {
 }
 
 /* Internal helpers defined in eigenscript.c. */
-Value* make_num_permanent(double n);
 const char* val_type_name(ValType t);
 int dict_has(Value *dict, const char *key);
 void dict_remove(Value *dict, const char *key);
@@ -2463,31 +2462,6 @@ int replay_blocks(const char *fn) {
 }
 
 
-/* ==== BUILTIN: arena_mark ==== */
-/* arena_mark of null — saves current arena position. All Values allocated
- * after this point will be reclaimed on arena_reset. Call before a training step. */
-Value* builtin_arena_mark(Value *arg) {
-    (void)arg;
-    arena_mark_pos();
-    return make_null();
-}
-
-/* ==== BUILTIN: arena_reset ==== */
-/* arena_reset of null — reclaims all Values allocated since the last arena_mark.
- * Call after a training step, when gradient tensors and intermediates are no longer needed. */
-Value* builtin_arena_reset(Value *arg) {
-    (void)arg;
-    arena_reset_to_mark();
-    return make_null();
-}
-
-/* ==== BUILTIN: arena_stats ==== */
-/* arena_stats of null — returns total bytes allocated through the arena. */
-Value* builtin_arena_stats(Value *arg) {
-    (void)arg;
-    return make_num((double)g_arena.total_allocated);
-}
-
 /* Free a TokenList's malloc'd storage (token array and str_vals) */
 void free_tokenlist(TokenList *tl) {
     if (!tl->tokens) return;
@@ -2923,7 +2897,7 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
     case VAL_LIST: {
         if (!desc_enter(ctx, v)) return NULL;
         /* make_list_heap, not make_list: the copy outlives this builtin call
-         * and must not be arena-allocated, and it is sized by a graph already
+         * and is sized by a graph already
          * in memory (the uncharged-wrapper rule make_list_heap documents). */
         Value *c = make_list_heap(v->data.list.count);
         for (int i = 0; i < v->data.list.count; i++) {
@@ -3788,15 +3762,6 @@ Value* builtin_copy_into(Value *arg) {
     }
     for (int i = 0; i < src->data.list.count && offset + i < dest->data.list.count; i++) {
         Value *item = src->data.list.items[i];
-        /* #873: promote arena items landing in a heap destination. */
-        if (item && item->arena && !dest->arena) {
-            Value *promoted = promote_if_arena(item);
-            if (promoted != item) {
-                val_decref(dest->data.list.items[offset + i]);
-                dest->data.list.items[offset + i] = promoted;
-                continue;
-            }
-        }
         val_incref(item);
         val_decref(dest->data.list.items[offset + i]);
         dest->data.list.items[offset + i] = item;
@@ -3841,11 +3806,11 @@ Value* builtin_list_slice(Value *arg) {
 
 /* ==== BUILTIN: num_copy ==== */
 /* num_copy of val → fresh heap-allocated copy of a numeric Value.
- * Use to extract a scalar from arena before arena_reset. */
+ */
 Value* builtin_num_copy(Value *arg) {
     BOOL_REFUSE(arg, "num_copy");
     if (!arg || arg->type != VAL_NUM) return make_null();
-    return make_num_permanent(eigs_num_arg(arg, __func__));
+    return make_num(eigs_num_arg(arg, __func__));
 }
 
 /* ==== BUILTIN: concat ==== */
@@ -4078,15 +4043,6 @@ Value* builtin_set_at(Value *arg) {
         int idx;
         if (!at_index(arg->data.list.items[1], list->data.list.count, "set_at", &idx))
             return make_null();
-        /* #873: promote an arena value stored into a heap list. */
-        if (val && val->arena && !list->arena) {
-            Value *promoted = promote_if_arena(val);
-            if (promoted != val) {
-                val_decref(list->data.list.items[idx]);
-                list->data.list.items[idx] = promoted;
-                return list;
-            }
-        }
         val_incref(val);
         val_decref(list->data.list.items[idx]);
         list->data.list.items[idx] = val;
@@ -4111,15 +4067,6 @@ Value* builtin_set_at(Value *arg) {
         int col;
         if (!at_index(arg->data.list.items[2], rowv->data.list.count, "set_at col", &col))
             return make_null();
-        /* #873: promote an arena value stored into a heap row. */
-        if (val && val->arena && !rowv->arena) {
-            Value *promoted = promote_if_arena(val);
-            if (promoted != val) {
-                val_decref(rowv->data.list.items[col]);
-                rowv->data.list.items[col] = promoted;
-                return list;
-            }
-        }
         val_incref(val);
         val_decref(rowv->data.list.items[col]);
         rowv->data.list.items[col] = val;
@@ -4221,7 +4168,7 @@ typedef struct EigsThreadHandle {
 static void *thread_entry(void *arg) {
     ThreadHandle *h = (ThreadHandle *)arg;
     /* Attach this OS thread to the parent's state. eigs_thread_attach
-     * runs arena_init internally, so the legacy arena_init call site
+     * performs the required thread initialization, so the legacy call site
      * has moved into the lifecycle. */
     eigs_thread_attach(h->parent_state);
     trace_spawn_attach(h->trace_binding);
@@ -4284,7 +4231,7 @@ static void *thread_entry(void *arg) {
          * handle takes over that single ref via h->result. thread_join transfers
          * it to the caller; handle_table_drain decrefs it for an unjoined worker.
          * An extra incref here was a second ref with no owner — it leaked the
-         * worker's heap-allocated return value (arena-allocated returns masked
+         * worker's heap-allocated return value (transient returns masked
          * it, since those aren't individually refcounted). */
         h->result = result;
         env_decref(call_env);
@@ -4320,12 +4267,7 @@ static void *thread_entry(void *arg) {
          * above) — no extra incref, which would leak. */
         h->result = result;
     }
-    /* #302: the return value may be arena-allocated (or a heap container with
-     * arena children) if the worker left g_arena.active — eigs_thread_detach
-     * below runs arena_destroy and frees the worker's arena. The joiner reads
-     * h->result strictly after that (pthread_join), so deep-copy it to heap
-     * now, re-homing interned dict keys into the process-global table, exactly
-     * as channel sends do (#293's val_clone_for_send). Drop the original. */
+    /* Clone the return value before detaching the worker thread. */
     if (h->result) {
         Value *cloned = val_clone_for_send(h->result);
         val_decref(h->result);
@@ -4342,7 +4284,7 @@ static void *thread_entry(void *arg) {
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();
-    /* Detach from the state — runs arena_destroy and clears TLS. The
+    /* Detach from the state and clear TLS. The
      * cycle collector resumes when the last worker is JOINED and the joiner
      * is the only attached thread (spawn_mt_maybe_clear, #1147), or at the
      * exit drain. */
@@ -4717,7 +4659,7 @@ Value* builtin_channel(Value *arg) {
 /* Thread safety: values sent through channels are deep-copied (#293) so the
  * received value is self-contained — independent of the sender thread's
  * lifetime (its dict keys are interned per-thread and freed at detach) and of
- * its arena. Data types (num/str/list/dict/buffer/text_builder, nested) are
+ * its originating thread. Data types (num/str/list/dict/buffer/text_builder, nested) are
  * copied; fn/builtin are shared by refcount. The copy also removes the old
  * shared-mutable-value hazard for the copied types. */
 Value* builtin_send(Value *arg) {
@@ -4944,7 +4886,7 @@ void task_free(Task *t) {
 /* task_spawn of fn  /  task_spawn of [fn, arg1, ...] → task id (a number).
  * Args are deep-copied to the heap (share-nothing at the boundary, exactly
  * like channel sends / thread_join results — #293's val_clone_for_send), so
- * a task never shares a mutable arena/heap value with its spawner by
+ * a task never shares a mutable heap value with its spawner by
  * reference. The task does not run yet (1a); the scheduler starts it in 1b. */
 Value* builtin_task_spawn(Value *arg) {
     Value *fn = arg;
@@ -5045,21 +4987,9 @@ static int no_yield_forbidden(const char *what) {
 
 /* task_yield of null — cooperatively hand control to the next ready task.
  * Returns null (the value of the yield expression); the scheduler saves and
- * re-enqueues this task at the tail. Forbidden inside an active arena scope
- * (arena_mark…arena_reset): a suspended task's arena values would be reclaimed
- * by another task's arena_reset — the task layer and the training arena are
- * separate tools (Lua-style "can't yield across a C boundary"). */
+ * re-enqueues this task at the tail. */
 Value* builtin_task_yield(Value *arg) {
     (void)arg;
-    /* #510: the arena guard is independent of whether a scheduler exists yet.
-     * Yielding inside arena_mark…arena_reset is forbidden even before any
-     * task_spawn — check it BEFORE the no-scheduler short-circuit so the
-     * "no-op with no tasks" rule cannot hide the "raise inside an arena" rule. */
-    if (g_arena.active) {
-        rt_error(EK_VALUE, 0, "cannot task_yield inside an arena scope "
-                 "(arena_mark…arena_reset)");
-        return make_null();
-    }
     if (!g_task_sched) return make_null();   /* no scheduler: yield is a no-op */
     if (no_yield_forbidden("task_yield")) return make_null();   /* #488 */
     task_request_yield();
@@ -5069,7 +4999,7 @@ Value* builtin_task_yield(Value *arg) {
 /* task_join of id — block until task `id` finishes; return its (deep-copied)
  * result, or re-raise its uncaught error. Joining an already-finished task
  * returns immediately. Joining an unknown id, self, or with no scheduler
- * returns null. Same arena/nesting restriction as task_yield. */
+ * returns null. Same nesting restriction as task_yield. */
 Value* builtin_task_join(Value *arg) {
     if (!arg || arg->type != VAL_NUM || !g_task_sched) return make_null();
     int target = 0;
@@ -5092,11 +5022,6 @@ Value* builtin_task_join(Value *arg) {
         Value *r = t->result ? t->result : make_null();
         val_incref(r);
         return r;
-    }
-    if (g_arena.active) {
-        rt_error(EK_VALUE, 0, "cannot task_join inside an arena scope "
-                 "(arena_mark…arena_reset)");
-        return make_null();
     }
     if (no_yield_forbidden("blocking task_join")) return make_null();   /* #488 */
     if (!task_request_join(target, t->hgen)) return make_null();
@@ -5135,20 +5060,10 @@ Value* builtin_task_send(Value *arg) {
 }
 
 /* task_recv of null — return the next message from this task's mailbox, or
- * block cooperatively until one arrives (woken by task_send). Same arena /
- * nested-evaluation restriction as the other suspending builtins. */
+ * block cooperatively until one arrives (woken by task_send). Same nested-evaluation restriction as the other suspending builtins. */
 Value* builtin_task_recv(Value *arg) {
     (void)arg;
-    /* A buffered message is delivered without suspending — arena-safe (and
-     * mbox helpers are null-safe with no scheduler). Only the BLOCKING path
-     * suspends, so only that path is arena-forbidden, and (#510) that guard
-     * fires regardless of whether a scheduler exists yet. */
     if (task_mbox_has()) return task_mbox_pop();
-    if (g_arena.active) {
-        rt_error(EK_VALUE, 0, "cannot task_recv inside an arena scope "
-                 "(arena_mark…arena_reset)");
-        return make_null();
-    }
     if (!g_task_sched) return make_null();   /* no tasks: nothing can arrive */
     if (no_yield_forbidden("blocking task_recv")) return make_null();   /* #488 */
     task_request_recv();
@@ -5189,14 +5104,8 @@ Value* builtin_task_alive(Value *arg) {
  * deterministic-by-construction like the rest of the task layer, NOT wall time.
  * A negative sleep is treated as 0 (a same-tick yield to everything ready). No
  * scheduler (no task ever spawned) → no time to pass, so it is a no-op, like
- * task_yield. Same arena/nesting restriction as the other suspending builtins. */
+ * task_yield. Same nesting restriction as the other suspending builtins. */
 Value* builtin_task_sleep(Value *arg) {
-    /* #510: arena guard before the no-scheduler short-circuit (see task_yield). */
-    if (g_arena.active) {
-        rt_error(EK_VALUE, 0, "cannot task_sleep inside an arena scope "
-                 "(arena_mark…arena_reset)");
-        return make_null();
-    }
     /* #1637: the type check comes before the no-scheduler short-circuit, so
      * `task_sleep of true` raises with or without a scheduler. */
     if (!arg || arg->type != VAL_NUM) {
@@ -5799,7 +5708,7 @@ Value* builtin_list_insert_at(Value *arg) {
         list_append(list, val);
         return list;
     }
-    /* Grow by one slot (list_append handles capacity + arena lists), then move
+    /* Grow by one slot (list_append handles capacity), then move
      * the tail up one place and drop the value into the vacated slot.
      * list_append increfs the old last element, but the memmove overwrites
      * its original slot with a raw pointer copy (no decref) — balance that
@@ -5810,15 +5719,6 @@ Value* builtin_list_insert_at(Value *arg) {
     list_append(list, old_last);
     memmove(&list->data.list.items[idx + 1], &list->data.list.items[idx],
             (count - idx) * sizeof(Value *));
-    /* #873: promote an arena value inserted into a heap list. */
-    if (val && val->arena && !list->arena) {
-        Value *promoted = promote_if_arena(val);
-        if (promoted != val) {
-            list->data.list.items[idx] = promoted;
-            val_decref(old_last);
-            return list;
-        }
-    }
     val_incref(val);
     list->data.list.items[idx] = val;
     val_decref(old_last);
@@ -6374,9 +6274,6 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "num_copy", make_builtin(builtin_num_copy));
     env_set_local_owned(env, "concat", make_builtin(builtin_concat));
     env_set_local_owned(env, "range", make_builtin(builtin_range));
-    env_set_local_owned(env, "arena_mark", make_builtin(builtin_arena_mark));
-    env_set_local_owned(env, "arena_reset", make_builtin(builtin_arena_reset));
-    env_set_local_owned(env, "arena_stats", make_builtin(builtin_arena_stats));
 
     /* ---- Concurrency builtins ---- */
     env_set_local_owned(env, "spawn", make_builtin(builtin_spawn));

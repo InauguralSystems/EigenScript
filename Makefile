@@ -23,7 +23,7 @@ LDFLAGS := -pie -Wl,-z,relro,-z,now -lm -lpthread
 endif
 
 SRC_DIR := src
-SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/arena.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
+SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
 HOSTED_SOURCES := $(SOURCES) $(SRC_DIR)/ext_gfx.c
 MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
 BINARY  := $(SRC_DIR)/eigenscript
@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv pool-off-arena
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -154,7 +154,7 @@ SRC_V_pool-off := $(HOSTED_SOURCES)
 FLAGS_pool-off := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF $(VERDEF)
 LIBS_pool-off  := $(LDFLAGS) -ldl
 
-# #1665 pool-off under ASan+UBSan: every Value/Env/string/arena slice is a real
+# #1665 pool-off under ASan+UBSan: every Value/Env/string allocation is a real
 # malloc/free, so ASan sees lifetimes the pools used to hide (the #1661 class).
 SRC_V_asan-pool-off := $(HOSTED_SOURCES)
 FLAGS_asan-pool-off := $(ASAN_FLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF $(VERDEF)
@@ -162,9 +162,10 @@ LIBS_asan-pool-off  := -lm -lpthread -ldl
 
 # #1665 remaining per-layer arms: each release-equivalent build bypasses EXACTLY
 # ONE recycling pool, so a measurement against release prices that layer in
-# isolation (the pre-registered per-layer decision rule). Four separate
-# variants use non-colliding build/<variant>/ objdirs. Same release flags/libs
-# as pool-off otherwise.
+# isolation (the pre-registered per-layer decision rule). Two separate
+# variants = two non-colliding build/<variant>/ objdirs; -DEIGS_POOL_OFF
+# (both at once) stays the pool-off variant above. Same release flags/libs as
+# pool-off otherwise.
 SRC_V_pool-off-num := $(HOSTED_SOURCES)
 FLAGS_pool-off-num := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF_NUM $(VERDEF)
 LIBS_pool-off-num  := $(LDFLAGS) -ldl
@@ -173,11 +174,8 @@ SRC_V_pool-off-callenv := $(HOSTED_SOURCES)
 FLAGS_pool-off-callenv := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF_CALLENV $(VERDEF)
 LIBS_pool-off-callenv  := $(LDFLAGS) -ldl
 
-SRC_V_pool-off-arena := $(HOSTED_SOURCES)
-FLAGS_pool-off-arena := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF_ARENA $(VERDEF)
-LIBS_pool-off-arena  := $(LDFLAGS) -ldl
 
-VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv pool-off-arena
+VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -620,13 +618,13 @@ poison: build/poison/eigenscript
 	$(call RELINK,poison)
 	@echo "EigenScript $(VERSION) (poison 0xAA -O1 -g) built. Binary: $(BINARY)"
 
-# #1665: the pool-off oracle build. Every per-thread Value/Env freelist, the
-# call-env recycler and the bump arena are bypassed so each object is a real
+# #1665: the pool-off oracle build. Every per-thread Value/Env freelist and the
+# call-env recycler are bypassed so each object is a real
 # malloc/free. Release-equivalent flags otherwise (measure the pools alone):
 #   make pool-off && cd tests && bash run_all_tests.sh
 pool-off: build/pool-off/eigenscript
 	$(call RELINK,pool-off)
-	@echo "EigenScript $(VERSION) (pool-off, no freelists/arena/call-env recycle) built. Binary: $(BINARY)"
+	@echo "EigenScript $(VERSION) (pool-off, no freelists/call-env recycle) built. Binary: $(BINARY)"
 
 # #1665: pool-off under ASan+UBSan. ASan now sees the lifetime of every object
 # the pools used to keep "allocated" — run the suite here to surface the
@@ -646,9 +644,7 @@ pool-off-num: build/pool-off-num/eigenscript
 pool-off-callenv: build/pool-off-callenv/eigenscript
 	$(call RELINK,pool-off-callenv)
 	@echo "EigenScript $(VERSION) (pool-off C3: call-env recycling off) built. Binary: $(BINARY)"
-pool-off-arena: build/pool-off-arena/eigenscript
-	$(call RELINK,pool-off-arena)
-	@echo "EigenScript $(VERSION) (pool-off C4: bump arena off) built. Binary: $(BINARY)"
+
 
 # Profile-guided optimization. Builds an instrumented binary, runs the
 # DMG cpu_instrs workload to collect branch/edge counters, then rebuilds
@@ -741,13 +737,6 @@ fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 		-lm -lpthread
 	@echo "libFuzzer binary built. Run: ./fuzz/fuzz_eigenscript fuzz/corpus/ -max_len=4096 -timeout=5"
 
-# Ordinary acyclic promotion oracle, linked only against its owning variant.
-ARENA_PROMOTION_VARIANT ?= release
-ARENA_PROMOTION_OBJ := $(filter-out build/$(ARENA_PROMOTION_VARIANT)/main.o,$(OBJ_$(ARENA_PROMOTION_VARIANT)))
-build/$(ARENA_PROMOTION_VARIANT)/test_arena_promotion_ordinary: tests/test_arena_promotion_ordinary.c $(ARENA_PROMOTION_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
-	$(CC) $(FLAGS_$(ARENA_PROMOTION_VARIANT)) -I$(SRC_DIR) -o $@ $< $(ARENA_PROMOTION_OBJ) $(LIBS_$(ARENA_PROMOTION_VARIANT))
-.PHONY: arena-promotion-ordinary-test
-arena-promotion-ordinary-test: build/$(ARENA_PROMOTION_VARIANT)/test_arena_promotion_ordinary
 
 version:
 	@echo $(VERSION)

@@ -314,9 +314,7 @@ EigsThread *eigs_thread_attach(EigsState *st) {
     th->gc_enabled = 1;
     th->gc_threshold = GC_THRESHOLD_MIN;
 
-    /* Wire TLS before arena_init so its writes land in th->arena. */
     eigs_current = th;
-    arena_init();
 
     /* Phase 9: zero the hot __thread caches in vm.c so an attach on an
      * OS thread that previously served another state doesn't see stale
@@ -337,8 +335,7 @@ EigsState *eigs_current_state(void) {
 }
 
 /* Single-thread multi-state switching (the M9 scheduler seam): PARK the
- * calling thread's current attachment (no teardown — the arena,
- * freelists, VM and error state all live on the EigsThread and stay
+ * calling thread's current attachment (no teardown — the freelists, VM and error state all live on the EigsThread and stay
  * intact) and activate this thread's attachment to `st`, creating one on
  * first switch. The only per-OS-thread state that is NOT on the
  * EigsThread is vm.c's __thread hot-pointer caches — reset on every
@@ -350,7 +347,7 @@ EigsState *eigs_current_state(void) {
  * by state, NOT by taking the address of the `eigs_current` __thread
  * variable (that miscompiles under a hand-rolled local-exec TLS such as
  * EigenOS's: attach and switch disagreed on the address, every switch
- * re-attached, and each fresh attach leaked a 16 MiB arena — the M9 OOM).
+ * re-attached, and each fresh attach leaked its thread-local state — the M9 OOM).
  * Attaching more than one OS thread to a state (eigs_thread_attach) and
  * then switching it is out of scope by contract. Cross-state rule stays
  * the caller's job: values belong to the state that made them; move
@@ -407,7 +404,6 @@ void eigs_thread_detach(void) {
     eigs_obs_memo_release();  /* #915: memo + speculative budget, thread-local */
     pthread_mutex_lock(&g_attached_lock); g_attached_threads_add(-1); pthread_mutex_unlock(&g_attached_lock);
 
-    arena_destroy();
     eigs_exit_scope_release(th->exit_scope);
     trace_attachment_destroy(th);
     eigs_current = NULL;

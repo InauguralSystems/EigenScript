@@ -6,27 +6,6 @@
 
 load_file of "lib/test.eigs"
 
-# --- #510: the arena guard on suspending builtins is independent of whether a
-#     scheduler exists yet. This block runs BEFORE the first task_spawn, so
-#     g_task_sched is still NULL — the "no-op with no tasks" rule must NOT hide
-#     the "raise inside an arena" rule. (Keep this first; a spawn arms the
-#     scheduler permanently.) ---
-define expect_arena_raise(thunk, label) as:
-    arena_mark of null
-    raised is 0
-    try:
-        thunk of null
-    catch e:
-        raised is 1
-        assert_eq of [e.kind, "value", label]
-    arena_reset of null
-    assert_eq of [raised, 1, label]
-expect_arena_raise of [task_yield, "task_yield raises in arena with no scheduler (#510)"]
-expect_arena_raise of [task_recv, "task_recv raises in arena with no scheduler (#510)"]
-define sleep1(x) as:
-    return task_sleep of 1
-expect_arena_raise of [sleep1, "task_sleep raises in arena with no scheduler (#510)"]
-
 # --- spawn returns a numeric id; a fresh task is alive ---
 define worker() as:
     return 42
@@ -117,20 +96,6 @@ catch e:
     assert_eq of [e.kind, "undefined_name", "join rethrows the task's error kind"]
 assert_eq of [threw, 1, "join of a crashed task raises"]
 
-# --- suspension inside an arena scope is a structured value-error ---
-define arena_yielder() as:
-    arena_mark of null
-    task_yield of null
-    return 0
-ay is task_spawn of arena_yielder
-threw2 is 0
-try:
-    ra is task_join of ay
-catch e:
-    threw2 is 1
-    assert_eq of [e.kind, "value", "task_yield in an arena scope is a value-error"]
-assert_eq of [threw2, 1, "arena-scoped yield raises"]
-
 # --- teardown: a task KILLED while suspended (main ends first) with a heap
 #     value live on its saved value stack must be reclaimed clean. The list
 #     literal evaluates left-to-right, so the string is on the stack when the
@@ -140,35 +105,6 @@ define holder() as:
     return len of keep
 hk is task_spawn of holder
 # NOT joined — reaped by kill-outstanding while suspended holding the string.
-
-# --- a task that dies inside an arena scope, UNJOINED, must not leave the
-#     per-thread arena active (would arena-allocate its error dict and
-#     contaminate the next task). Covered by the valgrind arena-poison gate. ---
-define arena_dier() as:
-    arena_mark of null
-    task_yield of null    # guard raises here; the task dies inside the scope
-    return 0
-ad is task_spawn of arena_dier
-# NOT joined — sched_finish must force the arena inactive on this dead task.
-
-# A clean task spawned AFTER the arena-dier proves the arena baseline is clean:
-# its string allocations must be heap, not arena (no cross-task contamination).
-define after_arena() as:
-    task_yield of null
-    local s is "fresh-heap-string"
-    return len of s
-aa is task_spawn of after_arena
-assert_eq of [task_join of aa, 17, "task after an arena-dier gets a clean arena"]
-# Observe the arena-dier's (now DEAD) death so THIS all-pass file exits rc 0.
-# An UNJOINED uncaught task death fails the process by design (#493) — that
-# exit-code contract is asserted by a dedicated suite harness, not here.
-threw_ad is 0
-try:
-    task_join of ad
-catch e:
-    threw_ad is 1
-    assert_eq of [e.kind, "value", "arena-dier died of the arena value-error"]
-assert_eq of [threw_ad, 1, "an arena-dier's death is observable via task_join"]
 
 # ============ increment 2: mailboxes ============
 

@@ -324,7 +324,6 @@ const char* val_type_name(ValType t) {
 }
 /* g_global_env is an EigsState field — see eigenscript.h bridge macros. */
 
-/* Arena allocator and free_weight_val are in arena.c */
 
 /* Forward declarations for hash helpers (used by dict and env). */
 uint32_t env_hash_name(const char *name);
@@ -338,8 +337,7 @@ static void env_intern_scope_remove(char *name);
  * VALUE CONSTRUCTORS
  * ================================================================ */
 
-/* Recursively free a heap-allocated Value tree.
- * Skips arena-allocated values (v->arena flag). */
+/* Recursively free a heap-allocated Value tree. */
 /* NUM_FREELIST_CAP / ENV_NAME_INTERN_BUCKETS and the EnvNameIntern typedef
  * live in eigenscript.h so EigsThread can carry the NUM freelist head + intern
  * table inline. The g_num_freelist / g_env_name_interns
@@ -348,8 +346,7 @@ static void env_intern_scope_remove(char *name);
 
 /* Refcount-aware teardown. Called by val_decref when refcount hits 0.
  * Children are val_decref'd (not recursively freed), so shared values
- * tracked by refcount elsewhere stay alive. Arena-owned memory is
- * skipped — it gets reclaimed by arena_reset. */
+ * tracked by refcount elsewhere stay alive. */
 /* ---- Observer system (moved from eval.c) ---- */
 
 /* #262 Phase-3 D: scalar entropy of a number, factored out so the slot
@@ -1622,7 +1619,7 @@ void env_retain_intern_table(Env *env, EnvInternTable *table) {
 }
 
 void free_value(Value *v) {
-    if (!v || v->arena) return;
+    if (!v) return;
     env_intern_release_value(v);
     if (v->type == VAL_NUM) {
 #ifndef EIGS_POOL_OFF_NUM
@@ -1717,10 +1714,9 @@ void free_value(Value *v) {
 
 Value* make_num(double n) {
     n = num_guard(n);
-    int from_arena = g_arena.active;
     Value *v;
 #ifndef EIGS_POOL_OFF_NUM
-    if (!from_arena && g_num_freelist) {
+    if (g_num_freelist) {
         v = g_num_freelist;
         memcpy(&g_num_freelist, &v->data, sizeof(Value *));
         g_num_freelist_count--;
@@ -1728,20 +1724,18 @@ Value* make_num(double n) {
         memset(v, 0, sizeof(Value));
     } else
 #endif  /* EIGS_POOL_OFF_NUM (#1665): never satisfy a make_num from the freelist —
-         * every heap NUM is a fresh xcalloc (arena path unchanged here; see
-         * arena_alloc). */
+         * every heap NUM is a fresh xcalloc. */
     {
-        v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+        v = xcalloc(1, sizeof(Value));
     }
     v->type = VAL_NUM;
     VAL_NUM_RAW(v) = n;
     v->refcount = 1;
-    v->arena = from_arena;
     return v;
 }
 
 void recycle_intermediate(Value *v) {
-    if (!v || v->type != VAL_NUM || v->arena || v->refcount > 1) return;
+    if (!v || v->type != VAL_NUM || v->refcount > 1) return;
 #ifdef EIGS_POOL_OFF_NUM
     /* #1665: no freelist — a discarded intermediate NUM is freed outright
      * (the pooled path already free()s it when the cap is hit, so callers
@@ -1760,24 +1754,24 @@ void recycle_intermediate(Value *v) {
 #endif
 }
 
-/* Heap-only make_num — for values that must outlive arena reset */
+/* Unpooled make_num: never touches the per-thread NUM freelist, so it is
+ * safe without a current VM thread (C-level fixtures, tests/test_intern_owners.c). */
 Value* make_num_permanent(double n) {
     n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_NUM;
     VAL_NUM_RAW(v) = n;
     v->refcount = 1;
-    v->arena = 0;
     return v;
 }
 
 /* Forward decl of the VAL_NULL singleton — defined below near make_null. */
 static Value g_null_singleton;
-/* #1637: the two VAL_BOOL singletons — immortal like null (arena=1 makes
- * every incref/decref a no-op). make_bool hands out one of these; no other
+/* #1637: the two VAL_BOOL singletons are immortal like null.
+ * make_bool hands out one of these; no other
  * VAL_BOOL Value is ever allocated. */
-static Value g_true_singleton  = { .type = VAL_BOOL, .data = { .boolean = 1 }, .refcount = 1000000, .arena = 1 };
-static Value g_false_singleton = { .type = VAL_BOOL, .data = { .boolean = 0 }, .refcount = 1000000, .arena = 1 };
+static Value g_true_singleton  = { .type = VAL_BOOL, .data = { .boolean = 1 }, .refcount = 1000000 };
+static Value g_false_singleton = { .type = VAL_BOOL, .data = { .boolean = 0 }, .refcount = 1000000 };
 Value* make_bool(int b) { return b ? &g_true_singleton : &g_false_singleton; }
 
 static const char *num_who(const char *who) {
@@ -1843,13 +1837,10 @@ int eigs_arg_has_bool(const Value *arg) {
  *     carry observer state, so there is no tracked-pointer case)
  *   - any other type -> TAG_HEAP; ref transferred
  *
- * Arena-allocated VAL_NUM cannot be tracked (it would die at arena
- * reset). For Phase A's safety, an arena VAL_NUM with observer state
- * is promoted to heap via make_tracked_num.
  */
 EigsSlot slot_from_value(Value *v) {
     if (!v || v->type == VAL_NULL) {
-        if (v && !v->arena && v != &g_null_singleton) val_decref(v);
+        if (v && v != &g_null_singleton) val_decref(v);
         return slot_null();
     }
     if (v->type == VAL_NUM) {
@@ -1883,189 +1874,6 @@ Value* slot_to_value(EigsSlot s) {
     return &g_null_singleton;
 }
 
-/* One entry for each arena list temporarily marked during promotion.  The
- * source list itself is the memo table: count == -1 means that items points
- * at its heap copy.  Keeping the original fields here lets us restore the
- * arena graph before returning.  This makes lookup O(1), including for
- * attacker-chosen cyclic graphs, rather than turning every edge into a scan
- * of a growing side table. */
-typedef struct {
-    Value *src;
-    Value *dst;
-    Value **items;
-    int count;
-    int capacity;
-    int copied_count;
-} PromoteEntry;
-
-#define PROMOTE_MAX_LISTS 100000
-
-static Value *promote_arena_scalar(Value *v) {
-    if (v->type == VAL_NUM) {
-        if (!sandbox_charge(sizeof(Value))) return NULL;
-        return make_num_permanent(VAL_NUM_RAW(v));
-    }
-    if (v->type == VAL_STR || v->type == VAL_JSON_RAW) {
-        size_t n = val_str_len(v);
-        if (!sandbox_charge(sizeof(Value) + n + 1)) return NULL;
-        Value *h = xcalloc(1, sizeof(Value));
-        h->type = v->type;
-        char *copy = xmalloc(n + 1);
-        memcpy(copy, v->data.str ? v->data.str : "", n);
-        copy[n] = '\0';
-        val_str_set(h, copy, n);
-        h->refcount = 1;
-        return h;
-    }
-    return v;
-}
-
-Value* promote_if_arena(Value *v) {
-    if (!v || !v->arena) return v;
-    if (v->type == VAL_NUM || v->type == VAL_STR || v->type == VAL_JSON_RAW) {
-        Value *h = promote_arena_scalar(v);
-        /* A sandbox refusal is sticky and unwinds at the next dispatch, but a
-         * store may retain this result in host history before that unwind.
-         * Never let the arena pointer cross that boundary: the immortal null
-         * preserves callers' non-NULL contract without another allocation. */
-        return h ? h : &g_null_singleton;
-    }
-    if (v->type == VAL_NULL || v->type == VAL_BOOL) {
-        /* VAL_NULL has a single immortal singleton (g_null_singleton, arena=1);
-         * VAL_BOOL has two (#1637).
-         * Don't allocate a heap copy — incref/decref are already no-ops on it,
-         * and a heap VAL_NULL leaks via slot_bridge_wrap's pointer-drop. */
-        return v;
-    }
-    if (v->type == VAL_LIST) {
-        PromoteEntry *work = NULL;
-        int work_count = 0;
-        int work_capacity = 0;
-        int refused = 0;
-
-        /* Discover and fill iteratively: native stack use is constant. */
-        Value *pending = v;
-        int wi = 0;
-        for (;;) {
-            if (pending) {
-                if (work_count == PROMOTE_MAX_LISTS) {
-                    rt_error(eigs_current && g_sandbox_active ? EK_SANDBOX : EK_LIMIT,
-                             0, "arena promotion exceeds %d lists",
-                             PROMOTE_MAX_LISTS);
-                    refused = 1;
-                    break;
-                }
-                if (work_count == work_capacity) {
-                    int old = work_capacity;
-                    int next = old ? old * 2 : 16;
-                    if (next > PROMOTE_MAX_LISTS) next = PROMOTE_MAX_LISTS;
-                    if (!sandbox_charge((size_t)(next - old) *
-                                        sizeof(PromoteEntry))) {
-                        refused = 1;
-                        break;
-                    }
-                    work = xrealloc_array(work, (size_t)next,
-                                          sizeof(PromoteEntry));
-                    work_capacity = next;
-                }
-                int cap = pending->data.list.count < 8
-                              ? 8 : pending->data.list.count;
-                if (!sandbox_charge(sizeof(Value) +
-                                    (size_t)cap * sizeof(Value *))) {
-                    refused = 1;
-                    break;
-                }
-                PromoteEntry *e = &work[work_count++];
-                e->src = pending;
-                e->items = pending->data.list.items;
-                e->count = pending->data.list.count;
-                e->capacity = pending->data.list.capacity;
-                e->copied_count = 0;
-                e->dst = make_list_heap(e->count);
-                /* Intrusive memo marker; restored on every exit below. */
-                pending->data.list.items = (Value **)e->dst;
-                pending->data.list.count = -1;
-                pending = NULL;
-            }
-
-            /* Breadth-first fill: wi only advances, so every edge costs O(1)
-             * native bookkeeping in addition to its charged copy work. */
-            while (wi < work_count &&
-                   work[wi].dst->data.list.count == work[wi].count)
-                wi++;
-            if (wi == work_count) break;
-
-            PromoteEntry *e = &work[wi];
-            int edge = e->dst->data.list.count;
-            Value *child = e->items[edge];
-            Value *copy;
-            int copy_is_fresh_scalar = 0;
-            if (child && child->arena && child->type == VAL_LIST) {
-                if (child->data.list.count == -1) {
-                    copy = (Value *)child->data.list.items;
-                } else {
-                    pending = child;
-                    continue;
-                }
-            } else if (child && child->arena) {
-                copy = promote_arena_scalar(child);
-                copy_is_fresh_scalar = 1;
-                if (!copy) {
-                    refused = 1;
-                    break;
-                }
-            } else {
-                copy = child;
-            }
-            if (!copy_is_fresh_scalar) val_incref(copy);
-            e->dst->data.list.items[e->dst->data.list.count++] = copy;
-        }
-
-        Value *root = work_count ? work[0].dst : NULL;
-        /* Restore the arena graph before any decref can invoke collection. */
-        for (int i = 0; i < work_count; i++) {
-            work[i].src->data.list.items = work[i].items;
-            work[i].src->data.list.count = work[i].count;
-            work[i].src->data.list.capacity = work[i].capacity;
-        }
-        if (refused) {
-            /* Hide every copied edge from cycle collection before dropping
-             * any of its references.  A decref can collect an entire copied
-             * cycle, so leaving even a sibling list traversable would let a
-             * later cleanup step follow an already-freed child. */
-            for (int i = 0; i < work_count; i++) {
-                Value *dst = work[i].dst;
-                work[i].copied_count = dst->data.list.count;
-                dst->data.list.count = 0;
-            }
-            for (int i = 0; i < work_count; i++) {
-                Value *dst = work[i].dst;
-                for (int j = 0; j < work[i].copied_count; j++) {
-                    Value *child = dst->data.list.items[j];
-                    dst->data.list.items[j] = NULL;
-                    val_decref(child);
-                }
-            }
-            for (int i = 0; i < work_count; i++) val_decref(work[i].dst);
-            /* As with scalar refusal, host observers can retain the return
-             * value before the sandbox unwinds and resets its arena. */
-            root = &g_null_singleton;
-        } else {
-            /* Edges own refs; the caller owns only the root constructor ref. */
-            for (int i = 1; i < work_count; i++) val_decref(work[i].dst);
-            /* A worker's sealed sandbox env is not an exit-snapshot root, and
-             * ordinary MT decrefs deliberately do not enter the candidate
-             * buffer. Preserve this promoted graph until deferred collection. */
-            if (g_vm_multithreaded) gc_note_possible_root_deferred(root);
-        }
-        free(work);
-        return root;
-    }
-    /* Remaining types (dict/fn/builtin/buffer/text builder) are
-     * heap-only at construction; an arena flag on one is unreachable. */
-    return v;
-}
-
 Value* make_str(const char *s) {
     /* #965: the copying string constructor is the sandbox chokepoint for the
      * pure string transforms (str_lower/str_upper/trim/substr/json_raw/
@@ -2087,15 +1895,12 @@ Value* make_str(const char *s) {
      * assumption holds. No-op outside an armed sandbox. */
     size_t n = strlen(s);   /* #1183: measured once here, then cached */
     if (!sandbox_charge(n + 1)) { /* raised; proceed like make_list */ }
-    int from_arena = g_arena.active;
-    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
     char *copy = xmalloc(n + 1);
     memcpy(copy, s, n + 1);
     val_str_set(v, copy, n);
-    if (from_arena) arena_track_string(v->data.str);
     v->refcount = 1;
-    v->arena = from_arena;
     return v;
 }
 
@@ -2103,16 +1908,13 @@ Value* make_str(const char *s) {
  * skips the re-measure. Same charging contract as make_str. */
 Value* make_str_len(const char *s, size_t n) {
     if (!sandbox_charge(n + 1)) { /* raised; proceed like make_list */ }
-    int from_arena = g_arena.active;
-    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
     char *copy = xmalloc(n + 1);
     memcpy(copy, s, n);
     copy[n] = '\0';
     val_str_set(v, copy, n);
-    if (from_arena) arena_track_string(v->data.str);
     v->refcount = 1;
-    v->arena = from_arena;
     return v;
 }
 
@@ -2129,17 +1931,14 @@ Value* make_str_owned(char *s) {
  * (n == strlen(s)) — the VM's concat and slice both do, and re-measuring
  * their own output is exactly the O(n) scan #1183 is removing. */
 Value* make_str_owned_len(char *s, size_t n) {
-    int from_arena = g_arena.active;
-    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_STR;
     val_str_set(v, s, n);
-    if (from_arena) arena_track_string(s);
     v->refcount = 1;
-    v->arena = from_arena;
     return v;
 }
 
-static Value g_null_singleton = { .type = VAL_NULL, .refcount = 1000000, .arena = 1 };
+static Value g_null_singleton = { .type = VAL_NULL, .refcount = 1000000 };
 /* forward decl resolved here */
 
 Value* make_null(void) {
@@ -2147,7 +1946,6 @@ Value* make_null(void) {
 }
 
 Value* make_list(int capacity) {
-    int from_arena = g_arena.active;
     /* EVERY program-visible container is charged at birth: node + slot
      * array. Charging only >8 pre-sizes and growth doublings left <=8-slot
      * containers free, and nesting turned that into an ~8-57x under-charge —
@@ -2166,24 +1964,16 @@ Value* make_list(int capacity) {
                             (size_t)chg_cap * sizeof(Value *)))
             capacity = 8;
     }
-    Value *v = from_arena ? arena_alloc(sizeof(Value)) : xcalloc(1, sizeof(Value));
+    Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
-    if (from_arena)
-        v->data.list.items = arena_alloc(v->data.list.capacity * sizeof(Value*));
-    else
-        v->data.list.items = xcalloc(v->data.list.capacity, sizeof(Value*));
+    v->data.list.items = xcalloc(v->data.list.capacity, sizeof(Value*));
     v->data.list.count = 0;
     v->refcount = 1;
-    v->arena = from_arena;
     return v;
 }
 
-/* Heap-forced list — for VM-internal wrappers that must outlive an arena
- * window. An arena list freezes val_decref into a no-op, so any heap items
- * it incref'd via list_append are leaked when the arena is reclaimed.
- * Used by the builtin-arg packing path: the wrapper holds incref'd args,
- * and val_decref(arg) must actually walk and release them on return. */
+/* Uncharged list for VM-internal wrappers sized by existing values. */
 Value* make_list_heap(int capacity) {
     /* Deliberately uncharged: see make_list — every call site is a
      * VM-internal wrapper sized by values already in memory. */
@@ -2193,7 +1983,6 @@ Value* make_list_heap(int capacity) {
     v->data.list.items = xcalloc(v->data.list.capacity, sizeof(Value*));
     v->data.list.count = 0;
     v->refcount = 1;
-    v->arena = 0;
     return v;
 }
 
@@ -2206,7 +1995,6 @@ Value* make_text_builder(void) {
     v->data.text_builder.len = 0;
     v->data.text_builder.parts = 0;
     v->refcount = 1;
-    v->arena = 0;
     return v;
 }
 
@@ -2231,7 +2019,6 @@ Value* make_fn(const char *name, char **params, int param_count, Env *closure) {
     v->data.fn.closure = closure;
     env_incref(closure);   /* the fn's owned ref on its captured env */
     v->refcount = 1;
-    v->arena = 0;
     return v;
 }
 
@@ -2240,7 +2027,6 @@ Value* make_builtin(BuiltinFn fn) {
     v->type = VAL_BUILTIN;
     v->data.builtin = fn;
     v->refcount = 1;
-    v->arena = 0;
     return v;
 }
 
@@ -2288,7 +2074,6 @@ Value* make_dict(int capacity) {
     v->data.dict.capacity = capacity;
     env_hash_init(&v->data.dict.hash, ENV_HASH_INIT_CAP);
     v->refcount = 1;
-    v->arena = 0;
     v->module_ns = 0;      /* #1057: a plain dict is never a module namespace */
     return v;
 }
@@ -2563,7 +2348,7 @@ static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
                 return cur;
             }
         } else if (slot_is_num(s) && cur && cur->type == VAL_NUM &&
-                   cur->refcount == 1 && !cur->arena) {
+                   cur->refcount == 1) {
             /* Exclusive untracked mirror — refresh in place, no allocation.
              * Same exclusivity test as dict_set_cached_immediate: a mirror
              * anyone else holds a ref to must not be mutated under them. */
@@ -2675,15 +2460,9 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
     if (h == 0) h = env_hash_name(key);
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx >= 0) {
-        Value *promoted = promote_if_arena(val);
-        if (promoted != val) {
-            val_decref(dict->data.dict.vals[idx]);
-            dict->data.dict.vals[idx] = promoted;
-        } else {
-            val_incref(val);
-            val_decref(dict->data.dict.vals[idx]);
-            dict->data.dict.vals[idx] = val;
-        }
+        val_incref(val);
+        val_decref(dict->data.dict.vals[idx]);
+        dict->data.dict.vals[idx] = val;
         return;
     }
     /* Grow if needed */
@@ -2727,9 +2506,8 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
         intern_ref_add(&dict->data.dict.intern_refs, eigs_current->intern_tbl);
     }
     dict->data.dict.keys[dict->data.dict.count] = interned;
-    Value *promoted = promote_if_arena(val);
-    dict->data.dict.vals[dict->data.dict.count] = promoted;
-    if (promoted == val) val_incref(val);
+    dict->data.dict.vals[dict->data.dict.count] = val;
+    val_incref(val);
     dict->data.dict.count++;
     if (dict->data.dict.count * 10 > (dict->data.dict.hash.mask + 1) * 7)
         env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
@@ -2884,15 +2662,9 @@ static Value *chan_clone_rec(Value *v, int depth) {
     return v;
 }
 
-/* Deep-copy a value for cross-thread channel transfer (see chan_clone_rec).
- * Forces heap allocation (g_arena is per-thread, so toggling its active flag is
- * safe here) so the copy survives the sender's arena_reset as well as detach. */
+/* Deep-copy a value for cross-thread channel transfer (see chan_clone_rec). */
 Value *val_clone_for_send(Value *v) {
-    int saved_active = g_arena.active;
-    g_arena.active = 0;
-    Value *out = chan_clone_rec(v, 0);
-    g_arena.active = saved_active;
-    return out;
+    return chan_clone_rec(v, 0);
 }
 
 Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
@@ -2967,28 +2739,8 @@ void list_append(Value *list, Value *item) {
         if (!sandbox_charge((size_t)(new_cap - list->data.list.capacity) *
                             (sizeof(Value *) + sizeof(Value))))
             return;
-        if (list->arena) {
-            /* Cannot realloc arena memory — allocate new array and copy */
-            Value **new_items = arena_alloc(safe_size_mul(new_cap, sizeof(Value*)));
-            memcpy(new_items, list->data.list.items, list->data.list.count * sizeof(Value*));
-            list->data.list.items = new_items;
-        } else {
-            list->data.list.items = xrealloc_array(list->data.list.items, new_cap, sizeof(Value*));
-        }
+        list->data.list.items = xrealloc_array(list->data.list.items, new_cap, sizeof(Value*));
         list->data.list.capacity = new_cap;
-    }
-    /* #873: an arena item appended into a HEAP list dangles after
-     * arena_reset (the abort repro: decref of the stale pointer corrupts
-     * the allocator). Promote on the way in — same contract as the env
-     * and dict store paths. Arena-into-arena stays raw (both die at
-     * reset), heap-into-arena keeps the documented leak-side sharp edge
-     * (test_arena_ownership). */
-    if (__builtin_expect(item && item->arena && !list->arena, 0)) {
-        Value *promoted = promote_if_arena(item);
-        if (promoted != item) {
-            list->data.list.items[list->data.list.count++] = promoted;
-            return;
-        }
     }
     list->data.list.items[list->data.list.count++] = item;
     val_incref(item);
@@ -3736,7 +3488,6 @@ Env* env_new(Env *parent) {
         __atomic_add_fetch(&g_env_version_global, 1, __ATOMIC_RELAXED);
     e->parent = parent;
     if (parent) env_incref(parent);   /* the parent link is an owned ref */
-    e->heap_allocated = 1;
     e->captured = 0;
     e->is_loop_env = 0;
     /* #1161: same reason as is_loop_env — a recycled env must not inherit the
@@ -3763,9 +3514,8 @@ void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         env_shared_lock(e);   /* #607: module hop vs main-thread binding creation */
         int idx = env_hash_find(&e->hash, name, h, e->names);
         if (idx >= 0) {
-            Value *promoted = promote_if_arena(val);
-            if (promoted == val) val_incref(promoted);
-            EigsSlot new_s = slot_from_value(promoted);
+            val_incref(val);
+            EigsSlot new_s = slot_from_value(val);
             slot_decref(e->values[idx]);
             e->values[idx] = new_s;
             if (e->assign_counts)
@@ -3788,9 +3538,8 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
     env_shared_lock(env);   /* #607: vs concurrent worker chain walks */
     int idx = env_hash_find(&env->hash, name, h, env->names);
     if (idx >= 0) {
-        Value *promoted = promote_if_arena(val);
-        if (promoted == val) val_incref(promoted);
-        EigsSlot new_s = slot_from_value(promoted);
+        val_incref(val);
+        EigsSlot new_s = slot_from_value(val);
         slot_decref(env->values[idx]);
         env->values[idx] = new_s;
         if (env->assign_counts)
@@ -3802,14 +3551,7 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
         int new_cap = env->capacity * 2;
         size_t nsz = new_cap * sizeof(char *);
         size_t vsz = new_cap * sizeof(EigsSlot);
-        if (!env->heap_allocated) {
-            char **nn  = arena_alloc(nsz);
-            EigsSlot *nv = arena_alloc(vsz);
-            memcpy(nn, env->names, env->count * sizeof(char *));
-            memcpy(nv, env->values, env->count * sizeof(EigsSlot));
-            env->names  = nn;
-            env->values = nv;
-        } else if (env_mt_shared(env)) {
+        if (env_mt_shared(env)) {
             env_grow_retire(env, new_cap);   /* #607: publish + retire */
         } else {
             env->names  = xrealloc(env->names, nsz);
@@ -3848,9 +3590,8 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
                              : env_intern_name(name);
     if (!g_vm_multithreaded)
         env_retain_intern_table(env, eigs_current->intern_tbl);
-    Value *promoted = promote_if_arena(val);
-    if (promoted == val) val_incref(promoted);
-    env->values[env->count] = slot_from_value(promoted);
+    val_incref(val);
+    env->values[env->count] = slot_from_value(val);
     if (env->assign_counts)
         env->assign_counts[env->count] = 1;
     env->count++;
@@ -3867,27 +3608,11 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
 
 /* ---- Slot-flavored env helpers (Phase B-5 hot path) ----
  * env borrows the input slot and slot_incref's internally to take a ref.
- * Promotion: an arena-tracked pointer slot is materialized to heap via
- * slot_to_value + promote_if_arena to preserve the existing arena-safety
- * contract that env never holds arena Values across arena reset. */
+ */
 void env_store_slot(Env *env, int idx, EigsSlot s) {
     env_shared_lock(env);   /* #607: a concurrent module-env grow would
                              * republish `values`; storing into the retired
                              * copy would silently lose this update. */
-    if (slot_is_ptr(s)) {
-        Value *v = slot_as_ptr(s);
-        if (v && v->arena) {
-            Value *promoted = promote_if_arena(v);
-            if (promoted && promoted != v) {
-                /* promoted is fresh (refcount=1); env takes it. */
-                EigsSlot new_s = slot_from_value(promoted);
-                slot_decref(env->values[idx]);
-                env->values[idx] = new_s;
-                env_shared_unlock(env);
-                return;
-            }
-        }
-    }
     slot_incref(s);
     slot_decref(env->values[idx]);
     env->values[idx] = s;
@@ -3940,14 +3665,7 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
         int new_cap = env->capacity * 2;
         size_t nsz = new_cap * sizeof(char *);
         size_t vsz = new_cap * sizeof(EigsSlot);
-        if (!env->heap_allocated) {
-            char **nn = arena_alloc(nsz);
-            EigsSlot *nv = arena_alloc(vsz);
-            memcpy(nn, env->names, env->count * sizeof(char *));
-            memcpy(nv, env->values, env->count * sizeof(EigsSlot));
-            env->names = nn;
-            env->values = nv;
-        } else if (env_mt_shared(env)) {
+        if (env_mt_shared(env)) {
             env_grow_retire(env, new_cap);   /* #607: publish + retire */
         } else {
             env->names = xrealloc(env->names, nsz);
@@ -3977,20 +3695,8 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
                              ? (char *)shared_intern_key(interned)
                              : (char *)interned;
     if (!g_vm_multithreaded) env_retain_intern_table(env, owner);
-    EigsSlot stored = s;
-    if (slot_is_ptr(s)) {
-        Value *v = slot_as_ptr(s);
-        if (v && v->arena) {
-            Value *promoted = promote_if_arena(v);
-            if (promoted && promoted != v) {
-                stored = slot_from_value(promoted);
-                goto store;
-            }
-        }
-    }
     slot_incref(s);
-store:
-    env->values[env->count] = stored;
+    env->values[env->count] = s;
     if (env->assign_counts)
         env->assign_counts[env->count] = 1;
     env->count++;
@@ -4010,7 +3716,7 @@ void env_set_local_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot 
 }
 
 /* Bind a parameter into a freshly-created call env. Caller guarantees:
- *   - env was just returned by env_new (heap_allocated=1, count=N with N<param)
+ *   - env was just returned by env_new (count=N with N<param)
  *   - `interned` came from env_intern_name (or VAL_FN.params, now interned)
  *   - the param name does not collide with any earlier param in this env
  *     (compiler rejects duplicate params)
@@ -4029,20 +3735,8 @@ void env_bind_fresh_param_slot(Env *env, const char *interned,
     }
     env_retain_intern_table(env, owner);
     env->names[env->count] = (char*)interned;
-    EigsSlot stored = s;
-    if (slot_is_ptr(s)) {
-        Value *v = slot_as_ptr(s);
-        if (v && v->arena) {
-            Value *promoted = promote_if_arena(v);
-            if (promoted && promoted != v) {
-                stored = slot_from_value(promoted);
-                goto store;
-            }
-        }
-    }
     slot_incref(s);
-store:
-    env->values[env->count] = stored;
+    env->values[env->count] = s;
     if (env->assign_counts) env->assign_counts[env->count] = 1;
     env->count++;
     env->binding_version++;
@@ -4142,7 +3836,7 @@ void env_set_local_owned(Env *env, const char *name, Value *val) {
 static void gc_unregister_env(Env *env);
 
 void env_decref(Env *env) {
-    if (!env || !env->heap_allocated) return;
+    if (!env) return;
     int newrc;
     if (__builtin_expect(g_vm_multithreaded, 0))
         newrc = __atomic_sub_fetch(&env->env_refcount, 1, __ATOMIC_ACQ_REL);
@@ -4212,7 +3906,7 @@ void env_decref(Env *env) {
  * env_clear + gc_collect_cycles + env_decref instead; this remains for
  * paths that must hard-destroy an env regardless of live references.) */
 void env_destroy_final(Env *env) {
-    if (!env || !env->heap_allocated) return;
+    if (!env) return;
     gc_unregister_env(env);
     EigsSlot *vals = env->values;
     int count = env->count;
@@ -4416,7 +4110,7 @@ static int gcu_add(GcU *u, void *obj, int kind) {
  * instead). Adding a ValType breaks the build here: decide node vs leaf,
  * and give a node its GC_EDGE_TABLE rows. */
 static int gc_value_is_node(Value *v) {
-    if (!v || v->arena) return 0;
+    if (!v) return 0;
     switch (v->type) {
     /* Nodes: each has one or more GC_EDGE_TABLE rows. */
     case VAL_LIST:
@@ -4440,7 +4134,7 @@ static int gc_value_is_node(Value *v) {
 /* An env child edge worth traversing: real, heap, and not the global
  * stop node. */
 static int gc_env_is_node(Env *e) {
-    return e && e->heap_allocated && e != g_global_env;
+    return e && e != g_global_env;
 }
 
 /* =========================================================================
@@ -4882,10 +4576,6 @@ void gc_note_possible_root(Value *v) {
     gc_buffer_possible_root(v);
 }
 
-void gc_note_possible_root_deferred(Value *v) {
-    gc_buffer_possible_root(v);
-}
-
 static void gc_drain_value_candidates(int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
     /* Feed the value-candidate buffer in as pinned seeds (each holds exactly
@@ -5154,30 +4844,22 @@ void env_reserve_slots(Env *env, int total) {
      * unless the env is a sealed root AND the state is multithreaded. */
     env_shared_lock(env);
     if (total <= env->count) { env_shared_unlock(env); return; }
-    /* Grow capacity if needed. Mirrors env_set_local_hashed's grow path
-     * for heap_allocated envs. Call-time envs are always heap-allocated
-     * (env_new sets heap_allocated=1). Reserve ENV_LOOP_BIND_HEADROOM extra
-     * CAPACITY (count still ends at `total`) so the runtime loop bindings
-     * don't realloc values[] out from under a live JIT %r12 cache (#291). */
+    /* Grow capacity if needed. Mirrors env_set_local_hashed's grow path.
+     * Reserve ENV_LOOP_BIND_HEADROOM extra CAPACITY (count still ends at
+     * `total`) so the runtime loop bindings don't realloc values[] out from
+     * under a live JIT %r12 cache (#291). */
     int want_cap = total + ENV_LOOP_BIND_HEADROOM;
     if (want_cap > env->capacity) {
         int new_cap = env->capacity ? env->capacity : ENV_INIT_CAP;
         while (new_cap < want_cap) new_cap *= 2;
         size_t nsz = new_cap * sizeof(char *);
         size_t vsz = new_cap * sizeof(EigsSlot);
-        if (env->heap_allocated && env_mt_shared(env)) {
+        if (env_mt_shared(env)) {
             env_grow_retire(env, new_cap);   /* #607: publish + retire */
-        } else if (env->heap_allocated) {
+        } else {
             env->names  = xrealloc(env->names,  nsz);
             env->values = xrealloc(env->values, vsz);
             env->assign_counts = xrealloc(env->assign_counts, new_cap * sizeof(int));
-        } else {
-            char **nn  = arena_alloc(nsz);
-            EigsSlot *nv = arena_alloc(vsz);
-            memcpy(nn, env->names,  env->count * sizeof(char *));
-            memcpy(nv, env->values, env->count * sizeof(EigsSlot));
-            env->names  = nn;
-            env->values = nv;
         }
         env->capacity = new_cap;
     }

@@ -130,8 +130,6 @@ SET:  env_store_slot(target, ic->slot_idx, s); assign_counts bump
 - GET inline must do `slot_incref`: tag-check, `incl refcount` when
   ptr. Push = store at `(values_base + %ecx*8)`, `inc %ecx`.
 - SET inline must replicate `env_store_slot` (src/eigenscript.c
-  ~1059): the arena-promotion branch is the ugly part — guard it out:
-  inline only when the incoming slot is immediate or a non-arena ptr,
   helper otherwise. Old-slot decref: same refcount>1-only rule as 5a.
 - SET also has the `g_trace_hist` hook *before* the store: load the
   flag (it's a plain global int — add its address to g_layout or

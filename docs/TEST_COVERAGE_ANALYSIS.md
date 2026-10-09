@@ -23,7 +23,6 @@ remains. Line coverage, before → after:
 | trace.c | 81.6% | 81.6% | 517 |
 | parser.c | 77.6% | 81.1% | 1186 |
 | vm.c | 73.5% | **80.2%** | 2356 |
-| arena.c | 77.8% | 77.8% | 117 |
 | eigenscript.c | 74.7% | 74.7% | 977 |
 | chunk.c | 73.0% | 73.0% | 152 |
 | lexer.c | 69.7% | 71.2% | 423 |
