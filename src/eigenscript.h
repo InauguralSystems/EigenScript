@@ -9,21 +9,17 @@
 
 /* Recycling-layer switches (#1665). Each bypasses exactly one pool so a
  * measurement can price it in isolation (the per-layer decision in #1665's
- * pre-registered rule). The union flag EIGS_POOL_OFF defines all four, so a
+ * pre-registered rule). The union flag EIGS_POOL_OFF defines all three, so a
  * build with -DEIGS_POOL_OFF is byte-identical to the original #1675 pool-off
  * build; the default build (none defined) is byte-identical to the pooled
  * baseline. The call sites below test the per-layer macros only — never
  * EIGS_POOL_OFF directly — so this is the single point of truth for the union.
  *   EIGS_POOL_OFF_NUM     — Value NUM freelist (free_value/make_num/recycle_intermediate)
- *   EIGS_POOL_OFF_ENV     — Env freelist (env_new/env_decref)
  *   EIGS_POOL_OFF_CALLENV — call-env recycling (vm_park_call_env/vm_take_call_env)
  *   EIGS_POOL_OFF_ARENA   — bump arena (arena_alloc/free_weight_val) */
 #ifdef EIGS_POOL_OFF
 #  ifndef EIGS_POOL_OFF_NUM
 #    define EIGS_POOL_OFF_NUM
-#  endif
-#  ifndef EIGS_POOL_OFF_ENV
-#    define EIGS_POOL_OFF_ENV
 #  endif
 #  ifndef EIGS_POOL_OFF_CALLENV
 #    define EIGS_POOL_OFF_CALLENV
@@ -91,10 +87,8 @@
  * — a layout-sensitive heisenbug class the sanitizer gates can't see (MSan
  * is deferred). Poison makes the read deterministic on every layout, so the
  * hosted suite names it. Sites: xmalloc fresh blocks, xrealloc grown tails,
- * and the env freelist's parked dormant arrays (names/values/assign_counts
- * + hash.hashes/indices — reuse deliberately does not clear them; the
- * generation gate itself is NOT poisoned). arena_alloc, xcalloc and the num
- * freelist zero-fill by documented contract and stay untouched. Pairs with
+ * arena_alloc, xcalloc and the NUM freelist zero-fill by documented contract
+ * and stay untouched. Pairs with
  * MALLOC_PERTURB_ (raw malloc/realloc sites) at suite time. Zero cost off. */
 #ifdef EIGS_POISON
 #define EIGS_POISON_BYTE 0xAA
@@ -389,13 +383,12 @@ struct Env {
      * (realloc under a reader: 61 ThreadSanitizer reports and a SIGSEGV on the
      * 2,000-fields-per-worker repro, 5/5 crashes on the release binary).
      * Set at creation for a root env and by env_mark_shared for a module
-     * namespace; env_new must assign it explicitly because the freelist branch
-     * does NOT zero the struct (same trap as is_loop_env above). */
+     * namespace; env_new assigns it explicitly. */
     unsigned char mt_shared;
     int env_refcount;   /* honest owner count: creator/frame + closures
                          * (make_fn) + child envs (parent link) + a chunk's
                          * parked env_cache. 0 -> destroyed. */
-    uint64_t binding_version; /* bumped on every new-binding add or env recycle;
+    uint64_t binding_version; /* seeded at birth and bumped on new-binding adds;
                                * used by VM inline caches to detect shadowing.
                                * #1674 round 2: 64-bit (was uint32). Seeded at
                                * birth from a process-wide monotonic counter
@@ -411,7 +404,7 @@ struct Env {
     /* Counted non-node leaf owners for borrowed binding names. */
     EnvInternRef *intern_refs;
     /* #262 Phase-1: self-managed slot-keyed observer array (own capacity,
-     * grown in observer_slot_update; freed/reset at env teardown/park). NULL
+     * grown in observer_slot_update; freed/reset at env teardown). NULL
      * until the first shadow observation under EIGS_OBS_SHADOW. */
     struct ObserverSlot *obs;
     int obs_cap;
@@ -419,7 +412,7 @@ struct Env {
      * worker thread may still hold a post-resolve pointer into the old
      * names/values/assign_counts/bucket arrays, so grows under MT publish
      * fresh copies and park the old blocks here instead of freeing them.
-     * Freed when the env itself is parked or destroyed. */
+     * Freed when the env is destroyed. */
     void **retired;
     int retired_count, retired_cap;
 };
@@ -749,8 +742,6 @@ typedef struct {
  * can carry the storage inline and so state.c can drain at detach.
  * (Phase 8: these moved off file-static __thread storage in eigenscript.c.) */
 #define NUM_FREELIST_CAP          4096
-#define ENV_FREELIST_CAP          1024
-#define ENV_FREELIST_MAX_BINDINGS 64
 #define ENV_NAME_INTERN_BUCKETS   4096
 
 typedef struct EnvNameIntern {
@@ -1135,25 +1126,16 @@ struct EigsThread {
     int                  gc_threshold;
     int                  gc_enabled;
     int                  in_gc;
-    /* Per-thread freelists + intern table (Phase 8). The freelists hold
-     * recyclable Value/Env memory that survives until thread detach;
-     * eigs_thread_drain_caches frees the held memory before the struct
-     * itself goes away. Interns own their `name` strings. */
+    /* Per-thread NUM freelist + intern table (Phase 8). The freelist holds
+     * recyclable Value memory until thread detach; interns own their names. */
     Value               *num_freelist;
     int                  num_freelist_count;
-    Env                 *env_freelist;
-    int                  env_freelist_count;
     /* #1674 round 2: the env birth counter is no longer here. Round 1 kept a
      * per-thread uint32 `env_version_ctr`; two per-thread counters could mint
      * EQUAL versions, and a uint32 wrapped at ~2^32 births (reachable in ~1.7h
-     * under EIGS_ENV_FREELIST_OFF) which reopened the ABA. It is now ONE
+     * on the fresh-allocation path) which reopened the ABA. It is now ONE
      * process-wide relaxed-atomic uint64 `g_env_version_global` in
      * eigenscript.c, read via __atomic_*; binding_version is uint64 too. */
-    /* #1674: test seam — when set (EIGS_ENV_FREELIST_OFF), env_decref never
-     * parks; every dead env is freed, forcing the address reuse the pool masks
-     * so the regression gate can see the stale-read class on the default build.
-     * Read once at attach; default 0 (no hot-path effect). */
-    int                  env_freelist_off;
     /* #1065: the per-thread intern table is a REFCOUNTED heap object. The
      * thread holds one ref; every chunk created on the thread holds one
      * (chunk_new / chunk_decref), because a chunk carries pointers into the
@@ -1543,9 +1525,6 @@ static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
 #define g_in_gc               (eigs_current->in_gc)
 #define g_num_freelist        (eigs_current->num_freelist)
 #define g_num_freelist_count  (eigs_current->num_freelist_count)
-#define g_env_freelist        (eigs_current->env_freelist)
-#define g_env_freelist_count  (eigs_current->env_freelist_count)
-#define g_env_freelist_off    (eigs_current->env_freelist_off)
 #define g_env_name_interns    (eigs_current->intern_tbl->buckets)
 #define g_sandbox_intern_scope (eigs_current->sandbox_intern_scope)
 #define g_sandbox_intern_scope_next (eigs_current->sandbox_intern_scope_next)
