@@ -11,13 +11,13 @@
                    * fn -> chunk -> env_cache / functions[] edges */
 #include <pthread.h>
 
-/* #298 follow-up: surface use-after-recycle on the per-thread Value/Env
- * freelists to Valgrind. A num/env whose refcount hits 0 is recycled onto a
- * freelist (not free()'d), so ASan — and un-annotated Valgrind — see it as
+/* #298 follow-up: surface use-after-recycle on the per-thread Value NUM
+ * freelist to Valgrind. A NUM whose refcount hits 0 is recycled (not freed),
+ * so ASan — and un-annotated Valgrind — see it as
  * still-allocated: a stale incref/decref on a prematurely-recycled object is
  * invisible. We poison just the REFCOUNT field NOACCESS while the object sits on
  * the freelist (it's the field a dangling refcount op touches, it's separate
- * from the freelist link stored in v->data / env->parent, and it's reset on
+ * from the link stored in v->data, and it's reset on
  * reuse so re-defining it is clean). Gated behind EIGS_VALGRIND (`make
  * valgrind`); no-op, zero cost in normal/release/asan builds. */
 #ifdef EIGS_VALGRIND
@@ -340,10 +340,9 @@ static void env_intern_scope_remove(char *name);
 
 /* Recursively free a heap-allocated Value tree.
  * Skips arena-allocated values (v->arena flag). */
-/* NUM_FREELIST_CAP / ENV_FREELIST_CAP / ENV_FREELIST_MAX_BINDINGS /
- * ENV_NAME_INTERN_BUCKETS and the EnvNameIntern typedef now live in
- * eigenscript.h so EigsThread can carry the freelist heads + intern
- * table inline. The g_num_freelist / g_env_freelist / g_env_name_interns
+/* NUM_FREELIST_CAP / ENV_NAME_INTERN_BUCKETS and the EnvNameIntern typedef
+ * live in eigenscript.h so EigsThread can carry the NUM freelist head + intern
+ * table inline. The g_num_freelist / g_env_name_interns
  * identifiers are bridge macros — same access syntax, one extra TLS
  * deref through eigs_current. */
 
@@ -1544,9 +1543,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
  * fields; g_obs_dh_zero/small/h_low are EigsState fields. See the macros
  * in eigenscript.h that bridge the source identifiers to those fields. */
 
-/* Phase 8: release per-thread freelist memory + intern table at detach.
- * The freelists store recyclable Value/Env structs that would otherwise
- * leak on thread teardown; the intern table owns its `name` strings.
+/* Phase 8: release per-thread NUM freelist memory + intern table at detach.
+ * The freelist stores recyclable NUM Values; the intern table owns names.
  * Called from eigs_thread_detach BEFORE eigs_current is cleared, so
  * the bridge macros still resolve. */
 void eigs_thread_drain_caches(EigsThread *th) {
@@ -1563,24 +1561,6 @@ void eigs_thread_drain_caches(EigsThread *th) {
     }
     th->num_freelist = NULL;
     th->num_freelist_count = 0;
-
-    /* env_freelist: parked envs use ->parent as the next pointer and
-     * retain their names/values/assign_counts/hash arrays for reuse. */
-    Env *en = th->env_freelist;
-    while (en) {
-        Env *next = en->parent;
-        observer_slot_reset(en);   /* #262 Phase-1 (normally already reset on park) */
-        free(en->names);
-        free(en->values);
-        free(en->assign_counts);
-        free(en->hash.hashes);
-        free(en->hash.indices);
-        free(en->hash.generations);
-        free(en);
-        en = next;
-    }
-    th->env_freelist = NULL;
-    th->env_freelist_count = 0;
 
     /* Private promoted keys are Value-owned in the state registry; detaching
      * their creator must not release keys still borrowed by surviving Values. */
@@ -3701,8 +3681,8 @@ char *env_intern_name(const char *name) {
  * address therefore always carries a STRICTLY GREATER binding_version than any
  * inline cache (EnvIC / g_loop_iter_cache) cached against the prior occupant,
  * so the cache misses on address reuse instead of firing on a version
- * collision. uint64: at this box's measured ~715k env births/s under
- * EIGS_ENV_FREELIST_OFF, 2^64 is ~800,000 years away — the uint32-wrap residual
+ * collision. uint64: at this box's measured ~715k env births/s, 2^64 is
+ * ~800,000 years away — the uint32-wrap residual
  * round 1 accepted is gone. RELAXED ordering is justified at the two use sites;
  * the allocator's free→reuse edge supplies the happens-before. */
 static uint64_t g_env_version_global = 0;
@@ -3721,77 +3701,43 @@ void env_version_seed_floor(uint64_t v) {
 }
 
 Env* env_new(Env *parent) {
-    Env *e = NULL;
-#ifndef EIGS_POOL_OFF_ENV
-    if (g_env_freelist) {
-        e = g_env_freelist;
-        g_env_freelist = e->parent;
-        g_env_freelist_count--;
-        EIGS_VG_DEFINED(&e->env_refcount, sizeof(e->env_refcount));  /* un-poison before reuse */
-        e->count = 0;
-        /* Generation already bumped in env_decref's freelist branch.
-         * Hash slots from the prior occupant are dormant by virtue of
-         * generations[i] != current generation. #1674: binding_version is
-         * NOT reseeded here — the park branch bumped it (env_decref), and this
-         * is the SAME struct, so its version climbs monotonically across every
-         * park/reuse cycle and can never return to a value an inline cache
-         * cached against an earlier occupancy of it. Reseeding it from the
-         * global counter would instead land it on seed+bumps of a prior
-         * occupancy (versions climb with per-binding bumps, not just the
-         * seed) and fire a stale IC/g_loop_iter_cache hit — an env_store_slot
-         * into a freed value (ASan heap-use-after-free, caught before commit).
-         * The reuse hazard #1674 is about a FREED env's address handed to a
-         * fresh xcalloc below; a parked env keeps its own struct, so only the
-         * fresh path needs the seed. */
-    } else
-#endif  /* EIGS_POOL_OFF_ENV (#1665): every Env is a fresh xcalloc; nothing is
-         * ever taken from the env freelist (which stays empty). */
-    {
-        e = xcalloc(1, sizeof(Env));
-        e->capacity = ENV_INIT_CAP;
-        e->names  = xcalloc(ENV_INIT_CAP, sizeof(char *));
-        e->values = xcalloc(ENV_INIT_CAP, sizeof(EigsSlot));
-        e->assign_counts = xcalloc(ENV_INIT_CAP, sizeof(int));
-        env_hash_init(&e->hash, ENV_HASH_INIT_CAP);
-        /* #1674: a fresh xcalloc may land on a just-free()d env's address.
-         * calloc zeroes binding_version to 0, so without this it would climb
-         * 0,1,2,… through exactly the small values an inline cache (and
-         * g_loop_iter_cache) cached against the prior occupant — the stale
-         * read the env freelist was masking (#1661 family). Seed from the
-         * process-wide monotonic env counter, which env_decref's free path
-         * carries up past every freed env's final binding_version: so this
-         * seed is STRICTLY GREATER than any version this address ever held,
-         * and the env only climbs further from here. The IC/version checks
-         * therefore MISS on address reuse and fall to the correct chain walk.
-         * A persisted loop env is xcalloc'd once and keeps climbing from its
-         * seed, so its hot IC survives across iterations; the freelist-reuse
-         * branch above is deliberately left untouched (same struct, version
-         * already climbs monotonically — reseeding it would collide with its
-         * own earlier seed+bumps). Under -DEIGS_POOL_OFF and the
-         * EIGS_ENV_FREELIST_OFF gate every env takes THIS path, so the fix
-         * covers the measurement build that exposes #1674.
-         *
-         * Round 2 (#1674): the counter is ONE process-wide uint64 advanced with
-         * a relaxed atomic add (not a per-thread uint32). This removes two
-         * round-1 residuals: uint32 wrap at ~2^32 births (the ABA could reopen
-         * after the counter wrapped back through the cached low values) and the
-         * cross-thread case where two per-thread counters minted equal versions
-         * for an address aliased across threads. RELAXED is sufficient: the
-         * only consumer that must observe this seed is a LATER env born at the
-         * same address, and address handoff (free on one thread → malloc reuse
-         * on any thread) carries the allocator's own release/acquire edge, so
-         * everything sequenced before the freeing env_decref — including its
-         * high-water store below — happens-before this add_fetch. */
-        e->binding_version =
-            __atomic_add_fetch(&g_env_version_global, 1, __ATOMIC_RELAXED);
-    }
+    Env *e = xcalloc(1, sizeof(Env));
+    e->capacity = ENV_INIT_CAP;
+    e->names  = xcalloc(ENV_INIT_CAP, sizeof(char *));
+    e->values = xcalloc(ENV_INIT_CAP, sizeof(EigsSlot));
+    e->assign_counts = xcalloc(ENV_INIT_CAP, sizeof(int));
+    env_hash_init(&e->hash, ENV_HASH_INIT_CAP);
+    /* #1674: a fresh xcalloc may land on a just-free()d env's address.
+     * calloc zeroes binding_version to 0, so without this it would climb
+     * 0,1,2,… through exactly the small values an inline cache (and
+     * g_loop_iter_cache) cached against the prior occupant — the stale
+     * read that Env address recycling exposed (#1661 family). Seed from the
+     * process-wide monotonic env counter, which env_decref's free path
+     * carries up past every freed env's final binding_version: so this
+     * seed is STRICTLY GREATER than any version this address ever held,
+     * and the env only climbs further from here. The IC/version checks
+     * therefore MISS on address reuse and fall to the correct chain walk.
+     * A persisted loop env is xcalloc'd once and keeps climbing from its
+     * seed, so its hot IC survives across iterations. Every general Env
+     * takes this fresh-allocation path; call-env recycling is separate.
+     *
+     * Round 2 (#1674): the counter is ONE process-wide uint64 advanced with
+     * a relaxed atomic add (not a per-thread uint32). This removes two
+     * round-1 residuals: uint32 wrap at ~2^32 births (the ABA could reopen
+     * after the counter wrapped back through the cached low values) and the
+     * cross-thread case where two per-thread counters minted equal versions
+     * for an address aliased across threads. RELAXED is sufficient: the
+     * only consumer that must observe this seed is a LATER env born at the
+     * same address, and address handoff (free on one thread → malloc reuse
+     * on any thread) carries the allocator's own release/acquire edge, so
+     * everything sequenced before the freeing env_decref — including its
+     * high-water store below — happens-before this add_fetch. */
+    e->binding_version =
+        __atomic_add_fetch(&g_env_version_global, 1, __ATOMIC_RELAXED);
     e->parent = parent;
     if (parent) env_incref(parent);   /* the parent link is an owned ref */
     e->heap_allocated = 1;
     e->captured = 0;
-    /* Explicit: the freelist branch above does NOT zero the struct (only
-     * `count` is reset), so a stale is_loop_env from the previous occupant
-     * would make an ordinary env look like a loop env (#959). */
     e->is_loop_env = 0;
     /* #1161: same reason as is_loop_env — a recycled env must not inherit the
      * previous occupant's shared flag, and a sealed ROOT env is shared by
@@ -4204,96 +4150,50 @@ void env_decref(Env *env) {
         newrc = --env->env_refcount;
     if (newrc > 0) return;
     /* Destructor: drop bindings, drop the parent link's owned ref,
-     * recycle or free the struct. */
+     * and free the struct. */
     gc_unregister_env(env);
     for (int i = 0; i < env->count; i++) {
         slot_decref(env->values[i]);
     }
     Env *parent = env->parent;
-    /* #262 Phase-1: drop slot-keyed observer state on both park and free so a
-     * recycled env never carries another binding's trajectory. */
+    /* #262 Phase-1: drop slot-keyed observer state before freeing the env. */
     observer_slot_reset(env);
     intern_refs_release(&env->intern_refs);
-#ifndef EIGS_POOL_OFF_ENV
-    /* #1674: EIGS_ENV_FREELIST_OFF forces the hazardous reuse the pool hides —
-     * every dead env is really free()d (as under -DEIGS_POOL_OFF), so a later
-     * env lands on a freed address and the #1661-family stale-IC read is
-     * reachable on the DEFAULT build. The regression gate (suite [0fe]) runs
-     * test_bool_fuzz.sh with this set; it FAILS without the env_new
-     * binding_version seeding above and PASSES with it. One predictable branch
-     * on the env-teardown path, never on the IC fast path. */
-    if (!g_env_freelist_off &&
-        env->capacity <= ENV_FREELIST_MAX_BINDINGS &&
-        g_env_freelist_count < ENV_FREELIST_CAP) {
-        env->count = 0;
-        env->captured = 0;
-        env->env_refcount = 0;
-        env->binding_version++; /* invalidate VM inline caches */
-        /* O(1) invalidation: bump generation. On wrap, fall back to a
-         * full reset (every ~4 billion env reuses on this thread). */
-        if (++env->hash.generation == 0) {
-            memset(env->hash.generations, 0,
-                   (env->hash.mask + 1) * sizeof(uint32_t));
-            env->hash.generation = 1;
-        }
-#ifdef EIGS_POISON
-        /* The parked arrays are dormant-dirty by design (gated by count=0 +
-         * the generation bump). Poison them so any read that slips past a
-         * gate sees 0xAA, not a stale-but-plausible pointer/index. The
-         * generations array IS the gate and must not be touched. */
-        EIGS_POISON_MEM(env->names, env->capacity * sizeof(char *));
-        EIGS_POISON_MEM(env->values, env->capacity * sizeof(EigsSlot));
-        if (env->assign_counts)
-            EIGS_POISON_MEM(env->assign_counts, env->capacity * sizeof(int));
-        EIGS_POISON_MEM(env->hash.hashes, (env->hash.mask + 1) * sizeof(uint32_t));
-        EIGS_POISON_MEM(env->hash.indices, (env->hash.mask + 1) * sizeof(int));
-#endif
-        env_free_retired(env);   /* #607: MT is over by park time */
-        env->parent = g_env_freelist;
-        g_env_freelist = env;
-        g_env_freelist_count++;
-        EIGS_VG_NOACCESS(&env->env_refcount, sizeof(env->env_refcount));  /* #297/#298 */
-    } else
-#endif  /* EIGS_POOL_OFF_ENV (#1665): never park an Env — every env is really
-         * free()d, so ASan sees its values[]/names[] arrays die too (the
-         * exact arrays a stale read like #1661 lands in). */
+    /* #1674: this struct's address may be handed to a fresh env_new next.
+     * Carry the process-wide env-version counter up to at least this env's
+     * final binding_version, so the reborn env's seed (add_fetch) is
+     * STRICTLY GREATER than every version this address ever held — hence
+     * greater than anything an inline cache or g_loop_iter_cache cached
+     * against it. Without this high-water step the fresh seed only exceeds
+     * the prior occupant's SEED, not its seed+per-binding bumps, leaving a
+     * narrow reuse collision; this closes it.
+     *
+     * Round 2 (#1674): an atomic max (CAS loop), since the counter is now
+     * process-wide. Correct under concurrency without a stronger order: the
+     * store completes before free() releases the struct's address, and the
+     * next occupant can only be minted by a malloc() that reuses that
+     * address, which acquires the allocator edge free() released — so this
+     * max is visible to that occupant's seeding add_fetch. RELAXED on both
+     * ends is therefore enough (the allocator, not g_env_version_global,
+     * carries the happens-before for address handoff). */
     {
-        /* #1674: this struct's address may be handed to a fresh env_new next.
-         * Carry the process-wide env-version counter up to at least this env's
-         * final binding_version, so the reborn env's seed (add_fetch) is
-         * STRICTLY GREATER than every version this address ever held — hence
-         * greater than anything an inline cache or g_loop_iter_cache cached
-         * against it. Without this high-water step the fresh seed only exceeds
-         * the prior occupant's SEED, not its seed+per-binding bumps, leaving a
-         * narrow reuse collision; this closes it.
-         *
-         * Round 2 (#1674): an atomic max (CAS loop), since the counter is now
-         * process-wide. Correct under concurrency without a stronger order: the
-         * store completes before free() releases the struct's address, and the
-         * next occupant can only be minted by a malloc() that reuses that
-         * address, which acquires the allocator edge free() released — so this
-         * max is visible to that occupant's seeding add_fetch. RELAXED on both
-         * ends is therefore enough (the allocator, not g_env_version_global,
-         * carries the happens-before for address handoff). */
-        {
-            uint64_t cur =
-                __atomic_load_n(&g_env_version_global, __ATOMIC_RELAXED);
-            while (env->binding_version > cur) {
-                if (__atomic_compare_exchange_n(&g_env_version_global, &cur,
-                        env->binding_version, 0,
-                        __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-                    break;   /* cur reloaded on CAS failure */
-            }
+        uint64_t cur =
+            __atomic_load_n(&g_env_version_global, __ATOMIC_RELAXED);
+        while (env->binding_version > cur) {
+            if (__atomic_compare_exchange_n(&g_env_version_global, &cur,
+                    env->binding_version, 0,
+                    __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+                break;   /* cur reloaded on CAS failure */
         }
-        env_free_retired(env);   /* #607 */
-        free(env->names);
-        free(env->values);
-        free(env->assign_counts);
-        free(env->hash.hashes);
-        free(env->hash.indices);
-        free(env->hash.generations);
-        free(env);
     }
+    env_free_retired(env);   /* #607 */
+    free(env->names);
+    free(env->values);
+    free(env->assign_counts);
+    free(env->hash.hashes);
+    free(env->hash.indices);
+    free(env->hash.generations);
+    free(env);
     env_decref(parent);   /* after the struct is gone: chains release iteratively */
 }
 

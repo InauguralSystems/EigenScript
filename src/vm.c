@@ -2082,7 +2082,7 @@ static __thread LoopIterCache g_loop_iter_cache;
 
 /* #1674 round 2: the env version token is 64-bit everywhere so the birth
  * counter cannot wrap within any process lifetime (uint32 wrapped at ~2^32
- * births, ~1.7h under EIGS_ENV_FREELIST_OFF, reopening the stale-IC ABA). These
+ * births, ~1.7h at the measured allocation rate, reopening the stale-IC ABA). These
  * three fields are compared against each other by the interpreter ICs, the
  * loop-iter cache, and the JIT-emitted sequences (which emit REX.W 64-bit
  * loads/compares of offsetof(Env, binding_version)); narrowing any one back to

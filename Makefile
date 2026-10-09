@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-env pool-off-callenv pool-off-arena
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv pool-off-arena
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -160,19 +160,14 @@ SRC_V_asan-pool-off := $(HOSTED_SOURCES)
 FLAGS_asan-pool-off := $(ASAN_FLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF $(VERDEF)
 LIBS_asan-pool-off  := -lm -lpthread -ldl
 
-# #1665 per-layer arms (C1-C4): each release-equivalent build bypasses EXACTLY
+# #1665 remaining per-layer arms: each release-equivalent build bypasses EXACTLY
 # ONE recycling pool, so a measurement against release prices that layer in
 # isolation (the pre-registered per-layer decision rule). Four separate
-# variants = four non-colliding build/<variant>/ objdirs; -DEIGS_POOL_OFF
-# (all four at once) stays the pool-off variant above and is byte-identical to
-# #1675's build. Same release flags/libs as pool-off otherwise.
+# variants use non-colliding build/<variant>/ objdirs. Same release flags/libs
+# as pool-off otherwise.
 SRC_V_pool-off-num := $(HOSTED_SOURCES)
 FLAGS_pool-off-num := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF_NUM $(VERDEF)
 LIBS_pool-off-num  := $(LDFLAGS) -ldl
-
-SRC_V_pool-off-env := $(HOSTED_SOURCES)
-FLAGS_pool-off-env := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF_ENV $(VERDEF)
-LIBS_pool-off-env  := $(LDFLAGS) -ldl
 
 SRC_V_pool-off-callenv := $(HOSTED_SOURCES)
 FLAGS_pool-off-callenv := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF_CALLENV $(VERDEF)
@@ -182,7 +177,7 @@ SRC_V_pool-off-arena := $(HOSTED_SOURCES)
 FLAGS_pool-off-arena := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF_ARENA $(VERDEF)
 LIBS_pool-off-arena  := $(LDFLAGS) -ldl
 
-VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-env pool-off-callenv pool-off-arena
+VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv pool-off-arena
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -641,16 +636,13 @@ asan-pool-off: build/asan-pool-off/eigenscript
 	$(call RELINK,asan-pool-off)
 	@echo "EigenScript $(VERSION) (asan+ubsan, pool-off) built. Binary: $(BINARY)"
 
-# #1665 per-layer arms (C1-C4): one pool off at a time, release-equivalent, so
+# #1665 remaining per-layer arms: one pool off at a time, release-equivalent, so
 # the Ir/RSS delta vs release prices that single layer (pre-registered rule 1:
 # a layer whose solo removal costs <2% Ir on every workload is removed).
 #   make pool-off-num && cd tests && TMPDIR=/tmp bash run_all_tests.sh   # etc.
 pool-off-num: build/pool-off-num/eigenscript
 	$(call RELINK,pool-off-num)
 	@echo "EigenScript $(VERSION) (pool-off C1: Value NUM freelist off) built. Binary: $(BINARY)"
-pool-off-env: build/pool-off-env/eigenscript
-	$(call RELINK,pool-off-env)
-	@echo "EigenScript $(VERSION) (pool-off C2: Env freelist off) built. Binary: $(BINARY)"
 pool-off-callenv: build/pool-off-callenv/eigenscript
 	$(call RELINK,pool-off-callenv)
 	@echo "EigenScript $(VERSION) (pool-off C3: call-env recycling off) built. Binary: $(BINARY)"

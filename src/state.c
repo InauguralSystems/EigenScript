@@ -288,7 +288,6 @@ EigsThread *eigs_thread_attach(EigsState *st) {
      * thread from the first resume (a program that cannot be edited can
      * still be traced); `task_sched_trace of 1` arms it from a program. */
     th->task_trace_on = eigs_env_flag("EIGS_TASK_TRACE");
-    th->env_freelist_off = eigs_env_flag("EIGS_ENV_FREELIST_OFF");   /* #1674 test seam */
     /* #1674 round 2 test seam: start the process-wide env-version counter near
      * a chosen value (e.g. just below the old uint32 boundary 4294967296) so a
      * test can show binding_version stays correct as births cross 2^32. Read
