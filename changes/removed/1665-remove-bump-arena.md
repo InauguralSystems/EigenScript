@@ -1,0 +1,1 @@
+- Remove the `arena_mark`, `arena_reset`, and `arena_stats` builtins and the bump arena allocator. Reference counting now owns all runtime values.

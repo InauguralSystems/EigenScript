@@ -683,12 +683,6 @@ for k in range of 5:
 
 ## Lists
 
-Arena-backed lists are promoted iteratively when they escape into longer-lived
-storage. Repeated references to the same source list share one promoted list.
-A promotion may contain at most 100,000 distinct arena-backed lists; exceeding
-it raises a catchable `limit` error, or `sandbox` inside a sandbox. Promotion
-copies and bookkeeping count toward an active sandbox allocation budget.
-
 Lists are mutable, heterogeneous, zero-indexed. They support negative
 indexing, half-open slicing with optional bounds, `append`, `len`,
 element assignment, comprehension, and destructuring.

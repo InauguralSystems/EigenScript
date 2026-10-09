@@ -45,10 +45,6 @@ x is 42
 y is num_copy of x
 assert_eq of [y, 42, "num_copy value"]
 
-# arena_stats — returns number (bytes allocated)
-stats is arena_stats of null
-assert_true of [(type of stats) == "num", "arena_stats is num"]
-
 # concat — concatenate two lists
 a is [1, 2]
 b is [3, 4]

@@ -11,7 +11,7 @@
 
 /* TRACE_NONDET_RET lives in trace.h. */
 
-/* Forward decls for helpers shared with the arena/observer machinery. */
+/* Forward decls for helpers shared with the allocation/observer machinery. */
 Value* make_num_permanent(double n);
 
 /* Shared double-precision tensor kernels. These live in this always-compiled

@@ -1,6 +1,6 @@
 /*
  * EigenScript Language Runtime — public header.
- * Core types, parser, evaluator, value constructors, arena allocator.
+ * Core types, parser, evaluator, and value constructors.
  * Extension types live in private headers (model_internal.h, ext_http_internal.h, ext_db_internal.h).
  */
 
@@ -9,23 +9,19 @@
 
 /* Recycling-layer switches (#1665). Each bypasses exactly one pool so a
  * measurement can price it in isolation (the per-layer decision in #1665's
- * pre-registered rule). The union flag EIGS_POOL_OFF defines all three, so a
- * build with -DEIGS_POOL_OFF is byte-identical to the original #1675 pool-off
- * build; the default build (none defined) is byte-identical to the pooled
- * baseline. The call sites below test the per-layer macros only — never
- * EIGS_POOL_OFF directly — so this is the single point of truth for the union.
+ * pre-registered rule). The rule removed the Env freelist and the bump arena;
+ * the two layers it kept remain switchable. The union flag EIGS_POOL_OFF
+ * defines both; the default build (none defined) is the pooled baseline. The
+ * call sites below test the per-layer macros only — never EIGS_POOL_OFF
+ * directly — so this is the single point of truth for the union.
  *   EIGS_POOL_OFF_NUM     — Value NUM freelist (free_value/make_num/recycle_intermediate)
- *   EIGS_POOL_OFF_CALLENV — call-env recycling (vm_park_call_env/vm_take_call_env)
- *   EIGS_POOL_OFF_ARENA   — bump arena (arena_alloc/free_weight_val) */
+ *   EIGS_POOL_OFF_CALLENV — call-env recycling (vm_park_call_env/vm_take_call_env) */
 #ifdef EIGS_POOL_OFF
 #  ifndef EIGS_POOL_OFF_NUM
 #    define EIGS_POOL_OFF_NUM
 #  endif
 #  ifndef EIGS_POOL_OFF_CALLENV
 #    define EIGS_POOL_OFF_CALLENV
-#  endif
-#  ifndef EIGS_POOL_OFF_ARENA
-#    define EIGS_POOL_OFF_ARENA
 #  endif
 #endif
 
@@ -86,8 +82,8 @@
  * but wild garbage on a non-glibc substrate (the EigenOS freestanding port)
  * — a layout-sensitive heisenbug class the sanitizer gates can't see (MSan
  * is deferred). Poison makes the read deterministic on every layout, so the
- * hosted suite names it. Sites: xmalloc fresh blocks, xrealloc grown tails,
- * arena_alloc, xcalloc and the NUM freelist zero-fill by documented contract
+ * hosted suite names it. Sites: xmalloc fresh blocks, xrealloc grown tails.
+ * xcalloc and the NUM freelist zero-fill by documented contract
  * and stay untouched. Pairs with
  * MALLOC_PERTURB_ (raw malloc/realloc sites) at suite time. Zero cost off. */
 #ifdef EIGS_POISON
@@ -459,12 +455,11 @@ struct Value {
      * in the value-path model; it now lives only on the per-binding Env slot
      * (ObserverSlot). The Value carries no observer state. */
     int refcount;       /* reference counting GC: 0 = unmanaged, >0 = tracked */
-    unsigned char arena; /* 1 if arena-allocated (don't free) */
     /* #307: Bacon-Rajan "possible root" flag. Set when a LIST/DICT that lost a
      * ref (but isn't dead) is parked on the value-candidate buffer for the next
      * cycle collection; cleared when the buffer is drained. Lives in the
      * struct's tail padding (no size change) and is zero-initialized by every
-     * Value allocator (xcalloc / arena_alloc memset / freelist reuse memset). */
+     * Value allocator (xcalloc / freelist reuse memset). */
     unsigned char gc_buffered;
     /* #1057: 1 iff this VAL_DICT is a module NAMESPACE — the value `import M`
      * binds. Such a dict is a LIVE VIEW of the module's Env: field reads
@@ -645,30 +640,6 @@ int observer_equilibrium(const Value *v);
  * vm.c and builtins.c. */
 int observer_stable(const Value *v);
 
-/* ---- Arena allocator ---- */
-
-#define ARENA_BLOCK_SIZE (16 * 1024 * 1024)
-#define ARENA_MAX_BLOCKS 64
-
-typedef struct {
-    char *blocks[ARENA_MAX_BLOCKS];
-    int block_count;
-    int current_block;
-    size_t offset;
-    int mark_block;
-    size_t mark_offset;
-    int active;
-    size_t total_allocated;
-    char **strings;
-    int string_count;
-    int string_capacity;
-    int mark_string_count;
-    char **fallbacks;       /* heap allocations from arena overflow */
-    int fallback_count;
-    int fallback_capacity;
-    int mark_fallback_count;
-} Arena;
-
 /* ---- Per-thread execution context ---------------------------------
  *
  * EigsThread carries every datum that used to be a __thread global so
@@ -679,7 +650,7 @@ typedef struct {
  * Hot fields live up front so the compiler can fold the indirection
  * into a single `[fs:TLS + offset]` addressing mode — same cost as
  * the legacy direct __thread access. Identifiers used everywhere in
- * the runtime (g_arena, g_returning, ...) are macros that expand to
+ * the runtime (g_returning, ...) are macros that expand to
  * `eigs_current->field`.
  *
  * The struct is fully transparent to internal TUs; the public
@@ -960,7 +931,6 @@ struct EigsThread {
     EigsState  *state;
     EigsExitScope *exit_scope;        /* owning, changed only by this thread */
     int         is_spawn_worker;    /* host evals inside workers inherit scope */
-    Arena       arena;
     /* #739: temporal prev-table (`prev of x`, `at <line>`, `state_at`).
      * Per-THREAD because it is keyed by interned name pointer and the
      * intern table above is per-thread — a shared table could never have
@@ -1262,7 +1232,6 @@ void eigs_thread_drain_caches(EigsThread *th);
 
 extern __thread EigsThread *eigs_current;
 
-#define g_arena             (eigs_current->arena)
 #define g_return_val        (eigs_current->return_val)
 #define g_returning         (eigs_current->returning)
 #define g_breaking          (eigs_current->breaking)
@@ -1663,7 +1632,7 @@ void eigs_obs_unmute_for_fatal(void);
 
 /* ---- OOM-safe allocation wrappers ----
  * Abort with a diagnostic on allocation failure. Used by value constructors
- * and the arena allocator, where a NULL return would immediately crash.
+ * where a NULL return would immediately crash.
  * The _array variants guard against size_t overflow in nmemb*size. */
 void* xmalloc(size_t size);
 void* xcalloc(size_t nmemb, size_t size);
@@ -1721,18 +1690,10 @@ void   strbuf_append_fmt(strbuf *b, const char *fmt, ...);
 char  *strbuf_finish(strbuf *b);
 void   strbuf_free(strbuf *b);
 
-void arena_init(void);
-void arena_destroy(void);
-void* arena_alloc(size_t size);
-void arena_track_string(char *s);
-void arena_mark_pos(void);
-void arena_reset_to_mark(void);
-void free_weight_val(Value *v);
 
 /* ---- Value constructors ---- */
 
 Value* make_num(double n);
-Value* promote_if_arena(Value *v);
 Value* make_num_permanent(double n);   /* heap-only make_num (#873 store paths) */
 void recycle_intermediate(Value *v);
 Value* make_str(const char *s);
@@ -1914,12 +1875,11 @@ static inline double num_guard_named(double x, const char *who) {
  * cycle collection. Out-of-line (keeps val_decref/slot_decref lean) and gated
  * inside on GC-enabled / not-collecting / single-threaded. */
 void gc_note_possible_root(Value *v);
-/* Sandbox arena promotion can create cycles rooted only in its sealed env.
- * Preserve those candidates even while collection is deferred under MT. */
+/* Preserve sandbox cycle candidates even while collection is deferred under MT. */
 void gc_note_possible_root_deferred(Value *v);
 
 static inline void val_incref(Value *v) {
-    if (v && !v->arena) {
+    if (v && v->type != VAL_NULL && v->type != VAL_BOOL) {
         if (__builtin_expect(g_vm_multithreaded, 0))
             __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
         else
@@ -1927,7 +1887,7 @@ static inline void val_incref(Value *v) {
     }
 }
 static inline void val_decref(Value *v) {
-    if (v && !v->arena) {
+    if (v && v->type != VAL_NULL && v->type != VAL_BOOL) {
         int newrc;
         if (__builtin_expect(g_vm_multithreaded, 0))
             newrc = __atomic_sub_fetch(&v->refcount, 1, __ATOMIC_ACQ_REL);
@@ -2068,7 +2028,7 @@ void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
  * TU (the AOT's inline caches) were relying on an implicit declaration. */
 int      env_hash_find_dict(Value *dict, const char *key, uint32_t h);
 EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found);
-/* Direct slot store with arena promotion; used by VM inline-cache fast paths
+/* Direct slot store used by VM inline-cache fast paths
  * after the slot index has been resolved out-of-band. Caller must update
  * binding_version/assign_counts as appropriate. */
 void env_store_slot(Env *env, int idx, EigsSlot s);

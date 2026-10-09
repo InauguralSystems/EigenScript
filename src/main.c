@@ -128,7 +128,7 @@ int main(int argc, char **argv) {
         return rc;
     }
 
-    /* --fmt is a pure source transformer; no VM, no arena, no state.
+    /* --fmt is a pure source transformer; no VM and no state.
      * Handled before trace_init like --step: nothing executes, so an
      * inherited EIGS_REPLAY must not fail it and an inherited EIGS_TRACE
      * must not truncate that tape file (#1238). */

@@ -135,7 +135,6 @@ static void module_env_chunk_cycle(void) {
 static void run_case(const char *name,void (*body)(void)) {
     EigsState *state=eigs_open();
     if (!state) exit(2);
-    CHECK(!g_arena.active,"heap mode");
     gc_collect_cycles();
     int first_check=checks, first_failure=failures, first_collection=total_collections;
     unsigned first_skip=traversal_skips;

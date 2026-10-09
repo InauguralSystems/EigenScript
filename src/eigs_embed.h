@@ -333,7 +333,7 @@ void eigs_register_function(const char *name, EigsHostFn fn);
  * image). Return the module's source text for `name` ("math", not
  * "lib/math.eigs"), or NULL if the provider doesn't carry it. The
  * returned pointer must stay valid for the duration of the import call
- * (the runtime copies it immediately); static/arena-backed strings are
+ * (the runtime copies it immediately); static or caller-backed strings are
  * ideal. Provider-served modules are cached like file modules — a
  * second `import name` binds the same module dict. Pass fn=NULL to
  * unregister. */

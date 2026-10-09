@@ -23,7 +23,6 @@ eigenscript.c|observer_entropy_now|1|observer entropy of a slot after slot_is_nu
 eigenscript.c|observer_slot_from_trajectory|9|trajectory snapshot fields each read right after its own type != VAL_NUM refusal
 eigenscript.c|observer_slot_sample_gated|1|observer sample after newval->type == VAL_NUM
 eigenscript.c|observer_slot_update|1|observer update after newval->type == VAL_NUM
-eigenscript.c|promote_arena_scalar|1|arena promotion, inside its type == VAL_NUM branch
 eigenscript.c|slot_from_value|1|NaN-boxing boundary, inside its VAL_NUM branch
 eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_num
 eigenscript.c|values_equal_impl|2|equality, switch case VAL_NUM after the bool/num pair raised
@@ -56,7 +55,7 @@ vm.c|dict_set_cached_immediate|1|in-place dict value update, writes a VAL_NUM it
 vm.c|jit_helper_dot_get|1|JIT helper: pushes a field value after its VAL_NUM test
 vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_num
 vm.c|jit_helper_index_get|10|JIT helper: index read after slot_is_num / VAL_NUM tests on index and element
-vm.c|jit_helper_index_set|13|JIT helper: index store after slot_is_num / VAL_NUM tests on index and value
+vm.c|jit_helper_index_set|12|JIT helper: index store after slot_is_num / VAL_NUM tests on index and value
 vm.c|jit_helper_iter_next|3|JIT helper: loop state list [iterable, idx, snap] built by the VM, each read behind a VAL_NUM test
 vm.c|jit_helper_local_dot_get|1|JIT helper: field value after its VAL_NUM test
 vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_num
@@ -71,6 +70,6 @@ vm.c|slot_as_double|2|VM numeric operand read: returns 0 (not a number) unless s
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_num
 vm.c|slot_truthy|1|truthiness after slot_is_num
 vm.c|vm_leaf_accessor_exec|3|leaf-accessor fast path: constants the scanner admitted only as VAL_NUM (chunk_scan_leaf_accessor) and values behind VAL_NUM tests
-vm.c|vm_run_ex|68|the interpreter loop: every opcode reads numbers behind slot_is_num / type == VAL_NUM dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
+vm.c|vm_run_ex|67|the interpreter loop: every opcode reads numbers behind slot_is_num / type == VAL_NUM dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
 vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_num
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_num

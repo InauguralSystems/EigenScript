@@ -125,8 +125,7 @@ assigned exactly once pays no allocation. Note the gate is the second
 *observation*, not interrogation: a binding nothing ever queries still allocates
 its window on its second assignment, because the observe op is emitted
 unconditionally (see [OBSERVER.md](OBSERVER.md#cost)). `unobserved:` is what
-avoids it. Arena values skip the buffer entirely —
-they cannot be tracked across resets.
+avoids it. they cannot be tracked across resets.
 
 **What `unobserved:` elides, precisely (#1049).** An assignment inside the
 block still records its **value-channel** sample: a scalar's relative and

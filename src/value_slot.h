@@ -91,12 +91,10 @@ static inline void slot_incref(EigsSlot s) {
         uint64_t tag = s.u & SLOT_TAG_MASK;
         if (tag == TAG_HEAP) {
             Value *v = (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK);
-            if (!v->arena) {
                 if (__builtin_expect(g_vm_multithreaded, 0))
                     __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
                 else
                     v->refcount++;
-            }
         }
     }
 }
@@ -106,7 +104,6 @@ static inline void slot_decref(EigsSlot s) {
         uint64_t tag = s.u & SLOT_TAG_MASK;
         if (tag == TAG_HEAP) {
             Value *v = (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK);
-            if (!v->arena) {
                 int newrc;
                 if (__builtin_expect(g_vm_multithreaded, 0))
                     newrc = __atomic_sub_fetch(&v->refcount, 1, __ATOMIC_ACQ_REL);
@@ -120,7 +117,6 @@ static inline void slot_decref(EigsSlot s) {
                                   && (v->type == VAL_LIST || v->type == VAL_DICT)
                                           && !v->gc_buffered, 0))
                     gc_note_possible_root(v);
-            }
         }
     }
 }

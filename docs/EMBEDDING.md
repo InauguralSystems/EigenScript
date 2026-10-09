@@ -57,7 +57,7 @@ A host application talks to the runtime through three opaque types:
 | type | what it represents |
 |---|---|
 | `EigsState` | One interpreter instance: global env, JIT cache, module cache, observer thresholds, handle table. |
-| `EigsThread` | The execution context for one OS thread attached to a state: arena, error state, VM, freelists. |
+| `EigsThread` | The execution context for one OS thread attached to a state: error state, VM, freelists. |
 | `EigsValue` | A ref-counted runtime value (number, string, list, dict, etc.). Same underlying object as the script's values. |
 
 The runtime is **multi-state**. A single process can hold multiple

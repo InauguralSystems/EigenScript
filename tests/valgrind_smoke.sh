@@ -4,9 +4,7 @@
 # Catches a bug class the other sanitizers miss at the system-allocator
 # granularity: use-after-free, reads of uninitialised memory
 # (--track-origins=yes), and definite/indirect leaks — complementing the
-# ASan+UBSan and ThreadSanitizer jobs. (Caveat: without arena/freelist
-# annotations Valgrind treats the custom arena as one defined block, so it
-# won't see uninit reads *inside* the arena yet — that's a follow-up.)
+# ASan+UBSan and ThreadSanitizer jobs.
 #
 # JIT is forced off: the copy-and-patch JIT emits runtime native code that
 # needs --smc-check=all and muddies the signal; the interpreter path is what
@@ -22,7 +20,6 @@ VG=(valgrind --quiet --error-exitcode=1 --leak-check=full
 # pattern match, recursion, JSON, modules, the observer/predicate system,
 # tensors, error handling, and the full threading set (spawn/channel/cycles).
 PROGS=(
-  test_arena_ownership   # arena-using program: the EIGS_VALGRIND annotations are only exercised by one of these (nightly corpus found arena_alloc writing into NOACCESS memory)
   test_closures test_closure_cycles test_closure_mutation
   test_data test_dict test_list_remove_at
   test_fstrings test_large_strings

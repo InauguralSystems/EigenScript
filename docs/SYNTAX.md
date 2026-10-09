@@ -652,11 +652,8 @@ Inside the block:
 Outside the block, normal observed behavior resumes. Nested `unobserved`
 blocks compose — the inner block doesn't re-enable observation.
 
-This mirrors what tensor code already does at the C level via
-`arena_mark` / `arena_reset` (lifecycle-scoped) and the save-restore
-pointer pattern in `numerical_grad_*` (identity-preserving raw swap).
-`unobserved` is the same idea at statement scope, visible in user
-source.
+This mirrors the save-restore pointer pattern in `numerical_grad_*`
+(identity-preserving raw swap), at statement scope and visible in user source.
 
 **When to reach for it:** game loops, physics integrators, and other
 hot paths where you'll inspect state via normal reads (`game.px`),

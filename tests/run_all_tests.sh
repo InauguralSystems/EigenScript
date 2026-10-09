@@ -717,23 +717,6 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
 done
 echo ""
 
-echo "[0e] Recording a tape must not change a program's exit (#1072 arena/history)"
-check_binary_fingerprint
-# EIGS_TRACE on the arena-escape program crashed at shutdown: the prev/history
-# table retained arena-allocated slots, arena_reset reclaimed them, and the
-# release path freed reclaimed memory (rc 139; the plain and replay runs both
-# passed). Planted (fix reverted): rc 139 here.
-AR_TAPE=$(mktemp /tmp/eigs_arena_XXXXXX.tape); rm -f "$AR_TAPE"
-AR_OUT=$($EIGS_TMO env EIGS_JIT_OFF=1 EIGS_TRACE="$AR_TAPE" ./eigenscript ../tests/test_arena_escape.eigs </dev/null 2>&1); AR_RC=$?
-rm -f "$AR_TAPE"
-TOTAL=$((TOTAL + 1))
-if [ "$AR_RC" -eq 0 ] && echo "$AR_OUT" | grep -q "All tests passed"; then
-    PASS=$((PASS + 1)); echo "  PASS: test_arena_escape records a tape and exits 0"
-else
-    FAIL=$((FAIL + 1)); echo "  FAIL: test_arena_escape under EIGS_TRACE (rc=$AR_RC): $(echo "$AR_OUT" | tail -1 | cut -c1-100)"
-fi
-echo ""
-
 # #1319 measurement phase: the opt-in accounting path reports requested-byte
 # cumulative/live/peak counters, while the default path remains silent.  This
 # is deliberately not a heap-cap test: the owner left enforcement open until
@@ -1282,33 +1265,6 @@ check "JS4 round-trip" "$JS3_RT" "[1,2,3]"
 JS4_KEY=$(echo "$JS_OUTPUT" | grep -A1 'JS4:' | tail -1)
 check "JS5 object decode key" "$JS4_KEY" "eigen"
 echo ""
-
-echo "[14/15] Arena Ownership"
-AO_OUTPUT=$(./eigenscript ../tests/test_arena_ownership.eigs 2>&1)
-
-AO1_Y=$(echo "$AO_OUTPUT" | grep -A1 'AO1:' | tail -1)
-check "AO1 new local in arena window survives reset" "$AO1_Y" "42"
-
-# 50 sgd_update steps accumulate float error; compare with tolerance rather
-# than exact string (the old %.6g formatter rounded 0.4999...956 to "0.5").
-AO2_W0=$(echo "$AO_OUTPUT" | grep -A1 'AO2:' | tail -1)
-check_numeric "AO2 50x sgd_update w[0]" "$AO2_W0" "0.4999" "0.5001"
-
-AO2_W3=$(echo "$AO_OUTPUT" | grep -A2 'AO2:' | tail -1)
-check_numeric "AO2 50x sgd_update w[3]" "$AO2_W3" "3.4999" "3.5001"
-
-AO3_V=$(echo "$AO_OUTPUT" | grep -A1 'AO3:' | tail -1)
-check "AO3 tensor save/load roundtrip" "$AO3_V" "21"
-
-AO4_C=$(echo "$AO_OUTPUT" | grep -A1 'AO4:' | tail -1)
-check "AO4 num_copy new local survives reset" "$AO4_C" "99.5"
-
-# #873: values escaping an arena_mark…arena_reset scope must deep-promote
-# at every store seam (binding, local slot, dict field, append, indexed
-# store, set_at/insert_at/copy_into) — a stomp loop overwrites the
-# reclaimed region so a dangling reference reads WRONG, not lucky.
-check_eigs_suite "arena escape containment (#873 — list deep-promote at every store seam)" \
-    "test_arena_escape.eigs" "All tests passed"
 
 check_eigs_suite "reduction builtins dot/sum/norm (vs explicit loop + edge cases)" \
     "test_dot.eigs" "DOT_OK"
@@ -5303,14 +5259,9 @@ TOTAL=$((TOTAL + RBE_PASS + RBE_FAIL)); PASS=$((PASS + RBE_PASS)); FAIL=$((FAIL 
 if [ "$RBE_FAIL" -gt 0 ]; then echo "  FAIL: replay boundary exit contract"; echo "$RBE_OUTPUT" | grep "^FAIL:" | head -5; else echo "  PASS: all $RBE_PASS replay-boundary exit checks (rc 1, no signal, both tiers)"; fi
 echo ""
 
-# [104] Worker arena-allocated return value survives detach (#302). thread_entry
-# deep-copies the result before arena_destroy frees the worker arena; a UAF here
-# is ASan-caught, and the values are pinned.
-echo "[104] Worker Arena Return (no cross-thread UAF, #302)"
-check_eigs_suite "worker arena return deep-copied before detach" test_spawn_arena_return.eigs "All tests passed"
-
+echo "[104] Cooperative Tasks (#408)"
 # #408 cooperative task layer: spawn/alive/yield/join/deadlock + leak-clean
-# teardown of suspended/killed tasks (incl. heap-on-saved-stack + arena-dier).
+# teardown of suspended/killed tasks (including heap values on saved stacks).
 check_eigs_suite "cooperative tasks: yield/join/deadlock/teardown (#408)" test_tasks.eigs "All tests passed"
 # #533: task loops must stay interpreted past the OSR threshold (lowered here
 # so the recv loop crosses it fast) — a mid-task OSR compile made task_recv

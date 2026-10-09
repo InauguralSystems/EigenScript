@@ -540,14 +540,6 @@ either way, so the numbers are byte-identical.
 | `sgd_update_rows` | `sgd_update_rows of [params, grad, lr, rows]` | SGD for specific rows |
 | `sgd_update_cols` | `sgd_update_cols of [params, grad, lr, cols]` | SGD for specific columns |
 
-## Memory
-
-| Name | Signature | Description |
-|------|-----------|-------------|
-| `arena_mark` | `arena_mark of null` | Snapshot arena allocation point |
-| `arena_reset` | `arena_reset of null` | Reclaim all allocations since mark |
-| `arena_stats` | `arena_stats of null` | Return total bytes allocated |
-
 ## Tokenizer Introspection
 
 | Name | Signature | Description |
@@ -913,13 +905,13 @@ Requires full build. Transformer model inference and training.
 | `task_spawn` | `task_spawn of fn` or `task_spawn of [fn, arg1, ...]` | Create a cooperative task (#408) running `fn` on the single OS thread — deterministic by construction, unlike `spawn`'s OS thread. Args are deep-COPIED (share-nothing, like channel sends), not shared by reference. Returns a numeric task id. A ready task can run when the current task explicitly yields, suspends in a blocking scheduler operation, or finishes. |
 | `task_alive` | `task_alive of id` | Returns `true` while the task is runnable or suspended, `false` once it has finished (or for an unknown id). |
 | `task_self` | `task_self of null` | The **running task's own id** (a number, in the same integer space `task_spawn` returns; the main task is 0, including before any task has been spawned). Lets a worker hand out its own id as a reply address — the message-link pattern a mailbox otherwise cannot express (#526). Deterministic — reads scheduler state, records no nondeterminism. |
-| `task_yield` | `task_yield of null` | Cooperatively hand control to the next ready task; this task resumes round-robin. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
+| `task_yield` | `task_yield of null` | Cooperatively hand control to the next ready task; this task resumes round-robin. A no-op when no task has been spawned. Forbidden inside a nested evaluation (raises `value`). |
 | `task_join` | `task_join of id` | Block until task `id` finishes, then return its deep-copied result — or re-raise its uncaught error (as the same `{kind, message, line}` it died with). Joining an already-finished task returns immediately; an unknown id (or self) returns null. All tasks blocked with none runnable is a `deadlock` error, not a hang — catchable by a `try`/`catch` around the join on the main task (`e.kind == "deadlock"`); terminal only if unhandled. |
 | `task_send` | `task_send of [id, value]` | Append a deep-copied message to task `id`'s unbounded FIFO mailbox, waking it if it waits in `task_recv`. Returns `true` if delivered, 0 if `id` is finished/unknown (a silent drop — send-to-dead is never an error). Never blocks. |
-| `task_recv` | `task_recv of null` | Return the next message from this task's mailbox, or block cooperatively until one arrives. Forbidden inside an `arena_mark`…`arena_reset` scope or a nested evaluation (raises `value`). |
+| `task_recv` | `task_recv of null` | Return the next message from this task's mailbox, or block cooperatively until one arrives. Forbidden inside a nested evaluation (raises `value`). |
 | `task_kill` | `task_kill of id` | Tear down task `id`: drop its mailbox, mark it dead, wake any joiner with an `interrupt` error. Returns `true` if killed, 0 for a finished/unknown/self target. |
 | `task_detach` | `task_detach of id` | Mark task `id` **fire-and-forget** (the pthread-detach precedent, #530): it is reaped the moment it finishes — or immediately if already finished — releasing its handle slot for reuse, so task-per-message workloads are bounded by *concurrent* tasks, not lifetime spawns. A detached task's uncaught death still prints its trace and still fails the process at exit (#493). A reaped id reads as unknown afterwards (`task_join` null, `task_alive` 0). A task may detach itself: `task_detach of (task_self of null)`. Returns 1, or 0 for main/unknown. |
-| `task_sleep` | `task_sleep of ticks` | Suspend this task until the **virtual clock** advances by `ticks`. The clock is logical (discrete-event): it only jumps forward — to the earliest sleeper — when nothing else is runnable, so sleeping stays deterministic, not wall-clock. A negative sleep is treated as 0. A no-op when no task has been spawned. Forbidden inside an `arena_mark`…`arena_reset` scope. |
+| `task_sleep` | `task_sleep of ticks` | Suspend this task until the **virtual clock** advances by `ticks`. The clock is logical (discrete-event): it only jumps forward — to the earliest sleeper — when nothing else is runnable, so sleeping stays deterministic, not wall-clock. A negative sleep is treated as 0. A no-op when no task has been spawned. |
 | `task_sched_seed` | `task_sched_seed of n` | Install a scheduling **seed**: the scheduler switches from FIFO round-robin to picking the next ready task from a seeded, platform-independent PRNG. Same seed ⇒ same interleaving (byte-identical run + replay, zero tape nondeterminism); a different seed explores a different ordering — the lever a deterministic simulation tester uses to search interleavings. No seed ⇒ unchanged FIFO. Typically called once at program start. Returns null. |
 
 **Thread safety:** Values sent through a channel (or returned through

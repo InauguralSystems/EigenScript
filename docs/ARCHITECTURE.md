@@ -8,8 +8,7 @@ and transformer models (full build).
 The runtime is **multi-state**: a single process can host multiple
 interpreter instances concurrently. `EigsState` carries per-interpreter
 config (global env, JIT cache, module cache, observer thresholds, handle
-table); `EigsThread` carries per-OS-thread execution state (arena, error
-state, VM, freelists, recursion-depth guards). Hot fields are reached via
+table); `EigsThread` carries per-OS-thread execution state (error state, VM, freelists, recursion-depth guards). Hot fields are reached via
 `eigs_current->field` bridge macros so the common single-state path costs
 exactly one TLS load. The public embedding API (`src/eigs_embed.h`) wraps
 state/thread lifecycle, eval, error retrieval, globals access, value
@@ -42,7 +41,7 @@ src/
 ├── builtins.c             # Core builtins (I/O, collections, string, bitwise, ...)
 ├── builtins_tensor.c      # Tensor math, gradients, SGD
 ├── builtins_internal.h    # Cross-TU prototypes for tensor builtins
-├── arena.c                # Arena memory allocator (mark/reset) + xalloc helpers
+├── alloc.c                # Checked allocation helpers
 ├── strbuf.c               # Growable string buffer helper
 ├── main.c                 # Entry point, CLI argument handling
 ├── ext_http.c             # HTTP server extension (optional)
@@ -197,18 +196,11 @@ and `__loop_iterations__` env variables.
 
 ## Memory
 
-EigenScript uses a hybrid memory model: reference counting, arena bump
-allocation, a numeric freelist, and environment freelists.
+EigenScript uses reference counting plus numeric and environment freelists.
 
 **Reference counting.** Every heap-allocated `Value` has an atomic refcount
 (`__ATOMIC_RELAXED` increment, `__ATOMIC_ACQ_REL` decrement). When the
 refcount reaches zero, `free_value` tears down the value and its children.
-Arena-allocated values (`v->arena == 1`) skip refcounting entirely — they
-are reclaimed in bulk by `arena_reset`.
-
-**Arena allocator.** The arena (`arena.c`) provides fast bump allocation in
-16 MB blocks (up to 64 blocks). Scripts use `arena_mark`/`arena_reset` to
-reclaim transient memory in bounded-computation loops.
 
 **Numeric freelist.** Freed `VAL_NUM` values are placed in a per-thread
 freelist (up to 4096 entries) and reused by `make_num`, avoiding

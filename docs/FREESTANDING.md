@@ -67,9 +67,9 @@ once.
 
 ### Memory — `BUILD` (the root expansion)
 `malloc` `calloc` `realloc` `free`
-The whole refcount + arena + cycle-collector machinery bottoms out here. Bare
+The whole refcount + cycle-collector machinery bottoms out here. Bare
 metal has no `malloc`: ship an allocator backed by physical pages the kernel
-hands us. The arena is already a bump allocator (half done); the general heap is
+hands us. The general heap is
 the new piece, and everything else allocates through it. **Highest priority —
 nothing else runs without it.**
 
@@ -185,7 +185,7 @@ rough order:
    there is no seam. Cutting it is the load-bearing move — every other root
    plugs into it.
 2. **Page + heap allocator** over the `page_alloc` root (gates all allocation;
-   the arena is already a bump allocator, the general heap is the new piece).
+   the general heap is the new piece).
 3. **~4 libm kernels** (`exp`, `log`, `sin`/`cos`, `atan`); `log2`/`fabs` first
    — the observer needs them.
 4. **The ordinary mini-libc/libm** over the roots — DONE 2026-07-02
