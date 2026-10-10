@@ -518,6 +518,7 @@ static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
     int obs_retain_cap = expected <= INT_MAX - 7 ? expected + 7 : -1;
     observer_slot_reset_bounded(env, obs_retain_cap);
     chunk->env_cache = env;
+    eigs_env_park_poison(env);   /* ASan: parked until take (eigenscript.h) */
     return 1;
 #endif  /* EIGS_POOL_OFF_CALLENV */
 }
@@ -532,6 +533,7 @@ static inline Env *vm_take_call_env(EigsChunk *fn_chunk, Env *closure,
     if (e && !g_vm_multithreaded && e->parent == closure &&
         (param_count <= 1 || argc >= param_count)) {
         fn_chunk->env_cache = NULL;
+        eigs_env_park_unpoison(e);
         return e;
     }
 #else  /* EIGS_POOL_OFF_CALLENV */

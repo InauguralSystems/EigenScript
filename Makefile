@@ -370,6 +370,16 @@ build/$(INTERN_OWNER_VARIANT)/test_intern_owners: tests/test_intern_owners.c $(I
 intern-owner-test: build/$(INTERN_OWNER_VARIANT)/test_intern_owners
 	@echo "Intern owner structural oracle built: $<"
 
+# #1665 follow-up: planted stale reads of the NUM freelist and the parked call
+# env, against the owning (ASan) variant; no CLI relink. Suite [0ff].
+POOL_POISON_VARIANT ?= asan
+POOL_POISON_OBJ := $(filter-out build/$(POOL_POISON_VARIANT)/main.o,$(OBJ_$(POOL_POISON_VARIANT)))
+build/$(POOL_POISON_VARIANT)/test_pool_poison: tests/test_pool_poison.c $(POOL_POISON_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(POOL_POISON_VARIANT)) -I$(SRC_DIR) -o $@ $< $(POOL_POISON_OBJ) $(LIBS_$(POOL_POISON_VARIANT))
+.PHONY: pool-poison-test
+pool-poison-test: build/$(POOL_POISON_VARIANT)/test_pool_poison
+	@echo "Pool poison plants built: $<"
+
 # #1056: use the same variant as the CLI under test, without relinking it.
 ROAD_VARIANT ?= release
 EMBED_ROADS_OBJ := $(filter-out build/$(ROAD_VARIANT)/main.o,$(OBJ_$(ROAD_VARIANT)))

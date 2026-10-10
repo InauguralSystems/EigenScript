@@ -1547,12 +1547,12 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
 void eigs_thread_drain_caches(EigsThread *th) {
     if (!th) return;
 
-    /* num_freelist: each entry's first sizeof(Value*) bytes of data are
-     * overlaid with the next-pointer. Save next, free node, advance. */
+    /* num_freelist: each entry's link word (EIGS_NUM_LINK, inside data) holds
+     * the next-pointer. Save next, free node, advance. */
     Value *vn = th->num_freelist;
     while (vn) {
         Value *next;
-        memcpy(&next, &vn->data, sizeof(Value *));
+        memcpy(&next, EIGS_NUM_LINK(vn), sizeof(Value *));
         free(vn);
         vn = next;
     }
@@ -1625,10 +1625,11 @@ void free_value(Value *v) {
 #ifndef EIGS_POOL_OFF_NUM
         /* Route freed NUMs to freelist for reuse by make_num */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {
-            memcpy(&v->data, &g_num_freelist, sizeof(Value *));
+            memcpy(EIGS_NUM_LINK(v), &g_num_freelist, sizeof(Value *));
             g_num_freelist = v;
             g_num_freelist_count++;
             EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));  /* #297/#298 */
+            eigs_num_park_poison(v);   /* ASan: all but the link word */
             return;
         }
 #endif  /* EIGS_POOL_OFF_NUM (#1665): never park — a refcount-0 NUM is free()d so
@@ -1718,9 +1719,10 @@ Value* make_num(double n) {
 #ifndef EIGS_POOL_OFF_NUM
     if (g_num_freelist) {
         v = g_num_freelist;
-        memcpy(&g_num_freelist, &v->data, sizeof(Value *));
+        memcpy(&g_num_freelist, EIGS_NUM_LINK(v), sizeof(Value *));
         g_num_freelist_count--;
         EIGS_VG_DEFINED(&v->refcount, sizeof(v->refcount));  /* un-poison before reuse */
+        eigs_num_park_unpoison(v);
         memset(v, 0, sizeof(Value));
     } else
 #endif  /* EIGS_POOL_OFF_NUM (#1665): never satisfy a make_num from the freelist —
@@ -1747,10 +1749,11 @@ void recycle_intermediate(Value *v) {
         free(v);
         return;
     }
-    memcpy(&v->data, &g_num_freelist, sizeof(Value *));
+    memcpy(EIGS_NUM_LINK(v), &g_num_freelist, sizeof(Value *));
     g_num_freelist = v;
     g_num_freelist_count++;
     EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));  /* #297/#298 */
+    eigs_num_park_poison(v);   /* ASan: all but the link word */
 #endif
 }
 
@@ -4378,6 +4381,21 @@ static int gc_next_threshold(int live, int last_universe) {
     return (int)t;
 }
 
+#ifdef EIGS_ASAN_POOL_POISON
+/* Re-poison every parked call env the collector unpoisoned during discovery.
+ * Only SURVIVING chunks still own one (a garbage chunk's env_cache was cleared
+ * and freed with it), so after a completed collection only marked chunks are
+ * visited; after an aborted one the graph is unchanged and all are. */
+static void gc_repoison_parked(GcU *u, int survivors_only) {
+    for (int n = 0; n < u->count; n++) {
+        if (u->kind[n] != GC_KIND_CHUNK || (survivors_only && !u->mark[n]))
+            continue;
+        Env *parked = ((EigsChunk *)u->objs[n])->env_cache;
+        if (parked) eigs_env_park_poison(parked);
+    }
+}
+#endif
+
 static void gc_collect_impl(Value **seeds, int seed_count,
                             int include_captured_envs) {
     if (g_in_gc || g_vm_multithreaded) return;
@@ -4408,6 +4426,13 @@ static void gc_collect_impl(Value **seeds, int seed_count,
     for (int n = 0; n < u.count; n++) {
         GC_FOR_EACH_CHILD(&u, n, child, child_kind, {
             gcu_add(&u, child, child_kind);
+#ifdef EIGS_ASAN_POOL_POISON
+            /* A chunk's only Env edge is its parked env_cache: the collector
+             * reads it from here on, so lift the park poison (eigenscript.h);
+             * gc_repoison_parked restores it before returning. */
+            if (child_kind == GC_KIND_ENV && u.kind[n] == GC_KIND_CHUNK)
+                eigs_env_park_unpoison((Env *)child);
+#endif
             /* gcu_add may reallocate the arrays; retain indices, not pointers
              * into them. The target is now present even on a forward edge. */
             int ci = gcu_find(&u, child);
@@ -4440,6 +4465,9 @@ static void gc_collect_impl(Value **seeds, int seed_count,
         uint64_t discovery_work = 0;
         for (int n = 0; n < u.count; n++)
             discovery_work += gc_node_work(u.objs[n], u.kind[n]);
+#ifdef EIGS_ASAN_POOL_POISON
+        gc_repoison_parked(&u, 0);
+#endif
         free(stack);
         free(u.table); free(u.objs); free(u.kind);
         free(u.internal); free(u.pinned); free(u.mark);
@@ -4491,6 +4519,9 @@ static void gc_collect_impl(Value **seeds, int seed_count,
     if (eigs_env_flag("EIGS_GC_DEBUG"))
         fprintf(stderr, "[gc] universe %d, freed %d, live captured %d\n",
                 u.count, garbage, g_gc_captured_live);
+#ifdef EIGS_ASAN_POOL_POISON
+    gc_repoison_parked(&u, 1);
+#endif
 
     free(u.table); free(u.objs); free(u.kind);
     free(u.internal); free(u.pinned); free(u.mark);
