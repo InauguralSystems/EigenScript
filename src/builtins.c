@@ -16,6 +16,19 @@
 #include "trace.h"
 #include <limits.h>
 
+/* Slot-native borrowed views for builtin arguments.  The compound-literal
+ * facade lives through the containing block; reference elements pass through. */
+#define BUILTIN_LIST_VIEW(list, i) \
+    slot_view(list_slot((list), (i)), &(EigsView){{0}})
+#define BUILTIN_DICT_VALUE_VIEW(dict, i) \
+    slot_view(dict_value_slot((dict), (i)), &(EigsView){{0}})
+static Value *builtin_dict_view(Value *dict, const char *key, EigsView *view) {
+    Value *v = dict_get_ref_legacy(dict, key);
+    return v ? slot_view(eigs_container_slot(v), view) : NULL;
+}
+#define BUILTIN_DICT_VIEW(dict, key) \
+    builtin_dict_view((dict), (key), &(EigsView){{0}})
+
 #if defined(__GLIBC__) && !EIGENSCRIPT_FREESTANDING
 #include <malloc.h>   /* mallinfo2, for builtin_heap_inuse (#770) */
 #endif
@@ -177,8 +190,8 @@ Value* builtin_usleep(Value *arg) {
 Value* builtin_join(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "join");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "join", "[list, separator]", make_str(""));
-    Value *list = list_get_borrow(arg, 0);
-    Value *sep_val = list_get_borrow(arg, 1);
+    Value *list = list_get_ref(arg, 0);
+    Value *sep_val = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!list || list->type != VAL_LIST, "join", "a list as its first argument", make_str(""));
     /* Coercion, not a guard — a non-string separator silently became "" and
      * the elements ran together (`join of [["a","b"], 42]` was "ab"). Same
@@ -199,7 +212,7 @@ Value* builtin_join(Value *arg) {
     size_t *lengths = xmalloc_array(count, sizeof(size_t));
     size_t total = 0;
     for (int i = 0; i < count; i++) {
-        parts[i] = value_to_string(list_get_borrow(list, i));
+        parts[i] = value_to_string(BUILTIN_LIST_VIEW(list, i));
         lengths[i] = strlen(parts[i]);
         total += lengths[i];
         if (i > 0) total += sep_len;
@@ -294,18 +307,18 @@ Value* builtin_text_builder_new(Value *arg) {
 Value* builtin_text_builder_append(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "text_builder_append");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *builder = list_get_borrow(arg, 0);
+    Value *builder = list_get_ref(arg, 0);
     if (!builder || builder->type != VAL_TEXT_BUILDER) return make_null();
-    text_builder_append_value(builder, list_get_borrow(arg, 1));
+    text_builder_append_value(builder, BUILTIN_LIST_VIEW(arg, 1));
     return builder;
 }
 
 Value* builtin_text_builder_append_line(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "text_builder_append_line");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *builder = list_get_borrow(arg, 0);
+    Value *builder = list_get_ref(arg, 0);
     if (!builder || builder->type != VAL_TEXT_BUILDER) return make_null();
-    text_builder_append_value(builder, list_get_borrow(arg, 1));
+    text_builder_append_value(builder, BUILTIN_LIST_VIEW(arg, 1));
     text_builder_append_raw(builder, "\n", 1);
     return builder;
 }
@@ -334,8 +347,8 @@ Value* builtin_text_builder_to_string(Value *arg) {
  * range). Shift counts are masked to 0..63 like the hardware would. */
 static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return 0;
-    Value *va = list_get_borrow(arg, 0);
-    Value *vb = list_get_borrow(arg, 1);
+    Value *va = BUILTIN_LIST_VIEW(arg, 0);
+    Value *vb = BUILTIN_LIST_VIEW(arg, 1);
     if (!va || va->type != VAL_NUM || !vb || vb->type != VAL_NUM) return 0;
     *a_out = (int64_t)eigs_num_arg(va, __func__);
     *b_out = (int64_t)eigs_num_arg(vb, __func__);
@@ -522,14 +535,14 @@ Value* builtin_append(Value *arg) {
         rt_error(EK_TYPE, 0, "append requires [list, item]");
         return make_null();
     }
-    Value *target = list_get_borrow(arg, 0);
-    Value *item = list_get_borrow(arg, 1);
+    Value *target = list_get_ref(arg, 0);
+    EigsSlot item = list_slot(arg, 1);
     if (target->type != VAL_LIST) {
         rt_error(EK_TYPE, 0, "append: target must be a list (got %s)",
                  val_type_name(target->type));
         return make_null();
     }
-    list_append(target, item);
+    list_append_slot(target, item);
     return target;
 }
 
@@ -615,8 +628,8 @@ Value* builtin_exit(Value *arg) {
     if (arg && arg->type == VAL_NUM) {
         code = (int)eigs_num_arg(arg, __func__);
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1 &&
-               list_get_borrow(arg, 0) &&
-               list_get_borrow(arg, 0)->type == VAL_NUM) {
+               BUILTIN_LIST_VIEW(arg, 0) &&
+               BUILTIN_LIST_VIEW(arg, 0)->type == VAL_NUM) {
         code = (int)eigs_list_num(arg, 0, __func__);
     }
     g_exit_code = code;
@@ -635,8 +648,8 @@ Value* builtin_assert(Value *arg) {
      * exit leaked the global env and every registered builtin. Side effect:
      * assert failures are now catchable in `try`/`catch`, matching `throw`. */
     if (arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        Value *cond = list_get_borrow(arg, 0);
-        Value *msg = list_get_borrow(arg, 1);
+        Value *cond = BUILTIN_LIST_VIEW(arg, 0);
+        Value *msg = BUILTIN_LIST_VIEW(arg, 1);
         if (!is_truthy(cond)) {
             char *msg_str = value_to_string(msg);
             rt_error(EK_ASSERT, 0, "ASSERT FAIL: %s", msg_str);
@@ -706,7 +719,7 @@ Value* builtin_values(Value *arg) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
         for (int i = 0; i < arg->data.dict.count; i++)
-            list_append(list, dict_value_get_borrow(arg, i));
+            list_append_slot(list, dict_value_slot(arg, i));
         return list;
     }
     return make_list(0);
@@ -715,8 +728,8 @@ Value* builtin_values(Value *arg) {
 Value* builtin_has_key(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "has_key");
     ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2, "has_key", "[dict, key]", make_bool(0));
-    Value *d = list_get_borrow(arg, 0);
-    Value *key = list_get_borrow(arg, 1);
+    Value *d = list_get_ref(arg, 0);
+    Value *key = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(d->type != VAL_DICT || key->type != VAL_STR, "has_key", "[dict, string]", make_bool(0));
     return make_bool(dict_has(d, key->data.str));
 }
@@ -725,9 +738,9 @@ Value* builtin_dict_set(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "dict_set");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
               "dict_set", "[dict, key, value]", make_null());
-    Value *d = list_get_borrow(arg, 0);
-    Value *key = list_get_borrow(arg, 1);
-    Value *val = list_get_borrow(arg, 2);
+    Value *d = list_get_ref(arg, 0);
+    Value *key = BUILTIN_LIST_VIEW(arg, 1);
+    Value *val = BUILTIN_LIST_VIEW(arg, 2);
     if (d->type != VAL_DICT || key->type != VAL_STR) return make_null();
     dict_set(d, key->data.str, val);
     return d;
@@ -737,8 +750,8 @@ Value* builtin_dict_remove(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "dict_remove");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "dict_remove", "[dict, key]", make_null());
-    Value *d = list_get_borrow(arg, 0);
-    Value *key = list_get_borrow(arg, 1);
+    Value *d = list_get_ref(arg, 0);
+    Value *key = BUILTIN_LIST_VIEW(arg, 1);
     if (d->type != VAL_DICT || key->type != VAL_STR) return make_null();
     dict_remove(d, key->data.str);
     return d;
@@ -770,9 +783,9 @@ Value* builtin_classify(Value *arg) {
     Value *t = arg;
     const char *channel = "value";
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        t = list_get_borrow(arg, 0);
+        t = BUILTIN_LIST_VIEW(arg, 0);
         if (arg->data.list.count >= 2) {
-            Value *ch = list_get_borrow(arg, 1);
+            Value *ch = BUILTIN_LIST_VIEW(arg, 1);
             if (!ch || ch->type != VAL_STR ||
                 (strcmp(ch->data.str, "value") != 0 &&
                  strcmp(ch->data.str, "entropy") != 0)) {
@@ -924,7 +937,7 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
             strbuf_append_char(out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
                 if (i > 0) strbuf_append_char(out, ',');
-                if (eigs_json_encode_value(list_get_borrow(v, i), out, depth + 1) != 0)
+                if (eigs_json_encode_value(BUILTIN_LIST_VIEW(v, i), out, depth + 1) != 0)
                     return -1;
             }
             strbuf_append_char(out, ']');
@@ -953,7 +966,7 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
                 }
                 strbuf_append_char(out, '"');
                 strbuf_append_char(out, ':');
-                if (eigs_json_encode_value(dict_value_get_borrow(v, i), out, depth + 1) != 0)
+                if (eigs_json_encode_value(BUILTIN_DICT_VALUE_VIEW(v, i), out, depth + 1) != 0)
                     return -1;
             }
             strbuf_append_char(out, '}');
@@ -1403,11 +1416,11 @@ Value* builtin_coalesce(Value *arg) {
     /* coalesce of [value, default] — returns value unless empty/null */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return arg ? arg : make_null();
-    Value *val = list_get_borrow(arg, 0);
-    Value *def = list_get_borrow(arg, 1);
-    if (!val || val->type == VAL_NULL) return def;
-    if (val->type == VAL_STR && val->data.str[0] == '\0') return def;
-    return val;
+    ValType type = list_elem_type(arg, 0);
+    if (type == VAL_NULL) return list_get_return(arg, 1);
+    if (type == VAL_STR && list_get_ref(arg, 0)->data.str[0] == '\0')
+        return list_get_return(arg, 1);
+    return list_get_return(arg, 0);
 }
 
 /* Escape a string for safe embedding in JSON (keys and values).
@@ -1446,11 +1459,11 @@ Value* builtin_json_build(Value *arg) {
     strbuf_append_char(&out, '{');
     for (int i = 0; i + 1 < count; i += 2) {
         if (i > 0) strbuf_append_n(&out, ", ", 2);
-        char *key = value_to_string(list_get_borrow(arg, i));
+        char *key = value_to_string(BUILTIN_LIST_VIEW(arg, i));
         eigs_json_escape_string(&out, key);
         free(key);
         strbuf_append_n(&out, ": ", 2);
-        Value *val = list_get_borrow(arg, i + 1);
+        Value *val = BUILTIN_LIST_VIEW(arg, i + 1);
         if (val->type == VAL_NUM) {
             char nb[32];                              /* #875: the shared rule */
             eigs_num_text(nb, sizeof(nb), eigs_num_arg(val, __func__));
@@ -1495,7 +1508,7 @@ Value* builtin_str_lower(Value *arg) {
 Value* builtin_contains(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "contains");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "contains", "[haystack, needle]", make_bool(0));
-    Value *h = list_get_borrow(arg, 0), *n = list_get_borrow(arg, 1);
+    Value *h = BUILTIN_LIST_VIEW(arg, 0), *n = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!h || h->type != VAL_STR || !n || n->type != VAL_STR, "contains", "two strings", make_bool(0));
     return make_bool(strstr(h->data.str, n->data.str) != NULL);
 }
@@ -1503,7 +1516,7 @@ Value* builtin_contains(Value *arg) {
 Value* builtin_starts_with(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "starts_with");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "starts_with", "[string, prefix]", make_bool(0));
-    Value *s = list_get_borrow(arg, 0), *p = list_get_borrow(arg, 1);
+    Value *s = BUILTIN_LIST_VIEW(arg, 0), *p = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!s || s->type != VAL_STR || !p || p->type != VAL_STR, "starts_with", "two strings", make_bool(0));
     return make_bool(strncmp(s->data.str, p->data.str, val_str_len(p)) == 0);
 }
@@ -1517,17 +1530,17 @@ Value* builtin_split(Value *arg) {
      * so STRICT_REQUIRE: raise under strict, byte-identical otherwise. */
     STRICT_REQUIRE(!arg || !(arg->type == VAL_STR ||
                              (arg->type == VAL_LIST && arg->data.list.count >= 1 &&
-                              list_get_borrow(arg, 0)->type == VAL_STR)),
+                              BUILTIN_LIST_VIEW(arg, 0)->type == VAL_STR)),
                    "split", "a string or [string, delimiter]");
     STRICT_REQUIRE(arg->type == VAL_LIST && arg->data.list.count >= 2 &&
-                   list_get_borrow(arg, 1)->type != VAL_STR,
+                   BUILTIN_LIST_VIEW(arg, 1)->type != VAL_STR,
                    "split", "a string delimiter");
     if (arg && arg->type == VAL_STR) {
         str = arg->data.str;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        if (list_get_borrow(arg, 0)->type == VAL_STR) str = list_get_borrow(arg, 0)->data.str;
-        if (arg->data.list.count >= 2 && list_get_borrow(arg, 1)->type == VAL_STR)
-            delim = list_get_borrow(arg, 1)->data.str;
+        if (BUILTIN_LIST_VIEW(arg, 0)->type == VAL_STR) str = BUILTIN_LIST_VIEW(arg, 0)->data.str;
+        if (arg->data.list.count >= 2 && BUILTIN_LIST_VIEW(arg, 1)->type == VAL_STR)
+            delim = BUILTIN_LIST_VIEW(arg, 1)->data.str;
     }
     /* Output-proportional and allowlisted: total output ~ input bytes plus a
      * Value + pointer per part. Uncharged, splitting a large string aborted
@@ -1581,10 +1594,10 @@ Value* builtin_scan_ints(Value *arg) {
     if (arg && arg->type == VAL_STR) {
         str = arg->data.str;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        Value *text_val = list_get_borrow(arg, 0);
+        Value *text_val = BUILTIN_LIST_VIEW(arg, 0);
         if (text_val && text_val->type == VAL_STR) str = text_val->data.str;
         if (arg->data.list.count >= 2) {
-            Value *comment_val = list_get_borrow(arg, 1);
+            Value *comment_val = BUILTIN_LIST_VIEW(arg, 1);
             if (comment_val && comment_val->type == VAL_STR && comment_val->data.str[0])
                 comment_marker = comment_val->data.str[0];
         }
@@ -1687,10 +1700,10 @@ Value* builtin_scan_int_tokens(Value *arg) {
     if (arg && arg->type == VAL_STR) {
         str = arg->data.str;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        Value *text_val = list_get_borrow(arg, 0);
+        Value *text_val = BUILTIN_LIST_VIEW(arg, 0);
         if (text_val && text_val->type == VAL_STR) str = text_val->data.str;
         if (arg->data.list.count >= 2) {
-            Value *comment_val = list_get_borrow(arg, 1);
+            Value *comment_val = BUILTIN_LIST_VIEW(arg, 1);
             if (comment_val && comment_val->type == VAL_STR && comment_val->data.str[0])
                 comment_marker = comment_val->data.str[0];
         }
@@ -1793,12 +1806,12 @@ Value* builtin_str_replace(Value *arg) {
      * because there is no single stand-in — a non-string `old` makes
      * old_len 0, which returns the ORIGINAL string, while a non-string
      * `string` returns "". The non-strict path is untouched. */
-    STRICT_REQUIRE(list_get_borrow(arg, 0)->type != VAL_STR, "str_replace", "a string as its first argument");
-    STRICT_REQUIRE(list_get_borrow(arg, 1)->type != VAL_STR, "str_replace", "a string as its second argument");
-    STRICT_REQUIRE(list_get_borrow(arg, 2)->type != VAL_STR, "str_replace", "a string as its third argument");
-    if (list_get_borrow(arg, 0)->type == VAL_STR) str = list_get_borrow(arg, 0)->data.str;
-    if (list_get_borrow(arg, 1)->type == VAL_STR) old_s = list_get_borrow(arg, 1)->data.str;
-    if (list_get_borrow(arg, 2)->type == VAL_STR) new_s = list_get_borrow(arg, 2)->data.str;
+    STRICT_REQUIRE(BUILTIN_LIST_VIEW(arg, 0)->type != VAL_STR, "str_replace", "a string as its first argument");
+    STRICT_REQUIRE(BUILTIN_LIST_VIEW(arg, 1)->type != VAL_STR, "str_replace", "a string as its second argument");
+    STRICT_REQUIRE(BUILTIN_LIST_VIEW(arg, 2)->type != VAL_STR, "str_replace", "a string as its third argument");
+    if (BUILTIN_LIST_VIEW(arg, 0)->type == VAL_STR) str = BUILTIN_LIST_VIEW(arg, 0)->data.str;
+    if (BUILTIN_LIST_VIEW(arg, 1)->type == VAL_STR) old_s = BUILTIN_LIST_VIEW(arg, 1)->data.str;
+    if (BUILTIN_LIST_VIEW(arg, 2)->type == VAL_STR) new_s = BUILTIN_LIST_VIEW(arg, 2)->data.str;
     size_t old_len = strlen(old_s), new_len = strlen(new_s), str_len = strlen(str);
     if (old_len == 0) return make_str(str);
     /* Count occurrences to size buffer */
@@ -1859,8 +1872,8 @@ Value* builtin_str_upper(Value *arg) {
 Value* builtin_char_at(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "char_at");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "char_at", "[string, index]", make_str(""));
-    Value *str_val = list_get_borrow(arg, 0);
-    Value *idx_val = list_get_borrow(arg, 1);
+    Value *str_val = BUILTIN_LIST_VIEW(arg, 0);
+    Value *idx_val = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!str_val || str_val->type != VAL_STR || !idx_val || idx_val->type != VAL_NUM,
               "char_at", "[string, number]", make_str(""));
     int idx = (int)eigs_num_arg(idx_val, __func__);
@@ -1878,7 +1891,7 @@ Value* builtin_char_at(Value *arg) {
 Value* builtin_ends_with(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "ends_with");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "ends_with", "[string, suffix]", make_bool(0));
-    Value *sv = list_get_borrow(arg, 0), *xv = list_get_borrow(arg, 1);
+    Value *sv = BUILTIN_LIST_VIEW(arg, 0), *xv = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!sv || sv->type != VAL_STR || !xv || xv->type != VAL_STR, "ends_with", "two strings", make_bool(0));
     const char *str = sv->data.str, *suffix = xv->data.str;
     int slen = strlen(str), xlen = strlen(suffix);
@@ -1893,9 +1906,9 @@ Value* builtin_ends_with(Value *arg) {
 Value* builtin_substr(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "substr");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3, "substr", "[string, start, length]", make_str(""));
-    Value *str_val = list_get_borrow(arg, 0);
-    Value *start_val = list_get_borrow(arg, 1);
-    Value *len_val = list_get_borrow(arg, 2);
+    Value *str_val = BUILTIN_LIST_VIEW(arg, 0);
+    Value *start_val = BUILTIN_LIST_VIEW(arg, 1);
+    Value *len_val = BUILTIN_LIST_VIEW(arg, 2);
     ARG_GUARD(!str_val || str_val->type != VAL_STR, "substr", "a string as its first argument", make_str(""));
     ARG_GUARD(!start_val || start_val->type != VAL_NUM, "substr", "a number as its start", make_str(""));
     ARG_GUARD(!len_val || len_val->type != VAL_NUM, "substr", "a number as its length", make_str(""));
@@ -1932,7 +1945,7 @@ Value* builtin_index_of(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "index_of");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "index_of", "[haystack, needle]", make_num(-1));
-    Value *h = list_get_borrow(arg, 0), *n = list_get_borrow(arg, 1);
+    Value *h = BUILTIN_LIST_VIEW(arg, 0), *n = BUILTIN_LIST_VIEW(arg, 1);
     /* #1008: the -1 for non-string operands is a deliberate choice (#316 —
      * folding to "" gave a false positive at index 0), so ARG_GUARD is
      * exactly the right shape: the answer is preserved with the flag off and
@@ -2002,8 +2015,8 @@ Value* builtin_atan(Value *arg) {
 Value* builtin_atan2(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "atan2");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "atan2", "[y, x]", make_num(0));
-    Value *y = list_get_borrow(arg, 0);
-    Value *x = list_get_borrow(arg, 1);
+    Value *y = BUILTIN_LIST_VIEW(arg, 0);
+    Value *x = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!y || y->type != VAL_NUM || !x || x->type != VAL_NUM, "atan2", "two numbers", make_num(0));
     return make_num(atan2(eigs_num_arg(y, __func__), eigs_num_arg(x, __func__)));
 }
@@ -2045,7 +2058,7 @@ static Value* minmax_reduce(Value *arg, int want_max) {
     if (arg->data.list.count < 1) return make_num(0);
     double best = 0.0;
     for (int i = 0; i < arg->data.list.count; i++) {
-        Value *v = list_get_borrow(arg, i);
+        Value *v = BUILTIN_LIST_VIEW(arg, i);
         ARG_GUARD(!v || v->type != VAL_NUM, want_max ? "max" : "min", "every element to be a number", make_num(0));
         if (i == 0 || (want_max ? eigs_num_arg(v, __func__) > best : eigs_num_arg(v, __func__) < best))
             best = eigs_num_arg(v, __func__);
@@ -2125,8 +2138,8 @@ Value* builtin_random_int(Value *arg) {
      * range. Taped shape: the soft half still records/replays as before. */
     ARG_GUARD_TAPED(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
                     "random_int", "[lo, hi]", make_num(0));
-    Value *lo = list_get_borrow(arg, 0);
-    Value *hi = list_get_borrow(arg, 1);
+    Value *lo = BUILTIN_LIST_VIEW(arg, 0);
+    Value *hi = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD_TAPED(!lo || lo->type != VAL_NUM || !hi || hi->type != VAL_NUM,
                     "random_int", "numeric bounds", make_num(0));
     /* Range-check as doubles before any integer cast — a double outside the
@@ -2206,8 +2219,8 @@ Value* builtin_args(Value *arg) {
 Value* builtin_path_join(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "path_join");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "path_join", "[a, b]", make_str(""));
-    Value *a = list_get_borrow(arg, 0);
-    Value *b = list_get_borrow(arg, 1);
+    Value *a = BUILTIN_LIST_VIEW(arg, 0);
+    Value *b = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!a || a->type != VAL_STR || !b || b->type != VAL_STR, "path_join", "two strings", make_str(""));
     int alen = val_str_len(a);
     int blen = val_str_len(b);
@@ -2287,9 +2300,9 @@ Value* builtin_path_ext(Value *arg) {
 static Value* json_obj_get(Value *obj, const char *key) {
     if (!obj || obj->type != VAL_LIST) return NULL;
     for (int i = 0; i + 1 < obj->data.list.count; i += 2) {
-        Value *k = list_get_borrow(obj, i);
+        Value *k = BUILTIN_LIST_VIEW(obj, i);
         if (k && k->type == VAL_STR && strcmp(k->data.str, key) == 0)
-            return list_get_borrow(obj, i + 1);
+            return list_get_return(obj, i + 1);
     }
     return NULL;
 }
@@ -2300,8 +2313,8 @@ Value* builtin_json_path(Value *arg) {
     /* json_path of [json_string, "dot.path"] -> value as string, or "" */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "json_path", "[json_string, path]", make_str(""));
     const char *json_str = "", *path = "";
-    if (list_get_borrow(arg, 0)->type == VAL_STR) json_str = list_get_borrow(arg, 0)->data.str;
-    if (list_get_borrow(arg, 1)->type == VAL_STR) path = list_get_borrow(arg, 1)->data.str;
+    if (BUILTIN_LIST_VIEW(arg, 0)->type == VAL_STR) json_str = BUILTIN_LIST_VIEW(arg, 0)->data.str;
+    if (BUILTIN_LIST_VIEW(arg, 1)->type == VAL_STR) path = BUILTIN_LIST_VIEW(arg, 1)->data.str;
 
     /* #507: reject empty path segments (a leading/trailing dot or a `..`).
      * strtok silently skips them, so "a..b", ".a" and "a." used to resolve
@@ -2353,7 +2366,7 @@ Value* builtin_json_path(Value *arg) {
 
     while (segment && current) {
         if (current->type == VAL_DICT) {
-            current = dict_get(current, segment);
+            current = BUILTIN_DICT_VIEW(current, segment);
             /* fs:ANSWER key absent from the object — "no value at that path" is
              * this function's documented result. */
             if (!current) { val_decref(root); return make_str(""); }
@@ -2365,7 +2378,7 @@ Value* builtin_json_path(Value *arg) {
                 /* Numeric: treat as array index */
                 /* Arrays from json_decode are VAL_LIST with sequential elements */
                 if (idx >= 0 && idx < current->data.list.count) {
-                    current = list_get_borrow(current, idx);
+                    current = BUILTIN_LIST_VIEW(current, idx);
                 } else {
                     /* fs:ANSWER array index out of range — no value at that path */
                     val_decref(root); return make_str("");
@@ -2550,8 +2563,8 @@ Value* builtin_state_at(Value *arg) {
 Value* builtin_secure_equals(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "secure_equals");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "secure_equals", "[string, string]", make_bool(0));
-    Value *a = list_get_borrow(arg, 0);
-    Value *b = list_get_borrow(arg, 1);
+    Value *a = BUILTIN_LIST_VIEW(arg, 0);
+    Value *b = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!a || !b || a->type != VAL_STR || b->type != VAL_STR, "secure_equals", "two strings", make_bool(0));
     const char *sa = a->data.str ? a->data.str : "";
     const char *sb = b->data.str ? b->data.str : "";
@@ -2612,8 +2625,8 @@ Value* builtin_hex(Value *arg) {
     if (arg && arg->type == VAL_NUM) {
         num = eigs_num_arg(arg, __func__);
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
-               list_get_borrow(arg, 0) && list_get_borrow(arg, 0)->type == VAL_NUM &&
-               list_get_borrow(arg, 1) && list_get_borrow(arg, 1)->type == VAL_NUM) {
+               BUILTIN_LIST_VIEW(arg, 0) && BUILTIN_LIST_VIEW(arg, 0)->type == VAL_NUM &&
+               BUILTIN_LIST_VIEW(arg, 1) && BUILTIN_LIST_VIEW(arg, 1)->type == VAL_NUM) {
         num = eigs_list_num(arg, 0, __func__);
         width = (long long)eigs_list_num(arg, 1, __func__);
         if (g_has_error) return make_null();
@@ -2762,7 +2775,7 @@ Value* builtin_eval(Value *arg) {
 static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
     if (!desc || desc->type != VAL_LIST || desc->data.list.count < 1)
         return "chunk descriptor must be a list";
-    Value *rev = list_get_borrow(desc, 0);
+    Value *rev = BUILTIN_LIST_VIEW(desc, 0);
     if (!rev || rev->type != VAL_NUM) {
         snprintf(buf, buflen,
                  "chunk descriptor carries no bytecode ABI revision (element 0 "
@@ -2901,7 +2914,7 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
          * in memory (the uncharged-wrapper rule make_list_heap documents). */
         Value *c = make_list_heap(v->data.list.count);
         for (int i = 0; i < v->data.list.count; i++) {
-            Value *e = desc_isolate_const(ctx, list_get_borrow(v, i));
+            Value *e = desc_isolate_const(ctx, BUILTIN_LIST_VIEW(v, i));
             if (!e) { val_decref(c); desc_leave(ctx); return NULL; }
             list_append_owned(c, e);
         }
@@ -2912,7 +2925,7 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
         if (!desc_enter(ctx, v)) return NULL;
         Value *c = make_dict(v->data.dict.count);
         for (int i = 0; i < v->data.dict.count; i++) {
-            Value *e = desc_isolate_const(ctx, dict_value_get_borrow(v, i));
+            Value *e = desc_isolate_const(ctx, BUILTIN_DICT_VALUE_VIEW(v, i));
             if (!e) { val_decref(c); desc_leave(ctx); return NULL; }
             dict_set_owned(c, v->data.dict.keys[i], e);
         }
@@ -2961,8 +2974,11 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         vm_desc_error(why, whyn, "descriptor must contain code and constants lists");
         return NULL;
     }
-    Value **d = list_values_storage(desc) + off;
     int n = desc->data.list.count - off;
+    Value *d[6] = {NULL, NULL, NULL, NULL, NULL, NULL};
+    EigsView d_views[6] = {{{0}}, {{0}}, {{0}}, {{0}}, {{0}}, {{0}}};
+    for (int i = 0; i < n && i < 6; i++)
+        d[i] = slot_view(list_slot(desc, off + i), &d_views[i]);
     Value *code = d[0], *consts = d[1];
     if (!code || code->type != VAL_LIST || !consts || consts->type != VAL_LIST) {
         vm_desc_error(why, whyn, "descriptor code and constants must be lists");
@@ -2980,7 +2996,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
     EigsChunk *chunk = chunk_new(name);
 
     for (int i = 0; i < code->data.list.count; i++) {
-        Value *b = list_get_borrow(code, i);
+        Value *b = BUILTIN_LIST_VIEW(code, i);
         /* #1637: a non-number code element (a bool) is refused, never
          * emitted as byte 0 (OP_CONST's opcode). */
         if (!b || b->type != VAL_NUM) {
@@ -2998,7 +3014,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
      * mutable constant, so nothing the sandbox does to a constant is visible
      * to the host, and nothing the host does mid-run is visible to it. */
     for (int i = 0; i < consts->data.list.count; i++) {
-        Value *item = list_get_borrow(consts, i);
+        Value *item = BUILTIN_LIST_VIEW(consts, i);
         if (!item) {
             vm_desc_error(why, whyn, "constant pool contains an empty entry");
             chunk_free(chunk); return NULL;
@@ -3027,7 +3043,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
             return NULL;
         }
         for (int i = 0; i < d[2]->data.list.count; i++) {
-            EigsChunk *fn = vm_build_chunk_desc_ctx(list_get_borrow(d[2], i), 0,
+            EigsChunk *fn = vm_build_chunk_desc_ctx(BUILTIN_LIST_VIEW(d[2], i), 0,
                                                     sandbox_mode, ctx, why, whyn);
             if (!fn) { chunk_free(chunk); return NULL; }
             chunk_add_function(chunk, fn);
@@ -3053,7 +3069,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         if (!desc_spend(ctx, lc)) { chunk_free(chunk); return NULL; }
         chunk->local_names = xcalloc(lc, sizeof(char *));
         for (int i = 0; i < lc; i++) {
-            Value *nm = list_get_borrow(d[5], i);
+            Value *nm = BUILTIN_LIST_VIEW(d[5], i);
             chunk->local_names[i] = env_intern_name((nm && nm->type == VAL_STR) ? nm->data.str : "");
         }
         chunk->local_count = lc;
@@ -3315,7 +3331,7 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
     }
     if (v->type == VAL_LIST) {
         for (int i = 0; i < v->data.list.count; i++)
-            if (sandbox_value_has_callable(list_get_borrow(v, i), depth + 1,
+            if (sandbox_value_has_callable(BUILTIN_LIST_VIEW(v, i), depth + 1,
                                            budget, unverified))
                 return 1;
     } else if (v->type == VAL_DICT) {
@@ -3326,7 +3342,7 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
              * whenever a sandbox intern scope is open, so that pass
              * changed 0 of 128 keys -- deleted. One job: callable
              * detection. */
-            if (sandbox_value_has_callable(dict_value_get_borrow(v, i), depth + 1,
+            if (sandbox_value_has_callable(BUILTIN_DICT_VALUE_VIEW(v, i), depth + 1,
                                            budget, unverified))
                 return 1;
         }
@@ -3357,17 +3373,17 @@ Value* builtin_sandbox_run(Value *arg) {
      * the gate's, and it evaporates the day sealing is relaxed. The guard runs
      * below, once the chunk exists. */
     Value *desc = (arg && arg->type == VAL_LIST && arg->data.list.count >= 1)
-                  ? list_get_borrow(arg, 0) : arg;
+                  ? BUILTIN_LIST_VIEW(arg, 0) : arg;
     int max_iter = 1000000;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
-        list_get_borrow(arg, 1) && list_get_borrow(arg, 1)->type == VAL_NUM)
+        BUILTIN_LIST_VIEW(arg, 1) && BUILTIN_LIST_VIEW(arg, 1)->type == VAL_NUM)
         max_iter = (int)eigs_list_num(arg, 1, __func__);
     /* #292: optional max_bytes (3rd element) — the allocation budget for this
      * run. Default 256 MiB: ample for the short generated snippets grade()
      * runs, small enough that even a few of them can't thrash a 4 GB box. */
     size_t max_bytes = (size_t)256 * 1024 * 1024;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3 &&
-        list_get_borrow(arg, 2) && list_get_borrow(arg, 2)->type == VAL_NUM &&
+        BUILTIN_LIST_VIEW(arg, 2) && BUILTIN_LIST_VIEW(arg, 2)->type == VAL_NUM &&
         eigs_list_num(arg, 2, __func__) > 0)
         max_bytes = (size_t)eigs_list_num(arg, 2, __func__);
     /* VM instructions, cumulative across callback re-entry and function
@@ -3376,7 +3392,7 @@ Value* builtin_sandbox_run(Value *arg) {
      * placing a finite ceiling on straight-line/call-heavy computation. */
     uint64_t max_work = UINT64_C(10000000);
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 4 &&
-        list_get_borrow(arg, 3) && list_get_borrow(arg, 3)->type == VAL_NUM) {
+        BUILTIN_LIST_VIEW(arg, 3) && BUILTIN_LIST_VIEW(arg, 3)->type == VAL_NUM) {
         double requested = eigs_list_num(arg, 3, __func__);
         /* A double rounds UINT64_MAX up to 2^64, so use a strict bound;
          * accepting equality and casting it would itself be undefined. */
@@ -3722,9 +3738,9 @@ Value* builtin_copy_into(Value *arg) {
         rt_error(EK_TYPE, 0, "copy_into requires [dest, offset, src]");
         return make_null();
     }
-    Value *dest = list_get_borrow(arg, 0);
-    Value *offv = list_get_borrow(arg, 1);
-    Value *src = list_get_borrow(arg, 2);
+    Value *dest = list_get_ref(arg, 0);
+    Value *offv = BUILTIN_LIST_VIEW(arg, 1);
+    Value *src = BUILTIN_LIST_VIEW(arg, 2);
     if (!offv || offv->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "copy_into: offset must be a number, got %s (the order is [dest, offset, src])",
                  offv ? val_type_name(offv->type) : "null");
@@ -3741,7 +3757,7 @@ Value* builtin_copy_into(Value *arg) {
         }
         if (src && src->type == VAL_LIST) {
             for (int i = 0; i < src->data.list.count && offset + i < dest->data.buffer.count; i++) {
-                Value *it = list_get_borrow(src, i);
+                Value *it = BUILTIN_LIST_VIEW(src, i);
                 if (!it || it->type != VAL_NUM) {
                     rt_error(EK_TYPE, 0, "cannot store %s in a buffer (copy_into element %d; buffers hold numbers)",
                              it ? val_type_name(it->type) : "null", i);
@@ -3761,9 +3777,9 @@ Value* builtin_copy_into(Value *arg) {
         return make_null();
     }
     for (int i = 0; i < src->data.list.count && offset + i < dest->data.list.count; i++) {
-        Value *item = list_get_borrow(src, i);
+        Value *item = BUILTIN_LIST_VIEW(src, i);
         val_incref(item);
-        val_decref(list_get_borrow(dest, offset + i));
+        val_decref(BUILTIN_LIST_VIEW(dest, offset + i));
         list_set_owned(dest, offset + i, item);
     }
     return dest;
@@ -3777,10 +3793,10 @@ Value* builtin_copy_into(Value *arg) {
 Value* builtin_list_slice(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "list_slice");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-    Value *list = list_get_borrow(arg, 0);
+    Value *list = list_get_ref(arg, 0);
     if (!list || list->type != VAL_LIST) return make_null();
-    Value *start_v = list_get_borrow(arg, 1);
-    Value *end_v = list_get_borrow(arg, 2);
+    Value *start_v = BUILTIN_LIST_VIEW(arg, 1);
+    Value *end_v = BUILTIN_LIST_VIEW(arg, 2);
     BOOL_REFUSE(start_v, "list_slice");
     BOOL_REFUSE(end_v, "list_slice");
     if (!start_v || start_v->type != VAL_NUM || !end_v || end_v->type != VAL_NUM)
@@ -3800,7 +3816,7 @@ Value* builtin_list_slice(Value *arg) {
     if (!sandbox_charge((size_t)out_n * sizeof(Value *))) return make_null();
     Value *result = make_list(out_n);
     for (int i = start; i < end; i++)
-        list_append(result, list_get_borrow(list, i));
+        list_append_slot(result, list_slot(list, i));
     return result;
 }
 
@@ -3818,8 +3834,8 @@ Value* builtin_num_copy(Value *arg) {
 Value* builtin_concat(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "concat");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *a = list_get_borrow(arg, 0);
-    Value *b = list_get_borrow(arg, 1);
+    Value *a = BUILTIN_LIST_VIEW(arg, 0);
+    Value *b = BUILTIN_LIST_VIEW(arg, 1);
     if (!a || a->type != VAL_LIST || !b || b->type != VAL_LIST) return make_null();
     int total = a->data.list.count + b->data.list.count;
     /* #292: charge the new slots — `result is concat of [result, more]` in a loop
@@ -3827,9 +3843,9 @@ Value* builtin_concat(Value *arg) {
     if (!sandbox_charge((size_t)total * sizeof(Value *))) return make_null();
     Value *result = make_list(total);
     for (int i = 0; i < a->data.list.count; i++)
-        list_append(result, list_get_borrow(a, i));
+        list_append_slot(result, list_slot(a, i));
     for (int i = 0; i < b->data.list.count; i++)
-        list_append(result, list_get_borrow(b, i));
+        list_append_slot(result, list_slot(b, i));
     return result;
 }
 
@@ -3852,10 +3868,10 @@ Value* builtin_range(Value *arg) {
          * be silently treated as 0 (or fold the whole call to []) — a
          * silent-wrong loop count. */
         for (int i = 0; i < argc && i < 3; i++) {
-            if (list_get_borrow(arg, i)->type != VAL_NUM) {
+            if (BUILTIN_LIST_VIEW(arg, i)->type != VAL_NUM) {
                 rt_error(EK_TYPE, 0,
                     "range: argument %d must be a number, got %s", i,
-                    val_type_name(list_get_borrow(arg, i)->type));
+                    val_type_name(BUILTIN_LIST_VIEW(arg, i)->type));
                 return make_list(0);
             }
         }
@@ -3929,10 +3945,10 @@ Value* builtin_fill(Value *arg) {
         rt_error(EK_TYPE, 0, "fill requires [count, value]");
         return make_list(0);
     }
-    BOOL_REFUSE(list_get_borrow(arg, 0), "fill");   /* the count; the value may be anything */
+    BOOL_REFUSE(BUILTIN_LIST_VIEW(arg, 0), "fill");   /* the count; the value may be anything */
     int count = (int)eigs_list_num(arg, 0, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
-    Value *val = list_get_borrow(arg, 1);
+    EigsSlot val = list_slot(arg, 1);
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000; /* 10M cap */
     /* #292: charge the sandbox budget — fill stores `count` slots pointing at the
@@ -3940,7 +3956,7 @@ Value* builtin_fill(Value *arg) {
     if (!sandbox_charge((size_t)count * sizeof(Value *))) return make_null();
     Value *result = make_list(count);
     for (int i = 0; i < count; i++)
-        list_append(result, val);
+        list_append_slot(result, val);
     return result;
 }
 
@@ -3999,21 +4015,21 @@ Value* builtin_set_at(Value *arg) {
      * one. A non-number value is refused with buf_set's message rather than
      * silently type-punned. `at_index`'s negative-from-the-end rule applies
      * to buffers too. */
-    if ((argc == 3 || argc == 4) && list_get_borrow(arg, 0)
-        && list_get_borrow(arg, 0)->type == VAL_BUFFER) {
-        Value *buf = list_get_borrow(arg, 0);
-        Value *val = list_get_borrow(arg, argc == 3 ? 2 : 3);
+    if ((argc == 3 || argc == 4) && BUILTIN_LIST_VIEW(arg, 0)
+        && BUILTIN_LIST_VIEW(arg, 0)->type == VAL_BUFFER) {
+        Value *buf = BUILTIN_LIST_VIEW(arg, 0);
+        Value *val = BUILTIN_LIST_VIEW(arg, argc == 3 ? 2 : 3);
         int64_t off;
         if (argc == 3) {
             int idx;
-            if (!buf_at_index(list_get_borrow(arg, 1), buf->data.buffer.count,
+            if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.count,
                               &idx)) return make_null();
             off = idx;
         } else if (argc == 4 && buf->data.buffer.rows > 0) {
             int row, col;
-            if (!buf_at_index(list_get_borrow(arg, 1), buf->data.buffer.rows,
+            if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.rows,
                               &row)) return make_null();
-            if (!buf_at_index(list_get_borrow(arg, 2), buf->data.buffer.cols,
+            if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 2), buf->data.buffer.cols,
                               &col)) return make_null();
             off = (int64_t)row * buf->data.buffer.cols + col;
         } else {
@@ -4034,41 +4050,41 @@ Value* builtin_set_at(Value *arg) {
     }
     if (argc == 3) {
         /* 1D: set_at of [list, index, value] */
-        Value *list = list_get_borrow(arg, 0);
-        Value *val = list_get_borrow(arg, 2);
+        Value *list = list_get_ref(arg, 0);
+        Value *val = BUILTIN_LIST_VIEW(arg, 2);
         if (!list || list->type != VAL_LIST) {
             rt_error(EK_TYPE, 0, "set_at: first argument must be a list");
             return make_null();
         }
         int idx;
-        if (!at_index(list_get_borrow(arg, 1), list->data.list.count, "set_at", &idx))
+        if (!at_index(BUILTIN_LIST_VIEW(arg, 1), list->data.list.count, "set_at", &idx))
             return make_null();
         val_incref(val);
-        val_decref(list_get_borrow(list, idx));
+        slot_decref(list_slot(list, idx));
         list_set_owned(list, idx, val);
         return list;
     }
     if (argc == 4) {
         /* 2D: set_at of [list, row, col, value] */
-        Value *list = list_get_borrow(arg, 0);
-        Value *val = list_get_borrow(arg, 3);
+        Value *list = list_get_ref(arg, 0);
+        Value *val = BUILTIN_LIST_VIEW(arg, 3);
         if (!list || list->type != VAL_LIST) {
             rt_error(EK_TYPE, 0, "set_at: first argument must be a list");
             return make_null();
         }
         int row;
-        if (!at_index(list_get_borrow(arg, 1), list->data.list.count, "set_at row", &row))
+        if (!at_index(BUILTIN_LIST_VIEW(arg, 1), list->data.list.count, "set_at row", &row))
             return make_null();
-        Value *rowv = list_get_borrow(list, row);
+        Value *rowv = BUILTIN_LIST_VIEW(list, row);
         if (!rowv || rowv->type != VAL_LIST) {
             rt_error(EK_TYPE, 0, "set_at: row %d is not a list", row);
             return make_null();
         }
         int col;
-        if (!at_index(list_get_borrow(arg, 2), rowv->data.list.count, "set_at col", &col))
+        if (!at_index(BUILTIN_LIST_VIEW(arg, 2), rowv->data.list.count, "set_at col", &col))
             return make_null();
         val_incref(val);
-        val_decref(list_get_borrow(rowv, col));
+        slot_decref(list_slot(rowv, col));
         list_set_owned(rowv, col, val);
         return list;
     }
@@ -4086,20 +4102,20 @@ Value* builtin_get_at(Value *arg) {
     }
     int argc = arg->data.list.count;
     /* #1093: same buffer reading as set_at above. */
-    if ((argc == 2 || argc == 3) && list_get_borrow(arg, 0)
-        && list_get_borrow(arg, 0)->type == VAL_BUFFER) {
-        Value *buf = list_get_borrow(arg, 0);
+    if ((argc == 2 || argc == 3) && BUILTIN_LIST_VIEW(arg, 0)
+        && BUILTIN_LIST_VIEW(arg, 0)->type == VAL_BUFFER) {
+        Value *buf = BUILTIN_LIST_VIEW(arg, 0);
         if (argc == 2) {
             int idx;
-            if (!buf_at_index(list_get_borrow(arg, 1), buf->data.buffer.count,
+            if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.count,
                               &idx)) return make_null();
             return make_num(buffer_read_num(buf, idx));
         }
         if (argc == 3 && buf->data.buffer.rows > 0) {
             int row, col;
-            if (!buf_at_index(list_get_borrow(arg, 1), buf->data.buffer.rows,
+            if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.rows,
                               &row)) return make_null();
-            if (!buf_at_index(list_get_borrow(arg, 2), buf->data.buffer.cols,
+            if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 2), buf->data.buffer.cols,
                               &col)) return make_null();
             return make_num(buffer_read_num(buf, (int64_t)row * buf->data.buffer.cols + col));
         }
@@ -4108,36 +4124,34 @@ Value* builtin_get_at(Value *arg) {
         return make_null();
     }
     if (argc == 2) {
-        Value *list = list_get_borrow(arg, 0);
+        Value *list = list_get_ref(arg, 0);
         if (!list || list->type != VAL_LIST) {
             rt_error(EK_TYPE, 0, "get_at: first argument must be a list");
             return make_null();
         }
         int idx;
-        if (!at_index(list_get_borrow(arg, 1), list->data.list.count, "get_at", &idx))
+        if (!at_index(BUILTIN_LIST_VIEW(arg, 1), list->data.list.count, "get_at", &idx))
             return make_null();
-        val_incref(list_get_borrow(list, idx));
-        return list_get_borrow(list, idx);
+        return list_get_return(list, idx);
     }
     if (argc == 3) {
-        Value *list = list_get_borrow(arg, 0);
+        Value *list = list_get_ref(arg, 0);
         if (!list || list->type != VAL_LIST) {
             rt_error(EK_TYPE, 0, "get_at: first argument must be a list");
             return make_null();
         }
         int row;
-        if (!at_index(list_get_borrow(arg, 1), list->data.list.count, "get_at row", &row))
+        if (!at_index(BUILTIN_LIST_VIEW(arg, 1), list->data.list.count, "get_at row", &row))
             return make_null();
-        Value *rowv = list_get_borrow(list, row);
+        Value *rowv = BUILTIN_LIST_VIEW(list, row);
         if (!rowv || rowv->type != VAL_LIST) {
             rt_error(EK_TYPE, 0, "get_at: row %d is not a list", row);
             return make_null();
         }
         int col;
-        if (!at_index(list_get_borrow(arg, 2), rowv->data.list.count, "get_at col", &col))
+        if (!at_index(BUILTIN_LIST_VIEW(arg, 2), rowv->data.list.count, "get_at col", &col))
             return make_null();
-        val_incref(list_get_borrow(rowv, col));
-        return list_get_borrow(rowv, col);
+        return list_get_return(rowv, col);
     }
     rt_error(EK_TYPE, 0, "get_at takes [list, index] or [list, row, col]");
     return make_null();
@@ -4350,13 +4364,12 @@ Value* builtin_spawn(Value *arg) {
     int fn_arg_count = 0;
     /* Accept bare function (0 args) or [fn, arg1, arg2, ...] (N args) */
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        fn = list_get_borrow(arg, 0);
+        fn = list_get_ref(arg, 0);
         fn_arg_count = arg->data.list.count - 1;
         if (fn_arg_count > 0) {
             fn_args = xmalloc(sizeof(Value*) * fn_arg_count);
             for (int i = 0; i < fn_arg_count; i++) {
-                fn_args[i] = list_get_borrow(arg, i + 1);
-                val_incref(fn_args[i]);
+                fn_args[i] = list_get_owned(arg, i + 1);
             }
         }
     }
@@ -4496,8 +4509,8 @@ Value* builtin_thread_join(Value *arg) {
         rt_error(EK_TYPE, 0, "thread_join requires a thread handle");
         return make_null();
     }
-    Value *hv = dict_get(arg, "_handle_id");
-    Value *gv = dict_get(arg, "_handle_gen");
+    Value *hv = BUILTIN_DICT_VIEW(arg, "_handle_id");
+    Value *gv = BUILTIN_DICT_VIEW(arg, "_handle_gen");
     if (!hv || hv->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "thread_join requires a thread handle");
         return make_null();
@@ -4582,10 +4595,10 @@ static Channel* get_channel_why(Value *v, int *why, int *out_id) {
     *why = HANDLE_CLAIM_BADVALUE;
     *out_id = 0;
     if (!v || v->type != VAL_DICT) return NULL;
-    Value *cv = dict_get(v, "_channel_id");
+    Value *cv = BUILTIN_DICT_VIEW(v, "_channel_id");
     if (!cv || cv->type != VAL_NUM) return NULL;
     *out_id = (int)eigs_num_arg(cv, __func__);
-    Value *gv = dict_get(v, "_channel_gen");
+    Value *gv = BUILTIN_DICT_VIEW(v, "_channel_gen");
     uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
     return (Channel*)handle_lookup(*out_id, gen, HANDLE_CHANNEL, why);
 }
@@ -4668,11 +4681,11 @@ Value* builtin_send(Value *arg) {
         rt_error(EK_TYPE, 0, "send requires [channel, value]");
         return make_null();
     }
-    Channel *ch = channel_arg(list_get_borrow(arg, 0), "send");
+    Channel *ch = channel_arg(BUILTIN_LIST_VIEW(arg, 0), "send");
     if (!ch) return make_null();
     /* Deep-copy into a self-contained heap value (refcount 1) owned by the
      * channel buffer; receiver adopts that ref. */
-    Value *val = val_clone_for_send(list_get_borrow(arg, 1));
+    Value *val = val_clone_for_send(BUILTIN_LIST_VIEW(arg, 1));
     pthread_mutex_lock(&ch->mutex);
     while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed &&
            !eigs_state_exit_requested(eigs_current_state(), NULL))
@@ -4750,10 +4763,10 @@ Value* builtin_recv_timeout(Value *arg) {
         rt_error(EK_TYPE, 0, "recv_timeout requires [channel, ms]");
         return make_null();
     }
-    Channel *ch = channel_arg(list_get_borrow(arg, 0), "recv_timeout");
+    Channel *ch = channel_arg(BUILTIN_LIST_VIEW(arg, 0), "recv_timeout");
     if (!ch) return make_null();
     if (replay_blocks("recv_timeout")) return make_null();   /* #1072: after validation */
-    Value *ms_v = list_get_borrow(arg, 1);
+    Value *ms_v = BUILTIN_LIST_VIEW(arg, 1);
     if (ms_v->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "recv_timeout: ms must be a number");
         return make_null();
@@ -4812,7 +4825,7 @@ Value* builtin_channel_closed(Value *arg) {
     /* #971 Phase D: get_channel folds "not a channel handle" into "no such
      * channel". The second is the documented answer (a reclaimed channel is
      * closed); the first is a type mistake reading as closed. Split. */
-    int not_a_handle = !arg || arg->type != VAL_DICT || !dict_get(arg, "_channel_id");
+    int not_a_handle = !arg || arg->type != VAL_DICT || !BUILTIN_DICT_VIEW(arg, "_channel_id");
     ARG_GUARD(not_a_handle, "channel_closed", "a channel", make_bool(1));
     Channel *ch = get_channel(arg);
     if (!ch) return make_bool(1);   /* fs:ANSWER an unknown/reclaimed channel is closed */
@@ -4893,12 +4906,13 @@ Value* builtin_task_spawn(Value *arg) {
     Value **args = NULL;
     int argc = 0;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        fn = list_get_borrow(arg, 0);
+        fn = list_get_ref(arg, 0);
         argc = arg->data.list.count - 1;
         if (argc > 0) {
             args = xmalloc(sizeof(Value*) * argc);
             for (int i = 0; i < argc; i++)
-                args[i] = val_clone_for_send(list_get_borrow(arg, i + 1));
+                { Value *owned = list_get_owned(arg, i + 1);
+                    args[i] = val_clone_for_send(owned); val_decref(owned); }
         }
     }
     if (!fn || (fn->type != VAL_FN && fn->type != VAL_BUILTIN)) {
@@ -5036,7 +5050,7 @@ Value* builtin_task_join(Value *arg) {
 Value* builtin_task_send(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "task_send");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "task_send", "[id, value]", make_bool(0));
-    Value *idv = list_get_borrow(arg, 0);
+    Value *idv = BUILTIN_LIST_VIEW(arg, 0);
     /* The type guard precedes the scheduler-state check deliberately. With the
      * state check first, `task_send of ["x", 1]` outside a task context
      * returned 0 without ever reaching this guard — a guard nothing can
@@ -5053,7 +5067,7 @@ Value* builtin_task_send(Value *arg) {
      * but it does have a scheduler mailbox (reply-to-supervisor pattern). */
     if (eigs_num_arg(idv, __func__) != 0 &&
         !task_handle_resolve(idv, "task_send", &target)) return make_bool(0);
-    Value *copy = val_clone_for_send(list_get_borrow(arg, 1));   /* share-nothing */
+    Value *copy = val_clone_for_send(BUILTIN_LIST_VIEW(arg, 1));   /* share-nothing */
     int sent = task_deliver(target, copy);
     if (!sent) val_decref(copy);   /* dropped to a dead task — release the copy */
     return make_bool(sent);
@@ -5325,7 +5339,7 @@ Value* builtin_nearest_in_range(Value *arg) {
         rt_error(EK_TYPE, 0, "nearest_in_range requires [entities, x, y, range, world_w, world_h]");
         return make_null();
     }
-    Value *entities = list_get_borrow(arg, 0);
+    Value *entities = BUILTIN_LIST_VIEW(arg, 0);
     if (!entities || entities->type != VAL_LIST) return make_null();
     BOOL_REFUSE(arg, "nearest_in_range");   /* x, y, range, world: numbers */
     double px = eigs_list_num(arg, 1, __func__);
@@ -5335,12 +5349,12 @@ Value* builtin_nearest_in_range(Value *arg) {
     double wh = eigs_list_num(arg, 5, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
-    if (arg->data.list.count >= 7 && list_get_borrow(arg, 6)->type == VAL_STR)
-        px_key = list_get_borrow(arg, 6)->data.str;
-    if (arg->data.list.count >= 8 && list_get_borrow(arg, 7)->type == VAL_STR)
-        py_key = list_get_borrow(arg, 7)->data.str;
-    if (arg->data.list.count >= 9 && list_get_borrow(arg, 8)->type == VAL_STR)
-        active_key = list_get_borrow(arg, 8)->data.str;
+    if (arg->data.list.count >= 7 && BUILTIN_LIST_VIEW(arg, 6)->type == VAL_STR)
+        px_key = BUILTIN_LIST_VIEW(arg, 6)->data.str;
+    if (arg->data.list.count >= 8 && BUILTIN_LIST_VIEW(arg, 7)->type == VAL_STR)
+        py_key = BUILTIN_LIST_VIEW(arg, 7)->data.str;
+    if (arg->data.list.count >= 9 && BUILTIN_LIST_VIEW(arg, 8)->type == VAL_STR)
+        active_key = BUILTIN_LIST_VIEW(arg, 8)->data.str;
 
     double range_sq = range * range;
     double best_sq = range_sq;
@@ -5371,8 +5385,8 @@ Value* builtin_nearest_in_range(Value *arg) {
 
     for (int i = 0; i < n; i++) {
         if (i + PFDIST < n)
-            __builtin_prefetch(list_get_borrow(entities, i + PFDIST), 0, 1);
-        Value *e = list_get_borrow(entities, i);
+            __builtin_prefetch(BUILTIN_LIST_VIEW(entities, i + PFDIST), 0, 1);
+        Value *e = BUILTIN_LIST_VIEW(entities, i);
         if (!e || e->type != VAL_DICT) continue;
         char **keys = e->data.dict.keys;
         Value **vals = dict_values_storage(e);
@@ -5457,7 +5471,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         rt_error(EK_TYPE, 0, "nearest_in_range_all requires [entities, range, world_w, world_h]");
         return make_null();
     }
-    Value *entities = list_get_borrow(arg, 0);
+    Value *entities = BUILTIN_LIST_VIEW(arg, 0);
     if (!entities || entities->type != VAL_LIST) return make_null();
     BOOL_REFUSE(arg, "nearest_in_range_all");   /* range, world: numbers */
     double range = eigs_list_num(arg, 1, __func__);
@@ -5465,12 +5479,12 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     double wh = eigs_list_num(arg, 3, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
-    if (arg->data.list.count >= 5 && list_get_borrow(arg, 4)->type == VAL_STR)
-        px_key = list_get_borrow(arg, 4)->data.str;
-    if (arg->data.list.count >= 6 && list_get_borrow(arg, 5)->type == VAL_STR)
-        py_key = list_get_borrow(arg, 5)->data.str;
-    if (arg->data.list.count >= 7 && list_get_borrow(arg, 6)->type == VAL_STR)
-        active_key = list_get_borrow(arg, 6)->data.str;
+    if (arg->data.list.count >= 5 && BUILTIN_LIST_VIEW(arg, 4)->type == VAL_STR)
+        px_key = BUILTIN_LIST_VIEW(arg, 4)->data.str;
+    if (arg->data.list.count >= 6 && BUILTIN_LIST_VIEW(arg, 5)->type == VAL_STR)
+        py_key = BUILTIN_LIST_VIEW(arg, 5)->data.str;
+    if (arg->data.list.count >= 7 && BUILTIN_LIST_VIEW(arg, 6)->type == VAL_STR)
+        active_key = BUILTIN_LIST_VIEW(arg, 6)->data.str;
 
     int n = entities->data.list.count;
     double range_sq = range * range;
@@ -5496,8 +5510,8 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     enum { PFDIST = 8 };
     for (int i = 0; i < n; i++) {
         if (i + PFDIST < n)
-            __builtin_prefetch(list_get_borrow(entities, i + PFDIST), 0, 1);
-        Value *e = list_get_borrow(entities, i);
+            __builtin_prefetch(BUILTIN_LIST_VIEW(entities, i + PFDIST), 0, 1);
+        Value *e = BUILTIN_LIST_VIEW(entities, i);
         if (!e || e->type != VAL_DICT) {
             valid_arr[i] = 0;
             active_arr[i] = 0;
@@ -5621,7 +5635,7 @@ Value* builtin_sign_extend(Value *arg) {
      * sign-extended whatever that produced. There is no previous behaviour
      * to preserve, because the previous behaviour was undefined; 0 is the
      * same stand-in every sibling here uses. Filed as its own issue. */
-    Value *v0 = list_get_borrow(arg, 0), *v1 = list_get_borrow(arg, 1);
+    Value *v0 = BUILTIN_LIST_VIEW(arg, 0), *v1 = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!v0 || v0->type != VAL_NUM || !v1 || v1->type != VAL_NUM, "sign_extend", "two numbers", make_num(0));
     double val = eigs_num_arg(v0, __func__);
     int bits = (int)eigs_num_arg(v1, __func__);
@@ -5640,8 +5654,8 @@ Value* builtin_list_truncate(Value *arg) {
         rt_error(EK_TYPE, 0, "list_truncate requires [list, new_len]");
         return make_null();
     }
-    Value *list = list_get_borrow(arg, 0);
-    Value *len_val = list_get_borrow(arg, 1);
+    Value *list = list_get_ref(arg, 0);
+    Value *len_val = BUILTIN_LIST_VIEW(arg, 1);
     if (!list || list->type != VAL_LIST) {
         rt_error(EK_TYPE, 0, "list_truncate: first argument must be a list");
         return make_null();
@@ -5659,7 +5673,7 @@ Value* builtin_list_truncate(Value *arg) {
     }
     if (new_len >= list->data.list.count) return list;
     for (int i = new_len; i < list->data.list.count; i++) {
-        val_decref(list_get_borrow(list, i));
+        slot_decref(list_slot(list, i));
         list_set_owned(list, i, NULL);
     }
     list->data.list.count = new_len;
@@ -5671,19 +5685,18 @@ Value* builtin_list_truncate(Value *arg) {
 Value* builtin_list_remove_at(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "list_remove_at");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *list = list_get_borrow(arg, 0);
-    Value *idx_val = list_get_borrow(arg, 1);
+    Value *list = list_get_ref(arg, 0);
+    Value *idx_val = BUILTIN_LIST_VIEW(arg, 1);
     if (!list || list->type != VAL_LIST) return make_null();
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
     ARG_GUARD(!idx_val || idx_val->type != VAL_NUM, "list_remove_at", "a number index", list);
     int idx = (int)eigs_num_arg(idx_val, __func__);
     if (idx < 0 || idx >= list->data.list.count) return list;
-    val_decref(list_get_borrow(list, idx));
+    slot_decref(list_slot(list, idx));
     int tail = list->data.list.count - idx - 1;
     if (tail > 0)
-        memmove(&list_values_storage(list)[idx], &list_values_storage(list)[idx + 1],
-                tail * sizeof(Value *));
+        list_move(list, idx, idx + 1, tail);
     list->data.list.count--;
     return list;
 }
@@ -5694,9 +5707,9 @@ Value* builtin_list_remove_at(Value *arg) {
 Value* builtin_list_insert_at(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "list_insert_at");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-    Value *list = list_get_borrow(arg, 0);
-    Value *idx_val = list_get_borrow(arg, 1);
-    Value *val = list_get_borrow(arg, 2);
+    Value *list = list_get_ref(arg, 0);
+    Value *idx_val = BUILTIN_LIST_VIEW(arg, 1);
+    Value *val = BUILTIN_LIST_VIEW(arg, 2);
     if (!list || list->type != VAL_LIST) return make_null();
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
@@ -5715,10 +5728,9 @@ Value* builtin_list_insert_at(Value *arg) {
      * spurious incref afterwards so old_last keeps exactly the one reference
      * its single remaining slot owns. It still occupies slot [count] at that
      * point, so the decref cannot free it. */
-    Value *old_last = list_get_borrow(list, count - 1);
-    list_append(list, old_last);
-    memmove(&list_values_storage(list)[idx + 1], &list_values_storage(list)[idx],
-            (count - idx) * sizeof(Value *));
+    Value *old_last = BUILTIN_LIST_VIEW(list, count - 1);
+    list_append_slot(list, list_slot(list, count - 1));
+    list_move(list, idx + 1, idx, count - idx);
     val_incref(val);
     list_set_owned(list, idx, val);
     val_decref(old_last);
@@ -5735,13 +5747,13 @@ Value* builtin_list_index_of(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "list_index_of");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "list_index_of", "[list, value]", make_num(-1));
-    Value *list = list_get_borrow(arg, 0);
-    Value *needle = list_get_borrow(arg, 1);
+    Value *list = list_get_ref(arg, 0);
+    Value *needle = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!list || list->type != VAL_LIST,
               "list_index_of", "a list as its first argument", make_num(-1));
     for (int i = 0; i < list->data.list.count; i++) {
         /* #1637: the `==` comparison, raising on bool vs num like `==`. */
-        int equal = values_equal_op(list_get_borrow(list, i), needle, "list_index_of");
+        int equal = values_equal_op(BUILTIN_LIST_VIEW(list, i), needle, "list_index_of");
         /* #1417: structural buffer comparison can raise on a strict NaN. */
         if (g_has_error) return make_null();
         if (equal) return make_num((double)i);
@@ -5757,12 +5769,12 @@ Value* builtin_list_index_of(Value *arg) {
 Value* builtin_list_contains(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "list_contains");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "list_contains", "[list, value]", make_bool(0));
-    Value *list = list_get_borrow(arg, 0);
-    Value *needle = list_get_borrow(arg, 1);
+    Value *list = list_get_ref(arg, 0);
+    Value *needle = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!list || list->type != VAL_LIST, "list_contains", "a list as its first argument", make_bool(0));
     for (int i = 0; i < list->data.list.count; i++) {
         /* #1637: the `==` comparison, raising on bool vs num like `==`. */
-        int equal = values_equal_op(list_get_borrow(list, i), needle, "list_contains");
+        int equal = values_equal_op(BUILTIN_LIST_VIEW(list, i), needle, "list_contains");
         /* #1417: structural buffer comparison can raise on a strict NaN. */
         if (g_has_error) return make_null();
         if (equal) return make_bool(1);
@@ -5788,8 +5800,8 @@ static int sort_by_pair_cmp(const void *a, const void *b) {
 Value* builtin_sort_by(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "sort_by");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *list = list_get_borrow(arg, 0);
-    Value *key_fn = list_get_borrow(arg, 1);
+    Value *list = list_get_ref(arg, 0);
+    Value *key_fn = BUILTIN_LIST_VIEW(arg, 1);
     if (!list || list->type != VAL_LIST) return make_null();
     if (!key_fn || (key_fn->type != VAL_FN && key_fn->type != VAL_BUILTIN))
         return make_null();
@@ -5798,7 +5810,7 @@ Value* builtin_sort_by(Value *arg) {
     SortByPair *pairs = calloc(n, sizeof(SortByPair));
     if (!pairs) return make_null();
     for (int i = 0; i < n; i++) {
-        Value *kv = call_eigs_fn(key_fn, list_get_borrow(list, i));
+        Value *kv = call_eigs_fn(key_fn, list_get_owned(list, i));
         /* #989: the key function itself raised (over-arity, or anything its
          * body threw). Its error is the real one — reporting "must return a
          * number" on top of it would bury the cause under a symptom. */
@@ -5825,7 +5837,7 @@ Value* builtin_sort_by(Value *arg) {
     qsort(pairs, n, sizeof(SortByPair), sort_by_pair_cmp);
     Value *result = make_list(n);
     for (int i = 0; i < n; i++) {
-        list_append(result, list_get_borrow(list, pairs[i].index));
+        list_append_slot(result, list_slot(list, pairs[i].index));
     }
     free(pairs);
     return result;
@@ -5837,12 +5849,14 @@ Value* builtin_sort_by(Value *arg) {
  * with libc-dependent element order on top (qsort gives no stability
  * guarantee for all-equal elements). Record sorting is sort_by's job. */
 static int sort_cmp_num(const void *a, const void *b) {
-    double da = eigs_num_arg((*(Value**)a), __func__), db = eigs_num_arg((*(Value**)b), __func__);
+    double da = eigs_slot_num(eigs_container_slot(*(Value * const *)a), __func__);
+    double db = eigs_slot_num(eigs_container_slot(*(Value * const *)b), __func__);
     return (da > db) - (da < db);
 }
 
 static int sort_cmp_str(const void *a, const void *b) {
-    return strcmp((*(Value**)a)->data.str, (*(Value**)b)->data.str);
+    return strcmp(slot_as_ptr(eigs_container_slot(*(Value * const *)a))->data.str,
+                  slot_as_ptr(eigs_container_slot(*(Value * const *)b))->data.str);
 }
 
 Value* builtin_sort(Value *arg) {
@@ -5850,10 +5864,10 @@ Value* builtin_sort(Value *arg) {
     STRICT_REQUIRE(arg && arg->type != VAL_LIST, "sort", "a list");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
         return arg ? arg : make_null();
-    ValType t = list_get_borrow(arg, 0) ? list_get_borrow(arg, 0)->type
+    ValType t = BUILTIN_LIST_VIEW(arg, 0) ? BUILTIN_LIST_VIEW(arg, 0)->type
                                         : VAL_NULL;
     for (int i = 0; i < arg->data.list.count; i++) {
-        Value *v = list_get_borrow(arg, i);
+        Value *v = BUILTIN_LIST_VIEW(arg, i);
         if (!v || v->type != t || (t != VAL_NUM && t != VAL_STR)) {
             rt_error(EK_TYPE, 0, "sort requires all numbers or all strings "
                           "(element %d is %s); use sort_by for records",
@@ -5861,8 +5875,7 @@ Value* builtin_sort(Value *arg) {
             return make_null();
         }
     }
-    qsort(list_values_storage(arg), arg->data.list.count, sizeof(Value*),
-          t == VAL_NUM ? sort_cmp_num : sort_cmp_str);
+    list_sort(arg, t == VAL_NUM ? sort_cmp_num : sort_cmp_str);
     return arg;
 }
 
@@ -5877,9 +5890,9 @@ Value* builtin_dispatch(Value *arg) {
         rt_error(EK_TYPE, 0, "dispatch requires [table, key, arg]");
         return make_null();
     }
-    Value *table = list_get_borrow(arg, 0);
-    Value *key_v = list_get_borrow(arg, 1);
-    Value *fn_arg = list_get_borrow(arg, 2);
+    Value *table = BUILTIN_LIST_VIEW(arg, 0);
+    Value *key_v = BUILTIN_LIST_VIEW(arg, 1);
+    Value *fn_arg = BUILTIN_LIST_VIEW(arg, 2);
 
     /* Key validation mirrors OP_DISPATCH (#353): a non-number key used to
      * reinterpret whatever union member the value carried as a double. */
@@ -5901,7 +5914,7 @@ Value* builtin_dispatch(Value *arg) {
     if (key < 0 || key >= table->data.list.count) {
         return make_null();
     }
-    Value *fn = list_get_borrow(table, key);
+    Value *fn = BUILTIN_LIST_VIEW(table, key);
     if (!fn || fn->type == VAL_NULL) {
         return make_null();
     }
@@ -5981,8 +5994,8 @@ Value* builtin_dispatch(Value *arg) {
 static Value* builtin_dot(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "dot");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "dot", "[a, b]", make_num(0));
-    Value *a = list_get_borrow(arg, 0);
-    Value *b = list_get_borrow(arg, 1);
+    Value *a = BUILTIN_LIST_VIEW(arg, 0);
+    Value *b = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!a || !b || a->type != VAL_BUFFER || b->type != VAL_BUFFER, "dot", "two buffers", make_num(0));
     int n = a->data.buffer.count;
     if (b->data.buffer.count < n) n = b->data.buffer.count;
@@ -6131,7 +6144,7 @@ int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg) {
     int n = arg->data.list.count < EIGS_BOOL_GATE_SCAN ? arg->data.list.count
                                                        : EIGS_BOOL_GATE_SCAN;
     for (int i = 0; i < n; i++) {
-        const Value *it = list_get_borrow(arg, i);
+        const Value *it = BUILTIN_LIST_VIEW(arg, i);
         if (!it || it->type != VAL_BOOL || (mask & BA_POS(i))) continue;
         const char *nm = bool_gate_name(fn);
         rt_error(EK_TYPE, 0, "%s: argument %d is a bool, which %s does not take there",
