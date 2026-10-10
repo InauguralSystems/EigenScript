@@ -52,7 +52,8 @@ def functions(sources):
             code = mask[match.end():end - 1]
             # Deliberately remove annotations before candidate discovery.
             code = re.sub(r'STRICT_LIST_MAX\([^;]*;', '', code)
-            direct = bool(re.search(r'\bVAL_LIST\b|data\.list|\bARG_COUNT\b|\bARG_AT\b', code))
+            # data.list or its #1665 container.h accessors (list_get_*/list_iter_*/...)
+            direct = bool(re.search(r'\bVAL_LIST\b|data\.list|\blist_(?:get|set|iter|values)_\w*\(|\bARG_COUNT\b|\bARG_AT\b', code))
             direct |= 'arg->data.dict' in code and bool(re.search(r'\bmake_list\s*\(', code))
             helpers = set()
             for call in re.finditer(r'\b([A-Za-z_]\w*)\s*\(', code):
