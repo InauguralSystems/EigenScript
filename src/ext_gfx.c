@@ -404,7 +404,7 @@ static int gfx_nums(Value *arg, int from, int to) {
     int cnt = arg->data.list.count;
     if (to > cnt) to = cnt;
     for (int i = from; i < to; i++) {
-        Value *v = arg->data.list.items[i];
+        Value *v = list_get_borrow(arg, i);
         if (!v || v->type != VAL_NUM) return 0;
     }
     return 1;
@@ -418,7 +418,7 @@ static int gfx_nums(Value *arg, int from, int to) {
 static int gfx_list_all_num(Value *l) {
     if (!l || l->type != VAL_LIST) return 0;
     for (int i = 0; i < l->data.list.count; i++) {
-        Value *v = l->data.list.items[i];
+        Value *v = list_get_borrow(l, i);
         if (!v || v->type != VAL_NUM) return 0;
     }
     return 1;
@@ -454,12 +454,12 @@ Value* builtin_gfx_open(Value *arg) {
      * overlaps `double num` with `char *str`, so gfx_open of ["800","600",t]
      * reinterpreted a pointer as a double and int-cast it — in practice a
      * tiny denormal, so the window opened 0x0 and gfx_open answered 1. */
-    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-              arg->data.list.items[1]->type != VAL_NUM,
+    ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+              list_get_borrow(arg, 1)->type != VAL_NUM,
               "gfx_open", "[number width, number height, title]", make_bool(0));
     int w = (int)eigs_list_num(arg, 0, __func__);
     int h = (int)eigs_list_num(arg, 1, __func__);
-    const char *title = arg->data.list.items[2]->type == VAL_STR ? arg->data.list.items[2]->data.str : "EigenScript";
+    const char *title = list_get_borrow(arg, 2)->type == VAL_STR ? list_get_borrow(arg, 2)->data.str : "EigenScript";
 
     if (!load_sdl2()) {
         fprintf(stderr, "gfx_open: cannot load libSDL2\n");
@@ -996,7 +996,7 @@ Value* builtin_gfx_text(Value *arg) {
      * to a parent build. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 6
               || !gfx_nums(arg, 0, 2)
-              || arg->data.list.items[2]->type != VAL_STR
+              || list_get_borrow(arg, 2)->type != VAL_STR
               || !gfx_nums(arg, 3, 7),
               "gfx_text",
               "[number x, number y, string text, number r, number g, number b] and an optional number scale",
@@ -1004,7 +1004,7 @@ Value* builtin_gfx_text(Value *arg) {
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_text answers null on every path -- the return value, not a rejected-argument stand-in */
     int x = (int)eigs_list_num(arg, 0, __func__);
     int y = (int)eigs_list_num(arg, 1, __func__);
-    const char *text = arg->data.list.items[2]->data.str;
+    const char *text = list_get_borrow(arg, 2)->data.str;
     int r = (int)eigs_list_num(arg, 3, __func__);
     int g = (int)eigs_list_num(arg, 4, __func__);
     int b = (int)eigs_list_num(arg, 5, __func__);
@@ -1071,10 +1071,10 @@ Value* builtin_gfx_text_width(Value *arg) {
     if (arg && arg->type == VAL_STR) {
         text = arg->data.str;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
-               && arg->data.list.items[0]->type == VAL_STR) {
-        text = arg->data.list.items[0]->data.str;
+               && list_get_borrow(arg, 0)->type == VAL_STR) {
+        text = list_get_borrow(arg, 0)->data.str;
         if (arg->data.list.count >= 2) {
-            if (arg->data.list.items[1]->type == VAL_NUM)
+            if (list_get_borrow(arg, 1)->type == VAL_NUM)
                 scale = (int)eigs_list_num(arg, 1, __func__);
             else
                 bad_scale = 1;
@@ -1110,12 +1110,12 @@ Value* builtin_gfx_text_height(Value *arg) {
      * raises under strict and does nothing otherwise. */
     STRICT_REQUIRE(arg && arg->type != VAL_NULL && arg->type != VAL_NUM
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 1
-                        && arg->data.list.items[0]->type == VAL_NUM),
+                        && list_get_borrow(arg, 0)->type == VAL_NUM),
                    "gfx_text_height", "number scale, [number scale] or null");
     if (arg && arg->type == VAL_NUM) {
         scale = (int)eigs_num_arg(arg, __func__);
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
-               && arg->data.list.items[0]->type == VAL_NUM) {
+               && list_get_borrow(arg, 0)->type == VAL_NUM) {
         scale = (int)eigs_list_num(arg, 0, __func__);
     }
     if (scale < 1) scale = 1;
@@ -1202,7 +1202,7 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
     if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
     int16_t *buf = xmalloc_array(n, sizeof(int16_t));
     for (int i = 0; i < n; i++) {
-        Value *v = samples->data.list.items[i];
+        Value *v = list_get_borrow(samples, i);
         /* #1007: a non-number used to be COERCED to 0 here, so a wrong-typed
          * sample list produced a valid buffer of silence and the caller's
          * `if (!buf)` guard never saw it — audio_play answered with a real
@@ -1313,8 +1313,8 @@ Value* builtin_audio_open(Value *arg) {
          * oversight rather than a convention is settled 180 lines down:
          * audio_stream_open guards this identical pair with `type == VAL_NUM`
          * before reading it. */
-        ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-                  arg->data.list.items[1]->type != VAL_NUM,
+        ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+                  list_get_borrow(arg, 1)->type != VAL_NUM,
                   "audio_open", "[number freq, number channels]", make_num(0));
     }
     if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
@@ -1456,8 +1456,8 @@ Value* builtin_audio_capture_open(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
                    "audio_capture_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-                  arg->data.list.items[1]->type != VAL_NUM,
+        ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+                  list_get_borrow(arg, 1)->type != VAL_NUM,
                   "audio_capture_open", "[number freq, number channels]", make_num(0));
     }
     TRACE_NONDET_TAKE("audio_capture_open");
@@ -1585,8 +1585,8 @@ Value* builtin_audio_stream_open(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
                    "audio_stream_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-                  arg->data.list.items[1]->type != VAL_NUM,
+        ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+                  list_get_borrow(arg, 1)->type != VAL_NUM,
                   "audio_stream_open", "[number freq, number channels]", make_num(0));
     }
     if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER BUILTINS.md audio_stream_open: "0 when SDL/audio is unavailable"; libSDL2 absent is environment state */
@@ -1604,8 +1604,8 @@ Value* builtin_audio_stream_open(Value *arg) {
     want.callback = NULL;   /* queue mode: feed via SDL_QueueAudio */
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
-        && arg->data.list.items[0]->type == VAL_NUM
-        && arg->data.list.items[1]->type == VAL_NUM) {
+        && list_get_borrow(arg, 0)->type == VAL_NUM
+        && list_get_borrow(arg, 1)->type == VAL_NUM) {
         want.freq = (int)eigs_list_num(arg, 0, __func__);
         want.channels = (int)eigs_list_num(arg, 1, __func__);
     }
@@ -1697,15 +1697,15 @@ Value* builtin_audio_music_play(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_music_play");
     /* #1007: both #971 deferral markers converted. Above load_sdl2(), the [135] rule. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1
-              || arg->data.list.items[0]->type != VAL_STR,
+              || list_get_borrow(arg, 0)->type != VAL_STR,
               "audio_music_play", "[string path, number loops]", make_bool(0));
     /* A wrong-typed `loops` is the COERCION shape: it fell back to -1
      * (forever), so a typo made the track loop rather than play once. */
     STRICT_REQUIRE(arg->data.list.count >= 2
-                   && arg->data.list.items[1]->type != VAL_NUM,
+                   && list_get_borrow(arg, 1)->type != VAL_NUM,
                    "audio_music_play", "[string path, number loops]");
-    const char *path = arg->data.list.items[0]->data.str;
-    int loops = (arg->data.list.count >= 2 && arg->data.list.items[1]->type == VAL_NUM)
+    const char *path = list_get_borrow(arg, 0)->data.str;
+    int loops = (arg->data.list.count >= 2 && list_get_borrow(arg, 1)->type == VAL_NUM)
                 ? (int)eigs_list_num(arg, 1, __func__) : -1;
     if (!load_sdl2()) return make_bool(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
@@ -1743,13 +1743,13 @@ Value* builtin_audio_music_volume(Value *arg) {
      * MUTED the music. Above the mixer-state check, the [135] rule. */
     STRICT_REQUIRE(!(arg && arg->type == VAL_NUM)
                    && !(arg && arg->type == VAL_LIST && arg->data.list.count >= 1
-                        && arg->data.list.items[0]->type == VAL_NUM),
+                        && list_get_borrow(arg, 0)->type == VAL_NUM),
                    "audio_music_volume", "number volume 0..128 or [number volume]");
     if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();  /* fs:VOID no mixer open: audio_music_volume answers null on every path -- the return value, not a rejected-argument stand-in */
     int v = 0;
     if (arg && arg->type == VAL_NUM) v = (int)eigs_num_arg(arg, __func__);
     else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
-             && arg->data.list.items[0]->type == VAL_NUM)
+             && list_get_borrow(arg, 0)->type == VAL_NUM)
         v = (int)eigs_list_num(arg, 0, __func__);
     if (v < 0) v = 0;
     if (v > MY_MIX_MAX_VOLUME) v = MY_MIX_MAX_VOLUME;
@@ -1796,8 +1796,8 @@ Value* builtin_audio_play_loop(Value *arg) {
      * soft, and it moves BELOW the guard so the guard is reachable on a
      * machine with no audio device (the [135] rule). */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
-              || !arg->data.list.items[1]
-              || arg->data.list.items[1]->type != VAL_NUM,
+              || !list_get_borrow(arg, 1)
+              || list_get_borrow(arg, 1)->type != VAL_NUM,
               "audio_play_loop", "[samples, number loops]", make_num(0));
     /* #152: NaN/huge casts are UB; -1 is the one negative with meaning. */
     double loops_d = eigs_list_num(arg, 1, __func__);
@@ -1814,12 +1814,12 @@ Value* builtin_audio_play_loop(Value *arg) {
      * device check for the same reachability reason. */
     /* #1637: a non-number sample element is refused here too, above the
      * device check (a bool in every strict mode, through STRICT_REQUIRE). */
-    STRICT_REQUIRE(gfx_bad_samples(arg->data.list.items[0])
-                   || (arg->data.list.items[0]->type == VAL_LIST
-                       && !gfx_list_all_num(arg->data.list.items[0])),
+    STRICT_REQUIRE(gfx_bad_samples(list_get_borrow(arg, 0))
+                   || (list_get_borrow(arg, 0)->type == VAL_LIST
+                       && !gfx_list_all_num(list_get_borrow(arg, 0))),
                    "audio_play_loop", "[list or buffer of samples, number loops]");
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play_loop: "0 on ... closed device"; channel ids are slot+1 >= 1, so 0 is not a channel */
-    Value *samples = arg->data.list.items[0];
+    Value *samples = list_get_borrow(arg, 0);
     int n = 0;
     int16_t *buf = audio_convert_samples(samples, &n);
     if (!buf) {
@@ -1837,12 +1837,12 @@ Value* builtin_audio_volume(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_volume");
     /* #1007: the mixed condition split, as its #971 deferral marker asked. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
-              || !arg->data.list.items[0] || arg->data.list.items[0]->type != VAL_NUM
-              || !arg->data.list.items[1] || arg->data.list.items[1]->type != VAL_NUM,
+              || !list_get_borrow(arg, 0) || list_get_borrow(arg, 0)->type != VAL_NUM
+              || !list_get_borrow(arg, 1) || list_get_borrow(arg, 1)->type != VAL_NUM,
               "audio_volume", "[number channel, number volume]", make_num(0));
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing", and with no device open no channel is */
-    Value *ch_v = arg->data.list.items[0];
-    Value *vol_v = arg->data.list.items[1];
+    Value *ch_v = list_get_borrow(arg, 0);
+    Value *vol_v = list_get_borrow(arg, 1);
     int c = (int)eigs_num_arg(ch_v, "audio_volume") - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing" -- the same value line 1452 returns for an inactive in-range channel; an out-of-range id is definitionally inactive */
     double vol = eigs_num_arg(vol_v, "audio_volume");
@@ -1921,9 +1921,9 @@ Value* builtin_audio_sine(Value *arg) {
      * Seven builtins share the shape; the list was derived by running each
      * candidate twice and diffing (a per-run difference IS the disclosure),
      * not by reading names — audio_gain was missed by the reading. */
-    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-              arg->data.list.items[1]->type != VAL_NUM ||
-              arg->data.list.items[2]->type != VAL_NUM,
+    ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+              list_get_borrow(arg, 1)->type != VAL_NUM ||
+              list_get_borrow(arg, 2)->type != VAL_NUM,
               "audio_sine", "[number freq, number duration, number amplitude]", make_list(0));
     double freq = eigs_list_num(arg, 0, __func__);
     double dur = eigs_list_num(arg, 1, __func__);
@@ -1956,9 +1956,9 @@ Value* builtin_audio_saw(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-              arg->data.list.items[1]->type != VAL_NUM ||
-              arg->data.list.items[2]->type != VAL_NUM,
+    ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+              list_get_borrow(arg, 1)->type != VAL_NUM ||
+              list_get_borrow(arg, 2)->type != VAL_NUM,
               "audio_saw", "[number freq, number duration, number amplitude]", make_list(0));
     double freq = eigs_list_num(arg, 0, __func__);
     double dur = eigs_list_num(arg, 1, __func__);
@@ -1991,9 +1991,9 @@ Value* builtin_audio_square(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-              arg->data.list.items[1]->type != VAL_NUM ||
-              arg->data.list.items[2]->type != VAL_NUM,
+    ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+              list_get_borrow(arg, 1)->type != VAL_NUM ||
+              list_get_borrow(arg, 2)->type != VAL_NUM,
               "audio_square", "[number freq, number duration, number amplitude]", make_list(0));
     double freq = eigs_list_num(arg, 0, __func__);
     double dur = eigs_list_num(arg, 1, __func__);
@@ -2027,11 +2027,11 @@ Value* builtin_audio_sweep(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-              arg->data.list.items[1]->type != VAL_NUM ||
-              arg->data.list.items[2]->type != VAL_NUM ||
-              arg->data.list.items[3]->type != VAL_NUM ||
-              arg->data.list.items[4]->type != VAL_NUM,
+    ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+              list_get_borrow(arg, 1)->type != VAL_NUM ||
+              list_get_borrow(arg, 2)->type != VAL_NUM ||
+              list_get_borrow(arg, 3)->type != VAL_NUM ||
+              list_get_borrow(arg, 4)->type != VAL_NUM,
               "audio_sweep", "[number freq_start, number freq_end, number duration, number amplitude, number waveform]", make_list(0));
     double f0 = eigs_list_num(arg, 0, __func__);
     double f1 = eigs_list_num(arg, 1, __func__);
@@ -2074,8 +2074,8 @@ Value* builtin_audio_noise(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(arg->data.list.items[0]->type != VAL_NUM ||
-              arg->data.list.items[1]->type != VAL_NUM,
+    ARG_GUARD(list_get_borrow(arg, 0)->type != VAL_NUM ||
+              list_get_borrow(arg, 1)->type != VAL_NUM,
               "audio_noise", "[number duration, number amplitude]", make_list(0));
     double dur = eigs_list_num(arg, 0, __func__);
     double amp = eigs_list_num(arg, 1, __func__);
@@ -2097,8 +2097,8 @@ Value* builtin_audio_mix(Value *arg) {
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "audio_mix", "[list samples_a, list samples_b]", make_list(0));
-    Value *a = arg->data.list.items[0];
-    Value *b = arg->data.list.items[1];
+    Value *a = list_get_borrow(arg, 0);
+    Value *b = list_get_borrow(arg, 1);
     ARG_GUARD(a->type != VAL_LIST || b->type != VAL_LIST,
               "audio_mix", "[list samples_a, list samples_b]", make_list(0));
     /* #1007, COERCION shape: a non-number ELEMENT was substituted with 0.0,
@@ -2112,8 +2112,8 @@ Value* builtin_audio_mix(Value *arg) {
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double sa = (i < a->data.list.count && a->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(a->data.list.items[i], __func__) : 0;
-        double sb = (i < b->data.list.count && b->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(b->data.list.items[i], __func__) : 0;
+        double sa = (i < a->data.list.count && list_get_borrow(a, i)->type == VAL_NUM) ? eigs_num_arg(list_get_borrow(a, i), __func__) : 0;
+        double sb = (i < b->data.list.count && list_get_borrow(b, i)->type == VAL_NUM) ? eigs_num_arg(list_get_borrow(b, i), __func__) : 0;
         double mixed = sa + sb;
         if (mixed > 1.0) mixed = 1.0;
         if (mixed < -1.0) mixed = -1.0;
@@ -2128,7 +2128,7 @@ Value* builtin_audio_gain(Value *arg) {
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "audio_gain", "[list samples, number volume]", make_list(0));
-    Value *samples = arg->data.list.items[0];
+    Value *samples = list_get_borrow(arg, 0);
     ARG_GUARD(samples->type != VAL_LIST, "audio_gain",
               "[list samples, number volume]", make_list(0));
     /* #1007, COERCION shape: a non-number ELEMENT was substituted with 0.0.
@@ -2143,14 +2143,14 @@ Value* builtin_audio_gain(Value *arg) {
      * `char *` into script-visible data exactly as audio_sweep did. Note the
      * element read on the next line was ALREADY type-checked — the argument
      * beside it was not, which is the same next-line asymmetry as gfx_open. */
-    ARG_GUARD(arg->data.list.items[1]->type != VAL_NUM,
+    ARG_GUARD(list_get_borrow(arg, 1)->type != VAL_NUM,
               "audio_gain", "[samples, number volume]", make_list(0));
     double vol = eigs_list_num(arg, 1, __func__);
     int n = samples->data.list.count;
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double s = (samples->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(samples->data.list.items[i], __func__) : 0;
+        double s = (list_get_borrow(samples, i)->type == VAL_NUM) ? eigs_num_arg(list_get_borrow(samples, i), __func__) : 0;
         s *= vol;
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
@@ -2174,12 +2174,12 @@ Value* builtin_audio_envelope(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(arg->data.list.items[1]->type != VAL_NUM ||
-              arg->data.list.items[2]->type != VAL_NUM ||
-              arg->data.list.items[3]->type != VAL_NUM ||
-              arg->data.list.items[4]->type != VAL_NUM,
+    ARG_GUARD(list_get_borrow(arg, 1)->type != VAL_NUM ||
+              list_get_borrow(arg, 2)->type != VAL_NUM ||
+              list_get_borrow(arg, 3)->type != VAL_NUM ||
+              list_get_borrow(arg, 4)->type != VAL_NUM,
               "audio_envelope", "[samples, number attack, number decay, number sustain, number release]", make_list(0));
-    Value *samples = arg->data.list.items[0];
+    Value *samples = list_get_borrow(arg, 0);
     ARG_GUARD(samples->type != VAL_LIST, "audio_envelope",
               "[list samples, number attack, number decay, number sustain, number release]",
               make_list(0));
@@ -2220,7 +2220,7 @@ Value* builtin_audio_envelope(Value *arg) {
             double frac = (r_samples > 0) ? (double)(i - r_start) / r_samples : 1.0;
             env = sustain * (1.0 - frac);
         }
-        double s = (samples->data.list.items[i]->type == VAL_NUM) ? eigs_num_arg(samples->data.list.items[i], __func__) : 0;
+        double s = (list_get_borrow(samples, i)->type == VAL_NUM) ? eigs_num_arg(list_get_borrow(samples, i), __func__) : 0;
         s *= env;
         list_append_owned(out, make_num(s));
     }
@@ -2237,13 +2237,13 @@ Value* builtin_gfx_fb(Value *arg) {
      * five geometry elements were read unchecked while the buffer beside
      * them was type-checked one line down. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 6
-              || !arg->data.list.items[0]
-              || arg->data.list.items[0]->type != VAL_BUFFER
+              || !list_get_borrow(arg, 0)
+              || list_get_borrow(arg, 0)->type != VAL_BUFFER
               || !gfx_nums(arg, 1, 6),
               "gfx_fb",
               "[buffer fb, number w, number h, number x, number y, number scale]",
               make_null());
-    Value *buf  = arg->data.list.items[0];
+    Value *buf  = list_get_borrow(arg, 0);
     int    w    = (int)eigs_list_num(arg, 1, __func__);
     int    h    = (int)eigs_list_num(arg, 2, __func__);
     int    dx   = (int)eigs_list_num(arg, 3, __func__);
@@ -2311,8 +2311,8 @@ Value* builtin_ppu_render_frame(Value *arg) {
      * no diagnostic anywhere. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "ppu_render_frame", "[buffer mem, buffer fb]", make_null());
-    Value *mem_v = arg->data.list.items[0];
-    Value *fb_v  = arg->data.list.items[1];
+    Value *mem_v = list_get_borrow(arg, 0);
+    Value *fb_v  = list_get_borrow(arg, 1);
     ARG_GUARD(!mem_v || mem_v->type != VAL_BUFFER
               || mem_v->data.buffer.count < 65536,
               "ppu_render_frame", "[buffer mem of at least 65536, buffer fb]",

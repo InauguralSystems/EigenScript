@@ -1,0 +1,1 @@
+- Internal refactor, no behaviour change: list elements and dict values go through the ownership-explicit accessors in src/container.h, ahead of NaN-boxed container storage (#1665 arm D).

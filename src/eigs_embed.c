@@ -352,7 +352,7 @@ int eigs_value_list_len(EigsValue *v) {
 EigsValue *eigs_value_list_get(EigsValue *v, int i) {
     if (!v || v->type != VAL_LIST) return NULL;
     if (i < 0 || i >= v->data.list.count) return NULL;
-    Value *r = v->data.list.items[i];
+    Value *r = list_get_borrow(v, i);
     if (r) val_incref(r);
     return r;
 }

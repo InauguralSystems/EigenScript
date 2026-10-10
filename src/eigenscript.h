@@ -1899,6 +1899,7 @@ static inline void val_decref(Value *v) {
 }
 
 #include "value_slot.h"
+#include "container.h"
 
 /* ---- Environment ---- */
 

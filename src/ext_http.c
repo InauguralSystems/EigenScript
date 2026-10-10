@@ -409,25 +409,25 @@ static Value *http_route_register(Value *arg, int requires_auth) {
      * time is also the right moment: the error lands on the line the author
      * wrote, before the socket is listening, instead of on a client request. */
     for (int i = 0; i < 2; i++) {
-        if (route_slot_is_callable(arg->data.list.items[i])) {
+        if (route_slot_is_callable(list_get_borrow(arg, i))) {
             rt_error(EK_TYPE, 0, "http_route: %s must be a string, not a function",
                      i == 0 ? "method" : "path");
             return make_null();
         }
     }
     if (arg->data.list.count >= 4) {
-        if (route_slot_is_callable(arg->data.list.items[2])) {
+        if (route_slot_is_callable(list_get_borrow(arg, 2))) {
             rt_error(EK_TYPE, 0, "http_route: kind must be a string, not a function "
                                  "(expected \"code\" or \"static\")");
             return make_null();
         }
-        if (route_slot_is_callable(arg->data.list.items[3])) {
+        if (route_slot_is_callable(list_get_borrow(arg, 3))) {
             rt_error(EK_TYPE, 0, "http_route: the code form's source must be a string of "
                                  "EigenScript source, not a function — "
                                  "http_route of [method, path, \"code\", \"return 42\"]");
             return make_null();
         }
-    } else if (route_slot_is_callable(arg->data.list.items[2])) {
+    } else if (route_slot_is_callable(list_get_borrow(arg, 2))) {
         rt_error(EK_TYPE, 0, "http_route: body must be a value, not a function — pass a "
                              "literal body (\"pong\"), or use the code form: "
                              "http_route of [method, path, \"code\", \"<source>\"]");
@@ -435,18 +435,18 @@ static Value *http_route_register(Value *arg, int requires_auth) {
     }
 
     Route *r = &g_server.routes[g_server.route_count];
-    char *method_s = value_to_string(arg->data.list.items[0]);
-    char *path_s = value_to_string(arg->data.list.items[1]);
+    char *method_s = value_to_string(list_get_borrow(arg, 0));
+    char *path_s = value_to_string(list_get_borrow(arg, 1));
     r->method = method_s;
     r->path = path_s;
 
     if (arg->data.list.count >= 4) {
-        char *kind_s = value_to_string(arg->data.list.items[2]);
-        char *payload_s = value_to_string(arg->data.list.items[3]);
+        char *kind_s = value_to_string(list_get_borrow(arg, 2));
+        char *payload_s = value_to_string(list_get_borrow(arg, 3));
         r->kind = kind_s;
         r->payload = payload_s;
     } else {
-        Value *handler = arg->data.list.items[2];
+        Value *handler = list_get_borrow(arg, 2);
         if (handler->type == VAL_STR) {
             r->kind = xstrdup("static");
             r->payload = xstrdup(handler->data.str);
@@ -478,8 +478,8 @@ Value* builtin_http_static(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "http_static");
     if (http_config_frozen("http_static")) return make_null();
     if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    char *prefix = value_to_string(arg->data.list.items[0]);
-    char *dir = value_to_string(arg->data.list.items[1]);
+    char *prefix = value_to_string(list_get_borrow(arg, 0));
+    char *dir = value_to_string(list_get_borrow(arg, 1));
     g_server.static_prefix = prefix;
     g_server.static_dir = dir;
     return make_str("static registered");
@@ -518,7 +518,7 @@ static Value *response_header_error(ErrKind kind, const char *rule) {
 Value* builtin_http_response_header(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
         return response_header_error(EK_TYPE, "requires [name, value] (exactly two strings)");
-    Value *name = arg->data.list.items[0], *value = arg->data.list.items[1];
+    Value *name = list_get_borrow(arg, 0), *value = list_get_borrow(arg, 1);
     if (name->type != VAL_STR || value->type != VAL_STR)
         return response_header_error(EK_TYPE, "name and value must be strings");
     size_t nlen = val_str_len(name), vlen = val_str_len(value);
@@ -563,11 +563,11 @@ Value* builtin_http_response_header(Value *arg) {
 Value* builtin_http_early_bind(Value *arg) {
     const char *live_path = NULL;
     if (arg && arg->type == VAL_LIST) {
-        if (arg->data.list.count != 2 || arg->data.list.items[1]->type != VAL_STR) {
+        if (arg->data.list.count != 2 || list_get_borrow(arg, 1)->type != VAL_STR) {
             rt_error(EK_TYPE, 0, "http_early_bind requires [port, absolute liveness path string]");
             return make_null();
         }
-        live_path = arg->data.list.items[1]->data.str;
+        live_path = list_get_borrow(arg, 1)->data.str;
         if (live_path[0] != '/') {
             rt_error(EK_VALUE, 0, "http_early_bind: liveness path must be absolute (start with /; no whitespace/CR/LF/NUL)");
             return make_null();
@@ -578,7 +578,7 @@ Value* builtin_http_early_bind(Value *arg) {
                 return make_null();
             }
         }
-        arg = arg->data.list.items[0];
+        arg = list_get_borrow(arg, 0);
     }
     if (arg && arg->type != VAL_NULL && arg->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "http_early_bind: port must be a number or null");
@@ -711,9 +711,9 @@ Value* builtin_http_post(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3)
         TRACE_NONDET_RECORD("http_post", make_str(""));
     const char *url = "", *headers_json = "", *body = "";
-    if (arg->data.list.items[0]->type == VAL_STR) url = arg->data.list.items[0]->data.str;
-    if (arg->data.list.items[1]->type == VAL_STR) headers_json = arg->data.list.items[1]->data.str;
-    if (arg->data.list.items[2]->type == VAL_STR) body = arg->data.list.items[2]->data.str;
+    if (list_get_borrow(arg, 0)->type == VAL_STR) url = list_get_borrow(arg, 0)->data.str;
+    if (list_get_borrow(arg, 1)->type == VAL_STR) headers_json = list_get_borrow(arg, 1)->data.str;
+    if (list_get_borrow(arg, 2)->type == VAL_STR) body = list_get_borrow(arg, 2)->data.str;
     if (!http_url_is_allowed(url)) TRACE_NONDET_RECORD("http_post", make_str(""));
 
     /* Write body to temp file */
@@ -754,7 +754,7 @@ Value* builtin_http_post(Value *arg) {
     if (hdr_obj && hdr_obj->type == VAL_DICT) {
         for (int i = 0; i < hdr_obj->data.dict.count && hdr_count < 32 && argc < 90; i++) {
             char *hk = xstrdup(hdr_obj->data.dict.keys[i]);
-            char *hv = value_to_string(hdr_obj->data.dict.vals[i]);
+            char *hv = value_to_string(dict_value_get_borrow(hdr_obj, i));
             http_strip_crlf(hk);
             http_strip_crlf(hv);
             snprintf(header_bufs[hdr_count], sizeof(header_bufs[0]), "%s: %s", hk, hv);
@@ -765,8 +765,8 @@ Value* builtin_http_post(Value *arg) {
         }
     } else if (hdr_obj && hdr_obj->type == VAL_LIST) {
         for (int i = 0; i + 1 < hdr_obj->data.list.count && hdr_count < 32 && argc < 90; i += 2) {
-            char *hk = value_to_string(hdr_obj->data.list.items[i]);
-            char *hv = value_to_string(hdr_obj->data.list.items[i + 1]);
+            char *hk = value_to_string(list_get_borrow(hdr_obj, i));
+            char *hv = value_to_string(list_get_borrow(hdr_obj, i + 1));
             /* Both halves reach curl's -H verbatim, so a CR/LF in either injects
              * extra headers into the outbound request. Script-controlled and so
              * not a vulnerability on its own under SECURITY.md's threat model,
@@ -890,8 +890,8 @@ static int shared_find(Server *s, const char *key) {
 Value* builtin_shared_set(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "shared_set");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *key_v = arg->data.list.items[0];
-    Value *val = arg->data.list.items[1];
+    Value *key_v = list_get_borrow(arg, 0);
+    Value *val = list_get_borrow(arg, 1);
     if (key_v->type != VAL_STR) return make_null();
     Server *s = eigs_http_active;
     if (!s) return make_null();
@@ -942,8 +942,8 @@ Value* builtin_shared_set(Value *arg) {
 Value* builtin_shared_incr(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "shared_incr");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *key_v = arg->data.list.items[0];
-    Value *delta_v = arg->data.list.items[1];
+    Value *key_v = list_get_borrow(arg, 0);
+    Value *delta_v = list_get_borrow(arg, 1);
     if (key_v->type != VAL_STR || delta_v->type != VAL_NUM) return make_null();
     Server *s = eigs_http_active;
     if (!s) return make_null();

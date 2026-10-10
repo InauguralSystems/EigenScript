@@ -555,7 +555,7 @@ Value* builtin_eigen_generate(Value *arg) {
         fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
     }
-    Value *prompt_list = arg->data.list.items[0];
+    Value *prompt_list = list_get_borrow(arg, 0);
     if (prompt_list->type != VAL_LIST) {
         fprintf(stderr, "eigen_generate: prompt_ids must be a list\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
@@ -569,9 +569,9 @@ Value* builtin_eigen_generate(Value *arg) {
     double top_p = 0.0;
     /* #1637: optional numbers -- null keeps the default, a bool raises. */
     double mt = max_tokens;
-    eigs_opt_num(arg->data.list.items[1], &temperature, __func__);
-    eigs_opt_num(arg->data.list.items[2], &mt, __func__);
-    if (arg->data.list.count >= 4) eigs_opt_num(arg->data.list.items[3], &top_p, __func__);
+    eigs_opt_num(list_get_borrow(arg, 1), &temperature, __func__);
+    eigs_opt_num(list_get_borrow(arg, 2), &mt, __func__);
+    if (arg->data.list.count >= 4) eigs_opt_num(list_get_borrow(arg, 3), &top_p, __func__);
     if (g_has_error) return make_null();
     max_tokens = (int)mt;
 
@@ -607,7 +607,7 @@ Value* builtin_eigen_generate(Value *arg) {
 
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
-        Value *v = prompt_list->data.list.items[i];
+        Value *v = list_get_borrow(prompt_list, i);
         prompt_ids[i] = (int)eigs_num_arg(v, "eigen_generate");   /* #1637: a bool raises */
     }
     if (g_has_error) { free(prompt_ids); return make_null(); }
@@ -651,12 +651,12 @@ Value* builtin_eigen_eval_loss(Value *arg) {
          * a real score. */
         ARG_GUARD(1, "eigen_eval_loss", "[prompt_ids, target_id]", make_num(-1.0));
     }
-    Value *prompt_list = arg->data.list.items[0];
+    Value *prompt_list = list_get_borrow(arg, 0);
     if (prompt_list->type != VAL_LIST) {
         fprintf(stderr, "eigen_eval_loss: prompt_ids must be a list\n");
         ARG_GUARD(1, "eigen_eval_loss", "a list of prompt ids", make_num(-1.0));
     }
-    if (arg->data.list.items[1]->type != VAL_NUM) {
+    if (list_get_borrow(arg, 1)->type != VAL_NUM) {
         fprintf(stderr, "eigen_eval_loss: target_id must be a number\n");
         ARG_GUARD(1, "eigen_eval_loss", "a numeric target_id", make_num(-1.0));
     }
@@ -692,7 +692,7 @@ Value* builtin_eigen_eval_loss(Value *arg) {
 
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
-        Value *v = prompt_list->data.list.items[i];
+        Value *v = list_get_borrow(prompt_list, i);
         int t = (int)eigs_num_arg(v, "eigen_eval_loss");          /* #1637: a bool raises */
         if (t < 0 || t >= vocab_size) t = 0;
         prompt_ids[i] = t;

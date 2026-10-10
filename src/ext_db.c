@@ -28,7 +28,7 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
         return 1;
     }
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 1 ||
-        arg->data.list.items[0]->type != VAL_STR) {
+        list_get_borrow(arg, 0)->type != VAL_STR) {
         /* #888: the callers used to turn this into "[]"/"" — the same value a
          * successful empty query returns. A malformed call is a program bug
          * and must not look like a result. */
@@ -36,7 +36,7 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
         return 0;
     }
 
-    *sql = arg->data.list.items[0]->data.str;
+    *sql = list_get_borrow(arg, 0)->data.str;
     *nparams = arg->data.list.count - 1;
     /* #356: raise instead of silently dropping params 17+ (Postgres would
      * error confusingly at exec time — or worse, not at all) or coercing
@@ -47,7 +47,7 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
         return 0;
     }
     for (int i = 0; i < *nparams; i++) {
-        Value *v = arg->data.list.items[i + 1];
+        Value *v = list_get_borrow(arg, i + 1);
         types[i] = 0;
         if (v && v->type == VAL_BOOL) {
             params[i] = v->data.boolean ? "true" : "false";

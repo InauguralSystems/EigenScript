@@ -142,7 +142,7 @@ static int net_require_list(Value *arg, int min, int max, const char *fn) {
 static int net_num_at(Value *arg, int idx, int fallback) {
     if (!arg || arg->type != VAL_LIST || idx >= arg->data.list.count)
         return fallback;
-    Value *v = arg->data.list.items[idx];
+    Value *v = list_get_borrow(arg, idx);
     /* #1637: null keeps the fallback, a number is read, anything else (a
      * bool) raises; callers check g_has_error after their reads. */
     double d = 0;
@@ -210,7 +210,7 @@ Value* builtin_net_accept(Value *arg) {
         if (!net_require_list(arg, 2, 2, "net_accept")) return make_null();
         timeout_ms = net_num_at(arg, 1, -1);
         if (g_has_error) return make_null();   /* #1637: a bool timeout raised */
-        arg = arg->data.list.items[0];
+        arg = list_get_borrow(arg, 0);
     }
     if (!arg || arg->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "net_accept: expected a listener handle");
@@ -236,7 +236,7 @@ Value* builtin_net_accept(Value *arg) {
  * the socket is restored to blocking afterward (recv/send poll first). */
 Value* builtin_net_dial(Value *arg) {
     if (!net_require_list(arg, 2, 3, "net_dial")) return make_null();
-    Value *host = arg->data.list.items[0];
+    Value *host = list_get_borrow(arg, 0);
     if (!host || host->type != VAL_STR) {
         rt_error(EK_TYPE, 0, "net_dial: expected [host, port] with a string host");
         return make_null();
@@ -290,7 +290,7 @@ Value* builtin_net_dial(Value *arg) {
  * Convert text with str_from_bytes. */
 Value* builtin_net_recv(Value *arg) {
     if (!net_require_list(arg, 2, 3, "net_recv")) return make_null();
-    Value *conn = arg->data.list.items[0];
+    Value *conn = list_get_borrow(arg, 0);
     int max = net_num_at(arg, 1, 0);
     int timeout_ms = net_num_at(arg, 2, -1);
     if (g_has_error) return make_null();   /* #1637 */
@@ -337,8 +337,8 @@ static Value* net_send_bytes(Value *conn, const unsigned char *bytes, size_t len
 
 Value* builtin_net_send(Value *arg) {
     if (!net_require_list(arg, 2, 2, "net_send")) return make_null();
-    Value *conn = arg->data.list.items[0];
-    Value *data = arg->data.list.items[1];
+    Value *conn = list_get_borrow(arg, 0);
+    Value *data = list_get_borrow(arg, 1);
     if (!data || (data->type != VAL_STR && data->type != VAL_BUFFER
                   && data->type != VAL_LIST)) {
         rt_error(EK_TYPE, 0, "net_send: data must be a string, buffer, or byte list");
@@ -359,7 +359,7 @@ Value* builtin_net_send(Value *arg) {
         for (int i = 0; i < n; i++) {
             double dv = data->type == VAL_BUFFER
                 ? buffer_read_num(data, i)
-                : eigs_elem_num(data->data.list.items[i], "net_send");   /* #1637 round 4 */
+                : eigs_elem_num(list_get_borrow(data, i), "net_send");   /* #1637 round 4 */
             if (g_has_error) { free(owned); return make_null(); }
             owned[i] = finite_num_to_byte(dv);
         }
