@@ -67,15 +67,11 @@ vm.c|#define ARITH_FAST|2|arithmetic fast path after both operands tested VAL_NU
 vm.c|#define INT_BINOP_R|2|integer op fast path after both slots slot_is_num
 vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_NUM && b->type == VAL_NUM; NUM_REUSE writes
 vm.c|dict_set_cached_immediate|1|in-place dict value update, writes a VAL_NUM it exclusively owns
-vm.c|jit_helper_dot_get|1|JIT helper: pushes a field value after its VAL_NUM test
 vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_num
-vm.c|jit_helper_index_get|10|JIT helper: index read after slot_is_num / VAL_NUM tests on index and element
-vm.c|jit_helper_index_set|12|JIT helper: index store after slot_is_num / VAL_NUM tests on index and value
-vm.c|jit_helper_iter_next|3|JIT helper: loop state list [iterable, idx, snap] built by the VM, each read behind a VAL_NUM test
-vm.c|jit_helper_local_dot_get|1|JIT helper: field value after its VAL_NUM test
+vm.c|jit_helper_index_get|9|JIT helper: index read after slot_is_num / VAL_NUM tests on index and element
+vm.c|jit_helper_index_set|10|JIT helper: index store after slot_is_num / VAL_NUM tests on index and value
+vm.c|jit_helper_iter_next|1|JIT helper: loop state list [iterable, idx, snap] built by the VM, each read behind a VAL_NUM test
 vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_num
-vm.c|jit_helper_local_idx_dot_get|1|JIT helper: field value after its VAL_NUM test
-vm.c|jit_helper_local_idx_get|1|JIT helper: element after its VAL_NUM test
 vm.c|jit_helper_observe_assign_local|2|JIT helper: observer update after slot_is_num
 vm.c|jit_helper_observe_name_post|2|JIT helper: observer update after slot_is_num
 vm.c|loop_iter_store|1|writes the loop counter slot after slot_is_num
@@ -84,7 +80,7 @@ vm.c|obs_dump_value|2|SIGUSR1 observer dump after slot_is_num / case VAL_NUM
 vm.c|slot_as_double|2|VM numeric operand read: returns 0 (not a number) unless slot_is_num or VAL_NUM
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_num
 vm.c|slot_truthy|1|truthiness after slot_is_num
-vm.c|vm_leaf_accessor_exec|3|leaf-accessor fast path: constants the scanner admitted only as VAL_NUM (chunk_scan_leaf_accessor) and values behind VAL_NUM tests
-vm.c|vm_run_ex|67|the interpreter loop: every opcode reads numbers behind slot_is_num / type == VAL_NUM dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
+vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admitted only as VAL_NUM (chunk_scan_leaf_accessor) and values behind VAL_NUM tests
+vm.c|vm_run_ex|57|the interpreter loop: every opcode reads numbers behind slot_is_num / type == VAL_NUM dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
 vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_num
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_num
