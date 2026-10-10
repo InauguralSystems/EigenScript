@@ -3,3 +3,4 @@ src/eigenscript.h
 src/eigenscript.c
 src/trace.c
 src/vm.c
+src/builtins.c
