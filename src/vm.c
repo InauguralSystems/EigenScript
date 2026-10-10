@@ -1365,8 +1365,7 @@ int jit_helper_local_idx_get(int slot, int idx) {
         }
         if (target->type == VAL_LIST) {
             if (i < target->data.list.count) {
-                EigsSlot item = list_slot(target, i);
-                slot_incref(item);
+                EigsSlot item = slot_read_owned(list_slot(target, i));
                 vm_push_slot(item);
             } else {
                 rt_error(EK_INDEX, g_vm.current_line,
@@ -1416,8 +1415,7 @@ int jit_helper_local_dot_get(EigsChunk *chunk, int slot, int name_idx) {
             h = env_hash_name(key);
             if (chunk->const_hashes) chunk->const_hashes[name_idx] = h;
         }
-        EigsSlot v = vm_dict_slot_cached(target, key, h);
-        slot_incref(v);
+        EigsSlot v = slot_read_owned(vm_dict_slot_cached(target, key, h));
         vm_push_slot(v);
         return g_has_error;
     }
@@ -1463,7 +1461,7 @@ int jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
                     if (chunk->const_hashes)
                         chunk->const_hashes[name_idx] = h;
                 }
-                EigsSlot v = vm_dict_slot_cached(dict, key, h);
+                EigsSlot v = slot_read_value(vm_dict_slot_cached(dict, key, h));
                 if (!slot_is_null(v)) {
                     slot_incref(v);
                     vm_push_slot(v);
@@ -1550,7 +1548,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
     }
     Value *target = vm_pop();
     if (target->type == VAL_DICT) {
-        EigsSlot v = vm_dict_slot_cached(target, key, h);
+        EigsSlot v = slot_read_value(vm_dict_slot_cached(target, key, h));
         if (!slot_is_null(v)) {
             slot_incref(v);
             val_decref(target);
@@ -1793,16 +1791,16 @@ int jit_helper_iter_next(void) {
         }
     }
     if (idx >= len) return 1;
-    Value *elem;
+    EigsSlot elem;
     if (iterable->type == VAL_BUFFER) {
-        elem = make_num(buffer_read_num(iterable, idx));
+        elem = slot_from_num(num_guard(buffer_read_num(iterable, idx)));
     } else {
-        elem = list_get_owned(iterable, idx);
+        elem = slot_read_owned(list_slot(iterable, idx));
     }
     /* In-place idx bump when the slot is an exclusive plain VAL_NUM
      * (matches the interpreter's NUM_REUSE fast path). */
     list_set_num(state, 1, (double)(idx + 1));
-    vm_push(elem);
+    vm_push_slot(elem);
     return g_has_error ? 2 : 0;
 }
 
@@ -1898,7 +1896,7 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
                 h = env_hash_name(key);
                 c->const_hashes[name_idx] = h;
             }
-            EigsSlot v = vm_dict_slot_cached(target, key, h);
+            EigsSlot v = slot_read_value(vm_dict_slot_cached(target, key, h));
             if (slot_is_null(v)) {
                 /* Missing field is null in the interpreter too. NOTE:
                  * slot_from_value would TAKE OWNERSHIP (decref) of a
@@ -1921,7 +1919,7 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
             if (!vm_index_is_int(idx_d, &i)) return 0;
             if (target->type == VAL_LIST) {
                 if (!vm_index_resolve(&i, target->data.list.count)) return 0;
-                mini[msp++] = list_slot(target, i); /* borrow, no incref */
+                mini[msp++] = slot_read_value(list_slot(target, i)); /* borrow, no incref */
             } else if (target->type == VAL_BUFFER) {
                 if (!vm_index_resolve(&i, target->data.buffer.count)) return 0;
                 /* #1417: this speculative evaluator has no callee frame and
@@ -2249,8 +2247,7 @@ int jit_helper_index_get(void) {
         int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
         if (target->type == VAL_LIST) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
-                EigsSlot r = list_slot(target, i);
-                slot_incref(r);
+                EigsSlot r = slot_read_owned(list_slot(target, i));
                 slot_decref(tgt_s);
                 vm_push_slot(r);
             } else {
@@ -4547,8 +4544,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
             if (target->type == VAL_LIST) {
                 if (_ok && vm_index_resolve(&i, target->data.list.count)) {
-                    EigsSlot r = list_slot(target, i);
-                    slot_incref(r);
+                    EigsSlot r = slot_read_owned(list_slot(target, i));
                     slot_decref(tgt_s);
                     vm_push_slot(r);
                 } else {
@@ -4705,7 +4701,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[idx] = h; }
         Value *target = vm_pop();
         if (target->type == VAL_DICT) {
-            EigsSlot v = vm_dict_slot_cached(target, key, h);
+            EigsSlot v = slot_read_value(vm_dict_slot_cached(target, key, h));
             if (!slot_is_null(v)) {
                 slot_incref(v);
                 val_decref(target);
@@ -4768,8 +4764,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             const char *key = chunk->const_interns[name_idx];
             uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
             if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
-            EigsSlot v = vm_dict_slot_cached(target, key, h);
-            slot_incref(v);
+            EigsSlot v = slot_read_owned(vm_dict_slot_cached(target, key, h));
             vm_push_slot(v);
         } else if (target) {
             const char *key = chunk->const_interns[name_idx];
@@ -4834,8 +4829,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             if (target->type == VAL_LIST) {
                 if (i < target->data.list.count) {
-                EigsSlot item = list_slot(target, i);
-                slot_incref(item);
+                EigsSlot item = slot_read_owned(list_slot(target, i));
                 vm_push_slot(item);
                 } else {
                     rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
@@ -4884,7 +4878,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     const char *key = chunk->const_interns[name_idx];
                     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
                     if (h == 0) { h = env_hash_name(key); if (chunk->const_hashes) chunk->const_hashes[name_idx] = h; }
-                    EigsSlot v = vm_dict_slot_cached(dict, key, h);
+                    EigsSlot v = slot_read_value(vm_dict_slot_cached(dict, key, h));
                     if (!slot_is_null(v)) {
                         slot_incref(v);
                         vm_push_slot(v);
@@ -5011,8 +5005,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                  * promote round-trip through vm_push. */
                 vm_push_slot(slot_from_num(buffer_read_num(iterable, idx)));
             } else {
-                EigsSlot elem = list_slot(iterable, idx);
-                slot_incref(elem);
+                EigsSlot elem = slot_read_owned(list_slot(iterable, idx));
                 vm_push_slot(elem);
             }
         }
@@ -5660,8 +5653,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * so each SET op consumes elements in declaration order. Incref each
          * element so the list's release below doesn't free them prematurely. */
         for (int i = n - 1; i >= 0; i--) {
-            EigsSlot e = list_slot(lst, i);
-            slot_incref(e);
+            EigsSlot e = slot_read_owned(list_slot(lst, i));
             vm_push_slot(e);
         }
         slot_decref(tgt_s);
@@ -5784,8 +5776,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (target->type == VAL_LIST) {
             result = make_list(n);
             for (int i = 0; i < n; i++) {
-                EigsSlot e = list_slot(target, start + i);
-                slot_incref(e);
+                EigsSlot e = slot_read_owned(list_slot(target, start + i));
                 list_set_slot_owned(result, i, e);
             }
             result->data.list.count = n;

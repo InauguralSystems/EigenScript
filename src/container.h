@@ -9,12 +9,33 @@
 typedef struct { Value v; } EigsView;
 
 static inline EigsSlot eigs_container_slot(Value *v) {
-    /* A borrowed read decodes a boxed number to an immediate in every build:
-     * the VM stack and slot consumers expect immediate numbers, and a
-     * heap-tagged NUM sends every element read down the slot_to_value /
-     * make_num slow path (+38% Ir on bench_dmg_shape, B2). */
+#ifdef EIGS_SLOT_REHEARSAL
     if (v && v->type == VAL_NUM) return slot_from_num(VAL_NUM_RAW(v));
+#endif
     return slot_from_heap(v);
+}
+
+/* A borrowed read for VALUE use (the VM stack, arithmetic): a boxed number
+ * becomes an immediate. list_slot stays storage-faithful before the flip
+ * (a boxed number is a heap slot) because ownership walkers (free_value, GC
+ * clear, vm_borrow_scan) must still see and release the box; the VM stack
+ * expects immediates, so its read sites normalise here. Identity after the
+ * flip, where numbers are already immediate. */
+static inline EigsSlot slot_read_value(EigsSlot s) {
+    if (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NUM)
+        return slot_from_num(VAL_NUM_RAW(slot_as_ptr(s)));
+    return s;
+}
+/* slot_read_value + slot_incref in one branch, for the VM hot read sites: a
+ * boxed number becomes an immediate (no ref taken), any other heap value is
+ * incref'd, immediates pass through. The returned slot is OWNED. */
+static inline EigsSlot slot_read_owned(EigsSlot s) {
+    if (slot_is_heap(s)) {
+        Value *v = slot_as_ptr(s);
+        if (v->type == VAL_NUM) return slot_from_num(VAL_NUM_RAW(v));
+        val_incref(v);
+    }
+    return s;
 }
 
 /* A slot read is borrowed: it owns no reference and remains valid only until
