@@ -2059,20 +2059,24 @@ Value* make_native_fn(BuiltinFn fn, const char *name) {
 }
 
 Value* make_dict(int capacity) {
-    if (capacity < 8) capacity = 8;
+    if (capacity < 0) capacity = 0;
     /* Charged at birth like make_list — JSON objects of <=8 keys were fully
      * uncharged (same small-container hole, dict half; blind round,
      * 2026-08-17). Refusal raises and proceeds small — see make_list. */
     if (!sandbox_charge(sizeof(Value) +
                         (size_t)capacity * (sizeof(char *) + sizeof(Value *))))
-        capacity = 8;
+        capacity = capacity ? 8 : 0;
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_DICT;
-    v->data.dict.keys = xcalloc(capacity, sizeof(char*));
-    v->data.dict.vals = xcalloc(capacity, sizeof(Value*));
+    v->data.dict.keys = capacity ? xcalloc(capacity, sizeof(char*)) : NULL;
+    v->data.dict.vals = capacity ? xcalloc(capacity, sizeof(Value*)) : NULL;
     v->data.dict.count = 0;
     v->data.dict.capacity = capacity;
-    env_hash_init(&v->data.dict.hash, ENV_HASH_INIT_CAP);
+    /* A literal {} reaches here with capacity zero.  Keep all three backing
+     * allocations absent until its first insertion; dict_set_hashed_raw is
+     * the single materialisation point. */
+    if (capacity)
+        env_hash_init(&v->data.dict.hash, ENV_HASH_INIT_CAP);
     v->refcount = 1;
     v->module_ns = 0;      /* #1057: a plain dict is never a module namespace */
     return v;
@@ -2458,6 +2462,16 @@ static const char *shared_intern_key(const char *name) {
 void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
     if (!dict || dict->type != VAL_DICT) return;
     if (h == 0) h = env_hash_name(key);
+    if (dict->data.dict.capacity == 0) {
+        const int initial_cap = 8;
+        if (!sandbox_charge((size_t)initial_cap *
+                            (sizeof(char *) + sizeof(Value *) + sizeof(Value))))
+            return;
+        dict->data.dict.keys = xcalloc(initial_cap, sizeof(char *));
+        dict->data.dict.vals = xcalloc(initial_cap, sizeof(Value *));
+        dict->data.dict.capacity = initial_cap;
+        env_hash_init(&dict->data.dict.hash, ENV_HASH_INIT_CAP);
+    }
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx >= 0) {
         val_incref(val);
@@ -2687,6 +2701,7 @@ Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
             return pv;
         }
     }
+    if (dict->data.dict.count == 0) return NULL;
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     return (idx >= 0) ? dict->data.dict.vals[idx] : NULL;
 }
@@ -2697,6 +2712,7 @@ Value* dict_get(Value *dict, const char *key) {
 
 int env_hash_find_dict(Value *dict, const char *key, uint32_t h) {
     if (!dict || dict->type != VAL_DICT) return -1;
+    if (dict->data.dict.count == 0) return -1;
     return env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
 }
 
@@ -2706,6 +2722,7 @@ int dict_has(Value *dict, const char *key) {
 
 void dict_remove(Value *dict, const char *key) {
     if (!dict || dict->type != VAL_DICT) return;
+    if (dict->data.dict.count == 0) return;
     uint32_t h = env_hash_name(key);
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx < 0) return;
