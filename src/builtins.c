@@ -537,9 +537,9 @@ Value* builtin_append(Value *arg) {
     }
     Value *target = list_get_ref(arg, 0);
     EigsSlot item = list_slot(arg, 1);
-    if (target->type != VAL_LIST) {
+    if (!target || target->type != VAL_LIST) {
         rt_error(EK_TYPE, 0, "append: target must be a list (got %s)",
-                 val_type_name(target->type));
+                 val_type_name(target ? target->type : VAL_NUM));
         return make_null();
     }
     list_append_slot(target, item);
@@ -730,7 +730,7 @@ Value* builtin_has_key(Value *arg) {
     ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2, "has_key", "[dict, key]", make_bool(0));
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    ARG_GUARD(d->type != VAL_DICT || key->type != VAL_STR, "has_key", "[dict, string]", make_bool(0));
+    ARG_GUARD(!d || d->type != VAL_DICT || key->type != VAL_STR, "has_key", "[dict, string]", make_bool(0));
     return make_bool(dict_has(d, key->data.str));
 }
 
@@ -740,9 +740,10 @@ Value* builtin_dict_set(Value *arg) {
               "dict_set", "[dict, key, value]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    Value *val = BUILTIN_LIST_VIEW(arg, 2);
-    if (d->type != VAL_DICT || key->type != VAL_STR) return make_null();
+    if (!d || d->type != VAL_DICT || key->type != VAL_STR) return make_null();
+    Value *val = list_get_owned(arg, 2);
     dict_set(d, key->data.str, val);
+    val_decref(val);
     return d;
 }
 
@@ -752,7 +753,7 @@ Value* builtin_dict_remove(Value *arg) {
               "dict_remove", "[dict, key]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (d->type != VAL_DICT || key->type != VAL_STR) return make_null();
+    if (!d || d->type != VAL_DICT || key->type != VAL_STR) return make_null();
     dict_remove(d, key->data.str);
     return d;
 }
@@ -2295,18 +2296,16 @@ Value* builtin_path_ext(Value *arg) {
  * JSON PATH — dot-notation extraction from nested JSON
  * ================================================================ */
 
-/* json_obj_get: needed by json_path, defined here if model extension is disabled */
-#if !(EIGENSCRIPT_EXT_MODEL)
-static Value* json_obj_get(Value *obj, const char *key) {
+/* Slot-native object-list lookup used only by json_path. */
+static Value* json_path_obj_view(Value *obj, const char *key, EigsView *view) {
     if (!obj || obj->type != VAL_LIST) return NULL;
     for (int i = 0; i + 1 < obj->data.list.count; i += 2) {
         Value *k = BUILTIN_LIST_VIEW(obj, i);
         if (k && k->type == VAL_STR && strcmp(k->data.str, key) == 0)
-            return list_get_return(obj, i + 1);
+            return list_get_view(obj, i + 1, view);
     }
     return NULL;
 }
-#endif
 
 Value* builtin_json_path(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "json_path");
@@ -2357,6 +2356,7 @@ Value* builtin_json_path(Value *arg) {
      * "" is the flag-off path (unchanged since before #971 Phase C). */
     if (!root) return make_str("");
     Value *current = root;   /* walks borrowed children of root */
+    EIGS_VIEW(current_view);
 
     char path_copy[1024];
     strncpy(path_copy, path, sizeof(path_copy) - 1);
@@ -2366,7 +2366,7 @@ Value* builtin_json_path(Value *arg) {
 
     while (segment && current) {
         if (current->type == VAL_DICT) {
-            current = BUILTIN_DICT_VIEW(current, segment);
+            current = builtin_dict_view(current, segment, &current_view);
             /* fs:ANSWER key absent from the object — "no value at that path" is
              * this function's documented result. */
             if (!current) { val_decref(root); return make_str(""); }
@@ -2378,14 +2378,14 @@ Value* builtin_json_path(Value *arg) {
                 /* Numeric: treat as array index */
                 /* Arrays from json_decode are VAL_LIST with sequential elements */
                 if (idx >= 0 && idx < current->data.list.count) {
-                    current = BUILTIN_LIST_VIEW(current, idx);
+                    current = list_get_view(current, idx, &current_view);
                 } else {
                     /* fs:ANSWER array index out of range — no value at that path */
                     val_decref(root); return make_str("");
                 }
             } else {
                 /* String key: treat as object lookup */
-                current = json_obj_get(current, segment);
+                current = json_path_obj_view(current, segment, &current_view);
                 /* fs:ANSWER key absent — no value at that path */
                 if (!current) { val_decref(root); return make_str(""); }
             }
@@ -2914,7 +2914,9 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
          * in memory (the uncharged-wrapper rule make_list_heap documents). */
         Value *c = make_list_heap(v->data.list.count);
         for (int i = 0; i < v->data.list.count; i++) {
-            Value *e = desc_isolate_const(ctx, BUILTIN_LIST_VIEW(v, i));
+            Value *input = list_get_owned(v, i);
+            Value *e = desc_isolate_const(ctx, input);
+            val_decref(input);
             if (!e) { val_decref(c); desc_leave(ctx); return NULL; }
             list_append_owned(c, e);
         }
@@ -2925,7 +2927,9 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
         if (!desc_enter(ctx, v)) return NULL;
         Value *c = make_dict(v->data.dict.count);
         for (int i = 0; i < v->data.dict.count; i++) {
-            Value *e = desc_isolate_const(ctx, BUILTIN_DICT_VALUE_VIEW(v, i));
+            Value *input = dict_value_get_owned(v, i);
+            Value *e = desc_isolate_const(ctx, input);
+            val_decref(input);
             if (!e) { val_decref(c); desc_leave(ctx); return NULL; }
             dict_set_owned(c, v->data.dict.keys[i], e);
         }
@@ -3014,7 +3018,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
      * mutable constant, so nothing the sandbox does to a constant is visible
      * to the host, and nothing the host does mid-run is visible to it. */
     for (int i = 0; i < consts->data.list.count; i++) {
-        Value *item = BUILTIN_LIST_VIEW(consts, i);
+        Value *item = list_get_owned(consts, i);
         if (!item) {
             vm_desc_error(why, whyn, "constant pool contains an empty entry");
             chunk_free(chunk); return NULL;
@@ -3022,6 +3026,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         if (sandbox_mode) {
             Value *iso = desc_isolate_const(ctx, item);
             if (!iso) {
+                val_decref(item);
                 vm_desc_error(why, whyn, "constant pool contains unsafe or over-limit data");
                 chunk_free(chunk); return NULL;
             }
@@ -3030,6 +3035,7 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         } else {
             chunk_add_constant_positional(chunk, item);
         }
+        val_decref(item);
     }
 
     /* nested function chunks (creator ref transfers into functions[]). A
@@ -3777,9 +3783,8 @@ Value* builtin_copy_into(Value *arg) {
         return make_null();
     }
     for (int i = 0; i < src->data.list.count && offset + i < dest->data.list.count; i++) {
-        Value *item = BUILTIN_LIST_VIEW(src, i);
-        val_incref(item);
-        val_decref(BUILTIN_LIST_VIEW(dest, offset + i));
+        Value *item = eigs_slot_box(list_slot(src, i));
+        slot_decref(list_slot(dest, offset + i));
         list_set_owned(dest, offset + i, item);
     }
     return dest;
@@ -4051,7 +4056,6 @@ Value* builtin_set_at(Value *arg) {
     if (argc == 3) {
         /* 1D: set_at of [list, index, value] */
         Value *list = list_get_ref(arg, 0);
-        Value *val = BUILTIN_LIST_VIEW(arg, 2);
         if (!list || list->type != VAL_LIST) {
             rt_error(EK_TYPE, 0, "set_at: first argument must be a list");
             return make_null();
@@ -4059,7 +4063,7 @@ Value* builtin_set_at(Value *arg) {
         int idx;
         if (!at_index(BUILTIN_LIST_VIEW(arg, 1), list->data.list.count, "set_at", &idx))
             return make_null();
-        val_incref(val);
+        Value *val = list_get_owned(arg, 2);
         slot_decref(list_slot(list, idx));
         list_set_owned(list, idx, val);
         return list;
@@ -4067,7 +4071,6 @@ Value* builtin_set_at(Value *arg) {
     if (argc == 4) {
         /* 2D: set_at of [list, row, col, value] */
         Value *list = list_get_ref(arg, 0);
-        Value *val = BUILTIN_LIST_VIEW(arg, 3);
         if (!list || list->type != VAL_LIST) {
             rt_error(EK_TYPE, 0, "set_at: first argument must be a list");
             return make_null();
@@ -4083,7 +4086,7 @@ Value* builtin_set_at(Value *arg) {
         int col;
         if (!at_index(BUILTIN_LIST_VIEW(arg, 2), rowv->data.list.count, "set_at col", &col))
             return make_null();
-        val_incref(val);
+        Value *val = list_get_owned(arg, 3);
         slot_decref(list_slot(rowv, col));
         list_set_owned(rowv, col, val);
         return list;
@@ -5709,7 +5712,6 @@ Value* builtin_list_insert_at(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
     Value *list = list_get_ref(arg, 0);
     Value *idx_val = BUILTIN_LIST_VIEW(arg, 1);
-    Value *val = BUILTIN_LIST_VIEW(arg, 2);
     if (!list || list->type != VAL_LIST) return make_null();
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
@@ -5718,22 +5720,18 @@ Value* builtin_list_insert_at(Value *arg) {
     int count = list->data.list.count;
     if (idx < 0 || idx > count) return list;
     if (idx == count) {
-        list_append(list, val);
+        list_append_slot(list, list_slot(arg, 2));
         return list;
     }
-    /* Grow by one slot (list_append handles capacity), then move
-     * the tail up one place and drop the value into the vacated slot.
-     * list_append increfs the old last element, but the memmove overwrites
-     * its original slot with a raw pointer copy (no decref) — balance that
-     * spurious incref afterwards so old_last keeps exactly the one reference
-     * its single remaining slot owns. It still occupies slot [count] at that
-     * point, so the decref cannot free it. */
-    Value *old_last = BUILTIN_LIST_VIEW(list, count - 1);
+    /* Grow by one slot, transfer the old last slot's ownership to that new
+     * copy, then move the tail and install an independently owned value.  In
+     * rehearsal this is also what keeps an immediate number from escaping as
+     * a retained Value view. */
     list_append_slot(list, list_slot(list, count - 1));
+    slot_decref(list_slot(list, count - 1));
     list_move(list, idx + 1, idx, count - idx);
-    val_incref(val);
+    Value *val = list_get_owned(arg, 2);
     list_set_owned(list, idx, val);
-    val_decref(old_last);
     return list;
 }
 
@@ -5810,7 +5808,9 @@ Value* builtin_sort_by(Value *arg) {
     SortByPair *pairs = calloc(n, sizeof(SortByPair));
     if (!pairs) return make_null();
     for (int i = 0; i < n; i++) {
-        Value *kv = call_eigs_fn(key_fn, list_get_owned(list, i));
+        Value *input = list_get_owned(list, i);
+        Value *kv = call_eigs_fn(key_fn, input);
+        val_decref(input);
         /* #989: the key function itself raised (over-arity, or anything its
          * body threw). Its error is the real one — reporting "must return a
          * number" on top of it would bury the cause under a symptom. */
