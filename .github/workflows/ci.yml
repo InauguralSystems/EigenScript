@@ -395,6 +395,21 @@ jobs:
       - name: JIT vs interpreter differential
         run: bash tools/jit_diff.sh
 
+      # #1665 follow-up: the JIT-tier sections against `make jit-checked`, whose
+      # emitter calls a slot witness before every direct env-slot access and
+      # aborts with the read site on an out-of-range slot or a stale cached
+      # values base (#1661 was such a read). The plan line pins all six
+      # sections as executed, not merely selected.
+      - name: JIT-tier sections under make jit-checked
+        env:
+          EIGS_SUITE_SECTIONS: 82 100 129 130 0fd 0fe
+        run: |
+          set -o pipefail
+          make jit-checked
+          bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/jit-checked.log"
+          grep -q 'PLAN: sections=82,100,129,130,0fd,0fe bearing=6 chunks=6$' "$RUNNER_TEMP/jit-checked.log"
+          grep -qE '^  RESULTS: [0-9]+/[0-9]+ passed, 0 failed, 0 skipped$' "$RUNNER_TEMP/jit-checked.log"
+
       - name: Require compiler guard activity
         if: always()
         run: bash tools/cc_guard.sh --report

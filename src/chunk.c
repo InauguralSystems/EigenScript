@@ -95,6 +95,7 @@ void chunk_decref(EigsChunk *chunk) {
     /* Stage 5i: release the parked call env (not captured, all slots
      * already null; the chunk holds its single ref — env_decref destroys
      * it and drops its owned parent ref). */
+    if (chunk->env_cache) eigs_env_park_unpoison(chunk->env_cache);
     env_decref(chunk->env_cache);
     free(chunk->lines);
     free(chunk->cols);

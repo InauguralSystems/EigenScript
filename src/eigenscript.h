@@ -486,6 +486,98 @@ _Static_assert(sizeof(((Value *)0)->data.str) == sizeof(((Value *)0)->data.strv.
 _Static_assert(sizeof(((Value *)0)->data.strv) <= sizeof(((Value *)0)->data.fn),
                "cached string length must fit in the union without growing it past `fn` on any pointer width — #1183");
 
+/* #1665 follow-up: ASan stale-read detectors for the two recycling pools the
+ * per-layer rule kept (the Value NUM freelist and call-env recycling). A
+ * recycled object stays "allocated" to ASan, so a read of a parked object was
+ * invisible (#1661 was one, tripped only by the JIT). Under AddressSanitizer
+ * the parked object is POISONED while it sits in the pool and unpoisoned when
+ * the pool hands it back out, so a stale read reports
+ * use-after-poison at the reading instruction. Compiled only when the
+ * compiler instruments for ASan; every other build expands these to nothing,
+ * so release objects are byte-identical.
+ *
+ * Parked NUM (free_value / recycle_intermediate -> make_num): the whole Value
+ * is poisoned EXCEPT the link word, the sizeof(Value *) bytes the freelist
+ * threads its next pointer through (EIGS_NUM_LINK). Only the pool's own push,
+ * pop (make_num) and drain (eigs_thread_drain_caches) touch those bytes. In
+ * every other build the link overlays the number itself (offset
+ * offsetof(Value, data)), which would leave a stale NUMBER read -- the
+ * commonest stale read of a recycled NUM -- undetectable; so under ASan the
+ * link moves one double further into the union, to bytes
+ * [offsetof(Value, data) + 8, offsetof(Value, data) + 16) (16..24 on LP64,
+ * the strv.len / list.count+capacity word, meaningless for a NUM). `type`,
+ * the number, `refcount`, the rest of the union and the tail flags are all
+ * poisoned, so a stale v->type check, number read, or incref/decref on a
+ * recycled NUM is reported. Release keeps the old offset: same bytes.
+ *
+ * Parked call env (vm_park_call_env -> vm_take_call_env, chunk->env_cache):
+ * values[], names[], assign_counts[] (capacity entries each), the three hash
+ * arrays (mask + 1 entries each) and the Env struct are poisoned, EXCEPT the
+ * `parent` field, which vm_take_call_env reads to decide whether the parked
+ * env matches the callee's closure. The pool's other legitimate readers --
+ * the cycle collector (it walks chunk -> env_cache as an owned edge) and
+ * chunk_free (it drops the parked ref) -- unpoison before they touch it. */
+#if defined(__SANITIZE_ADDRESS__)
+#  define EIGS_ASAN_POOL_POISON 1
+#elif defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+#    define EIGS_ASAN_POOL_POISON 1
+#  endif
+#endif
+#ifdef EIGS_ASAN_POOL_POISON
+#  define EIGS_NUM_LINK_OFF (offsetof(Value, data) + sizeof(double))
+#else
+#  define EIGS_NUM_LINK_OFF offsetof(Value, data)
+#endif
+/* Address of a parked NUM's freelist link (see above). */
+#define EIGS_NUM_LINK(v) ((void *)((char *)(v) + EIGS_NUM_LINK_OFF))
+_Static_assert(EIGS_NUM_LINK_OFF + sizeof(Value *) <=
+               offsetof(Value, data) + sizeof(((Value *)0)->data),
+               "the NUM freelist link must lie inside the data union");
+#ifdef EIGS_ASAN_POOL_POISON
+#include <sanitizer/asan_interface.h>
+_Static_assert(EIGS_NUM_LINK_OFF % 8 == 0 && sizeof(Value) % 8 == 0,
+               "NUM park poisoning assumes 8-byte ASan granules around the link word");
+static inline void eigs_num_park_poison(Value *v) {
+    size_t link = EIGS_NUM_LINK_OFF, link_end = link + sizeof(Value *);
+    ASAN_POISON_MEMORY_REGION(v, link);
+    ASAN_POISON_MEMORY_REGION((char *)v + link_end, sizeof(Value) - link_end);
+}
+static inline void eigs_num_park_unpoison(Value *v) {
+    ASAN_UNPOISON_MEMORY_REGION(v, sizeof(Value));
+}
+_Static_assert(offsetof(Env, parent) % 8 == 0,
+               "call-env park poisoning keeps `parent` addressable on its own granule");
+static inline void eigs_env_park_mark(Env *e, int poison) {
+    /* Sizes are read from the struct, so poison it LAST and unpoison it
+     * FIRST. */
+    if (!poison) ASAN_UNPOISON_MEMORY_REGION(e, sizeof(Env));
+    size_t cap = e->capacity > 0 ? (size_t)e->capacity : 0;
+    size_t hcap = e->hash.hashes ? (size_t)e->hash.mask + 1 : 0;
+    void *blk[6] = { e->values, e->names, e->assign_counts,
+                     e->hash.hashes, e->hash.indices, e->hash.generations };
+    size_t len[6] = { cap * sizeof(EigsSlot), cap * sizeof(char *), cap * sizeof(int),
+                      hcap * sizeof(uint32_t), hcap * sizeof(int), hcap * sizeof(uint32_t) };
+    for (int i = 0; i < 6; i++) {
+        if (!blk[i] || !len[i]) continue;
+        if (poison) ASAN_POISON_MEMORY_REGION(blk[i], len[i]);
+        else        ASAN_UNPOISON_MEMORY_REGION(blk[i], len[i]);
+    }
+    if (poison) {
+        size_t p = offsetof(Env, parent), p_end = p + sizeof(Env *);
+        ASAN_POISON_MEMORY_REGION(e, p);
+        ASAN_POISON_MEMORY_REGION((char *)e + p_end, sizeof(Env) - p_end);
+    }
+}
+#  define eigs_env_park_poison(e)   eigs_env_park_mark((e), 1)
+#  define eigs_env_park_unpoison(e) eigs_env_park_mark((e), 0)
+#else
+#  define eigs_num_park_poison(v)   ((void)0)
+#  define eigs_num_park_unpoison(v) ((void)0)
+#  define eigs_env_park_poison(e)   ((void)0)
+#  define eigs_env_park_unpoison(e) ((void)0)
+#endif
+
 /* Install a VAL_STR / VAL_JSON_RAW payload. `s` is adopted (the Value frees
  * it) and `n` MUST equal strlen(s). This is the ONLY way to write the payload
  * — `v->data.str` is const, so the compiler refuses the alternative. */

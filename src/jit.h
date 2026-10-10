@@ -270,4 +270,24 @@ void jit_helper_return(void);
  * pattern as OP_RETURN. */
 void jit_helper_return_null(void);
 
+#ifdef EIGS_JIT_CHECKED
+/* #1665 follow-up: `make jit-checked` (-DEIGS_JIT_CHECKED). Every emitted
+ * direct env-slot access calls one of these first; a violation prints the
+ * read site and aborts. Never emitted, declared or defined in any other
+ * build, so the default emitter is unchanged (byte-identical jit.o).
+ *   site = (opcode << 24) | bytecode offset of the accessing op.
+ * jit_checked_local: the %r12-based ops (GET_LOCAL, SET_LOCAL,
+ *   LOCAL_DOT_GET/SET). The cached values base must still be the current
+ *   frame's fn_env->values, and slot < fn_env->count -- the interpreter's
+ *   CASE(GET_LOCAL)/CASE(SET_LOCAL) range check.
+ * jit_checked_env_slot: the inline EnvIC hit paths (GET_NAME, SET_NAME*),
+ *   which index target->values[ic->slot_idx]; slot_idx < target->count. */
+struct EigsChunk;
+struct Env;
+void jit_checked_local(uint64_t *cached_values, uint32_t slot,
+                       uint32_t site, struct EigsChunk *chunk);
+void jit_checked_env_slot(struct Env *target, uint32_t slot,
+                          uint32_t site, struct EigsChunk *chunk);
+#endif
+
 #endif /* EIGS_JIT_H */

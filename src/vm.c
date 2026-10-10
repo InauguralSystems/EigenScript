@@ -518,6 +518,7 @@ static inline int vm_park_call_env(EigsChunk *chunk, Env *env) {
     int obs_retain_cap = expected <= INT_MAX - 7 ? expected + 7 : -1;
     observer_slot_reset_bounded(env, obs_retain_cap);
     chunk->env_cache = env;
+    eigs_env_park_poison(env);   /* ASan: parked until take (eigenscript.h) */
     return 1;
 #endif  /* EIGS_POOL_OFF_CALLENV */
 }
@@ -532,6 +533,7 @@ static inline Env *vm_take_call_env(EigsChunk *fn_chunk, Env *closure,
     if (e && !g_vm_multithreaded && e->parent == closure &&
         (param_count <= 1 || argc >= param_count)) {
         fn_chunk->env_cache = NULL;
+        eigs_env_park_unpoison(e);
         return e;
     }
 #else  /* EIGS_POOL_OFF_CALLENV */
@@ -2832,6 +2834,40 @@ void jit_helper_return_null(void) {
     g_vm.frame_count--;
     g_vm.stack[g_vm.sp++] = slot_null();
 }
+
+#ifdef EIGS_JIT_CHECKED
+/* `make jit-checked` slot witnesses (jit.h). Print the read site, abort. */
+static void jit_checked_fail(EigsChunk *chunk, uint32_t site,
+                             const char *what, long a, long b) {
+    uint32_t off = site & 0xFFFFFFu;
+    int line = (chunk && chunk->lines && (int)off < chunk->lines_len)
+             ? chunk->lines[off] : 0;
+    fprintf(stderr,
+            "EIGS_JIT_CHECKED: %s (%ld vs %ld) at %s offset %u in chunk '%s' line %d\n",
+            what, a, b, op_name((uint8_t)(site >> 24)), off,
+            (chunk && chunk->name) ? chunk->name : "<anon>", line);
+    fflush(stderr);
+    abort();
+}
+
+void jit_checked_local(uint64_t *cached_values, uint32_t slot,
+                       uint32_t site, EigsChunk *chunk) {
+    Env *e = g_vm.frames[g_vm.frame_count - 1].fn_env;
+    if ((void *)cached_values != (void *)e->values)
+        jit_checked_fail(chunk, site, "stale %r12 values base (cached != fn_env->values)",
+                         (long)(intptr_t)cached_values, (long)(intptr_t)e->values);
+    if ((int)slot >= e->count)
+        jit_checked_fail(chunk, site, "local slot out of range (slot vs fn_env->count)",
+                         (long)slot, (long)e->count);
+}
+
+void jit_checked_env_slot(Env *target, uint32_t slot, uint32_t site,
+                          EigsChunk *chunk) {
+    if ((int)slot >= target->count)
+        jit_checked_fail(chunk, site, "IC slot out of range (slot_idx vs target->count)",
+                         (long)slot, (long)target->count);
+}
+#endif
 
 /* Helper called by the JIT prologue on platforms where the JIT can't
  * encode TLS access directly — Darwin/Mach-O uses TLV descriptors
