@@ -697,10 +697,12 @@ static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
-            Value *existing = dict_value_get_ref(dict, ce->index);
-            if (existing && existing->type == VAL_NUM &&
-                existing->refcount == 1) {
-                VAL_NUM_RAW(existing) = num;
+            /* dict_value_get_ref is NULL for a number by contract, so the
+             * number test goes through the slot. dict_value_set_num keeps the
+             * rc==1 in-place rewrite on Value** storage and becomes a plain
+             * slot store after the flip. */
+            if (slot_is_num(dict_value_slot(dict, ce->index))) {
+                dict_value_set_num(dict, ce->index, num);
                 return 1;
             }
         }

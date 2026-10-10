@@ -9,9 +9,11 @@
 typedef struct { Value v; } EigsView;
 
 static inline EigsSlot eigs_container_slot(Value *v) {
-#ifdef EIGS_SLOT_REHEARSAL
+    /* A borrowed read decodes a boxed number to an immediate in every build:
+     * the VM stack and slot consumers expect immediate numbers, and a
+     * heap-tagged NUM sends every element read down the slot_to_value /
+     * make_num slow path (+38% Ir on bench_dmg_shape, B2). */
     if (v && v->type == VAL_NUM) return slot_from_num(VAL_NUM_RAW(v));
-#endif
     return slot_from_heap(v);
 }
 
