@@ -1,0 +1,1 @@
+- Internal: the core runtime (eigenscript.c/.h, trace.c) reads containers, walks values and traces GC edges through the slot API, ahead of NaN-boxed container storage (#1665 arm D B1).

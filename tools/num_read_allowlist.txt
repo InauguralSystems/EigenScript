@@ -28,15 +28,14 @@ chunk.c|const_equal|2|constant-pool dedup compares two constants after testing b
 chunk.c|const_hash_value|1|constant-pool hash of a constant inside its type == VAL_NUM branch
 eigenscript.c|chan_clone_rec|1|channel deep-copy, switch case VAL_NUM
 eigenscript.c|compute_entropy_impl|1|observer entropy, switch case VAL_NUM
-eigenscript.c|eigs_elem_num|1|checking accessor itself: reads only after type == VAL_NUM
+eigenscript.c|ent_child_slot|1|observer entropy reads an immediate only after slot_is_num
 eigenscript.c|eigs_num_arg_slow|1|checking accessor itself: reads only after type == VAL_NUM, raises otherwise
-eigenscript.c|eigs_opt_num|1|checking accessor itself: reads only after type == VAL_NUM, raises on non-null non-numbers
 eigenscript.c|is_truthy|1|truthiness, switch case VAL_NUM (a bool has its own case)
 eigenscript.c|make_num|1|constructor: writes the number of a Value it just typed VAL_NUM
 eigenscript.c|make_num_permanent|1|constructor: writes the number of a Value it just typed VAL_NUM
 eigenscript.c|module_ns_project|2|mirror refresh: reads a slot after slot_is_num and writes a VAL_NUM mirror it owns exclusively
 eigenscript.c|observer_entropy_now|1|observer entropy of a slot after slot_is_num
-eigenscript.c|observer_slot_from_trajectory|9|trajectory snapshot fields each read right after its own type != VAL_NUM refusal
+eigenscript.c|observer_slot_from_trajectory|6|trajectory snapshot fields each read right after its own type != VAL_NUM refusal
 eigenscript.c|observer_slot_sample_gated|1|observer sample after newval->type == VAL_NUM
 eigenscript.c|observer_slot_update|1|observer update after newval->type == VAL_NUM
 eigenscript.c|slot_from_value|1|NaN-boxing boundary, inside its VAL_NUM branch

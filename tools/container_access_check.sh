@@ -22,10 +22,6 @@ while IFS= read -r hit; do
         src/jit.c:*'offsetof(Value, data.dict.vals)'*)
             # Emitted machine code needs the representation offset (step-2 site).
             allowed=$((allowed + 1)); continue ;;
-        src/eigenscript.h:*'arg->data.list.items[i]'*)
-            # eigs_bool_gate scans arg lists before container.h is included
-            # (step-2 site: it must test the slot tag, not a Value*).
-            allowed=$((allowed + 1)); continue ;;
     esac
     printf 'raw Value container access: %s:%s:%s\n' "$file" "$line" "$text" >&2
     violations=$((violations + 1))

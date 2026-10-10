@@ -135,9 +135,18 @@ static inline Value *dict_value_get_return(const Value *dict, int i) {
     return v->type == VAL_NUM ? make_num(VAL_NUM_RAW(v)) : v;
 }
 
+/* Compatibility reads for files not yet migrated in later batches. */
+static inline Value *dict_get(Value *dict, const char *key) {
+    return dict_get_ref_legacy(dict, key);
+}
+static inline Value *dict_get_hashed(Value *dict, const char *key, uint32_t h) {
+    return dict_get_hashed_ref_legacy(dict, key, h);
+}
+
 /* Low-level compatibility accessors retain their pre-flip meaning. */
 static inline Value *list_get_borrow(const Value *list, int i) { return list->data.list.items[i]; }
 static inline Value *dict_value_get_borrow(const Value *dict, int i) { return dict->data.dict.vals[i]; }
+static inline Value *dict_value_compat_ref(const Value *dict, int i) { return dict->data.dict.vals[i]; }
 static inline void list_set_owned(Value *list, int i, Value *v) { list->data.list.items[i] = v; }
 static inline void dict_value_set_owned(Value *dict, int i, Value *v) { dict->data.dict.vals[i] = v; }
 static inline void list_set_borrow(Value *list, int i, Value *v) { val_incref(v); list_set_owned(list, i, v); }

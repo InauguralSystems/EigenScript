@@ -2960,7 +2960,8 @@ static void write_value_ptr_full(Value *v, int *budget) {
             int n = v->data.list.count;
             for (int i = 0; i < n && *budget > 0; i++) {
                 if (i) wf_puts(", ", budget);
-                write_value_ptr_full(list_get_borrow(v, i), budget);
+                EIGS_VIEW(item_view);
+                write_value_ptr_full(list_get_view(v, i, &item_view), budget);
             }
             wf_putc(']', budget);
             break;
@@ -2972,7 +2973,8 @@ static void write_value_ptr_full(Value *v, int *budget) {
                 if (i) wf_puts(", ", budget);
                 write_string_full(v->data.dict.keys[i], budget);
                 wf_puts(": ", budget);
-                write_value_ptr_full(dict_value_get_borrow(v, i), budget);
+                EIGS_VIEW(item_view);
+                write_value_ptr_full(dict_value_get_view(v, i, &item_view), budget);
             }
             wf_putc('}', budget);
             break;
