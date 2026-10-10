@@ -1,0 +1,1 @@
+- An empty dict `{}` no longer allocates its key array, value array or hash until the first insert: 1M empty dicts drop from about 773 MB to 209 MB resident (#1665).
