@@ -10,6 +10,7 @@ builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel int
 container.h|dict_value_get_num|1|accessor numeric fast path: reads the number only behind its own type == VAL_NUM test (#1665 arm D)
 container.h|dict_value_get_owned|1|owned numeric read copies a proven VAL_NUM box for flip-safe ownership
 container.h|dict_value_get_return|1|builtin-return numeric read copies a proven VAL_NUM box
+container.h|dict_value_rewrite_num|1|hot-path rewrite writes only after VAL_NUM and exclusive-ref checks
 container.h|dict_value_set_num|1|exclusive VAL_NUM box reuse writes only after type and refcount checks
 container.h|dict_value_set_slot_owned|1|slot write boxes an immediate only after slot_is_num
 container.h|eigs_container_slot|1|rehearsal decoder reads a box only after type == VAL_NUM
@@ -20,6 +21,7 @@ container.h|eigs_slot_opt_num|1|optional numeric accessor reads only after slot_
 container.h|list_get_num|1|accessor numeric fast path: reads the number only behind its own type == VAL_NUM test (#1665 arm D)
 container.h|list_get_owned|1|owned numeric read copies a proven VAL_NUM box for flip-safe ownership
 container.h|list_get_return|1|builtin-return numeric read copies a proven VAL_NUM box
+container.h|list_rewrite_num|1|hot-path rewrite writes only after VAL_NUM and exclusive-ref checks
 container.h|list_set_num|1|exclusive VAL_NUM box reuse writes only after type and refcount checks
 container.h|list_set_slot_owned|1|slot write boxes an immediate only after slot_is_num
 container.h|slot_view|2|numeric view copies a proven immediate into caller storage
@@ -66,7 +68,6 @@ value_slot.h|slot_truthy_immediate|1|truthiness after slot_is_num
 vm.c|#define ARITH_FAST|2|arithmetic fast path after both operands tested VAL_NUM; NUM_REUSE writes
 vm.c|#define INT_BINOP_R|2|integer op fast path after both slots slot_is_num
 vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_NUM && b->type == VAL_NUM; NUM_REUSE writes
-vm.c|dict_set_cached_immediate|1|in-place dict value update, writes a VAL_NUM it exclusively owns
 vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_num
 vm.c|jit_helper_index_get|9|JIT helper: index read after slot_is_num / VAL_NUM tests on index and element
 vm.c|jit_helper_index_set|10|JIT helper: index store after slot_is_num / VAL_NUM tests on index and value

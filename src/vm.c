@@ -642,7 +642,8 @@ static inline void dict_cache_insert(Value *dict, uint32_t h, int idx) {
     ce[1].dict = dict; ce[1].hash = h; ce[1].index = idx;
 }
 
-static inline EigsSlot vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
+static inline __attribute__((always_inline)) EigsSlot
+vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
     /* #1057: a module namespace is a LIVE VIEW of the module env, so its
      * own slots are only a mirror — the inline cache must not answer from
      * them. Route to dict_get_hashed, which projects the current binding.
@@ -690,7 +691,8 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
  * mutate data.num in place — no allocation, no refcount churn. Returns
  * 1 if the in-place fast path fired; 0 means the caller must materialize
  * and call dict_set_cached. */
-static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) {
+static inline __attribute__((always_inline)) int
+dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) {
     if (__builtin_expect(dict->module_ns != 0, 0))
         return 0;                     /* #1057: never in-place on a mirror */
     DictCacheEntry *ce = dict_cache_probe(dict, h);
@@ -701,8 +703,7 @@ static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32
              * number test goes through the slot. dict_value_set_num keeps the
              * rc==1 in-place rewrite on Value** storage and becomes a plain
              * slot store after the flip. */
-            if (slot_is_num(dict_value_slot(dict, ce->index))) {
-                dict_value_set_num(dict, ce->index, num);
+            if (dict_value_rewrite_num(dict, ce->index, num)) {
                 return 1;
             }
         }
@@ -2192,7 +2193,8 @@ void jit_helper_index_set(void) {
         }
         if (target->type == VAL_LIST && slot_is_num(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
-                list_set_num(target, i, SLOT_NUM_RAW(val_s));
+                double n = SLOT_NUM_RAW(val_s); /* already guarded in a slot */
+                if (!list_rewrite_num(target, i, n)) list_set_num(target, i, n);
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                 else rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)",
@@ -4871,10 +4873,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *e = frame->fn_env;
         Value *target = vm_local_lift(e, slot);
         int i = (int)list_idx;
+        EIGS_VIEW_NOCHECK(dict_view);
         if (target && target->type == VAL_LIST) {
             if (i < target->data.list.count) {
-                EIGS_VIEW(dict_view);
                 Value *dict = list_get_view(target, i, &dict_view);
+#if EIGS_BORROW_GUARD
+                if (getenv("EIGS_VM_VIEW_GUARD_PLANT")) dict_view.v.refcount++;
+#endif
                 if (dict && dict->type == VAL_DICT) {
                     const char *key = chunk->const_interns[name_idx];
                     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
@@ -4883,6 +4888,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     if (!slot_is_null(v)) {
                         slot_incref(v);
                         vm_push_slot(v);
+                        eigs_view_check(&dict_view);
                         DISPATCH();
                     }
                 } else if (dict) {
@@ -4900,6 +4906,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             rt_error(EK_TYPE, current_line, "cannot index null");
         }
         vm_push_slot(slot_null());
+        eigs_view_check(&dict_view);
         DISPATCH();
     }
 
@@ -4912,9 +4919,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *e = frame->fn_env;
         Value *target = vm_local_lift(e, slot);
         int i = (int)list_idx;
+        EIGS_VIEW_NOCHECK(dict_view);
         if (target && target->type == VAL_LIST) {
             if (i < target->data.list.count) {
-                EIGS_VIEW(dict_view);
                 Value *dict = list_get_view(target, i, &dict_view);
                 if (dict && dict->type == VAL_DICT) {
                     const char *key = chunk->const_interns[name_idx];
@@ -4926,6 +4933,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     EigsSlot tos = g_vm.stack[g_vm.sp - 1];
                     if (slot_is_num(tos) &&
                         dict_set_cached_immediate(dict, key, h, SLOT_NUM_RAW(tos))) {
+                        eigs_view_check(&dict_view);
                         DISPATCH();
                     }
                     Value *val = vm_slot_lift(g_vm.sp - 1);
@@ -4935,6 +4943,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     rt_error(EK_TYPE, current_line, "cannot assign field '%s' on %s",
                         key, val_type_name(dict->type));
                 }
+                eigs_view_check(&dict_view);
             } else {
                 rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                               i, target->data.list.count);
@@ -4972,7 +4981,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             ip += exit_offset;
             DISPATCH();
         }
-        EIGS_VIEW(iterable_view);
+        EIGS_VIEW_NOCHECK(iterable_view);
         Value *iterable = list_get_view(state, 0, &iterable_view);
         int idx = (int)eigs_slot_num(list_slot(state, 1), "for");
         int len = 0;
@@ -5007,6 +5016,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 vm_push_slot(elem);
             }
         }
+        eigs_view_check(&iterable_view);
         DISPATCH();
     }
 
@@ -6366,7 +6376,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
-        EIGS_VIEW(fn_view);
+        EIGS_VIEW_NOCHECK(fn_view);
 
         Value *fn = list_get_view(table, key, &fn_view);
 
@@ -6390,6 +6400,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             /* A blocking builtin can return because a peer requested exit. */
             POLL_STATE_EXIT();
             CHECK_ERROR();
+            eigs_view_check(&fn_view);
             DISPATCH();
         }
 
@@ -6442,6 +6453,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_LIMIT, current_line, "call stack overflow");
                 env_decref(call_env);
                 vm_push(make_null());
+                eigs_view_check(&fn_view);
                 DISPATCH();
             }
             frame = &g_vm.frames[g_vm.frame_count++];
@@ -6467,6 +6479,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     chunk_decref(fn_chunk);
                     if (g_vm.frame_count <= base_frame) {
                         EigsSlot result_s = g_vm.stack[--g_vm.sp];
+                        eigs_view_check(&fn_view);
                         if (slot_is_num(result_s))  return make_num(SLOT_NUM_RAW(result_s));
                         if (slot_is_null(result_s)) return make_null();
                         if (slot_is_bool(result_s)) return make_bool(slot_as_bool(result_s));
@@ -6476,6 +6489,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     ip = frame->ip;
                     chunk = frame->chunk;
                     current_line = g_vm.current_line;
+                    eigs_view_check(&fn_view);
                     DISPATCH();
                 }
                 if (fn_chunk->jit_advance == -2) {
@@ -6484,6 +6498,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     ip = frame->ip;
                     chunk = frame->chunk;
                     current_line = g_vm.current_line;
+                    eigs_view_check(&fn_view);
                     DISPATCH();
                 }
                 frame->ip += fn_chunk->jit_advance;
@@ -6492,6 +6507,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
             ip = frame->ip;
             chunk = fn_chunk;
+            eigs_view_check(&fn_view);
             DISPATCH();
         }
 
