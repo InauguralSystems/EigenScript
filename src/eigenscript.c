@@ -427,6 +427,11 @@ static double ent_child(Value *c) {
     return compute_entropy_impl(c);
 }
 
+static double ent_child_slot(EigsSlot s) {
+    if (slot_is_num(s)) return entropy_of_num(SLOT_NUM_RAW(s));
+    return ent_child(eigs_slot_ref(s));
+}
+
 static double compute_entropy_impl(Value *v) {
     if (!v) return 0.0;
     switch (v->type) {
@@ -438,7 +443,7 @@ static double compute_entropy_impl(Value *v) {
             if (v->data.list.count == 0) return 0.0;
             double sum = 0.0;
             for (int i = 0; i < v->data.list.count; i++)
-                sum += ent_child(list_get_borrow(v, i));
+                sum += ent_child_slot(list_slot(v, i));
             return sum / v->data.list.count + log2((double)v->data.list.count + 1.0);
         }
         case VAL_DICT: {
@@ -446,7 +451,7 @@ static double compute_entropy_impl(Value *v) {
             if (v->data.dict.count == 0) return 0.0;
             double sum = 0.0;
             for (int i = 0; i < v->data.dict.count; i++)
-                sum += ent_child(dict_value_get_borrow(v, i));
+                sum += ent_child_slot(dict_value_slot(v, i));
             return sum / v->data.dict.count + log2((double)v->data.dict.count + 1.0);
         }
         case VAL_FN: return 1.0;          /* #708: a constant, so dH never moves */
@@ -1444,6 +1449,11 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     return out;
 }
 
+static Value *dict_get_view_local(Value *dict, const char *key, EigsView *view) {
+    Value *v = dict_get_ref_legacy(dict, key);
+    return v ? slot_view(eigs_container_slot(v), view) : NULL;
+}
+
 /* Rebuild a classifiable slot from a snapshot dict. Returns 1 and fills
  * *out (windows malloc'd — caller frees dh_window/v_window/vr_window) when
  * the dict is a well-formed trajectory; 0 otherwise. Wrong shapes are the
@@ -1451,12 +1461,13 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
 int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     memset(out, 0, sizeof *out);
     if (!dict || dict->type != VAL_DICT) return 0;
-    Value *kind = dict_get(dict, "kind");
+    EIGS_VIEW(kind_view); EIGS_VIEW(rel_view); EIGS_VIEW(raw_view); EIGS_VIEW(dh_view);
+    Value *kind = dict_get_view_local(dict, "kind", &kind_view);
     if (!kind || kind->type != VAL_STR || strcmp(kind->data.str, "trajectory") != 0)
         return 0;
-    Value *rel = dict_get(dict, "rel");
-    Value *raw = dict_get(dict, "raw");
-    Value *dh  = dict_get(dict, "dh");
+    Value *rel = dict_get_view_local(dict, "rel", &rel_view);
+    Value *raw = dict_get_view_local(dict, "raw", &raw_view);
+    Value *dh  = dict_get_view_local(dict, "dh", &dh_view);
     if (!rel || rel->type != VAL_LIST || !raw || raw->type != VAL_LIST ||
         !dh || dh->type != VAL_LIST)
         return 0;
@@ -1464,7 +1475,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
      * may omit it — the state default then applies). Out of range means a
      * malformed snapshot, refused like any other wrong shape. */
     {
-        Value *w = dict_get(dict, "window");
+        EIGS_VIEW(w_view);
+        Value *w = dict_get_view_local(dict, "window", &w_view);
         if (w) {
             if (w->type != VAL_NUM || VAL_NUM_RAW(w) < OBSERVER_WINDOW_MIN ||
                 VAL_NUM_RAW(w) > OBSERVER_WINDOW_MAX || VAL_NUM_RAW(w) != (int)VAL_NUM_RAW(w))
@@ -1482,14 +1494,14 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     out->vr_window = xcalloc((size_t)N, sizeof(double));
     out->v_cap = out->dh_cap = (uint8_t)N;
     for (int i = vstart; i < vcnt; i++) {
-        Value *a = list_get_borrow(rel, i), *b = list_get_borrow(raw, i);
-        if (!a || a->type != VAL_NUM || !b || b->type != VAL_NUM) {
+        EigsSlot a = list_slot(rel, i), b = list_slot(raw, i);
+        if (slot_type(a) != VAL_NUM || slot_type(b) != VAL_NUM) {
             free(out->v_window); free(out->vr_window);
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->v_window[out->v_window_count]  = VAL_NUM_RAW(a);
-        out->vr_window[out->v_window_count] = VAL_NUM_RAW(b);
+        out->v_window[out->v_window_count]  = eigs_slot_num(a, __func__);
+        out->vr_window[out->v_window_count] = eigs_slot_num(b, __func__);
         out->v_window_count++;
     }
     out->v_window_head = (uint8_t)(out->v_window_count % N);
@@ -1497,13 +1509,13 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     int dstart = dcnt > N ? dcnt - N : 0;
     out->dh_window = xcalloc((size_t)N, sizeof(double));
     for (int i = dstart; i < dcnt; i++) {
-        Value *a = list_get_borrow(dh, i);
-        if (!a || a->type != VAL_NUM) {
+        EigsSlot a = list_slot(dh, i);
+        if (slot_type(a) != VAL_NUM) {
             free(out->v_window); free(out->vr_window); free(out->dh_window);
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->dh_window[out->dh_window_count++] = VAL_NUM_RAW(a);
+        out->dh_window[out->dh_window_count++] = eigs_slot_num(a, __func__);
     }
     out->dh_window_head = (uint8_t)(out->dh_window_count % N);
     /* #1637: the scalar fields are numbers and the two flags are bools, as
@@ -1513,7 +1525,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     static const char *const nums[] = {"entropy", "dH", "last_entropy", "last_value"};
     double *dsts[] = {&out->entropy, &out->dH, &out->last_entropy, &out->last_value};
     for (int k = 0; k < 4; k++) {
-        Value *v = dict_get(dict, nums[k]);
+        EIGS_VIEW(v_view);
+        Value *v = dict_get_view_local(dict, nums[k], &v_view);
         if (!v) continue;
         if (v->type != VAL_NUM) {
             free(out->v_window); free(out->vr_window); free(out->dh_window);
@@ -1522,7 +1535,9 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         }
         *dsts[k] = VAL_NUM_RAW(v);
     }
-    Value *fo = dict_get(dict, "observed"), *fn = dict_get(dict, "numeric");
+    EIGS_VIEW(fo_view); EIGS_VIEW(fn_view);
+    Value *fo = dict_get_view_local(dict, "observed", &fo_view);
+    Value *fn = dict_get_view_local(dict, "numeric", &fn_view);
     if ((fo && fo->type != VAL_BOOL) || (fn && fn->type != VAL_BOOL)) {
         free(out->v_window); free(out->vr_window); free(out->dh_window);
         memset(out, 0, sizeof *out);
@@ -1644,9 +1659,8 @@ void free_value(Value *v) {
             break;
         case VAL_LIST:
             for (int i = 0; i < v->data.list.count; i++)
-                val_decref(list_get_borrow(v, i));
-            if (list_values_storage(v))
-                free(list_values_storage(v));
+                slot_decref(list_slot(v, i));
+            free(*list_values_storage_ref(v));
             break;
         case VAL_DICT:
             if (v->module_ns) {
@@ -1658,7 +1672,7 @@ void free_value(Value *v) {
             }
             for (int i = 0; i < v->data.dict.count; i++) {
                 /* Keys have table/private-node ownership; do not free individually. */
-                val_decref(dict_value_get_borrow(v, i));
+                slot_decref(dict_value_slot(v, i));
             }
             free(v->data.dict.keys);
             free(dict_values_storage(v));
@@ -1797,20 +1811,15 @@ double eigs_list_num(const Value *list, int i, const char *who) {
                      num_who(who), i);
         return 0.0;
     }
-    return eigs_num_arg(list_get_borrow(list, i), who);
+    return eigs_slot_num(list_slot(list, i), who);
 }
 
 double eigs_elem_num(const Value *v, const char *who) {
-    if (v && v->type == VAL_NUM) return VAL_NUM_RAW(v);
-    if (g_strict || (v && v->type == VAL_BOOL)) return eigs_num_arg_slow(v, who);
-    return 0.0;
+    return eigs_slot_elem_num(eigs_container_slot((Value *)v), who);
 }
 
 int eigs_opt_num(const Value *v, double *out, const char *who) {
-    if (!v || v->type == VAL_NULL) return 0;
-    if (v->type == VAL_NUM) { *out = VAL_NUM_RAW(v); return 1; }
-    eigs_num_arg(v, who);
-    return 0;
+    return eigs_slot_opt_num(eigs_container_slot((Value *)v), out, who);
 }
 
 /* Two levels: the argument, an element of the argument list, or an element
@@ -1821,12 +1830,12 @@ int eigs_arg_has_bool(const Value *arg) {
     if (arg->type == VAL_BOOL) return 1;
     if (arg->type == VAL_LIST)
         for (int i = 0; i < arg->data.list.count; i++) {
-            const Value *e = list_get_borrow(arg, i);
-            if (!e) continue;
-            if (e->type == VAL_BOOL) return 1;
-            if (e->type == VAL_LIST)
+            if (list_elem_type(arg, i) == VAL_BOOL) return 1;
+            EIGS_VIEW(view);
+            const Value *e = list_get_view(arg, i, &view);
+            if (e && e->type == VAL_LIST)
                 for (int j = 0; j < e->data.list.count; j++)
-                    if (list_get_borrow(e, j) && list_get_borrow(e, j)->type == VAL_BOOL)
+                    if (list_elem_type(e, j) == VAL_BOOL)
                         return 1;
         }
     return 0;
@@ -1970,7 +1979,8 @@ Value* make_list(int capacity) {
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
-    *list_values_storage_ref(v) = xcalloc(v->data.list.capacity, sizeof(Value*));
+    *list_values_storage_ref(v) = xcalloc(v->data.list.capacity,
+                                         sizeof **list_values_storage_ref(v));
     v->data.list.count = 0;
     v->refcount = 1;
     return v;
@@ -1983,7 +1993,8 @@ Value* make_list_heap(int capacity) {
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_LIST;
     v->data.list.capacity = capacity < 8 ? 8 : capacity;
-    *list_values_storage_ref(v) = xcalloc(v->data.list.capacity, sizeof(Value*));
+    *list_values_storage_ref(v) = xcalloc(v->data.list.capacity,
+                                         sizeof **list_values_storage_ref(v));
     v->data.list.count = 0;
     v->refcount = 1;
     return v;
@@ -2341,14 +2352,14 @@ static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
     env_shared_lock(e);
     int di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
     if (ei < 0) {
-        Value *miss = (di >= 0) ? dict_value_get_borrow(d, di) : NULL;
+        Value *miss = (di >= 0) ? dict_value_compat_ref(d, di) : NULL;
         env_shared_unlock(e);
         return miss;
     }
     if (di >= 0) {
-        Value *cur = dict_value_get_borrow(d, di);
+        Value *cur = dict_value_compat_ref(d, di);
         if (slot_is_ptr(s)) {
-            /* Container/fn bindings were already shared by reference. */
+            /* Reference bindings are already shared by identity. */
             if (slot_as_ptr(s) == cur) {
                 env_shared_unlock(e);
                 slot_decref(s);
@@ -2368,7 +2379,7 @@ static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
     Value *mv = slot_to_value(s);            /* owned */
     dict_set_hashed_raw(d, key, h, mv);
     di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
-    Value *out = (di >= 0) ? dict_value_get_borrow(d, di) : NULL;
+    Value *out = (di >= 0) ? dict_value_compat_ref(d, di) : NULL;
     env_shared_unlock(e);
     slot_decref(s);                          /* drop the pin */
     val_decref(mv);
@@ -2478,7 +2489,7 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx >= 0) {
         val_incref(val);
-        val_decref(dict_value_get_borrow(dict, idx));
+        slot_decref(dict_value_slot(dict, idx));
         dict_value_set_owned(dict, idx, val);
         return;
     }
@@ -2606,7 +2617,8 @@ static Value *chan_clone_rec(Value *v, int depth) {
             int n = v->data.list.count;
             Value *out = make_list_heap(n > 0 ? n : 1);
             for (int i = 0; i < n; i++) {
-                Value *ce = chan_clone_rec(list_get_borrow(v, i), depth + 1);
+                EIGS_VIEW(child_view);
+                Value *ce = chan_clone_rec(list_get_view(v, i, &child_view), depth + 1);
                 list_append(out, ce);   /* increfs */
                 val_decref(ce);         /* drop birth ref */
             }
@@ -2620,7 +2632,8 @@ static Value *chan_clone_rec(Value *v, int depth) {
             int n = v->data.dict.count;
             Value *out = make_dict(n > 0 ? n : 8);
             for (int i = 0; i < n; i++) {
-                Value *cv = chan_clone_rec(dict_value_get_borrow(v, i), depth + 1);
+                EIGS_VIEW(child_view);
+                Value *cv = chan_clone_rec(dict_value_get_view(v, i, &child_view), depth + 1);
                 dict_set_owned(out, v->data.dict.keys[i], cv);  /* consumes cv */
             }
             /* Rehome keys from the (thread-local, soon-freed) intern table to
@@ -2684,7 +2697,7 @@ Value *val_clone_for_send(Value *v) {
     return chan_clone_rec(v, 0);
 }
 
-Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
+Value* dict_get_hashed_ref_legacy(Value *dict, const char *key, uint32_t h) {
     if (!dict || dict->type != VAL_DICT) return NULL;
     if (h == 0) h = env_hash_name(key);
     if (__builtin_expect(dict->module_ns != 0, 0)) {
@@ -2699,18 +2712,18 @@ Value* dict_get_hashed(Value *dict, const char *key, uint32_t h) {
             env_shared_lock(me);
             int pidx = env_hash_find(&dict->data.dict.hash, key, h,
                                      dict->data.dict.keys);
-            Value *pv = (pidx >= 0) ? dict_value_get_borrow(dict, pidx) : NULL;
+            Value *pv = (pidx >= 0) ? dict_value_compat_ref(dict, pidx) : NULL;
             env_shared_unlock(me);
             return pv;
         }
     }
     if (dict->data.dict.count == 0) return NULL;
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
-    return (idx >= 0) ? dict_value_get_borrow(dict, idx) : NULL;
+    return (idx >= 0) ? dict_value_compat_ref(dict, idx) : NULL;
 }
 
-Value* dict_get(Value *dict, const char *key) {
-    return dict_get_hashed(dict, key, env_hash_name(key));
+Value* dict_get_ref_legacy(Value *dict, const char *key) {
+    return dict_get_hashed_ref_legacy(dict, key, env_hash_name(key));
 }
 
 int env_hash_find_dict(Value *dict, const char *key, uint32_t h) {
@@ -2720,7 +2733,7 @@ int env_hash_find_dict(Value *dict, const char *key, uint32_t h) {
 }
 
 int dict_has(Value *dict, const char *key) {
-    return dict_get(dict, key) != NULL;
+    return dict_get_ref_legacy(dict, key) != NULL;
 }
 
 void dict_remove(Value *dict, const char *key) {
@@ -2731,11 +2744,11 @@ void dict_remove(Value *dict, const char *key) {
     if (idx < 0) return;
     /* keys are interned — do not free */
     env_intern_scope_remove(dict->data.dict.keys[idx]);
-    val_decref(dict_value_get_borrow(dict, idx));
+    slot_decref(dict_value_slot(dict, idx));
     /* Shift remaining */
     for (int j = idx; j < dict->data.dict.count - 1; j++) {
         dict->data.dict.keys[j] = dict->data.dict.keys[j+1];
-        dict_value_set_owned(dict, j, dict_value_get_borrow(dict, j+1));
+        dict_value_set_owned(dict, j, dict_value_compat_ref(dict, j + 1));
     }
     dict->data.dict.count--;
     env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
@@ -2759,7 +2772,8 @@ void list_append(Value *list, Value *item) {
         if (!sandbox_charge((size_t)(new_cap - list->data.list.capacity) *
                             (sizeof(Value *) + sizeof(Value))))
             return;
-        *list_values_storage_ref(list) = xrealloc_array(list_values_storage(list), new_cap, sizeof(Value*));
+        *list_values_storage_ref(list) = xrealloc_array(*list_values_storage_ref(list), new_cap,
+                                                       sizeof **list_values_storage_ref(list));
         list->data.list.capacity = new_cap;
     }
     list_set_owned(list, list->data.list.count++, item);
@@ -2834,10 +2848,12 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
         case VAL_BOOL: return a->data.boolean == b->data.boolean;
         case VAL_LIST: {
             if (a->data.list.count != b->data.list.count) return 0;
-            for (int i = 0; i < a->data.list.count; i++)
-                if (!values_equal_impl(list_get_borrow(a, i),
-                                       list_get_borrow(b, i), depth + 1, op))
+            for (int i = 0; i < a->data.list.count; i++) {
+                EIGS_VIEW(av); EIGS_VIEW(bv);
+                if (!values_equal_impl(list_get_view(a, i, &av),
+                                       list_get_view(b, i, &bv), depth + 1, op))
                     return 0;
+            }
             return 1;
         }
         case VAL_DICT: {
@@ -2845,9 +2861,10 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
             eigs_module_ns_sync(b);
             if (a->data.dict.count != b->data.dict.count) return 0;
             for (int i = 0; i < a->data.dict.count; i++) {
-                Value *bv = dict_get(b, a->data.dict.keys[i]);
+                Value *bv = dict_get_ref_legacy(b, a->data.dict.keys[i]);
                 if (!bv) return 0;
-                if (!values_equal_impl(dict_value_get_borrow(a, i), bv, depth + 1, op))
+                EIGS_VIEW(av);
+                if (!values_equal_impl(dict_value_get_view(a, i, &av), bv, depth + 1, op))
                     return 0;
             }
             return 1;
@@ -2930,8 +2947,10 @@ char* value_to_string(Value *v) {
             g_vts_depth++;
             for (int i = 0; i < v->data.list.count; i++) {
                 if (i > 0) strbuf_append_n(&out, ", ", 2);
-                char *s = value_to_string(list_get_borrow(v, i));
-                if (list_get_borrow(v, i) && list_get_borrow(v, i)->type == VAL_STR)
+                EIGS_VIEW(item_view);
+                Value *item = list_get_view(v, i, &item_view);
+                char *s = value_to_string(item);
+                if (list_elem_type(v, i) == VAL_STR)
                     eigs_json_escape_string(&out, s);
                 else
                     strbuf_append(&out, s);
@@ -2952,8 +2971,9 @@ char* value_to_string(Value *v) {
                 if (i > 0) strbuf_append_n(&out, ", ", 2);
                 eigs_json_escape_string(&out, v->data.dict.keys[i]);
                 strbuf_append_n(&out, ": ", 2);
-                char *vs = value_to_string(dict_value_get_borrow(v, i));
-                if (dict_value_get_borrow(v, i) && dict_value_get_borrow(v, i)->type == VAL_STR)
+                EIGS_VIEW(item_view);
+                char *vs = value_to_string(dict_value_get_view(v, i, &item_view));
+                if (dict_value_type(v, i) == VAL_STR)
                     eigs_json_escape_string(&out, vs);
                 else
                     strbuf_append(&out, vs);
@@ -4251,17 +4271,18 @@ static int gc_env_is_node(Env *e) {
         chunk_decref(_o); }, __VA_ARGS__)                                     \
     /* VAL_LIST / VAL_DICT: every element slot. */                            \
     X((_k == GC_KIND_VAL && _v->type == VAL_LIST), _v->data.list.count,       \
-      list_get_borrow(_v, _i), GC_KIND_VAL,                                   \
-      gc_value_is_node(list_get_borrow(_v, _i)),                              \
-      { Value *_o = list_get_borrow(_v, _i);                                  \
-        list_set_owned(_v, _i, NULL);                                       \
-        val_decref(_o); }, __VA_ARGS__)                                       \
+      slot_as_ptr(list_slot(_v, _i)), GC_KIND_VAL,                            \
+      slot_is_ptr(list_slot(_v, _i)) &&                                      \
+        gc_value_is_node(slot_as_ptr(list_slot(_v, _i))),                     \
+      { EigsSlot _o = list_take_slot(_v, _v->data.list.count - 1);            \
+        slot_decref(_o); }, __VA_ARGS__)                                      \
     X((_k == GC_KIND_VAL && _v->type == VAL_DICT), _v->data.dict.count,       \
-      dict_value_get_borrow(_v, _i), GC_KIND_VAL,                                    \
-      gc_value_is_node(dict_value_get_borrow(_v, _i)),                               \
-      { Value *_o = dict_value_get_borrow(_v, _i);                                   \
-        dict_value_set_owned(_v, _i, NULL);                                        \
-        val_decref(_o); }, __VA_ARGS__)                                       \
+      slot_as_ptr(dict_value_slot(_v, _i)), GC_KIND_VAL,                      \
+      slot_is_ptr(dict_value_slot(_v, _i)) &&                                 \
+        gc_value_is_node(slot_as_ptr(dict_value_slot(_v, _i))),               \
+      { EigsSlot _o = dict_value_take_slot(_v, _i);                           \
+        dict_value_set_owned(_v, _i, NULL);                                   \
+        slot_decref(_o); }, __VA_ARGS__)                                      \
     /* #1057 module namespace: the owning backref to the module Env taken   \
      * by eigs_module_ns_attach. Without this row a garbage                 \
      * namespace <-> module-env cycle would look externally referenced and  \
@@ -4288,7 +4309,8 @@ static int gc_env_is_node(Env *e) {
 #define GC_EDGE_CLEAR(GUARD, COUNT, CHILD, CHILD_KIND, IS_NODE, CLEAR,        \
                       _x1, _x2, _x3)                                          \
     if (GUARD) {                                                              \
-        for (int _i = 0; _i < (COUNT); _i++)                                  \
+        int _edge_count = (COUNT);                                            \
+        for (int _i = 0; _i < _edge_count; _i++)                              \
             CLEAR                                                             \
     }
 

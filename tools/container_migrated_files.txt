@@ -1,1 +1,4 @@
-# B0 has no migrated production call sites.  Add one src-relative path per line.
+# Whole-file migrations completed after the B0 API introduction.
+src/eigenscript.h
+src/eigenscript.c
+src/trace.c

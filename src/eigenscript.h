@@ -1412,21 +1412,6 @@ int eigs_opt_num(const Value *v, double *out, const char *who);
 #define EIGS_BOOL_GATE_SCAN 8
 int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg);
 void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
-static inline int eigs_bool_gate(BuiltinFn fn, const Value *arg) {
-    if (!arg) return 0;
-    if (arg->type == VAL_BOOL) return eigs_bool_gate_slow(fn, arg);
-    if (arg->type != VAL_LIST) return 0;
-    int n = arg->data.list.count < EIGS_BOOL_GATE_SCAN ? arg->data.list.count
-                                                       : EIGS_BOOL_GATE_SCAN;
-    for (int i = 0; i < n; i++) {
-        const Value *e = arg->data.list.items[i];
-        if (e && e->type == VAL_BOOL) return eigs_bool_gate_slow(fn, arg);
-    }
-    return 0;
-}
-static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
-    return eigs_bool_gate(fn, arg) ? NULL : fn(arg);
-}
 /* #1637: for a builtin that reads a number without a typed guard (its other
  * wrong types answer null): a bool there raises in every strict mode. */
 #define BOOL_REFUSE(v, who)                                                   \
@@ -1814,7 +1799,8 @@ void dict_set_owned(Value *dict, const char *key, Value *val);
  * keys into a process-global intern table so they survive the sender thread's
  * detach. Returns a heap value (refcount 1). */
 Value *val_clone_for_send(Value *v);
-Value* dict_get(Value *dict, const char *key);
+Value* dict_get_ref_legacy(Value *dict, const char *key);
+Value* dict_get_hashed_ref_legacy(Value *dict, const char *key, uint32_t h);
 void list_append(Value *list, Value *item);
 void list_append_owned(Value *list, Value *item);
 
@@ -1993,6 +1979,21 @@ static inline void val_decref(Value *v) {
 #include "value_slot.h"
 #include "container.h"
 
+static inline int eigs_bool_gate(BuiltinFn fn, const Value *arg) {
+    if (!arg) return 0;
+    if (arg->type == VAL_BOOL) return eigs_bool_gate_slow(fn, arg);
+    if (arg->type != VAL_LIST) return 0;
+    int n = arg->data.list.count < EIGS_BOOL_GATE_SCAN ? arg->data.list.count
+                                                       : EIGS_BOOL_GATE_SCAN;
+    for (int i = 0; i < n; i++)
+        if (list_elem_type(arg, i) == VAL_BOOL)
+            return eigs_bool_gate_slow(fn, arg);
+    return 0;
+}
+static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
+    return eigs_bool_gate(fn, arg) ? NULL : fn(arg);
+}
+
 /* ---- Environment ---- */
 
 /* #607: post-resolve array access for an env the MAIN thread may grow
@@ -2127,7 +2128,6 @@ void env_store_slot(Env *env, int idx, EigsSlot s);
 Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
                        int *out_slot, int *out_depth);
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
-Value* dict_get_hashed(Value *dict, const char *key, uint32_t h);
 /* #1057 module namespaces. `import M` binds a dict that is a LIVE VIEW of the
  * module's top-level Env: `M.x` reads the module's CURRENT binding and
  * `M.x is v` writes it. attach flags the dict and takes an OWNING ref on the
