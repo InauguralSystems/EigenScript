@@ -1,0 +1,1 @@
+- Add the container slot-access API, rehearsal build, view escape guard, and migration gate proving ground.

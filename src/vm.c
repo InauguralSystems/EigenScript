@@ -2422,6 +2422,12 @@ static const char* vm_builtin_name_for(Env *env, BuiltinFn fn) {
 static inline void vm_borrow_scan(Value *arg, Value *result,
                                   Value *fn_val, Env *env) {
     (void)fn_val; (void)env;
+#if EIGS_BORROW_GUARD || defined(EIGS_SLOT_REHEARSAL)
+    if (result && result->refcount >= EIGS_VIEW_RC) {
+        fprintf(stderr, "EigenScript FATAL: builtin returned an escaped numeric view\n");
+        abort();
+    }
+#endif
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
         if (n > VM_BORROW_SCAN_CAP) n = VM_BORROW_SCAN_CAP;
@@ -2495,6 +2501,16 @@ void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
     }
     vm_borrow_scan(arg, result, fn_val, env);
 }
+
+#ifdef EIGS_SLOT_TEST_HOOK
+/* Test-only planted builtin result.  It is deliberately absent from the
+ * registry and from production builds: the harness sends it through the real
+ * builtin-return compensation path to prove the escape guard aborts. */
+Value *eigs_test_builtin_number_view(void) {
+    static EigsView escaped;
+    return slot_view(slot_from_num(1665.0), &escaped);
+}
+#endif
 
 /* JIT Stage 4r/5f: out-of-line helper for OP_CALL.
  *
