@@ -379,7 +379,7 @@ intern-owner-test: build/$(INTERN_OWNER_VARIANT)/test_intern_owners
 	@echo "Intern owner structural oracle built: $<"
 
 # #1665 follow-up: planted stale reads of the NUM freelist and the parked call
-# env, against the owning (ASan) variant; no CLI relink. Suite [0ff].
+# env, against the owning (ASan) variant; no CLI relink. Suite [0fg].
 POOL_POISON_VARIANT ?= asan
 POOL_POISON_OBJ := $(filter-out build/$(POOL_POISON_VARIANT)/main.o,$(OBJ_$(POOL_POISON_VARIANT)))
 build/$(POOL_POISON_VARIANT)/test_pool_poison: tests/test_pool_poison.c $(POOL_POISON_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
