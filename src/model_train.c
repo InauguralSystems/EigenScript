@@ -1444,16 +1444,16 @@ Value* builtin_native_train_step(Value *arg) {
         return make_str("{\"status\": \"error\", \"error\": \"Model not loaded\"}");
     }
 
-    Value *in_list = arg->data.list.items[0];
-    Value *out_list = arg->data.list.items[1];
+    Value *in_list = list_get_borrow(arg, 0);
+    Value *out_list = list_get_borrow(arg, 1);
     if (in_list->type != VAL_LIST || out_list->type != VAL_LIST) {
         return make_str("{\"status\": \"error\", \"error\": \"input_ids and output_ids must be lists\"}");
     }
 
     float lr = 0.001f;
-    if (arg->data.list.items[2]->type == VAL_BOOL) { eigs_num_arg(arg->data.list.items[2], __func__); return make_null(); }  /* #1637 */
-    if (arg->data.list.items[2]->type == VAL_NUM) lr = eigs_list_num(arg, 2, __func__);
-    else if (arg->data.list.items[2]->type == VAL_STR) lr = strtod(arg->data.list.items[2]->data.str, NULL);
+    if (list_get_borrow(arg, 2)->type == VAL_BOOL) { eigs_num_arg(list_get_borrow(arg, 2), __func__); return make_null(); }  /* #1637 */
+    if (list_get_borrow(arg, 2)->type == VAL_NUM) lr = eigs_list_num(arg, 2, __func__);
+    else if (list_get_borrow(arg, 2)->type == VAL_STR) lr = strtod(list_get_borrow(arg, 2)->data.str, NULL);
     if (lr <= 0 || lr > 1) lr = 0.001f;
 
     int input_len = in_list->data.list.count;
@@ -1468,11 +1468,11 @@ Value* builtin_native_train_step(Value *arg) {
     int *input_ids = xcalloc(input_len > 0 ? input_len : 1, sizeof(int));
     int *output_ids = xcalloc(output_len > 0 ? output_len : 1, sizeof(int));
     for (int i = 0; i < input_len; i++) {
-        Value *v = in_list->data.list.items[i];
+        Value *v = list_get_borrow(in_list, i);
         input_ids[i] = (int)eigs_num_arg(v, "native_train_step");   /* #1637: a bool raises */
     }
     for (int i = 0; i < output_len; i++) {
-        Value *v = out_list->data.list.items[i];
+        Value *v = list_get_borrow(out_list, i);
         output_ids[i] = (int)eigs_num_arg(v, "native_train_step");
     }
     if (g_has_error) { free(input_ids); free(output_ids); return make_null(); }

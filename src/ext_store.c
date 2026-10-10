@@ -185,7 +185,7 @@ static void store_json_encode(Value *v, strbuf *out) {
             strbuf_append_char(out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
                 if (i > 0) strbuf_append_char(out, ',');
-                store_json_encode(v->data.list.items[i], out);
+                store_json_encode(list_get_borrow(v, i), out);
             }
             strbuf_append_char(out, ']');
             break;
@@ -201,7 +201,7 @@ static void store_json_encode(Value *v, strbuf *out) {
                 first = 0;
                 eigs_json_escape_string(out, key);
                 strbuf_append_char(out, ':');
-                store_json_encode(v->data.dict.vals[i], out);
+                store_json_encode(dict_value_get_borrow(v, i), out);
             }
             /* Escape the complete buffer-tag namespace.  Repeating the shape
              * member preserves its value after dict insertion while leaving a
@@ -330,8 +330,8 @@ static Value* store_buffer_from_tag(Value *dict) {
     if (!body || body->type != VAL_LIST) return NULL;
     if (!shape || shape->type != VAL_LIST || shape->data.list.count != 2) return NULL;
 
-    Value *rv = shape->data.list.items[0];
-    Value *cv = shape->data.list.items[1];
+    Value *rv = list_get_borrow(shape, 0);
+    Value *cv = list_get_borrow(shape, 1);
     if (!rv || rv->type != VAL_NUM || !cv || cv->type != VAL_NUM) return NULL;
 
     /* Range-gate BEFORE narrowing. A stored shape is whatever double the file
@@ -360,7 +360,7 @@ static Value* store_buffer_from_tag(Value *dict) {
         if (count != 0) return NULL;
     }
     for (int i = 0; i < count; i++) {
-        Value *e = body->data.list.items[i];
+        Value *e = list_get_borrow(body, i);
         if (!e) return NULL;
         if (e->type == VAL_NUM) continue;
         if (e->type == VAL_STR && store_nonfinite_sentinel(e->data.str, NULL)) continue;
@@ -375,7 +375,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     buf->data.buffer.cols = cols;
     buf->data.buffer.data = xcalloc(count > 0 ? (size_t)count : 1, sizeof(double));
     for (int i = 0; i < count; i++) {
-        Value *e = body->data.list.items[i];
+        Value *e = list_get_borrow(body, i);
         double d = 0;
         if (e->type == VAL_NUM) d = eigs_num_arg(e, __func__);
         else store_nonfinite_sentinel(e->data.str, &d);
@@ -705,7 +705,7 @@ static int store_load_catalog(Store *store) {
 
     for (int i = 0; i < store->catalog->data.dict.count; i++) {
         const char *name = store->catalog->data.dict.keys[i];
-        Value *col = store->catalog->data.dict.vals[i];
+        Value *col = dict_value_get_borrow(store->catalog, i);
 
         /* Strict schema: must be dict with numeric "root" and "next_id" */
         if (!col || col->type != VAL_DICT) {
@@ -975,11 +975,11 @@ static Value* builtin_store_put(Value *arg) {
         rt_error(EK_TYPE, 0, "store_put requires [handle, collection, record]\n");
         return make_null();
     }
-    Store *store = store_arg(arg->data.list.items[0], "store_put");
+    Store *store = store_arg(list_get_borrow(arg, 0), "store_put");
     if (!store) return make_null();
     if (store_replay_blocks("store_put")) return make_null();
-    Value *col_val = arg->data.list.items[1];
-    Value *record = arg->data.list.items[2];
+    Value *col_val = list_get_borrow(arg, 1);
+    Value *record = list_get_borrow(arg, 2);
     if (!col_val || col_val->type != VAL_STR) {
         rt_error(EK_VALUE, 0, "store_put: invalid handle or collection\n");
         return make_null();
@@ -1140,11 +1140,11 @@ static Value* builtin_store_get(Value *arg) {
         rt_error(EK_TYPE, 0, "store_get requires [handle, collection, key]\n");
         return make_null();
     }
-    Store *store = store_arg(arg->data.list.items[0], "store_get");
+    Store *store = store_arg(list_get_borrow(arg, 0), "store_get");
     if (!store) return make_null();
     if (store_replay_blocks("store_get")) return make_null();
-    Value *col_val = arg->data.list.items[1];
-    Value *key_val = arg->data.list.items[2];
+    Value *col_val = list_get_borrow(arg, 1);
+    Value *key_val = list_get_borrow(arg, 2);
     if (!col_val || col_val->type != VAL_STR) return make_null();
 
     const char *collection = col_val->data.str;
@@ -1298,7 +1298,7 @@ static Value* builtin_store_delete(Value *arg) {
          * CV2-68); this return is the post-raise placeholder, not the answer. */
         return make_bool(0);
     }
-    Store *store = store_arg(arg->data.list.items[0], "store_delete");
+    Store *store = store_arg(list_get_borrow(arg, 0), "store_delete");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
      * rt_error'd — "invalid store", "stale store handle", "already been
      * closed" — by the time it returns NULL, and rt_error LATCHES rather
@@ -1306,8 +1306,8 @@ static Value* builtin_store_delete(Value *arg) {
      * "deleted nothing". Same shape as the arity guard above. */
     if (!store) return make_bool(0);
     if (store_replay_blocks("store_delete")) return make_bool(0);
-    Value *col_val = arg->data.list.items[1];
-    Value *key_val = arg->data.list.items[2];
+    Value *col_val = list_get_borrow(arg, 1);
+    Value *key_val = list_get_borrow(arg, 2);
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_delete", "[store handle, string collection, key]", make_bool(0));
 
@@ -1352,10 +1352,10 @@ static Value* builtin_store_query(Value *arg) {
         rt_error(EK_TYPE, 0, "store_query requires [handle, collection]\n");
         return make_list(0);
     }
-    Store *store = store_arg(arg->data.list.items[0], "store_query");
+    Store *store = store_arg(list_get_borrow(arg, 0), "store_query");
     if (!store) return make_list(0);
     if (store_replay_blocks("store_query")) return make_list(0);
-    Value *col_val = arg->data.list.items[1];
+    Value *col_val = list_get_borrow(arg, 1);
     if (!col_val || col_val->type != VAL_STR) return make_list(0);
 
     const char *collection = col_val->data.str;
@@ -1400,7 +1400,7 @@ static Value* builtin_store_count(Value *arg) {
          * CV2-71); this return is the post-raise placeholder, not a count. */
         return make_num(0);
     }
-    Store *store = store_arg(arg->data.list.items[0], "store_count");
+    Store *store = store_arg(list_get_borrow(arg, 0), "store_count");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
      * rt_error'd by the time it returns NULL, and rt_error latches rather
      * than unwinding, so this return is the post-raise placeholder, not a
@@ -1408,7 +1408,7 @@ static Value* builtin_store_count(Value *arg) {
      * are store_count's real result for an unknown collection. */
     if (!store) return make_num(0);
     if (store_replay_blocks("store_count")) return make_num(0);
-    Value *col_val = arg->data.list.items[1];
+    Value *col_val = list_get_borrow(arg, 1);
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_count", "[store handle, string collection]", make_num(0));
 
@@ -1451,10 +1451,10 @@ static Value* builtin_store_update(Value *arg) {
          * is the post-raise placeholder, not "updated nothing". */
         return make_bool(0);
     }
-    Value *handle = arg->data.list.items[0];
-    Value *col_val = arg->data.list.items[1];
-    Value *key_val = arg->data.list.items[2];
-    Value *record = arg->data.list.items[3];
+    Value *handle = list_get_borrow(arg, 0);
+    Value *col_val = list_get_borrow(arg, 1);
+    Value *key_val = list_get_borrow(arg, 2);
+    Value *record = list_get_borrow(arg, 3);
 
     Store *store = store_arg(handle, "store_update");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
@@ -1593,7 +1593,7 @@ static Value* builtin_store_drop(Value *arg) {
          * CV2-74); this return is the post-raise placeholder, not "not dropped". */
         return make_bool(0);
     }
-    Store *store = store_arg(arg->data.list.items[0], "store_drop");
+    Store *store = store_arg(list_get_borrow(arg, 0), "store_drop");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
      * rt_error'd by the time it returns NULL, and rt_error latches rather
      * than unwinding, so this return is the post-raise placeholder, not
@@ -1601,7 +1601,7 @@ static Value* builtin_store_drop(Value *arg) {
      * below). */
     if (!store) return make_bool(0);
     if (store_replay_blocks("store_drop")) return make_bool(0);
-    Value *col_val = arg->data.list.items[1];
+    Value *col_val = list_get_borrow(arg, 1);
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_drop", "[store handle, string collection]", make_bool(0));
 
@@ -1635,7 +1635,7 @@ static Value* builtin_store_drop(Value *arg) {
     for (int i = 0; i < store->catalog->data.dict.count; i++) {
         if (strcmp(store->catalog->data.dict.keys[i], collection) != 0) {
             dict_set(new_catalog, store->catalog->data.dict.keys[i],
-                     store->catalog->data.dict.vals[i]);
+                     dict_value_get_borrow(store->catalog, i));
         }
     }
     val_decref(store->catalog);  /* drop the old catalog before replacing */

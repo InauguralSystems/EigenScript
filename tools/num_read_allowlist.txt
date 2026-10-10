@@ -7,6 +7,8 @@
 # eigs_opt_num / eigs_elem_num, which raise on a bool.
 builtins_tensor.c|builtin_numerical_grad_rows|3|in-place writes of a matrix cell that tensor_cells_numeric proved a number before any mutation
 builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel into a result buffer cell (EIGS_STRICT=0 path); a write, no Value is read
+container.h|dict_value_get_num|1|accessor numeric fast path: reads the number only behind its own type == VAL_NUM test (#1665 arm D)
+container.h|list_get_num|1|accessor numeric fast path: reads the number only behind its own type == VAL_NUM test (#1665 arm D)
 chunk.c|chunk_disassemble|1|debug disassembly prints a constant behind its own type == VAL_NUM test
 chunk.c|const_equal|2|constant-pool dedup compares two constants after testing both are VAL_NUM
 chunk.c|const_hash_value|1|constant-pool hash of a constant inside its type == VAL_NUM branch

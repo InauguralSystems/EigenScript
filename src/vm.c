@@ -651,12 +651,12 @@ static inline Value *dict_get_cached(Value *dict, const char *key, uint32_t h) {
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0)
-            return dict->data.dict.vals[ce->index];
+            return dict_value_get_borrow(dict, ce->index);
     }
     int idx = env_hash_find_dict(dict, key, h);
     if (idx >= 0) {
         dict_cache_insert(dict, h, idx);
-        return dict->data.dict.vals[idx];
+        return dict_value_get_borrow(dict, idx);
     }
     return NULL;
 }
@@ -672,8 +672,8 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
         if (stored == key || strcmp(stored, key) == 0) {
             /* Cache hit — update in place */
             val_incref(val);
-            val_decref(dict->data.dict.vals[ce->index]);
-            dict->data.dict.vals[ce->index] = val;
+            val_decref(dict_value_get_borrow(dict, ce->index));
+            dict_value_set_owned(dict, ce->index, val);
             return;
         }
     }
@@ -693,7 +693,7 @@ static inline int dict_set_cached_immediate(Value *dict, const char *key, uint32
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
-            Value *existing = dict->data.dict.vals[ce->index];
+            Value *existing = dict_value_get_borrow(dict, ce->index);
             if (existing && existing->type == VAL_NUM &&
                 existing->refcount == 1) {
                 VAL_NUM_RAW(existing) = num;
@@ -1358,7 +1358,7 @@ int jit_helper_local_idx_get(int slot, int idx) {
         }
         if (target->type == VAL_LIST) {
             if (i < target->data.list.count) {
-                Value *item = target->data.list.items[i];
+                Value *item = list_get_borrow(target, i);
                 if (item && item->type == VAL_NUM) {
                     vm_push_slot(slot_from_num(VAL_NUM_RAW(item)));
                 } else {
@@ -1457,7 +1457,7 @@ int jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
     int i = list_idx;
     if (target && target->type == VAL_LIST) {
         if (i < target->data.list.count) {
-            Value *dict = target->data.list.items[i];
+            Value *dict = list_get_borrow(target, i);
             if (dict && dict->type == VAL_DICT) {
                 const char *key = chunk->const_interns[name_idx];
                 uint32_t h = chunk->const_hashes
@@ -1787,9 +1787,9 @@ int jit_helper_iter_next(void) {
     Value *state = slot_as_ptr(state_slot);
     if (!state || state->type != VAL_LIST || state->data.list.count < 2)
         return 1;
-    Value *iterable = state->data.list.items[0];
+    Value *iterable = list_get_borrow(state, 0);
     if (!iterable) return 1;
-    Value *idx_v = state->data.list.items[1];
+    Value *idx_v = list_get_borrow(state, 1);
     if (!idx_v || idx_v->type != VAL_NUM) return 1;
     int idx = (int)VAL_NUM_RAW(idx_v);
     int len = 0;
@@ -1799,7 +1799,7 @@ int jit_helper_iter_next(void) {
     /* #491: cap by the entry-time snapshot (items[2]) — see make_iter_state.
      * Mirrors CASE(ITER_NEXT). */
     if (state->data.list.count >= 3) {
-        Value *snap_v = state->data.list.items[2];
+        Value *snap_v = list_get_borrow(state, 2);
         if (snap_v && snap_v->type == VAL_NUM) {
             int snap = (int)VAL_NUM_RAW(snap_v);
             if (snap < len) len = snap;
@@ -1810,7 +1810,7 @@ int jit_helper_iter_next(void) {
     if (iterable->type == VAL_BUFFER) {
         elem = make_num(buffer_read_num(iterable, idx));
     } else {
-        elem = iterable->data.list.items[idx];
+        elem = list_get_borrow(iterable, idx);
         val_incref(elem);
     }
     /* In-place idx bump when the slot is an exclusive plain VAL_NUM
@@ -1821,8 +1821,7 @@ int jit_helper_iter_next(void) {
         val_decref(idx_v);
         /* #873: heap-force when the state list must outlive an active
          * loop state. */
-        state->data.list.items[1] =
-            make_num(idx + 1);
+        list_set_owned(state, 1, make_num(idx + 1));
     }
     vm_push(elem);
     return g_has_error ? 2 : 0;
@@ -1945,7 +1944,7 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
             if (!vm_index_is_int(idx_d, &i)) return 0;
             if (target->type == VAL_LIST) {
                 if (!vm_index_resolve(&i, target->data.list.count)) return 0;
-                Value *r = target->data.list.items[i];
+                Value *r = list_get_borrow(target, i);
                 if (!r) return 0;
                 if (r->type == VAL_NUM)
                     mini[msp++] = slot_from_num(VAL_NUM_RAW(r));
@@ -2224,14 +2223,13 @@ void jit_helper_index_set(void) {
         }
         if (target->type == VAL_LIST && slot_is_num(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
-                Value *existing = target->data.list.items[i];
+                Value *existing = list_get_borrow(target, i);
                 if (existing && existing->type == VAL_NUM &&
                     existing->refcount == 1) {
                     VAL_NUM_RAW(existing) = SLOT_NUM_RAW(val_s);
                 } else {
                     val_decref(existing);
-                    target->data.list.items[i] =
-                        make_num(SLOT_NUM_RAW(val_s));
+                    list_set_owned(target, i, make_num(SLOT_NUM_RAW(val_s)));
                 }
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
@@ -2252,8 +2250,8 @@ void jit_helper_index_set(void) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             val_incref(val);
-            val_decref(target->data.list.items[i]);
-            target->data.list.items[i] = val;
+            val_decref(list_get_borrow(target, i));
+            list_set_owned(target, i, val);
         } else {
             rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
         }
@@ -2288,7 +2286,7 @@ int jit_helper_index_get(void) {
         int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
         if (target->type == VAL_LIST) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
-                Value *r = target->data.list.items[i];
+                Value *r = list_get_borrow(target, i);
                 if (r && r->type == VAL_NUM) {
                     /* See CASE(INDEX_GET) for the use-after-free story —
                      * snapshot VAL_NUM_RAW(r) before slot_decref(tgt_s)
@@ -2338,7 +2336,7 @@ int jit_helper_index_get(void) {
         if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
-            result = target->data.list.items[i];
+            result = list_get_borrow(target, i);
             val_incref(result);
         } else {
             rt_error(EK_INDEX, g_vm.current_line,
@@ -2382,7 +2380,7 @@ int jit_helper_index_get(void) {
 /* Direct-borrow heuristic, shared by the three builtin call sites
  * (CASE(CALL), jit_helper_call, OP_DISPATCH): if a builtin's result is
  * one of arg's top-level items (coalesce/append/dict_set return
- * arg->data.list.items[0]), incref it so it survives the arg-decref
+ * list_get_borrow(arg, 0)), incref it so it survives the arg-decref
  * that follows. Builtins returning a fresh allocation never match, so
  * no spurious ref is added; nested borrows (get_at: items[0][idx])
  * must still incref locally — only direct children are scanned.
@@ -2432,7 +2430,7 @@ static inline void vm_borrow_scan(Value *arg, Value *result,
          * borrow beyond the effective cap without exposing a builtin. */
         if (getenv("EIGS_BORROW_GUARD_PLANT")) n = 0;
 #endif
-        Value **items = arg->data.list.items;
+        Value **items = list_values_storage(arg);
         for (int i = 0; i < n; i++) {
             if (items[i] == result) { val_incref(result); return; }
         }
@@ -4542,7 +4540,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
             if (target->type == VAL_LIST) {
                 if (_ok && vm_index_resolve(&i, target->data.list.count)) {
-                    Value *r = target->data.list.items[i];
+                    Value *r = list_get_borrow(target, i);
                     if (r && r->type == VAL_NUM) {
                         /* Snapshot the double BEFORE decref'ing the list:
                          * if the stack slot was the sole owner, slot_decref
@@ -4597,7 +4595,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             } else if (vm_index_resolve(&i, target->data.list.count)) {
-                result = target->data.list.items[i];
+                result = list_get_borrow(target, i);
                 val_incref(result);
             } else {
                 rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
@@ -4656,15 +4654,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             if (target->type == VAL_LIST && slot_is_num(val_s)) {
                 if (_ok && vm_index_resolve(&i, target->data.list.count)) {
-                    Value *existing = target->data.list.items[i];
+                    Value *existing = list_get_borrow(target, i);
                     /* In-place mutate when slot is an exclusive untracked VAL_NUM. */
                     if (existing && existing->type == VAL_NUM &&
                         existing->refcount == 1) {
                         VAL_NUM_RAW(existing) = SLOT_NUM_RAW(val_s);
                     } else {
                         val_decref(existing);
-                        target->data.list.items[i] =
-                            make_num(SLOT_NUM_RAW(val_s));
+                        list_set_owned(target, i, make_num(SLOT_NUM_RAW(val_s)));
                     }
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
@@ -4685,8 +4682,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 val_incref(val);
-                val_decref(target->data.list.items[i]);
-                target->data.list.items[i] = val;
+                val_decref(list_get_borrow(target, i));
+                list_set_owned(target, i, val);
             } else {
                 rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
             }
@@ -4871,7 +4868,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             if (target->type == VAL_LIST) {
                 if (i < target->data.list.count) {
-                    Value *item = target->data.list.items[i];
+                    Value *item = list_get_borrow(target, i);
                     /* Plain VAL_NUM -> immediate; skip incref/decref pair. */
                     if (item && item->type == VAL_NUM) {
                         vm_push_slot(slot_from_num(VAL_NUM_RAW(item)));
@@ -4917,7 +4914,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int i = (int)list_idx;
         if (target && target->type == VAL_LIST) {
             if (i < target->data.list.count) {
-                Value *dict = target->data.list.items[i];
+                Value *dict = list_get_borrow(target, i);
                 if (dict && dict->type == VAL_DICT) {
                     const char *key = chunk->const_interns[name_idx];
                     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
@@ -4963,7 +4960,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int i = (int)list_idx;
         if (target && target->type == VAL_LIST) {
             if (i < target->data.list.count) {
-                Value *dict = target->data.list.items[i];
+                Value *dict = list_get_borrow(target, i);
                 if (dict && dict->type == VAL_DICT) {
                     const char *key = chunk->const_interns[name_idx];
                     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
@@ -5016,13 +5013,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * bare ITER_NEXT with any list on TOS, and reading VAL_NUM_RAW() off a
          * VAL_STR is a type confusion whose result then indexes items[] (#721). */
         if (!state || state->type != VAL_LIST || state->data.list.count < 2 ||
-            !state->data.list.items[1] ||
-            state->data.list.items[1]->type != VAL_NUM) {
+            !list_get_borrow(state, 1) ||
+            list_get_borrow(state, 1)->type != VAL_NUM) {
             ip += exit_offset;
             DISPATCH();
         }
-        Value *iterable = state->data.list.items[0];
-        int idx = (int)VAL_NUM_RAW(state->data.list.items[1]);
+        Value *iterable = list_get_borrow(state, 0);
+        int idx = (int)VAL_NUM_RAW(list_get_borrow(state, 1));
         int len = 0;
         if (iterable->type == VAL_LIST) len = iterable->data.list.count;
         else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -5030,8 +5027,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * appends can't extend the loop; min() with the live length keeps a
          * remove from reading past the end. See make_iter_state. */
         if (state->data.list.count >= 3 &&
-            state->data.list.items[2]->type == VAL_NUM) {
-            int snap = (int)VAL_NUM_RAW(state->data.list.items[2]);
+            list_get_borrow(state, 2)->type == VAL_NUM) {
+            int snap = (int)VAL_NUM_RAW(list_get_borrow(state, 2));
             if (snap < len) len = snap;
         }
 
@@ -5044,20 +5041,19 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else {
             /* Update index — mutate in place when the existing slot is
              * an exclusive plain VAL_NUM (avoids per-iter make_num/free). */
-            Value *idx_v = state->data.list.items[1];
+            Value *idx_v = list_get_borrow(state, 1);
             if (NUM_REUSE(idx_v)) {
                 VAL_NUM_RAW(idx_v) = (double)(idx + 1);
             } else {
                 val_decref(idx_v);
-                state->data.list.items[1] =
-                    make_num(idx + 1);
+                list_set_owned(state, 1, make_num(idx + 1));
             }
             if (iterable->type == VAL_BUFFER) {
                 /* Push number immediate directly — skip make_num + immediate-
                  * promote round-trip through vm_push. */
                 vm_push_slot(slot_from_num(buffer_read_num(iterable, idx)));
             } else {
-                Value *elem = iterable->data.list.items[idx];
+                Value *elem = list_get_borrow(iterable, idx);
                 val_incref(elem);
                 vm_push(elem);
             }
@@ -5705,7 +5701,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * so each SET op consumes elements in declaration order. Incref each
          * element so the list's release below doesn't free them prematurely. */
         for (int i = n - 1; i >= 0; i--) {
-            Value *e = lst->data.list.items[i];
+            Value *e = list_get_borrow(lst, i);
             val_incref(e);
             vm_push(e);
         }
@@ -5829,9 +5825,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (target->type == VAL_LIST) {
             result = make_list(n);
             for (int i = 0; i < n; i++) {
-                Value *e = target->data.list.items[start + i];
+                Value *e = list_get_borrow(target, start + i);
                 val_incref(e);
-                result->data.list.items[i] = e;
+                list_set_owned(result, i, e);
             }
             result->data.list.count = n;
         } else if (target->type == VAL_STR) {
@@ -6421,7 +6417,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
-        Value *fn = table->data.list.items[key];
+        Value *fn = list_get_borrow(table, key);
 
         if (fn && fn->type == VAL_BUILTIN) {
             Value *arg = slot_to_value(arg_s);

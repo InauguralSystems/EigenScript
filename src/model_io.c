@@ -603,9 +603,9 @@ Value* json_obj_get(Value *obj, const char *key) {
     if (obj->type == VAL_DICT) return dict_get(obj, key);
     if (obj->type != VAL_LIST) return NULL;
     for (int i = 0; i + 1 < obj->data.list.count; i += 2) {
-        Value *k = obj->data.list.items[i];
+        Value *k = list_get_borrow(obj, i);
         if (k && k->type == VAL_STR && strcmp(k->data.str, key) == 0) {
-            return obj->data.list.items[i + 1];
+            return list_get_borrow(obj, i + 1);
         }
     }
     return NULL;

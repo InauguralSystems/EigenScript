@@ -1259,7 +1259,7 @@ static Value *eigs_json_lint_allow_for(const char *path) {
 static int eigs_json_allows(Value *codes, const char *code) {
     if (!codes || codes->type != VAL_LIST) return 0;
     for (int i = 0; i < codes->data.list.count; i++) {
-        Value *c = codes->data.list.items[i];
+        Value *c = list_get_borrow(codes, i);
         if (c && c->type == VAL_STR &&
             (strcmp(c->data.str, code) == 0 || strcmp(c->data.str, "all") == 0))
             return 1;
