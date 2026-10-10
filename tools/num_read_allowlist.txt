@@ -8,7 +8,21 @@
 builtins_tensor.c|builtin_numerical_grad_rows|3|in-place writes of a matrix cell that tensor_cells_numeric proved a number before any mutation
 builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel into a result buffer cell (EIGS_STRICT=0 path); a write, no Value is read
 container.h|dict_value_get_num|1|accessor numeric fast path: reads the number only behind its own type == VAL_NUM test (#1665 arm D)
+container.h|dict_value_get_owned|1|owned numeric read copies a proven VAL_NUM box for flip-safe ownership
+container.h|dict_value_get_return|1|builtin-return numeric read copies a proven VAL_NUM box
+container.h|dict_value_set_num|1|exclusive VAL_NUM box reuse writes only after type and refcount checks
+container.h|dict_value_set_slot_owned|1|slot write boxes an immediate only after slot_is_num
+container.h|eigs_container_slot|1|rehearsal decoder reads a box only after type == VAL_NUM
+container.h|eigs_slot_box|1|borrowed slot write boxes a double only after slot_is_num
+container.h|eigs_slot_elem_num|1|element numeric accessor reads only after slot_is_num
+container.h|eigs_slot_num|1|required numeric accessor reads only after slot_is_num
+container.h|eigs_slot_opt_num|1|optional numeric accessor reads only after slot_is_num
 container.h|list_get_num|1|accessor numeric fast path: reads the number only behind its own type == VAL_NUM test (#1665 arm D)
+container.h|list_get_owned|1|owned numeric read copies a proven VAL_NUM box for flip-safe ownership
+container.h|list_get_return|1|builtin-return numeric read copies a proven VAL_NUM box
+container.h|list_set_num|1|exclusive VAL_NUM box reuse writes only after type and refcount checks
+container.h|list_set_slot_owned|1|slot write boxes an immediate only after slot_is_num
+container.h|slot_view|2|numeric view copies a proven immediate into caller storage
 chunk.c|chunk_disassemble|1|debug disassembly prints a constant behind its own type == VAL_NUM test
 chunk.c|const_equal|2|constant-pool dedup compares two constants after testing both are VAL_NUM
 chunk.c|const_hash_value|1|constant-pool hash of a constant inside its type == VAL_NUM branch

@@ -37,3 +37,32 @@ if (( violations )); then
     exit 1
 fi
 (( examined > 0 )) || { echo 'container-access: scan found nothing (vacuous)' >&2; exit 1; }
+
+# Files declared migrated may use only the slot API.  Count forbidden calls
+# independently so an empty B0 list is an explicit, non-vacuous population.
+migrated_files=0
+migrated_hits=0
+migrated_violations=0
+while IFS= read -r file; do
+    case "$file" in ''|'#'*) continue ;; esac
+    migrated_files=$((migrated_files + 1))
+    if [[ ! -f $file ]]; then
+        echo "container-migrated: missing listed file: $file" >&2
+        migrated_violations=$((migrated_violations + 1))
+        continue
+    fi
+    while IFS= read -r hit; do
+        [[ -z $hit ]] && continue
+        migrated_hits=$((migrated_hits + 1))
+        echo "forbidden migrated container access: $file:$hit" >&2
+        migrated_violations=$((migrated_violations + 1))
+    done < <(grep -n -E 'list_get_borrow[[:space:]]*[(]|dict_value_get_borrow[[:space:]]*[(]|(^|[^[:alnum:]_])dict_get(_hashed|_cached)?[[:space:]]*[(]|list_values_storage[[:space:]]*[(]' "$file" || true)
+done < "${EIGS_CONTAINER_MIGRATED_LIST:-tools/container_migrated_files.txt}"
+echo "container-migrated: files=$migrated_files examined=$migrated_hits violations=$migrated_violations"
+if (( migrated_violations != 0 )); then
+    if [[ ${EIGS_CONTAINER_EXPECT_VIOLATION:-0} == 1 ]]; then
+        echo "container-migrated-plant: PASS"
+    else
+        exit 1
+    fi
+fi

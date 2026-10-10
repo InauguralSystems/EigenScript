@@ -51,6 +51,9 @@ typedef struct ASTNode ASTNode;
  * definition in vm.c. */
 void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
                           Value *fn_val, Env *env);
+#ifdef EIGS_SLOT_TEST_HOOK
+Value *eigs_test_builtin_number_view(void);
+#endif
 
 
 /* ---- Opcodes ---- */
