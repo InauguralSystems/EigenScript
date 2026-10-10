@@ -512,6 +512,16 @@ static void ensure_layout(void) {
     g_layout_inited = 1;
 }
 
+/* `make jit-checked` (EIGS_JIT_CHECKED): each op whose emitted code indexes
+ * an env's values[] directly gets a slot-witness call (emit_checked_local /
+ * emit_checked_env_slot below); charge its bytes to the size estimate. */
+#ifdef EIGS_JIT_CHECKED
+#define JIT_CHECKED_BYTES 48
+#define JIT_CHECKED_SCAN_EXTRA() (*extra_size += JIT_CHECKED_BYTES)
+#else
+#define JIT_CHECKED_SCAN_EXTRA() ((void)0)
+#endif
+
 /* Scan a chunk-start prefix of opcodes we can natively translate.
  * Returns prefix length in *bytes* (0 = nothing compilable). Sets
  * *needs_env_cache when the prefix touches fn_env->values[]; sets
@@ -598,6 +608,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             }
             i += 3; ops++; non_line_ops++;
             *needs_env_cache = 1;
+            JIT_CHECKED_SCAN_EXTRA();
         } else if (op == OP_GET_NAME) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             uint16_t idx = (uint16_t)(chunk->code[i + 1] |
@@ -614,6 +625,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             /* Stage 5b: inline EnvIC fast path reads frame->env via the
              * %r15 frame cache; helper fallback still needs %r14=chunk. */
             *needs_frame_cache = 1;
+            JIT_CHECKED_SCAN_EXTRA();
             /* Result could be any slot type (whatever the binding holds).
              * Subsequent OP_POP cannot use the immediate peephole. */
         } else if (op == OP_SET_NAME || op == OP_SET_NAME_LOCAL ||
@@ -636,6 +648,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 3; ops++; non_line_ops++;
             *has_bail_op = 1;
             *needs_frame_cache = 1;   /* Stage 5b inline IC fast path */
+            JIT_CHECKED_SCAN_EXTRA();
         } else if (op == OP_LOCAL_IDX_GET) {
             /* 5-byte op: [op][slot:16][idx:16]. Helper handles VAL_BUFFER/
              * VAL_LIST/VAL_STR dispatch and reports a latched error.
@@ -658,6 +671,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 5; ops++; non_line_ops++;
             *has_bail_op = 1;
             *needs_env_cache = 1;
+            JIT_CHECKED_SCAN_EXTRA();
         } else if (op == OP_LOCAL_IDX_DOT_GET) {
             /* Stage 4v: 7-byte op [op][slot:16][list_idx:16][name_idx:16].
              * Helper needs chunk pointer (const_interns/const_hashes) —
@@ -712,6 +726,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 5; ops++; non_line_ops++;
             *has_bail_op = 1;
             *needs_env_cache = 1;   /* Stage 5d inline fast path */
+            JIT_CHECKED_SCAN_EXTRA();
         } else if (op == OP_SET_LOCAL) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             /* #348: same bounds rule as OP_GET_LOCAL above. */
@@ -723,6 +738,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 3; ops++; non_line_ops++;
             *needs_env_cache = 1;
             *has_bail_op = 1;   /* #1063: %r14=chunk for the traced slow path */
+            JIT_CHECKED_SCAN_EXTRA();
         } else if (op == OP_DUP) {
             i += 1; ops++; non_line_ops++;
         } else if (op == OP_DUP2) {
@@ -2201,6 +2217,57 @@ static uint8_t *emit_jb_rel32(uint8_t *w, uint8_t **patch) {
 static uint8_t *emit_mov_rdx_rdi(uint8_t *w) {
     *w++ = 0x48; *w++ = 0x89; *w++ = 0xD7; return w;
 }
+
+#ifdef EIGS_JIT_CHECKED
+/* `make jit-checked`: a call to a slot witness (jit.h) before every emitted
+ * direct env-slot access. Thunk bodies run at %rsp == 8 (mod 16), so the
+ * pushes stay odd in number to keep the call aligned. Nothing here exists
+ * in the default build: the emitter is unchanged there (byte-identical
+ * jit.o). JIT_CHECKED_SITE packs (opcode << 24) | bytecode offset. */
+#define JIT_CHECKED_SITE(op, off) (((uint32_t)(op) << 24) | ((uint32_t)(off) & 0xFFFFFFu))
+/* JIT_CHECKED_BYTES (scanner, above) bounds either sequence below (37 and
+ * 42 bytes). */
+_Static_assert(JIT_CHECKED_BYTES >= 42, "checked-slot sequence size bound");
+/* movabs $imm64, %rcx (10 bytes) */
+static uint8_t *emit_checked_movabs_rcx(uint8_t *w, uint64_t imm) {
+    *w++ = 0x48; *w++ = 0xB9; return emit_u64(w, imm);
+}
+/* %r12-based ops: jit_checked_local(%r12, slot, site, chunk). 37 bytes:
+ * push %rcx; mov %r12,%rdi; mov $slot,%esi; mov $site,%edx;
+ * movabs $chunk,%rcx; movabs $helper,%rax; call *%rax; pop %rcx. */
+static uint8_t *emit_checked_local(uint8_t *w, uint32_t slot, uint32_t site,
+                                   const struct EigsChunk *chunk) {
+    w = emit_push_rcx(w);
+    *w++ = 0x4C; *w++ = 0x89; *w++ = 0xE7;               /* mov %r12, %rdi */
+    w = emit_mov_imm32_esi(w, slot);
+    w = emit_mov_imm32_edx(w, site);
+    w = emit_checked_movabs_rcx(w, (uint64_t)(uintptr_t)chunk);
+    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_checked_local);
+    w = emit_call_rax(w);
+    w = emit_pop_rcx(w);
+    return w;
+}
+/* Inline EnvIC hit (%rdx = target env, %rax = ic):
+ * jit_checked_env_slot(target, ic->slot_idx, site, chunk), preserving
+ * %rax/%rdx for the hit path. 42 bytes. */
+static uint8_t *emit_checked_env_slot(uint8_t *w, uint32_t site,
+                                      const struct EigsChunk *chunk) {
+    w = emit_push_rcx(w);
+    *w++ = 0x50;                                         /* push %rax */
+    *w++ = 0x52;                                         /* push %rdx */
+    w = emit_mov_rdx_rdi(w);
+    *w++ = 0x8B; *w++ = 0xB0;                            /* mov disp32(%rax), %esi */
+    w = emit_u32(w, (uint32_t)offsetof(EnvIC, slot_idx));
+    w = emit_mov_imm32_edx(w, site);
+    w = emit_checked_movabs_rcx(w, (uint64_t)(uintptr_t)chunk);
+    w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_checked_env_slot);
+    w = emit_call_rax(w);
+    *w++ = 0x5A;                                         /* pop %rdx */
+    *w++ = 0x58;                                         /* pop %rax */
+    w = emit_pop_rcx(w);
+    return w;
+}
+#endif  /* EIGS_JIT_CHECKED */
 /* or %rsi, %rdx  (3 bytes) — rdx |= rsi. */
 static uint8_t *emit_or_rsi_rdx(uint8_t *w) {
     *w++ = 0x48; *w++ = 0x09; *w++ = 0xF2; return w;
@@ -2746,6 +2813,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         } else if (op == OP_GET_LOCAL) {
             uint16_t slot = (uint16_t)(chunk->code[i + 1] |
                                        ((uint16_t)chunk->code[i + 2] << 8));
+#ifdef EIGS_JIT_CHECKED
+            w = emit_checked_local(w, slot, JIT_CHECKED_SITE(op, i), chunk);
+#endif
             /* %rax = values[slot]  (8-byte slot at slot*8 offset) */
             w = emit_mov_disp32_r12_to_rax(w, (int32_t)slot * 8);
             int bail = 0;
@@ -2797,6 +2867,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_disp32_rdx_to_rsi(w, (int32_t)offsetof(Env, binding_version));
             w = emit_cmp_rsi_disp32_rax(w, (int32_t)offsetof(EnvIC, target_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
+#ifdef EIGS_JIT_CHECKED
+            w = emit_checked_env_slot(w, JIT_CHECKED_SITE(op, i), chunk);
+#endif
             /* Hit: load slot, incref, push. */
             w = emit_mov_disp32_rax_to_esi(w, (int32_t)offsetof(EnvIC, slot_idx));
             w = emit_mov_disp32_rdx_to_rdx(w, (int32_t)offsetof(Env, values));
@@ -2912,6 +2985,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_cmp_rsi_disp32_rax(w, (int32_t)offsetof(EnvIC, target_ver));
             w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
             /* Hit. %rdx = target env, %rax = ic. */
+#ifdef EIGS_JIT_CHECKED
+            w = emit_checked_env_slot(w, JIT_CHECKED_SITE(op, i), chunk);
+#endif
             w = emit_mov_disp32_rax_to_r9d(w, (int32_t)offsetof(EnvIC, slot_idx));
             w = emit_load_stack_to_r8(w, g_layout.off_stack - 8);   /* s */
             /* slot_incref(s): immediates skip, pointers get the lock-incref. */
@@ -3027,6 +3103,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             }
             uint8_t *slow_p[10];
             int slow_n = 0;
+#ifdef EIGS_JIT_CHECKED
+            w = emit_checked_local(w, slot, JIT_CHECKED_SITE(op, i), chunk);
+#endif
             uint8_t *done_p = NULL;
             /* Defensive: the shl $4 in the probe hard-codes the entry
              * size; fall back to helper-only emission if it ever moves. */
@@ -3158,6 +3237,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint8_t *slow_p[13];
             int slow_n = 0;
             uint8_t *done_p = NULL;
+#ifdef EIGS_JIT_CHECKED
+            w = emit_checked_local(w, slot, JIT_CHECKED_SITE(op, i), chunk);
+#endif
             if (g_layout.sizeof_dcache_entry == 16 && g_layout.dcache_ways == 2) {
                 w = emit_dict_cache_probe(w, slot, h, key, slow_p, &slow_n);
                 /* existing field: exclusive num. */
@@ -3328,6 +3410,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             int32_t off = (int32_t)slot * 8;
             uint8_t *swap_p[5], *plain_p[2], *done_p[2];
             int swap_n = 0, plain_n = 0, done_n = 0;
+#ifdef EIGS_JIT_CHECKED
+            w = emit_checked_local(w, slot, JIT_CHECKED_SITE(op, i), chunk);
+#endif
             /* #1063: g_trace_hist armed -> out-of-line helper, exactly as
              * the SET_NAME* arms do. The inline path below cannot record
              * history, and a slot-bound interrogated name (a parameter, or

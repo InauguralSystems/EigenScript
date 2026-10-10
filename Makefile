@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build slot-rehearsal server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv
+.PHONY: db-params-test all build slot-rehearsal server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -178,8 +178,16 @@ SRC_V_pool-off-callenv := $(HOSTED_SOURCES)
 FLAGS_pool-off-callenv := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_POOL_OFF_CALLENV $(VERDEF)
 LIBS_pool-off-callenv  := $(LDFLAGS) -ldl
 
+# #1665 follow-up: release build whose JIT emits a slot witness before every
+# direct env-slot access (GET_LOCAL/SET_LOCAL/LOCAL_DOT_*, the inline EnvIC
+# hit paths): a slot out of range of the env, or a stale cached values base,
+# aborts with the read site (jit.h EIGS_JIT_CHECKED). The default emitter is
+# unchanged; CI runs the JIT-tier sections against this build.
+SRC_V_jit-checked := $(HOSTED_SOURCES)
+FLAGS_jit-checked := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_JIT_CHECKED $(VERDEF)
+LIBS_jit-checked  := $(LDFLAGS) -ldl
 
-VARIANTS := release slot-rehearsal server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv
+VARIANTS := release slot-rehearsal server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -670,6 +678,12 @@ pool-off-num: build/pool-off-num/eigenscript
 pool-off-callenv: build/pool-off-callenv/eigenscript
 	$(call RELINK,pool-off-callenv)
 	@echo "EigenScript $(VERSION) (pool-off C3: call-env recycling off) built. Binary: $(BINARY)"
+
+# JIT slot witnesses (see FLAGS_jit-checked). Run the JIT-tier sections:
+#   make jit-checked && cd tests && EIGS_SUITE_SECTIONS='82 100 129 130 0fd 0fe' bash run_all_tests.sh
+jit-checked: build/jit-checked/eigenscript
+	$(call RELINK,jit-checked)
+	@echo "EigenScript $(VERSION) (jit-checked: emitted slot witnesses) built. Binary: $(BINARY)"
 
 
 # Profile-guided optimization. Builds an instrumented binary, runs the
