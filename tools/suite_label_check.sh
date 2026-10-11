@@ -73,5 +73,12 @@ grep -nE '^[[:space:]]*echo "\[[^]"]+\]' "$RUNNER" \
       { prev = $1; first = $2 }
       END { exit bad ? 1 : 0 }'
 rc=$?
+# Section fragments are SOURCED into the runner: a `set -e` / `set -u` in one
+# arms the option for every later section, and the first nonzero command
+# then kills the runner silently (PR #1726: the macOS suite died after [47i]).
+optleak=$(grep -nE '^[[:space:]]*set[[:space:]]+(-[a-zA-Z]*[eu]|-o[[:space:]]+(errexit|nounset))' tests/sections/*.sh 2>/dev/null || true)
+if [ -n "$optleak" ]; then
+  printf 'FAIL: a sourced section fragment toggles errexit/nounset:\n%s\n' "$optleak"; rc=1
+fi
 [ $rc -eq 0 ] && echo "PASS: $n labelled echo lines; labels and tallies carry no hand-typed counts; no two sections share a label"
 exit $rc
