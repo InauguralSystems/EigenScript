@@ -5,7 +5,6 @@
 # count), when a function with raw tokens is missing here, or a row is stale.
 # Builtins never belong here: they read through eigs_num_arg / eigs_list_num /
 # eigs_opt_num / eigs_elem_num, which raise on a bool.
-builtins_tensor.c|builtin_numerical_grad_rows|3|in-place writes of a matrix cell that tensor_cells_numeric proved a number before any mutation
 builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel into a result buffer cell (EIGS_STRICT=0 path); a write, no Value is read
 container.h|dict_value_get_num|1|accessor numeric fast path: reads the number only behind its own type == VAL_NUM test (#1665 arm D)
 container.h|dict_value_get_owned|1|owned numeric read copies a proven VAL_NUM box for flip-safe ownership

@@ -4,3 +4,7 @@ src/eigenscript.c
 src/trace.c
 src/vm.c
 src/builtins.c
+src/builtins_tensor.c
+src/model_infer.c
+src/model_train.c
+src/model_io.c
