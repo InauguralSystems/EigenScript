@@ -191,8 +191,6 @@ static inline Value *dict_get_hashed(Value *dict, const char *key, uint32_t h) {
 }
 
 /* Low-level compatibility accessors retain their pre-flip meaning. */
-static inline Value *list_get_borrow(const Value *list, int i) { return list->data.list.items[i]; }
-static inline Value *dict_value_get_borrow(const Value *dict, int i) { return dict->data.dict.vals[i]; }
 static inline Value *dict_value_compat_ref(const Value *dict, int i) { return dict->data.dict.vals[i]; }
 static inline void list_set_owned(Value *list, int i, Value *v) { list->data.list.items[i] = v; }
 static inline void dict_value_set_owned(Value *dict, int i, Value *v) { dict->data.dict.vals[i] = v; }
@@ -262,12 +260,10 @@ static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)
     qsort(list->data.list.items, (size_t)list->data.list.count, sizeof(Value *), cmp);
 }
 
-static inline int list_get_num(const Value *list, int i, double *out) { Value *v=list_get_borrow(list,i); if(!v||v->type!=VAL_NUM)return 0; *out=VAL_NUM_RAW(v); return 1; }
-static inline int dict_value_get_num(const Value *dict, int i, double *out) { Value *v=dict_value_get_borrow(dict,i); if(!v||v->type!=VAL_NUM)return 0; *out=VAL_NUM_RAW(v); return 1; }
+static inline int list_get_num(const Value *list, int i, double *out) { Value *v=list->data.list.items[i]; if(!v||v->type!=VAL_NUM)return 0; *out=VAL_NUM_RAW(v); return 1; }
+static inline int dict_value_get_num(const Value *dict, int i, double *out) { Value *v=dict->data.dict.vals[i]; if(!v||v->type!=VAL_NUM)return 0; *out=VAL_NUM_RAW(v); return 1; }
 static inline int list_iter_count(const Value *list) { return list->data.list.count; }
-static inline Value *list_iter_borrow(const Value *list, int i) { return list_get_borrow(list, i); }
 static inline int dict_value_iter_count(const Value *dict) { return dict->data.dict.count; }
-static inline Value *dict_value_iter_borrow(const Value *dict, int i) { return dict_value_get_borrow(dict, i); }
 
 /* Raw storage is confined to bulk allocation/movement/destruction code. */
 static inline Value **list_values_storage(Value *list) { return list->data.list.items; }
