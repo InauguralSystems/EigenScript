@@ -6508,6 +6508,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!fn || fn->type == VAL_NULL || fn->type == VAL_FN) {
             slot_decref(arg_s); slot_decref(table_s);
             vm_push_slot(slot_null());
+            eigs_view_check(&fn_view);
             DISPATCH();
         }
 
@@ -6516,6 +6517,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         slot_decref(arg_s); slot_decref(table_s);
         rt_error(EK_TYPE, current_line, "dispatch: slot %d is not a function", key);
         vm_push_slot(slot_null());
+        eigs_view_check(&fn_view);
         DISPATCH();
     }
 

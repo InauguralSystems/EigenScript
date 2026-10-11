@@ -2607,7 +2607,10 @@ static Value *chan_clone_rec(Value *v, int depth) {
     if (!v) return make_null();
     /* Cycle / pathological-depth guard: fall back to sharing (the pre-#293
      * behavior) rather than overflow the stack. */
-    if (depth > CHAN_CLONE_MAX_DEPTH) { val_incref(v); return v; }
+    /* #1665: scalars are copied at any depth: a number may be a stack view,
+     * which must never be shared out of its frame. */
+    if (depth > CHAN_CLONE_MAX_DEPTH && v->type != VAL_NUM && v->type != VAL_NULL &&
+        v->type != VAL_BOOL && v->type != VAL_STR) { val_incref(v); return v; }
     switch (v->type) {
         case VAL_NUM:  return make_num(VAL_NUM_RAW(v));
         case VAL_NULL: return make_null();
@@ -2840,7 +2843,9 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
         }
         return 0;
     }
-    if (depth > 64) return a == b;
+    /* #1665: the depth cap is for containers only; scalars compare by value
+     * (a number may be a view, so pointer identity is meaningless). */
+    if (depth > 64 && (a->type == VAL_LIST || a->type == VAL_DICT)) return a == b;
     switch (a->type) {
         case VAL_NUM:  return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
         case VAL_STR:  return strcmp(a->data.str, b->data.str) == 0;
