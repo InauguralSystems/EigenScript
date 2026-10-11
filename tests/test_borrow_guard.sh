@@ -113,6 +113,25 @@ else
     fail "borrow plant opt-in control" "rc=$rc got: $out"
 fi
 
+# VM dispatch uses explicit checks because GCC computed goto skips cleanup
+# attributes (and clang rejects those protected scopes outright).  Plant a
+# moved numeric view in the fused local[idx].field handler and prove its
+# explicit pre-DISPATCH check fires in borrow-guard builds.
+printf 'define vm_view_plant() as:\n    xs is [7]\n    return xs[0].a\nprint of vm_view_plant of []\n' \
+    > "$TMPDIR/vm_view.eigs"
+# `xs[0].a` on a number raises in every build, so a nonzero rc alone does not
+# say the plant ran: compare against the same program without the plant.
+base=$("$EIGS" "$TMPDIR/vm_view.eigs" 2>&1); base_rc=$?
+out=$(EIGS_VM_VIEW_GUARD_PLANT=1 "$EIGS" "$TMPDIR/vm_view.eigs" 2>&1)
+rc=$?
+if [ "$rc" -eq "$base_rc" ] && [ "$out" = "$base" ]; then
+    echo "  SKIP: non-borrow-guard build — VM view plant compiled out"
+elif echo "$out" | grep -q "numeric view refcount moved"; then
+    ok "planted VM numeric-view retention aborts before dispatch (rc=$rc)"
+else
+    fail "planted VM numeric-view guard diagnostic" "rc=$rc got: $(echo "$out" | head -1)"
+fi
+
 echo ""
 echo "borrow-guard: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -15,6 +15,29 @@ static inline EigsSlot eigs_container_slot(Value *v) {
     return slot_from_heap(v);
 }
 
+/* A borrowed read for VALUE use (the VM stack, arithmetic): a boxed number
+ * becomes an immediate. list_slot stays storage-faithful before the flip
+ * (a boxed number is a heap slot) because ownership walkers (free_value, GC
+ * clear, vm_borrow_scan) must still see and release the box; the VM stack
+ * expects immediates, so its read sites normalise here. Identity after the
+ * flip, where numbers are already immediate. */
+static inline EigsSlot slot_read_value(EigsSlot s) {
+    if (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NUM)
+        return slot_from_num(VAL_NUM_RAW(slot_as_ptr(s)));
+    return s;
+}
+/* slot_read_value + slot_incref in one branch, for the VM hot read sites: a
+ * boxed number becomes an immediate (no ref taken), any other heap value is
+ * incref'd, immediates pass through. The returned slot is OWNED. */
+static inline EigsSlot slot_read_owned(EigsSlot s) {
+    if (slot_is_heap(s)) {
+        Value *v = slot_as_ptr(s);
+        if (v->type == VAL_NUM) return slot_from_num(VAL_NUM_RAW(v));
+        val_incref(v);
+    }
+    return s;
+}
+
 /* A slot read is borrowed: it owns no reference and remains valid only until
  * the container is mutated.  In rehearsal a number is an immediate. */
 static inline EigsSlot list_slot(const Value *list, int i) {
@@ -22,6 +45,26 @@ static inline EigsSlot list_slot(const Value *list, int i) {
 }
 static inline EigsSlot dict_value_slot(const Value *dict, int i) {
     return eigs_container_slot(dict->data.dict.vals[i]);
+}
+
+/* Precondition: the selected element's logical type is VAL_NUM.  These raw
+ * readers intentionally bypass the slot encode/decode round trip for hot
+ * paths which have already established that contract.  They remain valid
+ * only until the container is mutated, just like the borrowed slot readers. */
+/* Rewrite an already boxed, exclusive numeric element.  The caller must pass
+ * a number already normalized by the VM slot boundary; this deliberately
+ * avoids a redundant num_guard on the assignment hot path. */
+static inline int dict_value_rewrite_num(const Value *dict, int i, double d) {
+    Value *v = dict->data.dict.vals[i];
+    if (!v || v->type != VAL_NUM || v->refcount != 1) return 0;
+    VAL_NUM_RAW(v) = d;
+    return 1;
+}
+static inline int list_rewrite_num(const Value *list, int i, double d) {
+    Value *v = list->data.list.items[i];
+    if (!v || v->type != VAL_NUM || v->refcount != 1) return 0;
+    VAL_NUM_RAW(v) = d;
+    return 1;
 }
 
 /* Return the logical type of a borrowed slot without allocating. */
@@ -110,6 +153,10 @@ static inline void eigs_view_check(EigsView *view) {
 #else
 #define EIGS_VIEW(name) EigsView name = {{0}}
 #endif
+/* Computed goto does not run cleanup attributes (and clang rejects jumping
+ * out of their protected scope).  Dispatch loops use this form and call
+ * eigs_view_check explicitly before every exit from the view's scope. */
+#define EIGS_VIEW_NOCHECK(name) EigsView name = {{0}}
 
 /* Owned/return reads make numeric storage independent.  Reference values are
  * increfed by the owned form; return preserves the builtin direct-child
@@ -159,7 +206,8 @@ static inline Value *eigs_slot_box(EigsSlot s) {
     if (slot_is_num(s)) return make_num(num_guard(SLOT_NUM_RAW(s)));
     Value *v = eigs_slot_ref(s); val_incref(v); return v;
 }
-static inline void list_set_slot_owned(Value *list, int i, EigsSlot s) {
+static inline __attribute__((always_inline)) void
+list_set_slot_owned(Value *list, int i, EigsSlot s) {
     Value *old = list->data.list.items[i];
     Value *v = slot_is_num(s) ? make_num(num_guard(SLOT_NUM_RAW(s))) : eigs_slot_ref(s);
     list->data.list.items[i] = v;
@@ -174,7 +222,8 @@ static inline void dict_value_set_slot_owned(Value *dict, int i, EigsSlot s) {
 static inline void list_append_slot(Value *list, EigsSlot s) {
     Value *v = eigs_slot_box(s); list_append_owned(list, v);
 }
-static inline void list_set_num(Value *list, int i, double d) {
+static inline __attribute__((always_inline)) void
+list_set_num(Value *list, int i, double d) {
     d = num_guard(d);
 #ifndef EIGS_SLOT_REHEARSAL
     Value *old = list->data.list.items[i];
