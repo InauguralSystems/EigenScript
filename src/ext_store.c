@@ -14,6 +14,15 @@ void register_store_builtins(Env *env) { (void)env; }
 void store_drain_handle(void *ptr) { (void)ptr; }
 #else
 
+/* Store dictionaries are ordinary runtime dictionaries (never module
+ * namespace projections).  Keep named reads on the slot boundary: callers
+ * supply the short-lived view storage used when the selected value is an
+ * inline number in the rehearsal/final representation. */
+static Value *store_dict_get_view(Value *dict, const char *key, EigsView *view) {
+    int idx = env_hash_find_dict(dict, key, env_hash_name(key));
+    return idx < 0 ? NULL : dict_value_get_view(dict, idx, view);
+}
+
 /* ================================================================
  * Bounded record iteration — validates all on-disk lengths before use.
  *
@@ -154,6 +163,24 @@ static void store_json_encode_buf_elem(strbuf *out, double d) {
     strbuf_append_fmt(out, "%.17g", d);
 }
 
+static void store_json_encode(Value *v, strbuf *out);
+
+/* Recursive container walks consume slots directly.  In particular, do not
+ * manufacture a stack-backed Value and pass it down the recursion for an
+ * inline number; format it through the same branch and format strings used by
+ * the historical boxed-number path so persisted bytes remain identical. */
+static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
+    if (slot_is_num(slot)) {
+        double n = eigs_slot_num(slot, __func__);
+        if (fabs(n) < 2147483648.0 && n == (int)n)
+            strbuf_append_fmt(out, "%d", (int)n);
+        else
+            strbuf_append_fmt(out, "%.15g", n);
+        return;
+    }
+    store_json_encode(eigs_slot_ref(slot), out);
+}
+
 static void store_json_encode(Value *v, strbuf *out) {
     if (!v || v->type == VAL_NULL || v->type == VAL_FN || v->type == VAL_BUILTIN) {
         strbuf_append(out, "null");
@@ -185,7 +212,7 @@ static void store_json_encode(Value *v, strbuf *out) {
             strbuf_append_char(out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
                 if (i > 0) strbuf_append_char(out, ',');
-                store_json_encode(list_get_borrow(v, i), out);
+                store_json_encode_slot(list_slot(v, i), out);
             }
             strbuf_append_char(out, ']');
             break;
@@ -201,15 +228,15 @@ static void store_json_encode(Value *v, strbuf *out) {
                 first = 0;
                 eigs_json_escape_string(out, key);
                 strbuf_append_char(out, ':');
-                store_json_encode(dict_value_get_borrow(v, i), out);
+                store_json_encode_slot(dict_value_slot(v, i), out);
             }
             /* Escape the complete buffer-tag namespace.  Repeating the shape
              * member preserves its value after dict insertion while leaving a
              * lexical fact that no user VAL_DICT can itself contain. */
             if (v->data.dict.count == 2 &&
-                dict_get(v, STORE_BUF_TAG) && dict_get(v, STORE_SHAPE_TAG)) {
+                store_dict_get_view(v, STORE_BUF_TAG, &(EigsView){{0}}) && store_dict_get_view(v, STORE_SHAPE_TAG, &(EigsView){{0}})) {
                 strbuf_append(out, ",\"" STORE_SHAPE_TAG "\":");
-                store_json_encode(dict_get(v, STORE_SHAPE_TAG), out);
+                store_json_encode(store_dict_get_view(v, STORE_SHAPE_TAG, &(EigsView){{0}}), out);
             }
             strbuf_append_char(out, '}');
             break;
@@ -325,13 +352,13 @@ static Value* store_json_parse_array(const char *s, int *pos) {
  * dict. */
 static Value* store_buffer_from_tag(Value *dict) {
     if (dict->data.dict.count != 2) return NULL;
-    Value *body  = dict_get(dict, STORE_BUF_TAG);
-    Value *shape = dict_get(dict, STORE_SHAPE_TAG);
+    Value *body  = store_dict_get_view(dict, STORE_BUF_TAG, &(EigsView){{0}});
+    Value *shape = store_dict_get_view(dict, STORE_SHAPE_TAG, &(EigsView){{0}});
     if (!body || body->type != VAL_LIST) return NULL;
     if (!shape || shape->type != VAL_LIST || shape->data.list.count != 2) return NULL;
 
-    Value *rv = list_get_borrow(shape, 0);
-    Value *cv = list_get_borrow(shape, 1);
+    Value *rv = list_get_view(shape, 0, &(EigsView){{0}});
+    Value *cv = list_get_view(shape, 1, &(EigsView){{0}});
     if (!rv || rv->type != VAL_NUM || !cv || cv->type != VAL_NUM) return NULL;
 
     /* Range-gate BEFORE narrowing. A stored shape is whatever double the file
@@ -360,7 +387,7 @@ static Value* store_buffer_from_tag(Value *dict) {
         if (count != 0) return NULL;
     }
     for (int i = 0; i < count; i++) {
-        Value *e = list_get_borrow(body, i);
+        Value *e = list_get_view(body, i, &(EigsView){{0}});
         if (!e) return NULL;
         if (e->type == VAL_NUM) continue;
         if (e->type == VAL_STR && store_nonfinite_sentinel(e->data.str, NULL)) continue;
@@ -375,7 +402,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     buf->data.buffer.cols = cols;
     buf->data.buffer.data = xcalloc(count > 0 ? (size_t)count : 1, sizeof(double));
     for (int i = 0; i < count; i++) {
-        Value *e = list_get_borrow(body, i);
+        Value *e = list_get_view(body, i, &(EigsView){{0}});
         double d = 0;
         if (e->type == VAL_NUM) d = eigs_num_arg(e, __func__);
         else store_nonfinite_sentinel(e->data.str, &d);
@@ -705,7 +732,7 @@ static int store_load_catalog(Store *store) {
 
     for (int i = 0; i < store->catalog->data.dict.count; i++) {
         const char *name = store->catalog->data.dict.keys[i];
-        Value *col = dict_value_get_borrow(store->catalog, i);
+        Value *col = dict_value_get_view(store->catalog, i, &(EigsView){{0}});
 
         /* Strict schema: must be dict with numeric "root" and "next_id" */
         if (!col || col->type != VAL_DICT) {
@@ -713,8 +740,8 @@ static int store_load_catalog(Store *store) {
             free(visited);
             return -1;
         }
-        Value *rv = dict_get(col, "root");
-        Value *nv = dict_get(col, "next_id");
+        Value *rv = store_dict_get_view(col, "root", &(EigsView){{0}});
+        Value *nv = store_dict_get_view(col, "next_id", &(EigsView){{0}});
         if (!rv || rv->type != VAL_NUM || !nv || nv->type != VAL_NUM) {
             fprintf(stderr, "store_open: collection '%s' missing root or next_id\n", name);
             free(visited);
@@ -786,10 +813,10 @@ static Store* get_store_why(Value *v, int *why, int *out_id) {
     *why = HANDLE_CLAIM_BADVALUE;
     *out_id = 0;
     if (!v || v->type != VAL_DICT) return NULL;
-    Value *sv = dict_get(v, "_store_id");
+    Value *sv = store_dict_get_view(v, "_store_id", &(EigsView){{0}});
     if (!sv || sv->type != VAL_NUM) return NULL;
     *out_id = (int)eigs_num_arg(sv, __func__);
-    Value *gv = dict_get(v, "_store_gen");
+    Value *gv = store_dict_get_view(v, "_store_gen", &(EigsView){{0}});
     uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
     return (Store*)handle_lookup(*out_id, gen, HANDLE_STORE, why);
 }
@@ -951,9 +978,9 @@ static Value* builtin_store_close(Value *arg) {
     if (store_replay_blocks("store_close")) return make_null();
     /* Release handle BEFORE freeing memory to prevent use-after-free
      * if another thread calls get_store() concurrently. */
-    Value *id_val = (arg && arg->type == VAL_DICT) ? dict_get(arg, "_store_id") : NULL;
+    Value *id_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_id", &(EigsView){{0}}) : NULL;
     int hid = (id_val && id_val->type == VAL_NUM) ? (int)eigs_num_arg(id_val, __func__) : -1;
-    Value *g_val = (arg && arg->type == VAL_DICT) ? dict_get(arg, "_store_gen") : NULL;
+    Value *g_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_gen", &(EigsView){{0}}) : NULL;
     uint32_t hgen = (g_val && g_val->type == VAL_NUM) ? (uint32_t)eigs_num_arg(g_val, __func__) : 0;
     handle_release(hid, hgen);
     store->dirty = 1; /* Force flush */
@@ -975,11 +1002,11 @@ static Value* builtin_store_put(Value *arg) {
         rt_error(EK_TYPE, 0, "store_put requires [handle, collection, record]\n");
         return make_null();
     }
-    Store *store = store_arg(list_get_borrow(arg, 0), "store_put");
+    Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_put");
     if (!store) return make_null();
     if (store_replay_blocks("store_put")) return make_null();
-    Value *col_val = list_get_borrow(arg, 1);
-    Value *record = list_get_borrow(arg, 2);
+    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
+    Value *record = list_get_view(arg, 2, &(EigsView){{0}});
     if (!col_val || col_val->type != VAL_STR) {
         rt_error(EK_VALUE, 0, "store_put: invalid handle or collection\n");
         return make_null();
@@ -991,7 +1018,7 @@ static Value* builtin_store_put(Value *arg) {
     const char *collection = col_val->data.str;
 
     /* Get or create collection entry in catalog */
-    Value *col_info = dict_get(store->catalog, collection);
+    Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     uint32_t root_page;
     int next_id;
 
@@ -1013,15 +1040,15 @@ static Value* builtin_store_put(Value *arg) {
         page.next_page = 0;
         store_write_page(store, root_page, &page);
     } else {
-        Value *rv = dict_get(col_info, "root");
-        Value *nv = dict_get(col_info, "next_id");
+        Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
+        Value *nv = store_dict_get_view(col_info, "next_id", &(EigsView){{0}});
         root_page = (uint32_t)(rv ? eigs_num_arg(rv, __func__) : 0);
         next_id = (int)(nv ? eigs_num_arg(nv, __func__) : 1);
     }
 
     /* Determine key */
     char key_buf[STORE_MAX_KEY_LEN];
-    Value *id_val = dict_get(record, "_id");
+    Value *id_val = store_dict_get_view(record, "_id", &(EigsView){{0}});
     if (id_val && id_val->type == VAL_STR && id_val->data.str[0] != '\0') {
         strncpy(key_buf, id_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
@@ -1140,11 +1167,11 @@ static Value* builtin_store_get(Value *arg) {
         rt_error(EK_TYPE, 0, "store_get requires [handle, collection, key]\n");
         return make_null();
     }
-    Store *store = store_arg(list_get_borrow(arg, 0), "store_get");
+    Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_get");
     if (!store) return make_null();
     if (store_replay_blocks("store_get")) return make_null();
-    Value *col_val = list_get_borrow(arg, 1);
-    Value *key_val = list_get_borrow(arg, 2);
+    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
+    Value *key_val = list_get_view(arg, 2, &(EigsView){{0}});
     if (!col_val || col_val->type != VAL_STR) return make_null();
 
     const char *collection = col_val->data.str;
@@ -1158,9 +1185,9 @@ static Value* builtin_store_get(Value *arg) {
         return make_null();
     }
 
-    Value *col_info = dict_get(store->catalog, collection);
+    Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     if (!col_info || col_info->type != VAL_DICT) return make_null();
-    Value *rv = dict_get(col_info, "root");
+    Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_null();
     uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
 
@@ -1216,9 +1243,9 @@ typedef struct {
  * (which includes a corruption abort — the scan stops having changed nothing). */
 static int store_locate(Store *store, const char *collection,
                         const char *key_buf, StoreLoc *loc) {
-    Value *col_info = dict_get(store->catalog, collection);
+    Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     if (!col_info || col_info->type != VAL_DICT) return 0;
-    Value *rv = dict_get(col_info, "root");
+    Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return 0;
     uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
     size_t target_key_len = strlen(key_buf);
@@ -1298,7 +1325,7 @@ static Value* builtin_store_delete(Value *arg) {
          * CV2-68); this return is the post-raise placeholder, not the answer. */
         return make_bool(0);
     }
-    Store *store = store_arg(list_get_borrow(arg, 0), "store_delete");
+    Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_delete");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
      * rt_error'd — "invalid store", "stale store handle", "already been
      * closed" — by the time it returns NULL, and rt_error LATCHES rather
@@ -1306,8 +1333,8 @@ static Value* builtin_store_delete(Value *arg) {
      * "deleted nothing". Same shape as the arity guard above. */
     if (!store) return make_bool(0);
     if (store_replay_blocks("store_delete")) return make_bool(0);
-    Value *col_val = list_get_borrow(arg, 1);
-    Value *key_val = list_get_borrow(arg, 2);
+    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
+    Value *key_val = list_get_view(arg, 2, &(EigsView){{0}});
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_delete", "[store handle, string collection, key]", make_bool(0));
 
@@ -1352,16 +1379,16 @@ static Value* builtin_store_query(Value *arg) {
         rt_error(EK_TYPE, 0, "store_query requires [handle, collection]\n");
         return make_list(0);
     }
-    Store *store = store_arg(list_get_borrow(arg, 0), "store_query");
+    Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_query");
     if (!store) return make_list(0);
     if (store_replay_blocks("store_query")) return make_list(0);
-    Value *col_val = list_get_borrow(arg, 1);
+    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     if (!col_val || col_val->type != VAL_STR) return make_list(0);
 
     const char *collection = col_val->data.str;
-    Value *col_info = dict_get(store->catalog, collection);
+    Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     if (!col_info || col_info->type != VAL_DICT) return make_list(0);
-    Value *rv = dict_get(col_info, "root");
+    Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_list(0);
     uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
 
@@ -1400,7 +1427,7 @@ static Value* builtin_store_count(Value *arg) {
          * CV2-71); this return is the post-raise placeholder, not a count. */
         return make_num(0);
     }
-    Store *store = store_arg(list_get_borrow(arg, 0), "store_count");
+    Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_count");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
      * rt_error'd by the time it returns NULL, and rt_error latches rather
      * than unwinding, so this return is the post-raise placeholder, not a
@@ -1408,16 +1435,16 @@ static Value* builtin_store_count(Value *arg) {
      * are store_count's real result for an unknown collection. */
     if (!store) return make_num(0);
     if (store_replay_blocks("store_count")) return make_num(0);
-    Value *col_val = list_get_borrow(arg, 1);
+    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_count", "[store handle, string collection]", make_num(0));
 
     const char *collection = col_val->data.str;
-    Value *col_info = dict_get(store->catalog, collection);
+    Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     /* fs:ANSWER a collection that is not in the catalog holds no records, so
      * its count is 0 — the documented result for an unknown collection. */
     if (!col_info || col_info->type != VAL_DICT) return make_num(0);
-    Value *rv = dict_get(col_info, "root");
+    Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     /* fs:ANSWER a catalog entry with no root page has no record pages, so the
      * count is 0. */
     if (!rv) return make_num(0);
@@ -1451,10 +1478,10 @@ static Value* builtin_store_update(Value *arg) {
          * is the post-raise placeholder, not "updated nothing". */
         return make_bool(0);
     }
-    Value *handle = list_get_borrow(arg, 0);
-    Value *col_val = list_get_borrow(arg, 1);
-    Value *key_val = list_get_borrow(arg, 2);
-    Value *record = list_get_borrow(arg, 3);
+    Value *handle = list_get_view(arg, 0, &(EigsView){{0}});
+    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
+    Value *key_val = list_get_view(arg, 2, &(EigsView){{0}});
+    Value *record = list_get_view(arg, 3, &(EigsView){{0}});
 
     Store *store = store_arg(handle, "store_update");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
@@ -1522,9 +1549,9 @@ static Value* builtin_store_update(Value *arg) {
 
     /* Put new record. Free the args list and store_put's returned key. */
     Value *put_args = make_list(3);
-    list_append(put_args, handle);
-    list_append(put_args, col_val);
-    list_append(put_args, record);
+    list_append_slot(put_args, list_slot(arg, 0));
+    list_append_slot(put_args, list_slot(arg, 1));
+    list_append_slot(put_args, list_slot(arg, 3));
     Value *put_result = builtin_store_put(put_args);
     val_decref(put_args);
 
@@ -1593,7 +1620,7 @@ static Value* builtin_store_drop(Value *arg) {
          * CV2-74); this return is the post-raise placeholder, not "not dropped". */
         return make_bool(0);
     }
-    Store *store = store_arg(list_get_borrow(arg, 0), "store_drop");
+    Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_drop");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
      * rt_error'd by the time it returns NULL, and rt_error latches rather
      * than unwinding, so this return is the post-raise placeholder, not
@@ -1601,18 +1628,18 @@ static Value* builtin_store_drop(Value *arg) {
      * below). */
     if (!store) return make_bool(0);
     if (store_replay_blocks("store_drop")) return make_bool(0);
-    Value *col_val = list_get_borrow(arg, 1);
+    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_drop", "[store handle, string collection]", make_bool(0));
 
     const char *collection = col_val->data.str;
-    Value *col_info = dict_get(store->catalog, collection);
+    Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     /* fs:ANSWER there is no such collection to drop, so nothing was dropped —
      * 0 is store_drop's documented "no" against the 1 produced on success. */
     if (!col_info || col_info->type != VAL_DICT) return make_bool(0);
 
     /* Mark all pages in chain as free */
-    Value *rv = dict_get(col_info, "root");
+    Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (rv) {
         uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
         for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1634,8 +1661,8 @@ static Value* builtin_store_drop(Value *arg) {
     Value *new_catalog = make_dict(store->catalog->data.dict.count);
     for (int i = 0; i < store->catalog->data.dict.count; i++) {
         if (strcmp(store->catalog->data.dict.keys[i], collection) != 0) {
-            dict_set(new_catalog, store->catalog->data.dict.keys[i],
-                     dict_value_get_borrow(store->catalog, i));
+            dict_set_owned(new_catalog, store->catalog->data.dict.keys[i],
+                           dict_value_get_owned(store->catalog, i));
         }
     }
     val_decref(store->catalog);  /* drop the old catalog before replacing */

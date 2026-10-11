@@ -205,7 +205,6 @@ int detect_checkpoint_format(const char *path);
 int model_total_weight_count(TransformerModel *model);
 void observer_buffer_init(ObserverBuffer *obs, int total_elements);
 void observer_buffer_free(ObserverBuffer *obs);
-Value* json_obj_get(Value *obj, const char *key);
 
 /* ---- Registration ---- */
 

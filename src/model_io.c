@@ -598,21 +598,6 @@ Value* builtin_eigen_model_load(Value *arg) {
 
 Value* eigs_json_parse_value(const char *s, int *pos);
 
-Value* json_obj_get(Value *obj, const char *key) {
-    if (!obj) return NULL;
-    if (obj->type == VAL_DICT) {
-        int i = env_hash_find_dict(obj, key, env_hash_name(key));
-        return i < 0 ? NULL : dict_value_get_return(obj, i);
-    }
-    if (obj->type != VAL_LIST) return NULL;
-    for (int i = 0; i + 1 < obj->data.list.count; i += 2) {
-        Value *k = list_get_ref(obj, i);
-        if (k && k->type == VAL_STR && strcmp(k->data.str, key) == 0) {
-            return list_get_return(obj, i + 1);
-        }
-    }
-    return NULL;
-}
 
 /* ================================================================
  * .eigen BINARY CHECKPOINT FORMAT

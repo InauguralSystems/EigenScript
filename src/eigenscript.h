@@ -2409,7 +2409,6 @@ void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
 
 /* Model-only JSON helper. */
 #if EIGENSCRIPT_EXT_MODEL
-Value* json_obj_get(Value *obj, const char *key);
 #endif
 
 /* ---- Handle table (opaque pointer indirection) ----
