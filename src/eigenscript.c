@@ -1450,8 +1450,7 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
 }
 
 static Value *dict_get_view_local(Value *dict, const char *key, EigsView *view) {
-    Value *v = dict_get_ref_legacy(dict, key);
-    return v ? slot_view(eigs_container_slot(v), view) : NULL;
+    return dict_get_view(dict, key, view);
 }
 
 /* Rebuild a classifiable slot from a snapshot dict. Returns 1 and fills
@@ -1973,7 +1972,7 @@ Value* make_list(int capacity) {
     {
         int chg_cap = capacity < 8 ? 8 : capacity;
         if (!sandbox_charge(sizeof(Value) +
-                            (size_t)chg_cap * sizeof(Value *)))
+                            (size_t)chg_cap * sizeof(EigsSlot)))
             capacity = 8;
     }
     Value *v = xcalloc(1, sizeof(Value));
@@ -2078,12 +2077,12 @@ Value* make_dict(int capacity) {
      * uncharged (same small-container hole, dict half; blind round,
      * 2026-08-17). Refusal raises and proceeds small — see make_list. */
     if (!sandbox_charge(sizeof(Value) +
-                        (size_t)capacity * (sizeof(char *) + sizeof(Value *))))
+                        (size_t)capacity * (sizeof(char *) + sizeof(EigsSlot))))
         capacity = capacity ? 8 : 0;
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_DICT;
     v->data.dict.keys = capacity ? xcalloc(capacity, sizeof(char*)) : NULL;
-    *dict_values_storage_ref(v) = capacity ? xcalloc(capacity, sizeof(Value*)) : NULL;
+    *dict_values_storage_ref(v) = capacity ? xcalloc(capacity, sizeof(EigsSlot)) : NULL;
     v->data.dict.count = 0;
     v->data.dict.capacity = capacity;
     /* A literal {} reaches here with capacity zero.  Keep all three backing
@@ -2329,7 +2328,8 @@ Env *eigs_module_ns_detach(Value *dict) {
  * (borrowed, exactly like a plain dict_get). Falls back to the dict's own
  * entry when the module has no such binding — a key written onto the
  * namespace that the module does not define stays readable. */
-static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
+static EigsSlot module_ns_project(Value *d, Env *e, const char *key, uint32_t h,
+                                  int *found) {
     /* #607: find + load under one hold, exactly as env_get_hashed_slot does —
      * a concurrent module-env grow republishes names/values. No-op when the
      * process is single-threaded. */
@@ -2352,34 +2352,35 @@ static Value *module_ns_project(Value *d, Env *e, const char *key, uint32_t h) {
     env_shared_lock(e);
     int di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
     if (ei < 0) {
-        Value *miss = (di >= 0) ? dict_value_compat_ref(d, di) : NULL;
+        EigsSlot miss = (di >= 0) ? dict_value_slot(d, di) : slot_null();
+        *found = di >= 0;
         env_shared_unlock(e);
         return miss;
     }
     if (di >= 0) {
-        Value *cur = dict_value_compat_ref(d, di);
-        if (slot_is_ptr(s)) {
-            /* Reference bindings are already shared by identity. */
-            if (slot_as_ptr(s) == cur) {
-                env_shared_unlock(e);
-                slot_decref(s);
-                return cur;
-            }
-        } else if (slot_is_num(s) && cur && cur->type == VAL_NUM &&
-                   cur->refcount == 1) {
-            /* Exclusive untracked mirror — refresh in place, no allocation.
-             * Same exclusivity test as dict_set_cached_immediate: a mirror
-             * anyone else holds a ref to must not be mutated under them. */
-            VAL_NUM_RAW(cur) = SLOT_NUM_RAW(s);
+        EigsSlot cur = dict_value_slot(d, di);
+        if (cur.u == s.u) {
+            /* Already current: a reference binding shared by identity, or
+             * an immediate with the same bits. */
             env_shared_unlock(e);
             slot_decref(s);
+            *found = 1;
             return cur;
+        }
+        if (slot_is_num(s) && slot_is_num(cur)) {
+            /* Number over number: a plain slot store with nothing to
+             * release, so no destructor runs under the hold. */
+            dict_value_rewrite_num(d, di, SLOT_NUM_RAW(s));
+            env_shared_unlock(e);
+            *found = 1;
+            return dict_value_slot(d, di);
         }
     }
     Value *mv = slot_to_value(s);            /* owned */
     dict_set_hashed_raw(d, key, h, mv);
     di = env_hash_find(&d->data.dict.hash, key, h, d->data.dict.keys);
-    Value *out = (di >= 0) ? dict_value_compat_ref(d, di) : NULL;
+    EigsSlot out = (di >= 0) ? dict_value_slot(d, di) : slot_null();
+    *found = di >= 0;
     env_shared_unlock(e);
     slot_decref(s);                          /* drop the pin */
     val_decref(mv);
@@ -2405,7 +2406,8 @@ void eigs_module_ns_sync(Value *dict) {
         const char *nm = (i < e->count) ? e->names[i] : NULL;
         env_shared_unlock(e);
         if (!module_ns_public(nm)) continue;
-        module_ns_project(dict, e, nm, env_hash_name(nm));
+        int found;
+        (void)module_ns_project(dict, e, nm, env_hash_name(nm), &found);
     }
 }
 
@@ -2479,18 +2481,22 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
     if (dict->data.dict.capacity == 0) {
         const int initial_cap = 8;
         if (!sandbox_charge((size_t)initial_cap *
-                            (sizeof(char *) + sizeof(Value *) + sizeof(Value))))
+                            (sizeof(char *) + sizeof(EigsSlot) + sizeof(Value))))
             return;
         dict->data.dict.keys = xcalloc(initial_cap, sizeof(char *));
-        *dict_values_storage_ref(dict) = xcalloc(initial_cap, sizeof(Value *));
+        *dict_values_storage_ref(dict) = xcalloc(initial_cap, sizeof(EigsSlot));
         dict->data.dict.capacity = initial_cap;
         env_hash_init(&dict->data.dict.hash, ENV_HASH_INIT_CAP);
     }
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx >= 0) {
+        /* Store first, release the old occupant after, so its destructor
+         * sees the dict in its new state. val is borrowed: the incref is
+         * the container's reference, consumed by dict_value_set_owned. */
+        EigsSlot old = dict_value_slot(dict, idx);
         val_incref(val);
-        slot_decref(dict_value_slot(dict, idx));
         dict_value_set_owned(dict, idx, val);
+        slot_decref(old);
         return;
     }
     /* Grow if needed */
@@ -2498,10 +2504,10 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
         int new_cap = dict->data.dict.capacity * 2;
         /* Sandbox chokepoint, dict half (JSON objects): see list_append. */
         if (!sandbox_charge((size_t)(new_cap - dict->data.dict.capacity) *
-                            (sizeof(char *) + sizeof(Value *) + sizeof(Value))))
+                            (sizeof(char *) + sizeof(EigsSlot) + sizeof(Value))))
             return;
         dict->data.dict.keys = xrealloc_array(dict->data.dict.keys, new_cap, sizeof(char*));
-        *dict_values_storage_ref(dict) = xrealloc_array(dict_values_storage(dict), new_cap, sizeof(Value*));
+        *dict_values_storage_ref(dict) = xrealloc_array(dict_values_storage(dict), new_cap, sizeof(EigsSlot));
         dict->data.dict.capacity = new_cap;
     }
     /* #1141: while the process is multithreaded, a key must outlive the
@@ -2534,8 +2540,8 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
         intern_ref_add(&dict->data.dict.intern_refs, eigs_current->intern_tbl);
     }
     dict->data.dict.keys[dict->data.dict.count] = interned;
+    val_incref(val);                 /* the container's reference; consumed below */
     dict_value_set_owned(dict, dict->data.dict.count, val);
-    val_incref(val);
     dict->data.dict.count++;
     if (dict->data.dict.count * 10 > (dict->data.dict.hash.mask + 1) * 7)
         env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
@@ -2700,13 +2706,14 @@ Value *val_clone_for_send(Value *v) {
     return chan_clone_rec(v, 0);
 }
 
-Value* dict_get_hashed_ref_legacy(Value *dict, const char *key, uint32_t h) {
-    if (!dict || dict->type != VAL_DICT) return NULL;
+EigsSlot dict_get_hashed_slot(Value *dict, const char *key, uint32_t h, int *found) {
+    *found = 0;
+    if (!dict || dict->type != VAL_DICT) return slot_null();
     if (h == 0) h = env_hash_name(key);
     if (__builtin_expect(dict->module_ns != 0, 0)) {
         Env *me = eigs_module_ns_env(dict);
         if (me && module_ns_public(key))
-            return module_ns_project(dict, me, key, h);
+            return module_ns_project(dict, me, key, h, found);
         if (me) {
             /* #1161: a module-PRIVATE (`_`-prefixed) key is never projected,
              * so it never took the mirror hold above — but a sibling worker
@@ -2715,18 +2722,17 @@ Value* dict_get_hashed_ref_legacy(Value *dict, const char *key, uint32_t h) {
             env_shared_lock(me);
             int pidx = env_hash_find(&dict->data.dict.hash, key, h,
                                      dict->data.dict.keys);
-            Value *pv = (pidx >= 0) ? dict_value_compat_ref(dict, pidx) : NULL;
+            EigsSlot pv = (pidx >= 0) ? dict_value_slot(dict, pidx) : slot_null();
+            *found = pidx >= 0;
             env_shared_unlock(me);
             return pv;
         }
     }
-    if (dict->data.dict.count == 0) return NULL;
+    if (dict->data.dict.count == 0) return slot_null();
     int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
-    return (idx >= 0) ? dict_value_compat_ref(dict, idx) : NULL;
-}
-
-Value* dict_get_ref_legacy(Value *dict, const char *key) {
-    return dict_get_hashed_ref_legacy(dict, key, env_hash_name(key));
+    if (idx < 0) return slot_null();
+    *found = 1;
+    return dict_value_slot(dict, idx);
 }
 
 int env_hash_find_dict(Value *dict, const char *key, uint32_t h) {
@@ -2736,7 +2742,9 @@ int env_hash_find_dict(Value *dict, const char *key, uint32_t h) {
 }
 
 int dict_has(Value *dict, const char *key) {
-    return dict_get_ref_legacy(dict, key) != NULL;
+    int found;
+    (void)dict_get_slot(dict, key, &found);
+    return found;
 }
 
 void dict_remove(Value *dict, const char *key) {
@@ -2751,14 +2759,14 @@ void dict_remove(Value *dict, const char *key) {
     /* Shift remaining */
     for (int j = idx; j < dict->data.dict.count - 1; j++) {
         dict->data.dict.keys[j] = dict->data.dict.keys[j+1];
-        dict_value_set_owned(dict, j, dict_value_compat_ref(dict, j + 1));
+        dict_values_storage(dict)[j] = dict_values_storage(dict)[j + 1];
     }
     dict->data.dict.count--;
     env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
 }
 
-void list_append(Value *list, Value *item) {
-    if (!list || list->type != VAL_LIST) return;
+int list_reserve_one(Value *list) {
+    if (!list || list->type != VAL_LIST) return 0;
     if (list->data.list.count >= list->data.list.capacity) {
         int new_cap = list->data.list.capacity * 2;
         /* Sandbox chokepoint for the Value-TREE/list output class: string
@@ -2769,18 +2777,21 @@ void list_append(Value *list, Value *item) {
          * round, 2026-08-17). Charge each new slot at full node weight
          * (slot pointer + Value) on the growth delta — amortized, off the
          * no-growth fast path, no-op outside an armed sandbox. On refusal
-         * the append is DROPPED (no incref taken, so list_append_owned's
-         * decref still releases the item) and the catchable EK_SANDBOX is
+         * the append is DROPPED (no incref taken, so list_append_owned
+         * still releases the item) and the catchable EK_SANDBOX is
          * already raised. */
         if (!sandbox_charge((size_t)(new_cap - list->data.list.capacity) *
-                            (sizeof(Value *) + sizeof(Value))))
-            return;
+                            (sizeof(EigsSlot) + sizeof(Value))))
+            return 0;
         *list_values_storage_ref(list) = xrealloc_array(*list_values_storage_ref(list), new_cap,
                                                        sizeof **list_values_storage_ref(list));
         list->data.list.capacity = new_cap;
     }
-    list_set_owned(list, list->data.list.count++, item);
-    val_incref(item);
+    return 1;
+}
+
+void list_append(Value *list, Value *item) {
+    list_append_slot(list, eigs_container_slot(item));
 }
 
 /* Adopting append: list_append increfs internally, so appending a
@@ -2788,8 +2799,8 @@ void list_append(Value *list, Value *item) {
  * per element). This consumes the birth ref — use it whenever the
  * caller does not keep its own pointer to the item. */
 void list_append_owned(Value *list, Value *item) {
-    list_append(list, item);
-    val_decref(item);
+    if (!list_reserve_one(list)) { val_decref(item); return; }
+    list_set_owned(list, list->data.list.count++, item);
 }
 
 int is_truthy(Value *v) {
@@ -2866,9 +2877,9 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
             eigs_module_ns_sync(b);
             if (a->data.dict.count != b->data.dict.count) return 0;
             for (int i = 0; i < a->data.dict.count; i++) {
-                Value *bv = dict_get_ref_legacy(b, a->data.dict.keys[i]);
+                EIGS_VIEW(av); EIGS_VIEW(bview);
+                Value *bv = dict_get_view(b, a->data.dict.keys[i], &bview);
                 if (!bv) return 0;
-                EIGS_VIEW(av);
                 if (!values_equal_impl(dict_value_get_view(a, i, &av), bv, depth + 1, op))
                     return 0;
             }
@@ -4285,8 +4296,7 @@ static int gc_env_is_node(Env *e) {
       slot_as_ptr(dict_value_slot(_v, _i)), GC_KIND_VAL,                      \
       slot_is_ptr(dict_value_slot(_v, _i)) &&                                 \
         gc_value_is_node(slot_as_ptr(dict_value_slot(_v, _i))),               \
-      { EigsSlot _o = dict_value_take_slot(_v, _i);                           \
-        dict_value_set_owned(_v, _i, NULL);                                   \
+      { EigsSlot _o = dict_value_take_slot(_v, _i);   /* leaves null */       \
         slot_decref(_o); }, __VA_ARGS__)                                      \
     /* #1057 module namespace: the owning backref to the module Env taken   \
      * by eigs_module_ns_attach. Without this row a garbage                 \

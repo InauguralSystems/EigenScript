@@ -386,12 +386,12 @@ ns_set=$(printf '%s\n' "$(fn_body "$ES_C" "dict_set_hashed")" \
          | grep -c 'env_shared_lock(me);' || true)
 ns_set_u=$(printf '%s\n' "$(fn_body "$ES_C" "dict_set_hashed")" \
            | grep -c 'env_shared_unlock(me);' || true)
-proj_body=$(awk '/^static Value \*module_ns_project\(/{f=1} f{print} f&&/^\}$/{exit}' "$ES_C")
+proj_body=$(awk '/^static EigsSlot module_ns_project\(/{f=1} f{print} f&&/^\}$/{exit}' "$ES_C")
 proj_lock=$(printf '%s\n' "$proj_body" | grep -c 'env_shared_lock(e);' || true)
 proj_unlock=$(printf '%s\n' "$proj_body" | grep -c 'env_shared_unlock(e);' || true)
 # EXACT, not a floor: project takes two holds (the env read, then the mirror),
 # and the mirror hold has FOUR exits — the miss return, the shared-pointer
-# return, the in-place-number return, and the tail. An unlock count that
+# return, the number-over-number store return, and the tail. An unlock count that
 # balances but sits on the wrong side of a return is caught by the bounded
 # live rows, not by this text (§136).
 PROJ_LOCK_DECLARED=2

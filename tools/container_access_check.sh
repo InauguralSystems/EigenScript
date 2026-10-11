@@ -20,7 +20,8 @@ while IFS= read -r hit; do
     esac
     case "$file:$text" in
         src/jit.c:*'offsetof(Value, data.dict.vals)'*)
-            # Emitted machine code needs the representation offset (step-2 site).
+            # Emitted machine code needs the representation offset: the inline
+            # dict-cache probe loads EigsSlot bits from vals[] (B10 flip).
             allowed=$((allowed + 1)); continue ;;
     esac
     printf 'raw Value container access: %s:%s:%s\n' "$file" "$line" "$text" >&2

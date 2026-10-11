@@ -2112,15 +2112,23 @@ static uint8_t *emit_mov_disp32_rax_to_rax(uint8_t *w, int32_t disp) {
     *w++ = 0x48; *w++ = 0x8B; *w++ = 0x80;
     return emit_u32(w, (uint32_t)disp);
 }
-/* mov %rdx, disp32(%rax)  (7 bytes) — store data.num bits in place. */
-static uint8_t *emit_mov_rdx_to_disp32_rax(uint8_t *w, int32_t disp) {
-    *w++ = 0x48; *w++ = 0x89; *w++ = 0x90;
-    return emit_u32(w, (uint32_t)disp);
-}
 /* mov disp32(%r12), %rdi  (9 bytes) — fn_env values[slot] → %rdi. */
 static uint8_t *emit_mov_disp32_r12_to_rdi(uint8_t *w, int32_t disp) {
     *w++ = 0x49; *w++ = 0x8B; *w++ = 0xBC; *w++ = 0x24;
     return emit_u32(w, (uint32_t)disp);
+}
+
+/* lea (%rax,%rdx,8), %r8  (4 bytes: 4C 8D 04 D0) — &vals[i]. */
+static uint8_t *emit_lea_rax_rdx8_to_r8(uint8_t *w) {
+    *w++ = 0x4C; *w++ = 0x8D; *w++ = 0x04; *w++ = 0xD0; return w;
+}
+/* mov (%r8), %rax  (3 bytes: 49 8B 00) — load the slot bits. */
+static uint8_t *emit_mov_r8_mem_to_rax(uint8_t *w) {
+    *w++ = 0x49; *w++ = 0x8B; *w++ = 0x00; return w;
+}
+/* mov %rdx, (%r8)  (3 bytes: 49 89 10) — store slot bits in place. */
+static uint8_t *emit_mov_rdx_to_r8_mem(uint8_t *w) {
+    *w++ = 0x49; *w++ = 0x89; *w++ = 0x10; return w;
 }
 
 /* Stage 5d: shared dict-cache-hit guard prefix for LOCAL_DOT_GET/SET.
@@ -2132,10 +2140,11 @@ static uint8_t *emit_mov_disp32_r12_to_rdi(uint8_t *w, int32_t disp) {
  *   ce->dict == target && ce->hash == h && ce->index < count
  *   keys[ce->index] == key                 (interned pointer equality;
  *                                           strcmp-equal goes to helper)
- *   vals[ce->index] != NULL
  *
- * On success: %rdi = dict Value*, %rdx = entry index, %rax =
- * vals[index]. `h` and `key` are compile-time constants. Guard-failure
+ * On success: %rdi = dict Value*, %rdx = entry index, %r8 = &vals[index],
+ * %rax = vals[index] -- the EigsSlot BITS (#1665 arm D B10: dict values are
+ * slot storage). There is no vacancy test: all-zero bits are the number
+ * 0.0, a real value. `h` and `key` are compile-time constants. Guard-failure
  * jumps append to slow_p[] (8 entries). The dict cache is TLS in vm.c;
  * Phase 5: %rbx now holds &EigsThread.vm (heap), so the probe loads
  * tls_base into %rsi via `mov %fs:0, %rsi` and addresses
@@ -2193,9 +2202,8 @@ static uint8_t *emit_dict_cache_probe(uint8_t *w, uint16_t slot,
     w = emit_cmp_rsi_rax(w);
     w = emit_jne_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
     w = emit_mov_disp32_rdi_to_rax(w, (int32_t)offsetof(Value, data.dict.vals));
-    w = emit_mov_rax_rdx8_to_rax(w);
-    w = emit_test_rax_rax(w);
-    w = emit_je_rel32(w, &slow_p[*slow_n]); (*slow_n)++;
+    w = emit_lea_rax_rdx8_to_r8(w);
+    w = emit_mov_r8_mem_to_rax(w);
     return w;
 }
 
@@ -3083,9 +3091,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * local, cache miss, strcmp-equal key, non-num or observed
              * field) routes to the Stage 4m helper, which repopulates
              * the dict cache so the next iteration hits inline. The hit
-             * path pushes VAL_NUM_RAW(v)'s raw bits — for an untracked
-             * number that IS the immediate slot encoding, so there is
-             * no incref/decref or allocation. Guards precede all
+             * path pushes the field's immediate-number slot bits as loaded
+             * (#1665 arm D B10), so there is no incref/decref or
+             * allocation. Guards precede all
              * mutation (the fast path mutates nothing but the stack). */
             uint16_t slot = (uint16_t)(chunk->code[i + 1] |
                                        ((uint16_t)chunk->code[i + 2] << 8));
@@ -3111,12 +3119,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * size; fall back to helper-only emission if it ever moves. */
             if (g_layout.sizeof_dcache_entry == 16 && g_layout.dcache_ways == 2) {
                 w = emit_dict_cache_probe(w, slot, h, key, slow_p, &slow_n);
-                /* v must be an untracked VAL_NUM for the immediate push. */
-                w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, type),
-                                               (uint32_t)VAL_NUM);
-                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
-                /* #262 Step E: obs_age guard removed — nums are never tracked. */
-                w = emit_mov_disp32_rax_to_rax(w, (int32_t)VAL_NUM_OFFSET);
+                /* The field must be an immediate number: its slot bits ARE
+                 * the stack encoding, so they are pushed as loaded (no
+                 * refcount, no allocation). Anything else -> helper. */
+                w = emit_immediate_num_check_rax(w, &slow_p[slow_n]); slow_n++;
                 w = emit_store_rax_at_stack(w, g_layout.off_stack);
                 w = emit_inc_ecx(w);
                 w = emit_jmp_rel32(w, &done_p);
@@ -3217,13 +3223,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         } else if (op == OP_LOCAL_DOT_SET) {
             /* Stage 5d: inline the dict_set_cached_immediate path of
              * CASE(LOCAL_DOT_SET) — cache hit where the existing field
-             * is an exclusive untracked VAL_NUM (type num, refcount 1,
-             * obs_age 0) and the incoming TOS is an
-             * immediate num: mutate data.num in place. No refcounts, no
+             * and the incoming TOS are both immediate numbers: store the
+             * TOS bits into the slot (#1665 arm D B10). No refcounts, no
              * allocation, sp and TOS untouched. Everything else (cache
-             * miss, shared/observed/non-num field, heap TOS, non-dict
-             * target) routes to the Stage 4q-d helper. Guards precede
-             * the single mutating store. */
+             * miss, non-num field, heap TOS, non-dict target) routes to
+             * the Stage 4q-d helper. Guards precede the single mutating
+             * store. */
             uint16_t slot = (uint16_t)(chunk->code[i + 1] |
                                        ((uint16_t)chunk->code[i + 2] << 8));
             uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
@@ -3242,18 +3247,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
 #endif
             if (g_layout.sizeof_dcache_entry == 16 && g_layout.dcache_ways == 2) {
                 w = emit_dict_cache_probe(w, slot, h, key, slow_p, &slow_n);
-                /* existing field: exclusive num. */
-                w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, type),
-                                               (uint32_t)VAL_NUM);
-                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
-                w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(Value, refcount), 1);
-                w = emit_jne_rel32(w, &slow_p[slow_n]); slow_n++;
-                /* #262 Step E: obs_age guard removed — nums are never tracked. */
-                /* TOS must be an immediate num. */
+                /* existing field: an immediate number (nothing to release). */
+                w = emit_immediate_num_check_rax(w, &slow_p[slow_n]); slow_n++;
+                /* TOS must be an immediate num (already guarded on the stack). */
                 w = emit_load_stack_to_rdx(w, g_layout.off_stack - 8);
                 w = emit_immediate_num_check_rdx(w, &slow_p[slow_n]); slow_n++;
-                /* VAL_NUM_RAW(existing) = tos.d (raw bits). */
-                w = emit_mov_rdx_to_disp32_rax(w, (int32_t)VAL_NUM_OFFSET);
+                /* vals[index] = tos bits (%r8 = &vals[index] from the probe). */
+                w = emit_mov_rdx_to_r8_mem(w);
                 w = emit_jmp_rel32(w, &done_p);
                 for (int k = 0; k < slow_n; k++) patch_rel32(slow_p[k], w);
             }

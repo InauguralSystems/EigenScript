@@ -108,9 +108,10 @@ int main(void) {
         snprintf(key, sizeof key, "sandbox-only-key-%d", i);
         Value *out = sandbox_call(i);
         assert(out != NULL);
-        Value *ok = dict_get(out, "ok");
+        EigsView ok_view, result_view;
+        Value *ok = dict_get_view(out, "ok", &ok_view);
         assert(ok && ok->type == VAL_BOOL && ok->data.boolean == 1);   /* #1637 */
-        Value *result = dict_get(out, "result");
+        Value *result = dict_get_view(out, "result", &result_view);
         assert(result && result->type == VAL_DICT);
         if (i == 0) {
             val_incref(result);
@@ -127,7 +128,8 @@ int main(void) {
     /* Check the escaped-result control before the retention assertion: a
      * mutant that restores the leak must still demonstrate that the returned
      * key remains readable through the run boundary. */
-    Value *escaped_value = dict_get(escaped, key);
+    EigsView escaped_view;
+    Value *escaped_value = dict_get_view(escaped, key, &escaped_view);
     if (!escaped_value) {
         char *diagnostic = value_to_string(escaped);
         fprintf(stderr, "escaped result=%s expected-key=%s\n", diagnostic, key);
@@ -160,7 +162,8 @@ int main(void) {
      * already isolated constants and may itself add more candidates. */
     Value *invalid_out = invalid_sandbox_call();
     assert(invalid_out != NULL);
-    Value *invalid_ok = dict_get(invalid_out, "ok");
+    EigsView invalid_view;
+    Value *invalid_ok = dict_get_view(invalid_out, "ok", &invalid_view);
     assert(invalid_ok && invalid_ok->type == VAL_BOOL &&
            invalid_ok->data.boolean == 0);   /* #1637: ok is a bool */
     val_decref(invalid_out);

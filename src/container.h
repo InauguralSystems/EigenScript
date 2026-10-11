@@ -1,69 +1,90 @@
 #ifndef EIGENSCRIPT_CONTAINER_H
 #define EIGENSCRIPT_CONTAINER_H
 
-/* Container slot boundary (#1665 arm D).  The representation is Value ** in
- * B0; EIGS_SLOT_REHEARSAL deliberately presents boxed numbers as immediate
- * slots so users of this API can be proved ready for the later storage flip. */
+/* Container slot boundary (#1665 arm D).  List items and dict values are
+ * EigsSlot storage (B10, the flip).  Every stored slot is one of:
+ *   - an immediate number, always num_guard'ed (the default x86 NaN
+ *     0xFFF8... is SLOT_NULL_BITS, so an unguarded double could read back
+ *     as null);
+ *   - SLOT_NULL_BITS or a bool encoding (the immortal singletons are never
+ *     stored as heap pointers);
+ *   - a TAG_HEAP pointer owning one counted reference to a Value whose type
+ *     is none of NUM / NULL / BOOL.
+ * All-zero bits are the number 0.0, not a vacancy: calloc'd storage reads as
+ * zeros, so only slots below `count` are meaningful.  Nothing outside this
+ * header touches the storage arrays except the bulk alloc/grow/free code that
+ * goes through the *_values_storage helpers at the bottom. */
 #define EIGS_VIEW_RC (1 << 29)
 
 typedef struct { Value v; } EigsView;
 
+/* Encode a BORROWED Value* as a storage slot: no reference changes hands.
+ * A boxed number becomes an immediate, null and bool become their
+ * encodings, everything else is a heap pointer.  C NULL encodes as null. */
 static inline EigsSlot eigs_container_slot(Value *v) {
-#ifdef EIGS_SLOT_REHEARSAL
-    if (v && v->type == VAL_NUM) return slot_from_num(VAL_NUM_RAW(v));
-#endif
+    if (!v || v->type == VAL_NULL) return slot_null();
+    if (v->type == VAL_NUM) return slot_from_num(num_guard(VAL_NUM_RAW(v)));
+    if (v->type == VAL_BOOL) return slot_from_bool(v->data.boolean);
     return slot_from_heap(v);
 }
-
-/* A borrowed read for VALUE use (the VM stack, arithmetic): a boxed number
- * becomes an immediate. list_slot stays storage-faithful before the flip
- * (a boxed number is a heap slot) because ownership walkers (free_value, GC
- * clear, vm_borrow_scan) must still see and release the box; the VM stack
- * expects immediates, so its read sites normalise here. Identity after the
- * flip, where numbers are already immediate. */
-static inline EigsSlot slot_read_value(EigsSlot s) {
-    if (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NUM)
-        return slot_from_num(VAL_NUM_RAW(slot_as_ptr(s)));
+/* Encode an OWNED Value* (consumes the caller's reference): a box that does
+ * not become a heap slot is released here. */
+static inline EigsSlot eigs_slot_adopt(Value *v) {
+    EigsSlot s = eigs_container_slot(v);
+    if (!slot_is_heap(s)) val_decref(v);
     return s;
 }
-/* slot_read_value + slot_incref in one branch, for the VM hot read sites: a
- * boxed number becomes an immediate (no ref taken), any other heap value is
- * incref'd, immediates pass through. The returned slot is OWNED. */
-static inline EigsSlot slot_read_owned(EigsSlot s) {
+/* Normalise a slot for storage.  Immediates are guarded; a heap slot that
+ * points at a NUM / NULL / BOOL Value (a VM-internal box or a singleton) is
+ * re-encoded as an immediate.  _owned consumes the slot's reference, _borrow
+ * takes a new one for the container. */
+static inline EigsSlot eigs_slot_store_owned(EigsSlot s) {
+    if (slot_is_num(s)) return slot_from_num(num_guard(SLOT_NUM_RAW(s)));
     if (slot_is_heap(s)) {
         Value *v = slot_as_ptr(s);
-        if (v->type == VAL_NUM) return slot_from_num(VAL_NUM_RAW(v));
-        val_incref(v);
+        if (v->type == VAL_NUM || v->type == VAL_NULL || v->type == VAL_BOOL)
+            return eigs_slot_adopt(v);
+    }
+    return s;
+}
+static inline EigsSlot eigs_slot_store_borrow(EigsSlot s) {
+    if (slot_is_num(s)) return slot_from_num(num_guard(SLOT_NUM_RAW(s)));
+    if (slot_is_heap(s)) {
+        EigsSlot e = eigs_container_slot(slot_as_ptr(s));
+        slot_incref(e);
+        return e;
     }
     return s;
 }
 
+/* VM read helpers.  Storage already holds immediates, so a value read is the
+ * stored slot and an owned read is that slot plus a reference. */
+static inline EigsSlot slot_read_value(EigsSlot s) { return s; }
+static inline EigsSlot slot_read_owned(EigsSlot s) { slot_incref(s); return s; }
+
 /* A slot read is borrowed: it owns no reference and remains valid only until
- * the container is mutated.  In rehearsal a number is an immediate. */
+ * the container is mutated. */
 static inline EigsSlot list_slot(const Value *list, int i) {
-    return eigs_container_slot(list->data.list.items[i]);
+    return list->data.list.items[i];
 }
 static inline EigsSlot dict_value_slot(const Value *dict, int i) {
-    return eigs_container_slot(dict->data.dict.vals[i]);
+    return dict->data.dict.vals[i];
 }
 
-/* Precondition: the selected element's logical type is VAL_NUM.  These raw
- * readers intentionally bypass the slot encode/decode round trip for hot
- * paths which have already established that contract.  They remain valid
- * only until the container is mutated, just like the borrowed slot readers. */
-/* Rewrite an already boxed, exclusive numeric element.  The caller must pass
- * a number already normalized by the VM slot boundary; this deliberately
- * avoids a redundant num_guard on the assignment hot path. */
+/* Store an immediate number the caller has already normalised (a VM stack
+ * slot is guarded at its producer), skipping the redundant num_guard on the
+ * assignment hot path.  A plain slot store: the previous occupant is
+ * released after the store, so a destructor it runs sees the new value. */
 static inline int dict_value_rewrite_num(const Value *dict, int i, double d) {
-    Value *v = dict->data.dict.vals[i];
-    if (!v || v->type != VAL_NUM || v->refcount != 1) return 0;
-    VAL_NUM_RAW(v) = d;
+    EigsSlot old = dict->data.dict.vals[i];
+    dict->data.dict.vals[i] = slot_from_num(d);
+    slot_decref(old);
     return 1;
 }
 static inline int list_rewrite_num(const Value *list, int i, double d) {
-    Value *v = list->data.list.items[i];
-    if (!v || v->type != VAL_NUM || v->refcount != 1) return 0;
-    VAL_NUM_RAW(v) = d;
+    EigsSlot old = list->data.list.items[i];
+    list->data.list.items[i] = slot_from_num(d);
+    slot_decref(old);
     return 1;
 }
 
@@ -89,17 +110,18 @@ static inline ValType dict_value_type(const Value *dict, int i) {
 /* Return the real heap pointer (including the immortal null/bool singleton),
  * or NULL when the element is numeric. */
 static inline Value *list_get_ref(const Value *list, int i) {
-    Value *v = list->data.list.items[i];
-    return v && v->type == VAL_NUM ? NULL : v;
+    EigsSlot s = list_slot(list, i);
+    return slot_is_num(s) ? NULL : eigs_slot_ref(s);
 }
 static inline Value *dict_value_get_ref(const Value *dict, int i) {
-    Value *v = dict->data.dict.vals[i];
-    return v && v->type == VAL_NUM ? NULL : v;
+    EigsSlot s = dict_value_slot(dict, i);
+    return slot_is_num(s) ? NULL : eigs_slot_ref(s);
 }
 
 /* Numeric readers have the same strict/bool behavior as the Value readers:
  * required raises for every non-number, element raises for bool or in strict
- * mode, and optional treats null as absent. */
+ * mode, and optional treats null as absent.  The heap-VAL_NUM arms serve a
+ * slot that did not come from container storage (a VM-internal box). */
 static inline double eigs_slot_num(EigsSlot s, const char *who) {
     if (slot_is_num(s)) return SLOT_NUM_RAW(s);
     if (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NUM)
@@ -162,113 +184,121 @@ static inline void eigs_view_check(EigsView *view) {
  * increfed by the owned form; return preserves the builtin direct-child
  * borrow protocol for references while numbers are always fresh. */
 static inline Value *list_get_owned(const Value *list, int i) {
-    Value *v = list->data.list.items[i];
-    if (v->type == VAL_NUM) return make_num(VAL_NUM_RAW(v));
-    val_incref(v);
-    return v;
+    return slot_to_value(list_slot(list, i));
 }
 static inline Value *list_get_return(const Value *list, int i) {
-    Value *v = list->data.list.items[i];
-    return v->type == VAL_NUM ? make_num(VAL_NUM_RAW(v)) : v;
+    EigsSlot s = list_slot(list, i);
+    return slot_is_num(s) ? make_num(SLOT_NUM_RAW(s)) : eigs_slot_ref(s);
 }
 static inline Value *dict_value_get_owned(const Value *dict, int i) {
-    Value *v = dict->data.dict.vals[i];
-    if (v->type == VAL_NUM) return make_num(VAL_NUM_RAW(v));
-    val_incref(v);
-    return v;
+    return slot_to_value(dict_value_slot(dict, i));
 }
 static inline Value *dict_value_get_return(const Value *dict, int i) {
-    Value *v = dict->data.dict.vals[i];
-    return v->type == VAL_NUM ? make_num(VAL_NUM_RAW(v)) : v;
+    EigsSlot s = dict_value_slot(dict, i);
+    return slot_is_num(s) ? make_num(SLOT_NUM_RAW(s)) : eigs_slot_ref(s);
 }
 
-/* Compatibility reads for files not yet migrated in later batches. */
-static inline Value *dict_get(Value *dict, const char *key) {
-    return dict_get_ref_legacy(dict, key);
+/* Keyed reads (eigenscript.c).  The slot is borrowed from the dict (for a
+ * module namespace, from its refreshed mirror); *found says whether the key
+ * exists, since every slot value -- including null -- is a valid entry. */
+EigsSlot dict_get_hashed_slot(Value *dict, const char *key, uint32_t h, int *found);
+static inline EigsSlot dict_get_slot(Value *dict, const char *key, int *found) {
+    return dict_get_hashed_slot(dict, key, 0, found);
 }
-static inline Value *dict_get_hashed(Value *dict, const char *key, uint32_t h) {
-    return dict_get_hashed_ref_legacy(dict, key, h);
+/* View of a keyed value, or C NULL when the key is absent. */
+static inline Value *dict_get_view(Value *dict, const char *key, EigsView *view) {
+    int found;
+    EigsSlot s = dict_get_slot(dict, key, &found);
+    return found ? slot_view(s, view) : NULL;
 }
 
-/* Low-level compatibility accessors retain their pre-flip meaning. */
-static inline Value *dict_value_compat_ref(const Value *dict, int i) { return dict->data.dict.vals[i]; }
-static inline void list_set_owned(Value *list, int i, Value *v) { list->data.list.items[i] = v; }
-static inline void dict_value_set_owned(Value *dict, int i, Value *v) { dict->data.dict.vals[i] = v; }
-static inline void list_set_borrow(Value *list, int i, Value *v) { val_incref(v); list_set_owned(list, i, v); }
-static inline void dict_value_set_borrow(Value *dict, int i, Value *v) { val_incref(v); dict_value_set_owned(dict, i, v); }
+/* Raw element stores: the caller has already released (or moved) the slot's
+ * previous occupant.  The Value* form consumes the caller's reference. */
+static inline void list_set_owned(Value *list, int i, Value *v) {
+    list->data.list.items[i] = eigs_slot_adopt(v);
+}
+static inline void dict_value_set_owned(Value *dict, int i, Value *v) {
+    dict->data.dict.vals[i] = eigs_slot_adopt(v);
+}
 
 /* Slot writes own exactly one container reference.  Owned consumes the slot;
  * append borrows it and therefore increfs.  Every double path applies
- * num_guard.  Before the flip list_set_num retains the exclusive-box reuse. */
+ * num_guard. */
 static inline Value *eigs_slot_box(EigsSlot s) {
     if (slot_is_num(s)) return make_num(num_guard(SLOT_NUM_RAW(s)));
     Value *v = eigs_slot_ref(s); val_incref(v); return v;
 }
 static inline __attribute__((always_inline)) void
 list_set_slot_owned(Value *list, int i, EigsSlot s) {
-    Value *old = list->data.list.items[i];
-    Value *v = slot_is_num(s) ? make_num(num_guard(SLOT_NUM_RAW(s))) : eigs_slot_ref(s);
-    list->data.list.items[i] = v;
-    val_decref(old);
+    EigsSlot old = list->data.list.items[i];
+    list->data.list.items[i] = eigs_slot_store_owned(s);
+    slot_decref(old);
 }
 static inline void dict_value_set_slot_owned(Value *dict, int i, EigsSlot s) {
-    Value *old = dict->data.dict.vals[i];
-    Value *v = slot_is_num(s) ? make_num(num_guard(SLOT_NUM_RAW(s))) : eigs_slot_ref(s);
-    dict->data.dict.vals[i] = v;
-    val_decref(old);
+    EigsSlot old = dict->data.dict.vals[i];
+    dict->data.dict.vals[i] = eigs_slot_store_owned(s);
+    slot_decref(old);
 }
+/* Grow a list by one slot (sandbox-charged).  0 = refused: the catchable
+ * EK_SANDBOX is already raised and the append must be dropped. */
+int list_reserve_one(Value *list);
 static inline void list_append_slot(Value *list, EigsSlot s) {
-    Value *v = eigs_slot_box(s); list_append_owned(list, v);
+    if (!list_reserve_one(list)) return;
+    list->data.list.items[list->data.list.count++] = eigs_slot_store_borrow(s);
 }
 static inline __attribute__((always_inline)) void
 list_set_num(Value *list, int i, double d) {
-    d = num_guard(d);
-#ifndef EIGS_SLOT_REHEARSAL
-    Value *old = list->data.list.items[i];
-    if (old && old->type == VAL_NUM && old->refcount == 1) { VAL_NUM_RAW(old) = d; return; }
-#endif
-    list_set_slot_owned(list, i, slot_from_num(d));
+    list_rewrite_num(list, i, num_guard(d));
 }
-static inline void list_append_num(Value *list, double d) { list_append_owned(list, make_num(num_guard(d))); }
+static inline void list_append_num(Value *list, double d) {
+    d = num_guard(d);
+    if (!list_reserve_one(list)) return;
+    list->data.list.items[list->data.list.count++] = slot_from_num(d);
+}
 static inline void dict_value_set_num(Value *dict, int i, double d) {
-    d = num_guard(d);
-#ifndef EIGS_SLOT_REHEARSAL
-    Value *old = dict->data.dict.vals[i];
-    if (old && old->type == VAL_NUM && old->refcount == 1) { VAL_NUM_RAW(old) = d; return; }
-#endif
-    dict_value_set_slot_owned(dict, i, slot_from_num(d));
+    dict_value_rewrite_num(dict, i, num_guard(d));
 }
+/* Remove element i, shifting the tail down; the caller owns the result. */
 static inline EigsSlot list_take_slot(Value *list, int i) {
-    Value *v = list->data.list.items[i];
-    EigsSlot s = eigs_container_slot(v);
-    if (slot_is_num(s)) val_decref(v);
+    EigsSlot s = list->data.list.items[i];
     memmove(&list->data.list.items[i], &list->data.list.items[i + 1],
-            (size_t)(list->data.list.count - i - 1) * sizeof(Value *));
+            (size_t)(list->data.list.count - i - 1) * sizeof(EigsSlot));
     list->data.list.count--;
     return s;
 }
+/* Detach value i (left holding null); the caller owns the result. */
 static inline EigsSlot dict_value_take_slot(Value *dict, int i) {
-    Value *v = dict->data.dict.vals[i];
-    EigsSlot s = eigs_container_slot(v);
-    if (slot_is_num(s)) val_decref(v);
+    EigsSlot s = dict->data.dict.vals[i];
+    dict->data.dict.vals[i] = slot_null();
     return s;
 }
 static inline void list_move(Value *list, int dst, int src, int n) {
-    memmove(&list->data.list.items[dst], &list->data.list.items[src], (size_t)n * sizeof(Value *));
+    memmove(&list->data.list.items[dst], &list->data.list.items[src], (size_t)n * sizeof(EigsSlot));
 }
+/* The comparator receives `const EigsSlot *` element pointers. */
 static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)) {
-    qsort(list->data.list.items, (size_t)list->data.list.count, sizeof(Value *), cmp);
+    qsort(list->data.list.items, (size_t)list->data.list.count, sizeof(EigsSlot), cmp);
 }
 
-static inline int list_get_num(const Value *list, int i, double *out) { Value *v=list->data.list.items[i]; if(!v||v->type!=VAL_NUM)return 0; *out=VAL_NUM_RAW(v); return 1; }
-static inline int dict_value_get_num(const Value *dict, int i, double *out) { Value *v=dict->data.dict.vals[i]; if(!v||v->type!=VAL_NUM)return 0; *out=VAL_NUM_RAW(v); return 1; }
+static inline int list_get_num(const Value *list, int i, double *out) {
+    EigsSlot s = list_slot(list, i);
+    if (!slot_is_num(s)) return 0;
+    *out = SLOT_NUM_RAW(s);
+    return 1;
+}
+static inline int dict_value_get_num(const Value *dict, int i, double *out) {
+    EigsSlot s = dict_value_slot(dict, i);
+    if (!slot_is_num(s)) return 0;
+    *out = SLOT_NUM_RAW(s);
+    return 1;
+}
 static inline int list_iter_count(const Value *list) { return list->data.list.count; }
 static inline int dict_value_iter_count(const Value *dict) { return dict->data.dict.count; }
 
 /* Raw storage is confined to bulk allocation/movement/destruction code. */
-static inline Value **list_values_storage(Value *list) { return list->data.list.items; }
-static inline Value ***list_values_storage_ref(Value *list) { return &list->data.list.items; }
-static inline Value **dict_values_storage(Value *dict) { return dict->data.dict.vals; }
-static inline Value ***dict_values_storage_ref(Value *dict) { return &dict->data.dict.vals; }
+static inline EigsSlot *list_values_storage(Value *list) { return list->data.list.items; }
+static inline EigsSlot **list_values_storage_ref(Value *list) { return &list->data.list.items; }
+static inline EigsSlot *dict_values_storage(Value *dict) { return dict->data.dict.vals; }
+static inline EigsSlot **dict_values_storage_ref(Value *dict) { return &dict->data.dict.vals; }
 
 #endif

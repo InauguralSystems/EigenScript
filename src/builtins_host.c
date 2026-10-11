@@ -310,8 +310,8 @@ Value* builtin_mkdir(Value *arg) {
 }
 
 static int ls_entry_cmp(const void *a, const void *b) {
-    const Value *va = *(Value *const *)a;
-    const Value *vb = *(Value *const *)b;
+    const Value *va = slot_as_ptr(*(const EigsSlot *)a);
+    const Value *vb = slot_as_ptr(*(const EigsSlot *)b);
     return strcmp(va->data.str, vb->data.str);
 }
 

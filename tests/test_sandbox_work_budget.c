@@ -59,8 +59,9 @@ int main(void) {
         list_append_owned(args, make_num(1048576));
         list_append_owned(args, make_num(10000));
         Value *out = builtin_sandbox_run(args);
-        Value *ok = out ? dict_get(out, "ok") : NULL;
-        Value *result = out ? dict_get(out, "result") : NULL;
+        EigsView ok_view, result_view;
+        Value *ok = out ? dict_get_view(out, "ok", &ok_view) : NULL;
+        Value *result = out ? dict_get_view(out, "result", &result_view) : NULL;
         REQUIRE(ok && ok->type == VAL_BOOL && ok->data.boolean == 1 &&
                 result && result->type == VAL_NUM && VAL_NUM_RAW(result) == 42,
                 "ordinary sandbox result");
