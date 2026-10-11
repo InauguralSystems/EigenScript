@@ -15,3 +15,5 @@ src/ext_http.c
 src/ext_net.c
 src/ext_store.c
 src/ext_db.c
+src/eigs_embed.c
+src/lint_host.c
