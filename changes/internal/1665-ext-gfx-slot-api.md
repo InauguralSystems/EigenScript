@@ -1,0 +1,1 @@
+- Migrate the SDL graphics and audio extension to slot-native container element access.
