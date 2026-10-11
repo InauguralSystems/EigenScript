@@ -147,7 +147,7 @@
     ],
     "source_sha256": {
       "audio_convert_samples": [
-        "deee0f2ceb3c972e6fa5e37d4e962136c52d1db3c44637a9408e2806e0b72e32"
+        "e04ac47c64a12a0ff9ffc8ae3acd398ce813a028a55880060c74cb282ef3ff9c"
       ],
       "builtin_audio_play": [
         "093742db555c0b87c29dea9095751714c0320123fb999941490bd1357b72640a"
@@ -233,7 +233,7 @@
     ],
     "source_sha256": {
       "audio_convert_samples": [
-        "deee0f2ceb3c972e6fa5e37d4e962136c52d1db3c44637a9408e2806e0b72e32"
+        "e04ac47c64a12a0ff9ffc8ae3acd398ce813a028a55880060c74cb282ef3ff9c"
       ],
       "builtin_audio_stream_push": [
         "b838449be37f5d9d6d58b12d588dbb5deb389a90343061ea18e2bd579a68f057"
