@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
     }
     Value *owned = list_get_owned(list, 0);
     Value *returned = list_get_return(list, 0);
-    CHECK(owned != list_get_borrow(list, 0) && returned != list_get_borrow(list, 0));
+    CHECK(owned != list_values_storage(list)[0] && returned != list_values_storage(list)[0]);
     val_decref(owned); val_decref(returned);
     list_set_num(list, 0, 4.0);
     list_set_slot_owned(list, 1, slot_from_heap(make_str("owned")));
@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
     CHECK(eigs_slot_num(dict_value_slot(dict, ni), "test") == 2.0);
     { EIGS_VIEW(v); CHECK(eigs_num_arg(dict_value_get_view(dict, ni, &v), "test") == 2.0); }
     owned = dict_value_get_owned(dict, ni); returned = dict_value_get_return(dict, ni);
-    CHECK(owned != dict_value_get_borrow(dict, ni) && returned != dict_value_get_borrow(dict, ni));
+    CHECK(owned != dict_values_storage(dict)[ni] && returned != dict_values_storage(dict)[ni]);
     val_decref(owned); val_decref(returned);
     dict_value_set_num(dict, ni, 8.0);
     dict_value_set_slot_owned(dict, si, slot_from_heap(make_str("changed")));

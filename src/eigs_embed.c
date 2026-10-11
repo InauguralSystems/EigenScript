@@ -352,9 +352,7 @@ int eigs_value_list_len(EigsValue *v) {
 EigsValue *eigs_value_list_get(EigsValue *v, int i) {
     if (!v || v->type != VAL_LIST) return NULL;
     if (i < 0 || i >= v->data.list.count) return NULL;
-    Value *r = list_get_borrow(v, i);
-    if (r) val_incref(r);
-    return r;
+    return list_get_owned(v, i);
 }
 
 void eigs_value_list_append(EigsValue *v, EigsValue *item) {
@@ -364,9 +362,8 @@ void eigs_value_list_append(EigsValue *v, EigsValue *item) {
 
 EigsValue *eigs_value_dict_get(EigsValue *v, const char *k) {
     if (!v || v->type != VAL_DICT || !k) return NULL;
-    Value *r = dict_get(v, k);
-    if (r) val_incref(r);
-    return r;
+    int i = env_hash_find_dict(v, k, env_hash_name(k));
+    return i >= 0 ? dict_value_get_owned(v, i) : NULL;
 }
 
 void eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val) {

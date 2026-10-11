@@ -1234,20 +1234,20 @@ static Value *eigs_json_lint_allow_for(const char *path) {
 
     Value *result = NULL;
     if (j->type == VAL_DICT) {
-        Value *lint = dict_get(j, "lint");
+        int lint_i = env_hash_find_dict(j, "lint", env_hash_name("lint"));
+        Value *lint = lint_i >= 0 ? dict_value_get_ref(j, lint_i) : NULL;
         if (lint && lint->type == VAL_DICT) {
-            Value *allow = dict_get(lint, "allow");
+            int allow_i = env_hash_find_dict(lint, "allow", env_hash_name("allow"));
+            Value *allow = allow_i >= 0 ? dict_value_get_ref(lint, allow_i) : NULL;
             if (allow && allow->type == VAL_DICT) {
                 /* real, relative to root ("<root>/lib/x.eigs" → "lib/x.eigs"). */
                 size_t rl = strlen(root);
                 const char *rel = real;
                 if (strncmp(real, root, rl) == 0 && real[rl] == '/')
                     rel = real + rl + 1;
-                Value *codes = dict_get(allow, rel);
-                if (codes && codes->type == VAL_LIST) {
-                    val_incref(codes);
-                    result = codes;
-                }
+                int codes_i = env_hash_find_dict(allow, rel, env_hash_name(rel));
+                if (codes_i >= 0 && dict_value_type(allow, codes_i) == VAL_LIST)
+                    result = dict_value_get_owned(allow, codes_i);
             }
         }
     }
@@ -1259,8 +1259,9 @@ static Value *eigs_json_lint_allow_for(const char *path) {
 static int eigs_json_allows(Value *codes, const char *code) {
     if (!codes || codes->type != VAL_LIST) return 0;
     for (int i = 0; i < codes->data.list.count; i++) {
-        Value *c = list_get_borrow(codes, i);
-        if (c && c->type == VAL_STR &&
+        if (list_elem_type(codes, i) != VAL_STR) continue;
+        Value *c = list_get_ref(codes, i);
+        if (c &&
             (strcmp(c->data.str, code) == 0 || strcmp(c->data.str, "all") == 0))
             return 1;
     }
