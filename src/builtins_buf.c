@@ -32,8 +32,8 @@
 Value* builtin_buffer(Value *arg) {
     /* buffer of [rows, cols] -> shaped 2-D buffer (flat double[rows*cols]) */
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
-        list_get_borrow(arg, 0)->type == VAL_NUM &&
-        list_get_borrow(arg, 1)->type == VAL_NUM) {
+        list_elem_type(arg, 0) == VAL_NUM &&
+        list_elem_type(arg, 1) == VAL_NUM) {
         int r = (int)eigs_list_num(arg, 0, __func__);
         int c = (int)eigs_list_num(arg, 1, __func__);
         if (r < 0) r = 0;
@@ -71,11 +71,12 @@ Value* builtin_buffer(Value *arg) {
 Value* builtin_reshape(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "reshape");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-    Value *b = list_get_borrow(arg, 0);
+    EIGS_VIEW(b_view);
+    Value *b = list_get_view(arg, 0, &b_view);
     if (b->type != VAL_BUFFER) return make_null();
     BOOL_REFUSE(arg, "reshape");   /* rows/cols; the buffer is not a bool */
-    if (list_get_borrow(arg, 1)->type != VAL_NUM ||
-        list_get_borrow(arg, 2)->type != VAL_NUM) return make_null();
+    if (list_elem_type(arg, 1) != VAL_NUM ||
+        list_elem_type(arg, 2) != VAL_NUM) return make_null();
     int r = (int)eigs_list_num(arg, 1, __func__);
     int c = (int)eigs_list_num(arg, 2, __func__);
     if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
@@ -103,7 +104,8 @@ Value* builtin_buf_get(Value *arg) {
         /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
-    Value *buf = list_get_borrow(arg, 0);
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
     if (!buf || buf->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "buf_get: first argument must be a buffer");
         /* fs:CHANNEL the rt_error above already raised */
@@ -127,7 +129,8 @@ Value* builtin_buf_set(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_set requires [buffer, index, value]");
         return make_null();
     }
-    Value *buf = list_get_borrow(arg, 0);
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
     if (!buf || buf->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "buf_set: first argument must be a buffer");
         return make_null();
@@ -135,12 +138,12 @@ Value* builtin_buf_set(Value *arg) {
     /* #1061: both operands were read through the num union member unchecked
      * -- a string index or value read garbage bits (the #1007 type-pun class).
      * Loud, like the `b[i] is v` opcode path. */
-    if (list_get_borrow(arg, 1)->type != VAL_NUM) {
-        rt_error(EK_TYPE, 0, "buf_set: index must be a number, got %s", val_type_name(list_get_borrow(arg, 1)->type));
+    if (list_elem_type(arg, 1) != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "buf_set: index must be a number, got %s", val_type_name(list_elem_type(arg, 1)));
         return make_null();
     }
-    if (list_get_borrow(arg, 2)->type != VAL_NUM) {
-        rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(list_get_borrow(arg, 2)->type));
+    if (list_elem_type(arg, 2) != VAL_NUM) {
+        rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(list_elem_type(arg, 2)));
         return make_null();
     }
     int idx = (int)eigs_list_num(arg, 1, __func__);
@@ -178,11 +181,11 @@ Value* builtin_buf_from_list(Value *arg) {
     v->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));
     v->refcount = 1;
     for (int i = 0; i < n; i++) {
-        if (list_get_borrow(arg, i)->type == VAL_NUM) {
-            v->data.buffer.data[i] = eigs_num_arg(list_get_borrow(arg, i), __func__);
+        if (list_elem_type(arg, i) == VAL_NUM) {
+            v->data.buffer.data[i] = eigs_slot_num(list_slot(arg, i), __func__);
         } else {
             /* #1061: a non-number element silently stayed 0.0. */
-            const char *tn = val_type_name(list_get_borrow(arg, i)->type);
+            const char *tn = val_type_name(list_elem_type(arg, i));
             val_decref(v);
             rt_error(EK_TYPE, 0, "buf_from_list: element %d is %s (buffers hold numbers)", i, tn);
             return make_null();
@@ -197,7 +200,8 @@ Value* builtin_buf_from_list(Value *arg) {
 static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
     if (!arg || arg->type != VAL_LIST) return 1;
     for (int i = 0; i < arg->data.list.count; i++) {
-        Value *item = list_get_borrow(arg, i);
+        EIGS_VIEW(item_view);
+        Value *item = list_get_view(arg, i, &item_view);
         /* #1637: a bool byte is refused in every strict mode. */
         if (!item || (item->type != VAL_NUM && (g_strict || item->type == VAL_BOOL))) {
             rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
@@ -220,10 +224,8 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
  * Surfaced by tidelog's CBOR text-string decoder. */
 Value* builtin_str_from_bytes(Value *arg) {
     int n = 0;
-    Value **items = NULL;
     if (arg && arg->type == VAL_LIST) {
         n = arg->data.list.count;
-        items = list_values_storage(arg);
     } else if (arg && arg->type == VAL_BUFFER) {
         n = arg->data.buffer.count;
     } else {
@@ -233,8 +235,9 @@ Value* builtin_str_from_bytes(Value *arg) {
     char *s = xcalloc((size_t)(n > 0 ? n : 0) + 1, 1);
     int len = 0;
     for (int i = 0; i < n; i++) {
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? eigs_num_arg(items[i], __func__) : 0.0)
-                          : buffer_read_num(arg, i);
+        double dv = arg->type == VAL_LIST
+                        ? (list_elem_type(arg, i) == VAL_NUM ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
+                        : buffer_read_num(arg, i);
         if (g_has_error) { free(s); return make_null(); }
         int b = finite_num_to_byte(dv);
         if (b == 0) break;            /* C-string terminates at NUL */
@@ -273,8 +276,8 @@ Value* builtin_f64_from_bytes(Value *arg) {
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
         for (int i = 0; i < 8 && i < n; i++)
-            if (list_get_borrow(arg, i) && list_get_borrow(arg, i)->type == VAL_NUM)
-                bytes_in[i] = eigs_num_arg(list_get_borrow(arg, i), __func__);
+            if (list_elem_type(arg, i) == VAL_NUM)
+                bytes_in[i] = eigs_slot_num(list_slot(arg, i), __func__);
     } else if (arg && arg->type == VAL_BUFFER) {
         int n = arg->data.buffer.count;
         for (int i = 0; i < 8 && i < n; i++) {
@@ -330,10 +333,8 @@ static int zlib_bytes_arg(Value *arg, const char *who,
     *out = NULL;
     *out_n = 0;
     int n = 0;
-    Value **items = NULL;
     if (arg && arg->type == VAL_LIST) {
         n = arg->data.list.count;
-        items = list_values_storage(arg);
     } else if (arg && arg->type == VAL_BUFFER) {
         n = arg->data.buffer.count;
     } else {
@@ -345,8 +346,9 @@ static int zlib_bytes_arg(Value *arg, const char *who,
     if (!strict_numeric_byte_list(arg, who, 0)) return 0;
     unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
     for (int i = 0; i < n; i++) {
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? eigs_num_arg(items[i], __func__) : 0.0)
-                          : buffer_read_num(arg, i);
+        double dv = arg->type == VAL_LIST
+                        ? (list_elem_type(arg, i) == VAL_NUM ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
+                        : buffer_read_num(arg, i);
         if (g_has_error) { free(b); return 0; }
         b[i] = finite_num_to_byte(dv);
     }
@@ -487,12 +489,12 @@ Value* builtin_inflate(Value *arg)      { (void)arg; return zlib_unavailable("in
  * bounds. Bounds failures RAISE (index_range / value), matching the
  * #490-#512 direction (buf_get/buf_set/set_at) — no silent truncation:
  * a clamped audio mix is a silently wrong render. */
-static int buf_count_arg(const char *who, Value *cnt_val, long long *out) {
-    if (!cnt_val || cnt_val->type != VAL_NUM) {
+static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
+    if (slot_type(cnt) != VAL_NUM) {
         rt_error(EK_VALUE, 0, "%s: count must be a number", who);
         return 0;
     }
-    long long c = (long long)eigs_num_arg(cnt_val, __func__);
+    long long c = (long long)eigs_slot_num(cnt, __func__);
     if (c < 0) {
         rt_error(EK_VALUE, 0, "%s: count must be non-negative (got %lld)",
                  who, c);
@@ -502,38 +504,38 @@ static int buf_count_arg(const char *who, Value *cnt_val, long long *out) {
     return 1;
 }
 
-static int buf_num_arg(const char *who, const char *what, Value *v,
+static int buf_num_arg(const char *who, const char *what, EigsSlot s,
                        double *out) {
-    if (!v || v->type != VAL_NUM) {
+    if (slot_type(s) != VAL_NUM) {
         rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
         return 0;
     }
-    *out = eigs_num_arg(v, __func__);
+    *out = eigs_slot_num(s, __func__);
     return 1;
 }
 
 /* Validate one (buffer, offset, count) window. On success writes the
  * offset and returns 1; on failure raises and returns 0. count must
  * already be validated non-negative (buf_count_arg). */
-static int buf_window_arg(const char *who, Value *buf, Value *off_val,
+static int buf_window_arg(const char *who, Value *buf, EigsSlot off,
                           long long count, long long *out_off) {
     if (!buf || buf->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "%s: expected a buffer", who);
         return 0;
     }
-    if (!off_val || off_val->type != VAL_NUM) {
+    if (slot_type(off) != VAL_NUM) {
         rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
         return 0;
     }
-    long long off = (long long)eigs_num_arg(off_val, __func__);
+    long long offset = (long long)eigs_slot_num(off, __func__);
     long long n = buf->data.buffer.count;
-    if (off < 0 || off > n - count) {
+    if (offset < 0 || offset > n - count) {
         rt_error(EK_INDEX, 0,
                  "%s: window [%lld, %lld) out of range (length %lld)",
-                 who, off, off + count, n);
+                 who, offset, offset + count, n);
         return 0;
     }
-    *out_off = off;
+    *out_off = offset;
     return 1;
 }
 
@@ -547,12 +549,14 @@ Value* builtin_buf_copy(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_copy requires [src, src_off, dst, dst_off, count]");
         return make_null();
     }
-    Value *src = list_get_borrow(arg, 0);
-    Value *dst = list_get_borrow(arg, 2);
+    EIGS_VIEW(src_view);
+    Value *src = list_get_view(arg, 0, &src_view);
+    EIGS_VIEW(dst_view);
+    Value *dst = list_get_view(arg, 2, &dst_view);
     long long count, src_off, dst_off;
-    if (!buf_count_arg("buf_copy", list_get_borrow(arg, 4), &count) ||
-        !buf_window_arg("buf_copy", src, list_get_borrow(arg, 1), count, &src_off) ||
-        !buf_window_arg("buf_copy", dst, list_get_borrow(arg, 3), count, &dst_off))
+    if (!buf_count_arg("buf_copy", list_slot(arg, 4), &count) ||
+        !buf_window_arg("buf_copy", src, list_slot(arg, 1), count, &src_off) ||
+        !buf_window_arg("buf_copy", dst, list_slot(arg, 3), count, &dst_off))
         return make_null();
     if (count == 0) return make_null();
     memmove(&dst->data.buffer.data[dst_off], &src->data.buffer.data[src_off],
@@ -574,14 +578,16 @@ Value* builtin_buf_mix(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_mix requires [dst, src, dst_off, src_off, count, gain]");
         return make_null();
     }
-    Value *dst = list_get_borrow(arg, 0);
-    Value *src = list_get_borrow(arg, 1);
+    EIGS_VIEW(dst_view);
+    Value *dst = list_get_view(arg, 0, &dst_view);
+    EIGS_VIEW(src_view);
+    Value *src = list_get_view(arg, 1, &src_view);
     long long count, dst_off, src_off;
     double gain;
-    if (!buf_count_arg("buf_mix", list_get_borrow(arg, 4), &count) ||
-        !buf_window_arg("buf_mix", dst, list_get_borrow(arg, 2), count, &dst_off) ||
-        !buf_window_arg("buf_mix", src, list_get_borrow(arg, 3), count, &src_off) ||
-        !buf_num_arg("buf_mix", "gain", list_get_borrow(arg, 5), &gain))
+    if (!buf_count_arg("buf_mix", list_slot(arg, 4), &count) ||
+        !buf_window_arg("buf_mix", dst, list_slot(arg, 2), count, &dst_off) ||
+        !buf_window_arg("buf_mix", src, list_slot(arg, 3), count, &src_off) ||
+        !buf_num_arg("buf_mix", "gain", list_slot(arg, 5), &gain))
         return make_null();
     double *dd = &dst->data.buffer.data[dst_off];
     double *sd = &src->data.buffer.data[src_off];
@@ -599,12 +605,13 @@ Value* builtin_buf_scale_range(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_scale_range requires [buffer, off, count, gain]");
         return make_null();
     }
-    Value *buf = list_get_borrow(arg, 0);
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
     long long count, off;
     double gain;
-    if (!buf_count_arg("buf_scale_range", list_get_borrow(arg, 2), &count) ||
-        !buf_window_arg("buf_scale_range", buf, list_get_borrow(arg, 1), count, &off) ||
-        !buf_num_arg("buf_scale_range", "gain", list_get_borrow(arg, 3), &gain))
+    if (!buf_count_arg("buf_scale_range", list_slot(arg, 2), &count) ||
+        !buf_window_arg("buf_scale_range", buf, list_slot(arg, 1), count, &off) ||
+        !buf_num_arg("buf_scale_range", "gain", list_slot(arg, 3), &gain))
         return make_null();
     double *d = &buf->data.buffer.data[off];
     for (long long i = 0; i < count; i++)
@@ -621,12 +628,13 @@ Value* builtin_buf_fill(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_fill requires [buffer, off, count, value]");
         return make_null();
     }
-    Value *buf = list_get_borrow(arg, 0);
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
     long long count, off;
     double val;
-    if (!buf_count_arg("buf_fill", list_get_borrow(arg, 2), &count) ||
-        !buf_window_arg("buf_fill", buf, list_get_borrow(arg, 1), count, &off) ||
-        !buf_num_arg("buf_fill", "value", list_get_borrow(arg, 3), &val))
+    if (!buf_count_arg("buf_fill", list_slot(arg, 2), &count) ||
+        !buf_window_arg("buf_fill", buf, list_slot(arg, 1), count, &off) ||
+        !buf_num_arg("buf_fill", "value", list_slot(arg, 3), &val))
         return make_null();
     double *d = &buf->data.buffer.data[off];
     for (long long i = 0; i < count; i++)
@@ -643,10 +651,11 @@ Value* builtin_buf_peak(Value *arg) {
         /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
-    Value *buf = list_get_borrow(arg, 0);
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
     long long count, off;
-    if (!buf_count_arg("buf_peak", list_get_borrow(arg, 2), &count) ||
-        !buf_window_arg("buf_peak", buf, list_get_borrow(arg, 1), count, &off))
+    if (!buf_count_arg("buf_peak", list_slot(arg, 2), &count) ||
+        !buf_window_arg("buf_peak", buf, list_slot(arg, 1), count, &off))
         /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
         return make_num(0);
     double m = 0.0;
@@ -672,12 +681,14 @@ Value* builtin_buf_dot(Value *arg) {
         /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
-    Value *a = list_get_borrow(arg, 0);
-    Value *b = list_get_borrow(arg, 1);
+    EIGS_VIEW(a_view);
+    Value *a = list_get_view(arg, 0, &a_view);
+    EIGS_VIEW(b_view);
+    Value *b = list_get_view(arg, 1, &b_view);
     long long count, a_off, b_off;
-    if (!buf_count_arg("buf_dot", list_get_borrow(arg, 4), &count) ||
-        !buf_window_arg("buf_dot", a, list_get_borrow(arg, 2), count, &a_off) ||
-        !buf_window_arg("buf_dot", b, list_get_borrow(arg, 3), count, &b_off))
+    if (!buf_count_arg("buf_dot", list_slot(arg, 4), &count) ||
+        !buf_window_arg("buf_dot", a, list_slot(arg, 2), count, &a_off) ||
+        !buf_window_arg("buf_dot", b, list_slot(arg, 3), count, &b_off))
         /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
         return make_num(0);
     double s = 0.0;
@@ -724,15 +735,16 @@ Value* builtin_buf_from_pcm16le(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_from_pcm16le requires [bytes, byte_off, count]");
         return make_null();
     }
-    Value *src = list_get_borrow(arg, 0);
+    EIGS_VIEW(src_view);
+    Value *src = list_get_view(arg, 0, &src_view);
     long long count, off;
-    if (!buf_count_arg("buf_from_pcm16le", list_get_borrow(arg, 2), &count))
+    if (!buf_count_arg("buf_from_pcm16le", list_slot(arg, 2), &count))
         return make_null();
     if (count > (long long)INT_MAX / 2) { /* 2*count below cannot overflow */
         rt_error(EK_LIMIT, 0, "buf_from_pcm16le: count %lld over the buffer size limit", count);
         return make_null();
     }
-    if (!buf_window_arg("buf_from_pcm16le", src, list_get_borrow(arg, 1),
+    if (!buf_window_arg("buf_from_pcm16le", src, list_slot(arg, 1),
                         count * 2, &off))
         return make_null();
     Value *out = buf_alloc_flat(count);
@@ -763,15 +775,16 @@ Value* builtin_buf_to_pcm16le(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_to_pcm16le requires [floats, off, count]");
         return make_null();
     }
-    Value *src = list_get_borrow(arg, 0);
+    EIGS_VIEW(src_view);
+    Value *src = list_get_view(arg, 0, &src_view);
     long long count, off;
-    if (!buf_count_arg("buf_to_pcm16le", list_get_borrow(arg, 2), &count))
+    if (!buf_count_arg("buf_to_pcm16le", list_slot(arg, 2), &count))
         return make_null();
     if (count > (long long)INT_MAX / 2) { /* output is 2*count elements */
         rt_error(EK_LIMIT, 0, "buf_to_pcm16le: count %lld over the buffer size limit", count);
         return make_null();
     }
-    if (!buf_window_arg("buf_to_pcm16le", src, list_get_borrow(arg, 1),
+    if (!buf_window_arg("buf_to_pcm16le", src, list_slot(arg, 1),
                         count, &off))
         return make_null();
     Value *out = buf_alloc_flat(count * 2);
@@ -801,13 +814,16 @@ Value* builtin_buf_deinterleave(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_deinterleave requires [src, channel, nch, count?]");
         return make_null();
     }
-    Value *src = list_get_borrow(arg, 0);
+    EIGS_VIEW(src_view);
+    Value *src = list_get_view(arg, 0, &src_view);
     if (!src || src->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "buf_deinterleave: expected a buffer");
         return make_null();
     }
-    Value *ch_v = list_get_borrow(arg, 1);
-    Value *nch_v = list_get_borrow(arg, 2);
+    EIGS_VIEW(ch_v_view);
+    Value *ch_v = list_get_view(arg, 1, &ch_v_view);
+    EIGS_VIEW(nch_v_view);
+    Value *nch_v = list_get_view(arg, 2, &nch_v_view);
     if (!ch_v || ch_v->type != VAL_NUM || !nch_v || nch_v->type != VAL_NUM) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: channel and nch must be numbers");
         return make_null();
@@ -826,9 +842,8 @@ Value* builtin_buf_deinterleave(Value *arg) {
     long long n = src->data.buffer.count;
     long long avail = channel < n ? (n - channel + nch - 1) / nch : 0;
     long long count = avail;
-    if (arg->data.list.count >= 4 && list_get_borrow(arg, 3) &&
-        list_get_borrow(arg, 3)->type != VAL_NULL) {
-        if (!buf_count_arg("buf_deinterleave", list_get_borrow(arg, 3), &count))
+    if (arg->data.list.count >= 4 && list_elem_type(arg, 3) != VAL_NULL) {
+        if (!buf_count_arg("buf_deinterleave", list_slot(arg, 3), &count))
             return make_null();
         if (count > avail) {
             rt_error(EK_INDEX, 0,
@@ -866,13 +881,14 @@ Value* builtin_buf_resample_linear(Value *arg) {
         rt_error(EK_TYPE, 0, "buf_resample_linear requires [src, dst_len]");
         return make_null();
     }
-    Value *src = list_get_borrow(arg, 0);
+    EIGS_VIEW(src_view);
+    Value *src = list_get_view(arg, 0, &src_view);
     if (!src || src->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "buf_resample_linear: expected a buffer");
         return make_null();
     }
     long long dst_len;
-    if (!buf_count_arg("buf_resample_linear", list_get_borrow(arg, 1), &dst_len))
+    if (!buf_count_arg("buf_resample_linear", list_slot(arg, 1), &dst_len))
         return make_null();
     if (dst_len > (long long)INT_MAX) {
         rt_error(EK_LIMIT, 0, "buf_resample_linear: dst_len %lld over the buffer size limit", dst_len);

@@ -42,12 +42,12 @@ Value* builtin_match(Value *arg) {
         rt_error(EK_TYPE, 0, "regex_match requires [string, pattern]");
         return make_list(0);
     }
-    if (list_get_borrow(arg, 0)->type != VAL_STR || list_get_borrow(arg, 1)->type != VAL_STR) {
+    if (list_elem_type(arg, 0) != VAL_STR || list_elem_type(arg, 1) != VAL_STR) {
         rt_error(EK_TYPE, 0, "regex_match: string and pattern must be strings");
         return make_list(0);
     }
-    const char *str = list_get_borrow(arg, 0)->data.str;
-    const char *pattern = list_get_borrow(arg, 1)->data.str;
+    const char *str = list_get_ref(arg, 0)->data.str;
+    const char *pattern = list_get_ref(arg, 1)->data.str;
 
     regex_t re;
     /* #500: an invalid pattern used to return [] — indistinguishable from a
@@ -100,12 +100,12 @@ Value* builtin_match_all(Value *arg) {
         rt_error(EK_TYPE, 0, "regex_find requires [string, pattern]");
         return make_list(0);
     }
-    if (list_get_borrow(arg, 0)->type != VAL_STR || list_get_borrow(arg, 1)->type != VAL_STR) {
+    if (list_elem_type(arg, 0) != VAL_STR || list_elem_type(arg, 1) != VAL_STR) {
         rt_error(EK_TYPE, 0, "regex_find: string and pattern must be strings");
         return make_list(0);
     }
-    const char *str = list_get_borrow(arg, 0)->data.str;
-    const char *pattern = list_get_borrow(arg, 1)->data.str;
+    const char *str = list_get_ref(arg, 0)->data.str;
+    const char *pattern = list_get_ref(arg, 1)->data.str;
 
     regex_t re;
     if (regcomp(&re, pattern, REG_EXTENDED) != 0) {           /* #500 */
@@ -143,18 +143,18 @@ Value* builtin_regex_replace(Value *arg) {
          * discards it at the CHECK_ERROR seam. */
         return make_str("");
     }
-    if (list_get_borrow(arg, 0)->type != VAL_STR ||
-        list_get_borrow(arg, 1)->type != VAL_STR ||
-        list_get_borrow(arg, 2)->type != VAL_STR) {
+    if (list_elem_type(arg, 0) != VAL_STR ||
+        list_elem_type(arg, 1) != VAL_STR ||
+        list_elem_type(arg, 2) != VAL_STR) {
         rt_error(EK_TYPE, 0, "regex_replace: string, pattern and replacement must be strings");
         /* fs:CHANNEL same as above — the unconditional rt_error is the error
          * channel; converting to ARG_GUARD would make this site quieter with
          * strict OFF, not louder. */
         return make_str("");
     }
-    const char *str = list_get_borrow(arg, 0)->data.str;
-    const char *pattern = list_get_borrow(arg, 1)->data.str;
-    const char *replacement = list_get_borrow(arg, 2)->data.str;
+    const char *str = list_get_ref(arg, 0)->data.str;
+    const char *pattern = list_get_ref(arg, 1)->data.str;
+    const char *replacement = list_get_ref(arg, 2)->data.str;
 
     regex_t re;
     /* #500: an invalid pattern used to return the input unchanged — a silent
@@ -211,8 +211,10 @@ Value* builtin_stream_open(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "stream_open");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "stream_open", "[path, count]", make_bool(0));
-    Value *path_val = list_get_borrow(arg, 0);
-    Value *count_val = list_get_borrow(arg, 1);
+    EIGS_VIEW(path_val_view);
+    Value *path_val = list_get_view(arg, 0, &path_val_view);
+    EIGS_VIEW(count_val_view);
+    Value *count_val = list_get_view(arg, 1, &count_val_view);
     ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM,
               "stream_open", "[a string path, a number count]", make_bool(0));
     if (eigs_num_arg(count_val, __func__) < 1 ||
@@ -331,8 +333,7 @@ Value* builtin_ls(Value *arg) {
         list_append_owned(list, make_str(entry->d_name));
     }
     closedir(d);
-    qsort(list_values_storage(list), list->data.list.count, sizeof(Value*),
-          ls_entry_cmp);
+    list_sort(list, ls_entry_cmp);
     TRACE_NONDET_RECORD("ls", list);
 }
 
@@ -397,10 +398,15 @@ Value* builtin_build_corpus(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4)
         return make_null();
 
-    Value *file_list = list_get_borrow(arg, 0);
-    Value *topn_val = list_get_borrow(arg, 1);
-    Value *stream_path_val = list_get_borrow(arg, 2);
-    Value *vocab_path_val = list_get_borrow(arg, 3);
+    EIGS_VIEW(file_list_view);
+
+    Value *file_list = list_get_view(arg, 0, &file_list_view);
+    EIGS_VIEW(topn_val_view);
+    Value *topn_val = list_get_view(arg, 1, &topn_val_view);
+    EIGS_VIEW(stream_path_val_view);
+    Value *stream_path_val = list_get_view(arg, 2, &stream_path_val_view);
+    EIGS_VIEW(vocab_path_val_view);
+    Value *vocab_path_val = list_get_view(arg, 3, &vocab_path_val_view);
 
     if (!file_list || file_list->type != VAL_LIST) return make_null();
     BOOL_REFUSE(topn_val, "build_corpus");
@@ -437,7 +443,8 @@ Value* builtin_build_corpus(Value *arg) {
      * been re-measured on the full corpus.) */
     int slot_count = 0;
     if (arg->data.list.count >= 6) {
-        Value *sv = list_get_borrow(arg, 5);
+        EIGS_VIEW(sv_view);
+        Value *sv = list_get_view(arg, 5, &sv_view);
         double d = 0;
         if (eigs_opt_num(sv, &d, "build_corpus")) slot_count = (int)d;   /* #1637: a bool raises */
         if (g_has_error) return make_null();
@@ -465,7 +472,8 @@ Value* builtin_build_corpus(Value *arg) {
      * high-frequency collision is. Opt-in: 0 leaves the stream byte-identical. */
     int int_count = 0;
     if (arg->data.list.count >= 7) {
-        Value *iv = list_get_borrow(arg, 6);
+        EIGS_VIEW(iv_view);
+        Value *iv = list_get_view(arg, 6, &iv_view);
         double d = 0;
         if (eigs_opt_num(iv, &d, "build_corpus")) int_count = (int)d;    /* #1637: a bool raises */
         if (g_has_error) return make_null();
@@ -487,7 +495,8 @@ Value* builtin_build_corpus(Value *arg) {
     int files_found = 0;
 
     for (int fi = 0; fi < n_files; fi++) {
-        Value *path_val = list_get_borrow(file_list, fi);
+        EIGS_VIEW(path_val_view);
+        Value *path_val = list_get_view(file_list, fi, &path_val_view);
         if (!path_val || path_val->type != VAL_STR) { file_tok_counts[fi] = 0; continue; }
         const char *path = path_val->data.str;
 
@@ -643,7 +652,9 @@ Value* builtin_build_corpus(Value *arg) {
     for (int fi = 0; fi < n_files; fi++) {
         if (file_tok_counts[fi] <= 0) continue;
 
-        Value *path_val = list_get_borrow(file_list, fi);
+        EIGS_VIEW(path_val_view);
+
+        Value *path_val = list_get_view(file_list, fi, &path_val_view);
         long fsize = 0;
         char *source = read_file_util(path_val->data.str, &fsize);
         if (!source) continue;
@@ -752,7 +763,8 @@ Value* builtin_build_corpus(Value *arg) {
      * Sorted by count descending. Enables exact coverage(top_n) curves
      * without re-running the full corpus build. */
     if (arg->data.list.count >= 5) {
-        Value *idents_path_val = list_get_borrow(arg, 4);
+        EIGS_VIEW(idents_path_val_view);
+        Value *idents_path_val = list_get_view(arg, 4, &idents_path_val_view);
         if (idents_path_val && idents_path_val->type == VAL_STR && n_idents > 0) {
             /* Build index array, sort descending by count via simple sort */
             int *order = xmalloc_array(n_idents, sizeof(int));
@@ -1003,8 +1015,10 @@ Value* builtin_rename(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "rename");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "rename", "[old_path, new_path]", make_bool(0));
-    Value *from = list_get_borrow(arg, 0);
-    Value *to = list_get_borrow(arg, 1);
+    EIGS_VIEW(from_view);
+    Value *from = list_get_view(arg, 0, &from_view);
+    EIGS_VIEW(to_view);
+    Value *to = list_get_view(arg, 1, &to_view);
     ARG_GUARD(!from || from->type != VAL_STR || !to || to->type != VAL_STR,
               "rename", "two string paths", make_bool(0));
     return make_bool(rename(from->data.str, to->data.str) == 0);
@@ -1085,9 +1099,10 @@ Value* builtin_read_bytes_buf(Value *arg) {
                      "read_bytes_buf of path, or read_bytes_buf of [path, max_bytes]");
             return make_null();
         }
-        path = list_get_borrow(arg, 0);
+        path = list_get_ref(arg, 0);
         if (arg->data.list.count >= 2) {
-            Value *mv = list_get_borrow(arg, 1);
+            EIGS_VIEW(mv_view);
+            Value *mv = list_get_view(arg, 1, &mv_view);
             if (!mv || mv->type != VAL_NUM) {
                 rt_error(EK_VALUE, 0, "read_bytes_buf: max_bytes must be a number");
                 return make_null();
@@ -1212,8 +1227,10 @@ Value* builtin_write_text(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "write_text");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "write_text", "[path, text]", make_bool(0));
-    Value *path_val = list_get_borrow(arg, 0);
-    Value *text_val = list_get_borrow(arg, 1);
+    EIGS_VIEW(path_val_view);
+    Value *path_val = list_get_view(arg, 0, &path_val_view);
+    EIGS_VIEW(text_val_view);
+    Value *text_val = list_get_view(arg, 1, &text_val_view);
     ARG_GUARD(!path_val || path_val->type != VAL_STR ||
               !text_val || text_val->type != VAL_STR,
               "write_text", "two strings", make_bool(0));
@@ -1270,9 +1287,9 @@ Value* builtin_exec_capture(Value *arg) {
     double timeout_sec = -1;
     Value *cmd_list = arg;
     if (arg->data.list.count == 2
-        && list_get_borrow(arg, 0) && list_get_borrow(arg, 0)->type == VAL_LIST
-        && list_get_borrow(arg, 1) && list_get_borrow(arg, 1)->type == VAL_NUM) {
-        cmd_list = list_get_borrow(arg, 0);
+        && list_elem_type(arg, 0) == VAL_LIST
+        && list_elem_type(arg, 1) == VAL_NUM) {
+        cmd_list = list_get_ref(arg, 0);
         timeout_sec = eigs_list_num(arg, 1, __func__);
         ARG_GUARD(cmd_list->data.list.count < 1,
                   "exec_capture", "a non-empty command list", exec_capture_result(-1, ""));
@@ -1286,7 +1303,8 @@ Value* builtin_exec_capture(Value *arg) {
      * outcome, not an argument the caller got wrong. */
     if (!argv) return exec_capture_result(-1, "");
     for (int i = 0; i < total; i++) {
-        Value *v = list_get_borrow(cmd_list, i);
+        EIGS_VIEW(v_view);
+        Value *v = list_get_view(cmd_list, i, &v_view);
         if (!v || v->type != VAL_STR) {
             free(argv);
             ARG_GUARD(1, "exec_capture", "a list of strings", exec_capture_result(-1, ""));
@@ -1417,8 +1435,10 @@ Value* builtin_proc_read_buf(Value *arg) {
     if (replay_blocks("proc_read_buf")) return make_null();
     if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
         return make_null();
-    Value *fd_v  = list_get_borrow(arg, 0);
-    Value *max_v = list_get_borrow(arg, 1);
+    EIGS_VIEW(fd_v_view);
+    Value *fd_v  = list_get_view(arg, 0, &fd_v_view);
+    EIGS_VIEW(max_v_view);
+    Value *max_v = list_get_view(arg, 1, &max_v_view);
     if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
         return make_null();
     int fd = (int)eigs_num_arg(fd_v, __func__);
@@ -1481,25 +1501,26 @@ Value* builtin_write_bytes(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "write_bytes");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "write_bytes", "[path, data] (optionally [path, data, append])", make_num(0));
-    Value *path_val = list_get_borrow(arg, 0);
-    Value *data = list_get_borrow(arg, 1);
+    EIGS_VIEW(path_val_view);
+    Value *path_val = list_get_view(arg, 0, &path_val_view);
+    EIGS_VIEW(data_view);
+    Value *data = list_get_view(arg, 1, &data_view);
     ARG_GUARD(!path_val || path_val->type != VAL_STR,
               "write_bytes", "a string path as its first argument", make_num(0));
     /* #1637: append is a flag -- a bool, or the older nonzero number. Any
      * other value raises rather than silently meaning "truncate". */
     int append = 0;
-    if (arg->data.list.count >= 3 && list_get_borrow(arg, 2)) {
-        Value *fl = list_get_borrow(arg, 2);
+    if (arg->data.list.count >= 3) {
+        EIGS_VIEW(fl_view);
+        Value *fl = list_get_view(arg, 2, &fl_view);
         if (fl->type == VAL_BOOL) append = fl->data.boolean;
         else if (fl->type != VAL_NULL) append = (eigs_num_arg(fl, "write_bytes") != 0.0);
         if (g_has_error) return make_num(0);
     }
 
     int n = 0;
-    Value **items = NULL;
     if (data && data->type == VAL_LIST) {
         n = data->data.list.count;
-        items = list_values_storage(data);
     } else if (data && data->type == VAL_BUFFER) {
         n = data->data.buffer.count;
     } else {
@@ -1517,14 +1538,15 @@ Value* builtin_write_bytes(Value *arg) {
          * two zero bytes and reported success. Same class as join/str_replace
          * — no stand-in return, so invisible to the classifier. The free()
          * matters: STRICT_REQUIRE returns, and `out` is already allocated. */
-        if (items && (!items[i] || items[i]->type != VAL_NUM)
-            && (g_strict || (items[i] && items[i]->type == VAL_BOOL))) {   /* #1637: a bool in every mode */
+        if (data->type == VAL_LIST && list_elem_type(data, i) != VAL_NUM
+            && (g_strict || list_elem_type(data, i) == VAL_BOOL)) {   /* #1637: a bool in every mode */
             free(out);
             rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
             return make_null();
         }
-        double dv = items ? (items[i] && items[i]->type == VAL_NUM ? eigs_num_arg(items[i], __func__) : 0.0)
-                          : buffer_read_num(data, i);
+        double dv = data->type == VAL_LIST
+                        ? eigs_slot_elem_num(list_slot(data, i), __func__)
+                        : buffer_read_num(data, i);
         if (g_has_error) { free(out); return make_null(); }
         out[i] = finite_num_to_byte(dv);
     }
