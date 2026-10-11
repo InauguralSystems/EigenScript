@@ -1260,9 +1260,8 @@ Value* builtin_write_text(Value *arg) {
 
 static Value* exec_capture_result(int code, const char *text) {
     Value *result = make_list(2);
-    list_set_owned(result, 0, make_num(code));
-    list_set_owned(result, 1, make_str(text));
-    result->data.list.count = 2;
+    list_append_num(result, code);
+    list_append_owned(result, make_str(text));
     return result;
 }
 
