@@ -17,7 +17,7 @@ void store_drain_handle(void *ptr) { (void)ptr; }
 /* Store dictionaries are ordinary runtime dictionaries (never module
  * namespace projections).  Keep named reads on the slot boundary: callers
  * supply the short-lived view storage used when the selected value is an
- * inline number in the rehearsal/final representation. */
+ * inline number in slot storage. */
 static Value *store_dict_get_view(Value *dict, const char *key, EigsView *view) {
     int idx = env_hash_find_dict(dict, key, env_hash_name(key));
     return idx < 0 ? NULL : dict_value_get_view(dict, idx, view);

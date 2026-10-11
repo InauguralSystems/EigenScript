@@ -5720,9 +5720,8 @@ Value* builtin_list_insert_at(Value *arg) {
         return list;
     }
     /* Grow by one slot, transfer the old last slot's ownership to that new
-     * copy, then move the tail and install an independently owned value.  In
-     * rehearsal this is also what keeps an immediate number from escaping as
-     * a retained Value view. */
+     * copy, then move the tail and install an independently owned value (an
+     * immediate number is never retained as a Value view). */
     list_append_slot(list, list_slot(list, count - 1));
     slot_decref(list_slot(list, count - 1));
     list_move(list, idx + 1, idx, count - idx);

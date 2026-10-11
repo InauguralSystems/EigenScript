@@ -156,6 +156,34 @@ loop while n < 80:
     n is n + 1
 check of ["local dot guard-miss store", rlast == 59]
 
+# #1665 arm D B10: dict values are EigsSlot storage, so the inline
+# LOCAL_DOT_GET probe pushes the field's slot bits. A 0 field is all-zero
+# bits (a number, not a vacancy); string/null/bool fields are not immediate
+# numbers and must take the helper, and a number store over a number field
+# is the inline bit store.
+define dot_mix(z) as:
+    d is {"zero": 0, "s": "str", "n": null, "t": true, "neg": -0.5}
+    k is 0
+    acc is 0
+    seen is ""
+    loop while k < 80:
+        acc is acc + d.zero + d.neg
+        if d.t:
+            seen is d.s
+        if d.n == null:
+            acc is acc + 1
+        d.zero is d.zero + z
+        k is k + 1
+    return [acc, seen, d.zero]
+
+n is 0
+dm is null
+loop while n < 80:
+    dm is dot_mix of 1
+    n is n + 1
+# acc = sum_{k<80} (k - 0.5 + 1) = 3160 + 40
+check of ["local dot slot reads (0 field, ref fields)", dm[0] == 3200 and dm[1] == "str" and dm[2] == 80]
+
 # ----------------------------------------------------------------
 # 3) Buffer + list index writes in a fn-local loop (bench_idxset
 #    shape: INDEX_SET inline fast path), plus the helper slow path
