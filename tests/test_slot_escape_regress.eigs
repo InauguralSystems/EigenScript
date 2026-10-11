@@ -1,0 +1,34 @@
+# #1665 arm D B3 review regressions: values handed out of builtins must not be
+# borrowed views or unowned grandchildren. Each case failed before its fix
+# (get_at use-after-free under ASan; dispatch returned a dead stack frame).
+
+load_file of "lib/test.eigs"
+# get_at of a REFERENCE element is a grandchild of the argument list, so it must
+# be owned: reading it, dropping it, and reading the list again stays intact.
+names is ["alpha", "beta"]
+x is get_at of [names, 0]
+assert_eq of [x, "alpha", "get_at returns the string element"]
+x is null
+assert_eq of [get_at of [names, 1], "beta", "the list is intact after the element is released"]
+grid is [["a", "b"], ["c", "d"]]
+c is get_at of [grid, 1, 0]
+assert_eq of [c, "c", "2-D get_at returns the string element"]
+c is null
+assert_eq of [grid, [["a", "b"], ["c", "d"]], "the grid is intact after release"]
+
+# dispatch into a builtin that returns its numeric argument (num) must return a
+# real number, not a pointer into dispatch's stack frame.
+d is dispatch
+r is d of [[num], 0, 5]
+assert_eq of [r, 5, "dispatch -> num returns the number"]
+r2 is d of [[num], 0, 7.5]
+assert_eq of [r + r2, 12.5, "two dispatched numbers are independent values"]
+
+# Equality and channel clone past the depth-64 container cap compare/copy
+# scalars by value.
+deep is 1
+for i in range of 70:
+    deep is [deep]
+assert_eq of [deep == deep, true, "a deep nest equals itself"]
+
+test_summary of null

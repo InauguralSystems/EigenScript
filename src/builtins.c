@@ -783,8 +783,9 @@ Value* builtin_classify(Value *arg) {
      * classifying an arbitrary value would silently mean "no trajectory". */
     Value *t = arg;
     const char *channel = "value";
+    EigsView t_view = {{0}};   /* function scope: t is read after the if-block (#1665) */
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
-        t = BUILTIN_LIST_VIEW(arg, 0);
+        t = slot_view(list_slot(arg, 0), &t_view);
         if (arg->data.list.count >= 2) {
             Value *ch = BUILTIN_LIST_VIEW(arg, 1);
             if (!ch || ch->type != VAL_STR ||
@@ -4135,7 +4136,7 @@ Value* builtin_get_at(Value *arg) {
         int idx;
         if (!at_index(BUILTIN_LIST_VIEW(arg, 1), list->data.list.count, "get_at", &idx))
             return make_null();
-        return list_get_return(list, idx);
+        return list_get_owned(list, idx);   /* grandchild of arg: vm_borrow_scan never sees it, so it is owned */
     }
     if (argc == 3) {
         Value *list = list_get_ref(arg, 0);
@@ -4154,7 +4155,7 @@ Value* builtin_get_at(Value *arg) {
         int col;
         if (!at_index(BUILTIN_LIST_VIEW(arg, 2), rowv->data.list.count, "get_at col", &col))
             return make_null();
-        return list_get_return(rowv, col);
+        return list_get_owned(rowv, col);   /* grandchild of arg: owned, as above */
     }
     rt_error(EK_TYPE, 0, "get_at takes [list, index] or [list, row, col]");
     return make_null();
@@ -5923,6 +5924,16 @@ Value* builtin_dispatch(Value *arg) {
         /* free_val CONSUMES a reference, and fn_arg is a child of our own
          * arg vector, which still points at it — lend it a ref of our own
          * making rather than the arg vector's (#720). */
+        /* #1665: a numeric fn_arg is a stack view in THIS frame. A builtin
+         * that returns its argument (`num`) would hand our caller a pointer
+         * into a dead frame, so a number goes in as a fresh box we own. */
+        if (fn_arg && fn_arg->type == VAL_NUM) {
+            Value *boxed = make_num(eigs_num_arg(fn_arg, __func__));
+            Value *res = eigs_call_builtin(fn->data.builtin, boxed);
+            if (res == boxed) return boxed;          /* our ref transfers */
+            val_decref(boxed);
+            return res ? res : make_null();
+        }
         Value *result = eigs_call_builtin(fn->data.builtin, fn_arg);
         if (!result) return make_null();
         /* #720: the inner builtin may return a borrow of fn_arg, which is a
