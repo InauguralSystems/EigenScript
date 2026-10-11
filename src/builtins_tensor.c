@@ -226,14 +226,14 @@ static int tensor_dims(Value *v, int *rows, int *cols) {
         *rows = 1; *cols = v->data.buffer.count; return 1;
     }
     if (!v || v->type != VAL_LIST || v->data.list.count == 0) return 0;
-    Value *first = list_get_borrow(v, 0);
-    if (first->type == VAL_NUM) {
+    if (list_elem_type(v, 0) == VAL_NUM) {
         /* 1D tensor */
         *rows = 1;
         *cols = v->data.list.count;
         return 1;
     }
-    if (first->type == VAL_LIST) {
+    Value *first = list_get_ref(v, 0);
+    if (first && first->type == VAL_LIST) {
         /* 2D tensor */
         *rows = v->data.list.count;
         *cols = first->data.list.count;
@@ -254,18 +254,20 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
      * explicit EIGS_STRICT=0 path deliberately retains the old stand-in.
      * Check even when the first element or row gives no usable shape. */
     /* #1637: a bool element is refused in every strict mode. */
-#define FLAT_BAD(e) ((e)->type != VAL_NUM && (g_strict || (e)->type == VAL_BOOL))
+#define FLAT_BAD(t) ((t) != VAL_NUM && (g_strict || (t) == VAL_BOOL))
     if (v && v->type == VAL_LIST) {
         int bad = 0;
         if (ndim == 1) {
             for (int i = 0; i < v->data.list.count; i++)
-                if (FLAT_BAD(list_get_borrow(v, i))) { bad = 1; break; }
+                if (FLAT_BAD(list_elem_type(v, i))) { bad = 1; break; }
         } else {
             for (int r = 0; r < v->data.list.count && !bad; r++) {
-                Value *row = list_get_borrow(v, r);
-                if (row->type != VAL_LIST) { bad = g_strict || row->type == VAL_BOOL; if (bad) break; continue; }
+                /* list_get_ref is NULL for a number: test the type first. */
+                ValType rt = list_elem_type(v, r);
+                if (rt != VAL_LIST) { bad = g_strict || rt == VAL_BOOL; if (bad) break; continue; }
+                Value *row = list_get_ref(v, r);
                 for (int c = 0; c < row->data.list.count; c++)
-                    if (FLAT_BAD(list_get_borrow(row, c))) { bad = 1; break; }
+                    if (FLAT_BAD(list_elem_type(row, c))) { bad = 1; break; }
             }
         }
 #undef FLAT_BAD
@@ -287,13 +289,14 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
     }
     if (ndim == 1) {
         for (int i = 0; i < *cols; i++)
-            out[i] = (list_get_borrow(v, i)->type == VAL_NUM) ? eigs_num_arg(list_get_borrow(v, i), __func__) : 0.0;
+            out[i] = (list_elem_type(v, i) == VAL_NUM) ? eigs_slot_num(list_slot(v, i), __func__) : 0.0;
     } else {
         for (int r = 0; r < *rows; r++) {
-            Value *row = list_get_borrow(v, r);
-            int rc = (row->type == VAL_LIST) ? row->data.list.count : 0;
+            /* list_get_ref is NULL for a number: test the type first. */
+            Value *row = (list_elem_type(v, r) == VAL_LIST) ? list_get_ref(v, r) : NULL;
+            int rc = row ? row->data.list.count : 0;
             for (int c = 0; c < *cols && c < rc; c++)
-                out[r * (*cols) + c] = (list_get_borrow(row, c)->type == VAL_NUM) ? eigs_num_arg(list_get_borrow(row, c), __func__) : 0.0;
+                out[r * (*cols) + c] = (list_elem_type(row, c) == VAL_NUM) ? eigs_slot_num(list_slot(row, c), __func__) : 0.0;
         }
     }
     return out;
@@ -363,8 +366,10 @@ static int tensor_total(Value *v) {
     if (v->type == VAL_BUFFER) return v->data.buffer.count;   /* #1093 */
     if (v->type != VAL_LIST) return 0;
     int total = 0;
-    for (int i = 0; i < v->data.list.count; i++)
-        total += tensor_total(list_get_borrow(v, i));
+    for (int i = 0; i < v->data.list.count; i++) {
+        EIGS_VIEW(child_view);
+        total += tensor_total(list_get_view(v, i, &child_view));
+    }
     return total;
 }
 
@@ -382,8 +387,10 @@ static int tensor_flatten_recursive(Value *v, double *out, int *idx) {
         return 1;
     }
     if (v->type != VAL_LIST) return 1;
-    for (int i = 0; i < v->data.list.count; i++)
-        if (!tensor_flatten_recursive(list_get_borrow(v, i), out, idx)) return 0;
+    for (int i = 0; i < v->data.list.count; i++) {
+        EIGS_VIEW(child_view);
+        if (!tensor_flatten_recursive(list_get_view(v, i, &child_view), out, idx)) return 0;
+    }
     return 1;
 }
 
@@ -471,6 +478,7 @@ static Value* buf_scalar_elementwise(Value *buf, double sc, BinOpFn fn, int buf_
     return out;
 }
 
+static Value* tensor_elementwise_slots(EigsSlot a, EigsSlot b, BinOpFn fn);
 static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     /* Shared by add/subtract/multiply/divide/pow (and by its own recursion on
      * nested elements), so the guard names that surface rather than one call.
@@ -512,7 +520,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     if (a->type == VAL_NUM && b->type == VAL_LIST) {
         Value *out = make_list(b->data.list.count);
         for (int i = 0; i < b->data.list.count; i++) {
-            Value *item = tensor_elementwise(a, list_get_borrow(b, i), fn);
+            Value *item = tensor_elementwise_slots(slot_from_heap(a), list_slot(b, i), fn);
             if (g_has_error) {
                 val_decref(item); val_decref(out); return make_null();
             }
@@ -523,7 +531,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     if (a->type == VAL_LIST && b->type == VAL_NUM) {
         Value *out = make_list(a->data.list.count);
         for (int i = 0; i < a->data.list.count; i++) {
-            Value *item = tensor_elementwise(list_get_borrow(a, i), b, fn);
+            Value *item = tensor_elementwise_slots(list_slot(a, i), slot_from_heap(b), fn);
             if (g_has_error) {
                 val_decref(item); val_decref(out); return make_null();
             }
@@ -538,16 +546,17 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
      * Row-vector bias takes priority for square matrices, matching neural
      * layer convention: add of [batch @ weights, bias]. */
     if (a->type == VAL_LIST && b->type == VAL_LIST) {
-        int a_is_matrix = a->data.list.count > 0 && list_get_borrow(a, 0)->type == VAL_LIST;
-        int b_is_matrix = b->data.list.count > 0 && list_get_borrow(b, 0)->type == VAL_LIST;
+        int a_is_matrix = a->data.list.count > 0 && list_elem_type(a, 0) == VAL_LIST;
+        int b_is_matrix = b->data.list.count > 0 && list_elem_type(b, 0) == VAL_LIST;
 
         if (a_is_matrix && !b_is_matrix) {
             int rows = a->data.list.count;
-            int cols = list_get_borrow(a, 0)->data.list.count;
+            int cols = list_get_ref(a, 0)->data.list.count;
             if (b->data.list.count == cols) {
                 Value *out = make_list(rows);
                 for (int i = 0; i < rows; i++) {
-                    Value *row = tensor_elementwise(list_get_borrow(a, i), b, fn);
+                    EigsView ai_view = {{0}};   /* a ragged row may be a number: view, not get_ref (NULL) */
+                    Value *row = tensor_elementwise(list_get_view(a, i, &ai_view), b, fn);
                     if (g_has_error) {
                         val_decref(row); val_decref(out); return make_null();
                     }
@@ -559,7 +568,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
             if (b->data.list.count == rows) {
                 Value *out = make_list(rows);
                 for (int i = 0; i < rows; i++) {
-                    Value *row = tensor_elementwise(list_get_borrow(a, i), list_get_borrow(b, i), fn);
+                    Value *row = tensor_elementwise_slots(list_slot(a, i), list_slot(b, i), fn);
                     if (g_has_error) {
                         val_decref(row); val_decref(out); return make_null();
                     }
@@ -572,11 +581,12 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
 
         if (!a_is_matrix && b_is_matrix) {
             int rows = b->data.list.count;
-            int cols = list_get_borrow(b, 0)->data.list.count;
+            int cols = list_get_ref(b, 0)->data.list.count;
             if (a->data.list.count == cols) {
                 Value *out = make_list(rows);
                 for (int i = 0; i < rows; i++) {
-                    Value *row = tensor_elementwise(a, list_get_borrow(b, i), fn);
+                    EigsView bi_view = {{0}};   /* a ragged row may be a number: view, not get_ref (NULL) */
+                    Value *row = tensor_elementwise(a, list_get_view(b, i, &bi_view), fn);
                     if (g_has_error) {
                         val_decref(row); val_decref(out); return make_null();
                     }
@@ -588,7 +598,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
             if (a->data.list.count == rows) {
                 Value *out = make_list(rows);
                 for (int i = 0; i < rows; i++) {
-                    Value *row = tensor_elementwise(list_get_borrow(a, i), list_get_borrow(b, i), fn);
+                    Value *row = tensor_elementwise_slots(list_slot(a, i), list_slot(b, i), fn);
                     if (g_has_error) {
                         val_decref(row); val_decref(out); return make_null();
                     }
@@ -603,7 +613,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
         int n = a->data.list.count < b->data.list.count ? a->data.list.count : b->data.list.count;
         Value *out = make_list(n);
         for (int i = 0; i < n; i++) {
-            Value *item = tensor_elementwise(list_get_borrow(a, i), list_get_borrow(b, i), fn);
+            Value *item = tensor_elementwise_slots(list_slot(a, i), list_slot(b, i), fn);
             if (g_has_error) {
                 val_decref(item); val_decref(out); return make_null();
             }
@@ -619,6 +629,12 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
               "numbers, lists or buffers as operands", make_num(0.0));
 }
 
+static Value* tensor_elementwise_slots(EigsSlot a, EigsSlot b, BinOpFn fn) {
+    EIGS_VIEW(av);
+    EIGS_VIEW(bv);
+    return tensor_elementwise(slot_view(a, &av), slot_view(b, &bv), fn);
+}
+
 /* ==== BUILTIN: add ==== */
 Value* builtin_tensor_add(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "add");
@@ -629,35 +645,35 @@ Value* builtin_tensor_add(Value *arg) {
      * integration by keeping THIS one — a builtin must not have two buffer
      * paths, and this is the one whose shape rules are the list path's,
      * container for container. */
-    return tensor_elementwise(list_get_borrow(arg, 0), list_get_borrow(arg, 1), op_add);
+    return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_add);
 }
 
 /* ==== BUILTIN: subtract ==== */
 Value* builtin_tensor_subtract(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "subtract");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    return tensor_elementwise(list_get_borrow(arg, 0), list_get_borrow(arg, 1), op_sub);
+    return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_sub);
 }
 
 /* ==== BUILTIN: multiply ==== */
 Value* builtin_tensor_multiply(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "multiply");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    return tensor_elementwise(list_get_borrow(arg, 0), list_get_borrow(arg, 1), op_mul);
+    return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_mul);
 }
 
 /* ==== BUILTIN: divide ==== */
 Value* builtin_tensor_divide(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "divide");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    return tensor_elementwise(list_get_borrow(arg, 0), list_get_borrow(arg, 1), op_div);
+    return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_div);
 }
 
 /* ==== BUILTIN: pow ==== */
 Value* builtin_tensor_pow(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "pow");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    return tensor_elementwise(list_get_borrow(arg, 0), list_get_borrow(arg, 1), op_pow);
+    return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_pow);
 }
 
 /* ---- Element-wise unary op ---- */
@@ -675,8 +691,10 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
     }
     if (v->type == VAL_LIST) {
         Value *out = make_list(v->data.list.count);
-        for (int i = 0; i < v->data.list.count; i++)
-            list_append_owned(out, tensor_unary(list_get_borrow(v, i), fn));
+        for (int i = 0; i < v->data.list.count; i++) {
+            EIGS_VIEW(child_view);
+            list_append_owned(out, tensor_unary(list_get_view(v, i, &child_view), fn));
+        }
         return out;
     }
     /* Both handled types exit above, so `v` is neither a number nor a
@@ -740,8 +758,10 @@ Value* builtin_tensor_matmul(Value *arg) {
         rt_error(EK_TYPE, 0, "matmul requires [A, B]");
         return make_null();
     }
-    Value *a = list_get_borrow(arg, 0);
-    Value *b = list_get_borrow(arg, 1);
+    EIGS_VIEW(a_view);
+    Value *a = list_get_view(arg, 0, &a_view);
+    EIGS_VIEW(b_view);
+    Value *b = list_get_view(arg, 1, &b_view);
     /* flat-buffer fast path: compute in place, no flatten/rebuild */
     if (a->type == VAL_BUFFER && b->type == VAL_BUFFER) {
         int ar, ac, br, bc;
@@ -832,8 +852,10 @@ Value* builtin_tensor_matmul_at(Value *arg) {
         rt_error(EK_TYPE, 0, "matmul_at requires [A, B]");
         return make_null();
     }
-    Value *a = list_get_borrow(arg, 0);
-    Value *b = list_get_borrow(arg, 1);
+    EIGS_VIEW(a_view);
+    Value *a = list_get_view(arg, 0, &a_view);
+    EIGS_VIEW(b_view);
+    Value *b = list_get_view(arg, 1, &b_view);
     if (a->type == VAL_BUFFER && b->type == VAL_BUFFER) {
         int ar, ac, br, bc;
         buf_dims(a, &ar, &ac); buf_dims(b, &br, &bc);
@@ -890,8 +912,10 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
         rt_error(EK_TYPE, 0, "matmul_bt requires [A, B]");
         return make_null();
     }
-    Value *a = list_get_borrow(arg, 0);
-    Value *b = list_get_borrow(arg, 1);
+    EIGS_VIEW(a_view);
+    Value *a = list_get_view(arg, 0, &a_view);
+    EIGS_VIEW(b_view);
+    Value *b = list_get_view(arg, 1, &b_view);
     if (a->type == VAL_BUFFER && b->type == VAL_BUFFER) {
         int ar, ac, br, bc;
         buf_dims(a, &ar, &ac); buf_dims(b, &br, &bc);
@@ -954,9 +978,12 @@ Value* builtin_tensor_scatter_add(Value *arg) {
         rt_error(EK_TYPE, 0, "scatter_add requires [dst, indices, values]");
         return make_null();
     }
-    Value *dst = list_get_borrow(arg, 0);
-    Value *indices = list_get_borrow(arg, 1);
-    Value *values = list_get_borrow(arg, 2);
+    EIGS_VIEW(dst_view);
+    Value *dst = list_get_view(arg, 0, &dst_view);
+    EIGS_VIEW(indices_view);
+    Value *indices = list_get_view(arg, 1, &indices_view);
+    EIGS_VIEW(values_view);
+    Value *values = list_get_view(arg, 2, &values_view);
     if (dst->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "scatter_add: dst must be a buffer, got %s", val_type_name(dst->type));
         return make_null();
@@ -995,12 +1022,12 @@ Value* builtin_tensor_scatter_add(Value *arg) {
         for (int i = 0; i < n; i++) {
             double di, v;
             if (indices->type == VAL_LIST) {
-                Value *iv = list_get_borrow(indices, i);
-                if (iv->type != VAL_NUM) {
-                    rt_error(EK_TYPE, 0, "scatter_add: index %d is %s (expected a number)", i, val_type_name(iv->type));
+                ValType it = list_elem_type(indices, i);
+                if (it != VAL_NUM) {
+                    rt_error(EK_TYPE, 0, "scatter_add: index %d is %s (expected a number)", i, val_type_name(it));
                     return make_null();
                 }
-                di = eigs_num_arg(iv, __func__);
+                di = eigs_slot_num(list_slot(indices, i), __func__);
             } else {
                 /* #1417: an index is a scalar read too.  Guard before the
                  * double-to-int conversion: casting a stored NaN is undefined
@@ -1010,12 +1037,12 @@ Value* builtin_tensor_scatter_add(Value *arg) {
                 if (g_has_error) return make_null();
             }
             if (values->type == VAL_LIST) {
-                Value *vv = list_get_borrow(values, i);
-                if (vv->type != VAL_NUM) {
-                    rt_error(EK_TYPE, 0, "scatter_add: value %d is %s (expected a number)", i, val_type_name(vv->type));
+                ValType vt = list_elem_type(values, i);
+                if (vt != VAL_NUM) {
+                    rt_error(EK_TYPE, 0, "scatter_add: value %d is %s (expected a number)", i, val_type_name(vt));
                     return make_null();
                 }
-                v = eigs_num_arg(vv, __func__);
+                v = eigs_slot_num(list_slot(values, i), __func__);
             } else if (values->type == VAL_BUFFER) {
                 v = values->data.buffer.data[i];
             } else {
@@ -1054,7 +1081,7 @@ Value* builtin_tensor_scatter_add(Value *arg) {
             }
         }
     }
-    return dst;   /* borrowed, like copy_into — the VM's borrow scan compensates */
+    return list_get_return(arg, 0);   /* borrowed, like copy_into — the VM's borrow scan compensates */
 }
 
 /* ==== BUILTIN: softmax ==== */
@@ -1094,9 +1121,9 @@ Value* builtin_tensor_log_softmax(Value *arg) {
      * a row (a list), never a number, so the two forms no longer collide. */
     Value *tensor = arg;
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
-        list_get_borrow(arg, 0)->type == VAL_LIST &&
-        list_get_borrow(arg, 1)->type == VAL_NUM)
-        tensor = list_get_borrow(arg, 0);   /* [tensor, dim] form */
+        list_elem_type(arg, 0) == VAL_LIST &&
+        list_elem_type(arg, 1) == VAL_NUM)
+        tensor = list_get_ref(arg, 0);   /* [tensor, dim] form */
     /* #632: log(softmax(scalar)) = log(1) = 0. */
     /* fs:ANSWER softmax of a single element is 1 and log(1) is 0, so 0.0 is
      * the arithmetic result for a scalar argument — a NUMBER is a valid
@@ -1335,8 +1362,8 @@ Value* builtin_tensor_zeros(Value *arg) {
     }
     /* zeros of [rows, cols] → 2D */
     if (arg->type == VAL_LIST && arg->data.list.count >= 2
-        && list_get_borrow(arg, 0)->type == VAL_NUM
-        && list_get_borrow(arg, 1)->type == VAL_NUM) {
+        && list_elem_type(arg, 0) == VAL_NUM
+        && list_elem_type(arg, 1) == VAL_NUM) {
         int64_t rows64 = (int64_t)eigs_list_num(arg, 0, __func__);
         int64_t cols64 = (int64_t)eigs_list_num(arg, 1, __func__);
         if (rows64 < 0) rows64 = 0;
@@ -1369,8 +1396,10 @@ Value* builtin_tensor_zeros_like(Value *arg) {
     if (arg->type == VAL_NUM) return make_num(0.0);
     if (arg->type == VAL_LIST) {
         Value *out = make_list(arg->data.list.count);
-        for (int i = 0; i < arg->data.list.count; i++)
-            list_append_owned(out, builtin_tensor_zeros_like(list_get_borrow(arg, i)));
+        for (int i = 0; i < arg->data.list.count; i++) {
+            EIGS_VIEW(child_view);
+            list_append_owned(out, builtin_tensor_zeros_like(list_get_view(arg, i, &child_view)));
+        }
         return out;
     }
     /* #1093: a buffer's zero is a zero BUFFER of the same shape, not the
@@ -1398,8 +1427,8 @@ static int flat_is_vector(Value *v) {
 }
 static int flat_index_at(Value *v, int i) {
     if (v->type == VAL_LIST)
-        return (list_get_borrow(v, i)->type == VAL_NUM)
-             ? (int)eigs_num_arg(list_get_borrow(v, i), __func__) : -1;
+        return (list_elem_type(v, i) == VAL_NUM)
+             ? (int)eigs_slot_num(list_slot(v, i), __func__) : -1;
     /* #1417: normalize before conversion, and let every caller propagate a
      * raised read before using its index or touching an output. Saturated
      * infinity is still outside the int domain and uses the existing invalid
@@ -1413,7 +1442,7 @@ static int flat_index_at(Value *v, int i) {
  * as "index -1 out of range" would name the wrong fault. Buffers hold doubles,
  * so every element is a number by construction. */
 static int flat_index_is_num(Value *v, int i) {
-    return v->type != VAL_LIST || list_get_borrow(v, i)->type == VAL_NUM;
+    return v->type != VAL_LIST || list_elem_type(v, i) == VAL_NUM;
 }
 
 /* ==== BUILTIN: gather ==== */
@@ -1448,8 +1477,10 @@ static int flat_index_is_num(Value *v, int i) {
 Value* builtin_tensor_gather(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "gather");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
-    Value *tensor = list_get_borrow(arg, 0);
-    Value *indices = list_get_borrow(arg, 1);
+    EIGS_VIEW(tensor_view);
+    Value *tensor = list_get_view(arg, 0, &tensor_view);
+    EIGS_VIEW(indices_view);
+    Value *indices = list_get_view(arg, 1, &indices_view);
     /* #1093 + #973: a buffer tensor. A shaped (2-D) buffer with one index per
      * row selects one element per row and yields a buffer; an unshaped (1-D)
      * buffer with a scalar index yields that element. */
@@ -1475,7 +1506,7 @@ Value* builtin_tensor_gather(Value *arg) {
                 if (!flat_index_is_num(indices, i)) {
                     val_decref(out);
                     rt_error(EK_TYPE, 0, "gather: index %d is %s (expected a number)",
-                             i, val_type_name(list_get_borrow(indices, i)->type));
+                             i, val_type_name(list_elem_type(indices, i)));
                     return make_null();
                 }
                 int idx = flat_index_at(indices, i);
@@ -1498,24 +1529,26 @@ Value* builtin_tensor_gather(Value *arg) {
               ? tensor->data.list.count : indices->data.list.count;
         Value *out = make_list(n);
         for (int i = 0; i < n; i++) {
-            Value *row = list_get_borrow(tensor, i);
-            if (row->type != VAL_LIST) {   /* not a matrix row — shape, not index */
+            /* list_get_ref is NULL for a number: test the type first. */
+            ValType row_t = list_elem_type(tensor, i);
+            if (row_t != VAL_LIST) {   /* not a matrix row — shape, not index */
                 /* #1637: a bool where a row belongs raises, in every mode. */
-                if (row->type == VAL_BOOL) {
+                if (row_t == VAL_BOOL) {
                     val_decref(out);
-                    eigs_num_arg_slow(row, "gather");
+                    eigs_num_arg_slow(list_get_ref(tensor, i), "gather");
                     return make_null();
                 }
                 list_append_owned(out, make_num(0.0));
                 continue;
             }
-            if (list_get_borrow(indices, i)->type != VAL_NUM) {
+            Value *row = list_get_ref(tensor, i);
+            if (list_elem_type(indices, i) != VAL_NUM) {
                 val_decref(out);
                 rt_error(EK_TYPE, 0, "gather: index %d is %s (expected a number)",
-                         i, val_type_name(list_get_borrow(indices, i)->type));
+                         i, val_type_name(list_elem_type(indices, i)));
                 return make_null();
             }
-            int idx = (int)eigs_num_arg(list_get_borrow(indices, i), __func__);
+            int idx = (int)eigs_slot_num(list_slot(indices, i), __func__);
             if (idx < 0 || idx >= row->data.list.count) {
                 val_decref(out);
                 rt_error(EK_INDEX, 0,
@@ -1525,7 +1558,7 @@ Value* builtin_tensor_gather(Value *arg) {
             }
             /* #1637 round 4: the selected cell is read as a number -- a
              * bool there raised nothing and read as 0 (critic r3). */
-            double cell = eigs_elem_num(list_get_borrow(row, idx), "gather");
+            double cell = eigs_slot_elem_num(list_slot(row, idx), "gather");
             if (g_has_error) { val_decref(out); return make_null(); }
             list_append_owned(out, make_num(cell));
         }
@@ -1539,7 +1572,7 @@ Value* builtin_tensor_gather(Value *arg) {
                      idx, tensor->data.list.count);
             return make_null();
         }
-        double cell = eigs_elem_num(list_get_borrow(tensor, idx), "gather");   /* #1637 round 4 */
+        double cell = eigs_slot_elem_num(list_slot(tensor, idx), "gather");   /* #1637 round 4 */
         if (g_has_error) return make_null();
         return make_num(cell);
     }
@@ -1592,7 +1625,7 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
     if (pc > 1 && arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
         for (int pi = 0; pi < pc && pi < n; pi++)
-            env_set_local(call_env, fn->data.fn.params[pi], list_get_borrow(arg, pi));
+            env_set_local_owned(call_env, fn->data.fn.params[pi], list_get_owned(arg, pi));
         /* Under-arity null-fill, matching the VM. Leaving the tail unbound
          * is not the same thing: an unbound name resolves through the
          * CLOSURE, so a 2-param key over 1-wide elements could silently read
@@ -1710,8 +1743,9 @@ Value* builtin_tensor_shape(Value *arg) {
         list_append_owned(out, make_num(0));
         return out;
     }
-    Value *first = list_get_borrow(arg, 0);
-    if (first->type == VAL_LIST) {
+    if (list_elem_type(arg, 0) == VAL_LIST) {
+        EIGS_VIEW(first_view);
+        Value *first = list_get_view(arg, 0, &first_view);
         /* 2D */
         Value *out = make_list(2);
         list_append_owned(out, make_num(arg->data.list.count));
@@ -1761,15 +1795,16 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
 static int tensor_cells_numeric(const Value *v, const char *who) {
     if (!v || v->type != VAL_LIST) return 1;
     for (int i = 0; i < v->data.list.count; i++) {
-        const Value *e = list_get_borrow(v, i);
-        if (e && e->type == VAL_LIST) {
+        ValType et = list_elem_type(v, i);
+        const Value *e = et == VAL_LIST ? list_get_ref(v, i) : NULL;
+        if (et == VAL_LIST) {
             for (int c = 0; c < e->data.list.count; c++)
-                if (!list_get_borrow(e, c) || list_get_borrow(e, c)->type != VAL_NUM) {
-                    eigs_num_arg(list_get_borrow(e, c), who);
+                if (list_elem_type(e, c) != VAL_NUM) {
+                    eigs_slot_num(list_slot(e, c), who);
                     return 0;
                 }
-        } else if (!e || e->type != VAL_NUM) {
-            eigs_num_arg(e, who);
+        } else if (et != VAL_NUM) {
+            eigs_slot_num(list_slot(v, i), who);
             return 0;
         }
     }
@@ -1779,12 +1814,14 @@ static int tensor_cells_numeric(const Value *v, const char *who) {
 Value* builtin_numerical_grad(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "numerical_grad");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-    Value *loss_fn = list_get_borrow(arg, 0);
-    Value *param = list_get_borrow(arg, 1);
+    EIGS_VIEW(loss_fn_view);
+    Value *loss_fn = list_get_view(arg, 0, &loss_fn_view);
+    EIGS_VIEW(param_view);
+    Value *param = list_get_view(arg, 1, &param_view);
     /* #1637: the optional eps: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double eps = 0.001;
-    eigs_opt_num(list_get_borrow(arg, 2), &eps, __func__);
+    eigs_slot_opt_num(list_slot(arg, 2), &eps, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(param, "numerical_grad")) return make_null();
     if (eps <= 0) eps = 0.001;
@@ -1813,26 +1850,19 @@ Value* builtin_numerical_grad(Value *arg) {
     Value *nul = make_null();   /* shared arg for loss_fn calls */
 
     /* Check if 1D or 2D */
-    int is_2d = (param->data.list.count > 0 && list_get_borrow(param, 0)->type == VAL_LIST);
+    int is_2d = (param->data.list.count > 0 && list_elem_type(param, 0) == VAL_LIST);
 
     if (!is_2d) {
         /* 1D param */
         int len = param->data.list.count;
         Value *grad = make_list(len);
         for (int i = 0; i < len; i++) {
-            Value *orig = list_get_borrow(param, i);
-            double old_val = eigs_num_arg(orig, __func__);
-            val_incref(orig);   /* guard while displaced from its slot */
-            Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
-            list_set_owned(param, i, pp);
+            double old_val = eigs_slot_num(list_slot(param, i), __func__);
+            list_set_num(param, i, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            Value *pm = make_num(old_val - eps);
-            list_set_owned(param, i, pm);
-            val_decref(pp);
+            list_set_num(param, i, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            list_set_owned(param, i, orig);
-            val_decref(orig);   /* drop the guard */
-            val_decref(pm);
+            list_set_num(param, i, old_val);
             /* Central difference */
             list_append_owned(grad, make_num((lp - lm) / (2.0 * eps)));
         }
@@ -1845,24 +1875,17 @@ Value* builtin_numerical_grad(Value *arg) {
     int rows = param->data.list.count;
     Value *grad = make_list(rows);
     for (int r = 0; r < rows; r++) {
-        Value *row = list_get_borrow(param, r);
+        Value *row = list_get_ref(param, r);
         if (!row || row->type != VAL_LIST) { list_append_owned(grad, make_list(0)); continue; }
         int cols = row->data.list.count;
         Value *grad_row = make_list(cols);
         for (int c = 0; c < cols; c++) {
-            Value *orig = list_get_borrow(row, c);
-            double old_val = eigs_num_arg(orig, __func__);
-            val_incref(orig);   /* guard while displaced from its slot */
-            Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
-            list_set_owned(row, c, pp);
+            double old_val = eigs_slot_num(list_slot(row, c), __func__);
+            list_set_num(row, c, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            Value *pm = make_num(old_val - eps);
-            list_set_owned(row, c, pm);
-            val_decref(pp);
+            list_set_num(row, c, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            list_set_owned(row, c, orig);
-            val_decref(orig);   /* drop the guard */
-            val_decref(pm);
+            list_set_num(row, c, old_val);
             list_append_owned(grad_row, make_num((lp - lm) / (2.0 * eps)));
         }
         list_append_owned(grad, grad_row);
@@ -1877,12 +1900,14 @@ Value* builtin_numerical_grad(Value *arg) {
 Value* builtin_sgd_update(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "sgd_update");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
-    Value *param = list_get_borrow(arg, 0);
-    Value *grad = list_get_borrow(arg, 1);
+    EIGS_VIEW(param_view);
+    Value *param = list_get_view(arg, 0, &param_view);
+    EIGS_VIEW(grad_view);
+    Value *grad = list_get_view(arg, 1, &grad_view);
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
-    eigs_opt_num(list_get_borrow(arg, 2), &lr, __func__);
+    eigs_slot_opt_num(list_slot(arg, 2), &lr, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(param, "sgd_update") || !tensor_cells_numeric(grad, "sgd_update")) return make_null();
 
@@ -1892,43 +1917,39 @@ Value* builtin_sgd_update(Value *arg) {
                 ? param->data.buffer.count : grad->data.buffer.count;
         for (int i = 0; i < len; i++)
             param->data.buffer.data[i] -= lr * grad->data.buffer.data[i];
-        return param;
+        return list_get_return(arg, 0);
     }
-    if (param->type != VAL_LIST || grad->type != VAL_LIST) return param;
+    if (param->type != VAL_LIST || grad->type != VAL_LIST) return list_get_return(arg, 0);
 
-    int is_2d = (param->data.list.count > 0 && list_get_borrow(param, 0)->type == VAL_LIST);
+    int is_2d = (param->data.list.count > 0 && list_elem_type(param, 0) == VAL_LIST);
 
     if (!is_2d) {
         /* 1D */
         int len = param->data.list.count < grad->data.list.count
                 ? param->data.list.count : grad->data.list.count;
         for (int i = 0; i < len; i++) {
-            Value *old = list_get_borrow(param, i);
-            double pv = eigs_num_arg(old, __func__);
-            double gv = eigs_num_arg(list_get_borrow(grad, i), __func__);
-            list_set_owned(param, i, make_num(pv - lr * gv));
-            val_decref(old);
+            double pv = eigs_slot_num(list_slot(param, i), __func__);
+            double gv = eigs_slot_num(list_slot(grad, i), __func__);
+            list_set_num(param, i, pv - lr * gv);
         }
     } else {
         /* 2D */
         int rows = param->data.list.count < grad->data.list.count
                  ? param->data.list.count : grad->data.list.count;
         for (int r = 0; r < rows; r++) {
-            Value *pr = list_get_borrow(param, r);
-            Value *gr = list_get_borrow(grad, r);
+            Value *pr = list_get_ref(param, r);
+            Value *gr = list_get_ref(grad, r);
             if (!pr || pr->type != VAL_LIST || !gr || gr->type != VAL_LIST) continue;
             int cols = pr->data.list.count < gr->data.list.count
                      ? pr->data.list.count : gr->data.list.count;
             for (int c = 0; c < cols; c++) {
-                Value *old = list_get_borrow(pr, c);
-                double pv = eigs_num_arg(old, __func__);
-                double gv = eigs_num_arg(list_get_borrow(gr, c), __func__);
-                list_set_owned(pr, c, make_num(pv - lr * gv));
-                val_decref(old);
+                double pv = eigs_slot_num(list_slot(pr, c), __func__);
+                double gv = eigs_slot_num(list_slot(gr, c), __func__);
+                list_set_num(pr, c, pv - lr * gv);
             }
         }
     }
-    return param;
+    return list_get_return(arg, 0);
 }
 
 /* ==== BUILTIN: numerical_grad_rows ==== */
@@ -1939,13 +1960,16 @@ Value* builtin_sgd_update(Value *arg) {
 Value* builtin_numerical_grad_rows(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "numerical_grad_rows");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
-    Value *loss_fn = list_get_borrow(arg, 0);
-    Value *matrix = list_get_borrow(arg, 1);
-    Value *row_indices = list_get_borrow(arg, 2);
+    EIGS_VIEW(loss_fn_view);
+    Value *loss_fn = list_get_view(arg, 0, &loss_fn_view);
+    EIGS_VIEW(matrix_view);
+    Value *matrix = list_get_view(arg, 1, &matrix_view);
+    EIGS_VIEW(row_indices_view);
+    Value *row_indices = list_get_view(arg, 2, &row_indices_view);
     /* #1637: the optional eps: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double eps = 0.001;
-    eigs_opt_num(list_get_borrow(arg, 3), &eps, __func__);
+    eigs_slot_opt_num(list_slot(arg, 3), &eps, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "numerical_grad_rows") || !tensor_cells_numeric(row_indices, "numerical_grad_rows")) return make_null();
     if (eps <= 0) eps = 0.001;
@@ -1987,8 +2011,8 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     if (matrix->type != VAL_LIST || !flat_is_vector(row_indices)) return make_null();
 
     int rows = matrix->data.list.count;
-    if (rows == 0 || list_get_borrow(matrix, 0)->type != VAL_LIST) return make_null();
-    int cols = list_get_borrow(matrix, 0)->data.list.count;
+    if (rows == 0 || list_elem_type(matrix, 0) != VAL_LIST) return make_null();
+    int cols = list_get_ref(matrix, 0)->data.list.count;
     Value *nul = make_null();   /* shared arg for loss_fn calls */
 
     /* Build zero gradient matrix */
@@ -2010,21 +2034,19 @@ Value* builtin_numerical_grad_rows(Value *arg) {
         }
         if (r < 0 || r >= rows) continue;
 
-        Value *row = list_get_borrow(matrix, r);
+        Value *row = list_get_ref(matrix, r);
         if (!row || row->type != VAL_LIST) continue;
-        Value *grad_row = list_get_borrow(grad, r);
+        Value *grad_row = list_get_ref(grad, r);
 
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
-            Value *cell = list_get_borrow(row, c);
-            double old_val = eigs_num_arg(cell, __func__);
-            VAL_NUM_RAW(cell) = old_val + eps;
+            double old_val = eigs_slot_num(list_slot(row, c), __func__);
+            list_set_num(row, c, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            VAL_NUM_RAW(cell) = old_val - eps;
+            list_set_num(row, c, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            VAL_NUM_RAW(cell) = old_val;
+            list_set_num(row, c, old_val);
             /* gradient — release the zero placeholder this slot held */
-            val_decref(list_get_borrow(grad_row, c));
-            list_set_owned(grad_row, c, make_num((loss_plus - loss_minus) / (2.0 * eps)));
+            list_set_num(grad_row, c, (loss_plus - loss_minus) / (2.0 * eps));
         }
     }
     val_decref(nul);
@@ -2038,13 +2060,16 @@ Value* builtin_numerical_grad_rows(Value *arg) {
 Value* builtin_sgd_update_rows(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "sgd_update_rows");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
-    Value *matrix = list_get_borrow(arg, 0);
-    Value *grad = list_get_borrow(arg, 1);
-    Value *row_indices = list_get_borrow(arg, 2);
+    EIGS_VIEW(matrix_view);
+    Value *matrix = list_get_view(arg, 0, &matrix_view);
+    EIGS_VIEW(grad_view);
+    Value *grad = list_get_view(arg, 1, &grad_view);
+    EIGS_VIEW(row_indices_view);
+    Value *row_indices = list_get_view(arg, 2, &row_indices_view);
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
-    eigs_opt_num(list_get_borrow(arg, 3), &lr, __func__);
+    eigs_slot_opt_num(list_slot(arg, 3), &lr, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "sgd_update_rows") || !tensor_cells_numeric(grad, "sgd_update_rows") || !tensor_cells_numeric(row_indices, "sgd_update_rows")) return make_null();
 
@@ -2064,31 +2089,29 @@ Value* builtin_sgd_update_rows(Value *arg) {
                 matrix->data.buffer.data[(int64_t)r * matrix->data.buffer.cols + c] -=
                     lr * grad->data.buffer.data[(int64_t)r * grad->data.buffer.cols + c];
         }
-        return matrix;
+        return list_get_return(arg, 0);
     }
     if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(row_indices))
-        return matrix;
+        return list_get_return(arg, 0);
 
     for (int ri = 0; ri < flat_count(row_indices); ri++) {
         int r = flat_index_at(row_indices, ri);
         if (g_has_error) return make_null();
         if (r < 0 || r >= matrix->data.list.count || r >= grad->data.list.count) continue;
 
-        Value *mrow = list_get_borrow(matrix, r);
-        Value *grow = list_get_borrow(grad, r);
+        Value *mrow = list_get_ref(matrix, r);
+        Value *grow = list_get_ref(grad, r);
         if (!mrow || mrow->type != VAL_LIST || !grow || grow->type != VAL_LIST) continue;
 
         int cols = mrow->data.list.count < grow->data.list.count
                  ? mrow->data.list.count : grow->data.list.count;
         for (int c = 0; c < cols; c++) {
-            Value *old = list_get_borrow(mrow, c);
-            double pv = eigs_num_arg(old, __func__);
-            double gv = eigs_num_arg(list_get_borrow(grow, c), __func__);
-            list_set_owned(mrow, c, make_num(pv - lr * gv));
-            val_decref(old);
+            double pv = eigs_slot_num(list_slot(mrow, c), __func__);
+            double gv = eigs_slot_num(list_slot(grow, c), __func__);
+            list_set_num(mrow, c, pv - lr * gv);
         }
     }
-    return matrix;
+    return list_get_return(arg, 0);
 }
 
 /* ==== BUILTIN: numerical_grad_cols ==== */
@@ -2099,13 +2122,16 @@ Value* builtin_sgd_update_rows(Value *arg) {
 Value* builtin_numerical_grad_cols(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "numerical_grad_cols");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
-    Value *loss_fn = list_get_borrow(arg, 0);
-    Value *matrix = list_get_borrow(arg, 1);
-    Value *col_indices = list_get_borrow(arg, 2);
+    EIGS_VIEW(loss_fn_view);
+    Value *loss_fn = list_get_view(arg, 0, &loss_fn_view);
+    EIGS_VIEW(matrix_view);
+    Value *matrix = list_get_view(arg, 1, &matrix_view);
+    EIGS_VIEW(col_indices_view);
+    Value *col_indices = list_get_view(arg, 2, &col_indices_view);
     /* #1637: the optional eps: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double eps = 0.001;
-    eigs_opt_num(list_get_borrow(arg, 3), &eps, __func__);
+    eigs_slot_opt_num(list_slot(arg, 3), &eps, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "numerical_grad_cols") || !tensor_cells_numeric(col_indices, "numerical_grad_cols")) return make_null();
     if (eps <= 0) eps = 0.001;
@@ -2145,8 +2171,8 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     if (matrix->type != VAL_LIST || !flat_is_vector(col_indices)) return make_null();
 
     int rows = matrix->data.list.count;
-    if (rows == 0 || list_get_borrow(matrix, 0)->type != VAL_LIST) return make_null();
-    int cols = list_get_borrow(matrix, 0)->data.list.count;
+    if (rows == 0 || list_elem_type(matrix, 0) != VAL_LIST) return make_null();
+    int cols = list_get_ref(matrix, 0)->data.list.count;
     Value *nul = make_null();   /* shared arg for loss_fn calls */
 
     /* Build zero gradient matrix */
@@ -2169,28 +2195,21 @@ Value* builtin_numerical_grad_cols(Value *arg) {
         if (col < 0 || col >= cols) continue;
 
         for (int r = 0; r < rows; r++) {
-            Value *row = list_get_borrow(matrix, r);
+            Value *row = list_get_ref(matrix, r);
             if (!row || row->type != VAL_LIST || col >= row->data.list.count) continue;
 
-            Value *orig = list_get_borrow(row, col);
-            double old_val = eigs_num_arg(orig, __func__);
-            val_incref(orig);   /* guard while displaced from its slot */
+            double old_val = eigs_slot_num(list_slot(row, col), __func__);
             /* +eps */
-            Value *pp = make_num(old_val + eps);   /* birth ref doubles as slot ref */
-            list_set_owned(row, col, pp);
+            list_set_num(row, col, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
             /* -eps */
-            Value *pm = make_num(old_val - eps);
-            list_set_owned(row, col, pm);
-            val_decref(pp);
+            list_set_num(row, col, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
             /* restore */
-            list_set_owned(row, col, orig);
-            val_decref(orig);   /* drop the guard */
-            val_decref(pm);
+            list_set_num(row, col, old_val);
             /* gradient — release the zero placeholder this slot held */
-            val_decref(list_get_borrow(list_get_borrow(grad, r), col));
-            list_set_owned(list_get_borrow(grad, r), col, make_num((loss_plus - loss_minus) / (2.0 * eps)));
+            Value *grad_row = list_get_ref(grad, r);
+            list_set_num(grad_row, col, (loss_plus - loss_minus) / (2.0 * eps));
         }
     }
     val_decref(nul);
@@ -2204,13 +2223,16 @@ Value* builtin_numerical_grad_cols(Value *arg) {
 Value* builtin_sgd_update_cols(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "sgd_update_cols");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
-    Value *matrix = list_get_borrow(arg, 0);
-    Value *grad = list_get_borrow(arg, 1);
-    Value *col_indices = list_get_borrow(arg, 2);
+    EIGS_VIEW(matrix_view);
+    Value *matrix = list_get_view(arg, 0, &matrix_view);
+    EIGS_VIEW(grad_view);
+    Value *grad = list_get_view(arg, 1, &grad_view);
+    EIGS_VIEW(col_indices_view);
+    Value *col_indices = list_get_view(arg, 2, &col_indices_view);
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
-    eigs_opt_num(list_get_borrow(arg, 3), &lr, __func__);
+    eigs_slot_opt_num(list_slot(arg, 3), &lr, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "sgd_update_cols") || !tensor_cells_numeric(grad, "sgd_update_cols") || !tensor_cells_numeric(col_indices, "sgd_update_cols")) return make_null();
 
@@ -2229,10 +2251,10 @@ Value* builtin_sgd_update_cols(Value *arg) {
                 matrix->data.buffer.data[(int64_t)r * matrix->data.buffer.cols + col] -=
                     lr * grad->data.buffer.data[(int64_t)r * grad->data.buffer.cols + col];
         }
-        return matrix;
+        return list_get_return(arg, 0);
     }
     if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(col_indices))
-        return matrix;
+        return list_get_return(arg, 0);
 
     int rows = matrix->data.list.count < grad->data.list.count
              ? matrix->data.list.count : grad->data.list.count;
@@ -2243,27 +2265,27 @@ Value* builtin_sgd_update_cols(Value *arg) {
         if (col < 0) continue;
 
         for (int r = 0; r < rows; r++) {
-            Value *mrow = list_get_borrow(matrix, r);
-            Value *grow = list_get_borrow(grad, r);
+            Value *mrow = list_get_ref(matrix, r);
+            Value *grow = list_get_ref(grad, r);
             if (!mrow || mrow->type != VAL_LIST || col >= mrow->data.list.count) continue;
             if (!grow || grow->type != VAL_LIST || col >= grow->data.list.count) continue;
 
-            Value *old = list_get_borrow(mrow, col);
-            double pv = eigs_num_arg(old, __func__);
-            double gv = eigs_num_arg(list_get_borrow(grow, col), __func__);
-            list_set_owned(mrow, col, make_num(pv - lr * gv));
-            val_decref(old);
+            double pv = eigs_slot_num(list_slot(mrow, col), __func__);
+            double gv = eigs_slot_num(list_slot(grow, col), __func__);
+            list_set_num(mrow, col, pv - lr * gv);
         }
     }
-    return matrix;
+    return list_get_return(arg, 0);
 }
 #if !EIGENSCRIPT_FREESTANDING
 Value* builtin_tensor_save(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "tensor_save");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
               "tensor_save", "[tensor, path]", make_bool(0));
-    Value *tensor = list_get_borrow(arg, 0);
-    Value *path_val = list_get_borrow(arg, 1);
+    EIGS_VIEW(tensor_view);
+    Value *tensor = list_get_view(arg, 0, &tensor_view);
+    EIGS_VIEW(path_val_view);
+    Value *path_val = list_get_view(arg, 1, &path_val_view);
     ARG_GUARD(!tensor || (tensor->type != VAL_LIST && tensor->type != VAL_BUFFER)
               || !path_val || path_val->type != VAL_STR,   /* #1093 */
               "tensor_save", "[a list or buffer tensor, a string path]", make_bool(0));
@@ -2378,8 +2400,8 @@ Value* builtin_tensor_load(Value *arg) {
             replayed_verdict = 1;
             if (verdict && verdict->type == VAL_LIST &&
                 verdict->data.list.count == 2 &&
-                list_get_borrow(verdict, 0)->type == VAL_NUM &&
-                list_get_borrow(verdict, 1)->type == VAL_NUM) {
+                list_elem_type(verdict, 0) == VAL_NUM &&
+                list_elem_type(verdict, 1) == VAL_NUM) {
                 uint32_t rows = (uint32_t)eigs_list_num(verdict, 0, __func__);
                 uint32_t cols = (uint32_t)eigs_list_num(verdict, 1, __func__);
                 val_decref(verdict);

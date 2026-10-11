@@ -31,4 +31,14 @@ for i in range of 70:
     deep is [deep]
 assert_eq of [deep == deep, true, "a deep nest equals itself"]
 
+# A ragged tensor holding a bare number where a row belongs: B5 read it with
+# list_get_ref (NULL for a number) and crashed; the type must be tested first.
+assert_eq of [add of [[[1, 2], 3], [1, 1]], [[2, 3], [4, 4]], "ragged broadcast add treats a number row as a scalar"]
+assert_eq of [gather of [[[1, 2], 5], [0, 0]], [1, 0], "gather on a ragged tensor"]
+try:
+    r is relu of ([[7, 1], 1])
+    assert_eq of ["no raise", "raise", "relu on a ragged tensor raises"]
+catch e:
+    assert_eq of [e.kind, "type_mismatch", "relu on a ragged tensor raises a type error"]
+
 test_summary of null
