@@ -5386,17 +5386,16 @@ Value* builtin_nearest_in_range(Value *arg) {
         Value *e = BUILTIN_LIST_VIEW(entities, i);
         if (!e || e->type != VAL_DICT) continue;
         char **keys = e->data.dict.keys;
-        EigsSlot *vals = dict_values_storage(e);
         EigsView av_view, ex_view, ey_view;
         int kcount = e->data.dict.count;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
-            av = slot_view(vals[hint_active], &av_view);
+            av = slot_view(dict_value_slot(e, hint_active), &av_view);
         } else {
             int idx = env_hash_find_dict(e, iactive, h_active);
             if (idx >= 0 && hint_active < 0) hint_active = idx;
-            av = (idx >= 0) ? slot_view(vals[idx], &av_view) : NULL;
+            av = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &av_view) : NULL;
         }
         /* #1637: "active" is a bool (false skips); the older 1/0 number
          * still reads as before. */
@@ -5405,20 +5404,20 @@ Value* builtin_nearest_in_range(Value *arg) {
 
         Value *ex;
         if (hint_px >= 0 && hint_px < kcount && keys[hint_px] == ipx) {
-            ex = slot_view(vals[hint_px], &ex_view);
+            ex = slot_view(dict_value_slot(e, hint_px), &ex_view);
         } else {
             int idx = env_hash_find_dict(e, ipx, h_px);
             if (idx >= 0 && hint_px < 0) hint_px = idx;
-            ex = (idx >= 0) ? slot_view(vals[idx], &ex_view) : NULL;
+            ex = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ex_view) : NULL;
         }
 
         Value *ey;
         if (hint_py >= 0 && hint_py < kcount && keys[hint_py] == ipy) {
-            ey = slot_view(vals[hint_py], &ey_view);
+            ey = slot_view(dict_value_slot(e, hint_py), &ey_view);
         } else {
             int idx = env_hash_find_dict(e, ipy, h_py);
             if (idx >= 0 && hint_py < 0) hint_py = idx;
-            ey = (idx >= 0) ? slot_view(vals[idx], &ey_view) : NULL;
+            ey = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ey_view) : NULL;
         }
 
         /* #1637 round 4: a bool coordinate raises (any other non-number
@@ -5516,17 +5515,16 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             continue;
         }
         char **keys = e->data.dict.keys;
-        EigsSlot *vals = dict_values_storage(e);
         EigsView av_view, ex_view, ey_view;
         int kcount = e->data.dict.count;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
-            av = slot_view(vals[hint_active], &av_view);
+            av = slot_view(dict_value_slot(e, hint_active), &av_view);
         } else {
             int idx = env_hash_find_dict(e, iactive, h_active);
             if (idx >= 0 && hint_active < 0) hint_active = idx;
-            av = (idx >= 0) ? slot_view(vals[idx], &av_view) : NULL;
+            av = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &av_view) : NULL;
         }
         /* active default: 1 (matches single-call behavior where missing/non-num
          * is treated as active). Explicit 0/non-1 value flips to inactive. */
@@ -5535,19 +5533,19 @@ Value* builtin_nearest_in_range_all(Value *arg) {
 
         Value *ex;
         if (hint_px >= 0 && hint_px < kcount && keys[hint_px] == ipx) {
-            ex = slot_view(vals[hint_px], &ex_view);
+            ex = slot_view(dict_value_slot(e, hint_px), &ex_view);
         } else {
             int idx = env_hash_find_dict(e, ipx, h_px);
             if (idx >= 0 && hint_px < 0) hint_px = idx;
-            ex = (idx >= 0) ? slot_view(vals[idx], &ex_view) : NULL;
+            ex = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ex_view) : NULL;
         }
         Value *ey;
         if (hint_py >= 0 && hint_py < kcount && keys[hint_py] == ipy) {
-            ey = slot_view(vals[hint_py], &ey_view);
+            ey = slot_view(dict_value_slot(e, hint_py), &ey_view);
         } else {
             int idx = env_hash_find_dict(e, ipy, h_py);
             if (idx >= 0 && hint_py < 0) hint_py = idx;
-            ey = (idx >= 0) ? slot_view(vals[idx], &ey_view) : NULL;
+            ey = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ey_view) : NULL;
         }
         if ((ex && ex->type == VAL_BOOL) || (ey && ey->type == VAL_BOOL)) {   /* #1637 round 4 */
             eigs_num_arg_slow((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range_all");

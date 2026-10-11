@@ -275,6 +275,9 @@ static inline EigsSlot dict_value_take_slot(Value *dict, int i) {
 static inline void list_move(Value *list, int dst, int src, int n) {
     memmove(&list->data.list.items[dst], &list->data.list.items[src], (size_t)n * sizeof(EigsSlot));
 }
+static inline void dict_value_move(Value *dict, int dst, int src, int n) {
+    memmove(&dict->data.dict.vals[dst], &dict->data.dict.vals[src], (size_t)n * sizeof(EigsSlot));
+}
 /* The comparator receives `const EigsSlot *` element pointers. */
 static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)) {
     qsort(list->data.list.items, (size_t)list->data.list.count, sizeof(EigsSlot), cmp);

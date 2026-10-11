@@ -2757,10 +2757,9 @@ void dict_remove(Value *dict, const char *key) {
     env_intern_scope_remove(dict->data.dict.keys[idx]);
     slot_decref(dict_value_slot(dict, idx));
     /* Shift remaining */
-    for (int j = idx; j < dict->data.dict.count - 1; j++) {
+    for (int j = idx; j < dict->data.dict.count - 1; j++)
         dict->data.dict.keys[j] = dict->data.dict.keys[j+1];
-        dict_values_storage(dict)[j] = dict_values_storage(dict)[j + 1];
-    }
+    dict_value_move(dict, idx, idx + 1, dict->data.dict.count - 1 - idx);
     dict->data.dict.count--;
     env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
 }
