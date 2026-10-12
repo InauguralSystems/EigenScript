@@ -19,10 +19,10 @@ TOTAL=$((TOTAL + 1))
 plant_dir=$(mktemp -d "${TESTS_DIR}/../.container-plant.XXXXXX")
 printf 'void plant(void) { list_get_borrow(0, 0); }\n' > "$plant_dir/plant.c"
 printf '%s\n' "${plant_dir#"$TESTS_DIR/../"}/plant.c" > "$plant_dir/list.txt"
-set +e
-PLANT_OUTPUT=$(cd "$TESTS_DIR/.." && EIGS_CONTAINER_EXPECT_VIOLATION=1 EIGS_CONTAINER_MIGRATED_LIST="${plant_dir#"$TESTS_DIR/../"}/list.txt" bash tools/container_access_check.sh 2>&1)
-PLANT_RC=$?
-set -e
+# No `set -e` toggling: this file is SOURCED into the runner, and re-arming
+# errexit here would kill the runner at the next nonzero command (#1726).
+PLANT_RC=0
+PLANT_OUTPUT=$(cd "$TESTS_DIR/.." && EIGS_CONTAINER_EXPECT_VIOLATION=1 EIGS_CONTAINER_MIGRATED_LIST="${plant_dir#"$TESTS_DIR/../"}/list.txt" bash tools/container_access_check.sh 2>&1) || PLANT_RC=$?
 rm -rf "$plant_dir"
 if [ "$PLANT_RC" -eq 0 ] && grep -qE '^container-migrated: files=1 examined=1 violations=1$' <<< "$PLANT_OUTPUT" && \
    grep -q '^container-migrated-plant: PASS$' <<< "$PLANT_OUTPUT"; then

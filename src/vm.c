@@ -650,8 +650,8 @@ vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
      * The JIT's inline probe carries the same guard (emit_dict_cache_probe). */
     if (__builtin_expect(dict->module_ns != 0, 0))
     {
-        Value *v = dict_get_hashed_ref_legacy(dict, key, h);
-        return v ? eigs_container_slot(v) : slot_null();
+        int found;
+        return dict_get_hashed_slot(dict, key, h, &found);  /* null when absent */
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
     if (ce && ce->index < dict->data.dict.count) {
@@ -699,13 +699,10 @@ dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) 
     if (ce && ce->index < dict->data.dict.count) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
-            /* dict_value_get_ref is NULL for a number by contract, so the
-             * number test goes through the slot. dict_value_set_num keeps the
-             * rc==1 in-place rewrite on Value** storage and becomes a plain
-             * slot store after the flip. */
-            if (dict_value_rewrite_num(dict, ce->index, num)) {
-                return 1;
-            }
+            /* Slot storage (#1665 arm D B10): a cache hit is a plain
+             * slot store of the already-guarded immediate, whatever the
+             * field held before (the old occupant is released). */
+            return dict_value_rewrite_num(dict, ce->index, num);
         }
     }
     return 0;
@@ -2192,7 +2189,7 @@ void jit_helper_index_set(void) {
         if (target->type == VAL_LIST && slot_is_num(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 double n = SLOT_NUM_RAW(val_s); /* already guarded in a slot */
-                if (!list_rewrite_num(target, i, n)) list_set_num(target, i, n);
+                list_rewrite_num(target, i, n);
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                 else rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)",
@@ -2373,12 +2370,13 @@ static const char* vm_builtin_name_for(Env *env, BuiltinFn fn) {
 static inline void vm_borrow_scan(Value *arg, Value *result,
                                   Value *fn_val, Env *env) {
     (void)fn_val; (void)env;
-#if EIGS_BORROW_GUARD || defined(EIGS_SLOT_REHEARSAL)
-    if (result && result->refcount >= EIGS_VIEW_RC) {
+    /* #1665 arm D: a numeric view is caller stack storage; returning one
+     * would hand the VM a dangling Value. Views carry EIGS_VIEW_RC, which no
+     * counted Value reaches (the immortal singletons sit at 1e6). */
+    if (__builtin_expect(result && result->refcount >= EIGS_VIEW_RC, 0)) {
         fprintf(stderr, "EigenScript FATAL: builtin returned an escaped numeric view\n");
         abort();
     }
-#endif
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
         if (n > VM_BORROW_SCAN_CAP) n = VM_BORROW_SCAN_CAP;
@@ -2455,16 +2453,6 @@ void vm_borrow_compensate(Value *arg, Value *result, int caller_owns_arg,
     }
     vm_borrow_scan(arg, result, fn_val, env);
 }
-
-#ifdef EIGS_SLOT_TEST_HOOK
-/* Test-only planted builtin result.  It is deliberately absent from the
- * registry and from production builds: the harness sends it through the real
- * builtin-return compensation path to prove the escape guard aborts. */
-Value *eigs_test_builtin_number_view(void) {
-    static EigsView escaped;
-    return slot_view(slot_from_num(1665.0), &escaped);
-}
-#endif
 
 /* JIT Stage 4r/5f: out-of-line helper for OP_CALL.
  *

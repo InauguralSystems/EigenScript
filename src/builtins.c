@@ -23,8 +23,7 @@
 #define BUILTIN_DICT_VALUE_VIEW(dict, i) \
     slot_view(dict_value_slot((dict), (i)), &(EigsView){{0}})
 static Value *builtin_dict_view(Value *dict, const char *key, EigsView *view) {
-    Value *v = dict_get_ref_legacy(dict, key);
-    return v ? slot_view(eigs_container_slot(v), view) : NULL;
+    return dict_get_view(dict, key, view);
 }
 #define BUILTIN_DICT_VIEW(dict, key) \
     builtin_dict_view((dict), (key), &(EigsView){{0}})
@@ -3784,9 +3783,7 @@ Value* builtin_copy_into(Value *arg) {
         return make_null();
     }
     for (int i = 0; i < src->data.list.count && offset + i < dest->data.list.count; i++) {
-        Value *item = eigs_slot_box(list_slot(src, i));
-        slot_decref(list_slot(dest, offset + i));
-        list_set_owned(dest, offset + i, item);
+        list_set_slot_owned(dest, offset + i, slot_read_owned(list_slot(src, i)));
     }
     return dest;
 }
@@ -4064,9 +4061,7 @@ Value* builtin_set_at(Value *arg) {
         int idx;
         if (!at_index(BUILTIN_LIST_VIEW(arg, 1), list->data.list.count, "set_at", &idx))
             return make_null();
-        Value *val = list_get_owned(arg, 2);
-        slot_decref(list_slot(list, idx));
-        list_set_owned(list, idx, val);
+        list_set_slot_owned(list, idx, slot_read_owned(list_slot(arg, 2)));
         return list;
     }
     if (argc == 4) {
@@ -4087,9 +4082,7 @@ Value* builtin_set_at(Value *arg) {
         int col;
         if (!at_index(BUILTIN_LIST_VIEW(arg, 2), rowv->data.list.count, "set_at col", &col))
             return make_null();
-        Value *val = list_get_owned(arg, 3);
-        slot_decref(list_slot(rowv, col));
-        list_set_owned(rowv, col, val);
+        list_set_slot_owned(rowv, col, slot_read_owned(list_slot(arg, 3)));
         return list;
     }
     rt_error(EK_TYPE, 0, "set_at takes [list, index, value] or "
@@ -5393,16 +5386,16 @@ Value* builtin_nearest_in_range(Value *arg) {
         Value *e = BUILTIN_LIST_VIEW(entities, i);
         if (!e || e->type != VAL_DICT) continue;
         char **keys = e->data.dict.keys;
-        Value **vals = dict_values_storage(e);
+        EigsView av_view, ex_view, ey_view;
         int kcount = e->data.dict.count;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
-            av = vals[hint_active];
+            av = slot_view(dict_value_slot(e, hint_active), &av_view);
         } else {
             int idx = env_hash_find_dict(e, iactive, h_active);
             if (idx >= 0 && hint_active < 0) hint_active = idx;
-            av = (idx >= 0) ? vals[idx] : NULL;
+            av = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &av_view) : NULL;
         }
         /* #1637: "active" is a bool (false skips); the older 1/0 number
          * still reads as before. */
@@ -5411,20 +5404,20 @@ Value* builtin_nearest_in_range(Value *arg) {
 
         Value *ex;
         if (hint_px >= 0 && hint_px < kcount && keys[hint_px] == ipx) {
-            ex = vals[hint_px];
+            ex = slot_view(dict_value_slot(e, hint_px), &ex_view);
         } else {
             int idx = env_hash_find_dict(e, ipx, h_px);
             if (idx >= 0 && hint_px < 0) hint_px = idx;
-            ex = (idx >= 0) ? vals[idx] : NULL;
+            ex = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ex_view) : NULL;
         }
 
         Value *ey;
         if (hint_py >= 0 && hint_py < kcount && keys[hint_py] == ipy) {
-            ey = vals[hint_py];
+            ey = slot_view(dict_value_slot(e, hint_py), &ey_view);
         } else {
             int idx = env_hash_find_dict(e, ipy, h_py);
             if (idx >= 0 && hint_py < 0) hint_py = idx;
-            ey = (idx >= 0) ? vals[idx] : NULL;
+            ey = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ey_view) : NULL;
         }
 
         /* #1637 round 4: a bool coordinate raises (any other non-number
@@ -5522,16 +5515,16 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             continue;
         }
         char **keys = e->data.dict.keys;
-        Value **vals = dict_values_storage(e);
+        EigsView av_view, ex_view, ey_view;
         int kcount = e->data.dict.count;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
-            av = vals[hint_active];
+            av = slot_view(dict_value_slot(e, hint_active), &av_view);
         } else {
             int idx = env_hash_find_dict(e, iactive, h_active);
             if (idx >= 0 && hint_active < 0) hint_active = idx;
-            av = (idx >= 0) ? vals[idx] : NULL;
+            av = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &av_view) : NULL;
         }
         /* active default: 1 (matches single-call behavior where missing/non-num
          * is treated as active). Explicit 0/non-1 value flips to inactive. */
@@ -5540,19 +5533,19 @@ Value* builtin_nearest_in_range_all(Value *arg) {
 
         Value *ex;
         if (hint_px >= 0 && hint_px < kcount && keys[hint_px] == ipx) {
-            ex = vals[hint_px];
+            ex = slot_view(dict_value_slot(e, hint_px), &ex_view);
         } else {
             int idx = env_hash_find_dict(e, ipx, h_px);
             if (idx >= 0 && hint_px < 0) hint_px = idx;
-            ex = (idx >= 0) ? vals[idx] : NULL;
+            ex = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ex_view) : NULL;
         }
         Value *ey;
         if (hint_py >= 0 && hint_py < kcount && keys[hint_py] == ipy) {
-            ey = vals[hint_py];
+            ey = slot_view(dict_value_slot(e, hint_py), &ey_view);
         } else {
             int idx = env_hash_find_dict(e, ipy, h_py);
             if (idx >= 0 && hint_py < 0) hint_py = idx;
-            ey = (idx >= 0) ? vals[idx] : NULL;
+            ey = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ey_view) : NULL;
         }
         if ((ex && ex->type == VAL_BOOL) || (ey && ey->type == VAL_BOOL)) {   /* #1637 round 4 */
             eigs_num_arg_slow((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range_all");
@@ -5725,9 +5718,8 @@ Value* builtin_list_insert_at(Value *arg) {
         return list;
     }
     /* Grow by one slot, transfer the old last slot's ownership to that new
-     * copy, then move the tail and install an independently owned value.  In
-     * rehearsal this is also what keeps an immediate number from escaping as
-     * a retained Value view. */
+     * copy, then move the tail and install an independently owned value (an
+     * immediate number is never retained as a Value view). */
     list_append_slot(list, list_slot(list, count - 1));
     slot_decref(list_slot(list, count - 1));
     list_move(list, idx + 1, idx, count - idx);
@@ -5850,14 +5842,14 @@ Value* builtin_sort_by(Value *arg) {
  * with libc-dependent element order on top (qsort gives no stability
  * guarantee for all-equal elements). Record sorting is sort_by's job. */
 static int sort_cmp_num(const void *a, const void *b) {
-    double da = eigs_slot_num(eigs_container_slot(*(Value * const *)a), __func__);
-    double db = eigs_slot_num(eigs_container_slot(*(Value * const *)b), __func__);
+    double da = eigs_slot_num(*(const EigsSlot *)a, __func__);
+    double db = eigs_slot_num(*(const EigsSlot *)b, __func__);
     return (da > db) - (da < db);
 }
 
 static int sort_cmp_str(const void *a, const void *b) {
-    return strcmp(slot_as_ptr(eigs_container_slot(*(Value * const *)a))->data.str,
-                  slot_as_ptr(eigs_container_slot(*(Value * const *)b))->data.str);
+    return strcmp(slot_as_ptr(*(const EigsSlot *)a)->data.str,
+                  slot_as_ptr(*(const EigsSlot *)b)->data.str);
 }
 
 Value* builtin_sort(Value *arg) {

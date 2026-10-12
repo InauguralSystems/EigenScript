@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build slot-rehearsal server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -105,10 +105,6 @@ ASAN_FLAGS := -fsanitize=address,undefined,float-cast-overflow $(WERROR_FLAGS) -
 SRC_V_release := $(HOSTED_SOURCES)
 FLAGS_release := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_release  := $(LDFLAGS) -ldl
-
-SRC_V_slot-rehearsal := $(HOSTED_SOURCES)
-FLAGS_slot-rehearsal := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_SLOT_REHEARSAL -DEIGS_BORROW_GUARD=1 -DEIGS_SLOT_TEST_HOOK $(VERDEF)
-LIBS_slot-rehearsal  := $(LDFLAGS) -ldl
 
 SRC_V_server := $(SERVER_SOURCES)
 FLAGS_server := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
@@ -187,7 +183,7 @@ SRC_V_jit-checked := $(HOSTED_SOURCES)
 FLAGS_jit-checked := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_JIT_CHECKED $(VERDEF)
 LIBS_jit-checked  := $(LDFLAGS) -ldl
 
-VARIANTS := release slot-rehearsal server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -226,10 +222,6 @@ all: build
 build: build/release/eigenscript
 	$(call RELINK,release)
 	@echo "EigenScript $(VERSION) built. Binary: $$(du -sh build/release/eigenscript | cut -f1)"
-
-slot-rehearsal: build/slot-rehearsal/eigenscript
-	$(call RELINK,slot-rehearsal)
-	@echo "EigenScript $(VERSION) slot rehearsal built. Binary: $$(du -sh build/slot-rehearsal/eigenscript | cut -f1)"
 
 SLOT_TEST_VARIANT ?= release
 SLOT_TEST_OBJ := $(filter-out build/$(SLOT_TEST_VARIANT)/main.o,$(OBJ_$(SLOT_TEST_VARIANT)))

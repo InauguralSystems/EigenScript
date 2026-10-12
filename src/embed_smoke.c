@@ -194,8 +194,10 @@ static void test_worker_exit_lifecycle(void) {
             EigsValue *handle = eigs_get_global("worker");
             CHECK(handle && handle->type == VAL_DICT, "exit fixture owns join handle");
             if (handle && handle->type == VAL_DICT) {
-                f.handle_id = (int)VAL_NUM_RAW(dict_get(handle, "_handle_id"));
-                f.handle_gen = (uint32_t)VAL_NUM_RAW(dict_get(handle, "_handle_gen"));
+                int found_id = 0, found_gen = 0;
+                f.handle_id = (int)eigs_slot_num(dict_get_slot(handle, "_handle_id", &found_id), "embed_smoke");
+                f.handle_gen = (uint32_t)eigs_slot_num(dict_get_slot(handle, "_handle_gen", &found_gen), "embed_smoke");
+                CHECK(found_id && found_gen, "join handle carries its id and generation");
                 pthread_t requester;
                 int made = pthread_create(&requester, NULL, exit_after_join_claim, &f) == 0;
                 CHECK(made, "exit fixture starts request coordinator");

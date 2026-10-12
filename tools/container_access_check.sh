@@ -20,7 +20,8 @@ while IFS= read -r hit; do
     esac
     case "$file:$text" in
         src/jit.c:*'offsetof(Value, data.dict.vals)'*)
-            # Emitted machine code needs the representation offset (step-2 site).
+            # Emitted machine code needs the representation offset: the inline
+            # dict-cache probe loads EigsSlot bits from vals[] (B10 flip).
             allowed=$((allowed + 1)); continue ;;
     esac
     printf 'raw Value container access: %s:%s:%s\n' "$file" "$line" "$text" >&2
@@ -52,7 +53,11 @@ while IFS= read -r file; do
         migrated_hits=$((migrated_hits + 1))
         echo "forbidden migrated container access: $file:$hit" >&2
         migrated_violations=$((migrated_violations + 1))
-    done < <(grep -n -E 'list_get_borrow[[:space:]]*[(]|dict_value_get_borrow[[:space:]]*[(]|(^|[^[:alnum:]_])dict_get(_hashed|_cached)?[[:space:]]*[(]|list_values_storage[[:space:]]*[(]' "$file" || true)
+    # Raw slot-array helpers are allowed only on bulk alloc / grow / free
+    # lines (the container.h contract); element-level reads, writes and
+    # aliases through them bypass num_guard and refcounting (#1665 B10 review).
+    done < <(grep -n -E 'list_get_borrow[[:space:]]*[(]|dict_value_get_borrow[[:space:]]*[(]|(^|[^[:alnum:]_])dict_get(_hashed|_cached)?[[:space:]]*[(]|(list|dict)_values_storage(_ref)?[[:space:]]*[(]' "$file" \
+             | grep -v -E 'x(c|re)alloc(_array)?[[:space:]]*[(]|(^|[^[:alnum:]_])free[[:space:]]*[(]|sizeof[[:space:]]*[*][*]' || true)
 done < "${EIGS_CONTAINER_MIGRATED_LIST:-tools/container_migrated_files.txt}"
 echo "container-migrated: files=$migrated_files examined=$migrated_hits violations=$migrated_violations"
 if (( migrated_violations != 0 )); then

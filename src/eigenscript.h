@@ -443,10 +443,10 @@ struct Value {
          * and Clang document as supported when the access goes through the
          * union object, as it does everywhere here. */
         struct { char *ptr; size_t len; } strv;
-        struct { Value **items; int count; int capacity; } list;
+        struct { EigsSlot *items; int count; int capacity; } list;   /* #1665 arm D: slot storage, src/container.h */
         struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; EnvInternTable *param_intern_tbl; } fn;
         BuiltinFn builtin;
-        struct { char **keys; Value **vals; int count; int capacity; EnvHash hash; EnvInternRef *intern_refs; } dict;
+        struct { char **keys; EigsSlot *vals; int count; int capacity; EnvHash hash; EnvInternRef *intern_refs; } dict;
         struct { double *data; int count; int rows, cols; } buffer;  /* rows==0 => unshaped 1-D (count is length); rows>0 => 2-D, rows*cols==count */
         struct { char *data; size_t len; size_t cap; int parts; } text_builder;
     } data;
@@ -1799,8 +1799,6 @@ void dict_set_owned(Value *dict, const char *key, Value *val);
  * keys into a process-global intern table so they survive the sender thread's
  * detach. Returns a heap value (refcount 1). */
 Value *val_clone_for_send(Value *v);
-Value* dict_get_ref_legacy(Value *dict, const char *key);
-Value* dict_get_hashed_ref_legacy(Value *dict, const char *key, uint32_t h);
 void list_append(Value *list, Value *item);
 void list_append_owned(Value *list, Value *item);
 

@@ -72,8 +72,8 @@ static void duplicate_and_leaf(void) {
     unsigned before=traversal_skips;
     collect(4,2,4,0,0);
     CHECK(traversal_skips>before,"numeric-leaf mark traversal skipped");
-    CHECK(root->data.list.items[0]==root->data.list.items[1],"live duplicate aliases retained");
-    CHECK(VAL_NUM_RAW(root->data.list.items[0]->data.list.items[63])==63,"live leaf contents retained");
+    CHECK(list_slot(root,0).u==list_slot(root,1).u,"live duplicate aliases retained");
+    CHECK(eigs_slot_num(list_slot(slot_as_ptr(list_slot(root,0)),63),"gc_traversal")==63,"live leaf contents retained");
     duplicate_child=NULL;
     val_decref(root); gc_collect_cycles();
     ++cases;
@@ -94,7 +94,7 @@ static void growing_ring(void) {
     g_gc_enabled=enabled;
     gc_note_possible_root(ring[0]);
     collect(N,0,N,0,0);
-    CHECK(ring[0]->data.list.items[0]==ring[1],"live ring retained after growth");
+    CHECK(slot_as_ptr(list_slot(ring[0],0))==ring[1],"live ring retained after growth");
     val_decref(ring[0]);
     collect(N,N,N,0,0);
     free(ring);
