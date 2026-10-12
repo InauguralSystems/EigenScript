@@ -1,1 +1,1 @@
-- Restore the trace-recorded `read_line` builtin used by EigenLua's `io.read` implementation.
+- The trace-recorded `read_line` builtin (EigenLua's `io.read`) is kept: the unused-builtin sweep (#1677) had removed it earlier in this release window, and it was restored before any release shipped without it.
