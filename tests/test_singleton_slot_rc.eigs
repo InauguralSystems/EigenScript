@@ -1,0 +1,24 @@
+# The null and bool singletons must never lose reference counts through a
+# slot. A heap-tagged singleton slot lost one count per pop: 1.1M builtin
+# calls on a null argument drove the null singleton's 1000000 to zero and
+# free()d a static (EigenLua warmup pairs fuzz, 2026-10-11). Each loop runs
+# past the 1000000 margin, so a regression aborts here.
+
+n is null
+b is 1 == 1
+i is 0
+loop while i < 1050000:
+    t is type of n
+    u is type of b
+    i is i + 1
+
+xs is [0]
+d is {"k": 0}
+j is 0
+loop while j < 1050000:
+    xs[0] is n
+    d["k"] is b
+    j is j + 1
+
+if t == "none" and u == "bool" and xs[0] == null and d["k"]:
+    print of "All tests passed"

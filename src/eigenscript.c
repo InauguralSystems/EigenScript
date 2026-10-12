@@ -1786,8 +1786,18 @@ static Value g_null_singleton;
 /* #1637: the two VAL_BOOL singletons are immortal like null.
  * make_bool hands out one of these; no other
  * VAL_BOOL Value is ever allocated. */
-static Value g_true_singleton  = { .type = VAL_BOOL, .data = { .boolean = 1 }, .refcount = 1000000 };
-static Value g_false_singleton = { .type = VAL_BOOL, .data = { .boolean = 0 }, .refcount = 1000000 };
+/* The singletons' refcounts are never maintained (val_incref/val_decref skip
+ * them), so the starting count is only a margin before a stray decrement frees
+ * a static. Sanitizer builds shrink it so a refcount imbalance on a singleton
+ * aborts within the ordinary suite instead of after a million operations
+ * (EigenLua's warmup fuzz found one that way, 2026-10-11). */
+#if defined(__SANITIZE_ADDRESS__)
+#define EIGS_SINGLETON_RC 1000
+#else
+#define EIGS_SINGLETON_RC 1000000
+#endif
+static Value g_true_singleton  = { .type = VAL_BOOL, .data = { .boolean = 1 }, .refcount = EIGS_SINGLETON_RC };
+static Value g_false_singleton = { .type = VAL_BOOL, .data = { .boolean = 0 }, .refcount = EIGS_SINGLETON_RC };
 Value* make_bool(int b) { return b ? &g_true_singleton : &g_false_singleton; }
 
 static const char *num_who(const char *who) {
@@ -1949,7 +1959,7 @@ Value* make_str_owned_len(char *s, size_t n) {
     return v;
 }
 
-static Value g_null_singleton = { .type = VAL_NULL, .refcount = 1000000 };
+static Value g_null_singleton = { .type = VAL_NULL, .refcount = EIGS_SINGLETON_RC };
 /* forward decl resolved here */
 
 Value* make_null(void) {
