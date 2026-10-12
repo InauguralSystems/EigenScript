@@ -4,6 +4,49 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-10-11
+
+### Breaking changes
+
+- Remove unused builtins `__borrow_guard_selftest`, `chdir`, `clear_math_flags`, `deflate`, `free_val`, `get_observer_scale`, `get_observer_window`, `heap_inuse`, `hmac_sha256`, `json_raw`, `proc_close`, `proc_read`, `proc_read_line`, `proc_spawn`, `proc_wait`, `proc_write`, `raw_key`, `scan_tokens`, `screen_clear`, `screen_end`, `screen_put`, `screen_render`, `set_observer_scale`, `set_observer_thresholds`, `set_observer_window`, `sha256_file`, `task_now`, `task_sched_trace`, `task_try_recv`, `text_builder_clear`, `text_builder_extend`, `text_builder_part_count`, `tokenize_ids`, `tokenize_with_names`, `zlib_deflate`, and `zlib_inflate`. Builtins with zero use across ecosystem consumers are removed as unstressed maintenance burden and can return when a real consumer needs them.
+
+### Added
+
+- **Stale-read detectors for the two kept recycling pools (#1665).** ASan
+  builds now poison a NUM parked on the per-thread freelist (all but its link
+  word) and a call env parked on its chunk (its slot, name, count and hash
+  arrays and the Env struct, all but `parent`), so a read of a recycled
+  object reports `use-after-poison` instead of passing silently (#1661 was
+  such a read). `make jit-checked` builds a JIT that checks every emitted
+  direct env-slot access against the env and aborts with the read site; CI
+  runs the JIT-tier sections against it. Release builds are unchanged.
+
+### Changed
+
+- An empty dict `{}` no longer allocates its key array, value array or hash until the first insert: 1M empty dicts drop from about 773 MB to 209 MB resident (#1665).
+
+- List items and dict values are now stored as NaN-boxed slots (#1665 arm D B10): a number in a
+  list or dict is an 8-byte immediate instead of a pointer to a heap-allocated boxed Value. Peak RSS
+  (release build, `/usr/bin/time -v`, minus an empty program): a 1M-element numeric list went from
+  103.9 to 8.0 bytes per element (104576 kB to 11008 kB); 100k four-key numeric dicts went from 1095 to
+  713 bytes per dict (110028 kB to 72808 kB); 1M empty dicts are unchanged at 144 bytes per dict.
+  Program-visible behaviour, trace tapes and the embedding ABI are unchanged. The `slot-rehearsal`
+  make target is removed (its semantics are now the only semantics).
+
+### Removed
+
+- Removed the Env freelist, the `EIGS_ENV_FREELIST_OFF` runtime knob, and the `make pool-off-env` measurement variant (#1665). Every general Env is now freshly allocated and really freed; the separate call-env cache and NUM freelist remain.
+
+- Remove the `arena_mark`, `arena_reset`, and `arena_stats` builtins and the bump arena allocator. Reference counting now owns all runtime values.
+
+### Fixed
+
+- Fixed a crash (`free(): invalid pointer`) after about a million operations that passed `null`, `true` or `false` through certain paths, such as calling a builtin with a `null` argument in a long loop (#1665 arm D follow-up). Since list and dict storage became slots, the null and bool singletons could be stored as counted heap pointers, and every release of such a slot took a count from a singleton whose count is never maintained. `slot_from_heap` now always encodes the singletons as immediates. Sanitizer builds start the singletons' margin at 1000 instead of 1000000, so a future imbalance fails the ordinary ASan suite. Found by EigenLua's warmup pairs fuzz during the v0.46.0 release preflight.
+
+- Fixed a stale inline-cache read that mis-resolved an in-scope loop variable as `undefined variable` once the env freelist was bypassed (#1674, #1661 family). An env's `binding_version` is seeded from a monotonic counter at creation, so an env born at a freed env's reused address always carries a strictly greater `binding_version` than any inline cache cached against the prior occupant — the cache misses on address reuse instead of firing on the deterministic low-version collision that the freelist had been masking. The version token (`Env.binding_version`, the `EnvIC` cached versions, the loop-iter cache version, and the JIT-emitted load/compare sequences) is 64-bit and the birth counter is one process-wide relaxed-atomic counter advanced past freed envs' final versions, so it cannot wrap or collide across threads within any process lifetime (the prior per-thread `uint32` wrapped at ~2^32 env births — ~1.7h of sustained churn — reopening the ABA). `EIGS_ENV_VERSION_SEED` starts the counter near 2^32 to exercise the boundary, and suite section `[0fe]` guards the address-reuse case on the default build.
+
+- The trace-recorded `read_line` builtin (EigenLua's `io.read`) is kept: the unused-builtin sweep (#1677) had removed it earlier in this release window, and it was restored before any release shipped without it.
+
 ## [0.45.1] - 2026-10-07
 
 ### Fixed

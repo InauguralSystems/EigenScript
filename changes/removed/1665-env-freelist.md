@@ -1,1 +1,0 @@
-- Removed the Env freelist, the `EIGS_ENV_FREELIST_OFF` runtime knob, and the `make pool-off-env` measurement variant (#1665). Every general Env is now freshly allocated and really freed; the separate call-env cache and NUM freelist remain.
