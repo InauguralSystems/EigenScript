@@ -148,7 +148,14 @@ scan_inventory() {
     [ -n "$pin" ] || continue
     if contains "$r" "${EXCLUDED[@]}"; then continue; fi
     kind=derived; wf=""; cmd=""; why=""
-    if accept_cmd_of "$r"; then cmd="$ACCEPT_CMD"; wf="$ACCEPT_WF"
+    # A checkout off its default branch tests some other commit's pin and
+    # code. The 0.46.0 sweep ran three clones parked on old feature branches
+    # and reported DeslanStudio FAIL against a v0.43.0 pin it had already
+    # left; on main it passed.
+    if git -C "$d" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null 2>&1 &&
+       [ "$(git -C "$d" rev-parse HEAD)" != "$(git -C "$d" rev-parse refs/remotes/origin/HEAD)" ]; then
+      kind=UNRUNNABLE; why=stale-checkout
+    elif accept_cmd_of "$r"; then cmd="$ACCEPT_CMD"; wf="$ACCEPT_WF"
     elif [ -n "$ACCEPT_WHY" ]; then kind=UNRUNNABLE; why="$ACCEPT_WHY"
     elif cmd="$(declared_cmd "$r")"; then kind=declared
     elif [ -f "$ECO/.ca_fixture" ] && [ -f "$d/.ca_declared" ]; then
@@ -1081,8 +1088,17 @@ CANDIDATE
   if [ "$st_rc" -ne 0 ] && grep -Fq 'row|archive_fail|v0.43.0|FAIL|0|' "$st_record" && grep -Fq 'prereq=log-archive' "$st_record" && grep -Fqx 'consumer_log|archive_fail|MISSING' "$st_record" && grep -Fqx 'status=COMPLETE' "$st_record"; then
     echo 'plant AA check=archive-failure RED row=FAIL log=MISSING record=COMPLETE'
   else echo 'plant AA check=archive-failure SILENT'; st_bad=1; fi
+  # (AB) A checkout whose HEAD is not origin/HEAD is UNRUNNABLE: stale-checkout.
+  st_reset; st_consumer parked 'eigenscript work.eigs'
+  printf 'parked\n' > "$st_eco/.ca_expected"
+  ( cd "$st_eco/parked" && git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm one &&
+    git update-ref refs/remotes/origin/main HEAD && git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main &&
+    git -c user.name=t -c user.email=t@t commit -q --allow-empty -m two ) >/dev/null 2>&1
+  st_rc=0; st_run || st_rc=$?
+  st_check AB stale-checkout 'row|parked|v0.43.0|UNRUNNABLE' "$st_record"
+  if ! grep -Fq 'stale-checkout' "$st_record" 2>/dev/null; then echo 'plant AB check=stale-checkout SILENT reason'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 35/35 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 36/36 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
