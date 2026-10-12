@@ -137,3 +137,26 @@ iteration, or a collector that quietly stops working).
   the same mutex. Snapshot under the lock, mutate outside it; before adding
   a lock around existing code, list every callee in the region that can
   reach `env_shared_lock` -- root envs are where it hides.
+
+- **Container elements are `EigsSlot` storage (#1665 arm D); read them only
+  through `src/container.h`, and know which getter owns what.** Every rule
+  below was bought by a real bug during the migration:
+  - `list_get_ref` / `dict_value_get_ref` return **NULL for a number** by
+    contract. Test `list_elem_type` / `slot_type` before dereferencing, and
+    never write `get_ref(...)->type == VAL_NUM` (always false). Ragged tensor
+    rows crashed `relu`/`gather` this way (B5), and the DMG in-place
+    register-write fast path silently never fired (B2, +38% Ir).
+  - A view (`list_get_view`, `slot_view`, `EIGS_VIEW`, `BUILTIN_*_VIEW`) is
+    **stack storage**: never return it, store it, or incref-and-keep it, and
+    a `BUILTIN_*_VIEW` compound literal dies at its enclosing block. A view in
+    a chunk constant pool was a stack-use-after-return (B3). `dispatch`
+    returned a numeric view out of its own frame, printing garbage and then
+    SIGSEGV. Anything retained comes from `list_get_owned`.
+  - `list_get_return` is for a builtin's **direct** argument children only:
+    `vm_borrow_scan` compensates direct children, and a grandchild must be
+    returned owned. `get_at` returned a grandchild string and use-after-freed
+    it (B3).
+  - Zero bits are the number 0.0, not a vacant slot. Every double→slot store
+    goes through `num_guard`, because the x86 default NaN equals
+    `SLOT_NULL_BITS`. Raw `*_values_storage` access is allowed only on bulk
+    alloc/grow/free lines (`tools/container_access_check.sh` enforces this).
