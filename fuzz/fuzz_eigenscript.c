@@ -60,6 +60,30 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     return 0;
 }
 
+
+/* Every per-state depth counter and the VM's stack must be back at rest when
+ * an input returns. The state lives across inputs, so a counter that an error
+ * path forgets to restore drifts input by input until a guard stops firing,
+ * and the crash lands on some LATER input that runs clean on its own (the
+ * first HF pilot, 2026-10-12: 29 crash artifacts, 0 reproducible). Aborting
+ * here makes the drifting input itself the artifact. */
+static void fuzz_check_invariants(void) {
+    struct { const char *name; long v; } c[] = {
+        {"try_depth", (long)g_try_depth}, {"unobserved_depth", (long)g_unobserved_depth},
+        {"parse_depth", (long)g_parse_depth}, {"obs_gate_depth", (long)g_obs_gate_depth},
+        {"tokenize_depth", (long)g_tokenize_depth}, {"vts_depth", (long)g_vts_depth},
+        {"json_depth", (long)g_json_depth}, {"native_call_depth", (long)g_native_call_depth},
+    };
+    for (size_t i = 0; i < sizeof c / sizeof c[0]; i++)
+        if (c[i].v != 0) { fprintf(stderr, "FUZZ INVARIANT: %s = %ld after input\n", c[i].name, c[i].v); abort(); }
+    if (eigs_current && eigs_current->vm) {
+        if (g_vm.frame_count != 0 || g_vm.sp != 0) {
+            fprintf(stderr, "FUZZ INVARIANT: vm frame_count = %d, sp = %d after input\n", g_vm.frame_count, g_vm.sp);
+            abort();
+        }
+    }
+}
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size == 0 || size > 65536) return 0;
 
@@ -128,5 +152,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     }
     free_tokenlist(&tl);
     free(source);
+    fuzz_check_invariants();
     return 0;
 }
