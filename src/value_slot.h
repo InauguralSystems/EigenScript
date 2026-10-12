@@ -71,11 +71,25 @@ static inline Value   *slot_as_ptr(EigsSlot s)    { return (Value*)(uintptr_t)(s
 /* Constructors */
 
 static inline EigsSlot slot_from_num(double d)       { EigsSlot s; SLOT_NUM_RAW(s) = d;                                              return s; }
-static inline EigsSlot slot_from_heap(Value *v)      { EigsSlot s; s.u = TAG_HEAP    | ((uint64_t)(uintptr_t)v & SLOT_PAYLOAD_MASK); return s; }
 static inline EigsSlot slot_null(void)               { EigsSlot s; s.u = SLOT_NULL_BITS;  return s; }
 static inline EigsSlot slot_true(void)               { EigsSlot s; s.u = SLOT_TRUE_BITS;  return s; }
 static inline EigsSlot slot_false(void)              { EigsSlot s; s.u = SLOT_FALSE_BITS; return s; }
 static inline EigsSlot slot_from_bool(int b)         { EigsSlot s; s.u = TAG_BOOL | (b ? 1ULL : 0ULL); return s; }
+
+/* The null and bool singletons are never heap-tagged. Their refcounts are not
+ * maintained (val_incref/val_decref skip them), so a TAG_HEAP slot holding one
+ * would lose a count at every slot_decref: `type of x` with x null, run 1.1M
+ * times, decremented the null singleton's 1000000 to zero and free()d a static
+ * (EigenLua's warmup pairs fuzz, 2026-10-11). Normalising here closes every
+ * caller at once — the env and stack lifts, the element stores, the task
+ * mailbox — instead of each remembering. */
+static inline EigsSlot slot_from_heap(Value *v) {
+    EigsSlot s;
+    if (__builtin_expect(!v || v->type == VAL_NULL, 0)) { s.u = SLOT_NULL_BITS; return s; }
+    if (__builtin_expect(v->type == VAL_BOOL, 0)) return slot_from_bool(v->data.boolean);
+    s.u = TAG_HEAP | ((uint64_t)(uintptr_t)v & SLOT_PAYLOAD_MASK);
+    return s;
+}
 
 /* Single-thread refcount gate (g_vm_multithreaded) is now provided as a
  * bridge macro by eigenscript.h, which is already included transitively
