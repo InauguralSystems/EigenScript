@@ -3020,6 +3020,13 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
     CallFrame *frame;
     uint8_t *ip;
     int current_line = 0;
+    /* An uncaught error leaves the dispatch loop wherever it was raised, so
+     * an `unobserved:` block it unwinds never runs OP_UNOBSERVED_END. A try
+     * handler restores the depth it saved (#871); the uncaught halt restores
+     * the depth at entry, or a REPL line or embedder eval that raised inside
+     * the block leaves every later one unobserved (fuzz invariant harness,
+     * 2026-10-12). */
+    int entry_unobserved_depth = g_unobserved_depth;
 
     if (resume) {
         /* Resume: the scheduler only ever resumes a task at the outermost
@@ -6544,6 +6551,7 @@ vm_error_halt:
         chunk_decref(f->chunk);   /* frame's ref */
         g_vm.frame_count--;
     }
+    g_unobserved_depth = entry_unobserved_depth;
     return make_null();
 
 vm_suspend_halt:
