@@ -7,7 +7,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WERROR_FLAGS_FILE="$HERE/tools/werror_flags.txt"
 . "$HERE/tools/read_werror_flags.sh" || exit 1
-EXPECTED=(DeslanStudio DMG dynamics eddy eigen-edit EigenGauntlet EigenMiniSat EigenRegex eigen-sheet iLambdaAi liferaft ouroboros phugoid polymethod tidelog Tidepool)
+EXPECTED=(DeslanStudio DMG dynamics eddy eigen-edit EigenGauntlet EigenLua EigenMiniSat EigenRegex eigen-sheet iLambdaAi liferaft ouroboros phugoid polymethod tidelog Tidepool)
 # These repositories pin EigenScript but have no release acceptance command.
 EXCLUDED=(EigenAttention EigenAttic tmp legibility-experiment awesome-eigenscript eigs-package-template homebrew-eigenscript EigenOS)
 # These four CI jobs have no devcontainer runCmd; their own test scripts are explicit.
