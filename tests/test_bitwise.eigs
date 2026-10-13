@@ -120,4 +120,30 @@ assert_eq of [bit_and of [bit_not of 0, 0xFFFFFFFF], 0xFFFFFFFF, "NOT of 0 maske
 crc_step is bit_xor of [bit_shr of [0xFFFFFFFF, 8], 0xEDB88320]
 assert_eq of [crc_step, (0xFFFFFFFF >> 8) ^ 0xEDB88320, "CRC step: builtin chain == infix chain"]
 
+# --- operands outside int64: defined, never a UB cast (libFuzzer run 5) ---
+# Out-of-range truncates to INT64_MIN — what the JIT's inline cvttsd2si
+# yields — so the VM, the bit_* builtins and the JIT agree. The loop runs
+# long enough to reach the JIT tier; every iteration must match.
+big is 1e30
+int64_min is 0 - 9223372036854775808
+assert_eq of [big | 0, int64_min, "OR: out-of-range operand is INT64_MIN"]
+assert_eq of [(0 - big) | 0, int64_min, "OR: negative out-of-range is INT64_MIN"]
+assert_eq of [big & 1, 0, "AND: INT64_MIN has bit 0 clear"]
+assert_eq of [1 << big, 1, "SHL: out-of-range count is INT64_MIN & 63 = 0"]
+assert_eq of [~big, 9223372036854775807, "NOT of out-of-range is INT64_MAX"]
+assert_eq of [bit_or of [big, 0], big | 0, "bit_or matches infix out of range"]
+assert_eq of [bit_not of big, ~big, "bit_not matches infix out of range"]
+assert_eq of [(0 - 1) << 1, 0 - 2, "SHL of a negative is defined (unsigned shift)"]
+assert_eq of [big << 1, 0, "SHL of out-of-range: INT64_MIN << 1 wraps to 0"]
+assert_eq of [bit_shl of [0 - 1, 1], (0 - 1) << 1, "bit_shl matches infix on a negative"]
+assert_eq of [bit_shl of [big, 1], big << 1, "bit_shl matches infix out of range"]
+oor_mismatch is 0
+oi is 0
+loop while oi < 3000:
+    r is (big + oi) ^ (oi | 0)
+    if r != (int64_min ^ oi):
+        oor_mismatch is oor_mismatch + 1
+    oi is oi + 1
+assert_eq of [oor_mismatch, 0, "hot-loop (JIT tier) agrees with the VM out of range"]
+
 test_summary of null

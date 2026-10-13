@@ -349,8 +349,8 @@ static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out) {
     Value *va = BUILTIN_LIST_VIEW(arg, 0);
     Value *vb = BUILTIN_LIST_VIEW(arg, 1);
     if (!va || va->type != VAL_NUM || !vb || vb->type != VAL_NUM) return 0;
-    *a_out = (int64_t)eigs_num_arg(va, __func__);
-    *b_out = (int64_t)eigs_num_arg(vb, __func__);
+    *a_out = num_to_i64_trunc(eigs_num_arg(va, __func__));
+    *b_out = num_to_i64_trunc(eigs_num_arg(vb, __func__));
     return 1;
 }
 
@@ -377,7 +377,7 @@ Value* builtin_bit_xor(Value *arg) {
 
 Value* builtin_bit_not(Value *arg) {
     if (!arg || arg->type != VAL_NUM) { rt_error(EK_TYPE, 0, "bit_not expects a number"); return make_null(); }
-    int64_t a = (int64_t)eigs_num_arg(arg, __func__);
+    int64_t a = num_to_i64_trunc(eigs_num_arg(arg, __func__));
     return make_num((double)(~a));
 }
 
@@ -385,7 +385,7 @@ Value* builtin_bit_shift_left(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "bit_shl");
     int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_shl expects [number, number]"); return make_null(); }
-    return make_num((double)(a << (b & 63)));
+    return make_num((double)(int64_t)((uint64_t)a << (b & 63)));  /* unsigned: no UB on negative a */
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
@@ -3856,6 +3856,17 @@ Value* builtin_concat(Value *arg) {
 /* range of n → [0, 1, ..., n-1]
  * range of [start, end] → [start, start+1, ..., end-1]
  * range of [start, end, step] → [start, start+step, ...] while < end (or > end if step < 0) */
+/* A bound outside int range was a UB cast (libFuzzer run 5). No such
+ * range could be materialized anyway, so it raises. */
+static int range_bound(double d, int *out) {
+    if (!(d >= (double)INT_MIN && d <= (double)INT_MAX)) {
+        rt_error(EK_VALUE, 0, "range: bound %g is outside the int range", d);
+        return 0;
+    }
+    *out = (int)d;
+    return 1;
+}
+
 Value* builtin_range(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "range");
     int start = 0, end = 0, step = 1;
@@ -3864,7 +3875,7 @@ Value* builtin_range(Value *arg) {
 
     if (arg->type == VAL_NUM) {
         /* range of n */
-        end = (int)eigs_num_arg(arg, __func__);
+        if (!range_bound(eigs_num_arg(arg, __func__), &end)) return make_list(0);
     } else if (arg->type == VAL_LIST) {
         int argc = arg->data.list.count;
         /* #497: every provided bound must be numeric. A non-number used to
@@ -3878,14 +3889,15 @@ Value* builtin_range(Value *arg) {
                 return make_list(0);
             }
         }
-        if (argc >= 1)
-            start = (int)eigs_list_num(arg, 0, __func__);
-        if (argc >= 2)
-            end = (int)eigs_list_num(arg, 1, __func__);
-        else
+        if (argc >= 1) {
+            if (!range_bound(eigs_list_num(arg, 0, __func__), &start)) return make_list(0);
+        }
+        if (argc >= 2) {
+            if (!range_bound(eigs_list_num(arg, 1, __func__), &end)) return make_list(0);
+        } else
             { end = start; start = 0; } /* single-element list: treat as range of n */
         if (argc >= 3) {
-            step = (int)eigs_list_num(arg, 2, __func__);
+            if (!range_bound(eigs_list_num(arg, 2, __func__), &step)) return make_list(0);
             /* The Euler-like update that feeds step can never produce
              * exactly zero — it trades the zero singularity for infinity.
              * This bound catches the infinity side: a step that would
@@ -3904,38 +3916,34 @@ Value* builtin_range(Value *arg) {
 
     /* Cap at 1M elements to prevent accidental OOM.
      * step is guaranteed non-zero by the Euler invariant bound above. */
-    int count;
+    /* int64: with int bounds near INT_MAX (`[0, 2147483647, 2]`, `[-2e9, 2e9]`)
+     * the span overflowed int, wrapped negative and became a silent []. */
+    int64_t count64;
     if (step > 0) {
-        count = (end - start + step - 1) / step;
+        count64 = ((int64_t)end - start + step - 1) / step;
     } else {
-        count = (start - end - step - 1) / (-step); // cppcheck-suppress zerodivcond
+        count64 = ((int64_t)start - end - step - 1) / (-(int64_t)step); // cppcheck-suppress zerodivcond
     }
-    if (count < 0) count = 0;
+    if (count64 < 0) count64 = 0;
     /* #498: the 1M cap used to size only the prealloc — the loop below still
      * ran to the original `end`, growing the list past the cap (unbounded
      * memory, OOM). Raise loudly instead of silently building a giant list. */
-    if (count > 1000000) {
+    if (count64 > 1000000) {
         rt_error(EK_LIMIT, 0,
-            "range: too many elements (%d, max 1000000)", count);
+            "range: too many elements (%lld, max 1000000)", (long long)count64);
         return make_list(0);
     }
+    int count = (int)count64;
     /* #292: range builds `count` fresh number Values — charge the sandbox budget
      * so a range-in-a-loop can't aggregate past it. */
     if (!sandbox_charge((size_t)count * (sizeof(Value) + sizeof(Value *)))) return make_list(0);
 
     Value *result = make_list(count);
-    if (step > 0) {
-        for (int i = start; i < end; i += step) {
-            Value *v = make_num((double)i);
-            list_append(result, v);
-            val_decref(v);
-        }
-    } else {
-        for (int i = start; i > end; i += step) {
-            Value *v = make_num((double)i);
-            list_append(result, v);
-            val_decref(v);
-        }
+    /* Index by k: `i += step` overflowed int near INT_MAX. */
+    for (int k = 0; k < count; k++) {
+        Value *v = make_num((double)((int64_t)start + (int64_t)k * step));
+        list_append(result, v);
+        val_decref(v);
     }
     return result;
 }

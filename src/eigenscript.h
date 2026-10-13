@@ -1902,6 +1902,16 @@ static inline unsigned char finite_num_to_byte(double x) {
     return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
 }
 
+/* Truncate a number to int64 for the bitwise operators. A plain cast is
+ * UB outside [-2^63, 2^63) (libFuzzer run 5). Out-of-range maps to
+ * INT64_MIN — exactly what x86 cvttsd2si returns, so the VM, the bit_*
+ * builtins and the JIT's inline cvttsd2si keep agreeing byte-for-byte. */
+static inline int64_t num_to_i64_trunc(double x) {
+    if (x >= -9223372036854775808.0 && x < 9223372036854775808.0)
+        return (int64_t)x;
+    return INT64_MIN;
+}
+
 static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {
     double x = buffer_read_num(buffer, index);
     if (g_has_error) return 0;
