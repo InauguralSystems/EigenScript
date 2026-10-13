@@ -7,9 +7,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WERROR_FLAGS_FILE="$HERE/tools/werror_flags.txt"
 . "$HERE/tools/read_werror_flags.sh" || exit 1
-EXPECTED=(DeslanStudio DMG dynamics eddy eigen-edit EigenGauntlet EigenLua EigenMiniSat EigenRegex eigen-sheet iLambdaAi liferaft ouroboros phugoid polymethod tidelog Tidepool)
+EXPECTED=(DeslanStudio DMG dynamics eddy eigen-edit EigenGauntlet EigenLua EigenMiniSat EigenRegex eigen-sheet liferaft ouroboros phugoid polymethod tidelog Tidepool)
 # These repositories pin EigenScript but have no release acceptance command.
-EXCLUDED=(EigenAttention EigenAttic tmp legibility-experiment awesome-eigenscript eigs-package-template homebrew-eigenscript EigenOS)
+EXCLUDED=(EigenAttention EigenAttic iLambdaAi tmp legibility-experiment awesome-eigenscript eigs-package-template homebrew-eigenscript EigenOS)
 # These four CI jobs have no devcontainer runCmd; their own test scripts are explicit.
 declared_cmd() {
   case "$1" in
@@ -381,8 +381,6 @@ unsupported_variant() {
 }
 # Shared by live rows and retained-log replay. Only status tokens at the start
 # of a line count; prose such as "0 skipped" or "ok: halted-skip" does not.
-# iLambdaAi tests/test_gates.sh declares one final gates: summary. Its skipped
-# count is a fallback when individual events are absent, never an added count.
 consumer_skip_check() {
   local name="$1" log="$2"
   if [ ! -f "$log" ] || [ ! -r "$log" ]; then
@@ -392,29 +390,11 @@ consumer_skip_check() {
     {
       line = tolower($0)
       if (line ~ /^[[:space:]]*skip([[:space:]:]|$)/) events++
-      if (consumer == "iLambdaAi" && line ~ /^[[:space:]]*gates:/) {
-        summaries++
-        if (line !~ /^[[:space:]]*gates: [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped, faults_run=[0-9]+[[:space:]]*$/) {
-          malformed = 1
-        } else {
-          sub(/^[[:space:]]*/, "", line)
-          split(line, fields, /[[:space:]]+/)
-          summary_skips = fields[6] + 0
-        }
-      }
     }
     END {
       count = events + 0
-      if (summary_skips > count) count = summary_skips
       reason = ""
-      if (consumer == "iLambdaAi") {
-        if (summaries == 0) reason = "missing-summary"
-        else if (summaries != 1) reason = "duplicate-summary"
-        else if (malformed) reason = "malformed-summary"
-        else if (events > 0 && events != summary_skips) reason = "summary-mismatch"
-      }
-      if (reason != "") reason = "skip-accounting:" reason
-      else if (count > 0) reason = "skips:" count
+      if (count > 0) reason = "skips:" count
       print count "|" reason
       exit (reason != "")
     }
@@ -1056,16 +1036,16 @@ CANDIDATE
   CA_MUTATE_TARGET="$st_server" CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 timeout 60 \
     bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --server "$st_server" > "$st_out" 2>&1 || st_rc=$?
   st_check W server-mutation 'prereq=candidate-mutated:eigenscript-server' "$st_record"
-  # (X) An indented lowercase event and its summary are one omitted branch.
-  st_reset; st_consumer iLambdaAi 'eigenscript good.eigs; printf "  skip: fixture omitted\ngates: 5 passed, 0 failed, 1 skipped, faults_run=2\n"'
-  printf 'iLambdaAi\n' > "$st_eco/.ca_expected"
+  # (X) An indented lowercase skip event is counted.
+  st_reset; st_consumer skipper 'eigenscript good.eigs; printf "  skip: fixture omitted\n"'
+  printf 'skipper\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   st_check X consumer-skips 'cand_calls=1|cand_ok=1|cand_fail=0|consumer_skips=1|selectors_overridden=none|prereq=skips:1' "$st_record"
-  # (Y) A zero-skipped summary and ordinary prose preserve an honest PASS.
-  st_reset; st_consumer iLambdaAi 'eigenscript good.eigs; printf "ok: fixture discusses skips\nSKIPPER is an identifier\ngates: 6 passed, 0 failed, 0 skipped, faults_run=3\n"'
-  printf 'iLambdaAi\n' > "$st_eco/.ca_expected"
+  # (Y) Prose that mentions skips preserves an honest PASS.
+  st_reset; st_consumer prose 'eigenscript good.eigs; printf "ok: fixture discusses skips\nSKIPPER is an identifier\n0 skipped\n"'
+  printf 'prose\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
-  if [ "$st_rc" -eq 0 ] && grep -Fq 'row|iLambdaAi|v0.43.0|PASS|0|' "$st_record" && grep -Fq 'cand_calls=1|cand_ok=1|cand_fail=0|consumer_skips=0|' "$st_record" && grep -Fqx 'VERDICT: PASS' "$st_record"; then
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'row|prose|v0.43.0|PASS|0|' "$st_record" && grep -Fq 'cand_calls=1|cand_ok=1|cand_fail=0|consumer_skips=0|' "$st_record" && grep -Fqx 'VERDICT: PASS' "$st_record"; then
     echo 'plant Y check=consumer-skip-clean GREEN consumer_skips=0 calls=1'
   else echo 'plant Y check=consumer-skip-clean SILENT'; st_bad=1; fi
   # (Z) Reusing CA_LOGS retains unrelated files while records name only their
