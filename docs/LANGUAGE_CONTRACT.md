@@ -227,9 +227,9 @@ in `builtins.c` / `vm.c`.
 `bit_not` / `bit_shl` / `bit_shr` builtins) operate on **64-bit** two's-complement
 integers. Every operand, the shift count included, must be an **exact integer in
 `[-2^63, 2^63)`**; a fractional operand (`1.5 | 0`, `1 << 0.5`) or one outside
-that range (`1e30 | 0`, `2^63 | 0`) raises a catchable `value` error ("number
+that range (`1e30 | 0`, `9223372036854775808 | 0`) raises a catchable `value` error ("number
 has no integer representation"). This is Lua 5.4's rule (reference manual
-§3.4.3); nothing is truncated or wrapped. `-2^63 | 0` is valid. A shift count
+§3.4.3); nothing is truncated or wrapped. `-9223372036854775808 | 0` is valid. A shift count
 that passes the check is masked to `[0,63]`, so large or negative shifts
 are defined, not UB (`1 << 64` == `1 << 0` == `1`; `1 << 100` == `1 << 36`). The
 infix operators and the `bit_*` builtins agree bit-for-bit on the same operands —
