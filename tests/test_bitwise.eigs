@@ -120,30 +120,176 @@ assert_eq of [bit_and of [bit_not of 0, 0xFFFFFFFF], 0xFFFFFFFF, "NOT of 0 maske
 crc_step is bit_xor of [bit_shr of [0xFFFFFFFF, 8], 0xEDB88320]
 assert_eq of [crc_step, (0xFFFFFFFF >> 8) ^ 0xEDB88320, "CRC step: builtin chain == infix chain"]
 
-# --- operands outside int64: defined, never a UB cast (libFuzzer run 5) ---
-# Out-of-range truncates to INT64_MIN — what the JIT's inline cvttsd2si
-# yields — so the VM, the bit_* builtins and the JIT agree. The loop runs
-# long enough to reach the JIT tier; every iteration must match.
+# --- #1740: an operand must be an EXACT int64 (Lua 5.4's rule) ---
+# A fractional operand, or one outside [-2^63, 2^63), has no integer
+# representation: the operation raises `value` (catchable), on every operand
+# including the shift count. (#1739 had mapped out-of-range to INT64_MIN.)
+define bw_raise(op, a, b) as:
+    local got is "no raise"
+    try:
+        if op == "&":
+            local r is a & b
+        elif op == "|":
+            local r is a | b
+        elif op == "^":
+            local r is a ^ b
+        elif op == "<<":
+            local r is a << b
+        elif op == ">>":
+            local r is a >> b
+        elif op == "~":
+            local r is ~a
+        elif op == "bit_and":
+            local r is bit_and of [a, b]
+        elif op == "bit_or":
+            local r is bit_or of [a, b]
+        elif op == "bit_xor":
+            local r is bit_xor of [a, b]
+        elif op == "bit_shl":
+            local r is bit_shl of [a, b]
+        elif op == "bit_shr":
+            local r is bit_shr of [a, b]
+        else:
+            local r is bit_not of a
+    catch e:
+        got is e.kind
+        if not (contains of [e.message, "'" + op + "'"]):
+            got is "message does not name the operator: " + e.message
+        elif not (contains of [e.message, "has no integer representation"]):
+            got is "wrong message: " + e.message
+    return got
+
 big is 1e30
-int64_min is 0 - 9223372036854775808
-assert_eq of [big | 0, int64_min, "OR: out-of-range operand is INT64_MIN"]
-assert_eq of [(0 - big) | 0, int64_min, "OR: negative out-of-range is INT64_MIN"]
-assert_eq of [big & 1, 0, "AND: INT64_MIN has bit 0 clear"]
-assert_eq of [1 << big, 1, "SHL: out-of-range count is INT64_MIN & 63 = 0"]
-assert_eq of [~big, 9223372036854775807, "NOT of out-of-range is INT64_MAX"]
-assert_eq of [bit_or of [big, 0], big | 0, "bit_or matches infix out of range"]
-assert_eq of [bit_not of big, ~big, "bit_not matches infix out of range"]
+assert_eq of [bw_raise of ["|", 1.5, 0], "value", "1.5 | 0 raises value"]
+assert_eq of [bw_raise of ["<<", 0.5, 1], "value", "0.5 << 1 raises value"]
+assert_eq of [bw_raise of ["<<", 1, 0.5], "value", "1 << 0.5 raises value (shift count)"]
+assert_eq of [bw_raise of [">>", 8, 0.5], "value", "8 >> 0.5 raises value (shift count)"]
+assert_eq of [bw_raise of ["<<", 1, big], "value", "1 << 1e30 raises value (count out of range)"]
+assert_eq of [bw_raise of ["&", 1, 0.5], "value", "1 & 0.5 raises value (right operand)"]
+assert_eq of [bw_raise of ["^", 1.5, 1], "value", "1.5 ^ 1 raises value"]
+assert_eq of [bw_raise of ["|", big, 0], "value", "1e30 | 0 raises value"]
+assert_eq of [bw_raise of ["|", 0 - big, 0], "value", "-1e30 | 0 raises value"]
+assert_eq of [bw_raise of ["|", 9223372036854775808, 0], "value", "2^63 | 0 raises value"]
+assert_eq of [bw_raise of ["&", -1e19, 1], "value", "-1e19 & 1 raises value"]
+assert_eq of [bw_raise of ["~", 0.5, 0], "value", "~0.5 raises value"]
+assert_eq of [bw_raise of ["~", big, 0], "value", "~1e30 raises value"]
+assert_eq of [bw_raise of ["bit_and", 1.5, 1], "value", "bit_and of [1.5, 1] raises value"]
+assert_eq of [bw_raise of ["bit_or", 1, big], "value", "bit_or of [1, 1e30] raises value"]
+assert_eq of [bw_raise of ["bit_xor", 0.5, 0], "value", "bit_xor of [0.5, 0] raises value"]
+assert_eq of [bw_raise of ["bit_shl", 1, 0.5], "value", "bit_shl of [1, 0.5] raises value (count)"]
+assert_eq of [bw_raise of ["bit_shr", 1, big], "value", "bit_shr of [1, 1e30] raises value (count)"]
+assert_eq of [bw_raise of ["bit_not", 1.5, 0], "value", "bit_not of 1.5 raises value"]
+assert_eq of [bw_raise of ["bit_not", 9223372036854775808, 0], "value", "bit_not of 2^63 raises value"]
+# Exact integers at the edges stay valid, unchanged from #1739.
+int64_min is -9223372036854775808
+assert_eq of [bw_raise of ["|", int64_min, 0], "no raise", "-2^63 | 0 is valid"]
+assert_eq of [int64_min | 0, int64_min, "-2^63 | 0 returns itself"]
+assert_eq of [bit_or of [int64_min, 0], int64_min, "bit_or of [-2^63, 0] returns itself"]
+assert_eq of [9223372036854774784 | 0, 9223372036854774784, "largest double below 2^63 is valid"]
+assert_eq of [~int64_min, 9223372036854775807, "~(-2^63) is INT64_MAX"]
+assert_eq of [(0 - 0) | 0, 0, "zero is valid"]
 assert_eq of [(0 - 1) << 1, 0 - 2, "SHL of a negative is defined (unsigned shift)"]
-assert_eq of [big << 1, 0, "SHL of out-of-range: INT64_MIN << 1 wraps to 0"]
 assert_eq of [bit_shl of [0 - 1, 1], (0 - 1) << 1, "bit_shl matches infix on a negative"]
-assert_eq of [bit_shl of [big, 1], big << 1, "bit_shl matches infix out of range"]
-oor_mismatch is 0
-oi is 0
-loop while oi < 3000:
-    r is (big + oi) ^ (oi | 0)
-    if r != (int64_min ^ oi):
-        oor_mismatch is oor_mismatch + 1
-    oi is oi + 1
-assert_eq of [oor_mismatch, 0, "hot-loop (JIT tier) agrees with the VM out of range"]
+assert_eq of [1 << (0 - 1), int64_min, "a negative exact count is masked & 63"]
+
+# --- JIT tier: the native path must raise exactly where the VM does ---
+# Each callee is called > EIGS_JIT_ENTRY_THRESHOLD (50) times with integers
+# first, so its thunk exists before a non-integer operand arrives; the OSR
+# loop runs past EIGS_JIT_OSR_THRESHOLD (5000) back-edges before its bad
+# iteration. tools/jit_diff.sh runs this file JIT-off, default and forced OSR.
+define hot_or(a, b) as:
+    return a | b
+define hot_shl(a, b) as:
+    return a << b
+define hot_not(a) as:
+    return ~a
+define hot_count(f, n) as:
+    local raised is 0
+    local sum is 0
+    local k is 0
+    loop while k < n:
+        local a is k
+        local b is 3
+        if k % 7 == 6:
+            a is k + 0.5
+        if k % 11 == 10:
+            b is 0.25
+        if k % 13 == 12:
+            a is 1e30
+        try:
+            if f == "or":
+                sum is sum + (hot_or of [a, b])
+            elif f == "shl":
+                sum is sum + (hot_shl of [a, b])
+            else:
+                sum is sum + (hot_not of a)
+        catch e:
+            if e.kind == "value":
+                raised is raised + 1
+        k is k + 1
+    return [raised, sum]
+# The oracle: the same counts from the bit_* builtins (C, never JIT-emitted).
+define oracle_count(f, n) as:
+    local raised is 0
+    local sum is 0
+    local k is 0
+    loop while k < n:
+        local a is k
+        local b is 3
+        if k % 7 == 6:
+            a is k + 0.5
+        if k % 11 == 10:
+            b is 0.25
+        if k % 13 == 12:
+            a is 1e30
+        try:
+            if f == "or":
+                sum is sum + (bit_or of [a, b])
+            elif f == "shl":
+                sum is sum + (bit_shl of [a, b])
+            else:
+                sum is sum + (bit_not of a)
+        catch e:
+            if e.kind == "value":
+                raised is raised + 1
+        k is k + 1
+    return [raised, sum]
+for f in ["or", "shl", "not"]:
+    hot is hot_count of [f, 3000]
+    want is oracle_count of [f, 3000]
+    assert_true of [hot[0] > 0, f"hot {f}: some operands raised"]
+    assert_eq of [hot[0], want[0], f"hot {f}: raise count equals the builtin oracle"]
+    assert_eq of [hot[1], want[1], f"hot {f}: result sum equals the builtin oracle"]
+
+define osr_loop(n, bad_at) as:
+    local i is 0
+    local acc is 0
+    local v is 0
+    try:
+        loop while i < n:
+            v is i
+            if i == bad_at:
+                v is i + 0.5
+            acc is (acc ^ (v << 1)) & 0xFFFFFF
+            acc is acc | (v & 3)
+            i is i + 1
+    catch e:
+        return [i, acc, e.kind]
+    return [i, acc, "none"]
+define osr_oracle(n) as:
+    local i is 0
+    local acc is 0
+    loop while i < n:
+        acc is bit_and of [bit_xor of [acc, bit_shl of [i, 1]], 0xFFFFFF]
+        acc is bit_or of [acc, bit_and of [i, 3]]
+        i is i + 1
+    return acc
+osr is osr_loop of [9000, 8000]
+assert_eq of [osr[0], 8000, "OSR loop raised at the fractional iteration"]
+assert_eq of [osr[2], "value", "OSR loop raised value"]
+assert_eq of [osr[1], osr_oracle of 8000, "OSR loop state at the raise equals the builtin oracle"]
+osr_ok is osr_loop of [9000, 0 - 1]
+assert_eq of [osr_ok[0], 9000, "OSR loop with exact integers completes"]
+assert_eq of [osr_ok[1], osr_oracle of 9000, "OSR loop with exact integers equals the builtin oracle"]
 
 test_summary of null

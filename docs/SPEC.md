@@ -242,7 +242,9 @@ consequences are contracts you can rely on:
 - **Integer exactness ends at 2^53.** Whole numbers up to `9007199254740992`
   are exact; past that the gaps between representable values exceed 1, so
   `+ 1` can be invisible. Keep integer identifiers, counters, and money-in-cents
-  below 2^53, or use the bitwise seam below for wider exact integer work.
+  below 2^53, or use the bitwise seam below for wider exact integer work
+  (its operands must be exact integers below 2^63 in magnitude; past 2^53 only
+  the representable ones qualify).
 - **Finite by construction — no `NaN`, no `Infinity` ever reach your program.**
   Overflow saturates at `±1e308` instead of becoming `Infinity`. Every
   *defined* operation returns a usable finite number; an *undefined* one —
@@ -336,7 +338,9 @@ consequences are contracts you can rely on:
   converts to NUL, so elements after that terminator are not inspected.
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
   `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
-  `1 << 40` is exact where an f64 mantissa alone would not help. This is the
+  `1 << 40` is exact where an f64 mantissa alone would not help. An operand that
+  is not an exact integer in `[-2^63, 2^63)` raises a `value` error (see
+  [Bitwise operators](#bitwise-operators)). This is the
   seam for checksums, hashing, and byte protocols (see docs/BUILTINS.md).
 
 ```eigenscript
@@ -593,8 +597,8 @@ cannot compare bool and num with '=='
 
 ## Bitwise operators
 
-`& | ^ << >> ~` operate on the integer part of nums as 64-bit
-two's-complement values. Note `^` is XOR, not exponentiation. The
+`& | ^ << >> ~` operate on nums as 64-bit two's-complement integers.
+Note `^` is XOR, not exponentiation. The
 `bit_and`/`bit_or`/`bit_xor`/`bit_not`/`bit_shl`/`bit_shr` builtins
 are the SAME operation in call form — one semantics, two spellings —
 so the full unsigned-32-bit range (device registers, CRC polynomials)
@@ -621,6 +625,36 @@ print of (bit_shl of [1, 32])
 3988292384
 3988292384
 4294967296
+```
+
+Every operand, the shift count included, must be an **exact integer** in
+`[-2^63, 2^63)`, Lua 5.4's rule. A fractional operand or one outside int64
+has no integer representation, and the operation raises a catchable
+`value` error instead of truncating. A valid shift count is then masked
+to `[0, 63]`:
+
+```eigenscript
+print of ((-9223372036854775808 | 0) == -9223372036854775808)
+print of (1 << 64)
+try:
+    print of (1.5 | 0)
+catch e:
+    print of e.kind
+try:
+    print of (1 << 0.5)
+catch e:
+    print of e.message
+try:
+    print of (bit_and of [1e30, 1])
+catch e:
+    print of e.kind
+```
+```output
+true
+1
+value
+'<<': number 0.5 has no integer representation
+value
 ```
 
 ## Conditionals

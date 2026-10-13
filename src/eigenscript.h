@@ -1902,15 +1902,19 @@ static inline unsigned char finite_num_to_byte(double x) {
     return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
 }
 
-/* Truncate a number to int64 for the bitwise operators. A plain cast is
- * UB outside [-2^63, 2^63) (libFuzzer run 5). Out-of-range maps to
- * INT64_MIN — exactly what x86 cvttsd2si returns, so the VM, the bit_*
- * builtins and the JIT's inline cvttsd2si keep agreeing byte-for-byte. */
-static inline int64_t num_to_i64_trunc(double x) {
-    if (x >= -9223372036854775808.0 && x < 9223372036854775808.0)
-        return (int64_t)x;
-    return INT64_MIN;
+/* #1740: a bitwise operand converts to int64 only if it is an EXACT integer
+ * in [-2^63, 2^63) -- Lua 5.4's rule (manual 3.4.3). Returns 0 for a
+ * fractional or out-of-range number; the caller raises `value`. Range test
+ * first: the cast is UB outside int64. Inside it, a fractional x is below
+ * 2^52, so (double)(int64_t)x is exact and differs from x. */
+static inline int num_to_i64_exact(double x, int64_t *out) {
+    if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) return 0;
+    int64_t i = (int64_t)x;
+    if ((double)i != x) return 0;
+    *out = i;
+    return 1;
 }
+#define EIGS_NO_INT_REP_FMT "'%s': number %.17g has no integer representation"
 
 static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {
     double x = buffer_read_num(buffer, index);

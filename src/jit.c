@@ -1428,6 +1428,26 @@ static uint8_t *emit_cvttsd2si_xmm0_rax(uint8_t *w) {
 static uint8_t *emit_cvttsd2si_xmm1_rdx(uint8_t *w) {
     *w++ = 0xF2; *w++ = 0x48; *w++ = 0x0F; *w++ = 0x2C; *w++ = 0xD1; return w;
 }
+/* #1740 exactness round-trip for the bitwise arms: cvtsi2sd the truncated
+ * int64 back into %xmm2 and ucomisd it against the source operand. Unequal
+ * (fractional, or out of range: cvttsd2si gave INT64_MIN) or unordered → the
+ * caller jumps to a bail slot and the VM re-executes the op and raises. */
+/* cvtsi2sd %rax, %xmm2  (5 bytes: F2 48 0F 2A D0) */
+static uint8_t *emit_cvtsi2sd_rax_xmm2(uint8_t *w) {
+    *w++ = 0xF2; *w++ = 0x48; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xD0; return w;
+}
+/* cvtsi2sd %rdx, %xmm2  (5 bytes: F2 48 0F 2A D2) */
+static uint8_t *emit_cvtsi2sd_rdx_xmm2(uint8_t *w) {
+    *w++ = 0xF2; *w++ = 0x48; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xD2; return w;
+}
+/* ucomisd %xmm0, %xmm2  (4 bytes: 66 0F 2E D0) */
+static uint8_t *emit_ucomisd_xmm0_xmm2(uint8_t *w) {
+    *w++ = 0x66; *w++ = 0x0F; *w++ = 0x2E; *w++ = 0xD0; return w;
+}
+/* ucomisd %xmm1, %xmm2  (4 bytes: 66 0F 2E D1) */
+static uint8_t *emit_ucomisd_xmm1_xmm2(uint8_t *w) {
+    *w++ = 0x66; *w++ = 0x0F; *w++ = 0x2E; *w++ = 0xD1; return w;
+}
 /* cvtsi2sd %rdx, %xmm0  (5 bytes: F2 48 0F 2A C2) — int64→double. */
 static uint8_t *emit_cvtsi2sd_rdx_xmm0(uint8_t *w) {
     *w++ = 0xF2; *w++ = 0x48; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC2; return w;
@@ -3696,10 +3716,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         } else if (op == OP_BAND || op == OP_BOR || op == OP_BXOR ||
                    op == OP_SHL || op == OP_SHR) {
             /* Bitwise INT_BINOP family: cast both doubles to int64,
-             * apply the integer op, cast back. No overflow check —
-             * the VM doesn't apply num_guard here either, so we match
-             * its truncation semantics. Two bail slots for type check. */
-            if (bail_count + 2 > (int)(sizeof bail_patches /
+             * apply the integer op, cast back. Two bail slots for the
+             * type check, four for the #1740 exactness check: an
+             * operand that is not an exact int64 bails, and the VM
+             * re-executes the op and raises `value`. */
+            if (bail_count + 6 > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3715,7 +3736,15 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_movq_rax_xmm0(w);
             w = emit_movq_rdx_xmm1(w);
             w = emit_cvttsd2si_xmm0_rax(w);
+            w = emit_cvtsi2sd_rax_xmm2(w);
+            w = emit_ucomisd_xmm0_xmm2(w);
+            w = emit_jp_rel32(w, &bail_patches[bail_count++]);
+            w = emit_jne_rel32(w, &bail_patches[bail_count++]);
             w = emit_cvttsd2si_xmm1_rdx(w);
+            w = emit_cvtsi2sd_rdx_xmm2(w);
+            w = emit_ucomisd_xmm1_xmm2(w);
+            w = emit_jp_rel32(w, &bail_patches[bail_count++]);
+            w = emit_jne_rel32(w, &bail_patches[bail_count++]);
             /* Apply op: rdx = rdx OP rax. For SHL/SHR the shift count
              * must be in %cl, but %rcx holds our sp cache — save it,
              * move rax→rcx, shift, restore rcx. */
@@ -3740,8 +3769,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             i += 1;
         } else if (op == OP_NEG || op == OP_NOT || op == OP_BNOT) {
             /* Unary: load TOS, type-check, compute in place, store
-             * back at TOS. One bail slot, sp unchanged. */
-            if (bail_count + 1 > (int)(sizeof bail_patches /
+             * back at TOS. One bail slot (BNOT: three, #1740), sp
+             * unchanged. */
+            if (bail_count + (op == OP_BNOT ? 3 : 1) > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3787,9 +3817,14 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                     if (ab8) { JIT_BAIL_AND_RETURN(); }
                 }
             } else { /* OP_BNOT */
-                /* (double)(~(int64_t)d): cvttsd2si, not, cvtsi2sd back. */
+                /* (double)(~(int64_t)d): cvttsd2si, exactness check
+                 * (#1740: bail so the VM raises), not, cvtsi2sd back. */
                 w = emit_movq_rax_xmm0(w);
                 w = emit_cvttsd2si_xmm0_rax(w);
+                w = emit_cvtsi2sd_rax_xmm2(w);
+                w = emit_ucomisd_xmm0_xmm2(w);
+                w = emit_jp_rel32(w, &bail_patches[bail_count++]);
+                w = emit_jne_rel32(w, &bail_patches[bail_count++]);
                 w = emit_not_rax(w);
                 w = emit_cvtsi2sd_rax_xmm0(w);
                 w = emit_movq_xmm0_rax(w);

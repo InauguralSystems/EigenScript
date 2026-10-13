@@ -344,54 +344,70 @@ Value* builtin_text_builder_to_string(Value *arg) {
  * `bit_and of [0xEDB88320, x]` returned garbage (found by the CRC-32
  * stdlib module, the first consumer needing the full unsigned-32
  * range). Shift counts are masked to 0..63 like the hardware would. */
-static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out) {
+/* #1740: an operand that is not an exact int64 raises `value` (Lua 5.4's
+ * rule, the same as the infix operators). Returns 0 after raising. */
+static int bit_int(double x, int64_t *out, const char *name) {
+    if (num_to_i64_exact(x, out)) return 1;
+    rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, name, x);
+    return 0;
+}
+
+/* 1 = both operands converted; 0 = wrong shape (caller raises `type`);
+ * -1 = a non-integer operand, `value` already raised. */
+static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out, const char *name) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return 0;
     Value *va = BUILTIN_LIST_VIEW(arg, 0);
     Value *vb = BUILTIN_LIST_VIEW(arg, 1);
     if (!va || va->type != VAL_NUM || !vb || vb->type != VAL_NUM) return 0;
-    *a_out = num_to_i64_trunc(eigs_num_arg(va, __func__));
-    *b_out = num_to_i64_trunc(eigs_num_arg(vb, __func__));
+    if (!bit_int(eigs_num_arg(va, __func__), a_out, name) ||
+        !bit_int(eigs_num_arg(vb, __func__), b_out, name)) return -1;
     return 1;
 }
 
 Value* builtin_bit_and(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "bit_and");
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_and expects [number, number]"); return make_null(); }
+    int ok = bit_pair(arg, &a, &b, "bit_and");
+    if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_and expects [number, number]"); return make_null(); }
     return make_num((double)(a & b));
 }
 
 Value* builtin_bit_or(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "bit_or");
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_or expects [number, number]"); return make_null(); }
+    int ok = bit_pair(arg, &a, &b, "bit_or");
+    if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_or expects [number, number]"); return make_null(); }
     return make_num((double)(a | b));
 }
 
 Value* builtin_bit_xor(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "bit_xor");
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_xor expects [number, number]"); return make_null(); }
+    int ok = bit_pair(arg, &a, &b, "bit_xor");
+    if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_xor expects [number, number]"); return make_null(); }
     return make_num((double)(a ^ b));
 }
 
 Value* builtin_bit_not(Value *arg) {
     if (!arg || arg->type != VAL_NUM) { rt_error(EK_TYPE, 0, "bit_not expects a number"); return make_null(); }
-    int64_t a = num_to_i64_trunc(eigs_num_arg(arg, __func__));
+    int64_t a;
+    if (!bit_int(eigs_num_arg(arg, __func__), &a, "bit_not")) return make_null();
     return make_num((double)(~a));
 }
 
 Value* builtin_bit_shift_left(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "bit_shl");
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_shl expects [number, number]"); return make_null(); }
+    int ok = bit_pair(arg, &a, &b, "bit_shl");
+    if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_shl expects [number, number]"); return make_null(); }
     return make_num((double)(int64_t)((uint64_t)a << (b & 63)));  /* unsigned: no UB on negative a */
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "bit_shr");
     int64_t a, b;
-    if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_shr expects [number, number]"); return make_null(); }
+    int ok = bit_pair(arg, &a, &b, "bit_shr");
+    if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_shr expects [number, number]"); return make_null(); }
     /* Arithmetic shift, like the infix >> on int64 (negative operands
      * keep their sign); mask a non-negative operand first for a
      * logical u32 shift. */
