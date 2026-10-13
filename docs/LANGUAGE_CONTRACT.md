@@ -225,8 +225,12 @@ in `builtins.c` / `vm.c`.
 
 **Promise:** Bitwise operators (and the `bit_and` / `bit_or` / `bit_xor` /
 `bit_not` / `bit_shl` / `bit_shr` builtins) operate on **64-bit** two's-complement
-integers; operands are truncated toward zero to `int64` (exact for magnitudes
-below 2^63). Shift amounts are masked to `[0,63]`, so large or negative shifts
+integers. Every operand, the shift count included, must be an **exact integer in
+`[-2^63, 2^63)`**; a fractional operand (`1.5 | 0`, `1 << 0.5`) or one outside
+that range (`1e30 | 0`, `9223372036854775808 | 0`) raises a catchable `value` error ("number
+has no integer representation"). This is Lua 5.4's rule (reference manual
+§3.4.3); nothing is truncated or wrapped. `-9223372036854775808 | 0` is valid. A shift count
+that passes the check is masked to `[0,63]`, so large or negative shifts
 are defined, not UB (`1 << 64` == `1 << 0` == `1`; `1 << 100` == `1 << 36`). The
 infix operators and the `bit_*` builtins agree bit-for-bit on the same operands —
 they were once a divergent `int32` implementation (`0xEDB88320`, CRC-32's
@@ -236,8 +240,10 @@ the arithmetic operators use; it makes the **Errors** promise ("type-mismatched
 operator … raises") hold for *every* operator with no exceptions.
 
 **Status:** Enforced — `tests/test_bitwise.eigs` (builtin == infix parity across
-the high-bit range and out-of-range shift counts), `INT_BINOP_R` / `CASE(BNOT)`
-in `vm.c`, `bit_*` builtins in `builtins.c`.
+the high-bit range and out-of-range shift counts; a `value` raise for every
+non-integer operand form, in the VM, the builtins and JIT-compiled hot loops),
+`num_to_i64_exact` in `eigenscript.h`, `INT_BINOP_R` / `CASE(BNOT)` in `vm.c`,
+`bit_*` builtins in `builtins.c`, and the exactness bail in `jit.c`'s bitwise arms.
 
 ## Truthiness
 

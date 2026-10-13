@@ -3448,7 +3448,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH();
     }
 
-/* RHS is the (possibly transformed) right operand expression. For `& | ^`
+/* #1740: both operands must be exact integers in int64 (Lua 5.4's rule);
+ * a fractional or out-of-range one raises `value` (see num_to_i64_exact).
+ * RHS is the (possibly transformed) right operand _bi. For `& | ^`
  * it is the plain int64 operand; for the shifts it is masked to [0,63] so a
  * large or negative shift count is defined (mod-64), never C UB — the same
  * `& 63` the bit_shl/bit_shr builtins apply, honoring the LANGUAGE_CONTRACT
@@ -3460,7 +3462,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
         double _ad, _bd; \
         if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) { \
-            double _r = (double)(INT_OP_##NAME(num_to_i64_trunc(_ad), (RHS))); \
+            int64_t _ai, _bi; \
+            if (__builtin_expect(!num_to_i64_exact(_ad, &_ai) || \
+                                 !num_to_i64_exact(_bd, &_bi), 0)) { \
+                slot_decref(_as); slot_decref(_bs); \
+                rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, OPNAME, \
+                    num_to_i64_exact(_ad, &_ai) ? _bd : _ad); \
+                g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
+                g_vm.sp--; \
+                DISPATCH(); \
+            } \
+            double _r = (double)(INT_OP_##NAME(_ai, (RHS))); \
             if (slot_is_ptr(_as)) { \
                 Value *_a = slot_as_ptr(_as); \
                 if (NUM_REUSE(_a)) { VAL_NUM_RAW(_a) = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); } \
@@ -3488,8 +3500,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH(); \
     }
 
-/* SHL shifts unsigned: `<<` on a negative int64 is UB, and an out-of-range
- * operand is INT64_MIN. Same bits as the JIT's `shl`. */
+/* SHL shifts unsigned: `<<` on a negative int64 is UB. Same bits as the
+ * JIT's `shl`. */
 #define INT_OP_BAND(a, b) ((a) & (b))
 #define INT_OP_BOR(a, b)  ((a) | (b))
 #define INT_OP_BXOR(a, b) ((a) ^ (b))
@@ -3497,13 +3509,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 #define INT_OP_SHR(a, b)  ((a) >> (b))
 
 /* Non-shift bitwise ops: RHS is the plain int64 operand. */
-#define INT_BINOP(NAME, OP, OPNAME) INT_BINOP_R(NAME, OP, OPNAME, num_to_i64_trunc(_bd))
+#define INT_BINOP(NAME, OP, OPNAME) INT_BINOP_R(NAME, OP, OPNAME, _bi)
 
     INT_BINOP(BAND, &, "&")
     INT_BINOP(BOR, |, "|")
     INT_BINOP(BXOR, ^, "^")
-    INT_BINOP_R(SHL, <<, "<<", (num_to_i64_trunc(_bd) & 63))
-    INT_BINOP_R(SHR, >>, ">>", (num_to_i64_trunc(_bd) & 63))
+    INT_BINOP_R(SHL, <<, "<<", (_bi & 63))
+    INT_BINOP_R(SHR, >>, ">>", (_bi & 63))
 
     /* ---- Unary ---- */
 
@@ -3537,7 +3549,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
         double d;
         if (__builtin_expect(slot_as_double(s, &d), 1)) {
-            double r = (double)(~num_to_i64_trunc(d));
+            int64_t i;
+            if (__builtin_expect(!num_to_i64_exact(d, &i), 0)) {   /* #1740 */
+                slot_decref(s);
+                rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, "~", d);
+                g_vm.stack[g_vm.sp - 1] = slot_from_num(0.0);
+                DISPATCH();
+            }
+            double r = (double)(~i);
             if (slot_is_ptr(s)) {
                 Value *v = slot_as_ptr(s);
                 if (NUM_REUSE(v)) { VAL_NUM_RAW(v) = r; DISPATCH(); }

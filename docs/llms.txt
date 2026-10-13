@@ -210,6 +210,8 @@ sqrt(2) = 1.414213562373095
   (in place) or a comprehension — `xs + ys` is a runtime error.
 - Numbers are f64 and finite by construction: overflow saturates at ±1e308.
   Integer bit ops are `bit_and`/`&` etc. on int64; exactness ends at 2^53.
+  A bit-op operand that is not an exact integer (`1.5 | 0`, `1e30 & 1`)
+  raises a `value` error; it is never truncated.
   Strict mode is the DEFAULT: out-of-domain math (`sqrt of -1`), a NaN
   result, a wrong-typed builtin argument (`abs of "x"`) and a malformed
   `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run
