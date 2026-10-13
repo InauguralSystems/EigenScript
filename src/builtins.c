@@ -385,7 +385,7 @@ Value* builtin_bit_shift_left(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "bit_shl");
     int64_t a, b;
     if (!bit_pair(arg, &a, &b)) { rt_error(EK_TYPE, 0, "bit_shl expects [number, number]"); return make_null(); }
-    return make_num((double)(a << (b & 63)));
+    return make_num((double)(int64_t)((uint64_t)a << (b & 63)));  /* unsigned: no UB on negative a */
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
@@ -3916,38 +3916,34 @@ Value* builtin_range(Value *arg) {
 
     /* Cap at 1M elements to prevent accidental OOM.
      * step is guaranteed non-zero by the Euler invariant bound above. */
-    int count;
+    /* int64: with int bounds near INT_MAX (`[0, 2147483647, 2]`, `[-2e9, 2e9]`)
+     * the span overflowed int, wrapped negative and became a silent []. */
+    int64_t count64;
     if (step > 0) {
-        count = (end - start + step - 1) / step;
+        count64 = ((int64_t)end - start + step - 1) / step;
     } else {
-        count = (start - end - step - 1) / (-step); // cppcheck-suppress zerodivcond
+        count64 = ((int64_t)start - end - step - 1) / (-(int64_t)step); // cppcheck-suppress zerodivcond
     }
-    if (count < 0) count = 0;
+    if (count64 < 0) count64 = 0;
     /* #498: the 1M cap used to size only the prealloc — the loop below still
      * ran to the original `end`, growing the list past the cap (unbounded
      * memory, OOM). Raise loudly instead of silently building a giant list. */
-    if (count > 1000000) {
+    if (count64 > 1000000) {
         rt_error(EK_LIMIT, 0,
-            "range: too many elements (%d, max 1000000)", count);
+            "range: too many elements (%lld, max 1000000)", (long long)count64);
         return make_list(0);
     }
+    int count = (int)count64;
     /* #292: range builds `count` fresh number Values — charge the sandbox budget
      * so a range-in-a-loop can't aggregate past it. */
     if (!sandbox_charge((size_t)count * (sizeof(Value) + sizeof(Value *)))) return make_list(0);
 
     Value *result = make_list(count);
-    if (step > 0) {
-        for (int i = start; i < end; i += step) {
-            Value *v = make_num((double)i);
-            list_append(result, v);
-            val_decref(v);
-        }
-    } else {
-        for (int i = start; i > end; i += step) {
-            Value *v = make_num((double)i);
-            list_append(result, v);
-            val_decref(v);
-        }
+    /* Index by k: `i += step` overflowed int near INT_MAX. */
+    for (int k = 0; k < count; k++) {
+        Value *v = make_num((double)((int64_t)start + (int64_t)k * step));
+        list_append(result, v);
+        val_decref(v);
     }
     return result;
 }

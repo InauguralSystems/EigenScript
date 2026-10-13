@@ -133,6 +133,10 @@ assert_eq of [1 << big, 1, "SHL: out-of-range count is INT64_MIN & 63 = 0"]
 assert_eq of [~big, 9223372036854775807, "NOT of out-of-range is INT64_MAX"]
 assert_eq of [bit_or of [big, 0], big | 0, "bit_or matches infix out of range"]
 assert_eq of [bit_not of big, ~big, "bit_not matches infix out of range"]
+assert_eq of [(0 - 1) << 1, 0 - 2, "SHL of a negative is defined (unsigned shift)"]
+assert_eq of [big << 1, 0, "SHL of out-of-range: INT64_MIN << 1 wraps to 0"]
+assert_eq of [bit_shl of [0 - 1, 1], (0 - 1) << 1, "bit_shl matches infix on a negative"]
+assert_eq of [bit_shl of [big, 1], big << 1, "bit_shl matches infix out of range"]
 oor_mismatch is 0
 oi is 0
 loop while oi < 3000:

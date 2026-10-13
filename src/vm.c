@@ -3460,7 +3460,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
         double _ad, _bd; \
         if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) { \
-            double _r = (double)(num_to_i64_trunc(_ad) OP (RHS)); \
+            double _r = (double)(INT_OP_##NAME(num_to_i64_trunc(_ad), (RHS))); \
             if (slot_is_ptr(_as)) { \
                 Value *_a = slot_as_ptr(_as); \
                 if (NUM_REUSE(_a)) { VAL_NUM_RAW(_a) = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); } \
@@ -3487,6 +3487,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         g_vm.sp--; \
         DISPATCH(); \
     }
+
+/* SHL shifts unsigned: `<<` on a negative int64 is UB, and an out-of-range
+ * operand is INT64_MIN. Same bits as the JIT's `shl`. */
+#define INT_OP_BAND(a, b) ((a) & (b))
+#define INT_OP_BOR(a, b)  ((a) | (b))
+#define INT_OP_BXOR(a, b) ((a) ^ (b))
+#define INT_OP_SHL(a, b)  ((int64_t)((uint64_t)(a) << (b)))
+#define INT_OP_SHR(a, b)  ((a) >> (b))
 
 /* Non-shift bitwise ops: RHS is the plain int64 operand. */
 #define INT_BINOP(NAME, OP, OPNAME) INT_BINOP_R(NAME, OP, OPNAME, num_to_i64_trunc(_bd))

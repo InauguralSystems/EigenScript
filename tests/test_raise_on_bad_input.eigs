@@ -337,6 +337,15 @@ for bound in [1e102, -1e102, 3000000000]:
         rng_oor is 1
         rng_oor_k is e.kind
     assert_true of [rng_oor == 1 and rng_oor_k == "value", "range bound outside int raises value"]
+# in-int bounds whose span overflows int: the 1M cap (was a wrapped silent [])
+for pair in [[0, 2147483647, 2], [-2000000000, 2000000000]]:
+    rng_span_k is ""
+    try:
+        ig is range of pair
+    catch e:
+        rng_span_k is e.kind
+    assert_true of [rng_span_k == "limit", "range span past int raises limit"]
+assert_true of [(range of [2147483640, 2147483647, 3]) == [2147483640, 2147483643, 2147483646], "range near INT_MAX stops at end"]
 rng_step is 0
 try:
     ig is range of [0, 10, 1e30]
