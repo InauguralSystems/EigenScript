@@ -326,5 +326,23 @@ catch e:
     ri_wide_k is e.kind
 assert_true of [ri_wide == 1 and ri_wide_k == "value", "random_int range span over 2^31 raises value"]
 
+# ---- range: a bound outside int range raises (was a UB float->int cast,
+# libFuzzer run 5); checked before the 1M cap, which a wrapped cast skipped ----
+for bound in [1e102, -1e102, 3000000000]:
+    rng_oor is 0
+    rng_oor_k is ""
+    try:
+        ig is range of [0, bound]
+    catch e:
+        rng_oor is 1
+        rng_oor_k is e.kind
+    assert_true of [rng_oor == 1 and rng_oor_k == "value", "range bound outside int raises value"]
+rng_step is 0
+try:
+    ig is range of [0, 10, 1e30]
+catch e:
+    rng_step is 1
+assert_true of [rng_step == 1, "range step outside int raises"]
+
 print of "ALL_RAISE_TESTS_DONE"
 test_summary of null

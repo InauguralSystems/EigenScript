@@ -67,6 +67,17 @@ struct EigsChunk;
  * call and shrinks the emitted body. */
 typedef void (*JitChunkFn)(void);
 
+/* Every call into emitted code goes through here. clang's
+ * -fsanitize=function (part of `undefined`) reads a signature word at
+ * fn-8 before each indirect call; emitted code has no such prologue and
+ * can start at offset 0 of a fresh code page, so the probe faults on the
+ * unmapped page below (libFuzzer run 5: a SEGV that looked like a VM
+ * crash). The check has nothing to verify on emitted code — skip it. */
+#if defined(__clang__)
+__attribute__((no_sanitize("function")))
+#endif
+static inline void jit_call(void *code) { ((JitChunkFn)code)(); }
+
 /* Try to compile `chunk` into native code. On success, sets
  * chunk->jit_state = 2 and chunk->jit_code to a JitChunkFn pointer.
  * On any unsupported pattern, sets jit_state = 1; when the code cache is

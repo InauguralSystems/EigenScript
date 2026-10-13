@@ -349,8 +349,8 @@ static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out) {
     Value *va = BUILTIN_LIST_VIEW(arg, 0);
     Value *vb = BUILTIN_LIST_VIEW(arg, 1);
     if (!va || va->type != VAL_NUM || !vb || vb->type != VAL_NUM) return 0;
-    *a_out = (int64_t)eigs_num_arg(va, __func__);
-    *b_out = (int64_t)eigs_num_arg(vb, __func__);
+    *a_out = num_to_i64_trunc(eigs_num_arg(va, __func__));
+    *b_out = num_to_i64_trunc(eigs_num_arg(vb, __func__));
     return 1;
 }
 
@@ -377,7 +377,7 @@ Value* builtin_bit_xor(Value *arg) {
 
 Value* builtin_bit_not(Value *arg) {
     if (!arg || arg->type != VAL_NUM) { rt_error(EK_TYPE, 0, "bit_not expects a number"); return make_null(); }
-    int64_t a = (int64_t)eigs_num_arg(arg, __func__);
+    int64_t a = num_to_i64_trunc(eigs_num_arg(arg, __func__));
     return make_num((double)(~a));
 }
 
@@ -3856,6 +3856,17 @@ Value* builtin_concat(Value *arg) {
 /* range of n → [0, 1, ..., n-1]
  * range of [start, end] → [start, start+1, ..., end-1]
  * range of [start, end, step] → [start, start+step, ...] while < end (or > end if step < 0) */
+/* A bound outside int range was a UB cast (libFuzzer run 5). No such
+ * range could be materialized anyway, so it raises. */
+static int range_bound(double d, int *out) {
+    if (!(d >= (double)INT_MIN && d <= (double)INT_MAX)) {
+        rt_error(EK_VALUE, 0, "range: bound %g is outside the int range", d);
+        return 0;
+    }
+    *out = (int)d;
+    return 1;
+}
+
 Value* builtin_range(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "range");
     int start = 0, end = 0, step = 1;
@@ -3864,7 +3875,7 @@ Value* builtin_range(Value *arg) {
 
     if (arg->type == VAL_NUM) {
         /* range of n */
-        end = (int)eigs_num_arg(arg, __func__);
+        if (!range_bound(eigs_num_arg(arg, __func__), &end)) return make_list(0);
     } else if (arg->type == VAL_LIST) {
         int argc = arg->data.list.count;
         /* #497: every provided bound must be numeric. A non-number used to
@@ -3878,14 +3889,15 @@ Value* builtin_range(Value *arg) {
                 return make_list(0);
             }
         }
-        if (argc >= 1)
-            start = (int)eigs_list_num(arg, 0, __func__);
-        if (argc >= 2)
-            end = (int)eigs_list_num(arg, 1, __func__);
-        else
+        if (argc >= 1) {
+            if (!range_bound(eigs_list_num(arg, 0, __func__), &start)) return make_list(0);
+        }
+        if (argc >= 2) {
+            if (!range_bound(eigs_list_num(arg, 1, __func__), &end)) return make_list(0);
+        } else
             { end = start; start = 0; } /* single-element list: treat as range of n */
         if (argc >= 3) {
-            step = (int)eigs_list_num(arg, 2, __func__);
+            if (!range_bound(eigs_list_num(arg, 2, __func__), &step)) return make_list(0);
             /* The Euler-like update that feeds step can never produce
              * exactly zero — it trades the zero singularity for infinity.
              * This bound catches the infinity side: a step that would

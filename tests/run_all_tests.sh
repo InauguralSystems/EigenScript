@@ -637,8 +637,8 @@ echo ""
 
 echo "[0d] sandbox_run policy errors stay contained (#1426)"
 check_binary_fingerprint
-HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>"$TMPDIR/eigs-host-frame.err"); HFL_RC=$?
-HFL_ERR=$(cat "$TMPDIR/eigs-host-frame.err")
+HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>"${TMPDIR:-/tmp}/eigs-host-frame.err"); HFL_RC=$?
+HFL_ERR=$(cat "${TMPDIR:-/tmp}/eigs-host-frame.err")
 TOTAL=$((TOTAL + 1))
 if [ "$HFL_RC" -eq 0 ] && [ "$HFL_OUT" = "[false, false]" ] && [ -z "$HFL_ERR" ]; then
     PASS=$((PASS + 1)); echo "  PASS: sandbox policy errors return ok=false without stderr"
@@ -1718,8 +1718,8 @@ check_eigs_suite "budget rejects bombs ({ok:0}), allows small, cumulative, per-r
 # in its structured return value and must not emit an "uncaught" diagnostic.
 echo "[108a] sandbox_run Error Containment (#1426)"
 check_binary_fingerprint
-SB1426_OUT=$($EIGS_TMO ./eigenscript ../tests/test_sandbox_error_silence.eigs </dev/null 2>"$TMPDIR/eigs-sandbox-1426.err"); SB1426_RC=$?
-SB1426_ERR=$(cat "$TMPDIR/eigs-sandbox-1426.err")
+SB1426_OUT=$($EIGS_TMO ./eigenscript ../tests/test_sandbox_error_silence.eigs </dev/null 2>"${TMPDIR:-/tmp}/eigs-sandbox-1426.err"); SB1426_RC=$?
+SB1426_ERR=$(cat "${TMPDIR:-/tmp}/eigs-sandbox-1426.err")
 TOTAL=$((TOTAL + 1))
 if [ "$SB1426_RC" -eq 0 ] && echo "$SB1426_OUT" | grep -q "All tests passed" && [ -z "$SB1426_ERR" ]; then
     PASS=$((PASS + 1)); echo "  PASS: structured sandbox error returned with empty stderr"

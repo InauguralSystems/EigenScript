@@ -2617,7 +2617,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         fn_chunk->exec_count++;
 
         g_native_call_depth++;
-        ((JitChunkFn)fn_chunk->jit_code)();
+        jit_call(fn_chunk->jit_code);
         g_native_call_depth--;
 
         int adv = fn_chunk->jit_advance;
@@ -3460,7 +3460,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
         double _ad, _bd; \
         if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) { \
-            double _r = (double)((int64_t)_ad OP (RHS)); \
+            double _r = (double)(num_to_i64_trunc(_ad) OP (RHS)); \
             if (slot_is_ptr(_as)) { \
                 Value *_a = slot_as_ptr(_as); \
                 if (NUM_REUSE(_a)) { VAL_NUM_RAW(_a) = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); } \
@@ -3489,13 +3489,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     }
 
 /* Non-shift bitwise ops: RHS is the plain int64 operand. */
-#define INT_BINOP(NAME, OP, OPNAME) INT_BINOP_R(NAME, OP, OPNAME, (int64_t)_bd)
+#define INT_BINOP(NAME, OP, OPNAME) INT_BINOP_R(NAME, OP, OPNAME, num_to_i64_trunc(_bd))
 
     INT_BINOP(BAND, &, "&")
     INT_BINOP(BOR, |, "|")
     INT_BINOP(BXOR, ^, "^")
-    INT_BINOP_R(SHL, <<, "<<", ((int64_t)_bd & 63))
-    INT_BINOP_R(SHR, >>, ">>", ((int64_t)_bd & 63))
+    INT_BINOP_R(SHL, <<, "<<", (num_to_i64_trunc(_bd) & 63))
+    INT_BINOP_R(SHR, >>, ">>", (num_to_i64_trunc(_bd) & 63))
 
     /* ---- Unary ---- */
 
@@ -3529,7 +3529,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
         double d;
         if (__builtin_expect(slot_as_double(s, &d), 1)) {
-            double r = (double)(~(int64_t)d);
+            double r = (double)(~num_to_i64_trunc(d));
             if (slot_is_ptr(s)) {
                 Value *v = slot_as_ptr(s);
                 if (NUM_REUSE(v)) { VAL_NUM_RAW(v) = r; DISPATCH(); }
@@ -3995,7 +3995,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             if (osr_hit >= 0 && chunk->jit_osr[osr_hit].code) {
             frame->ip = ip;
-            ((JitChunkFn)chunk->jit_osr[osr_hit].code)();
+            jit_call(chunk->jit_osr[osr_hit].code);
             if (chunk->jit_osr[osr_hit].advance == -1) {
                 /* Stage 4s: OSR thunk hit OP_RETURN. Same shape as the
                  * OP_CALL hook: result already on caller's stack, frame
@@ -4359,7 +4359,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * class). */
             if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
                 !g_sandbox_active) {
-                ((JitChunkFn)fn_chunk->jit_code)();
+                jit_call(fn_chunk->jit_code);
                 if (fn_chunk->jit_advance == -1) {
                     /* jit_helper_return popped fn_chunk's frame but left
                      * its chunk ref to us — the thunk epilogue writes
@@ -6458,7 +6458,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 jit_try_compile_chunk(fn_chunk);
             if (fn_chunk->jit_code && !g_vm_multithreaded && !g_task_sched &&
                 !g_sandbox_active) {   /* #873, #940: see the OP_CALL hook */
-                ((JitChunkFn)fn_chunk->jit_code)();
+                jit_call(fn_chunk->jit_code);
                 if (fn_chunk->jit_advance == -1) {
                     /* Stage 4s: OP_RETURN sentinel — see OP_CALL hook.
                      * Popped frame's chunk ref is ours to drop. */

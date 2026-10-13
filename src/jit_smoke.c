@@ -352,7 +352,7 @@ static int run_store_cases(void) {
             store_receipt.counts = counts;
             store_receipt.ip = vm->frames[0].ip;
             store_receipt.calls = store_receipt.bad = 0;
-            ((JitChunkFn)thunk)();
+            jit_call(thunk);
             rows++;
             STORE_ASSERT(store_receipt.calls == cases[c].helper);
             STORE_ASSERT(store_receipt.bad == 0);
@@ -433,7 +433,7 @@ static int run_index_bail_cases(void) {
              * The barriers prevent constant-folding the preservation check. */
             register uint64_t saved_r13 __asm__("r13") = UINT64_C(0x13579bdf2468ace0);
             __asm__ __volatile__("" : "+r"(saved_r13));
-            ((JitChunkFn)thunk)();
+            jit_call(thunk);
             __asm__ __volatile__("" : "+r"(saved_r13));
             int advance = osr ? chunk.jit_osr[0].advance : chunk.jit_advance;
             int expected = (int)sizeof code - (status ? 1 : 0) - (osr ? 2 : 0);
@@ -524,7 +524,7 @@ static int run_reader_bail_cases(void) {
                 chunk.jit_advance = chunk.jit_osr[0].advance = -99;
                 register uint64_t saved_r13 __asm__("r13") = UINT64_C(0x13579bdf2468ace0);
                 __asm__ __volatile__("" : "+r"(saved_r13));
-                ((JitChunkFn)thunk)();
+                jit_call(thunk);
                 __asm__ __volatile__("" : "+r"(saved_r13));
                 int raised = status == (kind ? 2 : 1);
                 int expected = (raised ? (kind ? 8 : 7) : chunk.code_len) -
@@ -629,7 +629,7 @@ static int run_exit_cases(void) {
             vm->frames[0].chunk = &chunk;
             vm->frames[0].ip = chunk.code + entry;
             chunk.jit_advance = chunk.jit_osr[0].advance = -99;
-            ((JitChunkFn)thunk)();
+            jit_call(thunk);
             rows++;
             int advance = osr ? chunk.jit_osr[0].advance : chunk.jit_advance;
             int other = osr ? chunk.jit_advance : chunk.jit_osr[0].advance;
@@ -705,7 +705,7 @@ static int run_bool_cases(void) {
         vm->frames[0].chunk = &chunk;
         vm->frames[0].ip = chunk.code;
         chunk.jit_advance = -99;
-        ((JitChunkFn)chunk.jit_code)();
+        jit_call(chunk.jit_code);
         if (chunk.jit_advance != (int)sizeof code || vm->sp != 1 + nwant) {
             fprintf(stderr, "FAIL bool: advance=%d (want %d) sp=%d (want %d)\n",
                     chunk.jit_advance, (int)sizeof code, vm->sp, 1 + nwant);
