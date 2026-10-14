@@ -226,14 +226,21 @@ n on; a new best inside the window), `oscillating`, `diverging` and `equilibrium
 MATH "has a limit" is reported beside `converged`, not scored: it is a whole-sequence property that no windowed observer can
 decide at n, and scoring the one `converged` reading against both questions contradicted itself on 28 of 84 checkpoints, so even
 a perfect observer failed. The MATH questions that stay scored are whole-sequence properties too, which a window can only
-approximate. Every row runs as straight-line code under the interpreter and as a `loop while` form in three tiers
-(`EIGS_JIT_OFF=1`, the default JIT after 50 warm-up calls, `EIGS_JIT_OSR_THRESHOLD=1`). In the JIT tiers the observed
-ASSIGNMENTS run in native code (the run prints its measured native assignment share, and a tier below 50% fails as vacuous);
-the predicate READS never do, because `PREDICATE_NAME` stops JIT compilation. Rows that need IEEE inf/-inf/NaN or exact int64
-values run only on a binary that has the capability (skips are printed), and every verdict on them must be right.
-`FLOOR=tools/observer_oracle/floor.json` fails a run that gets wrong any verdict the v0.46.0 tag got right; the floor is
-re-measured on that binary every run, and `waivers.json` lists accepted losses with their reasons. The reference model shares
-the observer's window and tolerances, so its agreement on window-limited rows is correlated, not independent evidence.
+approximate, and none is scored at a checkpoint before its row's law last changes (each row declares that `regime`
+index): a MATH verdict read there would be decided by values after the read, so it is reported, not scored. Every row runs
+as straight-line code under the interpreter and as a `loop while true` form in three tiers (`EIGS_JIT_OFF=1`, the default JIT
+after 50 warm-up calls, `EIGS_JIT_OSR_THRESHOLD=1`). Each JIT-tier run witnesses its own tier: `EIGS_JIT_HOT` and
+`EIGS_DUMP_BC` show whether the compiled thunk's last exit lies past the loop's back-edge, which a loop body that bails cannot
+reach. A run whose body stops computing x on an inf, NaN or clamped value (the JIT's designed bail) is reported as interpreted;
+any other run that does not witness fails as vacuous. So in the JIT tiers the observed ASSIGNMENTS run natively on every
+witnessing row, and the predicate READS never do, because `PREDICATE_NAME` stops JIT compilation. Rows that need IEEE
+inf/-inf/NaN or exact int64 values run only on a binary whose semantic probe shows the capability (skips are printed;
+`EXPECT=ieee,int64` makes an absent one fail), and every verdict on them must be right. `FLOOR=tools/observer_oracle/floor.json`
+fails a run that gets wrong any verdict the v0.46.0 tag got right; the floor is re-measured every run on the binary that
+`tools/observer_oracle/build_anchor.sh` builds from the tag (reproducibly: two builds give the same sha256). There are no
+waivers: a floor verdict agrees with its label, so losing it is wrong unless the label is, and a wrong label is fixed through
+`derive.py`/`certify.py`. The reference model shares the observer's window and tolerances, so its agreement on window-limited
+rows is correlated, not independent evidence.
 
 ## The manifold: two basins and a horizon
 

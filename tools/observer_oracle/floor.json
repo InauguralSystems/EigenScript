@@ -1,19 +1,13 @@
 {
-"format": "per-verdict/1",
-"binary": {
-"path": "/home/jon/src/wt/es-pin046-critic/build/release/eigenscript",
-"sha256": "c5c288bc5907fe323fcaff83ff06c7f50c8d1ca0f860e94d3366c9ad226277d6"
-},
-"note": "v0.46.0 tag build (git describe v0.46.0, commit 4a3a5c19), /home/jon/src/wt/es-pin046-critic/build/release/eigenscript",
+"format": "per-verdict/2",
+"note": "v0.46.0 (commit 4a3a5c19) built by tools/observer_oracle/build_anchor.sh; two builds at the fixed path gave the same sha256",
 "numbers": "clamp",
-"inputs": {
-"gen.py": "944044170819a4efd6d464ccf038e5cf2fa6ae965e18005e27472af0301bf2fa",
-"derive.py": "a4f6be86c53583d6dd05bb16071c70b5693647f6ad44952335ab31c12b3d9352",
-"score.py": "4330ed1d854bed39324b25e3bc88426fe5ff912f0d6860a2a3d84934ebc44b61",
-"reference.py": "6245c99df3c76e28c911cc65895267f56ca2c93d644b34d52e6799e9507e3cc9",
-"corpus.json": "b890e1355c7969dc0c37c7ef587a8754810bf76197c549618e4af8434936bafd",
-"labels.json": "d68af2c65dda318943550ba7ac710d10a4fd85f1d1fc41128aa92ed69ca83721",
-"certificate.json": "0c336587a79e962173b243001bb6ab0a0234b4ace5ba23c15aa15a7c10447b3d"
+"anchor": {
+"tag": "v0.46.0",
+"commit": "4a3a5c1941568e9bc562c7c8221cff22dc8ba697",
+"binary": "/tmp/eigs-oracle-anchor/v0.46.0/build/release/eigenscript",
+"binary_sha256": "c5c288bc5907fe323fcaff83ff06c7f50c8d1ca0f860e94d3366c9ad226277d6",
+"recipe_sha256": "b273f34e016bdb45c28b2e243a46955aa0dbd97352e7c7918700d3fbdb821ee9"
 },
 "verdicts": [
 "interp/loop alt_inv_n@2000 converged CONVENTION",

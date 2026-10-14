@@ -440,11 +440,13 @@ precheck:
 
 # Observer predicates vs a mathematics-graded corpus (#1746). Exits 1 on a FINDING
 # (tiers or forms disagree) or a wrong verdict on a capability row, 2 on a harness
-# error or a vacuous JIT tier; with FLOOR=tools/observer_oracle/floor.json it also
-# exits 1 when a verdict the v0.46.0 tag got right is lost without a waiver (#1758).
+# error or a vacuous JIT-tier run; with FLOOR=tools/observer_oracle/floor.json it
+# also exits 1 when a verdict the v0.46.0 tag got right is lost (the floor's anchor
+# comes from tools/observer_oracle/build_anchor.sh), and with EXPECT=ieee,int64
+# when an expected capability is absent (#1758).
 .PHONY: observer-oracle
 observer-oracle: build
-	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR))
+	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT))
 
 install-gfx: install
 	@echo "NOTE: 'make install-gfx' is a compatibility alias for 'make install'."

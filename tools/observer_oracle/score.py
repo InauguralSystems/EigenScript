@@ -1,51 +1,41 @@
 #!/usr/bin/env python3
 """Score EigenScript's observer against a ground-truth corpus (#1746, #1758).
 
-usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp]
+usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp] [--expect CAP,...]
                        [--floor FILE] [--write-floor FILE [--note TEXT]]
 
-Labels come from labels.json, which must equal derive.py's derivation from the
-certified corpus (the label gate). Each predicate is scored against ONE
-question, its scored definition in the corpus (converged, stable, improving:
-CONVENTION; oscillating, diverging, equilibrium: MATH); MATH "has a limit" is
-a reported column, never scored. Each row is generated in Python and run on
-BINARY in four ARMS:
-  interp/straight  straight-line code, EIGS_JIT_OFF=1, reading every checkpoint
-  interp/loop      a loop form per checkpoint c, EIGS_JIT_OFF=1
-  jit/loop         the same after 50 zero-iteration calls, so the default JIT
-                   has compiled run_row before the measured call
-  osr/loop         the same under EIGS_JIT_OSR_THRESHOLD=1 (OSR thunks)
-The loop form assigns x_0..x_c in `loop while i < m` (x from a list, or
-x * a + b computed in the runtime) and then reads c. Its compile stops at the
-read (PREDICATE_NAME), so predicate reads always run interpreted; the
-assignments are what the tiers exercise. Each jit/osr run measures its NATIVE
-ASSIGNMENT SHARE from EIGS_JIT_HOT, EIGS_JIT_DEBUG and EIGS_DUMP_BC: jit,
-(m - interpreted back-edges) / m when a function thunk spans the loop (exact:
-an interpreted iteration always takes one interpreted back-edge); osr,
-(OSR entries - 1) / m when an OSR thunk spans the loop body (an upper bound: a
-runtime bail inside an OSR thunk is counted by no runtime counter). A tier
-whose share is below 50% is VACUOUS (exit 2).
+labels.json must equal derive.py's derivation (the label gate). Each
+predicate is scored against ONE question (converged, stable, improving:
+CONVENTION; oscillating, diverging, equilibrium: MATH); MATH "has a limit"
+and a MATH verdict read before its row's law last changes are REPORTED, never
+scored. Each row runs on BINARY in four ARMS: interp/straight (straight-line
+code), and a loop form per checkpoint in interp/loop (EIGS_JIT_OFF=1),
+jit/loop (after 50 zero-iteration warm-up calls) and osr/loop
+(EIGS_JIT_OSR_THRESHOLD=1). The loop (`loop while true`, x from a list or
+x * a + b computed in the runtime) leaves by `break` after its body. Each
+jit/osr run WITNESSES its own tier from EIGS_JIT_HOT and EIGS_DUMP_BC: native
+when its thunk's last exit lies past the back-edge (jit: `adv`, and bked = 0;
+osr: `oent + oadv`), which a body that bails cannot reach. A body that stops
+computing x on a non-finite or clamped value is reported as interpreted and
+not counted (the JIT's designed bail, #1758 N12); any other non-native run is
+VACUOUS (exit 2). No aggregate. Predicate reads always run interpreted.
+Values are compared with the generator's exactly, and each read must fall
+between x_c and x_{c+1} (`when is x`). A capability row runs only when a
+semantic probe shows the capability; a skip warns, and an --expect'ed
+capability that is absent fails. The reference model (reference.py, distance
+and the runtime's entropy signal, #1667) shares the observer's window and
+tolerances, so it is correlated with the runtime, not independent evidence.
 
-Every value the runtime holds is compared exactly with the generator's
-(bit-exact floats, ints exactly, inf/NaN per --numbers, which is probed with
-`print of (1e308 * 10)`), and every read must fall after the assignment of
-x_c and before x_{c+1} (`when is x` counts the binding's assignments). A row
-with a `capability` runs only on a binary that has it (ieee: `print of
-(0.0/0.0)` prints nan; int64: `print of 9223372036854775807` round-trips);
-skips are counted and printed. The reference model (reference.py) is scored
-on the distance signal and on the runtime's entropy signal (#1667); it
-implements the definitions at the observer's own window and tolerances, so it
-is correlated with the runtime on window-limited rows, not independent.
-
-Exit 1: a FINDING (one reading that differs between arms), a wrong verdict on
-a capability row, or (--floor) a floor verdict now wrong that waivers.json,
-beside the floor, does not name with a reason. --floor re-runs the binary the
-floor records (sha256 verified) and refuses a floor whose verdict list is not
-that measurement. --write-floor records this run's right verdicts on rows
-without a capability. Exit 2 on any harness error (a program that errors, a
-missing, duplicate or misordered output line, a value that differs from the
-generator, a vacuous tier, a stale certificate, labels that differ from the
-derivation, a refused floor or waiver, an internal exception).
+Exit 1: a FINDING (a reading that differs between arms), a wrong verdict on a
+capability row, an expected capability absent, or (--floor) a floor verdict
+now wrong. There are no waivers: a floor verdict agrees with its label, so
+losing it is wrong unless the label is, and a wrong label is fixed through
+derive/certify, which re-measures the floor. The floor's anchor is the binary
+build_anchor.sh builds from tag v0.46.0: --floor re-measures it every run and
+refuses a floor that is not its measurement; --write-floor refuses any other
+binary. Exit 2 on any harness error (a failing program, a bad output line, a
+value off the generator, a VACUOUS run, stale certificates or labels, a
+refused floor, an internal exception).
 """
 import hashlib
 import json
@@ -68,14 +58,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TIERS = {"interp": {"EIGS_JIT_OFF": "1"}, "jit": {}, "osr": {"EIGS_JIT_OSR_THRESHOLD": "1"}}
 ARMS = (("interp", "straight"), ("interp", "loop"), ("jit", "loop"), ("osr", "loop"))
 WARMUP = {"interp": 0, "jit": 50, "osr": 0}       # src/jit.c: a function compiles at 50 calls
-DIAG = {"EIGS_JIT_HOT": "1", "EIGS_JIT_DEBUG": "1", "EIGS_DUMP_BC": "1"}
-NATIVE_FLOOR = 0.5
-PROBES = {"numbers": "print of (1e308 * 10)", "ieee": "print of (0.0/0.0)",
-          "int64": "print of 9223372036854775807"}
-HAS = {"ieee": "nan", "int64": "9223372036854775807"}
-FLOOR_FORMAT = "per-verdict/1"
+DIAG = {"EIGS_JIT_HOT": "1", "EIGS_DUMP_BC": "1"}
+PROBES = {"numbers": "print of (1e308 * 10)", "true": "print of (1 == 1)",
+          "ieee": "y is 0.0 / 0.0\nprint of (y != y)",
+          "int64": "print of ((9223372036854775807 - 9223372036854775806) == 1)",  # 0 in doubles
+          "int64_kind": "print of (num_type of 9223372036854775807)"}
+CAPS = ("ieee", "int64")
+FLOOR_FORMAT = "per-verdict/2"
+RECIPE = os.path.join(HERE, "build_anchor.sh")
 HOT_BLOCK = re.compile(r"=== Hot chunks.*?\n  bytes native: [^\n]*", re.S)
-DIAG_LINE = re.compile(r"^(\[jit\] |=== .* ===$|\d{4,} \[L\d+\] )")
+DIAG_LINE = re.compile(r"^(=== .* ===$|\d{4,} \[L\d+\] )")
 
 
 def read_expr(pred):
@@ -90,7 +82,7 @@ def sha256(path):
 
 def load_labels(corpus, certs, path):
     """The label gate: labels.json must equal derive(corpus), whose own
-    postconditions hold (one scored entry per predicate, the lattice)."""
+    postconditions hold (one entry per predicate, the regime rule, the lattice)."""
     try:
         with open(path) as f:
             committed = json.load(f)
@@ -155,11 +147,13 @@ def table(name, vals):
 
 
 def emit_loop(row, xs, ys, c, warm):
-    """run_row(m) makes the first m assignments in a `loop while` the
+    """run_row(m) makes the first m assignments in a `loop while true` the
     function JIT compiles (B[i], or x * A[i] + B[i] in the runtime), records
-    them in OUT, then reads checkpoint c. `warm` calls with m = 0 come first:
-    they compile run_row without one back-edge or assignment, and each call
-    has fresh locals, so the measured call's observer state is its own."""
+    them in OUT and leaves by `break` AFTER the body, so the last thunk exit
+    of a body that ran natively lies past the back-edge; then it reads
+    checkpoint c. `warm` calls with m = 0 come first: they compile run_row
+    without one back-edge or assignment, and each call has fresh locals, so
+    the measured call's observer state is its own."""
     st = steps(row, xs, c)
     aff = [s for s in st if s[0] == "aff"]
     zero = 0 if row["gen"].get("int") else 0.0
@@ -167,11 +161,12 @@ def emit_loop(row, xs, ys, c, warm):
     out += table("A", [zero if s[0] == "set" else s[1] for s in st] if aff else [])
     out += table("B", [s[1] if s[0] == "set" else s[2] for s in st])
     out += table("YB", ys[:c + 1]) if ys is not None else []
-    out += ["OUT is []", "OUTY is []", "define run_row(m) as:", "    i is 0", "    loop while i < m:",
-            "        if OPS[i] == 0:", "            x is B[i]", "        else:",
-            "            x is x * A[i] + B[i]", "        append of [OUT, x]"]
-    out += ["        y is YB[i]", "        append of [OUTY, y]"] if ys is not None else []
-    out += ["        i is i + 1", "    if m > 0:", "        " + ck_line(c, ys), "    return 0",
+    out += ["OUT is []", "OUTY is []", "define run_row(m) as:", "    i is 0", "    if m > 0:",
+            "        loop while true:", "            if OPS[i] == 0:", "                x is B[i]",
+            "            else:", "                x is x * A[i] + B[i]", "            append of [OUT, x]"]
+    out += ["            y is YB[i]", "            append of [OUTY, y]"] if ys is not None else []
+    out += ["            i is i + 1", "            if i >= m:", "                break",
+            "        " + ck_line(c, ys), "    return 0",
             f"for k in range of {warm}:", "    r is run_row of 0", f"r is run_row of {c + 1}",
             "for k in range of (len of OUT):", '    print of f"V {k} {OUT[k]}"',
             "for k in range of (len of OUTY):", '    print of f"Y {k} {OUTY[k]}"',
@@ -254,25 +249,38 @@ def parse_run(row, cks, form, rc, lines, errors, xs, ys, ieee):
     return got
 
 
-def native(tier, rid, err, hot, m):
-    """(native iterations of the measured call's m, what covered the loop)."""
+def witness(tier, rid, err, hot, held, c):
+    """("native" | "value bail" | "VACUOUS", detail) for the measured call's
+    loop. Its thunk's last exit must lie past the loop's back-edge (the body
+    ran to its `break` natively); for the function thunk also bked = 0, since
+    after a bail the rest of the call runs interpreted. A stop INSIDE the
+    computation of x (from the body's MUL to the next OBSERVE_ASSIGN) on a
+    non-finite or clamped value is the JIT's designed bail (#1758 N12)."""
     hrow = next((f for f in (ln.split() for ln in hot.splitlines()) if f[:1] == ["run_row"]), None)
     sec = re.search(r"^=== [^\n]*\(run_row, [^\n]*\n((?:\d{4,} [^\n]*\n?)*)", err, re.M)
-    jbs = re.findall(r"^(\d{4,}) \[L\d+\] JUMP_BACK\s+(\d+)", sec.group(1), re.M) if sec else []
+    ops = {int(o): (op, arg) for o, op, arg in
+           re.findall(r"^(\d{4,}) \[L\d+\] (\S+) *(\S*)", sec.group(1), re.M)} if sec else {}
+    jbs = [o for o, (op, _a) in ops.items() if op == "JUMP_BACK"]
     if hrow is None or len(hrow) != 12 or len(jbs) != 1:
-        raise HarnessError(f"{rid}: {tier} tier: no EIGS_JIT_HOT row for run_row, or not exactly"
-                           " one loop in its EIGS_DUMP_BC listing; cannot measure the native share")
-    jb = int(jbs[0][0])
-    head, bked = jb + 3 - int(jbs[0][1]), int(hrow[7])
-    thunks = [tuple(map(int, t)) for t in
-              re.findall(r"^\[jit\] compiled run_row: entry=(\d+) prefix=(\d+)", err, re.M)]
-    if tier == "jit":       # the function thunk spans the loop: interpreted back-edges are the rest
-        ok = any(e == 0 and p > jb for e, p in thunks)
-        nat, what = m - bked, f"function thunk stops at {hrow[11]}"
-    else:                   # an OSR thunk spans the body [head, jb): one entry per back-edge
-        ok = any(e == head and p == jb for e, p in thunks)
-        nat, what = bked - 1, "an OSR thunk spans the loop body"
-    return (max(0, min(m, nat)), what) if ok else (0, "no thunk spans the loop")
+        raise HarnessError(f"{rid}@{c}: {tier} tier: no EIGS_JIT_HOT row for run_row, or not exactly"
+                           " one loop in its EIGS_DUMP_BC listing; cannot witness the tier")
+    jb, bked = jbs[0], int(hrow[7])
+    if tier == "jit":
+        at = int(hrow[4]) if hrow[2] == "yes" and hrow[4].isdigit() else -1
+        ok, k = at > jb and bked == 0, c - bked       # x_k is the value whose iteration bailed
+    else:
+        head = jb + 3 - int(ops[jb][1])
+        at = int(hrow[10]) + int(hrow[9]) if hrow[8] == "yes" and int(hrow[10]) == head else -1
+        ok, k = at > jb, c
+    stop = f"{ops[at][0]}@{at}" if at in ops else "no thunk"
+    if ok:
+        return "native", f"exits at {stop}, past the back-edge at {jb}"
+    mul = min((o for o, (op, _a) in ops.items() if op == "MUL" and o < jb), default=jb)
+    asg = min((o for o, (op, _a) in ops.items() if op.startswith("OBSERVE_ASSIGN") and o > mul), default=mul)
+    bad = [v for v in held[max(0, k - 1):k + 1] if not math.isfinite(v) or abs(v) >= CLAMP]
+    if bad and mul <= at <= asg:
+        return "value bail", f"stops at {stop}, computing x, on x = {bad[-1]!r}"
+    return "VACUOUS", f"stops at {stop} (bked={bked}), not on a non-finite value computing x"
 
 
 def probe(binary, code):
@@ -290,14 +298,17 @@ def capabilities(binary, asked):
         raise HarnessError(f"number probe `{PROBES['numbers']}` printed {out['numbers']!r}, not inf or 1e+308")
     if asked and asked != mode:
         raise HarnessError(f"--numbers {asked} contradicts the binary: the probe printed {out['numbers']!r}")
-    return mode == "ieee", {k: out[k] == HAS[k] for k in HAS}, out
+    if not out["true"]:
+        raise HarnessError(f"`{PROBES['true']}` printed nothing: the capability probes have no true to compare")
+    caps = {"ieee": out["ieee"] == out["true"],
+            "int64": out["int64"] == out["true"] and out["int64_kind"] == "int"}
+    return mode == "ieee", caps, out
 
 
 def measure(binary, corpus, caps, ieee):
-    """Run every row the binary can run in every arm: readings, held values,
-    native shares and compile stops; capability skips are listed."""
-    res = {"read": {}, "held": {}, "share": {t: [0, 0, 1.0] for t in ("jit", "osr")},
-           "stops": {}, "skipped": [], "runs": 0}
+    """Run every row the binary can run in every arm: readings, held values
+    and per-run tier witnesses; capability skips are listed."""
+    res = {"read": {}, "held": {}, "wit": {}, "skipped": [], "runs": 0}
     with tempfile.TemporaryDirectory(prefix="obs_oracle_") as tmp:
         for row in corpus["rows"]:
             rid, cap = row["id"], row.get("capability")
@@ -306,6 +317,9 @@ def measure(binary, corpus, caps, ieee):
                 continue
             xs = generate(row["gen"], row["n"])
             ys = generate(row["second"], row["n"]) if "second" in row else None
+            # The values the RUNTIME holds: the clamp, or IEEE inf/NaN.
+            held = res["held"][rid] = [float(x) if ieee or math.isnan(x)
+                                       else max(-CLAMP, min(CLAMP, float(x))) for x in xs]
             jobs = [("interp", "straight", row["checkpoints"], emit_straight(row, xs, ys))]
             jobs += [(t, "loop", [c], emit_loop(row, xs, ys, c, WARMUP[t]))
                      for c in row["checkpoints"] for t in TIERS]
@@ -317,17 +331,10 @@ def measure(binary, corpus, caps, ieee):
                 got = parse_run(row, cks, form, rc, lines, errors, xs, ys, ieee)
                 res["runs"] += 1
                 if tier != "interp":
-                    m = cks[0] + 1
-                    nat, stop = native(tier, rid, err, hot, m)
-                    sh = res["share"][tier]
-                    sh[0], sh[1], sh[2] = sh[0] + nat, sh[1] + m, min(sh[2], nat / m)
-                    res["stops"][(tier, stop)] = res["stops"].get((tier, stop), 0) + 1
+                    res["wit"][(tier, rid, cks[0])] = witness(tier, rid, err, hot, held, cks[0])
                 for at in cks:
                     for p in PREDS:
                         res["read"][(tier, form, rid, at, p)] = got[at][p]
-            # The reference arms see the values the RUNTIME held: the clamp, or IEEE inf/NaN.
-            res["held"][rid] = [float(x) if ieee or math.isnan(x) else max(-CLAMP, min(CLAMP, float(x)))
-                                for x in xs]
     examined = len({k[2] for k in res["read"]})
     if examined + len(res["skipped"]) != len(corpus["rows"]) or examined == 0:
         raise HarnessError(f"examined {examined} rows + {len(res['skipped'])} skipped of {len(corpus['rows'])}")
@@ -337,12 +344,13 @@ def measure(binary, corpus, caps, ieee):
 # --- scoring ----------------------------------------------------------------
 
 def verdicts(res, corpus, labels):
-    """(arm, rid, at, pred) -> (class, label, reading) for every scored
-    verdict, the runtime arms and the two reference arms."""
+    """(arm, rid, at, pred) -> (class, label, reading) for every SCORED
+    verdict, the runtime arms and the two reference arms (REPORTED skipped)."""
     out, rows = {}, {r["id"]: r for r in corpus["rows"]}
     for (tier, form, rid, at, p), got in res["read"].items():
         e = labels[f"{rid}@{at}"][p]
-        out[(f"{tier}/{form}", rid, at, p)] = (e[0], e[1], got)
+        if e[0] != "REPORTED":
+            out[(f"{tier}/{form}", rid, at, p)] = (e[0], e[1], got)
     for rid, held in res["held"].items():
         hs = reference.entropy_signal(held)
         for at in rows[rid]["checkpoints"]:
@@ -350,80 +358,103 @@ def verdicts(res, corpus, labels):
             for arm, sig in (("REFERENCE", held), ("REFERENCE_ENTROPY", hs)):
                 ref = reference.classify(sig, at)
                 for p in PREDS:
-                    out[(arm, rid, at, p)] = (lab[p][0], lab[p][1], ref[p])
-    declared = sum(len(r["checkpoints"]) for r in corpus["rows"] if r["id"] in res["held"]) * len(PREDS)
+                    if lab[p][0] != "REPORTED":
+                        out[(arm, rid, at, p)] = (lab[p][0], lab[p][1], ref[p])
+    declared = sum(1 for rid in res["held"] for at in rows[rid]["checkpoints"]
+                   for p in PREDS if labels[f"{rid}@{at}"][p][0] != "REPORTED")
     for arm in [f"{t}/{f}" for t, f in ARMS] + ["REFERENCE", "REFERENCE_ENTROPY"]:
         if sum(1 for k in out if k[0] == arm) != declared or declared == 0:
             raise HarnessError(f"{arm} scored {sum(1 for k in out if k[0] == arm)} verdicts, corpus declares {declared}")
     return out
 
 
-def right_set(v, rows, capability):
-    """The runtime verdicts the binary got right, keyed as floor.json keys them."""
+def right_set(v, rows):
+    """The runtime verdicts the binary got right on rows with no capability,
+    keyed as floor.json keys them."""
     return sorted(f"{arm} {rid}@{at} {p} {cls}" for (arm, rid, at, p), (cls, want, got) in v.items()
-                  if "/" in arm and want == got and bool(rows[rid].get("capability")) == capability)
+                  if "/" in arm and want == got and not rows[rid].get("capability"))
+
+
+def anchor():
+    """The stamp build_anchor.sh wrote beside the binary it built, checked
+    against the recipe as it stands and the binary as it is."""
+    d = re.search(r"^DIR=(\S+)", open(RECIPE).read(), re.M).group(1)
+    try:
+        with open(os.path.join(d, "anchor.json")) as f:
+            stamp = json.load(f)
+    except (OSError, ValueError):
+        raise HarnessError(f"no floor anchor at {d}: run bash tools/observer_oracle/build_anchor.sh")
+    if stamp.get("recipe_sha256") != sha256(RECIPE) or not os.path.isfile(stamp.get("binary", "")) \
+            or sha256(stamp["binary"]) != stamp.get("binary_sha256"):
+        raise HarnessError(f"the anchor at {d} is not what build_anchor.sh as it stands builds:"
+                           " re-run bash tools/observer_oracle/build_anchor.sh")
+    return stamp
 
 
 def check_floor(path, cand_v, rows, corpus, labels):
-    """1 when a floor verdict is now wrong without a waiver, 0 otherwise;
-    HarnessError when the floor or its waivers cannot be trusted."""
+    """1 when a floor verdict is now wrong, 0 otherwise; HarnessError when the
+    floor cannot be trusted: not measured on the recipe's anchor, or not that
+    anchor's measurement now."""
+    if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(path)), "waivers.json")):
+        raise HarnessError("waivers.json: waivers are removed by design. A floor verdict agrees with its"
+                           " label, so an observer that loses it is wrong unless the label is; fix a wrong"
+                           " label through derive.py/certify.py, which re-measures the floor")
     try:
         with open(path) as f:
             floor = json.load(f)
-        with open(os.path.join(os.path.dirname(os.path.abspath(path)), "waivers.json")) as f:
-            waivers = json.load(f)["waivers"]
-    except (OSError, ValueError, KeyError) as e:
-        raise HarnessError(f"cannot load the floor or its waivers.json: {e}")
-    fb = floor.get("binary", {})
+    except (OSError, ValueError) as e:
+        raise HarnessError(f"cannot load the floor {path}: {e}")
+    fa, stamp = floor.get("anchor", {}), anchor()
     if floor.get("format") != FLOOR_FORMAT or not isinstance(floor.get("verdicts"), list):
         raise HarnessError(f"floor {path}: not a {FLOOR_FORMAT} floor")
-    if not (os.path.isfile(fb.get("path", "")) and sha256(fb["path"]) == fb.get("sha256")):
-        raise HarnessError(f"floor binary {fb.get('path')} is missing or no longer has sha256 {fb.get('sha256')}")
-    ieee, caps, _ = capabilities(fb["path"], None)
-    fv = verdicts(measure(fb["path"], corpus, caps, ieee), corpus, labels)
-    want = right_set(fv, rows, False)
+    if fa.get("recipe_sha256") != stamp["recipe_sha256"] or fa.get("binary_sha256") != stamp["binary_sha256"]:
+        raise HarnessError(f"floor {path} was measured on another anchor (recipe {fa.get('recipe_sha256')},"
+                           f" binary {fa.get('binary_sha256')}); the recipe now builds {stamp['binary_sha256']}")
+    ieee, caps, _ = capabilities(stamp["binary"], None)
+    want = right_set(verdicts(measure(stamp["binary"], corpus, caps, ieee), corpus, labels), rows)
     extra, missing = sorted(set(floor["verdicts"]) - set(want)), sorted(set(want) - set(floor["verdicts"]))
     if extra or missing or len(floor["verdicts"]) != len(want):
-        raise HarnessError(f"floor {path} does not match its own measurement on {fb['path']}:"
-                           f" {len(extra)} listed verdict(s) that binary gets wrong (first {extra[:1]}),"
-                           f" {len(missing)} right one(s) missing (first {missing[:1]}); re-write it with --write-floor")
-    stale = [k for k, h in floor.get("inputs", {}).items() if os.path.isfile(os.path.join(HERE, k)) and sha256(os.path.join(HERE, k)) != h]
-    print(f"\nfloor: {len(want)} verdicts ({FLOOR_FORMAT}), re-measured on {fb['path']}: the list matches"
-          + (f" (recorded before edits to {', '.join(stale)})" if stale else ""))
-    cand = {f"{arm} {rid}@{at} {p} {cls}": want_ == got for (arm, rid, at, p), (cls, want_, got) in cand_v.items()
-            if "/" in arm}
-    wv = {}
-    for w in waivers:
-        if not isinstance(w, dict) or not str(w.get("reason", "")).strip():
-            raise HarnessError(f"waiver {w!r} has no reason: a waiver says why the new verdict is more correct")
-        if w.get("verdict") not in floor["verdicts"] or w["verdict"] in wv:
-            raise HarnessError(f"waiver for {w.get('verdict')!r}: not a floor verdict, or named twice")
-        wv[w["verdict"]] = w["reason"]
+        raise HarnessError(f"floor {path} is not its anchor's measurement: {len(extra)} listed verdict(s)"
+                           f" the anchor gets wrong (first {extra[:1]}), {len(missing)} right one(s) missing"
+                           f" (first {missing[:1]}); the corpus, labels or harness changed: re-measure"
+                           f" with score.py {stamp['binary']} --write-floor {path}")
+    print(f"\nfloor: {len(want)} verdicts ({FLOOR_FORMAT}), re-measured on the anchor {stamp['binary']}"
+          f" (sha256 {stamp['binary_sha256'][:12]}, built by build_anchor.sh): the list matches")
+    cand = {f"{arm} {rid}@{at} {p} {cls}": w == g for (arm, rid, at, p), (cls, w, g) in cand_v.items() if "/" in arm}
     lost = [k for k in floor["verdicts"] if not cand[k]]
-    unused = sorted(set(wv) - set(lost))
-    if unused:
-        raise HarnessError(f"waiver for {unused[0]}, which this binary gets right: remove it ({len(unused)} unused)")
-    bad = [k for k in lost if k not in wv]
     for k in lost:
-        print(f"  FLOOR {'WAIVED' if k in wv else 'VIOLATION'} {k}" + (f": {wv[k]}" if k in wv else ""))
-    print(f"floor: {len(floor['verdicts'])} verdicts checked, {len(bad)} lost, {len(lost) - len(bad)} waived")
-    return 1 if bad else 0
+        print(f"  FLOOR VIOLATION {k}")
+    print(f"floor: {len(floor['verdicts'])} verdicts checked, {len(lost)} lost")
+    return 1 if lost else 0
 
 
-def report(v, res, corpus, numbers, caps, probes, labels, reported):
+def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
     arms = [f"{t}/{f}" for t, f in ARMS] + ["REFERENCE", "REFERENCE_ENTROPY"]
     scored = derive.scored_classes(corpus)[0]
     print(f"observer oracle: {len(corpus['rows'])} rows, {len(res['held'])} run, {len(res['skipped'])} skipped"
           f" by capability; {res['runs']} programs; numbers={numbers}")
-    for cap in sorted(HAS):
+    for cap in CAPS:
         n = sum(1 for _r, c in res["skipped"] if c == cap)
-        total = sum(1 for r in corpus["rows"] if r.get("capability") == cap)
-        print(f"  capability {cap}: probe `{PROBES[cap]}` printed {probes[cap]!r}: "
-              + ("present, " if caps[cap] else "ABSENT, ") + f"{total - n} row(s) run, {n} SKIPPED")
-    print(f"\nnative assignment share of the measured loop (VACUOUS below {NATIVE_FLOOR:.0%}):")
-    for t, (nat, m, lo) in res["share"].items():
-        print(f"  {t}: {nat}/{m} = {nat / max(m, 1):.1%} (lowest run {lo:.1%}); run_row: "
-              + ", ".join(f"{s} in {c} runs" for (tt, s), c in sorted(res["stops"].items()) if tt == t))
+        line = (f"capability {cap}: probe printed {probes[cap]!r}"
+                + (f", num_type {probes['int64_kind']!r}" if cap == "int64" else "") + f" (true is {probes['true']!r}): ")
+        if caps[cap]:
+            print(f"  {line}present, {sum(1 for r in corpus['rows'] if r.get('capability') == cap)} row(s) run")
+        else:
+            print(f"  {'EXPECTED ' if cap in expect else 'WARNING: '}{line}ABSENT, {n} row(s) SKIPPED")
+    print("\nTIER WITNESS, per run (n native, v interpreted: a value bail on a non-finite or clamped value, V VACUOUS):")
+    for row in corpus["rows"]:
+        if row["id"] in res["held"]:
+            print(f"  {row['id']:22}" + " ".join(
+                f"@{c} jit:{res['wit'][('jit', row['id'], c)][0][0]} osr:{res['wit'][('osr', row['id'], c)][0][0]}"
+                for c in row["checkpoints"]))
+    for t in ("jit", "osr"):
+        w = {k[1:]: x for k, x in res["wit"].items() if k[0] == t}
+        print(f"  {t}: {sum(1 for x in w.values() if x[0] == 'native')} of {len(w)} runs witness a native body;"
+              f" minimum: every run that is not a value bail, and at least one")
+        for (rid, c), (status, detail) in w.items():
+            if status != "native":
+                print(f"    {status.upper() if status == 'VACUOUS' else 'interpreted (value bail)'} {t}"
+                      f" {rid}@{c}: {detail}")
     print("  predicate reads run interpreted in every tier: PREDICATE_NAME stops compilation")
     print("\nSCORED VERDICTS, one question per predicate: TP FP FN TN right/total")
     print(f"  {'predicate':12}{'class':11}" + "".join(f"{a:>24}" for a in arms))
@@ -436,14 +467,18 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported):
                     c[{(True, True): 0, (False, True): 1, (True, False): 2, (False, False): 3}[(want, got)]] += 1
             cells.append(f"{c[0]:3} {c[1]:3} {c[2]:3} {c[3]:3} {c[0] + c[3]:4}/{sum(c):<4}")
         print(f"  {p:12}{scored.get(p, '-'):11}" + "".join(f"{x:>24}" for x in cells))
+    head = [[x[1] == x[2] for k, x in v.items() if k[0] == a] for a in arms]
+    print("HEADLINE, scored verdicts right/total (each verdict counted once): "
+          + ", ".join(f"{a} {sum(h)}/{len(h)}" for a, h in zip(arms, head)))
     for col in reported.values():
         agree = [[labels[f"{rid}@{at}"][col][1] == got for (arm, rid, at, q), (_c, _w, got) in v.items()
                   if arm == a and q == "converged"] for a in arms]
         print(f"REPORTED, not scored: MATH {col} vs each arm's `converged`, agree/total: "
               + ", ".join(f"{a} {sum(n)}/{len(n)}" for a, n in zip(arms, agree)))
-    head = [[x[1] == x[2] for k, x in v.items() if k[0] == a] for a in arms]
-    print("HEADLINE, scored verdicts right/total (each verdict counted once): "
-          + ", ".join(f"{a} {sum(h)}/{len(h)}" for a, h in zip(arms, head)))
+    early = sorted(f"{rid}@{at} {p}" for rid in res["held"] for at in
+                   next(r["checkpoints"] for r in corpus["rows"] if r["id"] == rid)
+                   for p in PREDS if labels[f"{rid}@{at}"][p][0] == "REPORTED")
+    print(f"REPORTED, not scored: MATH verdicts read before their row's law last changes: {early or 'none'}")
     for a in ("interp/straight", "REFERENCE"):
         dis = [(k, x) for k, x in v.items() if k[0] == a and x[1] != x[2]]
         print(f"\n{a} disagreements ({len(dis)}):")
@@ -454,19 +489,23 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported):
 
 def main(argv):
     args, opts = argv[1:], {}
-    for flag in ("--corpus", "--numbers", "--floor", "--write-floor", "--note"):
+    for flag in ("--corpus", "--numbers", "--expect", "--floor", "--write-floor", "--note"):
         if flag in args:
             i = args.index(flag)
             if i + 1 >= len(args):
                 raise HarnessError(f"{flag} needs a value")
             opts[flag] = args[i + 1]
             del args[i:i + 2]
-    if len(args) != 1 or opts.get("--numbers", "clamp") not in ("ieee", "clamp"):
-        raise HarnessError("usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp]"
+    expect = set(filter(None, opts.get("--expect", "").split(",")))
+    if len(args) != 1 or opts.get("--numbers", "clamp") not in ("ieee", "clamp") or expect - set(CAPS):
+        raise HarnessError("usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp] [--expect ieee,int64]"
                            " [--floor FILE] [--write-floor FILE [--note TEXT]]")
     binary = os.path.abspath(args[0])
     if not (os.path.isfile(binary) and os.access(binary, os.X_OK)):
         raise HarnessError(f"binary not found or not executable: {binary}")
+    if "--write-floor" in opts and os.path.realpath(binary) != os.path.realpath(anchor()["binary"]):
+        raise HarnessError(f"--write-floor measures only the anchor build_anchor.sh builds"
+                           f" ({anchor()['binary']}), not {binary}")
     corpus_path = opts.get("--corpus", os.path.join(HERE, "corpus.json"))
     cdir = os.path.dirname(os.path.abspath(corpus_path))
     corpus = derive.load_corpus(corpus_path)
@@ -476,11 +515,12 @@ def main(argv):
     ieee, caps, probes = capabilities(binary, opts.get("--numbers"))
     res = measure(binary, corpus, caps, ieee)
     v = verdicts(res, corpus, labels)
-    report(v, res, corpus, "ieee" if ieee else "clamp", caps, probes, labels, derive.scored_classes(corpus)[1])
-    vacuous = [f"{t} {nat / max(m, 1):.1%}" for t, (nat, m, _lo) in res["share"].items() if nat < NATIVE_FLOOR * m]
-    if vacuous:
-        raise HarnessError(f"VACUOUS tier(s): {', '.join(vacuous)} native assignment share,"
-                           f" below the {NATIVE_FLOOR:.0%} floor; the tier did not run the loop natively")
+    report(v, res, corpus, "ieee" if ieee else "clamp", caps, probes, labels,
+           derive.scored_classes(corpus)[1], expect)
+    vacuous = [f"{t} {rid}@{c}: {d}" for (t, rid, c), (s, d) in res["wit"].items() if s == "VACUOUS"]
+    if vacuous or not all(any(k[0] == t and x[0] == "native" for k, x in res["wit"].items()) for t in ("jit", "osr")):
+        raise HarnessError(f"VACUOUS: {len(vacuous)} JIT-tier run(s) did not run their loop body natively"
+                           f" and stopped on finite values, first {vacuous[:1]}; or a tier witnessed no run")
     reads = {}
     for (arm, rid, at, p), (_c, _w, got) in v.items():
         if "/" in arm:
@@ -491,20 +531,20 @@ def main(argv):
         print(f"  FINDING {rid}@{at} {p}: " + " ".join(f"{a}={str(b).lower()}" for a, b in r.items()))
     capwrong = [k for k, (cls, want, got) in v.items() if "/" in k[0] and rows[k[1]].get("capability") and want != got]
     ran = sorted({k[1] for k in v if rows[k[1]].get("capability")})
+    missing = sorted(c for c in expect if not caps[c])
     print(f"\nCAPABILITY ROWS (every scored verdict must be right): {len(ran)} run, {len(res['skipped'])} skipped,"
-          f" {len(capwrong)} wrong verdict(s)")
+          f" {len(capwrong)} wrong verdict(s); expected and absent: {missing or 'none'}")
     for arm, rid, at, p in capwrong:
         print(f"  CAPABILITY WRONG {arm} {rid}@{at} {p}: expected={str(v[(arm, rid, at, p)][1]).lower()}")
-    fail = 1 if findings or capwrong else 0
+    fail = 1 if findings or capwrong or missing else 0
     if "--floor" in opts:
         fail |= check_floor(opts["--floor"], v, rows, corpus, labels)
     if "--write-floor" in opts:
-        inputs = {k: sha256(os.path.join(HERE, k)) for k in ("gen.py", "derive.py", "score.py", "reference.py")}
-        inputs.update({k: sha256(os.path.join(cdir, k)) for k in ("corpus.json", "labels.json", "certificate.json")})
+        stamp = anchor()
         with open(opts["--write-floor"], "w") as f:
-            json.dump({"format": FLOOR_FORMAT, "binary": {"path": binary, "sha256": sha256(binary)},
-                       "note": opts.get("--note", ""), "numbers": "ieee" if ieee else "clamp",
-                       "inputs": inputs, "verdicts": right_set(v, rows, False)}, f, indent=0)
+            json.dump({"format": FLOOR_FORMAT, "note": opts.get("--note", ""), "numbers": "ieee" if ieee else "clamp",
+                       "anchor": {k: stamp[k] for k in ("tag", "commit", "binary", "binary_sha256", "recipe_sha256")},
+                       "verdicts": right_set(v, rows)}, f, indent=0)
             f.write("\n")
         print(f"floor written: {opts['--write-floor']}")
     print(f"\nobserver oracle exit {fail}: " + ("FAIL" if fail else "no gate failed"))

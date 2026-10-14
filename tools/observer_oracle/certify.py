@@ -24,13 +24,18 @@ certificate stale. Kinds:
                NaN is absorbing under x * a + b, so the tail is undefined
   manual       none of the above decides it: the row's `manual` block carries
                an argument, a citation and the `claims` it certifies
+`bounded` means EVENTUALLY bounded (lim sup |x_n| < inf; #1758 comment
+6173870348): finitely many early terms, inf included, never decide it.
 Numerics may REFUTE, never prove: whatever decided it, the values the
-runtime is fed must be consistent with the verdict (a limit approached or
-held within eps, a run to +-inf, a tail that does not settle, finite values
-when bounded), or the row is refused as float-degenerate. A manual block cannot override that,
-nor any refusal above. Exit 0 and write the file only when every row is
-certified; exit 1 listing every refusal; exit 2 on an internal error (a
-sympy exception included), which never falls through to `manual`.
+runtime is fed must be consistent with the verdict (a limit whose error
+keeps shrinking toward 0 over a 10^6-term horizon, or is within eps: the
+error over the horizon's last tenth must be under RHO = 0.95 of the error
+over its last decade; a run to +-inf; a tail that does not settle; finite
+late values when bounded), or the row is refused. A manual block cannot
+override that, nor any refusal above. Exit 0 and write the file only when
+every row is certified; exit 1 listing every refusal; exit 2 on an internal
+error (a sympy exception, or a row taking longer than ALARM_S = 120 s,
+#1766), which never falls through to `manual`.
 """
 import json
 import math
@@ -60,6 +65,14 @@ class Undecided(Exception):
 
 class Refused(Exception):
     """The row is wrong as stated, whatever its manual block says."""
+
+
+class SympyTimeout(BaseException):
+    """A BaseException, so no `except Exception` inside sympy can swallow it."""
+
+
+ALARM_S = 120          # per row; a timeout is an internal error (#1766), never `manual`
+RHO = 0.95             # a limit is refuted when the error does not shrink by 5% across a decade
 
 
 def parse(expr, names):
@@ -178,8 +191,8 @@ def fixed_point(f, row, lim):
 
 def in_program(row):
     """affine / pieces: the NaN tail (IEEE), or the exact closed form of the
-    last piece; bounded also needs every earlier value FINITE as the runtime
-    computes it (an overflow to inf is an extended-real term no K bounds)."""
+    last piece, which decides the limit and eventual boundedness: finitely
+    many early terms, inf included, never matter (#1758 comment 6173870348)."""
     g = row["gen"]
     xs = gen.generate(g, row["n"])
     nan_at = next((i for i, v in enumerate(xs) if v != v), None)
@@ -188,8 +201,8 @@ def in_program(row):
     last = ps[-1]
     if nan_at is not None:
         if any(st[0] == "set" for st in gen.program(g, s)[nan_at:]):
-            raise Undecided(f"x_{nan_at} is NaN and a later piece restarts: recovery from NaN is"
-                            " not decided (#1746)")
+            raise Undecided(f"x_{nan_at} is NaN and a later piece restarts: the tail decides it"
+                            " (#1758), but this oracle does not label NaN recovery yet (#1765)")
         st = gen.program(g, nan_at)[nan_at]
         if st[0] == "set":
             raise Refused(f"x_{nan_at} is a NaN literal, not a value the program computes")
@@ -207,8 +220,7 @@ def in_program(row):
     a, b = rat(last["a"]), rat(last["b"])
     j = N - s
     ex = x_s + b * j if a == 1 else a ** j * (x_s - b / (1 - a)) + b / (1 - a)
-    v, how = limit_of(ex)
-    v["bounded"] = v["bounded"] and all(math.isfinite(x) for x in xs[:s])
+    v, how = limit_of(ex)                 # bounded = EVENTUALLY bounded: the tail decides (#1758)
     return "symbolic", v, (f"exact closed form of x <- {last['a']!r} x + {last['b']!r} from"
                            f" x_{s} = {float(x_s):.10g}: {how}")
 
@@ -273,20 +285,21 @@ def refute(row, v, kind):
         if not (tail > head or s * xs[-1] == math.inf):
             raise Refused(f"float-degenerate: the values fed to the runtime do not run to"
                           f" {v['tends_to']}: the last {q} reach {s * tail!r}, the first {q} {s * head!r}")
-    elif v["limit"] is not None:
-        far, lim = gen.generate(row["gen"], max(20000, 10 * n)), float(v["limit"])
-        Q = len(far) // 4
+    elif v["limit"] is not None:           # the error must keep shrinking toward 0
+        H = max(10 ** 6, 10 * n)
+        far, lim = gen.generate(row["gen"], H), float(v["limit"])
         if any(x != x for x in far):
             raise Refused("float-degenerate: a value the generator computes is NaN, but the verdict is a limit")
-        dh, dt = (max(abs(x - lim) for x in part) for part in (far[:Q], far[-Q:]))
-        if not (dt < dh or dt <= derive.eps(lim)):
-            raise Refused(f"float-degenerate: the values do not approach {lim!r}: max |x - L| is"
-                          f" {dt:.3g} over the last quarter of {len(far)}, {dh:.3g} over the first")
+        dec, end = (max(abs(x - lim) for x in far[k:]) for k in (H // 10, H - H // 10))
+        if end > RHO * dec and end > derive.eps(lim):
+            raise Refused(f"the error |x - L| does not shrink toward 0: {end:.3g} over the last tenth of"
+                          f" {H} terms, {dec:.3g} over the last decade (more than {RHO} of it): no limit"
+                          f" {lim!r}, or one the floats cannot show")
     elif len(set(xs[-q:])) < 2:
         raise Refused(f"float-degenerate: no limit, but the last {q} values fed to the runtime"
                       f" are all {xs[-1]!r}")
-    if v["bounded"] and not all(math.isfinite(x) for x in xs):
-        raise Refused("float-degenerate: bounded, but a value fed to the runtime is infinite")
+    if v["bounded"] and not all(math.isfinite(x) for x in xs[len(xs) // 2:]):
+        raise Refused("float-degenerate: eventually bounded, but a late value fed to the runtime is infinite")
 
 
 def manual(row, sources, why):
@@ -299,7 +312,7 @@ def manual(row, sources, why):
 
 
 def _alarm(signum, frame):
-    raise Undecided("sympy took longer than 120 s")
+    raise SympyTimeout(f"took longer than {ALARM_S} s")
 
 
 def certify(corpus):
@@ -308,7 +321,7 @@ def certify(corpus):
     signal.signal(signal.SIGALRM, _alarm)
     for row in corpus["rows"]:
         rid, p = row["id"], row["props"]
-        signal.alarm(120)
+        signal.alarm(ALARM_S)
         try:
             const = constant(row)
             try:
@@ -324,6 +337,9 @@ def certify(corpus):
         except (Undecided, Refused) as e:
             refused.append(f"{rid}: {e}")
             continue
+        except SympyTimeout as e:
+            raise RuntimeError(f"{rid}: the certifier {e}; a timeout is an internal error, not a"
+                               " refusal, and never falls through to `manual` (#1766)")
         finally:
             signal.alarm(0)
         counts[kind] += 1

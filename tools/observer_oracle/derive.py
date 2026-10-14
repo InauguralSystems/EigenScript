@@ -12,15 +12,22 @@ certify.py; derive refuses a missing or stale certificate and needs no
 sympy. Each predicate is scored against ONE question: its single scored
 definition in the corpus `definitions` table. A `reported` definition (MATH
 "has a limit") becomes a label column that is printed, never scored. Every
-label is computed here from the certified properties, the generated values
-and that table; nothing per predicate or checkpoint is written by hand.
-derive() asserts its postconditions (one entry per predicate, of its scored
-class; CONVENTION converged implies stable), and score.py refuses a
+row declares `regime`, the index where its generator's law last changes (at
+least the structural one: a `pieces` row's last piece, a step threshold). A
+MATH verdict read before it is REPORTED, not scored: it would be decided by
+values after the read. A CONVENTION verdict there must be decided by
+x_0..x_n alone, or the row is refused. Every label is computed here from the
+certified properties, the generated values and that table; nothing per
+predicate or checkpoint is written by hand. derive() asserts its
+postconditions (one entry per predicate, of its scored class or REPORTED as
+above; CONVENTION converged implies stable), and score.py refuses a
 labels.json that differs from derive(corpus).
 """
 import hashlib
 import json
+import math
 import os
+import re
 import sys
 
 from gen import HarnessError, RANDOM_KINDS, generate
@@ -61,9 +68,20 @@ def code_hash():
 
 def row_hash(row, code):
     """What a certificate vouches for: the generator, the stated properties,
-    any manual argument, and the code that reads them."""
-    basis = {k: row.get(k) for k in ("gen", "props", "manual")}
+    any manual argument, where the row is read (checkpoints, regime), and
+    the code that reads them."""
+    basis = {k: row.get(k) for k in ("gen", "props", "manual", "checkpoints", "regime")}
     return hashlib.sha256((json.dumps(basis, sort_keys=True) + code).encode()).hexdigest()
+
+
+def structural_regime(gen):
+    """The last index at which the generator's LAW changes: the first value of
+    a `pieces` row's last piece, or the largest step(n, c) threshold."""
+    if gen["kind"] == "pieces":
+        return sum((1 if "x0" in q else 0) + q["steps"] for q in gen["pieces"][:-1])
+    if gen["kind"] == "closed":
+        return max([int(c) for c in re.findall(r"step\(\s*n\s*,\s*(\d+)\s*\)", gen["expr"])], default=0)
+    return 0
 
 
 def scored_classes(corpus):
@@ -102,10 +120,13 @@ def load_corpus(path):
         if not rid or rid in seen:
             raise HarnessError(f"row id missing or duplicated: {rid!r}")
         seen.add(rid)
-        for k in ("family", "form", "gen", "n", "checkpoints", "props", "why", "cite"):
+        for k in ("family", "form", "gen", "n", "checkpoints", "regime", "props", "why", "cite"):
             if k not in r:
                 raise HarnessError(f"{rid}: missing {k}")
         ats, p, g = r["checkpoints"], r["props"], r["gen"]
+        if not (isinstance(r["regime"], int) and structural_regime(g) <= r["regime"] <= r["n"]):
+            raise HarnessError(f"{rid}: regime {r['regime']!r} must be an index in [{structural_regime(g)},"
+                               f" n]: the generator's law last changes at x_{structural_regime(g)}")
         if not ats or ats != sorted(set(ats)) or ats[-1] != r["n"] or ats[0] < 1:
             raise HarnessError(f"{rid}: checkpoints {ats} must be increasing and end at n")
         if any(s not in sources for s in r["cite"]) or not r["why"]:
@@ -117,6 +138,8 @@ def load_corpus(path):
             raise HarnessError(f"{rid}: the first piece needs x0 and every piece but the last `steps`")
         if p["tends_to"] not in (None, "+inf", "-inf") or (p["tends_to"] and (p["bounded"] or p["limit"] is not None)):
             raise HarnessError(f"{rid}: tends_to {p['tends_to']!r} excludes a limit and boundedness")
+        if p["limit"] is not None and not p["bounded"]:
+            raise HarnessError(f"{rid}: a limit implies eventual boundedness")
         if p["deterministic"] != (g["kind"] not in RANDOM_KINDS):
             raise HarnessError(f"{rid}: deterministic={p['deterministic']} contradicts"
                                f" generator kind {g['kind']!r}")
@@ -191,7 +214,7 @@ def _improving(xs, n, bounded):
     ok = last is not None and last >= max(1, n - PATIENCE + 1)
     at = f"x_{last}" if last is not None else "none after x_0"
     why = f"last improvement {at} (best {best:.6g}); window [{max(1, n - PATIENCE + 1)}, {n}]"
-    return (ok and bounded), why + ("" if bounded else "; unbounded, so not improving")
+    return (ok and bounded), why + ("" if bounded else "; not eventually bounded, so not improving"), ok
 
 
 def _equilibrium(row, cert):
@@ -215,7 +238,7 @@ def _rules(row, cert, xs, far, n):
                                                   else "no finite limit") + f" ({why})"),
         ("converged", "CONVENTION"): _tail_within(row, far, n, eps, "eps"),
         ("stable", "CONVENTION"): _tail_within(row, far, n, band, "band"),
-        ("improving", "CONVENTION"): _improving(xs, n, p["bounded"]),
+        ("improving", "CONVENTION"): _improving(xs, n, p["bounded"])[:2],
         ("oscillating", "MATH"): (lim is None and tends is None, ("no limit and not +-inf" if lim is None
                                   and tends is None else "has a limit or tends to +-inf") + f" ({why})"),
         ("diverging", "MATH"): (tends is not None, (f"tends to {tends}" if tends
@@ -235,10 +258,6 @@ def derive_row(row, cert, defs, scored, reported):
         base = defs[(pred, cls)]
         return base + [s for s in row["cite"] if s not in base] if cls == "MATH" else base
     xs = generate(row["gen"], row["n"])
-    nan_at = next((i for i, v in enumerate(xs) if v != v), None)
-    if nan_at is not None and row["checkpoints"][0] < nan_at:
-        raise HarnessError(f"{row['id']}: checkpoint {row['checkpoints'][0]} precedes the NaN at"
-                           f" {nan_at}; no standard decides the whole-sequence predicates there")
     far = None                                  # horizon H = max(20000, 10n)
     if p["tends_to"] is None and (p["bounded"] or p["limit"] is not None):
         far = generate(row["gen"], max(20000, 10 * row["n"]))
@@ -250,22 +269,41 @@ def derive_row(row, cert, defs, scored, reported):
         entry = lambda q, cls: [cls, rule[(q, cls)][0], cite(q, cls), rule[(q, cls)][1]]
         v = {q: entry(q, scored[q]) for q in PREDS}
         v.update({col: entry(q, cls) for (q, cls), col in reported.items()})
+        if n < row["regime"]:                   # the tail's law starts after this read
+            for q in PREDS:
+                if scored[q] == "MATH":
+                    v[q][0], v[q][3] = "REPORTED", v[q][3] + (f"; REPORTED, not scored: the law"
+                                                             f" changes at x_{row['regime']}, after this read")
+                elif not prefix_decided(q, v[q][1], xs, n):
+                    raise HarnessError(f"{row['id']}@{n}.{q}: a CONVENTION verdict before the law"
+                                       f" changes at x_{row['regime']} depends on later values")
         out[f"{row['id']}@{n}"] = v
     return out
 
 
-def postconditions(labels, scored, reported):
+def prefix_decided(q, value, xs, n):
+    """Whether x_0..x_n alone decide a CONVENTION verdict: settling is refuted
+    by a non-finite x_n, and improving by no new best in the window."""
+    if q == "improving":
+        return not _improving(xs, n, True)[2]
+    return value is False and not math.isfinite(xs[n])
+
+
+def postconditions(labels, scored, reported, rows):
     """The derivation's own invariants, checked on its output: every
     predicate has ONE entry, of its scored class (so no verdict is scored
-    against two questions), the reported columns are present, and CONVENTION
+    against two questions) or REPORTED (a MATH verdict read before the row's
+    law last changes), the reported columns are present, and CONVENTION
     converged implies CONVENTION stable (the band is wider than eps)."""
     keys = set(PREDS) | set(reported.values())
     for key, preds in labels.items():
+        rid, n = key.rsplit("@", 1)
         if set(preds) != keys:
             raise HarnessError(f"{key}: label columns {sorted(preds)}, expected {sorted(keys)}")
         for q in PREDS:
             e = preds[q]
-            if len(e) != 4 or e[0] != scored[q] or not isinstance(e[1], bool):
+            early = scored[q] == "MATH" and int(n) < rows[rid]["regime"]
+            if len(e) != 4 or e[0] != ("REPORTED" if early else scored[q]) or not isinstance(e[1], bool):
                 raise HarnessError(f"{key}.{q}: {e[:2]} is not one {scored[q]} verdict")
         if scored["converged"] == scored["stable"] == "CONVENTION" \
                 and preds["converged"][1] and not preds["stable"][1]:
@@ -278,7 +316,7 @@ def derive(corpus, certs):
     labels = {}
     for row in corpus["rows"]:
         labels.update(derive_row(row, certs[row["id"]], defs, scored, reported))
-    postconditions(labels, scored, reported)
+    postconditions(labels, scored, reported, {r["id"]: r for r in corpus["rows"]})
     return labels
 
 
