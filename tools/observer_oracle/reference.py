@@ -9,9 +9,11 @@ Recommended model of the #1746 prior-art comment, section 4, with
   converged    windowed Cauchy test: diameter of the window <= tau
   diverging    Hardy Sec. 60 windowed: same-sign steps above tau that do
                not contract (rho >= 1), or a value that IS infinite
-  improving    ratio test on the steps: every |d_{i+1}| / |d_i| < 1
+  improving    CONVENTION (#1754): the recent half sets a new low below
+               the older half's best by more than min_delta (Keras/PyTorch
+               mode='min'); the ratio test survives as _contracting
   oscillating  Hardy Sec. 62 windowed: the window shows neither a limit
-               (converged / improving) nor a run to +-inf (diverging)
+               (converged / _contracting) nor a run to +-inf (diverging)
   equilibrium  no CUSUM alarm (NIST e-Handbook 6.3.2.3, k = 0.5 sigma,
                h = 4 sigma) of the recent half against the older half, no
                periodic fluctuation (NIST 6.4.4.2), not diverging
@@ -64,13 +66,27 @@ def diverging(w):
     return rho >= 1.0 - 1e-9
 
 
-def improving(w):
+def _contracting(w):
+    """Ratio test on the steps (Nocedal-Wright App. A.2): every
+    |d_{i+1}| / |d_i| < 1 and not yet settled: evidence of a limit."""
     if not _full(w) or not _finite(w) or converged(w):
         return False
     d = _steps(w)
     if any(s == 0.0 for s in d):
         return False
     return all(abs(b) / abs(a) < 1.0 for a, b in zip(d, d[1:]))
+
+
+def improving(w):
+    """CONVENTION (owner ruling, #1754): Keras/PyTorch mode='min'. The
+    corpus compares the recent best with the best of the whole history; a
+    window approximates that history by its older half, so the recent half
+    must set a new low below the older half's best by more than min_delta."""
+    if len(w) < 2 or not _finite(w):
+        return False
+    half = (len(w) + 1) // 2
+    best = min(w[:half])
+    return min(w[half:]) < best - RTOL * max(abs(best), SCALE)
 
 
 def _periodic(w):
@@ -88,7 +104,7 @@ def _periodic(w):
 def oscillating(w):
     if not _full(w) or not _finite(w):
         return False
-    return not (converged(w) or improving(w) or diverging(w))
+    return not (converged(w) or _contracting(w) or diverging(w))
 
 
 def equilibrium(w):

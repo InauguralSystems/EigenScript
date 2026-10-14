@@ -19,14 +19,16 @@
   "RW_RECURRENT": {"text": "A simple random walk on Z crosses every point infinitely often (recurrence; Polya 1921). Wikipedia, 'Random walk', one-dimensional section.", "status": "VERIFIED: en.wikipedia.org raw page fetched 2026-10-14 (secondary source)"},
   "BOREL_CANTELLI": {"text": "Second Borel-Cantelli lemma: independent events with divergent probability sum occur infinitely often with probability 1 (Wikipedia, 'Borel-Cantelli lemma', citing Feller and Durrett). So a non-degenerate iid sequence a.s. has |x_{n+1} - x_n| > delta infinitely often for some delta > 0 and does not converge.", "status": "VERIFIED: en.wikipedia.org raw page fetched 2026-10-14 (secondary source)"},
   "NIST_6442": {"text": "NIST/SEMATECH e-Handbook of Statistical Methods, Sec. 6.4.4.2 'Stationarity': mean, variance and autocorrelation structure do not change over time: no trend, constant variance, constant autocorrelation and no periodic fluctuations (seasonality).", "status": "VERIFIED: itl.nist.gov/div898/handbook/pmc/section4/pmc442.htm fetched 2026-10-14"},
-  "SHNOL_2007": {"text": "E. Shnol, 'Stability of equilibria', Scholarpedia 2(3):2770 (2007): Lyapunov stability takes into account only perturbations of the initial conditions.", "status": "VERIFIED: scholarpedia.org/article/Stability_of_equilibria fetched 2026-10-14"}
+  "SHNOL_2007": {"text": "E. Shnol, 'Stability of equilibria', Scholarpedia 2(3):2770 (2007): Lyapunov stability takes into account only perturbations of the initial conditions.", "status": "VERIFIED: scholarpedia.org/article/Stability_of_equilibria fetched 2026-10-14"},
+  "KERAS_ES": {"text": "Keras, EarlyStopping callback: 'min_delta: Minimum change in the monitored quantity to qualify as an improvement, i.e. an absolute change of less than min_delta, will count as no improvement'; for a loss the mode is 'min' (lower is better).", "status": "VERIFIED: keras.io/api/callbacks/early_stopping/ fetched 2026-10-14"},
+  "TORCH_RLROP": {"text": "PyTorch, torch.optim.lr_scheduler.ReduceLROnPlateau: mode 'min' (default) acts when the quantity 'has stopped decreasing'; threshold_mode 'rel' counts a value a as better than best iff a < best * (1 - threshold).", "status": "VERIFIED: torch/optim/lr_scheduler.py on pytorch main (docstring and _is_better) fetched 2026-10-14"}
  },
  "definitions": {
-  "_checkpoints": {"text": "How a limit-based definition is read at a finite checkpoint n. (i) WHETHER a sequence tends to a limit, to +inf or -inf, or oscillates is a property of the whole sequence (Hardy Secs. 58, 60, 62), decided from the generator, not from the observed prefix; so `oscillating` and `diverging` have one MATH value per row. (ii) WHEN a convergent sequence counts as converged uses eps(L) = rtol*max(|L|, scale), rtol = scale = 1e-3: converged@n iff the sequence tends to L AND |x_m - L| <= eps(L) for every m >= n (Hardy Sec. 58 with eps fixed at the observer's tolerance and n0(eps) <= n). eps only decides the timing, never whether a limit exists. `improving` uses the same timing. (iii) CONVENTION verdicts drop the 'tends to L' requirement: converged@n iff the tail from n stays within eps(L) of some L (numpy.isclose), and oscillating iff the tail neither stays within eps of a point nor tends to +-inf."},
+  "_checkpoints": {"text": "How a limit-based definition is read at a finite checkpoint n. (i) WHETHER a sequence tends to a limit, to +inf or -inf, or oscillates is a property of the whole sequence (Hardy Secs. 58, 60, 62), decided from the generator, not from the observed prefix; so `oscillating` and `diverging` have one MATH value per row. (ii) WHEN a convergent sequence counts as converged uses eps(L) = rtol*max(|L|, scale), rtol = scale = 1e-3: converged@n iff the sequence tends to L AND |x_m - L| <= eps(L) for every m >= n (Hardy Sec. 58 with eps fixed at the observer's tolerance and n0(eps) <= n). eps only decides the timing, never whether a limit exists. (`improving` is a CONVENTION with its own window rule; see its definition.) (iii) CONVENTION verdicts drop the 'tends to L' requirement: converged@n iff the tail from n stays within eps(L) of some L (numpy.isclose), and oscillating iff the tail neither stays within eps of a point nor tends to +-inf."},
   "converged": {"label": "MATH (CONVENTION where only the tolerance decides)", "cite": ["HARDY_58", "ISCLOSE"], "text": "MATH: the sequence tends to a limit L (Hardy Sec. 58) and has settled within eps(L) by n (see _checkpoints). A non-degenerate iid sequence a.s. tends to no limit (second Borel-Cantelli), so noise rows are MATH false at every amplitude; their CONVENTION verdict (within eps of the centre from n on, numpy.isclose) is true when the amplitude is below eps."},
   "diverging": {"label": "MATH", "cite": ["HARDY_60", "RUDIN_3_15"], "text": "Tends to +inf or to -inf (Hardy Sec. 60 Def. II; Rudin Def. 3.15). A sequence whose magnitude grows while its sign keeps changing ((-1.1)^n) does neither: it oscillates infinitely (Hardy Sec. 72)."},
   "oscillating": {"label": "MATH (CONVENTION where only the tolerance decides)", "cite": ["HARDY_62"], "text": "Hardy Sec. 62: the sequence tends neither to a limit nor to +inf nor to -inf (finitely if bounded, infinitely if not). Cycles, (-1)^n + 1/n, sin n (Examples XXIV.7), chaos, iid noise and the random walk all oscillate; convergent sequences (including damped and alternating approaches) and divergent ones do not. Asymptotic: a transient oscillation of a convergent sequence does not count. CONVENTION (iid noise below eps): the tail stays within eps of the centre, so at that tolerance it does not oscillate."},
-  "improving": {"label": "MATH", "cite": ["NW_A2"], "text": "The sequence tends to L at least Q-linearly (Nocedal-Wright App. A.2 eq. (A.34): |x_{k+1}-L|/|x_k-L| <= r < 1 for all large k) AND is not yet converged at n. Direction-agnostic: a loss rising to a plateau is improving in this sense, while the ML sense (Keras mode=min) would call it worse. Sublinear convergence (1/k-type tails, NW Exercise 2.13) is NOT improving."},
+  "improving": {"label": "CONVENTION (owner ruling on #1754: directional, the ML sense)", "cite": ["KERAS_ES", "TORCH_RLROP"], "text": "improving@n iff the monitored value reached a new best (lowest) value within the last 10 steps, beating the best before them by more than min_delta: min(x_{k+1..n}) < min(x_{0..k}) - min_delta, k = max(0, n-10), min_delta = rtol*max(|best|, scale). This is Keras EarlyStopping / PyTorch ReduceLROnPlateau with mode='min' (lower is better) and patience = the 10-step window: 'improving' = such a callback would see an improvement and not stop. min_delta is PyTorch's relative threshold at the observer's rtol = 1e-3, floored at scale = 1e-3 so it is absolute near zero. Directional: falling losses and decreasing decays improve; growth, rising-to-plateau, decay toward a limit from below, cycles that revisit an old best, and settled values do not. No standard mathematical definition exists, so there is no MATH verdict. Computed from the generated sequence by this rule."},
   "equilibrium": {"label": "MATH on some rows, EIGS-DEFINED on the rest", "cite": ["NIST_6442"], "text": "MATH rows: (level) stationarity, NIST 6.4.4.2: no trend, constant variance and autocorrelation, and no periodic fluctuations. MATH true: constants and iid noise. MATH false: trends, divergent sequences, growing variance (random walk, growing oscillations) and periodic fluctuations (cycles, the burst row, (-1)^n + 1/n). EIGS-DEFINED elsewhere (deterministic transients, chaos, quasi-periodic sin n). Documented intent (docs/PREDICATES.md): balanced motion, window |mean(rel)| < dh_zero and variance(rel) < dh_zero^2."},
   "stable": {"label": "EIGS-DEFINED", "cite": ["SHNOL_2007"], "text": "No standard definition applies: Lyapunov stability concerns perturbations of initial conditions, not one trajectory. Documented intent (docs/PREDICATES.md): the small-motion band, every relative step under dh_small with no strong consecutive sign flips; may carry drift."}
  },
@@ -36,7 +38,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "constant: L = 5, |x_m - L| = 0 for all m"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "constant: tends to its value, a limit"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 5 vs best of x_0..x_50 = 5: improvement 0 <= min_delta 0.005"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "a constant is (degenerately) stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -46,7 +48,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "constant: L = 1e308, |x_m - L| = 0 for all m"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded: |x_n| = 1e308 for all n"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "constant: tends to its value, a limit"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_21..x_30 = 1e+308 vs best of x_0..x_20 = 1e+308: improvement 0 <= min_delta 1e+305"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "constant"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -56,7 +58,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "L = 0, eps = 1e-6; x_5 = 0.03125 > eps"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges (period-1 limit)"]],
-    "improving": [["MATH", true, ["NW_A2"], "Q-linear with rate 0.5, not yet within eps"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_5 = 0.03125 vs best of x_0..x_0 = 1: improvement 0.969 > min_delta 0.001"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -64,7 +66,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "0.5^m <= 0.5^60 = 8.7e-19 <= eps = 1e-6 for all m >= 60"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 8.67362e-19 vs best of x_0..x_50 = 8.88178e-16: improvement 8.87e-16 <= min_delta 1e-06"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -74,7 +76,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "x_20 = 0.1216 > eps = 1e-6"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", true, ["NW_A2"], "Q-linear with rate 0.9, not yet within eps"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_11..x_20 = 0.121577 vs best of x_0..x_10 = 0.348678: improvement 0.227 > min_delta 0.000349"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -82,7 +84,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "0.9^300 = 1.9e-14 <= 1e-6 and decreasing"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 1.87393e-14 vs best of x_0..x_290 = 5.37437e-14: improvement 3.5e-14 <= min_delta 1e-06"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -92,7 +94,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "x_60 = 0.547 > eps = 1e-6"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", true, ["NW_A2"], "Q-linear with rate 0.99 (< 1), not yet within eps"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.547157 vs best of x_0..x_50 = 0.605006: improvement 0.0578 > min_delta 0.000605"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -100,7 +102,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "0.99^2000 = 1.9e-9 <= 1e-6 and decreasing"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = 1.86376e-09 vs best of x_0..x_1990 = 2.06081e-09: improvement 1.97e-10 <= min_delta 1e-06"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -110,7 +112,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 - 5| = 95*0.5^60 = 8e-17 <= eps = 5e-3"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 5"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 5 vs best of x_0..x_50 = 5: improvement 8.44e-14 <= min_delta 0.005"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -120,7 +122,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 - 5000| = 95000*0.5^60 = 8e-14 <= eps = 5"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 5000 vs best of x_0..x_50 = 5000: improvement 8.46e-11 <= min_delta 5"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -130,7 +132,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 - 0.005| = 0.095*0.5^60 = 8e-20 <= eps = 5e-6"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.005 vs best of x_0..x_50 = 0.005: improvement 8.33e-17 <= min_delta 5e-06"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -140,7 +142,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
     "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "x_n = 1e20^n -> +inf"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_31..x_40 = inf vs best of x_0..x_30 = 1: improvement -inf <= min_delta 0.001"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -150,7 +152,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
     "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "1.5^n -> +inf"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 9.56432e+08 vs best of x_0..x_50 = 1: improvement -9.56e+08 <= min_delta 0.001"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -160,7 +162,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
     "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "100 - n -> -inf"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "tends to -inf, so it does not oscillate"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 40 vs best of x_0..x_50 = 50: improvement 10 > min_delta 0.05"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "linear trend in the mean"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -170,7 +172,7 @@
     "converged": [["MATH", false, ["HARDY_77", "HARDY_58", "RUDIN_3_1"], "the harmonic series diverges"]],
     "diverging": [["MATH", true, ["HARDY_77", "HARDY_60", "RUDIN_3_15"], "H_n -> +inf (like ln n)"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 4.53804 vs best of x_0..x_50 = 1: improvement -3.54 <= min_delta 0.001"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -178,7 +180,7 @@
     "converged": [["MATH", false, ["HARDY_77", "HARDY_58", "RUDIN_3_1"], "the harmonic series diverges"]],
     "diverging": [["MATH", true, ["HARDY_77", "HARDY_60", "RUDIN_3_15"], "H_n -> +inf"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 6.25568 vs best of x_0..x_290 = 1: improvement -5.26 <= min_delta 0.001"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -186,7 +188,7 @@
     "converged": [["MATH", false, ["HARDY_77", "HARDY_58", "RUDIN_3_1"], "the harmonic series diverges"]],
     "diverging": [["MATH", true, ["HARDY_77", "HARDY_60", "RUDIN_3_15"], "H_n -> +inf"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = 8.17436 vs best of x_0..x_1990 = 1: improvement -7.17 <= min_delta 0.001"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -196,7 +198,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
     "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "ln n -> +inf"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 5.68017 vs best of x_0..x_290 = 0.693147: improvement -4.99 <= min_delta 0.000693"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -206,7 +208,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
     "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "sqrt n -> +inf"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 17.088 vs best of x_0..x_290 = 1: improvement -16.1 <= min_delta 0.001"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -216,7 +218,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "L = 0, eps = 1e-6; |x_m| = 1/(m+1) > eps until m ~ 1e6"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges to 0: the alternation decays, no cycle"]],
-    "improving": [["MATH", false, ["NW_A2"], "|x_{k+1}|/|x_k| = (k+1)/(k+2) -> 1: sublinear"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = -0.0188679 vs best of x_0..x_50 = -1: improvement -0.981 <= min_delta 0.001"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -224,7 +226,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_2000| = 5e-4 > eps = 1e-6"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges to 0"]],
-    "improving": [["MATH", false, ["NW_A2"], "sublinear"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = -0.000501756 vs best of x_0..x_1990 = -1: improvement -0.999 <= min_delta 0.001"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -234,7 +236,7 @@
     "converged": [["MATH", false, ["HARDY_188", "ALT_SERIES_EST", "HARDY_58", "RUDIN_3_1"], "|x_60 - ln 2| = 8.3e-3 > eps = 6.9e-4"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to ln 2"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges: the alternation decays"]],
-    "improving": [["MATH", false, ["NW_A2"], "error ratio -> -1: sublinear"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.683624 vs best of x_0..x_50 = 0.5: improvement -0.184 <= min_delta 0.0005"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -242,7 +244,7 @@
     "converged": [["MATH", true, ["HARDY_188", "ALT_SERIES_EST", "HARDY_58", "RUDIN_3_1"], "Leibniz: |x_m - ln 2| <= 1/(m+2) <= 5e-4 <= eps = 6.9e-4 for all m >= 2000"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = 0.692896 vs best of x_0..x_1990 = 0.5: improvement -0.193 <= min_delta 0.0005"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -252,7 +254,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "L = 0, eps = 1e-6; |x_21| = 0.109*|cos 21| = 0.06 > eps"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges to 0 (asymptotic definition; the transient oscillation does not count)"]],
-    "improving": [["MATH", false, ["NW_A2"], "|x_{k+1}|/|x_k| is unbounded (cos near 0): not Q-linear"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_11..x_20 = -0.177456 vs best of x_0..x_10 = -0.721705: improvement -0.544 <= min_delta 0.000722"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -260,7 +262,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_m| <= 0.9^300 = 1.9e-14 <= 1e-6"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = -4.29187e-14 vs best of x_0..x_290 = -0.721705: improvement -0.722 <= min_delta 0.000722"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -270,7 +272,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "envelope 0.99^100 = 0.37 > eps = 1e-6"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges to 0 (asymptotic definition)"]],
-    "improving": [["MATH", false, ["NW_A2"], "not Q-linear (cos zeros)"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_91..x_100 = -0.385804 vs best of x_0..x_90 = -0.932058: improvement -0.546 <= min_delta 0.000932"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -280,7 +282,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; prime period 2, amplitude 27"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 3 vs best of x_0..x_50 = 3: improvement 0 <= min_delta 0.003"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -290,7 +292,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; prime period 2, amplitude 1.5"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.5 vs best of x_0..x_50 = 0.5: improvement 0 <= min_delta 0.0005"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -300,7 +302,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; prime period 4, amplitude 27"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 3 vs best of x_0..x_50 = 3: improvement 0 <= min_delta 0.003"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -310,7 +312,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "four limit points"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; prime period 4, amplitude 6"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 1 vs best of x_0..x_50 = 1: improvement 0 <= min_delta 0.001"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -320,7 +322,7 @@
     "converged": [["MATH", false, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "x* = 1 - 1/2.8 = 0.642857; |x_10 - x*| = 4.1e-3 > eps = 6.4e-4"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded in [0, 1]"]],
     "oscillating": [["MATH", false, ["HARDY_62", "STROGATZ_10", "LOGISTIC_WIKI"], "attracting fixed point (|f'(x*)| = 0.8 < 1); the approach alternates but converges"]],
-    "improving": [["MATH", true, ["STROGATZ_10", "LOGISTIC_WIKI", "NW_A2"], "Q-linear with rate |f'(x*)| = 0.8, not yet within eps"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_10 = 0.617165 vs best of x_0..x_0 = 0.4: improvement -0.217 <= min_delta 0.0004"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -328,7 +330,7 @@
     "converged": [["MATH", true, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "|x_m - x*| <= ~0.8^m: 0 in double precision by m = 200"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", false, ["HARDY_62", "STROGATZ_10", "LOGISTIC_WIKI"], "tends to the fixed point"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = 0.642857 vs best of x_0..x_190 = 0.4: improvement -0.243 <= min_delta 0.0004"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -338,7 +340,7 @@
     "converged": [["MATH", false, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "attracting 2-cycle {0.5130, 0.7995}"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "STROGATZ_10", "LOGISTIC_WIKI"], "approaches an attracting prime-period-2 cycle, amplitude 0.286: several limit points, bounded: oscillates finitely"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 0.513045 vs best of x_0..x_290 = 0.4: improvement -0.113 <= min_delta 0.0004"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -348,7 +350,7 @@
     "converged": [["MATH", false, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "attracting 4-cycle"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "STROGATZ_10", "LOGISTIC_WIKI"], "approaches an attracting prime-period-4 cycle {0.383, 0.827, 0.501, 0.875}: several limit points, bounded: oscillates finitely"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 0.38282 vs best of x_0..x_290 = 0.382818: improvement -1.27e-06 <= min_delta 0.000383"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -358,7 +360,7 @@
     "converged": [["MATH", false, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "chaotic: lambda > 0, no limit"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded in [0, 1]"]],
     "oscillating": [["MATH", true, ["HARDY_62", "LOGISTIC_WIKI"], "chaotic orbit in [0, 1] (lambda > 0): no limit, bounded: oscillates finitely"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 0.101538 vs best of x_0..x_290 = 0.0951413: improvement -0.0064 <= min_delta 9.51e-05"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -368,7 +370,7 @@
     "converged": [["MATH", false, ["HARDY_62", "HARDY_58", "RUDIN_3_1"], "limit set is [-1, 1]"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "Hardy Examples XXIV.7 with theta = 1/pi irrational: oscillates finitely"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = -0.999756 vs best of x_0..x_290 = -0.99999: improvement -0.000234 <= min_delta 0.001"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -378,7 +380,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_10 - x*| = 5.2e-3 > eps = 7.4e-4"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62", "STROGATZ_10"], "attracting fixed point; the alternating approach converges"]],
-    "improving": [["MATH", true, ["STROGATZ_10", "NW_A2"], "Q-linear with rate |f'(x*)| = sin(x*) = 0.674"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_10 = 0.540302 vs best of x_0..x_0 = 1: improvement 0.46 > min_delta 0.001"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -386,7 +388,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 - x*| = 1.4e-11 <= eps and contracting"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62", "STROGATZ_10"], "tends to the fixed point"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.739085 vs best of x_0..x_50 = 0.540302: improvement -0.199 <= min_delta 0.00054"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -396,7 +398,7 @@
     "converged": [["MATH", true, ["NW_A2", "HARDY_58", "RUDIN_3_1"], "Q-quadratic; exact to double precision from n = 5"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_21..x_30 = 1.41421 vs best of x_0..x_20 = 1: improvement -0.414 <= min_delta 0.001"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -406,7 +408,7 @@
     "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1 for every m"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["MATH", false, ["NW_A2", "BOREL_CANTELLI"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_91..x_100 = 99.999 vs best of x_0..x_90 = 99.999: improvement -7.21e-06 <= min_delta 0.1"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -414,7 +416,7 @@
     "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["MATH", false, ["NW_A2", "BOREL_CANTELLI"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = 99.9992 vs best of x_0..x_190 = 99.999: improvement -0.000205 <= min_delta 0.1"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -422,7 +424,7 @@
     "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["MATH", false, ["NW_A2", "BOREL_CANTELLI"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 99.9992 vs best of x_0..x_290 = 99.999: improvement -0.000219 <= min_delta 0.1"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -432,7 +434,7 @@
     "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["MATH", false, ["NW_A2", "BOREL_CANTELLI"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 99.9991 vs best of x_0..x_290 = 99.999: improvement -4.91e-05 <= min_delta 0.1"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -442,7 +444,7 @@
     "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-9 <= eps = 0.1"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["MATH", false, ["NW_A2", "BOREL_CANTELLI"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 100 vs best of x_0..x_290 = 100: improvement -2.03e-10 <= min_delta 0.1"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -452,7 +454,7 @@
     "converged": [["MATH", false, ["BOREL_CANTELLI", "HARDY_58", "RUDIN_3_1"], "amplitude 10 > eps = 0.1: a.s. leaves every eps-ball infinitely often"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_91..x_100 = 90.1142 vs best of x_0..x_90 = 90.0421: improvement -0.0721 <= min_delta 0.09"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -460,7 +462,7 @@
     "converged": [["MATH", false, ["BOREL_CANTELLI", "HARDY_58", "RUDIN_3_1"], "a.s. no limit"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 92.2272 vs best of x_0..x_290 = 90.0421: improvement -2.19 <= min_delta 0.09"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -470,7 +472,7 @@
     "converged": [["MATH", false, ["RW_RECURRENT", "HARDY_58", "RUDIN_3_1"], "recurrent: a.s. no limit"]],
     "diverging": [["MATH", false, ["RW_RECURRENT", "HARDY_60", "RUDIN_3_15"], "recurrent: a.s. returns to 0 infinitely often, so not -> +-inf"]],
     "oscillating": [["MATH", true, ["HARDY_62", "RW_RECURRENT"], "recurrent: a.s. tends to no limit and not to +-inf (limsup +inf, liminf -inf): oscillates infinitely"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 5 vs best of x_0..x_290 = 0: improvement -5 <= min_delta 1e-06"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "Var(x_n) = n (sum of n independent +-1 steps): variance not constant"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -480,7 +482,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "the tail from n = 100 is the constant 2 (a causal window cannot know this yet)"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "eventually constant: tends to 2"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_94..x_103 = 1 vs best of x_0..x_93 = 1: improvement 0 <= min_delta 0.001"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -488,7 +490,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "constant 2 from n = 100"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "eventually constant: tends to 2"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_151..x_160 = 2 vs best of x_0..x_150 = 1: improvement -1 <= min_delta 0.001"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -498,7 +500,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_30 - 0.05| = 0.209 > eps = 5e-5"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0.05"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["MATH", true, ["NW_A2"], "Q-linear with rate exp(-0.08) = 0.923"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_21..x_30 = 0.258651 vs best of x_0..x_20 = 0.514362: improvement 0.256 > min_delta 0.000514"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -506,7 +508,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "error 2.9e-14 <= eps = 5e-5 (settled from n = 135)"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_391..x_400 = 0.05 vs best of x_0..x_390 = 0.05: improvement 3.57e-14 <= min_delta 5e-05"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -516,7 +518,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_60 - 0.1| = 0.76 > eps = 1e-4"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0.1"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["MATH", false, ["NW_A2"], "error ratio -> 1: sublinear"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.855929 vs best of x_0..x_50 = 0.916497: improvement 0.0606 > min_delta 0.000916"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -524,7 +526,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_2000 - 0.1| = 0.141 > eps = 1e-4"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0.1"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["MATH", false, ["NW_A2"], "sublinear"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = 0.241069 vs best of x_0..x_1990 = 0.241421: improvement 0.000352 > min_delta 0.000241"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -534,7 +536,7 @@
     "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 0.35| <= 1e-6 <= eps = 3.5e-4"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["MATH", false, ["NW_A2", "BOREL_CANTELLI"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = 0.349999 vs best of x_0..x_190 = 0.349999: improvement -5.17e-08 <= min_delta 0.00035"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -544,7 +546,7 @@
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_20 - 1| = 0.073 > eps = 1e-3"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 1"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["MATH", true, ["NW_A2"], "Q-linear with rate 0.9 (direction-agnostic; the ML sense would call this loss worse)"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_11..x_20 = 0.811714 vs best of x_0..x_10 = 0.4: improvement -0.412 <= min_delta 0.0004"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }},
@@ -552,7 +554,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "error 1.1e-14 <= eps = 1e-3"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 1 vs best of x_0..x_290 = 0.4: improvement -0.6 <= min_delta 0.0004"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -562,7 +564,7 @@
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "x: 0.5^60 <= eps = 1e-6"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "x converges"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "x converges (y, the last-assigned binding, is period 2)"]],
-    "improving": [["MATH", false, ["NW_A2"], "x already converged"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 8.67362e-19 vs best of x_0..x_50 = 8.88178e-16: improvement 8.87e-16 <= min_delta 1e-06"]],
     "equilibrium": [["EIGS-DEFINED"]],
     "stable": [["EIGS-DEFINED"]]
    }}
@@ -571,7 +573,7 @@
    {"at": 10, "v": {
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_10 - 1e300| = 9.8e301 > eps = 1e297"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", true, ["NW_A2"], "Q-linear with rate 0.5, not yet within eps"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_10 = 9.86553e+301 vs best of x_0..x_0 = 1e+305: improvement 9.99e+304 > min_delta 1e+302"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 1e300"]],
     "equilibrium": [["EIGS-DEFINED"]]
@@ -579,7 +581,7 @@
    {"at": 80, "v": {
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_m - 1e300| <= 1e305*0.5^80 = 8e280 <= eps = 1e297"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_71..x_80 = 1e+300 vs best of x_0..x_70 = 1e+300: improvement 0 <= min_delta 1e+297"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "equilibrium": [["EIGS-DEFINED"]]
@@ -589,7 +591,7 @@
    {"at": 5, "v": {
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_5 + 5| = 95/32 = 2.97 > eps = 5e-3"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", true, ["NW_A2"], "Q-linear with rate 0.5"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_5 = -52.5 vs best of x_0..x_0 = -100: improvement -47.5 <= min_delta 0.1"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to -5"]],
     "equilibrium": [["EIGS-DEFINED"]]
@@ -597,7 +599,7 @@
    {"at": 60, "v": {
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 + 5| = 95*0.5^60 = 8e-17 <= eps = 5e-3"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = -5 vs best of x_0..x_50 = -100: improvement -95 <= min_delta 0.1"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "equilibrium": [["EIGS-DEFINED"]]
@@ -607,7 +609,7 @@
    {"at": 20, "v": {
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_20| = 0.1216 > eps = 1e-6"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", true, ["NW_A2"], "Q-linear with rate 0.9"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_11..x_20 = -0.313811 vs best of x_0..x_10 = -1: improvement -0.686 <= min_delta 0.001"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
     "equilibrium": [["EIGS-DEFINED"]]
@@ -615,7 +617,7 @@
    {"at": 300, "v": {
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_m| <= 0.9^300 = 1.9e-14 <= 1e-6"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged at n"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = -4.83693e-14 vs best of x_0..x_290 = -1: improvement -1 <= min_delta 0.001"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
     "equilibrium": [["EIGS-DEFINED"]]
@@ -625,7 +627,7 @@
    {"at": 5, "v": {
     "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "constant: tends to 7 and |x_m - 7| = 0 for all m (a 10-step window has not filled)"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "already converged"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_5 = 7 vs best of x_0..x_0 = 7: improvement 0 <= min_delta 0.007"]],
     "oscillating": [["MATH", false, ["HARDY_62"], "constant: tends to 7"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "equilibrium": [["MATH", true, ["NIST_6442"], "constant"]]
@@ -635,7 +637,7 @@
    {"at": 200, "v": {
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = -50.2869 vs best of x_0..x_190 = -36.5794: improvement 13.7 > min_delta 0.0366"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "no limit, not +-inf, unbounded: oscillates infinitely"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "cos n > 1/2 and < -1/2 infinitely often, so x_n takes both signs at growing magnitude: tends to neither +inf nor -inf"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "variance grows with n"]]
@@ -645,7 +647,7 @@
    {"at": 144, "v": {
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points (1 and 3)"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_135..x_144 = 1 vs best of x_0..x_134 = 1: improvement 0 <= min_delta 0.001"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; the last 11 values are all 1.0"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation"]]
@@ -653,7 +655,7 @@
    {"at": 149, "v": {
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_140..x_149 = 1 vs best of x_0..x_139 = 1: improvement 0 <= min_delta 0.001"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "cycle of period 30"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation"]]
@@ -663,7 +665,7 @@
    {"at": 300, "v": {
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "limit points -1 and +1"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = -0.996678 vs best of x_0..x_290 = -0.996564: improvement 0.000114 <= min_delta 0.000997"]],
     "oscillating": [["MATH", true, ["HARDY_62"], "Hardy's own example in Sec. 62: oscillates (finitely), values do not recur"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded by 3/2"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "periodic (alternating) fluctuation"]]
@@ -673,7 +675,7 @@
    {"at": 200, "v": {
     "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
     "stable": [["EIGS-DEFINED"]],
-    "improving": [["MATH", false, ["NW_A2"], "no limit"]],
+    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = -1.72641e+08 vs best of x_0..x_190 = -6.65606e+07: improvement 1.06e+08 > min_delta 6.66e+04"]],
     "oscillating": [["MATH", true, ["HARDY_62", "HARDY_72"], "Hardy Sec. 72: x^n oscillates infinitely for x < -1"]],
     "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15", "HARDY_72"], "alternating sign: tends to neither +inf nor -inf (Hardy Sec. 72, x < -1)"]],
     "equilibrium": [["MATH", false, ["NIST_6442"], "variance grows with n"]]
