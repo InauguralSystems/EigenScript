@@ -119,7 +119,7 @@ Value* builtin_buf_get(Value *arg) {
         /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
         return make_num(0);
     }
-    return make_num(buffer_read_num(buf, idx));
+    return make_num(EIGS_ARG_PROP(buffer_read_num(buf, idx)));
 }
 
 /* buf_set of [buf, index, value] — O(1) indexed write */
@@ -147,7 +147,7 @@ Value* builtin_buf_set(Value *arg) {
         return make_null();
     }
     int idx = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
-    double val = eigs_list_num(arg, 2, __func__);
+    double val = EIGS_ARG_PROP(eigs_list_num(arg, 2, __func__));
     if (g_has_error) return make_null();   /* #1637: a non-number index raised; nothing written */
     if (idx < 0 || idx >= buf->data.buffer.count) {
         rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
@@ -182,7 +182,7 @@ Value* builtin_buf_from_list(Value *arg) {
     v->refcount = 1;
     for (int i = 0; i < n; i++) {
         if (list_elem_type(arg, i) == VAL_NUM) {
-            v->data.buffer.data[i] = eigs_slot_num(list_slot(arg, i), __func__);
+            v->data.buffer.data[i] = EIGS_ARG_PROP(eigs_slot_num(list_slot(arg, i), __func__));
         } else {
             /* #1061: a non-number element silently stayed 0.0. */
             const char *tn = val_type_name(list_elem_type(arg, i));
@@ -211,7 +211,7 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
          * here) ends the string as a NUL would -- the documented truncation
          * the compatibility mode keeps. It is never read as a number. */
         if (nul_ends && (item->type != VAL_NUM
-                         || finite_num_to_byte(eigs_num_arg(item, __func__)) == 0)) break;
+                         || finite_num_to_byte(EIGS_ARG_PROP(eigs_num_arg(item, __func__))) == 0)) break;
 #ifdef EIGS_IEEE
         if (g_has_error) return 0;   /* #1746: a non-finite byte raised */
 #endif
@@ -239,8 +239,8 @@ Value* builtin_str_from_bytes(Value *arg) {
     int len = 0;
     for (int i = 0; i < n; i++) {
         double dv = arg->type == VAL_LIST
-                        ? (list_elem_type(arg, i) == VAL_NUM ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
-                        : buffer_read_num(arg, i);
+                        ? (list_elem_type(arg, i) == VAL_NUM ? EIGS_ARG_PROP(eigs_slot_num(list_slot(arg, i), __func__)) : 0.0)
+                        : EIGS_ARG_PROP(buffer_read_num(arg, i));
         if (g_has_error) { free(s); return make_null(); }
         int b = finite_num_to_byte(dv);
 #ifdef EIGS_IEEE
@@ -264,7 +264,7 @@ Value* builtin_str_from_bytes(Value *arg) {
 Value* builtin_f64_to_bytes(Value *arg) {
     /* #971 Phase D: a non-number encoded as 0.0's eight bytes. */
     STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "f64_to_bytes", "a number");
-    double d = (arg && arg->type == VAL_NUM) ? eigs_num_arg(arg, __func__) : 0.0;
+    double d = (arg && arg->type == VAL_NUM) ? EIGS_ARG_PROP(eigs_num_arg(arg, __func__)) : 0.0;
     uint64_t bits;
     memcpy(&bits, &d, sizeof(bits));
 #ifdef EIGS_IEEE
@@ -286,11 +286,11 @@ Value* builtin_f64_from_bytes(Value *arg) {
         int n = arg->data.list.count;
         for (int i = 0; i < 8 && i < n; i++)
             if (list_elem_type(arg, i) == VAL_NUM)
-                bytes_in[i] = eigs_slot_num(list_slot(arg, i), __func__);
+                bytes_in[i] = EIGS_ARG_PROP(eigs_slot_num(list_slot(arg, i), __func__));
     } else if (arg && arg->type == VAL_BUFFER) {
         int n = arg->data.buffer.count;
         for (int i = 0; i < 8 && i < n; i++) {
-            bytes_in[i] = buffer_read_num(arg, i);
+            bytes_in[i] = EIGS_ARG_PROP(buffer_read_num(arg, i));
             if (g_has_error) return make_null();
         }
     } else {
@@ -522,7 +522,7 @@ static int buf_num_arg(const char *who, const char *what, EigsSlot s,
         rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
         return 0;
     }
-    *out = eigs_slot_num(s, __func__);
+    *out = EIGS_ARG_FIN(eigs_slot_num(s, __func__), 0);
     return 1;
 }
 
@@ -672,7 +672,7 @@ Value* builtin_buf_peak(Value *arg) {
         return make_num(0);
     double m = 0.0;
     for (long long i = 0; i < count; i++) {
-        double x = buffer_read_num(buf, off + i);
+        double x = EIGS_ARG_PROP(buffer_read_num(buf, off + i));
         if (g_has_error) return make_null();
         double a = x < 0 ? -x : x;
         if (a > m) m = a;
@@ -705,9 +705,9 @@ Value* builtin_buf_dot(Value *arg) {
         return make_num(0);
     double s = 0.0;
     for (long long i = 0; i < count; i++) {
-        double av = buffer_read_num(a, a_off + i);
+        double av = EIGS_ARG_PROP(buffer_read_num(a, a_off + i));
         if (g_has_error) return make_null();
-        double bv = buffer_read_num(b, b_off + i);
+        double bv = EIGS_ARG_PROP(buffer_read_num(b, b_off + i));
         if (g_has_error) return make_null();
         s = num_guard(s + num_guard(av * bv));
     }
@@ -763,9 +763,9 @@ Value* builtin_buf_from_pcm16le(Value *arg) {
     if (!out) return make_null();
     double *od = out->data.buffer.data;
     for (long long i = 0; i < count; i++) {
-        double lo = buffer_read_num(src, off + 2*i);
+        double lo = EIGS_ARG_PROP(buffer_read_num(src, off + 2*i));
         if (g_has_error) { val_decref(out); return make_null(); }
-        double hi = buffer_read_num(src, off + 2*i + 1);
+        double hi = EIGS_ARG_PROP(buffer_read_num(src, off + 2*i + 1));
         if (g_has_error) { val_decref(out); return make_null(); }
         double v = num_guard(lo + num_guard(256.0 * hi));
         if (g_has_error) { val_decref(out); return make_null(); }
@@ -803,7 +803,7 @@ Value* builtin_buf_to_pcm16le(Value *arg) {
     if (!out) return make_null();
     double *od = out->data.buffer.data;
     for (long long i = 0; i < count; i++) {
-        double x = buffer_read_num(src, off + i);
+        double x = EIGS_ARG_PROP(buffer_read_num(src, off + i));
         if (g_has_error) { val_decref(out); return make_null(); }
         if (x < -1.0) x = -1.0;
         if (x > 1.0) x = 1.0;

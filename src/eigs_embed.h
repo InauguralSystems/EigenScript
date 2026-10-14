@@ -169,6 +169,12 @@ void           eigs_value_release(EigsValue *v);
 
 EigsValueType  eigs_value_type(EigsValue *v);
 double         eigs_value_as_num(EigsValue *v);     /* NaN for a bool (#1637), 0.0 for any other non-num */
+/* #1746 ieee build (-DEIGS_IEEE): a NaN number is returned as the canonical
+ * quiet NaN 0x7FF8000000000000 (printf prints "nan", never "-nan"), and a
+ * bool is NOT a number: eigs_value_as_num returns 0.0 and leaves a `type_mismatch`
+ * error pending (eigs_has_error / eigs_last_error_message), the embed API's
+ * error convention -- a NaN answer would collide with a real NaN. The same
+ * canonical NaN comes back from eigs_value_buffer_get. */
 int            eigs_value_as_bool(EigsValue *v);    /* #1637: 1 for true, 0 for false or not a bool */
 const char    *eigs_value_as_string(EigsValue *v);  /* NULL if not str; borrowed */
 

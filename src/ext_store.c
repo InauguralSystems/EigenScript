@@ -171,7 +171,7 @@ static void store_json_encode(Value *v, strbuf *out);
  * the historical boxed-number path so persisted bytes remain identical. */
 static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
     if (slot_is_num(slot)) {
-        double n = eigs_slot_num(slot, __func__);
+        double n = EIGS_ARG_PROP(eigs_slot_num(slot, __func__));
         if (fabs(n) < 2147483648.0 && n == EIGS_DCAST_QUIET(int, n))   /* |n| < 2^31 */
             strbuf_append_fmt(out, "%d", EIGS_DCAST_QUIET(int, n));
         else
@@ -188,7 +188,7 @@ static void store_json_encode(Value *v, strbuf *out) {
     }
     switch (v->type) {
         case VAL_NUM: {
-            double n = eigs_num_arg(v, __func__);
+            double n = EIGS_ARG_PROP(eigs_num_arg(v, __func__));
             /* #816: magnitude BEFORE the narrowing cast (same class as
              * #695) — converting a double beyond int's range is UB, and
              * the old `n == (int)n && fabs(n) < 1e15` order ran the cast
@@ -402,7 +402,7 @@ static Value* store_buffer_from_tag(Value *dict) {
      * test (is this dimension a whole number?), so exact equality is the
      * correct operator and a tolerance would be the bug — 2.0000000000000004
      * is not a row count. This also establishes rows/cols >= 0. */
-    double rd = eigs_num_arg(rv, __func__), cd = eigs_num_arg(cv, __func__);
+    double rd = EIGS_ARG_FIN(eigs_num_arg(rv, __func__), NULL), cd = EIGS_ARG_FIN(eigs_num_arg(cv, __func__), NULL);
     if (!(rd >= 0 && rd <= (double)INT_MAX)) return NULL;
     if (!(cd >= 0 && cd <= (double)INT_MAX)) return NULL;
     int rows = EIGS_DCAST_QUIET(int, rd), cols = EIGS_DCAST_QUIET(int, cd);   /* range-checked above */
@@ -437,7 +437,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     for (int i = 0; i < count; i++) {
         Value *e = list_get_view(body, i, &(EigsView){{0}});
         double d = 0;
-        if (e->type == VAL_NUM) d = eigs_num_arg(e, __func__);
+        if (e->type == VAL_NUM) d = EIGS_ARG_PROP(eigs_num_arg(e, __func__));
         else store_nonfinite_sentinel(e->data.str, &d);
         buf->data.buffer.data[i] = d;
     }
@@ -780,7 +780,7 @@ static int store_load_catalog(Store *store) {
             free(visited);
             return -1;
         }
-        uint32_t root = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog field; 0 is refused below */
+        uint32_t root = EIGS_DCAST_QUIET(uint32_t, EIGS_ARG_FIN(eigs_num_arg(rv, __func__), (free(visited), -1)));   /* catalog field; 0 is refused below */
         if (root == 0 || root >= store->page_count) {
             fprintf(stderr, "store_open: collection '%s' has invalid root %u\n", name, root);
             free(visited);
@@ -1078,8 +1078,8 @@ static Value* builtin_store_put(Value *arg) {
     } else {
         Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
         Value *nv = store_dict_get_view(col_info, "next_id", &(EigsView){{0}});
-        root_page = EIGS_DCAST_QUIET(uint32_t, (rv ? eigs_num_arg(rv, __func__) : 0));   /* catalog fields */
-        next_id = EIGS_DCAST_QUIET(int, (nv ? eigs_num_arg(nv, __func__) : 1));
+        root_page = EIGS_DCAST_QUIET(uint32_t, (rv ? EIGS_ARG_FIN(eigs_num_arg(rv, __func__), make_null()) : 0));   /* catalog fields */
+        next_id = EIGS_DCAST_QUIET(int, (nv ? EIGS_ARG_FIN(eigs_num_arg(nv, __func__), make_null()) : 1));
     }
 
     /* Determine key */
@@ -1225,7 +1225,7 @@ static Value* builtin_store_get(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_null();
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_null();
-    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
+    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, EIGS_ARG_FIN(eigs_num_arg(rv, __func__), make_null()));   /* catalog root page */
 
     size_t target_key_len = strlen(key_buf);
 
@@ -1283,7 +1283,7 @@ static int store_locate(Store *store, const char *collection,
     if (!col_info || col_info->type != VAL_DICT) return 0;
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return 0;
-    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
+    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, EIGS_ARG_FIN(eigs_num_arg(rv, __func__), 0));   /* catalog root page */
     size_t target_key_len = strlen(key_buf);
 
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1426,7 +1426,7 @@ static Value* builtin_store_query(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_list(0);
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_list(0);
-    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
+    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, EIGS_ARG_FIN(eigs_num_arg(rv, __func__), make_null()));   /* catalog root page */
 
     Value *results = make_list(16);
 
@@ -1484,7 +1484,7 @@ static Value* builtin_store_count(Value *arg) {
     /* fs:ANSWER a catalog entry with no root page has no record pages, so the
      * count is 0. */
     if (!rv) return make_num(0);
-    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
+    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, EIGS_ARG_FIN(eigs_num_arg(rv, __func__), make_null()));   /* catalog root page */
 
     int count = 0;
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1680,7 +1680,7 @@ static Value* builtin_store_drop(Value *arg) {
     /* Mark all pages in chain as free */
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (rv) {
-        uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
+        uint32_t pg = EIGS_DCAST_QUIET(uint32_t, EIGS_ARG_FIN(eigs_num_arg(rv, __func__), make_null()));   /* catalog root page */
         for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
             Page page;
             if (store_read_page(store, pg, &page) != 0) break;

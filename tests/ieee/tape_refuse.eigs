@@ -1,0 +1,22 @@
+# #1746 Phase 1 (ieee build only), Class A tape row: recorded builtins refused
+# for a NaN argument inside `try` leave NO record -- the refusal precedes the
+# tape bracket -- so strict replay of the surrounding recorded calls lines up
+# and a re-record is byte-identical. tools/ieee_rows.sh greps the tape.
+q is 0 / 0
+seed_random of 7
+a is random_int of [1, 100]
+try:
+    random_normal of [q, 2, 1.0]
+catch e:
+    print of e["message"]
+try:
+    random_normal of [q, 1.0]
+catch e:
+    print of e["message"]
+try:
+    random_int of [q, 10]
+catch e:
+    print of e["message"]
+b is random_int of [1, 100]
+c is random_normal of [2, 1.0]
+print of [a, b, len of c]

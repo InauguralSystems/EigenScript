@@ -1,0 +1,21 @@
+# #1746 Phase 1: reviewed (function, check) pairs where a refusal follows an
+# "effect" by design. Row: `<file>:<function> <check> <reason>`.
+src/builtins.c:builtin_sort_by EIGS_ARG_FIN the refused number IS the key callback's own result; it cannot be known before the callback runs (pairs are freed, the list is untouched)
+src/builtins_host.c:builtin_read_bytes_buf EIGS_DCAST_RET converts the length recorded ON THE TAPE after a replay take; a non-finite value is a corrupted tape, refused after the take that read it
+src/builtins_tensor.c:builtin_tensor_load EIGS_DCAST_RET converts the [rows, cols] verdict recorded ON THE TAPE after a replay take; a corrupted tape is refused after the take that read it
+src/builtins_tensor.c:builtin_numerical_grad_rows flat_index_at every index was refused by the EIGS_IEEE pre-pass before the first perturbation or loss call; the in-loop reads cannot fail
+src/builtins_tensor.c:builtin_numerical_grad_cols flat_index_at every index was refused by the EIGS_IEEE pre-pass before the first perturbation or loss call; the in-loop reads cannot fail
+src/builtins.c:vm_build_chunk_desc_body EIGS_ARG_FIN descriptor validation while building a PRIVATE chunk (chunk_free on refusal); the "effect" is desc_isolate_const interning into that chunk's own constant pool
+src/builtins.c:vm_build_chunk_desc_body vm_build_chunk_desc_ctx a nested function descriptor is built into the same private, freed-on-refusal chunk
+src/builtins.c:vm_build_chunk_desc vm_build_chunk_desc_ctx the outer descriptor builder: the same private chunk, freed on refusal
+src/ext_store.c:builtin_store_put EIGS_ARG_FIN catalog fields written by the store itself, read on the else-branch EXCLUSIVE of the new-collection branch that allocates the page (the textual order is not execution order)
+src/ext_store.c:builtin_store_get store_json_decode decodes the store's own on-disk record after reading it; a non-finite field means a corrupted file (store_put refuses inf/nan)
+src/ext_store.c:builtin_store_query store_json_decode decodes the store's own on-disk records after reading them; a corrupted file is refused at the record that holds it
+src/ext_store.c:builtin_store_update builtin_store_put the replacement record was refused for inf/nan before the tombstone (store_refuse_nonfinite); store_locate before it only READS pages
+src/ext_store.c:store_json_parse_array store_json_parse_value recursive decode of the store's own on-disk JSON into a fresh list
+src/ext_store.c:store_json_parse_object store_json_parse_value recursive decode of the store's own on-disk JSON into a fresh dict
+src/ext_store.c:store_json_parse_object store_buffer_from_tag decode of a buffer tag in the store's own on-disk JSON
+src/ext_store.c:store_json_parse_value store_json_parse_object recursive decode dispatch over the store's own on-disk JSON
+src/ext_store.c:store_load_catalog store_json_decode store_open validating its own catalog file after reading it
+src/ext_store.c:store_load_catalog EIGS_ARG_FIN store_open validating a catalog root field from its own file after reading it
+src/ext_store.c:builtin_store_open store_load_catalog store_open validating the catalog file it has just opened and read

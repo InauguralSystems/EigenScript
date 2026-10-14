@@ -160,6 +160,17 @@ define nan_then_held() as:
     local t is trajectory of x
     return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
 
+# Def. 3.1 at the window boundary: 5, 5, NaN, then k fives. A window of 10
+# steps spans 11 terms, so at k=10 the NaN is still one of them (not
+# converged); at k=11 every term is defined (converged).
+define nan_boundary(k) as:
+    local x is 5
+    x is 5
+    x is q
+    for j in range of k:
+        x is 5
+    return [report of x, converged of x]
+
 define step_table() as:
     local x is 1.0
     x is inf
@@ -248,6 +259,11 @@ for u in [false, true]:
 # Def. 3.1: a NaN followed by a full window of a held real converges again.
 nh is nan_then_held of null
 check of ["nan_then_full_window_converged", (nh[0] == "converged") and nh[1], nh[0]]
+
+b10 is nan_boundary of 10
+check of ["nan_boundary_k10_not_converged", (b10[1] == false) and (b10[0] != "converged"), str of b10]
+b11 is nan_boundary of 11
+check of ["nan_boundary_k11_converged", (b11[1] == true) and (b11[0] == "converged"), str of b11]
 
 st is step_table of null
 check of ["step_rel", (str of st[0]) == "[1, -1, 1, -2, 0, 1, -2]", str of st[0]]

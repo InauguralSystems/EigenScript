@@ -359,8 +359,8 @@ static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out, const char *name
     Value *va = BUILTIN_LIST_VIEW(arg, 0);
     Value *vb = BUILTIN_LIST_VIEW(arg, 1);
     if (!va || va->type != VAL_NUM || !vb || vb->type != VAL_NUM) return 0;
-    if (!bit_int(eigs_num_arg(va, __func__), a_out, name) ||
-        !bit_int(eigs_num_arg(vb, __func__), b_out, name)) return -1;
+    if (!bit_int(EIGS_ARG_PROP(eigs_num_arg(va, __func__)), a_out, name) ||
+        !bit_int(EIGS_ARG_PROP(eigs_num_arg(vb, __func__)), b_out, name)) return -1;
     return 1;
 }
 
@@ -391,7 +391,7 @@ Value* builtin_bit_xor(Value *arg) {
 Value* builtin_bit_not(Value *arg) {
     if (!arg || arg->type != VAL_NUM) { rt_error(EK_TYPE, 0, "bit_not expects a number"); return make_null(); }
     int64_t a;
-    if (!bit_int(eigs_num_arg(arg, __func__), &a, "bit_not")) return make_null();
+    if (!bit_int(EIGS_ARG_PROP(eigs_num_arg(arg, __func__)), &a, "bit_not")) return make_null();
     return make_num((double)(~a));
 }
 
@@ -920,13 +920,13 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
              * different number. */
             char nb[32];
 #ifdef EIGS_IEEE
-            if (!isfinite(eigs_num_arg(v, __func__))) {   /* #1746: JSON has no inf/NaN */
+            if (!isfinite(EIGS_ARG_PROP(eigs_num_arg(v, __func__)))) {   /* #1746: JSON has no inf/NaN */
                 rt_error(EK_VALUE, 0, "json_encode: %s has no JSON representation",
                          VAL_NUM_RAW(v) != VAL_NUM_RAW(v) ? "nan" : "inf");
                 return -1;
             }
 #endif
-            eigs_num_text(nb, sizeof(nb), eigs_num_arg(v, __func__));
+            eigs_num_text(nb, sizeof(nb), EIGS_ARG_PROP(eigs_num_arg(v, __func__)));
             strbuf_append(out, nb);
             break;
         }
@@ -1499,13 +1499,13 @@ Value* builtin_json_build(Value *arg) {
         if (val->type == VAL_NUM) {
             char nb[32];                              /* #875: the shared rule */
 #ifdef EIGS_IEEE
-            if (!isfinite(eigs_num_arg(val, __func__))) {   /* #1746: JSON has no inf/NaN */
+            if (!isfinite(EIGS_ARG_PROP(eigs_num_arg(val, __func__)))) {   /* #1746: JSON has no inf/NaN */
                 strbuf_free(&out);
                 rt_error(EK_VALUE, 0, "json_build: a non-finite number has no JSON representation");
                 return make_null();
             }
 #endif
-            eigs_num_text(nb, sizeof(nb), eigs_num_arg(val, __func__));
+            eigs_num_text(nb, sizeof(nb), EIGS_ARG_PROP(eigs_num_arg(val, __func__)));
             strbuf_append(&out, nb);
         } else if (val->type == VAL_NULL) {
             strbuf_append(&out, "null");
@@ -2005,22 +2005,22 @@ Value* builtin_index_of(Value *arg) {
 
 Value* builtin_sin(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "sin", "a number", make_num(0));
-    return make_num(sin(eigs_num_arg(arg, __func__)));
+    return make_num(sin(EIGS_ARG_PROP(eigs_num_arg(arg, __func__))));
 }
 
 Value* builtin_cos(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "cos", "a number", make_num(0));
-    return make_num(cos(eigs_num_arg(arg, __func__)));
+    return make_num(cos(EIGS_ARG_PROP(eigs_num_arg(arg, __func__))));
 }
 
 Value* builtin_tan(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "tan", "a number", make_num(0));
-    return make_num(tan(eigs_num_arg(arg, __func__)));
+    return make_num(tan(EIGS_ARG_PROP(eigs_num_arg(arg, __func__))));
 }
 
 Value* builtin_asin(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "asin", "a number", make_num(0));
-    double x = eigs_num_arg(arg, __func__);
+    double x = EIGS_ARG_PROP(eigs_num_arg(arg, __func__));
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
 #ifndef EIGS_IEEE   /* #1746 experiment: out of domain is IEEE NaN */
@@ -2036,7 +2036,7 @@ Value* builtin_asin(Value *arg) {
 
 Value* builtin_acos(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "acos", "a number", make_num(0));
-    double x = eigs_num_arg(arg, __func__);
+    double x = EIGS_ARG_PROP(eigs_num_arg(arg, __func__));
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
 #ifndef EIGS_IEEE   /* #1746 experiment: out of domain is IEEE NaN */
@@ -2052,7 +2052,7 @@ Value* builtin_acos(Value *arg) {
 
 Value* builtin_atan(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "atan", "a number", make_num(0));
-    return make_num(atan(eigs_num_arg(arg, __func__)));
+    return make_num(atan(EIGS_ARG_PROP(eigs_num_arg(arg, __func__))));
 }
 
 Value* builtin_atan2(Value *arg) {
@@ -2061,27 +2061,27 @@ Value* builtin_atan2(Value *arg) {
     Value *y = BUILTIN_LIST_VIEW(arg, 0);
     Value *x = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!y || y->type != VAL_NUM || !x || x->type != VAL_NUM, "atan2", "two numbers", make_num(0));
-    return make_num(atan2(eigs_num_arg(y, __func__), eigs_num_arg(x, __func__)));
+    return make_num(atan2(EIGS_ARG_PROP(eigs_num_arg(y, __func__)), EIGS_ARG_PROP(eigs_num_arg(x, __func__))));
 }
 
 Value* builtin_floor(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "floor", "a number", make_num(0));
-    return make_num(floor(eigs_num_arg(arg, __func__)));
+    return make_num(floor(EIGS_ARG_PROP(eigs_num_arg(arg, __func__))));
 }
 
 Value* builtin_ceil(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "ceil", "a number", make_num(0));
-    return make_num(ceil(eigs_num_arg(arg, __func__)));
+    return make_num(ceil(EIGS_ARG_PROP(eigs_num_arg(arg, __func__))));
 }
 
 Value* builtin_round(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "round", "a number", make_num(0));
-    return make_num(round(eigs_num_arg(arg, __func__)));
+    return make_num(round(EIGS_ARG_PROP(eigs_num_arg(arg, __func__))));
 }
 
 Value* builtin_abs(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "abs", "a number", make_num(0));
-    return make_num(fabs(eigs_num_arg(arg, __func__)));
+    return make_num(fabs(EIGS_ARG_PROP(eigs_num_arg(arg, __func__))));
 }
 
 /* #317: min/max are N-ary reductions over a flat list of numbers — the old
@@ -2090,7 +2090,7 @@ Value* builtin_abs(Value *arg) {
  * an empty list or any non-number element keeps the old 0 fallback rather
  * than inventing a partial answer. */
 static Value* minmax_reduce(Value *arg, int want_max) {
-    if (arg && arg->type == VAL_NUM) return make_num(eigs_num_arg(arg, __func__));
+    if (arg && arg->type == VAL_NUM) return make_num(EIGS_ARG_PROP(eigs_num_arg(arg, __func__)));
     /* Split from the empty-list case below: #317 chose the 0 fallback for BOTH
      * a wrong type and an empty list in one condition, and only the first half
      * is a type mistake. Splitting keeps the non-strict answer identical while
@@ -2107,10 +2107,10 @@ static Value* minmax_reduce(Value *arg, int want_max) {
         Value *v = BUILTIN_LIST_VIEW(arg, i);
         ARG_GUARD(!v || v->type != VAL_NUM, want_max ? "max" : "min", "every element to be a number", make_num(0));
 #ifdef EIGS_IEEE
-        if (eigs_num_arg(v, __func__) != eigs_num_arg(v, __func__)) any_nan = 1;
+        if (EIGS_ARG_PROP(eigs_num_arg(v, __func__)) != EIGS_ARG_PROP(eigs_num_arg(v, __func__))) any_nan = 1;
 #endif
-        if (i == 0 || (want_max ? eigs_num_arg(v, __func__) > best : eigs_num_arg(v, __func__) < best))
-            best = eigs_num_arg(v, __func__);
+        if (i == 0 || (want_max ? EIGS_ARG_PROP(eigs_num_arg(v, __func__)) > best : EIGS_ARG_PROP(eigs_num_arg(v, __func__)) < best))
+            best = EIGS_ARG_PROP(eigs_num_arg(v, __func__));
     }
 #ifdef EIGS_IEEE
     if (any_nan) return make_num(NAN);
@@ -2197,8 +2197,8 @@ Value* builtin_random_int(Value *arg) {
     /* Range-check as doubles before any integer cast — a double outside the
      * int64_t range (or non-finite) makes the cast itself UB (#698 fixed the
      * same cast-before-range-check class in value_to_string). */
-    double lo_d = eigs_num_arg(lo, __func__);
-    double hi_d = eigs_num_arg(hi, __func__);
+    double lo_d = EIGS_ARG_FIN(eigs_num_arg(lo, __func__), make_null());
+    double hi_d = EIGS_ARG_FIN(eigs_num_arg(hi, __func__), make_null());
     if (!isfinite(lo_d) || !isfinite(hi_d) ||
         lo_d < -9223372036854775808.0 || hi_d < -9223372036854775808.0 ||
         lo_d >= 9223372036854775808.0 || hi_d >= 9223372036854775808.0) {
@@ -2227,10 +2227,13 @@ Value* builtin_random_int(Value *arg) {
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_bool(0));
 #ifdef EIGS_IEEE
-    (void)EIGS_DCAST_RET(long, eigs_num_arg(arg, __func__), make_bool(0));   /* before the lock */
-#endif
+    long seed_v = EIGS_DCAST_RET(long, eigs_num_arg(arg, __func__), make_bool(0));   /* #1746: before the lock */
     pthread_mutex_lock(&g_random_lock);
-    srand48(EIGS_DCAST_QUIET(long, eigs_num_arg(arg, __func__)));
+    srand48(seed_v);
+#else
+    pthread_mutex_lock(&g_random_lock);
+    srand48(EIGS_DCAST_QUIET(long, EIGS_ARG_FIN(eigs_num_arg(arg, __func__), make_bool(0))));
+#endif
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
     return make_bool(1);
@@ -2460,7 +2463,7 @@ Value* builtin_json_path(Value *arg) {
     }
     if (current->type == VAL_NUM) {
         char buf[64];
-        eigs_num_text(buf, sizeof(buf), eigs_num_arg(current, __func__));   /* #875 */
+        eigs_num_text(buf, sizeof(buf), EIGS_ARG_PROP(eigs_num_arg(current, __func__)));   /* #875 */
         val_decref(root);
         return make_str(buf);
     }
@@ -2652,7 +2655,7 @@ Value* builtin_chr(Value *arg) {
         rt_error(EK_TYPE, 0, "chr requires a number");
         return make_null();
     }
-    double num = eigs_num_arg(arg, __func__);
+    double num = EIGS_ARG_FIN(eigs_num_arg(arg, __func__), make_null());
     if (num != (double)EIGS_DCAST_QUIET(long long, num) || num < 1 || num > 255) {
         if (num == 0)
             rt_error(EK_VALUE, 0, "chr of 0: strings are NUL-terminated and cannot hold a NUL byte (use a buffer for binary with NULs)");
@@ -2677,11 +2680,11 @@ Value* builtin_hex(Value *arg) {
     double num;
     long long width = 0;
     if (arg && arg->type == VAL_NUM) {
-        num = eigs_num_arg(arg, __func__);
+        num = EIGS_ARG_FIN(eigs_num_arg(arg, __func__), make_null());
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
                BUILTIN_LIST_VIEW(arg, 0) && BUILTIN_LIST_VIEW(arg, 0)->type == VAL_NUM &&
                BUILTIN_LIST_VIEW(arg, 1) && BUILTIN_LIST_VIEW(arg, 1)->type == VAL_NUM) {
-        num = eigs_list_num(arg, 0, __func__);
+        num = EIGS_ARG_FIN(eigs_list_num(arg, 0, __func__), make_null());
         width = EIGS_DCAST_RET(long long, eigs_list_num(arg, 1, __func__), make_null());
         if (g_has_error) return make_null();
     } else {
@@ -2838,12 +2841,12 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
                  EIGS_BYTECODE_ABI, rev ? val_type_name(rev->type) : "nothing");
         return buf;
     }
-    if (EIGS_DCAST_QUIET(int, eigs_num_arg(rev, __func__)) != EIGS_BYTECODE_ABI) {   /* out of range -> 0, refused */
+    if (EIGS_DCAST_QUIET(int, EIGS_ARG_FIN(eigs_num_arg(rev, __func__), "chunk descriptor ABI revision must be a finite number")) != EIGS_BYTECODE_ABI) {   /* out of range -> 0, refused */
         snprintf(buf, buflen,
                  "chunk was produced for bytecode ABI revision %d, but this "
                  "runtime speaks revision %d — regenerate it with a matching "
                  "producer",
-                 EIGS_DCAST_QUIET(int, eigs_num_arg(rev, __func__)), EIGS_BYTECODE_ABI);
+                 EIGS_DCAST_QUIET(int, EIGS_ARG_FIN(eigs_num_arg(rev, __func__), "chunk descriptor ABI revision must be a finite number")), EIGS_BYTECODE_ABI);
         return buf;
     }
     return NULL;
@@ -3063,13 +3066,16 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
             return NULL;
         }
 #ifdef EIGS_IEEE
-        if (!(eigs_num_arg(b, __func__) >= (double)INT_MIN && eigs_num_arg(b, __func__) <= (double)INT_MAX)) {
+        double bv = EIGS_ARG_FIN(eigs_num_arg(b, __func__), (chunk_free(chunk), NULL));
+        if (!(bv >= (double)INT_MIN && bv <= (double)INT_MAX)) {
             chunk_free(chunk);   /* #1746: refused before anything is emitted */
             vm_desc_error(why, whyn, "descriptor code must be a list of byte numbers");
             return NULL;
         }
+        chunk_emit(chunk, (uint8_t)(EIGS_DCAST_QUIET(int, bv) & 0xFF), 1);
+#else
+        chunk_emit(chunk, (uint8_t)(EIGS_DCAST_QUIET(int, EIGS_ARG_FIN(eigs_num_arg(b, __func__), (chunk_free(chunk), NULL))) & 0xFF), 1);
 #endif
-        chunk_emit(chunk, (uint8_t)(EIGS_DCAST_QUIET(int, eigs_num_arg(b, __func__)) & 0xFF), 1);
     }
     /* Positional: the code stream indexes this pool by position, so neither
      * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
@@ -3126,15 +3132,17 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         return NULL;
     }
 #ifdef EIGS_IEEE
-    if (n >= 4 && d[3] && d[3]->type == VAL_NUM &&
-        !(eigs_num_arg(d[3], __func__) >= (double)INT_MIN && eigs_num_arg(d[3], __func__) <= (double)INT_MAX)) {
+    double pc_v = (n >= 4 && d[3] && d[3]->type == VAL_NUM) ? EIGS_ARG_FIN(eigs_num_arg(d[3], __func__), (chunk_free(chunk), NULL)) : 0.0;
+    if (!(pc_v >= (double)INT_MIN && pc_v <= (double)INT_MAX)) {
         chunk_free(chunk);   /* #1746 */
         vm_desc_error(why, whyn, "descriptor param_count must be a number");
         return NULL;
     }
-#endif
+    int param_count = EIGS_DCAST_QUIET(int, pc_v);
+#else
     int param_count = (n >= 4 && d[3] && d[3]->type == VAL_NUM)
-                      ? EIGS_DCAST_QUIET(int, eigs_num_arg(d[3], __func__)) : 0;
+                      ? EIGS_DCAST_QUIET(int, EIGS_ARG_FIN(eigs_num_arg(d[3], __func__), (chunk_free(chunk), NULL))) : 0;
+#endif
     chunk->param_count = param_count;
     chunk->first_default = param_count;        /* no defaults */
 
@@ -3459,7 +3467,7 @@ Value* builtin_sandbox_run(Value *arg) {
     size_t max_bytes = (size_t)256 * 1024 * 1024;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3 &&
         BUILTIN_LIST_VIEW(arg, 2) && BUILTIN_LIST_VIEW(arg, 2)->type == VAL_NUM &&
-        eigs_list_num(arg, 2, __func__) > 0)
+        EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null()) > 0)
         max_bytes = EIGS_DCAST_RET(size_t, eigs_list_num(arg, 2, __func__), make_null());
     /* VM instructions, cumulative across callback re-entry and function
      * frames.  This is intentionally distinct from the compatibility loop
@@ -3468,7 +3476,7 @@ Value* builtin_sandbox_run(Value *arg) {
     uint64_t max_work = UINT64_C(10000000);
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 4 &&
         BUILTIN_LIST_VIEW(arg, 3) && BUILTIN_LIST_VIEW(arg, 3)->type == VAL_NUM) {
-        double requested = eigs_list_num(arg, 3, __func__);
+        double requested = EIGS_ARG_FIN(eigs_list_num(arg, 3, __func__), make_null());
         /* A double rounds UINT64_MAX up to 2^64, so use a strict bound;
          * accepting equality and casting it would itself be undefined. */
         if (isfinite(requested) && requested >= 1.0 &&
@@ -3783,7 +3791,7 @@ Value* builtin_record_history(Value *arg) {
         return make_null();
     }
     int prev = g_trace_hist;
-    int on = (eigs_num_arg(arg, __func__) != 0.0) ? 1 : 0;
+    int on = (EIGS_ARG_FIN(eigs_num_arg(arg, __func__), make_null()) != 0.0) ? 1 : 0;
     /* #827: no name to narrow on — a self-hosted compiler calling this is
      * standing in for the whole-program arming, so it gets the wildcard. */
     if (on) { trace_arm_history_all(); trace_flag_store(g_trace_obs_hist_storage, 1); }
@@ -3838,7 +3846,7 @@ Value* builtin_copy_into(Value *arg) {
                              it ? val_type_name(it->type) : "null", i);
                     return make_null();
                 }
-                dest->data.buffer.data[offset + i] = eigs_num_arg(it, __func__);
+                dest->data.buffer.data[offset + i] = EIGS_ARG_PROP(eigs_num_arg(it, __func__));
             }
             return dest;   /* borrowed, like the list path below */
         }
@@ -3898,7 +3906,7 @@ Value* builtin_list_slice(Value *arg) {
 Value* builtin_num_copy(Value *arg) {
     BOOL_REFUSE(arg, "num_copy");
     if (!arg || arg->type != VAL_NUM) return make_null();
-    return make_num(eigs_num_arg(arg, __func__));
+    return make_num(EIGS_ARG_PROP(eigs_num_arg(arg, __func__)));
 }
 
 /* ==== BUILTIN: concat ==== */
@@ -3944,7 +3952,7 @@ Value* builtin_range(Value *arg) {
 
     if (arg->type == VAL_NUM) {
         /* range of n */
-        if (!range_bound(eigs_num_arg(arg, __func__), &end)) return make_list(0);
+        if (!range_bound(EIGS_ARG_FIN(eigs_num_arg(arg, __func__), make_null()), &end)) return make_list(0);
     } else if (arg->type == VAL_LIST) {
         int argc = arg->data.list.count;
         /* #497: every provided bound must be numeric. A non-number used to
@@ -3959,14 +3967,14 @@ Value* builtin_range(Value *arg) {
             }
         }
         if (argc >= 1) {
-            if (!range_bound(eigs_list_num(arg, 0, __func__), &start)) return make_list(0);
+            if (!range_bound(EIGS_ARG_FIN(eigs_list_num(arg, 0, __func__), make_null()), &start)) return make_list(0);
         }
         if (argc >= 2) {
-            if (!range_bound(eigs_list_num(arg, 1, __func__), &end)) return make_list(0);
+            if (!range_bound(EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null()), &end)) return make_list(0);
         } else
             { end = start; start = 0; } /* single-element list: treat as range of n */
         if (argc >= 3) {
-            if (!range_bound(eigs_list_num(arg, 2, __func__), &step)) return make_list(0);
+            if (!range_bound(EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null()), &step)) return make_list(0);
             /* The Euler-like update that feeds step can never produce
              * exactly zero — it trades the zero singularity for infinity.
              * This bound catches the infinity side: a step that would
@@ -4056,7 +4064,7 @@ static int at_index(Value *idx_val, int count, const char *what,
     if (idx < 0) idx += count;          /* #312: negative counts from end */
     if (idx < 0 || idx >= count) {
         rt_error(EK_INDEX, 0, "index %d out of range (list length %d)",
-                 EIGS_DCAST_QUIET(int, eigs_num_arg(idx_val, __func__)), count);   /* converted above */
+                 EIGS_DCAST_QUIET(int, EIGS_ARG_FIN(eigs_num_arg(idx_val, __func__), 0)), count);   /* converted above */
         return 0;
     }
     *out = idx;
@@ -4076,7 +4084,7 @@ static int buf_at_index(Value *idx_val, int count, int *out) {
     if (idx < 0) idx += count;
     if (idx < 0 || idx >= count) {
         rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 EIGS_DCAST_QUIET(int, eigs_num_arg(idx_val, __func__)), count);   /* converted above */
+                 EIGS_DCAST_QUIET(int, EIGS_ARG_FIN(eigs_num_arg(idx_val, __func__), 0)), count);   /* converted above */
         return 0;
     }
     *out = idx;
@@ -4122,7 +4130,7 @@ Value* builtin_set_at(Value *arg) {
                      val_type_name(val ? val->type : VAL_NULL));
             return make_null();
         }
-        buf->data.buffer.data[off] = eigs_num_arg(val, __func__);
+        buf->data.buffer.data[off] = EIGS_ARG_PROP(eigs_num_arg(val, __func__));
         /* Direct child of the arg vector — the borrow protocol (#720,
          * vm_borrow_compensate) compensates at the call site, exactly as for
          * the list path's `return list`. */
@@ -4183,7 +4191,7 @@ Value* builtin_get_at(Value *arg) {
             int idx;
             if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.count,
                               &idx)) return make_null();
-            return make_num(buffer_read_num(buf, idx));
+            return make_num(EIGS_ARG_PROP(buffer_read_num(buf, idx)));
         }
         if (argc == 3 && buf->data.buffer.rows > 0) {
             int row, col;
@@ -4191,7 +4199,7 @@ Value* builtin_get_at(Value *arg) {
                               &row)) return make_null();
             if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 2), buf->data.buffer.cols,
                               &col)) return make_null();
-            return make_num(buffer_read_num(buf, (int64_t)row * buf->data.buffer.cols + col));
+            return make_num(EIGS_ARG_PROP(buffer_read_num(buf, (int64_t)row * buf->data.buffer.cols + col)));
         }
         rt_error(EK_TYPE, 0, "get_at: [buffer, row, col] needs a shaped buffer "
                  "(see reshape)");
@@ -4845,7 +4853,7 @@ Value* builtin_recv_timeout(Value *arg) {
         rt_error(EK_TYPE, 0, "recv_timeout: ms must be a number");
         return make_null();
     }
-    double ms = eigs_num_arg(ms_v, __func__);
+    double ms = EIGS_ARG_FIN(eigs_num_arg(ms_v, __func__), make_null());
     /* Sanitize ms before the (long) cast (#151). NaN, +inf, or any value
      * above ~LONG_MAX is undefined behavior when cast to long, and in
      * practice produced a garbage deadline that fired immediately or
@@ -5038,7 +5046,7 @@ static Task *task_handle_resolve(Value *arg, const char *who, int *out_id) {
     int id = 0;
     uint32_t gen = 0;
     if (!arg || arg->type != VAL_NUM ||
-        !task_handle_unpack(eigs_num_arg(arg, __func__), &id, &gen)) return NULL;
+        !task_handle_unpack(EIGS_ARG_FIN(eigs_num_arg(arg, __func__), NULL), &id, &gen)) return NULL;
     int why = HANDLE_CLAIM_GONE;
     Task *t = (Task *)handle_lookup(id, gen, HANDLE_TASK, &why);
     if (!t && (why == HANDLE_CLAIM_STALE || why == HANDLE_CLAIM_TYPE))
@@ -5139,7 +5147,7 @@ Value* builtin_task_send(Value *arg) {
     int target = 0;
     /* Main is the reserved public id 0 and has no handle-table generation,
      * but it does have a scheduler mailbox (reply-to-supervisor pattern). */
-    if (eigs_num_arg(idv, __func__) != 0 &&
+    if (EIGS_ARG_FIN(eigs_num_arg(idv, __func__), make_null()) != 0 &&
         !task_handle_resolve(idv, "task_send", &target)) return make_bool(0);
     Value *copy = val_clone_for_send(BUILTIN_LIST_VIEW(arg, 1));   /* share-nothing */
     int sent = task_deliver(target, copy);
@@ -5202,7 +5210,7 @@ Value* builtin_task_sleep(Value *arg) {
     }
     if (!g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
     if (no_yield_forbidden("task_sleep")) return make_null();   /* #488 */
-    task_request_sleep(eigs_num_arg(arg, __func__));
+    task_request_sleep(EIGS_ARG_FIN(eigs_num_arg(arg, __func__), make_null()));
     return make_null();   /* placeholder: execution resumes when the clock wakes it */
 }
 
@@ -5267,7 +5275,7 @@ Value* builtin_task_sched_seed(Value *arg) {
         rt_error(EK_TYPE, 0, "task_sched_seed requires a number (the seed)");
         return make_null();
     }
-    task_sched_set_seed(eigs_num_arg(arg, __func__));
+    task_sched_set_seed(EIGS_ARG_FIN(eigs_num_arg(arg, __func__), make_null()));
     return make_null();
 }
 
@@ -5416,11 +5424,11 @@ Value* builtin_nearest_in_range(Value *arg) {
     Value *entities = BUILTIN_LIST_VIEW(arg, 0);
     if (!entities || entities->type != VAL_LIST) return make_null();
     BOOL_REFUSE(arg, "nearest_in_range");   /* x, y, range, world: numbers */
-    double px = eigs_list_num(arg, 1, __func__);
-    double py = eigs_list_num(arg, 2, __func__);
-    double range = eigs_list_num(arg, 3, __func__);
-    double ww = eigs_list_num(arg, 4, __func__);
-    double wh = eigs_list_num(arg, 5, __func__);
+    double px = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
+    double py = EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null());
+    double range = EIGS_ARG_FIN(eigs_list_num(arg, 3, __func__), make_null());
+    double ww = EIGS_ARG_FIN(eigs_list_num(arg, 4, __func__), make_null());
+    double wh = EIGS_ARG_FIN(eigs_list_num(arg, 5, __func__), make_null());
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
     if (arg->data.list.count >= 7 && BUILTIN_LIST_VIEW(arg, 6)->type == VAL_STR)
@@ -5476,7 +5484,7 @@ Value* builtin_nearest_in_range(Value *arg) {
         }
         /* #1637: "active" is a bool (false skips); the older 1/0 number
          * still reads as before. */
-        if (av && ((av->type == VAL_NUM && eigs_num_arg(av, __func__) != 1.0)
+        if (av && ((av->type == VAL_NUM && EIGS_ARG_FIN(eigs_num_arg(av, __func__), make_null()) != 1.0)
                    || (av->type == VAL_BOOL && !av->data.boolean))) continue;
 
         Value *ex;
@@ -5505,8 +5513,8 @@ Value* builtin_nearest_in_range(Value *arg) {
         }
         if (!ex || !ey || ex->type != VAL_NUM || ey->type != VAL_NUM) continue;
 
-        double dx = eigs_num_arg(ex, __func__) - px;
-        double dy = eigs_num_arg(ey, __func__) - py;
+        double dx = EIGS_ARG_FIN(eigs_num_arg(ex, __func__), make_null()) - px;
+        double dy = EIGS_ARG_FIN(eigs_num_arg(ey, __func__), make_null()) - py;
         double hw = ww * 0.5, hh = wh * 0.5;
         if (dx > hw) dx -= ww; else if (dx < -hw) dx += ww;
         if (dy > hh) dy -= wh; else if (dy < -hh) dy += wh;
@@ -5548,9 +5556,9 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     Value *entities = BUILTIN_LIST_VIEW(arg, 0);
     if (!entities || entities->type != VAL_LIST) return make_null();
     BOOL_REFUSE(arg, "nearest_in_range_all");   /* range, world: numbers */
-    double range = eigs_list_num(arg, 1, __func__);
-    double ww = eigs_list_num(arg, 2, __func__);
-    double wh = eigs_list_num(arg, 3, __func__);
+    double range = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
+    double ww = EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null());
+    double wh = EIGS_ARG_FIN(eigs_list_num(arg, 3, __func__), make_null());
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
     if (arg->data.list.count >= 5 && BUILTIN_LIST_VIEW(arg, 4)->type == VAL_STR)
@@ -5605,7 +5613,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         }
         /* active default: 1 (matches single-call behavior where missing/non-num
          * is treated as active). Explicit 0/non-1 value flips to inactive. */
-        active_arr[i] = (av && ((av->type == VAL_NUM && eigs_num_arg(av, __func__) != 1.0)
+        active_arr[i] = (av && ((av->type == VAL_NUM && EIGS_ARG_FIN(eigs_num_arg(av, __func__), make_null()) != 1.0)
                                 || (av->type == VAL_BOOL && !av->data.boolean))) ? 0 : 1;   /* #1637 */
 
         Value *ex;
@@ -5632,8 +5640,8 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             valid_arr[i] = 0;
             continue;
         }
-        px_arr[i] = eigs_num_arg(ex, __func__);
-        py_arr[i] = eigs_num_arg(ey, __func__);
+        px_arr[i] = EIGS_ARG_FIN(eigs_num_arg(ex, __func__), make_null());
+        py_arr[i] = EIGS_ARG_FIN(eigs_num_arg(ey, __func__), make_null());
         valid_arr[i] = 1;
     }
     if (g_has_error) {   /* #1637 round 4: a bool coordinate raised above */
@@ -5711,7 +5719,7 @@ Value* builtin_sign_extend(Value *arg) {
      * same stand-in every sibling here uses. Filed as its own issue. */
     Value *v0 = BUILTIN_LIST_VIEW(arg, 0), *v1 = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!v0 || v0->type != VAL_NUM || !v1 || v1->type != VAL_NUM, "sign_extend", "two numbers", make_num(0));
-    double val = eigs_num_arg(v0, __func__);
+    double val = EIGS_ARG_FIN(eigs_num_arg(v0, __func__), make_null());
     int bits = EIGS_DCAST_RET(int, eigs_num_arg(v1, __func__), make_null());
     if (bits <= 0 || bits > 32) return make_num(val);
     int64_t mask = 1LL << (bits - 1);
@@ -5900,7 +5908,7 @@ Value* builtin_sort_by(Value *arg) {
                 "gave %s)", i, kt);
             return make_null();
         }
-        pairs[i].key = eigs_num_arg(kv, __func__);
+        pairs[i].key = EIGS_ARG_FIN(eigs_num_arg(kv, __func__), (val_decref(kv), free(pairs), make_null()));
         pairs[i].index = i;
         val_decref(kv);
     }
@@ -5971,9 +5979,9 @@ Value* builtin_dispatch(Value *arg) {
         return make_null();
     }
     int key = EIGS_DCAST_RET(int, eigs_num_arg(key_v, __func__), make_null());
-    if ((double)key != eigs_num_arg(key_v, __func__)) {
+    if ((double)key != EIGS_ARG_FIN(eigs_num_arg(key_v, __func__), make_null())) {
         rt_error(EK_VALUE, 0, "dispatch key must be an integer, got %g",
-                      EIGS_NUM_CANON(eigs_num_arg(key_v, __func__)));
+                      EIGS_NUM_CANON(EIGS_ARG_FIN(eigs_num_arg(key_v, __func__), make_null())));
         return make_null();
     }
 
@@ -5997,7 +6005,7 @@ Value* builtin_dispatch(Value *arg) {
          * that returns its argument (`num`) would hand our caller a pointer
          * into a dead frame, so a number goes in as a fresh box we own. */
         if (fn_arg && fn_arg->type == VAL_NUM) {
-            Value *boxed = make_num(eigs_num_arg(fn_arg, __func__));
+            Value *boxed = make_num(EIGS_ARG_PROP(eigs_num_arg(fn_arg, __func__)));
             Value *res = eigs_call_builtin(fn->data.builtin, boxed);
             if (res == boxed) return boxed;          /* our ref transfers */
             val_decref(boxed);
@@ -6081,9 +6089,9 @@ static Value* builtin_dot(Value *arg) {
     if (b->data.buffer.count < n) n = b->data.buffer.count;
     double s = 0.0;
     for (int i = 0; i < n; i++) {
-        double av = buffer_read_num(a, i);
+        double av = EIGS_ARG_PROP(buffer_read_num(a, i));
         if (g_has_error) return make_null();
-        double bv = buffer_read_num(b, i);
+        double bv = EIGS_ARG_PROP(buffer_read_num(b, i));
         if (g_has_error) return make_null();
         s = num_guard(s + num_guard(av * bv));
     }

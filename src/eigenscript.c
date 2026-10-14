@@ -224,6 +224,19 @@ void eigs_d2ll_fail(double x, const char *who) {
     eigs_num_text(nb, sizeof nb, x);
     rt_error(EK_VALUE, 0, "%s: number %s is outside the integer range", who, nb);
 }
+void eigs_failret_mark(const char *file, int line) {
+    if (getenv("EIGS_FAILRET_TRACE")) fprintf(stderr, "FAILRET %s:%d\n", file, line);
+}
+/* #1746 Class B: the raise behind EIGS_ARG_FIN. */
+void eigs_nonfinite_fail(double x, const char *who) {
+    if (!eigs_current) return;
+    const char *bn = eigs_cur_builtin ? eigs_builtin_script_name(eigs_cur_builtin) : NULL;
+    if (bn) who = bn;
+    else if (strncmp(who, "builtin_", 8) == 0) who += 8;
+    char nb[32];
+    eigs_num_text(nb, sizeof nb, x);
+    rt_error(EK_VALUE, 0, "%s: number %s must be finite", who, nb);
+}
 #endif
 
 void eigs_strict_nan_raise(const char *who) {
@@ -734,7 +747,9 @@ void observer_slot_record_value(ObserverSlot *s, double v) {
     if (v != v) {
         if (!s->v_used) s->last_value = NAN;   /* no defined sample yet */
         s->v_undef = 1;
-        s->v_nan_recent = (uint8_t)obs_win(s);   /* an undefined term enters the window */
+        /* An undefined term enters the window. A window of N steps spans N+1
+         * terms, so N+1 defined terms must follow before none is the NaN. */
+        s->v_nan_recent = (uint8_t)(obs_win(s) + 1);
         s->v_used = 1;
         s->v_last = 1;
         return;
@@ -1699,7 +1714,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     {
         EIGS_VIEW(nr_view);
         Value *nr = dict_get_view_local(dict, "nan_recent", &nr_view);
-        if (nr && nr->type == VAL_NUM && VAL_NUM_RAW(nr) >= 0 && VAL_NUM_RAW(nr) <= OBSERVER_WINDOW_MAX)
+        if (nr && nr->type == VAL_NUM && VAL_NUM_RAW(nr) >= 0 && VAL_NUM_RAW(nr) <= OBSERVER_WINDOW_MAX + 1)
             out->v_nan_recent = (uint8_t)EIGS_DCAST_QUIET(int, VAL_NUM_RAW(nr));
     }
 #endif

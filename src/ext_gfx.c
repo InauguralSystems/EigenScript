@@ -681,16 +681,29 @@ Value* builtin_gfx_clip(Value *arg) {
                             || !gfx_nums(arg, 0, 4)),
               "gfx_clip", "[number x, number y, number w, number h] or null",
               make_null());
+#ifdef EIGS_IEEE
+    SDL_Rect clip_v = {0, 0, 0, 0};   /* #1746 Class A: converted before any SDL call */
+    if (!clearing) {
+        clip_v.x = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
+        clip_v.y = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+        clip_v.w = EIGS_DCAST_RET(int, eigs_list_num(arg, 2, __func__), make_null());
+        clip_v.h = EIGS_DCAST_RET(int, eigs_list_num(arg, 3, __func__), make_null());
+    }
+#endif
     if (!g_renderer || !p_SDL_RenderSetClipRect) return make_null();  /* fs:VOID no window / no SDL symbol: gfx_clip answers null on every path -- the return value, not a rejected-argument stand-in */
     if (clearing) {
         p_SDL_RenderSetClipRect(g_renderer, NULL);
         return make_null();  /* fs:VOID the clip was cleared -- gfx_clip's normal successful answer */
     }
+#ifdef EIGS_IEEE
+    SDL_Rect clip = clip_v;
+#else
     SDL_Rect clip;
     clip.x = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
     clip.y = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
     clip.w = EIGS_DCAST_RET(int, eigs_list_num(arg, 2, __func__), make_null());
     clip.h = EIGS_DCAST_RET(int, eigs_list_num(arg, 3, __func__), make_null());
+#endif
     p_SDL_RenderSetClipRect(g_renderer, &clip);
     return make_null(); /* fs:VOID gfx_clip answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -715,12 +728,21 @@ Value* builtin_gfx_read(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
               || !gfx_nums(arg, 0, 2),
               "gfx_read", "[number x, number y]", make_null());
+#ifdef EIGS_IEEE
+    int gr_x = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());   /* #1746: before the tape */
+    int gr_y = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+#endif
     TRACE_NONDET_TAKE("gfx_read");
     if (!g_renderer || !p_SDL_RenderReadPixels)
         TRACE_NONDET_RECORD("gfx_read", make_null());
     SDL_Rect r;
+#ifdef EIGS_IEEE
+    r.x = gr_x;
+    r.y = gr_y;
+#else
     r.x = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
     r.y = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+#endif
     r.w = 1;
     r.h = 1;
     Uint32 px = 0;
@@ -1186,7 +1208,7 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
         if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
         int16_t *buf = xmalloc_array(n, sizeof(int16_t));
         for (int i = 0; i < n; i++) {
-            double s = buffer_read_num(samples, i);
+            double s = EIGS_ARG_PROP(buffer_read_num(samples, i));
             if (g_has_error) { free(buf); return NULL; }
             if (s > 1.0) s = 1.0;
             if (s < -1.0) s = -1.0;
@@ -1223,7 +1245,7 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
             free(buf);
             return NULL;
         }
-        double s = eigs_slot_num(sample, __func__);
+        double s = EIGS_ARG_PROP(eigs_slot_num(sample, __func__));
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
         buf[i] = EIGS_DCAST_RET(int16_t, (s * 32767), (free(buf), NULL));
@@ -1315,6 +1337,15 @@ Value* builtin_audio_open(Value *arg) {
                   list_elem_type(arg, 1) != VAL_NUM,
                   "audio_open", "[number freq, number channels]", make_num(0));
     }
+#ifdef EIGS_IEEE
+    /* #1746 Class A: converted before the tape and the SDL load/init. */
+    int ao_freq = 44100, ao_ch = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
+        && list_elem_type(arg, 0) == VAL_NUM && list_elem_type(arg, 1) == VAL_NUM) {
+        ao_freq = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
+        ao_ch = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+    }
+#endif
     if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
     if (!p_SDL_OpenAudioDevice) {
         fprintf(stderr, "audio_open: SDL2 audio symbols not available\n");
@@ -1331,8 +1362,13 @@ Value* builtin_audio_open(Value *arg) {
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         /* Type-checked at the top of the function, before the SDL load. */
+#ifdef EIGS_IEEE
+        want.freq = ao_freq;
+        want.channels = ao_ch;
+#else
         want.freq = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
         want.channels = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+#endif
     }
 
     g_audio_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
@@ -1458,6 +1494,15 @@ Value* builtin_audio_capture_open(Value *arg) {
                   list_elem_type(arg, 1) != VAL_NUM,
                   "audio_capture_open", "[number freq, number channels]", make_num(0));
     }
+#ifdef EIGS_IEEE
+    /* #1746 Class A: converted before the tape and the SDL load/init. */
+    int ao_freq = 44100, ao_ch = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
+        && list_elem_type(arg, 0) == VAL_NUM && list_elem_type(arg, 1) == VAL_NUM) {
+        ao_freq = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
+        ao_ch = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+    }
+#endif
     TRACE_NONDET_TAKE("audio_capture_open");
     if (!g_sdl_lib) {
         if (!load_sdl2()) TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
@@ -1477,8 +1522,13 @@ Value* builtin_audio_capture_open(Value *arg) {
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         /* Type-checked at the top of the function, before the SDL load. */
+#ifdef EIGS_IEEE
+        want.freq = ao_freq;
+        want.channels = ao_ch;
+#else
         want.freq = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
         want.channels = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+#endif
     }
 
     if (g_capture_device) {
@@ -1587,6 +1637,15 @@ Value* builtin_audio_stream_open(Value *arg) {
                   list_elem_type(arg, 1) != VAL_NUM,
                   "audio_stream_open", "[number freq, number channels]", make_num(0));
     }
+#ifdef EIGS_IEEE
+    /* #1746 Class A: converted before the tape and the SDL load/init. */
+    int ao_freq = 44100, ao_ch = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
+        && list_elem_type(arg, 0) == VAL_NUM && list_elem_type(arg, 1) == VAL_NUM) {
+        ao_freq = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
+        ao_ch = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+    }
+#endif
     if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER BUILTINS.md audio_stream_open: "0 when SDL/audio is unavailable"; libSDL2 absent is environment state */
     if (!p_SDL_OpenAudioDevice || !p_SDL_QueueAudio) {
         fprintf(stderr, "audio_stream_open: SDL2 audio symbols not available\n");
@@ -1604,8 +1663,13 @@ Value* builtin_audio_stream_open(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
         && list_elem_type(arg, 0) == VAL_NUM
         && list_elem_type(arg, 1) == VAL_NUM) {
+#ifdef EIGS_IEEE
+        want.freq = ao_freq;
+        want.channels = ao_ch;
+#else
         want.freq = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
         want.channels = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+#endif
     }
 
     if (g_stream_device) {
@@ -1797,7 +1861,7 @@ Value* builtin_audio_play_loop(Value *arg) {
               || list_elem_type(arg, 1) != VAL_NUM,
               "audio_play_loop", "[samples, number loops]", make_num(0));
     /* #152: NaN/huge casts are UB; -1 is the one negative with meaning. */
-    double loops_d = eigs_list_num(arg, 1, __func__);
+    double loops_d = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
     int loops;
     if (loops_d == -1.0) loops = -1;
     else {
@@ -1841,7 +1905,7 @@ Value* builtin_audio_volume(Value *arg) {
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing", and with no device open no channel is */
     int c = EIGS_DCAST_RET(int, eigs_slot_num(list_slot(arg, 0), "audio_volume"), make_null()) - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing" -- the same value line 1452 returns for an inactive in-range channel; an out-of-range id is definitionally inactive */
-    double vol = eigs_slot_num(list_slot(arg, 1), "audio_volume");
+    double vol = EIGS_ARG_FIN(eigs_slot_num(list_slot(arg, 1), "audio_volume"), make_null());
     if (isnan(vol) || vol < 0.0) vol = 0.0;
     if (vol > 4.0) vol = 4.0;
     p_SDL_LockAudioDevice(g_audio_device);
@@ -1921,9 +1985,9 @@ Value* builtin_audio_sine(Value *arg) {
               list_elem_type(arg, 1) != VAL_NUM ||
               list_elem_type(arg, 2) != VAL_NUM,
               "audio_sine", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = EIGS_ARG_FIN(eigs_list_num(arg, 0, __func__), make_null());
+    double dur = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
+    double amp = EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null());
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = EIGS_DCAST_RET(int, (dur * rate), make_null());
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -1956,9 +2020,9 @@ Value* builtin_audio_saw(Value *arg) {
               list_elem_type(arg, 1) != VAL_NUM ||
               list_elem_type(arg, 2) != VAL_NUM,
               "audio_saw", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = EIGS_ARG_FIN(eigs_list_num(arg, 0, __func__), make_null());
+    double dur = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
+    double amp = EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null());
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = EIGS_DCAST_RET(int, (dur * rate), make_null());
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -1991,9 +2055,9 @@ Value* builtin_audio_square(Value *arg) {
               list_elem_type(arg, 1) != VAL_NUM ||
               list_elem_type(arg, 2) != VAL_NUM,
               "audio_square", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = EIGS_ARG_FIN(eigs_list_num(arg, 0, __func__), make_null());
+    double dur = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
+    double amp = EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null());
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = EIGS_DCAST_RET(int, (dur * rate), make_null());
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -2029,10 +2093,10 @@ Value* builtin_audio_sweep(Value *arg) {
               list_elem_type(arg, 3) != VAL_NUM ||
               list_elem_type(arg, 4) != VAL_NUM,
               "audio_sweep", "[number freq_start, number freq_end, number duration, number amplitude, number waveform]", make_list(0));
-    double f0 = eigs_list_num(arg, 0, __func__);
-    double f1 = eigs_list_num(arg, 1, __func__);
-    double dur = eigs_list_num(arg, 2, __func__);
-    double amp = eigs_list_num(arg, 3, __func__);
+    double f0 = EIGS_ARG_FIN(eigs_list_num(arg, 0, __func__), make_null());
+    double f1 = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
+    double dur = EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null());
+    double amp = EIGS_ARG_FIN(eigs_list_num(arg, 3, __func__), make_null());
     int wave = EIGS_DCAST_RET(int, eigs_list_num(arg, 4, __func__), make_null());
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = EIGS_DCAST_RET(int, (dur * rate), make_null());
@@ -2073,8 +2137,8 @@ Value* builtin_audio_noise(Value *arg) {
     ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
               list_elem_type(arg, 1) != VAL_NUM,
               "audio_noise", "[number duration, number amplitude]", make_list(0));
-    double dur = eigs_list_num(arg, 0, __func__);
-    double amp = eigs_list_num(arg, 1, __func__);
+    double dur = EIGS_ARG_FIN(eigs_list_num(arg, 0, __func__), make_null());
+    double amp = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n = EIGS_DCAST_RET(int, (dur * rate), make_null());
     if (n <= 0 || n > rate * 30) return make_list(0);
@@ -2109,8 +2173,8 @@ Value* builtin_audio_mix(Value *arg) {
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double sa = (i < a->data.list.count && list_elem_type(a, i) == VAL_NUM) ? eigs_slot_num(list_slot(a, i), __func__) : 0;
-        double sb = (i < b->data.list.count && list_elem_type(b, i) == VAL_NUM) ? eigs_slot_num(list_slot(b, i), __func__) : 0;
+        double sa = (i < a->data.list.count && list_elem_type(a, i) == VAL_NUM) ? EIGS_ARG_PROP(eigs_slot_num(list_slot(a, i), __func__)) : 0;
+        double sb = (i < b->data.list.count && list_elem_type(b, i) == VAL_NUM) ? EIGS_ARG_PROP(eigs_slot_num(list_slot(b, i), __func__)) : 0;
         double mixed = sa + sb;
         if (mixed > 1.0) mixed = 1.0;
         if (mixed < -1.0) mixed = -1.0;
@@ -2142,12 +2206,12 @@ Value* builtin_audio_gain(Value *arg) {
      * beside it was not, which is the same next-line asymmetry as gfx_open. */
     ARG_GUARD(list_elem_type(arg, 1) != VAL_NUM,
               "audio_gain", "[samples, number volume]", make_list(0));
-    double vol = eigs_list_num(arg, 1, __func__);
+    double vol = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
     int n = samples->data.list.count;
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double s = (list_elem_type(samples, i) == VAL_NUM) ? eigs_slot_num(list_slot(samples, i), __func__) : 0;
+        double s = (list_elem_type(samples, i) == VAL_NUM) ? EIGS_ARG_PROP(eigs_slot_num(list_slot(samples, i), __func__)) : 0;
         s *= vol;
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
@@ -2185,10 +2249,10 @@ Value* builtin_audio_envelope(Value *arg) {
      * nothing. */
     STRICT_REQUIRE(!gfx_list_all_num(samples), "audio_envelope",
                    "[list of numbers, number attack, number decay, number sustain, number release]");
-    double attack = eigs_list_num(arg, 1, __func__);
-    double decay = eigs_list_num(arg, 2, __func__);
-    double sustain = eigs_list_num(arg, 3, __func__);
-    double release = eigs_list_num(arg, 4, __func__);
+    double attack = EIGS_ARG_FIN(eigs_list_num(arg, 1, __func__), make_null());
+    double decay = EIGS_ARG_FIN(eigs_list_num(arg, 2, __func__), make_null());
+    double sustain = EIGS_ARG_FIN(eigs_list_num(arg, 3, __func__), make_null());
+    double release = EIGS_ARG_FIN(eigs_list_num(arg, 4, __func__), make_null());
 
     int n = samples->data.list.count;
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
@@ -2217,7 +2281,7 @@ Value* builtin_audio_envelope(Value *arg) {
             double frac = (r_samples > 0) ? (double)(i - r_start) / r_samples : 1.0;
             env = sustain * (1.0 - frac);
         }
-        double s = (list_elem_type(samples, i) == VAL_NUM) ? eigs_slot_num(list_slot(samples, i), __func__) : 0;
+        double s = (list_elem_type(samples, i) == VAL_NUM) ? EIGS_ARG_PROP(eigs_slot_num(list_slot(samples, i), __func__)) : 0;
         s *= env;
         list_append_owned(out, make_num(s));
     }

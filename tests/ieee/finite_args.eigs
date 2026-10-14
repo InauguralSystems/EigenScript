@@ -1,0 +1,78 @@
+# #1746 Phase 1 (ieee build only), Class B: a finite-required numeric argument
+# (timeout, duration, flag, range) given NaN or inf raises `value` naming the
+# builtin BEFORE any effect -- no NaN takes a default branch through a
+# comparison. Each row asserts the raise AND the absence of the effect, and the
+# program continues. (audio_volume, a gfx builtin, is compile-checked only.)
+# tools/ieee_rows.sh runs this with its scratch directory as cwd (the marker).
+#
+# Output: `CHECKS <n>` then exactly n lines `CHECK <name> ok|FAIL <detail>`.
+
+q is 0 / 0
+inf is 1e308 * 10
+results is []
+define check(name, cond, detail) as:
+    verdict is "FAIL"
+    if cond:
+        verdict is "ok"
+    append of [results, f"CHECK {name} {verdict} {detail}"]
+    return 0
+
+define attempt(thunk, arg) as:
+    try:
+        thunk of arg
+    catch e:
+        return [e["kind"], e["message"]]
+    return ["none", ""]
+
+define run_exec(t) as:
+    exec_capture of [["sh", "-c", "sleep 1; touch ieee_exec_ran"], t]
+define run_sleep(t) as:
+    task_sleep of t
+define run_recv(t) as:
+    recv_timeout of [(channel of 0), t]
+define run_history(t) as:
+    record_history of t
+define run_nearest(t) as:
+    nearest_in_range of [[[0, 0]], 0, 0, t, 10, 10]
+
+define worker(t) as:
+    return attempt of [run_sleep, t]
+
+for b in [["nan", q], ["inf", inf]]:
+    tag is b[0]
+    v is b[1]
+    t0 is monotonic_ms of 0
+    r is attempt of [run_exec, v]
+    ms is (monotonic_ms of 0) - t0
+    check of [f"exec_capture_{tag}", (r[0] == "value") and (ms < 100) and ((file_exists of "ieee_exec_ran") == false), str of [r, ms]]
+    t0 is monotonic_ms of 0
+    h is task_spawn of [worker, v]
+    r is task_join of h
+    ms is (monotonic_ms of 0) - t0
+    check of [f"task_sleep_{tag}", (r[0] == "value") and (ms < 100), str of [r, ms]]
+    t0 is monotonic_ms of 0
+    r is attempt of [run_recv, v]
+    ms is (monotonic_ms of 0) - t0
+    check of [f"recv_timeout_{tag}", (r[0] == "value") and (ms < 100), str of [r, ms]]
+    r is attempt of [run_nearest, v]
+    check of [f"nearest_in_range_{tag}", r[0] == "value", str of r]
+
+# record_history: history is OFF; a refused call must leave it off, so `prev`
+# of a binding assigned after it still has no history (null).
+define history_row(v) as:
+    record_history of 0
+    local y is 1
+    y is 2
+    local r is attempt of [run_history, v]
+    y is 3
+    local p is prev of y
+    record_history of 1
+    return [r, p]
+for b in [["nan", q], ["inf", inf]]:
+    hr is history_row of b[1]
+    check of [f"record_history_{b[0]}", (hr[0][0] == "value") and (hr[1] == null), str of hr]
+
+print of "process continued"
+print of f"CHECKS {len of results}"
+for line in results:
+    print of line

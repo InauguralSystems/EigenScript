@@ -337,6 +337,13 @@ int eigs_value_as_bool(EigsValue *v) {
  * plausible false-as-zero. Other non-numbers keep the documented 0.0. Hosts
  * test eigs_value_type first, or read a bool with eigs_value_as_bool. */
 double eigs_value_as_num(EigsValue *v) {
+#ifdef EIGS_IEEE
+    if (v && v->type == VAL_BOOL) {
+        if (eigs_current) rt_error(EK_TYPE, 0, "eigs_value_as_num: a bool is not a number");
+        return 0.0;
+    }
+    return (v && v->type == VAL_NUM) ? EIGS_NUM_CANON(VAL_NUM_RAW(v)) : 0.0;
+#endif
     if (v && v->type == VAL_BOOL) return NAN;
     return (v && v->type == VAL_NUM) ? VAL_NUM_RAW(v) : 0.0;
 }
@@ -391,7 +398,7 @@ int eigs_value_buffer_len(EigsValue *v) {
 double eigs_value_buffer_get(EigsValue *v, int i) {
     if (!v || v->type != VAL_BUFFER) return 0.0;
     if (i < 0 || i >= v->data.buffer.count) return 0.0;
-    return buffer_read_num(v, i);
+    return EIGS_NUM_CANON(buffer_read_num(v, i));   /* #1746: identity unless ieee */
 }
 
 void eigs_value_buffer_set(EigsValue *v, int i, double x) {

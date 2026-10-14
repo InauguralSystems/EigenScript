@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${1:-$ROOT/build/ieee/eigenscript}"
 T="$ROOT/tests/ieee"
 TMO="${IEEE_ROWS_TIMEOUT:-120}"
-DECLARED=16
+DECLARED=22
 W="$(mktemp -d "${TMPDIR:-/tmp}/ieee_rows.XXXXXX")" || { echo "FAIL setup: mktemp"; exit 2; }
 trap 'rm -rf "$W"' EXIT
 PASS=0; FAIL=0; RAN=""
@@ -172,6 +172,55 @@ else fail no_side_effect "$why"; fi
 # the formatter, user text untouched.
 if timeout "$TMO" python3 "$ROOT/tools/ieee_format_sites.py" > "$W/fmt.out" 2>&1; then pass format_sites
 else fail format_sites "$(tail -1 "$W/fmt.out")"; fi
+
+# 17. #1746 r4 Class A on the tape: random_normal and random_int refused for a
+# NaN inside `try` leave no record (the refusal precedes the tape bracket), so
+# strict replay reproduces the transcript and a re-record is byte-identical.
+run rf1 env EIGS_TRACE="$W/rf1.tape" "$BIN" "$T/tape_refuse.eigs"
+run rf2 env EIGS_TRACE="$W/rf2.tape" "$BIN" "$T/tape_refuse.eigs"
+run rfr env EIGS_REPLAY="$W/rf1.tape" EIGS_REPLAY_STRICT=1 "$BIN" "$T/tape_refuse.eigs"
+nrec=$(grep '^N ' "$W/rf1.tape" 2>/dev/null | sed 's/=.*//' | tr '\n' ',')
+if ! why=$(clean rf1) || ! why=$(clean rf2) || ! why=$(clean rfr); then fail tape_refusal "$why"
+elif [ "$(grep -c 'must be finite\|outside the integer range' "$W/rf1.out")" != 3 ]; then fail tape_refusal "want 3 refusals, got: $(tr '\n' '|' < "$W/rf1.out")"
+elif [ "$nrec" != "N 0 random_int,N 0 random_int,N 0 random_normal," ]; then fail tape_refusal "records of the refused calls on the tape: $nrec"
+elif ! cmp -s "$W/rf1.tape" "$W/rf2.tape"; then fail tape_refusal "re-record differs: $(diff "$W/rf1.tape" "$W/rf2.tape" | head -3 | tr '\n' ' ')"
+elif ! cmp -s "$W/rf1.out" "$W/rfr.out" || ! cmp -s "$W/rf1.err" "$W/rfr.err"; then fail tape_refusal "strict replay differs: $(diff "$W/rf1.out" "$W/rfr.out" | head -3 | tr '\n' ' ') $(head -2 "$W/rfr.err" | tr '\n' ' ')"
+else pass tape_refusal; fi
+
+# 18. #1746 r4 Class B: finite-required arguments (timeouts, durations, flags,
+# ranges) given NaN/inf raise `value` naming the builtin, with no effect: no
+# sleep, no process, history unchanged; the program continues.
+mkdir -p "$W/fin" && ( cd "$W/fin" && timeout "$TMO" "$BIN" "$T/finite_args.eigs" > "$W/fin.out" 2> "$W/fin.err"; echo $? > "$W/fin.rc" )
+if why=$(clean fin) && why=$(checks fin); then
+    if grep -qx 'process continued' "$W/fin.out"; then pass finite_args; else fail finite_args "the process did not continue"; fi
+else fail finite_args "$why"; fi
+
+# 19. #1746 r4 E: the embed API hands the host canonical NaN bits, and
+# eigs_value_as_num of a bool is 0.0 with a pending error. Compiled against the
+# objects of the variant under test.
+V=$(basename "$(dirname "$BIN")")
+EFL=$(make -s -C "$ROOT" "print-FLAGS_$V" | sed 's/-DEIGENSCRIPT_VERSION=[^ ]*//')
+EOBJ=$(make -s -C "$ROOT" "print-OBJ_$V" | tr ' ' '\n' | grep -v '/main\.o$' | sed "s|^|$ROOT/|" | tr '\n' ' ')
+ELIB=$(make -s -C "$ROOT" "print-LIBS_$V")
+# shellcheck disable=SC2086
+if ! timeout "$TMO" gcc $EFL -I"$ROOT/src" -o "$W/embed_nan" "$T/embed_nan.c" $EOBJ $ELIB > "$W/embed_cc.out" 2>&1; then
+    fail embed_nan "compile: $(tail -3 "$W/embed_cc.out" | tr '\n' ' ')"
+else
+    run emb "$W/embed_nan"
+    if why=$(clean emb) && grep -qx 'EMBED 6 passed, 0 failed' "$W/emb.out"; then pass embed_nan
+    else fail embed_nan "${why:-$(tr '\n' ' ' < "$W/emb.out")}"; fi
+fi
+
+# 20-22. The three class gates (r4): every numeric-argument read classified
+# (table pinned), every refusal before the first effect, every releasing
+# failret exercised leak-free under ASan.
+if timeout "$TMO" python3 "$ROOT/tools/ieee_accessor_gate.py" > "$W/acc.out" 2>&1; then pass accessor_gate
+else fail accessor_gate "$(tail -1 "$W/acc.out")"; fi
+if timeout "$TMO" python3 "$ROOT/tools/ieee_effect_order.py" > "$W/eff.out" 2>&1; then pass effect_order
+else fail effect_order "$(grep -m3 -E '^(VIOLATION|STALE)' "$W/eff.out" | tr '\n' ' ') $(tail -1 "$W/eff.out")"; fi
+ABIN="${IEEE_ASAN_BIN:-$ROOT/build/asan-ieee/eigenscript}"
+if timeout 600 python3 "$ROOT/tools/ieee_failret_coverage.py" "$ABIN" > "$W/frc.out" 2>&1; then pass failret_coverage
+else fail failret_coverage "$(grep -m3 -E '^(MISSED|STALE|LEAK)' "$W/frc.out" | tr '\n' ' ') $(tail -1 "$W/frc.out")"; fi
 
 ran=$(echo $RAN | wc -w)
 [ "$ran" = "$DECLARED" ] || { echo "FAIL rows: declared $DECLARED, ran $ran ($RAN)"; FAIL=$((FAIL+1)); }

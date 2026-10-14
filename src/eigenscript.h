@@ -354,7 +354,8 @@ typedef struct ObserverSlot {
                                  * NaN when there has been none */
     uint8_t v_nan_recent;       /* #1746: defined samples still owed since the
                                  * last NaN before a rest band may certify
-                                 * (window depth at the NaN, counted down) */
+                                 * (window depth + 1 terms at the NaN, counted
+                                 * down) */
 #endif
 } ObserverSlot;
 
@@ -1950,6 +1951,9 @@ static inline double buffer_read_num(const Value *buffer, int64_t index) {
  * Integer operands pass straight through (_Generic). */
 #ifdef EIGS_IEEE
 void eigs_d2ll_fail(double x, const char *who);
+/* #1746 Class C witness: with EIGS_FAILRET_TRACE set, every taken refusal
+ * prints `FAILRET <file>:<line>` to stderr (tools/ieee_failret_coverage.py). */
+void eigs_failret_mark(const char *file, int line);
 static inline int eigs_d2i_ok(double x, double lo, double hi, const char *who,
                               unsigned long long *out) {
     if (__builtin_expect(!(x >= lo && x < hi), 0)) {
@@ -1966,11 +1970,15 @@ static inline int eigs_d2i_ok(double x, double lo, double hi, const char *who,
 #define EIGS_DC_(T, x, who, onfail) ((T)_Generic((x),                         \
         double: ({ unsigned long long _eigs_dc;                               \
                    if (!eigs_d2i_ok((double)(x), EIGS_TLO_(T), EIGS_THI_(T),  \
-                                    (who), &_eigs_dc)) onfail;               \
+                                    (who), &_eigs_dc)) {                     \
+                       eigs_failret_mark(__FILE__, __LINE__);                \
+                       onfail; }                                             \
                    _eigs_dc; }),                                              \
         float:  ({ unsigned long long _eigs_dc;                               \
                    if (!eigs_d2i_ok((double)(x), EIGS_TLO_(T), EIGS_THI_(T),  \
-                                    (who), &_eigs_dc)) onfail;               \
+                                    (who), &_eigs_dc)) {                     \
+                       eigs_failret_mark(__FILE__, __LINE__);                \
+                       onfail; }                                             \
                    _eigs_dc; }),                                              \
         default: (x)))
 #define EIGS_DCAST_RET(T, x, failret) EIGS_DC_(T, x, __func__, return failret)
@@ -1979,6 +1987,40 @@ static inline int eigs_d2i_ok(double x, double lo, double hi, const char *who,
 #define EIGS_DCAST_RET(T, x, failret) ((T)(x))
 #define EIGS_DCAST_QUIET(T, x)        ((T)(x))
 #endif
+
+/* #1746 Class B: every numeric argument a builtin reads is classified (the
+ * ieee build's tools/ieee_accessor_gate.py fails an unclassified read):
+ *   EIGS_ARG_FIN(read, failret)  finite-required (counts, sizes, timeouts,
+ *                                indices, flags, ranges, durations, volumes):
+ *                                NaN / +-inf raise `value` naming the builtin
+ *                                and `return failret` before any effect;
+ *   EIGS_ARG_PROP(read)          propagating (math): NaN/inf in, NaN/inf out.
+ * A read inside EIGS_DCAST_RET is finite-required by construction.
+ * Default build: both are exactly `(read)`. */
+#ifdef EIGS_IEEE
+void eigs_nonfinite_fail(double x, const char *who);
+#define EIGS_ARG_FIN(x, failret) ({ double _eigs_af = (x);                   \
+        if (__builtin_expect(!isfinite(_eigs_af), 0)) {                      \
+            eigs_nonfinite_fail(_eigs_af, __func__);                         \
+            eigs_failret_mark(__FILE__, __LINE__); return failret; }         \
+        _eigs_af; })
+#else
+#define EIGS_ARG_FIN(x, failret) (x)
+#endif
+#define EIGS_ARG_PROP(x) (x)
+/* The out-parameter accessors (eigs_opt_num, eigs_slot_opt_num): the call
+ * answers "was a number given" and writes `var`; FIN refuses a non-finite
+ * `var` the same way. */
+#ifdef EIGS_IEEE
+#define EIGS_OPT_FIN(call, var, failret) ({ int _eigs_of = (call);           \
+        if (_eigs_of && !isfinite(var)) {                                     \
+            eigs_nonfinite_fail((var), __func__);                            \
+            eigs_failret_mark(__FILE__, __LINE__); return failret; }          \
+        _eigs_of; })
+#else
+#define EIGS_OPT_FIN(call, var, failret) (call)
+#endif
+#define EIGS_OPT_PROP(call) (call)
 
 /* Numeric byte consumers truncate and wrap modulo 256. Reduce in double
  * first: even a normalized finite number can be outside the C int range.
