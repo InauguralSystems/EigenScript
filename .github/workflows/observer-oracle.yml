@@ -1,0 +1,137 @@
+name: observer oracle
+
+# The observer oracle's per-verdict floor as a CI lane (#1764).
+#
+# `make observer-oracle` scores the six observer predicates against the
+# mathematics-graded corpus in tools/observer_oracle/ and, by default, applies
+# the committed floor: every verdict the v0.46.0 tag got right must stay right
+# (#1758). The floor's anchor is the tag's binary, which THIS job builds with
+# tools/observer_oracle/build_anchor.sh. Its identity is the recipe plus the
+# verdict list re-measured on it every run; its sha256 is printed for
+# information only, since this image's toolchain is not the one the floor was
+# measured with (mechanical-gates §191).
+#
+# After the real run, a self-test runs the same floor check through the
+# wrapper observer with one floor verdict reversed and requires it to go red
+# (plants.py floor-one): a green real run is evidence only while the floor
+# can still fail.
+#
+# Not a required check: a required check must report on every pull request
+# (#1264, tools/ci_tier_check.sh), and this lane runs only on the paths below,
+# nightly and on dispatch.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      # The observer and the six predicates (src/eigenscript.c, its state and
+      # thresholds in src/eigenscript.h), the opcodes that run them (src/vm.c,
+      # src/vm.h), the compiler that picks those opcodes and the observer gate
+      # (src/compiler.c, src/chunk.c, which also names the opcodes the oracle's
+      # EIGS_DUMP_BC check reads), the seeded thresholds (src/state.c), the
+      # JIT, then the lane's own inputs: the Makefile (its entry point and the
+      # build flags), the oracle and this file. No oracle program loads a lib
+      # module; lib/observer.eigs is the observer's stdlib face.
+      - 'src/eigenscript.c'
+      - 'src/eigenscript.h'
+      - 'src/vm.c'
+      - 'src/vm.h'
+      - 'src/compiler.c'
+      - 'src/chunk.c'
+      - 'src/state.c'
+      - 'src/jit*'
+      - 'lib/observer.eigs'
+      - 'Makefile'
+      - 'tools/observer_oracle/**'
+      - '.github/workflows/observer-oracle.yml'
+  schedule:
+    # 04:43 UTC: off the hour, and clear of nightly.yml's 04:17.
+    - cron: '43 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observer-oracle-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  floor:
+    name: observer oracle (v0.46.0 floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    # The rolling dev image every main push publishes (ci.yml, dev-image): the
+    # toolchain Codespaces and the ci.yml Linux legs use.
+    container:
+      image: ghcr.io/inauguralsystems/eigenscript-dev:ci-main
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # The anchor is built from the tag's own files (git archive), so the
+      # shallow checkout needs the tag's commit. The tag is the recipe's, read
+      # from build_anchor.sh rather than restated here.
+      - name: Fetch the anchor's tag
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          tag=$(sed -n 's/^TAG=//p' tools/observer_oracle/build_anchor.sh)
+          [ -n "$tag" ] || { echo "::error::no TAG= line in build_anchor.sh"; exit 1; }
+          git fetch --no-tags --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+          git rev-parse "$tag^{commit}"
+
+      - name: Build the candidate (make build)
+        run: make build
+
+      # A fresh container has no anchor cache, so the recipe BUILDS the anchor
+      # here; nothing restores it from an earlier run.
+      - name: Build the v0.46.0 anchor (build_anchor.sh)
+        run: |
+          cache="${XDG_CACHE_HOME:-$HOME/.cache}/eigs-oracle-anchor"
+          if [ -e "$cache" ]; then echo "::error::$cache exists before the build: the anchor must be built by this job"; exit 1; fi
+          bash tools/observer_oracle/build_anchor.sh
+
+      # The documented entry point, which applies the committed floor by
+      # default. The checks below read make's stdout only, score.py's verdict
+      # lines included (stderr, where score.py's errors go, reaches the log
+      # directly), and every expected value is derived from floor.json, the
+      # recipe and the anchor's stamp.
+      - name: Observer oracle against the committed floor (make observer-oracle)
+        run: |
+          out="$RUNNER_TEMP/observer-oracle.out"
+          rc=0
+          make observer-oracle | tee "$out" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::make observer-oracle exited $rc"; exit 1; }
+          read -r n fmt < <(python3 -c 'import json; f = json.load(open("tools/observer_oracle/floor.json")); print(len(f["verdicts"]), f["format"])')
+          recipe=$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)
+          anchor=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["binary"])' \
+                   "${XDG_CACHE_HOME:-$HOME/.cache}/eigs-oracle-anchor/$recipe/anchor.json")
+          measured="floor: $n verdicts ($fmt), re-measured on the anchor $anchor built by build_anchor.sh ${recipe:0:12}: the list matches; binary sha256 "
+          [ "$(grep -cF -- "$measured" "$out")" -eq 1 ] \
+            || { echo "::error::no single line '$measured...': the floor was not re-measured on this job's anchor"; exit 1; }
+          [ "$(grep -cx "floor: $n verdicts checked, 0 lost" "$out")" -eq 1 ] \
+            || { echo "::error::no single line 'floor: $n verdicts checked, 0 lost'"; exit 1; }
+          [ "$(grep -cx 'observer oracle exit 0: no gate failed' "$out")" -eq 1 ] \
+            || { echo "::error::no single verdict line 'observer oracle exit 0: no gate failed'"; exit 1; }
+          echo "observer-oracle lane: the floor's $n verdicts were re-measured on this job's v0.46.0 anchor and none was lost"
+
+      # The self-test: the same floor check, through the wrapper observer with
+      # the reading of the floor's first verdict reversed in every arm. The
+      # arms still agree, so only the floor can turn it red; plants.py exits 0
+      # only when the run exits 1 losing exactly that reading's verdicts.
+      - name: 'Self-test: one floor verdict reversed must turn the floor red (plants.py floor-one)'
+        run: |
+          out="$RUNNER_TEMP/plant.out"
+          rc=0
+          python3 tools/observer_oracle/plants.py src/eigenscript src/eigenscript --only floor-one | tee "$out" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::the planted floor loss was NOT caught (plants.py exited $rc)"; exit 1; }
+          [ "$(grep -cx 'plants: 1 examined, 1 red (controls included: green is their red)' "$out")" -eq 1 ] \
+            || { echo "::error::no single 'plants: 1 examined, 1 red' summary"; exit 1; }

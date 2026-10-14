@@ -6,6 +6,10 @@ usage: python3 plants.py TAG_BINARY IEEE_BINARY [--only NAME,...]
        plants.py wrap PROG|-e CODE   (the wrapper observer, run through a shim)
        python plants.py twins DIR     (with sympy: the twin labels, see below)
 
+The CI lane (.github/workflows/observer-oracle.yml, #1764) runs `--only
+floor-one` after every floor run, with its candidate as TAG_BINARY (the
+binary the wrapper wraps).
+
 Every plant runs in a scratch copy of this directory (the tree is never
 edited) and states the exit code and output line that must appear (and, for
 some, a check of what the run left behind). Counts in expected lines are
@@ -253,6 +257,28 @@ def swap_spec(d):
     return json.dumps(spec)
 
 
+def one_reversed(d):
+    """The CI lane's self-test (#1764): the reading of the floor's first verdict
+    reversed in every arm, as an OBS_WRAP_SPEC, and the floor verdicts that
+    reading carries, in floor order (one per arm). The arms still agree, so no
+    FINDING fires and only the floor can turn the run red."""
+    floor = json.load(open(os.path.join(d, "floor.json")))["verdicts"]
+    labels = json.load(open(os.path.join(d, "labels.json")))
+    _arm, key, pred, _cls = floor[0].split()
+    return json.dumps({f"{key}:{pred}": not labels[key][pred][1]}), [v for v in floor if v.split()[1:3] == [key, pred]]
+
+
+def floor_block(lost, n):
+    """What score.py --floor prints when exactly `lost` (in floor order) is lost
+    from a floor of n verdicts and no other check failed: no FINDING, no
+    capability verdict wrong, the floor re-measured on its anchor, each loss
+    named, the count, exit 1."""
+    return (r"^FINDINGS \(.*\): 0\n\nCAPABILITY ROWS .*, 0 wrong verdict\(s\); expected and absent: none\n\n"
+            rf"floor: {n} verdicts \(.*: the list matches; .*\n"
+            + "".join(rf"  FLOOR VIOLATION {re.escape(k)}\n" for k in lost)
+            + rf"floor: {n} verdicts checked, {len(lost)} lost\n\nobserver oracle exit 1: FAIL$")
+
+
 def stamp_anchor(d, make):
     """A local anchor for the scratch copy's recipe, in a cache inside d
     (XDG_CACHE_HOME): make(path) writes its binary; the stamp is intact."""
@@ -339,6 +365,7 @@ def plants(tag, ieee):
     cf = ["{venv}", "{d}/certify.py"]
     N, caps = counts()
     capline = rf"CAPABILITY ROWS .*: {caps['ieee']} run, {caps['int64']} skipped, 0 wrong.*"
+    one, nf = one_reversed(HERE), len(json.load(open(os.path.join(HERE, "floor.json")))["verdicts"])
     gut_regime = lambda d: (edit_text(d, "derive.py", 'if n < row["regime"]:', "if False:"),
                             edit_text(d, "derive.py", 'int(n) < rows[rid]["regime"]', "False"),
                             subprocess.run(["python3", f"{d}/derive.py", "--write"], check=True))
@@ -348,6 +375,9 @@ def plants(tag, ieee):
          lambda d: shim(d, "spec", tag, OBS_WRAP_SPEC=swap_spec(d)), sc("{d}/obs_spec", *F), 1, r"FLOOR VIOLATION .*"),
         ("INTBLIND", "every scored verdict on int rows reversed",
          lambda d: shim(d, "intblind", tag), sc("{d}/obs_intblind", *F), 1, r"FLOOR VIOLATION \S+ int_.*"),
+        ("floor-one", "ONE floor verdict reversed, in every arm (the CI lane's self-test, #1764): no FINDING,"
+         " and the floor alone reds the run, losing exactly that reading's verdicts",
+         lambda d: shim(d, "spec", tag, OBS_WRAP_SPEC=one[0]), sc("{d}/obs_spec", *F), 1, floor_block(one[1], nf)),
         ("twin-tag", "CONTROL: the twin (honest perfect) observer, tag binary",
          lambda d: shim(d, "twin", tag), sc("{d}/obs_twin", *F), 0, r"exit 0: no gate failed.*"),
         ("twin-ieee", "CONTROL: the twin observer on the IEEE prototype, capability rows run",

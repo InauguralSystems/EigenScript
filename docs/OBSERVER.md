@@ -249,14 +249,23 @@ vacuous. The predicate READS never run natively: the JIT compiles neither `PREDI
 A row's capability is derived from its values (IEEE inf/-inf/NaN; an int a double cannot hold exactly). Such a row runs
 only on a binary whose probe shows the capability (one probe checks that `1e308 * 10` overflows to inf AND that inf × 0 is
 NaN; a binary that does one without the other is refused), skips are printed, `EXPECT=ieee,int64` makes an absent one
-fail, and every verdict on them must be right. `FLOOR=tools/observer_oracle/floor.json` fails a run that gets wrong any
-verdict the v0.46.0 tag got right. Its anchor is the binary `tools/observer_oracle/build_anchor.sh` builds from the tag
-into `${XDG_CACHE_HOME:-~/.cache}/eigs-oracle-anchor/<sha256 of the recipe>/`, under a lock. The anchor's identity is the
-recipe plus the verdict list, which every `--floor` run re-measures on it; its sha256 is recorded only as information, so
-the floor holds on any toolchain whose build of the tag gives the same verdicts. There are no waivers: a floor verdict
-agrees with its label, so losing it is wrong unless the label is, and a wrong label is fixed through
-`derive.py`/`certify.py`. The reference model shares the observer's window and tolerances, so its agreement on
-window-limited rows is correlated, not independent evidence.
+fail, and every verdict on them must be right. By default the run also applies the committed floor,
+`tools/observer_oracle/floor.json` (#1764): it fails when it gets wrong any verdict the v0.46.0 tag got right. `FLOOR=`
+(empty) skips the floor. Its anchor is the binary `tools/observer_oracle/build_anchor.sh` builds from the tag into
+`${XDG_CACHE_HOME:-~/.cache}/eigs-oracle-anchor/<sha256 of the recipe>/`, under a lock; `make observer-oracle` runs the
+recipe first, and the recipe reuses an anchor that is already there. The anchor's identity is the recipe plus the verdict
+list, which every `--floor` run re-measures on it; its sha256 is recorded only as information, so the floor holds on any
+toolchain whose build of the tag gives the same verdicts. There are no waivers: a floor verdict agrees with its label, so
+losing it is wrong unless the label is, and a wrong label is fixed through `derive.py`/`certify.py`. The reference model
+shares the observer's window and tolerances, so its agreement on window-limited rows is correlated, not independent
+evidence.
+
+CI runs `make observer-oracle` in `.github/workflows/observer-oracle.yml`, on pull requests that touch the observer's
+runtime code, the JIT, `lib/observer.eigs` or `tools/observer_oracle/`, nightly, and on dispatch. The job builds its own
+anchor from the tag, and its log shows the floor re-measured on it. Then it checks that the floor can still fail: the same
+check, run through the wrapper observer with one floor verdict's reading reversed in every arm (`plants.py`, plant
+`floor-one`), must lose exactly that reading's verdicts, one per arm, and exit 1. The arms still agree, so no FINDING
+fires and only the floor can turn that run red. The lane is not a required check, because it runs only on those paths.
 
 ## The manifold: two basins and a horizon
 

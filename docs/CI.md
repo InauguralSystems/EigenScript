@@ -41,6 +41,8 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 - `macos-latest` runs on the PR; `macos-15-intel` runs nightly.
 - Differential, compiler, doc, and gate self-tests continue on their existing
   jobs. The separate playground workflow builds real wasm32 on every PR.
+- A PR that touches the observer, the JIT or the observer oracle also runs the
+  observer-oracle lane (**Observer oracle**, below). It is not required.
 
 ## The playground: the real wasm32 build, on the PR
 
@@ -189,6 +191,24 @@ on it and never rebase to satisfy it; the queue does both.
 - A failure opens — or appends to — a single tracking issue, so a nightly that
   nobody is watching still reaches someone. A green run after a red one
   comments on the same thread, which is what makes the thread closable.
+
+## Observer oracle (`.github/workflows/observer-oracle.yml`)
+
+- Runs on pull requests that touch the observer's runtime code
+  (`src/eigenscript.c` and `.h`, `src/vm.c` and `.h`, `src/compiler.c`,
+  `src/chunk.c`, `src/state.c`), the JIT (`src/jit*`), `lib/observer.eigs`,
+  the `Makefile` or `tools/observer_oracle/`; nightly; and on dispatch (#1764).
+- It builds the candidate and, with `tools/observer_oracle/build_anchor.sh`,
+  the v0.46.0 anchor, then runs `make observer-oracle`, which applies the
+  committed floor. The step passes only on the lines that show the floor
+  re-measured on this job's anchor with no verdict lost.
+- Then it shows the floor can still fail. `plants.py` plant `floor-one`
+  reverses one floor verdict's reading through the wrapper observer, and the
+  run must exit 1, losing exactly that reading's verdicts.
+- It is not a required check: a required check must report on every pull
+  request (`tools/ci_tier_check.sh`), and this lane runs only on its paths. A
+  failed scheduled run is not reported to the nightly tracking issue. GitHub
+  notifies the user who last edited the workflow's cron line.
 
 ## Section planner and skip accounting
 
@@ -470,7 +490,9 @@ The fix copies Rust (tiers plus a merge queue), CPython and Go:
   (never from a queue candidate that may still be rejected).
 - **Tier 2** — slow and port lanes, in `.github/workflows/nightly.yml`
   (today `macos-15-intel` and the full valgrind corpus). They never colour
-  `main`; a failure opens or appends to one tracking issue.
+  `main`; a failure opens or appends to one tracking issue. The observer
+  oracle lane is advisory too (**Observer oracle**, above): it is path-filtered
+  on pull requests, runs nightly, and is never required.
 
 ### The source of truth: `.github/required-checks.txt`
 

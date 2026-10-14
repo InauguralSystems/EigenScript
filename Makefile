@@ -438,14 +438,20 @@ test-changed: build
 precheck:
 	bash tools/precheck.sh
 
-# Observer predicates vs a mathematics-graded corpus (#1746). Exits 1 on a FINDING
-# (tiers or forms disagree) or a wrong verdict on a capability row, 2 on a harness
-# error or a vacuous JIT-tier run; with FLOOR=tools/observer_oracle/floor.json it
-# also exits 1 when a verdict the v0.46.0 tag got right is lost (the floor's anchor
-# comes from tools/observer_oracle/build_anchor.sh), and with EXPECT=ieee,int64
-# when an expected capability is absent (#1758).
+# Observer predicates vs a mathematics-graded corpus (#1746). score.py exits 1 on a
+# FINDING (tiers or forms disagree), a wrong verdict on a capability row or a lost
+# floor verdict, 2 on a harness error or a vacuous JIT-tier run. The committed floor
+# applies by default (#1764): a verdict the v0.46.0 tag got right must stay right,
+# re-measured on the anchor tools/observer_oracle/build_anchor.sh builds, or reuses,
+# in the user cache (it needs the v0.46.0 tag, git, flock and sha256sum). The
+# recipe runs without make's flags, so CC=... or -j on this command line cannot
+# reach the tag's build. FLOOR= (empty) skips the floor and the anchor;
+# EXPECT=ieee,int64 fails when an expected capability is absent (#1758). CI runs
+# this target: .github/workflows/observer-oracle.yml.
 .PHONY: observer-oracle
+observer-oracle: FLOOR = tools/observer_oracle/floor.json
 observer-oracle: build
+	$(if $(FLOOR),env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL bash tools/observer_oracle/build_anchor.sh)
 	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT))
 
 install-gfx: install
