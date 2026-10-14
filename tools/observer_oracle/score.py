@@ -567,7 +567,7 @@ def check_floor(pre, path, cand_v, rows, corpus, labels):
                                                f"differs from the floor's {floor['anchor'].get('binary_sha256', '?')[:12]}"
                                                " (another toolchain: information only)"))
     cand = {f"{arm} {rid}@{at} {p} {cls}": w == g for (arm, rid, at, p), (cls, w, g) in cand_v.items() if "/" in arm}
-    lost = []  # TEMPORARY (#1764 demonstration): the floor's loss detection gutted
+    lost = [k for k in floor["verdicts"] if not cand[k]]
     for k in lost:
         print(f"  FLOOR VIOLATION {k}")
     print(f"floor: {len(floor['verdicts'])} verdicts checked, {len(lost)} lost")
