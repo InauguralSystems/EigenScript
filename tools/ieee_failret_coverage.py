@@ -17,7 +17,7 @@ probe is MISSED; a probe whose function has no release site is STALE.
 Leaks: each probe runs with ASAN_OPTIONS=detect_leaks=1; any AddressSanitizer
 or LeakSanitizer text is counted. Exit 0 iff n > 0, exercised == n, leaks == 0,
 stale == 0."""
-import os, re, sys, subprocess, tempfile
+import os, re, shutil, sys, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ieee_cscan import hosted_sources, strip, functions, calls, line_of
 
@@ -114,7 +114,8 @@ def main():
     out, leaks = '', 0
     for n in sorted(PROBES):   # a stale probe still runs: its leak must still show
         d = tempfile.mkdtemp(prefix='ieee_failret.')
-        o = PROBES[n](binary, d)
+        try: o = PROBES[n](binary, d)
+        finally: shutil.rmtree(d, ignore_errors=True)   # a gate leaves no trace
         out += o
         lk = len(re.findall(r'ERROR: (AddressSanitizer|LeakSanitizer)|runtime error:', o))
         leaks += lk
