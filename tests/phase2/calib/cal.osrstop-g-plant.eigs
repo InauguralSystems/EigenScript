@@ -1,0 +1,20 @@
+# ROW: cal.osrstop-g-plant
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: O
+# WITNESS: osr-stop g ADD
+# OPS: ADD
+# plant: a float ADD, which runs natively to the sentinel
+define g(n) as:
+    s is 0.5
+    i is 0.0
+    loop while true:
+        s is s + 1.5
+        i is i + 1.0
+        if i >= n:
+            return s
+print of (g of 4.0)
+try:
+    print of (5.5 & 1)
+catch e:
+    print of e.kind

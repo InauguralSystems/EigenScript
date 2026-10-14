@@ -2187,6 +2187,39 @@ fails if a round named here has neither rows nor its mechanical gates.)
     mechanical gates, `mapped=0`; and with the int-source check planted (a
     production `slot_from_int(count)` call): exit 1.
 
+**As built in R1.1** (`tools/phase2_check.sh`, a wrapper over
+`tools/phase2_check.py`, whose docstring is the reference):
+- **Controls land with R1.3**, the first round with rows of its own. Under a
+  mechanical `--through` they are not required: their witnesses are about
+  ints (`ctl.N1.fn-int-truthiness` expects the int call to bail), which
+  cannot hold before an int exists.
+- **The leaf witness is read in the default and `osr` tiers.** With
+  `EIGS_JIT_OFF=1` the hot table counts no call at all (probed on the R1.1
+  binary: a function called 60 times has no row), so the `off` tier cannot
+  witness either way.
+- **The token gate** checks, in every mode, that each token a landed round
+  deleted (2.7) occurs in no code line of `src/` or `tests/` C files.
+- **The corpus differential** is `tools/phase2_corpus_diff.sh <baseline>
+  <branch>`: both binaries run every `.eigs` under the branch tree's
+  `tests/` from the branch tree's `src/` (the suite's cwd), so the file and
+  whatever it loads by a relative path are the same bytes for both; only
+  the binary and its stdlib differ. A file only the branch has (a new
+  fixture) is counted as `new`; one only the baseline has is a DELETED
+  failure. A file whose baseline disagrees with itself (randomness, timing)
+  is replayed: the baseline records a tape, replays it twice, and the branch
+  replays it once; the branch must match (`same_under_replay`), or it is a
+  DIFF. Only files whose replays disagree with each other stay NONDET.
+- **The calibration** is `phase2_check.sh --calibrate [--build-plants] <tag>
+  <branch>`, on the fixtures in `tests/phase2/calib/`: each ends in a line
+  that fails on the tag (#1740: `5.5 & 1` raises `value` on the branch and
+  truncates on v0.46.0), so an honest fixture has tag_fail == branch_pass.
+  `--through R1.2` cannot pass on the R1.1 tree (its token gate would find
+  `VAL_NUM`, correctly), so the R1.1 run of that item is `--through R1.1`;
+  the int-source plant runs against a planted copy of `src/`. Cases the
+  design did not list were added for the plan-level checks (an item with no
+  row, an arm no row exercises, a round with neither rows nor gates) and
+  for the token gate (a reintroduced `slot_is_num`).
+
 ### 9.3 `tools/phase2_plants.sh` (round 1 builds it; detached, about 7 release builds)
 
 Each plant:
@@ -2218,6 +2251,13 @@ running the plant against a copy of the check with its assertion removed.
 The tier-witness and leaf-differential plants (§9.2's calibration) belong to
 `phase2_check.sh`'s own calibration, not to this list: they test the
 instrument, not the semantics.
+
+As built in R1.1, the tool holds the plants whose named checks exist: plant
+1 (`slot_from_int` tags an int that fits as a heap pointer; its named line
+is `slot-layer-test: FAIL slot_from_int(0): bits ...`). Plants 2-7 join the
+table in the commits that land their rows, and its output then reads
+`plants=7`. Its transverse run deletes exactly the named assertion
+(`if (s.u != smi(v).u)` becomes `if (0)`) and requires the plant to pass.
 
 ### 9.4 The per-builtin behaviour table (R1.6's gate; replaces the int-fuzz class check)
 
