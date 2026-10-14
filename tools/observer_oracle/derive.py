@@ -128,7 +128,9 @@ def _tail_settles(row, far, n):
 
 
 def _improving(xs, n):
-    """Keras EarlyStopping mode='min', literally, from x_0 with patience."""
+    """Keras EarlyStopping mode='min' from x_0 with patience, with ONE deliberate
+    deviation: Keras starts best=inf so epoch 0 always counts as an improvement;
+    here x_0 is the baseline and never counts (a value cannot improve on nothing)."""
     best, last = xs[0], None
     for i in range(1, n + 1):
         if xs[i] < best - eps(best):

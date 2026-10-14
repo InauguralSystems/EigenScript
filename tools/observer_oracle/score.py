@@ -232,10 +232,15 @@ def main(argv):
             xs = generate(row["gen"], row["n"])
             ys = generate(row["second"], row["n"]) if "second" in row else None
             got = run_row(binary, row, xs, ys, tmp)
-            hs = reference.entropy_signal(xs)
+            # The reference arms see the values the RUNTIME held: the default
+            # build saturates at +/-CLAMP (check_value asserts it), so an
+            # unclamped inf would hand the reference a shortcut (isinf) the
+            # runtime can never take (/code-review on #1757).
+            held = [max(-CLAMP, min(CLAMP, x)) if not math.isnan(x) else x for x in xs]
+            hs = reference.entropy_signal(held)
             for at in row["checkpoints"]:
                 v = labels[f"{row['id']}@{at}"]
-                ref = reference.classify(xs, at)
+                ref = reference.classify(held, at)
                 ref_h = reference.classify(hs, at)
                 for p in PREDS:
                     arms[0].add(row["id"], at, p, v[p], got[at][p])
