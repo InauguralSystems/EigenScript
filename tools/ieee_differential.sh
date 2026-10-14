@@ -105,13 +105,16 @@ if [ -f "$DYN/tests/bifurcation_oracle.eigs" ]; then
 else bad "dynamics checkout absent at $DYN (named row cannot run)"; fi
 LUA="$ECO/EigenLua"
 if [ -x "$LUA/bin/eigenlua" ]; then
-    printf 'print(math.huge, -math.huge, math.huge > 1e308, math.huge == math.huge * 2)\n' > "$OUT/huge.lua"
+    # Field 1 is the VALUE witness: only a real inf exceeds DBL_MAX (the clamp
+    # gives exactly 1e308). Fields 2-3 are EigenLua's own text for it.
+    printf 'print(math.huge > 1.7976931348623157e308, -math.huge < -1.7976931348623157e308, math.huge, tostring(-math.huge))\n' > "$OUT/huge.lua"
     for side in rel ieee; do
         b=$REL; [ $side = ieee ] && b=$IEEE
         EIGENSCRIPT="$b" timeout 120 "$LUA/bin/eigenlua" "$OUT/huge.lua" > "$OUT/lua_$side.out" 2> "$OUT/lua_$side.err"; echo $? > "$OUT/lua_$side.rc"
     done
     echo "EXTERNAL EigenLua math.huge: release='$(cat "$OUT/lua_rel.out")' rc=$(cat "$OUT/lua_rel.rc"); ieee='$(cat "$OUT/lua_ieee.out")' rc=$(cat "$OUT/lua_ieee.rc")"
-    grep -q '^inf' "$OUT/lua_ieee.out" || bad "EigenLua math.huge is not inf under ieee"
+    grep -q '^true	true	' "$OUT/lua_ieee.out" || bad "EigenLua math.huge is not inf under ieee"
+    grep -q '^true	true	inf	-inf$' "$OUT/lua_ieee.out" || echo "FINDING (class c, EigenLua) math.huge is inf but prints as '$(cut -f3 "$OUT/lua_ieee.out")': lr_numstr/lr_fmt_g format finite doubles only"
 else bad "EigenLua checkout absent at $LUA (named row cannot run)"; fi
 
 echo "IEEE_DIFF: examined=$POP differ=$DIFF nondet=$ND timeout=$TO classified=$CL FAIL=$FAILS"
