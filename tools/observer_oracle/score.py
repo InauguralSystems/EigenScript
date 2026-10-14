@@ -10,8 +10,9 @@ runs BINARY on it, and reads all six predicates with the PER-VARIABLE form
 (`converged of x`) at every checkpoint. Bare predicates read the most
 recently assigned binding, the known probe trap; row `two_vars` exists to
 catch a harness that uses them. Every value the runtime holds is compared
-BIT-EXACTLY with the generator's, and every checkpoint read must follow the
-assignment of its value in the program's own output.
+BIT-EXACTLY with the generator's, and every checkpoint read must fall after
+the assignment of its value and before the next one (`when is x` counts
+the binding's assignments).
 
 MATH verdicts are the headline score. CONVENTION verdicts (decided only by a
 stated tolerance or convention) are scored in their own table. EIGS-DEFINED
@@ -24,7 +25,7 @@ independent evidence.
 
 Exit status: 0 when every row ran and was scored, whatever the agreement;
 2 on any harness error (missing binary, a program that errors, a missing or
-duplicate output line, a read before its value, a value that differs from
+duplicate output line, a read before or after its value, a value that differs from
 the generator in any bit, a label that differs from the derivation, a schema
 violation, zero rows, an internal exception). Measurement only:
 disagreements never fail the run.
@@ -55,10 +56,10 @@ def read_expr(pred):
 # --- labels -----------------------------------------------------------------
 
 def load_labels(corpus, path):
-    """The label gate: labels.json must equal derive(corpus), and an
-    EIGS-DEFINED verdict may appear only where the definitions table allows
-    it (stable; equilibrium on a row with no true flag and a stated
-    `undecided` reason)."""
+    """The label gate: labels.json must equal derive(corpus). derive() also
+    asserts its own postconditions (the converged => stable lattice, and
+    where EIGS-DEFINED may appear), so a derivation fault is caught there
+    even when labels.json was regenerated from it."""
     try:
         with open(path) as f:
             committed = json.load(f)
@@ -70,17 +71,6 @@ def load_labels(corpus, path):
     if diff:
         raise HarnessError(f"labels.json differs from derive.py at {len(diff)} checkpoint(s),"
                            f" first {diff[0]}; regenerate with derive.py --write")
-    rows = {r["id"]: r for r in corpus["rows"]}
-    for key, preds in committed.items():
-        row = rows[key.rsplit("@", 1)[0]]
-        for p, ents in preds.items():
-            if ents[0][0] != "EIGS-DEFINED":
-                continue
-            flags = [row["props"][f] for f in derive.FLAGS]
-            if p == "stable" or (p == "equilibrium" and True not in flags
-                                 and None in flags and row.get("undecided")):
-                continue
-            raise HarnessError(f"{key}.{p}: EIGS-DEFINED where a standard decides it")
     return committed
 
 
@@ -94,7 +84,9 @@ def literal(v):
 def emit(row, xs, ys):
     """Affine rows are emitted as the recurrence itself, so overflow happens
     in the runtime's own arithmetic; every other row assigns literals. Every
-    assignment is followed by a V (and Y) line carrying the runtime's value."""
+    assignment is followed by a V (and Y) line carrying the runtime's value,
+    and every checkpoint line carries `when is x` (and y), the binding's own
+    assignment count, which pins the read between x_at and x_{at+1}."""
     gen = row["gen"]
     cks = set(row["checkpoints"])
     out = []
@@ -109,7 +101,8 @@ def emit(row, xs, ys):
             out.append(f'print of f"Y {i} {{y}}"')
         if i in cks:
             reads = " ".join("{" + read_expr(p) + "}" for p in PREDS)
-            out.append(f'print of f"CK {i} {reads}"')
+            whens = " {when is x}" + (" {when is y}" if ys is not None else "")
+            out.append(f'print of f"CK {i} {reads}{whens}"')
     out.append(f'print of "ROW_DONE {row["id"]}"')
     return "\n".join(out) + "\n"
 
@@ -157,7 +150,7 @@ def run_row(binary, row, xs, ys, tmpdir):
             last[f[0]] = i
             vals[f[0]][i] = float(f[2])
             continue
-        if len(f) != 8 or f[0] != "CK":
+        if len(f) != 9 + (ys is not None) or f[0] != "CK":
             raise HarnessError(f"{rid}: unexpected output line {ln!r}")
         at = int(f[1])
         if at in got:
@@ -165,9 +158,12 @@ def run_row(binary, row, xs, ys, tmpdir):
         if last["V"] != at or (ys is not None and last["Y"] != at):
             raise HarnessError(f"{rid}: checkpoint {at} read after value {last['V']}:"
                                " a read must follow the assignment of x_at")
-        if any(b not in ("true", "false") for b in f[2:]):
-            raise HarnessError(f"{rid}@{at}: non-boolean read {f[2:]}")
-        got[at] = dict(zip(PREDS, (b == "true" for b in f[2:])))
+        if any(w != str(at + 1) for w in f[8:]):
+            raise HarnessError(f"{rid}: checkpoint {at} read after {f[8:]} assignments,"
+                               f" not {at + 1}: a read must fall between x_at and x_{at + 1}")
+        if any(b not in ("true", "false") for b in f[2:8]):
+            raise HarnessError(f"{rid}@{at}: non-boolean read {f[2:8]}")
+        got[at] = dict(zip(PREDS, (b == "true" for b in f[2:8])))
     want = row["checkpoints"]
     if sorted(got) != want:
         raise HarnessError(f"{rid}: checkpoints read {sorted(got)}, expected {want}")
