@@ -231,6 +231,22 @@ build/$(SLOT_TEST_VARIANT)/test_container_slots: tests/test_container_slots.c $(
 container-slot-test: build/$(SLOT_TEST_VARIANT)/test_container_slots
 	@echo "Container slot API test built: $<"
 
+# #1758 R1.1: the C slot test (docs/design/phase2-numbers.md 2.5). It includes
+# the single-file amalgamation so the static slot classifiers are reachable;
+# tests/phase2/slot_layer.sh runs it and compares the entries it examined with
+# the population tools/phase2_inventory.py derives. The release flavour turns
+# on slot_as_ptr's refusal with -DEIGS_SLOT_CHECKED; ASan turns it on itself.
+PHASE2_SLOT_VARIANT ?= release
+PHASE2_SLOT_FLAGS_release := $(CFLAGS) -g -DEIGS_SLOT_CHECKED
+PHASE2_SLOT_FLAGS_asan := $(ASAN_FLAGS)
+build/phase2/eigenscript_all.c: $(filter-out $(CLI_ONLY),$(SOURCES)) $(wildcard $(SRC_DIR)/*.h) tools/amalgamate.sh Makefile
+	bash tools/amalgamate.sh build/phase2
+build/phase2/slot_layer_%: tests/phase2/slot_layer.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+.PHONY: phase2-slot-test
+phase2-slot-test: build/phase2/slot_layer_$(PHASE2_SLOT_VARIANT)
+	@echo "phase2 slot test built: $<"
+
 # Focused lifetime regression for sandbox descriptor interns (#964). Link the
 # public embedding/runtime surface without CLI-only translation units so the
 # C test can inspect the internal thread-local intern accounting directly.
