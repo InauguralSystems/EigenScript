@@ -107,8 +107,9 @@ def load_corpus(path):
     if not isinstance(rows, list) or not rows:
         raise HarnessError("corpus has no rows")
     for k, s in sources.items():
-        if not s.get("text") or not s.get("status", "").startswith(("VERIFIED", "UNVERIFIED")):
-            raise HarnessError(f"source {k}: needs text and a VERIFIED/UNVERIFIED status")
+        if not s.get("text") or not s.get("status", "").startswith("VERIFIED"):
+            raise HarnessError(f"source {k}: needs text and a VERIFIED status that says what was"
+                               " checked against which copy (#1754: no unverified citation)")
     for d in c.get("definitions", []):
         if any(s not in sources for s in d["cite"]) or (d["predicate"], d["class"]) not in RULES:
             raise HarnessError(f"definition {d['predicate']}/{d['class']}: unknown source or no rule")

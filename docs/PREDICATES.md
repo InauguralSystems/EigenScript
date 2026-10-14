@@ -25,6 +25,30 @@ a **window** of the last `N` observations rather than the instantaneous
 runtime simplified five of the six to single-step checks, which flickered
 under noise — see "Pointwise behavior replaced" in each section.)
 
+## What each predicate is graded against (#1754)
+
+The owner's decisions on #1754 fix the one question each predicate answers.
+The six names were inherited from earlier sessions, so each question is the
+standard answer to what the name means, checked against how consumers use it.
+`definitions` in `tools/observer_oracle/corpus.json` is authoritative: it holds
+the full rule and the cited sources for each question. The windowed bands
+documented below approximate those definitions from the last `N`
+observations. `make observer-oracle` measures how well they do, and
+[`docs/OBSERVER.md`](OBSERVER.md) ("Graded against mathematics") describes the
+oracle.
+
+| Predicate | Class | Source | The question |
+|-----------|-------|--------|--------------|
+| `converged` | CONVENTION | numpy `isclose` | From checkpoint n on, does the value stay within ε of a point? |
+| `stable` | CONVENTION | settling time (control theory) | From n on, does the value stay within a band about where it is heading? |
+| `improving` | CONVENTION | Keras `EarlyStopping` (`mode='min'`), Hardy §62 | Did the value set a new best (lower) within the window, and is the sequence eventually bounded? |
+| `oscillating` | MATH | Hardy §62 | Does the sequence tend neither to a limit nor to +∞ or −∞? |
+| `diverging` | MATH | Hardy §60, Rudin Def. 3.15 | Does the sequence tend to +∞ or −∞? |
+| `equilibrium` | MATH | NIST e-Handbook 6.4.4.2 | Is the sequence stationary (a constant mean function)? |
+
+MATH "does the sequence have a limit" (Hardy §58, Rudin Def. 3.1) is reported
+beside `converged` but not scored: no windowed observer can decide it at n.
+
 ## Which channel answers (#861)
 
 The predicate words and `report` are **routed**: a binding whose most

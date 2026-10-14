@@ -385,6 +385,10 @@ def plants(tag, ieee):
          lambda d: edit_text(d, "reference.py", '    w = values[max(0, at - W):at + 1]\n',
                              '    w = values[max(0, at - W):at + 1]\n    math.exp(1000)\n'),
          sc(tag), 2, r"internal OverflowError.*"),
+        ("source-unverified", "a citation's status set back to UNVERIFIED",
+         lambda d: edit_json(d, "corpus.json", lambda c: c["sources"]["RUDIN_3_1"].update(
+             status="UNVERIFIED: not checked against the text")),
+         sc(tag), 2, r"source RUDIN_3_1: needs text and a VERIFIED status.*"),
         ("capability-name", "a row with an unknown capability",
          lambda d: edit_json(d, "corpus.json", lambda c: row(c, "ieee_nan").update(capability="quantum")),
          sc(tag), 2, r"unknown capability.*"),
