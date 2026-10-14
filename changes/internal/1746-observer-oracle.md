@@ -1,1 +1,0 @@
-- `make observer-oracle` scores the observer against a mathematics-graded corpus.
