@@ -1,87 +1,129 @@
-# #1746 Phase 1 (ieee build only): the observer with real IEEE edges.
+# #1746 Phase 1 (ieee build only): the observer on the extended real line,
+# graded against mathematics rather than the old spec.
 #
-# Graded against mathematics, not against the old spec:
-#   - a constant sequence converges (Cauchy), whatever its magnitude, so a
-#     literal 1e308 held constant is `converged` (the #861 magnitude rule read
-#     it `diverging`; that rule is removed in this build);
-#   - x <- x * 1e20 is unbounded: it reaches inf, and inf is `diverging`;
-#   - NaN is in no band: all six predicates false, `report` says "moving"
-#     (the rule chosen and documented for this experiment);
-#   - entropy (`where`) never becomes NaN itself;
-#   - a trajectory that passed through a non-finite value restarts, so a
-#     binding that recovers to a held constant converges again.
+#   - A constant sequence converges (Cauchy), whatever its magnitude: a literal
+#     1e308 held constant is `converged` (the #861 magnitude rule is removed).
+#   - Divergence to +-inf (Rudin, Def. 3.15): monotone growth reaching inf, and
+#     inf held, are `diverging`.
+#   - 1 <-> inf has lim inf 1 and lim sup +inf (Rudin, Def. 3.16-3.17): it
+#     oscillates, read at either end.
+#   - inf, then a held finite constant, converges after a full window.
+#   - NaN is undefined (IEEE 754-2019 sec. 7.2): while the current value is
+#     NaN all six predicates are false and `report` is "undefined"; NaN never
+#     enters a ring; the defined subsequence carries the trajectory.
+#   - Steps involving +-inf have defined, finite ring entries:
+#       held inf: rel 0, raw 0;  finite <-> inf: rel +-1, raw +-max(|finite|, 1e-3);
+#       inf <-> -inf: rel +-2, raw +-2e-3;  a finite step that overflows
+#       (1e308 -> -1e308): rel -2, raw -DBL_MAX.
+#   - Entropy (`where`) and dH (`why`) stay finite.
+#
+# Each case runs observed AND, where marked, inside `unobserved:` (the JIT's
+# value sampler). tools/ieee_rows.sh runs this under EIGS_JIT_OFF=1, the
+# default JIT and EIGS_JIT_OSR_THRESHOLD=1 and requires identical output.
 #
 # Output: `CHECKS <n>` then exactly n lines `CHECK <name> ok|FAIL <detail>`.
 
-# Predicates are read on the binding itself (a parameter would be a fresh
-# binding with no trajectory), hence the repeated list in each runner.
-define run_const_1e308() as:
-    local c is 1e308
-    local k is 0
-    loop while k < 12:
-        c is 1e308
-        k is k + 1
-    return [report of c, converged of c, diverging of c, stable of c,
-            equilibrium of c, improving of c, oscillating of c]
+inf is 1e308 * 10
+q is 0 / 0
 
-define run_const_5() as:
-    local c is 5
-    local k is 0
-    loop while k < 12:
-        c is 5
-        k is k + 1
-    return [report of c, converged of c, diverging of c, stable of c,
-            equilibrium of c, improving of c, oscillating of c]
+# Every ring entry is a finite number (NaN != NaN; inf - inf is NaN).
+define all_finite(xs) as:
+    for v in xs:
+        if v != v:
+            return false
+        if (v - v) != 0:
+            return false
+    return true
 
-define run_runaway() as:
+# [report, converged, diverging, stable, equilibrium, improving, oscillating,
+#  rel, raw, where, why] -- read on the binding itself.
+define const_1e308() as:
+    local x is 1e308
+    for k in range of 12:
+        x is 1e308
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+define growth_to_inf(u) as:
     local x is 1.0
-    local k is 0
-    loop while k < 30:
-        x is x * 1e20
-        k is k + 1
-    local p is [report of x, converged of x, diverging of x, stable of x,
-            equilibrium of x, improving of x, oscillating of x]
-    append of [p, x]
-    append of [p, where is x]
-    return p
+    if u:
+        unobserved:
+            for k in range of 3000:
+                x is 1.0
+                for j in range of 30:
+                    x is x * 1e20
+    else:
+        for j in range of 30:
+            x is x * 1e20
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
 
-define run_runaway_neg() as:
-    local x is -1.0
-    local k is 0
-    loop while k < 30:
-        x is x * 1e20
-        k is k + 1
-    local p is [report of x, converged of x, diverging of x, stable of x,
-            equilibrium of x, improving of x, oscillating of x]
-    append of [p, x]
-    return p
+define const_inf() as:
+    local x is inf
+    for k in range of 12:
+        x is inf
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
 
-define run_nan() as:
+define alt_one_inf(u, end_at_inf) as:
     local x is 1.0
-    local k is 0
-    loop while k < 12:
-        x is x * 0.5
-        k is k + 1
-    x is 0 / 0
-    x is 0 / 0
-    local p is [report of x, converged of x, diverging of x, stable of x,
-            equilibrium of x, improving of x, oscillating of x]
-    append of [p, where is x]
-    append of [p, x]
-    return p
+    if u:
+        unobserved:
+            for k in range of 4000:
+                x is inf
+                x is 1.0
+    else:
+        for k in range of 40:
+            x is inf
+            x is 1.0
+    if end_at_inf:
+        x is inf
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
 
-define run_recover() as:
-    local x is 1.0
-    local k is 0
-    loop while k < 30:
-        x is x * 1e20
-        k is k + 1
-    k is 0
-    loop while k < 12:
+define inf_then_const() as:
+    local x is inf
+    for k in range of 12:
         x is 5
-        k is k + 1
-    return [report of x, converged of x, diverging of x, stable of x,
-            equilibrium of x, improving of x, oscillating of x]
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+define nan_current() as:
+    local x is 1.0
+    for k in range of 12:
+        x is x * 0.5
+    x is q
+    x is q
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+define nan_interleaved(u) as:
+    local x is 1.0
+    for k in range of 40:
+        x is 1.0 + k
+    if u:
+        unobserved:
+            for k in range of 4000:
+                x is q
+                x is 5
+    else:
+        for k in range of 20:
+            x is q
+            x is 5
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+define step_table() as:
+    local x is 1.0
+    x is inf
+    x is 1.0
+    x is inf
+    x is -inf
+    x is -inf
+    x is 1e308
+    x is -1e308
+    local t is trajectory of x
+    return [t.rel, t.raw]
 
 results is []
 define check(name, cond, detail) as:
@@ -91,35 +133,47 @@ define check(name, cond, detail) as:
     append of [results, f"CHECK {name} {verdict} {detail}"]
     return 0
 
-c8 is run_const_1e308 of null
-check of ["const_1e308_report", c8[0] == "converged", c8[0]]
-check of ["const_1e308_converged", c8[1] == true, str of c8[1]]
-check of ["const_1e308_not_diverging", c8[2] == false, str of c8[2]]
+define none_of(p) as:
+    return not (p[1] or p[2] or p[3] or p[4] or p[5] or p[6])
 
-c5 is run_const_5 of null
-check of ["const_5_converged", (c5[0] == "converged") and (c5[1] == true), c5[0]]
+define finite_obs(p) as:
+    return (all_finite of p[7]) and (all_finite of p[8]) and (all_finite of ([p[9], p[10]]))
 
-r is run_runaway of null
-check of ["runaway_value_inf", (str of r[7]) == "inf", str of r[7]]
-check of ["runaway_report", r[0] == "diverging", r[0]]
-check of ["runaway_diverging", r[2] == true, str of r[2]]
-rest is r[1] or r[3] or r[4] or r[5] or r[6]
-check of ["runaway_no_other_band", rest == false, str of rest]
-check of ["runaway_entropy_finite", r[8] == r[8], str of r[8]]
+c8 is const_1e308 of null
+check of ["const_1e308_converged", (c8[0] == "converged") and c8[1] and (not c8[2]), c8[0]]
 
-rn is run_runaway_neg of null
-check of ["runaway_neg_value", (str of rn[7]) == "-inf", str of rn[7]]
-check of ["runaway_neg_diverging", (rn[0] == "diverging") and (rn[2] == true), rn[0]]
+for u in [false, true]:
+    g is growth_to_inf of u
+    check of [f"growth_to_inf_diverging_u{u}", (g[0] == "diverging") and g[2], g[0]]
+    check of [f"growth_to_inf_finite_u{u}", finite_obs of g, str of [g[7], g[8]]]
 
-nn is run_nan of null
-anyp is nn[1] or nn[2] or nn[3] or nn[4] or nn[5] or nn[6]
-check of ["nan_all_false", anyp == false, str of anyp]
-check of ["nan_report_moving", nn[0] == "moving", nn[0]]
-check of ["nan_entropy_finite", nn[7] == nn[7], str of nn[7]]
-check of ["nan_value_prints", (str of nn[8]) == "nan", str of nn[8]]
+ci is const_inf of null
+check of ["const_inf_diverging", (ci[0] == "diverging") and ci[2] and (not ci[1]) and (not ci[3]) and (not ci[4]), ci[0]]
+check of ["const_inf_finite", finite_obs of ci, str of [ci[7], ci[8]]]
 
-rc is run_recover of null
-check of ["recover_converged", (rc[0] == "converged") and (rc[1] == true), rc[0]]
+for u in [false, true]:
+    a1 is alt_one_inf of [u, false]
+    check of [f"alt_1_inf_at_1_oscillating_u{u}", (a1[0] == "oscillating") and a1[6], a1[0]]
+    check of [f"alt_1_inf_finite_u{u}", finite_obs of a1, str of [a1[7], a1[8]]]
+    ai is alt_one_inf of [u, true]
+    check of [f"alt_1_inf_at_inf_oscillating_u{u}", (ai[0] == "oscillating") and ai[6], ai[0]]
+
+ic is inf_then_const of null
+check of ["inf_then_const_converged", (ic[0] == "converged") and ic[1], ic[0]]
+
+nc is nan_current of null
+check of ["nan_current_undefined", nc[0] == "undefined", nc[0]]
+check of ["nan_current_all_false", none_of of nc, str of nc]
+check of ["nan_current_finite", finite_obs of nc, str of [nc[7], nc[8], nc[9], nc[10]]]
+
+for u in [false, true]:
+    ni is nan_interleaved of u
+    check of [f"nan_interleaved_converged_u{u}", (ni[0] == "converged") and ni[1], ni[0]]
+    check of [f"nan_interleaved_finite_u{u}", finite_obs of ni, str of [ni[7], ni[8]]]
+
+st is step_table of null
+check of ["step_rel", (str of st[0]) == "[1, -1, 1, -2, 0, 1, -2]", str of st[0]]
+check of ["step_raw", (str of st[1]) == "[1, -1, 1, -0.002, 0, 1e+308, -1.7976931348623157e+308]", str of st[1]]
 
 print of f"CHECKS {len of results}"
 for line in results:

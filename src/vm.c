@@ -1635,6 +1635,12 @@ static inline Value *obs_slot_value(EigsSlot s) {
 }
 
 static inline void jit_sample_num_gated(Env *e, int slot, double v) {
+#ifdef EIGS_IEEE
+    /* #1746: one guarded writer of the value rings (non-finite steps) —
+     * observer_slot_record_value, reached through the public sampler. */
+    observer_slot_sample_num_gated(e, slot, v);
+    return;
+#endif
     ObserverSlot *s = env_obs_slot(e, slot);
     int n = s && s->win_override ? s->win_override : g_obs_window;
     if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {
@@ -1772,7 +1778,7 @@ int jit_helper_iter_next(void) {
     Value *iterable = list_get_view(state, 0, &iterable_view);
     if (!iterable) return 1;
     if (list_elem_type(state, 1) != VAL_NUM) return 1;
-    int idx = (int)eigs_slot_num(list_slot(state, 1), "for");
+    int idx = EIGS_DCAST(int, eigs_slot_num(list_slot(state, 1), "for"));
     int len = 0;
     if (iterable->type == VAL_LIST)        len = iterable->data.list.count;
     else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -1783,7 +1789,7 @@ int jit_helper_iter_next(void) {
         EIGS_VIEW(snap_v_view);
         Value *snap_v = list_get_view(state, 2, &snap_v_view);
         if (snap_v && snap_v->type == VAL_NUM) {
-            int snap = (int)VAL_NUM_RAW(snap_v);
+            int snap = EIGS_DCAST(int, VAL_NUM_RAW(snap_v));
             if (snap < len) len = snap;
         }
     }
@@ -1811,12 +1817,23 @@ int jit_helper_iter_next(void) {
  * already performs and is pure SSE2, deliberately avoiding floor()/roundsd
  * (SSE4.1, absent on the Merom target). Negatives pass here and fail the usual
  * >= 0 range check downstream, unchanged. */
+#ifdef EIGS_IEEE
+/* #1746: a NaN dict key raises `value` (Lua: "table index is NaN"); any
+ * other non-string key keeps the type error. Returns 1 when it raised. */
+static int vm_nan_key(Value *target, Value *idx, int line) {
+    if (!target || !idx || target->type != VAL_DICT || idx->type != VAL_NUM ||
+        VAL_NUM_RAW(idx) == VAL_NUM_RAW(idx)) return 0;
+    rt_error(EK_VALUE, line, "key is NaN");
+    return 1;
+}
+#endif
+
 static inline int vm_index_is_int(double d, int *out) {
 #ifdef EIGS_IEEE
     /* #1746: NaN/inf reach indexes in this build; (int) of them is UB. */
     if (!(d >= (double)INT_MIN && d <= (double)INT_MAX)) return 0;
 #endif
-    int i = (int)d;
+    int i = EIGS_DCAST(int, d);
     if ((double)i != d) return 0;
     *out = i;
     return 1;
@@ -2233,6 +2250,9 @@ void jit_helper_index_set(void) {
     } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
         dict_set(target, idx->data.str, val);
     } else {
+#ifdef EIGS_IEEE
+        if (!vm_nan_key(target, idx, g_vm.current_line))
+#endif
         rt_error(EK_TYPE, g_vm.current_line, "cannot index %s for assignment", val_type_name(target->type));
     }
     val_decref(target); val_decref(idx);
@@ -2321,6 +2341,9 @@ int jit_helper_index_get(void) {
                 "buffer index %d out of range (length %d)",
                 i, target->data.buffer.count);
     } else {
+#ifdef EIGS_IEEE
+        if (!vm_nan_key(target, idx, g_vm.current_line))
+#endif
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
     }
@@ -4559,6 +4582,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             Value *k = STK_AS_VAL(base + i * 2);
             Value *v = STK_AS_VAL(base + i * 2 + 1);
             if (k->type != VAL_STR) {
+#ifdef EIGS_IEEE
+                if (!vm_nan_key(dict, k, current_line))
+#endif
                 rt_error(EK_TYPE, current_line, "dict key must be a string, got %s", val_type_name(k->type));
                 continue;
             }
@@ -4645,6 +4671,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             else
                 rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else {
+#ifdef EIGS_IEEE
+            if (!vm_nan_key(target, idx, current_line))
+#endif
             rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
         }
         val_decref(target); val_decref(idx);
@@ -4721,6 +4750,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
             dict_set(target, idx->data.str, val);
         } else {
+#ifdef EIGS_IEEE
+            if (!vm_nan_key(target, idx, current_line))
+#endif
             rt_error(EK_TYPE, current_line, "cannot index %s for assignment", val_type_name(target->type));
         }
         val_decref(target); val_decref(idx);
@@ -5013,7 +5045,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         EIGS_VIEW_NOCHECK(iterable_view);
         Value *iterable = list_get_view(state, 0, &iterable_view);
-        int idx = (int)eigs_slot_num(list_slot(state, 1), "for");
+        int idx = EIGS_DCAST(int, eigs_slot_num(list_slot(state, 1), "for"));
         int len = 0;
         if (iterable->type == VAL_LIST) len = iterable->data.list.count;
         else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -5022,7 +5054,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * remove from reading past the end. See make_iter_state. */
         if (state->data.list.count >= 3 &&
             list_elem_type(state, 2) == VAL_NUM) {
-            int snap = (int)eigs_slot_num(list_slot(state, 2), "for");
+            int snap = EIGS_DCAST(int, eigs_slot_num(list_slot(state, 2), "for"));
             if (snap < len) len = snap;
         }
 
@@ -5581,7 +5613,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push(make_null());
             DISPATCH();
         }
-        int line = (int)VAL_NUM_RAW(line_v);
+        int line = EIGS_DCAST(int, VAL_NUM_RAW(line_v));
         val_decref(line_v);
         Value *result = make_null();
         const char *name = chunk->const_interns[name_idx];
@@ -5614,14 +5646,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         /* A fractional ordinal names no assignment. Truncating silently would
          * answer a question that was not asked. */
-        if (ord_d != (double)(long long)ord_d) {
+        if (ord_d != (double)EIGS_DCAST(long long, ord_d)) {
             rt_error(EK_VALUE, current_line,
                 "'when' ordinal must be a whole number, got %g", ord_d);
             vm_push(make_null());
             DISPATCH();
         }
 
-        long long ordinal = (long long)ord_d;
+        long long ordinal = EIGS_DCAST(long long, ord_d);
         EigsSlot w_slot;
         long long total = 0, oldest = 0;
         int r = trace_query_when(kind, name, ordinal, &w_slot, &total, &oldest);

@@ -172,10 +172,10 @@ static void store_json_encode(Value *v, strbuf *out);
 static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
     if (slot_is_num(slot)) {
         double n = eigs_slot_num(slot, __func__);
-        if (fabs(n) < 2147483648.0 && n == (int)n)
-            strbuf_append_fmt(out, "%d", (int)n);
+        if (fabs(n) < 2147483648.0 && n == EIGS_DCAST(int, n))
+            strbuf_append_fmt(out, "%d", EIGS_DCAST(int, n));
         else
-            strbuf_append_fmt(out, "%.15g", n);
+            strbuf_append_fmt(out, "%.15g", EIGS_NUM_CANON(n));
         return;
     }
     store_json_encode(eigs_slot_ref(slot), out);
@@ -195,10 +195,10 @@ static void store_json_encode(Value *v, strbuf *out) {
              * first. The bound is int's own range: integral values beyond
              * it never took the %d path anyway (the equality failed), so
              * output is unchanged and the cast is now always defined. */
-            if (fabs(n) < 2147483648.0 && n == (int)n)
-                strbuf_append_fmt(out, "%d", (int)n);
+            if (fabs(n) < 2147483648.0 && n == EIGS_DCAST(int, n))
+                strbuf_append_fmt(out, "%d", EIGS_DCAST(int, n));
             else
-                strbuf_append_fmt(out, "%.15g", n);
+                strbuf_append_fmt(out, "%.15g", EIGS_NUM_CANON(n));
             break;
         }
         case VAL_STR: {
@@ -372,7 +372,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     double rd = eigs_num_arg(rv, __func__), cd = eigs_num_arg(cv, __func__);
     if (!(rd >= 0 && rd <= (double)INT_MAX)) return NULL;
     if (!(cd >= 0 && cd <= (double)INT_MAX)) return NULL;
-    int rows = (int)rd, cols = (int)cd;
+    int rows = EIGS_DCAST(int, rd), cols = EIGS_DCAST(int, cd);
     if (rd != (double)rows || cd != (double)cols) return NULL;
 
     /* Accept exactly the (rows, cols, count) triples the buffer constructors
@@ -747,7 +747,7 @@ static int store_load_catalog(Store *store) {
             free(visited);
             return -1;
         }
-        uint32_t root = (uint32_t)eigs_num_arg(rv, __func__);
+        uint32_t root = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
         if (root == 0 || root >= store->page_count) {
             fprintf(stderr, "store_open: collection '%s' has invalid root %u\n", name, root);
             free(visited);
@@ -815,9 +815,9 @@ static Store* get_store_why(Value *v, int *why, int *out_id) {
     if (!v || v->type != VAL_DICT) return NULL;
     Value *sv = store_dict_get_view(v, "_store_id", &(EigsView){{0}});
     if (!sv || sv->type != VAL_NUM) return NULL;
-    *out_id = (int)eigs_num_arg(sv, __func__);
+    *out_id = EIGS_DCAST(int, eigs_num_arg(sv, __func__));
     Value *gv = store_dict_get_view(v, "_store_gen", &(EigsView){{0}});
-    uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
+    uint32_t gen = (gv && gv->type == VAL_NUM) ? EIGS_DCAST(uint32_t, eigs_num_arg(gv, __func__)) : 0;
     return (Store*)handle_lookup(*out_id, gen, HANDLE_STORE, why);
 }
 
@@ -979,9 +979,9 @@ static Value* builtin_store_close(Value *arg) {
     /* Release handle BEFORE freeing memory to prevent use-after-free
      * if another thread calls get_store() concurrently. */
     Value *id_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_id", &(EigsView){{0}}) : NULL;
-    int hid = (id_val && id_val->type == VAL_NUM) ? (int)eigs_num_arg(id_val, __func__) : -1;
+    int hid = (id_val && id_val->type == VAL_NUM) ? EIGS_DCAST(int, eigs_num_arg(id_val, __func__)) : -1;
     Value *g_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_gen", &(EigsView){{0}}) : NULL;
-    uint32_t hgen = (g_val && g_val->type == VAL_NUM) ? (uint32_t)eigs_num_arg(g_val, __func__) : 0;
+    uint32_t hgen = (g_val && g_val->type == VAL_NUM) ? EIGS_DCAST(uint32_t, eigs_num_arg(g_val, __func__)) : 0;
     handle_release(hid, hgen);
     store->dirty = 1; /* Force flush */
     store_flush_catalog(store);
@@ -1042,8 +1042,8 @@ static Value* builtin_store_put(Value *arg) {
     } else {
         Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
         Value *nv = store_dict_get_view(col_info, "next_id", &(EigsView){{0}});
-        root_page = (uint32_t)(rv ? eigs_num_arg(rv, __func__) : 0);
-        next_id = (int)(nv ? eigs_num_arg(nv, __func__) : 1);
+        root_page = EIGS_DCAST(uint32_t, (rv ? eigs_num_arg(rv, __func__) : 0));
+        next_id = EIGS_DCAST(int, (nv ? eigs_num_arg(nv, __func__) : 1));
     }
 
     /* Determine key */
@@ -1180,7 +1180,7 @@ static Value* builtin_store_get(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST(int, eigs_num_arg(key_val, __func__)));
     } else {
         return make_null();
     }
@@ -1189,7 +1189,7 @@ static Value* builtin_store_get(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_null();
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_null();
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
 
     size_t target_key_len = strlen(key_buf);
 
@@ -1247,7 +1247,7 @@ static int store_locate(Store *store, const char *collection,
     if (!col_info || col_info->type != VAL_DICT) return 0;
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return 0;
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
     size_t target_key_len = strlen(key_buf);
 
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1344,7 +1344,7 @@ static Value* builtin_store_delete(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST(int, eigs_num_arg(key_val, __func__)));
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
@@ -1390,7 +1390,7 @@ static Value* builtin_store_query(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_list(0);
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_list(0);
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
 
     Value *results = make_list(16);
 
@@ -1448,7 +1448,7 @@ static Value* builtin_store_count(Value *arg) {
     /* fs:ANSWER a catalog entry with no root page has no record pages, so the
      * count is 0. */
     if (!rv) return make_num(0);
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
 
     int count = 0;
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1500,7 +1500,7 @@ static Value* builtin_store_update(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST(int, eigs_num_arg(key_val, __func__)));
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
@@ -1641,7 +1641,7 @@ static Value* builtin_store_drop(Value *arg) {
     /* Mark all pages in chain as free */
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (rv) {
-        uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+        uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
         for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
             Page page;
             if (store_read_page(store, pg, &page) != 0) break;

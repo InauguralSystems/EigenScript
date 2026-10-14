@@ -2928,7 +2928,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             node->data.index.target->type == AST_IDENT &&
             node->data.index.index->type == AST_NUM) {
             double dv = node->data.index.index->data.num;
-            int iv = (int)dv;
+            int iv = EIGS_DCAST_QUIET(int, dv);
             if (iv == dv && iv >= 0 && iv <= 0xFFFF) {
                 const char *tname = node->data.index.target->data.ident.name;
                 uint32_t th = node->data.index.target->name_hash;
@@ -2984,7 +2984,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             if (idx_node->data.index.target->type == AST_IDENT &&
                 idx_node->data.index.index->type == AST_NUM) {
                 double dv = idx_node->data.index.index->data.num;
-                int iv = (int)dv;
+                int iv = EIGS_DCAST_QUIET(int, dv);
                 if (iv == dv && iv >= 0 && iv <= 0xFFFF) {
                     const char *tname = idx_node->data.index.target->data.ident.name;
                     uint32_t th = idx_node->data.index.target->name_hash;
@@ -3029,7 +3029,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             if (idx_node->data.index.target->type == AST_IDENT &&
                 idx_node->data.index.index->type == AST_NUM) {
                 double dv = idx_node->data.index.index->data.num;
-                int iv = (int)dv;
+                int iv = EIGS_DCAST_QUIET(int, dv);
                 if (iv == dv && iv >= 0 && iv <= 0xFFFF) {
                     const char *tname = idx_node->data.index.target->data.ident.name;
                     uint32_t th = idx_node->data.index.target->name_hash;

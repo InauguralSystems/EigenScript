@@ -1,0 +1,53 @@
+# #1746 Phase 1 (ieee build only) / #1748: every builtin the round-1 critic
+# caught converting a NaN/inf/huge double to an integer with a bare C cast
+# (undefined behaviour; UBSan float-cast-overflow). Each call must raise
+# `value` naming the builtin, via the one checked conversion EIGS_DCAST.
+# tools/ieee_rows.sh runs this under asan-ieee with UBSAN_OPTIONS=halt_on_error=1.
+#
+# Output: `CASTS <n>` then exactly n lines `CAST <builtin> <arg> <kind> <message>`.
+
+inf is 1e308 * 10
+q is 0 / 0
+big is 1e300
+define t_buffer(x) as:
+    return buffer of x
+define t_zeros(x) as:
+    return zeros of x
+define t_substr(x) as:
+    return substr of ["abc", x, 1]
+define t_char_at(x) as:
+    return char_at of ["abc", x]
+define t_list_slice(x) as:
+    return list_slice of [[1, 2], x, 1]
+define t_chr(x) as:
+    return chr of x
+define t_hex(x) as:
+    return hex of x
+define t_usleep(x) as:
+    return usleep of x
+define t_fill(x) as:
+    return fill of [x, 1]
+define t_gather(x) as:
+    return gather of [(buf_from_list of [1, 2]), x]
+define t_sign_extend(x) as:
+    return sign_extend of [x, 8]
+
+cases is [["buffer", t_buffer], ["zeros", t_zeros], ["substr", t_substr],
+          ["char_at", t_char_at], ["list_slice", t_list_slice], ["chr", t_chr],
+          ["hex", t_hex], ["usleep", t_usleep], ["fill", t_fill],
+          ["gather", t_gather], ["sign_extend", t_sign_extend]]
+args is [["nan", q], ["inf", inf], ["1e300", big]]
+rows is []
+for c in cases:
+    for a in args:
+        kind is "none"
+        msg is ""
+        try:
+            r is c[1] of a[1]
+        catch e:
+            kind is e["kind"]
+            msg is e["message"]
+        append of [rows, f"CAST {c[0]} {a[0]} {kind} {msg}"]
+print of f"CASTS {len of rows}"
+for r in rows:
+    print of r

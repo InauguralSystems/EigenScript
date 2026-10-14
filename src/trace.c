@@ -2815,13 +2815,8 @@ static void write_string(const char *s) {
 /* #1746 experiment: a NaN is written as the canonical positive "nan" (one
  * spelling, whatever sign/payload a boxed or buffer NaN carries); strtod
  * reads it back as the canonical quiet NaN. inf/-inf are %.17g's own
- * "inf"/"-inf", which strtod also reads. Identity in the default build,
- * where num_guard keeps both off the tape. */
-#ifdef EIGS_IEEE
-#define TAPE_NUM(x) ((x) != (x) ? (double)NAN : (x))
-#else
-#define TAPE_NUM(x) (x)
-#endif
+ * "inf"/"-inf", which strtod also reads. */
+#define TAPE_NUM(x) EIGS_NUM_CANON(x)
 
 /* Format a heap or tracked Value*. Numeric heap values unwrap to their
  * number; collections show their size for at-a-glance scanning. */

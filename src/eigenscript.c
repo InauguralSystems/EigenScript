@@ -142,6 +142,17 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     va_start(args, fmt);
     vsnprintf(tmp, sizeof(tmp), fmt, args);
     va_end(args);
+#ifdef EIGS_IEEE
+    /* #1746: one spelling for NaN in every error message. A raise site that
+     * formats a boxed x86 NaN with %g prints "-nan"; normalise the token here,
+     * at the one funnel, instead of at each %g site. */
+    for (char *p = strstr(tmp, "-nan"); p; p = strstr(p, "-nan")) {
+        int before_ok = (p == tmp) || !isalnum((unsigned char)p[-1]);
+        int after_ok = !isalnum((unsigned char)p[4]);
+        if (before_ok && after_ok) memmove(p, p + 1, strlen(p + 1) + 1);
+        else p++;
+    }
+#endif
     /* Tolerate a trailing newline in the format (some call sites carried one
      * over from fprintf): the "Error line N:" frame and the stderr write add
      * their own, and a trailing \n would also leak into a caught error's text. */
@@ -210,6 +221,17 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
  * the backstop in num_guard fired for a source the enumerated callers of
  * num_guard_named do not cover; the message then names the arithmetic
  * rather than a builtin, which is still louder than a silent 0. */
+#ifdef EIGS_IEEE
+/* #1746/#1748: the raise behind EIGS_DCAST (eigenscript.h). */
+void eigs_d2ll_fail(double x, const char *who) {
+    if (!eigs_current) return;
+    if (strncmp(who, "builtin_", 8) == 0) who += 8;
+    char nb[32];
+    eigs_num_text(nb, sizeof nb, x);
+    rt_error(EK_VALUE, 0, "%s: number %s is outside the integer range", who, nb);
+}
+#endif
+
 void eigs_strict_nan_raise(const char *who) {
     rt_error(EK_VALUE, 0, "%s: result is not a number (NaN has no defined value)",
              who ? who : "arithmetic");
@@ -700,13 +722,51 @@ static int observer_slot_raw_oscillating(const ObserverSlot *s) {
  * N = 50. The local scale keeps the two knobs independent. */
 void observer_slot_record_value(ObserverSlot *s, double v) {
 #ifdef EIGS_IEEE
-    /* #1746: a step to/from a non-finite value has no finite size; restart
-     * the trajectory instead of pushing inf/NaN into the rings. */
-    if (!isfinite(v) || (s->v_used && !isfinite(s->last_value))) {
-        s->v_window_count = 0;
-        s->v_window_head = 0;
-        s->last_value = (v != v) ? NAN : v;
+    /* #1746 experiment, the ONE writer of the value rings in this build (the
+     * JIT's unobserved sampler routes here too). Values live on the extended
+     * real line (Rudin, Principles of Mathematical Analysis, Def. 1.23; limits
+     * and lim sup / lim inf there, Def. 3.16-3.17), so +-inf is a legal
+     * sample, and every step involving it is defined so no ring entry is
+     * NaN or inf:
+     *   held +-inf (v == last)       rel = 0,          raw = 0;
+     *   +-inf -> -+inf               rel = 2*dir,      raw = rel * scale;
+     *   finite <-> +-inf             rel = dir (|1|),  raw = dir * max(|finite end|, scale),
+     * dir = the sign of the move. NaN is IEEE 754's undefined result (2019
+     * sec. 7.2, invalid operation): it is never a sample. A NaN assignment
+     * pushes nothing and marks the binding's current value undefined
+     * (v_undef); the next defined value resumes the trajectory with one step
+     * from the last defined sample, so the rings hold the defined
+     * subsequence. */
+    if (v != v) {
+        if (!s->v_used) s->last_value = NAN;   /* no defined sample yet */
+        s->v_undef = 1;
         s->v_used = 1;
+        s->v_last = 1;
+        return;
+    }
+    s->v_undef = 0;
+    if (s->v_used && s->last_value != s->last_value) {   /* first defined sample */
+        s->last_value = v;
+        s->v_last = 1;
+        return;
+    }
+    if (s->v_used && (isinf(v) || isinf(s->last_value))) {
+        double fl = eigs_current ? eigs_current->state->obs_scale : 0.001;
+        double rel = 0.0, raw = 0.0;
+        if (v != s->last_value) {
+            double dir = v > s->last_value ? 1.0 : -1.0;
+            if (isinf(v) && isinf(s->last_value)) {
+                rel = 2.0 * dir;
+                raw = rel * fl;
+            } else {
+                double a = fabs(isinf(v) ? s->last_value : v);
+                if (fl > a) a = fl;
+                rel = dir;
+                raw = dir * a;
+            }
+        }
+        observer_slot_v_push(s, rel, raw);
+        s->last_value = v;
         s->v_last = 1;
         return;
     }
@@ -718,6 +778,12 @@ void observer_slot_record_value(ObserverSlot *s, double v) {
         double fl = eigs_current ? eigs_current->state->obs_scale : 0.001;
         if (fl > a) a = fl;
         double rel = raw / a;
+#ifdef EIGS_IEEE
+        if (!isfinite(raw)) {   /* #1746: finite - finite overflowed (1e308 -> -1e308) */
+            rel = v / a - s->last_value / a;
+            raw = copysign(DBL_MAX, rel);
+        }
+#endif
         observer_slot_v_push(s, rel, raw);
     }
     s->last_value = v;
@@ -950,18 +1016,22 @@ void observer_slot_reset(Env *e) {
 #ifdef EIGS_IEEE
 /* #1746 experiment: the #861 magnitude rule is GONE in this build. Overflow
  * now yields inf, so a binding holding a literal 1e308 is an ordinary
- * constant (a fixed point: `converged`), and "escaped the number line" is a
- * fact, not a guess: the last observed value is non-finite.
- *   ±inf -> `diverging` true, every other predicate false.
- *   NaN  -> all six predicates false; `report` says "moving" (no band).
- * observer_slot_record_value keeps inf/NaN OUT of the step rings (a
- * non-finite sample restarts the trajectory), and entropy_of_num maps NaN
- * to the opaque value 1.0, so no NaN reaches any observer window. */
-static int observer_slot_saturated(const ObserverSlot *s) {
-    return (s && s->v_used && !isfinite(s->last_value)) ? 1 : 0;
+ * constant (a fixed point: `converged`). The current value decides:
+ *   +-inf  -> `diverging` (divergence to +-inf, Rudin Def. 3.15); the rest
+ *             bands and `improving` are false; `oscillating` still reads the
+ *             window, so 1 <-> inf (lim inf 1, lim sup +inf) oscillates.
+ *   NaN    -> undefined (IEEE 754-2019 sec. 7.2): all six predicates false,
+ *             `report` says "undefined".
+ * observer_slot_record_value keeps every ring entry finite and entropy_of_num
+ * maps NaN to the opaque 1.0, so no NaN reaches observer state. */
+static int observer_slot_saturated(const ObserverSlot *s) {   /* non-finite: no rest band */
+    return (s && s->v_used && (s->v_undef || !isfinite(s->last_value))) ? 1 : 0;
 }
 static int observer_slot_inf(const ObserverSlot *s) {
     return (s && s->v_used && isinf(s->last_value)) ? 1 : 0;
+}
+static int observer_slot_undefined(const ObserverSlot *s) {
+    return (s && s->v_used && s->v_undef) ? 1 : 0;
 }
 #else
 static int observer_slot_saturated(const ObserverSlot *s) {
@@ -1072,7 +1142,7 @@ static int obs_num_bounded_oscillating(const ObserverSlot *s) {
 
 static int obs_num_oscillating(const ObserverSlot *s) {
 #ifdef EIGS_IEEE
-    if (observer_slot_saturated(s)) return 0;   /* non-finite: no band but diverging(inf) */
+    if (observer_slot_undefined(s)) return 0;
 #endif
     return obs_num_rel_oscillating(s) || observer_slot_raw_oscillating(s)
         || obs_num_bounded_oscillating(s);
@@ -1211,8 +1281,9 @@ static int obs_num_stable(const ObserverSlot *s) {
 static const char *obs_num_report(const ObserverSlot *s) {
     if (!s || !s->v_used) return "equilibrium";   /* no numeric trajectory */
 #ifdef EIGS_IEEE
-    if (observer_slot_saturated(s))               /* #1746: inf diverges; NaN is in no band */
-        return observer_slot_inf(s) ? "diverging" : "moving";
+    if (observer_slot_undefined(s)) return "undefined";   /* #1746: NaN */
+    if (observer_slot_inf(s))                              /* #1746: at +-inf */
+        return obs_num_oscillating(s) ? "oscillating" : "diverging";
 #endif
     size_t cnt = obs_v_count(s);
     if (cnt == 0) return "equilibrium";           /* one value seen, no step yet */
@@ -1483,7 +1554,11 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     dict_set_owned(out, "entropy",      make_num(s ? s->entropy : 0.0));
     dict_set_owned(out, "dH",           make_num(s ? s->dH : 0.0));
     dict_set_owned(out, "last_entropy", make_num(s ? s->last_entropy : 0.0));
+#ifdef EIGS_IEEE
+    dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? (s->v_undef ? NAN : s->last_value) : 0.0));
+#else
     dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? s->last_value : 0.0));
+#endif
     dict_set_owned(out, "observed",     make_bool(s && s->used != 0));     /* #1637 */
     dict_set_owned(out, "numeric",      make_bool(s && s->v_used != 0));
     /* #1044: the depth this slot classifies over travels with the snapshot,
@@ -1522,9 +1597,9 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         Value *w = dict_get_view_local(dict, "window", &w_view);
         if (w) {
             if (w->type != VAL_NUM || VAL_NUM_RAW(w) < OBSERVER_WINDOW_MIN ||
-                VAL_NUM_RAW(w) > OBSERVER_WINDOW_MAX || VAL_NUM_RAW(w) != (int)VAL_NUM_RAW(w))
+                VAL_NUM_RAW(w) > OBSERVER_WINDOW_MAX || VAL_NUM_RAW(w) != EIGS_DCAST(int, VAL_NUM_RAW(w)))
                 return 0;
-            out->win_override = (uint8_t)(int)VAL_NUM_RAW(w);
+            out->win_override = EIGS_DCAST(uint8_t, EIGS_DCAST(int, VAL_NUM_RAW(w)));
         }
     }
     const int N = observer_slot_window(out);
@@ -1545,6 +1620,16 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         }
         out->v_window[out->v_window_count]  = eigs_slot_num(a, __func__);
         out->vr_window[out->v_window_count] = eigs_slot_num(b, __func__);
+#ifdef EIGS_IEEE
+        /* #1746: a ring entry is always finite; a snapshot claiming
+         * otherwise is not one the observer could have written. */
+        if (!isfinite(out->v_window[out->v_window_count]) ||
+            !isfinite(out->vr_window[out->v_window_count])) {
+            free(out->v_window); free(out->vr_window);
+            memset(out, 0, sizeof *out);
+            return 0;
+        }
+#endif
         out->v_window_count++;
     }
     out->v_window_head = (uint8_t)(out->v_window_count % N);
@@ -1558,7 +1643,17 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
+#ifdef EIGS_IEEE
+        out->dh_window[out->dh_window_count] = eigs_slot_num(a, __func__);
+        if (!isfinite(out->dh_window[out->dh_window_count])) {   /* #1746 */
+            free(out->v_window); free(out->vr_window); free(out->dh_window);
+            memset(out, 0, sizeof *out);
+            return 0;
+        }
+        out->dh_window_count++;
+#else
         out->dh_window[out->dh_window_count++] = eigs_slot_num(a, __func__);
+#endif
     }
     out->dh_window_head = (uint8_t)(out->dh_window_count % N);
     /* #1637: the scalar fields are numbers and the two flags are bools, as
@@ -1586,6 +1681,9 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         memset(out, 0, sizeof *out);
         return 0;
     }
+#ifdef EIGS_IEEE
+    out->v_undef = (out->last_value != out->last_value);   /* #1746: a NaN snapshot */
+#endif
     out->used = fo ? fo->data.boolean : 1;
     out->v_used = fn ? fn->data.boolean : (out->v_window_count > 0);
     /* A full slot re-fed through the classifiers needs obs_age > 0 so the
@@ -2989,8 +3087,8 @@ void eigs_num_text(char *buf, size_t nbuf, double n) {
     /* Exact integers up to 2^53 (the largest integer all doubles represent
      * exactly) print without a decimal point or exponent. The magnitude test
      * runs BEFORE the cast — casting an out-of-range double is UB (#816). */
-    if (fabs(n) < 9007199254740992.0 && n == (long long)n) {
-        snprintf(buf, nbuf, "%lld", (long long)n);
+    if (fabs(n) < 9007199254740992.0 && n == EIGS_DCAST(long long, n)) {
+        snprintf(buf, nbuf, "%lld", EIGS_DCAST(long long, n));
         return;
     }
     /* Otherwise the shortest representation that round-trips: try 15..17

@@ -455,8 +455,8 @@ Value* builtin_gfx_open(Value *arg) {
     ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
               list_elem_type(arg, 1) != VAL_NUM,
               "gfx_open", "[number width, number height, title]", make_bool(0));
-    int w = (int)eigs_list_num(arg, 0, __func__);
-    int h = (int)eigs_list_num(arg, 1, __func__);
+    int w = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    int h = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
     const char *title = list_elem_type(arg, 2) == VAL_STR ? list_get_ref(arg, 2)->data.str : "EigenScript";
 
     if (!load_sdl2()) {
@@ -526,9 +526,9 @@ Value* builtin_gfx_clear(Value *arg) {
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
     int r = 0, g = 0, b = 0;
     if (shaped) {
-        r = (int)eigs_list_num(arg, 0, __func__);
-        g = (int)eigs_list_num(arg, 1, __func__);
-        b = (int)eigs_list_num(arg, 2, __func__);
+        r = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+        g = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+        b = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
     }
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderClear(g_renderer);
@@ -545,14 +545,14 @@ Value* builtin_gfx_rect(Value *arg) {
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rect answers null on every path -- the return value, not a rejected-argument stand-in */
     SDL_Rect rect;
-    rect.x = (int)eigs_list_num(arg, 0, __func__);
-    rect.y = (int)eigs_list_num(arg, 1, __func__);
-    rect.w = (int)eigs_list_num(arg, 2, __func__);
-    rect.h = (int)eigs_list_num(arg, 3, __func__);
-    int r = (int)eigs_list_num(arg, 4, __func__);
-    int g = (int)eigs_list_num(arg, 5, __func__);
-    int b = (int)eigs_list_num(arg, 6, __func__);
-    int a = (arg->data.list.count >= 8) ? (int)eigs_list_num(arg, 7, __func__) : 255;
+    rect.x = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    rect.y = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    rect.w = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
+    rect.h = EIGS_DCAST(int, eigs_list_num(arg, 3, __func__));
+    int r = EIGS_DCAST(int, eigs_list_num(arg, 4, __func__));
+    int g = EIGS_DCAST(int, eigs_list_num(arg, 5, __func__));
+    int b = EIGS_DCAST(int, eigs_list_num(arg, 6, __func__));
+    int a = (arg->data.list.count >= 8) ? EIGS_DCAST(int, eigs_list_num(arg, 7, __func__)) : 255;
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
     p_SDL_RenderFillRect(g_renderer, &rect);
     return make_null(); /* fs:VOID gfx_rect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
@@ -567,13 +567,13 @@ Value* builtin_gfx_line(Value *arg) {
               "[number x1, number y1, number x2, number y2, number r, number g, number b]",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_line answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x1 = (int)eigs_list_num(arg, 0, __func__);
-    int y1 = (int)eigs_list_num(arg, 1, __func__);
-    int x2 = (int)eigs_list_num(arg, 2, __func__);
-    int y2 = (int)eigs_list_num(arg, 3, __func__);
-    int r = (int)eigs_list_num(arg, 4, __func__);
-    int g = (int)eigs_list_num(arg, 5, __func__);
-    int b = (int)eigs_list_num(arg, 6, __func__);
+    int x1 = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    int y1 = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    int x2 = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
+    int y2 = EIGS_DCAST(int, eigs_list_num(arg, 3, __func__));
+    int r = EIGS_DCAST(int, eigs_list_num(arg, 4, __func__));
+    int g = EIGS_DCAST(int, eigs_list_num(arg, 5, __func__));
+    int b = EIGS_DCAST(int, eigs_list_num(arg, 6, __func__));
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderDrawLine(g_renderer, x1, y1, x2, y2);
     return make_null(); /* fs:VOID gfx_line answers null on every path -- this is the return value, not a stand-in for a rejected argument */
@@ -587,11 +587,11 @@ Value* builtin_gfx_point(Value *arg) {
               "gfx_point", "[number x, number y, number r, number g, number b]",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_point answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
-    int r = (int)eigs_list_num(arg, 2, __func__);
-    int g = (int)eigs_list_num(arg, 3, __func__);
-    int b = (int)eigs_list_num(arg, 4, __func__);
+    int x = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    int y = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    int r = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
+    int g = EIGS_DCAST(int, eigs_list_num(arg, 3, __func__));
+    int b = EIGS_DCAST(int, eigs_list_num(arg, 4, __func__));
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
     p_SDL_RenderDrawPoint(g_renderer, x, y);
     return make_null(); /* fs:VOID gfx_point answers null on every path -- this is the return value, not a stand-in for a rejected argument */
@@ -606,17 +606,17 @@ Value* builtin_gfx_circle(Value *arg) {
               "[number cx, number cy, number radius, number r, number g, number b] and an optional number alpha",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_circle answers null on every path -- the return value, not a rejected-argument stand-in */
-    int cx = (int)eigs_list_num(arg, 0, __func__);
-    int cy = (int)eigs_list_num(arg, 1, __func__);
-    int radius = (int)eigs_list_num(arg, 2, __func__);
-    int r = (int)eigs_list_num(arg, 3, __func__);
-    int g = (int)eigs_list_num(arg, 4, __func__);
-    int b = (int)eigs_list_num(arg, 5, __func__);
-    int a = (arg->data.list.count >= 7) ? (int)eigs_list_num(arg, 6, __func__) : 255;
+    int cx = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    int cy = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    int radius = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
+    int r = EIGS_DCAST(int, eigs_list_num(arg, 3, __func__));
+    int g = EIGS_DCAST(int, eigs_list_num(arg, 4, __func__));
+    int b = EIGS_DCAST(int, eigs_list_num(arg, 5, __func__));
+    int a = (arg->data.list.count >= 7) ? EIGS_DCAST(int, eigs_list_num(arg, 6, __func__)) : 255;
     p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
     /* Filled circle via horizontal lines */
     for (int dy = -radius; dy <= radius; dy++) {
-        int dx = (int)sqrt((double)(radius * radius - dy * dy));
+        int dx = EIGS_DCAST(int, sqrt((double)(radius * radius - dy * dy)));
         SDL_Rect row = { cx - dx, cy + dy, dx * 2 + 1, 1 };
         p_SDL_RenderFillRect(g_renderer, &row);
     }
@@ -633,15 +633,15 @@ Value* builtin_gfx_rrect(Value *arg) {
               "[number x, number y, number w, number h, number radius, number r, number g, number b] and an optional number alpha",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rrect answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
-    int w = (int)eigs_list_num(arg, 2, __func__);
-    int h = (int)eigs_list_num(arg, 3, __func__);
-    int rad = (int)eigs_list_num(arg, 4, __func__);
-    int r = (int)eigs_list_num(arg, 5, __func__);
-    int g = (int)eigs_list_num(arg, 6, __func__);
-    int b = (int)eigs_list_num(arg, 7, __func__);
-    int a = (arg->data.list.count >= 9) ? (int)eigs_list_num(arg, 8, __func__) : 255;
+    int x = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    int y = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    int w = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
+    int h = EIGS_DCAST(int, eigs_list_num(arg, 3, __func__));
+    int rad = EIGS_DCAST(int, eigs_list_num(arg, 4, __func__));
+    int r = EIGS_DCAST(int, eigs_list_num(arg, 5, __func__));
+    int g = EIGS_DCAST(int, eigs_list_num(arg, 6, __func__));
+    int b = EIGS_DCAST(int, eigs_list_num(arg, 7, __func__));
+    int a = (arg->data.list.count >= 9) ? EIGS_DCAST(int, eigs_list_num(arg, 8, __func__)) : 255;
     if (w <= 0 || h <= 0) return make_null(); /* fs:EMPTY a rectangle with no width or height covers no pixels, so drawing nothing IS the answer -- the degenerate-geometry identity, not a laundered argument (lib/ui layout produces zero-size rects routinely) */
     /* Clamp radius to half the smaller dimension */
     if (rad > w / 2) rad = w / 2;
@@ -658,7 +658,7 @@ Value* builtin_gfx_rrect(Value *arg) {
     p_SDL_RenderFillRect(g_renderer, &center);
     /* Top and bottom bands with rounded corners via scanlines */
     for (int dy = 0; dy < rad; dy++) {
-        int dx = (int)sqrt((double)(rad * rad - (rad - dy) * (rad - dy)));
+        int dx = EIGS_DCAST(int, sqrt((double)(rad * rad - (rad - dy) * (rad - dy))));
         /* Top band */
         SDL_Rect top_row = { x + rad - dx, y + dy, w - 2 * (rad - dx), 1 };
         p_SDL_RenderFillRect(g_renderer, &top_row);
@@ -687,10 +687,10 @@ Value* builtin_gfx_clip(Value *arg) {
         return make_null();  /* fs:VOID the clip was cleared -- gfx_clip's normal successful answer */
     }
     SDL_Rect clip;
-    clip.x = (int)eigs_list_num(arg, 0, __func__);
-    clip.y = (int)eigs_list_num(arg, 1, __func__);
-    clip.w = (int)eigs_list_num(arg, 2, __func__);
-    clip.h = (int)eigs_list_num(arg, 3, __func__);
+    clip.x = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    clip.y = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    clip.w = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
+    clip.h = EIGS_DCAST(int, eigs_list_num(arg, 3, __func__));
     p_SDL_RenderSetClipRect(g_renderer, &clip);
     return make_null(); /* fs:VOID gfx_clip answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -719,8 +719,8 @@ Value* builtin_gfx_read(Value *arg) {
     if (!g_renderer || !p_SDL_RenderReadPixels)
         TRACE_NONDET_RECORD("gfx_read", make_null());
     SDL_Rect r;
-    r.x = (int)eigs_list_num(arg, 0, __func__);
-    r.y = (int)eigs_list_num(arg, 1, __func__);
+    r.x = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    r.y = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
     r.w = 1;
     r.h = 1;
     Uint32 px = 0;
@@ -852,7 +852,7 @@ Value* builtin_gfx_ticks(Value *arg) {
 Value* builtin_gfx_delay(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "gfx_delay", "number milliseconds",
               make_null());
-    if (g_sdl_lib) p_SDL_Delay((Uint32)eigs_num_arg(arg, __func__));
+    if (g_sdl_lib) p_SDL_Delay(EIGS_DCAST(Uint32, eigs_num_arg(arg, __func__)));
     return make_null(); /* fs:VOID gfx_delay answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
@@ -1000,13 +1000,13 @@ Value* builtin_gfx_text(Value *arg) {
               "[number x, number y, string text, number r, number g, number b] and an optional number scale",
               make_null());
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_text answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
+    int x = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+    int y = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
     const char *text = list_get_ref(arg, 2)->data.str;
-    int r = (int)eigs_list_num(arg, 3, __func__);
-    int g = (int)eigs_list_num(arg, 4, __func__);
-    int b = (int)eigs_list_num(arg, 5, __func__);
-    int scale = (arg->data.list.count >= 7) ? (int)eigs_list_num(arg, 6, __func__) : 1;
+    int r = EIGS_DCAST(int, eigs_list_num(arg, 3, __func__));
+    int g = EIGS_DCAST(int, eigs_list_num(arg, 4, __func__));
+    int b = EIGS_DCAST(int, eigs_list_num(arg, 5, __func__));
+    int scale = (arg->data.list.count >= 7) ? EIGS_DCAST(int, eigs_list_num(arg, 6, __func__)) : 1;
     if (scale < 1) scale = 1;
 
     if (*text && ttf_available() && p_SDL_CreateTextureFromSurface
@@ -1073,7 +1073,7 @@ Value* builtin_gfx_text_width(Value *arg) {
         text = list_get_ref(arg, 0)->data.str;
         if (arg->data.list.count >= 2) {
             if (list_elem_type(arg, 1) == VAL_NUM)
-                scale = (int)eigs_list_num(arg, 1, __func__);
+                scale = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
             else
                 bad_scale = 1;
         }
@@ -1111,10 +1111,10 @@ Value* builtin_gfx_text_height(Value *arg) {
                         && list_elem_type(arg, 0) == VAL_NUM),
                    "gfx_text_height", "number scale, [number scale] or null");
     if (arg && arg->type == VAL_NUM) {
-        scale = (int)eigs_num_arg(arg, __func__);
+        scale = EIGS_DCAST(int, eigs_num_arg(arg, __func__));
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
                && list_elem_type(arg, 0) == VAL_NUM) {
-        scale = (int)eigs_list_num(arg, 0, __func__);
+        scale = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
     }
     if (scale < 1) scale = 1;
     if (ttf_available()) {
@@ -1165,7 +1165,7 @@ static void audio_mix_callback(void *ud, uint8_t *stream, int len) {
                 else { ch->active = 0; break; }
             }
             int32_t v = (int32_t)out[i]
-                      + (int32_t)((double)ch->samples[ch->pos++] * ch->volume);
+                      + EIGS_DCAST(int32_t, ((double)ch->samples[ch->pos++] * ch->volume));
             if (v > 32767) v = 32767;
             if (v < -32768) v = -32768;
             out[i] = (int16_t)v;
@@ -1190,7 +1190,7 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
             if (g_has_error) { free(buf); return NULL; }
             if (s > 1.0) s = 1.0;
             if (s < -1.0) s = -1.0;
-            buf[i] = (int16_t)(s * 32767);
+            buf[i] = EIGS_DCAST(int16_t, (s * 32767));
         }
         *out_n = n;
         return buf;
@@ -1226,7 +1226,7 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
         double s = eigs_slot_num(sample, __func__);
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
-        buf[i] = (int16_t)(s * 32767);
+        buf[i] = EIGS_DCAST(int16_t, (s * 32767));
     }
     *out_n = n;
     return buf;
@@ -1331,8 +1331,8 @@ Value* builtin_audio_open(Value *arg) {
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         /* Type-checked at the top of the function, before the SDL load. */
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
+        want.freq = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+        want.channels = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
     }
 
     g_audio_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
@@ -1362,7 +1362,7 @@ Value* builtin_audio_pause(Value *arg) {
     STRICT_REQUIRE(arg && arg->type != VAL_NULL && arg->type != VAL_NUM,
                    "audio_pause", "number flag (1 = pause, 0 = unpause) or null");
     if (!g_audio_device) return make_null();  /* fs:VOID no device open: audio_pause answers null on every path -- the return value, not a rejected-argument stand-in */
-    int pause = (arg && arg->type == VAL_NUM) ? (int)eigs_num_arg(arg, __func__) : 1;
+    int pause = (arg && arg->type == VAL_NUM) ? EIGS_DCAST(int, eigs_num_arg(arg, __func__)) : 1;
     p_SDL_PauseAudioDevice(g_audio_device, pause);
     return make_null(); /* fs:VOID audio_pause answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -1477,8 +1477,8 @@ Value* builtin_audio_capture_open(Value *arg) {
 
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         /* Type-checked at the top of the function, before the SDL load. */
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
+        want.freq = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+        want.channels = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
     }
 
     if (g_capture_device) {
@@ -1604,8 +1604,8 @@ Value* builtin_audio_stream_open(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
         && list_elem_type(arg, 0) == VAL_NUM
         && list_elem_type(arg, 1) == VAL_NUM) {
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
+        want.freq = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+        want.channels = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
     }
 
     if (g_stream_device) {
@@ -1704,7 +1704,7 @@ Value* builtin_audio_music_play(Value *arg) {
                    "audio_music_play", "[string path, number loops]");
     const char *path = list_get_ref(arg, 0)->data.str;
     int loops = (arg->data.list.count >= 2 && list_elem_type(arg, 1) == VAL_NUM)
-                ? (int)eigs_list_num(arg, 1, __func__) : -1;
+                ? EIGS_DCAST(int, eigs_list_num(arg, 1, __func__)) : -1;
     if (!load_sdl2()) return make_bool(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
     if (!load_sdl_mixer()) return make_bool(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
@@ -1745,10 +1745,10 @@ Value* builtin_audio_music_volume(Value *arg) {
                    "audio_music_volume", "number volume 0..128 or [number volume]");
     if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();  /* fs:VOID no mixer open: audio_music_volume answers null on every path -- the return value, not a rejected-argument stand-in */
     int v = 0;
-    if (arg && arg->type == VAL_NUM) v = (int)eigs_num_arg(arg, __func__);
+    if (arg && arg->type == VAL_NUM) v = EIGS_DCAST(int, eigs_num_arg(arg, __func__));
     else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
              && list_elem_type(arg, 0) == VAL_NUM)
-        v = (int)eigs_list_num(arg, 0, __func__);
+        v = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
     if (v < 0) v = 0;
     if (v > MY_MIX_MAX_VOLUME) v = MY_MIX_MAX_VOLUME;
     p_Mix_VolumeMusic(v);
@@ -1805,7 +1805,7 @@ Value* builtin_audio_play_loop(Value *arg) {
                   "audio_play_loop",
                   "[samples, number loops] with loops == -1 or 1..10000",
                   make_num(0));
-        loops = (int)loops_d;
+        loops = EIGS_DCAST(int, loops_d);
     }
     /* #1007 round 3: the samples slot, beside the loops slot and above the
      * device check for the same reachability reason. */
@@ -1839,7 +1839,7 @@ Value* builtin_audio_volume(Value *arg) {
               || list_elem_type(arg, 1) != VAL_NUM,
               "audio_volume", "[number channel, number volume]", make_num(0));
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing", and with no device open no channel is */
-    int c = (int)eigs_slot_num(list_slot(arg, 0), "audio_volume") - 1;
+    int c = EIGS_DCAST(int, eigs_slot_num(list_slot(arg, 0), "audio_volume")) - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing" -- the same value line 1452 returns for an inactive in-range channel; an out-of-range id is definitionally inactive */
     double vol = eigs_slot_num(list_slot(arg, 1), "audio_volume");
     if (isnan(vol) || vol < 0.0) vol = 0.0;
@@ -1858,7 +1858,7 @@ Value* builtin_audio_stop(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "audio_stop", "number channel",
               make_num(0));
     if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active", and with no device open none is */
-    int c = (int)eigs_num_arg(arg, __func__) - 1;
+    int c = EIGS_DCAST(int, eigs_num_arg(arg, __func__)) - 1;
     if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active" -- the same value line 1465 returns for an inactive in-range channel */
     p_SDL_LockAudioDevice(g_audio_device);
     int ok = g_audio_ch[c].active;
@@ -1925,7 +1925,7 @@ Value* builtin_audio_sine(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
+    int n = EIGS_DCAST(int, (dur * rate));
     if (n <= 0 || n > rate * 30) return make_list(0);
 
     Value *list = make_list(n);
@@ -1960,7 +1960,7 @@ Value* builtin_audio_saw(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
+    int n = EIGS_DCAST(int, (dur * rate));
     if (n <= 0 || n > rate * 30) return make_list(0);
 
     Value *list = make_list(n);
@@ -1995,7 +1995,7 @@ Value* builtin_audio_square(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
+    int n = EIGS_DCAST(int, (dur * rate));
     if (n <= 0 || n > rate * 30) return make_list(0);
 
     Value *list = make_list(n);
@@ -2033,9 +2033,9 @@ Value* builtin_audio_sweep(Value *arg) {
     double f1 = eigs_list_num(arg, 1, __func__);
     double dur = eigs_list_num(arg, 2, __func__);
     double amp = eigs_list_num(arg, 3, __func__);
-    int wave = (int)eigs_list_num(arg, 4, __func__);
+    int wave = EIGS_DCAST(int, eigs_list_num(arg, 4, __func__));
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
+    int n = EIGS_DCAST(int, (dur * rate));
     if (n <= 0 || n > rate * 30) return make_list(0);
 
     Value *list = make_list(n);
@@ -2076,7 +2076,7 @@ Value* builtin_audio_noise(Value *arg) {
     double dur = eigs_list_num(arg, 0, __func__);
     double amp = eigs_list_num(arg, 1, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
+    int n = EIGS_DCAST(int, (dur * rate));
     if (n <= 0 || n > rate * 30) return make_list(0);
 
     Value *list = make_list(n);
@@ -2192,9 +2192,9 @@ Value* builtin_audio_envelope(Value *arg) {
 
     int n = samples->data.list.count;
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int a_samples = (int)(attack * rate);
-    int d_samples = (int)(decay * rate);
-    int r_samples = (int)(release * rate);
+    int a_samples = EIGS_DCAST(int, (attack * rate));
+    int d_samples = EIGS_DCAST(int, (decay * rate));
+    int r_samples = EIGS_DCAST(int, (release * rate));
     int s_start = a_samples + d_samples;
     int r_start = n - r_samples;
     if (r_start < s_start) r_start = s_start;
@@ -2241,11 +2241,11 @@ Value* builtin_gfx_fb(Value *arg) {
               "[buffer fb, number w, number h, number x, number y, number scale]",
               make_null());
     Value *buf  = list_get_ref(arg, 0);
-    int    w    = (int)eigs_list_num(arg, 1, __func__);
-    int    h    = (int)eigs_list_num(arg, 2, __func__);
-    int    dx   = (int)eigs_list_num(arg, 3, __func__);
-    int    dy   = (int)eigs_list_num(arg, 4, __func__);
-    int    sc   = (int)eigs_list_num(arg, 5, __func__);
+    int    w    = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    int    h    = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
+    int    dx   = EIGS_DCAST(int, eigs_list_num(arg, 3, __func__));
+    int    dy   = EIGS_DCAST(int, eigs_list_num(arg, 4, __func__));
+    int    sc   = EIGS_DCAST(int, eigs_list_num(arg, 5, __func__));
     /* A non-positive dimension is DEGENERATE geometry (nothing to blit),
      * the same verdict gfx_rrect gives a zero-size rectangle. A buffer
      * SHORTER than w * h is an argument mismatch and is loud -- still above

@@ -348,6 +348,11 @@ typedef struct ObserverSlot {
                                  * number to string falls back to the entropy
                                  * channel instead of answering from a stale
                                  * numeric trajectory. */
+#ifdef EIGS_IEEE
+    uint8_t v_undef;            /* #1746: the current value is NaN (undefined);
+                                 * last_value keeps the last defined sample, or
+                                 * NaN when there has been none */
+#endif
 } ObserverSlot;
 
 struct Env {
@@ -1911,11 +1916,52 @@ static inline double buffer_read_num(const Value *buffer, int64_t index) {
     return num_guard(buffer->data.buffer.data[index]);
 }
 
+/* #1746: the canonical NaN for text a program can read (tape, store, debug
+ * dumps): any NaN prints as the positive "nan". Identity in the default
+ * build, where num_guard keeps NaN out of every number. */
+#ifdef EIGS_IEEE
+#define EIGS_NUM_CANON(x) ((x) != (x) ? (double)NAN : (x))
+#else
+#define EIGS_NUM_CANON(x) (x)
+#endif
+
+/* #1746 experiment / #1748: THE user-double -> integer conversion. Every
+ * float-to-integer conversion in the runtime is written EIGS_DCAST(T, x)
+ * (tools/ieee_cast_sites.sh proves, from gcc's GIMPLE, that the ieee build
+ * has no fix_trunc anywhere else). Default build: exactly the old `(T)(x)`.
+ * ieee build: x outside T's range -- NaN, +-inf, 1e300 -- is undefined
+ * behaviour in C, so it raises `value` naming the C function (the builtin)
+ * and converts 0 instead. EIGS_DCAST_QUIET is the same check with no raise,
+ * for compile-time integrality probes. Integer operands pass straight
+ * through (_Generic), so wrapping an int cast changes nothing. */
+#ifdef EIGS_IEEE
+void eigs_d2ll_fail(double x, const char *who);
+static inline long long eigs_d2ll(double x, double lo, double hi, const char *who) {
+    if (__builtin_expect(!(x >= lo && x < hi), 0)) {
+        if (who) eigs_d2ll_fail(x, who);
+        return 0;
+    }
+    return (long long)x;
+}
+#define EIGS_TLO_(T) (((T)-1 / 2 == 0) ? -ldexp(1.0, 8 * (int)sizeof(T) - 1) : 0.0)
+#define EIGS_THI_(T) (((T)-1 / 2 == 0) ? ldexp(1.0, 8 * (int)sizeof(T) - 1) \
+                     : ldexp(1.0, sizeof(T) >= 8 ? 63 : 8 * (int)sizeof(T)))
+#define EIGS_DCAST_W_(T, x, who) ((T)_Generic((x),                           \
+        double: eigs_d2ll((x), EIGS_TLO_(T), EIGS_THI_(T), (who)),            \
+        float:  eigs_d2ll((x), EIGS_TLO_(T), EIGS_THI_(T), (who)),            \
+        default: (x)))
+#define EIGS_DCAST(T, x)       EIGS_DCAST_W_(T, x, __func__)
+#define EIGS_DCAST_QUIET(T, x) EIGS_DCAST_W_(T, x, (const char *)0)
+#else
+#define EIGS_DCAST(T, x)       ((T)(x))
+#define EIGS_DCAST_QUIET(T, x) ((T)(x))
+#endif
+
 /* Numeric byte consumers truncate and wrap modulo 256. Reduce in double
  * first: even a normalized finite number can be outside the C int range.
  * The caller must normalize the input and stop on a raised read first. */
 static inline unsigned char finite_num_to_byte(double x) {
-    return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
+    return (unsigned char)(EIGS_DCAST(int, fmod(x, 256.0)) & 0xFF);
 }
 
 /* #1740: a bitwise operand converts to int64 only if it is an EXACT integer
@@ -1925,7 +1971,7 @@ static inline unsigned char finite_num_to_byte(double x) {
  * 2^52, so (double)(int64_t)x is exact and differs from x. */
 static inline int num_to_i64_exact(double x, int64_t *out) {
     if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) return 0;
-    int64_t i = (int64_t)x;
+    int64_t i = EIGS_DCAST(int64_t, x);
     if ((double)i != x) return 0;
     *out = i;
     return 1;

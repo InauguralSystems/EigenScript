@@ -419,7 +419,7 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
                 if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
                     Value *v = chunk->constants[arg];
                     if (v->type == VAL_NUM)
-                        fprintf(stderr, " (%.6g)", VAL_NUM_RAW(v));
+                        fprintf(stderr, " (%.6g)", EIGS_NUM_CANON(VAL_NUM_RAW(v)));
                     else if (v->type == VAL_STR)
                         fprintf(stderr, " (\"%s\")", v->data.str);
                 }

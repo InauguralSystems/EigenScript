@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${1:-$ROOT/build/ieee/eigenscript}"
 T="$ROOT/tests/ieee"
 TMO="${IEEE_ROWS_TIMEOUT:-120}"
-DECLARED=10
+DECLARED=14
 W="$(mktemp -d "${TMPDIR:-/tmp}/ieee_rows.XXXXXX")" || { echo "FAIL setup: mktemp"; exit 2; }
 trap 'rm -rf "$W"' EXIT
 PASS=0; FAIL=0; RAN=""
@@ -91,12 +91,22 @@ if why=$(clean sem) && why=$(checks sem); then
     else pass semantics; fi
 else fail semantics "$why"; fi
 
-# 6. Observer graded against mathematics (constant 1e308 converged, inf diverging, NaN rule).
-run obs "$BIN" "$T/observer.eigs"
-if why=$(clean obs) && why=$(checks obs); then pass observer; else fail observer "$why"; fi
+# 6-8. Observer graded against mathematics (extended reals, NaN undefined,
+# finite ring entries), on all three tiers; the JIT and OSR transcripts must
+# equal the interpreter's byte for byte (the unobserved: cases reach the
+# JIT's value sampler).
+run obs_interp env EIGS_JIT_OFF=1 "$BIN" "$T/observer.eigs"
+run obs_jit env EIGS_JIT_ENTRY_THRESHOLD=1 "$BIN" "$T/observer.eigs"
+run obs_osr env EIGS_JIT_ENTRY_THRESHOLD=1 EIGS_JIT_OSR_THRESHOLD=1 "$BIN" "$T/observer.eigs"
+for tier in interp jit osr; do
+    if ! why=$(clean "obs_$tier") || ! why=$(checks "obs_$tier"); then fail "observer_$tier" "$why"
+    elif [ "$tier" != interp ] && ! cmp -s "$W/obs_interp.out" "$W/obs_$tier.out"; then
+        fail "observer_$tier" "differs from the interpreter: $(diff "$W/obs_interp.out" "$W/obs_$tier.out" | head -4 | tr '\n' ' ')"
+    else pass "observer_$tier"; fi
+done
 
-# 7-9. Tape: same-seed record twice -> identical bytes; replay -> identical
-# stdout+stderr and a re-record identical again; NaN spelled canonically.
+# 9-11. Tape: same-seed record twice -> identical bytes; replay -> identical
+# stdout+stderr; NaN spelled canonically.
 run rec1 env EIGS_TRACE="$W/t1.tape" "$BIN" "$T/tape.eigs"
 run rec2 env EIGS_TRACE="$W/t2.tape" "$BIN" "$T/tape.eigs"
 run rep  env EIGS_REPLAY="$W/t1.tape" EIGS_REPLAY_STRICT=1 "$BIN" "$T/tape.eigs"
@@ -129,6 +139,24 @@ for v in nan -nan inf -inf; do
     elif [ "$(cat "$W/inj_$v.out")" != "$want" ]; then injbad="$v: got $(cat "$W/inj_$v.out")"; fi
 done
 if [ -z "$injbad" ]; then pass tape_inject; else fail tape_inject "$injbad"; fi
+
+# 13. #1748: the builtins that cast a user double to an integer raise `value`
+# naming themselves on NaN/inf/1e300 (no UB: under asan-ieee run with
+# UBSAN_OPTIONS=halt_on_error=1, a bypassed conversion aborts the row).
+run casts "$BIN" "$T/casts.eigs"
+if why=$(clean casts); then
+    n=$(awk '$1=="CASTS"{print $2; exit}' "$W/casts.out")
+    got=$(grep -c '^CAST ' "$W/casts.out")
+    badc=$(grep '^CAST ' "$W/casts.out" | awk '$4!="value" || index(substr($0, length($1 FS $2 FS $3 FS $4)+2), $2)==0' | head -3 | tr '\n' ';')
+    if [ -z "$n" ] || [ "$n" != 33 ] || [ "$got" != 33 ]; then fail casts "declared ${n:-none} (want 33), ran $got"
+    elif [ -n "$badc" ]; then fail casts "$badc"
+    else pass casts; fi
+else fail casts "$why"; fi
+
+# 14. The conversion population, from gcc's GIMPLE: no float->int anywhere but
+# the helper. Compiles the sources; skipped only if gcc is absent (a FAIL).
+if timeout "$TMO" bash "$ROOT/tools/ieee_cast_sites.sh" > "$W/sites.out" 2>&1; then pass cast_sites
+else fail cast_sites "$(tail -1 "$W/sites.out")"; fi
 
 ran=$(echo $RAN | wc -w)
 [ "$ran" = "$DECLARED" ] || { echo "FAIL rows: declared $DECLARED, ran $ran ($RAN)"; FAIL=$((FAIL+1)); }
