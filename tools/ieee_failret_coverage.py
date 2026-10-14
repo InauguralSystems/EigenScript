@@ -112,8 +112,7 @@ def main():
     fns = sorted({n for _, _, n in ss})
     stale = sorted(set(PROBES) - set(fns))
     out, leaks = '', 0
-    for n in fns:
-        if n not in PROBES: continue
+    for n in sorted(PROBES):   # a stale probe still runs: its leak must still show
         d = tempfile.mkdtemp(prefix='ieee_failret.')
         o = PROBES[n](binary, d)
         out += o
