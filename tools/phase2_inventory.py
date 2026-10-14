@@ -78,6 +78,7 @@ VOCAB = {
     'buffer_read_num': 'READ',
     'num_to_i64_exact': 'READ',
     'finite_num_to_byte': 'READ',
+    'buffer_read_byte': 'READ',    # a buffer element as a byte (Q1: N5, no wrap)
     'buf_num_arg': 'READ',         # builtins_buf.c wrapper of eigs_list_num
     'eigs_value_as_num': 'READ',   # embed API accessor
     'num_val': 'RAW',              # lexer token payload (double)
@@ -166,7 +167,22 @@ ROLE_RULES = [
                  r'builtin_(str|print|write|hex))$'),
 ]
 
+# Functions that dispatch on an opcode, and how an arm is spelled. Sites in
+# them are attributed per arm (`fn/OP_X`), and executor_arms() below derives
+# the executor matrix from the same arms.
+DISPATCHERS = {
+    'vm_run_ex': 'CASE',                  # the interpreter
+    'jit_supported_prefix': 'IF',         # the JIT scanner
+    'jit_compile_to_thunk': 'IF',         # the JIT emitter
+    'chunk_scan_leaf_accessor': 'LABEL',  # the leaf scanner (#366)
+    'vm_leaf_accessor_exec': 'LABEL',     # the leaf evaluator (#366)
+}
+
 TOKEN_RE = re.compile(r'\b(' + '|'.join(sorted(VOCAB, key=len, reverse=True)) + r')\b')
+# Raw union members: the Value's double (`num_`) and the slot's (`d_`). Only
+# the accessor macros may name them; anywhere else is a bypass.
+RAW_MEMBER = re.compile(r'(?:\.|->)(d_|num_)\b')
+RAW_MEMBER_HOMES = {'#define VAL_NUM_RAW', '#define SLOT_NUM_RAW', '#define VAL_NUM_OFFSET'}
 C_KEYWORDS = {'if', 'while', 'for', 'switch', 'return', 'sizeof', 'do', 'else',
               'case', 'defined', '__attribute__', '__typeof__', '_Generic'}
 
@@ -225,6 +241,8 @@ def scopes_for(stripped, fname, sigs=None):
     sig = ''              # text since the last top-level ; or } (signature)
     cur = '<file scope>'
     sub = None            # dispatcher sub-scope (CASE(X) / OP_X)
+    arm_depth = None      # brace depth of a LABEL dispatcher's arms
+    prev_label = False
     in_macro = None
     for ln, line in enumerate(lines, 1):
         # #define bodies (with continuations) are their own scope
@@ -242,16 +260,29 @@ def scopes_for(stripped, fname, sigs=None):
         if re.match(r'\s*#', line):
             scope[ln] = cur if depth > 0 else '<file scope>'
             continue
-        if depth > 0 and cur == 'vm_run_ex':
-            mc = re.match(r'\s*CASE\((\w+)\)', line)
-            if mc:
-                sub = 'CASE(%s)' % mc.group(1)
-        if depth > 0 and cur == 'jit_compile_to_thunk':
-            mo = re.search(r'\b(?:if|else if)\s*\(\s*op\s*==\s*(OP_\w+)', line)
-            if mo and depth <= 3:
-                sub = mo.group(1)
+        if depth > 0 and cur in DISPATCHERS:
+            style = DISPATCHERS[cur]
+            if style == 'CASE':
+                mc = re.match(r'\s*CASE\((\w+)\)', line)
+                if mc:
+                    sub = 'CASE(%s)' % mc.group(1)
+            elif style == 'IF':
+                mo = re.search(r'\b(?:if|else if)\s*\(\s*op\s*==\s*(OP_\w+)', line)
+                if mo and depth <= 3:
+                    sub = mo.group(1)
+            else:   # LABEL: the outermost `case OP_X:` labels of the dispatch switch
+                labels = re.findall(r'\bcase\s+(OP_\w+)\s*:', line)
+                if labels and arm_depth is None:
+                    arm_depth = depth
+                if labels and depth == arm_depth:
+                    # consecutive label lines name one grouped arm
+                    sub = (sub + '|' if prev_label and sub else '') + '|'.join(labels)
+                    # a line holding only labels continues into the next label line
+                    prev_label = line.rstrip().endswith(':')
+                elif line.strip():
+                    prev_label = False
         line_scope = cur if depth > 0 else '<file scope>'
-        if depth > 0 and sub and cur in ('vm_run_ex', 'jit_compile_to_thunk'):
+        if depth > 0 and sub and cur in DISPATCHERS:
             line_scope = cur + '/' + sub
         for ch in line:
             if ch == '{':
@@ -260,6 +291,7 @@ def scopes_for(stripped, fname, sigs=None):
                     if sigs is not None and not cur.startswith('<'):
                         sigs.setdefault(cur, sig)
                     sub = None
+                    arm_depth = None
                     line_scope = cur
                 depth += 1
             elif ch == '}':
@@ -361,6 +393,9 @@ def scan_file(path, rel):
                 tok = m.group(1)
                 tok = 'TAG-IMM ' + tok[:6] if tok.lower().startswith('0xfff') else tok
                 sites.append((rel, ln, scope[ln], tok, 'EMIT'))
+        for m in RAW_MEMBER.finditer(line):
+            kind = 'RAW' if scope[ln] in RAW_MEMBER_HOMES else 'BYPASS'
+            sites.append((rel, ln, scope[ln], m.group(1), kind))
         for m in AST_NUM_FIELD.finditer(line):
             rest = line[m.end():].lstrip()
             kind = 'WRITE' if re.match(r'=(?!=)', rest) else 'RAW'
@@ -370,7 +405,7 @@ def scan_file(path, rel):
 
 def classify(site):
     rel, ln, scope, tok, kind = site
-    if kind == 'UNKNOWN':
+    if kind in ('UNKNOWN', 'BYPASS'):
         return None, None
     base = scope.split('/')[-1] if '/' in scope else scope
     for idx, (cat, frx, srx) in enumerate(ROLE_RULES):
@@ -381,7 +416,8 @@ def classify(site):
 
 # ---- derived accessor check ----------------------------------------------
 READ_IN_BODY = re.compile(r'\b(VAL_NUM_RAW|SLOT_NUM_RAW|eigs_num_arg|eigs_list_num|'
-                          r'eigs_slot_num|list_get_num|dict_value_get_num|slot_as_double)\b')
+                          r'eigs_slot_num|list_get_num|dict_value_get_num|slot_as_double)\b|'
+                          r'(?:\.|->)(?:d_|num_)\b')
 
 
 def derived_accessors(stripped_by_file, scope_by_file, sigs_by_file):
@@ -492,6 +528,123 @@ def numeric_builtins(regs, sites, bodies):
     return result
 
 
+# ---- opcode executors, derived from the DISPATCHERS' arms ------------------
+ROLE_OF = {'vm_run_ex': 'interp', 'jit_supported_prefix': 'jit_scan',
+           'jit_compile_to_thunk': 'jit_emit', 'chunk_scan_leaf_accessor': 'leaf_scan',
+           'vm_leaf_accessor_exec': 'leaf_exec'}
+ROLES = ['interp', 'jit_scan', 'jit_emit', 'leaf_scan', 'leaf_exec']
+
+
+def executor_arms(stripped_by_file, scope_by_file):
+    """opcode -> set of roles that have an arm for it; and each dispatcher
+    arm's opcode chain, keyed by its scope (`fn/sub`)."""
+    arms, chains = {}, {}
+    # a macro whose body spells CASE(<its first parameter>) generates an
+    # interpreter arm at each invocation (NUM_BINOP(SUB, ...), NUM_CMP(LT, ...))
+    defs = []
+    for stripped in stripped_by_file.values():
+        for m in re.finditer(r'#\s*define\s+(\w+)\(\s*(\w+)[^)]*\)((?:[^\n]*\\\n)*[^\n]*)', stripped):
+            defs.append((m.group(1), m.group(2), m.group(3)))
+    case_macros, grew = set(), True
+    while grew:   # closed over chains: INT_BINOP -> INT_BINOP_R -> CASE(NAME)
+        grew = False
+        for name, p1, body in defs:
+            if name in case_macros:
+                continue
+            calls = ['CASE'] + sorted(case_macros)
+            if re.search(r'\b(%s)\(\s*%s\b' % ('|'.join(calls), re.escape(p1)), body):
+                case_macros.add(name); grew = True
+    gen = re.compile(r'^\s*(%s)\(\s*(\w+)' % '|'.join(sorted(case_macros))) if case_macros else None
+    for rel, stripped in stripped_by_file.items():
+        scope = scope_by_file[rel]
+        for ln, line in enumerate(stripped.split('\n'), 1):
+            fn, _, sub = scope[ln].partition('/')
+            if gen and fn == 'vm_run_ex':
+                mg = gen.match(line)
+                if mg:
+                    arms.setdefault('OP_' + mg.group(2), set()).add('interp')
+            if fn not in DISPATCHERS:
+                continue
+            if DISPATCHERS[fn] == 'IF':
+                ops = re.findall(r'\bop\s*==\s*(OP_\w+)', line)
+            elif sub.startswith('CASE('):
+                ops = ['OP_' + sub[5:-1]]
+            else:
+                ops = [o for o in sub.split('|') if o]
+            for op in ops:
+                arms.setdefault(op, set()).add(ROLE_OF[fn])
+            if sub and ops:
+                chains.setdefault(fn + '/' + sub, set()).update(ops)
+    return arms, chains
+
+
+# ---- slot classifiers (R1.1's worklist) ------------------------------------
+# Every function (or dispatcher arm) that tests, dereferences or types an
+# EigsSlot. D1 holds a number test, so the rename forces it; D2 dereferences
+# with no number test; D3 tests other tags or bits; T only reads slot_type.
+# Every D2 and D3 entry needs a reviewed disposition in the design doc.
+SLOT_TEST = {'slot_is_num', 'slot_is_numeric', 'slot_as_double'}
+SLOT_OTHER = {'slot_is_null', 'slot_is_bool', 'slot_is_heap', 'slot_is_ptr'}
+SLOT_DEREF = {'slot_as_ptr', 'slot_as_heap', 'eigs_slot_ref'}
+SLOT_TYPE = {'slot_type', 'list_elem_type', 'dict_value_type'}
+SLOT_BITS = {'SLOT_QNAN_MASK', 'SLOT_TAG_MASK', 'SLOT_PAYLOAD_MASK', 'TAG_HEAP', 'TAG_BOOL',
+             'TAG_SENTINEL', 'SLOT_NULL_BITS', 'SLOT_TRUE_BITS', 'SLOT_FALSE_BITS'}
+SLOT_RE = re.compile(r'\b(' + '|'.join(sorted(SLOT_TEST | SLOT_OTHER | SLOT_DEREF | SLOT_TYPE | SLOT_BITS,
+                                            key=len, reverse=True)) + r')\b')
+DISPOSITIONS = {'guarded', 'smi-arm', 'refuse', 'not-a-classifier'}
+
+
+def slot_classifiers(stripped_by_file, scope_by_file):
+    toks = {}
+    for rel, stripped in stripped_by_file.items():
+        scope = scope_by_file[rel]
+        for ln, line in enumerate(stripped.split('\n'), 1):
+            for m in SLOT_RE.finditer(line):
+                k = scope[ln]
+                if k.split('/')[0] not in DISPATCHERS:
+                    k = k.split('/')[0]
+                if k.startswith('#define ') and k[8:] in SLOT_BITS:
+                    continue          # the constant's own definition
+                toks.setdefault((rel, k), {}).setdefault(m.group(1), 0)
+                toks[(rel, k)][m.group(1)] += 1
+    out = {}
+    for key, c in toks.items():
+        t = set(c)
+        cls = ('D1' if t & SLOT_TEST else 'D2' if t & SLOT_DEREF else
+               'D3' if t & (SLOT_OTHER | SLOT_BITS) else 'T')
+        out[key] = (cls, c)
+    return out
+
+
+def read_marked_table(doc, tag, row_re):
+    """Rows between <!-- tag:begin --> and <!-- tag:end -->; an unparsed
+    line inside the markers is refused, never skipped."""
+    rows, bad = {}, []
+    if not os.path.exists(doc):
+        return None, ['%s missing' % doc]
+    inside = False
+    with open(doc, encoding='utf-8') as f:
+        for ln, line in enumerate(f, 1):
+            if line.startswith('<!-- %s:begin -->' % tag):
+                inside = True; continue
+            if line.startswith('<!-- %s:end -->' % tag):
+                inside = False; continue
+            if not inside or not line.strip():
+                continue
+            m = row_re.match(line)
+            if not m:
+                if not re.match(r'^\|\s*(name|builtin|-+)\s*\|', line.strip()):
+                    bad.append('%s:%d: unparsed %s line: %s' % (doc, ln, tag, line.strip()[:60]))
+                continue
+            if m.group(1) in rows:
+                bad.append('%s:%d: `%s` has two %s rows' % (doc, ln, m.group(1), tag))
+            rows[m.group(1)] = (ln,) + m.groups()[1:]
+    return rows, bad
+
+
+SLOT_ROW = re.compile(r'^\|\s*`([^`]+)`\s*\|\s*([a-z-]+)\s*\|')
+
+
 TABLE_ROW = re.compile(r'^\|\s*`([A-Za-z_]\w*)`\s*\|\s*([a-z-]+)\s*\|\s*(\S+)\s*\|')
 CLASSES = {'int-preserving', 'float-producing', 'int-requiring', 'other'}
 LOSS_MARKS = {'LOSS', '-'}
@@ -555,12 +708,15 @@ def main():
     classified, unclassified = [], []
     rule_hits = [0] * len(ROLE_RULES)
     token_hits = {t: 0 for t in VOCAB}
+    token_hits.update({'d_': 0, 'num_': 0})
     for site in sites:
         cat, rule = classify(site)
         if site[3] in token_hits:
             token_hits[site[3]] += 1
         if cat is None:
-            unclassified.append((site, 'VAL_NUM/AST_NUM in an unrecognized position'))
+            why = ('raw union member outside its accessor macro' if site[4] == 'BYPASS'
+                   else 'VAL_NUM/AST_NUM in an unrecognized position')
+            unclassified.append((site, why))
             continue
         if rule is not None:
             rule_hits[rule] += 1
@@ -590,6 +746,34 @@ def main():
     class_count = {}
     for n, (c, l) in (table or {}).items():
         class_count[c] = class_count.get(c, 0) + 1
+
+    # executors: the leaf scanner and evaluator must name the same opcodes
+    arms, chains = executor_arms(stripped_by_file, scope_by_file)
+    leaf_scan = {o for o, r in arms.items() if 'leaf_scan' in r}
+    leaf_exec = {o for o, r in arms.items() if 'leaf_exec' in r}
+    exec_bad = ['leaf scanner admits %s but the leaf evaluator has no arm' % o
+                for o in sorted(leaf_scan - leaf_exec)]
+    exec_bad += ['leaf evaluator has an arm for %s the leaf scanner never admits' % o
+                 for o in sorted(leaf_exec - leaf_scan)]
+    found = {r for rs in arms.values() for r in rs}
+    exec_bad += ['dispatcher %s (%s) attributed no opcode arm' % (f, r)
+                 for f, r in sorted(ROLE_OF.items()) if r not in found]
+
+    # slot classifiers: every D2/D3 entry has a reviewed disposition row
+    slots = slot_classifiers(stripped_by_file, scope_by_file)
+    slot_cls = {}
+    for key, (cls, c) in slots.items():
+        slot_cls[cls] = slot_cls.get(cls, 0) + 1
+    need = {'%s:%s' % k for k, (cls, c) in slots.items() if cls in ('D2', 'D3')}
+    srows, sbad = read_marked_table(args.doc, 'slot-table', SLOT_ROW)
+    srows = srows or {}
+    for name, (ln, disp) in srows.items():
+        if disp not in DISPOSITIONS:
+            sbad.append('%s:%d: `%s` has unknown disposition %r' % (args.doc, ln, name, disp))
+    slot_missing = sorted(need - set(srows))
+    slot_stale = sorted(set(srows) - need)
+    if not any(slot_cls.get(k) for k in ('D1', 'D2', 'D3')):
+        sbad.append('slot classifiers: examined=0 (no D1/D2/D3 entry found)')
 
     # ---- report ----
     cats = 'abcdefghij'
@@ -628,6 +812,31 @@ def main():
         parts = ' '.join('%s=%d' % (c, per_cat_file.get(c, {}).get(rel, 0)) for c in cats
                          if per_cat_file.get(c, {}).get(rel, 0))
         out.append('%-24s %5d   %s' % (rel, per_file[rel], parts))
+    out.append('')
+    out.append('## Executors (arms per opcode; roles: %s)' % ' '.join(ROLES))
+    interesting = sorted(o for o, r in arms.items() if r - {'interp'})
+    for o in interesting:
+        out.append('%-24s %s' % (o, ' '.join(r if r in arms[o] else '-' for r in ROLES)))
+    out.append('')
+    # the MAP's L/F/O rows must exercise every JIT-emitter and leaf arm that
+    # holds a numeric site (tests/phase2/MAP.md `ops:`; design §9.2)
+    num_arms = sorted({sc.split(' ')[0] for (r_, l_, sc, t_, k_), c_ in classified
+                       if sc.split('/')[0] in ('jit_compile_to_thunk', 'vm_leaf_accessor_exec')
+                       and '/' in sc.split(' ')[0]})
+    out.append('## Numeric arms (JIT emitter and leaf evaluator arms holding a numeric site)')
+    for sc in num_arms:
+        out.append('%-9s %-24s %s' % (ROLE_OF[sc.split('/')[0]], sc.split('/', 1)[1],
+                                      ' '.join(sorted(chains.get(sc, ())))))
+    out.append('')
+    out.append('## Slot classifiers (R1.1 worklist)')
+    out.append(' '.join('%s=%d' % (k, slot_cls.get(k, 0)) for k in ('D1', 'D2', 'D3', 'T')) +
+               ' dispositions=%d missing=%d stale=%d' % (len(srows), len(slot_missing), len(slot_stale)))
+    for key in sorted(slots, key=lambda k: (slots[k][0], k)):
+        cls, c = slots[key]
+        if cls in ('D1', 'D2', 'D3'):
+            disp = 'forced' if cls == 'D1' else srows.get('%s:%s' % key, (0, '-'))[1]
+            out.append('%s %-42s %-16s %s' % (cls, '%s:%s' % key, disp,
+                       ' '.join('%s=%d' % kv for kv in sorted(c.items()))))
     out.append('')
     out.append('## Builtins')
     out.append('registered=%d numeric=%d classified=%d unclassified=%d stale=%d' % (
@@ -670,10 +879,21 @@ def main():
         fail.append('numeric builtin `%s` (%s) has no classification row' % (n, nb[n][0]))
     for n in b_stale:
         fail.append('classification row `%s` names no numeric registered builtin' % n)
+    fail.extend(exec_bad)
+    fail.extend(sbad)
+    for n in slot_missing:
+        fail.append('slot classifier `%s` has no disposition row' % n)
+    for n in slot_stale:
+        fail.append('disposition row `%s` names no D2/D3 slot classifier' % n)
     for f_ in fail:
         print('FAIL: ' + f_)
     print('builtins: registered=%d numeric=%d classified=%d unclassified=%d stale=%d' % (
         len(regs), len(nb), len(nb) - len(b_unclassified), len(b_unclassified), len(b_stale)))
+    print('slot classifiers: %s dispositions=%d missing=%d stale=%d' % (
+        ' '.join('%s=%d' % (k, slot_cls.get(k, 0)) for k in ('D1', 'D2', 'D3', 'T')),
+        len(srows), len(slot_missing), len(slot_stale)))
+    print('executors: leaf_scan=%d leaf_exec=%d mismatches=%d' % (
+        len(leaf_scan), len(leaf_exec), len(exec_bad)))
     print('examined=%d classified=%d unclassified=%d' % (examined + len(unreviewed),
           len(classified), len(unclassified)))
     if examined <= 0 or not regs or unclassified or fail:
