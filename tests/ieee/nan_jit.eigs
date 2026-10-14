@@ -9,34 +9,46 @@
 # canonical NaN 0x7FF8... flips to the same bits. Each must reach the slot as
 # the canonical NaN: `num`. Comparisons with a NaN operand must answer IEEE.
 #
+# Each callee binds its result to a local first: a bare `return a - b` is a
+# #366 leaf accessor, run frameless by vm_leaf_accessor_exec (C, through
+# slot_from_num) and never by the JIT.
+#
 # Output: `ITERS <n>` then `HOT <check> <bad-count>` rows; every count is 0.
 
 inf is 1e308 * 10
-nanv is 0 / 0
+nanv is inf - inf
 
 define sub(a, b) as:
-    return a - b
+    local r is a - b
+    return r
 
 define mul(a, b) as:
-    return a * b
+    local r is a * b
+    return r
 
 define divi(a, b) as:
-    return a / b
+    local r is a / b
+    return r
 
 define negate(a) as:
-    return -a
+    local r is -a
+    return r
 
 define eq(a, b) as:
-    return a == b
+    local r is a == b
+    return r
 
 define ne(a, b) as:
-    return a != b
+    local r is a != b
+    return r
 
 define lt(a, b) as:
-    return a < b
+    local r is a < b
+    return r
 
 define ge(a, b) as:
-    return a >= b
+    local r is a >= b
+    return r
 
 n is 400
 print of f"ITERS {n}"
@@ -48,6 +60,13 @@ bad_osr is 0
 bad_cmp is 0
 i is 0
 loop while i < n:
+    # First in the body, so the OSR thunk's native prefix covers it.
+    z is inf - inf
+    w is -z
+    if (type of z) != "num":
+        bad_osr is bad_osr + 1
+    if (type of w) != "num":
+        bad_osr is bad_osr + 1
     r is sub of [inf, inf]
     if (type of r) != "num":
         bad_sub is bad_sub + 1
@@ -60,12 +79,6 @@ loop while i < n:
     g is negate of nanv
     if (type of g) != "num":
         bad_neg is bad_neg + 1
-    z is inf - inf
-    w is -z
-    if (type of z) != "num":
-        bad_osr is bad_osr + 1
-    if (type of w) != "num":
-        bad_osr is bad_osr + 1
     if eq of [nanv, nanv]:
         bad_cmp is bad_cmp + 1
     if not (ne of [nanv, nanv]):
