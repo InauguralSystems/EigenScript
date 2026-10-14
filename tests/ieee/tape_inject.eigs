@@ -1,0 +1,6 @@
+# #1746 Phase 1 (ieee build only): the replay-injection probe. tools/ieee_rows.sh
+# records this, rewrites the tape's `random` N record to nan / -nan / inf / -inf
+# (a hostile or hand-edited tape), and replays: the injected number must reach
+# the program as an ordinary num, with the canonical NaN's bytes.
+r is random of null
+print of [type of r, r, f64_to_bytes of r]

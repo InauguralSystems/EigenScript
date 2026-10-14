@@ -1812,6 +1812,10 @@ int jit_helper_iter_next(void) {
  * (SSE4.1, absent on the Merom target). Negatives pass here and fail the usual
  * >= 0 range check downstream, unchanged. */
 static inline int vm_index_is_int(double d, int *out) {
+#ifdef EIGS_IEEE
+    /* #1746: NaN/inf reach indexes in this build; (int) of them is UB. */
+    if (!(d >= (double)INT_MIN && d <= (double)INT_MAX)) return 0;
+#endif
     int i = (int)d;
     if ((double)i != d) return 0;
     *out = i;
@@ -2042,7 +2046,7 @@ static void loop_iter_store(Env *env, double n) {
     LoopIterCache *c = &g_loop_iter_cache;
     if (c->env == env && c->version == env->binding_version &&
         slot_is_num(env->values[c->slot])) {
-        SLOT_NUM_RAW(env->values[c->slot]) = n;
+        env->values[c->slot] = slot_from_num(n);   /* #1746: the one slot-write door */
         if (env->assign_counts)
             env->assign_counts[c->slot]++;
         return;
@@ -3407,7 +3411,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(DIV): {
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_NUM && b->type == VAL_NUM) {
+#ifdef EIGS_IEEE
+            /* #1746 experiment: IEEE division — x/0 is ±inf, 0/0 is NaN. */
+            if (0) {
+#else
             if (VAL_NUM_RAW(b) == 0.0) {
+#endif
                 rt_error(EK_VALUE, current_line, "division by zero");
                 vm_push(make_num(0));
             } else {
@@ -3431,7 +3440,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(MOD): {
         Value *b = vm_pop(); Value *a = vm_pop();
+#ifdef EIGS_IEEE
+        /* #1746 experiment: x % 0 is C fmod's NaN, not a raise. */
+        if (a->type == VAL_NUM && b->type == VAL_NUM) {
+#else
         if (a->type == VAL_NUM && b->type == VAL_NUM && VAL_NUM_RAW(b) != 0.0) {
+#endif
             double r = num_guard(fmod(VAL_NUM_RAW(a), VAL_NUM_RAW(b)));
             if (NUM_REUSE(a)) { VAL_NUM_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
             if (NUM_REUSE(b)) { VAL_NUM_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }

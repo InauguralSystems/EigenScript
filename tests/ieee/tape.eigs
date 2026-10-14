@@ -1,0 +1,19 @@
+# #1746 Phase 1 (ieee build only): a program that produces inf, -inf and NaN,
+# for tools/ieee_rows.sh's tape rows (record twice + byte-compare, replay +
+# byte-compare stdout/stderr, canonical `nan` spelling on the tape). The
+# random draw is the nondet N record; the seed makes two records identical.
+seed_random of 1746
+r is random of null
+pinf is (r + 1) * 1e308 * 10
+ninf is -pinf
+z is pinf + ninf
+w is 0 / 0
+b is buffer of 3
+b[0] is pinf
+b[1] is ninf
+b[2] is z
+xs is [pinf, ninf, z]
+d is {"p": pinf, "n": ninf, "z": z}
+print of [r > 0, pinf, ninf, z, w]
+print of [b[0], b[1], b[2], xs, d]
+print of [type of z, f64_to_bytes of z]

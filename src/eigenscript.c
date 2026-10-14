@@ -361,6 +361,9 @@ static double entropy_of_num(double num) {
      * a discontinuity the formula never had. |x| = 0 keeps H = 0 (p = 1,
      * the guard below), which IS the formula's limit there. */
     double x = fabs(num);
+#ifdef EIGS_IEEE
+    if (x != x) return 1.0;   /* #1746: NaN is opaque (the fn/builtin band), never a NaN entropy */
+#endif
     if (x == 0.0) return 0.0;
     double p = 1.0 / (1.0 + x);
     if (p <= 0.0 || p >= 1.0) return 0.0;
@@ -696,6 +699,18 @@ static int observer_slot_raw_oscillating(const ObserverSlot *s) {
  * x ~= 1.8) — and widening the window (#1044) makes it worse, r^49 at
  * N = 50. The local scale keeps the two knobs independent. */
 void observer_slot_record_value(ObserverSlot *s, double v) {
+#ifdef EIGS_IEEE
+    /* #1746: a step to/from a non-finite value has no finite size; restart
+     * the trajectory instead of pushing inf/NaN into the rings. */
+    if (!isfinite(v) || (s->v_used && !isfinite(s->last_value))) {
+        s->v_window_count = 0;
+        s->v_window_head = 0;
+        s->last_value = (v != v) ? NAN : v;
+        s->v_used = 1;
+        s->v_last = 1;
+        return;
+    }
+#endif
     if (s->v_used) {
         double raw = v - s->last_value;
         double a = fabs(v), b = fabs(s->last_value);
@@ -932,9 +947,27 @@ void observer_slot_reset(Env *e) {
  * for free. Contrast #708's opaque band, which must sit in vm.c because
  * value-is-a-function is only answerable from the binding. The entropy
  * constants are deliberately untouched — same discipline as #708. */
+#ifdef EIGS_IEEE
+/* #1746 experiment: the #861 magnitude rule is GONE in this build. Overflow
+ * now yields inf, so a binding holding a literal 1e308 is an ordinary
+ * constant (a fixed point: `converged`), and "escaped the number line" is a
+ * fact, not a guess: the last observed value is non-finite.
+ *   ±inf -> `diverging` true, every other predicate false.
+ *   NaN  -> all six predicates false; `report` says "moving" (no band).
+ * observer_slot_record_value keeps inf/NaN OUT of the step rings (a
+ * non-finite sample restarts the trajectory), and entropy_of_num maps NaN
+ * to the opaque value 1.0, so no NaN reaches any observer window. */
+static int observer_slot_saturated(const ObserverSlot *s) {
+    return (s && s->v_used && !isfinite(s->last_value)) ? 1 : 0;
+}
+static int observer_slot_inf(const ObserverSlot *s) {
+    return (s && s->v_used && isinf(s->last_value)) ? 1 : 0;
+}
+#else
 static int observer_slot_saturated(const ObserverSlot *s) {
     return (s && s->v_used && fabs(s->last_value) >= EIGS_NUM_MAX) ? 1 : 0;
 }
+#endif
 
 /* ==== #861: the numeric predicate family — the value channel as the ====
  * ==== authority for numeric bindings.                               ====
@@ -1038,6 +1071,9 @@ static int obs_num_bounded_oscillating(const ObserverSlot *s) {
 }
 
 static int obs_num_oscillating(const ObserverSlot *s) {
+#ifdef EIGS_IEEE
+    if (observer_slot_saturated(s)) return 0;   /* non-finite: no band but diverging(inf) */
+#endif
     return obs_num_rel_oscillating(s) || observer_slot_raw_oscillating(s)
         || obs_num_bounded_oscillating(s);
 }
@@ -1047,7 +1083,11 @@ static int obs_num_oscillating(const ObserverSlot *s) {
  * flattened the window), or the #422 raw test: non-vanishing same-sign
  * steps sum without bound no matter how small Δv/|v| looks. */
 static int obs_num_diverging(const ObserverSlot *s) {
+#ifdef EIGS_IEEE
+    if (observer_slot_saturated(s)) return observer_slot_inf(s);
+#else
     if (observer_slot_saturated(s)) return 1;
+#endif
     return observer_slot_raw_diverging(s);
 }
 
@@ -1170,6 +1210,10 @@ static int obs_num_stable(const ObserverSlot *s) {
  * partial-window fallback preserved verbatim. */
 static const char *obs_num_report(const ObserverSlot *s) {
     if (!s || !s->v_used) return "equilibrium";   /* no numeric trajectory */
+#ifdef EIGS_IEEE
+    if (observer_slot_saturated(s))               /* #1746: inf diverges; NaN is in no band */
+        return observer_slot_inf(s) ? "diverging" : "moving";
+#endif
     size_t cnt = obs_v_count(s);
     if (cnt == 0) return "equilibrium";           /* one value seen, no step yet */
     if (obs_num_oscillating(s)) return "oscillating";
@@ -2936,6 +2980,12 @@ int values_equal_op(Value *a, Value *b, const char *op) { return values_equal_im
  * Every producer of number text now calls this, so a fourth copy cannot
  * appear with a fourth rule. Writes at most 32 bytes. */
 void eigs_num_text(char *buf, size_t nbuf, double n) {
+#ifdef EIGS_IEEE
+    /* #1746 experiment: ONE spelling for every NaN — the canonical NaN has
+     * no sign, and a boxed NaN's payload/sign must not reach text (C prints
+     * the x86 default NaN as "-nan"). inf/-inf fall through to %g below. */
+    if (n != n) { snprintf(buf, nbuf, "nan"); return; }
+#endif
     /* Exact integers up to 2^53 (the largest integer all doubles represent
      * exactly) print without a decimal point or exponent. The magnitude test
      * runs BEFORE the cast — casting an out-of-range double is UB (#816). */

@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked ieee asan-ieee
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -183,7 +183,19 @@ SRC_V_jit-checked := $(HOSTED_SOURCES)
 FLAGS_jit-checked := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_JIT_CHECKED $(VERDEF)
 LIBS_jit-checked  := $(LDFLAGS) -ldl
 
-VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+# #1746 Phase 1 EXPERIMENT (not for merge as is): IEEE-754 doubles. -DEIGS_IEEE
+# makes num_guard the identity on finite/inf values and canonicalizes NaN to one
+# quiet-NaN pattern outside the slot tag range (value_slot.h SLOT_CANON_NAN).
+# Release-equivalent flags otherwise, so release vs ieee is a pure differential.
+SRC_V_ieee := $(HOSTED_SOURCES)
+FLAGS_ieee := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_IEEE $(VERDEF)
+LIBS_ieee  := $(LDFLAGS) -ldl
+
+SRC_V_asan-ieee := $(HOSTED_SOURCES)
+FLAGS_asan-ieee := $(ASAN_FLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_IEEE $(VERDEF)
+LIBS_asan-ieee  := -lm -lpthread -ldl
+
+VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked ieee asan-ieee
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -670,6 +682,14 @@ pool-off-num: build/pool-off-num/eigenscript
 pool-off-callenv: build/pool-off-callenv/eigenscript
 	$(call RELINK,pool-off-callenv)
 	@echo "EigenScript $(VERSION) (pool-off C3: call-env recycling off) built. Binary: $(BINARY)"
+
+# #1746 Phase 1 experiment builds (see FLAGS_ieee).
+ieee: build/ieee/eigenscript
+	$(call RELINK,ieee)
+	@echo "EigenScript $(VERSION) (ieee: IEEE-754 doubles, EXPERIMENT) built. Binary: $(BINARY)"
+asan-ieee: build/asan-ieee/eigenscript
+	$(call RELINK,asan-ieee)
+	@echo "EigenScript $(VERSION) (asan+ubsan, ieee EXPERIMENT) built. Binary: $(BINARY)"
 
 # JIT slot witnesses (see FLAGS_jit-checked). Run the JIT-tier sections:
 #   make jit-checked && cd tests && EIGS_SUITE_SECTIONS='82 100 129 130 0fd 0fe' bash run_all_tests.sh

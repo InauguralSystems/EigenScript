@@ -2631,7 +2631,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
      * allows. Any addsd/subsd result whose magnitude bits exceed this
      * (incl. ±Inf / NaN) bails to the slow interpreter path. */
     uint64_t max_normal_bits;
+#ifdef EIGS_IEEE
+    /* #1746 experiment: inf is a legal result, so the bail bound is inf's own
+     * bit pattern — abs-bits above it are exactly the NaNs. A NaN result
+     * bails BEFORE any store, and the interpreter re-executes the op and
+     * stores it through slot_from_num (canonical). This is the JIT's NaN
+     * canonicalization: emitted code never writes a NaN into a slot. */
+    max_normal_bits = 0x7FF0000000000000ULL;
+#else
     { double d = EIGS_NUM_MAX; memcpy(&max_normal_bits, &d, 8); }
+#endif
 
     /* Bail-jump rel32 patch sites collected during body emission and
      * resolved against the epilogue once we know its address. */
@@ -2823,6 +2832,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 /* Immediate-num: same shape as NUM_ZERO. (#262 Step E: a
                  * constant num never carries observer state.) */
                 memcpy(&bits, &VAL_NUM_RAW(v), 8);
+#ifdef EIGS_IEEE
+                if (VAL_NUM_RAW(v) != VAL_NUM_RAW(v)) bits = SLOT_CANON_NAN;   /* #1746 */
+#endif
             } else {
                 /* Heap slot: TAG_HEAP | payload. */
                 bits = 0xFFFB000000000000ULL |
@@ -3688,6 +3700,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_movabs_rax(w, SLOT_FALSE_BITS);  /* rax = false */
             w = emit_movabs_rdx(w, SLOT_TRUE_BITS);   /* rdx = true */
             w = emit_ucomisd_xmm0_xmm1(w);
+#ifdef EIGS_IEEE
+            /* #1746: an unordered compare (a NaN operand, PF=1) bails so the
+             * interpreter's C comparison answers it (nan == nan is false,
+             * nan != nan true). jp leaves the flags for the cmov below. */
+            w = emit_jp_rel32(w, &lp[lp_n]);
+            lp_n++;
+#endif
             /* cmovcc %rdx → %rax when condition holds. */
             uint8_t cc_byte;
             switch (op) {
@@ -3771,7 +3790,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* Unary: load TOS, type-check, compute in place, store
              * back at TOS. One bail slot (BNOT: three, #1740), sp
              * unchanged. */
-            if (bail_count + (op == OP_BNOT ? 3 : 1) > (int)(sizeof bail_patches /
+#ifdef EIGS_IEEE
+            const int neg_extra = 1;   /* #1746: NEG's NaN bail slot */
+#else
+            const int neg_extra = 0;
+#endif
+            if (bail_count + (op == OP_BNOT ? 3 : 1 + neg_extra) > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3795,6 +3819,14 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_immediate_num_check_rax(w, &p_t);
             bail_patches[bail_count++] = p_t;
             if (op == OP_NEG) {
+#ifdef EIGS_IEEE
+                /* #1746: flipping a canonical NaN's sign bit spells
+                 * SLOT_NULL_BITS (0xFFF8...). Bail a NaN operand; the
+                 * interpreter's slot_from_num re-canonicalizes. */
+                w = emit_overflow_check_rax(w, max_normal_bits,
+                                            &bail_patches[bail_count]);
+                bail_count++;
+#endif
                 /* Flip the IEEE-754 sign bit: rax ^= 0x8000…0. */
                 w = emit_movabs_rdx(w, 0x8000000000000000ULL);
                 w = emit_xor_rdx_rax(w);

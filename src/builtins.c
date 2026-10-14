@@ -919,6 +919,13 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
              * to %.15g, so integer IDs between 2^31 and 2^53 came back as a
              * different number. */
             char nb[32];
+#ifdef EIGS_IEEE
+            if (!isfinite(eigs_num_arg(v, __func__))) {   /* #1746: JSON has no inf/NaN */
+                rt_error(EK_VALUE, 0, "json_encode: %s has no JSON representation",
+                         VAL_NUM_RAW(v) != VAL_NUM_RAW(v) ? "nan" : "inf");
+                return -1;
+            }
+#endif
             eigs_num_text(nb, sizeof(nb), eigs_num_arg(v, __func__));
             strbuf_append(out, nb);
             break;
@@ -998,6 +1005,9 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
 
 /* Shared by every entry point so the message is written once. */
 static void json_encode_depth_error(const char *who) {
+#ifdef EIGS_IEEE
+    if (g_has_error) return;   /* #1746: the non-finite raise already spoke */
+#endif
     rt_error(EK_VALUE, 0,
              "%s: value nests deeper than %d levels "
              "(a self-referential value will always exceed this)",
@@ -1309,6 +1319,11 @@ static Value* eigs_json_parse_number(const char *s, int *pos) {
         d = strtod(iso, NULL);
         free(iso);
     }
+#ifdef EIGS_IEEE
+    /* #1746: a decimal JSON number past the double range (1e400) would be
+     * inf; JSON has no inf, so it is a parse error, never a value. */
+    if (isinf(d)) { g_json_parse_err = 1; *pos = p; return make_num(0); }
+#endif
     *pos = p;
     return make_num(d);
 }
@@ -1483,6 +1498,13 @@ Value* builtin_json_build(Value *arg) {
         Value *val = BUILTIN_LIST_VIEW(arg, i + 1);
         if (val->type == VAL_NUM) {
             char nb[32];                              /* #875: the shared rule */
+#ifdef EIGS_IEEE
+            if (!isfinite(eigs_num_arg(val, __func__))) {   /* #1746: JSON has no inf/NaN */
+                strbuf_free(&out);
+                rt_error(EK_VALUE, 0, "json_build: a non-finite number has no JSON representation");
+                return make_null();
+            }
+#endif
             eigs_num_text(nb, sizeof(nb), eigs_num_arg(val, __func__));
             strbuf_append(&out, nb);
         } else if (val->type == VAL_NULL) {
@@ -2001,12 +2023,14 @@ Value* builtin_asin(Value *arg) {
     double x = eigs_num_arg(arg, __func__);
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
+#ifndef EIGS_IEEE   /* #1746 experiment: out of domain is IEEE NaN */
     if (x < -1.0 || x > 1.0) {
         /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
         if (g_strict) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_num(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
     }
+#endif
     return make_num(asin(x));
 }
 
@@ -2015,12 +2039,14 @@ Value* builtin_acos(Value *arg) {
     double x = eigs_num_arg(arg, __func__);
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
+#ifndef EIGS_IEEE   /* #1746 experiment: out of domain is IEEE NaN */
     if (x < -1.0 || x > 1.0) {
         /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
         if (g_strict) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_num(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
     }
+#endif
     return make_num(acos(x));
 }
 

@@ -70,7 +70,25 @@ static inline Value   *slot_as_ptr(EigsSlot s)    { return (Value*)(uintptr_t)(s
 
 /* Constructors */
 
+#ifdef EIGS_IEEE
+/* #1746 Phase 1 (EXPERIMENT build only): user numbers include IEEE inf and
+ * NaN, so num_guard no longer keeps the tag space unreachable. Every NaN that
+ * enters a slot is stored as ONE canonical quiet NaN with the sign CLEAR
+ * (0x7FF8...), which slot_is_num accepts and no tag (0xFFF8..0xFFFF) can
+ * equal. The x86 default NaN (0xFFF8...0) IS SLOT_NULL_BITS, and a NaN built
+ * from bytes can spell any tag, so this is the memory-safety line: a double
+ * reaches a slot only through here (the C runtime) or through a JIT emitter
+ * that bails a NaN result to the interpreter (jit.c EIGS_IEEE notes). */
+#define SLOT_CANON_NAN     0x7FF8000000000000ULL
+static inline EigsSlot slot_from_num(double d) {
+    EigsSlot s;
+    if (__builtin_expect(d != d, 0)) s.u = SLOT_CANON_NAN;
+    else SLOT_NUM_RAW(s) = d;
+    return s;
+}
+#else
 static inline EigsSlot slot_from_num(double d)       { EigsSlot s; SLOT_NUM_RAW(s) = d;                                              return s; }
+#endif
 static inline EigsSlot slot_null(void)               { EigsSlot s; s.u = SLOT_NULL_BITS;  return s; }
 static inline EigsSlot slot_true(void)               { EigsSlot s; s.u = SLOT_TRUE_BITS;  return s; }
 static inline EigsSlot slot_false(void)              { EigsSlot s; s.u = SLOT_FALSE_BITS; return s; }

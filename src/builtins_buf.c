@@ -261,6 +261,9 @@ Value* builtin_f64_to_bytes(Value *arg) {
     double d = (arg && arg->type == VAL_NUM) ? eigs_num_arg(arg, __func__) : 0.0;
     uint64_t bits;
     memcpy(&bits, &d, sizeof(bits));
+#ifdef EIGS_IEEE
+    if (d != d) bits = SLOT_CANON_NAN;   /* #1746: a boxed NaN's sign/payload never leaks */
+#endif
     Value *list = make_list(8);
     for (int i = 0; i < 8; i++) {
         int shift = 8 * (7 - i);

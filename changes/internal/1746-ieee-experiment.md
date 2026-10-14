@@ -1,0 +1,1 @@
+- #1746 Phase 1 experiment: an opt-in `ieee`/`asan-ieee` build variant (-DEIGS_IEEE). The default build is unchanged (byte-identical release binary).

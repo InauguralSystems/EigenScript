@@ -1,0 +1,80 @@
+# #1746 Phase 1 (ieee build only): IEEE-754 binary64 semantics, the
+# experiment's configuration (not a decision; see #1746 "Open semantics").
+#
+# Output: `CHECKS <n>`, exactly n lines `CHECK <name> ok|FAIL <detail>`, then
+# `PRINTS 4` and four raw `print of` lines tools/ieee_rows.sh compares
+# literally (print must agree with `str of` and f-strings).
+
+results is []
+define check(name, cond, detail) as:
+    verdict is "FAIL"
+    if cond:
+        verdict is "ok"
+    append of [results, f"CHECK {name} {verdict} {detail}"]
+    return 0
+
+define raised_kind(thunk) as:
+    try:
+        thunk of null
+    catch e:
+        return e["kind"]
+    return "none"
+
+big is 1e308
+pinf is big * 10
+ninf is (0 - big) * 10
+nanv is 0 / 0
+
+check of ["overflow_is_inf", (str of pinf) == "inf", str of pinf]
+check of ["neg_overflow_is_neg_inf", (str of ninf) == "-inf", str of ninf]
+check of ["no_clamp_at_1e308", pinf > big, str of (pinf > big)]
+check of ["div_pos_zero", (str of (1 / 0)) == "inf", str of (1 / 0)]
+check of ["div_neg_zero", (str of (-1 / 0)) == "-inf", str of (-1 / 0)]
+check of ["zero_div_zero", (str of (0 / 0)) == "nan", str of (0 / 0)]
+check of ["sqrt_neg_is_nan", (str of (sqrt of -1)) == "nan", str of (sqrt of -1)]
+check of ["mod_zero_is_nan", (str of (5 % 0)) == "nan", str of (5 % 0)]
+check of ["log_zero_is_neg_inf", (str of (log of 0)) == "-inf", str of (log of 0)]
+check of ["inf_minus_inf_nan", (str of (pinf - pinf)) == "nan", str of (pinf - pinf)]
+check of ["nan_propagates", (str of (nanv * 0 + 1)) == "nan", str of (nanv * 0 + 1)]
+check of ["nan_eq_false", (nanv == nanv) == false, str of (nanv == nanv)]
+check of ["nan_ne_true", (nanv != nanv) == true, str of (nanv != nanv)]
+check of ["nan_lt_false", (nanv < 1) == false, str of (nanv < 1)]
+check of ["nan_gt_false", (nanv > 1) == false, str of (nanv > 1)]
+check of ["nan_le_false", (nanv <= 1) == false, str of (nanv <= 1)]
+check of ["nan_ge_false", (nanv >= 1) == false, str of (nanv >= 1)]
+check of ["inf_eq_inf", (pinf == pinf) == true, str of (pinf == pinf)]
+check of ["fstring_agrees", f"{pinf} {ninf} {nanv}" == "inf -inf nan", f"{pinf} {ninf} {nanv}"]
+check of ["list_text", (str of [pinf, ninf, nanv]) == "[inf, -inf, nan]", str of [pinf, ninf, nanv]]
+check of ["nan_one_spelling", (str of (0 - nanv)) == "nan", str of (0 - nanv)]
+check of ["num_of_inf_text", (num of (str of pinf)) == pinf, str of (num of "inf")]
+check of ["num_of_nan_text", (num of "nan") != (num of "nan"), str of (num of "nan")]
+check of ["canonical_bytes", (str of (f64_to_bytes of nanv)) == "[127, 248, 0, 0, 0, 0, 0, 0]", str of (f64_to_bytes of nanv)]
+check of ["canonical_bytes_neg", (str of (f64_to_bytes of (-nanv))) == "[127, 248, 0, 0, 0, 0, 0, 0]", str of (f64_to_bytes of (-nanv))]
+
+define enc_inf(_n) as:
+    return json_encode of [1, pinf]
+define enc_nan(_n) as:
+    return json_encode of ({"a": nanv})
+define dec_big(_n) as:
+    return json_decode of "[1e400]"
+define dict_nan_key(_n) as:
+    d is {}
+    d[nanv] is 1
+    return d
+define dispatch_nan(_n) as:
+    return dispatch of [[enc_inf], nanv, null]
+check of ["json_encode_inf_raises_value", (raised_kind of enc_inf) == "value", raised_kind of enc_inf]
+check of ["json_encode_nan_raises_value", (raised_kind of enc_nan) == "value", raised_kind of enc_nan]
+check of ["json_decode_never_inf", (raised_kind of dec_big) == "value", raised_kind of dec_big]
+check of ["dict_nan_key_raises", (raised_kind of dict_nan_key) != "none", raised_kind of dict_nan_key]
+check of ["dispatch_nan_key_raises_value", (raised_kind of dispatch_nan) == "value", raised_kind of dispatch_nan]
+check of ["json_finite_roundtrip", (json_encode of [1.5, big]) == "[1.5,1e+308]", json_encode of [1.5, big]]
+
+print of f"CHECKS {len of results}"
+for line in results:
+    print of line
+print of "PRINTS 4"
+print of pinf
+print of ninf
+print of nanv
+print of [pinf, ninf, nanv]

@@ -2812,12 +2812,23 @@ static void write_string(const char *s) {
     tp_putc('"');
 }
 
+/* #1746 experiment: a NaN is written as the canonical positive "nan" (one
+ * spelling, whatever sign/payload a boxed or buffer NaN carries); strtod
+ * reads it back as the canonical quiet NaN. inf/-inf are %.17g's own
+ * "inf"/"-inf", which strtod also reads. Identity in the default build,
+ * where num_guard keeps both off the tape. */
+#ifdef EIGS_IEEE
+#define TAPE_NUM(x) ((x) != (x) ? (double)NAN : (x))
+#else
+#define TAPE_NUM(x) (x)
+#endif
+
 /* Format a heap or tracked Value*. Numeric heap values unwrap to their
  * number; collections show their size for at-a-glance scanning. */
 static void write_value_ptr(Value *v) {
     if (!v) { tp_puts("null"); return; }
     switch (v->type) {
-        case VAL_NUM:          tp_printf("%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_NUM:          tp_printf("%.17g", TAPE_NUM(VAL_NUM_RAW(v))); break;
         case VAL_NULL:         tp_puts("null"); break;
         case VAL_STR:          write_string(v->data.str); break;
         case VAL_LIST:         tp_printf("<list:%d>", v->data.list.count); break;
@@ -2834,7 +2845,7 @@ static void write_value_ptr(Value *v) {
 }
 
 static void write_slot(EigsSlot s) {
-    if (slot_is_num(s))  { tp_printf("%.17g", SLOT_NUM_RAW(s)); return; }
+    if (slot_is_num(s))  { tp_printf("%.17g", TAPE_NUM(SLOT_NUM_RAW(s))); return; }
     if (slot_is_null(s)) { tp_puts("null"); return; }
     if (slot_is_bool(s)) { tp_puts(slot_as_bool(s) ? "true" : "false"); return; }
     if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
@@ -2951,7 +2962,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
     if (*budget <= 0) return;
     if (!v) { wf_puts("null", budget); return; }
     switch (v->type) {
-        case VAL_NUM:  wf_printf(budget, "%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_NUM:  wf_printf(budget, "%.17g", TAPE_NUM(VAL_NUM_RAW(v))); break;
         case VAL_NULL: wf_puts("null", budget); break;
         case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
         case VAL_STR:  write_string_full(v->data.str, budget); break;
@@ -2988,7 +2999,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
             int n = v->data.buffer.count;
             for (int i = 0; i < n && *budget > 0; i++) {
                 if (i) wf_puts(", ", budget);
-                wf_printf(budget, "%.17g", v->data.buffer.data[i]);
+                wf_printf(budget, "%.17g", TAPE_NUM(v->data.buffer.data[i]));
             }
             wf_putc(']', budget);
             break;

@@ -1873,7 +1873,23 @@ void free_value(Value *v);
  * branch stays one call on a path a finite program never takes. */
 void eigs_strict_nan_raise(const char *who);
 
+/* #1746 Phase 1 (EIGS_IEEE experiment build): numbers are IEEE-754 binary64.
+ * num_guard is the identity (no NaN collapse, no 1e308 saturation, no strict
+ * NaN raise) and the numeric strict raises are off — this is the
+ * experiment's configuration, not a decision. NaN safety moves to the slot
+ * boundary: slot_from_num (value_slot.h) stores every NaN canonically.
+ * EIGS_STRICT_NUM gates the numeric-domain strict raises (asin/acos/sqrt/log/
+ * matmul and the guards below); with the flag off it IS g_strict. */
+#ifdef EIGS_IEEE
+#define EIGS_STRICT_NUM 0
+#else
+#define EIGS_STRICT_NUM g_strict
+#endif
+
 static inline double num_guard(double x) {
+#ifdef EIGS_IEEE
+    return x;
+#endif
     /* Fast path unchanged: the flag writes live only on the clamp branches,
      * which a program that does not overflow never takes. */
     if (x != x) {                                                            /* NaN */
@@ -1931,6 +1947,10 @@ static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index)
  * cross-check key tools/strict_differential.sh derives its probe set from,
  * so a new caller here without a probe row goes red there. */
 static inline double num_guard_named(double x, const char *who) {
+#ifdef EIGS_IEEE
+    (void)who;
+    return x;
+#endif
     if (x != x) {
         g_math_flags |= EIGS_MATH_INVALID;
         if (g_strict) eigs_strict_nan_raise(who);
@@ -1946,7 +1966,7 @@ static inline double num_guard_named(double x, const char *who) {
  * cross-check key, like ARG_GUARD's. */
 #define STRICT_DOMAIN(cond, who, what)                                       \
     do {                                                                      \
-        if (g_strict && (cond))                                               \
+        if (EIGS_STRICT_NUM && (cond))                                        \
             rt_error(EK_VALUE, 0, "%s: %s", (who), (what));                   \
     } while (0)
 

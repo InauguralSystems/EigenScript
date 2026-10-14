@@ -404,7 +404,9 @@ static double op_mul(double a, double b) { return num_guard(a * b); }
  * IEEE result would be inf or NaN, so the 0 is a pre-collapse). Default
  * unchanged; under strict it is the same undefined operation and raises. */
 static double op_div(double a, double b) {
+#ifndef EIGS_IEEE   /* #1746 experiment: IEEE quotient (±inf / NaN) */
     if (b == 0.0) { STRICT_DOMAIN(1, "divide", "division by zero"); return 0.0; }
+#endif
     return num_guard(a / b);
 }
 /* #971: pow(negative, non-integer) is NaN — the one arithmetic builtin whose
@@ -709,6 +711,9 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
  * Like the log clamp below, the substituted value stays and the invalid bit
  * records that the argument was out of domain. */
 static double op_sqrt(double x) {
+#ifdef EIGS_IEEE
+    return sqrt(x);   /* #1746 experiment: sqrt of -1 is IEEE NaN */
+#endif
     if (x < 0) {
         if (g_strict) { rt_error(EK_VALUE, 0, "sqrt: argument out of domain (negative)"); return 0.0; }
         g_math_flags |= EIGS_MATH_INVALID; return 0.0;
@@ -727,6 +732,9 @@ static double op_exp(double x) { return num_guard(exp(x)); }
  * ln of any positive double is finite (ln(5e-324) = -744.44), so there is
  * nothing to guard there. */
 static double op_log_safe(double x) {
+#ifdef EIGS_IEEE
+    return log(x);    /* #1746 experiment: log 0 = -inf, log of a negative = NaN */
+#endif
     if (!(x > 0.0)) {
         if (g_strict) { rt_error(EK_VALUE, 0, "log: argument out of domain (must be > 0)"); return 0.0; }
         g_math_flags |= EIGS_MATH_INVALID; return num_guard(log(1e-10));
@@ -789,7 +797,7 @@ Value* builtin_tensor_matmul(Value *arg) {
          * Finite results and infinities remain untouched in storage. */
         for (int i = 0; i < res->data.buffer.count; i++) {
             if (res->data.buffer.data[i] != res->data.buffer.data[i]) {
-                if (g_strict) {
+                if (EIGS_STRICT_NUM) {
                     STRICT_DOMAIN(1, "matmul",
                                   "result is not a number (NaN has no defined value)");
                     break;

@@ -1,0 +1,81 @@
+# #1746 Phase 1 (ieee build only): NaN-payload fuzz over the slot tag space.
+#
+# Every double whose bits spell a slot TAG (null 0xFFF8, bool 0xFFF9, the
+# reserved 0xFFFA/0xFFFC-0xFFFE, heap 0xFFFB + payload, sentinel 0xFFFF), plus
+# sign/payload/signalling variants and the arithmetic NaN sources, is stored
+# through every slot-write site below and read back. Canonicalized, each read
+# is `num nan`. Without canonicalization the x86 default NaN reads as null and
+# a heap-tagged pattern is dereferenced as a Value* (ASan report / crash).
+#
+# Output: one header `PATTERNS <p> SITES <s>`, then exactly p*s lines
+# `ROW <pattern> <site> <type> <text>`. tools/ieee_rows.sh checks the count
+# and that every row is `num nan`.
+
+inf is 1e308 * 10
+pats is [
+    ["null_tag",      f64_from_bytes of [255, 248, 0, 0, 0, 0, 0, 0]],
+    ["false_tag",     f64_from_bytes of [255, 249, 0, 0, 0, 0, 0, 0]],
+    ["true_tag",      f64_from_bytes of [255, 249, 0, 0, 0, 0, 0, 1]],
+    ["smi_tag",       f64_from_bytes of [255, 250, 0, 0, 0, 0, 0, 7]],
+    ["heap_tag",      f64_from_bytes of [255, 251, 0, 0, 0, 0, 0, 64]],
+    ["heap_tag_hi",   f64_from_bytes of [255, 251, 0, 0, 222, 173, 190, 232]],
+    ["tag4",          f64_from_bytes of [255, 252, 0, 0, 0, 0, 0, 8]],
+    ["tag5",          f64_from_bytes of [255, 253, 0, 0, 0, 0, 0, 8]],
+    ["tag6",          f64_from_bytes of [255, 254, 0, 0, 0, 0, 0, 8]],
+    ["sentinel",      f64_from_bytes of [255, 255, 0, 0, 0, 0, 0, 0]],
+    ["sentinel_ff",   f64_from_bytes of [255, 255, 255, 255, 255, 255, 255, 255]],
+    ["pos_qnan",      f64_from_bytes of [127, 248, 0, 0, 0, 0, 0, 0]],
+    ["pos_qnan_pay",  f64_from_bytes of [127, 248, 0, 0, 0, 0, 0, 1]],
+    ["pos_snan",      f64_from_bytes of [127, 240, 0, 0, 0, 0, 0, 1]],
+    ["neg_snan",      f64_from_bytes of [255, 240, 0, 0, 0, 0, 0, 1]],
+    ["neg_snan_hi",   f64_from_bytes of [255, 247, 255, 255, 255, 255, 255, 255]],
+    ["pos_nan_max",   f64_from_bytes of [127, 255, 255, 255, 255, 255, 255, 255]],
+    ["div_0_0",       0 / 0],
+    ["inf_sub_inf",   inf - inf],
+    ["zero_mul_inf",  0 * inf],
+    ["sqrt_neg",      sqrt of -1],
+    ["inf_mod_1",     inf % 1],
+    ["log_neg",       log of -1],
+    ["num_nan",       num of "nan"]
+]
+
+define show(label, site, v) as:
+    print of f"ROW {label} {site} {type of v} {v}"
+
+define ident(a) as:
+    return a
+
+define make_getter(a) as:
+    define got(_n) as:
+        return a
+    return got
+
+sites is 14
+print of f"PATTERNS {len of pats} SITES {sites}"
+for p in pats:
+    label is p[0]
+    v is p[1]
+    show of [label, "arg", v]
+    local x is v
+    show of [label, "local", x]
+    g_module_slot is v
+    show of [label, "global", g_module_slot]
+    xs is [v]
+    show of [label, "list_lit", xs[0]]
+    ys is []
+    append of [ys, v]
+    show of [label, "append", ys[0]]
+    d is {"k": v}
+    show of [label, "dict_lit", d["k"]]
+    d["j"] is v
+    show of [label, "dict_set", d.j]
+    bf is buffer of 1
+    bf[0] is v
+    show of [label, "buffer", bf[0]]
+    show of [label, "add", v + 1]
+    show of [label, "mul", v * 2]
+    show of [label, "neg", -v]
+    show of [label, "sub_self", v - v]
+    show of [label, "ret", ident of v]
+    getter is make_getter of v
+    show of [label, "closure", getter of null]

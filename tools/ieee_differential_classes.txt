@@ -1,0 +1,6 @@
+# #1746 Phase 1: every program tools/ieee_differential.sh finds differing
+# between the guarded (release) and IEEE builds, one row each:
+#   <tests/ file> <class> <reason>
+# class a = the guard's own tests (clamping, strict NaN raises, /0 and %0 raises)
+# class b = the observer's #861 saturation tests
+# class c = anything else: a FINDING, listed in the experiment report

@@ -1,0 +1,84 @@
+# #1746 Phase 1 (ieee build only): the NaN-payload rows, run hot enough for the
+# JIT. tools/ieee_rows.sh runs this with EIGS_JIT_ENTRY_THRESHOLD=1 (callee
+# thunks) and EIGS_JIT_OSR_THRESHOLD=1 (the module loop OSR-compiles), checks
+# EIGS_JIT_STATS reports compiled chunks, and re-runs it with EIGS_JIT_OFF=1 as
+# the interpreter control.
+#
+# The JIT emits its own slot stores for SUB/ADD/MUL/DIV/MOD results and NEG.
+# inf - inf on x86 yields 0xFFF8000000000000 = SLOT_NULL_BITS, and NEG of the
+# canonical NaN 0x7FF8... flips to the same bits. Each must reach the slot as
+# the canonical NaN: `num`. Comparisons with a NaN operand must answer IEEE.
+#
+# Output: `ITERS <n>` then `HOT <check> <bad-count>` rows; every count is 0.
+
+inf is 1e308 * 10
+nanv is 0 / 0
+
+define sub(a, b) as:
+    return a - b
+
+define mul(a, b) as:
+    return a * b
+
+define divi(a, b) as:
+    return a / b
+
+define negate(a) as:
+    return -a
+
+define eq(a, b) as:
+    return a == b
+
+define ne(a, b) as:
+    return a != b
+
+define lt(a, b) as:
+    return a < b
+
+define ge(a, b) as:
+    return a >= b
+
+n is 400
+print of f"ITERS {n}"
+bad_sub is 0
+bad_mul is 0
+bad_div is 0
+bad_neg is 0
+bad_osr is 0
+bad_cmp is 0
+i is 0
+loop while i < n:
+    r is sub of [inf, inf]
+    if (type of r) != "num":
+        bad_sub is bad_sub + 1
+    m is mul of [0, inf]
+    if (type of m) != "num":
+        bad_mul is bad_mul + 1
+    q is divi of [0, 0]
+    if (type of q) != "num":
+        bad_div is bad_div + 1
+    g is negate of nanv
+    if (type of g) != "num":
+        bad_neg is bad_neg + 1
+    z is inf - inf
+    w is -z
+    if (type of z) != "num":
+        bad_osr is bad_osr + 1
+    if (type of w) != "num":
+        bad_osr is bad_osr + 1
+    if eq of [nanv, nanv]:
+        bad_cmp is bad_cmp + 1
+    if not (ne of [nanv, nanv]):
+        bad_cmp is bad_cmp + 1
+    if lt of [nanv, 1]:
+        bad_cmp is bad_cmp + 1
+    if ge of [nanv, 1]:
+        bad_cmp is bad_cmp + 1
+    i is i + 1
+print of f"HOT sub {bad_sub}"
+print of f"HOT mul {bad_mul}"
+print of f"HOT div {bad_div}"
+print of f"HOT neg {bad_neg}"
+print of f"HOT osr {bad_osr}"
+print of f"HOT cmp {bad_cmp}"
+print of f"HOT text {str of (sub of [inf, inf])} {str of (negate of nanv)} {str of (divi of [1, 0])}"
