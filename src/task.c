@@ -103,7 +103,7 @@ double task_handle_pack(int id, uint32_t gen) {
 
 int task_handle_unpack(double packed, int *id, uint32_t *gen) {
     if (!(packed > 0) || packed > 9007199254740992.0) return 0;
-    uint64_t p = EIGS_DCAST(uint64_t, packed);
+    uint64_t p = EIGS_DCAST_QUIET(uint64_t, packed);   /* (0, 2^53] checked above */
     if ((double)p != packed) return 0;
     int slot = (int)(p % HANDLE_TABLE_SIZE);
     uint64_t generation = p / HANDLE_TABLE_SIZE;
@@ -231,7 +231,7 @@ static uint64_t sched_rng_next(TaskScheduler *s) {
  * explore different interleavings, each fully reproducible. */
 void task_sched_set_seed(double seed) {
     TaskScheduler *s = sched_ensure();
-    s->rng_state = EIGS_DCAST(uint64_t, EIGS_DCAST(int64_t, seed));   /* integer seeds; fractions truncate */
+    s->rng_state = (uint64_t)EIGS_DCAST_RET(int64_t, seed, );   /* integer seeds; fractions truncate */
     s->seeded = 1;
 }
 

@@ -34,8 +34,8 @@ Value* builtin_buffer(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
         list_elem_type(arg, 0) == VAL_NUM &&
         list_elem_type(arg, 1) == VAL_NUM) {
-        int r = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
-        int c = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+        int r = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
+        int c = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
         if (r < 0) r = 0;
         if (c < 0) c = 0;
         long total = (long)r * (long)c;
@@ -54,7 +54,7 @@ Value* builtin_buffer(Value *arg) {
     /* #971 Phase D: a non-number size (or a malformed [rows, cols]) made an
      * EMPTY buffer — a plausible object with nothing in it. */
     STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "buffer", "a size or [rows, cols]");
-    if (arg && arg->type == VAL_NUM) count = EIGS_DCAST(int, eigs_num_arg(arg, __func__));
+    if (arg && arg->type == VAL_NUM) count = EIGS_DCAST_RET(int, eigs_num_arg(arg, __func__), make_null());
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000;
     if (!sandbox_charge((size_t)count * sizeof(double))) return make_null();  /* #292 */
@@ -77,8 +77,8 @@ Value* builtin_reshape(Value *arg) {
     BOOL_REFUSE(arg, "reshape");   /* rows/cols; the buffer is not a bool */
     if (list_elem_type(arg, 1) != VAL_NUM ||
         list_elem_type(arg, 2) != VAL_NUM) return make_null();
-    int r = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
-    int c = EIGS_DCAST(int, eigs_list_num(arg, 2, __func__));
+    int r = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
+    int c = EIGS_DCAST_RET(int, eigs_list_num(arg, 2, __func__), make_null());
     if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
     /* Same buffer chokepoint as buf_from_list — reshape copies the payload. */
     if (!sandbox_charge((b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1) * sizeof(double)))
@@ -111,7 +111,7 @@ Value* builtin_buf_get(Value *arg) {
         /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
-    int idx = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    int idx = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_num(0));
     if (g_has_error) return make_num(0);   /* fs:CHANNEL #1637: a non-number index raised */
     if (idx < 0 || idx >= buf->data.buffer.count) {
         rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
@@ -146,7 +146,7 @@ Value* builtin_buf_set(Value *arg) {
         rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(list_elem_type(arg, 2)));
         return make_null();
     }
-    int idx = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+    int idx = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
     double val = eigs_list_num(arg, 2, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number index raised; nothing written */
     if (idx < 0 || idx >= buf->data.buffer.count) {
@@ -212,6 +212,9 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
          * the compatibility mode keeps. It is never read as a number. */
         if (nul_ends && (item->type != VAL_NUM
                          || finite_num_to_byte(eigs_num_arg(item, __func__)) == 0)) break;
+#ifdef EIGS_IEEE
+        if (g_has_error) return 0;   /* #1746: a non-finite byte raised */
+#endif
     }
     return 1;
 }
@@ -240,6 +243,9 @@ Value* builtin_str_from_bytes(Value *arg) {
                         : buffer_read_num(arg, i);
         if (g_has_error) { free(s); return make_null(); }
         int b = finite_num_to_byte(dv);
+#ifdef EIGS_IEEE
+        if (g_has_error) { free(s); return make_null(); }
+#endif
         if (b == 0) break;            /* C-string terminates at NUL */
         s[len++] = (char)b;
     }
@@ -354,6 +360,9 @@ static int zlib_bytes_arg(Value *arg, const char *who,
                         : buffer_read_num(arg, i);
         if (g_has_error) { free(b); return 0; }
         b[i] = finite_num_to_byte(dv);
+#ifdef EIGS_IEEE
+        if (g_has_error) { free(b); return 0; }
+#endif
     }
     *out = b;
     *out_n = (size_t)n;
@@ -497,7 +506,7 @@ static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
         rt_error(EK_VALUE, 0, "%s: count must be a number", who);
         return 0;
     }
-    long long c = EIGS_DCAST(long long, eigs_slot_num(cnt, __func__));
+    long long c = EIGS_DCAST_RET(long long, eigs_slot_num(cnt, __func__), 0);
     if (c < 0) {
         rt_error(EK_VALUE, 0, "%s: count must be non-negative (got %lld)",
                  who, c);
@@ -530,7 +539,7 @@ static int buf_window_arg(const char *who, Value *buf, EigsSlot off,
         rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
         return 0;
     }
-    long long offset = EIGS_DCAST(long long, eigs_slot_num(off, __func__));
+    long long offset = EIGS_DCAST_RET(long long, eigs_slot_num(off, __func__), 0);
     long long n = buf->data.buffer.count;
     if (offset < 0 || offset > n - count) {
         rt_error(EK_INDEX, 0,
@@ -831,8 +840,8 @@ Value* builtin_buf_deinterleave(Value *arg) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: channel and nch must be numbers");
         return make_null();
     }
-    long long nch = EIGS_DCAST(long long, eigs_num_arg(nch_v, __func__));
-    long long channel = EIGS_DCAST(long long, eigs_num_arg(ch_v, __func__));
+    long long nch = EIGS_DCAST_RET(long long, eigs_num_arg(nch_v, __func__), make_null());
+    long long channel = EIGS_DCAST_RET(long long, eigs_num_arg(ch_v, __func__), make_null());
     if (nch < 1) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: nch must be >= 1 (got %lld)", nch);
         return make_null();
@@ -912,7 +921,7 @@ Value* builtin_buf_resample_linear(Value *arg) {
             pos = num_guard(num_guard((double)i * (double)(n - 1)) /
                             (double)(dst_len - 1));
         double lo_f = floor(pos);
-        long long lo = EIGS_DCAST(long long, lo_f);
+        long long lo = EIGS_DCAST_QUIET(long long, lo_f);   /* in [0, n-1] by construction */
         long long hi = lo + 1;
         if (hi > n - 1) hi = n - 1;
         /* pos is in [0, n-1] by construction (the i = dst_len-1 quotient

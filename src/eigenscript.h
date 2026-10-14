@@ -352,6 +352,9 @@ typedef struct ObserverSlot {
     uint8_t v_undef;            /* #1746: the current value is NaN (undefined);
                                  * last_value keeps the last defined sample, or
                                  * NaN when there has been none */
+    uint8_t v_nan_recent;       /* #1746: defined samples still owed since the
+                                 * last NaN before a rest band may certify
+                                 * (window depth at the NaN, counted down) */
 #endif
 } ObserverSlot;
 
@@ -1925,43 +1928,63 @@ static inline double buffer_read_num(const Value *buffer, int64_t index) {
 #define EIGS_NUM_CANON(x) (x)
 #endif
 
-/* #1746 experiment / #1748: THE user-double -> integer conversion. Every
- * float-to-integer conversion in the runtime is written EIGS_DCAST(T, x)
- * (tools/ieee_cast_sites.sh proves, from gcc's GIMPLE, that the ieee build
- * has no fix_trunc anywhere else). Default build: exactly the old `(T)(x)`.
- * ieee build: x outside T's range -- NaN, +-inf, 1e300 -- is undefined
- * behaviour in C, so it raises `value` naming the C function (the builtin)
- * and converts 0 instead. EIGS_DCAST_QUIET is the same check with no raise,
- * for compile-time integrality probes. Integer operands pass straight
- * through (_Generic), so wrapping an int cast changes nothing. */
+/* #1746 experiment / #1748: THE user-double -> integer conversion.
+ *
+ * Contract: a conversion either yields a value in T's range or the enclosing
+ * function RETURNS before doing anything else. There is no form that raises
+ * and carries on with a stand-in (round 2 did, and list_truncate emptied a
+ * list on NaN). Two spellings, and nothing else may convert a double to an
+ * integer (tools/ieee_cast_sites.sh proves from gcc's GIMPLE that the helper
+ * below holds the ieee build's only float->int conversion):
+ *
+ *   EIGS_DCAST_RET(T, x, failret)  out of range (NaN, +-inf, 1e300): raise
+ *                                  `value` naming the running builtin, then
+ *                                  `return failret;` from the enclosing
+ *                                  function (a GNU statement expression).
+ *   EIGS_DCAST_QUIET(T, x)         no raise, 0 when out of range: ONLY for a
+ *                                  value already range-checked, or an
+ *                                  integrality probe (`x != (double)(T)x`)
+ *                                  whose following check refuses x itself.
+ *
+ * Default build: both are exactly the old `(T)(x)`, so it is unchanged.
+ * Integer operands pass straight through (_Generic). */
 #ifdef EIGS_IEEE
 void eigs_d2ll_fail(double x, const char *who);
-static inline long long eigs_d2ll(double x, double lo, double hi, const char *who) {
+static inline int eigs_d2i_ok(double x, double lo, double hi, const char *who,
+                              unsigned long long *out) {
     if (__builtin_expect(!(x >= lo && x < hi), 0)) {
         if (who) eigs_d2ll_fail(x, who);
+        *out = 0;
         return 0;
     }
-    return (long long)x;
+    *out = lo < 0 ? (unsigned long long)(long long)x : (unsigned long long)x;
+    return 1;
 }
 #define EIGS_TLO_(T) (((T)-1 / 2 == 0) ? -ldexp(1.0, 8 * (int)sizeof(T) - 1) : 0.0)
 #define EIGS_THI_(T) (((T)-1 / 2 == 0) ? ldexp(1.0, 8 * (int)sizeof(T) - 1) \
-                     : ldexp(1.0, sizeof(T) >= 8 ? 63 : 8 * (int)sizeof(T)))
-#define EIGS_DCAST_W_(T, x, who) ((T)_Generic((x),                           \
-        double: eigs_d2ll((x), EIGS_TLO_(T), EIGS_THI_(T), (who)),            \
-        float:  eigs_d2ll((x), EIGS_TLO_(T), EIGS_THI_(T), (who)),            \
+                     : ldexp(1.0, 8 * (int)sizeof(T)))
+#define EIGS_DC_(T, x, who, onfail) ((T)_Generic((x),                         \
+        double: ({ unsigned long long _eigs_dc;                               \
+                   if (!eigs_d2i_ok((double)(x), EIGS_TLO_(T), EIGS_THI_(T),  \
+                                    (who), &_eigs_dc)) onfail;               \
+                   _eigs_dc; }),                                              \
+        float:  ({ unsigned long long _eigs_dc;                               \
+                   if (!eigs_d2i_ok((double)(x), EIGS_TLO_(T), EIGS_THI_(T),  \
+                                    (who), &_eigs_dc)) onfail;               \
+                   _eigs_dc; }),                                              \
         default: (x)))
-#define EIGS_DCAST(T, x)       EIGS_DCAST_W_(T, x, __func__)
-#define EIGS_DCAST_QUIET(T, x) EIGS_DCAST_W_(T, x, (const char *)0)
+#define EIGS_DCAST_RET(T, x, failret) EIGS_DC_(T, x, __func__, return failret)
+#define EIGS_DCAST_QUIET(T, x)        EIGS_DC_(T, x, (const char *)0, (void)0)
 #else
-#define EIGS_DCAST(T, x)       ((T)(x))
-#define EIGS_DCAST_QUIET(T, x) ((T)(x))
+#define EIGS_DCAST_RET(T, x, failret) ((T)(x))
+#define EIGS_DCAST_QUIET(T, x)        ((T)(x))
 #endif
 
 /* Numeric byte consumers truncate and wrap modulo 256. Reduce in double
  * first: even a normalized finite number can be outside the C int range.
  * The caller must normalize the input and stop on a raised read first. */
 static inline unsigned char finite_num_to_byte(double x) {
-    return (unsigned char)(EIGS_DCAST(int, fmod(x, 256.0)) & 0xFF);
+    return (unsigned char)(EIGS_DCAST_RET(int, fmod(x, 256.0), 0) & 0xFF);   /* NaN/inf: raise; callers stop on g_has_error */
 }
 
 /* #1740: a bitwise operand converts to int64 only if it is an EXACT integer
@@ -1971,7 +1994,7 @@ static inline unsigned char finite_num_to_byte(double x) {
  * 2^52, so (double)(int64_t)x is exact and differs from x. */
 static inline int num_to_i64_exact(double x, int64_t *out) {
     if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) return 0;
-    int64_t i = EIGS_DCAST(int64_t, x);
+    int64_t i = EIGS_DCAST_QUIET(int64_t, x);   /* range-checked above */
     if ((double)i != x) return 0;
     *out = i;
     return 1;
@@ -2068,9 +2091,24 @@ static inline int eigs_bool_gate(BuiltinFn fn, const Value *arg) {
             return eigs_bool_gate_slow(fn, arg);
     return 0;
 }
+#ifdef EIGS_IEEE
+/* #1746: the builtin running on this thread, so a failed integer conversion
+ * inside a shared helper names the BUILTIN the script called, not the C
+ * helper (eigs_d2ll_fail). Saved and restored: builtins nest. */
+extern __thread BuiltinFn eigs_cur_builtin;
+static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
+    if (eigs_bool_gate(fn, arg)) return NULL;
+    BuiltinFn saved = eigs_cur_builtin;
+    eigs_cur_builtin = fn;
+    Value *r = fn(arg);
+    eigs_cur_builtin = saved;
+    return r;
+}
+#else
 static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
     return eigs_bool_gate(fn, arg) ? NULL : fn(arg);
 }
+#endif
 
 /* ---- Environment ---- */
 

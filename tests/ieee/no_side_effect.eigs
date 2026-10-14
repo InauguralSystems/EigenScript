@@ -1,0 +1,123 @@
+# #1746 Phase 1 (ieee build only): a numeric argument with no integer value
+# (NaN, +-inf, 1e300) is refused BEFORE the builtin mutates, allocates, writes
+# or exits. Each call runs inside `try`; the row then asserts the state it
+# would have touched is exactly as before, and that the raise was `value`.
+# A store_put/store_update of a record holding inf/nan writes nothing either.
+# tools/ieee_rows.sh runs this with its scratch directory as cwd (the store
+# file is relative).
+#
+# Output: `CHECKS <n>` then exactly n lines `CHECK <name> ok|FAIL <detail>`.
+
+inf is 1e308 * 10
+q is 0 / 0
+bads is [["nan", q], ["inf", inf], ["1e300", 1e300]]
+
+results is []
+define check(name, cond, detail) as:
+    verdict is "FAIL"
+    if cond:
+        verdict is "ok"
+    append of [results, f"CHECK {name} {verdict} {detail}"]
+    return 0
+
+# [kind, message] of a raise, or ["none", ""].
+define attempt(thunk, arg) as:
+    try:
+        thunk of arg
+    catch e:
+        return [e["kind"], e["message"]]
+    return ["none", ""]
+
+s is store_open of "ieee_nse.db"
+store_put of [s, "c", {"_id": "0", "v": "precious"}]
+store_put of [s, "c", {"_id": "1", "v": "other"}]
+count0 is store_count of [s, "c"]
+
+define do_truncate(x) as:
+    list_truncate of [xs, x]
+define do_remove(x) as:
+    list_remove_at of [xs, x]
+define do_insert(x) as:
+    list_insert_at of [xs, x, 99]
+define do_set_at(x) as:
+    set_at of [xs, x, 99]
+define do_fill(x) as:
+    made is fill of [x, 7]
+define do_buffer(x) as:
+    made is buffer of x
+define do_buf_set(x) as:
+    buf_set of [bf, x, 77]
+define do_buf_copy(x) as:
+    buf_copy of [bf, 0, bf2, 0, x]
+define do_gather(x) as:
+    made is gather of [bf, x]
+define do_zeros(x) as:
+    made is zeros of x
+define do_store_delete(x) as:
+    store_delete of [s, "c", x]
+define do_store_get(x) as:
+    return store_get of [s, "c", x]
+define do_exit(x) as:
+    exit of x
+
+for b in bads:
+    tag is b[0]
+    v is b[1]
+    xs is [10, 20, 30]
+    bf is buf_from_list of [1, 2, 3]
+    bf2 is buf_from_list of [4, 5, 6]
+    made is "untouched"
+    for cs in [["list_truncate", do_truncate], ["list_remove_at", do_remove], ["list_insert_at", do_insert], ["set_at", do_set_at]]:
+        r is attempt of [cs[1], v]
+        check of [f"{cs[0]}_{tag}", (r[0] == "value") and ((str of xs) == "[10, 20, 30]"), str of [r, xs]]
+    for cs in [["fill", do_fill], ["buffer", do_buffer], ["zeros", do_zeros], ["gather", do_gather]]:
+        r is attempt of [cs[1], v]
+        check of [f"{cs[0]}_{tag}", (r[0] == "value") and (made == "untouched"), str of [r, type of made]]
+    r is attempt of [do_buf_set, v]
+    check of [f"buf_set_{tag}", (r[0] == "value") and ((str of [bf[0], bf[1], bf[2]]) == "[1, 2, 3]"), str of r]
+    r is attempt of [do_buf_copy, v]
+    check of [f"buf_copy_{tag}", (r[0] == "value") and ((str of [bf2[0], bf2[1], bf2[2]]) == "[4, 5, 6]"), str of r]
+    r is attempt of [do_store_delete, v]
+    rec is store_get of [s, "c", "0"]
+    check of [f"store_delete_{tag}", (r[0] == "value") and (rec["v"] == "precious") and ((store_count of [s, "c"]) == count0), str of [r, rec]]
+    r is attempt of [do_exit, v]
+    check of [f"exit_{tag}", r[0] == "value", str of r]
+
+# store_put / store_update of a record holding inf or nan: raise, write nothing.
+define put_bad(x) as:
+    store_put of [s, "c", {"_id": "2", "v": x}]
+define update_bad(x) as:
+    store_update of [s, "c", "0", {"v": x, "w": 1}]
+for b in bads:
+    if b[0] != "1e300":
+        r is attempt of [put_bad, b[1]]
+        check of [f"store_put_{b[0]}", (r[0] == "value") and ((store_count of [s, "c"]) == count0) and ((store_get of [s, "c", "2"]) == null), str of r]
+        r is attempt of [update_bad, b[1]]
+        rec is store_get of [s, "c", "0"]
+        check of [f"store_update_{b[0]}", (r[0] == "value") and (rec["v"] == "precious"), str of [r, rec]]
+nested is attempt of [put_bad, [1, [2, inf]]]
+check of ["store_put_nested_inf", nested[0] == "value", str of nested]
+
+# A failure reached through a shared C helper names the BUILTIN the script
+# called (buf_count_arg, at_index, flat_index_at, get_store_why).
+xs is [10, 20, 30]
+bf is buf_from_list of [1, 2, 3]
+bf2 is buf_from_list of [4, 5, 6]
+m is attempt of [do_buf_copy, q]
+check of ["helper_names_buf_copy", (index_of of [m[1], "buf_copy:"]) == 0, m[1]]
+m is attempt of [do_set_at, q]
+check of ["helper_names_set_at", (index_of of [m[1], "set_at:"]) == 0, m[1]]
+define do_gather2d(x) as:
+    made is gather of [(reshape of [(buf_from_list of [1, 2, 3, 4]), 2, 2]), [x, 0]]
+m is attempt of [do_gather2d, q]
+check of ["helper_names_tensor_builtin", (m[0] == "value") and ((index_of of [m[1], "gather:"]) == 0), m[1]]
+define do_forged(x) as:
+    store_get of [{"_store_id": x, "_store_gen": 1}, "c", "0"]
+m is attempt of [do_forged, q]
+check of ["helper_names_store_get", (index_of of [m[1], "store_get"]) == 0, m[1]]
+
+store_close of s
+print of "process continued"
+print of f"CHECKS {len of results}"
+for line in results:
+    print of line

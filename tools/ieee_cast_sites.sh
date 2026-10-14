@@ -1,6 +1,6 @@
 #!/bin/bash
 # #1746 Phase 1 / #1748: every float->integer conversion in the ieee build goes
-# through EIGS_DCAST's one checked helper (eigenscript.h eigs_d2ll).
+# through the one checked helper (eigenscript.h eigs_d2i_ok).
 #
 #   bash tools/ieee_cast_sites.sh            -> prints every fix_trunc site, then
 #   CAST_SITES: helper=<file:line> found=<n> outside=<m>
@@ -22,7 +22,7 @@ for f in $SRCS; do
 done
 n_src=$(echo $SRCS | wc -w); n_dump=$(ls "$O"/*.gimple 2>/dev/null | wc -l)
 [ "$n_src" -gt 0 ] && [ "$n_dump" = "$n_src" ] || { echo "FAIL: $n_dump dumps for $n_src sources"; exit 2; }
-hl=$(grep -n 'return (long long)x;' "$ROOT/src/eigenscript.h" | cut -d: -f1)
+hl=$(grep -n '\*out = lo < 0 ? (unsigned long long)(long long)x' "$ROOT/src/eigenscript.h" | cut -d: -f1)
 [ "$(echo "$hl" | wc -w)" = 1 ] || { echo "FAIL: helper conversion line not unique in eigenscript.h: '$hl'"; exit 2; }
 helper="eigenscript.h:$hl"
 grep -ho '\[[^]]*\] gimple_assign <fix_trunc_expr' "$O"/*.gimple \

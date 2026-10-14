@@ -222,7 +222,7 @@ Value* builtin_stream_open(Value *arg) {
         eigs_num_arg(count_val, __func__) != floor(eigs_num_arg(count_val, __func__))) {
         rt_error(EK_LIMIT, 0,
                  "stream_open: '%s' count %.17g is outside the 1..%d element cap",
-                 path_val->data.str, eigs_num_arg(count_val, __func__),
+                 path_val->data.str, EIGS_NUM_CANON(eigs_num_arg(count_val, __func__)),
                  EIGS_TENSOR_MAX_ELEMENTS);
         return make_bool(0);
     }
@@ -233,7 +233,7 @@ Value* builtin_stream_open(Value *arg) {
      * comment over this section documents stream_open as answering 1 — so 0
      * is the "could not open" answer, not a type mistake. */
     if (!g_stream_file) return make_bool(0);
-    uint32_t count = EIGS_DCAST(uint32_t, eigs_num_arg(count_val, __func__));
+    uint32_t count = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(count_val, __func__));   /* 1..cap checked above */
     uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
     if (fwrite(header, sizeof(uint32_t), 4, g_stream_file) != 4) {
         fclose(g_stream_file);
@@ -414,7 +414,7 @@ Value* builtin_build_corpus(Value *arg) {
     if (!stream_path_val || stream_path_val->type != VAL_STR) return make_null();
     if (!vocab_path_val || vocab_path_val->type != VAL_STR) return make_null();
 
-    int top_n = EIGS_DCAST(int, eigs_num_arg(topn_val, __func__));
+    int top_n = EIGS_DCAST_RET(int, eigs_num_arg(topn_val, __func__), make_null());
     int n_files = file_list->data.list.count;
 
     /* ---- SLOT MODE (optional 6th arg: slot_count > 0) --------------------
@@ -446,7 +446,7 @@ Value* builtin_build_corpus(Value *arg) {
         EIGS_VIEW(sv_view);
         Value *sv = list_get_view(arg, 5, &sv_view);
         double d = 0;
-        if (eigs_opt_num(sv, &d, "build_corpus")) slot_count = EIGS_DCAST(int, d);   /* #1637: a bool raises */
+        if (eigs_opt_num(sv, &d, "build_corpus")) slot_count = EIGS_DCAST_RET(int, d, make_null());   /* #1637: a bool raises */
         if (g_has_error) return make_null();
     }
     if (slot_count < 0) slot_count = 0;
@@ -475,7 +475,7 @@ Value* builtin_build_corpus(Value *arg) {
         EIGS_VIEW(iv_view);
         Value *iv = list_get_view(arg, 6, &iv_view);
         double d = 0;
-        if (eigs_opt_num(iv, &d, "build_corpus")) int_count = EIGS_DCAST(int, d);    /* #1637: a bool raises */
+        if (eigs_opt_num(iv, &d, "build_corpus")) int_count = EIGS_DCAST_RET(int, d, make_null());    /* #1637: a bool raises */
         if (g_has_error) return make_null();
     }
     if (int_count < 0) int_count = 0;
@@ -705,8 +705,8 @@ Value* builtin_build_corpus(Value *arg) {
                  * 3.5 etc.; the lexer emits '-' as its own token so num_val is
                  * never negative for a literal, but guard anyway. */
                 double nv = tl.tokens[i].num_val;
-                if (nv >= 0.0 && nv < (double)int_count && nv == (double)EIGS_DCAST(long, nv))
-                    tid = FIRST_IDENT + actual_top + slot_count + EIGS_DCAST(int, nv);
+                if (nv >= 0.0 && nv < (double)int_count && nv == (double)EIGS_DCAST_QUIET(long, nv))   /* nv in [0, int_count) */
+                    tid = FIRST_IDENT + actual_top + slot_count + EIGS_DCAST_QUIET(int, nv);
             }
             double d = (double)tid;
             fwrite(&d, sizeof(double), 1, stream_file);
@@ -1111,10 +1111,10 @@ Value* builtin_read_bytes_buf(Value *arg) {
                   eigs_num_arg(mv, __func__) <= (double)READ_BYTES_BUF_HARD_CAP)) {
                 rt_error(EK_VALUE, 0,
                          "read_bytes_buf: max_bytes must be in 1..%lld (got %g)",
-                         READ_BYTES_BUF_HARD_CAP, mv ? eigs_num_arg(mv, __func__) : 0.0);
+                         READ_BYTES_BUF_HARD_CAP, EIGS_NUM_CANON(mv ? eigs_num_arg(mv, __func__) : 0.0));
                 return make_null();
             }
-            cap = EIGS_DCAST(long long, eigs_num_arg(mv, __func__));
+            cap = EIGS_DCAST_QUIET(long long, eigs_num_arg(mv, __func__));   /* 1..HARD_CAP checked above */
         }
     }
     if (!path || path->type != VAL_STR) return make_null();
@@ -1129,7 +1129,7 @@ Value* builtin_read_bytes_buf(Value *arg) {
         if (trace_replay_refuse_off_owner("read_bytes_buf")) return make_null();
         if (trace_replay_take("read_bytes_buf", &tv)) {
             if (tv && tv->type == VAL_NUM) {
-                long long len = EIGS_DCAST(long long, eigs_num_arg(tv, __func__));
+                long long len = EIGS_DCAST_RET(long long, eigs_num_arg(tv, __func__), (val_decref(tv), make_null()));
                 val_decref(tv);
                 read_bytes_buf_cap_raise(path->data.str, len, cap);
                 return make_null();
@@ -1290,6 +1290,10 @@ Value* builtin_exec_capture(Value *arg) {
         && list_elem_type(arg, 1) == VAL_NUM) {
         cmd_list = list_get_ref(arg, 0);
         timeout_sec = eigs_list_num(arg, 1, __func__);
+#ifdef EIGS_IEEE
+        if (timeout_sec >= 0)   /* #1746: refused before anything is forked */
+            (void)EIGS_DCAST_RET(time_t, timeout_sec, exec_capture_result(-1, ""));
+#endif
         ARG_GUARD(cmd_list->data.list.count < 1,
                   "exec_capture", "a non-empty command list", exec_capture_result(-1, ""));
     }
@@ -1357,8 +1361,8 @@ Value* builtin_exec_capture(Value *arg) {
     int has_timeout = (timeout_sec >= 0);
     if (has_timeout) {
         clock_gettime(CLOCK_MONOTONIC, &deadline);
-        deadline.tv_sec += EIGS_DCAST(time_t, timeout_sec);
-        deadline.tv_nsec += EIGS_DCAST(long, ((timeout_sec - EIGS_DCAST(time_t, timeout_sec)) * 1e9));
+        deadline.tv_sec += EIGS_DCAST_QUIET(time_t, timeout_sec);   /* checked before the fork */
+        deadline.tv_nsec += EIGS_DCAST_QUIET(long, ((timeout_sec - EIGS_DCAST_QUIET(time_t, timeout_sec)) * 1e9));
         if (deadline.tv_nsec >= 1000000000L) {
             deadline.tv_sec++;
             deadline.tv_nsec -= 1000000000L;
@@ -1440,8 +1444,8 @@ Value* builtin_proc_read_buf(Value *arg) {
     Value *max_v = list_get_view(arg, 1, &max_v_view);
     if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
         return make_null();
-    int fd = EIGS_DCAST(int, eigs_num_arg(fd_v, __func__));
-    int max = EIGS_DCAST(int, eigs_num_arg(max_v, __func__));
+    int fd = EIGS_DCAST_RET(int, eigs_num_arg(fd_v, __func__), make_null());
+    int max = EIGS_DCAST_RET(int, eigs_num_arg(max_v, __func__), make_null());
     if (fd < 0 || max <= 0) return make_null();
     if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
     unsigned char *buf = xmalloc((size_t)max);
@@ -1473,7 +1477,7 @@ Value* builtin_random_hex(Value *arg) {
     /* #971 Phase D: a non-number length answered "" (as does a length of 0,
      * which stays the answer). Taped: the soft half records as before. */
     ARG_GUARD_TAPED(!arg || arg->type != VAL_NUM, "random_hex", "a number of hex digits", make_str(""));
-    int n = (arg && arg->type == VAL_NUM) ? EIGS_DCAST(int, eigs_num_arg(arg, __func__)) : 0;
+    int n = (arg && arg->type == VAL_NUM) ? EIGS_DCAST_RET(int, eigs_num_arg(arg, __func__), make_null()) : 0;
     if (n <= 0 || n > 256) TRACE_NONDET_RET("random_hex", make_str(""));
     int bytes_needed = (n + 1) / 2;
     unsigned char raw[128];
@@ -1548,6 +1552,9 @@ Value* builtin_write_bytes(Value *arg) {
                         : buffer_read_num(data, i);
         if (g_has_error) { free(out); return make_null(); }
         out[i] = finite_num_to_byte(dv);
+#ifdef EIGS_IEEE
+        if (g_has_error) { free(out); return make_null(); }   /* before the file opens */
+#endif
     }
     FILE *f = xfopen_write(path_val->data.str, append ? "ab" : "wb");
     /* fs:ANSWER the path was accepted by the guard above; a NULL FILE* is

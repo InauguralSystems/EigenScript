@@ -1,0 +1,8 @@
+# #1746 Phase 1: printf-family calls that format a double the runtime itself
+# computed and that is finite by construction, so they need no NaN spelling.
+# One row per `file:function reason`; tools/ieee_format_sites.py fails a row
+# that matches no site (stale) and any unlisted, unrouted site.
+src/jit.c:jit_thread_destroy EIGS_JIT_STOPS/EIGS_JIT_HOT debug percentages: ratios of counters with a nonzero denominator
+src/trace.c:obs_cfg_sync observer configuration parameters (dh_zero, dh_small, h_low, scale), finite constants set by the runtime
+src/vm.c:obs_dump_scope SIGUSR1 observer dump: entropy and dH, kept finite by entropy_of_num (NaN -> 1.0)
+src/ext_store.c:store_json_encode_buf_elem the %.17g branch is reached only after its isnan/isinf branches returned

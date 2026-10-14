@@ -172,8 +172,8 @@ static void store_json_encode(Value *v, strbuf *out);
 static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
     if (slot_is_num(slot)) {
         double n = eigs_slot_num(slot, __func__);
-        if (fabs(n) < 2147483648.0 && n == EIGS_DCAST(int, n))
-            strbuf_append_fmt(out, "%d", EIGS_DCAST(int, n));
+        if (fabs(n) < 2147483648.0 && n == EIGS_DCAST_QUIET(int, n))   /* |n| < 2^31 */
+            strbuf_append_fmt(out, "%d", EIGS_DCAST_QUIET(int, n));
         else
             strbuf_append_fmt(out, "%.15g", EIGS_NUM_CANON(n));
         return;
@@ -195,8 +195,8 @@ static void store_json_encode(Value *v, strbuf *out) {
              * first. The bound is int's own range: integral values beyond
              * it never took the %d path anyway (the equality failed), so
              * output is unchanged and the cast is now always defined. */
-            if (fabs(n) < 2147483648.0 && n == EIGS_DCAST(int, n))
-                strbuf_append_fmt(out, "%d", EIGS_DCAST(int, n));
+            if (fabs(n) < 2147483648.0 && n == EIGS_DCAST_QUIET(int, n))   /* |n| < 2^31 */
+                strbuf_append_fmt(out, "%d", EIGS_DCAST_QUIET(int, n));
             else
                 strbuf_append_fmt(out, "%.15g", EIGS_NUM_CANON(n));
             break;
@@ -267,6 +267,39 @@ static void store_json_encode(Value *v, strbuf *out) {
             break;
     }
 }
+
+#ifdef EIGS_IEEE
+/* #1746: the store's record encoding writes a scalar number bare, and inf /
+ * nan have no bare JSON form (they would persist as unreadable text: the
+ * record is counted but store_get answers null). Like json_encode, refuse a
+ * record holding one -- checked BEFORE store_put / store_update touch the
+ * catalog or a page. Buffer elements are exempt: they carry their own
+ * "inf"/"nan" string encoding that round-trips (store_json_encode_buf_elem). */
+static int store_nonfinite_scalar(Value *v, int depth) {
+    if (!v || depth > 200) return 0;
+    if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++) {
+            EigsSlot s = list_slot(v, i);
+            if (slot_is_num(s) ? !isfinite(SLOT_NUM_RAW(s))
+                               : store_nonfinite_scalar(eigs_slot_ref(s), depth + 1)) return 1;
+        }
+    } else if (v->type == VAL_DICT) {
+        for (int i = 0; i < v->data.dict.count; i++) {
+            EigsSlot s = dict_value_slot(v, i);
+            if (slot_is_num(s) ? !isfinite(SLOT_NUM_RAW(s))
+                               : store_nonfinite_scalar(eigs_slot_ref(s), depth + 1)) return 1;
+        }
+    } else if (v->type == VAL_NUM) {
+        return !isfinite(VAL_NUM_RAW(v));
+    }
+    return 0;
+}
+static int store_refuse_nonfinite(Value *record, const char *who) {
+    if (!store_nonfinite_scalar(record, 0)) return 0;
+    rt_error(EK_VALUE, 0, "%s: a non-finite number (inf or nan) has no store encoding", who);
+    return 1;
+}
+#endif
 
 static char* store_dict_to_json(Value *dict) {
     strbuf out;
@@ -372,7 +405,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     double rd = eigs_num_arg(rv, __func__), cd = eigs_num_arg(cv, __func__);
     if (!(rd >= 0 && rd <= (double)INT_MAX)) return NULL;
     if (!(cd >= 0 && cd <= (double)INT_MAX)) return NULL;
-    int rows = EIGS_DCAST(int, rd), cols = EIGS_DCAST(int, cd);
+    int rows = EIGS_DCAST_QUIET(int, rd), cols = EIGS_DCAST_QUIET(int, cd);   /* range-checked above */
     if (rd != (double)rows || cd != (double)cols) return NULL;
 
     /* Accept exactly the (rows, cols, count) triples the buffer constructors
@@ -747,7 +780,7 @@ static int store_load_catalog(Store *store) {
             free(visited);
             return -1;
         }
-        uint32_t root = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
+        uint32_t root = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog field; 0 is refused below */
         if (root == 0 || root >= store->page_count) {
             fprintf(stderr, "store_open: collection '%s' has invalid root %u\n", name, root);
             free(visited);
@@ -815,9 +848,9 @@ static Store* get_store_why(Value *v, int *why, int *out_id) {
     if (!v || v->type != VAL_DICT) return NULL;
     Value *sv = store_dict_get_view(v, "_store_id", &(EigsView){{0}});
     if (!sv || sv->type != VAL_NUM) return NULL;
-    *out_id = EIGS_DCAST(int, eigs_num_arg(sv, __func__));
+    *out_id = EIGS_DCAST_RET(int, eigs_num_arg(sv, __func__), NULL);
     Value *gv = store_dict_get_view(v, "_store_gen", &(EigsView){{0}});
-    uint32_t gen = (gv && gv->type == VAL_NUM) ? EIGS_DCAST(uint32_t, eigs_num_arg(gv, __func__)) : 0;
+    uint32_t gen = (gv && gv->type == VAL_NUM) ? EIGS_DCAST_RET(uint32_t, eigs_num_arg(gv, __func__), NULL) : 0;
     return (Store*)handle_lookup(*out_id, gen, HANDLE_STORE, why);
 }
 
@@ -979,9 +1012,9 @@ static Value* builtin_store_close(Value *arg) {
     /* Release handle BEFORE freeing memory to prevent use-after-free
      * if another thread calls get_store() concurrently. */
     Value *id_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_id", &(EigsView){{0}}) : NULL;
-    int hid = (id_val && id_val->type == VAL_NUM) ? EIGS_DCAST(int, eigs_num_arg(id_val, __func__)) : -1;
+    int hid = (id_val && id_val->type == VAL_NUM) ? EIGS_DCAST_RET(int, eigs_num_arg(id_val, __func__), make_null()) : -1;
     Value *g_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_gen", &(EigsView){{0}}) : NULL;
-    uint32_t hgen = (g_val && g_val->type == VAL_NUM) ? EIGS_DCAST(uint32_t, eigs_num_arg(g_val, __func__)) : 0;
+    uint32_t hgen = (g_val && g_val->type == VAL_NUM) ? EIGS_DCAST_RET(uint32_t, eigs_num_arg(g_val, __func__), make_null()) : 0;
     handle_release(hid, hgen);
     store->dirty = 1; /* Force flush */
     store_flush_catalog(store);
@@ -1015,6 +1048,9 @@ static Value* builtin_store_put(Value *arg) {
         rt_error(EK_TYPE, 0, "store_put: record must be a dict\n");
         return make_null();
     }
+#ifdef EIGS_IEEE
+    if (store_refuse_nonfinite(record, "store_put")) return make_null();   /* nothing written */
+#endif
     const char *collection = col_val->data.str;
 
     /* Get or create collection entry in catalog */
@@ -1042,8 +1078,8 @@ static Value* builtin_store_put(Value *arg) {
     } else {
         Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
         Value *nv = store_dict_get_view(col_info, "next_id", &(EigsView){{0}});
-        root_page = EIGS_DCAST(uint32_t, (rv ? eigs_num_arg(rv, __func__) : 0));
-        next_id = EIGS_DCAST(int, (nv ? eigs_num_arg(nv, __func__) : 1));
+        root_page = EIGS_DCAST_QUIET(uint32_t, (rv ? eigs_num_arg(rv, __func__) : 0));   /* catalog fields */
+        next_id = EIGS_DCAST_QUIET(int, (nv ? eigs_num_arg(nv, __func__) : 1));
     }
 
     /* Determine key */
@@ -1180,7 +1216,7 @@ static Value* builtin_store_get(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST(int, eigs_num_arg(key_val, __func__)));
+        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST_RET(int, eigs_num_arg(key_val, __func__), make_null()));
     } else {
         return make_null();
     }
@@ -1189,7 +1225,7 @@ static Value* builtin_store_get(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_null();
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_null();
-    uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
+    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
 
     size_t target_key_len = strlen(key_buf);
 
@@ -1247,7 +1283,7 @@ static int store_locate(Store *store, const char *collection,
     if (!col_info || col_info->type != VAL_DICT) return 0;
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return 0;
-    uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
+    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
     size_t target_key_len = strlen(key_buf);
 
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1344,7 +1380,7 @@ static Value* builtin_store_delete(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST(int, eigs_num_arg(key_val, __func__)));
+        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST_RET(int, eigs_num_arg(key_val, __func__), make_bool(0)));
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
@@ -1390,7 +1426,7 @@ static Value* builtin_store_query(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_list(0);
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_list(0);
-    uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
+    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
 
     Value *results = make_list(16);
 
@@ -1448,7 +1484,7 @@ static Value* builtin_store_count(Value *arg) {
     /* fs:ANSWER a catalog entry with no root page has no record pages, so the
      * count is 0. */
     if (!rv) return make_num(0);
-    uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
+    uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
 
     int count = 0;
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1500,7 +1536,7 @@ static Value* builtin_store_update(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST(int, eigs_num_arg(key_val, __func__)));
+        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", EIGS_DCAST_RET(int, eigs_num_arg(key_val, __func__), make_bool(0)));
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
@@ -1534,6 +1570,9 @@ static Value* builtin_store_update(Value *arg) {
          * post-raise placeholder, not "no row updated". */
         return make_bool(0);
     }
+#ifdef EIGS_IEEE
+    if (store_refuse_nonfinite(record, "store_update")) return make_bool(0);   /* old record intact */
+#endif
 
     if (store_tombstone(store, &loc) != 0) {
         rt_error(EK_IO, 0, "store_update: page write failed\n");
@@ -1641,7 +1680,7 @@ static Value* builtin_store_drop(Value *arg) {
     /* Mark all pages in chain as free */
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (rv) {
-        uint32_t pg = EIGS_DCAST(uint32_t, eigs_num_arg(rv, __func__));
+        uint32_t pg = EIGS_DCAST_QUIET(uint32_t, eigs_num_arg(rv, __func__));   /* catalog root page */
         for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
             Page page;
             if (store_read_page(store, pg, &page) != 0) break;

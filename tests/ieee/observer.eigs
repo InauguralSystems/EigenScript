@@ -1,21 +1,22 @@
 # #1746 Phase 1 (ieee build only): the observer on the extended real line,
-# graded against mathematics rather than the old spec.
+# graded against mathematics (Rudin, Principles of Mathematical Analysis;
+# IEEE 754-2019), not against the old spec. Each check cites its definition.
 #
-#   - A constant sequence converges (Cauchy), whatever its magnitude: a literal
-#     1e308 held constant is `converged` (the #861 magnitude rule is removed).
-#   - Divergence to +-inf (Rudin, Def. 3.15): monotone growth reaching inf, and
-#     inf held, are `diverging`.
-#   - 1 <-> inf has lim inf 1 and lim sup +inf (Rudin, Def. 3.16-3.17): it
-#     oscillates, read at either end.
-#   - inf, then a held finite constant, converges after a full window.
-#   - NaN is undefined (IEEE 754-2019 sec. 7.2): while the current value is
-#     NaN all six predicates are false and `report` is "undefined"; NaN never
-#     enters a ring; the defined subsequence carries the trajectory.
-#   - Steps involving +-inf have defined, finite ring entries:
-#       held inf: rel 0, raw 0;  finite <-> inf: rel +-1, raw +-max(|finite|, 1e-3);
-#       inf <-> -inf: rel +-2, raw +-2e-3;  a finite step that overflows
-#       (1e308 -> -1e308): rel -2, raw -DBL_MAX.
-#   - Entropy (`where`) and dH (`why`) stay finite.
+#   converged   Def. 3.1/3.11: a sequence of REALS whose terms settle; a
+#               constant converges at any magnitude (1e308 included). Every
+#               term in the window must be defined (no NaN), and a full window
+#               of defined terms must follow the last NaN.
+#   diverging   Def. 3.15: tends to +inf (lim inf = +inf) or -inf (lim sup =
+#               -inf): growth to inf, inf held, -inf held. 1 <-> inf has
+#               lim inf 1 and inf <-> -inf has lim inf -inf: NOT diverging.
+#   oscillating Def. 3.16-3.17: lim inf != lim sup (1 <-> inf, inf <-> -inf).
+#   NaN         IEEE 754-2019 sec. 7.2 (invalid operation: undefined). While
+#               the current value is NaN all six predicates are false and
+#               `report` is "undefined"; NaN never enters a ring.
+#   Ring steps involving +-inf are finite (held 0; finite<->inf rel +-1, raw
+#   +-max(|finite|,1e-3); inf<->-inf rel +-2, raw +-2e-3; a finite step that
+#   overflows: rel -2, raw -DBL_MAX). Entropy (`where`) and dH (`why`) stay
+#   finite.
 #
 # Each case runs observed AND, where marked, inside `unobserved:` (the JIT's
 # value sampler). tools/ieee_rows.sh runs this under EIGS_JIT_OFF=1, the
@@ -136,6 +137,29 @@ define nan_interleaved_unobs(u) as:
     local t is trajectory of x
     return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, 0, 0]
 
+define alt_inf_ninf() as:
+    local x is inf
+    for k in range of 40:
+        x is -inf
+        x is inf
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+define const_ninf() as:
+    local x is 0
+    for k in range of 12:
+        x is -inf
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+define nan_then_held() as:
+    local x is 1.0
+    x is q
+    for k in range of 12:
+        x is 5
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
 define step_table() as:
     local x is 1.0
     x is inf
@@ -162,9 +186,11 @@ define none_of(p) as:
 define finite_obs(p) as:
     return (all_finite of p[7]) and (all_finite of p[8]) and (all_finite of ([p[9], p[10]]))
 
+# Def. 3.1: a constant sequence converges, whatever its magnitude.
 c8 is const_1e308 of null
 check of ["const_1e308_converged", (c8[0] == "converged") and c8[1] and (not c8[2]), c8[0]]
 
+# Def. 3.15: growth to +inf tends to +inf.
 for u in [false, true]:
     g is growth_to_inf of u
     if u:
@@ -172,35 +198,56 @@ for u in [false, true]:
     check of [f"growth_to_inf_diverging_u{u}", (g[0] == "diverging") and g[2], g[0]]
     check of [f"growth_to_inf_finite_u{u}", finite_obs of g, str of [g[7], g[8]]]
 
+# Def. 3.15: +inf held tends to +inf; no rest band (Def. 3.1 is about reals).
 ci is const_inf of null
 check of ["const_inf_diverging", (ci[0] == "diverging") and ci[2] and (not ci[1]) and (not ci[3]) and (not ci[4]), ci[0]]
 check of ["const_inf_finite", finite_obs of ci, str of [ci[7], ci[8]]]
 
+# Def. 3.15: -inf held tends to -inf.
+cn is const_ninf of null
+check of ["const_ninf_diverging", (cn[0] == "diverging") and cn[2], cn[0]]
+
+# Def. 3.16-3.17: 1 <-> inf has lim inf 1 != lim sup inf -> oscillating, read
+# at either end; Def. 3.15: lim inf = 1, so NOT diverging.
 for u in [false, true]:
     a1 is alt_one_inf of [u, false]
     if u:
         a1 is alt_one_inf_unobs of [u, false]
-    check of [f"alt_1_inf_at_1_oscillating_u{u}", (a1[0] == "oscillating") and a1[6], a1[0]]
+    check of [f"alt_1_inf_at_1_oscillating_u{u}", (a1[0] == "oscillating") and a1[6] and (not a1[2]), a1[0]]
     check of [f"alt_1_inf_finite_u{u}", finite_obs of a1, str of [a1[7], a1[8]]]
     ai is alt_one_inf of [u, true]
     if u:
         ai is alt_one_inf_unobs of [u, true]
-    check of [f"alt_1_inf_at_inf_oscillating_u{u}", (ai[0] == "oscillating") and ai[6], ai[0]]
+    check of [f"alt_1_inf_at_inf_oscillating_not_diverging_u{u}", (ai[0] == "oscillating") and ai[6] and (not ai[2]), str of [ai[0], ai[2], ai[6]]]
 
+# Def. 3.16-3.17 / 3.15: inf <-> -inf oscillates and does not diverge.
+an is alt_inf_ninf of null
+check of ["alt_inf_ninf_oscillating_not_diverging", (an[0] == "oscillating") and an[6] and (not an[2]), str of [an[0], an[2], an[6]]]
+check of ["alt_inf_ninf_finite", finite_obs of an, str of [an[7], an[8]]]
+
+# Def. 3.1: after inf, a held real converges once a full window follows.
 ic is inf_then_const of null
 check of ["inf_then_const_converged", (ic[0] == "converged") and ic[1], ic[0]]
 
+# IEEE 754 sec. 7.2: a current NaN is undefined -- every predicate false.
 nc is nan_current of null
 check of ["nan_current_undefined", nc[0] == "undefined", nc[0]]
 check of ["nan_current_all_false", none_of of nc, str of nc]
 check of ["nan_current_finite", finite_obs of nc, str of [nc[7], nc[8], nc[9], nc[10]]]
 
+# Def. 3.1 (sequences of reals): 5, NaN, 5, NaN... has undefined terms in every
+# window, so no rest band (converged/stable/equilibrium/improving) may hold.
 for u in [false, true]:
     ni is nan_interleaved of u
     if u:
         ni is nan_interleaved_unobs of u
-    check of [f"nan_interleaved_converged_u{u}", (ni[0] == "converged") and ni[1], ni[0]]
+    rest is ni[1] or ni[3] or ni[4] or ni[5]
+    check of [f"nan_interleaved_no_rest_band_u{u}", (ni[0] != "converged") and (rest == false), str of [ni[0], ni[1], ni[3], ni[4], ni[5]]]
     check of [f"nan_interleaved_finite_u{u}", finite_obs of ni, str of [ni[7], ni[8]]]
+
+# Def. 3.1: a NaN followed by a full window of a held real converges again.
+nh is nan_then_held of null
+check of ["nan_then_full_window_converged", (nh[0] == "converged") and nh[1], nh[0]]
 
 st is step_table of null
 check of ["step_rel", (str of st[0]) == "[1, -1, 1, -2, 0, 1, -2]", str of st[0]]

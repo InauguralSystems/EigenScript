@@ -1086,16 +1086,16 @@ Value* builtin_tensor_scatter_add(Value *arg) {
                 /* The range check makes this conversion representable.  Check
                  * both directions instead of calling trunc(), which is not
                  * part of the freestanding runtime's mini-libm surface. */
-                idx = EIGS_DCAST(int, di);
+                idx = EIGS_DCAST_QUIET(int, di);   /* range-checked above */
                 valid_index = di >= (double)idx && di <= (double)idx;
             }
             if (!valid_index) {
                 if (per_row) {
                     rt_error(EK_INDEX, 0, "scatter_add: column index %.17g out of range for row %d (cols %d)",
-                             di, i, cols);
+                             EIGS_NUM_CANON(di), i, cols);
                 } else {
                     rt_error(EK_INDEX, 0, "scatter_add: index %.17g out of range (length %d)",
-                             di, index_limit);
+                             EIGS_NUM_CANON(di), index_limit);
                 }
                 return make_null();
             }
@@ -1382,7 +1382,7 @@ Value* builtin_tensor_zeros(Value *arg) {
      * (ouroboros#170). make_shaped_buffer carries the sandbox charge, which
      * is now 8 bytes/element instead of TENSOR_LIST_ELEM_BYTES. */
     if (arg->type == VAL_NUM) {
-        int64_t n64 = EIGS_DCAST(int64_t, eigs_num_arg(arg, __func__));
+        int64_t n64 = EIGS_DCAST_RET(int64_t, eigs_num_arg(arg, __func__), make_null());
         if (n64 < 0) n64 = 0;
         if (n64 > 10000000) n64 = 10000000;  /* #292: cap like fill/buffer (was uncapped → x_oom/abort) */
         Value *out = make_shaped_buffer(0, (int)n64);
@@ -1392,8 +1392,8 @@ Value* builtin_tensor_zeros(Value *arg) {
     if (arg->type == VAL_LIST && arg->data.list.count >= 2
         && list_elem_type(arg, 0) == VAL_NUM
         && list_elem_type(arg, 1) == VAL_NUM) {
-        int64_t rows64 = EIGS_DCAST(int64_t, eigs_list_num(arg, 0, __func__));
-        int64_t cols64 = EIGS_DCAST(int64_t, eigs_list_num(arg, 1, __func__));
+        int64_t rows64 = EIGS_DCAST_RET(int64_t, eigs_list_num(arg, 0, __func__), make_null());
+        int64_t cols64 = EIGS_DCAST_RET(int64_t, eigs_list_num(arg, 1, __func__), make_null());
         if (rows64 < 0) rows64 = 0;
         if (cols64 < 0) cols64 = 0;
         /* #292: bound each dim before multiplying (no int64 overflow), then the
@@ -1456,7 +1456,7 @@ static int flat_is_vector(Value *v) {
 static int flat_index_at(Value *v, int i) {
     if (v->type == VAL_LIST)
         return (list_elem_type(v, i) == VAL_NUM)
-             ? EIGS_DCAST(int, eigs_slot_num(list_slot(v, i), __func__)) : -1;
+             ? EIGS_DCAST_RET(int, eigs_slot_num(list_slot(v, i), __func__), -1) : -1;
     /* #1417: normalize before conversion, and let every caller propagate a
      * raised read before using its index or touching an output. Saturated
      * infinity is still outside the int domain and uses the existing invalid
@@ -1464,7 +1464,7 @@ static int flat_index_at(Value *v, int i) {
     double index = buffer_read_num(v, i);
     if (g_has_error) return -1;
     if (index < (double)INT_MIN || index > (double)INT_MAX) return -1;
-    return EIGS_DCAST(int, index);
+    return EIGS_DCAST_RET(int, index, -1);   /* NaN passes the bound test above */
 }
 /* #973: a non-numeric element of an index LIST has no index, and reporting it
  * as "index -1 out of range" would name the wrong fault. Buffers hold doubles,
@@ -1514,7 +1514,7 @@ Value* builtin_tensor_gather(Value *arg) {
      * buffer with a scalar index yields that element. */
     if (tensor->type == VAL_BUFFER) {
         if (indices->type == VAL_NUM && tensor->data.buffer.rows == 0) {
-            int idx = EIGS_DCAST(int, eigs_num_arg(indices, __func__));
+            int idx = EIGS_DCAST_RET(int, eigs_num_arg(indices, __func__), make_null());
             if (idx < 0 || idx >= tensor->data.buffer.count) {
                 rt_error(EK_INDEX, 0, "gather: index %d out of range (length %d)",
                          idx, tensor->data.buffer.count);
@@ -1576,7 +1576,7 @@ Value* builtin_tensor_gather(Value *arg) {
                          i, val_type_name(list_elem_type(indices, i)));
                 return make_null();
             }
-            int idx = EIGS_DCAST(int, eigs_slot_num(list_slot(indices, i), __func__));
+            int idx = EIGS_DCAST_RET(int, eigs_slot_num(list_slot(indices, i), __func__), (val_decref(out), make_null()));
             if (idx < 0 || idx >= row->data.list.count) {
                 val_decref(out);
                 rt_error(EK_INDEX, 0,
@@ -1594,7 +1594,7 @@ Value* builtin_tensor_gather(Value *arg) {
     }
     /* 1D tensor, scalar index */
     if (tensor->type == VAL_LIST && indices->type == VAL_NUM) {
-        int idx = EIGS_DCAST(int, eigs_num_arg(indices, __func__));
+        int idx = EIGS_DCAST_RET(int, eigs_num_arg(indices, __func__), make_null());
         if (idx < 0 || idx >= tensor->data.list.count) {
             rt_error(EK_INDEX, 0, "gather: index %d out of range (length %d)",
                      idx, tensor->data.list.count);
@@ -1711,8 +1711,8 @@ Value* builtin_random_normal(Value *arg) {
     int argc = arg->data.list.count;
     if (argc == 3) {
         /* 2D: [rows, cols, scale] */
-        int rows = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
-        int cols = EIGS_DCAST(int, eigs_list_num(arg, 1, __func__));
+        int rows = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
+        int cols = EIGS_DCAST_RET(int, eigs_list_num(arg, 1, __func__), make_null());
         double scale = eigs_list_num(arg, 2, __func__);
         Value *outer = make_list(rows);
         for (int r = 0; r < rows; r++) {
@@ -1731,7 +1731,7 @@ Value* builtin_random_normal(Value *arg) {
     }
     if (argc == 2) {
         /* 1D: [len, scale] */
-        int len = EIGS_DCAST(int, eigs_list_num(arg, 0, __func__));
+        int len = EIGS_DCAST_RET(int, eigs_list_num(arg, 0, __func__), make_null());
         double scale = eigs_list_num(arg, 1, __func__);
         Value *out = make_list(len);
         for (int i = 0; i < len; i++) {
@@ -2430,8 +2430,8 @@ Value* builtin_tensor_load(Value *arg) {
                 verdict->data.list.count == 2 &&
                 list_elem_type(verdict, 0) == VAL_NUM &&
                 list_elem_type(verdict, 1) == VAL_NUM) {
-                uint32_t rows = EIGS_DCAST(uint32_t, eigs_list_num(verdict, 0, __func__));
-                uint32_t cols = EIGS_DCAST(uint32_t, eigs_list_num(verdict, 1, __func__));
+                uint32_t rows = EIGS_DCAST_RET(uint32_t, eigs_list_num(verdict, 0, __func__), (val_decref(verdict), make_null()));
+                uint32_t cols = EIGS_DCAST_RET(uint32_t, eigs_list_num(verdict, 1, __func__), (val_decref(verdict), make_null()));
                 val_decref(verdict);
                 tensor_load_limit_raise(arg->data.str, rows, cols);
                 return make_null();

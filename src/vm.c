@@ -1778,7 +1778,7 @@ int jit_helper_iter_next(void) {
     Value *iterable = list_get_view(state, 0, &iterable_view);
     if (!iterable) return 1;
     if (list_elem_type(state, 1) != VAL_NUM) return 1;
-    int idx = EIGS_DCAST(int, eigs_slot_num(list_slot(state, 1), "for"));
+    int idx = EIGS_DCAST_QUIET(int, eigs_slot_num(list_slot(state, 1), "for"));   /* VM-written counter */
     int len = 0;
     if (iterable->type == VAL_LIST)        len = iterable->data.list.count;
     else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -1789,7 +1789,7 @@ int jit_helper_iter_next(void) {
         EIGS_VIEW(snap_v_view);
         Value *snap_v = list_get_view(state, 2, &snap_v_view);
         if (snap_v && snap_v->type == VAL_NUM) {
-            int snap = EIGS_DCAST(int, VAL_NUM_RAW(snap_v));
+            int snap = EIGS_DCAST_QUIET(int, VAL_NUM_RAW(snap_v));   /* VM-written length */
             if (snap < len) len = snap;
         }
     }
@@ -1833,7 +1833,7 @@ static inline int vm_index_is_int(double d, int *out) {
     /* #1746: NaN/inf reach indexes in this build; (int) of them is UB. */
     if (!(d >= (double)INT_MIN && d <= (double)INT_MAX)) return 0;
 #endif
-    int i = EIGS_DCAST(int, d);
+    int i = EIGS_DCAST_QUIET(int, d);   /* ieee: range-checked above; default: the old cast */
     if ((double)i != d) return 0;
     *out = i;
     return 1;
@@ -2197,7 +2197,7 @@ void jit_helper_index_set(void) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                 target->data.buffer.data[i] = SLOT_NUM_RAW(val_s);
             } else {
-                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(idx_s)));
                 else rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)",
                               i, target->data.buffer.count);
             }
@@ -2212,7 +2212,7 @@ void jit_helper_index_set(void) {
                 double n = SLOT_NUM_RAW(val_s); /* already guarded in a slot */
                 list_rewrite_num(target, i, n);
             } else {
-                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(idx_s)));
                 else rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)",
                               i, target->data.list.count);
             }
@@ -2227,7 +2227,7 @@ void jit_helper_index_set(void) {
     if (target->type == VAL_LIST && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             val_incref(val);
             list_set_slot_owned(target, i, slot_from_heap(val));
@@ -2237,7 +2237,7 @@ void jit_helper_index_set(void) {
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
         } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
             rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
         } else if (val->type == VAL_NUM) {
@@ -2272,7 +2272,7 @@ int jit_helper_index_get(void) {
                 slot_decref(tgt_s);
                 vm_push_slot(r);
             } else {
-                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(idx_s)));
                 else rt_error(EK_INDEX, g_vm.current_line,
                     "index %d out of range (list length %d)",
                     i, target->data.list.count);
@@ -2287,7 +2287,7 @@ int jit_helper_index_get(void) {
                 slot_decref(tgt_s);
                 vm_push_slot(slot_from_num(v));
             } else {
-                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
+                if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(idx_s)));
                 else rt_error(EK_INDEX, g_vm.current_line,
                     "buffer index %d out of range (length %d)",
                     i, target->data.buffer.count);
@@ -2306,7 +2306,7 @@ int jit_helper_index_get(void) {
     if (target->type == VAL_LIST && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             result = list_get_owned(target, i);
         } else {
@@ -2321,7 +2321,7 @@ int jit_helper_index_get(void) {
     } else if (target->type == VAL_STR && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
         } else if (vm_index_resolve(&i, (int)val_str_len(target))) {
             char buf[2] = { target->data.str[i], 0 };
             result = make_str_len(buf, 1);
@@ -2333,7 +2333,7 @@ int jit_helper_index_get(void) {
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(VAL_NUM_RAW(idx), &i))
-            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+            rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
         else if (vm_index_resolve(&i, target->data.buffer.count))
             result = make_num(buffer_read_num(target, i));
         else
@@ -3504,7 +3504,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                                  !num_to_i64_exact(_bd, &_bi), 0)) { \
                 slot_decref(_as); slot_decref(_bs); \
                 rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, OPNAME, \
-                    num_to_i64_exact(_ad, &_ai) ? _bd : _ad); \
+                    EIGS_NUM_CANON(num_to_i64_exact(_ad, &_ai) ? _bd : _ad)); \
                 g_vm.stack[g_vm.sp - 2] = slot_from_num(0.0); \
                 g_vm.sp--; \
                 DISPATCH(); \
@@ -3589,7 +3589,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             int64_t i;
             if (__builtin_expect(!num_to_i64_exact(d, &i), 0)) {   /* #1740 */
                 slot_decref(s);
-                rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, "~", d);
+                rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, "~", EIGS_NUM_CANON(d));
                 g_vm.stack[g_vm.sp - 1] = slot_from_num(0.0);
                 DISPATCH();
             }
@@ -4610,7 +4610,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     slot_decref(tgt_s);
                     vm_push_slot(r);
                 } else {
-                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(idx_s)));
                     else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                                   i, target->data.list.count);
                     slot_decref(tgt_s);
@@ -4624,7 +4624,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     slot_decref(tgt_s);
                     vm_push_slot(slot_from_num(v));
                 } else {
-                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(idx_s)));
                     else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
                     slot_decref(tgt_s);
@@ -4642,7 +4642,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (target->type == VAL_LIST && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 result = list_get_owned(target, i);
             } else {
@@ -4655,7 +4655,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else if (target->type == VAL_STR && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
             } else if (vm_index_resolve(&i, (int)val_str_len(target))) {
                 char buf[2] = { target->data.str[i], 0 };
                 result = make_str_len(buf, 1);
@@ -4665,7 +4665,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(VAL_NUM_RAW(idx), &i))
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
             else if (vm_index_resolve(&i, target->data.buffer.count))
                 result = make_num(buffer_read_num(target, i));
             else
@@ -4694,7 +4694,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                     target->data.buffer.data[i] = SLOT_NUM_RAW(val_s);
                 } else {
-                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(idx_s)));
                     else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
                                   i, target->data.buffer.count);
                 }
@@ -4708,7 +4708,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                     list_set_num(target, i, SLOT_NUM_RAW(val_s));
                 } else {
-                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
+                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(idx_s)));
                     else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
                                   i, target->data.list.count);
                 }
@@ -4723,7 +4723,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (target->type == VAL_LIST && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 val_incref(val);
                 list_set_slot_owned(target, i, slot_from_heap(val));
@@ -4733,7 +4733,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
-                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
+                rt_error(EK_VALUE, current_line, "index must be an integer, got %g", EIGS_NUM_CANON(VAL_NUM_RAW(idx)));
             } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
                 rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
             } else if (val->type == VAL_NUM) {
@@ -5045,7 +5045,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         EIGS_VIEW_NOCHECK(iterable_view);
         Value *iterable = list_get_view(state, 0, &iterable_view);
-        int idx = EIGS_DCAST(int, eigs_slot_num(list_slot(state, 1), "for"));
+        int idx = EIGS_DCAST_QUIET(int, eigs_slot_num(list_slot(state, 1), "for"));   /* VM-written counter */
         int len = 0;
         if (iterable->type == VAL_LIST) len = iterable->data.list.count;
         else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -5054,7 +5054,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * remove from reading past the end. See make_iter_state. */
         if (state->data.list.count >= 3 &&
             list_elem_type(state, 2) == VAL_NUM) {
-            int snap = EIGS_DCAST(int, eigs_slot_num(list_slot(state, 2), "for"));
+            int snap = EIGS_DCAST_QUIET(int, eigs_slot_num(list_slot(state, 2), "for"));   /* VM-written length */
             if (snap < len) len = snap;
         }
 
@@ -5613,7 +5613,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             vm_push(make_null());
             DISPATCH();
         }
-        int line = EIGS_DCAST(int, VAL_NUM_RAW(line_v));
+#ifdef EIGS_IEEE
+        {   /* #1746: the one checked conversion; refuse before the lookup */
+            unsigned long long ok_line;
+            if (!eigs_d2i_ok(VAL_NUM_RAW(line_v), (double)INT_MIN, (double)INT_MAX + 1.0, "'at' line", &ok_line)) {
+                val_decref(line_v);
+                vm_push(make_null());
+                DISPATCH();
+            }
+        }
+#endif
+        int line = EIGS_DCAST_QUIET(int, VAL_NUM_RAW(line_v));
         val_decref(line_v);
         Value *result = make_null();
         const char *name = chunk->const_interns[name_idx];
@@ -5646,14 +5656,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         /* A fractional ordinal names no assignment. Truncating silently would
          * answer a question that was not asked. */
-        if (ord_d != (double)EIGS_DCAST(long long, ord_d)) {
+        if (ord_d != (double)EIGS_DCAST_QUIET(long long, ord_d)) {   /* probe; refused below */
             rt_error(EK_VALUE, current_line,
-                "'when' ordinal must be a whole number, got %g", ord_d);
+                "'when' ordinal must be a whole number, got %g", EIGS_NUM_CANON(ord_d));
             vm_push(make_null());
             DISPATCH();
         }
 
-        long long ordinal = EIGS_DCAST(long long, ord_d);
+        long long ordinal = EIGS_DCAST_QUIET(long long, ord_d);   /* integral, checked above */
         EigsSlot w_slot;
         long long total = 0, oldest = 0;
         int r = trace_query_when(kind, name, ordinal, &w_slot, &total, &oldest);
@@ -5784,7 +5794,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 if (slot_is_num(slot)) {                                      \
                     if (!vm_index_is_int(SLOT_NUM_RAW(slot), &(outvar))) {                \
                         rt_error(EK_VALUE, g_vm.current_line,                      \
-                            "slice bound must be an integer, got %g", SLOT_NUM_RAW(slot));\
+                            "slice bound must be an integer, got %g", EIGS_NUM_CANON(SLOT_NUM_RAW(slot)));\
                         bound_err = 1;                                        \
                     }                                                         \
                 } else if (slot_is_ptr(slot)) {                               \
@@ -5795,7 +5805,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         if (!vm_index_is_int(VAL_NUM_RAW(bv), &(outvar))) {      \
                             rt_error(EK_VALUE, g_vm.current_line,                  \
                                 "slice bound must be an integer, got %g",     \
-                                VAL_NUM_RAW(bv));                                \
+                                EIGS_NUM_CANON(VAL_NUM_RAW(bv)));                                \
                             bound_err = 1;                                    \
                         }                                                     \
                     } else {                                                  \
@@ -6416,7 +6426,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!vm_index_is_int(key_d, &key)) {
             slot_decref(arg_s); slot_decref(table_s);
             rt_error(EK_VALUE, current_line,
-                "dispatch key must be an integer, got %g", key_d);
+                "dispatch key must be an integer, got %g", EIGS_NUM_CANON(key_d));
             vm_push_slot(slot_null());
             DISPATCH();
         }

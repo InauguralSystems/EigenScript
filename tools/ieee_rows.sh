@@ -14,13 +14,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${1:-$ROOT/build/ieee/eigenscript}"
 T="$ROOT/tests/ieee"
 TMO="${IEEE_ROWS_TIMEOUT:-120}"
-DECLARED=14
+DECLARED=16
 W="$(mktemp -d "${TMPDIR:-/tmp}/ieee_rows.XXXXXX")" || { echo "FAIL setup: mktemp"; exit 2; }
 trap 'rm -rf "$W"' EXIT
 PASS=0; FAIL=0; RAN=""
 pass() { PASS=$((PASS+1)); RAN="$RAN $1"; echo "PASS $1"; }
 fail() { FAIL=$((FAIL+1)); RAN="$RAN $1"; echo "FAIL $1: $2"; }
 [ -x "$BIN" ] || { echo "FAIL setup: no binary at $BIN"; echo "IEEE_ROWS: 0 passed, 1 failed of $DECLARED"; exit 1; }
+BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"   # absolute: row 15 changes cwd
 
 # run <tag> <cmd...>: stdout -> $W/<tag>.out, stderr -> $W/<tag>.err, rc -> $W/<tag>.rc
 run() {
@@ -157,6 +158,20 @@ else fail casts "$why"; fi
 # the helper. Compiles the sources; skipped only if gcc is absent (a FAIL).
 if timeout "$TMO" bash "$ROOT/tools/ieee_cast_sites.sh" > "$W/sites.out" 2>&1; then pass cast_sites
 else fail cast_sites "$(tail -1 "$W/sites.out")"; fi
+
+# 15. #1746 r3: a numeric argument with no integer value is refused BEFORE any
+# mutation, allocation, I/O or exit; store_put/store_update refuse inf/nan and
+# write nothing; a failure inside a shared C helper names the builtin.
+mkdir -p "$W/nse" && ( cd "$W/nse" && timeout "$TMO" "$BIN" "$T/no_side_effect.eigs" > "$W/nse.out" 2> "$W/nse.err"; echo $? > "$W/nse.rc" )
+if why=$(clean nse) && why=$(checks nse); then
+    if grep -qx 'process continued' "$W/nse.out"; then pass no_side_effect; else fail no_side_effect "the process did not continue past exit of a bad number"; fi
+else fail no_side_effect "$why"; fi
+
+# 16. Every printf-family call that formats a double routes it through
+# EIGS_NUM_CANON (or is a reviewed internal-finite site): one NaN spelling at
+# the formatter, user text untouched.
+if timeout "$TMO" python3 "$ROOT/tools/ieee_format_sites.py" > "$W/fmt.out" 2>&1; then pass format_sites
+else fail format_sites "$(tail -1 "$W/fmt.out")"; fi
 
 ran=$(echo $RAN | wc -w)
 [ "$ran" = "$DECLARED" ] || { echo "FAIL rows: declared $DECLARED, ran $ran ($RAN)"; FAIL=$((FAIL+1)); }
