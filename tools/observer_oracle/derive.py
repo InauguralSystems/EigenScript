@@ -3,84 +3,43 @@
 
 usage: derive.py [--write]     (prints, or rewrites labels.json)
 
-The corpus states, per row, a generator and ONE property set (limit,
-tends_to, bounded, deterministic; random-process rows add has_trend,
-periodic, variance_changes) with its justification. The mathematical facts
-are CERTIFIED offline by certify.py (sympy), which writes certificate.json
-with the sha256 of each row's generator and properties; derive refuses a
-missing or stale certificate, and needs no sympy itself. Every label is
-computed here from the certified properties, the generated values and the
-corpus `definitions` table; nothing per predicate or per checkpoint is
-written by hand. derive() asserts its own postconditions (the converged =>
-stable lattice, and where EIGS-DEFINED may appear), and score.py refuses a
+The corpus states, per row, a generator (gen.py) and ONE property set
+(limit, tends_to, bounded, deterministic; a random-process row adds the
+NIST flags, which must equal the ones its process kind implies) with its
+justification. certify.py (offline, sympy) certifies the properties into
+certificate.json, keyed by the row and by the sha256 of gen.py and
+certify.py; derive refuses a missing or stale certificate and needs no
+sympy. Each predicate is scored against ONE question: its single scored
+definition in the corpus `definitions` table. A `reported` definition (MATH
+"has a limit") becomes a label column that is printed, never scored. Every
+label is computed here from the certified properties, the generated values
+and that table; nothing per predicate or checkpoint is written by hand.
+derive() asserts its postconditions (one entry per predicate, of its scored
+class; CONVENTION converged implies stable), and score.py refuses a
 labels.json that differs from derive(corpus).
 """
 import hashlib
 import json
-import math
 import os
-import random
 import sys
 
+from gen import HarnessError, RANDOM_KINDS, generate
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-PREDS = ["converged", "stable", "improving", "oscillating", "diverging",
-         "equilibrium"]
+PREDS = ["converged", "stable", "improving", "oscillating", "diverging", "equilibrium"]
 RTOL = 1e-3          # the observer's dh_zero: settle tolerance and min_delta
 BAND = 1e-2          # the observer's dh_small: OUR choice of settling band
 SCALE = 1e-3         # the observer's scale: below it tolerances turn absolute
 PATIENCE = 10        # the observer's window
 FLAGS = ("has_trend", "periodic", "variance_changes")
-RANDOM_KINDS = ("noise", "walk")            # realizations of random processes
-INT64_MIN = -2 ** 63
-
-
-class HarnessError(Exception):
-    pass
-
-
-# Corpus expressions are checked-in repo data (not user input), evaluated
-# with no builtins, compiled once into a function of n (closed) or x, n (recur).
-ENV = {"__builtins__": {}, "math": math,
-       "step": lambda n, c: 1.0 if n >= c else 0.0}    # certify.py: Heaviside(n - c + 1/2)
-
-
-def _fn(gen):
-    args = "n" if gen["kind"] == "closed" else "x, n"
-    return eval(f"lambda {args}: ({gen['expr']})", ENV)
-
-
-def generate(gen, n):
-    """The row's values x_0..x_n: floats, or exact Python ints for an int row."""
-    k, num = gen["kind"], (int if gen.get("int") else float)
-    if k == "affine":
-        xs = [gen["x0"]]
-        for _ in range(n):
-            xs.append(xs[-1] * gen["a"] + gen["b"])
-    elif k == "closed":
-        f = _fn(gen)
-        xs = [f(i) for i in range(n + 1)]
-    elif k == "recur":
-        f = _fn(gen)
-        xs = [gen["x0"]]
-        for i in range(1, n + 1):
-            xs.append(float(f(xs[-1], i)))
-    elif k == "cycle":
-        vs = gen["values"]
-        xs = [vs[i % len(vs)] for i in range(n + 1)]
-    elif k == "noise":
-        rng = random.Random(gen["seed"])
-        xs = [gen["center"] + gen["amp"] * rng.uniform(-1.0, 1.0)
-              for _ in range(n + 1)]
-    elif k == "walk":
-        rng = random.Random(gen["seed"])
-        xs = [gen["x0"]]
-        for _ in range(n):
-            xs.append(xs[-1] + (gen["step"] if rng.random() < 0.5 else -gen["step"]))
-    else:
-        raise HarnessError(f"unknown generator kind {k!r}")
-    if num is int and any(not isinstance(v, int) or not INT64_MIN <= v < 2 ** 63 for v in xs):
-        raise HarnessError(f"an int row must generate int64 values: {gen}")
-    return [num(v) for v in xs]
+# NIST 6.4.4.2 flags follow from the process kind; a row may not choose them.
+PROCESS = {"noise": ((False, False, False), "iid noise with a fixed centre and amplitude is"
+                     " stationary: no trend, no periodic fluctuation, constant variance"),
+           "walk": ((False, False, True), "a random walk x_0 + (n iid steps) has Var x_n ="
+                    " n sigma^2, so its variance changes; its mean stays x_0 (no trend)")}
+CAPABILITIES = ("ieee", "int64")
+NAN_WHY = ("x_n is NaN: IEEE 754 invalid operation, an undefined value (#1758 O2, #1746: every"
+           " predicate is false while the current value is NaN)")
 
 
 def eps(v):
@@ -91,11 +50,33 @@ def band(v):
     return BAND * max(abs(v), SCALE)
 
 
-def row_hash(row):
-    """What a certificate vouches for: the generator, the stated properties
-    and any symbolic form or manual argument the certifier used."""
-    basis = {k: row.get(k) for k in ("gen", "props", "sym", "manual")}
-    return hashlib.sha256(json.dumps(basis, sort_keys=True).encode()).hexdigest()
+def code_hash():
+    """The code that gives a row its meaning: the generator and the certifier."""
+    h = hashlib.sha256()
+    for name in ("gen.py", "certify.py"):
+        with open(os.path.join(HERE, name), "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def row_hash(row, code):
+    """What a certificate vouches for: the generator, the stated properties,
+    any manual argument, and the code that reads them."""
+    basis = {k: row.get(k) for k in ("gen", "props", "manual")}
+    return hashlib.sha256((json.dumps(basis, sort_keys=True) + code).encode()).hexdigest()
+
+
+def scored_classes(corpus):
+    """predicate -> its one scored class; reported (predicate, class) -> column."""
+    scored, reported = {}, {}
+    for d in corpus["definitions"]:
+        if d.get("reported"):
+            reported[(d["predicate"], d["class"])] = d["column"]
+        elif d["predicate"] in scored:
+            raise HarnessError(f"{d['predicate']}: two scored definitions; score one question")
+        else:
+            scored[d["predicate"]] = d["class"]
+    return scored, reported
 
 
 def load_corpus(path):
@@ -110,12 +91,11 @@ def load_corpus(path):
     for k, s in sources.items():
         if not s.get("text") or not s.get("status", "").startswith(("VERIFIED", "UNVERIFIED")):
             raise HarnessError(f"source {k}: needs text and a VERIFIED/UNVERIFIED status")
-    table = {(d["predicate"], d["class"]) for d in c.get("definitions", [])}
     for d in c.get("definitions", []):
-        if any(s not in sources for s in d["cite"]):
-            raise HarnessError(f"definition {d['predicate']}/{d['class']}: unknown source")
-    if {p for p, _ in table} != set(PREDS):
-        raise HarnessError("definitions table must cover all six predicates")
+        if any(s not in sources for s in d["cite"]) or (d["predicate"], d["class"]) not in RULES:
+            raise HarnessError(f"definition {d['predicate']}/{d['class']}: unknown source or no rule")
+    if set(scored_classes(c)[0]) != set(PREDS):
+        raise HarnessError("every predicate needs exactly one scored definition")
     seen = set()
     for r in rows:
         rid = r.get("id")
@@ -125,52 +105,55 @@ def load_corpus(path):
         for k in ("family", "form", "gen", "n", "checkpoints", "props", "why", "cite"):
             if k not in r:
                 raise HarnessError(f"{rid}: missing {k}")
-        ats, p = r["checkpoints"], r["props"]
+        ats, p, g = r["checkpoints"], r["props"], r["gen"]
         if not ats or ats != sorted(set(ats)) or ats[-1] != r["n"] or ats[0] < 1:
             raise HarnessError(f"{rid}: checkpoints {ats} must be increasing and end at n")
         if any(s not in sources for s in r["cite"]) or not r["why"]:
             raise HarnessError(f"{rid}: properties need a reason and known sources")
-        if p["limit"] is not None and (p["tends_to"] is not None or not p["bounded"]):
-            raise HarnessError(f"{rid}: a limit excludes tends_to and unboundedness")
-        if p["tends_to"] not in (None, "+inf", "-inf") or (p["tends_to"] and p["bounded"]):
-            raise HarnessError(f"{rid}: bad tends_to {p['tends_to']!r}")
-        if p["deterministic"] != (r["gen"]["kind"] not in RANDOM_KINDS):
+        if r.get("capability", "ieee") not in CAPABILITIES:
+            raise HarnessError(f"{rid}: unknown capability {r['capability']!r}")
+        if g["kind"] == "pieces" and not ("x0" in g["pieces"][0] and all(
+                isinstance(q.get("steps"), int) and q["steps"] > 0 for q in g["pieces"][:-1])):
+            raise HarnessError(f"{rid}: the first piece needs x0 and every piece but the last `steps`")
+        if p["tends_to"] not in (None, "+inf", "-inf") or (p["tends_to"] and (p["bounded"] or p["limit"] is not None)):
+            raise HarnessError(f"{rid}: tends_to {p['tends_to']!r} excludes a limit and boundedness")
+        if p["deterministic"] != (g["kind"] not in RANDOM_KINDS):
             raise HarnessError(f"{rid}: deterministic={p['deterministic']} contradicts"
-                               f" generator kind {r['gen']['kind']!r}")
-        has = [f in p for f in FLAGS]
-        if p["deterministic"] and any(has):
-            raise HarnessError(f"{rid}: trend/periodic/variance flags decide nothing on a"
-                               " deterministic row; remove them")
-        if not p["deterministic"]:
-            if not all(has):
-                raise HarnessError(f"{rid}: a random-process row needs all three NIST flags")
-            if any(p[f] for f in FLAGS) and "NIST_6442" not in r["cite"]:
-                raise HarnessError(f"{rid}: a true trend/periodic/variance flag needs NIST_6442")
-            if any(p[f] is None for f in FLAGS) != bool(r.get("undecided")):
-                raise HarnessError(f"{rid}: a null flag needs an `undecided` reason, and only then")
+                               f" generator kind {g['kind']!r}")
+        if p["deterministic"]:
+            if any(f in p for f in FLAGS):
+                raise HarnessError(f"{rid}: trend/periodic/variance flags decide nothing on a"
+                                   " deterministic row; remove them")
+            continue
+        want, reason = PROCESS[g["kind"]]
+        if [p.get(f) for f in FLAGS] != list(want):
+            raise HarnessError(f"{rid}: flags {dict((f, p.get(f)) for f in FLAGS)} contradict the"
+                               f" {g['kind']} process, which gives {dict(zip(FLAGS, want))}: {reason}")
+        if any(want) and "NIST_6442" not in r["cite"]:
+            raise HarnessError(f"{rid}: a true trend/periodic/variance flag needs NIST_6442")
     return c
 
 
 def load_certificates(corpus, path):
     """certify.py's verdicts, refused unless every row has one whose hash
-    matches the row as it stands now (and no certificate names a row the
-    corpus lacks)."""
+    matches the row and the generator/certifier code as they stand now (and
+    no certificate names a row the corpus lacks)."""
     try:
         with open(path) as f:
             certs = json.load(f)["rows"]
     except (OSError, ValueError, KeyError) as e:
         raise HarnessError(f"cannot load certificates {path}: {e}; re-run certify.py")
-    ids = {r["id"] for r in corpus["rows"]}
+    ids, code = {r["id"] for r in corpus["rows"]}, code_hash()
     for rid in sorted(set(certs) - ids):
         raise HarnessError(f"certificate for {rid}, which the corpus lacks: stale; re-run certify.py")
     for r in corpus["rows"]:
         c = certs.get(r["id"])
         if c is None:
             raise HarnessError(f"{r['id']}: no certificate; re-run certify.py")
-        if c.get("hash") != row_hash(r):
-            raise HarnessError(f"{r['id']}: stale certificate (the row changed since it was"
-                               " certified); re-run certify.py")
-        if c.get("kind") not in ("symbolic", "exact", "fixed-point", "manual"):
+        if c.get("hash") != row_hash(r, code):
+            raise HarnessError(f"{r['id']}: stale certificate (the row, gen.py or certify.py changed"
+                               " since it was certified); re-run certify.py")
+        if c.get("kind") not in ("symbolic", "exact", "fixed-point", "ieee", "manual"):
             raise HarnessError(f"{r['id']}: certificate kind {c.get('kind')!r}")
         if r["props"]["deterministic"] and not isinstance(c.get("constant"), bool):
             raise HarnessError(f"{r['id']}: certificate does not decide constancy")
@@ -182,8 +165,10 @@ def _tail_within(row, far, n, radius, name):
     radius(L) of the limit, or (no limit) fits a ball of radius(centre)."""
     p = row["props"]
     if far is None:
-        return False, "unbounded"
+        return False, "tends to " + p["tends_to"] if p["tends_to"] else "unbounded"
     h, tail = len(far) - 1, far[n:]
+    if any(v != v for v in tail):
+        return False, f"x_m is NaN for some m in [{n}, {h}]"
     if p["limit"] is not None:
         lim = p["limit"]
         worst = max(abs(v - lim) for v in tail)
@@ -209,80 +194,91 @@ def _improving(xs, n, bounded):
     return (ok and bounded), why + ("" if bounded else "; unbounded, so not improving")
 
 
-def _equilibrium(row, cert, cite):
+def _equilibrium(row, cert):
     p, why = row["props"], row["why"]
     if p["deterministic"]:
         if cert["constant"]:
-            return ["MATH", True, cite, f"a constant sequence: certified constant ({why})"]
-        return ["MATH", False, cite, "deterministic and certified non-constant: as a"
-                " degenerate process its mean x_n is not constant, so it is not stationary" + f" ({why})"]
-    if True in [p[f] for f in FLAGS]:
-        return ["MATH", False, cite, "not stationary: " + ", ".join(f for f in FLAGS if p[f]) + f" ({why})"]
-    if None in [p[f] for f in FLAGS]:
-        return ["EIGS-DEFINED", row["undecided"]]
-    return ["MATH", True, cite, f"no trend, constant variance, no periodic fluctuation ({why})"]
+            return True, f"a constant sequence: certified constant ({why})"
+        return False, ("deterministic and certified non-constant: as a degenerate process its"
+                       f" mean x_n is not constant, so it is not stationary ({why})")
+    if any(p[f] for f in FLAGS):
+        return False, "not stationary: " + ", ".join(f for f in FLAGS if p[f]) + f" ({why})"
+    return True, f"no trend, constant variance, no periodic fluctuation ({why})"
 
 
-def derive_row(row, cert, defs):
+def _rules(row, cert, xs, far, n):
+    """Every (predicate, class) question the definitions table may ask, at n."""
     p, why = row["props"], row["why"]
+    lim, tends = p["limit"], p["tends_to"]
+    return {
+        ("converged", "MATH"): (lim is not None, (f"limit {lim:.10g}" if lim is not None
+                                                  else "no finite limit") + f" ({why})"),
+        ("converged", "CONVENTION"): _tail_within(row, far, n, eps, "eps"),
+        ("stable", "CONVENTION"): _tail_within(row, far, n, band, "band"),
+        ("improving", "CONVENTION"): _improving(xs, n, p["bounded"]),
+        ("oscillating", "MATH"): (lim is None and tends is None, ("no limit and not +-inf" if lim is None
+                                  and tends is None else "has a limit or tends to +-inf") + f" ({why})"),
+        ("diverging", "MATH"): (tends is not None, (f"tends to {tends}" if tends
+                                                    else "does not tend to +-inf") + f" ({why})"),
+        ("equilibrium", "MATH"): _equilibrium(row, cert),
+    }
+
+
+RULES = {("converged", "MATH"), ("converged", "CONVENTION"), ("stable", "CONVENTION"),
+         ("improving", "CONVENTION"), ("oscillating", "MATH"), ("diverging", "MATH"),
+         ("equilibrium", "MATH")}           # the keys _rules answers
+
+
+def derive_row(row, cert, defs, scored, reported):
+    p = row["props"]
     def cite(pred, cls):                        # MATH adds the row's property sources
         base = defs[(pred, cls)]
         return base + [s for s in row["cite"] if s not in base] if cls == "MATH" else base
     xs = generate(row["gen"], row["n"])
+    nan_at = next((i for i, v in enumerate(xs) if v != v), None)
+    if nan_at is not None and row["checkpoints"][0] < nan_at:
+        raise HarnessError(f"{row['id']}: checkpoint {row['checkpoints'][0]} precedes the NaN at"
+                           f" {nan_at}; no standard decides the whole-sequence predicates there")
     far = None                                  # horizon H = max(20000, 10n)
-    if p["bounded"] and not p["tends_to"]:
+    if p["tends_to"] is None and (p["bounded"] or p["limit"] is not None):
         far = generate(row["gen"], max(20000, 10 * row["n"]))
-    lim, tends = p["limit"], p["tends_to"]
-    whole = {
-        "converged": [["MATH", lim is not None, cite("converged", "MATH"),
-                       (f"limit {lim:.10g}" if lim is not None else "no finite limit") + f" ({why})"]],
-        "diverging": [["MATH", tends is not None, cite("diverging", "MATH"),
-                       (f"tends to {tends}" if tends else "does not tend to +-inf") + f" ({why})"]],
-        "oscillating": [["MATH", lim is None and tends is None, cite("oscillating", "MATH"),
-                         ("no limit and not +-inf" if lim is None and tends is None
-                          else "has a limit or tends to +-inf") + f" ({why})"]],
-        "equilibrium": [_equilibrium(row, cert, cite("equilibrium", "MATH"))],
-    }
     out = {}
     for n in row["checkpoints"]:
-        settled, swhy = _tail_within(row, far, n, eps, "eps")
-        inband, bwhy = _tail_within(row, far, n, band, "band")
-        imp, iwhy = _improving(xs, n, p["bounded"])
-        v = dict(whole)
-        v["converged"] = whole["converged"] + [["CONVENTION", settled, cite("converged", "CONVENTION"), swhy]]
-        v["stable"] = [["CONVENTION", inband, cite("stable", "CONVENTION"), bwhy]]
-        v["improving"] = [["CONVENTION", imp, cite("improving", "CONVENTION"), iwhy]]
-        out[f"{row['id']}@{n}"] = {k: v[k] for k in PREDS}
+        rule = _rules(row, cert, xs, far, n)
+        if xs[n] != xs[n]:
+            rule.update({(q, scored[q]): (False, NAN_WHY) for q in PREDS})
+        entry = lambda q, cls: [cls, rule[(q, cls)][0], cite(q, cls), rule[(q, cls)][1]]
+        v = {q: entry(q, scored[q]) for q in PREDS}
+        v.update({col: entry(q, cls) for (q, cls), col in reported.items()})
+        out[f"{row['id']}@{n}"] = v
     return out
 
 
-def postconditions(corpus, labels):
-    """The derivation's own invariants, checked on its output: CONVENTION
-    converged implies CONVENTION stable (the band is wider than eps), and
-    EIGS-DEFINED appears only where the definitions table allows it."""
-    rows = {r["id"]: r for r in corpus["rows"]}
+def postconditions(labels, scored, reported):
+    """The derivation's own invariants, checked on its output: every
+    predicate has ONE entry, of its scored class (so no verdict is scored
+    against two questions), the reported columns are present, and CONVENTION
+    converged implies CONVENTION stable (the band is wider than eps)."""
+    keys = set(PREDS) | set(reported.values())
     for key, preds in labels.items():
-        row = rows[key.rsplit("@", 1)[0]]
-        conv = [e for e in preds["converged"] if e[0] == "CONVENTION"]
-        st = [e for e in preds["stable"] if e[0] == "CONVENTION"]
-        if conv and conv[0][1] and not (st and st[0][1]):
+        if set(preds) != keys:
+            raise HarnessError(f"{key}: label columns {sorted(preds)}, expected {sorted(keys)}")
+        for q in PREDS:
+            e = preds[q]
+            if len(e) != 4 or e[0] != scored[q] or not isinstance(e[1], bool):
+                raise HarnessError(f"{key}.{q}: {e[:2]} is not one {scored[q]} verdict")
+        if scored["converged"] == scored["stable"] == "CONVENTION" \
+                and preds["converged"][1] and not preds["stable"][1]:
             raise HarnessError(f"{key}: lattice broken: CONVENTION converged without stable")
-        for p, ents in preds.items():
-            if ents[0][0] != "EIGS-DEFINED":
-                continue
-            props = row["props"]
-            flags = [props.get(f) for f in FLAGS]
-            if not (p == "equilibrium" and not props["deterministic"]
-                    and True not in flags and None in flags and row.get("undecided")):
-                raise HarnessError(f"{key}.{p}: EIGS-DEFINED where a standard decides it")
 
 
 def derive(corpus, certs):
     defs = {(d["predicate"], d["class"]): d["cite"] for d in corpus["definitions"]}
+    scored, reported = scored_classes(corpus)
     labels = {}
     for row in corpus["rows"]:
-        labels.update(derive_row(row, certs[row["id"]], defs))
-    postconditions(corpus, labels)
+        labels.update(derive_row(row, certs[row["id"]], defs, scored, reported))
+    postconditions(labels, scored, reported)
     return labels
 
 

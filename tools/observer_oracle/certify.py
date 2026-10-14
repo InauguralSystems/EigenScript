@@ -6,24 +6,34 @@ usage: ~/.local/venvs/oracle/bin/python certify.py [--corpus PATH]
 OFFLINE: needs sympy, which the scorer and the build never import. For every
 row it decides, from the row's generator, whether the stated `limit`,
 `tends_to` and `bounded` are TRUE, and whether the sequence is constant, and
-writes certificate.json (beside the corpus) with the sha256 of each row's
-generator and properties (derive.row_hash). derive.py refuses a missing or
-stale certificate. Kinds:
-  symbolic     sympy decides it: closed forms (sympy.limit over a real
+writes certificate.json (beside the corpus) keyed by the row and by the
+sha256 of gen.py and this file (derive.row_hash): editing either makes every
+certificate stale. Kinds:
+  symbolic     sympy decides it: a closed form (sympy.limit over a real
                variable, which is sound for the integer sequence when the
-               result is a number or +-oo; an AccumBounds result also needs
-               the integer samples to span half the bounds), affine
-               recurrences (their exact closed form) and x <- x + g(n) (a
-               series sum)
+               result is a number or +-oo; otherwise the even and odd
+               subsequences must both have such limits: equal, it is their
+               limit; different, there is no limit), an affine recurrence or
+               the last piece of a `pieces` row (its exact closed form), or
+               x <- x + g(n) (a series sum)
   exact        a cycle of literal values: it converges iff it is constant
-  fixed-point  x <- f(x) with limit L: f(L) = L, |f'| < 1 on an interval I
-               around L (bounded with sympy), and the iterates enter I
-  manual       sympy cannot decide it: the row's `manual` block carries a
-               citation and a one-line argument; counted and printed
-Exit 0 and write the file only when every row is certified; exit 1 listing
-every refusal otherwise.
+  fixed-point  x <- f(x) with a stated limit L: f(L) = L and |f'| < 1 on an
+               interval around L (bounded with sympy) that the iterates enter.
+               |f'(L)| > 1 (repelling) is REFUSED, manual block or not
+  ieee         an in-program row whose value becomes NaN (IEEE 754: inf * 0):
+               NaN is absorbing under x * a + b, so the tail is undefined
+  manual       none of the above decides it: the row's `manual` block carries
+               an argument, a citation and the `claims` it certifies
+Numerics may REFUTE, never prove: whatever decided it, the values the
+runtime is fed must be consistent with the verdict (a limit approached or
+held within eps, a run to +-inf, a tail that does not settle, finite values
+when bounded), or the row is refused as float-degenerate. A manual block cannot override that,
+nor any refusal above. Exit 0 and write the file only when every row is
+certified; exit 1 listing every refusal; exit 2 on an internal error (a
+sympy exception included), which never falls through to `manual`.
 """
 import json
+import math
 import os
 import signal
 import sys
@@ -32,27 +42,37 @@ import sympy as sp
 from sympy.calculus.util import maximum, minimum
 
 import derive
+import gen
 
 N = sp.Symbol("n", integer=True, nonnegative=True)
+K = sp.Symbol("k", integer=True, nonnegative=True)
 T = sp.Symbol("t", positive=True)               # real-variable stand-in for n
 X = sp.Symbol("x", real=True)
 I = sp.Symbol("i", integer=True, positive=True)
 # step(n, c) is 1 for n >= c, else 0: the same text means the same integer
-# sequence in the generator (derive.ENV) and here (Heaviside at c - 1/2).
+# sequence in the generator (gen.ENV) and here (Heaviside at c - 1/2).
 STEP = sp.Lambda((N, sp.Symbol("c")), sp.Heaviside(N - sp.Symbol("c") + sp.Rational(1, 2)))
 
 
 class Undecided(Exception):
-    pass
+    """The automated routes cannot decide the row: a manual block may."""
+
+
+class Refused(Exception):
+    """The row is wrong as stated, whatever its manual block says."""
 
 
 def parse(expr, names):
     return sp.sympify(expr.replace("math.", ""), locals={**names, "step": STEP}, rational=True)
 
 
+def rat(v):
+    return sp.Rational(repr(v)) if isinstance(v, float) else sp.Integer(v)
+
+
 def realify(ex):
     """The real function the sequence samples at integers: (-b)**e -> cos(pi e) b**e."""
-    ex = ex.subs(N, T)
+    ex = ex.subs({N: T, K: T})
     return ex.replace(lambda q: q.is_Pow and q.base.is_number and q.base.is_negative,
                       lambda q: sp.cos(sp.pi * q.exp) * (-q.base) ** q.exp)
 
@@ -62,60 +82,62 @@ def close(a, b):
     return a.imag == 0 and abs(a.real - float(b)) <= 1e-12 * max(1.0, abs(float(b)))
 
 
-def limit_of(ex, row):
-    """('limit', L) | ('tends', '+inf'|'-inf') | ('bounded-nolimit', lo, hi) | Undecided."""
-    lim = sp.limit(realify(ex), T, sp.oo)
-    if lim is sp.oo or lim is sp.S.NegativeInfinity:
-        return ("tends", "+inf" if lim is sp.oo else "-inf")
-    if isinstance(lim, sp.AccumBounds):
-        lo, hi = lim.min, lim.max
-        if not (lo.is_finite and hi.is_finite):
-            raise Undecided(f"sympy: {lim}")
-        far = derive.generate(row["gen"], max(20000, 10 * row["n"]))
-        tail = far[len(far) // 2:]
-        if max(tail) - min(tail) < float(hi - lo) / 2:   # real-variable bound, integer witness
-            raise Undecided(f"sympy bounds real n by {lim}, but the integer samples span only"
-                            f" {max(tail) - min(tail):.3g}")
-        return ("bounded-nolimit", float(lo), float(hi))
-    if lim.is_number and lim.is_finite and lim.is_real:
-        return ("limit", lim)
-    raise Undecided(f"sympy: {lim}")
+def limit_of(ex):
+    """{limit, tends_to, bounded} of the integer sequence ex(n), or Undecided."""
+    def lim(e):
+        r = sp.limit(realify(e), T, sp.oo)
+        return r if r in (sp.oo, -sp.oo) or (r.is_number and r.is_finite and r.is_real) else None
+    whole = lim(ex)
+    if whole is not None:
+        subs, how = [whole, whole], f"sympy.limit = {whole if whole in (sp.oo, -sp.oo) else sp.N(whole, 12)}"
+    else:   # (-b)**(2k + r) = (-1)**r b**(2k + r): parity decides the sign exactly
+        split = ex.replace(lambda q: q.is_Pow and q.base.is_number and q.base.is_negative and q.base != -1,
+                           lambda q: sp.Pow(-1, q.exp) * (-q.base) ** q.exp)
+        subs = [lim(sp.powsimp(sp.expand_power_exp(split.subs(N, 2 * K + r)))) for r in (0, 1)]
+        if None in subs:
+            raise Undecided(f"sympy decides neither the limit of {ex} nor those of its even and"
+                            " odd subsequences (no automatic 'no limit' from AccumBounds)")
+        how = f"even/odd subsequences tend to {subs[0]} and {subs[1]}"
+    if subs[0] == subs[1]:
+        if subs[0] in (sp.oo, -sp.oo):
+            return {"limit": None, "tends_to": "+inf" if subs[0] == sp.oo else "-inf", "bounded": False}, how
+        return {"limit": subs[0], "tends_to": None, "bounded": True}, how
+    return {"limit": None, "tends_to": None, "bounded": all(s.is_finite for s in subs)}, how
 
 
 def agree(ex, row):
     """The parsed form must be the generator over the observed indices."""
-    f = derive._fn(row["gen"])
+    f = gen.fn(row["gen"])
     for k in range(0, min(row["n"], 200) + 1):
         want, got = float(f(k)), complex(sp.N(ex.subs(N, k), 20))
         if got.imag != 0 or abs(got.real - want) > 1e-9 * max(1.0, abs(want)):
-            raise ValueError(f"sympy reads the generator differently at n={k}: {got.real!r} vs {want!r}")
-
-
-def closed_constant(ex):
-    c0 = ex.subs(N, 0)
-    if sp.simplify(ex - c0) == 0:
-        return True
-    for k in list(range(1, 201)) + [10 ** e for e in range(3, 13)]:
-        if abs(complex(sp.N(ex.subs(N, k) - c0, 30))) > 1e-20 * max(1.0, abs(complex(sp.N(c0)))):
-            return False
-    raise Undecided("cannot decide whether it is constant")
+            raise Refused(f"sympy reads the generator differently at n={k}: {got.real!r} vs {want!r}")
 
 
 def constant(row):
     """Decided from the generator itself, not from a horizon of samples."""
     g = row["gen"]
     k = g["kind"]
-    if k in derive.RANDOM_KINDS:
+    if k in gen.RANDOM_KINDS:
         return None
     if k == "cycle":
         return len(set(g["values"])) == 1
     if k == "closed":
-        return closed_constant(parse(g["expr"], {"n": N}))
-    x0 = sp.Rational(repr(g["x0"]))
+        ex = parse(g["expr"], {"n": N})
+        if sp.simplify(ex - ex.subs(N, 0)) == 0:
+            return True
+        c0 = ex.subs(N, 0)
+        for j in list(range(1, 201)) + [10 ** e for e in range(3, 13)]:
+            if abs(complex(sp.N(ex.subs(N, j) - c0, 30))) > 1e-20 * max(1.0, abs(complex(sp.N(c0)))):
+                return False
+        raise Undecided("cannot decide whether it is constant")
     if k == "affine":
-        a, b = sp.Rational(repr(g["a"])), sp.Rational(repr(g["b"]))
-        return a * x0 + b == x0
-    f = parse(g["expr"], {"x": X, "n": N})
+        return rat(g["a"]) * rat(g["x0"]) + rat(g["b"]) == rat(g["x0"])
+    if k == "pieces":
+        if len({repr(v) for v in gen.generate(g, row["n"])}) > 1:
+            return False
+        raise Undecided("cannot decide whether it is constant")
+    x0, f = sp.Rational(repr(g["x0"])), parse(g["expr"], {"x": X, "n": N})
     if sp.simplify(f.subs({N: 1, X: x0}) - x0) != 0:
         return False                                  # x_1 != x_0
     if N not in f.free_symbols or sp.simplify(f - X) == 0:
@@ -124,12 +146,20 @@ def constant(row):
 
 
 def fixed_point(f, row, lim):
-    """f(L) = L; a sympy-bounded contraction on I = [L-d, L+d]; iterates enter I."""
-    exact = sp.simplify(f.subs(X, sp.nsimplify(lim)) - sp.nsimplify(lim)) == 0
+    """f(L) = L; not repelling; a sympy-bounded contraction on I = [L-d, L+d]
+    that the iterates enter."""
+    L = sp.nsimplify(lim)
+    exact = sp.simplify(f.subs(X, L) - L) == 0
     if not exact and not close(f.subs(X, sp.Float(lim, 30)) - sp.Float(lim, 30), 0.0):
-        raise ValueError(f"f(L) != L at the stated limit {lim}")
-    fp, lq = sp.diff(f, X), sp.Rational(lim)
-    d = sp.Rational(max(abs(lim), 1.0)) / 2
+        raise Refused(f"f(L) != L at the stated limit {lim}: L is not a fixed point")
+    fp = sp.diff(f, X)
+    q0 = abs(complex(sp.N(fp.subs(X, L if exact else sp.Float(lim, 30)), 30)))
+    if q0 > 1 + 1e-12:
+        raise Refused(f"|f'(L)| = {q0:.4g} > 1: L = {lim} is a repelling fixed point, which an"
+                      " orbit converges to only by landing on it exactly")
+    if q0 >= 1 - 1e-12:
+        raise Undecided(f"|f'(L)| = {q0:.4g}: no contraction certificate exists")
+    lq, d = sp.Rational(lim), sp.Rational(max(abs(lim), 1.0)) / 2
     for _ in range(30):
         iv = sp.Interval(lq - d, lq + d)
         q = max(abs(maximum(fp, X, iv)), abs(minimum(fp, X, iv)))
@@ -138,58 +168,134 @@ def fixed_point(f, row, lim):
         d /= 2
     else:
         raise Undecided("no interval around L on which |f'| < 1")
-    xs = derive.generate(row["gen"], max(20000, 10 * row["n"]))
+    xs = gen.generate(row["gen"], max(20000, 10 * row["n"]))
     k = next((i for i, v in enumerate(xs) if abs(v - lim) <= float(d) / 2), None)
     if k is None:
-        raise ValueError(f"the iterates never enter I = L +- {float(d):.3g}")
+        raise Refused(f"the iterates never enter I = L +- {float(d):.3g}")
     return (f"f(L) = L {'exactly' if exact else 'to 1e-12'}; max |f'| = {float(q):.4f} < 1 on"
             f" L +- {float(d):.4g}; x_{k} is inside")
 
 
+def in_program(row):
+    """affine / pieces: the NaN tail (IEEE), or the exact closed form of the
+    last piece; bounded also needs every earlier value FINITE as the runtime
+    computes it (an overflow to inf is an extended-real term no K bounds)."""
+    g = row["gen"]
+    xs = gen.generate(g, row["n"])
+    nan_at = next((i for i, v in enumerate(xs) if v != v), None)
+    ps = gen.pieces(g)
+    s = sum((1 if "x0" in p else 0) + p["steps"] for p in ps[:-1])
+    last = ps[-1]
+    if nan_at is not None:
+        if any(st[0] == "set" for st in gen.program(g, s)[nan_at:]):
+            raise Undecided(f"x_{nan_at} is NaN and a later piece restarts: recovery from NaN is"
+                            " not decided (#1746)")
+        st = gen.program(g, nan_at)[nan_at]
+        if st[0] == "set":
+            raise Refused(f"x_{nan_at} is a NaN literal, not a value the program computes")
+        return "ieee", {"limit": None, "tends_to": None, "bounded": False}, (
+            f"x_{nan_at} = {xs[nan_at - 1]!r} * {st[1]!r} + {st[2]!r} is NaN (IEEE 754 invalid"
+            " operation); NaN is absorbing under x * a + b, so every later value is NaN: no"
+            " limit, not +-inf, not bounded")
+    if "x0" in last:
+        x_s = rat(last["x0"])
+    else:                                             # exact value where the last piece starts
+        s -= 1
+        x_s = None
+        for st in gen.program(g, s):
+            x_s = rat(st[1]) if st[0] == "set" else x_s * rat(st[1]) + rat(st[2])
+    a, b = rat(last["a"]), rat(last["b"])
+    j = N - s
+    ex = x_s + b * j if a == 1 else a ** j * (x_s - b / (1 - a)) + b / (1 - a)
+    v, how = limit_of(ex)
+    v["bounded"] = v["bounded"] and all(math.isfinite(x) for x in xs[:s])
+    return "symbolic", v, (f"exact closed form of x <- {last['a']!r} x + {last['b']!r} from"
+                           f" x_{s} = {float(x_s):.10g}: {how}")
+
+
 def decide(row):
-    """(kind, verdict, detail), or raise Undecided / ValueError."""
+    """(kind, verdict, detail), or raise Undecided / Refused."""
     g, p = row["gen"], row["props"]
     k = g["kind"]
-    if k in derive.RANDOM_KINDS:
+    if k in gen.RANDOM_KINDS:
         raise Undecided("a realization of a random process")
     if k == "cycle":
         vs = g["values"]
-        v = ("limit", vs[0]) if len(set(vs)) == 1 else ("bounded-nolimit", min(vs), max(vs))
+        v = {"limit": vs[0] if len(set(vs)) == 1 else None, "tends_to": None, "bounded": True}
         return "exact", v, "a cycle converges iff it is constant"
     if k == "closed":
         ex = parse(g["expr"], {"n": N})
         agree(ex, row)
-        return "symbolic", limit_of(ex, row), "sympy.limit"
-    if k == "affine":
-        a, b, x0 = (sp.Rational(repr(g[v])) for v in ("a", "b", "x0"))
-        ex = x0 + b * N if a == 1 else a ** N * (x0 - b / (1 - a)) + b / (1 - a)
-        return "symbolic", limit_of(ex, row), "exact closed form of x <- a x + b"
+        return ("symbolic", *limit_of(ex))
+    if k in gen.IN_PROGRAM:
+        return in_program(row)
     f = parse(g["expr"], {"x": X, "n": N})
-    if N not in f.free_symbols:                       # autonomous x <- f(x)
-        if p["limit"] is None:
-            raise Undecided("an autonomous recurrence without a stated limit")
-        return "fixed-point", ("limit", p["limit"]), fixed_point(f, row, p["limit"])
     gn = sp.simplify(f - X)
-    if X in gn.free_symbols:
+    if X not in gn.free_symbols:                      # x <- x + g(n)
+        s = sp.summation(gn.subs(N, I), (I, 1, sp.oo))
+        if isinstance(s, sp.Sum):
+            raise Undecided(f"sympy cannot sum {gn}")
+        if s in (sp.oo, -sp.oo):
+            v = {"limit": None, "tends_to": "+inf" if s == sp.oo else "-inf", "bounded": False}
+        elif s.is_number and s.is_finite:
+            v = {"limit": sp.Rational(repr(g["x0"])) + s, "tends_to": None, "bounded": True}
+        else:
+            raise Undecided(f"series sum {s}")
+        return "symbolic", v, f"x <- x + g(n): x_0 + sum g = {v['limit'] if v['limit'] is not None else v['tends_to']}"
+    if N in f.free_symbols:
         raise Undecided("a non-autonomous recurrence that is not x <- x + g(n)")
-    s = sp.summation(gn.subs(N, I), (I, 1, sp.oo))
-    if isinstance(s, sp.Sum):
-        raise Undecided(f"sympy cannot sum {gn}")
-    if s is sp.oo or s is sp.S.NegativeInfinity:
-        v = ("tends", "+inf" if s is sp.oo else "-inf")
-    elif s.is_number and s.is_finite:
-        v = ("limit", sp.Rational(repr(g["x0"])) + s)
-    else:
-        raise Undecided(f"series sum {s}")
-    return "symbolic", v, f"x <- x + g(n): x_0 + sum g = {v[1]}"
+    if p["limit"] is None:
+        raise Undecided("an autonomous recurrence without a stated limit")
+    v = {"limit": p["limit"], "tends_to": None, "bounded": True}
+    return "fixed-point", v, fixed_point(f, row, p["limit"])
 
 
 def matches(v, p):
-    if v[0] == "limit":
-        return p["limit"] is not None and close(v[1], p["limit"]) and p["bounded"]
-    if v[0] == "tends":
-        return p["limit"] is None and p["tends_to"] == v[1] and not p["bounded"]
-    return p["limit"] is None and p["tends_to"] is None and p["bounded"]
+    if (v["limit"] is None) != (p["limit"] is None):
+        return False
+    return (v["limit"] is None or close(v["limit"], p["limit"])) \
+        and v["tends_to"] == p["tends_to"] and v["bounded"] == p["bounded"]
+
+
+def refute(row, v, kind):
+    """Numerics may REFUTE, never prove: raise Refused when the values the
+    runtime is fed are inconsistent with the verdict (float-degenerate)."""
+    if kind == "ieee":
+        return
+    n = row["n"]
+    xs = gen.generate(row["gen"], n)
+    q = max(1, (n + 1) // 4)
+    if any(x != x for x in xs):
+        raise Refused(f"float-degenerate: a value fed to the runtime is NaN, but the verdict is {v}")
+    if v["tends_to"]:
+        s = 1 if v["tends_to"] == "+inf" else -1
+        head, tail = max(s * x for x in xs[:q]), max(s * x for x in xs[-q:])
+        if not (tail > head or s * xs[-1] == math.inf):
+            raise Refused(f"float-degenerate: the values fed to the runtime do not run to"
+                          f" {v['tends_to']}: the last {q} reach {s * tail!r}, the first {q} {s * head!r}")
+    elif v["limit"] is not None:
+        far, lim = gen.generate(row["gen"], max(20000, 10 * n)), float(v["limit"])
+        Q = len(far) // 4
+        if any(x != x for x in far):
+            raise Refused("float-degenerate: a value the generator computes is NaN, but the verdict is a limit")
+        dh, dt = (max(abs(x - lim) for x in part) for part in (far[:Q], far[-Q:]))
+        if not (dt < dh or dt <= derive.eps(lim)):
+            raise Refused(f"float-degenerate: the values do not approach {lim!r}: max |x - L| is"
+                          f" {dt:.3g} over the last quarter of {len(far)}, {dh:.3g} over the first")
+    elif len(set(xs[-q:])) < 2:
+        raise Refused(f"float-degenerate: no limit, but the last {q} values fed to the runtime"
+                      f" are all {xs[-1]!r}")
+    if v["bounded"] and not all(math.isfinite(x) for x in xs):
+        raise Refused("float-degenerate: bounded, but a value fed to the runtime is infinite")
+
+
+def manual(row, sources, why):
+    m = row.get("manual")
+    if not m or not m.get("argument") or not m.get("cite") or any(s not in sources for s in m["cite"]) \
+            or set(m.get("claims", {})) != {"limit", "tends_to", "bounded"}:
+        raise Undecided(f"{why}; add a manual block with an argument, a citation and its claims")
+    return "manual", dict(m["claims"]), (f"{m['argument']} [{', '.join(m['cite'])}]"
+                                         f" (undecided automatically: {why})")
 
 
 def _alarm(signum, frame):
@@ -197,35 +303,31 @@ def _alarm(signum, frame):
 
 
 def certify(corpus):
-    sources = corpus["sources"]
-    certs, refused = {}, []
-    counts = {"symbolic": 0, "exact": 0, "fixed-point": 0, "manual": 0}
+    certs, refused, code = {}, [], derive.code_hash()
+    counts = {k: 0 for k in ("symbolic", "exact", "fixed-point", "ieee", "manual")}
     signal.signal(signal.SIGALRM, _alarm)
     for row in corpus["rows"]:
-        rid, p, man = row["id"], row["props"], row.get("manual")
+        rid, p = row["id"], row["props"]
         signal.alarm(120)
         try:
             const = constant(row)
             try:
-                kind, verdict, detail = decide(row)
+                kind, v, detail = decide(row)
+                if row.get("manual"):
+                    raise Refused(f"manual block unused ({kind} decides it); remove it")
             except Undecided as e:
-                if not man or not man.get("argument") or not man.get("cite") \
-                        or any(s not in sources for s in man["cite"]):
-                    raise Undecided(f"{e}; add a manual block with a citation")
-                kind, detail = "manual", f"{man['argument']} [{', '.join(man['cite'])}] (undecided by sympy: {e})"
-            else:
-                if not matches(verdict, p):
-                    raise ValueError(f"stated limit={p['limit']} tends_to={p['tends_to']}"
-                                     f" bounded={p['bounded']}, but {kind} gives {verdict}")
-                if man:
-                    raise ValueError(f"manual block unused ({kind} decides it); remove it")
-        except (Undecided, ValueError) as e:
+                kind, v, detail = manual(row, corpus["sources"], str(e))
+            if not matches(v, p):
+                raise Refused(f"stated limit={p['limit']} tends_to={p['tends_to']}"
+                              f" bounded={p['bounded']}, but {kind} gives {v}")
+            refute(row, v, kind)
+        except (Undecided, Refused) as e:
             refused.append(f"{rid}: {e}")
             continue
         finally:
             signal.alarm(0)
         counts[kind] += 1
-        certs[rid] = {"hash": derive.row_hash(row), "kind": kind, "constant": const, "detail": detail}
+        certs[rid] = {"hash": derive.row_hash(row, code), "kind": kind, "constant": const, "detail": detail}
         print(f"  {rid:22} {kind:11} constant={const!s:5} {detail}")
     return certs, refused, counts
 
@@ -250,6 +352,9 @@ def main(argv):
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv))
-    except derive.HarnessError as e:
+    except gen.HarnessError as e:
         print(f"OBSERVER_ORACLE_ERROR: {e}", file=sys.stderr)
+        sys.exit(2)
+    except Exception as e:          # an instrument crash is never a refusal, never `manual`
+        print(f"OBSERVER_ORACLE_ERROR: internal {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(2)
