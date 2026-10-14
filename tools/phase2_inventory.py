@@ -645,9 +645,12 @@ def read_marked_table(doc, tag, row_re):
 SLOT_ROW = re.compile(r'^\|\s*`([^`]+)`\s*\|\s*([a-z-]+)\s*\|')
 
 
-TABLE_ROW = re.compile(r'^\|\s*`([A-Za-z_]\w*)`\s*\|\s*([a-z-]+)\s*\|\s*(\S+)\s*\|')
+TABLE_ROW = re.compile(r'^\|\s*`([A-Za-z_]\w*)`\s*\|\s*([a-z-]+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s*\|(.*)\|\s*$')
 CLASSES = {'int-preserving', 'float-producing', 'int-requiring', 'other'}
 LOSS_MARKS = {'LOSS', '-'}
+# Q7 (decided, #1758 comment 6174302316): the class of each continuous
+# parameter. A row names the classes it has, in this order, or `-`.
+Q7_CLASSES = ['geometry', 'bounded', 'magnitude']
 # A LOSS row claims the body computes through a double; it must have one.
 DOUBLE_PATH = {'eigs_num_arg', 'eigs_list_num', 'eigs_slot_num', 'eigs_opt_num', 'eigs_slot_opt_num',
                'eigs_slot_elem_num', 'eigs_elem_num', 'buffer_read_num', 'make_num', 'slot_as_double',
@@ -674,14 +677,22 @@ def read_table(doc):
                 if line.strip() and not re.match(r'^\|\s*(builtin|-+)\s*\|', line.strip()):
                     bad.append('%s:%d: unparsed table line: %s' % (doc, ln, line.strip()[:60]))
                 continue
-            name, cls, loss = m.group(1), m.group(2), m.group(3)
+            name, cls, loss, q7, note = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5)
             if cls not in CLASSES:
                 bad.append('%s:%d: `%s` has unknown class %r' % (doc, ln, name, cls))
             if loss not in LOSS_MARKS:
                 bad.append('%s:%d: `%s` has unknown loss mark %r' % (doc, ln, name, loss))
+            q7s = [] if q7 == '-' else q7.split(',')
+            if q7s != [c for c in Q7_CLASSES if c in q7s] or len(set(q7s)) != len(q7s):
+                bad.append('%s:%d: `%s` has a bad Q7 column %r (want `-` or an ordered subset of %s)'
+                           % (doc, ln, name, q7, ','.join(Q7_CLASSES)))
+            # the column and the note make the same claim, both ways
+            if bool(q7s) != ('continuous' in note):
+                bad.append('%s:%d: `%s`: Q7 column %r disagrees with its note (a continuous '
+                           'parameter must be named in both)' % (doc, ln, name, q7))
             if name in rows:
                 bad.append('%s:%d: `%s` has two rows' % (doc, ln, name))
-            rows[name] = (cls, loss)
+            rows[name] = (cls, loss, q7)
     return rows, bad
 
 
@@ -739,13 +750,16 @@ def main():
     table, table_bad = read_table(args.doc)
     b_unclassified = sorted(n for n in nb if table is None or n not in table)
     b_stale = sorted(n for n in (table or {}) if n not in nb)
-    loss_rows = sorted(n for n, (c, l) in (table or {}).items() if l == 'LOSS')
+    loss_rows = sorted(n for n, (c, l, q) in (table or {}).items() if l == 'LOSS')
     for n in loss_rows:
         if n in nb and not (set(nb[n][1]) & DOUBLE_PATH):
             table_bad.append('`%s` is marked LOSS but its closure has no double-path token' % n)
     class_count = {}
-    for n, (c, l) in (table or {}).items():
+    q7_count = {}
+    for n, (c, l, q) in (table or {}).items():
         class_count[c] = class_count.get(c, 0) + 1
+        for k in ([] if q == '-' else q.split(',')):
+            q7_count[k] = q7_count.get(k, 0) + 1
 
     # executors: the leaf scanner and evaluator must name the same opcodes
     arms, chains = executor_arms(stripped_by_file, scope_by_file)
@@ -843,10 +857,11 @@ def main():
         len(regs), len(nb), len(nb) - len(b_unclassified), len(b_unclassified), len(b_stale)))
     out.append('classes: ' + ' '.join('%s=%d' % (c, class_count.get(c, 0)) for c in sorted(CLASSES)))
     out.append('LOSS (%d): %s' % (len(loss_rows), ' '.join(loss_rows)))
+    out.append('Q7: ' + ' '.join('%s=%d' % (c, q7_count.get(c, 0)) for c in Q7_CLASSES))
     for name in sorted(nb):
         fn, toks = nb[name]
-        cls, loss = (table or {}).get(name, ('-', '-'))
-        out.append('%-28s %-34s %-16s %-5s %s' % (name, fn, cls, loss, ','.join(toks)))
+        cls, loss, q7 = (table or {}).get(name, ('-', '-', '-'))
+        out.append('%-28s %-34s %-16s %-5s %-24s %s' % (name, fn, cls, loss, q7, ','.join(toks)))
     out.append('')
     out.append('## Sites (file:line scope token kind category)')
     for (rel, ln, scope, tok, kind), cat in sorted(classified, key=lambda x: (x[0][0], x[0][1], x[0][3])):

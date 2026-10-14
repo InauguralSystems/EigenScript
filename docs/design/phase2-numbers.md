@@ -1,9 +1,11 @@
-# Phase 2 numbers (#1758): design (round 0, revised in design round 2)
+# Phase 2 numbers (#1758): design (round 0, revised in design rounds 2 and 3)
 
-Status: design for blind review, before round 1 builds. Nothing here changes
-`src/`. Spec: issue #1758 (Revision 1), its owner decisions (A), (B), (C), and
-the Q1-Q6 decisions
-([comment](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6171744498)).
+Status: the last design round before round 1 builds. Nothing here changes
+`src/`. Spec: issue #1758 (Revision 1), its owner decisions (A), (B), (C), the
+Q1-Q6 decisions
+([comment](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6171744498))
+and the Q7-Q8 decisions
+([comment](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6174302316)).
 Evidence base: issue #1746 and the `exp-ieee-p1` branch (canonical NaN, the
 single slot writer, the JIT bailing on NaN, refusal inside writers).
 
@@ -34,6 +36,29 @@ Companion artifacts:
   found; §11 records Q1-Q6 as decided.
 - The test plan has row shapes and tier witnesses (§9).
 
+**What design round 3 changed** (after the critic's FAIL on round 2):
+- The `osr` witness proves the loop BODY ran natively: every OSR row is a
+  `loop while true:` whose only exit is a `return` right after the claimed
+  ops, and the witness requires the OSR record to reach the return sentinel
+  (§9.1). Every witness kind now has a negative plant, calibrated on main
+  (§9.2); the old form passed a plant with 0 native `INDEX_SET` calls.
+- R1.2 is behaviour-preserving and stays so: the builtin readers and
+  producers are a named BRIDGE that R1.6 deletes, so every builtin behaviour
+  change coincides with a token change, and a per-builtin behaviour table
+  gates R1.6 (§2.7, §8, §9.4). The first int value appears at R1.3, and
+  §8 lists every consumer converted in that commit.
+- `phase2_check.sh --through Rk` checks a round against exactly the rows that
+  have landed; R1.1 and R1.2 are mechanical rounds with named gates (§9.2).
+- The observer's boxed-int path is mapped and routed (§7, MAP
+  `O1.int-observed-numeric`).
+- `buffer_read_num` is renamed in R1.6, so the index reads (`gather`,
+  `scatter_add`) and the byte reads (`buf_from_pcm16le` and the byte
+  consumers) are re-decided there; the compile count is re-measured under the
+  Makefile's exact flags and attributed per commit (§2.3a).
+- Q7 and Q8 are decided and folded in: a validated `q7` column in the builtin
+  table, a geometry reader that clips the whole shape, and IEEE `totalOrder`
+  for sorting with NaN propagating through `min`/`max` (§2.6, §6, §11).
+
 Contents:
 1. The inventory
 2. Representation
@@ -45,7 +70,7 @@ Contents:
 8. Round plan
 9. Test plan
 10. Lua differential tool
-11. Decided questions (Q1-Q6) and what stays open
+11. Decided questions (Q1-Q8)
 
 ---
 
@@ -195,7 +220,7 @@ allowed tokens, or a `LOSS` row has no double path in its closure.
 
 **Calibration: every check turns red on its plant.** Each plant runs
 against a scratch copy of `src/` and of this document (`--src`, `--doc`,
-`--no-write`), never the worktree; the unplanted copy passes first. All 18
+`--no-write`), never the worktree; the unplanted copy passes first. All 20
 were KILLED on this tree, each by its own FAIL line:
 
 | plant | mutation | the red line |
@@ -218,8 +243,14 @@ were KILLED on this tree, each by its own FAIL line:
 | P | a disposition row for a function that does not exist | ``disposition row `vm.c:p2_gone` names no D2/D3 slot classifier`` |
 | Q | disposition `fine` | `` `vm.c:slot_type_name` has unknown disposition 'fine' `` |
 | R | `vm_leaf_accessor_exec` renamed | `dispatcher vm_leaf_accessor_exec (leaf_exec) attributed no opcode arm` |
+| S | `gfx_clear`'s `q7` column set to `size` | `` `gfx_clear` has a bad Q7 column 'size' (want `-` or an ordered subset of geometry,bounded,magnitude) `` |
+| T | `gfx_clear`'s `q7` column set to `-` (its note says continuous) | `` `gfx_clear`: Q7 column '-' disagrees with its note (a continuous parameter must be named in both) `` |
 
-M is the critic's plant verbatim; on the round-0 oracle it stayed green.
+M is the critic's plant verbatim; on the round-0 oracle it stayed green. (On
+its first run the plant driver reported T as SURVIVED although the gate
+exited 1 with the right FAIL line: the driver's expected-message pattern
+did not allow for the quotes around `-`. The pattern was fixed and T
+re-run; the gate was never green on it.)
 
 ---
 
@@ -347,99 +378,132 @@ computed from the site list.
 | | sites that must be revisited | how the revisit is forced | what a MISSED site does |
 |---|---|---|---|
 | **Alt 1** | the 382 TEST and 63 CASE sites (all categories) that should admit ints; reads after them; every producer that should yield an int; JIT producers | CASE only: 62 of the 63 `case VAL_NUM:`/`case AST_NUM:` switches have no `default:`, so `-Werror=switch` names them. TEST sites are not forced. | The int fails `== VAL_NUM` and takes the non-number branch. That raises a type error where the branch raises (loud, acceptable), but returns a **soft default** where the branch is soft. Examples: `what is 5` answers 0 and `who is 5` answers "unknown" (vm.c:5465-5484); `json_encode of 5` writes `null` (builtins.c:998, the one switch with a `default:`). Silently wrong, but never a lossy double. |
-| **Alt 1R** | the same sites | **Measured (§2.3a): 1,416 of the 1,798 sites stop compiling (1,380 non-JIT, 36 in the JIT files)**, plus 44 inside a deleted definition. The other 338 keep a token on purpose, each class with its reason in §2.3a: the AST kind (52), the clamp R2.2 deletes (60), the decided embed accessor (48), f64 buffer reads (26), the libc parsers (15), the exact-conversion and formatter helpers (9), definitions (38), 87 JIT emitter immediates and helpers reviewed per guard (§4), and 3 `offsetof` uses that a real member rename does reach (measured). | **A compile error.** It cannot exist in code that names the vocabulary. The meaning changes that carry no token are listed with the token event that forces them (§2.7); the last `default:` that could absorb `VAL_INT` (builtins.c:998) is removed first in round 1. |
+| **Alt 1R** | the same sites | **Measured (§2.3a), under the Makefile's exact flags: 1,488 of the 1,798 sites stop compiling (1,450 non-JIT, 38 in the JIT files)**, each attributed to the commit that first forces it (R1.1 223, R1.2 464, R1.3 11, R1.6 743, R2.2 47), plus 53 inside a deleted definition. The other 257 keep a token on purpose, each class with its reason in §2.3a: the AST kind (52), the decided embed accessor (48), the libc parsers (15), the exact-conversion and formatter helpers (9), definitions (44), 86 JIT emitter immediates and helpers reviewed per guard (§4), and 3 `offsetof` uses that a real member rename does reach (measured). | **A compile error.** It cannot exist in code that names the vocabulary. The meaning changes that carry no token are listed with the gate that catches a miss (§2.7); the last `default:` that could absorb `VAL_INT` (builtins.c:998) is removed first in R1.2a. |
 | **Alt 2** | payload reads and producers (enforced only if `num_` is renamed); the type tests keep compiling and now admit ints | none for the 382+63 type tests and the 484 checked reads | **A silent wrong number.** After `== VAL_NUM`, a `VAL_NUM_RAW` read of an int reads its int64 bits as a double (5 reads as 2.5e-323). An accessor that converts loses precision above 2^53 silently. In the JIT, three emitters misread with no compiler to catch them: `emit_load_numeric_operand`'s heap arm (jit.c:2343) loads `data.num_` of a boxed int; the `OP_SET_LOCAL` in-place branch (jit.c:3410) writes double bits into an int Value; the `OP_CONST` emitter (jit.c:2816) pushes `VAL_NUM_RAW` bits of an int constant. Constant dedup `const_equal` (chunk.c:212) merges `3` and `3.0`. |
 | **Alt 3** | only the sites that need exactness (N2, N3, N6, N8, N14, tape) | none: every existing read compiles and works below 2^53 | **A silently lossy double**, exact below 2^53, so ordinary tests cannot see it. This is precisely the class the brief says to design out. |
 
-### 2.3a The compile measurement (design round 2)
+### 2.3a The compile measurement (design rounds 2 and 3)
 
-Round 0 claimed 1,449 non-JIT sites stop compiling. That was a token count,
-not a compile. The critic compiled it and found 1,331, with 118 sites
-carrying tokens round 0 never renamed (`AST_NUM` 52, `list_set_num` 21,
-`slot_as_double` 16, `data.num` 7, `num_val` 5, and 17 more). This round
-extends the rename list and measures again, the critic's way.
+Round 0 claimed 1,449 non-JIT sites stop compiling; that was a token count,
+and the critic's compile measured 1,331. Round 2 extended the rename list
+and measured 1,416 of 1,798, under three hand-written configurations; the
+one it called `server-db` was really every TU with every extension, ZLIB
+included (the critic reproduced the count only with ZLIB). Round 3 does two
+things: it adds the two token events the plan still lacked (`buffer_read_num`,
+renamed in R1.6 so every buffer element read is re-decided, and the clamp,
+deleted in R2.2), and it measures under the Makefile's exact flags.
 
 **Method.**
-- A scratch copy of `src/` (never the worktree). Each token Alt 1R renames
-  or deletes gets a declaration with clang's
+- A scratch copy of `src/`, never the worktree. Each token the plan renames
+  or deletes gets a declaration carrying clang's
   `__attribute__((unavailable("P2 ...")))`, so every USE is a compile error
-  and the definition stays legal. `SLOT_NUM_RAW`, a macro, is routed
-  through an unavailable `extern` so each expansion errors; `VAL_NUM_RAW`
-  expands to the unavailable member `num_` and errors with a macro note.
-- The list: the enumerator `VAL_NUM`; the members `num_` (Value), `num`
-  (AST literal payload) and `num_val` (token); `eigs_num_arg`,
-  `eigs_num_arg_slow`, `eigs_list_num`, `eigs_elem_num`, `eigs_opt_num`,
-  `eigs_slot_num`, `eigs_slot_elem_num`, `eigs_slot_opt_num` and
-  `buf_num_arg` (deleted); `make_num` and `make_num_permanent`;
-  `finite_num_to_byte` and `buffer_read_byte` (deleted: Q1 byte values
-  follow N5); `SLOT_NUM_RAW`,
-  `slot_is_num`, `slot_from_num` and `slot_is_numeric` (deleted);
-  `slot_as_double` (deleted in R1.1, §2.7); and the container f64 helpers
-  `list_set_num`, `list_append_num`, `list_rewrite_num`,
-  `dict_value_set_num`, `dict_value_rewrite_num`, `list_get_num`,
-  `dict_value_get_num` (renamed `_f64`).
-- clang 18.1.3, `-fsyntax-only -ferror-limit=0
-  -Werror=implicit-function-declaration` plus `tools/werror_flags.txt`, one
-  translation unit at a time. The three configurations take their TU sets
-  from the Makefile at run time (`make print-<VAR>`):
-  - `server-db`: every `src/*.c` (41 TUs), all extensions on;
-  - `release`: `HOSTED_SOURCES` (29 TUs), gfx on, http/model/db off;
-  - `freestanding`: `SOURCES` minus `CLI_ONLY` (23 TUs), `-ffreestanding
-    -DEIGENSCRIPT_FREESTANDING=1`, every extension off.
-- The generated `lsp_stdlib_index.h` is produced into the scratch copy
-  (`tools/gen_lsp_stdlib_index.sh <copy>/lsp_stdlib_index.h`), so
-  `eigenlsp.c` compiles.
-- An error line, and each macro-expansion note under it, is mapped back to
+  and the definition stays legal. The macros `SLOT_NUM_RAW` and
+  `EIGS_NUM_MAX` are routed through an unavailable `extern`; `VAL_NUM_RAW`
+  expands to the unavailable member `num_`.
+- The tokens, by the commit that removes them (§2.7):
+
+  | commit | tokens |
+  |---|---|
+  | R1.1 | `slot_is_num`, `slot_is_numeric`, `SLOT_NUM_RAW`, `slot_from_num`, `slot_as_double` |
+  | R1.2 | `VAL_NUM`, the member `num_` (so `VAL_NUM_RAW`), `VAL_NUM_OFFSET` |
+  | R1.3 | the AST literal payload `num`, the token payload `num_val` |
+  | R1.6 | the bridge (§2.7): `eigs_num_arg`, `eigs_num_arg_slow`, `eigs_list_num`, `eigs_elem_num`, `eigs_opt_num`, `eigs_slot_num`, `eigs_slot_elem_num`, `eigs_slot_opt_num`, `buf_num_arg`, `make_num`, `make_num_permanent`, the container helpers `list_set_num`, `list_append_num`, `list_rewrite_num`, `dict_value_set_num`, `dict_value_rewrite_num`, `list_get_num`, `dict_value_get_num`; `finite_num_to_byte`, `buffer_read_byte`, `buffer_read_num` |
+  | R2.2 | `num_guard`, `num_guard_named`, `EIGS_NUM_MAX` |
+- clang 18.1.3, `-fsyntax-only -ferror-limit=0`, one translation unit at a
+  time, five configurations. Three are the Makefile's own build variants,
+  with flags and TU lists read at run time (`make print-FLAGS_<v>`,
+  `make print-SRC_V_<v>`); `freestanding` takes `tools/freestanding_check.sh`'s
+  flags; `all` adds the TUs no build variant compiles (`eigenlsp.c`,
+  `eigsdap.c`, the embed and JIT smoke programs), with every extension on:
+
+  ```
+  release      (29 TUs) -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment
+               -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+               -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
+               -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION="0.46.0"
+  server-db    (35 TUs) the same CFLAGS, -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1
+               -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1
+               -DEIGENSCRIPT_EXT_GFX=1 (no ZLIB: the Makefile's FLAGS_server-db omits it)
+  zlib         (29 TUs) release's flags plus -DEIGENSCRIPT_EXT_ZLIB=1
+  freestanding (23 TUs) -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE
+               -Werror=implicit-function-declaration -Werror=switch -Werror=comment
+               -Werror=misleading-indentation -DEIGENSCRIPT_FREESTANDING=1
+               -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
+  all          (41 TUs) CFLAGS plus every extension, -DEIGENSCRIPT_EXT_ZLIB=1 included
+  ```
+- The generated `lsp_stdlib_index.h` is produced into the copy
+  (`tools/gen_lsp_stdlib_index.sh <copy>/lsp_stdlib_index.h`).
+- An error line and each macro-expansion note under it are mapped back to
   the unmutated copy's line (difflib). A site is **flagged** when its
-  file:line carries an error.
+  file:line carries an error. A flagged site is attributed to the FIRST
+  commit whose token errors on its line: that is when a migrator must first
+  visit it.
 
 **Results** (the unmutated copy first, as the control):
 
 ```
-base:  cfg=server-db tus=41 errors=0 unparsed_failures=0
-       cfg=release tus=29 errors=0 unparsed_failures=0
-       cfg=freestanding tus=23 errors=0 unparsed_failures=0
-R:     cfg=server-db tus=41 errors=2756 unparsed_failures=0
-       cfg=release tus=29 errors=2293 unparsed_failures=0
-       cfg=freestanding tus=23 errors=1740 unparsed_failures=0
+base:  cfg=release tus=29 errors=0      cfg=server-db tus=35 errors=0     cfg=zlib tus=29 errors=0
+       cfg=freestanding tus=23 errors=0 cfg=all tus=41 errors=0           (unparsed_failures=0 everywhere)
+R3:    cfg=release tus=29 errors=2501   cfg=server-db tus=35 errors=2780  cfg=zlib tus=29 errors=2506
+       cfg=freestanding tus=23 errors=1920 cfg=all tus=41 errors=3011     (unparsed_failures=0 everywhere)
 inventory sites=1798 (non-JIT 1671, JIT-file 127)
-cfg=server-db    distinct_flagged_lines=1245 sites_flagged=1416 (non-JIT 1380, JIT-file 36)
-cfg=release      distinct_flagged_lines=1151 sites_flagged=1315 (non-JIT 1310, JIT-file 5)
-cfg=freestanding distinct_flagged_lines=812 sites_flagged=960 (non-JIT 960, JIT-file 0)
-UNION: flagged=1416 (non-JIT 1380, JIT-file 36)  inside-deleted-definitions=44  not-flagged=338 (non-JIT 247, JIT-file 91)
+cfg=release      distinct_flagged_lines=1209 sites_flagged=1384 (non-JIT 1377, JIT-file 7)
+cfg=server-db    distinct_flagged_lines=1265 sites_flagged=1442 (non-JIT 1435, JIT-file 7)
+cfg=zlib         distinct_flagged_lines=1213 sites_flagged=1389 (non-JIT 1382, JIT-file 7)
+cfg=freestanding distinct_flagged_lines=866 sites_flagged=1024 (non-JIT 1024, JIT-file 0)
+cfg=all          distinct_flagged_lines=1307 sites_flagged=1488 (non-JIT 1450, JIT-file 38)
+UNION of the four build configs: sites_flagged=1447; all-TU config adds 41
+UNION: flagged=1488 (non-JIT 1450, JIT-file 38)  inside-deleted-definitions=53  not-flagged=257 (non-JIT 168, JIT-file 89)
+first forced in: R1.1=223  R1.2=464  R1.3=11  R1.6=743  R2.2=47
+errors not naming a planned token: {"cannot take the address of an rvalue of type 'double'": 5}
 ```
 
-The error totals count a header's error once per TU that includes it;
-the distinct lines and the sites are what matter. The union equals
-`server-db`, because every TU is in it. `release` and
-`freestanding` matter for what a build of that configuration forces (a
-freestanding build cannot see the JIT, for instance), not for the union.
+The error totals count a header's error once per TU that includes it; the
+distinct lines and the sites are what matter. The five errors that name no
+token are an artifact of the `SLOT_NUM_RAW` reroute (it takes an address,
+and five uses pass an rvalue); every one sits on a line that also carries
+an `unavailable` error, so no site depends on them. Every flagged site has a
+first commit.
 
-**The 338 sites that do not stop compiling, every one classified:**
+**The 257 sites that never stop compiling, every one classified:**
 
 | class | sites | why it keeps compiling, and what forces it instead |
 |---|---:|---|
-| `AST_NUM` | 52 | Under (B) the node kind still means "number literal". Its payload `num` is renamed, so all 7 reads of the literal's value are flagged; a site that only tests the kind is right for both kinds. The critic made the same call. |
-| the clamp: `num_guard` 48, `num_guard_named` 4, `EIGS_NUM_MAX` 8 | 60 | A float clamp whose meaning does not change in round 1. R2.2 deletes all three, so every one of these sites stops compiling in that round: a token event of its own. |
-| `eigs_value_as_num` | 48 | The embed accessor, used by the embed test harnesses (`embed_smoke.c` 42, `embed_concurrent.c` 6). Q3 decided it converts an int as `lua_tonumber` does, so "this value as a double" is unchanged. Exact ints get `eigs_value_as_int`/`eigs_value_is_int`. |
-| `buffer_read_num` | 26 | Buffers are f64 storage (Q2): the read is a float by contract. Of its other 12 sites, 11 share a line with a renamed token and one is inside the deleted `buffer_read_byte`. |
-| `strtod` 14, `atof` 1 | 15 | The libc parsers. The lexer's result reaches the renamed `num_val` through `tok_add`, whose store is flagged; the literal's kind changes `tok_add`'s parameter, which forces the call. The JSON, store and trace scalar parsers return `make_num(d)` a few lines on (flagged); trace.c:2324 fills a buffer's f64 storage (Q2). The rest parse model hyperparameters (float), the tape's observer config, and `tape_read.c:368`, which feeds the observer replay a double (`tape_read.c:635`); round 1 observes ints as doubles live and on replay alike (§8 risks), and round 3's change to `observer_slot_record_value`'s parameter forces this line. |
-| `num_to_i64_exact` 6, `eigs_num_text` 3 | 9 | Pure helpers over a double, unchanged in meaning; every input reaches them through a renamed reader. N6 changes the formatter's output on purpose (pinned by the N6 rows), not silently. |
-| definitions | 38 | Declarations and bodies of the renamed and deleted names themselves. |
+| JIT emitter immediates and helpers | 86 | Tag compares (`0xFFF8`/`0xFFF9`/`0xFFFB`/`0xFFFD`) and the `emit_*` helpers. Reviewed per guard in §4.1: an SMI or a `VAL_INT` box fails every consuming guard and bails; the producer emitters keep their float meaning (§4.2). |
+| `AST_NUM` | 52 | Under (B) the node kind still means "number literal". Its payload `num` is renamed in R1.3, so all 7 reads of the literal's value are flagged; a site that only tests the kind is right for both kinds. The critic made the same call. |
+| `eigs_value_as_num` | 48 | The embed accessor: 40 call sites in `embed_smoke.c` and 6 in `embed_concurrent.c` (the embed test harnesses), plus its definition (`eigs_embed.c`) and declaration (`eigs_embed.h`). Q3 decided it converts an int as `lua_tonumber` does, so "this value as a double" is unchanged; exact ints get `eigs_value_as_int`/`eigs_value_is_int` (R1.8). |
+| definitions | 44 | Declarations and bodies of the renamed and deleted names themselves. |
+| `strtod` 14, `atof` 1 | 15 | The libc parsers. The lexer's result reaches the renamed `num_val` through `tok_add`, whose store is flagged; the literal's kind changes `tok_add`'s parameter, which forces the call. The JSON, store and trace scalar parsers return `make_num(d)` a few lines on (flagged, R1.6); trace.c:2324 fills a buffer's f64 storage (Q2). The rest parse model hyperparameters (float), the tape's observer config, and `tape_read.c:368`, which feeds the observer replay a double (`tape_read.c:635`); round 1 observes ints as doubles live and on replay alike (§8 risks), and round 3's change to `observer_slot_record_value`'s parameter forces this line. |
+| `num_to_i64_exact` 6, `eigs_num_text` 3 | 9 | Pure helpers over a double, unchanged in meaning; every input reaches them through a renamed reader. N6 changes the formatter's output on purpose in R1.7, a token-less change listed in §2.7 with its rows. |
 | `VAL_NUM_OFFSET` in jit.c | 3 | `offsetof` uses, which the attribute does not reach. A real rename does: renaming `num_` to `f64_` (and the macro) in a further scratch copy gives exactly 3 errors, jit.c:2367, 2368 and 3471. |
-| JIT emitter immediates and helpers | 87 | Tag compares (`0xFFF8`/`0xFFF9`/`0xFFFB`/`0xFFFD`) and the `emit_*` helpers. Reviewed per guard in §4.1: an SMI or a `VAL_INT` box fails every consuming guard and bails; the producer emitters keep their float meaning (§4.2). |
-| **total** | **338** | |
+| **total** | **257** | |
 
-So the round-0 headline becomes: **1,416 of 1,798 sites stop compiling**
-(1,380 non-JIT, 36 JIT-file), 44 more are inside deleted definitions, and
-338 keep a token for the reasons above. None of the 338 changes meaning
-without a token event: the ones that change meaning later change it in
-R2.2 (the clamp) or round 3 (the observer), each forced then.
+**What round 2 got wrong here, and round 3 fixes.** Round 2 kept
+`buffer_read_num` (26 unflagged sites) as "a float by contract". Ten of its
+38 sites read a value that is NOT a float: byte values (`str_from_bytes`
+builtins_buf.c:240, `f64_from_bytes` :284, the zlib input :351,
+`buf_from_pcm16le` :754 and :756, `write_bytes` builtins_host.c:1548,
+`net_send` ext_net.c:361, and inside `buffer_read_byte` eigenscript.h:1920)
+and indices (`scatter_add` builtins_tensor.c:1036, `flat_index_at` :1436, the
+`gather` path the critic probed: an index of 1.5 truncates to 1 today). With
+`buffer_read_num` renamed in R1.6, all 38 sites are flagged in that commit,
+and each is re-decided: `buffer_read_f64` for data, the Q1 byte reader for a
+byte, the N5 index reader for an index (§2.6). Without the rename, nine of
+the ten lines stayed unflagged in round 2; most sit in a function another
+token forces anyway (the `finite_num_to_byte` call a line later), but
+`buf_from_pcm16le` names no other token before R2.2's clamp deletion, so
+nothing would have made R1.6 visit it.
+
+So the headline is: **1,488 of 1,798 sites stop compiling across the
+plan** (first forced: R1.1 223, R1.2 464, R1.3 11, R1.6 743, R2.2 47), 53
+more sit inside deleted definitions, and 257 keep a token for the reasons
+above. None of the 257 changes meaning without a token event: the ones that
+change meaning later do so in a commit listed in §2.7.
 
 ### 2.4 The choice: Alt 1R
 
 1. **It is the only alternative whose missed site is loud by construction.**
-   Measured: 1,416 of 1,798 sites stop compiling until a person decides,
+   Measured: 1,488 of 1,798 sites stop compiling until a person decides,
    site by site, whether the site admits ints and with what semantics
    (§2.3a). Alt 2 and Alt 3 leave 445 type tests and cases plus 484 checked
    reads compiling with a widened or lossy meaning.
@@ -461,7 +525,8 @@ deprecation warnings, so the compiler's warning count is the progress meter
 and the final commit deletes the old names. A mechanical `sed` from old name
 to new would reintroduce the silent class (`len` returning
 `make_float(count)`), so the migration is per site, with the builtin table
-(§6) deciding each builtin's accessor and the int-fuzz gate (§9) checking it.
+(§6) deciding each builtin's accessor and the per-builtin behaviour table
+(§9.4) checking it.
 
 ### 2.5 The slot classifiers, derived
 
@@ -560,7 +625,7 @@ R1.1, before any program can produce an SMI.
 | `value_slot.h:slot_true` | not-a-classifier | constructor (D3) |
 | `vm.c:jit_helper_dot_get` | guarded | a non-null field is pushed as its bits; an SMI is a valid stack slot (D3) |
 | `vm.c:jit_helper_local_idx_dot_get` | guarded | as `jit_helper_dot_get` (D3) |
-| `vm.c:obs_slot_observable` | refuse | answers "pointer or bool", so an SMI is silently unobserved. Its callers test `slot_is_num` first (compile-forced) and must route an SMI into the numeric channel; R1.1 aborts here on an SMI, so a missed caller fails loudly (D3) |
+| `vm.c:obs_slot_observable` | refuse | answers "pointer or bool", so an SMI is silently unobserved. Its callers test `slot_is_num` first (compile-forced) and must route an SMI into the numeric channel; R1.1 aborts here on an SMI, so a missed caller fails loudly. A BOXED int is a pointer, so it passes this test and goes to `observer_slot_update(Value *)`, whose number arm (eigenscript.c:785) R1.2's `VAL_NUM` rename forces (§7, O map) (D3) |
 | `vm.c:vm_local_is_null` | guarded | exact null test (D3) |
 | `vm.c:vm_run_ex/CASE(DOT_GET)` | guarded | exact null test of a field (D3) |
 | `vm.c:vm_run_ex/CASE(LOCAL_IDX_DOT_GET)` | guarded | exact null test of a field (D3) |
@@ -569,38 +634,50 @@ R1.1, before any program can produce an SMI.
 ### 2.6 The accessor API after round 1 (Alt 1R)
 
 ```
-/* slots (R1.1) */
+/* slots (R1.1: readers and the SMI encoding; no int VALUE can exist yet) */
 int      slot_is_f64(EigsSlot);     /* high16 < 0xFFF8 */
 int      slot_is_smi(EigsSlot);     /* high16 == 0xFFFA */
 int      slot_is_int(EigsSlot);     /* SMI or heap VAL_INT */
 int      slot_is_number(EigsSlot);  /* f64 or int */
 EigsSlot slot_from_f64(double);     /* the ONE double writer; round 2: canonical NaN */
-EigsSlot slot_from_int(int64_t);    /* the ONE int writer: SMI in range, else a box */
+EigsSlot slot_from_int(int64_t);    /* the ONE int writer: SMI in range, else a box.
+                                       Until R1.3 its only callers convert an
+                                       existing VAL_INT (§8, the int-source check) */
 int      slot_f64_value(EigsSlot, double *);   /* an immediate double or a VAL_FLOAT
                                                   box; 0 for anything else, ints
                                                   included. Replaces slot_as_double. */
 int      slot_int_value(EigsSlot, int64_t *);  /* an SMI or a VAL_INT box */
 #define  SLOT_F64_RAW(s)            /* was SLOT_NUM_RAW */
-/* container f64 storage helpers (R1.1): list_set_f64, list_append_f64,
-   list_rewrite_f64, dict_value_set_f64, dict_value_rewrite_f64,
-   list_get_f64, dict_value_get_f64 (were *_num) */
 
-/* Values (R1.2) */
+/* Values (R1.2a; make_int lands in R1.3, the first int producer) */
 Value   *make_float(double);   Value *make_float_permanent(double);
 Value   *make_int(int64_t);
 #define  VAL_F64_RAW(v)             /* member f64_; were VAL_NUM_RAW and num_ */
 #define  VAL_F64_OFFSET             /* was VAL_NUM_OFFSET (the JIT's fixed-offset load) */
+#define  VAL_I64_RAW(v)             /* member i64_ of a VAL_INT */
+
+/* the final readers, which replace the bridge in R1.6 (§2.7) */
 EigsNum  eigs_number_arg(const Value *, const char *who); /* int-preserving */
 double   eigs_float_arg(const Value *, const char *who);  /* float-producing: int converts */
 int64_t  eigs_int_arg(const Value *, const char *who);    /* int-requiring: N5 exact rule */
 int      eigs_int_arg_range(const Value *, int64_t lo, int64_t hi,
                             int64_t *out, const char *who);  /* N5, then the C range */
 uint8_t  eigs_byte_arg(const Value *, const char *who);   /* Q1: N5, then 0..255 */
-int      eigs_round_arg(const Value *, int *out, const char *who);
-                                    /* Q1 continuous: round to nearest, half away
-                                       from zero (as Q4's round); non-finite is
-                                       refused (N13); finite but outside the C int
-                                       range is open: §11 Q7 */
+/* buffer elements (buffer_read_num renamed in R1.6; every site re-decided) */
+double   buffer_read_f64(const Value *buf, int64_t i);   /* data: an f64 element (Q2) */
+int      buffer_byte_at(const Value *buf, int64_t i, uint8_t *out, const char *who);
+                                    /* a byte value: N5, then 0..255 (Q1) */
+int      buffer_index_at(const Value *buf, int64_t i, int64_t *out, const char *who);
+                                    /* an index: N5 (gather, scatter_add) */
+/* the container f64/int helpers (R1.6): list_set_f64, list_append_f64,
+   list_get_f64, dict_value_set_f64, ... and their _int twins (were *_num) */
+
+/* Q7 (decided): continuous parameters, by the quantity they represent */
+int      eigs_geom_shape(const Value *args, int first, EigsShapeKind kind,
+                         const EigsRect *drawable, EigsShape *out, const char *who);
+int      eigs_bounded_arg(const Value *, double lo, double hi, int *out, const char *who);
+int      eigs_magnitude_arg(const Value *, int64_t lo, int64_t hi, int64_t *out,
+                            const char *who);
 
 /* literals (R1.3) */
 OP_INT_ZERO, OP_INT_ONE, OP_INT_CONST   /* appended to OpCode; §2.7 */
@@ -610,45 +687,103 @@ OP_INT_ZERO, OP_INT_ONE, OP_INT_CONST   /* appended to OpCode; §2.7 */
 Each `_arg` reader also has the list, slot and optional forms of today's
 checked accessors.
 
+**The Q7 readers** (decided in
+[#1758 comment 6174302316](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6174302316);
+the builtin table's `q7` column, §6, names each builtin's classes):
+- **Geometry** (coordinates and sizes): clip the WHOLE shape in float
+  space against the drawable area, then round to nearest. A per-argument
+  reader cannot do that: saturating each endpoint of
+  `gfx_rect of [-3e9, 0, 6e9, 10]` separately covers half the screen
+  instead of all of it, so the reader takes the shape. `eigs_geom_shape`
+  reads all of a shape's numbers as doubles (a non-finite one raises
+  `value`, N13), then clips by kind and only then converts:
+  - `POINT` (x, y): outside the drawable rect, the shape is empty;
+  - `RECT` (x, y, w, h; also the clip rect, the framebuffer's destination
+    `dx, dy, w*scale, h*scale`, and a glyph cell of `gfx_text`): intersect
+    with the drawable rect in float space; an empty intersection draws
+    nothing;
+  - `LINE` (x1, y1, x2, y2): Liang-Barsky clipping of the segment in float
+    space, so the visible part keeps its slope;
+  - `CIRCLE` (cx, cy, r) and `RRECT` (x, y, w, h, r): reject when the
+    bounding box misses the drawable rect; otherwise clamp the span loop to
+    the drawable rows and columns before converting, so a radius of `3e9`
+    costs the visible rows, not 6e9 iterations;
+  - every surviving coordinate is then rounded half away from zero (Q4's
+    rule) into a C `int`, which the clip guarantees holds it.
+  `EigsShape.empty` tells the caller to draw nothing; that is the only
+  outcome a finite out-of-range shape has.
+- **Bounded** (colour channels, gain, volume, PCM samples): clamp to the
+  domain, then round (`eigs_bounded_arg`); a NaN raises `value` (N13).
+- **Magnitude** (durations, sleeps, timeouts, sample counts, window sizes, a
+  measurement's scale): round, and raise `value` naming the builtin when the
+  result does not fit what the C call can honour (`eigs_magnitude_arg`).
+
 ### 2.7 Every meaning change coincides with a token change
 
 Round 0's order changed meanings with no token change: R1.1 widened
 `slot_as_double` with an SMI arm, and R1.3 re-meant `OP_NUM_ZERO`/`OP_NUM_ONE`
 as ints. Neither produces a compile error, so a missed caller or a missed
 executor (the critic found the leaf evaluator's `OP_NUM_ZERO`/`OP_NUM_ONE`
-arms, vm.c:1872-1877) would keep compiling with the old meaning. The rule
-now: **a meaning change lands in the same commit as the token change that
-stops every affected site**, or it is listed below with the reason no token
-exists and the gate that catches a miss instead.
+arms, vm.c:1872-1877) would keep compiling with the old meaning. Round 2's
+order had a second flaw the critic found: R1.2 deleted the builtin readers
+(a compile error) while claiming to preserve behaviour, and R1.6 then changed
+about 114 builtin rows with no token event at all.
 
-| meaning change | commit | token change in that commit | a missed site |
+The rule: **a meaning change lands in the same commit as the token change
+that stops every affected site**, or it is listed below with the reason no
+token exists and the gate that catches a miss instead.
+
+**The bridge.** The builtin-facing readers and producers are kept, under
+their current names, until R1.6, and they are the bridge: `eigs_num_arg` and
+its family, `buf_num_arg`, `make_num`/`make_num_permanent`, the container
+`*_num` helpers, `finite_num_to_byte`, `buffer_read_byte` and
+`buffer_read_num`. Through R1.5 they keep exactly today's meaning: a number
+read is a double (an int converts, as every number already is on the tag), a
+number produced is a float. R1.6 deletes the bridge, so every builtin site
+stops compiling in the commit that gives it its §6 semantics. R1.2 touches
+no builtin's behaviour.
+
+| commit | meaning change | token change in that commit | a missed site |
 |---|---|---|---|
-| a slot may hold an int (SMI tag 0xFFFA) | R1.1 | `slot_is_num` -> `slot_is_f64`, `SLOT_NUM_RAW` -> `SLOT_F64_RAW`, `slot_from_num` -> `slot_from_f64`; `slot_is_numeric` deleted; the container helpers `*_num` -> `*_f64` | compile error (D1, 58 entries) |
-| "a number from an immediate or a box" (`slot_as_double`) | R1.1 | **deleted**. Its 15 calls (leaf `INDEX_GET` and `ADD/SUB/MUL`, `ARITH_FAST`, `INT_BINOP_R`, `NEG`, `BNOT`, `EQ`, `NE`, `NUM_CMP`) are rewritten with an explicit int decision: the float fast path reads `slot_f64_value` (float only), an int takes the slow path that R1.2/R1.3 give int semantics, and the leaf bails | compile error at all 15 |
-| a slot classifier without a number test meets an SMI | R1.1 | none can exist (they name no number token) | the derived D2/D3 table (§2.5): `refuse` entries abort, `smi-arm` entries answer; the inventory fails on an unreviewed entry |
-| raw access to a slot's or Value's double | R1.1/R1.2 | the members and macros renamed (`SLOT_F64_RAW`, `VAL_F64_RAW`, `f64_`) | a spelled-out `.d_`/`.num_` is refused by `tools/num_read_check.sh` and by the inventory (BYPASS) |
-| a Value number may be an int (`VAL_INT`) | R1.2a | `VAL_NUM` -> `VAL_FLOAT`; `VAL_INT` appended, so `-Werror=switch` stops every default-less ValType switch; the one `default:` (builtins.c:998) is removed in the same commit | compile error |
-| the checked readers' contract (number in, double out) | R1.2 | `eigs_num_arg` family, `eigs_slot_num` family and `buf_num_arg` deleted; the replacements name the intent (§2.6) | compile error |
-| the number constructors | R1.2 | `make_num` -> `make_float`, `make_num_permanent` -> `make_float_permanent`; `make_int` added | compile error |
-| equality, ordering and hashing across kinds | R1.2 | their `VAL_NUM` arms and cross-type test renamed (`values_equal_impl`'s type-mismatch block names `VAL_NUM`; `sort_cmp_num`; `const_hash_value`/`const_equal`) | compile error |
-| `VAL_NUM_OFFSET` (the JIT's fixed-offset load) | R1.2 | renamed `VAL_F64_OFFSET` with the member | compile error (jit.c:2367, 2368, 3471; measured) |
-| an int literal | R1.3 | **new opcodes `OP_INT_ZERO`, `OP_INT_ONE`, `OP_INT_CONST`, appended** (the opcode-ABI rule, no `EIGS_BYTECODE_ABI` bump); the AST payload `num` and the token's `num_val` renamed to an `EigsNum` in the same commit | the four exhaustive OpCode switches stop compiling (`op_name` chunk.c:337, `op_verify_operands` chunk.c:466, `op_verify_stack_effect` chunk.c:615, `op_stack_effect` compiler.c:305), and `tools/obs_marker_check.sh` requires each new enumerator's `/*obs:NONE*/` marker (`opcode_is_observer_reader`, chunk.c:1302, has a `default:` that correctly answers "not a reader"); the JIT scanner and the leaf scanner refuse an opcode they do not know (their `default:`), so the literal runs interpreted; the interpreter's computed-goto table is the one executor the compiler cannot check, and a missing entry is a NULL jump that crashes the first int-literal row (loud) |
-| `OP_NUM_ZERO`, `OP_NUM_ONE` | none | **no meaning change**: they keep pushing float 0.0 and 1.0, so their three executors (interpreter vm.c:3257, JIT emitter jit.c:2797, leaf evaluator vm.c:1872) and two scanners stay correct untouched. The compiler emits them only for a float literal (compiler.c:2073, which reads the renamed payload) | n/a |
-| `OP_CONST` | none | **no meaning change**: an int is never an `OP_CONST` operand (`OP_INT_CONST` carries it). Its three executors already push any non-number constant as a box, and the leaf scanner refuses a non-`VAL_FLOAT` constant (renamed test, chunk.c:1090) | a stray int constant is a box: correct, merely slow |
-| the byte conversion (wrap modulo 256 -> N5, Q1) | R1.6 | `finite_num_to_byte` deleted (7 calls), and with it `buffer_read_byte` (21 calls in `gfx_fb` and `ppu_render_frame`), replaced by a reader that raises on a non-byte | compile error |
-| the observer's numeric channel receives an int | R1.1 (refusal), R1.3 (routing) | `obs_slot_observable` refuses an SMI (D3 `refuse`); its callers are D1 (forced in R1.1) and route an SMI into the numeric channel as a double once ints exist | abort |
-| `tape_read.c:368`'s double (the observer replay's input) | round 3 | none in round 1: live and replayed observers both see an int as its double. Round 3 changes `observer_slot_record_value`'s parameter to the numeric kind, which forces this line | n/a in round 1 |
-| the embed accessor `eigs_value_as_num` given an int | R1.8 | none, **by decision** (Q3): it converts, like `lua_tonumber`; `eigs_value_as_int`, `eigs_value_is_int` and `eigs_value_new_int` are added | n/a |
-| the clamp's removal: NaN and inf become reachable | R2.2 | `num_guard`, `num_guard_named`, `EIGS_NUM_MAX` deleted (74 sites forced: 60, 6 and 8) | compile error |
+| R1.1 | a slot may hold an SMI (no producer yet) | `slot_is_num` -> `slot_is_f64`, `SLOT_NUM_RAW` -> `SLOT_F64_RAW`, `slot_from_num` -> `slot_from_f64`; `slot_is_numeric` and **`slot_as_double`** deleted | compile error: 223 sites first forced here (§2.3a), the 58 D1 classifiers among them |
+| R1.1 | a slot classifier without a number test meets an SMI | none can exist (they name no number token) | the derived D2/D3 table (§2.5): `refuse` entries abort, `smi-arm` entries answer; the inventory fails on an unreviewed entry |
+| R1.2a | a Value number may be an int (`VAL_INT`; no producer yet) | `VAL_NUM` -> `VAL_FLOAT`, `num_` -> `f64_`, `VAL_NUM_RAW`/`VAL_NUM_OFFSET` renamed; `VAL_INT` appended, so `-Werror=switch` stops every default-less ValType switch; the one `default:` (builtins.c:998) removed in the same commit | compile error: 464 sites first forced here. Each forced site gets its final int arm, live from R1.3; a builtin's number test admits an int and reads it through the bridge |
+| R1.3 | **the first int values**: int literals, and int arithmetic on them | the AST payload `num` and the token's `num_val` become an `EigsNum`; **new opcodes `OP_INT_ZERO`, `OP_INT_ONE`, `OP_INT_CONST`, appended** (the opcode-ABI rule; no `EIGS_BYTECODE_ABI` bump); `make_int` introduced | compile error at the 11 payload sites and the four exhaustive OpCode switches (`op_name` chunk.c:337, `op_verify_operands` chunk.c:466, `op_verify_stack_effect` chunk.c:615, `op_stack_effect` compiler.c:305; `tools/obs_marker_check.sh` requires each new enumerator's `/*obs:NONE*/`); the JIT and leaf scanners refuse an opcode they do not know (their `default:`); the interpreter's dispatch table is the one executor the compiler cannot check, and a missing entry is a NULL jump that crashes the first int-literal row (loud) |
+| R1.3 | `OP_NUM_ZERO`, `OP_NUM_ONE`, `OP_CONST` | **no meaning change**: they keep their float meaning in all three executors (interpreter vm.c:3257, JIT emitter jit.c:2797, leaf evaluator vm.c:1872); an int is never an `OP_CONST` operand | n/a |
+| R1.4 | `//` | `OP_IDIV` appended, `TOK_SLASH_SLASH` appended (and `//=`, Q6) | compile error at the exhaustive switches |
+| R1.6 | **every builtin's §6 semantics** (N5 raises, int results, Q1 byte and Q7 continuous readers, the index readers of `gather`/`scatter_add`) | **the bridge is deleted** (21 tokens, §2.3a) | compile error: 743 sites first forced here; the per-builtin behaviour table (§9.4) checks every row's result against §6, on the tag and the branch |
+| R1.8 | the embed API gains ints | `eigs_value_new_int`, `eigs_value_as_int`, `eigs_value_is_int` added; `eigs_value_as_num` keeps its name **by decision** (Q3: it converts, like `lua_tonumber`) | the embed gate row (MAP `gate.N7.embed-int`) |
+| R2.2 | NaN and inf become reachable | `num_guard`, `num_guard_named`, `EIGS_NUM_MAX` deleted | compile error: 47 sites first forced here (the rest of the clamp's 74 sites were forced earlier) |
 
 **The meaning changes that cannot carry a token**, each with the gate that
 catches a miss:
-- **The leaf evaluator vs the generic path.** The leaf has no frame and no
-  `OP_LINE`, so nothing marks it when the generic path's semantics change.
-  The gate is the leaf differential (§9.2, the `trace` tier): every row runs
-  with the leaf on and off, and the outputs must be byte-identical.
-- **Consumers that assumed a finite double (R2.2).** No token marks code that
-  merely receives a NaN or an inf after the clamp is gone:
+- **R1.3, the int arms written in R1.1 and R1.2 go live.** They were forced
+  then and written with their final semantics while no int could reach them.
+  Gate: R1.3's 42 MAP rows and the C slot test; and the int-source check
+  (§8) proves nothing before R1.3 could produce an int, so nothing earlier
+  could have exercised an unfinished arm.
+- **R1.3, the tape parser.** `parse_value_p` (trace.c:2284) reads digits as
+  an int from v7 on; the version bump refuses an older tape. Gate: the T1
+  rows (`T1.twice-int`, `T1.v6-refused`).
+- **R1.3, the leaf evaluator vs the generic path.** The leaf has no frame and
+  no `OP_LINE`, so nothing marks it when the generic path's semantics change.
+  Gate: the `trace` tier of §9.2, which runs every row with the leaf off and
+  requires byte-identical output.
+- **R1.4 `%` and R1.5 the shift rules.** Each has one live executor in round
+  1: the interpreter (`CASE(MOD)`, `INT_BINOP_R`). The JIT scanner refuses
+  MOD and the bitwise ops from R1.3, the leaf admits neither, and nothing
+  folds constants (checked: the compiler and parser evaluate no operator at
+  compile time). Gate: the N4 and N8 rows, including their `F` shapes.
+- **R1.7, the float text.** N6 changes `eigs_num_text`, the one shared
+  float formatter, and in the same commit the writers that format a float on
+  their own: the JSON encoder, `store_json_encode` and `db_build_query`
+  (#1762), and trace.c's `%.17g` writers (2817, 2836, 2950). (The decoders'
+  int kinds for integer text, `json_decode`, `json_path`, `store_query`,
+  `db_query_value` and `num of`, land in R1.6, where deleting `make_num`
+  forces them.) Gate: one row per writer (`N6.*`, `N14.encode-kinds`,
+  `N14.store-exact-digits`, `gate.N14.db-param-exact`, `T1.twice-float`).
+- **R2.2, consumers that assumed a finite double.** No token marks code that
+  merely receives a NaN or an inf once the clamp is gone:
   - `values_equal_impl`'s identity shortcut (`if (a == b && ...) return
     1;`) would call a NaN box equal to itself. No program path reaches it
     with one float box on both sides today (EQ compares two floats in its
@@ -656,11 +791,13 @@ catches a miss:
     not probed, since no NaN exists yet), so R2.2 excludes floats from the
     shortcut as #1417 excluded buffers, and the C slot test calls it with
     one NaN box on both sides;
-  - C casts of a double to an integer type (undefined on NaN/inf): every
+  - C casts of a double to an integer type (undefined on NaN or inf): every
     builtin argument goes through a §2.6 reader, which refuses a non-finite
     value (N13); the internal casts left are the #1746 residue (R2.6);
-  - the sort comparators: NaN has no order, and the order a sort should
-    give it is not decided (§11 Q8).
+  - the sort comparators and `min`/`max` (Q8, decided): `sort` and `sort_by`
+    order floats by IEEE 754 `totalOrder`, the canonical NaN after +inf;
+    `min` and `max` propagate NaN. Gate: `N11.sort-total-order`,
+    `N11.min-max-nan`.
 
 ---
 
@@ -871,7 +1008,7 @@ leaf off under trace (the tape records every line, and the leaf skips
 | `OP_INT_ZERO/ONE/CONST` | do not exist | **not admitted**: the scanner's `default:` refuses the chunk, so an int literal sends every call down the generic path. Round 5 adds scanner and evaluator arms together (the inventory requires both directions) |
 | `GET_LOCAL` (1878) | borrows the argument slot | unchanged (an SMI argument is a valid slot) |
 | `LOCAL_DOT_GET` (1883) | the target must be a pointer to a dict, else bail; a missing field is null; a field is borrowed as its bits | unchanged: an SMI field is borrowed as an SMI (§2.5 row `guarded`) |
-| `INDEX_GET` (1907) | the index through `slot_as_double` (an immediate or a boxed `VAL_NUM`) then `vm_index_is_int`; a list element is borrowed; a buffer element is `slot_from_num(buffer_read_num(...))` | `slot_as_double` is deleted (R1.1), so this arm stops compiling. It reads the index with `slot_f64_value` and **bails on an int index**; the buffer element is `slot_from_f64` (Q2: f64 storage). Round 5 adds the SMI index |
+| `INDEX_GET` (1907) | the index through `slot_as_double` (an immediate or a boxed `VAL_NUM`) then `vm_index_is_int`; a list element is borrowed; a buffer element is `slot_from_num(buffer_read_num(...))` | `slot_as_double` is deleted (R1.1), so this arm stops compiling. It reads the index with `slot_f64_value` and **bails on an int index**; the buffer element is `slot_from_f64` (Q2: f64 storage), read through `buffer_read_f64` once R1.6 renames `buffer_read_num`. Round 5 adds the SMI index |
 | `ADD`/`SUB`/`MUL` (1933) | both operands through `slot_as_double`; `r = a op b`; the underflow flag for MUL (#1079); `slot_from_num(num_guard(r))` | stops compiling (R1.1). Reads with `slot_f64_value` and **bails unless both operands are floats**, so an int or mixed operation runs on the generic path with N2/N3/(A) semantics. Round 5 adds int arms whose overflow bails (never raises inside the leaf: the generic path raises with the caller's line). R2.2 deletes `num_guard` here with the others |
 | `RETURN` (1957) | increfs the result, pops args and fn, pushes the result | unchanged (`slot_incref` ignores an SMI) |
 | `default` (1966) | unreachable; returns 0 | unchanged |
@@ -964,11 +1101,13 @@ exactly as an int. That is the path the bar critic found missing: payload
   - `type` ((B));
   - continuous parameters (Q1, decided): gfx coordinates and sizes, colour
     channels, durations and audio gain accept an int or a float. Where the
-    C API needs an int, `eigs_round_arg` rounds to nearest (half away from
-    zero, as `round`), replacing today's truncation toward zero, which gets
-    negative coordinates wrong; a finite value outside the C range is §11
-    Q7, still open. (Byte consumers, which truncated and
-    wrapped modulo 256 here in round 0, are int-requiring under Q1.)
+    C API needs an int the value rounds to nearest (half away from zero, as
+    `round`), replacing today's truncation toward zero, which gets negative
+    coordinates wrong. What a finite value outside the C range does follows
+    the quantity (Q7, decided): geometry is clipped as a whole shape in
+    float space, a bounded quantity is clamped, a magnitude raises `value`
+    (§2.6). (Byte consumers, which truncated and wrapped modulo 256 here in
+    round 0, are int-requiring under Q1.)
 
 **The `loss` column.** `LOSS` marks a builtin whose *current* body reads its
 argument through a double accessor, or builds its result from a computed
@@ -1004,12 +1143,21 @@ Two consequences of the definition, made explicit in design round 2:
   R1.7 inherits the fix and only adds the int arm. Its MAP entries are the
   row `N14.store-exact-digits` and the gate `gate.N14.db-param-exact`.
 
+**The `q7` column** (design round 3) names the Q7 class of each continuous
+parameter a builtin converts: an ordered subset of `geometry`, `bounded`,
+`magnitude`, or `-`. The inventory refuses any other token, and checks the
+column against the note both ways: a row's note says "continuous" exactly
+when its `q7` column is not `-`. Counts: geometry 9, bounded 13, magnitude 13.
+
 **Counts** (from the table below, checked by `tools/phase2_inventory.py`,
 which prints them): 230 numeric builtins (`ppu_render_frame` joined when
-`buffer_read_byte` entered the vocabulary). By class: 37 int-preserving, 58
-float-producing, 84 int-requiring, 51 other. The decided Q1 moved 16 rows
+`buffer_read_byte` entered the vocabulary). By class: 37 int-preserving, 57
+float-producing, 85 int-requiring, 51 other. The decided Q1 moved 16 rows
 from other to int-requiring (counts, byte values, handles, flags and
-selectors), and `ppu_render_frame` is a new int-requiring row. 42 are LOSS:
+selectors); `ppu_render_frame` is a new int-requiring row; design round 3
+moved `buf_from_pcm16le` from float-producing to int-requiring (its inputs are
+byte values, #1758 comment 6174964306) and corrected `gather` (its indices
+truncate today). 42 are LOSS:
 - arithmetic: `abs`, `add`, `subtract`, `multiply`, `negative`, `sum`,
   `num_copy`;
 - min/max and rounding: `min`, `max`, `floor`, `ceil`, `round`;
@@ -1040,238 +1188,238 @@ current state behind several rows:
   `eigs_int_arg` for the key closes it if it is still open then).
 
 <!-- builtin-table:begin -->
-| builtin | class | loss | note |
-|---|---|---|---|
-| `abs` | int-preserving | LOSS | Lua math.abs (integer/float); abs of INT64_MIN raises (N4b) |
-| `acos` | float-producing | - | Lua math.acos |
-| `add` | int-preserving | LOSS | scalar arm mirrors `+` (overflow raises, (A)); buffer arms stay float |
-| `append` | other | - | appends any value; VAL_NUM appears only as a diagnostic default |
-| `asin` | float-producing | - | Lua math.asin |
-| `assert` | other | - | message via value_to_string (N6) |
-| `atan` | float-producing | - | Lua math.atan |
-| `atan2` | float-producing | - | Lua math.atan(y, x) |
-| `audio_capture_open` | int-requiring | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
-| `audio_envelope` | float-producing | - | float samples; times in seconds |
-| `audio_gain` | float-producing | - | float samples |
-| `audio_mix` | float-producing | - | float samples |
-| `audio_music_play` | int-requiring | - | loop count: N5, then the C int range (Q1) |
-| `audio_music_volume` | other | - | volume is a gain: continuous, rounds to nearest for the C int API (Q1) |
-| `audio_noise` | float-producing | - | float samples |
-| `audio_open` | int-requiring | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
-| `audio_pause` | int-requiring | - | the pause flag is discrete, not continuous: N5 (Q1; today `(int)0.5` silently un-pauses) |
-| `audio_play` | other | - | float samples in; returns a channel number |
-| `audio_play_loop` | int-requiring | - | loop count: N5, then the C int range (Q1); returns a channel |
-| `audio_queue_size` | int-preserving | - | byte count (computed in a double, below 2^53) |
-| `audio_saw` | float-producing | - | float samples |
-| `audio_sine` | float-producing | - | float samples |
-| `audio_square` | float-producing | - | float samples |
-| `audio_stop` | int-requiring | - | channel number |
-| `audio_stream_open` | int-requiring | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
-| `audio_stream_push` | other | - | float samples quantized to int16 |
-| `audio_stream_queued` | int-preserving | - | sample count |
-| `audio_sweep` | float-producing | - | float samples; frequencies, duration and amplitude are continuous; the wave selector is integer-valued: N5 (Q1) |
-| `audio_volume` | int-requiring | - | channel index: N5 (Q1); the volume is a float gain |
-| `bit_and` | int-requiring | LOSS | Lua `&` (§3.4.2): N5 operands, int64-pattern result (N8); today a double result |
-| `bit_not` | int-requiring | LOSS | Lua unary `~` |
-| `bit_or` | int-requiring | LOSS | Lua `\|` |
-| `bit_shl` | int-requiring | LOSS | Lua `<<`; today masks the count mod 64, N8 needs >=64 gives 0 and negative shifts right |
-| `bit_shr` | int-requiring | LOSS | Lua `>>` is logical (N8); today an arithmetic shift with `& 63` |
-| `bit_xor` | int-requiring | LOSS | Lua binary `~` |
-| `buf_copy` | int-requiring | - | offsets and counts |
-| `buf_deinterleave` | int-requiring | - | channel count and index |
-| `buf_dot` | float-producing | - | buffer dot product |
-| `buf_fill` | float-producing | - | fills float storage; offsets by N5 |
-| `buf_from_list` | float-producing | - | buffer storage is float: an int element converts (Q2) |
-| `buf_from_pcm16le` | float-producing | - | decodes bytes to floats |
-| `buf_get` | int-requiring | - | index; returns the float element |
-| `buf_len` | int-preserving | - | element count |
-| `buf_mix` | float-producing | - | float storage |
-| `buf_peak` | float-producing | - | float max abs |
-| `buf_resample_linear` | float-producing | - | float storage |
-| `buf_scale_range` | float-producing | - | float storage |
-| `buf_set` | int-requiring | - | index; the value converts to float storage (Q2) |
-| `buf_to_pcm16le` | other | - | quantizes floats to byte values |
-| `buffer` | int-requiring | - | size or [rows, cols] |
-| `build_corpus` | int-requiring | - | counts; returns counts |
-| `ceil` | int-preserving | LOSS | Lua math.ceil: an int when the result fits int64, else a float |
-| `channel` | int-preserving | - | handle dict with int id/gen fields |
-| `channel_closed` | int-requiring | - | channel handle ids |
-| `char_at` | int-requiring | - | string position (Lua string.sub) |
-| `chr` | int-requiring | - | byte 1..255, already exactness-checked (Lua string.char) |
-| `clock_unix` | float-producing | - | fractional seconds |
-| `close_channel` | int-requiring | - | channel handle ids |
-| `copy_into` | int-requiring | - | offset; values convert to float storage |
-| `cos` | float-producing | - | Lua math.cos |
-| `db_execute` | other | LOSS | binds every numeric parameter with `%g`, 6 significant digits (ext_db.c:57-58, #1762). R1.7: the N6/N14 writer |
-| `db_query_json` | other | LOSS | binds parameters with `%g` (#1762); encodes rows (N14) |
-| `db_query_value` | other | LOSS | binds parameters with `%g` (#1762); decodes a numeric column with strtod, so integer text beyond 2^53 rounds |
-| `dispatch` | int-requiring | - | integer table key, already exactness-checked |
-| `divide` | float-producing | - | mirrors `/` (Lua §3.4.1: always float) |
-| `dot` | float-producing | - | buffer dot product |
-| `eigen_eval_loss` | float-producing | - | token ids are indices; the loss is a float |
-| `eigen_generate` | int-requiring | - | token ids and max_tokens are integer-valued (N5, Q1); temperature and top_p are floats |
-| `eigen_model_load` | other | - | parses model JSON numbers with strtod |
-| `exec_capture` | other | - | the timeout is a duration in seconds (continuous, a float; Q1); returns exit status ints |
-| `exit` | int-requiring | - | exit code: N5, then the C int range (Q1) |
-| `exp` | float-producing | - | Lua math.exp |
-| `f64_from_bytes` | int-requiring | - | 8 byte values: N5, then 0..255 (Q1; the modulo-256 wrap is gone); the float result's NaN is canonical (N12) |
-| `f64_to_bytes` | other | - | float to 8 byte ints; f64_bits (N12) is the int-valued sibling |
-| `fill` | int-requiring | - | count |
-| `floor` | int-preserving | LOSS | Lua math.floor: an int when the result fits int64, else a float |
-| `gather` | int-requiring | - | index or index vector; returns elements unchanged |
-| `get_at` | int-requiring | - | index, row and col; returns the element |
-| `get_observer_thresholds` | float-producing | - | observer thresholds (O3 drops h_low) |
-| `gfx_circle` | other | - | centre, radius and colour are continuous: round to nearest (Q1), replacing truncation |
-| `gfx_clear` | other | - | colour channels are continuous: round to nearest (Q1) |
-| `gfx_clip` | other | - | the clip rect is continuous: round to nearest (Q1) |
-| `gfx_delay` | other | - | milliseconds are a duration: continuous, round to nearest into Uint32 (Q1) |
-| `gfx_fb` | int-requiring | - | w and h lay out the pixel buffer (integer-valued: N5, Q1); its elements are palette bytes read through `buffer_read_byte` (N5, then 0..255); dx, dy and scale are drawing coordinates and size (continuous: round to nearest, Q1) |
-| `gfx_line` | other | - | endpoints and colour are continuous: round to nearest (Q1) |
-| `gfx_open` | other | - | window width and height are gfx sizes: continuous, round to nearest (Q1) |
-| `gfx_point` | other | - | position and colour are continuous: round to nearest (Q1) |
-| `gfx_poll` | int-preserving | - | event fields x, y, scancode, button are ints |
-| `gfx_read` | other | - | the origin is continuous: round to nearest (Q1); returns the channel values as ints |
-| `gfx_rect` | other | - | rect and colour are continuous: round to nearest (Q1) |
-| `gfx_rrect` | other | - | rect, radius and colour are continuous: round to nearest (Q1) |
-| `gfx_text` | other | - | position, colour and scale are continuous: round to nearest (Q1) |
-| `gfx_text_height` | int-preserving | - | pixel height, an int; the scale is continuous: round to nearest (Q1) |
-| `gfx_text_width` | int-preserving | - | pixel width, an int; the scale is continuous: round to nearest (Q1) |
-| `gfx_ticks` | int-preserving | - | SDL ticks (Uint32 ms) |
-| `hex` | int-requiring | LOSS | refuses above 2^53 by a double compare, so int 2^53+1 reads as 2^53 and passes silently |
-| `http_early_bind` | int-requiring | - | port |
-| `http_post` | other | - | header values via value_to_string (N6) |
-| `http_route` | other | - | formats via value_to_string |
-| `http_route_authed` | other | - | formats via value_to_string |
-| `http_serve` | int-requiring | - | port |
-| `http_static` | other | - | formats via value_to_string |
-| `index_of` | int-preserving | - | byte index or -1 |
-| `inflate` | int-requiring | - | byte values: N5, then 0..255 (Q1; the modulo-256 wrap is gone) |
-| `join` | other | - | elements via value_to_string (N6) |
-| `json_build` | other | LOSS | N14 encoder; reads values through eigs_num_arg (a double) |
-| `json_decode` | other | LOSS | N14 decoder; integer text decodes through strtod (a double) |
-| `json_encode` | other | LOSS | N13/N14 encoder; reads values through eigs_num_arg; its `default:` writes null (builtins.c:998) |
-| `json_path` | other | LOSS | decodes with strtod, then formats (N14, N6) |
-| `leaky_relu` | float-producing | - | ML activation (float tensors; no Lua counterpart) |
-| `len` | int-preserving | - | count (Lua `#` is an integer) |
-| `list_contains` | other | - | equality via values_equal (N2) |
-| `list_index_of` | int-preserving | - | returns an index; equality via values_equal (N2) |
-| `list_insert_at` | int-requiring | - | position (Lua table.insert) |
-| `list_remove_at` | int-requiring | - | position (Lua table.remove) |
-| `list_slice` | int-requiring | - | start and end indices |
-| `list_truncate` | int-requiring | - | new length |
-| `log` | float-producing | - | Lua math.log; log of 0 is -inf (N11) |
-| `log_softmax` | float-producing | - | ML (float) |
-| `matmul` | float-producing | - | float tensors |
-| `matmul_at` | float-producing | - | float tensors |
-| `matmul_bt` | float-producing | - | float tensors |
-| `max` | int-preserving | LOSS | Lua math.max returns the winning argument with its own subtype |
-| `mean` | float-producing | - | arithmetic mean |
-| `min` | int-preserving | LOSS | Lua math.min |
-| `model_load_weights` | other | - | alias of eigen_model_load |
-| `monotonic_ms` | float-producing | - | fractional milliseconds |
-| `monotonic_ns` | int-preserving | LOSS | exact below 2^53 ns (104 days of uptime), a rounded double after; an exact int under N1 |
-| `multiply` | int-preserving | LOSS | scalar arm mirrors `*` (overflow raises, (A)); buffer arms float |
-| `native_train_step_builtin` | int-requiring | - | token ids are integer-valued (N5, Q1); lr is a float (a numeric string is accepted through strtod) |
-| `nearest_in_range` | float-producing | - | geometry floats; the `index` field is an int |
-| `nearest_in_range_all` | float-producing | - | geometry floats; the `index` field is an int |
-| `negative` | int-preserving | LOSS | mirrors unary `-`; negating INT64_MIN raises (N4b) |
-| `net_accept` | int-requiring | - | socket handle |
-| `net_close` | int-requiring | - | socket handle |
-| `net_dial` | int-requiring | - | port; returns a handle |
-| `net_listen` | int-requiring | - | port; returns a handle |
-| `net_port` | int-requiring | - | socket handle; returns a port |
-| `net_recv` | int-requiring | - | handle and max bytes |
-| `net_send` | int-requiring | - | the handle and the byte values: N5, bytes then 0..255 (Q1; the modulo-256 wrap is gone) |
-| `norm` | float-producing | - | L2 norm |
-| `num` | other | LOSS | N10 parser: integer text decodes through strtod today (a double) |
-| `num_copy` | int-preserving | LOSS | copies a number and must keep its subtype; today re-boxes through a double |
-| `numerical_grad` | float-producing | - | finite differences |
-| `numerical_grad_cols` | float-producing | - | finite differences; column indices int |
-| `numerical_grad_rows` | float-producing | - | finite differences; row indices int |
-| `observe` | other | - | observer readouts (O4) |
-| `ord` | int-preserving | - | byte code (Lua string.byte) |
-| `pi` | float-producing | - | Lua math.pi |
-| `pow` | float-producing | - | mirrors `^` (Lua §3.4.1: exponentiation is always float) |
-| `ppu_render_frame` | int-requiring | - | reads the emulated memory buffer through `buffer_read_byte`: byte values by N5, then 0..255 (Q1; the modulo-256 wrap is gone) |
-| `print` | other | - | N6 printing via value_to_string |
-| `proc_read_buf` | int-requiring | - | fd and max bytes; bytes stored as floats |
-| `random` | float-producing | - | Lua math.random() in [0,1) |
-| `random_hex` | int-requiring | - | digit count |
-| `random_int` | int-requiring | LOSS | Lua math.random(m, n) is an integer; bounds read as doubles today |
-| `random_normal` | float-producing | - | dims int; samples float |
-| `range` | int-preserving | - | bounds by N5; the elements are ints (floats today, inside int range) |
-| `read_bytes` | int-preserving | - | byte values 0..255 |
-| `read_bytes_buf` | int-requiring | - | cap and length; bytes stored as floats |
-| `record_history` | other | - | truthiness flag in; previous flag out |
-| `recv` | int-requiring | - | channel handle ids |
-| `recv_timeout` | int-requiring | - | the channel handle: N5 (Q1); milliseconds are a duration (continuous, a float) |
-| `relu` | float-producing | - | ML activation (float tensors; no Lua counterpart) |
-| `reshape` | int-requiring | - | rows and cols |
-| `round` | int-preserving | LOSS | no Lua counterpart; follows floor and ceil (Q4) |
-| `sandbox_run` | int-requiring | - | iteration, byte and work limits; returns line ints |
-| `scan_int_tokens` | int-preserving | LOSS | integers accumulate in a double |
-| `scan_ints` | int-preserving | LOSS | integers accumulate in a double |
-| `scatter_add` | float-producing | - | indices exactness-checked; float accumulation |
-| `seed_random` | int-requiring | LOSS | `(long)` of a double; Lua randomseed takes integers |
-| `send` | int-requiring | - | channel handle ids |
-| `set_at` | int-requiring | - | index, row and col; a buffer value converts to float |
-| `sgd_update` | float-producing | - | float update |
-| `sgd_update_cols` | float-producing | - | column indices int |
-| `sgd_update_rows` | float-producing | - | row indices int |
-| `shape` | int-preserving | - | dimension counts |
-| `shared_delete` | int-preserving | - | removed count |
-| `shared_incr` | int-preserving | LOSS | shared counter: delta and stored value in doubles |
-| `shared_size` | int-preserving | - | entry count |
-| `sign_extend` | int-requiring | LOSS | `(int64_t)` of a double |
-| `sin` | float-producing | - | Lua math.sin |
-| `softmax` | float-producing | - | ML (float) |
-| `sort` | other | LOSS | sort_cmp_num compares doubles: ints beyond 2^53 tie (N2 needs exact) |
-| `sort_by` | other | LOSS | key results compared as doubles |
-| `spawn` | int-preserving | - | handle dict with int id/gen fields |
-| `sqrt` | float-producing | - | Lua math.sqrt; sqrt of -1 is NaN (N11) |
-| `state_at` | int-requiring | - | step index |
-| `store_close` | int-requiring | - | handle id/gen |
-| `store_collections` | int-requiring | - | handle id |
-| `store_count` | int-requiring | - | handle and page ids; returns a count |
-| `store_delete` | int-requiring | LOSS | key formatted `%d` of an `(int)` cast: 1.9 finds "1"; keys above INT_MAX are UB (probed) |
-| `store_drop` | int-requiring | - | handle and page ids |
-| `store_get` | int-requiring | LOSS | same key cast as store_delete; decodes records (N14) |
-| `store_open` | int-preserving | - | handle dict with int id/gen fields |
-| `store_put` | other | LOSS | the record encoder writes a non-int32 number with `%.15g`: 1234567890123456 is stored as 1234567890123460 and 0.1 + 0.2 as 0.3, on main and the tag (#1762). R1.7: the N6/N14 writer; R2.3: refusal inside the encoder |
-| `store_query` | other | LOSS | decodes records; integer text through strtod (N14) |
-| `store_update` | other | LOSS | same key cast as store_delete; re-puts through the `%.15g` encoder (#1762); N13/N14 |
-| `str` | other | - | N6 printing via value_to_string |
-| `str_from_bytes` | int-requiring | - | byte values: N5, then 0..255 (Q1; Lua string.char raises on 65.5 and on 256) |
-| `stream_open` | int-requiring | - | element count, already floor-checked |
-| `stream_write` | float-producing | - | writes a raw f64 |
-| `substr` | int-requiring | - | start and length (Lua string.sub) |
-| `subtract` | int-preserving | LOSS | scalar arm mirrors `-` (overflow raises, (A)) |
-| `sum` | int-preserving | LOSS | an all-int input sums exactly, and overflow raises (A); today a guarded double sum |
-| `tan` | float-producing | - | Lua math.tan |
-| `task_alive` | int-requiring | - | task handle (packed below 2^53, exactness-checked) |
-| `task_detach` | int-requiring | - | task handle |
-| `task_join` | int-requiring | - | task handle |
-| `task_kill` | int-requiring | - | task handle |
-| `task_sched_seed` | int-requiring | LOSS | `(int64_t)` of a double |
-| `task_self` | int-preserving | - | task handle |
-| `task_send` | int-requiring | - | task handle |
-| `task_sleep` | other | - | milliseconds are a duration: continuous, a float (Q1) |
-| `task_spawn` | int-preserving | - | returns a task handle |
-| `tensor_load` | float-producing | - | float tensor; shape ints |
-| `tensor_save` | float-producing | - | writes float cells |
-| `text_builder_append` | other | - | formats via value_to_string (N6) |
-| `text_builder_append_line` | other | - | formats via value_to_string (N6) |
-| `thread_join` | int-requiring | - | thread handle id/gen |
-| `throw` | other | - | message via value_to_string |
-| `token_name` | int-requiring | - | token id |
-| `try_recv` | int-requiring | - | channel handle ids |
-| `type` | other | - | `type of` an int or a float is "num" ((B)) |
-| `usleep` | other | - | microseconds are a duration: continuous, round to nearest (Q1) |
-| `vm_run_bytecode` | int-requiring | - | opcode bytes and ABI numbers |
-| `write` | other | - | N6 printing |
-| `write_bytes` | int-requiring | - | byte values: N5, then 0..255 (Q1; the modulo-256 wrap is gone); returns bytes written |
-| `zeros` | int-requiring | - | size or [rows, cols]; elements are float 0.0 |
-| `zeros_like` | float-producing | - | float zeros |
+| builtin | class | loss | q7 | note |
+|---|---|---|---|---|
+| `abs` | int-preserving | LOSS | - | Lua math.abs (integer/float); abs of INT64_MIN raises (N4b) |
+| `acos` | float-producing | - | - | Lua math.acos |
+| `add` | int-preserving | LOSS | - | scalar arm mirrors `+` (overflow raises, (A)); buffer arms stay float |
+| `append` | other | - | - | appends any value; VAL_NUM appears only as a diagnostic default |
+| `asin` | float-producing | - | - | Lua math.asin |
+| `assert` | other | - | - | message via value_to_string (N6) |
+| `atan` | float-producing | - | - | Lua math.atan |
+| `atan2` | float-producing | - | - | Lua math.atan(y, x) |
+| `audio_capture_open` | int-requiring | - | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
+| `audio_envelope` | float-producing | - | magnitude | float samples; the attack and release times are continuous durations: a sample count the C int cannot hold raises (Q7 magnitude) |
+| `audio_gain` | float-producing | - | - | float samples |
+| `audio_mix` | float-producing | - | - | float samples |
+| `audio_music_play` | int-requiring | - | - | loop count: N5, then the C int range (Q1) |
+| `audio_music_volume` | other | - | bounded | the volume is a continuous gain: clamped to SDL_mixer's 0..128, then rounded (Q7 bounded) |
+| `audio_noise` | float-producing | - | magnitude | float samples; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude) |
+| `audio_open` | int-requiring | - | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
+| `audio_pause` | int-requiring | - | - | the pause flag is discrete: N5 (Q1; today `(int)0.5` silently un-pauses) |
+| `audio_play` | other | - | bounded | the samples are continuous: clamped to [-1, 1], then rounded to int16 (Q7 bounded; today they truncate); returns a channel number |
+| `audio_play_loop` | int-requiring | - | bounded | loop count: N5, then the C int range (Q1); the samples are continuous: clamped and rounded to int16 (Q7 bounded); returns a channel |
+| `audio_queue_size` | int-preserving | - | - | byte count (computed in a double, below 2^53) |
+| `audio_saw` | float-producing | - | magnitude | float samples; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude) |
+| `audio_sine` | float-producing | - | magnitude | float samples; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude) |
+| `audio_square` | float-producing | - | magnitude | float samples; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude) |
+| `audio_stop` | int-requiring | - | - | channel number |
+| `audio_stream_open` | int-requiring | - | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
+| `audio_stream_push` | other | - | bounded | the samples are continuous: clamped to [-1, 1], then rounded to int16 (Q7 bounded) |
+| `audio_stream_queued` | int-preserving | - | - | sample count |
+| `audio_sweep` | float-producing | - | magnitude | float samples; frequencies and amplitude stay floats; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude); the wave selector is integer-valued: N5 (Q1) |
+| `audio_volume` | int-requiring | - | bounded | channel index: N5 (Q1); the volume is a continuous gain: clamped to the mixer's range (Q7 bounded) |
+| `bit_and` | int-requiring | LOSS | - | Lua `&` (§3.4.2): N5 operands, int64-pattern result (N8); today a double result |
+| `bit_not` | int-requiring | LOSS | - | Lua unary `~` |
+| `bit_or` | int-requiring | LOSS | - | Lua `\|` |
+| `bit_shl` | int-requiring | LOSS | - | Lua `<<`; today masks the count mod 64, N8 needs >=64 gives 0 and negative shifts right |
+| `bit_shr` | int-requiring | LOSS | - | Lua `>>` is logical (N8); today an arithmetic shift with `& 63` |
+| `bit_xor` | int-requiring | LOSS | - | Lua binary `~` |
+| `buf_copy` | int-requiring | - | - | offsets and counts |
+| `buf_deinterleave` | int-requiring | - | - | channel count and index |
+| `buf_dot` | float-producing | - | - | buffer dot product |
+| `buf_fill` | float-producing | - | - | fills float storage; offsets by N5 |
+| `buf_from_list` | float-producing | - | - | buffer storage is float: an int element converts (Q2) |
+| `buf_from_pcm16le` | int-requiring | - | - | its input elements are byte values: each is read through the Q1 byte reader (N5, then 0..255), so a byte of 300 or 1.5 raises `value` (#1758 comment 6174964306; today 300 and 1.5 decode silently); the decoded samples are floats |
+| `buf_get` | int-requiring | - | - | index; returns the float element |
+| `buf_len` | int-preserving | - | - | element count |
+| `buf_mix` | float-producing | - | - | float storage |
+| `buf_peak` | float-producing | - | - | float max abs |
+| `buf_resample_linear` | float-producing | - | - | float storage |
+| `buf_scale_range` | float-producing | - | - | float storage |
+| `buf_set` | int-requiring | - | - | index; the value converts to float storage (Q2) |
+| `buf_to_pcm16le` | other | - | bounded | the samples are continuous: clamped to [-1, 1] and rounded (Q7 bounded, today's behaviour); the result is byte values |
+| `buffer` | int-requiring | - | - | size or [rows, cols] |
+| `build_corpus` | int-requiring | - | - | counts; returns counts |
+| `ceil` | int-preserving | LOSS | - | Lua math.ceil: an int when the result fits int64, else a float |
+| `channel` | int-preserving | - | - | handle dict with int id/gen fields |
+| `channel_closed` | int-requiring | - | - | channel handle ids |
+| `char_at` | int-requiring | - | - | string position (Lua string.sub) |
+| `chr` | int-requiring | - | - | byte 1..255, already exactness-checked (Lua string.char) |
+| `clock_unix` | float-producing | - | - | fractional seconds |
+| `close_channel` | int-requiring | - | - | channel handle ids |
+| `copy_into` | int-requiring | - | - | offset; values convert to float storage |
+| `cos` | float-producing | - | - | Lua math.cos |
+| `db_execute` | other | LOSS | - | binds every numeric parameter with `%g`, 6 significant digits (ext_db.c:57-58, #1762). R1.7: the N6/N14 writer |
+| `db_query_json` | other | LOSS | - | binds parameters with `%g` (#1762); encodes rows (N14) |
+| `db_query_value` | other | LOSS | - | binds parameters with `%g` (#1762); decodes a numeric column with strtod, so integer text beyond 2^53 rounds |
+| `dispatch` | int-requiring | - | - | integer table key, already exactness-checked |
+| `divide` | float-producing | - | - | mirrors `/` (Lua §3.4.1: always float) |
+| `dot` | float-producing | - | - | buffer dot product |
+| `eigen_eval_loss` | float-producing | - | - | token ids are indices; the loss is a float |
+| `eigen_generate` | int-requiring | - | - | token ids and max_tokens are integer-valued (N5, Q1); temperature and top_p are floats |
+| `eigen_model_load` | other | - | - | parses model JSON numbers with strtod |
+| `exec_capture` | other | - | magnitude | the timeout is a continuous duration in seconds: a poll interval the C int cannot hold raises (Q7 magnitude); returns exit status ints |
+| `exit` | int-requiring | - | - | exit code: N5, then the C int range (Q1) |
+| `exp` | float-producing | - | - | Lua math.exp |
+| `f64_from_bytes` | int-requiring | - | - | 8 byte values: N5, then 0..255 (Q1; the modulo-256 wrap is gone); the float result's NaN is canonical (N12) |
+| `f64_to_bytes` | other | - | - | float to 8 byte ints; f64_bits (N12) is the int-valued sibling |
+| `fill` | int-requiring | - | - | count |
+| `floor` | int-preserving | LOSS | - | Lua math.floor: an int when the result fits int64, else a float |
+| `gather` | int-requiring | - | - | each index, from a list or an index buffer, is integer-valued: N5 raises on 1.5 (today `flat_index_at` truncates: `gather of [t, ib]` with `ib[0]` = 1.5 returns `[11, 22]`, probed); returns elements unchanged |
+| `get_at` | int-requiring | - | - | index, row and col; returns the element |
+| `get_observer_thresholds` | float-producing | - | - | observer thresholds (O3 drops h_low) |
+| `gfx_circle` | other | - | geometry,bounded | centre and radius are continuous geometry: the circle is clipped in float space against the drawable area, then rounded; the colour channels are continuous and bounded: clamped to 0..255, then rounded (Q7) |
+| `gfx_clear` | other | - | bounded | the colour channels are continuous and bounded: clamped to 0..255, then rounded (Q7) |
+| `gfx_clip` | other | - | geometry | the clip rect is continuous geometry: intersected with the drawable area in float space, then rounded (Q7) |
+| `gfx_delay` | other | - | magnitude | the milliseconds are a continuous duration: rounded; a delay Uint32 cannot hold raises (Q7 magnitude) |
+| `gfx_fb` | int-requiring | - | geometry | w and h lay out the pixel buffer (integer-valued: N5, Q1); its elements are palette bytes read through the Q1 byte reader; dx, dy and scale are continuous geometry: the destination rect is clipped in float space, then rounded (Q7) |
+| `gfx_line` | other | - | geometry,bounded | the endpoints are continuous geometry: the segment is clipped in float space against the drawable area, then rounded; the colour is bounded (Q7) |
+| `gfx_open` | other | - | magnitude | window width and height are continuous sizes with no drawable area yet to clip against: rounded, and a size the C int cannot hold raises (Q7 magnitude) |
+| `gfx_point` | other | - | geometry,bounded | the position is continuous geometry: a point outside the drawable area draws nothing; the colour is bounded (Q7) |
+| `gfx_poll` | int-preserving | - | - | event fields x, y, scancode, button are ints |
+| `gfx_read` | other | - | geometry | the origin is continuous geometry: rounded, and a point outside the drawable area reads nothing (Q7); returns the channel values as ints |
+| `gfx_rect` | other | - | geometry,bounded | the rect is continuous geometry: intersected with the drawable area in float space, then rounded; the colour is bounded (Q7) |
+| `gfx_rrect` | other | - | geometry,bounded | the rect and radius are continuous geometry: clipped in float space, then rounded; the colour is bounded (Q7) |
+| `gfx_text` | other | - | geometry,bounded | the position and scale are continuous geometry: each glyph cell is clipped in float space, then rounded; the colour is bounded (Q7) |
+| `gfx_text_height` | int-preserving | - | magnitude | pixel height, an int; the scale is continuous, and a measurement has no drawable area to clip against: rounded, and a scale the C int cannot hold raises (Q7 magnitude) |
+| `gfx_text_width` | int-preserving | - | magnitude | pixel width, an int; the scale is continuous, and a measurement has no drawable area to clip against: rounded, and a scale the C int cannot hold raises (Q7 magnitude) |
+| `gfx_ticks` | int-preserving | - | - | SDL ticks (Uint32 ms) |
+| `hex` | int-requiring | LOSS | - | refuses above 2^53 by a double compare, so int 2^53+1 reads as 2^53 and passes silently |
+| `http_early_bind` | int-requiring | - | - | port |
+| `http_post` | other | - | - | header values via value_to_string (N6) |
+| `http_route` | other | - | - | formats via value_to_string |
+| `http_route_authed` | other | - | - | formats via value_to_string |
+| `http_serve` | int-requiring | - | - | port |
+| `http_static` | other | - | - | formats via value_to_string |
+| `index_of` | int-preserving | - | - | byte index or -1 |
+| `inflate` | int-requiring | - | - | byte values: N5, then 0..255 (Q1; the modulo-256 wrap is gone) |
+| `join` | other | - | - | elements via value_to_string (N6) |
+| `json_build` | other | LOSS | - | N14 encoder; reads values through eigs_num_arg (a double) |
+| `json_decode` | other | LOSS | - | N14 decoder; integer text decodes through strtod (a double) |
+| `json_encode` | other | LOSS | - | N13/N14 encoder; reads values through eigs_num_arg; its `default:` writes null (builtins.c:998) |
+| `json_path` | other | LOSS | - | decodes with strtod, then formats (N14, N6) |
+| `leaky_relu` | float-producing | - | - | ML activation (float tensors; no Lua counterpart) |
+| `len` | int-preserving | - | - | count (Lua `#` is an integer) |
+| `list_contains` | other | - | - | equality via values_equal (N2) |
+| `list_index_of` | int-preserving | - | - | returns an index; equality via values_equal (N2) |
+| `list_insert_at` | int-requiring | - | - | position (Lua table.insert) |
+| `list_remove_at` | int-requiring | - | - | position (Lua table.remove) |
+| `list_slice` | int-requiring | - | - | start and end indices |
+| `list_truncate` | int-requiring | - | - | new length |
+| `log` | float-producing | - | - | Lua math.log; log of 0 is -inf (N11) |
+| `log_softmax` | float-producing | - | - | ML (float) |
+| `matmul` | float-producing | - | - | float tensors |
+| `matmul_at` | float-producing | - | - | float tensors |
+| `matmul_bt` | float-producing | - | - | float tensors |
+| `max` | int-preserving | LOSS | - | Lua math.max returns the winning argument with its own subtype; a NaN argument makes the result NaN (Q8: IEEE 754-2019 maximum) |
+| `mean` | float-producing | - | - | arithmetic mean |
+| `min` | int-preserving | LOSS | - | Lua math.min; a NaN argument makes the result NaN (Q8: IEEE 754-2019 minimum) |
+| `model_load_weights` | other | - | - | alias of eigen_model_load |
+| `monotonic_ms` | float-producing | - | - | fractional milliseconds |
+| `monotonic_ns` | int-preserving | LOSS | - | exact below 2^53 ns (104 days of uptime), a rounded double after; an exact int under N1 |
+| `multiply` | int-preserving | LOSS | - | scalar arm mirrors `*` (overflow raises, (A)); buffer arms float |
+| `native_train_step_builtin` | int-requiring | - | - | token ids are integer-valued (N5, Q1); lr is a float (a numeric string is accepted through strtod) |
+| `nearest_in_range` | float-producing | - | - | geometry floats; the `index` field is an int |
+| `nearest_in_range_all` | float-producing | - | - | geometry floats; the `index` field is an int |
+| `negative` | int-preserving | LOSS | - | mirrors unary `-`; negating INT64_MIN raises (N4b) |
+| `net_accept` | int-requiring | - | - | socket handle |
+| `net_close` | int-requiring | - | - | socket handle |
+| `net_dial` | int-requiring | - | - | port; returns a handle |
+| `net_listen` | int-requiring | - | - | port; returns a handle |
+| `net_port` | int-requiring | - | - | socket handle; returns a port |
+| `net_recv` | int-requiring | - | - | handle and max bytes |
+| `net_send` | int-requiring | - | - | the handle and the byte values: N5, bytes then 0..255 (Q1; the modulo-256 wrap is gone) |
+| `norm` | float-producing | - | - | L2 norm |
+| `num` | other | LOSS | - | N10 parser: integer text decodes through strtod today (a double) |
+| `num_copy` | int-preserving | LOSS | - | copies a number and must keep its subtype; today re-boxes through a double |
+| `numerical_grad` | float-producing | - | - | finite differences |
+| `numerical_grad_cols` | float-producing | - | - | finite differences; column indices int |
+| `numerical_grad_rows` | float-producing | - | - | finite differences; row indices int |
+| `observe` | other | - | - | observer readouts (O4) |
+| `ord` | int-preserving | - | - | byte code (Lua string.byte) |
+| `pi` | float-producing | - | - | Lua math.pi |
+| `pow` | float-producing | - | - | mirrors `^` (Lua §3.4.1: exponentiation is always float) |
+| `ppu_render_frame` | int-requiring | - | - | reads the emulated memory buffer through `buffer_read_byte`: byte values by N5, then 0..255 (Q1; the modulo-256 wrap is gone) |
+| `print` | other | - | - | N6 printing via value_to_string |
+| `proc_read_buf` | int-requiring | - | - | fd and max bytes; bytes stored as floats |
+| `random` | float-producing | - | - | Lua math.random() in [0,1) |
+| `random_hex` | int-requiring | - | - | digit count |
+| `random_int` | int-requiring | LOSS | - | Lua math.random(m, n) is an integer; bounds read as doubles today |
+| `random_normal` | float-producing | - | - | dims int; samples float |
+| `range` | int-preserving | - | - | bounds by N5; the elements are ints (floats today, inside int range) |
+| `read_bytes` | int-preserving | - | - | byte values 0..255 |
+| `read_bytes_buf` | int-requiring | - | - | cap and length; bytes stored as floats |
+| `record_history` | other | - | - | truthiness flag in; previous flag out |
+| `recv` | int-requiring | - | - | channel handle ids |
+| `recv_timeout` | int-requiring | - | magnitude | the channel handle: N5 (Q1); the milliseconds are a continuous duration: a timeout the C long cannot hold raises (Q7 magnitude) |
+| `relu` | float-producing | - | - | ML activation (float tensors; no Lua counterpart) |
+| `reshape` | int-requiring | - | - | rows and cols |
+| `round` | int-preserving | LOSS | - | no Lua counterpart; follows floor and ceil (Q4) |
+| `sandbox_run` | int-requiring | - | - | iteration, byte and work limits; returns line ints |
+| `scan_int_tokens` | int-preserving | LOSS | - | integers accumulate in a double |
+| `scan_ints` | int-preserving | LOSS | - | integers accumulate in a double |
+| `scatter_add` | float-producing | - | - | indices are exactness-checked today, but raise an index error for 1.5; R1.6 reads them through the N5 index reader (`value`); float accumulation |
+| `seed_random` | int-requiring | LOSS | - | `(long)` of a double; Lua randomseed takes integers |
+| `send` | int-requiring | - | - | channel handle ids |
+| `set_at` | int-requiring | - | - | index, row and col; a buffer value converts to float |
+| `sgd_update` | float-producing | - | - | float update |
+| `sgd_update_cols` | float-producing | - | - | column indices int |
+| `sgd_update_rows` | float-producing | - | - | row indices int |
+| `shape` | int-preserving | - | - | dimension counts |
+| `shared_delete` | int-preserving | - | - | removed count |
+| `shared_incr` | int-preserving | LOSS | - | shared counter: delta and stored value in doubles |
+| `shared_size` | int-preserving | - | - | entry count |
+| `sign_extend` | int-requiring | LOSS | - | `(int64_t)` of a double |
+| `sin` | float-producing | - | - | Lua math.sin |
+| `softmax` | float-producing | - | - | ML (float) |
+| `sort` | other | LOSS | - | sort_cmp_num compares doubles: ints beyond 2^53 tie (N2 needs exact); from R2.2 floats sort by IEEE totalOrder, NaN after +inf (Q8) |
+| `sort_by` | other | LOSS | - | key results compared as doubles; from R2.2 by IEEE totalOrder, NaN after +inf (Q8) |
+| `spawn` | int-preserving | - | - | handle dict with int id/gen fields |
+| `sqrt` | float-producing | - | - | Lua math.sqrt; sqrt of -1 is NaN (N11) |
+| `state_at` | int-requiring | - | - | step index |
+| `store_close` | int-requiring | - | - | handle id/gen |
+| `store_collections` | int-requiring | - | - | handle id |
+| `store_count` | int-requiring | - | - | handle and page ids; returns a count |
+| `store_delete` | int-requiring | LOSS | - | key formatted `%d` of an `(int)` cast: 1.9 finds "1"; keys above INT_MAX are UB (probed) |
+| `store_drop` | int-requiring | - | - | handle and page ids |
+| `store_get` | int-requiring | LOSS | - | same key cast as store_delete; decodes records (N14) |
+| `store_open` | int-preserving | - | - | handle dict with int id/gen fields |
+| `store_put` | other | LOSS | - | the record encoder writes a non-int32 number with `%.15g`: 1234567890123456 is stored as 1234567890123460 and 0.1 + 0.2 as 0.3, on main and the tag (#1762). R1.7: the N6/N14 writer; R2.3: refusal inside the encoder |
+| `store_query` | other | LOSS | - | decodes records; integer text through strtod (N14) |
+| `store_update` | other | LOSS | - | same key cast as store_delete; re-puts through the `%.15g` encoder (#1762); N13/N14 |
+| `str` | other | - | - | N6 printing via value_to_string |
+| `str_from_bytes` | int-requiring | - | - | byte values: N5, then 0..255 (Q1; Lua string.char raises on 65.5 and on 256) |
+| `stream_open` | int-requiring | - | - | element count, already floor-checked |
+| `stream_write` | float-producing | - | - | writes a raw f64 |
+| `substr` | int-requiring | - | - | start and length (Lua string.sub) |
+| `subtract` | int-preserving | LOSS | - | scalar arm mirrors `-` (overflow raises, (A)) |
+| `sum` | int-preserving | LOSS | - | an all-int input sums exactly, and overflow raises (A); today a guarded double sum |
+| `tan` | float-producing | - | - | Lua math.tan |
+| `task_alive` | int-requiring | - | - | task handle (packed below 2^53, exactness-checked) |
+| `task_detach` | int-requiring | - | - | task handle |
+| `task_join` | int-requiring | - | - | task handle |
+| `task_kill` | int-requiring | - | - | task handle |
+| `task_sched_seed` | int-requiring | LOSS | - | `(int64_t)` of a double |
+| `task_self` | int-preserving | - | - | task handle |
+| `task_send` | int-requiring | - | - | task handle |
+| `task_sleep` | other | - | - | milliseconds of virtual time, kept as a float: no C integer conversion, so Q7 does not apply |
+| `task_spawn` | int-preserving | - | - | returns a task handle |
+| `tensor_load` | float-producing | - | - | float tensor; shape ints |
+| `tensor_save` | float-producing | - | - | writes float cells |
+| `text_builder_append` | other | - | - | formats via value_to_string (N6) |
+| `text_builder_append_line` | other | - | - | formats via value_to_string (N6) |
+| `thread_join` | int-requiring | - | - | thread handle id/gen |
+| `throw` | other | - | - | message via value_to_string |
+| `token_name` | int-requiring | - | - | token id |
+| `try_recv` | int-requiring | - | - | channel handle ids |
+| `type` | other | - | - | `type of` an int or a float is "num" ((B)) |
+| `usleep` | other | - | magnitude | the microseconds are a continuous duration: rounded; a sleep the C int cannot hold raises (Q7 magnitude) |
+| `vm_run_bytecode` | int-requiring | - | - | opcode bytes and ABI numbers |
+| `write` | other | - | - | N6 printing |
+| `write_bytes` | int-requiring | - | - | byte values: N5, then 0..255 (Q1; the modulo-256 wrap is gone); returns bytes written |
+| `zeros` | int-requiring | - | - | size or [rows, cols]; elements are float 0.0 |
+| `zeros_like` | float-producing | - | - | float zeros |
 <!-- builtin-table:end -->
 
 **Builtins to add**, outside the checked table until they exist:
@@ -1367,7 +1515,8 @@ numbers are at `0740af03`.
   - eigenscript.h:1910 `num_to_i64_exact` (#1740);
   - every int-requiring row of §6, through `eigs_int_arg` (with
     `eigs_int_arg_range`, `eigs_byte_arg` for Q1's integer-valued
-    parameters; `eigs_round_arg` for its continuous ones);
+    parameters; the Q7 readers `eigs_geom_shape`, `eigs_bounded_arg` and
+    `eigs_magnitude_arg` for its continuous ones);
   - vm.c index paths (`jit_helper_index_get`/`set`, `CASE(INDEX_*)`) and
     `range_bound` (builtins.c:3877);
   - the JIT `OP_INDEX_SET` integrality guard (jit.c:4100-4112) stays
@@ -1376,7 +1525,18 @@ numbers are at `0740af03`.
     int index (the generic path applies N5), and a float index still goes
     through `vm_index_is_int`;
   - `buffer_read_byte` and `finite_num_to_byte` (Q1 byte values), deleted
-    in R1.6 (§2.7).
+    in R1.6 (§2.7), and the byte reads `buffer_read_num` performs today:
+    `buf_from_pcm16le` (builtins_buf.c:754, :756; #1758 comment 6174964306),
+    `str_from_bytes` (:240), `f64_from_bytes` (:284), the zlib input (:351),
+    `write_bytes` (builtins_host.c:1548) and `net_send` (ext_net.c:361), each
+    through `buffer_byte_at` after R1.6 renames `buffer_read_num`;
+  - the index reads: `gather`'s `flat_index_at` (builtins_tensor.c:1428-1440,
+    both its list path and its buffer path truncate today) and
+    `scatter_add` (:1036, exactness-checked but raising an index error),
+    each through `buffer_index_at` or `eigs_int_arg` (N5, `value`);
+  - the Q7 readers (§2.6) for every continuous parameter the `q7` column
+    names: the gfx shapes (ext_gfx.c), the audio samples, gains and
+    durations, `usleep`, `gfx_delay`, `exec_capture`, `recv_timeout`.
 - **N6 (printing):**
   - eigenscript.c:2938 `eigs_num_text` (today integral doubles below 2^53
     print without `.0`) and 2957 `value_to_string`;
@@ -1413,7 +1573,10 @@ numbers are at `0740af03`.
   - the leaf's `num_guard(r)` (vm.c:1954), deleted with the others;
   - the consumers no token marks (§2.7): `values_equal_impl`'s identity
     shortcut (eigenscript.c, first line of the function) must not call a
-    NaN box equal to itself; the sort comparators (NaN order: §11 Q8).
+    NaN box equal to itself; the sort comparators (`sort_cmp_num`,
+    builtins.c:5868, and `sort_by`'s key comparison, 5815) order floats by
+    IEEE `totalOrder`, NaN after +inf; `minmax_reduce` (builtins.c:2086-2088,
+    `min`/`max`) propagates NaN (Q8, decided).
 - **N12 (canonical NaN; payload fidelity through ints):**
   - value_slot.h:73 `slot_from_num`, becoming `slot_from_f64`: the single
     writer, including the leaf's five calls (vm.c:1869, 1873, 1876, 1927,
@@ -1469,9 +1632,29 @@ numbers are at `0740af03`.
     `observer_slot_update_num`, the `obs_num_*` predicates (935-1193) and
     `compute_entropy_impl` (435), from which entropy is removed for numerics;
   - vm.c `obs_slot_observable` (1630);
-  - the observe helpers `jit_helper_observe_assign_local` (1661) and
-    `jit_sample_num_gated`, which must route an SMI into the numeric channel
-    in round 1 already, converting to double for the distance (§2.5);
+  - **the routing of an int into the numeric channel, from R1.3 (when the
+    first int exists), converted to a double for the distance until round
+    3.** Two paths, both forced before R1.3 and both live in R1.3:
+    - **an SMI**: the observe sites test `slot_is_num` first (D1, forced in
+      R1.1): `CASE(OBSERVE_ASSIGN_LOCAL)` (vm.c:5189, its elided
+      `unobserved:` path at 5202), `CASE(OBSERVE_NAME_POST)` (5431),
+      `jit_helper_observe_assign_local` (1678-1684) and
+      `jit_helper_observe_name_post` (1730). Each gains `slot_is_smi(s)` ->
+      `observer_slot_update_num(e, slot, (double)smi)` (or the sample form);
+      `obs_slot_observable` aborts on an SMI that reaches it (§2.5);
+    - **a boxed int** (an int outside [-2^47, 2^47), or any int a lift
+      boxed): `obs_slot_observable` answers true for any pointer, so it goes
+      to `observer_slot_update(Value *)` (eigenscript.c:769), whose number
+      arm (`newval->type == VAL_NUM`, :785) feeds the value channel and whose
+      `else` ends the numeric trajectory (#861). R1.2's `VAL_NUM` rename
+      forces that arm; it gains `VAL_INT` ->
+      `observer_slot_record_value(s, (double)i)`. The same holds for the
+      elided `observer_slot_sample_gated` (:851, its arm at :852) and for
+      `compute_entropy_impl`'s exhaustive switch (:437), whose `VAL_INT` arm
+      gives an int the entropy of its double;
+    - the MAP row `O1.int-observed-numeric` (R1.3) pins both: an SMI and a
+      boxed int (2^47 and up) must answer every observer readout exactly as
+      their float twins do;
   - vm.c:5460 `CASE(INTERROGATE)` (`where`/`why`/`how`);
   - `builtin_observe`;
   - the `O cfg` record;
@@ -1500,129 +1683,152 @@ numbers are at `0740af03`.
 Every commit builds, passes the full suite, and carries its own MAP rows.
 "Unchanged" means a differential against the baseline binary captured
 before the commit (the verify-and-fix rule), not "the suite passed". Every
-meaning change lands in the commit that carries its token change (§2.7).
+meaning change lands in the commit that carries its token change, or is in
+§2.7's token-less list with its gate. `phase2_check.sh --through <commit>`
+checks each commit against exactly the rows that have landed (§9.2).
+
+### Where the first int value appears: R1.3
+
+No int VALUE exists before R1.3, and this is structural, not a promise:
+- `make_int` is introduced in R1.3, so nothing earlier can call it;
+- `slot_from_int` exists from R1.1 (the C slot test needs it), but until R1.3
+  its only production callers are the canonicalizing writers of §2.1, which
+  convert an existing `VAL_INT`, and none exists. `phase2_check.sh --through
+  R1.2` checks this: it derives the callers of `slot_from_int` and
+  `make_int` from the source and fails on any caller outside that list
+  (the int-source check);
+- the lexer produces only float literals until R1.3, and the tape cannot
+  carry an int until v7 (R1.3).
+
+**Every consumer of an int is converted AT R1.3**, either by code forced and
+written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
+
+| consumer | converted by | how it treats an int at R1.3 |
+|---|---|---|
+| VM arithmetic, comparison, negation (N2, N3, N4b, (A)) | R1.1 forced the arms (`slot_as_double` deleted); R1.3 adds the int semantics | exact int64, overflow raises |
+| `/` and `%` | R1.3 (transitional) | converted to doubles, today's semantics, until R1.4 |
+| bitwise operators | R1.3 (transitional) | exact int64 operands (#1740's rule), today's shift rule until R1.5 |
+| equality, ordering, hashing, the constant pool | R1.2 (forced arms) | by value across kinds (N2); the pool keys on kind |
+| printing (`value_to_string`, f-strings) | R1.2a (the exhaustive switch) | exact digits, as today for small ints |
+| `type of`, `num_type` | R1.2a (`val_type_name`), R1.3 (`num_type`) | `"num"`; `"int"` |
+| containers | R1.2 (the four canonicalizing writers) | an SMI, or a box outside the SMI range (§2.1) |
+| the observer | R1.1 (SMI sites, D1) and R1.2 (the boxed arm at eigenscript.c:785, the entropy switch) | the numeric channel, as a double until round 3 (§7) |
+| the tape | R1.3: v7 writer and parser | ints as digits, floats marked as floats; a v6 tape is refused |
+| the JIT | nothing to convert: its guards bail on an SMI or a `VAL_INT` box (§4.1), and its scanner refuses `OP_INT_*` | interpreted |
+| the leaf evaluator | R1.1 (its arithmetic and index arms bail) | the generic path computes it |
+| builtins | the bridge (R1.2's number tests admit ints) | a double, exactly as the tag sees every number, until R1.6 |
+| JSON, store and db encoders | R1.2a (their `VAL_INT` arms) | exact digits |
+| the embed API (`eigs_value_as_num`) | R1.2 (its forced `VAL_NUM` test) | converts to a double (Q3) |
+| lint and the LSP | R1.3 (the AST payload rename) | the literal's kind |
 
 ### Round 1: the core model (Alt 1R)
 
 1. **R1.1, the slot layer: the SMI exists, every slot reader is forced (no
-   producer yet).**
+   producer).**
    - Add `TAG_SMI`, `slot_is_smi`, `slot_from_int`, `slot_smi_val`,
      `slot_f64_value` and `slot_int_value` (§2.6).
-   - The token changes of this commit: `slot_is_num` -> `slot_is_f64`,
-     `SLOT_NUM_RAW` -> `SLOT_F64_RAW`, `slot_from_num` -> `slot_from_f64`,
-     the container helpers `*_num` -> `*_f64`; `slot_is_numeric` deleted;
-     **`slot_as_double` deleted**. Its 15 calls are rewritten with an
-     explicit int decision: the arithmetic and compare arms take their float
-     fast path through `slot_f64_value` and send anything else to the slow
-     path; the leaf evaluator's `INDEX_GET` and `ADD`/`SUB`/`MUL` arms bail
-     on anything that is not a float.
+   - The token changes: `slot_is_num` -> `slot_is_f64`, `SLOT_NUM_RAW` ->
+     `SLOT_F64_RAW`, `slot_from_num` -> `slot_from_f64`; `slot_is_numeric`
+     deleted; **`slot_as_double` deleted**. Its 15 calls are rewritten with
+     an explicit int decision: the arithmetic and compare arms take their
+     float fast path through `slot_f64_value` and send anything else to the
+     slow path; the leaf evaluator's `INDEX_GET` and `ADD`/`SUB`/`MUL` arms
+     bail on anything that is not a float. 223 sites first forced (§2.3a).
    - The D2/D3 dispositions (§2.5): `eigs_slot_ref`, `obs_slot_observable`,
      `slot_as_ptr` and `slot_as_heap` refuse an SMI (abort; `slot_as_ptr`
-     in ASan and debug builds); `slot_type_name` gains its SMI arm. Every D1
-     function gets its SMI arm as the compiler stops at it.
-   - `tools/phase2_check.sh` (§9.2) lands here with its calibration, and
-     runs the rows whose round has landed.
-   - Test: the C slot test (§2.5), through the amalgamation, built from the
-     inventory's D1-D3 list and run under ASan; plant 1 (§9.3). Language
-     behaviour is unchanged (differential over the suite's `.eigs` corpus),
-     because nothing produces an SMI yet.
-2. **R1.2, the Value layer and the renames (deprecate, then delete).**
-   - R1.2a: `VAL_INT` (appended), `make_int`, the §2.6 readers and
-     `val_type_name(VAL_INT) = "num"`. **Delete the `default:` arm of
-     `eigs_json_encode_value` (builtins.c:998)**, enumerating the types, so
+     in ASan and debug builds); `slot_type_name` gains its SMI arm.
+   - `tools/phase2_check.sh` lands here with its calibration (§9.2).
+   - Gates (a mechanical round, zero MAP rows): the compile errors, the C
+     slot test (§2.5) and plant 1 (§9.3); the int-source check; language
+     behaviour unchanged (differential over the suite's `.eigs` corpus).
+2. **R1.2, the Value layer (behaviour-preserving; no builtin decision).**
+   - R1.2a: `VAL_INT` appended; `VAL_NUM` -> `VAL_FLOAT`, `num_` -> `f64_`,
+     `VAL_NUM_RAW`/`VAL_NUM_OFFSET` renamed, with deprecated aliases as the
+     progress meter; `val_type_name(VAL_INT) = "num"`; **the `default:` arm
+     of `eigs_json_encode_value` (builtins.c:998) deleted**, so
      `-Werror=switch` reaches the last switch that could absorb `VAL_INT`
-     silently. The old names stay, marked `__attribute__((deprecated))`;
-     macros are routed through a deprecated inline.
-   - R1.2b-n: one commit per file group (vm.c; builtins.c; tensor; buf;
-     host; gfx; net/http/db/model; store; trace; observer; embed; lint and
-     LSP). Each migrates its sites by the §6 table and lowers the
-     deprecation-warning count. `VAL_INT` exists and is handled (the int
-     arms are written against the final semantics), but nothing produces
-     it, so behaviour is unchanged (differential).
-   - R1.2z: delete the old names (`VAL_NUM`, `num_`, `VAL_NUM_RAW`,
-     `VAL_NUM_OFFSET`, `make_num`, `make_num_permanent`, the `eigs_num_arg`
-     and `eigs_slot_num` families, `buf_num_arg`). A straggler fails to
-     compile (§2.3a measured which sites).
-   - Risk: the size (1,416 compile-forced sites across R1.1-R1.2); and a
-     mis-migration that picks `eigs_float_arg` for an int-preserving
-     builtin, caught by the int-fuzz gate (§9.4).
-3. **R1.3, the flip: int literals and exact int arithmetic.**
+     silently.
+   - R1.2b-n: one commit per file group. Each forced site gets its final
+     int arm (dead until R1.3), and a builtin's number test admits an int
+     and reads it through the bridge (§2.7). The bridge's names are NOT
+     touched: no builtin's behaviour changes. 464 sites first forced.
+   - R1.2z: delete the deprecated aliases. A straggler fails to compile.
+   - Gates (a mechanical round, zero MAP rows): the compile errors; the
+     differential over the suite's `.eigs` corpus (identical to the
+     baseline); the int-source check.
+3. **R1.3, the flip: the first int values.** See the table above.
    - N1, with its token changes in this same commit: the lexer produces an
      int literal; the AST payload `num` and the token's `num_val` become an
-     `EigsNum` (renamed, so the parser, compiler, lint and LSP sites stop
-     compiling here); **`OP_INT_ZERO`, `OP_INT_ONE` and `OP_INT_CONST` are
-     appended** to `OpCode` (the four exhaustive OpCode switches stop
-     compiling until they name them; three new interpreter CASEs; the JIT
-     scanner and the leaf scanner refuse them by their `default:`);
-     `OP_NUM_ZERO`/`OP_NUM_ONE`/`OP_CONST` keep their float meaning in all
-     three executors. The constant pool keys on kind and bits.
-   - N3 with (A) overflow raise, N2 exact cross-kind comparison, N4b `-x`,
-     N7 `num_type`.
-   - EQ/NE: the only bit fast path is "both SMI"; anything boxed compares by
-     value (§2.1).
+     `EigsNum`; **`OP_INT_ZERO`, `OP_INT_ONE` and `OP_INT_CONST` are
+     appended** (the four exhaustive OpCode switches; three new interpreter
+     CASEs; the JIT and leaf scanners refuse them by their `default:`);
+     `make_int` is introduced. `OP_NUM_ZERO`/`OP_NUM_ONE`/`OP_CONST` keep
+     their float meaning in all three executors.
+   - N3 with (A), N2's exact cross-kind comparison, N4b `-x`, N7 `num_type`;
+     EQ/NE's only bit fast path is "both SMI" (§2.1).
    - The JIT scanner refuses `BAND`/`BOR`/`BXOR`/`SHL`/`SHR`/`BNOT`/`MOD`.
-   - **The tape goes to v7 in this commit.** The moment ints exist, a v6
-     writer would print `3` for both kinds and replay would turn ints into
-     floats. The float token marks its kind now (`3.0`); N6's full repr
-     replaces it in R1.7, still inside v7.
-   - The observer routes an SMI into the numeric channel (converted to
-     double); `obs_slot_observable`'s refusal (R1.1) catches a missed caller.
-   - The `trace` tier (§9.2, the leaf differential) and the tier witnesses
-     start gating here, because ints now reach all three evaluators.
-   - The visible change is small: ints print as today. The rest waits for
-     N4/N6.
-   - Risks:
-     - JIT int loops leave the JIT (§3: +70% Ir on a counter loop), and the
-       leaf evaluator stops computing int helpers. Declare the CodSpeed
-       baseline move first.
-     - Consumer hashes that relied on double rounding now raise ((A)); they
-       move to the N9 wrapping builtins.
+   - **Tape v7 in this commit**: a v6 writer would print `3` for both kinds
+     and replay would turn ints into floats. The float token marks its kind
+     now (`3.0`); N6's repr replaces it in R1.7, still inside v7.
+   - The observer routes an SMI and a boxed int into the numeric channel
+     (§7).
+   - The `trace` tier (the leaf differential) and the tier witnesses gate
+     from here.
+   - Risks: JIT int loops leave the JIT (§3: +70% Ir on a counter loop),
+     and the leaf stops computing int helpers; declare the CodSpeed baseline
+     move first. Consumer hashes that relied on double rounding now raise
+     ((A)); they move to the N9 wrapping builtins.
 4. **R1.4, N4.** `//` (token, parser, `OP_IDIV` appended,
-   `op_name`/`op_stack_effect`/obs marker/ABI test), `//=` beside `/=`
-   (Q6, decided), `%` floor modulo for ints and floats, int division by
-   zero raises, `INT64_MIN % -1` is 0.
-5. **R1.5, N8.** Bitwise ops on ints with Lua's shift rules; `bit_*`
-   returns ints.
-6. **R1.6, N5, N9, N10 and the §6 builtins.** Every int-preserving and
-   int-requiring row, the 42 LOSS rows first; Q1 (decided): integer-valued
-   parameters through `eigs_int_arg_range`/`eigs_byte_arg`
-   (`finite_num_to_byte` and `buffer_read_byte` deleted in this commit),
-   continuous ones through `eigs_round_arg` once §11 Q7 is decided (until
-   then they keep R1.2's behaviour-preserving truncation); Q4 `round`;
-   `num of` (#1638); the N9 width family.
-7. **R1.7, N6 and N14's int half.**
+   `op_name`/`op_stack_effect`/obs marker/ABI test), `//=` beside `/=` (Q6),
+   `%` floor modulo for ints and floats, int division by zero raises,
+   `INT64_MIN % -1` is 0.
+5. **R1.5, N8.** Bitwise operators on ints with Lua's shift rules.
+6. **R1.6, the bridge deletion: every builtin's §6 semantics.** The bridge's
+   21 tokens are deleted (743 sites first forced), in per-file-group commits
+   that each migrate their sites off the deprecated bridge and give those
+   builtins their final behaviour in the same commit:
+   - every int-preserving and int-requiring row, the 42 LOSS rows first;
+   - Q1: integer-valued parameters through `eigs_int_arg_range`,
+     `eigs_byte_arg`, `buffer_byte_at` and `buffer_index_at`;
+   - Q7: continuous parameters through `eigs_geom_shape`,
+     `eigs_bounded_arg` and `eigs_magnitude_arg` (§2.6);
+   - Q4 `round`; `num of` (#1638) and the decoders' int kinds for integer
+     text (`json_decode`, `json_path`, `store_query`, `db_query_value`); the
+     N9 width family;
+   - gate: the per-builtin behaviour table (§9.4), on the tag and the branch.
+7. **R1.7, the float text (N6) and N14's writers.**
    - Python-repr floats; ints as exact digits.
    - The constant dedup compares bits, so `-0.0` survives.
-   - JSON writes ints as digits and floats with `.0`; integer text within
-     int64 decodes as an int; `1e400` raises.
-   - #1762's writers: `store_json_encode` and `db_build_query` go through
-     the same N6 writer (§6), unless #1762 landed on main first.
+   - JSON writes floats with `.0`; #1762's writers (`store_json_encode`,
+     `db_build_query`) go through the same N6 writer, unless #1762 landed on
+     main first.
    - `src/freestanding/mini_fmt.c` and `mini_strtod.c` follow, gated by
      `make freestanding-libc-diff`.
    - This is the largest visible change: every golden that prints an
      integral float.
-8. **R1.8, the embed API (Q3, decided), lint/LSP type knowledge and docs.**
+8. **R1.8, the embed API (Q3), lint/LSP type knowledge and docs.**
    `eigs_value_as_num` converts an int (like `lua_tonumber`);
    `eigs_value_new_int`, `eigs_value_as_int` (with a success flag, like
    `lua_tointegerx`) and `eigs_value_is_int` are added; `EIGS_TYPE_NUM`
-   covers both kinds. Docs: SPEC, COMPARISON, README, llms.txt executed
-   fences. The CLAUDE.md same-PR docs rule applies to the integration PR as
-   a whole.
+   covers both kinds. Gate: `gate.N7.embed-int` (the embed smoke test), the
+   executed doc fences (suite [89]/[90]) and the LSP and lint suite sections.
+   Docs: SPEC, COMPARISON, README, llms.txt; the CLAUDE.md same-PR docs rule
+   applies to the integration PR as a whole.
 
 ### Round 2: IEEE (N11-N14 remainder), on the experiment's evidence
 
 1. **R2.1, canonical NaN at the single double writer** (`slot_from_f64`)
    **and the JIT NaN bails** (§4.3), while `num_guard` still keeps NaN out:
-   memory safety first.
-   - Test: the C slot test writes every tag-spelling NaN payload. The
-     #1746 plant (a raw store) segfaults in `slot_incref`.
+   memory safety first. A mechanical round (no program can make a NaN yet):
+   the C slot test writes every tag-spelling NaN payload, and the #1746
+   plant (a raw store) segfaults in `slot_incref`.
 2. **R2.2, retire `num_guard`, `num_guard_named`, `EIGS_NUM_MAX` and the
-   1e308 clamp** (74 sites, the leaf's included). `EIGS_STRICT` becomes an
-   opt-in trap
-   (state.c:62). `sqrt of -1` is NaN, `log of 0` is -inf, `x/0` is ±inf,
-   `0/0` and float `x%0` are NaN. The consumers no token marks (§2.7):
-   `values_equal_impl`'s identity shortcut excludes floats; NaN order in
-   sort follows §11 Q8 once decided.
+   1e308 clamp** (74 sites, the leaf's included; 47 first forced here).
+   `EIGS_STRICT` becomes an opt-in trap (state.c:62). `sqrt of -1` is NaN,
+   `log of 0` is -inf, `x/0` is ±inf, `0/0` and float `x%0` are NaN. Q8:
+   `sort`/`sort_by` order floats by IEEE `totalOrder` (NaN after +inf), and
+   `min`/`max` propagate NaN. `values_equal_impl`'s identity shortcut
+   excludes floats.
 3. **R2.3, N13 refusal inside the writers:** the JSON encoder, the store
    encoder (delete the pre-walk `store_nonfinite_scalar`), the byte
    encoders and the int conversion. This removes the class #1746 chased for
@@ -1632,9 +1838,10 @@ meaning change lands in the commit that carries its token change (§2.7).
 5. **R2.5, tape v7 `inf`/`-inf`/`nan` tokens; N6 non-finite printing;
    N14 `1e400` raises.**
 6. **R2.6, the #1746 residue:**
-   - the gfx/net/model `fix_trunc` sites;
+   - the internal `(int)` casts the Q7 readers do not cover (the audio
+     generators' `dur * rate`, the model builtins);
    - `net_send` continuing after a raise (ext_net.c:364);
-   - `buf_to_pcm16le` NaN;
+   - `buf_to_pcm16le` with a NaN sample;
    - the `numerical_grad` waiver.
 
 ### Risks across both rounds
@@ -1652,7 +1859,8 @@ meaning change lands in the commit that carries its token change (§2.7).
 - Consumers. N6 printing moves goldens in all 16; N4 changes `%` on
   negatives; (A) raises where doubles lost precision silently; Q1 raises on
   a non-integral count, handle or byte, and on a byte outside 0..255 that
-  used to wrap. The DMG emulator feeds `ppu_render_frame` its memory buffer
+  used to wrap; Q7 raises on a duration or window size the C call cannot
+  honour. The DMG emulator feeds `ppu_render_frame` its memory buffer
   through `buffer_read_byte`; the consumer acceptance run (Done-when) shows
   whether any program stored a non-byte there.
 - Observer. Until round 3, ints are observed as their double value (the
@@ -1695,8 +1903,18 @@ now has one of four shapes:
   times: the leaf evaluator's shape (§4.5).
 - `F`: a multi-statement function called at least 60 times, above the
   default entry threshold of 50 (jit.c:2478): the function JIT's shape.
-- `O`: a loop, in a function or at module level, run in the `osr` tier
-  (`EIGS_JIT_OSR_THRESHOLD=1`): the OSR shape.
+  `EIGS_JIT_HOT` records a chunk's LAST run, so the witnessed call must be
+  the function's last call (round 2's two truthiness controls ended on a
+  float call and could not hold; both are reordered).
+- `O`: a `loop while true:` loop, in a function or at module level, run in
+  the `osr` tier (`EIGS_JIT_OSR_THRESHOLD=1`), **whose only exit is a
+  `return` placed right after the claimed ops** (`if <done>: return <r>`; at
+  module level, `print of <r>` first). The OSR thunk's record holds only its
+  last entry, and with a `loop while <cond>:` header that entry is always the
+  final condition check, which exits through the header whether or not the
+  body ever ran natively. With the return inside the body, the only way the
+  last entry ends at the return sentinel is to run the whole body natively
+  first.
 
 The `L`, `F` and `O` rows (35 in the MAP) cover every JIT-emitter and leaf
 arm that holds a numeric site (the inventory's `## Numeric arms`, 20 today;
@@ -1719,8 +1937,8 @@ witness may name several helpers, each of which must hold), followed by
 | `leaf-gen <fn>` | the normal run and the `trace` run both show the same K >= 1 entries: every call took the generic path (the scanner refused the chunk, or the leaf bailed) |
 | `fn <fn>` | in the default and `osr` tiers, `<fn>`'s row has `jit yes` and `adv RET`: its last call ran natively to its return |
 | `fn-stop <fn> <OP>` | `jit yes`, and the opcode at offset `adv` of `<fn>`'s bytecode (`EIGS_DUMP_BC=1`) is `<OP>`: the thunk handed back at `<OP>`, by a compile stop or a guard bail |
-| `osr <chunk>` | in the `osr` tier, `<chunk>`'s row has `osr yes`, and `oent + oadv` lies past the loop's `JUMP_BACK`: the thunk ran the loop to its exit |
-| `osr-stop <chunk> <OP>` | `osr yes`, and the opcode at `oent + oadv` is `<OP>` |
+| `osr <chunk>` | in the `osr` tier, `<chunk>`'s row has `osr yes` and `oadv == len`: the OSR thunk's last entry reached the return sentinel (jit_advance -1, which `EIGS_JIT_HOT` prints as the chunk length, jit.c:244), so it ran the whole body natively on the way. Round 2's form (`oent + oadv` past `JUMP_BACK`) is withdrawn: the critic's plant ran native `INDEX_SET` 0 times and still passed it |
+| `osr-stop <chunk> <OP>` | `osr yes`, `oadv != len`, and the opcode at `oent + oadv` is `<OP>`: every entry handed back at `<OP>` |
 
 Why `EIGS_JIT_HOT` and not only `EIGS_JIT_STATS`/`EIGS_JIT_STOPS`:
 `STATS` counts are process-wide (`scanned`, `compiled`), and `STOPS` records
@@ -1731,22 +1949,26 @@ operation natively. `HOT` records, per chunk, the last run's native advance
 must show `compiled >= 1` for an `fn`/`osr` claim, and for a `-stop` claim
 whose stop is a compile stop, `STOPS` must name `<OP>`. The leaf has no
 counter; its witness is the entry count, because both generic call paths
-count an entry (vm.c:2617, vm.c:4353) and the leaf path never does. The
-witness uses only existing diagnostics: nothing in production changes so a
-test can observe it.
+count an entry (vm.c:2617, vm.c:4353) and the leaf path never does.
 
-**Calibrated on the main binary this round** (each predicate holds where it
-should and fails where it should not):
-- `leaf sq`: `sq` called 200 times has no `HOT` row in the `off`, default and
-  `osr` tiers; with `EIGS_TRACE` set it shows `sq 200 yes ... RET`. The same
-  predicate is false for the leaf-off run.
-- `fn g`: `g` called 60 times shows `g 60 yes ... RET ... RETURN`.
-- `fn-stop h ADD`: `h` called 55 times with numbers and then once with a
-  string operand (the program raises there) shows `h 56 yes ... 30`; offset
-  30 of `h` is `ADD`: the thunk's guard bailed there and the interpreter
-  raised.
-- `osr f`: `f`'s loop under `EIGS_JIT_OSR_THRESHOLD=1` shows `osr yes`,
-  `oent 31`, `oadv 57`: 31 + 57 = 88, past `JUMP_BACK` at 85.
+**Calibrated on the main binary: every kind holds on its honest row and is
+VACUOUS on a plant where the claimed op did not run as claimed** (design
+round 3; a scratch model of the predicates read `EIGS_JIT_HOT` and
+`EIGS_DUMP_BC`; the `osr` pair also counted native `jit_helper_index_set`
+calls under gdb, with the critic's `gdbcount.gdb`):
+
+| kind | honest row (main) | evidence | plant | evidence |
+|---|---|---|---|---|
+| `leaf sq` | `define sq(x) as: return x * x`, one call with 1.5 | `sq normal=0 trace=1`: HOLDS | the body split into two statements (not leaf-eligible) | `sq normal=1 trace=1`: VACUOUS |
+| `leaf-gen nth` | `define nth(xs, i) as: return xs[i]`, called on a string (the leaf's `INDEX_GET` bails) | `nth normal=1 trace=1`: HOLDS | called on a list (the leaf computes it) | `nth normal=0 trace=1`: VACUOUS |
+| `fn keep` | `t is q / return t`, 60 calls with 2.5 | `keep jit=yes adv=RET`: HOLDS | `zz is [q]` first (the scanner stops at `LIST`) | `keep jit=no stop=LIST`: VACUOUS |
+| `fn-stop cat ADD` | `t is a + b / return t`, 60 calls with two strings (the `ADD` guard bails) | `cat jit=yes adv=11`, offset 11 is `ADD`: HOLDS | 60 calls with two floats | `adv=RET`: VACUOUS |
+| `osr fill` | the critic's `osr_ret`: `loop while true: (xs[i] is big / i is i + 1.0 / if i >= n: return xs)` | `osr=yes oadv=123 len=123 oent=37`; 3 native `INDEX_SET` helper calls: HOLDS | the critic's `osr_ret_PLANT2`: `s is s + "a"` first in the body | `oadv=20 len=157`; 0 native calls: VACUOUS |
+| `osr fill`, round 2's shape | `loop while i < n:` (the critic's `osr_index_set`) | 3 native calls, but no sentinel: VACUOUS under the new rule | `zz is [i]` first (`osr_index_set_PLANT`) | 0 native calls; `oent + oadv` = 109, past `JUMP_BACK` at 106: the round-2 rule PASSED it; the new rule is VACUOUS |
+| `osr-stop g ADD` | `loop while true: (s is s + "a" / i is i + 1.0 / if i >= n: return s)` | `oent=33 oadv=20`, offset 53 is `ADD`: HOLDS | `s` a float (`s is s + 1.5`) | `oadv=122=len` (the sentinel): VACUOUS |
+
+The witness uses only existing diagnostics: nothing in production changes so
+a test can observe it.
 
 **What the witnesses expect in round 1.** The JIT and the leaf bail on an
 int that meets an arithmetic, comparison, bitwise or index op, and refuse an
@@ -1755,14 +1977,45 @@ int literal, until round 5 (§4), so such a row's honest witness is
 scanner refused) and the interpreter produced the row's output. An int that
 only moves, into a local, a field, a list element or a module binding,
 passes through the JIT's C helpers and the leaf's borrows, so those rows
-(`N1.fn-int-local`, `N1.fn-dot-fields`, `N1.osr-module-int-store`,
+(`N1.fn-int-local`, `N1.fn-dot-fields`, `N1.osr-global-int-store`,
 `N5.osr-index-set`, `N1.leaf-dot-get`) have native witnesses already in
 round 1. A float row's witness is native too: it proves the float meaning of
 `NUM_ZERO`/`NUM_ONE`/`CONST` survived in the JIT and the leaf. Round 5 flips
 the int witnesses to native, one row at a time, and each flip is a
 deliberate edit of the row.
 
-### 9.2 `tools/phase2_check.sh <tag-binary> <branch-binary>` (R1.1 builds it)
+### 9.2 `tools/phase2_check.sh [--through <commit>] <tag-binary> <branch-binary>` (R1.1 builds it)
+
+**The landed-round filter.** Each MAP row names the commit that makes it
+pass (`[R1.3]`; a row needing two commits names both, `[R2.1/R2.4]`, and
+lands with the later). `--through Rk` selects the rows that have landed by
+Rk, in the order R1.1 < R1.2 < ... < R1.8 < R2.1 < ... < R2.6 < R3; controls
+run in every mode; the default is the whole plan. A round is checked against
+exactly its landed rows, so R1.3's check cannot fail on an R1.7 row, and the
+final check runs all of them. Each round has a non-zero set of its own rows,
+or a mechanical guarantee stated here, which `--through` runs instead of
+failing on zero rows:
+
+| round | its own MAP rows | its gates, or the mechanical guarantee |
+|---|---:|---|
+| R1.1 | 0 | mechanical: the compile errors (223 sites), the C slot test (§2.5; `examined` equals the derived classifier count), plant 1, the int-source check, and the differential over the suite's `.eigs` corpus |
+| R1.2 | 0 | mechanical: the compile errors (464 sites), the int-source check, and the differential over the suite's `.eigs` corpus (behaviour-preserving) |
+| R1.3 | 43 | |
+| R1.4 | 6 | |
+| R1.5 | 7 | |
+| R1.6 | 18 | `gate.N5.q7-readers`, and the per-builtin behaviour table (§9.4) |
+| R1.7 | 12 | `gate.N14.db-param-exact` |
+| R1.8 | 0 | `gate.N7.embed-int` (the embed smoke test), the executed doc fences (suite [89]/[90]), the LSP and lint suite sections |
+| R2.1 | 0 | mechanical: the C slot test's NaN-payload rows and plant 2 (no program can make a NaN before R2.2) |
+| R2.2 | 9 | |
+| R2.3 | 3 | |
+| R2.4 | 6 | |
+| R2.5 | 6 | |
+| R2.6 | 1 | |
+| R3 | 5 | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` |
+
+(The counts are the MAP's at this commit; `phase2_check.sh` derives them, and
+fails if a round named here has neither rows nor its mechanical gates.)
 
 - **Rows** live in `tests/phase2/rows/<id>.eigs`. Each has a header
   `# ROW: <id>`, `# ITEMS: N1 N2`, `# EXPECT-RC: <n>`, `# SHAPE: S|L|F|O`,
@@ -1780,7 +2033,8 @@ deliberate edit of the row.
     arms today, each with its opcode chain; an arm is covered when some
     row's `ops:` names an opcode of its chain that the row runs natively or
     stops exactly at; the MAP's shaped rows cover all 20);
-  - zero rows is a FAIL.
+  - zero rows is a FAIL, except a mechanical round under `--through`
+    (the table above), which runs its named gates instead.
 - **Tiers:**
   - `off` = `EIGS_JIT_OFF=1`;
   - `default`;
@@ -1809,7 +2063,8 @@ deliberate edit of the row.
   branch_pass=N vacuous=0 tag_timeout=K tag_signal=K`, then `controls=M
   both_pass=M`, `witnessed=W` (the rows whose witness held), and an
   environment banner (both binaries' `--version` and sha256).
-- **Exit 0** iff in every tier examined == tag_fail == branch_pass > 0,
+- **Exit 0** iff in every tier examined == tag_fail == branch_pass > 0
+  (or, for a mechanical round under `--through`, its named gates pass),
   vacuous == 0, the controls all pass on both, and the population checks
   pass.
 - **Calibration** (one-time, in the commit that adds it):
@@ -1824,7 +2079,18 @@ deliberate edit of the row.
     (the JIT never compiled it);
   - an `L` row run against a scratch build whose leaf `MUL` arm computes
     `a * b + 1`: the `trace` tier differs from the others, exit 1, naming
-    the row.
+    the row;
+  - **one negative plant per witness kind, each a row where the claimed op
+    did not run as claimed** (the rows of §9.1's calibration table, which
+    this design ran on main): `leaf` (the helper split into two statements),
+    `leaf-gen` (the helper computed by the leaf), `fn` (an unsupported op
+    before the claimed one), `fn-stop` (the claimed op runs natively), `osr`
+    (the critic's `osr_ret_PLANT2`: a string concat ahead of the claimed op,
+    0 native `INDEX_SET` calls), `osr-stop` (the claimed op runs natively to
+    the sentinel). Each must give `vacuous=1`, exit 1, naming the row;
+  - `--through R1.2` on a tree with no R1.1/R1.2 rows: exit 0 by the
+    mechanical gates, `mapped=0`; and with the int-source check planted (a
+    production `slot_from_int(count)` call): exit 1.
 
 ### 9.3 `tools/phase2_plants.sh` (round 1 builds it; detached, about 7 release builds)
 
@@ -1858,19 +2124,55 @@ The tier-witness and leaf-differential plants (§9.2's calibration) belong to
 `phase2_check.sh`'s own calibration, not to this list: they test the
 instrument, not the semantics.
 
-### 9.4 The int-fuzz gate (round 1; the §6 table's enforcement)
+### 9.4 The per-builtin behaviour table (R1.6's gate; replaces the int-fuzz class check)
 
-It follows `tests/test_bool_fuzz.sh` (which feeds bools to every builtin
-`--api --json` lists):
-- every numeric builtin of §6 is called with ints in each numeric slot;
-- **int-preserving:** the result's `num_type` is "int" for int inputs;
-- **int-requiring:** a float with a fraction raises `value` (N5), and an
-  integral float converts;
-- **float-producing:** the result is a float;
-- the population is derived from `--api --json` intersected with the table,
-  and the gate prints `examined=N` equal to the table's row count.
+Round 2 planned an int-fuzz gate asserting "the result is an int for int
+inputs". The critic showed what it cannot see: builtins whose int result
+comes from a non-numeric input (`len`, `ord`, `index_of`, `buf_len`,
+`scan_ints`, `read_bytes`: fed an int they raise `type_mismatch` on both
+binaries), and builtins that need a valid argument to run at all
+(`shared_size` raises `value` on a bare int). R1.6 changes about 114 rows, so
+its gate must exercise every builtin with a VALID call.
 
-It catches a mis-migrated accessor (R1.2) that compiles.
+`tests/phase2/builtins.tsv` (written in R1.6, checked by
+`tools/phase2_builtins.sh <tag-binary> <branch-binary>`):
+- **One row per numeric builtin of §6, both directions** (the population is
+  the inventory file's `## Builtins` list, not a hand list): `builtin`,
+  `class` (must equal §6's), `probe` (a short program that calls it validly
+  and prints the result, plus `num_type of` it where the result is a
+  number), `branch` (the exact expected stdout and rc), `tag` (the tag's
+  observed stdout and rc), `changes` (`yes`/`no`).
+- **Checks:**
+  1. the row set equals §6's numeric builtins, both directions; zero rows
+     is a FAIL;
+  2. `class` equals §6's class, and the row's `branch` output is consistent
+     with it: an `int-preserving` row prints `"int"` for its result's
+     `num_type`; a `float-producing` row prints `"float"`; an
+     `int-requiring` row's probe passes a fractional value in an
+     integer-valued parameter and expects `value` (and a second line with
+     an integral float that converts); a Q7 row's probe exercises one
+     out-of-range value of each class it names (a clipped shape draws
+     nothing, a bounded value clamps, a magnitude raises);
+  3. the branch's actual output equals `branch`, and the tag's equals
+     `tag`;
+  4. `changes` is `yes` exactly when `branch` and `tag` differ, and every
+     `LOSS`, `int-requiring` and Q7 row has `changes: yes`: a probe that
+     does not show the tag/branch difference for a builtin §6 says changes
+     is VACUOUS.
+- **What it sees that the fuzz could not:** `len of [1, 2]` must print
+  `[2, "int"]`; `ord of "A"` `[65, "int"]`; `shared_size` is probed with a
+  valid shared value; every `int-requiring` row raises on 1.5; `gather` and
+  `scatter_add` raise on an index of 1.5; `buf_from_pcm16le` raises on a
+  byte of 300 and of 1.5.
+- **Calibration plants** (one-time, in the commit that adds it): `len`
+  reverted to `make_float`: its row red; an `int-requiring` builtin reverted
+  to truncation: red; a row deleted, and a stale row added: membership red
+  both ways; a class edited: red; a `LOSS` row whose probe stays below 2^53:
+  VACUOUS.
+
+The int-fuzz sweep, if kept, shrinks to what the table does not do: a
+crash-only sweep (every builtin fed ints in every numeric slot must raise
+or return, never crash), in the shape of `tests/test_bool_fuzz.sh`.
 
 ---
 
@@ -1931,7 +2233,7 @@ disagree=0`. It exits 1 on any unexplained disagreement or on examined=0.
 
 ---
 
-## 11. Decided questions (Q1-Q6) and what stays open
+## 11. Decided questions (Q1-Q8)
 
 Q1-Q6 were open in round 0. They were decided on 2026-10-14 by the
 standard answer, each verified by probe, in
@@ -1948,8 +2250,8 @@ The owner may overrule any of them; until then this design follows them.
     conversion rounds to nearest, replacing truncation toward zero (SDL3's
     float coordinates, LÖVE's numeric drawing API).
   - Applied: §6's rows (16 moved from other to int-requiring; byte
-    consumers no longer wrap), `eigs_byte_arg`, `eigs_int_arg_range` and
-    `eigs_round_arg` (§2.6), R1.6 (§8).
+    consumers no longer wrap), `eigs_byte_arg`, `eigs_int_arg_range`, and
+    the Q7 readers (§2.6), R1.6 (§8).
 - **Q2, an int stored into float storage: DECIDED.** Convert with IEEE
   round-to-nearest, documented as the container's contract (Python
   `float(2**53+1)`, numpy, JS `Float64Array`). Applied: `buf_set`,
@@ -1965,28 +2267,35 @@ The owner may overrule any of them; until then this design follows them.
 - **Q4, `round`: DECIDED.** Keep half away from zero (C and Rust `round`);
   the result is an int when it fits int64 and a float otherwise, like Lua's
   `math.floor`/`math.ceil` (`math.floor(1e300)` stays `1e+300`). Applied:
-  §6 (`round` int-preserving, LOSS), R1.6; `eigs_round_arg` uses the same
+  §6 (`round` int-preserving, LOSS), R1.6; the Q7 readers use the same
   tie rule.
 - **Q5, `why is x` for an int binding: DECIDED.** An int when Δv fits in
   int64, otherwise a float. A readout never raises; (A) applies to
   operators, not to observer readouts. Applied: round 3 (O4).
 - **Q6, `//=`: DECIDED.** Add it beside `/=`. Applied: R1.4.
 
-**Open, new in design round 2.** Round 1 must not pick these silently; each
-needs the standard answer cited or an owner decision.
-- **Q7. A finite continuous parameter outside the C type's range**
-  (`gfx_rect of [3e9, 0, 10, 10, ...]`). Q1 decides rounding to nearest,
-  and N13 already decides that a non-finite one is refused (it is an int
-  conversion). The finite out-of-range case is open; today the C cast is
-  undefined behaviour. Options: saturate to the C range (it draws
-  off-screen, as a huge float coordinate does in SDL3), or raise `value`.
-  This design does not pick: R1.2's gfx group re-points the reads to
-  `eigs_float_arg` with today's truncation (behaviour unchanged, like every
-  R1.2 commit), and the part of R1.6 that installs `eigs_round_arg` waits
-  for the decision. Nothing else in round 1 depends on it.
-- **Q8. NaN in an ordering.** From R2.2 a NaN can reach `sort`, `sort_by`,
-  `min` and `max`. NaN has no order: C's `qsort` with an inconsistent
-  comparator gives an unspecified order, Python's `sorted` too, and Lua's
-  `table.sort` may raise "invalid order function". Options: raise `value`
-  when a NaN is compared for order, or define a total order (NaN last, as
-  IEEE `totalOrder` and numpy's `sort` do).
+- **Q7, a finite continuous parameter outside the C range: DECIDED**
+  ([#1758 comment 6174302316](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6174302316)).
+  It follows the quantity it represents:
+  - geometry (coordinates and sizes): clip in float space against the
+    drawable area, then round to nearest. Saturating each argument
+    separately is wrong: `gfx_rect of [-3e9, 0, 6e9, 10]` would cover half
+    the screen instead of all of it;
+  - bounded quantities (colour channels, gain, volume): clamp to the domain;
+  - unbounded magnitudes the C call cannot honour (durations, sleeps): raise
+    `value`, naming the builtin (Python's `time.sleep(3e12)` raises
+    `OverflowError`).
+  - Applied: the builtin table's validated `q7` column (§6); the readers
+    `eigs_geom_shape`, `eigs_bounded_arg`, `eigs_magnitude_arg` (§2.6),
+    landing in R1.6. Two classifications this design made inside the
+    decided categories: a window size (`gfx_open`) and a measurement's
+    scale (`gfx_text_width`/`height`) have no drawable area to clip against,
+    so they are magnitudes.
+- **Q8, NaN in an ordering: DECIDED** (same comment). IEEE 754-2019
+  `totalOrder`: the canonical (positive, quiet) NaN sorts after +inf,
+  deterministically, in `sort` and `sort_by` (numpy's `sort` and Rust's
+  `f64::total_cmp` give the same order); `min` and `max` propagate NaN
+  (IEEE 754-2019 `minimum`/`maximum`). Lua and Python produce a garbage
+  order here (probed for #1758: Lua's `table.sort` left a list holding NaNs
+  unsorted without an error). Applied: R2.2, when NaN first becomes
+  reachable; rows `N11.sort-total-order` and `N11.min-max-nan`.

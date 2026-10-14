@@ -18,6 +18,10 @@ design doc) runs every row:
 
 Every mapped row must FAIL on the tag and PASS on the branch in every tier,
 and its witness must hold on the branch (design §9.1), or it is VACUOUS.
+`phase2_check.sh --through <commit>` checks only the rows whose `[Rn]` has
+landed by that commit (a row tagged `[Ra/Rb]` lands with the later); R1.1,
+R1.2 and R2.1 have no rows of their own and are checked by their mechanical
+gates (design §9.2).
 
 ## Format (machine-read by `phase2_check.sh`)
 
@@ -57,15 +61,20 @@ and its witness must hold on the branch (design §9.1), or it is VACUOUS.
   The other shapes carry a fourth line, `shape: <L|F|O>  witness: <kind>
   <chunk>... [<OP>]  ops: <OP>...`:
   - `L`: a one-line helper (the leaf evaluator); `F`: a multi-statement
-    function called at least 60 times (the function JIT); `O`: a loop, in a
-    function or at module level, witnessed in the `osr` tier (OSR).
+    function called at least 60 times (the function JIT), whose witnessed
+    call is its LAST call (`EIGS_JIT_HOT` records the last run); `O`: a
+    `loop while true:` loop, in a function or at module level, witnessed in
+    the `osr` tier, whose only exit is a `return` right after the claimed ops
+    (at module level, `print of <r>` first).
   - witness kinds (design §9.1): `leaf <fn>` (no `EIGS_JIT_HOT` entries for
     `<fn>` in the normal run, K >= 1 in the `trace` run), `leaf-gen <fn>`
     (the same K >= 1 entries in both: every call took the generic path),
     `fn <fn>` (`jit yes`, `adv RET`), `fn-stop <fn> <OP>` (`jit yes`, the
-    op at `adv` is `<OP>`), `osr <chunk>` (`osr yes`, `oent + oadv` past the
-    loop's `JUMP_BACK`), `osr-stop <chunk> <OP>` (the op at `oent + oadv` is
-    `<OP>`).
+    op at `adv` is `<OP>`), `osr <chunk>` (`osr yes` and `oadv == len`: the
+    last OSR entry reached the return sentinel, so it ran the body natively),
+    `osr-stop <chunk> <OP>` (`oadv != len`, and the op at `oent + oadv` is
+    `<OP>`). Each kind was calibrated on main against a plant where the
+    claimed op did not run as claimed (design §9.1).
   - `leaf` and `leaf-gen` may name several helpers; each must hold.
   - `ops:` lists the opcodes whose JIT or leaf arm the row exercises: run
     natively, or stopped at exactly (a `-stop` witness's `<OP>`, which proves
@@ -127,24 +136,24 @@ and its witness must hold on the branch (design §9.1), or it is VACUOUS.
   -> `9007199254740993` (the field store and load take their C helpers for a non-double and the thunk runs on)
   tag: `9007199254740992` (probed main)
   shape: F  witness: fn setx (witness probed main, with a double: `setx 60 yes ... RET`)  ops: LOCAL_DOT_SET LOCAL_DOT_GET
-- `ctl.N1.fn-int-truthiness` (control) `define truth(a) as: if a: return 1 / return 2`, called 60 times with `0`; `print of [truth of 0, truth of 5, truth of 0.0]`
+- `ctl.N1.fn-int-truthiness` (control) `define truth(a) as: if a: return 1 / return 2`, called 60 times with `0`; `print of [truth of 0.0, truth of 5, truth of 0]` (the int call is LAST, so `EIGS_JIT_HOT` records it)
   -> `[2, 1, 2]` on both (0 and 0.0 are falsy)
-  shape: F  witness: fn-stop truth JUMP_IF_FALSE (an SMI condition fails the bool and number checks; on main a double 0.0 instead leaves at the jump target, 21)  ops: JUMP_IF_FALSE
-- `ctl.N1.fn-int-not` (control) `define neg(a) as: r is not a / return r`, called 60 times with `0`; `print of [neg of 0, neg of 5, neg of 0.0]`
+  shape: F  witness: fn-stop truth JUMP_IF_FALSE (an SMI condition fails the bool and number checks)  ops: JUMP_IF_FALSE
+- `ctl.N1.fn-int-not` (control) `define neg(a) as: r is not a / return r`, called 60 times with `0`; `print of [neg of 0.0, neg of 5, neg of 0]` (the int call is LAST)
   -> `[true, false, true]` on both
   shape: F  witness: fn-stop neg NOT (an SMI fails NOT's number check)  ops: NOT
 - `N1.fn-int-local` [R1.3] `define keep(q) as: t is q / return t`, called 60 times with `9007199254740993`; print the last result
   -> `9007199254740993` (an int stored into a local takes `SET_LOCAL`'s generic swap and the thunk runs on)
   tag: `9007199254740992` (probed main)
   shape: F  witness: fn keep (witness probed main, with a double: `keep 60 yes ... RET`)  ops: SET_LOCAL POP
-- `N1.osr-module-int-store` [R1.3] module-level `big is 9007199254740993 / x is 0 / i is 0.0 / loop while i < 100.0: (x is big / i is i + 1.0) / print of x`
+- `N1.osr-global-int-store` [R1.3] `x is 0 / define put(big, n) as: i is 0.0 / loop while true: (x is big / i is i + 1.0 / if i >= n: return x)`; `print of (put of [9007199254740993, 4.0])` (`x is big` inside `put` writes the module binding: `SET_NAME`)
   -> `9007199254740993`
   tag: `9007199254740992` (probed main)
-  shape: O  witness: osr <module> (witness probed main: `osr yes`, `oent 55`, `oadv 59`, 114 past `JUMP_BACK` at 111)  ops: SET_NAME LT ADD
-- `N1.osr-int-counter` [R1.3] `define count(n) as: i is 9007199254740990 / k is 0 / loop while k < n: (i is i + 1 / k is k + 1) / return i`; `print of (count of 10)`
+  shape: O  witness: osr put (the boxed int moves through `SET_NAME` without a guard; witness probed main with a double: `oadv 106` = `len 106`)  ops: SET_NAME NUM_ONE ADD GE JUMP_IF_FALSE
+- `N1.osr-int-counter` [R1.3] `define count(n) as: i is 9007199254740990 / k is 0.0 / loop while true: (i is i + 1 / k is k + 1.0 / if k >= n: return i)`; `print of (count of 10.0)`
   -> `9007199254741000`
   tag: `9007199254740992`: the double counter stalls at 2^53 (probed main)
-  shape: O  witness: osr-stop count LT (the SMI `k` fails LT's operand guard)  ops: LT
+  shape: O  witness: osr-stop count INT_ONE (the OSR scanner stops at the literal `1`, the body's first int op)  ops: INT_ONE
 
 ### N2
 - `N2.int-eq-float-kinds` [R1.3] `print of [1 == 1.0, 1 != 1.0, num_type of 1, num_type of 1.0]`
@@ -200,17 +209,17 @@ and its witness must hold on the branch (design §9.1), or it is VACUOUS.
   -> `9007199515875289`
   tag: `9007199515875288` (probed main)
   shape: F  witness: fn-stop f MUL  ops: MUL
-- `N3.osr-sum-exact` [R1.3] `define total(n) as: acc is 9007199254740000 / i is 0 / loop while i < n: (acc is acc + 1 / i is i + 1) / return acc`; `print of (total of 1000)`
+- `N3.osr-sum-exact` [R1.3] `define total(n, step) as: acc is 9007199254740000 / i is 0.0 / loop while true: (acc is acc + step / i is i + 1.0 / if i >= n: return acc)`; `print of (total of [1000.0, 1])`
   -> `9007199254741000`
   tag: `9007199254740992`: the double sum stalls at 2^53 (probed main)
-  shape: O  witness: osr-stop total LT  ops: LT
-- `N3.osr-module-sum` [R1.3] module-level `acc is 9007199254740000 / i is 0 / loop while i < 1000: (acc is acc + 1 / i is i + 1) / print of acc`
+  shape: O  witness: osr-stop total ADD (a boxed int and an SMI fail ADD's operand guard)  ops: ADD
+- `N3.osr-module-sum` [R1.3] module-level `acc is 9007199254740000 / step is 1 / i is 0.0 / loop while true: (acc is acc + step / i is i + 1.0 / if i >= 1000.0: (print of acc / return acc))`
   -> `9007199254741000`
   tag: `9007199254740992` (probed main)
-  shape: O  witness: osr-stop <module> INT_CONST (the OSR scanner stops at the literal `1000`)  ops: INT_CONST
-- `ctl.N3.osr-float` (control) `define totalf(n) as: acc is 0.5 / i is 0.0 / loop while i < n: (acc is acc + 1.5 / i is i + 1.0) / return acc`; `print of (totalf of 100.0)`
+  shape: O  witness: osr-stop <module> ADD (module-level OSR; a boxed int fails ADD's operand guard)  ops: ADD
+- `ctl.N3.osr-float` (control) `define totalf(n) as: acc is 0.5 / i is 0.0 / loop while true: (acc is acc + 1.5 / i is i + 1.0 / if i >= n: return acc)`; `print of (totalf of 100.0)`
   -> `150.5` on both
-  shape: O  witness: osr totalf (witness probed main: `osr yes`, `oent 33`, `oadv 57`; 90 is past `JUMP_BACK` at 87)  ops: LT ADD NUM_ONE CONST JUMP_IF_FALSE SET_LOCAL POP
+  shape: O  witness: osr totalf (witness probed main: `osr yes`, `oadv 122` = `len 122`, the return sentinel)  ops: ADD CONST NUM_ONE GE JUMP_IF_FALSE SET_LOCAL POP
 
 ### A
 - `A.add-overflow-raises` [R1.3] `{try print of (9223372036854775807 + 1) catch}`, printing `[e.kind, (index_of of [e.message, "+"]) >= 0]`
@@ -236,10 +245,10 @@ and its witness must hold on the branch (design §9.1), or it is VACUOUS.
   -> `value`
   tag: `9.223372036854776e+18`, no raise (probed main)
   shape: F  witness: fn-stop inc INT_ONE  ops: INT_ONE
-- `A.osr-double-overflow` [R1.3] `define dbl(n) as: x is 1 / i is 0 / loop while i < n: (x is x * 2 / i is i + 1) / return x`; `{try print of (dbl of 63) catch}`, printing `e.kind`
+- `A.osr-double-overflow` [R1.3] `define dbl(n, two) as: x is two / i is 1.0 / loop while true: (x is x * two / i is i + 1.0 / if i >= n: return x)`; `{try print of (dbl of [63.0, 2]) catch}`, printing `e.kind`
   -> `value` (2^63 overflows on the 63rd doubling)
   tag: `9.223372036854776e+18`, no raise (probed main)
-  shape: O  witness: osr-stop dbl LT  ops: LT
+  shape: O  witness: osr-stop dbl MUL (two SMIs fail MUL's operand guard)  ops: MUL
 
 ### B
 - `B.type-of-both-num` [R1.3] `print of [type of 3, type of 3.0, (type of 3) == (type of 3.0), num_type of 3]`
@@ -315,6 +324,15 @@ and its witness must hold on the branch (design §9.1), or it is VACUOUS.
 - `N5.range-fraction-raises` [R1.6] `{try print of (range of 2.5) catch}`, printing `e.kind`
   -> `value`
   tag: no raise (read: `range_bound` accepts any double inside the int range)
+- `N5.gather-index-fraction-raises` [R1.6] `t is buffer of [2, 3]` filled 10, 11, 12, 20, 21, 22 / `ib is buffer of 2 / ib[0] is 1.5 / ib[1] is 2.0 / {try g is gather of [t, ib] / print of [g[0], g[1]] catch}`, printing `e.kind`
+  -> `value` (an index is integer-valued: N5)
+  tag: `[11, 22]`: `flat_index_at` truncates 1.5 to 1 (probed main; the critic's `gather.eigs`)
+- `N5.pcm16-byte-raises` [R1.6] `b is buffer of 2 / b[0] is 300 / b[1] is 0 / {try buf_from_pcm16le of [b, 0, 1] catch}` printing `e.kind`, then the same with `b[0] is 1.5`
+  -> `value` twice (byte values: N5, then 0..255; #1758 comment 6174964306)
+  tag: no raise, samples `0.009155552842799158` and `4.577776421399579e-05` (probed main)
+- `gate.N5.q7-readers` [R1.6] `tests/phase2/q7_readers.c` (through the amalgamation, no SDL): `eigs_geom_shape` clips `RECT [-3e9, 0, 6e9, 10]` on a 640x480 drawable area to `[0, 0, 640, 10]` (saturating each argument would give half of that), clips a `LINE` with Liang-Barsky, bounds a `CIRCLE` of radius 3e9 to the visible rows; `eigs_bounded_arg` clamps 300 to 255; `eigs_magnitude_arg` raises `value` on 3e12 for a C `int`
+  -> every case as stated
+  tag: n/a (a C test of new readers), so it is a gate
 - `N5.leaf-buffer-index` [R1.7] `define bat(b, i) as: return b[i] / b is buffer of 3 / print of (bat of [b, 1])`
   -> `0.0` (a buffer element is an f64, Q2)
   tag: `0` (probed main)
@@ -322,10 +340,10 @@ and its witness must hold on the branch (design §9.1), or it is VACUOUS.
 - `ctl.N5.leaf-float-index` (control) `define nth(xs, i) as: return xs[i] / print of (nth of [[10, 20, 30], 1.0])`
   -> `20` on both (an integral float index converts, N5)
   shape: L  witness: leaf nth (witness probed main: no entries normally, 1 under trace)  ops: INDEX_GET
-- `N5.osr-index-set` [R1.3] `define fill(big, n) as: xs is [0, 0, 0, 0] / i is 0.0 / loop while i < n: (xs[i] is big / i is i + 1.0) / return xs`; `print of (fill of [9007199254740993, 4.0])`
-  -> `[9007199254740993, 9007199254740993, 9007199254740993, 9007199254740993]` (an integral float index converts, N5; the int value is stored exactly)
+- `N5.osr-index-set` [R1.3] `define fill(big, n) as: xs is [0, 0, 0, 0] / i is 0.0 / loop while true: (xs[i] is big / i is i + 1.0 / if i >= n: return xs)`; `print of (fill of [9007199254740993, 4.0])` (the critic's `osr_ret`)
+  -> `[9007199254740993, 9007199254740993, 9007199254740993, 9007199254740993]` (an integral float index converts, N5; the int is stored exactly)
   tag: four times `9007199254740992` (probed main)
-  shape: O  witness: osr fill (the float counter keeps the loop native; the boxed int value takes `INDEX_SET`'s C helper; witness probed main with a double: `osr yes`, `oent 37`, `oadv 54`, 91 past `JUMP_BACK` at 88)  ops: INDEX_SET LT ADD
+  shape: O  witness: osr fill (the float counter keeps the loop native; the boxed int takes `INDEX_SET`'s C helper; witness probed main: `oadv 123` = `len 123`, 3 native `jit_helper_index_set` calls under gdb)  ops: INDEX_SET NUM_ONE ADD GE JUMP_IF_FALSE SET_LOCAL POP
 
 ### N6
 - `N6.float-repr` [R1.7] `print of [3.0, 1e3, -0.0, 0.1 + 0.2, 1e15, 1e16, 1e-05, 0.0001]`
@@ -356,6 +374,9 @@ and its witness must hold on the branch (design §9.1), or it is VACUOUS.
 - `N7.num-type-non-number` [R1.3] `print of [num_type of "3", num_type of null, num_type of true, num_type of [1]]`
   -> `[null, null, null, null]` (Lua `math.type` returns fail)
   tag: undefined
+- `gate.N7.embed-int` [R1.8] `make embed-smoke` with new rows: `eigs_value_new_int` round-trips 9007199254740993 exactly; `eigs_value_as_int` succeeds on an int and on an integral float, and fails with its flag on 1.5; `eigs_value_is_int` tells the kinds apart; `eigs_value_as_num` converts an int (Q3); `EIGS_TYPE_NUM` answers for both
+  -> every case as stated
+  tag: n/a (a C test of new embed functions), so it is a gate
 
 ### N8
 - `N8.bitwise-results-int` [R1.5] `print of [6 & 3, 6 | 3, 6 ^ 3, ~0, num_type of (6 & 3)]`
@@ -425,6 +446,12 @@ The builtin names are decided in round 1 (`<w-add-i64>` etc. below are placehold
   -> `inf` (an inf result is not a NaN, so the JIT keeps it native)
   tag: `1e+308`, the clamp (probed main)
   shape: F  witness: fn big  ops: MUL CONST
+- `N11.min-max-nan` [R2.2] `x is (1e308 * 10) - (1e308 * 10) / a is min of [1, x] / b is min of [x, 1] / c is max of [x, 1] / print of [a == a, b == b, c == c]`
+  -> `[false, false, false]` (NaN propagates in either argument order: Q8, IEEE 754-2019 `minimum`/`maximum`)
+  tag: `[true, true, true]`: the clamp turns `x` into 0 (probed main)
+- `N11.sort-total-order` [R2.5] `x is (1e308 * 10) - (1e308 * 10) / inf is 1e308 * 10 / print of (sort of [3, x, 1, inf, 2])`
+  -> `[1, 2, 3, inf, nan]` (Q8: IEEE `totalOrder`, NaN after +inf)
+  tag: `[0, 1, 2, 3, 1e+308]` (probed main)
 
 ### N12
 - `N12.f64-bits` [R2.4] `print of [f64_bits of 1.0, f64_bits of -0.0, f64_from_bits of 4607182418800017408]`
@@ -458,12 +485,15 @@ The builtin names are decided in round 1 (`<w-add-i64>` etc. below are placehold
 - `N13.int-conversion-refuses` [R2.3] `x is 1e308 * 10 / {try print of (substr of ["abc", x, 1]) catch}`
   -> `value`
   tag: no raise (read: `(int)` of a clamped 1e308)
+- `N13.pcm16-refuses-nan` [R2.6] `b is buffer of 1 / b[0] is (1e308 * 10) - (1e308 * 10) / {try o is buf_to_pcm16le of [b, 0, 1] catch}`, printing `e.kind`
+  -> `value` (the quantizer refuses a NaN sample: the #1746 residue)
+  tag: no raise, bytes `0, 0` (probed main)
 
 ### N14
 - `N14.encode-kinds` [R1.7] `print of (json_encode of [3, 3.0, 0.1, -0.0])`
   -> `[3,3.0,0.1,-0.0]`
   tag: `[3,3,0.1,0]` (probed main for the first three)
-- `N14.decode-kinds` [R1.7] `v is json_decode of "[3, 3.0, 9223372036854775807, 18446744073709551615]" / print of [num_type of v[0], num_type of v[1], v[2], num_type of v[3]]`
+- `N14.decode-kinds` [R1.6] `v is json_decode of "[3, 3.0, 9223372036854775807, 18446744073709551615]" / print of [num_type of v[0], num_type of v[1], v[2], num_type of v[3]]`
   -> `["int", "float", 9223372036854775807, "float"]`
   tag: `num_type` undefined
 - `N14.decode-overflow-raises` [R2.5] `{try print of (json_decode of "1e400") catch}`
@@ -509,6 +539,9 @@ The `O cfg` record's v7 shape is pinned by `O3.ocfg-no-hlow` (its file lists
 - `O1.where-is-value` [R3] `x is 2.5 / print of (where is x)`
   -> `2.5`
   tag: `0.7219...`, an entropy (probed main: `where is x` after 1 and 4 gives `0.7219280948873623`)
+- `O1.int-observed-numeric` [R1.3] `a is 3 / b is 140737488355328 / af is 3.0 / bf is 140737488355328.0`, then 12 times `a is a * 2 / b is b * 2 / af is af * 2.0 / bf is bf * 2.0`; `print of [report of a, report of af, report of b, report of bf, num_type of b]`
+  -> `["diverging", "diverging", "diverging", "diverging", "int"]`: an SMI (`a`) and a boxed int (`b`, 2^47 and up) are observed exactly as their float twins (the numeric channel, as a double until round 3)
+  tag: `num_type` undefined (the reports alone are all `"diverging"` on main, where every number is a double)
 
 ### O2
 - `gate.O2.predicate-floors` [R3] the post-#1754 corpus with per-predicate TP/TN floors (`floor.json`, the corpus sha256 recorded)

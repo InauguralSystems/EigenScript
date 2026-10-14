@@ -286,238 +286,239 @@ D3 vm.c:vm_run_ex/CASE(LOCAL_IDX_DOT_GET)     guarded          slot_is_null=1
 
 ## Builtins
 registered=311 numeric=230 classified=230 unclassified=0 stale=0
-classes: float-producing=58 int-preserving=37 int-requiring=84 other=51
+classes: float-producing=57 int-preserving=37 int-requiring=85 other=51
 LOSS (42): abs add bit_and bit_not bit_or bit_shl bit_shr bit_xor ceil db_execute db_query_json db_query_value floor hex json_build json_decode json_encode json_path max min monotonic_ns multiply negative num num_copy random_int round scan_int_tokens scan_ints seed_random shared_incr sign_extend sort sort_by store_delete store_get store_put store_query store_update subtract sum task_sched_seed
-abs                          builtin_abs                        int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-acos                         builtin_acos                       float-producing  -     VAL_NUM,eigs_num_arg,make_num
-add                          builtin_tensor_add                 int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num,num_guard
-append                       builtin_append                     other            -     VAL_NUM
-asin                         builtin_asin                       float-producing  -     VAL_NUM,eigs_num_arg,make_num
-assert                       builtin_assert                     other            -     eigs_num_text
-atan                         builtin_atan                       float-producing  -     VAL_NUM,eigs_num_arg,make_num
-atan2                        builtin_atan2                      float-producing  -     VAL_NUM,eigs_num_arg,make_num
-audio_capture_open           builtin_audio_capture_open         int-requiring    -     VAL_NUM,eigs_list_num,make_num
-audio_envelope               builtin_audio_envelope             float-producing  -     VAL_NUM,eigs_list_num,eigs_slot_num,make_num
-audio_gain                   builtin_audio_gain                 float-producing  -     VAL_NUM,eigs_list_num,eigs_slot_num,make_num
-audio_mix                    builtin_audio_mix                  float-producing  -     VAL_NUM,eigs_slot_num,make_num
-audio_music_play             builtin_audio_music_play           int-requiring    -     VAL_NUM,eigs_list_num
-audio_music_volume           builtin_audio_music_volume         other            -     VAL_NUM,eigs_list_num,eigs_num_arg
-audio_noise                  builtin_audio_noise                float-producing  -     VAL_NUM,eigs_list_num,make_num
-audio_open                   builtin_audio_open                 int-requiring    -     VAL_NUM,eigs_list_num,make_num
-audio_pause                  builtin_audio_pause                int-requiring    -     VAL_NUM,eigs_num_arg
-audio_play                   builtin_audio_play                 other            -     VAL_NUM,buffer_read_num,eigs_slot_num,make_num
-audio_play_loop              builtin_audio_play_loop            int-requiring    -     VAL_NUM,buffer_read_num,eigs_list_num,eigs_slot_num,make_num
-audio_queue_size             builtin_audio_queue_size           int-preserving   -     make_num
-audio_saw                    builtin_audio_saw                  float-producing  -     VAL_NUM,eigs_list_num,make_num
-audio_sine                   builtin_audio_sine                 float-producing  -     VAL_NUM,eigs_list_num,make_num
-audio_square                 builtin_audio_square               float-producing  -     VAL_NUM,eigs_list_num,make_num
-audio_stop                   builtin_audio_stop                 int-requiring    -     VAL_NUM,eigs_num_arg,make_num
-audio_stream_open            builtin_audio_stream_open          int-requiring    -     VAL_NUM,eigs_list_num,make_num
-audio_stream_push            builtin_audio_stream_push          other            -     VAL_NUM,buffer_read_num,eigs_slot_num
-audio_stream_queued          builtin_audio_stream_queued        int-preserving   -     make_num
-audio_sweep                  builtin_audio_sweep                float-producing  -     VAL_NUM,eigs_list_num,make_num
-audio_volume                 builtin_audio_volume               int-requiring    -     VAL_NUM,eigs_slot_num,make_num
-bit_and                      builtin_bit_and                    int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
-bit_not                      builtin_bit_not                    int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
-bit_or                       builtin_bit_or                     int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
-bit_shl                      builtin_bit_shift_left             int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
-bit_shr                      builtin_bit_shift_right            int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
-bit_xor                      builtin_bit_xor                    int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
-buf_copy                     builtin_buf_copy                   int-requiring    -     VAL_NUM,eigs_slot_num
-buf_deinterleave             builtin_buf_deinterleave           int-requiring    -     VAL_NUM,eigs_num_arg,eigs_slot_num
-buf_dot                      builtin_buf_dot                    float-producing  -     VAL_NUM,buffer_read_num,eigs_slot_num,make_num,num_guard
-buf_fill                     builtin_buf_fill                   float-producing  -     VAL_NUM,buf_num_arg,eigs_slot_num
-buf_from_list                builtin_buf_from_list              float-producing  -     VAL_NUM,eigs_slot_num
-buf_from_pcm16le             builtin_buf_from_pcm16le           float-producing  -     VAL_NUM,buffer_read_num,eigs_slot_num,num_guard
-buf_get                      builtin_buf_get                    int-requiring    -     buffer_read_num,eigs_list_num,make_num
-buf_len                      builtin_buf_len                    int-preserving   -     make_num
-buf_mix                      builtin_buf_mix                    float-producing  -     VAL_NUM,buf_num_arg,eigs_slot_num,num_guard
-buf_peak                     builtin_buf_peak                   float-producing  -     VAL_NUM,buffer_read_num,eigs_slot_num,make_num
-buf_resample_linear          builtin_buf_resample_linear        float-producing  -     VAL_NUM,eigs_slot_num,num_guard
-buf_scale_range              builtin_buf_scale_range            float-producing  -     VAL_NUM,buf_num_arg,eigs_slot_num,num_guard
-buf_set                      builtin_buf_set                    int-requiring    -     VAL_NUM,eigs_list_num
-buf_to_pcm16le               builtin_buf_to_pcm16le             other            -     VAL_NUM,buffer_read_num,eigs_slot_num,num_guard
-buffer                       builtin_buffer                     int-requiring    -     VAL_NUM,eigs_list_num,eigs_num_arg
-build_corpus                 builtin_build_corpus               int-requiring    -     VAL_NUM,eigs_num_arg,eigs_opt_num,make_num,num_val
-ceil                         builtin_ceil                       int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-channel                      builtin_channel                    int-preserving   -     make_num
-channel_closed               builtin_channel_closed             int-requiring    -     VAL_NUM,eigs_num_arg
-char_at                      builtin_char_at                    int-requiring    -     VAL_NUM,eigs_num_arg
-chr                          builtin_chr                        int-requiring    -     VAL_NUM,eigs_num_arg
-clock_unix                   builtin_clock_unix                 float-producing  -     make_num
-close_channel                builtin_close_channel              int-requiring    -     VAL_NUM,eigs_num_arg
-copy_into                    builtin_copy_into                  int-requiring    -     VAL_NUM,eigs_num_arg
-cos                          builtin_cos                        float-producing  -     VAL_NUM,eigs_num_arg,make_num
-db_execute                   builtin_db_execute                 other            LOSS  VAL_NUM,eigs_num_arg
-db_query_json                builtin_db_query_json              other            LOSS  VAL_NUM,eigs_num_arg
-db_query_value               builtin_db_query_value             other            LOSS  VAL_NUM,eigs_num_arg,make_num,strtod
-dispatch                     builtin_dispatch                   int-requiring    -     VAL_NUM,eigs_num_arg,make_num
-divide                       builtin_tensor_divide              float-producing  -     VAL_NUM,eigs_num_arg,make_num,num_guard
-dot                          builtin_dot                        float-producing  -     buffer_read_num,make_num,num_guard
-eigen_eval_loss              builtin_eigen_eval_loss            float-producing  -     VAL_NUM,eigs_list_num,eigs_slot_num,make_num
-eigen_generate               builtin_eigen_generate             int-requiring    -     eigs_slot_num,eigs_slot_opt_num,make_num
-eigen_model_load             builtin_eigen_model_load           other            -     strtod
-exec_capture                 builtin_exec_capture               other            -     VAL_NUM,eigs_list_num,list_append_num
-exit                         builtin_exit                       int-requiring    -     VAL_NUM,eigs_list_num,eigs_num_arg
-exp                          builtin_tensor_exp                 float-producing  -     VAL_NUM,eigs_num_arg,make_num,num_guard
-f64_from_bytes               builtin_f64_from_bytes             int-requiring    -     VAL_NUM,buffer_read_num,eigs_slot_num,finite_num_to_byte,make_num,num_guard_named
-f64_to_bytes                 builtin_f64_to_bytes               other            -     VAL_NUM,eigs_num_arg,make_num
-fill                         builtin_fill                       int-requiring    -     eigs_list_num
-floor                        builtin_floor                      int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-gather                       builtin_tensor_gather              int-requiring    -     VAL_NUM,buffer_read_num,eigs_num_arg,eigs_num_arg_slow,eigs_slot_elem_num,eigs_slot_num,make_num
-get_at                       builtin_get_at                     int-requiring    -     VAL_NUM,buffer_read_num,eigs_num_arg,make_num
-get_observer_thresholds      builtin_get_observer_thresholds    float-producing  -     make_num
-gfx_circle                   builtin_gfx_circle                 other            -     VAL_NUM,eigs_list_num
-gfx_clear                    builtin_gfx_clear                  other            -     VAL_NUM,eigs_list_num
-gfx_clip                     builtin_gfx_clip                   other            -     VAL_NUM,eigs_list_num
-gfx_delay                    builtin_gfx_delay                  other            -     VAL_NUM,eigs_num_arg
-gfx_fb                       builtin_gfx_fb                     int-requiring    -     VAL_NUM,buffer_read_byte,eigs_list_num
-gfx_line                     builtin_gfx_line                   other            -     VAL_NUM,eigs_list_num
-gfx_open                     builtin_gfx_open                   other            -     VAL_NUM,eigs_list_num
-gfx_point                    builtin_gfx_point                  other            -     VAL_NUM,eigs_list_num
-gfx_poll                     builtin_gfx_poll                   int-preserving   -     make_num
-gfx_read                     builtin_gfx_read                   other            -     VAL_NUM,eigs_list_num,make_num
-gfx_rect                     builtin_gfx_rect                   other            -     VAL_NUM,eigs_list_num
-gfx_rrect                    builtin_gfx_rrect                  other            -     VAL_NUM,eigs_list_num
-gfx_text                     builtin_gfx_text                   other            -     VAL_NUM,eigs_list_num
-gfx_text_height              builtin_gfx_text_height            int-preserving   -     VAL_NUM,eigs_list_num,eigs_num_arg,make_num
-gfx_text_width               builtin_gfx_text_width             int-preserving   -     VAL_NUM,eigs_list_num,make_num
-gfx_ticks                    builtin_gfx_ticks                  int-preserving   -     make_num
-hex                          builtin_hex                        int-requiring    LOSS  VAL_NUM,eigs_list_num,eigs_num_arg
-http_early_bind              builtin_http_early_bind            int-requiring    -     VAL_NUM,eigs_opt_num
-http_post                    builtin_http_post                  other            -     eigs_num_text
-http_route                   builtin_http_route                 other            -     eigs_num_text
-http_route_authed            builtin_http_route_authed          other            -     eigs_num_text
-http_serve                   builtin_http_serve                 int-requiring    -     eigs_num_text,eigs_opt_num
-http_static                  builtin_http_static                other            -     eigs_num_text
-index_of                     builtin_index_of                   int-preserving   -     make_num
-inflate                      builtin_inflate                    int-requiring    -     VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,finite_num_to_byte,make_num
-join                         builtin_join                       other            -     eigs_num_text
-json_build                   builtin_json_build                 other            LOSS  VAL_NUM,eigs_num_arg,eigs_num_text
-json_decode                  builtin_json_decode                other            LOSS  make_num,strtod
-json_encode                  builtin_json_encode                other            LOSS  VAL_NUM,eigs_num_arg,eigs_num_text
-json_path                    builtin_json_path                  other            LOSS  VAL_NUM,eigs_num_arg,eigs_num_text,make_num,strtod
-leaky_relu                   builtin_tensor_leaky_relu          float-producing  -     VAL_NUM,eigs_num_arg,eigs_slot_num,make_num
-len                          builtin_len                        int-preserving   -     make_num
-list_contains                builtin_list_contains              other            -     values_equal
-list_index_of                builtin_list_index_of              int-preserving   -     make_num,values_equal
-list_insert_at               builtin_list_insert_at             int-requiring    -     VAL_NUM,eigs_num_arg
-list_remove_at               builtin_list_remove_at             int-requiring    -     VAL_NUM,eigs_num_arg
-list_slice                   builtin_list_slice                 int-requiring    -     VAL_NUM,eigs_num_arg
-list_truncate                builtin_list_truncate              int-requiring    -     VAL_NUM,eigs_num_arg
-log                          builtin_tensor_log                 float-producing  -     VAL_NUM,eigs_num_arg,make_num,num_guard
-log_softmax                  builtin_tensor_log_softmax         float-producing  -     VAL_NUM,eigs_slot_num,make_num
-matmul                       builtin_tensor_matmul              float-producing  -     SLOT_NUM_RAW,VAL_NUM,eigs_slot_num,make_num,num_guard_named
-matmul_at                    builtin_tensor_matmul_at           float-producing  -     VAL_NUM,eigs_slot_num,make_num
-matmul_bt                    builtin_tensor_matmul_bt           float-producing  -     VAL_NUM,eigs_slot_num,make_num
-max                          builtin_max                        int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-mean                         builtin_tensor_mean                float-producing  -     VAL_NUM,buffer_read_num,eigs_num_arg,make_num,num_guard
-min                          builtin_min                        int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-model_load_weights           builtin_eigen_model_load           other            -     strtod
-monotonic_ms                 builtin_monotonic_ms               float-producing  -     make_num
-monotonic_ns                 builtin_monotonic_ns               int-preserving   LOSS  make_num
-multiply                     builtin_tensor_multiply            int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num,num_guard
-native_train_step_builtin    builtin_native_train_step          int-requiring    -     VAL_NUM,atof,eigs_list_num,eigs_slot_num,strtod
-nearest_in_range             builtin_nearest_in_range           float-producing  -     VAL_NUM,eigs_list_num,eigs_num_arg,eigs_num_arg_slow,make_num
-nearest_in_range_all         builtin_nearest_in_range_all       float-producing  -     VAL_NUM,eigs_list_num,eigs_num_arg,eigs_num_arg_slow,make_num
-negative                     builtin_tensor_negative            int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-net_accept                   builtin_net_accept                 int-requiring    -     VAL_NUM,eigs_num_arg,eigs_slot_opt_num,make_num
-net_close                    builtin_net_close                  int-requiring    -     VAL_NUM,eigs_num_arg
-net_dial                     builtin_net_dial                   int-requiring    -     eigs_slot_opt_num,make_num
-net_listen                   builtin_net_listen                 int-requiring    -     VAL_NUM,eigs_num_arg,make_num
-net_port                     builtin_net_port                   int-requiring    -     VAL_NUM,eigs_num_arg,make_num
-net_recv                     builtin_net_recv                   int-requiring    -     VAL_NUM,eigs_num_arg,eigs_slot_opt_num
-net_send                     builtin_net_send                   int-requiring    -     VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_elem_num,finite_num_to_byte,make_num
-norm                         builtin_tensor_norm                float-producing  -     VAL_NUM,buffer_read_num,eigs_num_arg,make_num,num_guard
-num                          builtin_num                        other            LOSS  VAL_NUM,make_num,num_guard_named,strtod
-num_copy                     builtin_num_copy                   int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-numerical_grad               builtin_numerical_grad             float-producing  -     VAL_NUM,eigs_num_arg,eigs_slot_num,eigs_slot_opt_num,list_set_num,make_num
-numerical_grad_cols          builtin_numerical_grad_cols        float-producing  -     VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,eigs_slot_opt_num,list_set_num,make_num
-numerical_grad_rows          builtin_numerical_grad_rows        float-producing  -     VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,eigs_slot_opt_num,list_set_num,make_num
-observe                      builtin_observe                    other            -     make_num
-ord                          builtin_ord                        int-preserving   -     make_num
-pi                           builtin_pi                         float-producing  -     make_num
-pow                          builtin_tensor_pow                 float-producing  -     VAL_NUM,eigs_num_arg,make_num,num_guard_named
-ppu_render_frame             builtin_ppu_render_frame           int-requiring    -     buffer_read_byte
-print                        builtin_print                      other            -     eigs_num_text
-proc_read_buf                builtin_proc_read_buf              int-requiring    -     VAL_NUM,eigs_num_arg
-random                       builtin_random                     float-producing  -     make_num
-random_hex                   builtin_random_hex                 int-requiring    -     VAL_NUM,eigs_num_arg
-random_int                   builtin_random_int                 int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num
-random_normal                builtin_random_normal              float-producing  -     eigs_list_num,make_num
-range                        builtin_range                      int-preserving   -     VAL_NUM,eigs_list_num,eigs_num_arg,make_num
-read_bytes                   builtin_read_bytes                 int-preserving   -     make_num
-read_bytes_buf               builtin_read_bytes_buf             int-requiring    -     VAL_NUM,eigs_num_arg,make_num
-record_history               builtin_record_history             other            -     VAL_NUM,eigs_num_arg,make_num
-recv                         builtin_recv                       int-requiring    -     VAL_NUM,eigs_num_arg
-recv_timeout                 builtin_recv_timeout               int-requiring    -     VAL_NUM,eigs_num_arg
-relu                         builtin_tensor_relu                float-producing  -     VAL_NUM,eigs_num_arg,eigs_slot_num,make_num
-reshape                      builtin_reshape                    int-requiring    -     VAL_NUM,eigs_list_num
-round                        builtin_round                      int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-sandbox_run                  builtin_sandbox_run                int-requiring    -     VAL_NUM,eigs_list_num,eigs_num_arg,make_num
-scan_int_tokens              builtin_scan_int_tokens            int-preserving   LOSS  make_num
-scan_ints                    builtin_scan_ints                  int-preserving   LOSS  make_num
-scatter_add                  builtin_tensor_scatter_add         float-producing  -     VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,num_guard
-seed_random                  builtin_seed_random                int-requiring    LOSS  VAL_NUM,eigs_num_arg
-send                         builtin_send                       int-requiring    -     VAL_NUM,eigs_num_arg
-set_at                       builtin_set_at                     int-requiring    -     VAL_NUM,eigs_num_arg
-sgd_update                   builtin_sgd_update                 float-producing  -     VAL_NUM,eigs_slot_num,eigs_slot_opt_num,list_set_num
-sgd_update_cols              builtin_sgd_update_cols            float-producing  -     VAL_NUM,buffer_read_num,eigs_slot_num,eigs_slot_opt_num,list_set_num
-sgd_update_rows              builtin_sgd_update_rows            float-producing  -     VAL_NUM,buffer_read_num,eigs_slot_num,eigs_slot_opt_num,list_set_num
-shape                        builtin_tensor_shape               int-preserving   -     VAL_NUM,make_num
-shared_delete                builtin_shared_delete              int-preserving   -     make_num
-shared_incr                  builtin_shared_incr                int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num
-shared_size                  builtin_shared_size                int-preserving   -     make_num
-sign_extend                  builtin_sign_extend                int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num
-sin                          builtin_sin                        float-producing  -     VAL_NUM,eigs_num_arg,make_num
-softmax                      builtin_tensor_softmax             float-producing  -     VAL_NUM,eigs_slot_num,make_num
-sort                         builtin_sort                       other            LOSS  VAL_NUM,eigs_slot_num
-sort_by                      builtin_sort_by                    other            LOSS  VAL_NUM,eigs_num_arg
-spawn                        builtin_spawn                      int-preserving   -     make_num
-sqrt                         builtin_tensor_sqrt                float-producing  -     VAL_NUM,eigs_num_arg,make_num
-state_at                     builtin_state_at                   int-requiring    -     VAL_NUM,eigs_num_arg
-store_close                  builtin_store_close                int-requiring    -     VAL_NUM,eigs_num_arg,eigs_slot_num,slot_is_num
-store_collections            builtin_store_collections          int-requiring    -     VAL_NUM,eigs_num_arg
-store_count                  builtin_store_count                int-requiring    -     VAL_NUM,eigs_num_arg,make_num
-store_delete                 builtin_store_delete               int-requiring    LOSS  VAL_NUM,eigs_num_arg
-store_drop                   builtin_store_drop                 int-requiring    -     VAL_NUM,eigs_num_arg,eigs_slot_num,slot_is_num
-store_get                    builtin_store_get                  int-requiring    LOSS  VAL_NUM,eigs_num_arg,make_num,strtod
-store_open                   builtin_store_open                 int-preserving   -     VAL_NUM,eigs_num_arg,make_num,strtod
-store_put                    builtin_store_put                  other            LOSS  VAL_NUM,eigs_num_arg,eigs_slot_num,make_num,slot_is_num
-store_query                  builtin_store_query                other            LOSS  VAL_NUM,eigs_num_arg,make_num,strtod
-store_update                 builtin_store_update               other            LOSS  VAL_NUM,eigs_num_arg,eigs_slot_num,make_num,slot_is_num
-str                          builtin_str                        other            -     eigs_num_text
-str_from_bytes               builtin_str_from_bytes             int-requiring    -     VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,finite_num_to_byte
-stream_open                  builtin_stream_open                int-requiring    -     VAL_NUM,eigs_num_arg
-stream_write                 builtin_stream_write               float-producing  -     VAL_NUM,eigs_num_arg
-substr                       builtin_substr                     int-requiring    -     VAL_NUM,eigs_num_arg
-subtract                     builtin_tensor_subtract            int-preserving   LOSS  VAL_NUM,eigs_num_arg,make_num,num_guard
-sum                          builtin_tensor_sum                 int-preserving   LOSS  VAL_NUM,buffer_read_num,eigs_num_arg,make_num,num_guard
-tan                          builtin_tan                        float-producing  -     VAL_NUM,eigs_num_arg,make_num
-task_alive                   builtin_task_alive                 int-requiring    -     VAL_NUM,eigs_num_arg
-task_detach                  builtin_task_detach                int-requiring    -     VAL_NUM,eigs_num_arg,make_num
-task_join                    builtin_task_join                  int-requiring    -     VAL_NUM,eigs_num_arg
-task_kill                    builtin_task_kill                  int-requiring    -     VAL_NUM,eigs_num_arg
-task_sched_seed              builtin_task_sched_seed            int-requiring    LOSS  VAL_NUM,eigs_num_arg
-task_self                    builtin_task_self                  int-preserving   -     make_num
-task_send                    builtin_task_send                  int-requiring    -     VAL_NUM,eigs_num_arg
-task_sleep                   builtin_task_sleep                 other            -     VAL_NUM,eigs_num_arg
-task_spawn                   builtin_task_spawn                 int-preserving   -     make_num
-tensor_load                  builtin_tensor_load                float-producing  -     VAL_NUM,eigs_list_num,make_num,num_guard_named
-tensor_save                  builtin_tensor_save                float-producing  -     VAL_NUM,eigs_slot_num
-text_builder_append          builtin_text_builder_append        other            -     eigs_num_text
-text_builder_append_line     builtin_text_builder_append_line   other            -     eigs_num_text
-thread_join                  builtin_thread_join                int-requiring    -     VAL_NUM,eigs_num_arg
-throw                        builtin_throw                      other            -     eigs_num_text
-token_name                   builtin_token_name                 int-requiring    -     VAL_NUM,eigs_num_arg
-try_recv                     builtin_try_recv                   int-requiring    -     VAL_NUM,eigs_num_arg
-type                         builtin_type                       other            -     VAL_NUM
-usleep                       builtin_usleep                     other            -     VAL_NUM,eigs_num_arg
-vm_run_bytecode              builtin_vm_run_bytecode            int-requiring    -     VAL_NUM,eigs_num_arg
-write                        builtin_write                      other            -     eigs_num_text
-write_bytes                  builtin_write_bytes                int-requiring    -     VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_elem_num,finite_num_to_byte,make_num
-zeros                        builtin_tensor_zeros               int-requiring    -     VAL_NUM,eigs_list_num,eigs_num_arg,make_num
-zeros_like                   builtin_tensor_zeros_like          float-producing  -     VAL_NUM,make_num
+Q7: geometry=9 bounded=13 magnitude=13
+abs                          builtin_abs                        int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+acos                         builtin_acos                       float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num
+add                          builtin_tensor_add                 int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_guard
+append                       builtin_append                     other            -     -                        VAL_NUM
+asin                         builtin_asin                       float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num
+assert                       builtin_assert                     other            -     -                        eigs_num_text
+atan                         builtin_atan                       float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num
+atan2                        builtin_atan2                      float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num
+audio_capture_open           builtin_audio_capture_open         int-requiring    -     -                        VAL_NUM,eigs_list_num,make_num
+audio_envelope               builtin_audio_envelope             float-producing  -     magnitude                VAL_NUM,eigs_list_num,eigs_slot_num,make_num
+audio_gain                   builtin_audio_gain                 float-producing  -     -                        VAL_NUM,eigs_list_num,eigs_slot_num,make_num
+audio_mix                    builtin_audio_mix                  float-producing  -     -                        VAL_NUM,eigs_slot_num,make_num
+audio_music_play             builtin_audio_music_play           int-requiring    -     -                        VAL_NUM,eigs_list_num
+audio_music_volume           builtin_audio_music_volume         other            -     bounded                  VAL_NUM,eigs_list_num,eigs_num_arg
+audio_noise                  builtin_audio_noise                float-producing  -     magnitude                VAL_NUM,eigs_list_num,make_num
+audio_open                   builtin_audio_open                 int-requiring    -     -                        VAL_NUM,eigs_list_num,make_num
+audio_pause                  builtin_audio_pause                int-requiring    -     -                        VAL_NUM,eigs_num_arg
+audio_play                   builtin_audio_play                 other            -     bounded                  VAL_NUM,buffer_read_num,eigs_slot_num,make_num
+audio_play_loop              builtin_audio_play_loop            int-requiring    -     bounded                  VAL_NUM,buffer_read_num,eigs_list_num,eigs_slot_num,make_num
+audio_queue_size             builtin_audio_queue_size           int-preserving   -     -                        make_num
+audio_saw                    builtin_audio_saw                  float-producing  -     magnitude                VAL_NUM,eigs_list_num,make_num
+audio_sine                   builtin_audio_sine                 float-producing  -     magnitude                VAL_NUM,eigs_list_num,make_num
+audio_square                 builtin_audio_square               float-producing  -     magnitude                VAL_NUM,eigs_list_num,make_num
+audio_stop                   builtin_audio_stop                 int-requiring    -     -                        VAL_NUM,eigs_num_arg,make_num
+audio_stream_open            builtin_audio_stream_open          int-requiring    -     -                        VAL_NUM,eigs_list_num,make_num
+audio_stream_push            builtin_audio_stream_push          other            -     bounded                  VAL_NUM,buffer_read_num,eigs_slot_num
+audio_stream_queued          builtin_audio_stream_queued        int-preserving   -     -                        make_num
+audio_sweep                  builtin_audio_sweep                float-producing  -     magnitude                VAL_NUM,eigs_list_num,make_num
+audio_volume                 builtin_audio_volume               int-requiring    -     bounded                  VAL_NUM,eigs_slot_num,make_num
+bit_and                      builtin_bit_and                    int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
+bit_not                      builtin_bit_not                    int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
+bit_or                       builtin_bit_or                     int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
+bit_shl                      builtin_bit_shift_left             int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
+bit_shr                      builtin_bit_shift_right            int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
+bit_xor                      builtin_bit_xor                    int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_to_i64_exact
+buf_copy                     builtin_buf_copy                   int-requiring    -     -                        VAL_NUM,eigs_slot_num
+buf_deinterleave             builtin_buf_deinterleave           int-requiring    -     -                        VAL_NUM,eigs_num_arg,eigs_slot_num
+buf_dot                      builtin_buf_dot                    float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_slot_num,make_num,num_guard
+buf_fill                     builtin_buf_fill                   float-producing  -     -                        VAL_NUM,buf_num_arg,eigs_slot_num
+buf_from_list                builtin_buf_from_list              float-producing  -     -                        VAL_NUM,eigs_slot_num
+buf_from_pcm16le             builtin_buf_from_pcm16le           int-requiring    -     -                        VAL_NUM,buffer_read_num,eigs_slot_num,num_guard
+buf_get                      builtin_buf_get                    int-requiring    -     -                        buffer_read_num,eigs_list_num,make_num
+buf_len                      builtin_buf_len                    int-preserving   -     -                        make_num
+buf_mix                      builtin_buf_mix                    float-producing  -     -                        VAL_NUM,buf_num_arg,eigs_slot_num,num_guard
+buf_peak                     builtin_buf_peak                   float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_slot_num,make_num
+buf_resample_linear          builtin_buf_resample_linear        float-producing  -     -                        VAL_NUM,eigs_slot_num,num_guard
+buf_scale_range              builtin_buf_scale_range            float-producing  -     -                        VAL_NUM,buf_num_arg,eigs_slot_num,num_guard
+buf_set                      builtin_buf_set                    int-requiring    -     -                        VAL_NUM,eigs_list_num
+buf_to_pcm16le               builtin_buf_to_pcm16le             other            -     bounded                  VAL_NUM,buffer_read_num,eigs_slot_num,num_guard
+buffer                       builtin_buffer                     int-requiring    -     -                        VAL_NUM,eigs_list_num,eigs_num_arg
+build_corpus                 builtin_build_corpus               int-requiring    -     -                        VAL_NUM,eigs_num_arg,eigs_opt_num,make_num,num_val
+ceil                         builtin_ceil                       int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+channel                      builtin_channel                    int-preserving   -     -                        make_num
+channel_closed               builtin_channel_closed             int-requiring    -     -                        VAL_NUM,eigs_num_arg
+char_at                      builtin_char_at                    int-requiring    -     -                        VAL_NUM,eigs_num_arg
+chr                          builtin_chr                        int-requiring    -     -                        VAL_NUM,eigs_num_arg
+clock_unix                   builtin_clock_unix                 float-producing  -     -                        make_num
+close_channel                builtin_close_channel              int-requiring    -     -                        VAL_NUM,eigs_num_arg
+copy_into                    builtin_copy_into                  int-requiring    -     -                        VAL_NUM,eigs_num_arg
+cos                          builtin_cos                        float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num
+db_execute                   builtin_db_execute                 other            LOSS  -                        VAL_NUM,eigs_num_arg
+db_query_json                builtin_db_query_json              other            LOSS  -                        VAL_NUM,eigs_num_arg
+db_query_value               builtin_db_query_value             other            LOSS  -                        VAL_NUM,eigs_num_arg,make_num,strtod
+dispatch                     builtin_dispatch                   int-requiring    -     -                        VAL_NUM,eigs_num_arg,make_num
+divide                       builtin_tensor_divide              float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num,num_guard
+dot                          builtin_dot                        float-producing  -     -                        buffer_read_num,make_num,num_guard
+eigen_eval_loss              builtin_eigen_eval_loss            float-producing  -     -                        VAL_NUM,eigs_list_num,eigs_slot_num,make_num
+eigen_generate               builtin_eigen_generate             int-requiring    -     -                        eigs_slot_num,eigs_slot_opt_num,make_num
+eigen_model_load             builtin_eigen_model_load           other            -     -                        strtod
+exec_capture                 builtin_exec_capture               other            -     magnitude                VAL_NUM,eigs_list_num,list_append_num
+exit                         builtin_exit                       int-requiring    -     -                        VAL_NUM,eigs_list_num,eigs_num_arg
+exp                          builtin_tensor_exp                 float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num,num_guard
+f64_from_bytes               builtin_f64_from_bytes             int-requiring    -     -                        VAL_NUM,buffer_read_num,eigs_slot_num,finite_num_to_byte,make_num,num_guard_named
+f64_to_bytes                 builtin_f64_to_bytes               other            -     -                        VAL_NUM,eigs_num_arg,make_num
+fill                         builtin_fill                       int-requiring    -     -                        eigs_list_num
+floor                        builtin_floor                      int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+gather                       builtin_tensor_gather              int-requiring    -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,eigs_num_arg_slow,eigs_slot_elem_num,eigs_slot_num,make_num
+get_at                       builtin_get_at                     int-requiring    -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,make_num
+get_observer_thresholds      builtin_get_observer_thresholds    float-producing  -     -                        make_num
+gfx_circle                   builtin_gfx_circle                 other            -     geometry,bounded         VAL_NUM,eigs_list_num
+gfx_clear                    builtin_gfx_clear                  other            -     bounded                  VAL_NUM,eigs_list_num
+gfx_clip                     builtin_gfx_clip                   other            -     geometry                 VAL_NUM,eigs_list_num
+gfx_delay                    builtin_gfx_delay                  other            -     magnitude                VAL_NUM,eigs_num_arg
+gfx_fb                       builtin_gfx_fb                     int-requiring    -     geometry                 VAL_NUM,buffer_read_byte,eigs_list_num
+gfx_line                     builtin_gfx_line                   other            -     geometry,bounded         VAL_NUM,eigs_list_num
+gfx_open                     builtin_gfx_open                   other            -     magnitude                VAL_NUM,eigs_list_num
+gfx_point                    builtin_gfx_point                  other            -     geometry,bounded         VAL_NUM,eigs_list_num
+gfx_poll                     builtin_gfx_poll                   int-preserving   -     -                        make_num
+gfx_read                     builtin_gfx_read                   other            -     geometry                 VAL_NUM,eigs_list_num,make_num
+gfx_rect                     builtin_gfx_rect                   other            -     geometry,bounded         VAL_NUM,eigs_list_num
+gfx_rrect                    builtin_gfx_rrect                  other            -     geometry,bounded         VAL_NUM,eigs_list_num
+gfx_text                     builtin_gfx_text                   other            -     geometry,bounded         VAL_NUM,eigs_list_num
+gfx_text_height              builtin_gfx_text_height            int-preserving   -     magnitude                VAL_NUM,eigs_list_num,eigs_num_arg,make_num
+gfx_text_width               builtin_gfx_text_width             int-preserving   -     magnitude                VAL_NUM,eigs_list_num,make_num
+gfx_ticks                    builtin_gfx_ticks                  int-preserving   -     -                        make_num
+hex                          builtin_hex                        int-requiring    LOSS  -                        VAL_NUM,eigs_list_num,eigs_num_arg
+http_early_bind              builtin_http_early_bind            int-requiring    -     -                        VAL_NUM,eigs_opt_num
+http_post                    builtin_http_post                  other            -     -                        eigs_num_text
+http_route                   builtin_http_route                 other            -     -                        eigs_num_text
+http_route_authed            builtin_http_route_authed          other            -     -                        eigs_num_text
+http_serve                   builtin_http_serve                 int-requiring    -     -                        eigs_num_text,eigs_opt_num
+http_static                  builtin_http_static                other            -     -                        eigs_num_text
+index_of                     builtin_index_of                   int-preserving   -     -                        make_num
+inflate                      builtin_inflate                    int-requiring    -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,finite_num_to_byte,make_num
+join                         builtin_join                       other            -     -                        eigs_num_text
+json_build                   builtin_json_build                 other            LOSS  -                        VAL_NUM,eigs_num_arg,eigs_num_text
+json_decode                  builtin_json_decode                other            LOSS  -                        make_num,strtod
+json_encode                  builtin_json_encode                other            LOSS  -                        VAL_NUM,eigs_num_arg,eigs_num_text
+json_path                    builtin_json_path                  other            LOSS  -                        VAL_NUM,eigs_num_arg,eigs_num_text,make_num,strtod
+leaky_relu                   builtin_tensor_leaky_relu          float-producing  -     -                        VAL_NUM,eigs_num_arg,eigs_slot_num,make_num
+len                          builtin_len                        int-preserving   -     -                        make_num
+list_contains                builtin_list_contains              other            -     -                        values_equal
+list_index_of                builtin_list_index_of              int-preserving   -     -                        make_num,values_equal
+list_insert_at               builtin_list_insert_at             int-requiring    -     -                        VAL_NUM,eigs_num_arg
+list_remove_at               builtin_list_remove_at             int-requiring    -     -                        VAL_NUM,eigs_num_arg
+list_slice                   builtin_list_slice                 int-requiring    -     -                        VAL_NUM,eigs_num_arg
+list_truncate                builtin_list_truncate              int-requiring    -     -                        VAL_NUM,eigs_num_arg
+log                          builtin_tensor_log                 float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num,num_guard
+log_softmax                  builtin_tensor_log_softmax         float-producing  -     -                        VAL_NUM,eigs_slot_num,make_num
+matmul                       builtin_tensor_matmul              float-producing  -     -                        SLOT_NUM_RAW,VAL_NUM,eigs_slot_num,make_num,num_guard_named
+matmul_at                    builtin_tensor_matmul_at           float-producing  -     -                        VAL_NUM,eigs_slot_num,make_num
+matmul_bt                    builtin_tensor_matmul_bt           float-producing  -     -                        VAL_NUM,eigs_slot_num,make_num
+max                          builtin_max                        int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+mean                         builtin_tensor_mean                float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,make_num,num_guard
+min                          builtin_min                        int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+model_load_weights           builtin_eigen_model_load           other            -     -                        strtod
+monotonic_ms                 builtin_monotonic_ms               float-producing  -     -                        make_num
+monotonic_ns                 builtin_monotonic_ns               int-preserving   LOSS  -                        make_num
+multiply                     builtin_tensor_multiply            int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_guard
+native_train_step_builtin    builtin_native_train_step          int-requiring    -     -                        VAL_NUM,atof,eigs_list_num,eigs_slot_num,strtod
+nearest_in_range             builtin_nearest_in_range           float-producing  -     -                        VAL_NUM,eigs_list_num,eigs_num_arg,eigs_num_arg_slow,make_num
+nearest_in_range_all         builtin_nearest_in_range_all       float-producing  -     -                        VAL_NUM,eigs_list_num,eigs_num_arg,eigs_num_arg_slow,make_num
+negative                     builtin_tensor_negative            int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+net_accept                   builtin_net_accept                 int-requiring    -     -                        VAL_NUM,eigs_num_arg,eigs_slot_opt_num,make_num
+net_close                    builtin_net_close                  int-requiring    -     -                        VAL_NUM,eigs_num_arg
+net_dial                     builtin_net_dial                   int-requiring    -     -                        eigs_slot_opt_num,make_num
+net_listen                   builtin_net_listen                 int-requiring    -     -                        VAL_NUM,eigs_num_arg,make_num
+net_port                     builtin_net_port                   int-requiring    -     -                        VAL_NUM,eigs_num_arg,make_num
+net_recv                     builtin_net_recv                   int-requiring    -     -                        VAL_NUM,eigs_num_arg,eigs_slot_opt_num
+net_send                     builtin_net_send                   int-requiring    -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_elem_num,finite_num_to_byte,make_num
+norm                         builtin_tensor_norm                float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,make_num,num_guard
+num                          builtin_num                        other            LOSS  -                        VAL_NUM,make_num,num_guard_named,strtod
+num_copy                     builtin_num_copy                   int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+numerical_grad               builtin_numerical_grad             float-producing  -     -                        VAL_NUM,eigs_num_arg,eigs_slot_num,eigs_slot_opt_num,list_set_num,make_num
+numerical_grad_cols          builtin_numerical_grad_cols        float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,eigs_slot_opt_num,list_set_num,make_num
+numerical_grad_rows          builtin_numerical_grad_rows        float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,eigs_slot_opt_num,list_set_num,make_num
+observe                      builtin_observe                    other            -     -                        make_num
+ord                          builtin_ord                        int-preserving   -     -                        make_num
+pi                           builtin_pi                         float-producing  -     -                        make_num
+pow                          builtin_tensor_pow                 float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num,num_guard_named
+ppu_render_frame             builtin_ppu_render_frame           int-requiring    -     -                        buffer_read_byte
+print                        builtin_print                      other            -     -                        eigs_num_text
+proc_read_buf                builtin_proc_read_buf              int-requiring    -     -                        VAL_NUM,eigs_num_arg
+random                       builtin_random                     float-producing  -     -                        make_num
+random_hex                   builtin_random_hex                 int-requiring    -     -                        VAL_NUM,eigs_num_arg
+random_int                   builtin_random_int                 int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+random_normal                builtin_random_normal              float-producing  -     -                        eigs_list_num,make_num
+range                        builtin_range                      int-preserving   -     -                        VAL_NUM,eigs_list_num,eigs_num_arg,make_num
+read_bytes                   builtin_read_bytes                 int-preserving   -     -                        make_num
+read_bytes_buf               builtin_read_bytes_buf             int-requiring    -     -                        VAL_NUM,eigs_num_arg,make_num
+record_history               builtin_record_history             other            -     -                        VAL_NUM,eigs_num_arg,make_num
+recv                         builtin_recv                       int-requiring    -     -                        VAL_NUM,eigs_num_arg
+recv_timeout                 builtin_recv_timeout               int-requiring    -     magnitude                VAL_NUM,eigs_num_arg
+relu                         builtin_tensor_relu                float-producing  -     -                        VAL_NUM,eigs_num_arg,eigs_slot_num,make_num
+reshape                      builtin_reshape                    int-requiring    -     -                        VAL_NUM,eigs_list_num
+round                        builtin_round                      int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+sandbox_run                  builtin_sandbox_run                int-requiring    -     -                        VAL_NUM,eigs_list_num,eigs_num_arg,make_num
+scan_int_tokens              builtin_scan_int_tokens            int-preserving   LOSS  -                        make_num
+scan_ints                    builtin_scan_ints                  int-preserving   LOSS  -                        make_num
+scatter_add                  builtin_tensor_scatter_add         float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,num_guard
+seed_random                  builtin_seed_random                int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg
+send                         builtin_send                       int-requiring    -     -                        VAL_NUM,eigs_num_arg
+set_at                       builtin_set_at                     int-requiring    -     -                        VAL_NUM,eigs_num_arg
+sgd_update                   builtin_sgd_update                 float-producing  -     -                        VAL_NUM,eigs_slot_num,eigs_slot_opt_num,list_set_num
+sgd_update_cols              builtin_sgd_update_cols            float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_slot_num,eigs_slot_opt_num,list_set_num
+sgd_update_rows              builtin_sgd_update_rows            float-producing  -     -                        VAL_NUM,buffer_read_num,eigs_slot_num,eigs_slot_opt_num,list_set_num
+shape                        builtin_tensor_shape               int-preserving   -     -                        VAL_NUM,make_num
+shared_delete                builtin_shared_delete              int-preserving   -     -                        make_num
+shared_incr                  builtin_shared_incr                int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+shared_size                  builtin_shared_size                int-preserving   -     -                        make_num
+sign_extend                  builtin_sign_extend                int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num
+sin                          builtin_sin                        float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num
+softmax                      builtin_tensor_softmax             float-producing  -     -                        VAL_NUM,eigs_slot_num,make_num
+sort                         builtin_sort                       other            LOSS  -                        VAL_NUM,eigs_slot_num
+sort_by                      builtin_sort_by                    other            LOSS  -                        VAL_NUM,eigs_num_arg
+spawn                        builtin_spawn                      int-preserving   -     -                        make_num
+sqrt                         builtin_tensor_sqrt                float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num
+state_at                     builtin_state_at                   int-requiring    -     -                        VAL_NUM,eigs_num_arg
+store_close                  builtin_store_close                int-requiring    -     -                        VAL_NUM,eigs_num_arg,eigs_slot_num,slot_is_num
+store_collections            builtin_store_collections          int-requiring    -     -                        VAL_NUM,eigs_num_arg
+store_count                  builtin_store_count                int-requiring    -     -                        VAL_NUM,eigs_num_arg,make_num
+store_delete                 builtin_store_delete               int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg
+store_drop                   builtin_store_drop                 int-requiring    -     -                        VAL_NUM,eigs_num_arg,eigs_slot_num,slot_is_num
+store_get                    builtin_store_get                  int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg,make_num,strtod
+store_open                   builtin_store_open                 int-preserving   -     -                        VAL_NUM,eigs_num_arg,make_num,strtod
+store_put                    builtin_store_put                  other            LOSS  -                        VAL_NUM,eigs_num_arg,eigs_slot_num,make_num,slot_is_num
+store_query                  builtin_store_query                other            LOSS  -                        VAL_NUM,eigs_num_arg,make_num,strtod
+store_update                 builtin_store_update               other            LOSS  -                        VAL_NUM,eigs_num_arg,eigs_slot_num,make_num,slot_is_num
+str                          builtin_str                        other            -     -                        eigs_num_text
+str_from_bytes               builtin_str_from_bytes             int-requiring    -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_num,finite_num_to_byte
+stream_open                  builtin_stream_open                int-requiring    -     -                        VAL_NUM,eigs_num_arg
+stream_write                 builtin_stream_write               float-producing  -     -                        VAL_NUM,eigs_num_arg
+substr                       builtin_substr                     int-requiring    -     -                        VAL_NUM,eigs_num_arg
+subtract                     builtin_tensor_subtract            int-preserving   LOSS  -                        VAL_NUM,eigs_num_arg,make_num,num_guard
+sum                          builtin_tensor_sum                 int-preserving   LOSS  -                        VAL_NUM,buffer_read_num,eigs_num_arg,make_num,num_guard
+tan                          builtin_tan                        float-producing  -     -                        VAL_NUM,eigs_num_arg,make_num
+task_alive                   builtin_task_alive                 int-requiring    -     -                        VAL_NUM,eigs_num_arg
+task_detach                  builtin_task_detach                int-requiring    -     -                        VAL_NUM,eigs_num_arg,make_num
+task_join                    builtin_task_join                  int-requiring    -     -                        VAL_NUM,eigs_num_arg
+task_kill                    builtin_task_kill                  int-requiring    -     -                        VAL_NUM,eigs_num_arg
+task_sched_seed              builtin_task_sched_seed            int-requiring    LOSS  -                        VAL_NUM,eigs_num_arg
+task_self                    builtin_task_self                  int-preserving   -     -                        make_num
+task_send                    builtin_task_send                  int-requiring    -     -                        VAL_NUM,eigs_num_arg
+task_sleep                   builtin_task_sleep                 other            -     -                        VAL_NUM,eigs_num_arg
+task_spawn                   builtin_task_spawn                 int-preserving   -     -                        make_num
+tensor_load                  builtin_tensor_load                float-producing  -     -                        VAL_NUM,eigs_list_num,make_num,num_guard_named
+tensor_save                  builtin_tensor_save                float-producing  -     -                        VAL_NUM,eigs_slot_num
+text_builder_append          builtin_text_builder_append        other            -     -                        eigs_num_text
+text_builder_append_line     builtin_text_builder_append_line   other            -     -                        eigs_num_text
+thread_join                  builtin_thread_join                int-requiring    -     -                        VAL_NUM,eigs_num_arg
+throw                        builtin_throw                      other            -     -                        eigs_num_text
+token_name                   builtin_token_name                 int-requiring    -     -                        VAL_NUM,eigs_num_arg
+try_recv                     builtin_try_recv                   int-requiring    -     -                        VAL_NUM,eigs_num_arg
+type                         builtin_type                       other            -     -                        VAL_NUM
+usleep                       builtin_usleep                     other            -     magnitude                VAL_NUM,eigs_num_arg
+vm_run_bytecode              builtin_vm_run_bytecode            int-requiring    -     -                        VAL_NUM,eigs_num_arg
+write                        builtin_write                      other            -     -                        eigs_num_text
+write_bytes                  builtin_write_bytes                int-requiring    -     -                        VAL_NUM,buffer_read_num,eigs_num_arg,eigs_slot_elem_num,finite_num_to_byte,make_num
+zeros                        builtin_tensor_zeros               int-requiring    -     -                        VAL_NUM,eigs_list_num,eigs_num_arg,make_num
+zeros_like                   builtin_tensor_zeros_like          float-producing  -     -                        VAL_NUM,make_num
 
 ## Sites (file:line scope token kind category)
 builtins.c:164 builtin_usleep VAL_NUM TEST a
