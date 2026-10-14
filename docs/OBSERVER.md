@@ -216,6 +216,14 @@ absolute swing around a large offset, is `oscillating`, not `stable`. A
 `converged` as before. These checks run before the relative verdicts; the
 relative step remains the primary contract.
 
+### Graded against mathematics (`make observer-oracle`, #1746)
+
+`make observer-oracle` scores the six predicates against `tools/observer_oracle/corpus.json`,
+whose verdicts come from cited definitions (Rudin, Nocedal-Wright, Strogatz, NIST), not from
+this document. Each verdict is MATH (scored) or EIGS-DEFINED (listed, not scored). It also
+scores an independent windowed reference model on the value and the entropy signal (#1667).
+It is a measurement: it fails on a harness error, never on a disagreement.
+
 ## The manifold: two basins and a horizon
 
 For numbers, `where` (information content) is **not** monotonic in the

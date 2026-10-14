@@ -1,0 +1,471 @@
+{
+  "schema": 1,
+  "about": "Ground-truth corpus for EigenScript's observer predicates (#1746, #1667). Each row is a sequence with a closed form or recurrence; each checkpoint `at` = n means the observer has seen x_0..x_n. Every predicate at every checkpoint is labelled MATH (a standard definition decides it; value + citation + reason) or EIGS-DEFINED (no standard definition; the documented intent in `definitions` is ours). Verdict form: [\"MATH\", value, [source keys], reason] or [\"EIGS-DEFINED\"].",
+  "params": {"rtol": 0.001, "scale": 0.001, "epsilon": "eps(L) = rtol * max(|L|, scale): the observer's declared settle tolerance (docs/SPEC.md, dh_zero and scale defaults)"},
+  "sources": {
+    "RUDIN_3_1": "W. Rudin, Principles of Mathematical Analysis, 3rd ed. (1976), Def. 3.1 (convergent sequence) and Thm. 3.11 (in R^k a sequence converges iff it is Cauchy).",
+    "ISCLOSE": "Mixed absolute/relative tolerance |a - b| <= atol + rtol*|b|: numpy.isclose, https://numpy.org/doc/stable/reference/generated/numpy.isclose.html (the stopping criterion the observer documents in docs/PREDICATES.md).",
+    "RUDIN_3_15": "W. Rudin, Principles of Mathematical Analysis, 3rd ed., Def. 3.15 (s_n -> +inf: for every real M there is N with s_n >= M for all n >= N; likewise -inf).",
+    "RUDIN_3_28": "W. Rudin, Principles of Mathematical Analysis, 3rd ed., Thm. 3.28 (sum 1/n^p converges iff p > 1; the harmonic series diverges).",
+    "RUDIN_3_34": "W. Rudin, Principles of Mathematical Analysis, 3rd ed., Thm. 3.34 (ratio test).",
+    "RUDIN_3_43": "W. Rudin, Principles of Mathematical Analysis, 3rd ed., Thm. 3.43 (alternating series with terms decreasing to 0 converges); Leibniz bound |S - S_n| <= a_{n+1}.",
+    "NW_2_2": "J. Nocedal, S. Wright, Numerical Optimization, 2nd ed. (2006), Sec. 2.2 'Rates of convergence' (Q-linear: |x_{k+1}-x*|/|x_k-x*| <= r < 1 for all k large; Q-superlinear, Q-quadratic; sublinear when the ratio tends to 1).",
+    "DEVANEY_1_3": "R. L. Devaney, An Introduction to Chaotic Dynamical Systems, 2nd ed. (1989), Sec. 1.3 (periodic points, prime period, eventually periodic points) and Sec. 1.4-1.5 (attracting cycles).",
+    "STROGATZ_10": "S. H. Strogatz, Nonlinear Dynamics and Chaos (1994), Ch. 10: Sec. 10.1 (fixed points of maps, multiplier f'(x*)), 10.2-10.3 (logistic map: stable fixed point for 1 < r < 3, 2-cycle for 3 < r < 3.449, 4-cycle for 3.449 < r < 3.544, chaos beyond r_inf = 3.5699 outside windows), 10.5 (Lyapunov exponent lambda = lim (1/n) sum ln|f'(x_i)|; lambda > 0 is chaos).",
+    "WEYL_1916": "H. Weyl, 'Ueber die Gleichverteilung von Zahlen mod. Eins', Math. Ann. 77 (1916): n*theta mod 1 is equidistributed for irrational theta, so sin(n) is not eventually periodic and its limit set is [-1, 1].",
+    "POLYA_1921": "G. Polya, 'Ueber eine Aufgabe der Wahrscheinlichkeitsrechnung betreffend die Irrfahrt im Strassennetz', Math. Ann. 84 (1921): the 1-D simple random walk is recurrent, so a.s. it neither converges nor tends to +-inf.",
+    "DURRETT_BC": "R. Durrett, Probability: Theory and Examples, 5th ed. (2019), Sec. 2.3 (second Borel-Cantelli lemma: independent events with divergent probability sum occur infinitely often a.s.), so a non-degenerate iid sequence a.s. does not converge.",
+    "NIST_6442": "NIST/SEMATECH e-Handbook of Statistical Methods, Sec. 6.4.4.2 'Stationarity': a stationary process has constant mean, variance and autocorrelation over time. https://www.itl.nist.gov/div898/handbook/pmc/section4/pmc442.htm",
+    "HAMILTON_15": "J. D. Hamilton, Time Series Analysis (1994), Ch. 15 (unit-root processes: the random walk y_t = y_{t-1} + e_t has Var(y_t) = t*sigma^2 and is not stationary).",
+    "SHNOL_2007": "E. Shnol, 'Stability of equilibria', Scholarpedia 2(3):2770 (2007): Lyapunov stability concerns perturbations of initial conditions of an equilibrium, not one observed trajectory."
+  },
+  "definitions": {
+    "converged": {"label": "MATH", "cite": ["RUDIN_3_1", "ISCLOSE"], "text": "Rudin Def. 3.1 instantiated at the observer's declared tolerance: converged at index n iff there is an L with |x_m - L| <= eps(L) for EVERY m >= n, eps(L) = rtol*max(|L|, scale). A tail property: it quantifies over the future, which no causal window sees (the level-shift row at n=103 and the harmonic row measure that limit)."},
+    "diverging": {"label": "MATH", "cite": ["RUDIN_3_15"], "text": "Rudin Def. 3.15: x_n -> +inf or x_n -> -inf. Asymptotic, so it has one value per row. Bounded, convergent, periodic, chaotic and recurrent sequences do not diverge in this sense."},
+    "oscillating": {"label": "MATH", "cite": ["DEVANEY_1_3", "STROGATZ_10"], "text": "Asymptotically periodic with prime period p >= 2: the sequence approaches a cycle of prime period >= 2 whose amplitude exceeds eps. Convergent (including damped and alternating approaches), divergent, quasi-periodic, chaotic and iid sequences are NOT oscillating in this sense. Asymptotic: transient oscillation of a damped sequence does not count."},
+    "improving": {"label": "MATH", "cite": ["NW_2_2", "RUDIN_3_34"], "text": "The sequence converges to L at least Q-linearly (limsup |x_{k+1}-L|/|x_k-L| < 1; Nocedal-Wright Sec. 2.2, the ratio test) AND is not yet converged at n. Direction-agnostic: a loss rising to a plateau is improving in this sense, while the ML sense (Keras mode=min) would call it worse. Sublinear convergence (ratio -> 1, 1/n-type tails) is NOT improving."},
+    "equilibrium": {"label": "MATH on some rows, EIGS-DEFINED on the rest", "cite": ["NIST_6442", "HAMILTON_15"], "text": "MATH rows: weak (level) stationarity of the tail process (constant mean, variance, autocorrelation). Labelled MATH only where it is unambiguous: constants and iid noise (true); trends, divergent sequences and the random walk (false). Elsewhere EIGS-DEFINED: for deterministic transients, cycles and chaos, stationarity needs a choice (random phase, invariant measure) no source fixes. Documented intent (docs/PREDICATES.md): balanced motion, window |mean(rel)| < dh_zero and variance(rel) < dh_zero^2."},
+    "stable": {"label": "EIGS-DEFINED", "cite": ["SHNOL_2007"], "text": "No standard definition applies: Lyapunov stability needs perturbed initial conditions, not one trajectory. Documented intent (docs/PREDICATES.md): the small-motion band, every relative step under dh_small with no strong consecutive sign flips; may carry drift."}
+  },
+  "rows": [
+    {"id": "const_5", "family": "constant", "form": "x_n = 5", "gen": {"kind": "closed", "expr": "5.0"}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "constant: L = 5, |x_m - L| = 0 for all m"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "period 1 (a fixed point), amplitude 0"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "a constant is (degenerately) stationary"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "const_1e308_literal", "family": "constant literal 1e308", "form": "x_n = 1e308 (a literal; never overflowed)", "gen": {"kind": "closed", "expr": "1e308"}, "n": 30, "checkpoints": [
+      {"at": 30, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "constant: L = 1e308, |x_m - L| = 0 for all m"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded: |x_n| = 1e308 for all n"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "period 1, amplitude 0"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "constant"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "geo_decay_0.5", "family": "geometric decay", "form": "x_n = 0.5^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.5, "b": 0.0}, "n": 60, "checkpoints": [
+      {"at": 5, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "L = 0, eps = 1e-6; x_5 = 0.03125 > eps"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges (period-1 limit)"],
+        "improving": ["MATH", true, ["NW_2_2"], "Q-linear with rate 0.5, not yet within eps"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 60, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "0.5^m <= 0.5^60 = 8.7e-19 <= eps = 1e-6 for all m >= 60"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "geo_decay_0.9", "family": "geometric decay", "form": "x_n = 0.9^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.9, "b": 0.0}, "n": 300, "checkpoints": [
+      {"at": 20, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "x_20 = 0.1216 > eps = 1e-6"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", true, ["NW_2_2"], "Q-linear with rate 0.9, not yet within eps"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 300, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "0.9^300 = 1.9e-14 <= 1e-6 and decreasing"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "geo_decay_0.99", "family": "geometric decay", "form": "x_n = 0.99^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.99, "b": 0.0}, "n": 2000, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "x_60 = 0.547 > eps = 1e-6"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", true, ["NW_2_2"], "Q-linear with rate 0.99 (< 1), not yet within eps"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 2000, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "0.99^2000 = 1.9e-9 <= 1e-6 and decreasing"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "halving_to_5", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 2.5, x_0 = 100 (-> 5)", "gen": {"kind": "affine", "x0": 100.0, "a": 0.5, "b": 2.5}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "|x_60 - 5| = 95*0.5^60 = 8e-17 <= eps = 5e-3"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 5"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "halving_to_5000", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 2500, x_0 = 1e5 (-> 5000)", "gen": {"kind": "affine", "x0": 100000.0, "a": 0.5, "b": 2500.0}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "|x_60 - 5000| = 95000*0.5^60 = 8e-14 <= eps = 5"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "halving_to_0.005", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 0.0025, x_0 = 0.1 (-> 0.005)", "gen": {"kind": "affine", "x0": 0.1, "a": 0.5, "b": 0.0025}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "|x_60 - 0.005| = 0.095*0.5^60 = 8e-20 <= eps = 5e-6"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "geo_growth_1e20", "family": "geometric growth past 1e308", "form": "x_n = 1e20^n (exceeds 1e308 at n = 16)", "gen": {"kind": "affine", "x0": 1.0, "a": 1e20, "b": 0.0}, "n": 40, "checkpoints": [
+      {"at": 40, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "unbounded"],
+        "diverging": ["MATH", true, ["RUDIN_3_15"], "x_n = 1e20^n -> +inf"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone, unbounded"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["NIST_6442"], "mean grows without bound"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "geo_growth_1.5", "family": "geometric growth", "form": "x_n = 1.5^n", "gen": {"kind": "affine", "x0": 1.0, "a": 1.5, "b": 0.0}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "unbounded"],
+        "diverging": ["MATH", true, ["RUDIN_3_15"], "1.5^n -> +inf"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone, unbounded"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["NIST_6442"], "mean grows without bound"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "linear_decrease", "family": "falling without bound", "form": "x_n = 100 - n", "gen": {"kind": "affine", "x0": 100.0, "a": 1.0, "b": -1.0}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "unbounded"],
+        "diverging": ["MATH", true, ["RUDIN_3_15"], "100 - n -> -inf"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["NIST_6442"], "linear trend in the mean"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "harmonic", "family": "harmonic partial sums (slow divergence)", "form": "x_n = H_{n+1} = sum_{k=1}^{n+1} 1/k", "gen": {"kind": "recur", "x0": 1.0, "expr": "x + 1.0 / (n + 1)"}, "n": 2000, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_28", "RUDIN_3_1"], "the harmonic series diverges"],
+        "diverging": ["MATH", true, ["RUDIN_3_28", "RUDIN_3_15"], "H_n -> +inf (like ln n)"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["NIST_6442"], "mean grows without bound"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_28", "RUDIN_3_1"], "the harmonic series diverges"],
+        "diverging": ["MATH", true, ["RUDIN_3_28", "RUDIN_3_15"], "H_n -> +inf"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["NIST_6442"], "mean grows without bound"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 2000, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_28", "RUDIN_3_1"], "the harmonic series diverges"],
+        "diverging": ["MATH", true, ["RUDIN_3_28", "RUDIN_3_15"], "H_n -> +inf"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["NIST_6442"], "mean grows without bound"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "log_n", "family": "slow divergence", "form": "x_n = ln(n + 2)", "gen": {"kind": "closed", "expr": "math.log(n + 2)"}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "unbounded"],
+        "diverging": ["MATH", true, ["RUDIN_3_15"], "ln n -> +inf"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["NIST_6442"], "mean grows without bound"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "sqrt_n", "family": "slow divergence", "form": "x_n = sqrt(n + 1)", "gen": {"kind": "closed", "expr": "math.sqrt(n + 1)"}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "unbounded"],
+        "diverging": ["MATH", true, ["RUDIN_3_15"], "sqrt n -> +inf"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["NIST_6442"], "mean grows without bound"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "alt_inv_n", "family": "alternating convergent", "form": "x_n = (-1)^(n+1) / (n + 1)", "gen": {"kind": "closed", "expr": "(-1.0) ** (n + 1) / (n + 1)"}, "n": 2000, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "L = 0, eps = 1e-6; |x_m| = 1/(m+1) > eps until m ~ 1e6"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges to 0: the alternation decays, no cycle"],
+        "improving": ["MATH", false, ["NW_2_2"], "|x_{k+1}|/|x_k| = (k+1)/(k+2) -> 1: sublinear"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 2000, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "|x_2000| = 5e-4 > eps = 1e-6"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges to 0"],
+        "improving": ["MATH", false, ["NW_2_2"], "sublinear"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "alt_series_ln2", "family": "alternating convergent (partial sums)", "form": "x_n = sum_{k=1}^{n+1} (-1)^(k+1)/k (-> ln 2)", "gen": {"kind": "recur", "x0": 1.0, "expr": "x + (-1.0) ** n / (n + 1)"}, "n": 2000, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_43", "RUDIN_3_1"], "|x_60 - ln 2| = 8.3e-3 > eps = 6.9e-4"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to ln 2"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges: the alternation decays"],
+        "improving": ["MATH", false, ["NW_2_2"], "error ratio -> -1: sublinear"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 2000, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_43", "RUDIN_3_1"], "Leibniz: |x_m - ln 2| <= 1/(m+2) <= 5e-4 <= eps = 6.9e-4 for all m >= 2000"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "damped_osc_0.9", "family": "damped oscillator", "form": "x_n = 0.9^n cos(n)", "gen": {"kind": "closed", "expr": "0.9 ** n * math.cos(1.0 * n)"}, "n": 300, "checkpoints": [
+      {"at": 20, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "L = 0, eps = 1e-6; |x_21| = 0.109*|cos 21| = 0.06 > eps"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges to 0 (asymptotic definition; the transient oscillation does not count)"],
+        "improving": ["MATH", false, ["NW_2_2"], "|x_{k+1}|/|x_k| is unbounded (cos near 0): not Q-linear"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 300, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "|x_m| <= 0.9^300 = 1.9e-14 <= 1e-6"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "damped_osc_0.99", "family": "damped oscillator", "form": "x_n = 0.99^n cos(0.5 n)", "gen": {"kind": "closed", "expr": "0.99 ** n * math.cos(0.5 * n)"}, "n": 100, "checkpoints": [
+      {"at": 100, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "envelope 0.99^100 = 0.37 > eps = 1e-6"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges to 0 (asymptotic definition)"],
+        "improving": ["MATH", false, ["NW_2_2"], "not Q-linear (cos zeros)"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "period2_wide", "family": "period-2 orbit", "form": "3, 30, 3, 30, ...", "gen": {"kind": "cycle", "values": [3.0, 30.0]}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "two limit points"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", true, ["DEVANEY_1_3"], "prime period 2, amplitude 27"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "period2_reciprocal", "family": "period-2 orbit", "form": "2, 0.5, 2, 0.5, ...", "gen": {"kind": "cycle", "values": [2.0, 0.5]}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "two limit points"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", true, ["DEVANEY_1_3"], "prime period 2, amplitude 1.5"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "period4_square", "family": "period-4 orbit", "form": "3, 3, 30, 30, ...", "gen": {"kind": "cycle", "values": [3.0, 3.0, 30.0, 30.0]}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "two limit points"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", true, ["DEVANEY_1_3"], "prime period 4, amplitude 27"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "period4_distinct", "family": "period-4 orbit", "form": "1, 5, 2, 7, ...", "gen": {"kind": "cycle", "values": [1.0, 5.0, 2.0, 7.0]}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "four limit points"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", true, ["DEVANEY_1_3"], "prime period 4, amplitude 6"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "logistic_2.8", "family": "logistic map (convergent)", "form": "x_{n+1} = 2.8 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent ln 0.8 = -0.223 (negative)", "lyapunov": -0.2231, "gen": {"kind": "recur", "x0": 0.4, "expr": "2.8 * x * (1.0 - x)"}, "n": 200, "checkpoints": [
+      {"at": 10, "v": {
+        "converged": ["MATH", false, ["STROGATZ_10", "RUDIN_3_1"], "x* = 1 - 1/2.8 = 0.642857; |x_10 - x*| = 4.1e-3 > eps = 6.4e-4"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded in [0, 1]"],
+        "oscillating": ["MATH", false, ["STROGATZ_10"], "attracting fixed point (|f'(x*)| = 0.8 < 1); the approach alternates but converges"],
+        "improving": ["MATH", true, ["STROGATZ_10", "NW_2_2"], "Q-linear with rate |f'(x*)| = 0.8, not yet within eps"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 200, "v": {
+        "converged": ["MATH", true, ["STROGATZ_10", "RUDIN_3_1"], "|x_m - x*| <= ~0.8^m: 0 in double precision by m = 200"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["STROGATZ_10"], "fixed point"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "logistic_3.2", "family": "logistic map (period 2)", "form": "x_{n+1} = 3.2 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent 0.5 ln 0.16 = -0.916 (negative)", "lyapunov": -0.9163, "gen": {"kind": "recur", "x0": 0.4, "expr": "3.2 * x * (1.0 - x)"}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["STROGATZ_10", "RUDIN_3_1"], "attracting 2-cycle {0.5130, 0.7995}"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", true, ["STROGATZ_10", "DEVANEY_1_3"], "attracting prime-period-2 cycle, amplitude 0.286"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "logistic_3.5", "family": "logistic map (period 4)", "form": "x_{n+1} = 3.5 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent -0.873 (negative, computed over 2e5 iterates)", "lyapunov": -0.8725, "gen": {"kind": "recur", "x0": 0.4, "expr": "3.5 * x * (1.0 - x)"}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["STROGATZ_10", "RUDIN_3_1"], "attracting 4-cycle"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", true, ["STROGATZ_10", "DEVANEY_1_3"], "attracting prime-period-4 cycle {0.383, 0.827, 0.501, 0.875}"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "logistic_3.9", "family": "logistic map (chaotic)", "form": "x_{n+1} = 3.9 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent +0.497 (positive, computed over 2e5 iterates)", "lyapunov": 0.4967, "gen": {"kind": "recur", "x0": 0.4, "expr": "3.9 * x * (1.0 - x)"}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["STROGATZ_10", "RUDIN_3_1"], "chaotic: lambda > 0, no limit"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded in [0, 1]"],
+        "oscillating": ["MATH", false, ["STROGATZ_10", "DEVANEY_1_3"], "chaotic, not asymptotically periodic (lambda > 0)"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "sin_n", "family": "quasi-periodic", "form": "x_n = sin(n)", "gen": {"kind": "closed", "expr": "math.sin(1.0 * n)"}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["WEYL_1916", "RUDIN_3_1"], "limit set is [-1, 1]"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["WEYL_1916", "DEVANEY_1_3"], "1/(2 pi) is irrational: quasi-periodic, never periodic"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "cos_fixed_point", "family": "fixed-point iteration (alternating approach)", "form": "x_{n+1} = cos(x_n), x_0 = 1 (-> 0.739085)", "gen": {"kind": "recur", "x0": 1.0, "expr": "math.cos(x)"}, "n": 60, "checkpoints": [
+      {"at": 10, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "|x_10 - x*| = 5.2e-3 > eps = 7.4e-4"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["STROGATZ_10"], "attracting fixed point; the alternating approach converges"],
+        "improving": ["MATH", true, ["STROGATZ_10", "NW_2_2"], "Q-linear with rate |f'(x*)| = sin(x*) = 0.674"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 60, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "|x_60 - x*| = 1.4e-11 <= eps and contracting"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["STROGATZ_10"], "fixed point"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "newton_sqrt2", "family": "Newton iteration (quadratic)", "form": "x_{n+1} = (x_n + 2/x_n)/2, x_0 = 1 (-> sqrt 2)", "gen": {"kind": "recur", "x0": 1.0, "expr": "(x + 2.0 / x) / 2.0"}, "n": 30, "checkpoints": [
+      {"at": 30, "v": {
+        "converged": ["MATH", true, ["NW_2_2", "RUDIN_3_1"], "Q-quadratic; exact to double precision from n = 5"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "converges"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "noise_below_s1", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-3 u_n, u_n iid uniform[-1, 1] (seed 1)", "gen": {"kind": "noise", "center": 100.0, "amp": 0.001, "seed": 1}, "n": 300, "checkpoints": [
+      {"at": 100, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1", "ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1 for every m"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "iid: not periodic; amplitude below eps"],
+        "improving": ["MATH", false, ["NW_2_2"], "already within eps"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "iid: stationary"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 200, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1", "ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "iid: not periodic"],
+        "improving": ["MATH", false, ["NW_2_2"], "already within eps"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "iid: stationary"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 300, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1", "ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "iid: not periodic"],
+        "improving": ["MATH", false, ["NW_2_2"], "already within eps"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "iid: stationary"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "noise_below_s2", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-3 u_n (seed 2)", "gen": {"kind": "noise", "center": 100.0, "amp": 0.001, "seed": 2}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1", "ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "iid: not periodic"],
+        "improving": ["MATH", false, ["NW_2_2"], "already within eps"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "iid: stationary"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "noise_tiny_s3", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-9 u_n (seed 3)", "gen": {"kind": "noise", "center": 100.0, "amp": 1e-9, "seed": 3}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1", "ISCLOSE"], "|x_m - 100| <= 1e-9 <= eps = 0.1"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "iid: not periodic"],
+        "improving": ["MATH", false, ["NW_2_2"], "already within eps"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "iid: stationary"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "noise_above_s1", "family": "iid noise above tolerance", "form": "x_n = 100 + 10 u_n (seed 1)", "gen": {"kind": "noise", "center": 100.0, "amp": 10.0, "seed": 1}, "n": 300, "checkpoints": [
+      {"at": 100, "v": {
+        "converged": ["MATH", false, ["DURRETT_BC", "RUDIN_3_1"], "amplitude 10 > eps = 0.1: a.s. leaves every eps-ball infinitely often"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "iid: not periodic"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "iid: stationary"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["DURRETT_BC", "RUDIN_3_1"], "a.s. no limit"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "iid: not periodic"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "iid: stationary"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "random_walk", "family": "random walk", "form": "x_0 = 0, x_{n+1} = x_n +- 1 (fair coin, seed 7)", "gen": {"kind": "walk", "x0": 0.0, "step": 1.0, "seed": 7}, "n": 300, "checkpoints": [
+      {"at": 300, "v": {
+        "converged": ["MATH", false, ["POLYA_1921", "RUDIN_3_1"], "recurrent: a.s. no limit"],
+        "diverging": ["MATH", false, ["POLYA_1921", "RUDIN_3_15"], "recurrent: a.s. returns to 0 infinitely often, so not -> +-inf"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "not periodic"],
+        "improving": ["MATH", false, ["NW_2_2"], "no limit"],
+        "equilibrium": ["MATH", false, ["HAMILTON_15", "NIST_6442"], "unit root: Var(x_n) = n, not stationary"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "level_shift", "family": "level shift", "form": "x_n = 1 for n < 100, 2 for n >= 100", "gen": {"kind": "closed", "expr": "1.0 if n < 100 else 2.0"}, "n": 160, "checkpoints": [
+      {"at": 103, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "the tail from n = 100 is the constant 2 (a causal window cannot know this yet)"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "eventually constant"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 160, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "constant 2 from n = 100"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "eventually constant"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "ml_loss_exp", "family": "ML loss (falling, exponential)", "form": "x_n = 0.05 + 2.3 exp(-0.08 n)", "gen": {"kind": "closed", "expr": "0.05 + 2.3 * math.exp(-0.08 * n)"}, "n": 400, "checkpoints": [
+      {"at": 30, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "|x_30 - 0.05| = 0.209 > eps = 5e-5"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0.05"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", true, ["NW_2_2"], "Q-linear with rate exp(-0.08) = 0.923"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 400, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "error 2.9e-14 <= eps = 5e-5 (settled from n = 135)"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "ml_loss_power", "family": "ML loss (falling, power law)", "form": "x_n = 0.1 + 2 / sqrt(1 + 0.1 n)", "gen": {"kind": "closed", "expr": "0.1 + 2.0 / math.sqrt(1.0 + 0.1 * n)"}, "n": 2000, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "|x_60 - 0.1| = 0.76 > eps = 1e-4"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0.1"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "error ratio -> 1: sublinear"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 2000, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "|x_2000 - 0.1| = 0.141 > eps = 1e-4"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 0.1"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "sublinear"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "ml_plateau", "family": "ML loss (plateau)", "form": "x_n = 0.35 + 1e-6 u_n (seed 5)", "gen": {"kind": "noise", "center": 0.35, "amp": 1e-6, "seed": 5}, "n": 200, "checkpoints": [
+      {"at": 200, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1", "ISCLOSE"], "|x_m - 0.35| <= 1e-6 <= eps = 3.5e-4"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "bounded"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "not periodic; amplitude below eps"],
+        "improving": ["MATH", false, ["NW_2_2"], "already within eps"],
+        "equilibrium": ["MATH", true, ["NIST_6442"], "iid: stationary"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "ml_loss_rise_plateau", "family": "ML loss (rising to a plateau)", "form": "x_n = 1 - 0.6 * 0.9^n", "gen": {"kind": "closed", "expr": "1.0 - 0.6 * 0.9 ** n"}, "n": 300, "checkpoints": [
+      {"at": 20, "v": {
+        "converged": ["MATH", false, ["RUDIN_3_1"], "|x_20 - 1| = 0.073 > eps = 1e-3"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges to 1"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", true, ["NW_2_2"], "Q-linear with rate 0.9 (direction-agnostic; the ML sense would call this loss worse)"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}},
+      {"at": 300, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "error 1.1e-14 <= eps = 1e-3"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "converges"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "monotone"],
+        "improving": ["MATH", false, ["NW_2_2"], "already converged at n"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]},
+    {"id": "two_vars", "family": "two variables (probe trap)", "form": "x_n = 0.5^n, with y = 3, 30, 3, ... assigned AFTER x at every step; predicates read on x", "gen": {"kind": "affine", "x0": 1.0, "a": 0.5, "b": 0.0}, "second": {"kind": "cycle", "values": [3.0, 30.0]}, "n": 60, "checkpoints": [
+      {"at": 60, "v": {
+        "converged": ["MATH", true, ["RUDIN_3_1"], "x: 0.5^60 <= eps = 1e-6"],
+        "diverging": ["MATH", false, ["RUDIN_3_15"], "x converges"],
+        "oscillating": ["MATH", false, ["DEVANEY_1_3"], "x converges (y, the last-assigned binding, is period 2)"],
+        "improving": ["MATH", false, ["NW_2_2"], "x already converged"],
+        "equilibrium": ["EIGS-DEFINED"],
+        "stable": ["EIGS-DEFINED"]}}]}
+  ]
+}
