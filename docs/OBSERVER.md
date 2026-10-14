@@ -219,10 +219,10 @@ relative step remains the primary contract.
 ### Graded against mathematics (`make observer-oracle`, #1746)
 
 `make observer-oracle` scores the six predicates against `tools/observer_oracle/corpus.json`,
-whose verdicts come from cited definitions (Rudin, Nocedal-Wright, Strogatz, NIST), not from
-this document. Each verdict is MATH (scored) or EIGS-DEFINED (listed, not scored). It also
-scores an independent windowed reference model on the value and the entropy signal (#1667).
-It is a measurement: it fails on a harness error, never on a disagreement.
+whose verdicts come from cited definitions (Hardy, Nocedal-Wright, NIST), not from this document.
+Each verdict is MATH (the headline score), CONVENTION (decided only by a stated tolerance; scored
+separately) or EIGS-DEFINED (listed, not scored). It also scores an independent windowed reference
+model on the value and the entropy signal (#1667). It fails on a harness error, never on a disagreement.
 
 ## The manifold: two basins and a horizon
 

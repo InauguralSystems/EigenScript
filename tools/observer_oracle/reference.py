@@ -4,23 +4,18 @@ Written from the MATH definitions in corpus.json ("definitions"), not from
 the C observer. Every predicate is a pure function of a window `w`: the last
 W+1 observed values of one signal, oldest first. Nothing else is read.
 
-Recommended model of the #1746 prior-art comment, section 4:
+Recommended model of the #1746 prior-art comment, section 4, with
+`oscillating` taken from Hardy Sec. 62 as the corpus defines it:
   converged    windowed Cauchy test: diameter of the window <= tau
-  diverging    term/ratio test: same-sign steps above tau that do not
-               contract (rho >= 1), or a value that IS infinite
+  diverging    Hardy Sec. 60 windowed: same-sign steps above tau that do
+               not contract (rho >= 1), or a value that IS infinite
   improving    ratio test on the steps: every |d_{i+1}| / |d_i| < 1
-  oscillating  periodicity at tolerance: some p in 2..W//2 with
-               |w_i - w_{i-p}| <= tau across the window, and one period
-               spanning more than tau
+  oscillating  Hardy Sec. 62 windowed: the window shows neither a limit
+               (converged / improving) nor a run to +-inf (diverging)
   equilibrium  no CUSUM alarm (NIST e-Handbook 6.3.2.3, k = 0.5 sigma,
-               h = 4 sigma) of the recent half against the older half,
-               and neither diverging nor oscillating
+               h = 4 sigma) of the recent half against the older half, no
+               periodic fluctuation (NIST 6.4.4.2), not diverging
   stable       (EIGS-DEFINED) the converged test at the coarse tolerance
-
-Deviation from the prior-art sketch, on purpose: `oscillating` tests
-periodicity (the corpus' MATH definition) instead of Nelson rule 4. Nelson
-alternation fires on damped alternating approaches, which converge and so
-are not oscillating under that definition.
 
 #1667: `entropy_signal` maps values to the runtime's per-number entropy, so
 the same classifier can run on either signal.
@@ -78,30 +73,36 @@ def improving(w):
     return all(abs(b) / abs(a) < 1.0 for a, b in zip(d, d[1:]))
 
 
-def oscillating(w):
-    if not _full(w) or not _finite(w):
-        return False
+def _periodic(w):
+    """Some p in 2..W//2 repeats across the window and one period spans
+    more than tau: the periodic fluctuation NIST 6.4.4.2 excludes."""
     t = tau(w[-1])
-    if max(w) - min(w) <= t:
-        return False
     for p in range(2, W // 2 + 1):
-        cycle = w[-p:]                  # one period must move above tau
+        cycle = w[-p:]
         if max(cycle) - min(cycle) > t and \
                 all(abs(w[i] - w[i - p]) <= t for i in range(p, len(w))):
             return True
     return False
 
 
+def oscillating(w):
+    if not _full(w) or not _finite(w):
+        return False
+    return not (converged(w) or improving(w) or diverging(w))
+
+
 def equilibrium(w):
     if not _full(w) or not _finite(w):
         return False
-    if diverging(w) or oscillating(w):
+    if diverging(w) or _periodic(w):
         return False
-    half = len(w) // 2
-    old, new = w[:half], w[half:]
+    s = max(abs(v) for v in w) or 1.0      # scale-free: no overflow at 1e305
+    u = [v / s for v in w]
+    half = len(u) // 2
+    old, new = u[:half], u[half:]
     mu = sum(old) / len(old)
-    sd = math.sqrt(sum((v - mu) ** 2 for v in old) / (len(old) - 1))
-    sigma = max(sd, tau(w[-1]))
+    sd = math.sqrt(sum((v - mu) * (v - mu) for v in old) / (len(old) - 1))
+    sigma = max(sd, tau(w[-1]) / s)
     k, h = 0.5 * sigma, 4.0 * sigma
     hi = lo = 0.0
     for v in new:
