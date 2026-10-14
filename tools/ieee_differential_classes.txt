@@ -4,3 +4,18 @@
 # class a = the guard's own tests (clamping, strict NaN raises, /0 and %0 raises)
 # class b = the observer's #861 saturation tests
 # class c = anything else: a FINDING, listed in the experiment report
+line_after_callback_halt.eigs a uses `sqrt of <negative>` (strict domain raise) as its error source; IEEE answers NaN, so no error line
+line_after_return_fn.eigs a uses `1 / 0` (division-by-zero raise) as its error source; IEEE answers inf
+line_after_return_module.eigs a uses `1 / 0` (division-by-zero raise) as its error source; IEEE answers inf
+test_buffer_nonfinite_read.eigs a #1417 pins the buffer scalar-read clamp (inf -> 1e308, NaN raise); IEEE reads inf/nan as values
+test_coverage_v2.eigs a CV2-11 asserts division by zero raises
+test_error_extra.eigs a EE07 asserts division by zero raises
+test_fstrings.eigs a six e.line checks use `1 / 0` inside the snippet as the raise; IEEE gives inf, no error, e.line -1
+test_gc.eigs a GC25 asserts modulo by zero raises
+test_line_after_return.eigs a uses sqrt of a negative, / 0 and % 0 as raise fixtures for line accounting
+test_numeric_guard.eigs a the guard's own test (NaN collapse, 1e308 saturation, strict raises, reassociation pin)
+test_observer_saturation.eigs b #861: pins a runaway at +/-1e308 and a literal 1e308 as diverging; IEEE runs away to inf and the literal converges
+test_sandbox_error_silence.eigs a its sandboxed bytecode divides by zero to provoke the pinned error
+test_stdlib_fixes.eigs a SF101 pins lib/math log10 of 0 == -10, i.e. the log domain stand-in ln(1e-10); IEEE log 0 = -inf
+test_store.eigs a pins matmul overflow clamped to 1e308 at the scalar read boundary
+test_tensor_buffer_ops.eigs a pins `divide` folding a zero denominator (strict raise); IEEE gives inf/nan

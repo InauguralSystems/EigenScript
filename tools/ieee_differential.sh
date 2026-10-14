@@ -36,7 +36,7 @@ mkdir -p "$OUT/bin_rel" "$OUT/bin_ieee" && ln -sfn "$ROOT/lib" "$OUT/lib" \
 REL="$OUT/bin_rel/eigenscript"; IEEE="$OUT/bin_ieee/eigenscript"
 cd "$ROOT/src" || exit 2
 git -C "$ROOT" ls-files 'tests/*.eigs' | awk -F/ 'NF==2{print $2}' | sort > "$OUT/tracked.txt"
-GFX_RE='(gfx_[a-z_]+|ui_[a-z_]+|http_[a-z_]+|net_[a-z_]+|serve[a-z_]*) of|load_file of .*lib/ui'
+GFX_RE='(^|[^A-Za-z0-9_])(gfx_[a-z_]+|ui_[a-z_]+|http_[a-z_]+|net_[a-z_]+|serve[a-z_]*) of|load_file of .*lib/ui'
 : > "$OUT/population.txt"; : > "$OUT/excluded.txt"
 while read -r f; do
     if grep -qE "$GFX_RE" "../tests/$f"; then echo "$f" >> "$OUT/excluded.txt"; else echo "$f" >> "$OUT/population.txt"; fi
