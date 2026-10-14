@@ -49,21 +49,23 @@ def program(gen, n):
 
 
 def generate(gen, n):
-    """The row's values x_0..x_n: floats (IEEE: they may overflow to inf or
-    become NaN), or exact Python ints for an int row."""
+    """The row's values x_0..x_n: floats, or exact Python ints for an int row.
+    x * a + b overflows to inf and inf * 0 is NaN, as in IEEE 754; Python's
+    ** and math functions raise instead (OverflowError, ValueError), and a
+    row whose generator raises is refused (HarnessError), never a traceback."""
     k, num = gen["kind"], (int if gen.get("int") else float)
     if k in IN_PROGRAM:
         xs = []
         for s in program(gen, n):
             xs.append(num(s[1]) if s[0] == "set" else xs[-1] * s[1] + s[2])
-    elif k == "closed":
-        f = fn(gen)
-        xs = [f(i) for i in range(n + 1)]
-    elif k == "recur":
-        f = fn(gen)
-        xs = [gen["x0"]]
-        for i in range(1, n + 1):
-            xs.append(float(f(xs[-1], i)))
+    elif k in ("closed", "recur"):
+        f, xs = fn(gen), [] if k == "closed" else [gen["x0"]]
+        try:
+            for i in range(len(xs), n + 1):
+                xs.append(f(i) if k == "closed" else float(f(xs[-1], i)))
+        except (ArithmeticError, ValueError) as e:
+            raise HarnessError(f"{gen['expr']!r} cannot be computed at n = {len(xs)}: {type(e).__name__}: {e}"
+                               " (Python's ** and math functions raise where IEEE would give inf or NaN)")
     elif k == "cycle":
         vs = gen["values"]
         xs = [vs[i % len(vs)] for i in range(n + 1)]

@@ -160,7 +160,8 @@ def equilibrium(w):
 def stable(w):
     if not _full(w) or not _finite(w):
         return False
-    return max(w) - min(w) <= 2 * tau((max(w) + min(w)) / 2, RTOL_COARSE)
+    hi, lo = max(w), min(w)                 # halves first: hi + lo overflows near DBL_MAX
+    return hi / 2 - lo / 2 <= tau(hi / 2 + lo / 2, RTOL_COARSE)
 
 
 PREDICATES = {

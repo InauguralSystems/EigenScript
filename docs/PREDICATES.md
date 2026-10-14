@@ -27,27 +27,50 @@ under noise — see "Pointwise behavior replaced" in each section.)
 
 ## What each predicate is graded against (#1754)
 
-The owner's decisions on #1754 fix the one question each predicate answers.
-The six names were inherited from earlier sessions, so each question is the
-standard answer to what the name means, checked against how consumers use it.
-`definitions` in `tools/observer_oracle/corpus.json` is authoritative: it holds
-the full rule and the cited sources for each question. The windowed bands
-documented below approximate those definitions from the last `N`
-observations. `make observer-oracle` measures how well they do, and
-[`docs/OBSERVER.md`](OBSERVER.md) ("Graded against mathematics") describes the
-oracle.
+The question each predicate answers is decided on #1754 (a `kind:decision`
+issue: owner intent lives there, per [`docs/PRINCIPLES.md`](PRINCIPLES.md)
+§0); the provenance of each is recorded in its comment 6178341982.
+`definitions` in `tools/observer_oracle/corpus.json` is the machine-readable
+form of those decisions: the full rule and the cited sources for each
+question. Its lines marked "OUR derivation" or "OUR documented choice" are
+the modelling choices recorded on #1754, not part of the cited texts.
+`make observer-oracle` grades the runtime against them, and
+[`docs/OBSERVER.md`](OBSERVER.md) ("Graded against mathematics") describes
+the oracle.
 
-| Predicate | Class | Source | The question |
-|-----------|-------|--------|--------------|
-| `converged` | CONVENTION | numpy `isclose` | From checkpoint n on, does the value stay within ε of a point? |
-| `stable` | CONVENTION | settling time (control theory) | From n on, does the value stay within a band about where it is heading? |
-| `improving` | CONVENTION | Keras `EarlyStopping` (`mode='min'`), Hardy §62 | Did the value set a new best (lower) within the window, and is the sequence eventually bounded? |
-| `oscillating` | MATH | Hardy §62 | Does the sequence tend neither to a limit nor to +∞ or −∞? |
-| `diverging` | MATH | Hardy §60, Rudin Def. 3.15 | Does the sequence tend to +∞ or −∞? |
-| `equilibrium` | MATH | NIST e-Handbook 6.4.4.2 | Is the sequence stationary (a constant mean function)? |
+| Predicate | Class | Source | Decided by | The question |
+|-----------|-------|--------|------------|--------------|
+| `converged` | CONVENTION | numpy `isclose` | the standard answer, under the owner's delegation for inherited names | From checkpoint n on, does the value stay within ε of a point? |
+| `stable` | CONVENTION | settling time (control theory) | the standard answer plus measured usage, under the delegation | From n on, does the value stay within a band about where it is heading? |
+| `improving` | CONVENTION | Keras `EarlyStopping` (`mode='min'`), Hardy §62 | the owner's ruling: directional, lower is better; corrected to "eventually bounded" | Did the value set a new best (lower) within the window, and is the sequence eventually bounded? |
+| `oscillating` | MATH | Hardy §62 | the mathematical definition (no choice) | Does the sequence tend neither to a limit nor to +∞ or −∞? |
+| `diverging` | MATH | Hardy §60, Rudin Def. 3.15 | the mathematical definition (no choice) | Does the sequence tend to +∞ or −∞? |
+| `equilibrium` | MATH | NIST e-Handbook 6.4.4.2 | the standard answer, under the delegation; the deterministic case is OUR derivation | Is the sequence weakly stationary: a constant mean and variance, an autocovariance that depends only on the lag? For a deterministic sequence that means constant, so a random walk (constant mean, growing variance) is not in equilibrium, and neither is a settled but still-moving decay. |
 
 MATH "does the sequence have a limit" (Hardy §58, Rudin Def. 3.1) is reported
 beside `converged` but not scored: no windowed observer can decide it at n.
+
+**NaN.** At a checkpoint whose current value is NaN, every predicate is
+false: the #1758 O2 convention (NaN is undefined), not a MATH answer. The
+oracle labels such a checkpoint CONVENTION for all six predicates, citing
+#1758, whatever the whole sequence does. It is the one recorded exception to
+one question per predicate.
+
+**The bands below are not those definitions.** They are the runtime's current
+windowed tests of the last `N` observations. Two limits are inherent: a window
+cannot see the values after n that `converged` and `stable` ask about, nor the
+whole sequence that `oscillating` and `diverging` describe. Beyond that, the
+runtime answers a different question for two predicates:
+- `improving`: the band is direction-agnostic. It fires on monotone steps that
+  contract, so a value rising to a plateau reads `improving`, which the ruling
+  says it is not (#1771; the oracle's `rise_to_1` row measures it).
+- `equilibrium`: the band tests that the window's relative steps have
+  near-zero mean and variance, so a sequence whose steps have died down reads
+  `equilibrium` although it is not constant (a decay settling on a limit,
+  Newton's iteration for √2, even the slowly growing harmonic series), which
+  the definition says it is not.
+
+The per-predicate tables `make observer-oracle` prints measure all of this.
 
 ## Which channel answers (#861)
 

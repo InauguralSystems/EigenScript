@@ -1,27 +1,34 @@
 #!/usr/bin/env python3
 """Derive the observer oracle's labels from the corpus (#1746).
 
-usage: derive.py [--write]     (prints, or rewrites labels.json)
+usage: derive.py [--corpus PATH] [--write]   (prints, or rewrites the
+       labels.json beside the corpus; certificate.json is read from there)
 
 The corpus states, per row, a generator (gen.py) and ONE property set
 (limit, tends_to, bounded, deterministic; a random-process row adds the
 NIST flags, which must equal the ones its process kind implies) with its
 justification. certify.py (offline, sympy) certifies the properties into
-certificate.json, keyed by the row and by the sha256 of gen.py and
-certify.py; derive refuses a missing or stale certificate and needs no
-sympy. Each predicate is scored against ONE question: its single scored
-definition in the corpus `definitions` table. A `reported` definition (MATH
+certificate.json, keyed by the row (its capability included) and by the
+sha256 of gen.py, certify.py and the tolerances certify.py reads from here;
+derive refuses a missing or stale certificate and needs no sympy. A row's
+`capability` is DERIVED from the values it feeds the runtime (ieee: one is
+inf or NaN; int64: an int a double cannot hold exactly) and the declared tag
+must equal it. Each predicate is scored against ONE question: its single
+scored definition in the corpus `definitions` table, with one exception
+recorded there: at a checkpoint whose x_n is NaN every predicate answers
+the #1758 NaN convention (false, CONVENTION). A `reported` definition (MATH
 "has a limit") becomes a label column that is printed, never scored. Every
 row declares `regime`, the index where its generator's law last changes (at
-least the structural one: a `pieces` row's last piece, a step threshold). A
+least the structural one: a `pieces` row's last piece, the largest
+step(n, c) threshold; any other spelling of step is refused, rule 186). A
 MATH verdict read before it is REPORTED, not scored: it would be decided by
 values after the read. A CONVENTION verdict there must be decided by
 x_0..x_n alone, or the row is refused. Every label is computed here from the
 certified properties, the generated values and that table; nothing per
 predicate or checkpoint is written by hand. derive() asserts its
-postconditions (one entry per predicate, of its scored class or REPORTED as
-above; CONVENTION converged implies stable), and score.py refuses a
-labels.json that differs from derive(corpus).
+postconditions (one entry per predicate, of its scored class, the NaN class
+or REPORTED as above; CONVENTION converged implies stable), and score.py
+refuses a labels.json that differs from derive(corpus).
 """
 import hashlib
 import json
@@ -45,8 +52,11 @@ PROCESS = {"noise": ((False, False, False), "iid noise with a fixed centre and a
            "walk": ((False, False, True), "a random walk x_0 + (n iid steps) has Var x_n ="
                     " n sigma^2, so its variance changes; its mean stays x_0 (no trend)")}
 CAPABILITIES = ("ieee", "int64")
-NAN_WHY = ("x_n is NaN: IEEE 754 invalid operation, an undefined value (#1758 O2, #1746: every"
-           " predicate is false while the current value is NaN)")
+GEN_KEYS = {"affine": ("x0", "a", "b"), "pieces": ("pieces",), "closed": ("expr",), "recur": ("x0", "expr"),
+            "cycle": ("values",), "noise": ("center", "amp", "seed"), "walk": ("x0", "step", "seed")}
+STEP = re.compile(r"\bstep\(\s*n\s*,\s*(\d+)\s*\)")      # the one spelling of a law change
+NAN_WHY = ("x_n is NaN: the #1758 O2 convention (#1746: NaN is undefined), not a MATH answer:"
+           " every predicate is false while the current value is NaN")
 
 
 def eps(v):
@@ -58,20 +68,39 @@ def band(v):
 
 
 def code_hash():
-    """The code that gives a row its meaning: the generator and the certifier."""
+    """The code that gives a row its meaning: the generator, the certifier and
+    the tolerances the certifier reads from here (refute's eps)."""
     h = hashlib.sha256()
     for name in ("gen.py", "certify.py"):
         with open(os.path.join(HERE, name), "rb") as f:
             h.update(f.read())
+    h.update(json.dumps({"RTOL": RTOL, "SCALE": SCALE}).encode())
     return h.hexdigest()
 
 
 def row_hash(row, code):
     """What a certificate vouches for: the generator, the stated properties,
-    any manual argument, where the row is read (checkpoints, regime), and
-    the code that reads them."""
-    basis = {k: row.get(k) for k in ("gen", "props", "manual", "checkpoints", "regime")}
+    any manual argument, where the row is read (checkpoints, regime), the
+    capability it runs under, and the code that reads them."""
+    basis = {k: row.get(k) for k in ("gen", "props", "manual", "checkpoints", "regime", "capability")}
     return hashlib.sha256((json.dumps(basis, sort_keys=True) + code).encode()).hexdigest()
+
+
+def step_thresholds(expr):
+    """The thresholds c of the law changes step(n, c) in an expression. Any
+    other spelling of step (step(n, 100.0), step(n - 1, 99), step(n, 50 + 50)
+    ...) is REFUSED, never read as no law change (rule 186)."""
+    canon = STEP.findall(expr)
+    if len(re.findall(r"\bstep\b", expr)) != len(canon):
+        raise HarnessError(f"{expr!r}: a law change must be spelled step(n, <integer literal>);"
+                           " another spelling would read as no law change (rule 186)")
+    return [int(c) for c in canon]
+
+
+def drop_steps_after(expr, n):
+    """The expression with every law change after index n removed (a twin)."""
+    step_thresholds(expr)
+    return STEP.sub(lambda m: m.group(0) if int(m.group(1)) <= n else "0.0", expr)
 
 
 def structural_regime(gen):
@@ -79,15 +108,46 @@ def structural_regime(gen):
     a `pieces` row's last piece, or the largest step(n, c) threshold."""
     if gen["kind"] == "pieces":
         return sum((1 if "x0" in q else 0) + q["steps"] for q in gen["pieces"][:-1])
-    if gen["kind"] == "closed":
-        return max([int(c) for c in re.findall(r"step\(\s*n\s*,\s*(\d+)\s*\)", gen["expr"])], default=0)
+    if gen["kind"] in ("closed", "recur"):
+        return max(step_thresholds(gen["expr"]), default=0)
     return 0
 
 
+def capability(row):
+    """The capability a row NEEDS, from the values it feeds the runtime: ieee
+    when one is inf or NaN, int64 when an int is one a double cannot hold
+    exactly (some int beyond 2^53), else None."""
+    vals = [v for g in [row["gen"]] + ([row["second"]] if "second" in row else []) for v in generate(g, row["n"])]
+    if any(isinstance(v, float) and not math.isfinite(v) for v in vals):
+        return "ieee"
+    if any(isinstance(v, int) and float(v) != v for v in vals):
+        return "int64"
+    return None
+
+
+def check_gen(rid, g):
+    """The generator's shape, before anything reads it."""
+    k = g.get("kind") if isinstance(g, dict) else None
+    if k not in GEN_KEYS or any(key not in g for key in GEN_KEYS[k]):
+        raise HarnessError(f"{rid}: generator {g!r}: kind must be one of {sorted(GEN_KEYS)} with"
+                           f" {GEN_KEYS.get(k, ())}")
+    ps = g.get("pieces")
+    if k == "pieces" and not (isinstance(ps, list) and ps and all(isinstance(q, dict) and "a" in q and "b" in q
+                                                                 for q in ps) and "x0" in ps[0]
+                              and all(isinstance(q.get("steps"), int) and q["steps"] > 0 for q in ps[:-1])):
+        raise HarnessError(f"{rid}: a pieces row lists pieces with a and b, the first with x0,"
+                           " every one but the last with `steps` > 0")
+    if k == "cycle" and not (isinstance(g["values"], list) and g["values"]):
+        raise HarnessError(f"{rid}: a cycle row lists at least one value")
+
+
 def scored_classes(corpus):
-    """predicate -> its one scored class; reported (predicate, class) -> column."""
+    """predicate -> its one scored class; reported (predicate, class) -> column.
+    The NaN convention (predicate "*") is the recorded exception, not a question."""
     scored, reported = {}, {}
     for d in corpus["definitions"]:
+        if d["predicate"] == "*":
+            continue
         if d.get("reported"):
             reported[(d["predicate"], d["class"])] = d["column"]
         elif d["predicate"] in scored:
@@ -111,10 +171,12 @@ def load_corpus(path):
             raise HarnessError(f"source {k}: needs text and a VERIFIED status that says what was"
                                " checked against which copy (#1754: no unverified citation)")
     for d in c.get("definitions", []):
-        if any(s not in sources for s in d["cite"]) or (d["predicate"], d["class"]) not in RULES:
+        if any(s not in sources for s in d["cite"]) or ((d["predicate"], d["class"]) not in RULES
+                                                       and (d["predicate"], d["class"]) != ("*", "CONVENTION")):
             raise HarnessError(f"definition {d['predicate']}/{d['class']}: unknown source or no rule")
-    if set(scored_classes(c)[0]) != set(PREDS):
-        raise HarnessError("every predicate needs exactly one scored definition")
+    if set(scored_classes(c)[0]) != set(PREDS) or sum(d["predicate"] == "*" for d in c["definitions"]) != 1:
+        raise HarnessError("every predicate needs exactly one scored definition, and the table one NaN"
+                           " convention (predicate \"*\")")
     seen = set()
     for r in rows:
         rid = r.get("id")
@@ -125,18 +187,27 @@ def load_corpus(path):
             if k not in r:
                 raise HarnessError(f"{rid}: missing {k}")
         ats, p, g = r["checkpoints"], r["props"], r["gen"]
-        if not (isinstance(r["regime"], int) and structural_regime(g) <= r["regime"] <= r["n"]):
-            raise HarnessError(f"{rid}: regime {r['regime']!r} must be an index in [{structural_regime(g)},"
-                               f" n]: the generator's law last changes at x_{structural_regime(g)}")
+        for gg in [g] + ([r["second"]] if "second" in r else []):
+            check_gen(rid, gg)
+        try:
+            sr = structural_regime(g)
+        except HarnessError as e:
+            raise HarnessError(f"{rid}: {e}")
+        if not (isinstance(r["regime"], int) and sr <= r["regime"] <= r["n"]):
+            raise HarnessError(f"{rid}: regime {r['regime']!r} must be an index in [{sr},"
+                               f" n]: the generator's law last changes at x_{sr}")
         if not ats or ats != sorted(set(ats)) or ats[-1] != r["n"] or ats[0] < 1:
             raise HarnessError(f"{rid}: checkpoints {ats} must be increasing and end at n")
         if any(s not in sources for s in r["cite"]) or not r["why"]:
             raise HarnessError(f"{rid}: properties need a reason and known sources")
         if r.get("capability", "ieee") not in CAPABILITIES:
             raise HarnessError(f"{rid}: unknown capability {r['capability']!r}")
-        if g["kind"] == "pieces" and not ("x0" in g["pieces"][0] and all(
-                isinstance(q.get("steps"), int) and q["steps"] > 0 for q in g["pieces"][:-1])):
-            raise HarnessError(f"{rid}: the first piece needs x0 and every piece but the last `steps`")
+        if r.get("capability") != capability(r):
+            raise HarnessError(f"{rid}: capability {r.get('capability')!r} declared, but the values it feeds"
+                               f" the runtime need {capability(r)!r} (ieee: an inf or NaN value; int64: an"
+                               " int a double cannot hold exactly)")
+        if p["limit"] is not None and not (isinstance(p["limit"], (int, float)) and math.isfinite(p["limit"])):
+            raise HarnessError(f"{rid}: limit {p['limit']!r}: a limit is a finite number or null")
         if p["tends_to"] not in (None, "+inf", "-inf") or (p["tends_to"] and (p["bounded"] or p["limit"] is not None)):
             raise HarnessError(f"{rid}: tends_to {p['tends_to']!r} excludes a limit and boundedness")
         if p["limit"] is not None and not p["bounded"]:
@@ -175,8 +246,8 @@ def load_certificates(corpus, path):
         if c is None:
             raise HarnessError(f"{r['id']}: no certificate; re-run certify.py")
         if c.get("hash") != row_hash(r, code):
-            raise HarnessError(f"{r['id']}: stale certificate (the row, gen.py or certify.py changed"
-                               " since it was certified); re-run certify.py")
+            raise HarnessError(f"{r['id']}: stale certificate (the row, gen.py, certify.py or derive's"
+                               " RTOL/SCALE changed since it was certified); re-run certify.py")
         if c.get("kind") not in ("symbolic", "exact", "fixed-point", "ieee", "manual"):
             raise HarnessError(f"{r['id']}: certificate kind {c.get('kind')!r}")
         if r["props"]["deterministic"] and not isinstance(c.get("constant"), bool):
@@ -186,20 +257,21 @@ def load_certificates(corpus, path):
 
 def _tail_within(row, far, n, radius, name):
     """CONVENTION converged/stable@n: the tail x_n..x_H stays within
-    radius(L) of the limit, or (no limit) fits a ball of radius(centre)."""
+    radius(L) of the limit, or (no limit) fits a ball of radius(centre). A
+    tail with an inf or NaN in it is not settled."""
     p = row["props"]
     if far is None:
         return False, "tends to " + p["tends_to"] if p["tends_to"] else "unbounded"
     h, tail = len(far) - 1, far[n:]
-    if any(v != v for v in tail):
-        return False, f"x_m is NaN for some m in [{n}, {h}]"
+    if not all(math.isfinite(v) for v in tail):
+        return False, f"x_m is inf or NaN for some m in [{n}, {h}]"
     if p["limit"] is not None:
         lim = p["limit"]
         worst = max(abs(v - lim) for v in tail)
         return worst <= radius(lim), f"max |x_m - {lim:.6g}| over m in [{n}, {h}] = {worst:.3g} vs {name} {radius(lim):.3g}"
     lo, hi = min(tail), max(tail)
-    mid = (lo + hi) / 2
-    return (hi - lo) / 2 <= radius(mid), f"tail x_{n}..x_{h} spans {hi - lo:.3g} vs 2*{name} {2 * radius(mid):.3g}"
+    mid = lo / 2 + hi / 2                       # (lo + hi) / 2 overflows near DBL_MAX
+    return hi / 2 - lo / 2 <= radius(mid), f"tail x_{n}..x_{h} spans {hi - lo:.3g} vs 2*{name} {2 * radius(mid):.3g}"
 
 
 def _improving(xs, n, bounded):
@@ -254,7 +326,9 @@ RULES = {("converged", "MATH"), ("converged", "CONVENTION"), ("stable", "CONVENT
 
 
 def derive_row(row, cert, defs, scored, reported):
+    """defs: (predicate, class) -> cite, the NaN convention under predicate "*"."""
     p = row["props"]
+    nan_cls, nan_cite = next(((k[1], c) for k, c in defs.items() if k[0] == "*"), (None, None))
     def cite(pred, cls):                        # MATH adds the row's property sources
         base = defs[(pred, cls)]
         return base + [s for s in row["cite"] if s not in base] if cls == "MATH" else base
@@ -265,14 +339,17 @@ def derive_row(row, cert, defs, scored, reported):
     out = {}
     for n in row["checkpoints"]:
         rule = _rules(row, cert, xs, far, n)
-        if xs[n] != xs[n]:
-            rule.update({(q, scored[q]): (False, NAN_WHY) for q in PREDS})
         entry = lambda q, cls: [cls, rule[(q, cls)][0], cite(q, cls), rule[(q, cls)][1]]
-        v = {q: entry(q, scored[q]) for q in PREDS}
+        if xs[n] == xs[n]:
+            v = {q: entry(q, scored[q]) for q in PREDS}
+        elif nan_cls is None:
+            raise HarnessError(f"{row['id']}@{n}: x_n is NaN and the definitions table has no NaN convention")
+        else:                                   # the recorded exception to one question per predicate
+            v = {q: [nan_cls, False, list(nan_cite), NAN_WHY] for q in PREDS}
         v.update({col: entry(q, cls) for (q, cls), col in reported.items()})
         if n < row["regime"]:                   # the tail's law starts after this read
             for q in PREDS:
-                if scored[q] == "MATH":
+                if v[q][0] == "MATH":
                     v[q][0], v[q][3] = "REPORTED", v[q][3] + (f"; REPORTED, not scored: the law"
                                                              f" changes at x_{row['regime']}, after this read")
                 elif not prefix_decided(q, v[q][1], xs, n):
@@ -283,19 +360,23 @@ def derive_row(row, cert, defs, scored, reported):
 
 
 def prefix_decided(q, value, xs, n):
-    """Whether x_0..x_n alone decide a CONVENTION verdict: settling is refuted
-    by a non-finite x_n, and improving by no new best in the window."""
+    """Whether x_0..x_n alone decide a CONVENTION verdict: a NaN x_n decides
+    every predicate (the NaN convention), settling is refuted by a non-finite
+    x_n, and improving by no new best in the window."""
+    if xs[n] != xs[n]:
+        return value is False
     if q == "improving":
         return not _improving(xs, n, True)[2]
     return value is False and not math.isfinite(xs[n])
 
 
-def postconditions(labels, scored, reported, rows):
+def postconditions(labels, scored, reported, rows, nans, nan_cls):
     """The derivation's own invariants, checked on its output: every
     predicate has ONE entry, of its scored class (so no verdict is scored
-    against two questions) or REPORTED (a MATH verdict read before the row's
-    law last changes), the reported columns are present, and CONVENTION
-    converged implies CONVENTION stable (the band is wider than eps)."""
+    against two questions), the NaN class and false at a NaN checkpoint, or
+    REPORTED (a MATH verdict read before the row's law last changes); the
+    reported columns are present; and CONVENTION converged implies
+    CONVENTION stable (the band is wider than eps)."""
     keys = set(PREDS) | set(reported.values())
     for key, preds in labels.items():
         rid, n = key.rsplit("@", 1)
@@ -304,20 +385,29 @@ def postconditions(labels, scored, reported, rows):
         for q in PREDS:
             e = preds[q]
             early = scored[q] == "MATH" and int(n) < rows[rid]["regime"]
-            if len(e) != 4 or e[0] != ("REPORTED" if early else scored[q]) or not isinstance(e[1], bool):
-                raise HarnessError(f"{key}.{q}: {e[:2]} is not one {scored[q]} verdict")
+            want = nan_cls if key in nans else ("REPORTED" if early else scored[q])
+            if len(e) != 4 or e[0] != want or not isinstance(e[1], bool) or (key in nans and e[1]):
+                raise HarnessError(f"{key}.{q}: {e[:2]} is not one {want} verdict")
         if scored["converged"] == scored["stable"] == "CONVENTION" \
                 and preds["converged"][1] and not preds["stable"][1]:
             raise HarnessError(f"{key}: lattice broken: CONVENTION converged without stable")
 
 
+def definitions(corpus):
+    """(predicate, class) -> cite for every definition, the NaN convention under ("*", class)."""
+    return {(d["predicate"], d["class"]): d["cite"] for d in corpus["definitions"]}
+
+
 def derive(corpus, certs):
-    defs = {(d["predicate"], d["class"]): d["cite"] for d in corpus["definitions"]}
+    defs = definitions(corpus)
     scored, reported = scored_classes(corpus)
-    labels = {}
+    labels, nans = {}, set()
     for row in corpus["rows"]:
         labels.update(derive_row(row, certs[row["id"]], defs, scored, reported))
-    postconditions(labels, scored, reported, {r["id"]: r for r in corpus["rows"]})
+        xs = generate(row["gen"], row["n"])
+        nans |= {f"{row['id']}@{n}" for n in row["checkpoints"] if xs[n] != xs[n]}
+    nan_cls = next(k[1] for k in defs if k[0] == "*")
+    postconditions(labels, scored, reported, {r["id"]: r for r in corpus["rows"]}, nans, nan_cls)
     return labels
 
 
@@ -326,15 +416,32 @@ def dump(labels):
     return "{\n" + ",\n".join(lines) + "\n}\n"
 
 
-if __name__ == "__main__":
-    try:
-        corpus = load_corpus(os.path.join(HERE, "corpus.json"))
-        text = dump(derive(corpus, load_certificates(corpus, os.path.join(HERE, "certificate.json"))))
-    except HarnessError as e:
-        print(f"OBSERVER_ORACLE_ERROR: {e}", file=sys.stderr)
-        sys.exit(2)
-    if sys.argv[1:] == ["--write"]:
-        with open(os.path.join(HERE, "labels.json"), "w") as f:
+def main(argv):
+    args, path, write = argv[1:], os.path.join(HERE, "corpus.json"), False
+    while args:
+        if args[0] == "--write":
+            write, args = True, args[1:]
+        elif args[0] == "--corpus" and len(args) > 1:
+            path, args = args[1], args[2:]
+        else:
+            raise HarnessError(f"usage: derive.py [--corpus PATH] [--write] (not {args[0]!r})")
+    cdir = os.path.dirname(os.path.abspath(path))
+    corpus = load_corpus(path)
+    text = dump(derive(corpus, load_certificates(corpus, os.path.join(cdir, "certificate.json"))))
+    if write:
+        with open(os.path.join(cdir, "labels.json"), "w") as f:
             f.write(text)
     else:
         sys.stdout.write(text)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv))
+    except HarnessError as e:
+        print(f"OBSERVER_ORACLE_ERROR: {e}", file=sys.stderr)
+        sys.exit(2)
+    except Exception as e:          # an instrument crash is never a label
+        print(f"OBSERVER_ORACLE_ERROR: internal {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(2)

@@ -7,62 +7,84 @@ usage: python3 plants.py TAG_BINARY IEEE_BINARY [--only NAME,...]
        python plants.py twins DIR     (with sympy: the twin labels, see below)
 
 Every plant runs in a scratch copy of this directory (the tree is never
-edited) and states the exit code and output line that must appear. The
-wrapper observer (OBS_WRAP_MODE) runs the real binary (OBS_WRAP_REAL):
+edited) and states the exit code and output line that must appear (and, for
+some, a check of what the run left behind). Counts in expected lines are
+derived from the corpus, never typed (rule 177). Each plant command runs in a
+session of its own and a timeout kills its process group: a MISS, never a
+traceback. The wrapper observer (OBS_WRAP_MODE) runs the real binary
+(OBS_WRAP_REAL) in the scored run's own process group, so the scorer's group
+kill reaches it:
   twin          the honest "perfect" observer: at checkpoint n it answers the
                 labels of the row's TWIN at n, the row as an observer at n can
                 know it (its values up to x_n, the law in force at n continued,
                 later law changes dropped). A fully online perfect observer
                 cannot exist here: settling and whole-sequence questions are
                 about values after n. The twin proves no scored label depends
-                on a law change after its checkpoint.
-  const_false, intblind, spec   rewritten CK readings
+                on a law change after its checkpoint. OBS_WRAP_NAN=1 also
+                prints every NaN as -nan.
+  const_false, intblind, spec   rewritten CK readings; zero_sign flips the
+                runtime's zero sign lines
   osr_bail, jit_bail_body, jit_bail_short, num_body   a string ADD that bails
-                at runtime (or a numeric ADD that does not) put into the loop
-  minus_nan     NaN printed as -nan;  int64_fake  int64 probes answered yes,
-                int64 rows' values printed exactly, readings from the real binary
-  error, silent, jit_off        harness faults
+                at runtime (or a numeric ADD that does not) put into the loop,
+                at an anchor that must occur exactly once (else it refuses)
+  int64_fake    int64 probes answered yes, int64 rows' values printed exactly,
+                readings from the real binary; ieee_split, ieee_reverse  the
+                IEEE probe answered half IEEE (overflow clamps but inf * 0 is
+                NaN, or the reverse)
+  error, silent, jit_off, hang  harness faults (hang: a grandchild that never
+                exits, its pid recorded)
 Exit 0 only when every plant went red, printing `plants: N examined, N red`.
 """
+import hashlib
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENV = os.path.expanduser("~/.local/venvs/oracle/bin/python")
 PREDS = ["converged", "stable", "improving", "oscillating", "diverging", "equilibrium"]
+LOOP_HEAD, GUARD = "        loop while true:\n", "    if m > 0:\n"
 INJECT = {"osr_bail": ("osr", "cw is CW_S + CW_S"), "jit_bail_body": ("jit", "cw is CW_S + CW_S"),
           "num_body": (None, "cw is 1.0 + 2.0")}
+PROBE_ANSWERS = {"int64_fake": {"9223372036854775806": "true", "num_type": "int"},
+                 "ieee_split": {"1e308 * 10": "1e+308 true"}, "ieee_reverse": {"1e308 * 10": "inf false"}}
+PLANT_TIMEOUT = 1800
+
+
+def checked(text, anchor, new):
+    """Inject at an anchor that occurs exactly once, or refuse: never run unplanted."""
+    if text.count(anchor) != 1:
+        sys.exit(f"wrap: refused: the anchor {anchor!r} occurs {text.count(anchor)} time(s), not once")
+    return text.replace(anchor, new)
 
 
 def wrap(args):
     real, mode = os.environ["OBS_WRAP_REAL"], os.environ.get("OBS_WRAP_MODE", "pass")
     d = os.environ.get("OBS_WRAP_DIR", HERE)
     if args[0] == "-e":                       # a probe
-        if mode == "int64_fake" and "9223372036854775806" in args[1]:
-            print("true")
-        elif mode == "int64_fake" and "num_type" in args[1]:
-            print("int")
-        elif mode != "minus_nan":
-            os.execv(real, [real] + args)
-        else:
-            p = subprocess.run([real] + args, capture_output=True, text=True)
-            sys.stdout.write(re.sub(r"\bnan\b", "-nan", p.stdout))
-            sys.exit(p.returncode)
-        sys.exit(0)
+        hit = [v for k, v in PROBE_ANSWERS.get(mode, {}).items() if k in args[1]]
+        if hit:
+            print(hit[0])
+            sys.exit(0)
+        os.execv(real, [real] + args)
     prog = args[0]
     head, tier, form = os.path.basename(prog)[:-5].rsplit(".", 2)
     rid = head.rsplit("@", 1)[0]
     text = open(prog).read()
     if mode in INJECT and form == "loop" and INJECT[mode][0] in (None, tier) and tier != "interp":
-        text = 'CW_S is "s"\n' + text.replace("        loop while true:\n",
-                                              "        loop while true:\n            " + INJECT[mode][1] + "\n", 1)
+        text = 'CW_S is "s"\n' + checked(text, LOOP_HEAD, LOOP_HEAD + "            " + INJECT[mode][1] + "\n")
     if mode == "jit_bail_short" and tier == "jit" and head != "const_5@60":
-        text = 'CW_S is "s"\n' + text.replace("    if m > 0:\n", "    if m > 0:\n        cw is CW_S + CW_S\n", 1)
+        text = 'CW_S is "s"\n' + checked(text, GUARD, GUARD + "        cw is CW_S + CW_S\n")
+    if mode == "hang":                        # a grandchild in this run's process group, never exiting
+        g = subprocess.Popen(["sleep", "600"])
+        open(os.path.join(d, "hang.pid"), "w").write(str(g.pid))
+        g.wait()
     if mode == "error":
         text += "print of undefined_q\n"
     if mode == "silent":
@@ -86,6 +108,8 @@ def wrap(args):
         f = ln.split()
         if f[:1] == ["V"] and exact is not None and len(f) == 3:
             f[2] = str(exact[int(f[1])])
+        if f[:1] == ["S"] and mode == "zero_sign" and len(f) == 4:
+            f[3] = {"true": "false", "false": "true"}.get(f[3], f[3])
         if f[:1] == ["CK"]:
             key = f"{rid}@{f[1]}"
             for i, q in enumerate(PREDS):
@@ -97,9 +121,13 @@ def wrap(args):
                     f[2 + i] = str(not labels[key][q][1]).lower()
                 if f"{key}:{q}" in spec:
                     f[2 + i] = str(spec[f"{key}:{q}"]).lower()
-        out.append(" ".join(f) if f[:1] in (["CK"], ["V"]) else ln)
+        out.append(" ".join(f) if f[:1] in (["CK"], ["V"], ["S"]) else ln)
     text = "\n".join(out) + ("\n" if out else "")
-    sys.stdout.write(re.sub(r"\bnan\b", "-nan", text) if mode == "minus_nan" else text)
+    if os.environ.get("OBS_WRAP_NAN"):
+        text, k = re.subn(r"\bnan\b", "-nan", text)
+        with open(os.path.join(d, "wrap_nan.count"), "a") as f:
+            f.write(f"{k}\n")
+    sys.stdout.write(text)
     sys.stderr.write(p.stderr)
     sys.exit(p.returncode)
 
@@ -107,12 +135,13 @@ def wrap(args):
 def twins(d):
     """twin_labels.json: for every checkpoint n before its row's regime, the
     labels of the row's twin at n (needs sympy: certify.decide gives the
-    twin's properties)."""
+    twin's properties). Law changes are found as derive finds them: any
+    spelling of step but step(n, <integer literal>) is refused."""
     sys.path.insert(0, d)
     import certify
     import derive
     corpus = derive.load_corpus(os.path.join(d, "corpus.json"))
-    defs = {(x["predicate"], x["class"]): x["cite"] for x in corpus["definitions"]}
+    defs = derive.definitions(corpus)
     scored, reported = derive.scored_classes(corpus)
     out = {}
     for r in corpus["rows"]:
@@ -127,9 +156,8 @@ def twins(d):
                     idx += (1 if "x0" in q else 0) + q.get("steps", 0)
                 keep[-1].pop("steps", None)
                 g["pieces"] = keep
-            else:                                     # a step that fires after n never fires
-                g["expr"] = re.sub(r"step\(\s*n\s*,\s*(\d+)\s*\)",
-                                   lambda m: m.group(0) if int(m.group(1)) <= n else "0.0", g["expr"])
+            elif g["kind"] in ("closed", "recur"):     # a step that fires after n never fires
+                g["expr"] = derive.drop_steps_after(g["expr"], n)
             t = dict(r, id=f"{r['id']}~{n}", gen=g, n=n, checkpoints=[n], regime=derive.structural_regime(g))
             kind, v, _detail = certify.decide(t)
             t["props"] = dict(r["props"], limit=None if v["limit"] is None else float(v["limit"]),
@@ -145,8 +173,8 @@ def twins(d):
 def edit_text(d, name, old, new):
     path = os.path.join(d, name)
     text = open(path).read()
-    if old not in text:
-        raise SystemExit(f"plant setup: {name} has no {old!r}")
+    if text.count(old) != 1:
+        raise SystemExit(f"plant setup: {name} has {text.count(old)} of {old!r}, not one")
     open(path, "w").write(text.replace(old, new, 1))
 
 
@@ -175,6 +203,8 @@ def extra_row(d, base, **upd):
 def forge(d, relabel=True):
     """A certifier that vouches for anything: re-key every certificate to the
     rows as they stand, then (relabel) regenerate labels from them."""
+    for m in ("derive", "gen"):
+        sys.modules.pop(m, None)
     sys.path.insert(0, d)
     try:
         import derive as dv
@@ -192,6 +222,10 @@ def forge(d, relabel=True):
         subprocess.run([sys.executable, os.path.join(d, "derive.py"), "--write"], check=True)
 
 
+def certify_in(d):
+    subprocess.run([VENV, os.path.join(d, "certify.py")], check=True, capture_output=True, timeout=600)
+
+
 def shim(d, mode, real, **env):
     path = os.path.join(d, f"obs_{mode}")
     with open(path, "w") as f:
@@ -205,17 +239,96 @@ def shim(d, mode, real, **env):
 
 def swap_spec(d):
     """Count-preserving: per predicate p, one floor verdict made wrong and one
-    wrong tag verdict made right, both labelled true, in every arm."""
+    wrong verdict on a row with no capability made right, both labelled true,
+    in every arm."""
     floor = set(json.load(open(os.path.join(d, "floor.json")))["verdicts"])
     labels = json.load(open(os.path.join(d, "labels.json")))
+    capped = {r["id"] for r in json.load(open(os.path.join(d, "corpus.json")))["rows"] if r.get("capability")}
     spec = {}
     for q in ("converged", "oscillating"):
-        right = [k for k, v in labels.items() if v[q][1] and f"interp/straight {k} {q} {v[q][0]}" in floor
-                 and not k.startswith(("ieee", "int64"))]
-        wrong = [k for k, v in labels.items() if v[q][1] and f"interp/straight {k} {q} {v[q][0]}" not in floor
-                 and not k.startswith(("ieee", "int64"))]
+        cand = [k for k, v in labels.items() if v[q][1] and k.rsplit("@", 1)[0] not in capped]
+        right = [k for k in cand if f"interp/straight {k} {q} {labels[k][q][0]}" in floor]
+        wrong = [k for k in cand if f"interp/straight {k} {q} {labels[k][q][0]}" not in floor]
         spec[f"{right[0]}:{q}"], spec[f"{wrong[0]}:{q}"] = False, True
     return json.dumps(spec)
+
+
+def stamp_anchor(d, make):
+    """A local anchor for the scratch copy's recipe, in a cache inside d
+    (XDG_CACHE_HOME): make(path) writes its binary; the stamp is intact."""
+    recipe = hashlib.sha256(open(os.path.join(d, "build_anchor.sh"), "rb").read()).hexdigest()
+    a = os.path.join(d, "cache", "eigs-oracle-anchor", recipe)
+    os.makedirs(a)
+    b = os.path.join(a, "eigenscript")
+    make(b)
+    sha = hashlib.sha256(open(b, "rb").read()).hexdigest()
+    json.dump({"tag": "v0.46.0", "binary": b, "binary_sha256": sha, "recipe_sha256": recipe},
+              open(os.path.join(a, "anchor.json"), "w"))
+    os.environ["XDG_CACHE_HOME"] = os.path.join(d, "cache")
+
+
+def edit_comment(src):
+    """The anchor with another toolchain's .comment section: other bytes, same behaviour."""
+    def make(b):
+        with open(b + ".comment", "wb") as f:
+            f.write(b"GCC: (Debian 14.2.0-19) 14.2.0\0")
+        subprocess.run(["objcopy", "--update-section", f".comment={b}.comment", src, b], check=True)
+    return make
+
+
+def const_false_binary(src, d):
+    """An 'anchor' whose observer answers false everywhere: changed behaviour."""
+    def make(b):
+        with open(b, "w") as f:
+            f.write(f"#!/bin/sh\nOBS_WRAP_MODE=const_false OBS_WRAP_REAL={src} OBS_WRAP_DIR={d}"
+                    f" exec {sys.executable} {os.path.join(d, 'plants.py')} wrap \"$@\"\n")
+        os.chmod(b, 0o755)
+    return make
+
+
+def hang_gone(d):
+    """None when the hanging run's grandchild is gone (or a zombie), else why."""
+    try:
+        pid = int(open(os.path.join(d, "hang.pid")).read())
+    except (OSError, ValueError):
+        return "the hanging wrapper recorded no pid"
+    for _ in range(50):
+        try:
+            cmd, stat = open(f"/proc/{pid}/cmdline", "rb").read(), open(f"/proc/{pid}/stat").read()
+        except OSError:
+            return None
+        if cmd != b"sleep\x00600\x00" or stat.rsplit(")", 1)[1].split()[0] in ("Z", "X"):
+            return None
+        time.sleep(0.1)
+    os.kill(pid, signal.SIGKILL)
+    return f"pid {pid} (sleep 600, the hung program's grandchild) survived the scorer's timeout; killed now"
+
+
+def nan_rewritten(d):
+    try:
+        n = sum(int(k) for k in open(os.path.join(d, "wrap_nan.count")).read().split())
+    except (OSError, ValueError):
+        n = 0
+    return None if n > 0 else "no NaN was printed as -nan: the control ran unplanted"
+
+
+def labels_beside(d):
+    """None when derive.py --corpus wrote labels for exactly that corpus beside it."""
+    try:
+        got = list(json.load(open(os.path.join(d, "one", "labels.json"))))
+    except (OSError, ValueError) as e:
+        return f"no labels.json beside the given corpus: {e}"
+    want = [f"const_5@{n}" for n in row(json.load(open(os.path.join(d, "one", "corpus.json"))), "const_5")["checkpoints"]]
+    return None if got == want else f"labels for {got}, expected {want}"
+
+
+def counts():
+    """What the expected lines count, derived from the corpus (rule 177): the
+    capability-less checkpoints (the runs per JIT tier on the clamp tag
+    binary) and the rows per capability."""
+    rows = json.load(open(os.path.join(HERE, "corpus.json")))["rows"]
+    return (sum(len(r["checkpoints"]) for r in rows if not r.get("capability")),
+            {c: sum(1 for r in rows if r.get("capability") == c) for c in ("ieee", "int64")})
 
 
 # --- the plants -----------------------------------------------------------------
@@ -224,11 +337,13 @@ def plants(tag, ieee):
     F = ["--floor", "{d}/floor.json"]
     sc = lambda *a: ["python3", "{d}/score.py", *a]
     cf = ["{venv}", "{d}/certify.py"]
+    N, caps = counts()
+    capline = rf"CAPABILITY ROWS .*: {caps['ieee']} run, {caps['int64']} skipped, 0 wrong.*"
     gut_regime = lambda d: (edit_text(d, "derive.py", 'if n < row["regime"]:', "if False:"),
                             edit_text(d, "derive.py", 'int(n) < rows[rid]["regime"]', "False"),
                             subprocess.run(["python3", f"{d}/derive.py", "--write"], check=True))
     return [
-        # name, what is planted, setup(d), argv, expected rc, line that must appear
+        # name, what is planted, setup(d), argv, expected rc, line that must appear[, post(d) -> None | why not]
         ("SWAP", "count-preserving swap: one floor verdict wrong, one wrong verdict right, per predicate",
          lambda d: shim(d, "spec", tag, OBS_WRAP_SPEC=swap_spec(d)), sc("{d}/obs_spec", *F), 1, r"FLOOR VIOLATION .*"),
         ("INTBLIND", "every scored verdict on int rows reversed",
@@ -236,7 +351,7 @@ def plants(tag, ieee):
         ("twin-tag", "CONTROL: the twin (honest perfect) observer, tag binary",
          lambda d: shim(d, "twin", tag), sc("{d}/obs_twin", *F), 0, r"exit 0: no gate failed.*"),
         ("twin-ieee", "CONTROL: the twin observer on the IEEE prototype, capability rows run",
-         lambda d: shim(d, "twin", ieee), sc("{d}/obs_twin", *F), 0, r"CAPABILITY ROWS .*: 5 run, 2 skipped, 0 wrong.*"),
+         lambda d: shim(d, "twin", ieee), sc("{d}/obs_twin", *F), 0, capline),
         ("regime-gutted", "derive scores MATH before a row's law change; the twin observer must then FAIL",
          lambda d: (gut_regime(d), shim(d, "twin", ieee)), sc("{d}/obs_twin", *F), 1,
          r"CAPABILITY WRONG \S+ ieee_inf_recover@2 diverging.*"),
@@ -248,15 +363,35 @@ def plants(tag, ieee):
          lambda d: (edit_json(d, "corpus.json", lambda c: row(c, "level_shift").update(checkpoints=[50, 103, 160])),
                     forge(d, relabel=False)), ["python3", "{d}/derive.py"], 2,
          r"level_shift@50.converged: a CONVENTION verdict before the law changes at x_100 depends on later values.*"),
+        ("step-spelling", "level_shift's law change spelled step(n, 100.0): refused, never read as regime 0 (rule 186)",
+         lambda d: edit_json(d, "corpus.json", lambda c: row(c, "level_shift")["gen"].update(expr="1.0 + step(n, 100.0)")),
+         sc(tag), 2, r"level_shift: '1.0 \+ step\(n, 100.0\)': a law change must be spelled step\(n, <integer literal>\).*"),
+        ("step-spelling-twins", "the same spelling through plants.py twins",
+         lambda d: edit_json(d, "corpus.json", lambda c: row(c, "level_shift")["gen"].update(expr="1.0 + step(n, 100.0)")),
+         ["{venv}", "{d}/plants.py", "twins", "{d}"], 2, r"a law change must be spelled step\(n, <integer literal>\).*"),
         ("checkpoint-hash", "checkpoint 2 added to ieee_inf without re-certifying",
          lambda d: edit_json(d, "corpus.json", lambda c: row(c, "ieee_inf").update(checkpoints=[2, 5, 30])),
          sc(tag), 2, r"ieee_inf: stale certificate.*"),
         ("capability-wrong", "the twin observer with one ieee verdict reversed",
          lambda d: shim(d, "twin", ieee, OBS_WRAP_SPEC='{"ieee_nan@30:diverging": true}'),
          sc("{d}/obs_twin", *F), 1, r"CAPABILITY WRONG \S+ ieee_nan@30 diverging.*"),
-        ("minus-nan", "the IEEE prototype printing NaN as -nan, --expect ieee",
-         lambda d: shim(d, "minus_nan", ieee), sc("{d}/obs_minus_nan", "--expect", "ieee"), 1,
-         r"CAPABILITY ROWS .*: 5 run, 2 skipped, [1-9]\d* wrong.*"),
+        ("capability-int64", "geo_decay_0.5 tagged int64 (it would drop out of scoring and the floor)",
+         lambda d: edit_json(d, "corpus.json", lambda c: row(c, "geo_decay_0.5").update(capability="int64")),
+         sc(tag), 2, r"geo_decay_0.5: capability 'int64' declared, but the values it feeds the runtime need None.*"),
+        ("minus-nan", "CONTROL: the twin observer on the IEEE prototype printing every NaN as -nan, --expect ieee",
+         lambda d: shim(d, "twin", ieee, OBS_WRAP_NAN="1"), sc("{d}/obs_twin", "--expect", "ieee"), 0, capline,
+         nan_rewritten),
+        ("reported-split", "the twin observer on the IEEE prototype, jit/loop reading a REPORTED verdict"
+         " (ieee_inf_recover@2 oscillating) the other arms do not",
+         lambda d: shim(d, "twin", ieee, OBS_WRAP_SPEC='{"ieee_inf_recover@2:oscillating": true}',
+                        OBS_WRAP_ONLY="jit/loop"),
+         sc("{d}/obs_twin"), 1, r"FINDING ieee_inf_recover@2 oscillating: .*jit/loop=true.*"),
+        ("ieee-split", "IEEE probe: 1e308 * 10 clamps but inf * 0 is NaN",
+         lambda d: shim(d, "ieee_split", tag), sc("{d}/obs_ieee_split"), 2,
+         r"mixed IEEE behaviour: the IEEE probe printed '1e\+308 true'.*"),
+        ("ieee-reverse", "IEEE probe: 1e308 * 10 is inf but inf * 0 is not NaN",
+         lambda d: shim(d, "ieee_reverse", tag), sc("{d}/obs_ieee_reverse"), 2,
+         r"mixed IEEE behaviour: the IEEE probe printed 'inf false'.*"),
         ("expect-absent", "--expect ieee on the clamp binary", None, sc(tag, "--expect", "ieee"), 1,
          r"expected and absent: \['ieee'\].*"),
         ("int64-fake", "a float runtime whose int64 probes pass and whose int64 values print exactly",
@@ -267,12 +402,18 @@ def plants(tag, ieee):
         ("self-anchored", "--write-floor from the const-false observer (the critic's G4)",
          lambda d: shim(d, "const_false", tag), sc("{d}/obs_const_false", "--write-floor", "{d}/floor.json"), 2,
          r"--write-floor measures only the anchor build_anchor.sh builds.*"),
-        ("anchor-missing", "the recipe's fixed path holds no anchor",
-         lambda d: edit_text(d, "build_anchor.sh", "DIR=/tmp/eigs-oracle-anchor/v0.46.0", "DIR=/tmp/eigs-oracle-anchor/absent"),
+        ("anchor-missing", "no anchor built for the recipe (an empty cache)",
+         lambda d: os.environ.update(XDG_CACHE_HOME=os.path.join(d, "nocache")),
          sc(tag, *F), 2, r"no floor anchor at \S+: run bash tools/observer_oracle/build_anchor.sh.*"),
-        ("recipe-changed", "the recipe edited after the anchor was built",
+        ("recipe-changed", "the recipe edited after the floor was measured",
          lambda d: edit_text(d, "build_anchor.sh", "set -euo pipefail", "set -euo pipefail  # edited"),
-         sc(tag, *F), 2, r"not what build_anchor.sh as it stands builds.*"),
+         sc(tag, *F), 2, r"was measured on the anchor of another recipe.*"),
+        ("anchor-comment", "CONTROL: the anchor rebuilt with another toolchain's .comment (objcopy): other"
+         " bytes, the same verdicts",
+         lambda d: stamp_anchor(d, edit_comment(tag)), sc(tag, *F), 0,
+         r"the list matches; binary sha256 \w+ differs from the floor's .*"),
+        ("anchor-behaviour", "an anchor whose observer behaves differently (answers false everywhere)",
+         lambda d: stamp_anchor(d, const_false_binary(tag, d)), sc(tag, *F), 2, r"is not its anchor's measurement.*"),
         ("waiver-file", "a hand-added waivers.json", lambda d: open(os.path.join(d, "waivers.json"), "w").write(
             json.dumps({"waivers": [{"verdict": "interp/loop const_5@60 converged CONVENTION", "reason": "x"}]})),
          sc(tag, *F), 2, r"waivers.json: waivers are removed by design.*"),
@@ -285,29 +426,54 @@ def plants(tag, ieee):
         ("floor-edited", "one verdict removed from floor.json by hand",
          lambda d: edit_json(d, "floor.json", lambda f: f["verdicts"].pop(7)), sc(tag, *F), 2,
          r"0 listed verdict\(s\) the anchor gets wrong .*1 right one\(s\) missing.*"),
-        ("floor-binary", "floor.json names another anchor binary",
-         lambda d: edit_json(d, "floor.json", lambda f: f["anchor"].update(binary_sha256="0" * 64)), sc(tag, *F), 2,
-         r"was measured on another anchor.*"),
         ("floor-inputs-moved", "CONTROL: corpus `about` text edited; the re-measured verdicts still match",
          lambda d: edit_json(d, "corpus.json", lambda c: c.update(about=c["about"] + " (edited)")),
          sc(tag, *F), 0, r"the list matches.*"),
+        ("slot-path", "`when is x` back in the loop form's read: x interrogated, so the loop arms grade the"
+         " name path", lambda d: edit_text(d, "score.py", '"        " + ck_line(c, ys, "loop")',
+                                           '"        " + ck_line(c, ys, "straight")'),
+         sc(tag), 2, r"interp/loop: this arm grades x through OBSERVE_ASSIGN_LOCAL and PREDICATE_SLOT, but its"
+                     r" EIGS_DUMP_BC listing of run_row reads 6 predicate\(s\) through \['PREDICATE_NAME'\].*"),
         ("osr_bail", "a runtime-bailing string ADD as the osr loop body's first statement (the critic's cwrap)",
-         lambda d: shim(d, "osr_bail", tag), sc("{d}/obs_osr_bail"), 2, r"VACUOUS: 84 JIT-tier run\(s\).*"),
+         lambda d: shim(d, "osr_bail", tag), sc("{d}/obs_osr_bail"), 2, rf"VACUOUS: {N} JIT-tier run\(s\).*"),
         ("jit_bail_body", "the same in the jit tier", lambda d: shim(d, "jit_bail_body", tag),
-         sc("{d}/obs_jit_bail_body"), 2, r"VACUOUS: 84 JIT-tier run\(s\).*"),
+         sc("{d}/obs_jit_bail_body"), 2, rf"VACUOUS: {N} JIT-tier run\(s\).*"),
         ("jit_bail_short", "a bailing ADD before the loop in every jit run but one",
-         lambda d: shim(d, "jit_bail_short", tag), sc("{d}/obs_jit_bail_short"), 2, r"VACUOUS: 83 JIT-tier run\(s\).*"),
+         lambda d: shim(d, "jit_bail_short", tag), sc("{d}/obs_jit_bail_short"), 2, rf"VACUOUS: {N - 1} JIT-tier run\(s\).*"),
         ("num_body", "CONTROL: a numeric ADD as the first body statement in both JIT tiers must still witness",
-         lambda d: shim(d, "num_body", tag), sc("{d}/obs_num_body"), 0, r"jit: 83 of 84 runs witness a native body.*"),
+         lambda d: shim(d, "num_body", tag), sc("{d}/obs_num_body"), 0, rf"jit: \d+ of {N} runs witness a native body.*"),
+        ("wrap-anchor", "the loop's header respelled, so the bail plants' anchor is gone: wrap must refuse,"
+         " not run unplanted", lambda d: (edit_text(d, "score.py", '"        loop while true:"', '"        loop while 1 == 1:"'),
+                                          shim(d, "osr_bail", tag)),
+         sc("{d}/obs_osr_bail"), 2, r"wrap: refused: the anchor '        loop while true:\\n' occurs 0 time\(s\).*"),
         ("vacuous-jit", "no warm-up calls: the jit tier never compiles run_row",
          lambda d: edit_text(d, "score.py", 'WARMUP = {"interp": 0, "jit": 50,', 'WARMUP = {"interp": 0, "jit": 0,'),
-         sc(tag), 2, r"VACUOUS: 84 JIT-tier run\(s\).*"),
+         sc(tag), 2, rf"VACUOUS: {N} JIT-tier run\(s\).*"),
         ("vacuous-osr", "EIGS_JIT_OSR_OFF=1 in the osr tier: no OSR thunk",
          lambda d: edit_text(d, "score.py", '"osr": {"EIGS_JIT_OSR_THRESHOLD": "1"}',
                              '"osr": {"EIGS_JIT_OSR_THRESHOLD": "1", "EIGS_JIT_OSR_OFF": "1"}'),
-         sc(tag), 2, r"VACUOUS: 84 JIT-tier run\(s\).*"),
+         sc(tag), 2, rf"VACUOUS: {N} JIT-tier run\(s\).*"),
         ("jit-off-wrapper", "the binary ignores the tier and runs with EIGS_JIT_OFF=1",
          lambda d: shim(d, "jit_off", tag), sc("{d}/obs_jit_off"), 2, r"cannot witness the tier.*"),
+        ("env-entry-threshold", "CONTROL: EIGS_JIT_ENTRY_THRESHOLD=1 exported by the caller: the tiers"
+         " scrub it, so the scores are the unplanted run's",
+         lambda d: os.environ.update(EIGS_JIT_ENTRY_THRESHOLD="1"), sc(tag), 0, r"SAME:^HEADLINE.*"),
+        ("env-jit-off", "CONTROL: EIGS_JIT_OFF=1 exported by the caller: scrubbed the same way",
+         lambda d: os.environ.update(EIGS_JIT_OFF="1"), sc(tag), 0, r"SAME:^HEADLINE.*"),
+        ("hang", "a program whose grandchild never exits, a 3 s row timeout: the run fails, and the scorer"
+         " kills the whole process group (no orphan on a 4 GB box)",
+         lambda d: (edit_text(d, "score.py", "ROW_TIMEOUT = 120", "ROW_TIMEOUT = 3"), shim(d, "hang", tag)),
+         sc("{d}/obs_hang"), 2, r"cannot run \S+: .*timed out after 3 seconds.*", hang_gone),
+        ("zero-sign", "the runtime's zero sign lines flipped (it would hold -0.0 where the generator holds 0.0)",
+         lambda d: shim(d, "zero_sign", tag), sc("{d}/obs_zero_sign"), 2,
+         r"runtime=0 \(sign bit True\) generator=0.0 \(values must agree in every bit\).*"),
+        ("intmin-literal", "CONTROL: an int row x <- x * INT64_MIN + 0 from 0: the spliced INT64_MIN literal"
+         " must keep its parentheses (x_1 = 0, not -1)",
+         lambda d: (edit_json(d, "corpus.json", keep_rows(extra=extra_row(d, "int_counter", id="intmin_a",
+             gen={"kind": "affine", "x0": 0, "a": -2 ** 63, "b": 0, "int": True}, n=10, checkpoints=[10],
+             props={"limit": 0.0, "tends_to": None, "bounded": True, "deterministic": True}))),
+                    certify_in(d), subprocess.run(["python3", f"{d}/derive.py", "--write"], check=True)),
+         sc(tag), 0, r"observer oracle exit 0: no gate failed.*"),
         ("double-scored", "converged scored against MATH and CONVENTION (the reported flag removed)",
          lambda d: edit_json(d, "corpus.json", lambda c: [x.pop("reported", None) for x in c["definitions"]]),
          sc(tag), 2, r"two scored definitions.*"),
@@ -326,14 +492,12 @@ def plants(tag, ieee):
          lambda d: edit_text(d, "reference.py", "    return max(w) - min(w) <= tau(w[-1])\n",
                              "    return abs(w[-1] - w[-2]) <= tau(w[-1])\n"),
          sc(tag), 0, r"DIFF:^  converged .*"),
-        ("G3", "bare predicate read (the harness change also moves the anchor's re-measured floor)",
+        ("G3", "bare predicate read: the opcode gate sees no PREDICATE_NAME/PREDICATE_SLOT on x",
          lambda d: edit_text(d, "score.py", 'return f"{pred} of x"', 'return f"{pred}"'),
-         sc(tag, *F), 2, r"is not its anchor's measurement.*"),
-        ("G3-nofloor", "bare predicate read, no floor: the loop form's last assignment is i, not x",
-         lambda d: edit_text(d, "score.py", 'return f"{pred} of x"', 'return f"{pred}"'),
-         sc(tag), 1, r"FINDING \S+ .*"),
+         sc(tag), 2, r"interp/straight: this arm grades x through OBSERVE_ASSIGN and PREDICATE_NAME, but its"
+                     r" EIGS_DUMP_BC listing of <module> reads \d+ predicate\(s\) through \['PREDICATE'\].*"),
         ("G4a", "missing binary", None, sc("/nonexistent/eigenscript"), 2, r"binary not found.*"),
-        ("G4b", "/bin/false", None, sc("/bin/false"), 2, r"number probe.*"),
+        ("G4b", "/bin/false", None, sc("/bin/false"), 2, r"IEEE probe .* printed '', not 'inf true'.*"),
         ("G4c", "a program that errors (probes pass)", lambda d: shim(d, "error", tag), sc("{d}/obs_error"), 2,
          r"program failed \(rc=1\).*"),
         ("G4d", "a binary that prints nothing (probes pass)", lambda d: shim(d, "silent", tag), sc("{d}/obs_silent"), 2,
@@ -344,14 +508,15 @@ def plants(tag, ieee):
                                                                  "    return format(v, '.10g')\n"),
          sc(tag), 2, r"values must agree in every bit.*"),
         ("P-off", "straight-form read emitted before x_i is assigned",
-         lambda d: (edit_text(d, "score.py", "        if i in cks:\n            out.append(ck_line(i, ys))\n", ""),
+         lambda d: (edit_text(d, "score.py", '        if i in cks:\n            out.append(ck_line(i, ys, "straight"))\n', ""),
                     edit_text(d, "score.py", "        out.append(f\"x is {literal(s[1])}\"",
-                              "        out += [ck_line(i, ys)] if i in cks else []\n        out.append(f\"x is {literal(s[1])}\"")),
+                              "        out += [ck_line(i, ys, 'straight')] if i in cks else []\n"
+                              "        out.append(f\"x is {literal(s[1])}\"")),
          sc(tag), 2, r"read after value.*"),
         ("late-read-straight", "a checkpoint c < n read after x_{c+1} is assigned, before its V line",
          lambda d: (edit_text(d, "score.py", "        if i in cks:\n", "        if i in cks and i == row[\"n\"]:\n"),
                     edit_text(d, "score.py", "        out.append(f'print of f\"V {i} {{x}}\"')",
-                              "        out += [ck_line(i - 1, ys)] if i - 1 in cks and i - 1 < row[\"n\"] else []\n"
+                              "        out += [ck_line(i - 1, ys, 'straight')] if i - 1 in cks and i - 1 < row[\"n\"] else []\n"
                               "        out.append(f'print of f\"V {i} {{x}}\"')")),
          sc(tag), 2, r"\S+: checkpoint \d+ read after \['\d+'\] assignments,\s+not \d+.*"),
         ("late-read-loop", "loop-form read after one assignment too many",
@@ -373,9 +538,18 @@ def plants(tag, ieee):
         ("improving-bounded", "the boundedness clause of improving dropped",
          lambda d: edit_text(d, "derive.py", "return (ok and bounded), why", "return ok, why"),
          sc(tag), 2, r"labels.json differs from derive.py.*"),
+        ("midpoint", "CONTROL: a cycle of 9.5e307 and 1e308: the tail midpoint must not overflow, so neither"
+         " converged nor stable is labelled true",
+         lambda d: (edit_json(d, "corpus.json", keep_rows(extra=extra_row(d, "period2_wide", id="huge_cycle",
+             gen={"kind": "cycle", "values": [9.5e307, 1e308]}, n=20, checkpoints=[20]))), certify_in(d)),
+         ["python3", "{d}/derive.py"], 0,
+         r'"huge_cycle@20": \{"converged": \["CONVENTION", false.*"stable": \["CONVENTION", false.*'),
         ("stale-cert", "a row edited without re-certifying",
          lambda d: edit_json(d, "corpus.json", lambda c: row(c, "geo_decay_0.5")["gen"].update(a=0.6)),
          sc(tag), 2, r"geo_decay_0.5: stale certificate.*"),
+        ("stale-tolerance", "derive's RTOL retuned (certify.refute reads it) without re-certifying",
+         lambda d: edit_text(d, "derive.py", "RTOL = 1e-3 ", "RTOL = 1e-17 "),
+         sc(tag), 2, r"stale certificate.*RTOL/SCALE.*"),
         ("ENV-step", "gen.ENV['step'] redefined", lambda d: edit_text(d, "gen.py", "1.0 if n >= c else 0.0",
                                                                    "1.0 if n > c else 0.0"),
          sc(tag), 2, r"stale certificate.*"),
@@ -404,6 +578,12 @@ def plants(tag, ieee):
              gen={"kind": "closed", "expr": "(1.0 + 1e-17) ** n"},
              props={"limit": None, "tends_to": "+inf", "bounded": False, "deterministic": True}))),
          cf, 1, r"REFUSED one_plus_tiny: float-degenerate.*"),
+        ("cert-repelling-affine", "x <- 3x - 0.2 from 0.1 (exact decimal fixed point 1/10) stated -> 0.1: the"
+         " floats the runtime is fed run away (x_60 = 3.9e11, inf from x_682)",
+         lambda d: edit_json(d, "corpus.json", keep_rows(extra=extra_row(d, "halving_to_5", id="repel_fp_0.1",
+             gen={"kind": "affine", "x0": 0.1, "a": 3.0, "b": -0.2},
+             props={"limit": 0.1, "tends_to": None, "bounded": True, "deterministic": True}))),
+         cf, 1, r"REFUSED repel_fp_0.1: \|a\| = 3 > 1: .*repelling fixed point.*"),
         ("cert-parity", "1/ln(n+2) + 0.001 (-1)^(n^2+n) stated as having no limit",
          lambda d: edit_json(d, "corpus.json", keep_rows(extra=extra_row(d, "inv_log", id="parity_inv_log",
              gen={"kind": "closed", "expr": "1.0 / math.log(n + 2) + 0.001 * (-1.0) ** (n * n + n)"},
@@ -457,17 +637,29 @@ def plants(tag, ieee):
                                                           row(c, "level_shift")["gen"].update(expr="1.0 + step(n, 25000)"),
                                                           row(c, "level_shift").update(regime=25000, n=30000, checkpoints=[30000]))),
          cf, 0, r"certified: symbolic=1,.*refused=0.*"),
+        ("cert-positional", "certify.py given a corpus path without --corpus: a usage error, the repo's"
+         " certificate untouched", None, ["{venv}", "{d}/certify.py", "{d}/corpus.json"], 2,
+         r"usage: certify.py \[--corpus PATH\].*",
+         lambda d: None if open(os.path.join(d, "certificate.json")).read() == open(os.path.join(HERE, "certificate.json")).read()
+         else "certificate.json was rewritten"),
+        ("derive-corpus", "derive.py --corpus writes labels beside THAT corpus (a one-row copy here)",
+         lambda d: (os.makedirs(os.path.join(d, "one")),
+                    edit_json(d, "corpus.json", keep_rows("const_5")),
+                    shutil.copy(os.path.join(d, "corpus.json"), os.path.join(d, "one", "corpus.json")),
+                    certify_in(d), shutil.copy(os.path.join(d, "certificate.json"), os.path.join(d, "one"))),
+         ["python3", "{d}/derive.py", "--corpus", "{d}/one/corpus.json", "--write"], 0, r"^$", labels_beside),
     ]
 
 
 def run_plants(tag, ieee, only):
-    table, red = plants(tag, ieee), 0
+    from score import run_group
+    table, red, base = plants(tag, ieee), 0, {}
     if only:
         table = [p for p in table if p[0] in only]
     names = [p[0] for p in table]
     if not table or len(set(names)) != len(names) or (only and len(table) != len(only)):
         raise SystemExit(f"plant table empty, with duplicate names, or missing a name asked for: {names}")
-    for name, what, setup, argv, rc_want, line in table:
+    for name, what, setup, argv, rc_want, line, *post in table:
         with tempfile.TemporaryDirectory(prefix=f"plant_{name}_") as tmp:
             d = os.path.join(tmp, "oracle")
             shutil.copytree(HERE, d, ignore=shutil.ignore_patterns("__pycache__"))
@@ -475,23 +667,33 @@ def run_plants(tag, ieee, only):
             try:
                 if setup:
                     setup(d)
-                cmd = [a.format(d=d, venv=VENV) for a in argv]
-                p = subprocess.run(cmd, capture_output=True, text=True, timeout=1800, cwd=d)
+                p = run_group([a.format(d=d, venv=VENV) for a in argv], PLANT_TIMEOUT, cwd=d)
+                rc, out = p.returncode, p.stdout + p.stderr
+            except subprocess.TimeoutExpired:
+                rc, out = "timeout", f"MISS: timed out after {PLANT_TIMEOUT} s; its process group was killed"
             finally:
                 os.environ.clear()
                 os.environ.update(saved)
-            out = p.stdout + p.stderr
-            if line.startswith("DIFF:"):            # red iff the selected line moved from the unplanted run
-                base = subprocess.run([a.format(d=HERE, venv=VENV) for a in argv], capture_output=True,
-                                      text=True, timeout=900, cwd=HERE).stdout
-                m, b = re.search(line[5:], out, re.M), re.search(line[5:], base, re.M)
-                m = m if m and b and m.group(0) != b.group(0) else None
+            if line.startswith(("DIFF:", "SAME:")):  # red iff the selected line moved (DIFF) or held (SAME)
+                key = tuple(argv)
+                if key not in base:
+                    try:
+                        base[key] = run_group([a.format(d=HERE, venv=VENV) for a in argv], PLANT_TIMEOUT, cwd=HERE).stdout
+                    except subprocess.TimeoutExpired:
+                        base[key] = ""
+                m, b = re.search(line[5:], out, re.M), re.search(line[5:], base[key], re.M)
+                moved = m is not None and b is not None and m.group(0) != b.group(0)
+                m = m if b is not None and (moved if line.startswith("DIFF:") else not moved) else None
             else:
-                m = re.search(line, out)
-            ok = p.returncode == rc_want and m is not None
+                m = re.search(line, out, re.M)
+            try:
+                why = post[0](d) if post and rc == rc_want and m is not None else None
+            except Exception as e:          # a broken post-check is a MISS, never a crash
+                why = f"post-check raised {type(e).__name__}: {e}"
+            ok = rc == rc_want and m is not None and why is None
             red += ok
-            shown = m.group(0) if m else (out.strip().splitlines() or [""])[-1][:160]
-            print(f"{'RED ' if ok else 'MISS'} {name:22} rc={p.returncode} (want {rc_want})  {what}\n"
+            shown = why or (m.group(0) if m else (out.strip().splitlines() or [""])[-1][:160])
+            print(f"{'RED ' if ok else 'MISS'} {name:22} rc={rc} (want {rc_want})  {what}\n"
                   f"     {shown}", flush=True)
     print(f"plants: {len(table)} examined, {red} red (controls included: green is their red)")
     return 0 if red == len(table) else 1
@@ -501,7 +703,13 @@ if __name__ == "__main__":
     if sys.argv[1:2] == ["wrap"]:
         wrap(sys.argv[2:])
     if sys.argv[1:2] == ["twins"]:
-        sys.exit(twins(sys.argv[2]))
+        sys.path.insert(0, sys.argv[2])
+        from gen import HarnessError
+        try:
+            sys.exit(twins(sys.argv[2]))
+        except HarnessError as e:
+            print(f"OBSERVER_ORACLE_ERROR: {e}", file=sys.stderr)
+            sys.exit(2)
     args = sys.argv[1:]
     only = set()
     if "--only" in args:
