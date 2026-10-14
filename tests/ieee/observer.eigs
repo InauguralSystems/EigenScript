@@ -46,17 +46,24 @@ define const_1e308() as:
 
 define growth_to_inf(u) as:
     local x is 1.0
-    if u:
-        unobserved:
-            for k in range of 3000:
-                x is 1.0
-                for j in range of 30:
-                    x is x * 1e20
-    else:
-        for j in range of 30:
-            x is x * 1e20
+    for j in range of 30:
+        x is x * 1e20
     local t is trajectory of x
     return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+# The unobserved: twins are straight-line `loop while` bodies run past the
+# default OSR threshold (5000), the shape that reaches the JIT's value sampler.
+# They read no `where`/`why`: an interrogative in the function takes its
+# observe ops off the sampler path (measured), so those slots hold 0.
+define growth_to_inf_unobs(u) as:
+    local x is 1.0
+    local k is 0
+    unobserved:
+        loop while k < 20000:
+            x is x * 1e20
+            k is k + 1
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, 0, 0]
 
 define const_inf() as:
     local x is inf
@@ -67,19 +74,26 @@ define const_inf() as:
 
 define alt_one_inf(u, end_at_inf) as:
     local x is 1.0
-    if u:
-        unobserved:
-            for k in range of 4000:
-                x is inf
-                x is 1.0
-    else:
-        for k in range of 40:
-            x is inf
-            x is 1.0
+    for k in range of 40:
+        x is inf
+        x is 1.0
     if end_at_inf:
         x is inf
     local t is trajectory of x
     return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+define alt_one_inf_unobs(u, end_at_inf) as:
+    local x is 1.0
+    local k is 0
+    unobserved:
+        loop while k < 20000:
+            x is inf
+            x is 1.0
+            k is k + 1
+    if end_at_inf:
+        x is inf
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, 0, 0]
 
 define inf_then_const() as:
     local x is inf
@@ -101,17 +115,26 @@ define nan_interleaved(u) as:
     local x is 1.0
     for k in range of 40:
         x is 1.0 + k
-    if u:
-        unobserved:
-            for k in range of 4000:
-                x is q
-                x is 5
-    else:
-        for k in range of 20:
-            x is q
-            x is 5
+    for k in range of 20:
+        x is q
+        x is 5
     local t is trajectory of x
     return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, where is x, why is x]
+
+define nan_interleaved_unobs(u) as:
+    local x is 1.0
+    local k is 0
+    loop while k < 40:
+        x is 1.0 + k
+        k is k + 1
+    k is 0
+    unobserved:
+        loop while k < 20000:
+            x is q
+            x is 5
+            k is k + 1
+    local t is trajectory of x
+    return [report of x, converged of x, diverging of x, stable of x, equilibrium of x, improving of x, oscillating of x, t.rel, t.raw, 0, 0]
 
 define step_table() as:
     local x is 1.0
@@ -144,6 +167,8 @@ check of ["const_1e308_converged", (c8[0] == "converged") and c8[1] and (not c8[
 
 for u in [false, true]:
     g is growth_to_inf of u
+    if u:
+        g is growth_to_inf_unobs of u
     check of [f"growth_to_inf_diverging_u{u}", (g[0] == "diverging") and g[2], g[0]]
     check of [f"growth_to_inf_finite_u{u}", finite_obs of g, str of [g[7], g[8]]]
 
@@ -153,9 +178,13 @@ check of ["const_inf_finite", finite_obs of ci, str of [ci[7], ci[8]]]
 
 for u in [false, true]:
     a1 is alt_one_inf of [u, false]
+    if u:
+        a1 is alt_one_inf_unobs of [u, false]
     check of [f"alt_1_inf_at_1_oscillating_u{u}", (a1[0] == "oscillating") and a1[6], a1[0]]
     check of [f"alt_1_inf_finite_u{u}", finite_obs of a1, str of [a1[7], a1[8]]]
     ai is alt_one_inf of [u, true]
+    if u:
+        ai is alt_one_inf_unobs of [u, true]
     check of [f"alt_1_inf_at_inf_oscillating_u{u}", (ai[0] == "oscillating") and ai[6], ai[0]]
 
 ic is inf_then_const of null
@@ -168,6 +197,8 @@ check of ["nan_current_finite", finite_obs of nc, str of [nc[7], nc[8], nc[9], n
 
 for u in [false, true]:
     ni is nan_interleaved of u
+    if u:
+        ni is nan_interleaved_unobs of u
     check of [f"nan_interleaved_converged_u{u}", (ni[0] == "converged") and ni[1], ni[0]]
     check of [f"nan_interleaved_finite_u{u}", finite_obs of ni, str of [ni[7], ni[8]]]
 
