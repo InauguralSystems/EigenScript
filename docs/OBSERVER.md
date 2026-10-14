@@ -218,11 +218,45 @@ relative step remains the primary contract.
 
 ### Graded against mathematics (`make observer-oracle`, #1746)
 
-`make observer-oracle` scores the six predicates against `tools/observer_oracle/corpus.json`. Labels are
-derived (`derive.py`) from per-row properties and cited definitions (Hardy, NIST, Keras), not from this
-document: MATH is the headline score, CONVENTION (tolerance or convention) is scored separately, EIGS-DEFINED
-is listed. The reference model implements the DEFINITIONS independently but at the observer's own window and
-tolerances, so its agreement with the runtime on window-limited rows is correlated, not independent evidence.
+`make observer-oracle` scores the six predicates against `tools/observer_oracle/corpus.json`, whose properties are certified
+offline (`certify.py`, sympy, on the values the runtime is fed; the generated values may refute a verdict, never prove one)
+and turned into labels by `derive.py` from the definitions decided on #1754 (Hardy, NIST, Keras, settling time; each one's
+provenance is in [`docs/PREDICATES.md`](PREDICATES.md)). Each predicate is scored against ONE question, so the headline
+counts each verdict once: `converged`, `stable` and `improving` against a CONVENTION (settled within ε, or within a band,
+from checkpoint n on; a new best inside the window, for an eventually bounded sequence), `oscillating`, `diverging` and
+`equilibrium` against MATH (Hardy §§60, 62; weak stationarity, NIST 6.4.4.2). At a checkpoint whose value is NaN every
+predicate answers the #1758 NaN convention instead: false, labelled CONVENTION. MATH "has a limit" is reported beside
+`converged`, not scored: it is a whole-sequence property that no windowed observer can decide at n, and scoring the one
+`converged` reading against both questions contradicted itself on 28 of 84 checkpoints, so even a perfect observer failed.
+The MATH questions that stay scored are whole-sequence properties too, which a window can only approximate, and none is
+scored at a checkpoint before its row's law last changes (each row declares that `regime` index; a law change is spelled
+`step(n, <integer>)` or the row is refused): a MATH verdict read there would be decided by values after the read, so it is
+reported, not scored.
+
+Every row runs as module-level straight-line code under the interpreter, where `x` is a name (`OBSERVE_ASSIGN`,
+`PREDICATE_NAME`), and as a `loop while true` form in three tiers (`EIGS_JIT_OFF=1`, the default JIT after 50 warm-up
+calls, `EIGS_JIT_OSR_THRESHOLD=1`), where `x` is a function local in a slot (`OBSERVE_ASSIGN_LOCAL`, `PREDICATE_SLOT`).
+Every run's `EIGS_DUMP_BC` listing must show the path its arm grades, and each run gets only its own tier's `EIGS_*`
+variables (inherited ones are scrubbed). A reading that differs between arms, a REPORTED one included, fails the run. Each
+JIT-tier run witnesses its own tier from `EIGS_JIT_HOT` and `EIGS_DUMP_BC`. In the jit tier the function thunk's last exit
+lies past the loop's back-edge and `bked` is 0, so every iteration ran natively, `x_0`'s assignment included. In the osr
+tier only the OSR thunk's last exit is recorded, so the witness covers the last iteration's body: OSR compiles at the first
+back-edge, so `x_0` is always assigned interpreted, and an earlier iteration that bailed goes unwitnessed until #1768. A run
+whose body stops computing `x` on an inf, NaN or clamped value (the JIT's designed bail) is reported as interpreted and
+passes, so its readings grade the interpreter's observer for those iterations; any other run that does not witness fails as
+vacuous. The predicate READS never run natively: the JIT compiles neither `PREDICATE_SLOT` nor `PREDICATE_NAME`.
+
+A row's capability is derived from its values (IEEE inf/-inf/NaN; an int a double cannot hold exactly). Such a row runs
+only on a binary whose probe shows the capability (one probe checks that `1e308 * 10` overflows to inf AND that inf × 0 is
+NaN; a binary that does one without the other is refused), skips are printed, `EXPECT=ieee,int64` makes an absent one
+fail, and every verdict on them must be right. `FLOOR=tools/observer_oracle/floor.json` fails a run that gets wrong any
+verdict the v0.46.0 tag got right. Its anchor is the binary `tools/observer_oracle/build_anchor.sh` builds from the tag
+into `${XDG_CACHE_HOME:-~/.cache}/eigs-oracle-anchor/<sha256 of the recipe>/`, under a lock. The anchor's identity is the
+recipe plus the verdict list, which every `--floor` run re-measures on it; its sha256 is recorded only as information, so
+the floor holds on any toolchain whose build of the tag gives the same verdicts. There are no waivers: a floor verdict
+agrees with its label, so losing it is wrong unless the label is, and a wrong label is fixed through
+`derive.py`/`certify.py`. The reference model shares the observer's window and tolerances, so its agreement on
+window-limited rows is correlated, not independent evidence.
 
 ## The manifold: two basins and a horizon
 
