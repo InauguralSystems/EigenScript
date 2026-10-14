@@ -10,7 +10,7 @@ Recommended model of the #1746 prior-art comment, section 4, with
   diverging    Hardy Sec. 60 windowed: same-sign steps above tau that do
                not contract (rho >= 1), or a value that IS infinite
   improving    CONVENTION (#1754): the recent half sets a new low below
-               the older half's best by more than min_delta (Keras/PyTorch
+               the older half's best by more than min_delta (Keras
                mode='min'); the ratio test survives as _contracting
   oscillating  Hardy Sec. 62 windowed: the window shows neither a limit
                (converged / _contracting) nor a run to +-inf (diverging)
@@ -18,6 +18,12 @@ Recommended model of the #1746 prior-art comment, section 4, with
                h = 4 sigma) of the recent half against the older half, no
                periodic fluctuation (NIST 6.4.4.2), not diverging
   stable       (EIGS-DEFINED) the converged test at the coarse tolerance
+
+Independence, stated honestly: this is an independent implementation of
+the corpus DEFINITIONS, but at the observer's own design parameters (W = 10,
+RTOL = dh_zero, RTOL_COARSE = dh_small, SCALE) and with entropy_of_num
+copied from the C. Its agreement with the runtime on window-limited rows is
+correlated, not independent evidence.
 
 #1667: `entropy_signal` maps values to the runtime's per-number entropy, so
 the same classifier can run on either signal.
@@ -78,7 +84,7 @@ def _contracting(w):
 
 
 def improving(w):
-    """CONVENTION (owner ruling, #1754): Keras/PyTorch mode='min'. The
+    """CONVENTION (owner ruling, #1754): Keras mode='min', min_delta = rtol*max(|best|, scale). The
     corpus compares the recent best with the best of the whole history; a
     window approximates that history by its older half, so the recent half
     must set a new low below the older half's best by more than min_delta."""

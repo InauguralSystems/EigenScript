@@ -1,13 +1,12 @@
 {
- "schema": 1,
- "about": "Ground-truth corpus for EigenScript's observer predicates (#1746, #1667). Each row is a sequence with a closed form or recurrence; a checkpoint `at` = n means the observer has seen x_0..x_n. Each predicate at each checkpoint carries a list of verdicts: [\"MATH\", value, [sources], reason] (a standard definition decides it), [\"CONVENTION\", value, [sources], reason] (decided only by a stated tolerance or engineering convention), or [\"EIGS-DEFINED\"] alone (no standard definition; the documented intent in `definitions` is ours). A predicate may carry both a MATH and a CONVENTION verdict when the two views differ.",
- "params": {"rtol": 0.001, "scale": 0.001, "epsilon": "eps(L) = rtol * max(|L|, scale): the observer's declared settle tolerance (docs/SPEC.md, dh_zero and scale defaults)"},
+ "schema": 3,
+ "about": "Ground-truth corpus for EigenScript's observer predicates (#1746, #1667). Each row gives a generator, its checkpoints (n = the observer has seen x_0..x_n) and ONE property set (limit, tends_to, bounded, has_trend, periodic, variance_changes) with its justification and citations. Labels are not written here: tools/observer_oracle/derive.py computes them from the generator, the properties and the `definitions` table, writes labels.json, and score.py refuses a labels.json that differs from the derivation.",
  "sources": {
   "HARDY_58": {"text": "G. H. Hardy, A Course of Pure Mathematics, 3rd ed. (1921), Sec. 58 'Definition of a limit': phi(n) tends to l if for every eps > 0 there is n0(eps) with |phi(n) - l| < eps for all n >= n0.", "status": "VERIFIED: Project Gutenberg #38769 text, Sec. 58"},
   "HARDY_60": {"text": "Hardy, A Course of Pure Mathematics, Sec. 60, Definition II: phi(n) tends to +inf if for every Delta there is n0(Delta) with phi(n) > Delta for ALL n >= n0; likewise -inf.", "status": "VERIFIED: Project Gutenberg #38769 text, Sec. 60"},
   "HARDY_62": {"text": "Hardy, A Course of Pure Mathematics, Sec. 62 'Oscillating functions': when phi(n) does not tend to a limit, nor to +inf, nor to -inf, phi(n) oscillates; finitely if bounded, infinitely otherwise. Examples in the text: (-1)^n, (-1)^n + 1/n, (-1)^n n; a continual repetition of a cycle of values certainly oscillates. Examples XXIV.7: sin(n theta pi) oscillates finitely for irrational theta.", "status": "VERIFIED: Project Gutenberg #38769 text, Sec. 62 and Examples XXIV.7"},
   "HARDY_72": {"text": "Hardy, A Course of Pure Mathematics, Sec. 72 'The limit of x^n': x^n -> +inf (x > 1), -> 0 (-1 < x < 1), oscillates finitely (x = -1), oscillates infinitely (x < -1).", "status": "VERIFIED: Project Gutenberg #38769 text, Sec. 72"},
-  "HARDY_77": {"text": "Hardy, A Course of Pure Mathematics, Sec. 77 (7): the series 1 + 1/2 + 1/3 + ... diverges to +inf.", "status": "VERIFIED: Project Gutenberg #38769 text, Sec. 77"},
+  "HARDY_77": {"text": "Hardy, A Course of Pure Mathematics, Sec. 77, the remark following theorem (7): the converse of (7) fails, since 1 + 1/2 + 1/3 + ... diverges to +inf although 1/n -> 0.", "status": "VERIFIED: Project Gutenberg #38769 text, Sec. 77, remark after (7)"},
   "HARDY_188": {"text": "Hardy, A Course of Pure Mathematics, Sec. 188 'Alternating series': if phi(n) decreases steadily to 0, phi(0) - phi(1) + phi(2) - ... converges and its sum lies between phi(0) and phi(0) - phi(1). Applied to the tail after the k-th term this gives |S - S_k| <= a_{k+1}.", "status": "VERIFIED: Project Gutenberg #38769 text, Sec. 188 (the tail bound is the theorem applied to the tail)"},
   "ALT_SERIES_EST": {"text": "Alternating series estimation theorem: |S_k - L| <= a_{k+1}. Wikipedia, 'Alternating series test', section 'Alternating series estimation theorem'.", "status": "VERIFIED: en.wikipedia.org raw page fetched 2026-10-14 (secondary source)"},
   "RUDIN_3_1": {"text": "W. Rudin, Principles of Mathematical Analysis, 3rd ed. (1976), Def. 3.1 (convergent sequence).", "status": "UNVERIFIED: not checked against the text this session; theorem/section number from memory"},
@@ -20,666 +19,69 @@
   "BOREL_CANTELLI": {"text": "Second Borel-Cantelli lemma: independent events with divergent probability sum occur infinitely often with probability 1 (Wikipedia, 'Borel-Cantelli lemma', citing Feller and Durrett). So a non-degenerate iid sequence a.s. has |x_{n+1} - x_n| > delta infinitely often for some delta > 0 and does not converge.", "status": "VERIFIED: en.wikipedia.org raw page fetched 2026-10-14 (secondary source)"},
   "NIST_6442": {"text": "NIST/SEMATECH e-Handbook of Statistical Methods, Sec. 6.4.4.2 'Stationarity': mean, variance and autocorrelation structure do not change over time: no trend, constant variance, constant autocorrelation and no periodic fluctuations (seasonality).", "status": "VERIFIED: itl.nist.gov/div898/handbook/pmc/section4/pmc442.htm fetched 2026-10-14"},
   "SHNOL_2007": {"text": "E. Shnol, 'Stability of equilibria', Scholarpedia 2(3):2770 (2007): Lyapunov stability takes into account only perturbations of the initial conditions.", "status": "VERIFIED: scholarpedia.org/article/Stability_of_equilibria fetched 2026-10-14"},
-  "KERAS_ES": {"text": "Keras, EarlyStopping callback: 'min_delta: Minimum change in the monitored quantity to qualify as an improvement, i.e. an absolute change of less than min_delta, will count as no improvement'; for a loss the mode is 'min' (lower is better).", "status": "VERIFIED: keras.io/api/callbacks/early_stopping/ fetched 2026-10-14"},
-  "TORCH_RLROP": {"text": "PyTorch, torch.optim.lr_scheduler.ReduceLROnPlateau: mode 'min' (default) acts when the quantity 'has stopped decreasing'; threshold_mode 'rel' counts a value a as better than best iff a < best * (1 - threshold).", "status": "VERIFIED: torch/optim/lr_scheduler.py on pytorch main (docstring and _is_better) fetched 2026-10-14"}
+  "KERAS_ES": {"text": "Keras EarlyStopping / MonitorCallback: 'min_delta: Minimum change in the monitored quantity to qualify as an improvement, i.e. an absolute change of less than min_delta, will count as no improvement'; _is_improvement(monitor, reference) = monitor_op(monitor - min_delta, reference), with min_delta negated for mode 'min' (monitor_op = less): an improvement is current < best - min_delta.", "status": "VERIFIED: keras.io/api/callbacks/early_stopping/ and keras/src/callbacks/monitor_callback.py (master) fetched 2026-10-14"},
+  "HARDY_XXIV5": {"text": "Hardy, A Course of Pure Mathematics, Examples XXIV.5: n^2 + (-1)^n 2n -> +inf, progressing 'by a continual series of steps forwards and backwards'; it does not oscillate according to the definition of Sec. 62.", "status": "VERIFIED: Project Gutenberg #38769 text, Examples XXIV.5"}
  },
- "definitions": {
-  "_checkpoints": {"text": "How a limit-based definition is read at a finite checkpoint n. (i) WHETHER a sequence tends to a limit, to +inf or -inf, or oscillates is a property of the whole sequence (Hardy Secs. 58, 60, 62), decided from the generator, not from the observed prefix; so `oscillating` and `diverging` have one MATH value per row. (ii) WHEN a convergent sequence counts as converged uses eps(L) = rtol*max(|L|, scale), rtol = scale = 1e-3: converged@n iff the sequence tends to L AND |x_m - L| <= eps(L) for every m >= n (Hardy Sec. 58 with eps fixed at the observer's tolerance and n0(eps) <= n). eps only decides the timing, never whether a limit exists. (`improving` is a CONVENTION with its own window rule; see its definition.) (iii) CONVENTION verdicts drop the 'tends to L' requirement: converged@n iff the tail from n stays within eps(L) of some L (numpy.isclose), and oscillating iff the tail neither stays within eps of a point nor tends to +-inf."},
-  "converged": {"label": "MATH (CONVENTION where only the tolerance decides)", "cite": ["HARDY_58", "ISCLOSE"], "text": "MATH: the sequence tends to a limit L (Hardy Sec. 58) and has settled within eps(L) by n (see _checkpoints). A non-degenerate iid sequence a.s. tends to no limit (second Borel-Cantelli), so noise rows are MATH false at every amplitude; their CONVENTION verdict (within eps of the centre from n on, numpy.isclose) is true when the amplitude is below eps."},
-  "diverging": {"label": "MATH", "cite": ["HARDY_60", "RUDIN_3_15"], "text": "Tends to +inf or to -inf (Hardy Sec. 60 Def. II; Rudin Def. 3.15). A sequence whose magnitude grows while its sign keeps changing ((-1.1)^n) does neither: it oscillates infinitely (Hardy Sec. 72)."},
-  "oscillating": {"label": "MATH (CONVENTION where only the tolerance decides)", "cite": ["HARDY_62"], "text": "Hardy Sec. 62: the sequence tends neither to a limit nor to +inf nor to -inf (finitely if bounded, infinitely if not). Cycles, (-1)^n + 1/n, sin n (Examples XXIV.7), chaos, iid noise and the random walk all oscillate; convergent sequences (including damped and alternating approaches) and divergent ones do not. Asymptotic: a transient oscillation of a convergent sequence does not count. CONVENTION (iid noise below eps): the tail stays within eps of the centre, so at that tolerance it does not oscillate."},
-  "improving": {"label": "CONVENTION (owner ruling on #1754: directional, the ML sense)", "cite": ["KERAS_ES", "TORCH_RLROP"], "text": "improving@n iff the monitored value reached a new best (lowest) value within the last 10 steps, beating the best before them by more than min_delta: min(x_{k+1..n}) < min(x_{0..k}) - min_delta, k = max(0, n-10), min_delta = rtol*max(|best|, scale). This is Keras EarlyStopping / PyTorch ReduceLROnPlateau with mode='min' (lower is better) and patience = the 10-step window: 'improving' = such a callback would see an improvement and not stop. min_delta is PyTorch's relative threshold at the observer's rtol = 1e-3, floored at scale = 1e-3 so it is absolute near zero. Directional: falling losses and decreasing decays improve; growth, rising-to-plateau, decay toward a limit from below, cycles that revisit an old best, and settled values do not. No standard mathematical definition exists, so there is no MATH verdict. Computed from the generated sequence by this rule."},
-  "equilibrium": {"label": "MATH on some rows, EIGS-DEFINED on the rest", "cite": ["NIST_6442"], "text": "MATH rows: (level) stationarity, NIST 6.4.4.2: no trend, constant variance and autocorrelation, and no periodic fluctuations. MATH true: constants and iid noise. MATH false: trends, divergent sequences, growing variance (random walk, growing oscillations) and periodic fluctuations (cycles, the burst row, (-1)^n + 1/n). EIGS-DEFINED elsewhere (deterministic transients, chaos, quasi-periodic sin n). Documented intent (docs/PREDICATES.md): balanced motion, window |mean(rel)| < dh_zero and variance(rel) < dh_zero^2."},
-  "stable": {"label": "EIGS-DEFINED", "cite": ["SHNOL_2007"], "text": "No standard definition applies: Lyapunov stability concerns perturbations of initial conditions, not one trajectory. Documented intent (docs/PREDICATES.md): the small-motion band, every relative step under dh_small with no strong consecutive sign flips; may carry drift."}
- },
+ "definitions": [
+  {"predicate": "converged", "question": "Does the sequence tend to a finite limit?", "class": "MATH", "cite": ["HARDY_58", "RUDIN_3_1"], "rule": "true iff props.limit is a number. A whole-sequence property: one value per row, graded at every checkpoint."},
+  {"predicate": "converged", "question": "From checkpoint n on, does the sequence stay within eps of a point?", "class": "CONVENTION", "cite": ["ISCLOSE"], "rule": "eps(L) = 1e-3*max(|L|, 1e-3) (the observer's dh_zero and scale). With a limit L: |x_m - L| <= eps(L) for every m in [n, H]. Without a limit and bounded: the tail x_n..x_H fits in a ball of radius eps(centre). Unbounded or tending to +-inf: false. H = max(20000, 10n) generated values: a horizon, not a proof."},
+  {"predicate": "diverging", "question": "Does the sequence tend to +inf or -inf?", "class": "MATH", "cite": ["HARDY_60", "RUDIN_3_15"], "rule": "true iff props.tends_to is '+inf' or '-inf'. Whole-sequence."},
+  {"predicate": "oscillating", "question": "Does it tend neither to a limit nor to +inf nor to -inf (Hardy Sec. 62)?", "class": "MATH", "cite": ["HARDY_62"], "rule": "true iff props.limit is null and props.tends_to is null. Whole-sequence: a transient oscillation of a convergent sequence does not count, and a run to +inf by steps forwards and backwards does not oscillate (Examples XXIV.5)."},
+  {"predicate": "equilibrium", "question": "Is the sequence stationary (NIST 6.4.4.2: no trend, constant variance, no periodic fluctuation)?", "class": "MATH", "cite": ["NIST_6442"], "rule": "false if any of props.has_trend, props.periodic, props.variance_changes is true; true if all three are false; EIGS-DEFINED only when none is true and at least one is null, with the row's `undecided` reason saying why no standard decides."},
+  {"predicate": "improving", "question": "Did the value improve (lower is better) within the last 10 steps?", "class": "CONVENTION", "cite": ["KERAS_ES"], "rule": "Owner ruling (#1754). Keras EarlyStopping mode='min' applied literally, epoch by epoch from x_0: best starts at x_0; x_i is an improvement iff x_i < best - min_delta, and then best = x_i. improving@n iff an improvement occurred at some i in [max(1, n-9), n] (patience = the 10-step window). min_delta = 1e-3*max(|best|, 1e-3) is OUR documented choice (the observer's rtol and scale); it is not PyTorch's rel threshold, which is best*(1 - threshold) and differs when best < 0."},
+  {"predicate": "stable", "question": "(none)", "class": "EIGS-DEFINED", "cite": ["SHNOL_2007"], "rule": "Pending the owner (#1754). Lyapunov stability concerns perturbed initial conditions, not one trajectory. Documented intent (docs/PREDICATES.md): the small-motion band, every relative step under dh_small with no strong consecutive sign flips."}
+ ],
  "rows": [
-  {"id": "const_5", "family": "constant", "form": "x_n = 5", "gen": {"kind": "closed", "expr": "5.0"}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "constant: L = 5, |x_m - L| = 0 for all m"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "constant: tends to its value, a limit"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 5 vs best of x_0..x_50 = 5: improvement 0 <= min_delta 0.005"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "a constant is (degenerately) stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "const_1e308_literal", "family": "constant literal 1e308", "form": "x_n = 1e308 (a literal; never overflowed)", "gen": {"kind": "closed", "expr": "1e308"}, "n": 30, "checkpoints": [
-   {"at": 30, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "constant: L = 1e308, |x_m - L| = 0 for all m"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded: |x_n| = 1e308 for all n"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "constant: tends to its value, a limit"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_21..x_30 = 1e+308 vs best of x_0..x_20 = 1e+308: improvement 0 <= min_delta 1e+305"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "constant"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "geo_decay_0.5", "family": "geometric decay", "form": "x_n = 0.5^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.5, "b": 0.0}, "n": 60, "checkpoints": [
-   {"at": 5, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "L = 0, eps = 1e-6; x_5 = 0.03125 > eps"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges (period-1 limit)"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_5 = 0.03125 vs best of x_0..x_0 = 1: improvement 0.969 > min_delta 0.001"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 60, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "0.5^m <= 0.5^60 = 8.7e-19 <= eps = 1e-6 for all m >= 60"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 8.67362e-19 vs best of x_0..x_50 = 8.88178e-16: improvement 8.87e-16 <= min_delta 1e-06"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "geo_decay_0.9", "family": "geometric decay", "form": "x_n = 0.9^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.9, "b": 0.0}, "n": 300, "checkpoints": [
-   {"at": 20, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "x_20 = 0.1216 > eps = 1e-6"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_11..x_20 = 0.121577 vs best of x_0..x_10 = 0.348678: improvement 0.227 > min_delta 0.000349"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 300, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "0.9^300 = 1.9e-14 <= 1e-6 and decreasing"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 1.87393e-14 vs best of x_0..x_290 = 5.37437e-14: improvement 3.5e-14 <= min_delta 1e-06"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "geo_decay_0.99", "family": "geometric decay", "form": "x_n = 0.99^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.99, "b": 0.0}, "n": 2000, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "x_60 = 0.547 > eps = 1e-6"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.547157 vs best of x_0..x_50 = 0.605006: improvement 0.0578 > min_delta 0.000605"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 2000, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "0.99^2000 = 1.9e-9 <= 1e-6 and decreasing"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = 1.86376e-09 vs best of x_0..x_1990 = 2.06081e-09: improvement 1.97e-10 <= min_delta 1e-06"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "halving_to_5", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 2.5, x_0 = 100 (-> 5)", "gen": {"kind": "affine", "x0": 100.0, "a": 0.5, "b": 2.5}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 - 5| = 95*0.5^60 = 8e-17 <= eps = 5e-3"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 5"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 5 vs best of x_0..x_50 = 5: improvement 8.44e-14 <= min_delta 0.005"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "halving_to_5000", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 2500, x_0 = 1e5 (-> 5000)", "gen": {"kind": "affine", "x0": 100000.0, "a": 0.5, "b": 2500.0}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 - 5000| = 95000*0.5^60 = 8e-14 <= eps = 5"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 5000 vs best of x_0..x_50 = 5000: improvement 8.46e-11 <= min_delta 5"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "halving_to_0.005", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 0.0025, x_0 = 0.1 (-> 0.005)", "gen": {"kind": "affine", "x0": 0.1, "a": 0.5, "b": 0.0025}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 - 0.005| = 0.095*0.5^60 = 8e-20 <= eps = 5e-6"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.005 vs best of x_0..x_50 = 0.005: improvement 8.33e-17 <= min_delta 5e-06"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "geo_growth_1e20", "family": "geometric growth past 1e308", "form": "x_n = 1e20^n (exceeds 1e308 at n = 16)", "gen": {"kind": "affine", "x0": 1.0, "a": 1e+20, "b": 0.0}, "n": 40, "checkpoints": [
-   {"at": 40, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
-    "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "x_n = 1e20^n -> +inf"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_31..x_40 = inf vs best of x_0..x_30 = 1: improvement -inf <= min_delta 0.001"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "geo_growth_1.5", "family": "geometric growth", "form": "x_n = 1.5^n", "gen": {"kind": "affine", "x0": 1.0, "a": 1.5, "b": 0.0}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
-    "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "1.5^n -> +inf"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 9.56432e+08 vs best of x_0..x_50 = 1: improvement -9.56e+08 <= min_delta 0.001"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "linear_decrease", "family": "falling without bound", "form": "x_n = 100 - n", "gen": {"kind": "affine", "x0": 100.0, "a": 1.0, "b": -1.0}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
-    "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "100 - n -> -inf"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "tends to -inf, so it does not oscillate"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 40 vs best of x_0..x_50 = 50: improvement 10 > min_delta 0.05"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "linear trend in the mean"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "harmonic", "family": "harmonic partial sums (slow divergence)", "form": "x_n = H_{n+1} = sum_{k=1}^{n+1} 1/k", "gen": {"kind": "recur", "x0": 1.0, "expr": "x + 1.0 / (n + 1)"}, "n": 2000, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_77", "HARDY_58", "RUDIN_3_1"], "the harmonic series diverges"]],
-    "diverging": [["MATH", true, ["HARDY_77", "HARDY_60", "RUDIN_3_15"], "H_n -> +inf (like ln n)"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 4.53804 vs best of x_0..x_50 = 1: improvement -3.54 <= min_delta 0.001"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["HARDY_77", "HARDY_58", "RUDIN_3_1"], "the harmonic series diverges"]],
-    "diverging": [["MATH", true, ["HARDY_77", "HARDY_60", "RUDIN_3_15"], "H_n -> +inf"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 6.25568 vs best of x_0..x_290 = 1: improvement -5.26 <= min_delta 0.001"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 2000, "v": {
-    "converged": [["MATH", false, ["HARDY_77", "HARDY_58", "RUDIN_3_1"], "the harmonic series diverges"]],
-    "diverging": [["MATH", true, ["HARDY_77", "HARDY_60", "RUDIN_3_15"], "H_n -> +inf"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = 8.17436 vs best of x_0..x_1990 = 1: improvement -7.17 <= min_delta 0.001"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "log_n", "family": "slow divergence", "form": "x_n = ln(n + 2)", "gen": {"kind": "closed", "expr": "math.log(n + 2)"}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
-    "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "ln n -> +inf"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 5.68017 vs best of x_0..x_290 = 0.693147: improvement -4.99 <= min_delta 0.000693"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "sqrt_n", "family": "slow divergence", "form": "x_n = sqrt(n + 1)", "gen": {"kind": "closed", "expr": "math.sqrt(n + 1)"}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
-    "diverging": [["MATH", true, ["HARDY_60", "RUDIN_3_15"], "sqrt n -> +inf"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "tends to +inf, so it does not oscillate"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 17.088 vs best of x_0..x_290 = 1: improvement -16.1 <= min_delta 0.001"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "mean grows without bound"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "alt_inv_n", "family": "alternating convergent", "form": "x_n = (-1)^(n+1) / (n + 1)", "gen": {"kind": "closed", "expr": "(-1.0) ** (n + 1) / (n + 1)"}, "n": 2000, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "L = 0, eps = 1e-6; |x_m| = 1/(m+1) > eps until m ~ 1e6"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges to 0: the alternation decays, no cycle"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = -0.0188679 vs best of x_0..x_50 = -1: improvement -0.981 <= min_delta 0.001"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 2000, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_2000| = 5e-4 > eps = 1e-6"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges to 0"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = -0.000501756 vs best of x_0..x_1990 = -1: improvement -0.999 <= min_delta 0.001"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "alt_series_ln2", "family": "alternating convergent (partial sums)", "form": "x_n = sum_{k=1}^{n+1} (-1)^(k+1)/k (-> ln 2)", "gen": {"kind": "recur", "x0": 1.0, "expr": "x + (-1.0) ** n / (n + 1)"}, "n": 2000, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_188", "ALT_SERIES_EST", "HARDY_58", "RUDIN_3_1"], "|x_60 - ln 2| = 8.3e-3 > eps = 6.9e-4"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to ln 2"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges: the alternation decays"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.683624 vs best of x_0..x_50 = 0.5: improvement -0.184 <= min_delta 0.0005"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 2000, "v": {
-    "converged": [["MATH", true, ["HARDY_188", "ALT_SERIES_EST", "HARDY_58", "RUDIN_3_1"], "Leibniz: |x_m - ln 2| <= 1/(m+2) <= 5e-4 <= eps = 6.9e-4 for all m >= 2000"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = 0.692896 vs best of x_0..x_1990 = 0.5: improvement -0.193 <= min_delta 0.0005"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "damped_osc_0.9", "family": "damped oscillator", "form": "x_n = 0.9^n cos(n)", "gen": {"kind": "closed", "expr": "0.9 ** n * math.cos(1.0 * n)"}, "n": 300, "checkpoints": [
-   {"at": 20, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "L = 0, eps = 1e-6; |x_21| = 0.109*|cos 21| = 0.06 > eps"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges to 0 (asymptotic definition; the transient oscillation does not count)"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_11..x_20 = -0.177456 vs best of x_0..x_10 = -0.721705: improvement -0.544 <= min_delta 0.000722"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 300, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_m| <= 0.9^300 = 1.9e-14 <= 1e-6"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = -4.29187e-14 vs best of x_0..x_290 = -0.721705: improvement -0.722 <= min_delta 0.000722"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "damped_osc_0.99", "family": "damped oscillator", "form": "x_n = 0.99^n cos(0.5 n)", "gen": {"kind": "closed", "expr": "0.99 ** n * math.cos(0.5 * n)"}, "n": 100, "checkpoints": [
-   {"at": 100, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "envelope 0.99^100 = 0.37 > eps = 1e-6"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges to 0 (asymptotic definition)"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_91..x_100 = -0.385804 vs best of x_0..x_90 = -0.932058: improvement -0.546 <= min_delta 0.000932"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "period2_wide", "family": "period-2 orbit", "form": "3, 30, 3, 30, ...", "gen": {"kind": "cycle", "values": [3.0, 30.0]}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; prime period 2, amplitude 27"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 3 vs best of x_0..x_50 = 3: improvement 0 <= min_delta 0.003"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "period2_reciprocal", "family": "period-2 orbit", "form": "2, 0.5, 2, 0.5, ...", "gen": {"kind": "cycle", "values": [2.0, 0.5]}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; prime period 2, amplitude 1.5"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.5 vs best of x_0..x_50 = 0.5: improvement 0 <= min_delta 0.0005"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "period4_square", "family": "period-4 orbit", "form": "3, 3, 30, 30, ...", "gen": {"kind": "cycle", "values": [3.0, 3.0, 30.0, 30.0]}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; prime period 4, amplitude 27"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 3 vs best of x_0..x_50 = 3: improvement 0 <= min_delta 0.003"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "period4_distinct", "family": "period-4 orbit", "form": "1, 5, 2, 7, ...", "gen": {"kind": "cycle", "values": [1.0, 5.0, 2.0, 7.0]}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "four limit points"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; prime period 4, amplitude 6"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 1 vs best of x_0..x_50 = 1: improvement 0 <= min_delta 0.001"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "logistic_2.8", "family": "logistic map (convergent)", "form": "x_{n+1} = 2.8 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent ln 0.8 = -0.223 (negative)", "lyapunov": -0.2231, "gen": {"kind": "recur", "x0": 0.4, "expr": "2.8 * x * (1.0 - x)"}, "n": 200, "checkpoints": [
-   {"at": 10, "v": {
-    "converged": [["MATH", false, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "x* = 1 - 1/2.8 = 0.642857; |x_10 - x*| = 4.1e-3 > eps = 6.4e-4"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded in [0, 1]"]],
-    "oscillating": [["MATH", false, ["HARDY_62", "STROGATZ_10", "LOGISTIC_WIKI"], "attracting fixed point (|f'(x*)| = 0.8 < 1); the approach alternates but converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_10 = 0.617165 vs best of x_0..x_0 = 0.4: improvement -0.217 <= min_delta 0.0004"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 200, "v": {
-    "converged": [["MATH", true, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "|x_m - x*| <= ~0.8^m: 0 in double precision by m = 200"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", false, ["HARDY_62", "STROGATZ_10", "LOGISTIC_WIKI"], "tends to the fixed point"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = 0.642857 vs best of x_0..x_190 = 0.4: improvement -0.243 <= min_delta 0.0004"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "logistic_3.2", "family": "logistic map (period 2)", "form": "x_{n+1} = 3.2 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent 0.5 ln 0.16 = -0.916 (negative)", "lyapunov": -0.9163, "gen": {"kind": "recur", "x0": 0.4, "expr": "3.2 * x * (1.0 - x)"}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "attracting 2-cycle {0.5130, 0.7995}"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "STROGATZ_10", "LOGISTIC_WIKI"], "approaches an attracting prime-period-2 cycle, amplitude 0.286: several limit points, bounded: oscillates finitely"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 0.513045 vs best of x_0..x_290 = 0.4: improvement -0.113 <= min_delta 0.0004"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "logistic_3.5", "family": "logistic map (period 4)", "form": "x_{n+1} = 3.5 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent -0.873 (negative, computed over 2e5 iterates)", "lyapunov": -0.8725, "gen": {"kind": "recur", "x0": 0.4, "expr": "3.5 * x * (1.0 - x)"}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "attracting 4-cycle"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "STROGATZ_10", "LOGISTIC_WIKI"], "approaches an attracting prime-period-4 cycle {0.383, 0.827, 0.501, 0.875}: several limit points, bounded: oscillates finitely"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 0.38282 vs best of x_0..x_290 = 0.382818: improvement -1.27e-06 <= min_delta 0.000383"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation: excluded from stationarity"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "logistic_3.9", "family": "logistic map (chaotic)", "form": "x_{n+1} = 3.9 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent +0.497 (positive, computed over 2e5 iterates)", "lyapunov": 0.4967, "gen": {"kind": "recur", "x0": 0.4, "expr": "3.9 * x * (1.0 - x)"}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["STROGATZ_10", "LOGISTIC_WIKI", "HARDY_58", "RUDIN_3_1"], "chaotic: lambda > 0, no limit"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded in [0, 1]"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "LOGISTIC_WIKI"], "chaotic orbit in [0, 1] (lambda > 0): no limit, bounded: oscillates finitely"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 0.101538 vs best of x_0..x_290 = 0.0951413: improvement -0.0064 <= min_delta 9.51e-05"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "sin_n", "family": "quasi-periodic", "form": "x_n = sin(n)", "gen": {"kind": "closed", "expr": "math.sin(1.0 * n)"}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["HARDY_62", "HARDY_58", "RUDIN_3_1"], "limit set is [-1, 1]"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "Hardy Examples XXIV.7 with theta = 1/pi irrational: oscillates finitely"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = -0.999756 vs best of x_0..x_290 = -0.99999: improvement -0.000234 <= min_delta 0.001"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "cos_fixed_point", "family": "fixed-point iteration (alternating approach)", "form": "x_{n+1} = cos(x_n), x_0 = 1 (-> 0.739085)", "gen": {"kind": "recur", "x0": 1.0, "expr": "math.cos(x)"}, "n": 60, "checkpoints": [
-   {"at": 10, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_10 - x*| = 5.2e-3 > eps = 7.4e-4"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62", "STROGATZ_10"], "attracting fixed point; the alternating approach converges"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_10 = 0.540302 vs best of x_0..x_0 = 1: improvement 0.46 > min_delta 0.001"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 60, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 - x*| = 1.4e-11 <= eps and contracting"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62", "STROGATZ_10"], "tends to the fixed point"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.739085 vs best of x_0..x_50 = 0.540302: improvement -0.199 <= min_delta 0.00054"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "newton_sqrt2", "family": "Newton iteration (quadratic)", "form": "x_{n+1} = (x_n + 2/x_n)/2, x_0 = 1 (-> sqrt 2)", "gen": {"kind": "recur", "x0": 1.0, "expr": "(x + 2.0 / x) / 2.0"}, "n": 30, "checkpoints": [
-   {"at": 30, "v": {
-    "converged": [["MATH", true, ["NW_A2", "HARDY_58", "RUDIN_3_1"], "Q-quadratic; exact to double precision from n = 5"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_21..x_30 = 1.41421 vs best of x_0..x_20 = 1: improvement -0.414 <= min_delta 0.001"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "noise_below_s1", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-3 u_n, u_n iid uniform[-1, 1] (seed 1)", "gen": {"kind": "noise", "center": 100.0, "amp": 0.001, "seed": 1}, "n": 300, "checkpoints": [
-   {"at": 100, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1 for every m"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_91..x_100 = 99.999 vs best of x_0..x_90 = 99.999: improvement -7.21e-06 <= min_delta 0.1"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 200, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = 99.9992 vs best of x_0..x_190 = 99.999: improvement -0.000205 <= min_delta 0.1"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 99.9992 vs best of x_0..x_290 = 99.999: improvement -0.000219 <= min_delta 0.1"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "noise_below_s2", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-3 u_n (seed 2)", "gen": {"kind": "noise", "center": 100.0, "amp": 0.001, "seed": 2}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-3 <= eps = 0.1"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 99.9991 vs best of x_0..x_290 = 99.999: improvement -4.91e-05 <= min_delta 0.1"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "noise_tiny_s3", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-9 u_n (seed 3)", "gen": {"kind": "noise", "center": 100.0, "amp": 1e-09, "seed": 3}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 100| <= 1e-9 <= eps = 0.1"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 100 vs best of x_0..x_290 = 100: improvement -2.03e-10 <= min_delta 0.1"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "noise_above_s1", "family": "iid noise above tolerance", "form": "x_n = 100 + 10 u_n (seed 1)", "gen": {"kind": "noise", "center": 100.0, "amp": 10.0, "seed": 1}, "n": 300, "checkpoints": [
-   {"at": 100, "v": {
-    "converged": [["MATH", false, ["BOREL_CANTELLI", "HARDY_58", "RUDIN_3_1"], "amplitude 10 > eps = 0.1: a.s. leaves every eps-ball infinitely often"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_91..x_100 = 90.1142 vs best of x_0..x_90 = 90.0421: improvement -0.0721 <= min_delta 0.09"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["BOREL_CANTELLI", "HARDY_58", "RUDIN_3_1"], "a.s. no limit"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 92.2272 vs best of x_0..x_290 = 90.0421: improvement -2.19 <= min_delta 0.09"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "random_walk", "family": "random walk", "form": "x_0 = 0, x_{n+1} = x_n +- 1 (fair coin, seed 7)", "gen": {"kind": "walk", "x0": 0.0, "step": 1.0, "seed": 7}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["RW_RECURRENT", "HARDY_58", "RUDIN_3_1"], "recurrent: a.s. no limit"]],
-    "diverging": [["MATH", false, ["RW_RECURRENT", "HARDY_60", "RUDIN_3_15"], "recurrent: a.s. returns to 0 infinitely often, so not -> +-inf"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "RW_RECURRENT"], "recurrent: a.s. tends to no limit and not to +-inf (limsup +inf, liminf -inf): oscillates infinitely"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 5 vs best of x_0..x_290 = 0: improvement -5 <= min_delta 1e-06"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "Var(x_n) = n (sum of n independent +-1 steps): variance not constant"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "level_shift", "family": "level shift", "form": "x_n = 1 for n < 100, 2 for n >= 100", "gen": {"kind": "closed", "expr": "1.0 if n < 100 else 2.0"}, "n": 160, "checkpoints": [
-   {"at": 103, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "the tail from n = 100 is the constant 2 (a causal window cannot know this yet)"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "eventually constant: tends to 2"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_94..x_103 = 1 vs best of x_0..x_93 = 1: improvement 0 <= min_delta 0.001"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 160, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "constant 2 from n = 100"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "eventually constant: tends to 2"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_151..x_160 = 2 vs best of x_0..x_150 = 1: improvement -1 <= min_delta 0.001"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "ml_loss_exp", "family": "ML loss (falling, exponential)", "form": "x_n = 0.05 + 2.3 exp(-0.08 n)", "gen": {"kind": "closed", "expr": "0.05 + 2.3 * math.exp(-0.08 * n)"}, "n": 400, "checkpoints": [
-   {"at": 30, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_30 - 0.05| = 0.209 > eps = 5e-5"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0.05"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_21..x_30 = 0.258651 vs best of x_0..x_20 = 0.514362: improvement 0.256 > min_delta 0.000514"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 400, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "error 2.9e-14 <= eps = 5e-5 (settled from n = 135)"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_391..x_400 = 0.05 vs best of x_0..x_390 = 0.05: improvement 3.57e-14 <= min_delta 5e-05"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "ml_loss_power", "family": "ML loss (falling, power law)", "form": "x_n = 0.1 + 2 / sqrt(1 + 0.1 n)", "gen": {"kind": "closed", "expr": "0.1 + 2.0 / math.sqrt(1.0 + 0.1 * n)"}, "n": 2000, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_60 - 0.1| = 0.76 > eps = 1e-4"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0.1"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 0.855929 vs best of x_0..x_50 = 0.916497: improvement 0.0606 > min_delta 0.000916"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 2000, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_2000 - 0.1| = 0.141 > eps = 1e-4"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0.1"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_1991..x_2000 = 0.241069 vs best of x_0..x_1990 = 0.241421: improvement 0.000352 > min_delta 0.000241"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "ml_plateau", "family": "ML loss (plateau)", "form": "x_n = 0.35 + 1e-6 u_n (seed 5)", "gen": {"kind": "noise", "center": 0.35, "amp": 1e-06, "seed": 5}, "n": 200, "checkpoints": [
-   {"at": 200, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "BOREL_CANTELLI"], "iid non-degenerate: a.s. tends to no limit, at any amplitude"], ["CONVENTION", true, ["ISCLOSE"], "|x_m - 0.35| <= 1e-6 <= eps = 3.5e-4"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "BOREL_CANTELLI"], "iid: a.s. no limit (second Borel-Cantelli), bounded: oscillates finitely"], ["CONVENTION", false, ["ISCLOSE"], "the tail stays within eps of the centre: no oscillation resolvable at the tolerance"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = 0.349999 vs best of x_0..x_190 = 0.349999: improvement -5.17e-08 <= min_delta 0.00035"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "iid: stationary"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "ml_loss_rise_plateau", "family": "ML loss (rising to a plateau)", "form": "x_n = 1 - 0.6 * 0.9^n", "gen": {"kind": "closed", "expr": "1.0 - 0.6 * 0.9 ** n"}, "n": 300, "checkpoints": [
-   {"at": 20, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_20 - 1| = 0.073 > eps = 1e-3"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 1"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_11..x_20 = 0.811714 vs best of x_0..x_10 = 0.4: improvement -0.412 <= min_delta 0.0004"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }},
-   {"at": 300, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "error 1.1e-14 <= eps = 1e-3"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "monotone and convergent: tends to a limit"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = 1 vs best of x_0..x_290 = 0.4: improvement -0.6 <= min_delta 0.0004"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "two_vars", "family": "two variables (probe trap)", "form": "x_n = 0.5^n, with y = 3, 30, 3, ... assigned AFTER x at every step; predicates read on x", "gen": {"kind": "affine", "x0": 1.0, "a": 0.5, "b": 0.0}, "second": {"kind": "cycle", "values": [3.0, 30.0]}, "n": 60, "checkpoints": [
-   {"at": 60, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "x: 0.5^60 <= eps = 1e-6"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "x converges"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "x converges (y, the last-assigned binding, is period 2)"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = 8.67362e-19 vs best of x_0..x_50 = 8.88178e-16: improvement 8.87e-16 <= min_delta 1e-06"]],
-    "equilibrium": [["EIGS-DEFINED"]],
-    "stable": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "huge_conv", "family": "convergence at huge magnitude", "form": "x_{n+1} = 0.5 x_n + 5e299, x_0 = 1e305 (-> 1e300)", "gen": {"kind": "affine", "x0": 1e+305, "a": 0.5, "b": 5e+299}, "n": 80, "checkpoints": [
-   {"at": 10, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_10 - 1e300| = 9.8e301 > eps = 1e297"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_10 = 9.86553e+301 vs best of x_0..x_0 = 1e+305: improvement 9.99e+304 > min_delta 1e+302"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 1e300"]],
-    "equilibrium": [["EIGS-DEFINED"]]
-   }},
-   {"at": 80, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_m - 1e300| <= 1e305*0.5^80 = 8e280 <= eps = 1e297"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_71..x_80 = 1e+300 vs best of x_0..x_70 = 1e+300: improvement 0 <= min_delta 1e+297"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "equilibrium": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "neg_to_m5", "family": "negative-valued convergence", "form": "x_{n+1} = 0.5 x_n - 2.5, x_0 = -100 (-> -5)", "gen": {"kind": "affine", "x0": -100.0, "a": 0.5, "b": -2.5}, "n": 60, "checkpoints": [
-   {"at": 5, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_5 + 5| = 95/32 = 2.97 > eps = 5e-3"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_5 = -52.5 vs best of x_0..x_0 = -100: improvement -47.5 <= min_delta 0.1"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to -5"]],
-    "equilibrium": [["EIGS-DEFINED"]]
-   }},
-   {"at": 60, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_60 + 5| = 95*0.5^60 = 8e-17 <= eps = 5e-3"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_51..x_60 = -5 vs best of x_0..x_50 = -100: improvement -95 <= min_delta 0.1"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "equilibrium": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "neg_decay", "family": "negative-valued decay", "form": "x_n = -0.9^n", "gen": {"kind": "affine", "x0": -1.0, "a": 0.9, "b": 0.0}, "n": 300, "checkpoints": [
-   {"at": 20, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "|x_20| = 0.1216 > eps = 1e-6"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_11..x_20 = -0.313811 vs best of x_0..x_10 = -1: improvement -0.686 <= min_delta 0.001"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges to 0"]],
-    "equilibrium": [["EIGS-DEFINED"]]
-   }},
-   {"at": 300, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "|x_m| <= 0.9^300 = 1.9e-14 <= 1e-6"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = -4.83693e-14 vs best of x_0..x_290 = -1: improvement -1 <= min_delta 0.001"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "converges"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "converges"]],
-    "equilibrium": [["EIGS-DEFINED"]]
-   }}
-  ]},
-  {"id": "short_const", "family": "shorter than the window", "form": "x_n = 7, only 6 values (5 steps; window is 10)", "gen": {"kind": "closed", "expr": "7.0"}, "n": 5, "checkpoints": [
-   {"at": 5, "v": {
-    "converged": [["MATH", true, ["HARDY_58", "RUDIN_3_1"], "constant: tends to 7 and |x_m - 7| = 0 for all m (a 10-step window has not filled)"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_1..x_5 = 7 vs best of x_0..x_0 = 7: improvement 0 <= min_delta 0.007"]],
-    "oscillating": [["MATH", false, ["HARDY_62"], "constant: tends to 7"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "equilibrium": [["MATH", true, ["NIST_6442"], "constant"]]
-   }}
-  ]},
-  {"id": "growing_osc", "family": "oscillation with a growing envelope", "form": "x_n = 1.02^n cos(n)", "gen": {"kind": "closed", "expr": "1.02 ** n * math.cos(1.0 * n)"}, "n": 200, "checkpoints": [
-   {"at": 200, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = -50.2869 vs best of x_0..x_190 = -36.5794: improvement 13.7 > min_delta 0.0366"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "no limit, not +-inf, unbounded: oscillates infinitely"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "cos n > 1/2 and < -1/2 infinitely often, so x_n takes both signs at growing magnitude: tends to neither +inf nor -inf"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "variance grows with n"]]
-   }}
-  ]},
-  {"id": "burst", "family": "intermittent burst (period longer than the window)", "form": "cycle of 30: 25 x 1.0 then 5 x 3.0", "gen": {"kind": "cycle", "values": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0, 3.0, 3.0, 3.0]}, "n": 149, "checkpoints": [
-   {"at": 144, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points (1 and 3)"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_135..x_144 = 1 vs best of x_0..x_134 = 1: improvement 0 <= min_delta 0.001"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "a continual repetition of a cycle of values (Sec. 62): oscillates finitely; the last 11 values are all 1.0"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation"]]
-   }},
-   {"at": 149, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "two limit points"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_140..x_149 = 1 vs best of x_0..x_139 = 1: improvement 0 <= min_delta 0.001"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "cycle of period 30"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic fluctuation"]]
-   }}
-  ]},
-  {"id": "hardy_alt", "family": "Hardy's (-1)^n + 1/n", "form": "x_n = (-1)^k + 1/k, k = n + 1", "gen": {"kind": "closed", "expr": "(-1.0) ** (n + 1) + 1.0 / (n + 1)"}, "n": 300, "checkpoints": [
-   {"at": 300, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "limit points -1 and +1"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", false, ["KERAS_ES", "TORCH_RLROP"], "best of x_291..x_300 = -0.996678 vs best of x_0..x_290 = -0.996564: improvement 0.000114 <= min_delta 0.000997"]],
-    "oscillating": [["MATH", true, ["HARDY_62"], "Hardy's own example in Sec. 62: oscillates (finitely), values do not recur"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15"], "bounded by 3/2"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "periodic (alternating) fluctuation"]]
-   }}
-  ]},
-  {"id": "neg_1.1_pow", "family": "(-1.1)^n", "form": "x_n = (-1.1)^n", "gen": {"kind": "closed", "expr": "(-1.1) ** n"}, "n": 200, "checkpoints": [
-   {"at": 200, "v": {
-    "converged": [["MATH", false, ["HARDY_58", "RUDIN_3_1"], "unbounded"]],
-    "stable": [["EIGS-DEFINED"]],
-    "improving": [["CONVENTION", true, ["KERAS_ES", "TORCH_RLROP"], "best of x_191..x_200 = -1.72641e+08 vs best of x_0..x_190 = -6.65606e+07: improvement 1.06e+08 > min_delta 6.66e+04"]],
-    "oscillating": [["MATH", true, ["HARDY_62", "HARDY_72"], "Hardy Sec. 72: x^n oscillates infinitely for x < -1"]],
-    "diverging": [["MATH", false, ["HARDY_60", "RUDIN_3_15", "HARDY_72"], "alternating sign: tends to neither +inf nor -inf (Hardy Sec. 72, x < -1)"]],
-    "equilibrium": [["MATH", false, ["NIST_6442"], "variance grows with n"]]
-   }}
-  ]}
+  {"id": "const_5", "family": "constant", "form": "x_n = 5", "gen": {"kind": "closed", "expr": "5.0"}, "n": 60, "checkpoints": [60], "props": {"limit": 5.0, "tends_to": null, "bounded": true, "has_trend": false, "periodic": false, "variance_changes": false}, "why": "constant 5", "cite": ["HARDY_58"]},
+  {"id": "const_1e308_literal", "family": "constant literal 1e308", "form": "x_n = 1e308 (a literal; never overflowed)", "gen": {"kind": "closed", "expr": "1e308"}, "n": 30, "checkpoints": [30], "props": {"limit": 1e+308, "tends_to": null, "bounded": true, "has_trend": false, "periodic": false, "variance_changes": false}, "why": "constant 1e308 (a literal, never overflowed)", "cite": ["HARDY_58"]},
+  {"id": "geo_decay_0.5", "family": "geometric decay", "form": "x_n = 0.5^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.5, "b": 0.0}, "n": 60, "checkpoints": [5, 60], "props": {"limit": 0.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "0.5^n -> 0 monotonically (Hardy Sec. 72, 0 < x < 1): a trend, no fluctuation", "cite": ["HARDY_72"]},
+  {"id": "geo_decay_0.9", "family": "geometric decay", "form": "x_n = 0.9^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.9, "b": 0.0}, "n": 300, "checkpoints": [20, 300], "props": {"limit": 0.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "0.9^n -> 0 monotonically (Hardy Sec. 72)", "cite": ["HARDY_72"]},
+  {"id": "geo_decay_0.99", "family": "geometric decay", "form": "x_n = 0.99^n", "gen": {"kind": "affine", "x0": 1.0, "a": 0.99, "b": 0.0}, "n": 2000, "checkpoints": [60, 2000], "props": {"limit": 0.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "0.99^n -> 0 monotonically (Hardy Sec. 72)", "cite": ["HARDY_72"]},
+  {"id": "halving_to_5", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 2.5, x_0 = 100 (-> 5)", "gen": {"kind": "affine", "x0": 100.0, "a": 0.5, "b": 2.5}, "n": 60, "checkpoints": [60], "props": {"limit": 5.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "x_n = 5 + 95*0.5^n -> 5 monotonically", "cite": ["HARDY_72"]},
+  {"id": "halving_to_5000", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 2500, x_0 = 1e5 (-> 5000)", "gen": {"kind": "affine", "x0": 100000.0, "a": 0.5, "b": 2500.0}, "n": 60, "checkpoints": [60], "props": {"limit": 5000.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "x_n = 5000 + 95000*0.5^n -> 5000 monotonically", "cite": ["HARDY_72"]},
+  {"id": "halving_to_0.005", "family": "geometric decay (nonzero limit)", "form": "x_{n+1} = 0.5 x_n + 0.0025, x_0 = 0.1 (-> 0.005)", "gen": {"kind": "affine", "x0": 0.1, "a": 0.5, "b": 0.0025}, "n": 60, "checkpoints": [60], "props": {"limit": 0.005, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "x_n = 0.005 + 0.095*0.5^n -> 0.005 monotonically", "cite": ["HARDY_72"]},
+  {"id": "geo_growth_1e20", "family": "geometric growth past 1e308", "form": "x_n = 1e20^n (exceeds 1e308 at n = 16)", "gen": {"kind": "affine", "x0": 1.0, "a": 1e+20, "b": 0.0}, "n": 40, "checkpoints": [40], "props": {"limit": null, "tends_to": "+inf", "bounded": false, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "1e20^n -> +inf (Hardy Sec. 72, x > 1); exceeds 1e308 at n = 16", "cite": ["HARDY_72"]},
+  {"id": "geo_growth_1.5", "family": "geometric growth", "form": "x_n = 1.5^n", "gen": {"kind": "affine", "x0": 1.0, "a": 1.5, "b": 0.0}, "n": 60, "checkpoints": [60], "props": {"limit": null, "tends_to": "+inf", "bounded": false, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "1.5^n -> +inf (Hardy Sec. 72, x > 1)", "cite": ["HARDY_72"]},
+  {"id": "linear_decrease", "family": "falling without bound", "form": "x_n = 100 - n", "gen": {"kind": "affine", "x0": 100.0, "a": 1.0, "b": -1.0}, "n": 60, "checkpoints": [60], "props": {"limit": null, "tends_to": "-inf", "bounded": false, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "100 - n -> -inf", "cite": ["HARDY_60"]},
+  {"id": "harmonic", "family": "harmonic partial sums (slow divergence)", "form": "x_n = H_{n+1} = sum_{k=1}^{n+1} 1/k", "gen": {"kind": "recur", "x0": 1.0, "expr": "x + 1.0 / (n + 1)"}, "n": 2000, "checkpoints": [60, 300, 2000], "props": {"limit": null, "tends_to": "+inf", "bounded": false, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "harmonic partial sums -> +inf (Hardy Sec. 77, remark after (7))", "cite": ["HARDY_77"]},
+  {"id": "log_n", "family": "slow divergence", "form": "x_n = ln(n + 2)", "gen": {"kind": "closed", "expr": "math.log(n + 2)"}, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": "+inf", "bounded": false, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "ln(n + 2) -> +inf", "cite": ["HARDY_60"]},
+  {"id": "sqrt_n", "family": "slow divergence", "form": "x_n = sqrt(n + 1)", "gen": {"kind": "closed", "expr": "math.sqrt(n + 1)"}, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": "+inf", "bounded": false, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "sqrt(n + 1) -> +inf", "cite": ["HARDY_60"]},
+  {"id": "alt_inv_n", "family": "alternating convergent", "form": "x_n = (-1)^(n+1) / (n + 1)", "gen": {"kind": "closed", "expr": "(-1.0) ** (n + 1) / (n + 1)"}, "n": 2000, "checkpoints": [60, 2000], "props": {"limit": 0.0, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": true}, "why": "(-1)^(n+1)/(n+1) -> 0; it alternates about 0 (a periodic sign fluctuation) whose amplitude 1/(n+1) shrinks (variance changes)", "cite": ["HARDY_58"]},
+  {"id": "alt_series_ln2", "family": "alternating convergent (partial sums)", "form": "x_n = sum_{k=1}^{n+1} (-1)^(k+1)/k (-> ln 2)", "gen": {"kind": "recur", "x0": 1.0, "expr": "x + (-1.0) ** n / (n + 1)"}, "n": 2000, "checkpoints": [60, 2000], "props": {"limit": 0.6931471805599453, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": true}, "why": "alternating partial sums -> ln 2 (Hardy Sec. 188), alternating about the limit with shrinking amplitude", "cite": ["HARDY_188", "ALT_SERIES_EST"]},
+  {"id": "damped_osc_0.9", "family": "damped oscillator", "form": "x_n = 0.9^n cos(n)", "gen": {"kind": "closed", "expr": "0.9 ** n * math.cos(1.0 * n)"}, "n": 300, "checkpoints": [20, 300], "props": {"limit": 0.0, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": true}, "why": "0.9^n cos n -> 0; an oscillation (periodic fluctuation) of decaying amplitude", "cite": ["HARDY_58"]},
+  {"id": "damped_osc_0.99", "family": "damped oscillator", "form": "x_n = 0.99^n cos(0.5 n)", "gen": {"kind": "closed", "expr": "0.99 ** n * math.cos(0.5 * n)"}, "n": 100, "checkpoints": [100], "props": {"limit": 0.0, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": true}, "why": "0.99^n cos(n/2) -> 0; an oscillation of decaying amplitude", "cite": ["HARDY_58"]},
+  {"id": "period2_wide", "family": "period-2 orbit", "form": "3, 30, 3, 30, ...", "gen": {"kind": "cycle", "values": [3.0, 30.0]}, "n": 60, "checkpoints": [60], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": false}, "why": "a continual repetition of the cycle (3, 30) (Hardy Sec. 62)", "cite": ["HARDY_62"]},
+  {"id": "period2_reciprocal", "family": "period-2 orbit", "form": "2, 0.5, 2, 0.5, ...", "gen": {"kind": "cycle", "values": [2.0, 0.5]}, "n": 60, "checkpoints": [60], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": false}, "why": "a continual repetition of the cycle (2, 0.5)", "cite": ["HARDY_62"]},
+  {"id": "period4_square", "family": "period-4 orbit", "form": "3, 3, 30, 30, ...", "gen": {"kind": "cycle", "values": [3.0, 3.0, 30.0, 30.0]}, "n": 60, "checkpoints": [60], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": false}, "why": "a continual repetition of the cycle (3, 3, 30, 30)", "cite": ["HARDY_62"]},
+  {"id": "period4_distinct", "family": "period-4 orbit", "form": "1, 5, 2, 7, ...", "gen": {"kind": "cycle", "values": [1.0, 5.0, 2.0, 7.0]}, "n": 60, "checkpoints": [60], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": false}, "why": "a continual repetition of the cycle (1, 5, 2, 7)", "cite": ["HARDY_62"]},
+  {"id": "logistic_2.8", "family": "logistic map (convergent)", "form": "x_{n+1} = 2.8 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent ln 0.8 = -0.223 (negative)", "gen": {"kind": "recur", "x0": 0.4, "expr": "2.8 * x * (1.0 - x)"}, "lyapunov": -0.2231, "n": 200, "checkpoints": [10, 200], "props": {"limit": 0.6428571428571428, "tends_to": null, "bounded": true, "has_trend": true, "periodic": true, "variance_changes": true}, "why": "r = 2.8 < 3: tends to the fixed point 1 - 1/r (multiplier -0.8), rising from 0.4 with an alternating, decaying approach; Lyapunov exponent ln 0.8 < 0", "cite": ["LOGISTIC_WIKI", "STROGATZ_10"]},
+  {"id": "logistic_3.2", "family": "logistic map (period 2)", "form": "x_{n+1} = 3.2 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent 0.5 ln 0.16 = -0.916 (negative)", "gen": {"kind": "recur", "x0": 0.4, "expr": "3.2 * x * (1.0 - x)"}, "lyapunov": -0.9163, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": false}, "why": "3 < r = 3.2 < 3.44949: the orbit approaches a 2-cycle {0.5130, 0.7995}; Lyapunov exponent -0.916", "cite": ["LOGISTIC_WIKI", "STROGATZ_10"]},
+  {"id": "logistic_3.5", "family": "logistic map (period 4)", "form": "x_{n+1} = 3.5 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent -0.873 (negative, computed over 2e5 iterates)", "gen": {"kind": "recur", "x0": 0.4, "expr": "3.5 * x * (1.0 - x)"}, "lyapunov": -0.8725, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": false}, "why": "3.44949 < r = 3.5 < 3.54409: the orbit approaches a 4-cycle; Lyapunov exponent -0.873", "cite": ["LOGISTIC_WIKI", "STROGATZ_10"]},
+  {"id": "logistic_3.9", "family": "logistic map (chaotic)", "form": "x_{n+1} = 3.9 x_n (1 - x_n), x_0 = 0.4; Lyapunov exponent +0.497 (positive, computed over 2e5 iterates)", "gen": {"kind": "recur", "x0": 0.4, "expr": "3.9 * x * (1.0 - x)"}, "lyapunov": 0.4967, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": null, "variance_changes": null}, "why": "r = 3.9: chaotic orbit in [0, 1] (Lyapunov exponent +0.497): bounded, no limit", "cite": ["LOGISTIC_WIKI", "STROGATZ_10"], "undecided": "a chaotic orbit is stationary only under its invariant measure; NIST's run-sequence notion (periodic fluctuation, constant variance) does not decide a deterministic chaotic orbit"},
+  {"id": "sin_n", "family": "quasi-periodic", "form": "x_n = sin(n)", "gen": {"kind": "closed", "expr": "math.sin(1.0 * n)"}, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": null, "variance_changes": false}, "why": "sin n with theta = 1/pi irrational: oscillates finitely (Hardy Examples XXIV.7); bounded amplitude 1", "cite": ["HARDY_62"], "undecided": "quasi-periodic: whether a non-recurring fluctuation of a periodic function counts as NIST's 'periodic fluctuation' is not decided by the source"},
+  {"id": "cos_fixed_point", "family": "fixed-point iteration (alternating approach)", "form": "x_{n+1} = cos(x_n), x_0 = 1 (-> 0.739085)", "gen": {"kind": "recur", "x0": 1.0, "expr": "math.cos(x)"}, "n": 60, "checkpoints": [10, 60], "props": {"limit": 0.7390851332151607, "tends_to": null, "bounded": true, "has_trend": true, "periodic": true, "variance_changes": true}, "why": "x -> cos x from 1 tends to 0.739085 (multiplier -sin x* = -0.674): falls from 1 with an alternating, decaying approach", "cite": ["HARDY_58"]},
+  {"id": "newton_sqrt2", "family": "Newton iteration (quadratic)", "form": "x_{n+1} = (x_n + 2/x_n)/2, x_0 = 1 (-> sqrt 2)", "gen": {"kind": "recur", "x0": 1.0, "expr": "(x + 2.0 / x) / 2.0"}, "n": 30, "checkpoints": [30], "props": {"limit": 1.4142135623730951, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "Newton's iteration for sqrt 2 from 1: monotone after the first step, quadratic convergence", "cite": ["NW_A2"]},
+  {"id": "noise_below_s1", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-3 u_n, u_n iid uniform[-1, 1] (seed 1)", "gen": {"kind": "noise", "center": 100.0, "amp": 0.001, "seed": 1}, "n": 300, "checkpoints": [100, 200, 300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": false, "variance_changes": false}, "why": "iid uniform noise, amplitude 1e-3 about 100: a.s. no limit (second Borel-Cantelli), bounded, stationary", "cite": ["BOREL_CANTELLI", "NIST_6442"]},
+  {"id": "noise_below_s2", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-3 u_n (seed 2)", "gen": {"kind": "noise", "center": 100.0, "amp": 0.001, "seed": 2}, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": false, "variance_changes": false}, "why": "iid uniform noise, amplitude 1e-3 about 100 (seed 2): a.s. no limit, stationary", "cite": ["BOREL_CANTELLI", "NIST_6442"]},
+  {"id": "noise_tiny_s3", "family": "iid noise below tolerance", "form": "x_n = 100 + 1e-9 u_n (seed 3)", "gen": {"kind": "noise", "center": 100.0, "amp": 1e-09, "seed": 3}, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": false, "variance_changes": false}, "why": "iid uniform noise, amplitude 1e-9 about 100: a.s. no limit, stationary", "cite": ["BOREL_CANTELLI", "NIST_6442"]},
+  {"id": "noise_above_s1", "family": "iid noise above tolerance", "form": "x_n = 100 + 10 u_n (seed 1)", "gen": {"kind": "noise", "center": 100.0, "amp": 10.0, "seed": 1}, "n": 300, "checkpoints": [100, 300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": false, "variance_changes": false}, "why": "iid uniform noise, amplitude 10 about 100: a.s. no limit, stationary", "cite": ["BOREL_CANTELLI", "NIST_6442"]},
+  {"id": "random_walk", "family": "random walk", "form": "x_0 = 0, x_{n+1} = x_n +- 1 (fair coin, seed 7)", "gen": {"kind": "walk", "x0": 0.0, "step": 1.0, "seed": 7}, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": false, "has_trend": false, "periodic": false, "variance_changes": true}, "why": "simple +-1 random walk: recurrent, so a.s. no limit and not +-inf; Var(x_n) = n grows", "cite": ["RW_RECURRENT", "NIST_6442"]},
+  {"id": "level_shift", "family": "level shift", "form": "x_n = 1 for n < 100, 2 for n >= 100", "gen": {"kind": "closed", "expr": "1.0 if n < 100 else 2.0"}, "n": 160, "checkpoints": [103, 160], "props": {"limit": 2.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "1 until n = 100, then 2 forever: limit 2; the level change is a trend in the mean", "cite": ["HARDY_58", "NIST_6442"]},
+  {"id": "ml_loss_exp", "family": "ML loss (falling, exponential)", "form": "x_n = 0.05 + 2.3 exp(-0.08 n)", "gen": {"kind": "closed", "expr": "0.05 + 2.3 * math.exp(-0.08 * n)"}, "n": 400, "checkpoints": [30, 400], "props": {"limit": 0.05, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "0.05 + 2.3 exp(-0.08 n) falls monotonically to 0.05", "cite": ["HARDY_72"]},
+  {"id": "ml_loss_power", "family": "ML loss (falling, power law)", "form": "x_n = 0.1 + 2 / sqrt(1 + 0.1 n)", "gen": {"kind": "closed", "expr": "0.1 + 2.0 / math.sqrt(1.0 + 0.1 * n)"}, "n": 2000, "checkpoints": [60, 2000], "props": {"limit": 0.1, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "0.1 + 2/sqrt(1 + 0.1 n) falls monotonically to 0.1 (sublinearly)", "cite": ["HARDY_58"]},
+  {"id": "ml_plateau", "family": "ML loss (plateau)", "form": "x_n = 0.35 + 1e-6 u_n (seed 5)", "gen": {"kind": "noise", "center": 0.35, "amp": 1e-06, "seed": 5}, "n": 200, "checkpoints": [200], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": false, "variance_changes": false}, "why": "iid uniform noise, amplitude 1e-6 about 0.35: a.s. no limit, stationary", "cite": ["BOREL_CANTELLI", "NIST_6442"]},
+  {"id": "ml_loss_rise_plateau", "family": "ML loss (rising to a plateau)", "form": "x_n = 1 - 0.6 * 0.9^n", "gen": {"kind": "closed", "expr": "1.0 - 0.6 * 0.9 ** n"}, "n": 300, "checkpoints": [20, 300], "props": {"limit": 1.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "1 - 0.6*0.9^n rises monotonically to 1", "cite": ["HARDY_72"]},
+  {"id": "two_vars", "family": "two variables (probe trap)", "form": "x_n = 0.5^n, with y = 3, 30, 3, ... assigned AFTER x at every step; predicates read on x", "gen": {"kind": "affine", "x0": 1.0, "a": 0.5, "b": 0.0}, "second": {"kind": "cycle", "values": [3.0, 30.0]}, "n": 60, "checkpoints": [60], "props": {"limit": 0.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "x = 0.5^n -> 0 monotonically (y, assigned after x, is the cycle (3, 30))", "cite": ["HARDY_72"]},
+  {"id": "huge_conv", "family": "convergence at huge magnitude", "form": "x_{n+1} = 0.5 x_n + 5e299, x_0 = 1e305 (-> 1e300)", "gen": {"kind": "affine", "x0": 1e+305, "a": 0.5, "b": 5e+299}, "n": 80, "checkpoints": [10, 80], "props": {"limit": 1e+300, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "x_n = 1e300 + (1e305 - 1e300)*0.5^n -> 1e300 monotonically", "cite": ["HARDY_72"]},
+  {"id": "neg_to_m5", "family": "negative-valued convergence", "form": "x_{n+1} = 0.5 x_n - 2.5, x_0 = -100 (-> -5)", "gen": {"kind": "affine", "x0": -100.0, "a": 0.5, "b": -2.5}, "n": 60, "checkpoints": [5, 60], "props": {"limit": -5.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "x_n = -5 - 95*0.5^n rises monotonically to -5", "cite": ["HARDY_72"]},
+  {"id": "neg_decay", "family": "negative-valued decay", "form": "x_n = -0.9^n", "gen": {"kind": "affine", "x0": -1.0, "a": 0.9, "b": 0.0}, "n": 300, "checkpoints": [20, 300], "props": {"limit": 0.0, "tends_to": null, "bounded": true, "has_trend": true, "periodic": false, "variance_changes": false}, "why": "-0.9^n rises monotonically to 0", "cite": ["HARDY_72"]},
+  {"id": "short_const", "family": "shorter than the window", "form": "x_n = 7, only 6 values (5 steps; window is 10)", "gen": {"kind": "closed", "expr": "7.0"}, "n": 5, "checkpoints": [5], "props": {"limit": 7.0, "tends_to": null, "bounded": true, "has_trend": false, "periodic": false, "variance_changes": false}, "why": "constant 7 (only 6 values observed)", "cite": ["HARDY_58"]},
+  {"id": "growing_osc", "family": "oscillation with a growing envelope", "form": "x_n = 1.02^n cos(n)", "gen": {"kind": "closed", "expr": "1.02 ** n * math.cos(1.0 * n)"}, "n": 200, "checkpoints": [200], "props": {"limit": null, "tends_to": null, "bounded": false, "has_trend": false, "periodic": true, "variance_changes": true}, "why": "1.02^n cos n: |x| unbounded with both signs infinitely often, so no limit and neither +inf nor -inf: oscillates infinitely; growing amplitude", "cite": ["HARDY_62"]},
+  {"id": "burst", "family": "intermittent burst (period longer than the window)", "form": "cycle of 30: 25 x 1.0 then 5 x 3.0", "gen": {"kind": "cycle", "values": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0, 3.0, 3.0, 3.0]}, "n": 149, "checkpoints": [144, 149], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": false}, "why": "a continual repetition of a 30-value cycle (25 x 1.0, 5 x 3.0)", "cite": ["HARDY_62"]},
+  {"id": "hardy_alt", "family": "Hardy's (-1)^n + 1/n", "form": "x_n = (-1)^k + 1/k, k = n + 1", "gen": {"kind": "closed", "expr": "(-1.0) ** (n + 1) + 1.0 / (n + 1)"}, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": true, "variance_changes": false}, "why": "(-1)^k + 1/k: Hardy's own Sec. 62 example; oscillates finitely between values near -1 and +1", "cite": ["HARDY_62"]},
+  {"id": "neg_1.1_pow", "family": "(-1.1)^n", "form": "x_n = (-1.1)^n", "gen": {"kind": "closed", "expr": "(-1.1) ** n"}, "n": 200, "checkpoints": [200], "props": {"limit": null, "tends_to": null, "bounded": false, "has_trend": false, "periodic": true, "variance_changes": true}, "why": "(-1.1)^n oscillates infinitely (Hardy Sec. 72, x < -1); alternating sign, growing magnitude", "cite": ["HARDY_72"]},
+  {"id": "hardy_xxiv5", "family": "Hardy XXIV.5: to +inf by steps forwards and backwards", "form": "x_n = k^2 + (-1)^k 2k, k = n + 1", "gen": {"kind": "closed", "expr": "(n + 1.0) ** 2 + (-1.0) ** (n + 1) * 2.0 * (n + 1)"}, "n": 200, "checkpoints": [60, 200], "props": {"limit": null, "tends_to": "+inf", "bounded": false, "has_trend": true, "periodic": true, "variance_changes": true}, "why": "k^2 + (-1)^k 2k -> +inf by steps forwards and backwards: it does not oscillate (Hardy Examples XXIV.5)", "cite": ["HARDY_XXIV5"]},
+  {"id": "sawtooth_up", "family": "alternation on a rising trend", "form": "x_n = n + 3(-1)^n", "gen": {"kind": "closed", "expr": "n + 3.0 * (-1.0) ** n"}, "n": 200, "checkpoints": [200], "props": {"limit": null, "tends_to": "+inf", "bounded": false, "has_trend": true, "periodic": true, "variance_changes": false}, "why": "n + 3(-1)^n >= n - 3 -> +inf, alternating about the trend line n", "cite": ["HARDY_60"]},
+  {"id": "quasi_2", "family": "quasi-periodic (two frequencies)", "form": "x_n = sin n + sin(sqrt2 n)", "gen": {"kind": "closed", "expr": "math.sin(1.0 * n) + math.sin(math.sqrt(2.0) * n)"}, "n": 300, "checkpoints": [300], "props": {"limit": null, "tends_to": null, "bounded": true, "has_trend": false, "periodic": null, "variance_changes": false}, "why": "sin n + sin(sqrt2 n): bounded, two incommensurate frequencies, never periodic, no limit: oscillates finitely", "cite": ["HARDY_62"], "undecided": "quasi-periodic: whether a non-recurring fluctuation counts as NIST's 'periodic fluctuation' is not decided by the source"}
  ]
 }

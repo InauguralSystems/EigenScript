@@ -3,46 +3,48 @@
 
 usage: score.py BINARY [--corpus PATH]
 
-For each corpus row this generates the sequence in Python, emits an
-EigenScript program that assigns it to `x`, runs BINARY on it, and reads all
-six predicates with the PER-VARIABLE form (`converged of x`) at every
-checkpoint. Bare predicates read the most recently assigned binding, the
-known probe trap; row `two_vars` exists to catch a harness that uses them.
-Every value the runtime holds is compared BIT-EXACTLY with the generator's.
+Labels come from labels.json, which must equal derive.py's derivation from
+the corpus properties (the label gate). For each corpus row this generates
+the sequence in Python, emits an EigenScript program that assigns it to `x`,
+runs BINARY on it, and reads all six predicates with the PER-VARIABLE form
+(`converged of x`) at every checkpoint. Bare predicates read the most
+recently assigned binding, the known probe trap; row `two_vars` exists to
+catch a harness that uses them. Every value the runtime holds is compared
+BIT-EXACTLY with the generator's, and every checkpoint read must follow the
+assignment of its value in the program's own output.
 
 MATH verdicts are the headline score. CONVENTION verdicts (decided only by a
-stated tolerance) are scored in their own table. EIGS-DEFINED verdicts are
-listed, never scored. The same verdicts are scored for the independent
+stated tolerance or convention) are scored in their own table. EIGS-DEFINED
+verdicts are listed, never scored. The same verdicts are scored for the
 reference model (reference.py) on the distance signal (the values) and on
-the runtime's entropy signal (#1667).
+the runtime's entropy signal (#1667). The reference is an independent
+implementation of the DEFINITIONS at the observer's window and tolerances;
+its agreement with the runtime on window-limited rows is correlated, not
+independent evidence.
 
 Exit status: 0 when every row ran and was scored, whatever the agreement;
 2 on any harness error (missing binary, a program that errors, a missing or
-duplicate output line, a value that differs from the generator in any bit,
-a schema violation, zero rows, an internal exception). Measurement only:
+duplicate output line, a read before its value, a value that differs from
+the generator in any bit, a label that differs from the derivation, a schema
+violation, zero rows, an internal exception). Measurement only:
 disagreements never fail the run.
 """
 import json
 import math
 import os
-import random
 import struct
 import subprocess
 import sys
 import tempfile
 
+import derive
 import reference
+from derive import HarnessError, PREDS, generate
 
-PREDS = ["converged", "stable", "improving", "oscillating", "diverging",
-         "equilibrium"]
 SCORED = ("MATH", "CONVENTION")
 ROW_TIMEOUT = 60
 CLAMP = 1e308          # the default build saturates here (EIGS_NUM_MAX)
 HERE = os.path.dirname(os.path.abspath(__file__))
-
-
-class HarnessError(Exception):
-    pass
 
 
 def read_expr(pred):
@@ -50,90 +52,36 @@ def read_expr(pred):
     return f"{pred} of x"
 
 
-# --- corpus -----------------------------------------------------------------
+# --- labels -----------------------------------------------------------------
 
-def check_verdicts(where, ents, sources):
-    if not isinstance(ents, list) or not ents:
-        raise HarnessError(f"{where}: needs a list of verdicts")
-    labels = [e[0] if e else None for e in ents]
-    if labels == ["EIGS-DEFINED"]:
-        if len(ents[0]) != 1:
-            raise HarnessError(f"{where}: EIGS-DEFINED takes no value")
-        return
-    if len(set(labels)) != len(labels) or any(l not in SCORED for l in labels):
-        raise HarnessError(f"{where}: bad labels {labels}")
-    for e in ents:
-        if (len(e) != 4 or not isinstance(e[1], bool) or not e[2]
-                or any(s not in sources for s in e[2]) or not e[3]):
-            raise HarnessError(f"{where}: a {e[0]} verdict needs a bool,"
-                               " known sources and a reason")
-
-
-def load_corpus(path):
+def load_labels(corpus, path):
+    """The label gate: labels.json must equal derive(corpus), and an
+    EIGS-DEFINED verdict may appear only where the definitions table allows
+    it (stable; equilibrium on a row with no true flag and a stated
+    `undecided` reason)."""
     try:
         with open(path) as f:
-            c = json.load(f)
+            committed = json.load(f)
     except (OSError, ValueError) as e:
-        raise HarnessError(f"cannot load corpus {path}: {e}")
-    rows = c.get("rows")
-    if not isinstance(rows, list) or not rows:
-        raise HarnessError("corpus has no rows")
-    sources = c.get("sources", {})
-    for k, s in sources.items():
-        if not s.get("text") or not s.get("status", "").startswith(("VERIFIED", "UNVERIFIED")):
-            raise HarnessError(f"source {k}: needs text and a VERIFIED/UNVERIFIED status")
-    seen = set()
-    for r in rows:
-        rid = r.get("id")
-        if not rid or rid in seen:
-            raise HarnessError(f"row id missing or duplicated: {rid!r}")
-        seen.add(rid)
-        for k in ("family", "form", "gen", "n", "checkpoints"):
-            if k not in r:
-                raise HarnessError(f"{rid}: missing {k}")
-        ats = [ck["at"] for ck in r["checkpoints"]]
-        if not ats or ats != sorted(set(ats)) or ats[-1] != r["n"] or ats[0] < 1:
-            raise HarnessError(f"{rid}: checkpoints {ats} must be increasing"
-                               f" and end at n={r['n']}")
-        for ck in r["checkpoints"]:
-            if sorted(ck["v"]) != sorted(PREDS):
-                raise HarnessError(f"{rid}@{ck['at']}: needs all six predicates")
-            for p, ents in ck["v"].items():
-                check_verdicts(f"{rid}@{ck['at']}.{p}", ents, sources)
-    return c
-
-
-# Corpus expressions are checked-in data, evaluated with no builtins.
-ENV = {"__builtins__": {}, "math": math}
-
-
-def generate(gen, n):
-    k = gen["kind"]
-    if k == "affine":
-        xs = [gen["x0"]]
-        for _ in range(n):
-            xs.append(xs[-1] * gen["a"] + gen["b"])
-    elif k == "closed":
-        xs = [float(eval(gen["expr"], ENV, {"n": i})) for i in range(n + 1)]
-    elif k == "recur":
-        xs = [gen["x0"]]
-        for i in range(1, n + 1):
-            xs.append(float(eval(gen["expr"], ENV, {"x": xs[-1], "n": i})))
-    elif k == "cycle":
-        vs = gen["values"]
-        xs = [vs[i % len(vs)] for i in range(n + 1)]
-    elif k == "noise":
-        rng = random.Random(gen["seed"])
-        xs = [gen["center"] + gen["amp"] * rng.uniform(-1.0, 1.0)
-              for _ in range(n + 1)]
-    elif k == "walk":
-        rng = random.Random(gen["seed"])
-        xs = [gen["x0"]]
-        for _ in range(n):
-            xs.append(xs[-1] + (gen["step"] if rng.random() < 0.5 else -gen["step"]))
-    else:
-        raise HarnessError(f"unknown generator kind {k!r}")
-    return [float(v) for v in xs]
+        raise HarnessError(f"cannot load labels {path}: {e}")
+    derived = derive.derive(corpus)
+    diff = sorted(k for k in set(committed) | set(derived)
+                  if committed.get(k) != derived.get(k))
+    if diff:
+        raise HarnessError(f"labels.json differs from derive.py at {len(diff)} checkpoint(s),"
+                           f" first {diff[0]}; regenerate with derive.py --write")
+    rows = {r["id"]: r for r in corpus["rows"]}
+    for key, preds in committed.items():
+        row = rows[key.rsplit("@", 1)[0]]
+        for p, ents in preds.items():
+            if ents[0][0] != "EIGS-DEFINED":
+                continue
+            flags = [row["props"][f] for f in derive.FLAGS]
+            if p == "stable" or (p == "equilibrium" and True not in flags
+                                 and None in flags and row.get("undecided")):
+                continue
+            raise HarnessError(f"{key}.{p}: EIGS-DEFINED where a standard decides it")
+    return committed
 
 
 def literal(v):
@@ -148,7 +96,7 @@ def emit(row, xs, ys):
     in the runtime's own arithmetic; every other row assigns literals. Every
     assignment is followed by a V (and Y) line carrying the runtime's value."""
     gen = row["gen"]
-    cks = {ck["at"] for ck in row["checkpoints"]}
+    cks = set(row["checkpoints"])
     out = []
     for i, v in enumerate(xs):
         if gen["kind"] == "affine" and i > 0:
@@ -199,12 +147,14 @@ def run_row(binary, row, xs, ys, tmpdir):
                            f"stderr: {p.stderr.strip()[:400]}\n"
                            f"stdout tail: {lines[-3:]}")
     got, vals = {}, {"V": {}, "Y": {}}
+    last = {"V": -1, "Y": -1}                  # the program's own order
     for ln in lines[:-1]:
         f = ln.split()
         if len(f) == 3 and f[0] in vals:
             i = int(f[1])
-            if i in vals[f[0]]:
-                raise HarnessError(f"{rid}: duplicate {f[0]} line {i}")
+            if i != last[f[0]] + 1:
+                raise HarnessError(f"{rid}: {f[0]} line {i} out of order after {last[f[0]]}")
+            last[f[0]] = i
             vals[f[0]][i] = float(f[2])
             continue
         if len(f) != 8 or f[0] != "CK":
@@ -212,10 +162,13 @@ def run_row(binary, row, xs, ys, tmpdir):
         at = int(f[1])
         if at in got:
             raise HarnessError(f"{rid}: duplicate checkpoint {at}")
+        if last["V"] != at or (ys is not None and last["Y"] != at):
+            raise HarnessError(f"{rid}: checkpoint {at} read after value {last['V']}:"
+                               " a read must follow the assignment of x_at")
         if any(b not in ("true", "false") for b in f[2:]):
             raise HarnessError(f"{rid}@{at}: non-boolean read {f[2:]}")
         got[at] = dict(zip(PREDS, (b == "true" for b in f[2:])))
-    want = [ck["at"] for ck in row["checkpoints"]]
+    want = row["checkpoints"]
     if sorted(got) != want:
         raise HarnessError(f"{rid}: checkpoints read {sorted(got)}, expected {want}")
     for tag, seq in (("V", xs), ("Y", ys)):
@@ -263,15 +216,15 @@ def main(argv):
         corpus_path = args[i + 1]
         del args[i:i + 2]
     if len(args) != 1:
-        raise HarnessError("usage: score.py BINARY [--corpus PATH]")
+        raise HarnessError("usage: score.py BINARY [--corpus PATH]  (labels.json beside it)")
     binary = os.path.abspath(args[0])
     if not (os.path.isfile(binary) and os.access(binary, os.X_OK)):
         raise HarnessError(f"binary not found or not executable: {binary}")
-    corpus = load_corpus(corpus_path)
+    corpus = derive.load_corpus(corpus_path)
+    labels = load_labels(corpus, os.path.join(os.path.dirname(corpus_path), "labels.json"))
     rows = corpus["rows"]
-    declared = {c: sum(1 for r in rows for ck in r["checkpoints"]
-                       for ents in ck["v"].values() for e in ents if e[0] == c)
-                for c in SCORED}
+    declared = {c: sum(1 for v in labels.values() for ents in v.values()
+                       for e in ents if e[0] == c) for c in SCORED}
     arms = [Arm("RUNTIME"), Arm("REFERENCE"), Arm("REFERENCE_ENTROPY")]
     examined = 0
     with tempfile.TemporaryDirectory(prefix="obs_oracle_") as tmp:
@@ -280,14 +233,14 @@ def main(argv):
             ys = generate(row["second"], row["n"]) if "second" in row else None
             got = run_row(binary, row, xs, ys, tmp)
             hs = reference.entropy_signal(xs)
-            for ck in row["checkpoints"]:
-                at = ck["at"]
+            for at in row["checkpoints"]:
+                v = labels[f"{row['id']}@{at}"]
                 ref = reference.classify(xs, at)
                 ref_h = reference.classify(hs, at)
                 for p in PREDS:
-                    arms[0].add(row["id"], at, p, ck["v"][p], got[at][p])
-                    arms[1].add(row["id"], at, p, ck["v"][p], ref[p])
-                    arms[2].add(row["id"], at, p, ck["v"][p], ref_h[p])
+                    arms[0].add(row["id"], at, p, v[p], got[at][p])
+                    arms[1].add(row["id"], at, p, v[p], ref[p])
+                    arms[2].add(row["id"], at, p, v[p], ref_h[p])
             examined += 1
     if examined != len(rows) or examined == 0:
         raise HarnessError(f"examined {examined} rows of {len(rows)}")
