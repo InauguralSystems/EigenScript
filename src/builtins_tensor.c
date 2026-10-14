@@ -794,7 +794,7 @@ Value* builtin_tensor_matmul(Value *arg) {
                                   "result is not a number (NaN has no defined value)");
                     break;
                 }
-                res->data.buffer.data[i] = SLOT_NUM_RAW(slot_null());
+                res->data.buffer.data[i] = SLOT_F64_RAW(slot_null());
             }
         }
         return res;

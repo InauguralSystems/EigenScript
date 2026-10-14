@@ -56,15 +56,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VOCAB = {
     # (a) type tests and type derivations
     'VAL_NUM': 'TAG',              # position decides: TEST/CASE/TAGSET/YIELD/EMIT
-    'slot_is_num': 'TEST',
-    'slot_is_numeric': 'TEST',
+    'slot_is_f64': 'TEST',         # R1.1: was slot_is_num (slot_is_numeric deleted)
+    'slot_is_smi': 'TEST',         # R1.1: the SMI tag test
     'NUM_REUSE': 'TEST',
     'AST_NUM': 'TAG',
     # (b) payload reads
     'VAL_NUM_RAW': 'RAW',          # an lvalue: `VAL_NUM_RAW(v) = x` is a WRITE
-    'SLOT_NUM_RAW': 'RAW',
+    'SLOT_F64_RAW': 'RAW',         # R1.1: was SLOT_NUM_RAW
+    'slot_smi_val': 'RAW',         # R1.1: an SMI's int (no int Value exists before R1.3)
     'VAL_NUM_OFFSET': 'RAW',
-    'slot_as_double': 'READ',
+    'slot_f64_value': 'READ',      # R1.1: replaces vm.c's slot_as_double (floats only)
+    'slot_int_value': 'READ',      # R1.1: an int's value (SMI; R1.2a adds the VAL_INT box)
     'eigs_num_arg': 'READ',
     'eigs_num_arg_slow': 'READ',
     'eigs_list_num': 'READ',
@@ -85,7 +87,8 @@ VOCAB = {
     # (c) producers
     'make_num': 'PRODUCE',
     'make_num_permanent': 'PRODUCE',
-    'slot_from_num': 'PRODUCE',
+    'slot_from_f64': 'PRODUCE',    # R1.1: was slot_from_num
+    'slot_from_int': 'PRODUCE',    # R1.1: the one int writer (no runtime caller before R1.3)
     'list_set_num': 'PRODUCE',
     'list_append_num': 'PRODUCE',
     'dict_value_set_num': 'PRODUCE',
@@ -143,6 +146,7 @@ WRAPPERS = {
     'compute_entropy_impl': 'observer: returns an entropy, not the number; its payload read is the site',
     'ent_child_slot': 'observer: returns a child entropy, not the number; its payload read is the site',
     'observer_entropy_now': 'observer: writes an entropy, not the number; its payload read is the site',
+    'obs_slot_num': 'observer: the numeric channel of a slot (R1.1); its payload read is the site',
     'numerical_loss': 'tensor: reads the loss callback result once; that read is the site',
     'tensor_flatten_recursive': 'tensor: bulk element flattener into a double array; the per-element read is the site',
     'tensor_to_flat': 'tensor: bulk element flattener into a double array; the per-element read is the site',
@@ -182,7 +186,7 @@ TOKEN_RE = re.compile(r'\b(' + '|'.join(sorted(VOCAB, key=len, reverse=True)) + 
 # Raw union members: the Value's double (`num_`) and the slot's (`d_`). Only
 # the accessor macros may name them; anywhere else is a bypass.
 RAW_MEMBER = re.compile(r'(?:\.|->)(d_|num_)\b')
-RAW_MEMBER_HOMES = {'#define VAL_NUM_RAW', '#define SLOT_NUM_RAW', '#define VAL_NUM_OFFSET'}
+RAW_MEMBER_HOMES = {'#define VAL_NUM_RAW', '#define SLOT_F64_RAW', '#define VAL_NUM_OFFSET'}
 C_KEYWORDS = {'if', 'while', 'for', 'switch', 'return', 'sizeof', 'do', 'else',
               'case', 'defined', '__attribute__', '__typeof__', '_Generic'}
 
@@ -353,7 +357,7 @@ def val_num_kind(line, start, end, token):
 
 
 def raw_kind(line, end):
-    """VAL_NUM_RAW(...)/SLOT_NUM_RAW(...) followed by a plain `=` is a write."""
+    """VAL_NUM_RAW(...)/SLOT_F64_RAW(...) followed by a plain `=` is a write."""
     depth, i = 0, end
     while i < len(line):
         ch = line[i]
@@ -385,7 +389,7 @@ def scan_file(path, rel):
             kind = VOCAB[tok]
             if kind == 'TAG':
                 kind = val_num_kind(line, m.start(), m.end(), tok)
-            elif tok in ('VAL_NUM_RAW', 'SLOT_NUM_RAW'):
+            elif tok in ('VAL_NUM_RAW', 'SLOT_F64_RAW'):
                 kind = raw_kind(line, m.end())
             sites.append((rel, ln, scope[ln], tok, kind))
         if JIT_FILES.match(rel):
@@ -415,8 +419,8 @@ def classify(site):
 
 
 # ---- derived accessor check ----------------------------------------------
-READ_IN_BODY = re.compile(r'\b(VAL_NUM_RAW|SLOT_NUM_RAW|eigs_num_arg|eigs_list_num|'
-                          r'eigs_slot_num|list_get_num|dict_value_get_num|slot_as_double)\b|'
+READ_IN_BODY = re.compile(r'\b(VAL_NUM_RAW|SLOT_F64_RAW|eigs_num_arg|eigs_list_num|'
+                          r'eigs_slot_num|list_get_num|dict_value_get_num|slot_f64_value)\b|'
                           r'(?:\.|->)(?:d_|num_)\b')
 
 
@@ -580,18 +584,24 @@ def executor_arms(stripped_by_file, scope_by_file):
 
 # ---- slot classifiers (R1.1's worklist) ------------------------------------
 # Every function (or dispatcher arm) that tests, dereferences or types an
-# EigsSlot. D1 holds a number test, so the rename forces it; D2 dereferences
-# with no number test; D3 tests other tags or bits; T only reads slot_type.
-# Every D2 and D3 entry needs a reviewed disposition in the design doc.
-SLOT_TEST = {'slot_is_num', 'slot_is_numeric', 'slot_as_double'}
+# EigsSlot. D1 holds a number test (R1.1 renamed or deleted every one, so the
+# compiler stopped at each); D2 dereferences with no number test; D3 tests
+# other tags or bits; T only reads slot_type. From R1.1 on, every D1, D2 and
+# D3 entry needs a reviewed disposition in the design doc: what an int (an
+# SMI) does there.
+SLOT_TEST = {'slot_is_f64', 'slot_is_smi', 'slot_f64_value', 'slot_int_value', 'slot_smi_val'}
 SLOT_OTHER = {'slot_is_null', 'slot_is_bool', 'slot_is_heap', 'slot_is_ptr'}
 SLOT_DEREF = {'slot_as_ptr', 'slot_as_heap', 'eigs_slot_ref'}
 SLOT_TYPE = {'slot_type', 'list_elem_type', 'dict_value_type'}
-SLOT_BITS = {'SLOT_QNAN_MASK', 'SLOT_TAG_MASK', 'SLOT_PAYLOAD_MASK', 'TAG_HEAP', 'TAG_BOOL',
+SLOT_BITS = {'SLOT_QNAN_MASK', 'SLOT_TAG_MASK', 'SLOT_PAYLOAD_MASK', 'TAG_HEAP', 'TAG_BOOL', 'TAG_SMI',
+             'SLOT_SMI_MIN', 'SLOT_SMI_MAX', 'SLOT_SMI_SIGN',
              'TAG_SENTINEL', 'SLOT_NULL_BITS', 'SLOT_TRUE_BITS', 'SLOT_FALSE_BITS'}
 SLOT_RE = re.compile(r'\b(' + '|'.join(sorted(SLOT_TEST | SLOT_OTHER | SLOT_DEREF | SLOT_TYPE | SLOT_BITS,
                                             key=len, reverse=True)) + r')\b')
-DISPOSITIONS = {'guarded', 'smi-arm', 'refuse', 'not-a-classifier'}
+# `unwired` (R1.1): aborts on an SMI through eigs_int_unwired, whose arm needs
+# the int Value kind or tape v7; R1.3 deletes eigs_int_unwired, so each one
+# stops compiling in the commit that makes ints reachable.
+DISPOSITIONS = {'guarded', 'smi-arm', 'refuse', 'unwired', 'not-a-classifier'}
 
 
 def slot_classifiers(stripped_by_file, scope_by_file):
@@ -614,6 +624,34 @@ def slot_classifiers(stripped_by_file, scope_by_file):
                'D3' if t & (SLOT_OTHER | SLOT_BITS) else 'T')
         out[key] = (cls, c)
     return out
+
+
+def slot_population(slots, sigs_by_file):
+    """The C slot test's population (design 2.5): every D1/D2/D3 FUNCTION
+    entry whose first parameter is an EigsSlot by value. #define entries and
+    dispatcher arms take no slot argument. tests/phase2/slot_layer.sh
+    compares this list with the entries the test examined, both ways."""
+    out, bad = [], []
+    for (rel, k), (cls, c) in sorted(slots.items()):
+        if cls not in ('D1', 'D2', 'D3') or k.startswith('#define') or '/' in k:
+            continue
+        sig = sigs_by_file[rel].get(k)
+        if not sig or k not in sig:
+            bad.append('%s:%s has no signature' % (rel, k))
+            continue
+        params = sig[sig.rindex(k) + len(k):].strip()
+        if not params.startswith('('):
+            bad.append('%s:%s: unparsed signature %r' % (rel, k, sig.strip()[:60]))
+            continue
+        first = re.split(r'[,)]', params[1:], 1)[0].strip()
+        if re.match(r'^(const\s+)?EigsSlot\s+[A-Za-z_]\w*$', first):
+            out.append('%s:%s' % (rel, k))
+    for line in out:
+        print(line)
+    for b in bad:
+        print('slot-population: FAIL: ' + b)
+    print('slot-population: entries=%d' % len(out))
+    return 1 if bad or not out else 0
 
 
 def read_marked_table(doc, tag, row_re):
@@ -653,8 +691,8 @@ LOSS_MARKS = {'LOSS', '-'}
 Q7_CLASSES = ['geometry', 'bounded', 'magnitude']
 # A LOSS row claims the body computes through a double; it must have one.
 DOUBLE_PATH = {'eigs_num_arg', 'eigs_list_num', 'eigs_slot_num', 'eigs_opt_num', 'eigs_slot_opt_num',
-               'eigs_slot_elem_num', 'eigs_elem_num', 'buffer_read_num', 'make_num', 'slot_as_double',
-               'VAL_NUM_RAW', 'SLOT_NUM_RAW', 'strtod', 'atof', 'num_guard', 'list_set_num'}
+               'eigs_slot_elem_num', 'eigs_elem_num', 'buffer_read_num', 'make_num', 'slot_f64_value',
+               'VAL_NUM_RAW', 'SLOT_F64_RAW', 'strtod', 'atof', 'num_guard', 'list_set_num'}
 
 
 def read_table(doc):
@@ -703,6 +741,8 @@ def main():
     ap.add_argument('--out', default=os.path.join(ROOT, 'docs/design/phase2-inventory.txt'))
     ap.add_argument('--no-write', action='store_true')
     ap.add_argument('--sites', action='store_true', help='print every site')
+    ap.add_argument('--slot-population', action='store_true',
+                    help='print the C slot test population (design 2.5) and exit')
     args = ap.parse_args()
 
     files = sorted(glob.glob(os.path.join(args.src, '*.c')) + glob.glob(os.path.join(args.src, '*.h')))
@@ -773,12 +813,12 @@ def main():
     exec_bad += ['dispatcher %s (%s) attributed no opcode arm' % (f, r)
                  for f, r in sorted(ROLE_OF.items()) if r not in found]
 
-    # slot classifiers: every D2/D3 entry has a reviewed disposition row
+    # slot classifiers: every D1/D2/D3 entry has a reviewed disposition row
     slots = slot_classifiers(stripped_by_file, scope_by_file)
     slot_cls = {}
     for key, (cls, c) in slots.items():
         slot_cls[cls] = slot_cls.get(cls, 0) + 1
-    need = {'%s:%s' % k for k, (cls, c) in slots.items() if cls in ('D2', 'D3')}
+    need = {'%s:%s' % k for k, (cls, c) in slots.items() if cls in ('D1', 'D2', 'D3')}
     srows, sbad = read_marked_table(args.doc, 'slot-table', SLOT_ROW)
     srows = srows or {}
     for name, (ln, disp) in srows.items():
@@ -788,6 +828,9 @@ def main():
     slot_stale = sorted(set(srows) - need)
     if not any(slot_cls.get(k) for k in ('D1', 'D2', 'D3')):
         sbad.append('slot classifiers: examined=0 (no D1/D2/D3 entry found)')
+
+    if args.slot_population:
+        return slot_population(slots, sigs_by_file)
 
     # ---- report ----
     cats = 'abcdefghij'
@@ -848,7 +891,7 @@ def main():
     for key in sorted(slots, key=lambda k: (slots[k][0], k)):
         cls, c = slots[key]
         if cls in ('D1', 'D2', 'D3'):
-            disp = 'forced' if cls == 'D1' else srows.get('%s:%s' % key, (0, '-'))[1]
+            disp = srows.get('%s:%s' % key, (0, '-'))[1]
             out.append('%s %-42s %-16s %s' % (cls, '%s:%s' % key, disp,
                        ' '.join('%s=%d' % kv for kv in sorted(c.items()))))
     out.append('')
@@ -899,7 +942,7 @@ def main():
     for n in slot_missing:
         fail.append('slot classifier `%s` has no disposition row' % n)
     for n in slot_stale:
-        fail.append('disposition row `%s` names no D2/D3 slot classifier' % n)
+        fail.append('disposition row `%s` names no D1/D2/D3 slot classifier' % n)
     for f_ in fail:
         print('FAIL: ' + f_)
     print('builtins: registered=%d numeric=%d classified=%d unclassified=%d stale=%d' % (

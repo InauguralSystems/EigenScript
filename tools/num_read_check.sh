@@ -7,7 +7,7 @@
 # two ways:
 #   - the checking accessors eigs_num_arg / eigs_list_num / eigs_opt_num,
 #     which raise a type error on a bool or any other non-number;
-#   - the raw macros VAL_NUM_RAW(v) / SLOT_NUM_RAW(s) (and VAL_NUM_OFFSET for
+#   - the raw macros VAL_NUM_RAW(v) / SLOT_F64_RAW(s) (and VAL_NUM_OFFSET for
 #     JIT-emitted loads), for a value whose type is already proven.
 # This gate enumerates every raw token in src/*.c and src/*.h. It attributes
 # each one to its enclosing function, or to its #define for a macro. Then it
@@ -56,12 +56,12 @@ for f in "$SRC_DIR"/*.c "$SRC_DIR"/*.h; do
     { linemac = inmac }
     {
         s = line
-        while (match(s, /(VAL_NUM_RAW|SLOT_NUM_RAW)[ \t]*\(|VAL_NUM_OFFSET/)) {
+        while (match(s, /(VAL_NUM_RAW|SLOT_F64_RAW)[ \t]*\(|VAL_NUM_OFFSET/)) {
             tok = substr(s, RSTART, RLENGTH); sub(/[ \t]*\($/, "", tok)
             printf "%s|%s|%s|%d\n", FILE, (scope == "" ? "<file scope>" : scope), tok, NR
             s = substr(s, RSTART + RLENGTH)
         }
-        if (line ~ /data\.num_|[A-Za-z0-9_)\]]\.d_([^A-Za-z0-9_]|$)/ && scope !~ /^#define (VAL_NUM_RAW|SLOT_NUM_RAW|VAL_NUM_OFFSET)$/)
+        if (line ~ /data\.num_|[A-Za-z0-9_)\]]\.d_([^A-Za-z0-9_]|$)/ && scope !~ /^#define (VAL_NUM_RAW|SLOT_F64_RAW|VAL_NUM_OFFSET)$/)
             printf "%s:%d: %s\n", FILE, NR, $0 >> BYPASS
         if (line ~ /->data\.builtin[ \t]*\(/) printf "%s:%d: ungated builtin call: %s\n", FILE, NR, $0 >> BYPASS
         incont = ($0 ~ /\\$/)

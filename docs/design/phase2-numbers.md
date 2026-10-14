@@ -583,52 +583,138 @@ child), and every other entry must return without a sanitizer report, with
 the int's Value, type name or truthiness where it returns one. This runs in
 R1.1, before any program can produce an SMI.
 
+**As implemented in R1.1 (reported as design deviations in the R1.1
+result).**
+- **The table covers D1 too.** The rename made the compiler stop at every D1
+  entry, but a rename can be typed without a decision, so every D1, D2 and
+  D3 entry now has a reviewed row below (98 after R1.1), and the inventory
+  fails on a slot classifier of any class without one.
+- **A fifth disposition, `unwired`.** Some D1 arms need what R1.1 does not
+  have: an int Value (`make_int`, R1.3), the int ValType (R1.2a), or tape v7
+  (R1.3). Each calls `eigs_int_unwired(who, bits)`, which aborts naming the
+  reader. R1.3 deletes `eigs_int_unwired`, so each one stops compiling in the
+  commit that makes ints reachable (2.7). They are `slot_to_value` (the one
+  place that boxes an SMI: the lifts, `slot_bridge_unwrap`, `eigs_slot_box`
+  and the `*_get_return` readers route there), `slot_type`, `slot_view`,
+  `write_slot`, and `slot_from_int`'s out-of-range arm (the `VAL_INT` box).
+- **The permanent refusals** (`refuse`) go through `eigs_slot_refuse(who,
+  slot)`, which prints the bits and aborts; `slot_as_ptr` refuses a non-heap
+  slot under ASan and `-DEIGS_SLOT_CHECKED`. Readers that used to turn an
+  unknown tag into null or `<unknown>` (`slot_to_value`, `vm_slot_lift`,
+  `write_slot`) refuse it now; no slot carries such a tag today.
+- **The C slot test's population** is
+  `tools/phase2_inventory.py --slot-population` (33 entries after R1.1);
+  `tests/phase2/slot_layer.sh` compares it with the entries the test
+  examined, both ways. The test also runs a tag matrix (a double, the
+  canonical NaN, -0.0, null, both bools, an SMI, a heap pointer, the
+  reserved tags and the sentinel against the predicates and the deciding
+  readers) and plant 1's named check (`slot_from_int` over the boundary
+  values). Its ABORT rows run in forked children and must name the reader.
+- **"The int's Value"** cannot be checked in R1.1: no int Value kind exists,
+  so `slot_to_value` and the readers that route to it are ABORT rows until
+  R1.3 turns them into RETURN rows.
+
 <!-- slot-table:begin -->
-| name | disposition | why an SMI is safe there, or what R1.1 does |
+| name | disposition | what an int (an SMI) does there, as of R1.1 |
 |---|---|---|
 | `builtins.c:bool_gate_name` | guarded | skips every non-pointer slot (`!slot_is_ptr`); an SMI is never a builtin (D2) |
 | `builtins.c:sort_cmp_str` | guarded | reached only after `builtin_sort` proved every element a string (its homogeneity test names `VAL_NUM`, compile-forced) (D2) |
 | `builtins_host.c:ls_entry_cmp` | guarded | sorts the string entries `ls` built itself (D2) |
-| `container.h:eigs_slot_ref` | refuse | today an immediate double or an SMI is dereferenced as a pointer; every caller tests `slot_is_num` first (compile-forced). R1.1 aborts on any slot that is not a pointer, null or bool, so a caller missed later fails loudly (D2) |
+| `container.h:dict_value_get_num` | smi-arm | bridge reader (2.7): an int element converts to its double, exactly (|SMI| < 2^47), until R1.6 deletes the bridge (D1) |
+| `container.h:dict_value_get_ref` | smi-arm | NULL for a number by contract, an int included; the caller then types the element (D1) |
+| `container.h:dict_value_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value`, the one SMI boxer (unwired until R1.3) (D1) |
+| `container.h:eigs_slot_adopt` | guarded | decides ownership from what `eigs_container_slot` returned (compile-forced); a small int comes back as an SMI and its box is released (D3) |
+| `container.h:eigs_slot_box` | smi-arm | boxes an int through `slot_to_value`, kind-preserving (unwired until R1.3) (D1) |
+| `container.h:eigs_slot_elem_num` | smi-arm | bridge reader: an int converts to its double (D1) |
+| `container.h:eigs_slot_num` | smi-arm | bridge reader: an int converts to its double (D1) |
+| `container.h:eigs_slot_opt_num` | smi-arm | bridge reader: an int converts to its double and answers present (D1) |
+| `container.h:eigs_slot_ref` | refuse | an immediate double or an SMI was dereferenced as a pointer; every caller tests for a number first. R1.1 aborts on any slot that is not a pointer, null or bool, so a caller missed later fails loudly (D2) |
+| `container.h:eigs_slot_store_borrow` | guarded | an SMI is canonical storage and comes back as it is, with no reference to take (D1) |
+| `container.h:eigs_slot_store_owned` | guarded | an SMI is canonical storage and comes back as it is, with no reference to release (D1) |
+| `container.h:list_get_num` | smi-arm | bridge reader: an int element converts to its double (D1) |
+| `container.h:list_get_ref` | smi-arm | NULL for a number by contract, an int included (D1) |
+| `container.h:list_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value` (unwired until R1.3) (D1) |
+| `container.h:slot_type` | unwired | an SMI's type is the int ValType, which lands in R1.2a; any other unknown tag refuses instead of being read as a pointer (D1) |
+| `container.h:slot_view` | unwired | an SMI's facade is a `VAL_INT` view (R1.2a) (D1) |
 | `eigenscript.c:#define GC_EDGE_TABLE` | guarded | a GC edge exists only for `slot_is_ptr`; an SMI has no edge (D2) |
+| `eigenscript.c:ent_child_slot` | smi-arm | an int's entropy is its double's: the numeric channel until round 3 (design 7) (D1) |
 | `eigenscript.c:env_get_hashed` | guarded | a non-pointer slot goes through `slot_to_value` (compile-forced) and comes back boxed: the lift boxes on purpose (§2.1) (D2) |
 | `eigenscript.c:env_get_local_hashed` | guarded | as `env_get_hashed` (D2) |
 | `eigenscript.c:gc_collect_at_exit` | guarded | skips every non-pointer slot (D2) |
-| `value_slot.h:#define slot_as_heap` | refuse | alias of `slot_as_ptr` (D2) |
-| `value_slot.h:slot_as_ptr` | refuse | the raw dereference: R1.1 asserts the heap tag in ASan and debug builds (D2) |
-| `vm.c:jit_helper_iter_next` | guarded | a non-pointer state slot returns 1 (bail); its index-kind test `!= VAL_NUM` is compile-forced (D2) |
-| `vm.c:obs_slot_value` | guarded | called only after `obs_slot_observable` answered true (pointer or bool) (D2) |
-| `vm.c:slot_type_name` | smi-arm | today an SMI reaches the final `return "num"` by accident. R1.1 adds an explicit SMI arm ("num") and aborts on an unknown tag (D2) |
-| `vm.c:vm_borrow_scan` | guarded | compares heap slots with the result pointer; an SMI is not heap (D2) |
-| `vm.c:vm_builtin_name_for` | guarded | skips every non-heap slot (D2) |
-| `vm.c:vm_leaf_accessor_exec/OP_LOCAL_DOT_GET` | guarded | a non-pointer target bails (`return 0`); a non-null field is borrowed as its bits, an SMI included (D2) |
-| `vm.c:vm_local_lift` | guarded | a non-pointer, non-null slot goes through `slot_to_value` (compile-forced) and is boxed on purpose (D2) |
-| `vm.c:vm_run_ex/CASE(DESTRUCTURE_UNPACK)` | guarded | a non-pointer source takes the error path, which names the type through `slot_type_name` (D2) |
-| `vm.c:vm_run_ex/CASE(SLICE_GET)` | guarded | as DESTRUCTURE_UNPACK (D2) |
-| `vm.c:vm_slot_value_opaque` | guarded | only a pointer can be a fn or builtin; an SMI answers "not opaque", which is right (D2) |
-| `container.h:eigs_slot_adopt` | guarded | decides ownership from what `eigs_container_slot` returned (compile-forced); a small int comes back as an SMI and its box is released (D3) |
+| `eigenscript.c:module_ns_project` | guarded | an int skips the float-over-float rewrite: `slot_to_value` boxes it and the dict store re-canonicalizes it (D1) |
+| `eigenscript.c:observer_entropy_now` | smi-arm | an int is the numeric kind, as its double (D1) |
+| `eigenscript.c:slot_to_value` | unwired | the one SMI boxer: a fresh int Value needs `make_int` (R1.3). Any other unknown tag now refuses; it used to read back as null (D1) |
+| `ext_store.c:store_json_encode_slot` | smi-arm | an int is written as its exact digits (design 7) (D1) |
 | `jit.c:jit_compile_to_thunk/OP_EQ` | not-a-classifier | writes the bool result bits (D3) |
 | `jit.c:jit_compile_to_thunk/OP_NEG` | not-a-classifier | the NOT arm writes bool result bits (D3) |
 | `jit.c:jit_compile_to_thunk/OP_NULL` | not-a-classifier | the constant arm writes null and bool bits (D3) |
 | `jit_smoke.c:run_bool_cases` | not-a-classifier | test harness: expected bool bits (D3) |
 | `jit_smoke.c:run_index_bail_cases` | guarded | test harness: an exact null test of a result (D3) |
+| `trace.c:write_slot` | unwired | an int needs tape v7 (ints as digits, floats marked), R1.3; a v6 tape would replay it as a float. Any other tag refuses; it was written as `<unknown>` (D1) |
+| `value_slot.h:#define slot_as_heap` | refuse | alias of `slot_as_ptr` (D2) |
+| `value_slot.h:slot_as_ptr` | refuse | the raw dereference: R1.1 refuses a non-heap slot in ASan builds and under `-DEIGS_SLOT_CHECKED` (the C slot test) (D2) |
 | `value_slot.h:slot_decref` | guarded | acts only on tag `0xFFFB`; an SMI has no refcount (D3) |
+| `value_slot.h:slot_f64_value` | guarded | the float reader (was vm.c's `slot_as_double`): answers 0 for an int, so each caller decided where an int goes (D1) |
 | `value_slot.h:slot_false` | not-a-classifier | constructor (D3) |
 | `value_slot.h:slot_from_bool` | not-a-classifier | constructor (D3) |
 | `value_slot.h:slot_from_heap` | guarded | maps null and bool Values to their immediates and every other Value to a heap slot, so a `VAL_INT` box stays a box: the lifts depend on that (§2.1) (D3) |
+| `value_slot.h:slot_from_int` | not-a-classifier | the one int writer: an SMI inside [-2^47, 2^47); outside it the `VAL_INT` box is unwired until R1.3 (D3) |
 | `value_slot.h:slot_incref` | guarded | as `slot_decref` (D3) |
+| `value_slot.h:slot_int_value` | smi-arm | an SMI's int; the `VAL_INT` box arm lands in R1.2a with the type it names (D1) |
 | `value_slot.h:slot_is_bool` | guarded | exact tag test (D3) |
+| `value_slot.h:slot_is_f64` | guarded | the double test (was `slot_is_num`): an SMI answers 0 (D1) |
 | `value_slot.h:slot_is_heap` | guarded | exact tag test (D3) |
 | `value_slot.h:slot_is_null` | guarded | exact bit test (D3) |
 | `value_slot.h:slot_is_ptr` | guarded | exact tag test (D3) |
+| `value_slot.h:slot_is_smi` | smi-arm | the SMI tag test (D1) |
 | `value_slot.h:slot_null` | not-a-classifier | constructor (D3) |
+| `value_slot.h:slot_smi_val` | smi-arm | an SMI's int, sign-extending bit 47 without a right shift (2.1) (D1) |
 | `value_slot.h:slot_true` | not-a-classifier | constructor (D3) |
+| `value_slot.h:slot_truthy_immediate` | smi-arm | an int is truthy when it is not 0, like a double (D1) |
+| `vm.c:#define ARITH_FAST` | guarded | an int is not a float (`slot_f64_value`): the arm's slow path pops it through `slot_bridge_unwrap`; R1.3 gives that path int arithmetic (D1) |
+| `vm.c:#define INT_BINOP_R` | guarded | an int is not a float: the type error, which names it `num` (`slot_type_name`); R1.3 adds the int arm (D1) |
+| `vm.c:#define NUM_CMP` | guarded | an int is not a float: the type error naming `num`; R1.3 adds N2's exact compare (D1) |
+| `vm.c:#define READ_SLICE_BOUND` | smi-arm | an int bound is its value when a C `int` holds it, else a value error (D1) |
 | `vm.c:jit_helper_dot_get` | guarded | a non-null field is pushed as its bits; an SMI is a valid stack slot (D3) |
+| `vm.c:jit_helper_dot_set` | guarded | an int value skips the immediate store: the slow path pops it through `slot_bridge_unwrap` (D1) |
+| `vm.c:jit_helper_index_get` | guarded | an int index skips the fast path: the slow path lifts it through `slot_to_value` (D1) |
+| `vm.c:jit_helper_index_set` | guarded | an int index or value skips the fast path: the slow path pops it through `slot_bridge_unwrap` (D1) |
+| `vm.c:jit_helper_iter_next` | guarded | a non-pointer state slot returns 1 (bail); its index-kind test `!= VAL_NUM` is compile-forced (D2) |
+| `vm.c:jit_helper_local_dot_set` | guarded | an int value skips the immediate store: `vm_slot_lift` boxes it (D1) |
 | `vm.c:jit_helper_local_idx_dot_get` | guarded | as `jit_helper_dot_get` (D3) |
-| `vm.c:obs_slot_observable` | refuse | answers "pointer or bool", so an SMI is silently unobserved. Its callers test `slot_is_num` first (compile-forced) and must route an SMI into the numeric channel; R1.1 aborts here on an SMI, so a missed caller fails loudly. A BOXED int is a pointer, so it passes this test and goes to `observer_slot_update(Value *)`, whose number arm (eigenscript.c:785) R1.2's `VAL_NUM` rename forces (§7, O map) (D3) |
+| `vm.c:loop_iter_store` | guarded | the loop counter is a float the VM makes; a non-float slot takes the `make_num` path (D1) |
+| `vm.c:obs_dump_scope` | smi-arm | an int's entropy, as its double (D1) |
+| `vm.c:obs_dump_value` | smi-arm | an int prints as its exact digits (D1) |
+| `vm.c:obs_slot_num` | smi-arm | the observer's numeric channel: a float, or an int as its exact double until round 3 (design 7) (D1) |
+| `vm.c:obs_slot_observable` | refuse | answered "pointer or bool", so an SMI was silently unobserved. R1.1 aborts on an SMI or a reserved tag; every caller routes a number to `obs_slot_num` first. A BOXED int is a pointer and goes to `observer_slot_update(Value *)`, whose number arm (eigenscript.c:785) R1.2's `VAL_NUM` rename forces (§7, O map) (D1 since R1.1: it names `slot_is_f64`) |
+| `vm.c:obs_slot_value` | guarded | called only after `obs_slot_observable` answered true (pointer or bool) (D2) |
+| `vm.c:slot_bridge_unwrap` | smi-arm | an int materializes through `slot_to_value` (unwired until R1.3) (D1) |
+| `vm.c:slot_truthy` | smi-arm | an int is truthy when it is not 0; a reserved tag refuses instead of being dereferenced (D1) |
+| `vm.c:slot_type_name` | smi-arm | an SMI reached the final `return "num"` by accident. R1.1 adds the explicit SMI arm ("num", (B)) and aborts on a reserved tag (D1 since R1.1) |
+| `vm.c:vm_borrow_scan` | guarded | compares heap slots with the result pointer; an SMI is not heap (D2) |
+| `vm.c:vm_builtin_name_for` | guarded | skips every non-heap slot (D2) |
+| `vm.c:vm_leaf_accessor_exec/OP_ADD|OP_SUB|OP_MUL` | guarded | bails unless both operands are floats, so the generic call computes an int or mixed operation (4.5) (D1) |
+| `vm.c:vm_leaf_accessor_exec/OP_INDEX_GET` | guarded | bails on an int index; the generic call indexes (4.5) (D1) |
+| `vm.c:vm_leaf_accessor_exec/OP_LOCAL_DOT_GET` | guarded | a non-pointer target bails (`return 0`); a non-null field is borrowed as its bits, an SMI included (D2) |
 | `vm.c:vm_local_is_null` | guarded | exact null test (D3) |
+| `vm.c:vm_local_lift` | guarded | a non-pointer, non-null slot goes through `slot_to_value` (compile-forced) and is boxed on purpose (D2) |
+| `vm.c:vm_run_ex/CASE(BNOT)` | guarded | an int is not a float: the type error naming `num`; R1.3 adds the int arm (D1) |
+| `vm.c:vm_run_ex/CASE(DESTRUCTURE_UNPACK)` | guarded | a non-pointer source takes the error path, which names the type through `slot_type_name` (D2) |
+| `vm.c:vm_run_ex/CASE(DISPATCH)` | smi-arm | an int key is its value when a C `int` holds it, else a value error; the result returns through `slot_bridge_unwrap` (D1) |
 | `vm.c:vm_run_ex/CASE(DOT_GET)` | guarded | exact null test of a field (D3) |
+| `vm.c:vm_run_ex/CASE(DOT_SET)` | guarded | an int value skips the immediate store: the slow path pops it (D1) |
+| `vm.c:vm_run_ex/CASE(EQ)` | guarded | an int is not a float: the slow path (`values_equal_op` on the lifted Values); R1.3 adds N2 (D1) |
+| `vm.c:vm_run_ex/CASE(INDEX_GET)` | guarded | an int index skips the fast path: the slow path lifts it through `slot_to_value` (D1) |
+| `vm.c:vm_run_ex/CASE(INDEX_SET)` | guarded | an int index or value skips the fast path: the slow path pops it (D1) |
+| `vm.c:vm_run_ex/CASE(LOCAL_DOT_SET)` | guarded | an int value: `vm_slot_lift` boxes it (D1) |
 | `vm.c:vm_run_ex/CASE(LOCAL_IDX_DOT_GET)` | guarded | exact null test of a field (D3) |
+| `vm.c:vm_run_ex/CASE(LOCAL_IDX_DOT_SET)` | guarded | an int value: `vm_slot_lift` boxes it (D1) |
+| `vm.c:vm_run_ex/CASE(NE)` | guarded | an int is not a float: the slow path; R1.3 adds N2 (D1) |
+| `vm.c:vm_run_ex/CASE(NEG)` | guarded | an int is not a float: the type error naming `num`; R1.3 adds N4b (D1) |
+| `vm.c:vm_run_ex/CASE(SLICE_GET)` | guarded | as DESTRUCTURE_UNPACK (D2) |
+| `vm.c:vm_slot_lift` | smi-arm | an int is boxed on purpose through `slot_to_value` (2.1; unwired until R1.3); a reserved tag refuses, where it became null (D1) |
+| `vm.c:vm_slot_value_opaque` | guarded | only a pointer can be a fn or builtin; an SMI answers "not opaque", which is right (D2) |
+| `vm.c:vm_store_local_slot` | guarded | an int skips the in-place float store; the generic swap stores the SMI (D1) |
 <!-- slot-table:end -->
 
 ### 2.6 The accessor API after round 1 (Alt 1R)
@@ -642,7 +728,10 @@ int      slot_is_number(EigsSlot);  /* f64 or int */
 EigsSlot slot_from_f64(double);     /* the ONE double writer; round 2: canonical NaN */
 EigsSlot slot_from_int(int64_t);    /* the ONE int writer: SMI in range, else a box.
                                        Until R1.3 its only callers convert an
-                                       existing VAL_INT (§8, the int-source check) */
+                                       existing VAL_INT (§8, the int-source check);
+                                       R1.1's box arm is eigs_int_unwired */
+void     eigs_slot_refuse(const char *, EigsSlot);  /* R1.1: a broken contract */
+void     eigs_int_unwired(const char *, uint64_t);  /* R1.1; R1.3 deletes it (2.5) */
 int      slot_f64_value(EigsSlot, double *);   /* an immediate double or a VAL_FLOAT
                                                   box; 0 for anything else, ints
                                                   included. Replaces slot_as_double. */
@@ -748,7 +837,7 @@ no builtin's behaviour.
 | R1.1 | a slot may hold an SMI (no producer yet) | `slot_is_num` -> `slot_is_f64`, `SLOT_NUM_RAW` -> `SLOT_F64_RAW`, `slot_from_num` -> `slot_from_f64`; `slot_is_numeric` and **`slot_as_double`** deleted | compile error: 223 sites first forced here (§2.3a), the 58 D1 classifiers among them |
 | R1.1 | a slot classifier without a number test meets an SMI | none can exist (they name no number token) | the derived D2/D3 table (§2.5): `refuse` entries abort, `smi-arm` entries answer; the inventory fails on an unreviewed entry |
 | R1.2a | a Value number may be an int (`VAL_INT`; no producer yet) | `VAL_NUM` -> `VAL_FLOAT`, `num_` -> `f64_`, `VAL_NUM_RAW`/`VAL_NUM_OFFSET` renamed; `VAL_INT` appended, so `-Werror=switch` stops every default-less ValType switch; the one `default:` (builtins.c:998) removed in the same commit | compile error: 464 sites first forced here. Each forced site gets its final int arm, live from R1.3; a builtin's number test admits an int and reads it through the bridge |
-| R1.3 | **the first int values**: int literals, and int arithmetic on them | the AST payload `num` and the token's `num_val` become an `EigsNum`; **new opcodes `OP_INT_ZERO`, `OP_INT_ONE`, `OP_INT_CONST`, appended** (the opcode-ABI rule; no `EIGS_BYTECODE_ABI` bump); `make_int` introduced | compile error at the 11 payload sites and the four exhaustive OpCode switches (`op_name` chunk.c:337, `op_verify_operands` chunk.c:466, `op_verify_stack_effect` chunk.c:615, `op_stack_effect` compiler.c:305; `tools/obs_marker_check.sh` requires each new enumerator's `/*obs:NONE*/`); the JIT and leaf scanners refuse an opcode they do not know (their `default:`); the interpreter's dispatch table is the one executor the compiler cannot check, and a missing entry is a NULL jump that crashes the first int-literal row (loud) |
+| R1.3 | **the first int values**: int literals, and int arithmetic on them | the AST payload `num` and the token's `num_val` become an `EigsNum`; **new opcodes `OP_INT_ZERO`, `OP_INT_ONE`, `OP_INT_CONST`, appended** (the opcode-ABI rule; no `EIGS_BYTECODE_ABI` bump); `make_int` introduced; `eigs_int_unwired` deleted (the R1.1 placeholders, 2.5) | compile error at the 11 payload sites, at each `eigs_int_unwired` caller, and the four exhaustive OpCode switches (`op_name` chunk.c:337, `op_verify_operands` chunk.c:466, `op_verify_stack_effect` chunk.c:615, `op_stack_effect` compiler.c:305; `tools/obs_marker_check.sh` requires each new enumerator's `/*obs:NONE*/`); the JIT and leaf scanners refuse an opcode they do not know (their `default:`); the interpreter's dispatch table is the one executor the compiler cannot check, and a missing entry is a NULL jump that crashes the first int-literal row (loud) |
 | R1.3 | `OP_NUM_ZERO`, `OP_NUM_ONE`, `OP_CONST` | **no meaning change**: they keep their float meaning in all three executors (interpreter vm.c:3257, JIT emitter jit.c:2797, leaf evaluator vm.c:1872); an int is never an `OP_CONST` operand | n/a |
 | R1.4 | `//` | `OP_IDIV` appended, `TOK_SLASH_SLASH` appended (and `//=`, Q6) | compile error at the exhaustive switches |
 | R1.6 | **every builtin's §6 semantics** (N5 raises, int results, Q1 byte and Q7 continuous readers, the index readers of `gather`/`scatter_add`) | **the bridge is deleted** (21 tokens, §2.3a) | compile error: 743 sites first forced here; the per-builtin behaviour table (§9.4) checks every row's result against §6, on the tag and the branch |
@@ -761,7 +850,9 @@ catches a miss:
   then and written with their final semantics while no int could reach them.
   Gate: R1.3's 42 MAP rows and the C slot test; and the int-source check
   (§8) proves nothing before R1.3 could produce an int, so nothing earlier
-  could have exercised an unfinished arm.
+  could have exercised an unfinished arm. The R1.1 arms that could not be
+  final (`unwired`, 2.5) are token-forced instead: R1.3 deletes
+  `eigs_int_unwired`.
 - **R1.3, the tape parser.** `parse_value_p` (trace.c:2284) reads digits as
   an int from v7 on; the version bump refuses an older tape. Gate: the T1
   rows (`T1.twice-int`, `T1.v6-refused`).
@@ -1770,6 +1861,10 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    - **Tape v7 in this commit**: a v6 writer would print `3` for both kinds
      and replay would turn ints into floats. The float token marks its kind
      now (`3.0`); N6's repr replaces it in R1.7, still inside v7.
+   - `eigs_int_unwired` is deleted: `slot_to_value` boxes an SMI with
+     `make_int`, `slot_type` answers `VAL_INT`, `slot_view` gives a
+     `VAL_INT` facade, `write_slot` writes v7 digits, and `slot_from_int`
+     boxes an int outside the SMI range (each R1.1 placeholder, 2.5).
    - The observer routes an SMI and a boxed int into the numeric channel
      (§7).
    - The `trace` tier (the leaf differential) and the tier witnesses gate

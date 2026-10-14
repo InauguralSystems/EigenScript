@@ -2329,7 +2329,7 @@ static uint8_t *emit_mov_disp32_rdi_to_rdx(uint8_t *w, int32_t disp) {
 
 /* Stage 5e: numeric-operand loader for the arith/compare templates.
  *
- * Accepts what the interpreter's slot_as_double accepts MINUS the
+ * Accepts what the interpreter's slot_f64_value accepts MINUS the
  * NUM_REUSE candidates: an immediate double, or a heap/tracked pointer
  * to a VAL_NUM with refcount >= 2 (refcount 1 would make the
  * interpreter's NUM_REUSE in-place branch fire, so it routes to the

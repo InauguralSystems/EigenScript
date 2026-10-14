@@ -170,12 +170,17 @@ static void store_json_encode(Value *v, strbuf *out);
  * inline number; format it through the same branch and format strings used by
  * the historical boxed-number path so persisted bytes remain identical. */
 static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
-    if (slot_is_num(slot)) {
+    if (slot_is_f64(slot)) {
         double n = eigs_slot_num(slot, __func__);
         if (fabs(n) < 2147483648.0 && n == (int)n)
             strbuf_append_fmt(out, "%d", (int)n);
         else
             strbuf_append_fmt(out, "%.15g", n);
+        return;
+    }
+    if (slot_is_smi(slot)) {
+        /* #1758: an int is written as its exact digits (design 7). */
+        strbuf_append_fmt(out, "%lld", (long long)slot_smi_val(slot));
         return;
     }
     store_json_encode(eigs_slot_ref(slot), out);
