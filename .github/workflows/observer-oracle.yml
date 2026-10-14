@@ -60,7 +60,10 @@ jobs:
   floor:
     name: observer oracle (v0.46.0 floor)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Measured on PR #1777: 84 s wall for the whole job (container 20 s, each
+    # build about 20 s, the floor run 5 s, the self-test 13 s). 15 minutes
+    # bounds a hang without cutting a cold image pull.
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
