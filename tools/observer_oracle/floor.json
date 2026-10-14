@@ -1,0 +1,342 @@
+{
+ "corpus_sha256": "193164f0b7ce6df60f43d15c591d56126a7f7a7fe98da83f8a221ea0a5c0b875",
+ "labels_sha256": "d54e56a7057d4e6ba853c55d0a818454469cb86ce5565611d2f757df2c6f4240",
+ "binary": {
+  "path": "/home/jon/src/wt/es-pin046-critic/build/release/eigenscript",
+  "sha256": "c5c288bc5907fe323fcaff83ff06c7f50c8d1ca0f860e94d3366c9ad226277d6"
+ },
+ "note": "v0.46.0 tag build (git describe v0.46.0, commit 4a3a5c19), /home/jon/src/wt/es-pin046-critic/build/release/eigenscript",
+ "numbers": "clamp",
+ "floors": {
+  "interp": {
+   "straight": {
+    "MATH": {
+     "converged": {
+      "TP": 24,
+      "TN": 31
+     },
+     "stable": {
+      "TP": 0,
+      "TN": 0
+     },
+     "improving": {
+      "TP": 0,
+      "TN": 0
+     },
+     "oscillating": {
+      "TP": 17,
+      "TN": 51
+     },
+     "diverging": {
+      "TP": 7,
+      "TN": 68
+     },
+     "equilibrium": {
+      "TP": 5,
+      "TN": 46
+     }
+    },
+    "CONVENTION": {
+     "converged": {
+      "TP": 24,
+      "TN": 47
+     },
+     "stable": {
+      "TP": 25,
+      "TN": 40
+     },
+     "improving": {
+      "TP": 4,
+      "TN": 69
+     },
+     "oscillating": {
+      "TP": 0,
+      "TN": 0
+     },
+     "diverging": {
+      "TP": 0,
+      "TN": 0
+     },
+     "equilibrium": {
+      "TP": 0,
+      "TN": 0
+     }
+    }
+   },
+   "loop": {
+    "MATH": {
+     "converged": {
+      "TP": 24,
+      "TN": 31
+     },
+     "stable": {
+      "TP": 0,
+      "TN": 0
+     },
+     "improving": {
+      "TP": 0,
+      "TN": 0
+     },
+     "oscillating": {
+      "TP": 17,
+      "TN": 51
+     },
+     "diverging": {
+      "TP": 7,
+      "TN": 68
+     },
+     "equilibrium": {
+      "TP": 5,
+      "TN": 46
+     }
+    },
+    "CONVENTION": {
+     "converged": {
+      "TP": 24,
+      "TN": 47
+     },
+     "stable": {
+      "TP": 25,
+      "TN": 40
+     },
+     "improving": {
+      "TP": 4,
+      "TN": 69
+     },
+     "oscillating": {
+      "TP": 0,
+      "TN": 0
+     },
+     "diverging": {
+      "TP": 0,
+      "TN": 0
+     },
+     "equilibrium": {
+      "TP": 0,
+      "TN": 0
+     }
+    }
+   }
+  },
+  "jit": {
+   "straight": {
+    "MATH": {
+     "converged": {
+      "TP": 24,
+      "TN": 31
+     },
+     "stable": {
+      "TP": 0,
+      "TN": 0
+     },
+     "improving": {
+      "TP": 0,
+      "TN": 0
+     },
+     "oscillating": {
+      "TP": 17,
+      "TN": 51
+     },
+     "diverging": {
+      "TP": 7,
+      "TN": 68
+     },
+     "equilibrium": {
+      "TP": 5,
+      "TN": 46
+     }
+    },
+    "CONVENTION": {
+     "converged": {
+      "TP": 24,
+      "TN": 47
+     },
+     "stable": {
+      "TP": 25,
+      "TN": 40
+     },
+     "improving": {
+      "TP": 4,
+      "TN": 69
+     },
+     "oscillating": {
+      "TP": 0,
+      "TN": 0
+     },
+     "diverging": {
+      "TP": 0,
+      "TN": 0
+     },
+     "equilibrium": {
+      "TP": 0,
+      "TN": 0
+     }
+    }
+   },
+   "loop": {
+    "MATH": {
+     "converged": {
+      "TP": 24,
+      "TN": 31
+     },
+     "stable": {
+      "TP": 0,
+      "TN": 0
+     },
+     "improving": {
+      "TP": 0,
+      "TN": 0
+     },
+     "oscillating": {
+      "TP": 17,
+      "TN": 51
+     },
+     "diverging": {
+      "TP": 7,
+      "TN": 68
+     },
+     "equilibrium": {
+      "TP": 5,
+      "TN": 46
+     }
+    },
+    "CONVENTION": {
+     "converged": {
+      "TP": 24,
+      "TN": 47
+     },
+     "stable": {
+      "TP": 25,
+      "TN": 40
+     },
+     "improving": {
+      "TP": 4,
+      "TN": 69
+     },
+     "oscillating": {
+      "TP": 0,
+      "TN": 0
+     },
+     "diverging": {
+      "TP": 0,
+      "TN": 0
+     },
+     "equilibrium": {
+      "TP": 0,
+      "TN": 0
+     }
+    }
+   }
+  },
+  "osr": {
+   "straight": {
+    "MATH": {
+     "converged": {
+      "TP": 24,
+      "TN": 31
+     },
+     "stable": {
+      "TP": 0,
+      "TN": 0
+     },
+     "improving": {
+      "TP": 0,
+      "TN": 0
+     },
+     "oscillating": {
+      "TP": 17,
+      "TN": 51
+     },
+     "diverging": {
+      "TP": 7,
+      "TN": 68
+     },
+     "equilibrium": {
+      "TP": 5,
+      "TN": 46
+     }
+    },
+    "CONVENTION": {
+     "converged": {
+      "TP": 24,
+      "TN": 47
+     },
+     "stable": {
+      "TP": 25,
+      "TN": 40
+     },
+     "improving": {
+      "TP": 4,
+      "TN": 69
+     },
+     "oscillating": {
+      "TP": 0,
+      "TN": 0
+     },
+     "diverging": {
+      "TP": 0,
+      "TN": 0
+     },
+     "equilibrium": {
+      "TP": 0,
+      "TN": 0
+     }
+    }
+   },
+   "loop": {
+    "MATH": {
+     "converged": {
+      "TP": 24,
+      "TN": 31
+     },
+     "stable": {
+      "TP": 0,
+      "TN": 0
+     },
+     "improving": {
+      "TP": 0,
+      "TN": 0
+     },
+     "oscillating": {
+      "TP": 17,
+      "TN": 51
+     },
+     "diverging": {
+      "TP": 7,
+      "TN": 68
+     },
+     "equilibrium": {
+      "TP": 5,
+      "TN": 46
+     }
+    },
+    "CONVENTION": {
+     "converged": {
+      "TP": 24,
+      "TN": 47
+     },
+     "stable": {
+      "TP": 25,
+      "TN": 40
+     },
+     "improving": {
+      "TP": 4,
+      "TN": 69
+     },
+     "oscillating": {
+      "TP": 0,
+      "TN": 0
+     },
+     "diverging": {
+      "TP": 0,
+      "TN": 0
+     },
+     "equilibrium": {
+      "TP": 0,
+      "TN": 0
+     }
+    }
+   }
+  }
+ }
+}

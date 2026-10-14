@@ -438,11 +438,12 @@ test-changed: build
 precheck:
 	bash tools/precheck.sh
 
-# Observer predicates vs a mathematics-graded corpus (#1746). Measurement, not
-# a gate: exits nonzero only on a harness error, never on a disagreement.
+# Observer predicates vs a mathematics-graded corpus (#1746). A report that
+# exits nonzero only on a harness error; with FLOOR=tools/observer_oracle/floor.json
+# it also exits 1 below any per-predicate floor (#1758).
 .PHONY: observer-oracle
 observer-oracle: build
-	python3 tools/observer_oracle/score.py src/eigenscript
+	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR))
 
 install-gfx: install
 	@echo "NOTE: 'make install-gfx' is a compatibility alias for 'make install'."
