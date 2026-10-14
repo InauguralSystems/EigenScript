@@ -99,6 +99,18 @@ jobs:
           if [ -e "$cache" ]; then echo "::error::$cache exists before the build: the anchor must be built by this job"; exit 1; fi
           bash tools/observer_oracle/build_anchor.sh
 
+      # TEMPORARY (#1764's recorded demonstration, reverted by the next
+      # commit): the real run below scores the wrapper observer, around the
+      # candidate, with one floor verdict's reading reversed in every arm.
+      - name: 'TEMPORARY demonstration: point the real run at the planted wrapper observer'
+        run: |
+          spec=$(python3 -c 'import sys; sys.path.insert(0, "tools/observer_oracle"); import plants; print(plants.one_reversed("tools/observer_oracle")[0])')
+          printf '#!/bin/sh\nexec python3 %s/tools/observer_oracle/plants.py wrap "$@"\n' "$PWD" > "$RUNNER_TEMP/obs_planted"
+          chmod +x "$RUNNER_TEMP/obs_planted"
+          { echo "OBS_WRAP_REAL=$PWD/src/eigenscript"; echo "OBS_WRAP_MODE=spec"; echo "OBS_WRAP_SPEC=$spec"
+            echo "OBS_PLANTED=$RUNNER_TEMP/obs_planted"; } >> "$GITHUB_ENV"
+          echo "planted $spec: the real run scores $RUNNER_TEMP/obs_planted"
+
       # The documented entry point, which applies the committed floor by
       # default. The checks below read make's stdout only, score.py's verdict
       # lines included (stderr, where score.py's errors go, reaches the log

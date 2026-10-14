@@ -452,7 +452,7 @@ precheck:
 observer-oracle: FLOOR = tools/observer_oracle/floor.json
 observer-oracle: build
 	$(if $(FLOOR),env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL bash tools/observer_oracle/build_anchor.sh)
-	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT))
+	python3 tools/observer_oracle/score.py $(or $(OBS_PLANTED),src/eigenscript) $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT))
 
 install-gfx: install
 	@echo "NOTE: 'make install-gfx' is a compatibility alias for 'make install'."
