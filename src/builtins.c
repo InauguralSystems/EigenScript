@@ -2003,8 +2003,8 @@ Value* builtin_asin(Value *arg) {
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
         /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
-        if (g_strict) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_num(0); }
-        g_math_flags |= EIGS_MATH_INVALID;
+        if (g_strict) { GUARD_HIT(2); rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_num(0); }
+        g_math_flags |= EIGS_MATH_INVALID; GUARD_HIT(0);
         x = (x < -1.0) ? -1.0 : 1.0;
     }
     return make_num(asin(x));
@@ -2017,8 +2017,8 @@ Value* builtin_acos(Value *arg) {
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
         /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
-        if (g_strict) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_num(0); }
-        g_math_flags |= EIGS_MATH_INVALID;
+        if (g_strict) { GUARD_HIT(2); rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_num(0); }
+        g_math_flags |= EIGS_MATH_INVALID; GUARD_HIT(0);
         x = (x < -1.0) ? -1.0 : 1.0;
     }
     return make_num(acos(x));

@@ -1873,16 +1873,21 @@ void free_value(Value *v);
  * branch stays one call on a path a finite program never takes. */
 void eigs_strict_nan_raise(const char *who);
 
+/* EXPERIMENT (IEEE phase 0, not for merge): process-wide counts of guard
+ * activations. [0] NaN collapsed, [1] overflow saturated, [2] strict domain
+ * raise (IEEE: NaN), [3] division/modulo by zero raise (IEEE: inf/NaN). */
+extern unsigned long g_guard_hits[4];
+#define GUARD_HIT(i) __atomic_add_fetch(&g_guard_hits[i], 1, __ATOMIC_RELAXED)
 static inline double num_guard(double x) {
     /* Fast path unchanged: the flag writes live only on the clamp branches,
      * which a program that does not overflow never takes. */
     if (x != x) {                                                            /* NaN */
-        g_math_flags |= EIGS_MATH_INVALID;
+        g_math_flags |= EIGS_MATH_INVALID; GUARD_HIT(0);
         if (g_strict) eigs_strict_nan_raise(NULL);
         return 0.0;
     }
-    if (x > EIGS_NUM_MAX)  { g_math_flags |= EIGS_MATH_OVERFLOW; return EIGS_NUM_MAX; }
-    if (x < -EIGS_NUM_MAX) { g_math_flags |= EIGS_MATH_OVERFLOW; return -EIGS_NUM_MAX; }
+    if (x > EIGS_NUM_MAX)  { g_math_flags |= EIGS_MATH_OVERFLOW; GUARD_HIT(1); return EIGS_NUM_MAX; }
+    if (x < -EIGS_NUM_MAX) { g_math_flags |= EIGS_MATH_OVERFLOW; GUARD_HIT(1); return -EIGS_NUM_MAX; }
     return x;
 }
 
@@ -1932,7 +1937,7 @@ static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index)
  * so a new caller here without a probe row goes red there. */
 static inline double num_guard_named(double x, const char *who) {
     if (x != x) {
-        g_math_flags |= EIGS_MATH_INVALID;
+        g_math_flags |= EIGS_MATH_INVALID; GUARD_HIT(0);
         if (g_strict) eigs_strict_nan_raise(who);
         return 0.0;
     }
@@ -1947,7 +1952,7 @@ static inline double num_guard_named(double x, const char *who) {
 #define STRICT_DOMAIN(cond, who, what)                                       \
     do {                                                                      \
         if (g_strict && (cond))                                               \
-            rt_error(EK_VALUE, 0, "%s: %s", (who), (what));                   \
+            { GUARD_HIT(2); rt_error(EK_VALUE, 0, "%s: %s", (who), (what)); } \
     } while (0)
 
 /* The g_vm_multithreaded flag (state->multithreaded, bridge macro above)

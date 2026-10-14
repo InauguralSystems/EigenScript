@@ -3408,7 +3408,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_NUM && b->type == VAL_NUM) {
             if (VAL_NUM_RAW(b) == 0.0) {
-                rt_error(EK_VALUE, current_line, "division by zero");
+                GUARD_HIT(3); rt_error(EK_VALUE, current_line, "division by zero");
                 vm_push(make_num(0));
             } else {
                 double r = num_guard(VAL_NUM_RAW(a) / VAL_NUM_RAW(b));
@@ -3441,7 +3441,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_TYPE, current_line, "cannot apply '%%' to %s and %s",
                     val_type_name(a->type), val_type_name(b->type));
             else
-                rt_error(EK_VALUE, current_line, "modulo by zero");
+                { GUARD_HIT(3); rt_error(EK_VALUE, current_line, "modulo by zero"); }
             vm_push(make_num(0));
         }
         val_decref(a); val_decref(b);

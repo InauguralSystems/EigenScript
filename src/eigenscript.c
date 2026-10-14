@@ -7,6 +7,7 @@
 #include <float.h>   /* DBL_EPSILON — the #422 raw-step fp-noise floor */
 #include "env_flag.h"
 #include "eigenscript.h"
+unsigned long g_guard_hits[4];
 #include "vm.h"   /* EigsChunk layout: the cycle collector traverses
                    * fn -> chunk -> env_cache / functions[] edges */
 #include <pthread.h>

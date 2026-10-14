@@ -710,8 +710,8 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
  * records that the argument was out of domain. */
 static double op_sqrt(double x) {
     if (x < 0) {
-        if (g_strict) { rt_error(EK_VALUE, 0, "sqrt: argument out of domain (negative)"); return 0.0; }
-        g_math_flags |= EIGS_MATH_INVALID; return 0.0;
+        if (g_strict) { GUARD_HIT(2); rt_error(EK_VALUE, 0, "sqrt: argument out of domain (negative)"); return 0.0; }
+        g_math_flags |= EIGS_MATH_INVALID; GUARD_HIT(0); return 0.0;
     }
     return sqrt(x);
 }
@@ -728,8 +728,8 @@ static double op_exp(double x) { return num_guard(exp(x)); }
  * nothing to guard there. */
 static double op_log_safe(double x) {
     if (!(x > 0.0)) {
-        if (g_strict) { rt_error(EK_VALUE, 0, "log: argument out of domain (must be > 0)"); return 0.0; }
-        g_math_flags |= EIGS_MATH_INVALID; return num_guard(log(1e-10));
+        if (g_strict) { GUARD_HIT(2); rt_error(EK_VALUE, 0, "log: argument out of domain (must be > 0)"); return 0.0; }
+        g_math_flags |= EIGS_MATH_INVALID; GUARD_HIT(0); return num_guard(log(1e-10));
     }
     return num_guard(log(x));
 }

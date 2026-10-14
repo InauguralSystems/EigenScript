@@ -1,3 +1,4 @@
+#include <unistd.h>
 /*
  * EigenScript CLI — script runner and REPL entry point.
  */
@@ -35,7 +36,26 @@ static void set_exe_dir(const char *argv0) {
     g_exe_dir[dir_len] = '\0';
 }
 
+/* EXPERIMENT (IEEE phase 0): EIGS_GUARD_REPORT=<file> appends one line per
+ * process: guard activations, cwd and argv. */
+static char g_guard_argv[1024];
+static void guard_report(void) {
+    const char *f = getenv("EIGS_GUARD_REPORT");
+    if (!f) return;
+    FILE *o = fopen(f, "a");
+    if (!o) return;
+    char cwd[512]; if (!getcwd(cwd, sizeof cwd)) strcpy(cwd, "?");
+    fprintf(o, "nan=%lu ovf=%lu dom=%lu div0=%lu cwd=%s argv=%s\n", g_guard_hits[0], g_guard_hits[1], g_guard_hits[2], g_guard_hits[3], cwd, g_guard_argv);
+    fclose(o);
+}
+
 int main(int argc, char **argv) {
+    if (getenv("EIGS_GUARD_REPORT")) {
+        size_t n = 0;
+        for (int i = 1; i < argc && n < sizeof g_guard_argv - 2; i++)
+            n += snprintf(g_guard_argv + n, sizeof g_guard_argv - n, "%s ", argv[i]);
+        atexit(guard_report);
+    }
     /* #413: a bundled binary (appended archive, trailer magic) extracts
      * itself and rewrites argv to run the extracted script — before ANY
      * flag handling, because in bundle mode the arguments belong to the
