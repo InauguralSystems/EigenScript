@@ -124,12 +124,17 @@ echo "corpus-diff: files=$listed${PHASE2_DIFF_FILES:+ (RESTRICTED by PHASE2_DIFF
 # normalised; CAP=1 runs under the GUI memory cap.
 run() {
     local bin="$1" rel="$2" out="$3" cap="$4" extra="${5:-PHASE2_DIFF=1}" rc
-    (
-        cd "$BR_ROOT/src" || exit 99
-        [ "$cap" = 1 ] && ulimit -v 2097152
-        exec env -u XAUTHORITY DISPLAY=:99 LD_PRELOAD="$SHIM" "$extra" timeout 60 "$bin" "../$rel"
-    ) < /dev/null > "$out.rawout" 2> "$out.rawerr"
-    rc=$?
+    # The run's stderr is its file. The brace group's 2>/dev/null takes only
+    # bash's own report of a run killed by a signal ("line N: PID Aborted"),
+    # which would otherwise reach this tool's stderr, where a gate refuses it.
+    {
+        (
+            cd "$BR_ROOT/src" || exit 99
+            [ "$cap" = 1 ] && ulimit -v 2097152
+            exec env -u XAUTHORITY DISPLAY=:99 LD_PRELOAD="$SHIM" "$extra" timeout 60 "$bin" "../$rel"
+        ) < /dev/null > "$out.rawout" 2> "$out.rawerr"
+        rc=$?
+    } 2> /dev/null
     echo "$rc" > "$out.rc"
     sed "s|$BASE_ROOT|<ROOT>|g; s|$BR_ROOT|<ROOT>|g" "$out.rawout" > "$out.out"
     sed "s|$BASE_ROOT|<ROOT>|g; s|$BR_ROOT|<ROOT>|g" "$out.rawerr" > "$out.err"

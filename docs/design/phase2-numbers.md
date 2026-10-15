@@ -2287,6 +2287,11 @@ fails if a round named here has neither rows nor its mechanical gates.)
   allowed writer and the static half passes it); and P4 built into a
   smi-trap binary, which the dynamic half must stop. A restricted run (the
   calibration's file list) prints `RESTRICTED` and exits 3, never PASS.
+  The calibration is a `tools/selftests.txt` row (`phase2_check.py
+  --selftest`, which builds v0.46.0 and the four planted binaries itself):
+  it runs when the checker or its fixtures change, and nightly, never on
+  every suite or CI run (docs/PRINCIPLES.md 5: a check proves it fires once,
+  when it is written or changed).
 
 ### 9.3 `tools/phase2_plants.sh` (round 1 builds it; detached, about 7 release builds)
 
@@ -2334,7 +2339,11 @@ deleted; named line `slot-layer-test: FAIL arm lt with an int: got ...`),
 `slot-layer: FAIL: the population scan wrote to stderr`) and
 `stdout-noise` (the scan prints a line outside its grammar; named line
 `slot-layer: FAIL: the population scan printed lines outside its
-grammar`). The tool also fails a plant whose check writes to stderr.
+grammar`). The tool also fails a plant whose check writes to stderr. Like
+the calibration, the plants are a `tools/selftests.txt` row (`phase2_plants.sh
+--selftest`), keyed on the checks they name (the slot test, its runner and
+the population scan), so they run when those change, never per suite or CI
+run (docs/PRINCIPLES.md 5).
 
 ### 9.4 The per-builtin behaviour table (R1.6's gate; replaces the int-fuzz class check)
 
