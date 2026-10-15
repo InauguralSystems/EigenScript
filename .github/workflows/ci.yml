@@ -155,9 +155,10 @@ jobs:
         # push to main whose SHA is main's tip moves ci-main: a dispatch from
         # any ref, main included, and a re-run of an older push push only
         # ci-<sha>. Do not gate on GITHUB_RUN_ATTEMPT: a re-run at the tip is
-        # legitimate.
+        # legitimate. Keep it bash-3.2 clean (tr, not ${OWNER,,}): precheck runs
+        # it, and macOS ships bash 3.2.
         run: |
-          BASE="ghcr.io/${OWNER,,}/eigenscript-dev"
+          BASE="ghcr.io/$(printf %s "$OWNER" | tr '[:upper:]' '[:lower:]')/eigenscript-dev"
           SHA="${{ github.sha }}"
           if [ "$IS_FORK" = "true" ]; then
             echo "image=$BASE:ci-main" >> "$GITHUB_OUTPUT"

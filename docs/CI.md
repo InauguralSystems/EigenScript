@@ -603,8 +603,8 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   may mention the event only as `github.event_name ==/!= 'pull_request'`, or
   via the PR payload `github.event.pull_request.*` (empty on push and in the
   queue alike). Beyond those two forms, a condition may read only the `github`
-  fields that are the same for the push, merge-queue, pull-request and dispatch
-  runs of this repository: `repository`, `repository_owner`, `repository_id`,
+  fields whose value does not depend on the event that started the run:
+  `repository`, `repository_owner`, `repository_id`,
   `repository_owner_id`, `server_url`, `api_url`, `graphql_url`, `workspace`,
   `workflow`, `job`, `action`, `token` and `retention_days`. Any other field
   (such as `ref_protected`, `workflow_ref`, `sha` or `actor`), or a bare
