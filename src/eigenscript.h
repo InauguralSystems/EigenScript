@@ -292,6 +292,10 @@ typedef enum {
 
 typedef struct Value Value;
 typedef Value* (*BuiltinFn)(Value* arg);
+/* #1758 R1.2: a number Value is a VAL_FLOAT or a VAL_INT. THE test a number
+ * test uses when an int belongs on the same path as a float (a builtin's
+ * number test admits an int and reads it through the bridge, design 2.7). */
+#define val_is_number(v)  ((v)->type == VAL_FLOAT || (v)->type == VAL_INT)
 
 /* #1637 round 4: the ONE raw way into a Value's number (an lvalue: also the
  * write). Only for a Value whose type is proven (VAL_FLOAT for the double,
@@ -1412,8 +1416,8 @@ int eigs_arg_has_bool(const Value *arg);
  *                              and returns 0 */
 double eigs_num_arg_slow(const Value *v, const char *who);
 static inline double eigs_num_arg(const Value *v, const char *who) {
-    if (__builtin_expect(v && v->type == VAL_NUM, 1)) return VAL_NUM_RAW(v);
-    return eigs_num_arg_slow(v, who);
+    if (__builtin_expect(v && v->type == VAL_FLOAT, 1)) return VAL_F64_RAW(v);
+    return eigs_num_arg_slow(v, who);   /* #1758: an int converts there */
 }
 double eigs_list_num(const Value *list, int i, const char *who);
 /* #1637 round 4: an ELEMENT a builtin reads as a number (a tensor cell, a

@@ -673,6 +673,7 @@ result).**
 | `container.h:dict_value_get_num` | smi-arm | bridge reader (2.7): an int element converts to its double, exactly (|SMI| < 2^47), until R1.6 deletes the bridge (D1) |
 | `container.h:dict_value_get_ref` | smi-arm | NULL for a number by contract, an int included; the caller then types the element (D1) |
 | `container.h:dict_value_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value`, the one SMI boxer (unwired until R1.3) (D1) |
+| `container.h:eigs_container_slot` | not-a-classifier | the canonicalizing Value-to-slot writer (R1.2): it reads a Value, not a slot, and writes the bits; a `VAL_INT` box becomes an SMI inside [-2^47, 2^47) and stays a heap slot outside it (2.1) (D3) |
 | `container.h:eigs_slot_adopt` | guarded | decides ownership from what `eigs_container_slot` returned (compile-forced); a small int comes back as an SMI and its box is released (D3) |
 | `container.h:eigs_slot_box` | smi-arm | boxes an int through `slot_to_value`, kind-preserving (unwired until R1.3) (D1) |
 | `container.h:eigs_slot_elem_num` | smi-arm | bridge reader: an int converts to its double (D1) |

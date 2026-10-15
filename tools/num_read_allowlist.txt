@@ -9,7 +9,7 @@ builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel int
 builtins.c|eigs_json_encode_value|1|JSON encoder: case VAL_INT writes the int's exact digits (#1758 R1.2a)
 container.h|dict_value_get_num|1|accessor numeric fast path: reads the slot only behind its own slot_is_f64 test (#1665 arm D)
 container.h|dict_value_get_return|1|builtin-return read boxes an immediate only after slot_is_f64
-container.h|eigs_container_slot|1|Value-to-slot encoder reads a box only after type == VAL_NUM, then num_guards it
+container.h|eigs_container_slot|2|Value-to-slot encoder reads a box only after type == VAL_FLOAT (then num_guards it) or type == VAL_INT (an SMI in range, design 2.1)
 container.h|eigs_slot_store_borrow|1|storage normaliser re-guards an immediate only after slot_is_f64 (#1665 arm D B10)
 container.h|eigs_slot_store_owned|1|storage normaliser re-guards an immediate only after slot_is_f64 (#1665 arm D B10)
 container.h|eigs_slot_box|1|borrowed slot write boxes a double only after slot_is_f64
@@ -25,7 +25,7 @@ chunk.c|const_hash_value|1|constant-pool hash of a constant inside its type == V
 eigenscript.c|chan_clone_rec|2|channel deep-copy, switch case VAL_NUM; case VAL_INT names the int it refuses (unwired, R1.3)
 eigenscript.c|compute_entropy_impl|2|observer entropy, switch case VAL_NUM, and case VAL_INT (an int's entropy is its double's, design 7)
 eigenscript.c|ent_child_slot|1|observer entropy reads an immediate only after slot_is_f64
-eigenscript.c|eigs_num_arg_slow|1|checking accessor itself: reads only after type == VAL_NUM, raises otherwise
+eigenscript.c|eigs_num_arg_slow|2|checked reader slow path: reads only after type == VAL_FLOAT, or VAL_INT (the bridge converts an int, design 2.7)
 eigenscript.c|is_truthy|2|truthiness, switch case VAL_NUM and case VAL_INT (a bool has its own case)
 eigenscript.c|make_num|1|constructor: writes the number of a Value it just typed VAL_NUM
 eigenscript.c|make_num_permanent|1|constructor: writes the number of a Value it just typed VAL_NUM

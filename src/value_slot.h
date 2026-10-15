@@ -232,7 +232,7 @@ static inline int slot_truthy_immediate(EigsSlot s, int *out_decided) {
     return 0;
 }
 
-/* #1758: a float's double, from an immediate or a VAL_NUM box (the VM boxes
+/* #1758: a float's double, from an immediate or a VAL_FLOAT box (the VM boxes
  * numbers on purpose: the lifts, a for-in variable). 0 for anything else,
  * an int (an SMI, later a VAL_INT box) included: the caller sends it to its
  * slow path; *out is written only when the answer is 1. Replaces vm.c's
@@ -245,7 +245,7 @@ static inline int slot_f64_value(EigsSlot s, double *out) {
     if (slot_is_f64(s)) { *out = SLOT_F64_RAW(s); return 1; }
     if (slot_is_heap(s)) {
         Value *v = slot_as_ptr(s);
-        if (v->type == VAL_NUM) { *out = VAL_NUM_RAW(v); return 1; }
+        if (v->type == VAL_FLOAT) { *out = VAL_F64_RAW(v); return 1; }   /* a VAL_INT box: 0 */
     }
     return 0;
 }

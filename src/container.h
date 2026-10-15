@@ -23,7 +23,13 @@ typedef struct { Value v; } EigsView;
  * encodings, everything else is a heap pointer.  C NULL encodes as null. */
 static inline EigsSlot eigs_container_slot(Value *v) {
     if (!v || v->type == VAL_NULL) return slot_null();
-    if (v->type == VAL_NUM) return slot_from_f64(num_guard(VAL_NUM_RAW(v)));
+    if (v->type == VAL_FLOAT) return slot_from_f64(num_guard(VAL_F64_RAW(v)));
+    /* #1758 (design 2.1): container storage is canonical -- a small int is
+     * an SMI, and only an int outside [-2^47, 2^47) stays its box. */
+    if (v->type == VAL_INT) {
+        int64_t i = VAL_I64_RAW(v);
+        return (i >= SLOT_SMI_MIN && i <= SLOT_SMI_MAX) ? slot_from_int(i) : slot_from_heap(v);
+    }
     if (v->type == VAL_BOOL) return slot_from_bool(v->data.boolean);
     return slot_from_heap(v);
 }
@@ -43,8 +49,8 @@ static inline EigsSlot eigs_slot_store_owned(EigsSlot s) {
     if (slot_is_f64(s)) return slot_from_f64(num_guard(SLOT_F64_RAW(s)));
     if (slot_is_heap(s)) {
         Value *v = slot_as_ptr(s);
-        if (v->type == VAL_NUM || v->type == VAL_NULL || v->type == VAL_BOOL)
-            return eigs_slot_adopt(v);
+        if (v->type == VAL_FLOAT || v->type == VAL_INT || v->type == VAL_NULL || v->type == VAL_BOOL)
+            return eigs_slot_adopt(v);   /* #1758: a small-int box becomes its SMI */
     }
     return s;
 }
@@ -93,7 +99,7 @@ static inline int list_rewrite_num(const Value *list, int i, double d) {
  * SMI's type is the int ValType, which lands in R1.2a; until then it is
  * refused loudly rather than read as a pointer. */
 static inline ValType slot_type(EigsSlot s) {
-    if (slot_is_f64(s)) return VAL_NUM;
+    if (slot_is_f64(s)) return VAL_FLOAT;
     if (slot_is_null(s)) return VAL_NULL;
     if (slot_is_bool(s)) return VAL_BOOL;
     if (slot_is_heap(s)) return slot_as_ptr(s)->type;
@@ -138,15 +144,15 @@ static inline Value *dict_value_get_ref(const Value *dict, int i) {
 static inline double eigs_slot_num(EigsSlot s, const char *who) {
     if (slot_is_f64(s)) return SLOT_F64_RAW(s);
     if (slot_is_smi(s)) return (double)slot_smi_val(s);
-    if (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NUM)
-        return eigs_num_arg(slot_as_ptr(s), who);
+    if (slot_is_heap(s) && val_is_number(slot_as_ptr(s)))
+        return eigs_num_arg(slot_as_ptr(s), who);   /* #1758: an int box converts (the bridge) */
     return eigs_num_arg_slow(eigs_slot_ref(s), who);
 }
 static inline double eigs_slot_elem_num(EigsSlot s, const char *who) {
     if (slot_is_f64(s)) return SLOT_F64_RAW(s);
     if (slot_is_smi(s)) return (double)slot_smi_val(s);
     Value *v = eigs_slot_ref(s);
-    if (v && v->type == VAL_NUM) return eigs_num_arg(v, who);
+    if (v && val_is_number(v)) return eigs_num_arg(v, who);
     if (g_strict || (v && v->type == VAL_BOOL)) return eigs_num_arg_slow(v, who);
     return 0.0;
 }
@@ -154,7 +160,7 @@ static inline int eigs_slot_opt_num(EigsSlot s, double *out, const char *who) {
     if (slot_is_null(s) || (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NULL)) return 0;
     if (slot_is_f64(s)) { *out = SLOT_F64_RAW(s); return 1; }
     if (slot_is_smi(s)) { *out = (double)slot_smi_val(s); return 1; }
-    if (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NUM) {
+    if (slot_is_heap(s) && val_is_number(slot_as_ptr(s))) {
         *out = eigs_num_arg(slot_as_ptr(s), who); return 1;
     }
     (void)eigs_num_arg_slow(eigs_slot_ref(s), who);
@@ -167,9 +173,10 @@ static inline int eigs_slot_opt_num(EigsSlot s, double *out, const char *who) {
  * #1758: an SMI's facade is a VAL_INT view (R1.2a); refused until then. */
 static inline Value *slot_view(EigsSlot s, EigsView *view) {
     if (slot_is_smi(s)) eigs_int_unwired("slot_view", s.u);
-    if (!slot_is_f64(s) && slot_type(s) != VAL_NUM) return eigs_slot_ref(s);
-    view->v.type = VAL_NUM;
-    VAL_NUM_RAW(&view->v) = slot_is_f64(s) ? SLOT_F64_RAW(s)
+    /* a heap VAL_INT box is a real Value: it is returned as itself */
+    if (!slot_is_f64(s) && slot_type(s) != VAL_FLOAT) return eigs_slot_ref(s);
+    view->v.type = VAL_FLOAT;
+    VAL_F64_RAW(&view->v) = slot_is_f64(s) ? SLOT_F64_RAW(s)
                                            : eigs_num_arg(slot_as_ptr(s), "slot_view");
     view->v.refcount = EIGS_VIEW_RC;
     return &view->v;
@@ -181,7 +188,7 @@ static inline Value *dict_value_get_view(const Value *dict, int i, EigsView *vie
     return slot_view(dict_value_slot(dict, i), view);
 }
 static inline void eigs_view_check(EigsView *view) {
-    if (view->v.type == VAL_NUM && view->v.refcount != 0 &&
+    if ((view->v.type == VAL_FLOAT || view->v.type == VAL_INT) && view->v.refcount != 0 &&
         view->v.refcount != EIGS_VIEW_RC) {
         fprintf(stderr, "%s:%d: EigenScript FATAL: numeric view refcount moved (%d)\n",
                 __FILE__, __LINE__, view->v.refcount);

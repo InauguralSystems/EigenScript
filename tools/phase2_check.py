@@ -793,7 +793,10 @@ def calibrate(args, out):
         case('int-source plant: the check fails, naming the caller', (ok, any(
             'trace.c' in l and 'calls slot_from_int' in l for l in lines)), (False, True), detail=lines)
     lines = []
-    case('int-source on the real tree passes', int_source(os.path.join(ROOT, 'src'), lines.append), True, detail=lines)
+    # at R1.2: from R1.2 the canonicalizing writers may convert a VAL_INT
+    # (design 8), and the branch is past R1.1
+    case('int-source on the real tree passes (at R1.2)',
+         int_source(os.path.join(ROOT, 'src'), lines.append, 'R1.2'), True, detail=lines)
     # the token gate against a reintroduced deleted token
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
         os.mkdir(os.path.join(d, 'src'))

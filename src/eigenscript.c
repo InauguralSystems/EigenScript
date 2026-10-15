@@ -1816,7 +1816,11 @@ static const char *num_who(const char *who) {
 }
 
 double eigs_num_arg_slow(const Value *v, const char *who) {
-    if (v && v->type == VAL_NUM) return VAL_NUM_RAW(v);
+    if (v && v->type == VAL_FLOAT) return VAL_F64_RAW(v);
+    /* #1758 R1.2, the bridge (design 2.7): until R1.6 a number a builtin
+     * reads is a double, so an int converts (rounding beyond 2^53), as every
+     * number already is one on the tag. */
+    if (v && v->type == VAL_INT) return (double)VAL_I64_RAW(v);
     if (!g_has_error)
         rt_error(EK_TYPE, 0, "%s: expected a number, got %s", num_who(who),
                  v ? val_type_name(v->type) : "nothing");
