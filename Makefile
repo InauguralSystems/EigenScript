@@ -188,8 +188,12 @@ LIBS_jit-checked  := $(LDFLAGS) -ldl
 # (value_slot.h EIGS_SMI_TRAP); slot_as_ptr checks its tag too. Until R1.3 no
 # program may make an int, so this build must run the corpus exactly as
 # release does: tools/phase2_check.sh --through R1.1 --smi-trap <binary>.
+# -Wno-maybe-uninitialized: the trap's noreturn refusal inside every slot
+# predicate defeats GCC's flow analysis in vm_run_ex's four compare arms
+# (false positives on _ad, read only after both reads succeeded). Release
+# compiles the same source with the warning on and has none (#1775).
 SRC_V_smi-trap := $(HOSTED_SOURCES)
-FLAGS_smi-trap := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_SMI_TRAP -DEIGS_SLOT_CHECKED $(VERDEF)
+FLAGS_smi-trap := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_SMI_TRAP -DEIGS_SLOT_CHECKED -Wno-maybe-uninitialized $(VERDEF)
 LIBS_smi-trap  := $(LDFLAGS) -ldl
 
 VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked smi-trap
