@@ -31,12 +31,11 @@ eigenscript.c|make_num|1|constructor: writes the number of a Value it just typed
 eigenscript.c|make_num_permanent|1|constructor: writes the number of a Value it just typed VAL_NUM
 eigenscript.c|module_ns_project|1|mirror refresh: reads the binding slot after slot_is_f64 and stores it over a numeric mirror slot
 eigenscript.c|observer_entropy_now|1|observer entropy of a slot after slot_is_f64
-eigenscript.c|observer_slot_from_trajectory|6|trajectory snapshot fields each read right after its own type != VAL_NUM refusal
-eigenscript.c|observer_slot_sample_gated|1|observer sample after newval->type == VAL_NUM
-eigenscript.c|observer_slot_update|1|observer update after newval->type == VAL_NUM
-eigenscript.c|slot_from_value|1|NaN-boxing boundary, inside its VAL_NUM branch
+eigenscript.c|observer_slot_sample_gated|2|observer sample inside val_is_number: the VAL_INT box as its double, else the VAL_FLOAT (design 7)
+eigenscript.c|observer_slot_update|2|observer update inside val_is_number: the VAL_INT box as its double, else the VAL_FLOAT (design 7)
+eigenscript.c|slot_from_value|2|NaN-boxing boundary, inside its VAL_FLOAT branch and its VAL_INT branch (an SMI in range, design 2.1)
 eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_f64
-eigenscript.c|values_equal_impl|4|equality, switch case VAL_NUM after the bool/num pair raised, and case VAL_INT (both ints)
+eigenscript.c|values_equal_impl|8|equality: the int/float pair by eigs_cmp_int_float (N2), each read inside its own type test; switch case VAL_FLOAT and case VAL_INT (both ints)
 eigenscript.c|value_to_string|2|printing, switch case VAL_NUM and case VAL_INT (exact digits)
 eigenscript.h|#define VAL_NUM_OFFSET|1|the raw member offset definition (JIT)
 eigenscript.h|#define VAL_F64_OFFSET|1|the raw double member offset definition (JIT; #1758 R1.2a: was VAL_NUM_OFFSET)

@@ -296,6 +296,19 @@ typedef Value* (*BuiltinFn)(Value* arg);
  * test uses when an int belongs on the same path as a float (a builtin's
  * number test admits an int and reads it through the bridge, design 2.7). */
 #define val_is_number(v)  ((v)->type == VAL_FLOAT || (v)->type == VAL_INT)
+/* #1758 N2 (design 7): an int and a float compare exactly, by value. Returns
+ * -1, 0 or 1 for i < f, i == f, i > f, and 2 when f is NaN (unordered: every
+ * comparison is false except !=). Lua's LTintfloat/EQintfloat give the same
+ * answers. Pure; no int Value exists before R1.3. */
+static inline int eigs_cmp_int_float(int64_t i, double f) {
+    if (f != f) return 2;
+    if (f >= 9223372036854775808.0) return -1;     /* f above every int64 */
+    if (f < -9223372036854775808.0) return 1;      /* f below every int64 */
+    double fl = floor(f);                          /* in [-2^63, 2^63): the cast is exact */
+    int64_t il = (int64_t)fl;
+    if (i != il) return i < il ? -1 : 1;
+    return f != fl ? -1 : 0;                       /* i == floor(f) < f when f has a fraction */
+}
 
 /* #1637 round 4: the ONE raw way into a Value's number (an lvalue: also the
  * write). Only for a Value whose type is proven (VAL_FLOAT for the double,

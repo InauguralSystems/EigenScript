@@ -694,6 +694,7 @@ result).**
 | `eigenscript.c:gc_collect_at_exit` | guarded | skips every non-pointer slot (D2) |
 | `eigenscript.c:module_ns_project` | guarded | an int skips the float-over-float rewrite: `slot_to_value` boxes it and the dict store re-canonicalizes it (D1) |
 | `eigenscript.c:observer_entropy_now` | smi-arm | an int is the numeric kind, as its double (D1) |
+| `eigenscript.c:slot_from_value` | not-a-classifier | the adopting Value-to-slot writer (R1.2): it reads a Value, not a slot, and writes the bits; a `VAL_INT` box becomes an SMI inside [-2^47, 2^47) (its box released) and stays a heap slot outside it (2.1) (D3) |
 | `eigenscript.c:slot_to_value` | unwired | the one SMI boxer: a fresh int Value needs `make_int` (R1.3). Any other unknown tag now refuses; it used to read back as null (D1) |
 | `ext_store.c:store_json_encode_slot` | smi-arm | an int is written as its exact digits (design 7) (D1) |
 | `jit.c:jit_compile_to_thunk/OP_EQ` | not-a-classifier | writes the bool result bits (D3) |

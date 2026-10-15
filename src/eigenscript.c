@@ -439,7 +439,7 @@ static double compute_entropy_impl(Value *v) {
     if (!v) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
-        case VAL_NUM: return entropy_of_num(VAL_NUM_RAW(v));
+        case VAL_FLOAT: return entropy_of_num(VAL_F64_RAW(v));
         /* #1758 R1.2a (design 7): an int's entropy is its double's; it joins
          * the numeric channel when ints exist (R1.3). */
         case VAL_INT: return entropy_of_num((double)VAL_I64_RAW(v));
@@ -791,9 +791,12 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
     observer_slot_update_e(e, idx, compute_entropy(newval));
     /* #294 also fold the raw value into the value-signal channel (numbers only:
      * the relative-delta step is only defined for a scalar trajectory). */
-    if (newval && newval->type == VAL_NUM) {
+    /* #1758 (design 7): a boxed int joins the numeric channel as its double
+     * until round 3. */
+    if (newval && val_is_number(newval)) {
         ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) observer_slot_record_value(s, VAL_NUM_RAW(newval));
+        if (s) observer_slot_record_value(s, newval->type == VAL_INT ? (double)VAL_I64_RAW(newval)
+                                                                     : VAL_F64_RAW(newval));
     } else {
         /* #861: a non-numeric assignment ends the numeric trajectory's claim
          * on this binding — predicates fall back to the entropy channel until
@@ -855,8 +858,9 @@ void observer_slot_sample_num_gated(Env *e, int idx, double num) {
 }
 
 void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
-    if (newval && newval->type == VAL_NUM) {
-        observer_slot_sample_num_gated(e, idx, VAL_NUM_RAW(newval));
+    if (newval && val_is_number(newval)) {     /* #1758: an int box as its double */
+        observer_slot_sample_num_gated(e, idx, newval->type == VAL_INT ? (double)VAL_I64_RAW(newval)
+                                                                       : VAL_F64_RAW(newval));
         return;
     }
     if (!e || idx < 0) return;
@@ -1486,10 +1490,12 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         EIGS_VIEW(w_view);
         Value *w = dict_get_view_local(dict, "window", &w_view);
         if (w) {
-            if (w->type != VAL_NUM || VAL_NUM_RAW(w) < OBSERVER_WINDOW_MIN ||
-                VAL_NUM_RAW(w) > OBSERVER_WINDOW_MAX || VAL_NUM_RAW(w) != (int)VAL_NUM_RAW(w))
+            /* #1758: a number of either kind, read through the bridge */
+            double wd = val_is_number(w) ? eigs_num_arg(w, __func__) : 0.0;
+            if (!val_is_number(w) || wd < OBSERVER_WINDOW_MIN ||
+                wd > OBSERVER_WINDOW_MAX || wd != (int)wd)
                 return 0;
-            out->win_override = (uint8_t)(int)VAL_NUM_RAW(w);
+            out->win_override = (uint8_t)(int)wd;
         }
     }
     const int N = observer_slot_window(out);
@@ -1503,7 +1509,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     out->v_cap = out->dh_cap = (uint8_t)N;
     for (int i = vstart; i < vcnt; i++) {
         EigsSlot a = list_slot(rel, i), b = list_slot(raw, i);
-        if (slot_type(a) != VAL_NUM || slot_type(b) != VAL_NUM) {
+        ValType ta = slot_type(a), tb = slot_type(b);   /* #1758: either number kind */
+        if ((ta != VAL_FLOAT && ta != VAL_INT) || (tb != VAL_FLOAT && tb != VAL_INT)) {
             free(out->v_window); free(out->vr_window);
             memset(out, 0, sizeof *out);
             return 0;
@@ -1518,7 +1525,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     out->dh_window = xcalloc((size_t)N, sizeof(double));
     for (int i = dstart; i < dcnt; i++) {
         EigsSlot a = list_slot(dh, i);
-        if (slot_type(a) != VAL_NUM) {
+        ValType ta = slot_type(a);
+        if (ta != VAL_FLOAT && ta != VAL_INT) {
             free(out->v_window); free(out->vr_window); free(out->dh_window);
             memset(out, 0, sizeof *out);
             return 0;
@@ -1536,12 +1544,12 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         EIGS_VIEW(v_view);
         Value *v = dict_get_view_local(dict, nums[k], &v_view);
         if (!v) continue;
-        if (v->type != VAL_NUM) {
+        if (!val_is_number(v)) {
             free(out->v_window); free(out->vr_window); free(out->dh_window);
             memset(out, 0, sizeof *out);
             return 0;
         }
-        *dsts[k] = VAL_NUM_RAW(v);
+        *dsts[k] = eigs_num_arg(v, __func__);   /* #1758: an int converts (the bridge) */
     }
     EIGS_VIEW(fo_view); EIGS_VIEW(fn_view);
     Value *fo = dict_get_view_local(dict, "observed", &fo_view);
@@ -1644,7 +1652,7 @@ void env_retain_intern_table(Env *env, EnvInternTable *table) {
 void free_value(Value *v) {
     if (!v) return;
     env_intern_release_value(v);
-    if (v->type == VAL_NUM) {
+    if (v->type == VAL_FLOAT) {   /* the freelist recycles float boxes; an int box is freed */
 #ifndef EIGS_POOL_OFF_NUM
         /* Route freed NUMs to freelist for reuse by make_num */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {
@@ -1726,7 +1734,7 @@ void free_value(Value *v) {
         /* No owned memory. Enumerated rather than covered by a `default:` so
          * that -Werror=switch (Makefile CFLAGS) makes a new ValType a build
          * error here instead of a silent leak. */
-        case VAL_NUM:
+        case VAL_FLOAT:
         case VAL_INT:      /* #1758 R1.2a: an int box owns nothing */
         case VAL_BUILTIN:
         case VAL_NULL:
@@ -1753,14 +1761,14 @@ Value* make_num(double n) {
     {
         v = xcalloc(1, sizeof(Value));
     }
-    v->type = VAL_NUM;
-    VAL_NUM_RAW(v) = n;
+    v->type = VAL_FLOAT;
+    VAL_F64_RAW(v) = n;
     v->refcount = 1;
     return v;
 }
 
 void recycle_intermediate(Value *v) {
-    if (!v || v->type != VAL_NUM || v->refcount > 1) return;
+    if (!v || v->type != VAL_FLOAT || v->refcount > 1) return;
 #ifdef EIGS_POOL_OFF_NUM
     /* #1665: no freelist — a discarded intermediate NUM is freed outright
      * (the pooled path already free()s it when the cap is hit, so callers
@@ -1785,8 +1793,8 @@ void recycle_intermediate(Value *v) {
 Value* make_num_permanent(double n) {
     n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
-    v->type = VAL_NUM;
-    VAL_NUM_RAW(v) = n;
+    v->type = VAL_FLOAT;
+    VAL_F64_RAW(v) = n;
     v->refcount = 1;
     return v;
 }
@@ -1878,13 +1886,23 @@ EigsSlot slot_from_value(Value *v) {
         if (v && v != &g_null_singleton) val_decref(v);
         return slot_null();
     }
-    if (v->type == VAL_NUM) {
+    if (v->type == VAL_FLOAT) {
         /* #262 Step E: a number never carries observer state (it lives on the
-         * Env slot), so every VAL_NUM ships as an immediate double. TAG_TRACKED
+         * Env slot), so every VAL_FLOAT ships as an immediate double. TAG_TRACKED
          * is dead. */
-        double n = VAL_NUM_RAW(v);
+        double n = VAL_F64_RAW(v);
         val_decref(v);
         return slot_from_f64(n);
+    }
+    /* #1758 (design 2.1): a small int is stored as its SMI and its box is
+     * released; an int outside [-2^47, 2^47) keeps its box (a heap slot). */
+    if (v->type == VAL_INT) {
+        int64_t i = VAL_I64_RAW(v);
+        if (i >= SLOT_SMI_MIN && i <= SLOT_SMI_MAX) {
+            val_decref(v);
+            return slot_from_int(i);
+        }
+        return slot_from_heap(v);
     }
     if (v->type == VAL_BOOL) return slot_from_bool(v->data.boolean); /* singleton: borrowed */
     return slot_from_heap(v);
@@ -2660,10 +2678,10 @@ static Value *chan_clone_rec(Value *v, int depth) {
      * behavior) rather than overflow the stack. */
     /* #1665: scalars are copied at any depth: a number may be a stack view,
      * which must never be shared out of its frame. */
-    if (depth > CHAN_CLONE_MAX_DEPTH && v->type != VAL_NUM && v->type != VAL_NULL &&
+    if (depth > CHAN_CLONE_MAX_DEPTH && v->type != VAL_FLOAT && v->type != VAL_INT && v->type != VAL_NULL &&
         v->type != VAL_BOOL && v->type != VAL_STR) { val_incref(v); return v; }
     switch (v->type) {
-        case VAL_NUM:  return make_num(VAL_NUM_RAW(v));
+        case VAL_FLOAT: return make_num(VAL_F64_RAW(v));
         /* #1758 R1.2a: a channel gets a fresh int box, which needs make_int
          * (R1.3); no int exists before then. */
         case VAL_INT:  eigs_int_unwired("chan_clone_rec", (uint64_t)VAL_I64_RAW(v));
@@ -2854,7 +2872,7 @@ int is_truthy(Value *v) {
     if (!v) return 0;
     switch (v->type) {
         case VAL_NULL: return 0;
-        case VAL_NUM: return VAL_NUM_RAW(v) != 0.0;
+        case VAL_FLOAT: return VAL_F64_RAW(v) != 0.0;
         case VAL_INT: return VAL_I64_RAW(v) != 0;   /* #1758 R1.2a */
         case VAL_STR: return v->data.str && v->data.str[0] != '\0';
         case VAL_LIST: return v->data.list.count > 0;
@@ -2874,7 +2892,8 @@ int is_truthy(Value *v) {
  * recursively by structure (lists element-wise, dicts by key/value
  * order-independently, buffers/text-builders by contents). Functions,
  * builtins, and raw-JSON compare by identity. Mixed types are never equal
- * (no coercion — consistent with the comparison operators). The depth
+ * (no coercion — consistent with the comparison operators), except an int
+ * and a float, which are one type, `num`, and compare by value (#1758 N2). The depth
  * guard prevents runaway recursion on self-referential containers; beyond
  * it we fall back to identity. */
 /* #1637 item 6: a bool met by a number — at any depth of the two values —
@@ -2891,8 +2910,15 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
     if (a == b && (!a || a->type != VAL_BUFFER)) return 1;
     if (!a || !b) return 0;
     if (a->type != b->type) {
-        if ((a->type == VAL_BOOL && b->type == VAL_NUM) ||
-            (a->type == VAL_NUM && b->type == VAL_BOOL)) {
+        /* #1758 N2 (design 7): an int and a float are both numbers and are
+         * equal exactly when their values are; no conversion rounds either
+         * side. Dead until R1.3, when the first int Value exists. */
+        if (a->type == VAL_INT && b->type == VAL_FLOAT)
+            return eigs_cmp_int_float(VAL_I64_RAW(a), VAL_F64_RAW(b)) == 0;
+        if (a->type == VAL_FLOAT && b->type == VAL_INT)
+            return eigs_cmp_int_float(VAL_I64_RAW(b), VAL_F64_RAW(a)) == 0;
+        if ((a->type == VAL_BOOL && val_is_number(b)) ||
+            (val_is_number(a) && b->type == VAL_BOOL)) {
             if (op[0] == '=' || op[0] == '!')
                 rt_error(EK_TYPE, 0, "cannot compare %s and %s with '%s'",
                          val_type_name(a->type), val_type_name(b->type), op);
@@ -2906,7 +2932,7 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
      * (a number may be a view, so pointer identity is meaningless). */
     if (depth > 64 && (a->type == VAL_LIST || a->type == VAL_DICT)) return a == b;
     switch (a->type) {
-        case VAL_NUM:  return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
+        case VAL_FLOAT: return VAL_F64_RAW(a) == VAL_F64_RAW(b);
         case VAL_INT:  return VAL_I64_RAW(a) == VAL_I64_RAW(b);   /* #1758 R1.2a: both ints */
         case VAL_STR:  return strcmp(a->data.str, b->data.str) == 0;
         case VAL_NULL: return 1;
@@ -3005,8 +3031,8 @@ char* value_to_string(Value *v) {
     char buf[256];
     switch (v->type) {
         case VAL_NULL: return xstrdup("null");
-        case VAL_NUM: {
-            eigs_num_text(buf, sizeof(buf), VAL_NUM_RAW(v));
+        case VAL_FLOAT: {
+            eigs_num_text(buf, sizeof(buf), VAL_F64_RAW(v));
             return xstrdup(buf);
         }
         case VAL_INT: {     /* #1758 R1.2a: an int prints its exact digits */
@@ -4232,7 +4258,7 @@ static int gc_value_is_node(Value *v) {
     case VAL_FN:
         return 1;
     /* Leaves: no owned edges out, so no rows and never a cycle member. */
-    case VAL_NUM:
+    case VAL_FLOAT:
     case VAL_INT:
     case VAL_STR:
     case VAL_NULL:
