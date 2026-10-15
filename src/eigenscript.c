@@ -312,7 +312,6 @@ const char* val_type_name(ValType t) {
         case VAL_FN: return "fn";
         case VAL_BUILTIN: return "builtin";
         case VAL_NULL: return "null";
-        case VAL_JSON_RAW: return "json_raw";
         case VAL_DICT: return "dict";
         case VAL_BUFFER: return "buffer";
         case VAL_TEXT_BUILDER: return "text_builder";
@@ -380,11 +379,7 @@ double observer_settledness(double dH) {
     return 1.0 - r;
 }
 
-/* Shannon entropy over a NUL-terminated byte string (256-bin frequency count).
- * Shared by VAL_STR and VAL_JSON_RAW: both hold `data.str`, so the same bytes
- * must measure the same either way. VAL_JSON_RAW used to return a flat 0.0 —
- * a document could grow without bound and the observer still reported it as
- * `equilibrium` with dH exactly 0 forever. */
+/* Shannon entropy over a NUL-terminated byte string (256-bin frequency count). */
 static double entropy_of_cstr(const char *sp) {
     if (!sp || !sp[0]) return 0.0;
     int freq[256] = {0};
@@ -438,7 +433,6 @@ static double compute_entropy_impl(Value *v) {
         case VAL_NULL: return 0.0;
         case VAL_NUM: return entropy_of_num(VAL_NUM_RAW(v));
         case VAL_STR:      return entropy_of_cstr(v->data.str);
-        case VAL_JSON_RAW: return entropy_of_cstr(v->data.str);
         case VAL_LIST: {
             if (v->data.list.count == 0) return 0.0;
             double sum = 0.0;
@@ -473,8 +467,8 @@ static double compute_entropy_impl(Value *v) {
      * new ValType is a BUILD failure at this switch rather than a silent 0.0.
      * A plausible number for a type nobody measured is the worst outcome — it
      * reads as "perfectly quiet" and pins dH at 0, so the binding classifies
-     * `equilibrium` no matter what it does. That is how VAL_JSON_RAW went
-     * unnoticed. Reaching here at runtime means a corrupted type tag. */
+     * `equilibrium` no matter what it does. Reaching here at runtime means a
+     * corrupted type tag. */
     fprintf(stderr, "eigenscript: compute_entropy: unhandled ValType %d\n", (int)v->type);
     abort();
 }
@@ -1653,7 +1647,6 @@ void free_value(Value *v) {
     }
     switch (v->type) {
         case VAL_STR:
-        case VAL_JSON_RAW:
             if (v->data.str) free(v->data.str);
             break;
         case VAL_LIST:
@@ -1897,7 +1890,7 @@ Value* slot_to_value(EigsSlot s) {
 
 Value* make_str(const char *s) {
     /* #965: the copying string constructor is the sandbox chokepoint for the
-     * pure string transforms (str_lower/str_upper/trim/substr/json_raw/
+     * pure string transforms (str_lower/str_upper/trim/substr/
      * str_from_bytes, and every other fresh copy): each output is a NEW
      * allocation no upstream allocator accounted for, so charge the payload
      * here — once, at the constructor, not per builtin. "Bounded by
@@ -2614,7 +2607,7 @@ void dict_set_owned(Value *dict, const char *key, Value *val) {
  * re-intern its dict keys into the process-global table above. Copying
  * also removes the old shared-by-reference concurrent-mutation footgun for the
  * data types it covers. Buffers and text builders are mutable values, so they
- * are copied too. Functions, builtins, and raw JSON remain shared by refcount;
+ * are copied too. Functions and builtins remain shared by refcount;
  * function parameters now retain their own intern table independently of
  * the creating attachment. This does not permit cross-state Value transfer. */
 
@@ -2703,7 +2696,6 @@ static Value *chan_clone_rec(Value *v, int depth) {
          * ValType to choose clone-vs-share here. */
         case VAL_FN:
         case VAL_BUILTIN:
-        case VAL_JSON_RAW:
             val_incref(v);
             return v;
     }
@@ -2821,7 +2813,6 @@ int is_truthy(Value *v) {
         case VAL_LIST: return v->data.list.count > 0;
         case VAL_FN: return 1;
         case VAL_BUILTIN: return 1;
-        case VAL_JSON_RAW: return v->data.str && v->data.str[0] != '\0';
         case VAL_DICT: eigs_module_ns_sync(v); return v->data.dict.count > 0;
         case VAL_BUFFER: return v->data.buffer.count > 0;
         case VAL_TEXT_BUILDER: return v->data.text_builder.len > 0;
@@ -2834,7 +2825,7 @@ int is_truthy(Value *v) {
  * Scalars compare by value (numbers, strings, null); collections compare
  * recursively by structure (lists element-wise, dicts by key/value
  * order-independently, buffers/text-builders by contents). Functions,
- * builtins, and raw-JSON compare by identity. Mixed types are never equal
+ * and builtins compare by identity. Mixed types are never equal
  * (no coercion — consistent with the comparison operators). The depth
  * guard prevents runaway recursion on self-referential containers; beyond
  * it we fall back to identity. */
@@ -2913,7 +2904,6 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
          * so -Werror=switch forces a new ValType to choose its equality. */
         case VAL_FN:
         case VAL_BUILTIN:
-        case VAL_JSON_RAW:
             return a == b;
     }
     return a == b;   /* unreachable for valid ValType values */
@@ -3013,7 +3003,6 @@ char* value_to_string(Value *v) {
             if (nn) { snprintf(buf, sizeof(buf), "<fn %s>", nn); return xstrdup(buf); }
             return xstrdup("<builtin>");
         }
-        case VAL_JSON_RAW: return xstrdup(v->data.str);
         case VAL_BUFFER:
             snprintf(buf, sizeof(buf), "<buffer:%d>", v->data.buffer.count);
             return xstrdup(buf);
@@ -4186,7 +4175,6 @@ static int gc_value_is_node(Value *v) {
     case VAL_NUM:
     case VAL_STR:
     case VAL_NULL:
-    case VAL_JSON_RAW:
     case VAL_BUILTIN:
     case VAL_BUFFER:
     case VAL_TEXT_BUILDER:

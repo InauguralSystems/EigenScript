@@ -165,7 +165,7 @@ way they do.** `chan_clone_rec` (src/eigenscript.c) switches on `ValType` with
 no `default:`, so `-Werror=switch` forces every new type to choose a side; the
 switch handles each type explicitly: `VAL_NUM`, `VAL_NULL`, `VAL_STR`,
 `VAL_LIST`, `VAL_DICT`, `VAL_BUFFER`, and `VAL_TEXT_BUILDER` are rebuilt
-(copy), while `VAL_FN`, `VAL_BUILTIN`, and `VAL_JSON_RAW` take a refcount
+(copy), while `VAL_FN` and `VAL_BUILTIN` take a refcount
 (share).
 A new `ValType` must choose a side in the switch for the compiler to accept it.
 The copy is recursive but not an identity-preserving graph copy: two references
