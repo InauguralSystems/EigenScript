@@ -15,3 +15,12 @@ updates:
       github-actions:
         patterns:
           - "*"
+  # The dev/CI image's base (.devcontainer/Dockerfile), pinned by digest (#1777).
+  # Each new debian:stable digest arrives as its own PR. That PR rebuilds the
+  # image, and its required `observer oracle (floor)` check rebuilds the
+  # v0.46.0 anchor with the new toolchain, so a verdict the new gcc or libm
+  # moves is found there, not in an unrelated merge-queue candidate.
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer"
+    schedule:
+      interval: "weekly"

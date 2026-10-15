@@ -556,10 +556,15 @@ def check_floor(pre, path, cand_v, rows, corpus, labels):
         want = right_set(verdicts(measure(stamp["binary"], corpus, caps), corpus, labels), rows)
     extra, missing = sorted(set(floor["verdicts"]) - set(want)), sorted(set(want) - set(floor["verdicts"]))
     if extra or missing or len(floor["verdicts"]) != len(want):
+        built = stamp.get("toolchain") or "an unrecorded toolchain"
+        measured = floor["anchor"].get("toolchain") or "an unrecorded toolchain"
+        cause = (f"This anchor was built by {built!r}, and the floor was measured on a build by {measured!r}: a"
+                 " toolchain or image change (in CI, a new dev-image digest) is the likely cause" if built != measured
+                 else f"This anchor was built by the floor's own toolchain ({built!r}), so the toolchain is not the cause")
         raise HarnessError(f"floor {path} is not its anchor's measurement: {len(extra)} listed verdict(s)"
                            f" the anchor gets wrong (first {extra[:1]}), {len(missing)} right one(s) missing"
-                           f" (first {missing[:1]}); the corpus, labels or harness changed: re-measure"
-                           f" with score.py {stamp['binary']} --write-floor {path}")
+                           f" (first {missing[:1]}). {cause}. Re-measure the floor where the check runs, in the"
+                           f" CI image: make observer-anchor, then score.py {stamp['binary']} --write-floor {path}")
     same = floor["anchor"].get("binary_sha256") == stamp["binary_sha256"]
     print(f"\nfloor: {len(want)} verdicts ({FLOOR_FORMAT}), re-measured on the anchor {stamp['binary']}"
           f" built by build_anchor.sh {stamp['recipe_sha256'][:12]}: the list matches; binary sha256"
@@ -567,10 +572,11 @@ def check_floor(pre, path, cand_v, rows, corpus, labels):
                                                f"differs from the floor's {floor['anchor'].get('binary_sha256', '?')[:12]}"
                                                " (another toolchain: information only)"))
     cand = {f"{arm} {rid}@{at} {p} {cls}": w == g for (arm, rid, at, p), (cls, w, g) in cand_v.items() if "/" in arm}
-    lost = [k for k in floor["verdicts"] if not cand[k]]
+    judged = {k: cand[k] for k in floor["verdicts"]}      # the count printed is the verdicts compared (#1777)
+    lost = [k for k, right in judged.items() if not right]
     for k in lost:
         print(f"  FLOOR VIOLATION {k}")
-    print(f"floor: {len(floor['verdicts'])} verdicts checked, {len(lost)} lost")
+    print(f"floor: {len(judged)} verdicts checked, {len(lost)} lost")
     return 1 if lost else 0
 
 

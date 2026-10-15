@@ -34,6 +34,18 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 ## PR lane (`pull_request`)
 
 - `scope` skips runtime steps for a docs-only PR. The doc gates still run.
+  `tools/ci_scope.sh` fails closed. A PR is docs-only only when every
+  changed path is plainly docs:
+  - it is a `.md` file that git prints unquoted;
+  - wherever it exists on either side of the diff, it is a regular file,
+    not a symlink or a submodule;
+  - it is outside `tests/` and `changes/`, and it is not `CHANGELOG.md`.
+
+  Anything else is code (#1777). The merge queue runs every lane whatever
+  the PR's scope, so a PR-stage skip is never the last check on a merge
+  through the queue. The Protection ruleset lets an administrator bypass the
+  queue; then only the PR-stage checks have run, and there a lane skips only
+  a PR that is plainly docs.
 - Linux gcc and clang, HTTP+model, gfx, zlib, net, and the PostgreSQL full
   build each run the complete suite against their own binary.
 - The HTTP+model ASan binary runs the complete suite across weight-balanced
@@ -41,6 +53,8 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 - `macos-latest` runs on the PR; `macos-15-intel` runs nightly.
 - Differential, compiler, doc, and gate self-tests continue on their existing
   jobs. The separate playground workflow builds real wasm32 on every PR.
+- `observer oracle (floor)` is required. Like the differentials, it runs on
+  every code change, and a docs-only PR skips it (**Observer oracle**, below).
 
 ## The playground: the real wasm32 build, on the PR
 
@@ -189,6 +203,34 @@ on it and never rebase to satisfy it; the queue does both.
 - A failure opens — or appends to — a single tracking issue, so a nightly that
   nobody is watching still reaches someone. A green run after a red one
   comments on the same thread, which is what makes the thread closable.
+
+## Observer oracle (#1764, #1778)
+
+- `observer oracle (floor)` is a required `ci.yml` check, gated like the
+  differentials on `scope`'s `code` output. It runs on every pull request
+  that changes code, on every merge-queue candidate and on every push to
+  `main`. A docs-only pull request skips it, and the skip counts as a pass
+  once `scope` and the dev image finish.
+- The job runs `tools/observer_oracle/ci_lane.sh`. The lane builds the
+  v0.46.0 anchor with `make observer-anchor`, which runs
+  `tools/observer_oracle/build_anchor.sh` under `env -i`. Nothing in the job's
+  environment, the compiler guard included, reaches the tag's build, and a
+  failed anchor build prints the tail of its log.
+- The lane then builds the candidate under the guard and calls `score.py`
+  with the committed floor directly. Exit 1 is a lost or split verdict (the
+  gate working); exit 2 is a harness error. Every floor verdict must have been
+  compared.
+- The anchor is built with the image's own compiler, so the image is pinned.
+  `.devcontainer/Dockerfile` names `debian:stable` by digest, and Dependabot
+  proposes each new digest as a pull request. That pull request's floor run
+  shows whether the new toolchain moves a verdict.
+- The proof that the floor can still fail is a gate self-test, not part of
+  the check (`docs/PRINCIPLES.md` §5). The `tools/selftests.txt` row
+  `tools/observer_oracle/plants.py --selftest` runs when
+  `tools/observer_oracle/` changes, and nightly with every other row. It
+  reverses one floor reading per predicate, class and label direction
+  through the wrapper observer, and requires the floor check to report
+  exactly those readings' verdicts as lost.
 
 ## Section planner and skip accounting
 
@@ -541,6 +583,7 @@ triggers) are listed in #1278.
 | `db extension (postgres service)` | 1 | gate |
 | `jit differential (…)`, `replay differential (…)` | 1 | gates |
 | `freestanding profile (symbol gate + smoke)` | 1 | gate |
+| `observer oracle (floor)` | 1 | gate: the observer oracle's per-verdict floor (#1778), gated on `code` like the differentials |
 | `valgrind (memcheck smoke, JIT off)` | 1 | the smoke spread (the full corpus is tier 2) |
 | `tsan (concurrency race gate)` | 1 | gate |
 | `tsan-http (race gate over ext_http)` | 1 | gate: the HTTP sections ([44], [45a], [45b]) under a TSan build with ext_http compiled in, which the stock `tsan` build compiles out (#1139) |

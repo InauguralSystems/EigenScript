@@ -452,6 +452,35 @@ jobs:
         if: always()
         run: bash tools/cc_guard.sh --report
 
+  # The observer oracle's per-verdict floor (#1764), a required check (#1778):
+  # every verdict the v0.46.0 tag got right must stay right, re-measured on an
+  # anchor this job builds from the tag (tools/observer_oracle/ci_lane.sh).
+  # Gated like the differentials above: it runs on every code change, and a
+  # docs-only PR skips it. The proof that the floor can still fail is not
+  # re-run here; it is a tools/selftests.txt row (plants.py --selftest) that
+  # runs when the oracle changes (docs/PRINCIPLES.md §5, #1777).
+  observer-oracle:
+    name: observer oracle (floor)
+    needs: [dev-image, scope]
+    if: needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    # About 2 minutes measured (84-115 s on PR #1777); this bounds a hang.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.dev-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Observer oracle lane (tools/observer_oracle/ci_lane.sh)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash tools/observer_oracle/ci_lane.sh
+
   # Freestanding symbol gate: compiles the runtime with the freestanding
   # profile (-DEIGENSCRIPT_FREESTANDING=1) and asserts its undefined-symbol
   # set stays within tools/freestanding_allowlist.txt — the HAL roots +

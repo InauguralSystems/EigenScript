@@ -3,8 +3,14 @@
 the check it names red, and each CONTROL must stay green.
 
 usage: python3 plants.py TAG_BINARY IEEE_BINARY [--only NAME,...]
+       plants.py --selftest         (the floor can fail: a tools/selftests.txt row)
        plants.py wrap PROG|-e CODE   (the wrapper observer, run through a shim)
        python plants.py twins DIR     (with sympy: the twin labels, see below)
+
+--selftest is the tools/selftests.txt row that runs when tools/observer_oracle/
+changes (#1275, #1777; docs/PRINCIPLES.md section 5: a checker proves it fires
+when it is written or changed, not on every run). It builds or reuses the
+floor's anchor through `make observer-anchor` and runs floor-each against it.
 
 Every plant runs in a scratch copy of this directory (the tree is never
 edited) and states the exit code and output line that must appear (and, for
@@ -46,9 +52,10 @@ import sys
 import tempfile
 import time
 
+from derive import PREDS     # the order score.py prints a CK line's readings in
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENV = os.path.expanduser("~/.local/venvs/oracle/bin/python")
-PREDS = ["converged", "stable", "improving", "oscillating", "diverging", "equilibrium"]
 LOOP_HEAD, GUARD = "        loop while true:\n", "    if m > 0:\n"
 INJECT = {"osr_bail": ("osr", "cw is CW_S + CW_S"), "jit_bail_body": ("jit", "cw is CW_S + CW_S"),
           "num_body": (None, "cw is 1.0 + 2.0")}
@@ -253,6 +260,40 @@ def swap_spec(d):
     return json.dumps(spec)
 
 
+def floor_readings(d):
+    """floor-each (#1777): for every (predicate, class, label) the floor holds,
+    one reading, from a row not used yet where the floor allows, reversed in
+    every arm. Returns the OBS_WRAP_SPEC and the floor verdicts those readings
+    carry, in floor order (one per arm). The arms still agree, so no FINDING
+    fires. A check_floor that skips a predicate, a class, a label direction or
+    an arm leaves some of these losses out of its report."""
+    floor = json.load(open(os.path.join(d, "floor.json")))["verdicts"]
+    labels = json.load(open(os.path.join(d, "labels.json")))
+    combos = {}
+    for v in floor:
+        _arm, key, pred, cls = v.split()
+        combos.setdefault((pred, cls, labels[key][pred][1]), {})[(key, pred)] = None
+    picked, used = {}, set()
+    for combo in sorted(combos):
+        readings = list(combos[combo])
+        key, pred = next((r for r in readings if r[0].rsplit("@", 1)[0] not in used), readings[0])
+        used.add(key.rsplit("@", 1)[0])
+        picked[(key, pred)] = not combo[2]
+    return (json.dumps({f"{k}:{p}": flip for (k, p), flip in picked.items()}),
+            [v for v in floor if tuple(v.split()[1:3]) in picked])
+
+
+def floor_block(lost, n):
+    """What score.py --floor prints when exactly `lost` (in floor order) is lost
+    from a floor of n verdicts and no other check failed: no FINDING, no
+    capability verdict wrong, the floor re-measured on its anchor, each loss
+    named, the count, exit 1."""
+    return (r"^FINDINGS \(.*\): 0\n\nCAPABILITY ROWS .*, 0 wrong verdict\(s\); expected and absent: none\n\n"
+            rf"floor: {n} verdicts \(.*: the list matches; .*\n"
+            + "".join(rf"  FLOOR VIOLATION {re.escape(k)}\n" for k in lost)
+            + rf"floor: {n} verdicts checked, {len(lost)} lost\n\nobserver oracle exit 1: FAIL$")
+
+
 def stamp_anchor(d, make):
     """A local anchor for the scratch copy's recipe, in a cache inside d
     (XDG_CACHE_HOME): make(path) writes its binary; the stamp is intact."""
@@ -348,6 +389,11 @@ def plants(tag, ieee):
          lambda d: shim(d, "spec", tag, OBS_WRAP_SPEC=swap_spec(d)), sc("{d}/obs_spec", *F), 1, r"FLOOR VIOLATION .*"),
         ("INTBLIND", "every scored verdict on int rows reversed",
          lambda d: shim(d, "intblind", tag), sc("{d}/obs_intblind", *F), 1, r"FLOOR VIOLATION \S+ int_.*"),
+        ("floor-each", "one floor reading per (predicate, class, label) reversed in every arm (#1777): no"
+         " FINDING, and the floor alone reds the run, losing exactly those readings' verdicts",
+         lambda d: shim(d, "spec", tag, OBS_WRAP_SPEC=floor_readings(d)[0]), sc("{d}/obs_spec", *F), 1,
+         lambda: floor_block(floor_readings(HERE)[1],
+                             len(json.load(open(os.path.join(HERE, "floor.json")))["verdicts"]))),
         ("twin-tag", "CONTROL: the twin (honest perfect) observer, tag binary",
          lambda d: shim(d, "twin", tag), sc("{d}/obs_twin", *F), 0, r"exit 0: no gate failed.*"),
         ("twin-ieee", "CONTROL: the twin observer on the IEEE prototype, capability rows run",
@@ -660,6 +706,7 @@ def run_plants(tag, ieee, only):
     if not table or len(set(names)) != len(names) or (only and len(table) != len(only)):
         raise SystemExit(f"plant table empty, with duplicate names, or missing a name asked for: {names}")
     for name, what, setup, argv, rc_want, line, *post in table:
+        line = line() if callable(line) else line       # built only for the plants that run
         with tempfile.TemporaryDirectory(prefix=f"plant_{name}_") as tmp:
             d = os.path.join(tmp, "oracle")
             shutil.copytree(HERE, d, ignore=shutil.ignore_patterns("__pycache__"))
@@ -699,7 +746,33 @@ def run_plants(tag, ieee, only):
     return 0 if red == len(table) else 1
 
 
+def selftest():
+    """The tools/selftests.txt row: build (or reuse) the floor's anchor through
+    the hermetic `make observer-anchor`, then run floor-each against it through
+    the real score.py --floor. Exit 0 only when the plant goes red."""
+    root = os.path.dirname(os.path.dirname(HERE))
+    if subprocess.run(["make", "--no-print-directory", "-C", root, "observer-anchor"], stdin=subprocess.DEVNULL).returncode:
+        recipe = hashlib.sha256(open(os.path.join(HERE, "build_anchor.sh"), "rb").read()).hexdigest()
+        cache = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+        try:
+            sys.stderr.write("".join(open(os.path.join(cache, "eigs-oracle-anchor", recipe + ".log")).readlines()[-50:]))
+        except OSError:
+            pass
+        print("OBSERVER_ORACLE_ERROR: make observer-anchor failed: no anchor to plant against", file=sys.stderr)
+        return 2
+    from score import anchor
+    from gen import HarnessError
+    try:
+        binary = anchor()["binary"]
+    except HarnessError as e:
+        print(f"OBSERVER_ORACLE_ERROR: {e}", file=sys.stderr)
+        return 2
+    return run_plants(binary, binary, {"floor-each"})
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--selftest"]:
+        sys.exit(selftest())
     if sys.argv[1:2] == ["wrap"]:
         wrap(sys.argv[2:])
     if sys.argv[1:2] == ["twins"]:
