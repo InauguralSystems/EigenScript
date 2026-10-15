@@ -438,21 +438,30 @@ test-changed: build
 precheck:
 	bash tools/precheck.sh
 
+# The floor's anchor (#1777): tools/observer_oracle/build_anchor.sh under env -i
+# with only HOME, PATH=/usr/bin:/bin and XDG_CACHE_HOME (when set), so nothing in
+# this shell or this make reaches the tag's build: not CC or CFLAGS, not MAKEFLAGS
+# or MAKEFILES, not CPATH or LIBRARY_PATH, not a PATH override. It needs the
+# v0.46.0 tag, and git, flock and sha256sum in /usr/bin or /bin.
+OBSERVER_ANCHOR = env -i HOME="$$HOME" PATH=/usr/bin:/bin $${XDG_CACHE_HOME:+XDG_CACHE_HOME="$$XDG_CACHE_HOME"} bash tools/observer_oracle/build_anchor.sh
+.PHONY: observer-anchor
+observer-anchor:
+	$(OBSERVER_ANCHOR)
+
 # Observer predicates vs a mathematics-graded corpus (#1746). score.py exits 1 on a
 # FINDING (tiers or forms disagree), a wrong verdict on a capability row or a lost
-# floor verdict, 2 on a harness error or a vacuous JIT-tier run. The committed floor
-# applies by default (#1764): a verdict the v0.46.0 tag got right must stay right,
-# re-measured on the anchor tools/observer_oracle/build_anchor.sh builds, or reuses,
-# in the user cache (it needs the v0.46.0 tag, git, flock and sha256sum). The
-# recipe runs without make's flags, so CC=... or -j on this command line cannot
-# reach the tag's build. FLOOR= (empty) skips the floor and the anchor;
-# EXPECT=ieee,int64 fails when an expected capability is absent (#1758). CI runs
-# this target through tools/observer_oracle/ci_lane.sh: the required ci.yml check
-# `observer oracle (v0.46.0 floor)` (#1778) and the nightly observer-oracle.yml.
+# floor verdict, and 2 on a harness error or a vacuous JIT-tier run; make turns
+# either into its own exit 2. The committed floor applies by default (#1764): a
+# verdict the v0.46.0 tag got right must stay right, re-measured on the anchor that
+# observer-anchor builds, or reuses, in the user cache. FLOOR=<file>, on the command
+# line or in the environment, names another floor; an empty FLOOR skips the floor
+# and the anchor. EXPECT=ieee,int64 fails when an expected capability is absent
+# (#1758). CI calls score.py directly, through tools/observer_oracle/ci_lane.sh
+# (the required check `observer oracle (floor)`).
 .PHONY: observer-oracle
-observer-oracle: FLOOR = tools/observer_oracle/floor.json
+observer-oracle: FLOOR ?= tools/observer_oracle/floor.json
 observer-oracle: build
-	$(if $(FLOOR),env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL bash tools/observer_oracle/build_anchor.sh)
+	$(if $(FLOOR),$(OBSERVER_ANCHOR))
 	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT))
 
 install-gfx: install

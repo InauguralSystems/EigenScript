@@ -63,9 +63,6 @@ jobs:
     timeout-minutes: 30
     outputs:
       code: ${{ steps.detect.outputs.code }}
-      # tools/ci_scope.sh's second line (#1778): whether a pull request touches
-      # the observer oracle's lane. Empty outside a pull request.
-      observer: ${{ steps.detect.outputs.observer }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -457,19 +454,15 @@ jobs:
 
   # The observer oracle's per-verdict floor (#1764), a required check (#1778):
   # every verdict the v0.46.0 tag got right must stay right, re-measured on an
-  # anchor this job builds from the tag, and the job then proves that the
-  # floor can still fail. The work is tools/observer_oracle/ci_lane.sh, which
-  # the nightly .github/workflows/observer-oracle.yml runs too.
-  #
-  # On a pull request the job runs only when tools/ci_scope.sh printed
-  # observer=true (the PR touches one of its OBSERVER_PATHS). Any other PR
-  # skips it, and GitHub counts a skipped required check as passing. The merge
-  # queue and main always run it: outside a pull request the scope job prints
-  # no observer line, and an empty output is not 'false'.
+  # anchor this job builds from the tag (tools/observer_oracle/ci_lane.sh).
+  # Gated like the differentials above: it runs on every code change, and a
+  # docs-only PR skips it. The proof that the floor can still fail is not
+  # re-run here; it is a tools/selftests.txt row (plants.py --selftest) that
+  # runs when the oracle changes (docs/PRINCIPLES.md §5, #1777).
   observer-oracle:
-    name: observer oracle (v0.46.0 floor)
+    name: observer oracle (floor)
     needs: [dev-image, scope]
-    if: needs.scope.outputs.observer != 'false'
+    if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     # About 2 minutes measured (84-115 s on PR #1777); this bounds a hang.
     timeout-minutes: 15
