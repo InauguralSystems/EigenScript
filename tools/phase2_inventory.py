@@ -643,7 +643,7 @@ def slot_population(slots, sigs_by_file):
         if not params.startswith('('):
             bad.append('%s:%s: unparsed signature %r' % (rel, k, sig.strip()[:60]))
             continue
-        first = re.split(r'[,)]', params[1:], 1)[0].strip()
+        first = re.split(r'[,)]', params[1:], maxsplit=1)[0].strip()
         if re.match(r'^(const\s+)?EigsSlot\s+[A-Za-z_]\w*$', first):
             out.append('%s:%s' % (rel, k))
     for line in out:

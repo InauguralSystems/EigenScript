@@ -82,20 +82,38 @@ EIGS_SLOT_NORETURN void eigs_int_unwired(const char *who, uint64_t bits);
 #  endif
 #endif
 
+/* #1758 R1.1, the dynamic half of the int-source check: built with
+ * -DEIGS_SMI_TRAP (`make smi-trap`), every slot classifier below aborts the
+ * moment it reads an SMI, and slot_from_int aborts on any call. Nothing may
+ * make an int before R1.3, so the corpus must run on that build exactly as on
+ * release; a producer that writes the tag bits itself, which no scan of names
+ * sees, dies at its first reader. R1.3 retires the mode with eigs_int_unwired.
+ * In every other build SLOT_SMI_TRAP is nothing. */
+#ifdef EIGS_SMI_TRAP
+#define SLOT_SMI_TRAP(s)                                                       \
+    do {                                                                       \
+        if (__builtin_expect(((s).u & SLOT_TAG_MASK) == TAG_SMI, 0))           \
+            eigs_slot_refuse("EIGS_SMI_TRAP: an int before #1758 R1.3", (s));  \
+    } while (0)
+#else
+#define SLOT_SMI_TRAP(s) ((void)0)
+#endif
+
 /* Predicates */
 
-/* #1758: a double. Was slot_is_f64; renamed so that every site that meant
+/* #1758: a double. Was slot_is_num; renamed so that every site that meant
  * "a number" had to decide what an int (SMI) does there. */
 static inline int slot_is_f64(EigsSlot s) {
+    SLOT_SMI_TRAP(s);
     return (s.u & SLOT_QNAN_MASK) != SLOT_QNAN_MASK;
 }
-static inline int slot_is_null(EigsSlot s)    { return s.u == SLOT_NULL_BITS; }
-static inline int slot_is_bool(EigsSlot s)    { return (s.u & SLOT_TAG_MASK) == TAG_BOOL; }
-static inline int slot_is_smi(EigsSlot s)     { return (s.u & SLOT_TAG_MASK) == TAG_SMI; }
-static inline int slot_is_heap(EigsSlot s)    { return (s.u & SLOT_TAG_MASK) == TAG_HEAP; }
+static inline int slot_is_null(EigsSlot s)    { SLOT_SMI_TRAP(s); return s.u == SLOT_NULL_BITS; }
+static inline int slot_is_bool(EigsSlot s)    { SLOT_SMI_TRAP(s); return (s.u & SLOT_TAG_MASK) == TAG_BOOL; }
+static inline int slot_is_smi(EigsSlot s)     { SLOT_SMI_TRAP(s); return (s.u & SLOT_TAG_MASK) == TAG_SMI; }
+static inline int slot_is_heap(EigsSlot s)    { SLOT_SMI_TRAP(s); return (s.u & SLOT_TAG_MASK) == TAG_HEAP; }
 /* #262 Step E: TAG_TRACKED is gone — a number is always an immediate, never a
  * heap-boxed observer-tracked Value. Heap is the only pointer tag. */
-static inline int slot_is_ptr(EigsSlot s)     { return (s.u & SLOT_TAG_MASK) == TAG_HEAP; }
+static inline int slot_is_ptr(EigsSlot s)     { SLOT_SMI_TRAP(s); return (s.u & SLOT_TAG_MASK) == TAG_HEAP; }
 
 /* Accessors (caller must check the predicate first) */
 
@@ -103,8 +121,9 @@ static inline int slot_is_ptr(EigsSlot s)     { return (s.u & SLOT_TAG_MASK) == 
  * proven a double (slot_is_f64). Every use sits in a function listed in
  * tools/num_read_allowlist.txt with its count (tools/num_read_check.sh). */
 #define SLOT_F64_RAW(s) ((s).d_)
-static inline int      slot_as_bool(EigsSlot s)   { return (int)(s.u & 1ULL); }
+static inline int      slot_as_bool(EigsSlot s)   { SLOT_SMI_TRAP(s); return (int)(s.u & 1ULL); }
 static inline Value   *slot_as_ptr(EigsSlot s) {
+    SLOT_SMI_TRAP(s);
 #ifdef EIGS_SLOT_CHECKS
     if (__builtin_expect(!slot_is_heap(s), 0)) eigs_slot_refuse("slot_as_ptr", s);
 #endif
@@ -114,6 +133,7 @@ static inline Value   *slot_as_ptr(EigsSlot s) {
 /* The int an SMI holds, sign-extending payload bit 47 without an
  * implementation-defined right shift (design 2.1). */
 static inline int64_t  slot_smi_val(EigsSlot s) {
+    SLOT_SMI_TRAP(s);
     return (int64_t)((s.u & SLOT_PAYLOAD_MASK) ^ SLOT_SMI_SIGN) - (int64_t)SLOT_SMI_SIGN;
 }
 
@@ -126,6 +146,9 @@ static inline EigsSlot slot_from_f64(double d)       { EigsSlot s; SLOT_F64_RAW(
  * R1.3 nothing in the runtime calls this (tools/phase2_check.sh, the
  * int-source check); tests/phase2/slot_layer.c drives it. */
 static inline EigsSlot slot_from_int(int64_t i) {
+#ifdef EIGS_SMI_TRAP
+    eigs_int_unwired("slot_from_int under EIGS_SMI_TRAP", (uint64_t)i);
+#endif
     if (__builtin_expect(i < SLOT_SMI_MIN || i > SLOT_SMI_MAX, 0))
         eigs_int_unwired("slot_from_int", (uint64_t)i);
     EigsSlot s; s.u = TAG_SMI | ((uint64_t)i & SLOT_PAYLOAD_MASK); return s;
@@ -160,6 +183,7 @@ static inline EigsSlot slot_from_heap(Value *v) {
  * The outer `& SLOT_QNAN_MASK` branch peels off numbers in one
  * predicted-not-taken test with zero memory access. */
 static inline void slot_incref(EigsSlot s) {
+    SLOT_SMI_TRAP(s);
     if ((s.u & SLOT_QNAN_MASK) == SLOT_QNAN_MASK) {
         uint64_t tag = s.u & SLOT_TAG_MASK;
         if (tag == TAG_HEAP) {
@@ -173,6 +197,7 @@ static inline void slot_incref(EigsSlot s) {
 }
 
 static inline void slot_decref(EigsSlot s) {
+    SLOT_SMI_TRAP(s);
     if ((s.u & SLOT_QNAN_MASK) == SLOT_QNAN_MASK) {
         uint64_t tag = s.u & SLOT_TAG_MASK;
         if (tag == TAG_HEAP) {

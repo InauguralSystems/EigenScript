@@ -1914,9 +1914,8 @@ void eigs_slot_refuse(const char *who, EigsSlot s) {
 }
 
 void eigs_int_unwired(const char *who, uint64_t bits) {
-    fprintf(stderr, "EigenScript FATAL: %s: int 0x%016llx reached a path whose "
-            "int arm lands with the int Value kind (#1758 R1.3)\n", who,
-            (unsigned long long)bits);
+    fprintf(stderr, "EigenScript FATAL: %s: int 0x%016llx reached an arm whose "
+            "int handling lands in #1758 R1.3\n", who, (unsigned long long)bits);
     abort();
 }
 

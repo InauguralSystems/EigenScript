@@ -610,6 +610,37 @@ result).**
   reserved tags and the sentinel against the predicates and the deciding
   readers) and plant 1's named check (`slot_from_int` over the boundary
   values). Its ABORT rows run in forked children and must name the reader.
+
+**As corrected in the R1.1 fix round (the R1.1 critic's FAIL).**
+- **The four type-error arms are `unwired`, not `guarded`.** `NUM_CMP`
+  (`< > <= >=`), `INT_BINOP_R` (`& | ^ << >>`), `CASE(NEG)` and
+  `CASE(BNOT)` met an SMI with the type error naming `num`; inside a `try`
+  that error became a wrong value (`r is xs[0] < 6` with an SMI 5 gave
+  `false`, the float control `true`). "Handled correctly as written" was
+  false. Each now refuses through `eigs_int_unwired`, so R1.3, which deletes
+  the token, cannot compile until each has its int arm. All four are tied to
+  **R1.3**, bitwise included: R1.3's int literals reach `&` at once
+  (`tests/bench_dmg_shape.eigs:21`, `c.a is c.a & 255`), and §8 already
+  gives bitwise operators exact int64 operands at R1.3, with R1.5 changing
+  only the shift rule.
+- **The tag matrix covers every entry.** Each of the 33 population entries
+  meets all twelve kinds (a double, the canonical NaN, -0.0, null, false,
+  true, an SMI, a heap pointer, the three reserved tags and the sentinel),
+  each kind with its expected outcome: a value, a refusal naming the reader,
+  or a raise. The runner requires the MATRIX set to equal the population.
+- **Part D drives the operator arms through the VM.** A host builtin
+  (`phase2_poke`) writes an SMI into a list element, and a program then
+  applies each refusing operator to it, plain and inside a `try`: each must
+  abort naming its arm, where the float control computes the value.
+- **The slot test builds at -O0** (about 41 s instead of 162 s, and well
+  under -O2's 602 MB peak), after the warnings #1775 listed were fixed:
+  `builtin_tensor_gather`'s missing return and the maybe-uninitialized
+  `num_to_i64_exact` and `vm_index_resolve` locals.
+- **Its runner reads each tool on its own channel.** The scan and the test
+  each have a grammar; a line outside it, or any stderr, is a FAIL that
+  prints the line (the R1.1 critic: Python 3.13's DeprecationWarning on the
+  scan's stderr was read as two classifiers). The Python runs with `-W
+  error`.
 - **"The int's Value"** cannot be checked in R1.1: no int Value kind exists,
   so `slot_to_value` and the readers that route to it are ABORT rows until
   R1.3 turns them into RETURN rows.
@@ -651,6 +682,7 @@ result).**
 | `jit_smoke.c:run_bool_cases` | not-a-classifier | test harness: expected bool bits (D3) |
 | `jit_smoke.c:run_index_bail_cases` | guarded | test harness: an exact null test of a result (D3) |
 | `trace.c:write_slot` | unwired | an int needs tape v7 (ints as digits, floats marked), R1.3; a v6 tape would replay it as a float. Any other tag refuses; it was written as `<unknown>` (D1) |
+| `value_slot.h:#define SLOT_SMI_TRAP` | refuse | the smi-trap build's check (`-DEIGS_SMI_TRAP`): every slot classifier aborts on an SMI before R1.3; nothing in other builds (D3) |
 | `value_slot.h:#define slot_as_heap` | refuse | alias of `slot_as_ptr` (D2) |
 | `value_slot.h:slot_as_ptr` | refuse | the raw dereference: R1.1 refuses a non-heap slot in ASan builds and under `-DEIGS_SLOT_CHECKED` (the C slot test) (D2) |
 | `value_slot.h:slot_decref` | guarded | acts only on tag `0xFFFB`; an SMI has no refcount (D3) |
@@ -672,8 +704,8 @@ result).**
 | `value_slot.h:slot_true` | not-a-classifier | constructor (D3) |
 | `value_slot.h:slot_truthy_immediate` | smi-arm | an int is truthy when it is not 0, like a double (D1) |
 | `vm.c:#define ARITH_FAST` | guarded | an int is not a float (`slot_f64_value`): the arm's slow path pops it through `slot_bridge_unwrap`; R1.3 gives that path int arithmetic (D1) |
-| `vm.c:#define INT_BINOP_R` | guarded | an int is not a float: the type error, which names it `num` (`slot_type_name`); R1.3 adds the int arm (D1) |
-| `vm.c:#define NUM_CMP` | guarded | an int is not a float: the type error naming `num`; R1.3 adds N2's exact compare (D1) |
+| `vm.c:#define INT_BINOP_R` | unwired | an int operand used to reach the type error naming `num`, which a `try` turned into a wrong value (the R1.1 critic). It now refuses through `eigs_int_unwired` until R1.3 gives the bitwise arms exact int64 operands (D1) |
+| `vm.c:#define NUM_CMP` | unwired | an int operand used to reach the type error naming `num` (`r is xs[0] < 6` gave `false` inside a `try`). It now refuses through `eigs_int_unwired` until R1.3 adds N2's exact compare (D1) |
 | `vm.c:#define READ_SLICE_BOUND` | smi-arm | an int bound is its value when a C `int` holds it, else a value error (D1) |
 | `vm.c:jit_helper_dot_get` | guarded | a non-null field is pushed as its bits; an SMI is a valid stack slot (D3) |
 | `vm.c:jit_helper_dot_set` | guarded | an int value skips the immediate store: the slow path pops it through `slot_bridge_unwrap` (D1) |
@@ -698,7 +730,7 @@ result).**
 | `vm.c:vm_leaf_accessor_exec/OP_LOCAL_DOT_GET` | guarded | a non-pointer target bails (`return 0`); a non-null field is borrowed as its bits, an SMI included (D2) |
 | `vm.c:vm_local_is_null` | guarded | exact null test (D3) |
 | `vm.c:vm_local_lift` | guarded | a non-pointer, non-null slot goes through `slot_to_value` (compile-forced) and is boxed on purpose (D2) |
-| `vm.c:vm_run_ex/CASE(BNOT)` | guarded | an int is not a float: the type error naming `num`; R1.3 adds the int arm (D1) |
+| `vm.c:vm_run_ex/CASE(BNOT)` | unwired | an int used to reach the type error naming `num`. It now refuses through `eigs_int_unwired` until R1.3 gives the bitwise arms exact int64 operands (D1) |
 | `vm.c:vm_run_ex/CASE(DESTRUCTURE_UNPACK)` | guarded | a non-pointer source takes the error path, which names the type through `slot_type_name` (D2) |
 | `vm.c:vm_run_ex/CASE(DISPATCH)` | smi-arm | an int key is its value when a C `int` holds it, else a value error; the result returns through `slot_bridge_unwrap` (D1) |
 | `vm.c:vm_run_ex/CASE(DOT_GET)` | guarded | exact null test of a field (D3) |
@@ -710,7 +742,7 @@ result).**
 | `vm.c:vm_run_ex/CASE(LOCAL_IDX_DOT_GET)` | guarded | exact null test of a field (D3) |
 | `vm.c:vm_run_ex/CASE(LOCAL_IDX_DOT_SET)` | guarded | an int value: `vm_slot_lift` boxes it (D1) |
 | `vm.c:vm_run_ex/CASE(NE)` | guarded | an int is not a float: the slow path; R1.3 adds N2 (D1) |
-| `vm.c:vm_run_ex/CASE(NEG)` | guarded | an int is not a float: the type error naming `num`; R1.3 adds N4b (D1) |
+| `vm.c:vm_run_ex/CASE(NEG)` | unwired | an int used to reach the type error naming `num`. It now refuses through `eigs_int_unwired` until R1.3 adds N4b (D1) |
 | `vm.c:vm_run_ex/CASE(SLICE_GET)` | guarded | as DESTRUCTURE_UNPACK (D2) |
 | `vm.c:vm_slot_lift` | smi-arm | an int is boxed on purpose through `slot_to_value` (2.1; unwired until R1.3); a reserved tag refuses, where it became null (D1) |
 | `vm.c:vm_slot_value_opaque` | guarded | only a pointer can be a fn or builtin; an SMI answers "not opaque", which is right (D2) |
@@ -852,7 +884,9 @@ catches a miss:
   (§8) proves nothing before R1.3 could produce an int, so nothing earlier
   could have exercised an unfinished arm. The R1.1 arms that could not be
   final (`unwired`, 2.5) are token-forced instead: R1.3 deletes
-  `eigs_int_unwired`.
+  `eigs_int_unwired`. Since the R1.1 fix round the four operator arms that
+  raised a type error for an SMI (`NUM_CMP`, `INT_BINOP_R`, `NEG`, `BNOT`)
+  are among them.
 - **R1.3, the tape parser.** `parse_value_p` (trace.c:2284) reads digits as
   an int from v7 on; the version bump refuses an older tape. Gate: the T1
   rows (`T1.twice-int`, `T1.v6-refused`).
@@ -1787,7 +1821,12 @@ No int VALUE exists before R1.3, and this is structural, not a promise:
   convert an existing `VAL_INT`, and none exists. `phase2_check.sh --through
   R1.2` checks this: it derives the callers of `slot_from_int` and
   `make_int` from the source and fails on any caller outside that list
-  (the int-source check);
+  (the int-source check). A producer can also write the tag bits without
+  calling the writer, so the check fails on `TAG_SMI` or the SMI bit pattern
+  anywhere outside its definitions in `value_slot.h`, and its dynamic half
+  runs the corpus on a `make smi-trap` build, where every slot classifier
+  aborts on an SMI and `slot_from_int` aborts on any call (the R1.1 fix
+  round, after the critic's plants P3-P5);
 - the lexer produces only float literals until R1.3, and the tape cannot
   carry an int until v7 (R1.3).
 
@@ -2205,10 +2244,31 @@ fails if a round named here has neither rows nor its mechanical gates.)
   whatever it loads by a relative path are the same bytes for both; only
   the binary and its stdlib differ. A file only the branch has (a new
   fixture) is counted as `new`; one only the baseline has is a DELETED
-  failure. A file whose baseline disagrees with itself (randomness, timing)
-  is replayed: the baseline records a tape, replays it twice, and the branch
-  replays it once; the branch must match (`same_under_replay`), or it is a
-  DIFF. Only files whose replays disagree with each other stay NONDET.
+  failure. **As corrected in the R1.1 fix round** (the critic's plants B
+  and D passed the first version):
+  - each binary runs each file TWICE. A file is deterministic when the
+    baseline's two runs agree, and then any branch run that differs is a
+    DIFF: a branch that is wrong on every other run is wrong;
+  - randomness runs LIVE with a pinned seed. The runtime has no seed flag
+    or variable (an unseeded program seeds from `CLOCK_MONOTONIC ^ pid`), so
+    the tool builds an `LD_PRELOAD` shim that pins every self-seed (>= 2^20)
+    to one constant and passes a small explicit seed through, and checks the
+    shim first (pinned draws agree, unpinned ones differ). A random builtin
+    changed on the branch therefore shows wherever the corpus observes it;
+    `test_system.eigs` now draws `random_int` 300 times against its bounds;
+  - a tape is the last resort, for a file whose baseline disagrees with
+    itself even pinned (timing, threads): the baseline records it and
+    replays it twice, the branch replays it once and must match
+    (`same_under_replay`). Such a file's nondeterministic builtins did not
+    run live, so their behaviour is invisible there; the report lists every
+    file adjudicated that way (`REPLAYED`). Files whose replays disagree with
+    each other stay NONDET, also listed;
+  - no blanket memory cap: only files that drive the gfx, ui or audio
+    surface run under `ulimit -v 2097152` (listed as `CAPPED`).
+    `handles_full.eigs` varied only because of the old blanket cap.
+- **The smi-trap gate** (`--smi-trap BIN`, R1.1 and R1.2) runs the same
+  differential with a `make smi-trap` build as the branch; until R1.3 it
+  must show no difference, because no program may make an int.
 - **The calibration** is `phase2_check.sh --calibrate [--build-plants] <tag>
   <branch>`, on the fixtures in `tests/phase2/calib/`: each ends in a line
   that fails on the tag (#1740: `5.5 & 1` raises `value` on the branch and
@@ -2218,7 +2278,15 @@ fails if a round named here has neither rows nor its mechanical gates.)
   the int-source plant runs against a planted copy of `src/`. Cases the
   design did not list were added for the plan-level checks (an item with no
   row, an arm no row exercises, a round with neither rows nor gates) and
-  for the token gate (a reintroduced `slot_is_num`).
+  for the token gate (a reintroduced `slot_is_num`). The fix round added the
+  critic's plants: the differential's A (a deterministic file prints one
+  more line), B (a branch wrong on alternate runs, both phases) and D (a
+  build whose `random_int` answers lo+1..hi+1), each of which must make the
+  differential name the file DIFF; the int-source plants P1-P5, each of
+  which the static half must name at R1.1 (at R1.2, P4 sits inside an
+  allowed writer and the static half passes it); and P4 built into a
+  smi-trap binary, which the dynamic half must stop. A restricted run (the
+  calibration's file list) prints `RESTRICTED` and exits 3, never PASS.
 
 ### 9.3 `tools/phase2_plants.sh` (round 1 builds it; detached, about 7 release builds)
 
@@ -2258,6 +2326,15 @@ is `slot-layer-test: FAIL slot_from_int(0): bits ...`). Plants 2-7 join the
 table in the commits that land their rows, and its output then reads
 `plants=7`. Its transverse run deletes exactly the named assertion
 (`if (s.u != smi(v).u)` becomes `if (0)`) and requires the plant to pass.
+
+The R1.1 fix round added three instrument plants on the slot test, each
+with its own transverse run: `arm-refusal` (`NUM_CMP`'s int refusal
+deleted; named line `slot-layer-test: FAIL arm lt with an int: got ...`),
+`stderr-noise` (the population scan writes a line to stderr; named line
+`slot-layer: FAIL: the population scan wrote to stderr`) and
+`stdout-noise` (the scan prints a line outside its grammar; named line
+`slot-layer: FAIL: the population scan printed lines outside its
+grammar`). The tool also fails a plant whose check writes to stderr.
 
 ### 9.4 The per-builtin behaviour table (R1.6's gate; replaces the int-fuzz class check)
 

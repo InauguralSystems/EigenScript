@@ -1584,6 +1584,8 @@ Value* builtin_tensor_gather(Value *arg) {
      * other wrong-type case: a raise in strict mode (the default, #1361),
      * 0.0 under EIGS_STRICT=0. */
     ARG_GUARD(1, "gather", "a tensor and an index or index vector", make_num(0.0));
+    return make_null();   /* unreachable: the guard above always returns, but
+                           * -O0 does not fold its constant test (#1775) */
 }
 
 /* ==== Helper: call a user-defined EigenScript function from C ====

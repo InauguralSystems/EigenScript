@@ -879,10 +879,12 @@ static inline int slot_truthy(EigsSlot s) {
 
 /* #1758 R1.1: vm.c's slot_as_double is gone. Its readers now call
  * slot_f64_value (value_slot.h), which answers only for a FLOAT; each one
- * decided what an int does there: the arithmetic, comparison, negation and
- * bitwise arms send it to their slow path or type error, which R1.3 gives
- * the int semantics (design 8); the leaf evaluator bails, so the generic
- * call computes it (design 4.5). */
+ * decided what an int does there: the arithmetic and equality arms send it to
+ * their slow path, which lifts it through slot_to_value; the ordering,
+ * bitwise, negation and `~` arms refuse it (eigs_int_unwired) where they used
+ * to raise a type error, which a `try` turned into a wrong value. R1.3 gives
+ * every one of them the int semantics and deletes eigs_int_unwired (design 8);
+ * the leaf evaluator bails, so the generic call computes it (design 4.5). */
 
 static inline uint16_t read_u16(uint8_t *ip) {
     return ip[0] | (ip[1] << 8);
@@ -2199,7 +2201,7 @@ void jit_helper_index_set(void) {
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
     if (slot_is_f64(idx_s) && slot_is_ptr(tgt_s)) {
         Value *target = slot_as_ptr(tgt_s);
-        int i, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
+        int i = 0, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
         if (target->type == VAL_BUFFER && slot_is_f64(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                 target->data.buffer.data[i] = SLOT_F64_RAW(val_s);
@@ -2269,7 +2271,7 @@ int jit_helper_index_get(void) {
     g_vm.sp -= 2;
     if (slot_is_f64(idx_s) && slot_is_ptr(tgt_s)) {
         Value *target = slot_as_ptr(tgt_s);
-        int i, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
+        int i = 0, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
         if (target->type == VAL_LIST) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                 EigsSlot r = slot_read_owned(list_slot(target, i));
@@ -3320,7 +3322,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 #define ARITH_FAST(OP, UF) do { \
     EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
     EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-    double _ad, _bd; \
+    double _ad = 0.0, _bd = 0.0; \
     if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) { \
         double _r = num_guard(_ad OP _bd); \
         if ((UF) && _r == 0.0 && _ad != 0.0 && _bd != 0.0) \
@@ -3490,7 +3492,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-        double _ad, _bd; \
+        double _ad = 0.0, _bd = 0.0; \
         if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) { \
             int64_t _ai, _bi; \
             if (__builtin_expect(!num_to_i64_exact(_ad, &_ai) || \
@@ -3516,6 +3518,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             g_vm.sp--; \
             DISPATCH(); \
         } \
+        /* #1758 R1.1: an int operand is not a type error (inside a try \
+         * it would become a wrong value). The arm refuses until R1.3 \
+         * gives it exact int64 operands, and deleting eigs_int_unwired \
+         * there forces that. */ \
+        if (slot_is_smi(_as) || slot_is_smi(_bs)) \
+            eigs_int_unwired("bitwise '" OPNAME "'", (slot_is_smi(_as) ? _as : _bs).u); \
         /* Mixed/non-numeric: error rather than silently returning 0, \
          * matching the arithmetic operators and the strict error model. \
          * Capture type names before decref (cf. NUM_CMP above). */ \
@@ -3561,6 +3569,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             g_vm.stack[g_vm.sp - 1] = slot_from_f64(-d);
             DISPATCH();
         }
+        /* #1758 R1.1: an int is refused, not a type error, until R1.3
+         * gives NEG its int arm (N4b) and deletes eigs_int_unwired. */
+        if (slot_is_smi(s)) eigs_int_unwired("negation", s.u);
         rt_error(EK_TYPE, current_line, "cannot negate %s", slot_type_name(s));   /* #1637: names bool */
         slot_decref(s);
         g_vm.stack[g_vm.sp - 1] = slot_from_f64(0.0);
@@ -3595,6 +3606,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             g_vm.stack[g_vm.sp - 1] = slot_from_f64(r);
             DISPATCH();
         }
+        /* #1758 R1.1: an int is refused, not a type error, until R1.3
+         * gives the bitwise arms exact int64 operands. */
+        if (slot_is_smi(s)) eigs_int_unwired("bitwise '~'", s.u);
         {
             const char *_tn = slot_type_name(s);
             slot_decref(s);
@@ -3609,7 +3623,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(EQ): {
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1];
         EigsSlot _as = g_vm.stack[g_vm.sp - 2];
-        double _ad, _bd;
+        double _ad = 0.0, _bd = 0.0;
         if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) {
             /* #1637: the result is a bool immediate. The old NUM_REUSE
              * branches wrote a 0/1 result INTO a heap-number operand; a bool
@@ -3630,7 +3644,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(NE): {
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1];
         EigsSlot _as = g_vm.stack[g_vm.sp - 2];
-        double _ad, _bd;
+        double _ad = 0.0, _bd = 0.0;
         if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) {
             /* #1637: the result is a bool immediate. The old NUM_REUSE
              * branches wrote a 0/1 result INTO a heap-number operand; a bool
@@ -3652,7 +3666,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-        double _ad, _bd; \
+        double _ad = 0.0, _bd = 0.0; \
         if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) { \
             /* #1637: a bool immediate; no NUM_REUSE (see CASE(EQ)). */ \
             int _r = (_ad OP _bd); \
@@ -3673,6 +3687,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 DISPATCH(); \
             } \
         } \
+        /* #1758 R1.1: an int operand is refused, not a type error (which \
+         * a try would turn into a wrong `false`), until R1.3 gives this \
+         * arm N2's exact compare and deletes eigs_int_unwired. */ \
+        if (slot_is_smi(_as) || slot_is_smi(_bs)) \
+            eigs_int_unwired("compare '" OPNAME "'", (slot_is_smi(_as) ? _as : _bs).u); \
         /* Mixed/uncomparable types: error rather than silently returning \
          * false (e.g. "3" < 4 used to be 0). Capture type names before \
          * decref. ==/!= keep cross-type "not equal"; only ordering errors. */ \
@@ -4590,7 +4609,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         g_vm.sp -= 2;
         if (slot_is_f64(idx_s) && slot_is_ptr(tgt_s)) {
             Value *target = slot_as_ptr(tgt_s);
-            int i, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
+            int i = 0, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
             if (target->type == VAL_LIST) {
                 if (_ok && vm_index_resolve(&i, target->data.list.count)) {
                     EigsSlot r = slot_read_owned(list_slot(target, i));
@@ -4673,7 +4692,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
         if (slot_is_f64(idx_s) && slot_is_ptr(tgt_s)) {
             Value *target = slot_as_ptr(tgt_s);
-            int i, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
+            int i = 0, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
             if (target->type == VAL_BUFFER && slot_is_f64(val_s)) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                     target->data.buffer.data[i] = SLOT_F64_RAW(val_s);

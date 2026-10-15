@@ -77,7 +77,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked smi-trap
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -183,7 +183,16 @@ SRC_V_jit-checked := $(HOSTED_SOURCES)
 FLAGS_jit-checked := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_JIT_CHECKED $(VERDEF)
 LIBS_jit-checked  := $(LDFLAGS) -ldl
 
-VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+# #1758 R1.1: the dynamic half of the int-source check. Every slot classifier
+# aborts when it reads an SMI and slot_from_int aborts on any call
+# (value_slot.h EIGS_SMI_TRAP); slot_as_ptr checks its tag too. Until R1.3 no
+# program may make an int, so this build must run the corpus exactly as
+# release does: tools/phase2_check.sh --through R1.1 --smi-trap <binary>.
+SRC_V_smi-trap := $(HOSTED_SOURCES)
+FLAGS_smi-trap := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_SMI_TRAP -DEIGS_SLOT_CHECKED $(VERDEF)
+LIBS_smi-trap  := $(LDFLAGS) -ldl
+
+VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked smi-trap
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
@@ -236,9 +245,12 @@ container-slot-test: build/$(SLOT_TEST_VARIANT)/test_container_slots
 # tests/phase2/slot_layer.sh runs it and compares the entries it examined with
 # the population tools/phase2_inventory.py derives. The release flavour turns
 # on slot_as_ptr's refusal with -DEIGS_SLOT_CHECKED; ASan turns it on itself.
+# Both carry -Wall -Wextra, and the runner fails on any warning: release
+# compiles the amalgamation at -O0 and ASan at -O1, the two levels #1775
+# found warnings at (and -O0 is about 41 s against -O2's 162 s).
 PHASE2_SLOT_VARIANT ?= release
-PHASE2_SLOT_FLAGS_release := $(CFLAGS) -g -DEIGS_SLOT_CHECKED
-PHASE2_SLOT_FLAGS_asan := $(ASAN_FLAGS)
+PHASE2_SLOT_FLAGS_release := -Wall -Wextra $(WERROR_FLAGS) -O0 -g -DEIGS_SLOT_CHECKED
+PHASE2_SLOT_FLAGS_asan := -Wall -Wextra $(ASAN_FLAGS)
 build/phase2/eigenscript_all.c: $(filter-out $(CLI_ONLY),$(SOURCES)) $(wildcard $(SRC_DIR)/*.h) tools/amalgamate.sh Makefile
 	bash tools/amalgamate.sh build/phase2
 build/phase2/slot_layer_%: tests/phase2/slot_layer.c build/phase2/eigenscript_all.c tools/werror_flags.txt
@@ -698,6 +710,12 @@ pool-off-callenv: build/pool-off-callenv/eigenscript
 jit-checked: build/jit-checked/eigenscript
 	$(call RELINK,jit-checked)
 	@echo "EigenScript $(VERSION) (jit-checked: emitted slot witnesses) built. Binary: $(BINARY)"
+
+# #1758 R1.1 (see FLAGS_smi-trap): build it in a scratch tree, then
+#   tools/phase2_check.sh --through R1.1 --smi-trap <tree>/src/eigenscript ...
+smi-trap: build/smi-trap/eigenscript
+	$(call RELINK,smi-trap)
+	@echo "EigenScript $(VERSION) (smi-trap: an int before #1758 R1.3 aborts) built. Binary: $(BINARY)"
 
 
 # Profile-guided optimization. Builds an instrumented binary, runs the
