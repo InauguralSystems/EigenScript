@@ -12,7 +12,15 @@
 # Base mirrors the runtime image family (debian stable). Built linux/amd64 so
 # the copy-and-patch JIT (src/jit.c is __x86_64__-gated) is actually exercised
 # rather than silently falling back to the interpreter.
-FROM debian:stable
+#
+# Pinned by digest (#1777). The required `observer oracle (floor)` check builds
+# the v0.46.0 anchor with this image's gcc and libm and requires the anchor's
+# verdicts to equal tools/observer_oracle/floor.json. A floating tag would let a
+# Debian point release move a verdict under every merge-queue candidate at
+# once. Dependabot (.github/dependabot.yml, docker) proposes each new digest as
+# its own PR, and that PR's floor run shows whether the new toolchain moves a
+# verdict.
+FROM debian:stable@sha256:f7c6c9e4aba843dc41bac68bbf104773f71fabf53f74f8441049aaa56e50c4e2
 
 ENV DEBIAN_FRONTEND=noninteractive
 

@@ -11,13 +11,18 @@ Recommended model of the #1746 prior-art comment, section 4, with
                not contract (rho >= 1), or a value that IS infinite
   improving    CONVENTION (#1754): the recent half sets a new low below
                the older half's best by more than min_delta (Keras
-               mode='min'); the ratio test survives as _contracting
+               mode='min'), AND the window does not look unbounded (an
+               APPROXIMATION of the corpus' `bounded`: not diverging and
+               not an expanding fluctuation); the ratio test survives as
+               _contracting
   oscillating  Hardy Sec. 62 windowed: the window shows neither a limit
                (converged / _contracting) nor a run to +-inf (diverging)
   equilibrium  no CUSUM alarm (NIST e-Handbook 6.3.2.3, k = 0.5 sigma,
                h = 4 sigma) of the recent half against the older half, no
                periodic fluctuation (NIST 6.4.4.2), not diverging
-  stable       (EIGS-DEFINED) the converged test at the coarse tolerance
+  stable       CONVENTION (#1754, settled within a band): the window fits a
+               ball of radius beta(centre), beta = 1e-2*max(|v|, scale),
+               i.e. its diameter is at most 2*beta
 
 Independence, stated honestly: this is an independent implementation of
 the corpus DEFINITIONS, but at the observer's own design parameters (W = 10,
@@ -83,16 +88,33 @@ def _contracting(w):
     return all(abs(b) / abs(a) < 1.0 for a, b in zip(d, d[1:]))
 
 
+def _expanding(w):
+    """The window's fluctuation about its mean crosses the mean at least
+    twice and its amplitude grew: the recent half's largest deviation beats
+    the older half's. An APPROXIMATION of 'unbounded' from one window: a
+    bounded oscillation whose sampled peaks happen to grow within the window
+    (sin n, chaos) also reads expanding."""
+    m = sum(w) / len(w)
+    dev = [v - m for v in w]
+    half = len(dev) // 2
+    crossings = sum(1 for a, b in zip(dev, dev[1:]) if a * b < 0)
+    return crossings >= 2 and max(map(abs, dev[half:])) > max(map(abs, dev[:half]))
+
+
 def improving(w):
-    """CONVENTION (owner ruling, #1754): Keras mode='min', min_delta = rtol*max(|best|, scale). The
-    corpus compares the recent best with the best of the whole history; a
-    window approximates that history by its older half, so the recent half
-    must set a new low below the older half's best by more than min_delta."""
+    """CONVENTION (owner ruling, #1754, corrected): Keras mode='min', min_delta = rtol*max(|best|, scale),
+    for a bounded sequence. The corpus compares the recent best with the
+    best of the whole history; a window approximates that history by its
+    older half, so the recent half must set a new low below the older half's
+    best by more than min_delta. Boundedness is approximated from the window
+    (not diverging, not expanding)."""
     if len(w) < 2 or not _finite(w):
         return False
     half = (len(w) + 1) // 2
     best = min(w[:half])
-    return min(w[half:]) < best - RTOL * max(abs(best), SCALE)
+    if not min(w[half:]) < best - RTOL * max(abs(best), SCALE):
+        return False
+    return not (diverging(w) or (_full(w) and _expanding(w)))
 
 
 def _periodic(w):
@@ -138,7 +160,8 @@ def equilibrium(w):
 def stable(w):
     if not _full(w) or not _finite(w):
         return False
-    return max(w) - min(w) <= tau(w[-1], RTOL_COARSE)
+    hi, lo = max(w), min(w)                 # halves first: hi + lo overflows near DBL_MAX
+    return hi / 2 - lo / 2 <= tau(hi / 2 + lo / 2, RTOL_COARSE)
 
 
 PREDICATES = {
