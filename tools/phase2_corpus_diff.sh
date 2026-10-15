@@ -7,8 +7,12 @@
 # all four runs from the branch tree's src/ (the suite's cwd) as
 # `../tests/<file>`, so a file and whatever it loads by a relative path are the
 # same bytes for both; only the binary and the stdlib next to it differ.
-# stdin /dev/null, a 60 s bound, `env -u XAUTHORITY DISPLAY=:99`. stdout,
-# stderr and the exit code are compared byte for byte after one
+# stdin /dev/null, a 60 s bound, `env -u XAUTHORITY DISPLAY=:99
+# SDL_AUDIODRIVER=dummy` (the X server is Xvfb; SDL's dummy audio device
+# because a real capture device delivers samples or not by timing, so
+# test_audio.eigs printed a SKIP on some runs and two agreeing baseline runs
+# did not make it deterministic: a branch run that differed read as a DIFF).
+# stdout, stderr and the exit code are compared byte for byte after one
 # normalisation: each tree's absolute root becomes `<ROOT>`.
 #
 # RUN CONDITIONS. Each file runs under its conditions from the ONE loader the
@@ -214,7 +218,7 @@ run() {
         (
             cd "$BR_ROOT/src" || exit 99
             [ "$cap" = 1 ] && ulimit -v 2097152
-            suite_program_run "$rel" env -u XAUTHORITY DISPLAY=:99 LD_PRELOAD="$SHIM" \
+            suite_program_run "$rel" env -u XAUTHORITY DISPLAY=:99 SDL_AUDIODRIVER=dummy LD_PRELOAD="$SHIM" \
                 PHASE2_URANDOM_MARK="$out.urandom" "$extra" timeout 60 "$bin" "../$rel"
         ) < /dev/null > "$out.rawout" 2> "$out.rawerr"
         rc=$?

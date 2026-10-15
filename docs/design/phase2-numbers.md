@@ -2318,7 +2318,12 @@ fails if a round named here has neither rows nor its mechanical gates.)
     differential red, and so does a new test that dies early. Every
     declared file is listed with its code (`SAME-NONZERO`);
   - a timeout or a crash all four runs agree on is counted as
-    `timeout_both` or `crash_both`, no longer also as `same`.
+    `timeout_both` or `crash_both`, no longer also as `same`;
+  - every run uses SDL's dummy audio device (`SDL_AUDIODRIVER=dummy`): a
+    real capture device delivers samples or not by timing, so
+    `test_audio.eigs` printed a SKIP on some runs, and with its conditions
+    applied the two-run baseline check let it through as deterministic and
+    a branch run that differed read as a DIFF.
 - **The smi-trap gate** (`--smi-trap BIN`, R1.1 and R1.2) runs the same
   differential with a `make smi-trap` build as the branch; until R1.3 it
   must show no difference, because no program may make an int.
