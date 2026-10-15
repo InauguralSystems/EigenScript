@@ -260,12 +260,15 @@ losing it is wrong unless the label is, and a wrong label is fixed through `deri
 shares the observer's window and tolerances, so its agreement on window-limited rows is correlated, not independent
 evidence.
 
-CI runs `make observer-oracle` in `.github/workflows/observer-oracle.yml`, on pull requests that touch the observer's
-runtime code, the JIT, `lib/observer.eigs` or `tools/observer_oracle/`, nightly, and on dispatch. The job builds its own
-anchor from the tag, and its log shows the floor re-measured on it. Then it checks that the floor can still fail: the same
+CI runs `make observer-oracle` as the required check `observer oracle (v0.46.0 floor)` (#1778), so a change that loses a
+floor verdict cannot merge. The check runs `tools/observer_oracle/ci_lane.sh` on every merge-queue candidate, on every
+push to `main`, and on pull requests that touch the lane's paths (`OBSERVER_PATHS` in `tools/ci_scope.sh`: the observer's
+runtime code, the JIT, `lib/observer.eigs`, the oracle and the build). Other pull requests pass it without running it.
+`.github/workflows/observer-oracle.yml` runs the same script nightly and on dispatch. The job builds its own anchor from
+the tag, and its log shows the floor re-measured on it. Then it checks that the floor can still fail: the same
 check, run through the wrapper observer with one floor verdict's reading reversed in every arm (`plants.py`, plant
 `floor-one`), must lose exactly that reading's verdicts, one per arm, and exit 1. The arms still agree, so no FINDING
-fires and only the floor can turn that run red. The lane is not a required check, because it runs only on those paths.
+fires and only the floor can turn that run red.
 
 ## The manifold: two basins and a horizon
 

@@ -447,7 +447,8 @@ precheck:
 # recipe runs without make's flags, so CC=... or -j on this command line cannot
 # reach the tag's build. FLOOR= (empty) skips the floor and the anchor;
 # EXPECT=ieee,int64 fails when an expected capability is absent (#1758). CI runs
-# this target: .github/workflows/observer-oracle.yml.
+# this target through tools/observer_oracle/ci_lane.sh: the required ci.yml check
+# `observer oracle (v0.46.0 floor)` (#1778) and the nightly observer-oracle.yml.
 .PHONY: observer-oracle
 observer-oracle: FLOOR = tools/observer_oracle/floor.json
 observer-oracle: build

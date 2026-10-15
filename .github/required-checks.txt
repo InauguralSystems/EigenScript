@@ -28,6 +28,10 @@ asan + ubsan (full suite)
 db extension (postgres service)
 jit differential (interpreter oracle, tape-replayed)
 replay differential (same-binary tape fidelity)
+# The observer oracle's per-verdict floor, the gate for #1758's Observer
+# Done-when (#1778). Skipped, so passing, on a PR that touches none of its
+# paths (tools/ci_scope.sh OBSERVER_PATHS); always run in the merge queue.
+observer oracle (v0.46.0 floor)
 freestanding profile (symbol gate + smoke)
 tsan (concurrency race gate)
 tsan-http (race gate over ext_http)

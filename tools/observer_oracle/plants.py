@@ -6,7 +6,7 @@ usage: python3 plants.py TAG_BINARY IEEE_BINARY [--only NAME,...]
        plants.py wrap PROG|-e CODE   (the wrapper observer, run through a shim)
        python plants.py twins DIR     (with sympy: the twin labels, see below)
 
-The CI lane (.github/workflows/observer-oracle.yml, #1764) runs `--only
+The CI lane (tools/observer_oracle/ci_lane.sh, #1764, #1778) runs `--only
 floor-one` after every floor run, with its candidate as TAG_BINARY (the
 binary the wrapper wraps).
 

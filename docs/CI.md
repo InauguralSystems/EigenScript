@@ -41,8 +41,9 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 - `macos-latest` runs on the PR; `macos-15-intel` runs nightly.
 - Differential, compiler, doc, and gate self-tests continue on their existing
   jobs. The separate playground workflow builds real wasm32 on every PR.
-- A PR that touches the observer, the JIT or the observer oracle also runs the
-  observer-oracle lane (**Observer oracle**, below). It is not required.
+- `observer oracle (v0.46.0 floor)` is required. It does its work only on a PR
+  that touches the observer, the JIT or the observer oracle; any other PR gets
+  it as an instant pass (**Observer oracle**, below).
 
 ## The playground: the real wasm32 build, on the PR
 
@@ -192,23 +193,30 @@ on it and never rebase to satisfy it; the queue does both.
   nobody is watching still reaches someone. A green run after a red one
   comments on the same thread, which is what makes the thread closable.
 
-## Observer oracle (`.github/workflows/observer-oracle.yml`)
+## Observer oracle (#1764, #1778)
 
-- Runs on pull requests that touch the observer's runtime code
-  (`src/eigenscript.c` and `.h`, `src/vm.c` and `.h`, `src/compiler.c`,
-  `src/chunk.c`, `src/state.c`), the JIT (`src/jit*`), `lib/observer.eigs`,
-  the `Makefile` or `tools/observer_oracle/`; nightly; and on dispatch (#1764).
-- It builds the candidate and, with `tools/observer_oracle/build_anchor.sh`,
-  the v0.46.0 anchor, then runs `make observer-oracle`, which applies the
-  committed floor. The step passes only on the lines that show the floor
-  re-measured on this job's anchor with no verdict lost.
-- Then it shows the floor can still fail. `plants.py` plant `floor-one`
-  reverses one floor verdict's reading through the wrapper observer, and the
-  run must exit 1, losing exactly that reading's verdicts.
-- It is not a required check: a required check must report on every pull
-  request (`tools/ci_tier_check.sh`), and this lane runs only on its paths. A
-  failed scheduled run is not reported to the nightly tracking issue. GitHub
-  notifies the user who last edited the workflow's cron line.
+- `observer oracle (v0.46.0 floor)` is a required `ci.yml` check. It runs
+  `tools/observer_oracle/ci_lane.sh`. On a pull request the job does its work
+  only when `tools/ci_scope.sh` prints `observer=true`, meaning the PR touches
+  one of its `OBSERVER_PATHS`: the observer's runtime code, the JIT,
+  `lib/observer.eigs`, the `Makefile`, the oracle, `ci.yml` or the dev image.
+  Any other PR skips the job, and a skipped required check passes. The merge
+  queue and every push to `main` always run it. Outside a pull request the
+  `scope` job prints no observer line, and the job runs unless that line says
+  `false`.
+- The lane builds the v0.46.0 anchor with `tools/observer_oracle/build_anchor.sh`
+  before it puts the compiler guard on `PATH`, because the anchor is the tag's
+  own build. It then builds the candidate and runs `make observer-oracle`,
+  which applies the committed floor. The run passes only on the lines that
+  show the floor re-measured on this job's anchor with no verdict lost.
+- Then the lane shows that the floor can still fail. `plants.py` plant
+  `floor-one` reverses one floor verdict's reading through the wrapper
+  observer, and that run must exit 1, losing exactly that reading's verdicts.
+- `.github/workflows/observer-oracle.yml` runs the same script nightly and on
+  dispatch. That run covers what no commit changes: the rolling `ci-main`
+  image and the runner. A failed nightly run is not reported to the nightly
+  tracking issue (#1779). GitHub notifies the user who last edited the
+  workflow's cron line.
 
 ## Section planner and skip accounting
 
@@ -491,8 +499,8 @@ The fix copies Rust (tiers plus a merge queue), CPython and Go:
 - **Tier 2** — slow and port lanes, in `.github/workflows/nightly.yml`
   (today `macos-15-intel` and the full valgrind corpus). They never colour
   `main`; a failure opens or appends to one tracking issue. The observer
-  oracle lane is advisory too (**Observer oracle**, above): it is path-filtered
-  on pull requests, runs nightly, and is never required.
+  oracle's nightly run (`.github/workflows/observer-oracle.yml`) is tier 2 as
+  well. Its required check is the `ci.yml` job (**Observer oracle**, above).
 
 ### The source of truth: `.github/required-checks.txt`
 
@@ -527,7 +535,7 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   `if:` that reads `env.*`, `needs.*.outputs` or `steps.*.outputs` is traced
   to where the value is set — unresolvable is red, `vars.*` is always red.
   Two reviewed step outputs are waived by a hash of their step (`scope`/`detect`
-  for docs-only classification and `gate-selftests`/`select` for changed-gate
+  for docs-only and observer-lane classification and `gate-selftests`/`select` for changed-gate
   selection); a waiver that matches nothing is red.
 - `[heavy-deferral]` / `[heavy-on-pr]` / `[heavy-no-merge-work]` — every
   enumerated heavy required job has exactly one PR step printing `deferred to
@@ -549,7 +557,7 @@ triggers) are listed in #1278.
 
 | Job (check name) | Tier | Why |
 |---|---|---|
-| `scope` | 1 | decides docs-only; the runtime legs read its output |
+| `scope` | 1 | decides docs-only and whether a PR touches the observer oracle's lane; the runtime legs and the observer oracle read its outputs |
 | `build dev/ci image` | 1 | the image every `container:` job (the Linux legs, the extension/ASan workers, db, the audits, the differentials, freestanding) runs inside; required because required jobs `needs` it, and a failed prerequisite *skips* them — added by #1264 |
 | `werror flags ([99i])` | 1 | gate |
 | `gate self-tests (changed rows)` | 1 | gate |
@@ -563,6 +571,7 @@ triggers) are listed in #1278.
 | `db extension (postgres service)` | 1 | gate |
 | `jit differential (…)`, `replay differential (…)` | 1 | gates |
 | `freestanding profile (symbol gate + smoke)` | 1 | gate |
+| `observer oracle (v0.46.0 floor)` | 1 | gate: the observer oracle's per-verdict floor (#1778). It runs on a PR only when the PR touches the lane's paths, and always in the queue and on `main` |
 | `valgrind (memcheck smoke, JIT off)` | 1 | the smoke spread (the full corpus is tier 2) |
 | `tsan (concurrency race gate)` | 1 | gate |
 | `tsan-http (race gate over ext_http)` | 1 | gate: the HTTP sections ([44], [45a], [45b]) under a TSan build with ext_http compiled in, which the stock `tsan` build compiles out (#1139) |
@@ -571,6 +580,7 @@ triggers) are listed in #1278.
 | `nightly / macos-15-intel full suite` | **2** (`nightly.yml`) | port lane, slow: hit its timeout on nearly every main push (#1265) |
 | `nightly / gate self-tests` | **2** (`nightly.yml`) | calibrates every checker |
 | `nightly / valgrind (full corpus, JIT off)` | **2** (`nightly.yml`) | slow; the PR and main lanes run the smoke spread |
+| `nightly / observer oracle (v0.46.0 floor)` | **2** (`observer-oracle.yml`) | the required check's lane, run again nightly and on dispatch |
 
 No required check is absent on pull requests: heavy checks report the
 canonical successful deferral, then run their real suites on the candidate
