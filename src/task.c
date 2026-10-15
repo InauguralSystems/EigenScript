@@ -666,7 +666,7 @@ static void task_reap(Task *t) {
  * open `try` held the process-global g_try_depth up when it died). A runtime
  * error is a {kind, message, line} dict; a `throw` holds the thrown value. */
 static void task_error_summary(Value *ev, char *out, size_t cap) {
-    EigsView mv, lv;
+    EigsView mv = {{0}}, lv = {{0}};
     Value *msg = (ev && ev->type == VAL_DICT) ? dict_get_view(ev, "message", &mv) : NULL;
     if (msg && msg->type == VAL_STR) {
         Value *line = dict_get_view(ev, "line", &lv);
