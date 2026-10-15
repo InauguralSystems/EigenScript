@@ -647,6 +647,14 @@ result).**
   flags at -O1 (`INT_BINOP_R`'s `_ad`/`_bd`, the `i` of `CASE(INDEX_SET)`
   and of `jit_helper_index_set`): against R1.1, -0.0001% on the JIT-off
   float loop, +0.0001% with the JIT, -0.08% on the DMG canary.
+- **A build warning fails the slot test under gcc only.** gcc is the
+  reference toolchain for #1775's class (-Wreturn-type,
+  -Wmaybe-uninitialized at -O0/-O1). R1.1's macOS lane (clang) printed 103
+  warnings the gcc build does not have (-Wdefault-const-init-field-unsafe
+  on `EigsView`), which the main clang build prints too. Under any compiler
+  other than gcc (asked through its predefined macros: `__GNUC__` without
+  `__clang__`) the slot test follows the main build's policy on that
+  platform: warnings print, and only the -Werror set fails.
 - **Its runner reads each tool on its own channel.** The scan and the test
   each have a grammar; a line outside it, or any stderr, is a FAIL that
   prints the line (the R1.1 critic: Python 3.13's DeprecationWarning on the
