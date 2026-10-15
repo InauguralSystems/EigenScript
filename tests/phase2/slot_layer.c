@@ -131,7 +131,8 @@ static int r_store_json_encode_slot(int64_t v) {
     strbuf_free(&sb);
     return bad;
 }
-static int r_slot_f64_value(int64_t v) { double d = -7.25; return slot_f64_value(smi(v), &d) != 0 || d != -7.25; }
+/* #1775: the reader writes its out-param on every path (0.0 when it answers 0) */
+static int r_slot_f64_value(int64_t v) { double d = -7.25; return slot_f64_value(smi(v), &d) != 0 || d != 0.0; }
 static int r_slot_int_value(int64_t v) { int64_t i = 7; return slot_int_value(smi(v), &i) != 1 || i != v; }
 static int r_slot_is_f64(int64_t v) { return slot_is_f64(smi(v)) != 0; }
 static int r_slot_is_smi(int64_t v) { return slot_is_smi(smi(v)) != 1; }
@@ -186,7 +187,7 @@ static const Entry ENTRIES[] = {
     {"container.h:eigs_slot_store_owned", r_eigs_slot_store_owned, 0, 0, "canonical storage: unchanged"},
     {"eigenscript.c:ent_child_slot", r_ent_child_slot, 0, 0, "the entropy of its double"},
     {"ext_store.c:store_json_encode_slot", r_store_json_encode_slot, 0, 0, "exact digits"},
-    {"value_slot.h:slot_f64_value", r_slot_f64_value, 0, 0, "not a float: 0, out untouched"},
+    {"value_slot.h:slot_f64_value", r_slot_f64_value, 0, 0, "not a float: 0, out 0.0"},
     {"value_slot.h:slot_int_value", r_slot_int_value, 0, 0, "the int"},
     {"value_slot.h:slot_is_f64", r_slot_is_f64, 0, 0, "0"},
     {"value_slot.h:slot_is_smi", r_slot_is_smi, 0, 0, "1"},
@@ -390,7 +391,7 @@ EXP(write_slot) {
 }
 EXP(f64_value) {
     if (kclass(k) == C_F64) snprintf(b, n, "o:1 d:%016llx", (unsigned long long)KB[k]);
-    else snprintf(b, n, "o:0 d:%016llx", (unsigned long long)u64_of(-7.25));
+    else snprintf(b, n, "o:0 d:%016llx", (unsigned long long)u64_of(0.0));   /* written on every path (#1775) */
 }
 EXP(int_value) { snprintf(b, n, k == K_SMI ? "o:1 i:5" : "o:0 i:7"); }
 EXP(is_f64) { snprintf(b, n, "i:%d", kclass(k) == C_F64); }

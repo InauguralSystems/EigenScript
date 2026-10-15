@@ -235,13 +235,18 @@ static inline int slot_truthy_immediate(EigsSlot s, int *out_decided) {
 /* #1758: a float's double, from an immediate or a VAL_NUM box (the VM boxes
  * numbers on purpose: the lifts, a for-in variable). 0 for anything else,
  * an int (an SMI, later a VAL_INT box) included: the caller sends it to its
- * slow path. Replaces vm.c's slot_as_double. */
+ * slow path. Replaces vm.c's slot_as_double.
+ * *out is written on EVERY path (0.0 when the answer is 0), so a caller's
+ * local is never read uninitialised and needs no initialiser of its own: the
+ * store sits on the cold failure path, and an initialiser in vm_run_ex's hot
+ * arms cost +2.07% Ir on DMG and +4.17% on a JIT-off float loop (#1775). */
 static inline int slot_f64_value(EigsSlot s, double *out) {
     if (slot_is_f64(s)) { *out = SLOT_F64_RAW(s); return 1; }
     if (slot_is_heap(s)) {
         Value *v = slot_as_ptr(s);
         if (v->type == VAL_NUM) { *out = VAL_NUM_RAW(v); return 1; }
     }
+    *out = 0.0;
     return 0;
 }
 /* #1758: an int's value. R1.1 knows the SMI; R1.2a adds the VAL_INT box
