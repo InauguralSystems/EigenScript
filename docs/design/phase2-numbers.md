@@ -634,8 +634,13 @@ result).**
   abort naming its arm, where the float control computes the value.
 - **The slot test builds at -O0** (about 41 s instead of 162 s, and well
   under -O2's 602 MB peak), after the warnings #1775 listed were fixed:
-  `builtin_tensor_gather`'s missing return and the maybe-uninitialized
-  `num_to_i64_exact` and `vm_index_resolve` locals.
+  `builtin_tensor_gather`'s missing return, and the maybe-uninitialized
+  locals behind `num_to_i64_exact` and `vm_index_resolve`. The first fix
+  round initialised those locals in `vm_run_ex`'s hot arms, which cost
+  +2.07% Ir on DMG and +4.17% on a JIT-off float loop (the second R1.1
+  critic). The second fix round removed the initialisers: the readers
+  that fill them, `slot_f64_value` and `vm_index_is_int`, write their
+  out-parameter on every path, so the store sits on the cold path.
 - **Its runner reads each tool on its own channel.** The scan and the test
   each have a grammar; a line outside it, or any stderr, is a FAIL that
   prints the line (the R1.1 critic: Python 3.13's DeprecationWarning on the
@@ -2238,6 +2243,14 @@ fails if a round named here has neither rows nor its mechanical gates.)
   witness either way.
 - **The token gate** checks, in every mode, that each token a landed round
   deleted (2.7) occurs in no code line of `src/` or `tests/` C files.
+  (Until the second R1.1 fix round it ran only in the mechanical rounds;
+  it runs in every mode now, as this line said.)
+- **The inventory gate** runs in every mode too:
+  `tools/phase2_inventory.py --check` must PASS, so a slot classifier with
+  no reviewed disposition row fails the check, and so does a committed
+  `docs/design/phase2-inventory.txt` that is not exactly the generated
+  file (#1804: nothing ran the inventory's verdict, and the committed file
+  had gone stale).
 - **The corpus differential** is `tools/phase2_corpus_diff.sh <baseline>
   <branch>`: both binaries run every `.eigs` under the branch tree's
   `tests/` from the branch tree's `src/` (the suite's cwd), so the file and
@@ -2250,11 +2263,20 @@ fails if a round named here has neither rows nor its mechanical gates.)
     baseline's two runs agree, and then any branch run that differs is a
     DIFF: a branch that is wrong on every other run is wrong;
   - randomness runs LIVE with a pinned seed. The runtime has no seed flag
-    or variable (an unseeded program seeds from `CLOCK_MONOTONIC ^ pid`), so
-    the tool builds an `LD_PRELOAD` shim that pins every self-seed (>= 2^20)
-    to one constant and passes a small explicit seed through, and checks the
-    shim first (pinned draws agree, unpinned ones differ). A random builtin
-    changed on the branch therefore shows wherever the corpus observes it;
+    or variable, so the tool builds an `LD_PRELOAD` shim. The drand48
+    self-seed is `srand48(tv_sec ^ tv_nsec ^ getpid())` from a
+    `CLOCK_MONOTONIC` reading taken just before; the shim records each
+    thread's last such reading and pins a seed equal to that formula,
+    whatever its value, while a script's `seed_random of N` passes
+    unchanged. (The first fix round's shim pinned seeds >= 2^20 instead,
+    and the self-seed falls below that: 5 of 3,000 draws went unpinned; the
+    second round's pinned 3,000 of 3,000.) libc `rand()`, which
+    `audio_noise` draws from and `main()` seeds with `srand(time(NULL))`,
+    is pinned at every `srand` call. `random_hex` reads `/dev/urandom` by
+    design and stays unpinned; the shim marks every run that opens it, and
+    those files are listed (`UNPINNED`) with their verdicts. The tool
+    checks the shim first (two pinned draws agree). A random builtin changed
+    on the branch therefore shows wherever the corpus observes it;
     `test_system.eigs` now draws `random_int` 300 times against its bounds;
   - a tape is the last resort, for a file whose baseline disagrees with
     itself even pinned (timing, threads): the baseline records it and
@@ -2266,6 +2288,31 @@ fails if a round named here has neither rows nor its mechanical gates.)
   - no blanket memory cap: only files that drive the gfx, ui or audio
     surface run under `ulimit -v 2097152` (listed as `CAPPED`).
     `handles_full.eigs` varied only because of the old blanket cap.
+
+  **As corrected in the second R1.1 fix round** (the second critic's plants
+  C and B2 passed the whole oracle while the suite went red on C):
+  - each file runs under its run conditions from the one loader the suite,
+    `jit_diff.sh` and `replay_diff.sh` use (`tests/suite_program_env.sh`,
+    policy `tests/suite_program_env.txt`). Before, every file started in
+    the default strict mode, so 14 fail-soft numeric-boundary files died at
+    an early strict raise on both binaries, about 394 asserts never ran, and
+    the two early deaths were counted `same`. The four files the suite ran
+    with an inline `EIGS_STRICT=0` (and one with an inline
+    `SDL_VIDEODRIVER=dummy`) now have rows there, so there is no second
+    source;
+  - a file with conditions must complete (rc 0) on both baseline runs, the
+    rule `jit_diff.sh` already applied; otherwise it is INCOMPLETE and
+    never compared;
+  - every file whose baseline exits nonzero must be declared, with that
+    code and a reason, in `tests/phase2/corpus_nonzero.txt` (32 rows: the
+    runaway guard's fixture, deliberate errors, fixtures of other hosts,
+    capabilities the release build lacks). An undeclared exit is
+    UNDECLARED-NONZERO and a row whose file exits otherwise is STALE: both
+    fail the run. So removing a file's run conditions turns the
+    differential red, and so does a new test that dies early. Every
+    declared file is listed with its code (`SAME-NONZERO`);
+  - a timeout or a crash all four runs agree on is counted as
+    `timeout_both` or `crash_both`, no longer also as `same`.
 - **The smi-trap gate** (`--smi-trap BIN`, R1.1 and R1.2) runs the same
   differential with a `make smi-trap` build as the branch; until R1.3 it
   must show no difference, because no program may make an int.
@@ -2285,8 +2332,17 @@ fails if a round named here has neither rows nor its mechanical gates.)
   differential name the file DIFF; the int-source plants P1-P5, each of
   which the static half must name at R1.1 (at R1.2, P4 sits inside an
   allowed writer and the static half passes it); and P4 built into a
-  smi-trap binary, which the dynamic half must stop. A restricted run (the
-  calibration's file list) prints `RESTRICTED` and exits 3, never PASS.
+  smi-trap binary, which the dynamic half must stop. The second fix round
+  added the second critic's plants C (a build whose buffer equality reads
+  raw elements) and B2 (an int whose tag bits are spelled from
+  `SLOT_QNAN_MASK`, which the static half does not see, on the smi-trap
+  build), each of which must make the differential name a conditioned file
+  DIFF; a removed policy row, which must be UNDECLARED-NONZERO; a ledger row
+  for a completing file (STALE); a conditioned file that does not complete
+  (INCOMPLETE); and the inventory gate's plants (`vm.c:critic_new_reader`
+  with no disposition row, and a stale committed inventory). A restricted
+  run (the calibration's file list) prints `RESTRICTED` and exits 3, never
+  PASS.
   The calibration is a `tools/selftests.txt` row (`phase2_check.py
   --selftest`, which builds v0.46.0 and the four planted binaries itself):
   it runs when the checker or its fixtures change, and nightly, never on

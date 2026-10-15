@@ -33,15 +33,23 @@ EIGS_DUMP_BC; nothing in production changes so a witness can see it):
 A -stop whose op is the chunk's compile stop must also be named by
 EIGS_JIT_STOPS.
 
+EVERY MODE runs two gates: the token gate (every token a landed round
+deleted is absent from code) and the inventory's own verdict
+(tools/phase2_inventory.py --check: every slot classifier has a reviewed
+disposition, and the committed docs/design/phase2-inventory.txt is exactly
+the generated one, #1804).
+
 MECHANICAL ROUNDS (R1.1, R1.2, R2.1) have no rows of their own; --through
-one of them runs its gates instead: the token gate (every token a landed
-round deleted is absent from code), the int-source check in two halves --
+one of them runs its gates instead: the int-source check in two halves --
 static: before R1.3 no runtime code calls slot_from_int or make_int outside
 the canonicalizing writers, make_int does not exist, and TAG_SMI or an SMI
 bit pattern is spelled only at its value_slot.h homes; dynamic (--smi-trap,
 R1.1/R1.2): the corpus differential against a `make smi-trap` build, on
 which every slot classifier aborts at an SMI -- the C slot test, and the
 corpus differential against --baseline (the binary from before the round).
+The differential runs each file under its run conditions from the suite's
+loader (tests/suite_program_env.sh) and requires every nonzero exit to be
+declared (tests/phase2/corpus_nonzero.txt); its header is the reference.
 A gate tool that writes to stderr fails, with its words (tool()); the
 checker runs under `python3 -W error` (tools/phase2_check.sh).
 
@@ -65,10 +73,14 @@ import phase2_inventory as inv  # noqa: E402  (strip_c: one C-comment grammar)
 
 ROUNDS = ['R1.1', 'R1.2', 'R1.3', 'R1.4', 'R1.5', 'R1.6', 'R1.7', 'R1.8',
           'R2.1', 'R2.2', 'R2.3', 'R2.4', 'R2.5', 'R2.6', 'R3']
+# Gates every mode runs: the token gate (a landed round's deleted tokens stay
+# deleted) and the inventory's own verdict, which includes the committed
+# docs/design/phase2-inventory.txt being exactly the generated one (#1804).
+EVERY_MODE = ('tokens', 'inventory')
 MECHANICAL = {
-    'R1.1': ('tokens', 'int-source', 'slot-test', 'corpus-diff', 'smi-trap'),
-    'R1.2': ('tokens', 'int-source', 'slot-test', 'corpus-diff', 'smi-trap'),
-    'R2.1': ('tokens', 'slot-test', 'corpus-diff'),
+    'R1.1': ('int-source', 'slot-test', 'corpus-diff', 'smi-trap'),
+    'R1.2': ('int-source', 'slot-test', 'corpus-diff', 'smi-trap'),
+    'R2.1': ('slot-test', 'corpus-diff'),
 }
 ITEMS = ['N%d' % i for i in range(1, 15)] + ['N4b', 'A', 'B', 'T1', 'O1', 'O2', 'O3', 'O4']
 # design 2.7: the tokens each round deletes. A later round adds its list here
@@ -542,21 +554,42 @@ def tool(cmd, out, tail_re, env=None):
     for l in text.split('\n'):
         if re.match(tail_re, l):
             out('  ' + l)
+    who = next((os.path.basename(a) for a in cmd if a.endswith(('.py', '.sh'))), cmd[0])
     for l in err.split('\n'):
         if l:
-            out('  STDERR %s: %s' % (os.path.basename(cmd[1]), l))
+            out('  STDERR %s: %s' % (who, l))
     return p.returncode == 0 and not err, text
 
 
-DIFF_TAIL = r'^(corpus-diff: (seed pin|baseline|branch|examined|RESTRICTED|PASS|FAIL)|DIFF|DELETED|NEW|NONDET|REPLAYED|BOTH-|CAPPED)'
+INVENTORY_TAIL = r'^(FAIL: |UNCLASSIFIED: |slot classifiers: |examined=|phase2-inventory: )'
+
+
+def inventory_gate(out, extra=()):
+    """The inventory's own verdict, under -W error, with --check: every slot
+    classifier has a reviewed disposition and the committed inventory file is
+    exactly the generated one. PASS only for rc 0, no stderr, and a last line
+    `phase2-inventory: PASS`."""
+    ok, text = tool([sys.executable, '-W', 'error', os.path.join(ROOT, 'tools/phase2_inventory.py'), '--check']
+                    + list(extra), out, INVENTORY_TAIL)
+    lines = [l for l in text.split('\n') if l]
+    return ok and lines[-1:] == ['phase2-inventory: PASS']
+
+
+DIFF_TAIL = (r'^(corpus-diff: (seed pin|baseline|branch|files|examined|RESTRICTED|PASS|FAIL)|DIFF|DELETED|NEW|NONDET|'
+             r'REPLAYED|BOTH-|SAME-NONZERO|UNPINNED|INCOMPLETE|UNDECLARED|STALE|LEDGER|CAPPED)')
+
+
+def every_mode(through, out):
+    res = {'tokens': token_gate(ROOT, through, out), 'inventory': inventory_gate(out)}
+    for g in EVERY_MODE:
+        out('gate %s: %s' % (g, 'PASS' if res[g] else 'FAIL'))
+    return all(res[g] for g in EVERY_MODE)
 
 
 def mechanical(through, baseline, branch, out, smi_trap=None):
     res = {}
     for g in MECHANICAL[through]:
-        if g == 'tokens':
-            res[g] = token_gate(ROOT, through, out)
-        elif g == 'int-source':
+        if g == 'int-source':
             res[g] = int_source(os.path.join(ROOT, 'src'), out, through)
         elif g == 'slot-test':
             res[g], _ = tool(['bash', 'tests/phase2/slot_layer.sh', 'release'], out,
@@ -635,15 +668,16 @@ def main_check(args, out):
     with tempfile.TemporaryDirectory(prefix='eigs-p2-') as scratch:
         pop_ok, rows_ok, ctl_ok, landed, cnt, _ = check(
             map_rows, args.rows, args.controls, args.tag, args.branch, args.through, scratch, out)
+    always_ok = every_mode(args.through, out)
     mech_ok = None
     if args.through in MECHANICAL:
         mech_ok = mechanical(args.through, args.baseline, args.branch, out, args.smi_trap)
     if landed == 0:
         if mech_ok is None:
             out('  ZERO-ROWS: %s has no landed row and no mechanical gates' % args.through)
-        verdict = bool(mech_ok) and pop_ok and not bad and ctl_ok
+        verdict = bool(mech_ok) and pop_ok and not bad and ctl_ok and always_ok
     else:
-        verdict = rows_ok and pop_ok and not bad and ctl_ok and mech_ok is not False
+        verdict = rows_ok and pop_ok and not bad and ctl_ok and mech_ok is not False and always_ok
     out('phase2-check: %s' % ('PASS' if verdict else 'FAIL'))
     return 0 if verdict else 1
 
@@ -801,11 +835,80 @@ def calibrate(args, out):
             case('differential plant B, phase %d (wrong on alternate runs): DIFF, never NONDET' % phase,
                  (rc, v.get('tests/test_dispatch.eigs'), v.get('tests/test_bool.eigs'), v.get('<stderr>')),
                  (3, 'DIFF', 'same', None))
+    # the run conditions and the nonzero ledger (the second R1.1 critic):
+    # fake trees that run the real branch binary with one input changed
+    with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
+        files = ['tests/test_numeric_guard.eigs', 'tests/test_buffer_nonfinite_read.eigs', 'tests/test_bool.eigs']
+        rc, text, v = diff_restricted(base, args.branch, files)
+        case('unplanted branch, conditioned files included: all same, nothing undeclared',
+             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),
+             bool(re.search(r' incomplete=0 undeclared=0 stale=0 ledger_refused=0 ', text))),
+             (3, 'same', 'same', 'same', None, True))
+        cut = wrapper_tree(os.path.join(d, 'cut'), args.branch, files[:1] + files[2:], 'exec "$REAL" "$@"',
+                           {'tests/suite_program_env.txt':
+                            lambda t: re.sub(r'(?m)^test_numeric_guard\.eigs .*\n', '', t)})
+        rc, text, v = diff_restricted(base, cut, files[:1] + files[2:])
+        case('a policy row removed: its file exits early on both, UNDECLARED-NONZERO',
+             (rc, 'UNDECLARED-NONZERO tests/test_numeric_guard.eigs rc=1' in text,
+              ' undeclared=1 ' in text, v.get('<stderr>')), (3, True, True, None))
+        stale = wrapper_tree(os.path.join(d, 'stale'), args.branch, files[2:], 'exec "$REAL" "$@"',
+                             {'tests/phase2/corpus_nonzero.txt':
+                              lambda t: t + 'tests/test_bool.eigs 1 planted: test_bool completes\n'})
+        rc, text, v = diff_restricted(base, stale, files[2:])
+        case('a ledger row for a file that completes: STALE',
+             (rc, 'STALE tests/test_bool.eigs:' in text, ' stale=1 ' in text), (3, True, True))
+        inc = wrapper_tree(os.path.join(d, 'inc'), args.branch, ['tests/test_assert_fail.eigs'], 'exec "$REAL" "$@"',
+                           {'tests/suite_program_env.txt': lambda t: t + 'test_assert_fail.eigs EIGS_STRICT=0\n',
+                            'tests/phase2/corpus_nonzero.txt':
+                            lambda t: re.sub(r'(?m)^tests/test_assert_fail\.eigs .*\n', '', t)})
+        rc, text, v = diff_restricted(base, inc, ['tests/test_assert_fail.eigs'])
+        case('a conditioned file that does not complete: INCOMPLETE, never compared',
+             (rc, v.get('tests/test_assert_fail.eigs'), ' incomplete=1 ' in text), (3, 'INCOMPLETE', True))
+    # the inventory gate (#1804): a classifier with no reviewed disposition,
+    # and a committed inventory that is not the generated one
+    with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
+        shutil.copytree(os.path.join(ROOT, 'src'), os.path.join(d, 'src'), ignore=c_sources_only)
+        os.makedirs(os.path.join(d, 'docs/design'))
+        for f in ('docs/design/phase2-numbers.md', 'docs/design/phase2-inventory.txt'):
+            shutil.copy(os.path.join(ROOT, f), os.path.join(d, f))
+        inv_args = ['--src', os.path.join(d, 'src'), '--doc', os.path.join(d, 'docs/design/phase2-numbers.md'),
+                    '--out', os.path.join(d, 'docs/design/phase2-inventory.txt')]
+        lines = []
+        case('inventory gate on an unchanged copy passes', inventory_gate(lines.append, inv_args), True)
+        inv_path = os.path.join(d, 'docs/design/phase2-inventory.txt')
+        committed = read_text(inv_path)
+        write_text(inv_path, committed.replace('dispositions=', 'dispositions=0', 1))
+        lines = []
+        case('a committed inventory that is not the generated one: the gate fails, saying stale',
+             (inventory_gate(lines.append, inv_args), any('is stale' in l for l in lines)), (False, True))
+        write_text(inv_path, committed)
+        with open(os.path.join(d, 'src', 'vm.c'), 'a') as f:
+            f.write('\nint critic_new_reader(Value *v) {\n    EigsSlot s = slot_from_heap(v);\n'
+                    '    return slot_is_bool(s) ? 1 : (slot_is_null(s) ? 2 : 0);\n}\n')
+        lines = []
+        case('an unreviewed slot classifier (critic_new_reader): the gate fails, naming it',
+             (inventory_gate(lines.append, inv_args),
+              any('`vm.c:critic_new_reader` has no disposition row' in l for l in lines)), (False, True))
     if args.build_plants:
         args.planted_leaf_scan = build_plant('leaf-scan', out)
         args.planted_leaf_mul = build_plant('leaf-mul', out)
         args.planted_random_int = build_plant('random-int', out)
         args.planted_p4_trap = build_plant('p4-trap', out)
+        args.planted_value_eq = build_plant('value-eq-raw', out)
+        args.planted_b2_trap = build_plant('b2-trap', out)
+    for label, b, files, want in (
+            ('plant C (buffer equality reads raw elements), release build', args.planted_value_eq,
+             ['tests/test_numeric_guard.eigs', 'tests/test_bool.eigs'], ('DIFF', 'same')),
+            ('plant B2 (an int from spelled tag bits) on the smi-trap build', args.planted_b2_trap,
+             ['tests/test_buffer_nonfinite_read.eigs', 'tests/test_numeric_guard.eigs', 'tests/test_bool.eigs'],
+             ('DIFF', 'DIFF', 'same'))):
+        if not b:
+            out('CAL %-58s NOT RUN (no binary; --build-plants builds it)' % label)
+            results.append(False)
+            continue
+        rc, text, v = diff_restricted(base, b, files)
+        case('differential %s: DIFF where its conditioned file reaches it' % label,
+             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),), (3,) + want + (None,))
     if args.planted_random_int:
         # test_system.eigs asserts random_int's bounds over 300 draws, so it
         # sees the plant whatever the seed; test_optimize.eigs prints a search
@@ -861,6 +964,14 @@ BUILD_PLANTS = {
     # the R1.1 critic's plant D: random_int answers lo+1..hi+1
     'random-int': ('src/builtins.c', 'make_num(lo_i + (eigs_random_long() % (int64_t)span))',
                    'make_num(lo_i + 1 + (eigs_random_long() % (int64_t)span))', 'build'),
+    # the second R1.1 critic's plant C: equality of two buffers reads raw
+    # elements (no read normalisation); the suite's [42c] goes red on it
+    'value-eq-raw': ('src/eigenscript.c', '        case VAL_BUFFER: {\n            if (a->data.buffer.count != b->data.buffer.count) return 0;\n            for (int i = 0; i < a->data.buffer.count; i++) {\n                double av = buffer_read_num(a, i);\n                if (g_has_error) return 0;\n                double bv = buffer_read_num(b, i);\n',
+                     '        case VAL_BUFFER: {\n            if (a->data.buffer.count != b->data.buffer.count) return 0;\n            for (int i = 0; i < a->data.buffer.count; i++) {\n                double av = a->data.buffer.data[i];   /* CRITIC PLANT C: raw element, no read normalisation */\n                if (g_has_error) return 0;\n                double bv = b->data.buffer.data[i];\n', 'build'),
+    # the second critic's plant B2: an int produced by spelling the tag's bits
+    # (no TAG_SMI, so the static half cannot see it), on the smi-trap build
+    'b2-trap': ('src/vm.c', '            if (target->type == VAL_BUFFER) {\n                if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {\n                    double v = buffer_read_num(target, i);\n                    slot_decref(tgt_s);\n                    vm_push_slot(slot_from_f64(v));\n                } else {\n                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));\n                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",\n',
+                '            if (target->type == VAL_BUFFER) {\n                if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {\n                    double v = buffer_read_num(target, i);\n                    slot_decref(tgt_s);\n                    if (isnan(target->data.buffer.data[i])) {   /* CRITIC PLANT B2: an int producer, bits spelled */\n                        EigsSlot p; p.u = (SLOT_QNAN_MASK | (UINT64_C(2) << 48)) | 7u;\n                        vm_push_slot(p);\n                    } else {\n                        vm_push_slot(slot_from_f64(v));\n                    }\n                } else {\n                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));\n                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",\n', 'smi-trap'),
     # the critic's P4 (an int produced inside an allowed writer) on the smi-trap build
     'p4-trap': ('src/eigenscript.c', '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n        return slot_from_f64(n);',
                 '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n'
@@ -941,13 +1052,19 @@ def diff_restricted(base, branch, files):
     return p.returncode, text, verdicts
 
 
-def wrapper_tree(d, real, files, script):
+RUN_POLICY = ('tests/suite_program_env.sh', 'tests/suite_program_env.txt', 'tests/phase2/corpus_nonzero.txt')
+
+
+def wrapper_tree(d, real, files, script, edit=None):
     """A fake branch tree: src/eigenscript runs `script` (bash, $REAL is the
-    real binary, $N the per-tree invocation count), tests/ holds the files."""
+    real binary, $N the per-tree invocation count), tests/ holds the files and
+    the run-condition loader, its table and the nonzero ledger, each of which
+    `edit` ({path: function(text) -> text}) may change."""
     os.makedirs(os.path.join(d, 'src'))
-    for f in files:
+    for f in list(files) + list(RUN_POLICY):
         os.makedirs(os.path.join(d, os.path.dirname(f)), exist_ok=True)
-        shutil.copy(os.path.join(ROOT, f), os.path.join(d, f))
+        text = read_text(os.path.join(ROOT, f))
+        write_text(os.path.join(d, f), (edit or {}).get(f, lambda t: t)(text))
     w = os.path.join(d, 'src', 'eigenscript')
     write_text(w, '#!/usr/bin/env bash\nREAL=%s\nSTATE=%s\nN=$(cat "$STATE" 2>/dev/null || echo 0)\n'
                   'echo $((N + 1)) > "$STATE"\n%s\n' % (real, os.path.join(d, 'n'), script))
@@ -986,7 +1103,8 @@ def selftest(out):
         out('  TAG %s built in %s' % (TAG, d))
     args = argparse.Namespace(tag=os.path.abspath(tag), branch=branch, build_plants=True,
                               planted_leaf_scan=None, planted_leaf_mul=None,
-                              planted_random_int=None, planted_p4_trap=None)
+                              planted_random_int=None, planted_p4_trap=None,
+                              planted_value_eq=None, planted_b2_trap=None)
     return calibrate(args, out)
 
 
@@ -1013,14 +1131,17 @@ def main():
     ap.add_argument('--planted-leaf-mul', help='calibration: a build whose leaf MUL computes a*b+1')
     ap.add_argument('--planted-random-int', help='calibration: a build whose random_int answers lo+1..hi+1')
     ap.add_argument('--planted-p4-trap', help='calibration: a smi-trap build with the P4 producer planted')
+    ap.add_argument('--planted-value-eq', help='calibration: a build whose buffer equality reads raw elements (C)')
+    ap.add_argument('--planted-b2-trap', help='calibration: a smi-trap build with the B2 producer planted')
     ap.add_argument('--build-plants', action='store_true',
-                    help='calibration: build the four planted binaries from HEAD')
+                    help='calibration: build the six planted binaries from HEAD')
     args = ap.parse_args()
     if args.selftest:
         print('phase2-check: FAIL: --selftest takes no other argument')
         return 2
     for b in (args.tag, args.branch, args.baseline, args.smi_trap, args.planted_leaf_scan,
-              args.planted_leaf_mul, args.planted_random_int, args.planted_p4_trap):
+              args.planted_leaf_mul, args.planted_random_int, args.planted_p4_trap,
+              args.planted_value_eq, args.planted_b2_trap):
         if b and not os.access(b, os.X_OK):
             print('phase2-check: FAIL: %s is not an executable' % b)
             return 2

@@ -44,6 +44,7 @@ if any site or builtin is unclassified, a table row is stale, a rule or
 token never fires, or nothing was examined.
 """
 import argparse
+import difflib
 import glob
 import os
 import re
@@ -740,6 +741,8 @@ def main():
     ap.add_argument('--doc', default=os.path.join(ROOT, 'docs/design/phase2-numbers.md'))
     ap.add_argument('--out', default=os.path.join(ROOT, 'docs/design/phase2-inventory.txt'))
     ap.add_argument('--no-write', action='store_true')
+    ap.add_argument('--check', action='store_true',
+                    help='write nothing, and FAIL when --out differs from the generated text (#1804)')
     ap.add_argument('--sites', action='store_true', help='print every site')
     ap.add_argument('--slot-population', action='store_true',
                     help='print the C slot test population (design 2.5) and exit')
@@ -911,7 +914,18 @@ def main():
         out.append('%s:%d %s %s %s %s' % (rel, ln, scope, tok, kind, cat))
     text = '\n'.join(out) + '\n'
 
-    if not args.no_write:
+    stale = None
+    if args.check:
+        # the committed file must be exactly what this run generates
+        try:
+            with open(args.out, encoding='utf-8') as f:
+                committed = f.read()
+        except OSError:
+            committed = ''
+        if committed != text:
+            stale = sum(1 for l in difflib.unified_diff(committed.split('\n'), text.split('\n'), n=0, lineterm='')
+                        if l[:1] in '+-' and not l.startswith(('+++', '---')))
+    elif not args.no_write:
         os.makedirs(os.path.dirname(args.out), exist_ok=True)
         with open(args.out, 'w', encoding='utf-8') as f:
             f.write(text)
@@ -943,6 +957,9 @@ def main():
         fail.append('slot classifier `%s` has no disposition row' % n)
     for n in slot_stale:
         fail.append('disposition row `%s` names no D1/D2/D3 slot classifier' % n)
+    if stale is not None:
+        fail.append('%s is stale: %d line(s) differ from the generated inventory; regenerate it with '
+                    'tools/phase2_inventory.py' % (os.path.relpath(args.out, ROOT), stale))
     for f_ in fail:
         print('FAIL: ' + f_)
     print('builtins: registered=%d numeric=%d classified=%d unclassified=%d stale=%d' % (
