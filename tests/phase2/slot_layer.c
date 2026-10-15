@@ -15,28 +15,48 @@
  *      ones (eigs_slot_refuse) and the R1.1 placeholders whose int arm needs
  *      the int Value kind (eigs_int_unwired, deleted in R1.3). An abort runs
  *      in a forked child, and its FATAL line must name the expected reader.
- *   B  the tag matrix: the predicates and the deciding readers against a
- *      double, the canonical NaN, -0.0, null, both bools, an SMI, a heap
- *      pointer, the reserved tags and the sentinel.
+ *   B  every population entry x twelve slot kinds: a double, the canonical
+ *      NaN, -0.0, null, both bools, an SMI, a heap pointer, the reserved
+ *      tags and the sentinel; each cell runs in a forked child.
  *   C  slot_from_int, the one int writer (plant 1's named check, design 9.3):
  *      inside [-2^47, 2^47) the tag is 0xFFFA and the int reads back exactly;
  *      outside, R1.1 refuses (the VAL_INT box lands in R1.3).
+ *   D  the VM's operator arms: a host builtin puts an SMI into a list and a
+ *      program applies each operator to it. Every arm must refuse by name,
+ *      inside a `try` too; the same program with a double is the control.
  *
- * Output: one `ENTRY <file>:<function> ...` line per Part A entry (the runner
- * compares that set with the derived population, both ways), `FAIL` lines,
- * and a final `slot-layer-test: examined=N ... failures=F` line, then its verdict.
- * Exit 0 only for failures == 0 with every part non-empty. */
+ * Output, every line in one grammar (tests/phase2/slot_layer.sh refuses any
+ * other line): `ENTRY <file>:<function> <kind> values=<n> ok|FAIL` per Part A
+ * entry and `MATRIX <file>:<function> kinds=<n> ok|FAIL` per Part B entry (the
+ * runner compares both sets with the derived population, both ways),
+ * `ARM <name> ok|FAIL` per Part D arm, `slot-layer-test: FAIL <detail>` lines,
+ * then `slot-layer-test: examined=N ... failures=F` and the verdict. Nothing
+ * goes to stderr. Exit 0 only for failures == 0 with every part complete. */
 #include "eigenscript_all.c"
 
 #include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 #ifndef EIGS_SLOT_CHECKS
 #error "build with -DEIGS_SLOT_CHECKED (or ASan): slot_as_ptr's refusal is under test"
 #endif
 
 static int failures;
+
+/* A child that is EXPECTED to abort must not dump core. On a box whose
+ * core_pattern pipes to a crash reporter (Ubuntu's apport), the kernel runs
+ * the reporter for every abort, RLIMIT_CORE notwithstanding: about 1.4 s
+ * each, which made this test take 224 s instead of seconds. A non-dumpable
+ * process skips the core dump entirely; the SIGABRT status is unchanged. */
+static void child_no_core(void) {
+#ifdef __linux__
+    (void)prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+#endif
+}
 
 /* The test's own encoding, independent of value_slot.h's writers. */
 #define T_SMI_TAG   0xFFFA000000000000ULL
@@ -62,6 +82,7 @@ static int aborts_naming(void (*fn)(EigsSlot), EigsSlot s, const char *who, cons
     pid_t pid = fork();
     if (pid < 0) { FAILF("%s: fork", what); return 0; }
     if (pid == 0) {
+        child_no_core();
         close(p[0]);
         dup2(p[1], 2);
         fn(s);
@@ -214,114 +235,390 @@ static int part_a(void) {
     return calls;
 }
 
-/* ---- Part B: the tag matrix ---------------------------------------------- */
+/* ---- Part B: every entry against every tag ------------------------------ */
 
-typedef struct { const char *name; uint64_t u; } Kind;
+/* The twelve slot kinds: three doubles (an ordinary one, the canonical NaN,
+ * -0.0), null, both bools, an SMI, a heap pointer, the three reserved tags
+ * and the sentinel. */
+enum { K_F, K_NAN, K_NZ, K_NULL, K_FALSE, K_TRUE, K_SMI, K_HEAP, K_R1, K_R2, K_R3, K_SENT, N_KINDS };
+static const char *KIND_NAMES[N_KINDS] = {
+    "f64 1.5", "f64 canonical NaN", "f64 -0.0", "null", "false", "true", "SMI 5",
+    "heap str", "reserved 0xFFFC", "reserved 0xFFFD", "reserved 0xFFFE", "sentinel 0xFFFF",
+};
+static uint64_t KB[N_KINDS];          /* each kind's slot bits (main fills K_HEAP) */
+static Value *g_str;                  /* the heap kind's Value, a string "x" */
+static double KD(int k) { return f64_of(KB[k]); }
+enum { C_F64, C_NULL, C_BOOL, C_SMI, C_HEAP, C_RES };
+static int kclass(int k) {
+    switch (k) {
+        case K_F: case K_NAN: case K_NZ: return C_F64;
+        case K_NULL: return C_NULL;
+        case K_FALSE: case K_TRUE: return C_BOOL;
+        case K_SMI: return C_SMI;
+        case K_HEAP: return C_HEAP;
+        default: return C_RES;
+    }
+}
 
-static void b_type_name(EigsSlot s) { (void)slot_type_name(s); }
-static void b_truthy(EigsSlot s) { (void)slot_truthy(s); }
+/* Renderers: every result becomes one comparable token. */
+static uint64_t u64_of(double d) { uint64_t u; memcpy(&u, &d, sizeof u); return u; }
+static void r_d(char *b, size_t n, double d) { snprintf(b, n, "d:%016llx", (unsigned long long)u64_of(d)); }
+static void r_v(char *b, size_t n, Value *v) {
+    if (!v) { snprintf(b, n, "v:NULL"); return; }
+    if (v == g_str) { snprintf(b, n, "v:H"); return; }
+    switch (v->type) {
+        case VAL_NUM: snprintf(b, n, "v:num:%016llx", (unsigned long long)u64_of(VAL_NUM_RAW(v))); return;
+        case VAL_NULL: snprintf(b, n, "v:null"); return;
+        case VAL_BOOL: snprintf(b, n, "v:%s", v->data.boolean ? "true" : "false"); return;
+        case VAL_STR: case VAL_LIST: case VAL_DICT: case VAL_FN: case VAL_BUILTIN:
+        case VAL_BUFFER: case VAL_TEXT_BUILDER: case VAL_JSON_RAW:
+            snprintf(b, n, "v:%s", val_type_name(v->type)); return;
+    }
+}
+static int is_heap_kind(EigsSlot s) { return s.u == KB[K_HEAP]; }
+
+/* Cells: call one entry and render its result. Each runs in a forked child. */
+#define CELL(name) static void c_##name(EigsSlot s, char *b, size_t n)
+CELL(elem_num) { r_d(b, n, eigs_slot_elem_num(s, "matrix")); }
+CELL(num) { r_d(b, n, eigs_slot_num(s, "matrix")); }
+CELL(opt_num) { double d = -7.25; int r = eigs_slot_opt_num(s, &d, "matrix");
+                snprintf(b, n, "o:%d d:%016llx", r, (unsigned long long)u64_of(d)); }
+CELL(store_borrow) { EigsSlot r = eigs_slot_store_borrow(s); snprintf(b, n, "b:%016llx", (unsigned long long)r.u);
+                     if (is_heap_kind(r)) slot_decref(r); }
+CELL(store_owned) { if (is_heap_kind(s)) slot_incref(s);
+                    EigsSlot r = eigs_slot_store_owned(s); snprintf(b, n, "b:%016llx", (unsigned long long)r.u);
+                    if (is_heap_kind(r)) slot_decref(r); }
+CELL(ent_child) { r_d(b, n, ent_child_slot(s)); }
+CELL(store_json) { strbuf sb; strbuf_init(&sb); store_json_encode_slot(s, &sb);
+                   snprintf(b, n, "s:%s", sb.data ? sb.data : ""); strbuf_free(&sb); }
+CELL(write_slot) { size_t before = g_out_len; write_slot(s);
+                   snprintf(b, n, "w:%.*s", (int)(g_out_len - before), g_out + before); }
+CELL(f64_value) { double d = -7.25; int r = slot_f64_value(s, &d);
+                  snprintf(b, n, "o:%d d:%016llx", r, (unsigned long long)u64_of(d)); }
+CELL(int_value) { int64_t i = 7; int r = slot_int_value(s, &i); snprintf(b, n, "o:%d i:%lld", r, (long long)i); }
+CELL(is_f64) { snprintf(b, n, "i:%d", slot_is_f64(s)); }
+CELL(is_smi) { snprintf(b, n, "i:%d", slot_is_smi(s)); }
+CELL(smi_val) { snprintf(b, n, "i:%lld", (long long)slot_smi_val(s)); }
+CELL(truthy_imm) { int dec = -1; int t = slot_truthy_immediate(s, &dec); snprintf(b, n, "o:%d dec:%d", t, dec); }
+CELL(dump_value) { char buf[160]; obs_dump_value(s, buf, sizeof buf); snprintf(b, n, "s:%s", buf); }
+CELL(obs_num) { double d = -7.25; int r = obs_slot_num(s, &d);
+                snprintf(b, n, "o:%d d:%016llx", r, (unsigned long long)u64_of(d)); }
+CELL(truthy) { snprintf(b, n, "i:%d", slot_truthy(s)); }
+CELL(type_name) { snprintf(b, n, "s:%s", slot_type_name(s)); }
+CELL(decref) { if (is_heap_kind(s)) slot_incref(s); slot_decref(s); snprintf(b, n, "ok"); }
+CELL(incref) { slot_incref(s); if (is_heap_kind(s)) slot_decref(s); snprintf(b, n, "ok"); }
+CELL(is_bool) { snprintf(b, n, "i:%d", slot_is_bool(s)); }
+CELL(is_heap) { snprintf(b, n, "i:%d", slot_is_heap(s)); }
+CELL(is_null) { snprintf(b, n, "i:%d", slot_is_null(s)); }
+CELL(is_ptr) { snprintf(b, n, "i:%d", slot_is_ptr(s)); }
+CELL(slot_box) { Value *v = eigs_slot_box(s); r_v(b, n, v); if (v == g_str) val_decref(v); }
+CELL(slot_type) { snprintf(b, n, "t:%s", val_type_name(slot_type(s))); }
+CELL(slot_view) { EIGS_VIEW_NOCHECK(view); r_v(b, n, slot_view(s, &view)); }
+CELL(to_value) { Value *v = slot_to_value(s); r_v(b, n, v); if (v == g_str) val_decref(v); }
+CELL(observable) { snprintf(b, n, "i:%d", obs_slot_observable(s)); }
+CELL(unwrap) { r_v(b, n, slot_bridge_unwrap(s)); }
+CELL(slot_ref) { r_v(b, n, eigs_slot_ref(s)); }
+CELL(as_ptr) { r_v(b, n, slot_as_ptr(s)); }
+CELL(obs_value) { r_v(b, n, obs_slot_value(s)); }
+
+/* Expectations: what each entry must do with each kind, written from its
+ * contract (container.h, value_slot.h, the 2.5 dispositions). The tokens:
+ * `A:<reader>` an abort naming the reader; ` raise` a type error raised. */
+#define EXP(name) static void e_##name(int k, char *b, size_t n)
+#define ABORT(who) snprintf(b, n, "A:%s", who)
+static void e_d(char *b, size_t n, double d, int raise) { r_d(b, n, d); if (raise) strncat(b, " raise", n - strlen(b) - 1); }
+static void e_bool(char *b, size_t n, int k) { snprintf(b, n, "v:%s", k == K_TRUE ? "true" : "false"); }
+EXP(elem_num) {
+    switch (kclass(k)) {
+        case C_F64: e_d(b, n, KD(k), 0); break;
+        case C_NULL: case C_HEAP: e_d(b, n, 0.0, 0); break;       /* non-strict element read */
+        case C_BOOL: e_d(b, n, 0.0, 1); break;                    /* a bool raises (#1637) */
+        case C_SMI: e_d(b, n, 5.0, 0); break;
+        default: ABORT("eigs_slot_ref");
+    }
+}
+EXP(num) {
+    switch (kclass(k)) {
+        case C_F64: e_d(b, n, KD(k), 0); break;
+        case C_SMI: e_d(b, n, 5.0, 0); break;
+        case C_NULL: case C_BOOL: case C_HEAP: e_d(b, n, 0.0, 1); break;   /* required: raises */
+        default: ABORT("eigs_slot_ref");
+    }
+}
+EXP(opt_num) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "o:1 d:%016llx", (unsigned long long)KB[k]); break;
+        case C_SMI: snprintf(b, n, "o:1 d:%016llx", (unsigned long long)u64_of(5.0)); break;
+        case C_NULL: snprintf(b, n, "o:0 d:%016llx", (unsigned long long)u64_of(-7.25)); break;
+        case C_BOOL: case C_HEAP: snprintf(b, n, "o:0 d:%016llx raise", (unsigned long long)u64_of(-7.25)); break;
+        default: ABORT("eigs_slot_ref");
+    }
+}
+EXP(store_slot) {   /* both normalisers: a double is guarded (NaN -> 0), the rest kept */
+    snprintf(b, n, "b:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k]));
+}
+EXP(ent_child) {
+    switch (kclass(k)) {
+        case C_F64: r_d(b, n, entropy_of_num(KD(k))); break;
+        case C_SMI: r_d(b, n, entropy_of_num(5.0)); break;
+        case C_NULL: r_d(b, n, compute_entropy_impl(make_null())); break;
+        case C_BOOL: r_d(b, n, compute_entropy_impl(make_bool(k == K_TRUE))); break;
+        case C_HEAP: r_d(b, n, compute_entropy_impl(g_str)); break;
+        default: ABORT("eigs_slot_ref");
+    }
+}
+EXP(store_json) {
+    static const char *f64[3] = {"s:1.5", "s:nan", "s:0"};   /* -0.0 takes the %d branch */
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "%s", f64[k]); break;
+        case C_NULL: snprintf(b, n, "s:null"); break;
+        case C_BOOL: snprintf(b, n, "s:%s", k == K_TRUE ? "true" : "false"); break;
+        case C_SMI: snprintf(b, n, "s:5"); break;
+        case C_HEAP: snprintf(b, n, "s:\"x\""); break;
+        default: ABORT("eigs_slot_ref");
+    }
+}
+static char g_heap_tape[64];         /* what the tape writer prints for g_str */
+EXP(write_slot) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "w:%.17g", KD(k)); break;
+        case C_NULL: snprintf(b, n, "w:null"); break;
+        case C_BOOL: snprintf(b, n, "w:%s", k == K_TRUE ? "true" : "false"); break;
+        case C_HEAP: snprintf(b, n, "w:%s", g_heap_tape); break;
+        default: ABORT("write_slot");             /* an SMI: tape v7 is R1.3's; a reserved tag refuses */
+    }
+}
+EXP(f64_value) {
+    if (kclass(k) == C_F64) snprintf(b, n, "o:1 d:%016llx", (unsigned long long)KB[k]);
+    else snprintf(b, n, "o:0 d:%016llx", (unsigned long long)u64_of(-7.25));
+}
+EXP(int_value) { snprintf(b, n, k == K_SMI ? "o:1 i:5" : "o:0 i:7"); }
+EXP(is_f64) { snprintf(b, n, "i:%d", kclass(k) == C_F64); }
+EXP(is_smi) { snprintf(b, n, "i:%d", k == K_SMI); }
+EXP(smi_val) {   /* the payload, sign-extended from bit 47, by the test's own arithmetic */
+    uint64_t p = KB[k] & T_PAYLOAD;
+    int64_t v = (p & 0x0000800000000000ULL) ? (int64_t)p - (INT64_C(1) << 48) : (int64_t)p;
+    snprintf(b, n, "i:%lld", (long long)v);
+}
+EXP(truthy_imm) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "o:%d dec:1", KD(k) != 0.0); break;   /* NaN is truthy, -0.0 is not */
+        case C_NULL: snprintf(b, n, "o:0 dec:1"); break;
+        case C_BOOL: snprintf(b, n, "o:%d dec:1", k == K_TRUE); break;
+        case C_SMI: snprintf(b, n, "o:1 dec:1"); break;
+        default: snprintf(b, n, "o:0 dec:0");                             /* undecided: no dereference */
+    }
+}
+EXP(dump_value) {
+    char t[64];
+    switch (kclass(k)) {
+        case C_F64: eigs_num_text(t, sizeof t, KD(k)); snprintf(b, n, "s:%s", t); break;
+        case C_NULL: snprintf(b, n, "s:null"); break;
+        case C_BOOL: snprintf(b, n, "s:%s", k == K_TRUE ? "true" : "false"); break;
+        case C_SMI: snprintf(b, n, "s:5"); break;
+        case C_HEAP: snprintf(b, n, "s:\"x\""); break;
+        default: snprintf(b, n, "s:?");
+    }
+}
+EXP(obs_num) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "o:1 d:%016llx", (unsigned long long)KB[k]); break;
+        case C_SMI: snprintf(b, n, "o:1 d:%016llx", (unsigned long long)u64_of(5.0)); break;
+        default: snprintf(b, n, "o:0 d:%016llx", (unsigned long long)u64_of(-7.25));
+    }
+}
+EXP(truthy) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "i:%d", KD(k) != 0.0); break;
+        case C_NULL: snprintf(b, n, "i:0"); break;
+        case C_BOOL: snprintf(b, n, "i:%d", k == K_TRUE); break;
+        case C_SMI: case C_HEAP: snprintf(b, n, "i:1"); break;
+        default: ABORT("slot_truthy");
+    }
+}
+EXP(type_name) {
+    static const char *names[] = {"s:num", "s:none", "s:bool", "s:num", "s:str"};
+    if (kclass(k) == C_RES) ABORT("slot_type_name"); else snprintf(b, n, "%s", names[kclass(k)]);
+}
+EXP(ok) { (void)k; snprintf(b, n, "ok"); }
+EXP(is_bool) { snprintf(b, n, "i:%d", kclass(k) == C_BOOL); }
+EXP(is_heap) { snprintf(b, n, "i:%d", k == K_HEAP); }
+EXP(is_null) { snprintf(b, n, "i:%d", k == K_NULL); }
+EXP(slot_box) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k])); break;
+        case C_NULL: snprintf(b, n, "v:null"); break;
+        case C_BOOL: e_bool(b, n, k); break;
+        case C_HEAP: snprintf(b, n, "v:H"); break;
+        case C_SMI: ABORT("slot_to_value"); break;
+        default: ABORT("eigs_slot_ref");
+    }
+}
+EXP(slot_type) {
+    static const char *names[] = {"t:num", "t:null", "t:bool", "", "t:str"};
+    if (kclass(k) == C_SMI || kclass(k) == C_RES) ABORT("slot_type");
+    else snprintf(b, n, "%s", names[kclass(k)]);
+}
+EXP(slot_view) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)KB[k]); break;   /* a facade: no guard */
+        case C_NULL: snprintf(b, n, "v:null"); break;
+        case C_BOOL: e_bool(b, n, k); break;
+        case C_HEAP: snprintf(b, n, "v:H"); break;
+        case C_SMI: ABORT("slot_view"); break;
+        default: ABORT("slot_type");
+    }
+}
+EXP(to_value) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k])); break;
+        case C_NULL: snprintf(b, n, "v:null"); break;
+        case C_BOOL: e_bool(b, n, k); break;
+        case C_HEAP: snprintf(b, n, "v:H"); break;
+        default: ABORT("slot_to_value");
+    }
+}
+EXP(observable) {
+    switch (kclass(k)) {
+        case C_F64: case C_NULL: snprintf(b, n, "i:0"); break;
+        case C_BOOL: case C_HEAP: snprintf(b, n, "i:1"); break;
+        default: ABORT("obs_slot_observable");
+    }
+}
+EXP(unwrap) {
+    switch (kclass(k)) {
+        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k])); break;
+        case C_NULL: snprintf(b, n, "v:null"); break;
+        case C_BOOL: e_bool(b, n, k); break;
+        case C_HEAP: snprintf(b, n, "v:H"); break;
+        case C_SMI: ABORT("slot_to_value"); break;
+        default: ABORT("slot_as_ptr");
+    }
+}
+EXP(slot_ref) {
+    switch (kclass(k)) {
+        case C_NULL: snprintf(b, n, "v:null"); break;
+        case C_BOOL: e_bool(b, n, k); break;
+        case C_HEAP: snprintf(b, n, "v:H"); break;
+        default: ABORT("eigs_slot_ref");
+    }
+}
+EXP(as_ptr) { if (k == K_HEAP) snprintf(b, n, "v:H"); else ABORT("slot_as_ptr"); }
+EXP(obs_value) {
+    if (kclass(k) == C_BOOL) e_bool(b, n, k);
+    else if (k == K_HEAP) snprintf(b, n, "v:H");
+    else ABORT("slot_as_ptr");
+}
+
+typedef struct {
+    const char *name;
+    void (*cell)(EigsSlot, char *, size_t);
+    void (*expect)(int, char *, size_t);
+} MatrixEntry;
+static const MatrixEntry MATRIX[] = {
+    {"container.h:eigs_slot_elem_num", c_elem_num, e_elem_num},
+    {"container.h:eigs_slot_num", c_num, e_num},
+    {"container.h:eigs_slot_opt_num", c_opt_num, e_opt_num},
+    {"container.h:eigs_slot_store_borrow", c_store_borrow, e_store_slot},
+    {"container.h:eigs_slot_store_owned", c_store_owned, e_store_slot},
+    {"eigenscript.c:ent_child_slot", c_ent_child, e_ent_child},
+    {"ext_store.c:store_json_encode_slot", c_store_json, e_store_json},
+    {"trace.c:write_slot", c_write_slot, e_write_slot},
+    {"value_slot.h:slot_f64_value", c_f64_value, e_f64_value},
+    {"value_slot.h:slot_int_value", c_int_value, e_int_value},
+    {"value_slot.h:slot_is_f64", c_is_f64, e_is_f64},
+    {"value_slot.h:slot_is_smi", c_is_smi, e_is_smi},
+    {"value_slot.h:slot_smi_val", c_smi_val, e_smi_val},
+    {"value_slot.h:slot_truthy_immediate", c_truthy_imm, e_truthy_imm},
+    {"vm.c:obs_dump_value", c_dump_value, e_dump_value},
+    {"vm.c:obs_slot_num", c_obs_num, e_obs_num},
+    {"vm.c:slot_truthy", c_truthy, e_truthy},
+    {"vm.c:slot_type_name", c_type_name, e_type_name},
+    {"value_slot.h:slot_decref", c_decref, e_ok},
+    {"value_slot.h:slot_incref", c_incref, e_ok},
+    {"value_slot.h:slot_is_bool", c_is_bool, e_is_bool},
+    {"value_slot.h:slot_is_heap", c_is_heap, e_is_heap},
+    {"value_slot.h:slot_is_null", c_is_null, e_is_null},
+    {"value_slot.h:slot_is_ptr", c_is_ptr, e_is_heap},
+    {"container.h:eigs_slot_box", c_slot_box, e_slot_box},
+    {"container.h:slot_type", c_slot_type, e_slot_type},
+    {"container.h:slot_view", c_slot_view, e_slot_view},
+    {"eigenscript.c:slot_to_value", c_to_value, e_to_value},
+    {"vm.c:obs_slot_observable", c_observable, e_observable},
+    {"vm.c:slot_bridge_unwrap", c_unwrap, e_unwrap},
+    {"container.h:eigs_slot_ref", c_slot_ref, e_slot_ref},
+    {"value_slot.h:slot_as_ptr", c_as_ptr, e_as_ptr},
+    {"vm.c:obs_slot_value", c_obs_value, e_obs_value},
+};
+#define N_MATRIX ((int)(sizeof MATRIX / sizeof MATRIX[0]))
+
+/* Run cell(s) in a child; return its outcome as a token: the rendered result
+ * (plus " raise" when the call raised), `A:<reader>` for an abort with a FATAL
+ * line naming the reader, `X:...` for anything else (a crash, a bad exit).
+ * `pre`, when given, receives what the child printed before its result. */
+static void run_cell(void (*cell)(EigsSlot, char *, size_t), EigsSlot s, char *got, size_t gn,
+                     char *pre, size_t pn) {
+    if (pre) pre[0] = 0;
+    int p[2];
+    if (pipe(p) != 0) { snprintf(got, gn, "X:pipe"); return; }
+    fflush(stdout); fflush(stderr);
+    pid_t pid = fork();
+    if (pid < 0) { snprintf(got, gn, "X:fork"); return; }
+    if (pid == 0) {
+        child_no_core();
+        close(p[0]);
+        dup2(p[1], 1); dup2(p[1], 2);
+        char b[512];
+        g_has_error = 0;
+        cell(s, b, sizeof b);
+        printf("R:%s%s\n", b, g_has_error ? " raise" : "");
+        fflush(stdout);
+        _exit(0);
+    }
+    close(p[1]);
+    char buf[2048];
+    size_t len = 0;
+    ssize_t r;
+    while (len < sizeof buf - 1 && (r = read(p[0], buf + len, sizeof buf - 1 - len)) > 0) len += (size_t)r;
+    buf[len] = 0;
+    close(p[0]);
+    int st = 0;
+    waitpid(pid, &st, 0);
+    char *f = strstr(buf, "EigenScript FATAL: ");
+    if (WIFSIGNALED(st) && WTERMSIG(st) == SIGABRT && f) {
+        f += strlen("EigenScript FATAL: ");
+        char *end = strstr(f, ": ");
+        snprintf(got, gn, "A:%.*s", end ? (int)(end - f) : (int)strcspn(f, "\n"), f);
+        return;
+    }
+    char *rl = (strncmp(buf, "R:", 2) == 0) ? buf : strstr(buf, "\nR:");
+    if (rl && rl != buf) rl++;
+    if (pre && rl) snprintf(pre, pn, "%.*s", (int)(rl - buf), buf);
+    if (WIFEXITED(st) && WEXITSTATUS(st) == 0 && rl) {
+        snprintf(got, gn, "%.*s", (int)strcspn(rl + 2, "\n"), rl + 2);
+        return;
+    }
+    snprintf(got, gn, "X:%s %d: %.*s", WIFSIGNALED(st) ? "signal" : "exit",
+             WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st), (int)strcspn(buf, "\n"), buf);
+}
 
 static int part_b(void) {
-    Value *str = make_str("x");
-    Kind kinds[] = {
-        {"f64 1.5", 0x3FF8000000000000ULL},
-        {"f64 canonical NaN", 0x7FF8000000000000ULL},
-        {"f64 -0.0", 0x8000000000000000ULL},
-        {"null", 0xFFF8000000000000ULL},
-        {"false", 0xFFF9000000000000ULL},
-        {"true", 0xFFF9000000000001ULL},
-        {"SMI 5", T_SMI_TAG | 5},
-        {"heap str", 0},
-        {"reserved 0xFFFC", 0xFFFC000000000000ULL},
-        {"reserved 0xFFFD", 0xFFFD000000000000ULL},
-        {"reserved 0xFFFE", 0xFFFE000000000000ULL},
-        {"sentinel 0xFFFF", 0xFFFF000000000000ULL},
-    };
-    int nk = (int)(sizeof kinds / sizeof kinds[0]);
-    kinds[7].u = slot_from_heap(str).u;
-    /* expected predicate answers, columns: f64 smi null bool heap ptr */
-    static const int want_pred[][6] = {
-        {1,0,0,0,0,0}, {1,0,0,0,0,0}, {1,0,0,0,0,0}, {0,0,1,0,0,0}, {0,0,0,1,0,0},
-        {0,0,0,1,0,0}, {0,1,0,0,0,0}, {0,0,0,0,1,1}, {0,0,0,0,0,0}, {0,0,0,0,0,0},
-        {0,0,0,0,0,0}, {0,0,0,0,0,0},
-    };
-    static const char *want_type[] = {
-        "num", "num", "num", "none", "bool", "bool", "num", "str", 0, 0, 0, 0,
-    };
-    static const int want_truthy[] = { 1, 1, 0, 0, 0, 1, 1, 1, -1, -1, -1, -1 };
-    static const int want_f64[] = { 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    int rows = 0;
-    for (int i = 0; i < nk; i++) {
-        EigsSlot s = bits(kinds[i].u);
-        int got[6] = { slot_is_f64(s), slot_is_smi(s), slot_is_null(s), slot_is_bool(s),
-                       slot_is_heap(s), slot_is_ptr(s) };
-        static const char *pn[6] = {"slot_is_f64", "slot_is_smi", "slot_is_null",
-                                    "slot_is_bool", "slot_is_heap", "slot_is_ptr"};
-        for (int j = 0; j < 6; j++, rows++)
-            if (got[j] != want_pred[i][j])
-                FAILF("%s(%s) = %d, want %d", pn[j], kinds[i].name, got[j], want_pred[i][j]);
-        rows++;
-        if (want_type[i]) {
-            const char *t = slot_type_name(s);
-            if (strcmp(t, want_type[i]) != 0)
-                FAILF("slot_type_name(%s) = %s, want %s", kinds[i].name, t, want_type[i]);
-        } else {
-            (void)aborts_naming(b_type_name, s, "slot_type_name", "slot_type_name");
+    int cells = 0;
+    for (int i = 0; i < N_MATRIX; i++) {
+        const MatrixEntry *m = &MATRIX[i];
+        int bad = 0;
+        for (int k = 0; k < N_KINDS; k++, cells++) {
+            char want[256], got[512];
+            m->expect(k, want, sizeof want);
+            run_cell(m->cell, bits(KB[k]), got, sizeof got, NULL, 0);
+            if (strcmp(want, got) != 0) {
+                FAILF("%s(%s): got %s, want %s", m->name, KIND_NAMES[k], got, want);
+                bad++;
+            }
         }
-        rows++;
-        if (want_truthy[i] >= 0) {
-            int t = slot_truthy(s);
-            if (t != want_truthy[i])
-                FAILF("slot_truthy(%s) = %d, want %d", kinds[i].name, t, want_truthy[i]);
-        } else {
-            (void)aborts_naming(b_truthy, s, "slot_truthy", "slot_truthy");
-        }
-        rows++;
-        double d = -7.25;
-        int f = slot_f64_value(s, &d);
-        if (f != want_f64[i] || (f && memcmp(&d, &kinds[i].u, sizeof d) != 0))
-            FAILF("slot_f64_value(%s) = %d, want %d with the same bits", kinds[i].name, f, want_f64[i]);
-        rows++;
-        int64_t iv = 0;
-        int isint = slot_int_value(s, &iv);
-        if (isint != (i == 6) || (isint && iv != 5))
-            FAILF("slot_int_value(%s) = %d (%lld)", kinds[i].name, isint, (long long)iv);
-        /* the readers that must refuse every non-pointer, non-null, non-bool */
-        rows++;
-        if (want_pred[i][3] || want_pred[i][2] || want_pred[i][4]) {
-            Value *r = eigs_slot_ref(s);
-            Value *want = want_pred[i][4] ? str : want_pred[i][2] ? make_null() : make_bool(i == 5);
-            if (r != want) FAILF("eigs_slot_ref(%s) is not its Value", kinds[i].name);
-        } else {
-            (void)aborts_naming(a_eigs_slot_ref, s, "eigs_slot_ref", "eigs_slot_ref");
-        }
-        rows++;
-        if (want_pred[i][1]) {
-            (void)aborts_naming(a_slot_to_value, s, "slot_to_value", "slot_to_value");
-        } else if (want_pred[i][0] || want_pred[i][2] || want_pred[i][3] || want_pred[i][4]) {
-            Value *v = slot_to_value(s);
-            /* make_num guards: a NaN reads back 0.0 (non-strict, set in main) */
-            double wd = want_pred[i][0] ? num_guard(f64_of(kinds[i].u)) : 0.0;
-            int ok = want_pred[i][0] ? (v->type == VAL_NUM && memcmp(&VAL_NUM_RAW(v), &wd, 8) == 0)
-                   : want_pred[i][2] ? v->type == VAL_NULL
-                   : want_pred[i][3] ? (v->type == VAL_BOOL && v->data.boolean == (i == 5))
-                   : v == str;
-            if (!ok) FAILF("slot_to_value(%s) is not its Value", kinds[i].name);
-            val_decref(v);
-        } else {
-            (void)aborts_naming(a_slot_to_value, s, "slot_to_value", "slot_to_value");
-        }
-        rows++;
-        if (want_pred[i][1] || (!want_pred[i][0] && !want_pred[i][2] && !want_pred[i][3] && !want_pred[i][4])) {
-            (void)aborts_naming(a_obs_slot_observable, s, "obs_slot_observable", "obs_slot_observable");
-        } else {
-            int o = obs_slot_observable(s);
-            int wo = want_pred[i][3] || want_pred[i][4];
-            if (o != wo) FAILF("obs_slot_observable(%s) = %d, want %d", kinds[i].name, o, wo);
-        }
+        printf("MATRIX %s kinds=%d %s\n", m->name, N_KINDS, bad ? "FAIL" : "ok");
     }
-    val_decref(str);
-    return rows;
+    return cells;
 }
 
 /* ---- Part C: slot_from_int (plant 1's named check) ----------------------- */
@@ -357,19 +654,109 @@ static int part_c(void) {
     return rows;
 }
 
+/* ---- Part D: the VM's operator arms, with an int in a list ------------- */
+
+/* A host builtin puts a hand-built SMI (or, for the control run, the double
+ * of the same value) into a list element, the way no program can before
+ * R1.3. Each arm that met an int with a type error -- which a `try` turned
+ * into a wrong value (the R1.1 critic) -- must now refuse it by name, inside
+ * a `try` too; the control run proves the program reaches the arm. */
+static int g_poke_smi;
+static EigsValue *h_poke(EigsValue *arg) {
+    Value *t = list_get_ref(arg, 0);
+    if (!t || t->type != VAL_LIST || t->data.list.count < 1) { printf("POKE: bad target\n"); _exit(97); }
+    EigsSlot old = t->data.list.items[0];
+    t->data.list.items[0] = g_poke_smi ? smi(5) : slot_from_f64(5.0);
+    slot_decref(old);
+    return make_null();
+}
+typedef struct { const char *name, *expr, *f64_out, *aborts; int in_try; } Arm;
+static const Arm ARMS[] = {
+    {"lt", "xs[0] < 6", "true", "compare '<'", 0},
+    {"gt", "xs[0] > 6", "false", "compare '>'", 0},
+    {"le", "xs[0] <= 6", "true", "compare '<='", 0},
+    {"ge", "xs[0] >= 6", "false", "compare '>='", 0},
+    {"lt_in_try", "xs[0] < 6", "true", "compare '<'", 1},
+    {"band", "xs[0] & 3", "1", "bitwise '&'", 0},
+    {"bor", "xs[0] | 3", "7", "bitwise '|'", 0},
+    {"bxor", "xs[0] ^ 3", "6", "bitwise '^'", 0},
+    {"shl", "xs[0] << 1", "10", "bitwise '<<'", 0},
+    {"shr", "xs[0] >> 1", "2", "bitwise '>>'", 0},
+    {"band_in_try", "xs[0] & 3", "1", "bitwise '&'", 1},
+    {"neg", "-(xs[0])", "-5", "negation", 0},
+    {"neg_in_try", "-(xs[0])", "-5", "negation", 1},
+    {"bnot", "~(xs[0])", "-6", "bitwise '~'", 0},
+    {"eq", "xs[0] == 5", "true", "slot_to_value", 0},
+    {"add", "xs[0] + 1", "6", "slot_to_value", 0},
+};
+#define N_ARMS ((int)(sizeof ARMS / sizeof ARMS[0]))
+static const Arm *g_arm;
+static void c_arm(EigsSlot s, char *b, size_t n) {
+    (void)s;
+    char prog[512];
+    if (g_arm->in_try)
+        snprintf(prog, sizeof prog, "xs is [7.5]\nphase2_poke of ([xs])\ntry:\n    print of (%s)\n"
+                 "catch e:\n    print of \"caught\"\n", g_arm->expr);
+    else
+        snprintf(prog, sizeof prog, "xs is [7.5]\nphase2_poke of ([xs])\nprint of (%s)\n", g_arm->expr);
+    EigsValue *r = eigs_eval_string(prog);
+    fflush(stdout);
+    snprintf(b, n, "%s", r ? "ran" : "eval-error");
+}
+static int part_d(void) {
+    eigs_register_function("phase2_poke", h_poke);
+    int rows = 0;
+    for (int i = 0; i < N_ARMS; i++) {
+        g_arm = &ARMS[i];
+        int bad = 0;
+        char got[512], want[256], pre[512], wpre[64];
+        g_poke_smi = 1;
+        run_cell(c_arm, slot_null(), got, sizeof got, NULL, 0);
+        snprintf(want, sizeof want, "A:%s", g_arm->aborts);
+        if (strcmp(got, want) != 0) { FAILF("arm %s with an int: got %s, want %s", g_arm->name, got, want); bad++; }
+        g_poke_smi = 0;
+        run_cell(c_arm, slot_null(), got, sizeof got, pre, sizeof pre);
+        snprintf(wpre, sizeof wpre, "%s\n", g_arm->f64_out);
+        if (strcmp(got, "ran") != 0 || strcmp(pre, wpre) != 0) {
+            FAILF("arm %s control (a double): got %s, printed \"%.*s\", want ran and %s", g_arm->name, got,
+                  (int)strcspn(pre, "\n"), pre, g_arm->f64_out);
+            bad++;
+        }
+        rows += 2;
+        printf("ARM %s %s\n", g_arm->name, bad ? "FAIL" : "ok");
+    }
+    return rows;
+}
+
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("slot-layer-test: FAIL eigs_open\n"); return 1; }
     /* Part B reads the canonical NaN back through make_num, whose guard
      * raises under strict mode; the test pins the soft read instead. */
     eigs_state_set_strict(st, 0);
+    g_str = make_str("x");
+    static const uint64_t kinds[N_KINDS] = {
+        0x3FF8000000000000ULL, 0x7FF8000000000000ULL, 0x8000000000000000ULL,
+        0xFFF8000000000000ULL, 0xFFF9000000000000ULL, 0xFFF9000000000001ULL,
+        T_SMI_TAG | 5, 0, 0xFFFC000000000000ULL, 0xFFFD000000000000ULL,
+        0xFFFE000000000000ULL, 0xFFFF000000000000ULL,
+    };
+    memcpy(KB, kinds, sizeof KB);
+    KB[K_HEAP] = slot_from_heap(g_str).u;
+    size_t before = g_out_len;
+    write_value_ptr(g_str);
+    snprintf(g_heap_tape, sizeof g_heap_tape, "%.*s", (int)(g_out_len - before), g_out + before);
     int calls = part_a();
-    int tag_rows = part_b();
+    int matrix_cells = part_b();
     int from_int_rows = part_c();
-    printf("slot-layer-test: examined=%d smi_values=%d calls=%d tag_rows=%d from_int_rows=%d failures=%d\n",
-           N_ENTRIES, N_SMI, calls, tag_rows, from_int_rows, failures);
+    int arm_rows = part_d();
+    printf("slot-layer-test: examined=%d smi_values=%d calls=%d matrix=%d kinds=%d matrix_cells=%d "
+           "from_int_rows=%d arm_rows=%d failures=%d\n", N_ENTRIES, N_SMI, calls, N_MATRIX, N_KINDS,
+           matrix_cells, from_int_rows, arm_rows, failures);
+    val_decref(g_str);
     eigs_close(st);
-    int ok = failures == 0 && N_ENTRIES > 0 && calls > 0 && tag_rows > 0 && from_int_rows > 0;
+    int ok = failures == 0 && N_ENTRIES > 0 && calls > 0 && N_MATRIX == N_ENTRIES &&
+             matrix_cells == N_MATRIX * N_KINDS && from_int_rows > 0 && arm_rows == 2 * N_ARMS;
     printf("slot-layer-test: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }
