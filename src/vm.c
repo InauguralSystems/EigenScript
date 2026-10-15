@@ -419,12 +419,10 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
 
 /* #744: this file no longer re-declares ANY cross-TU symbol. The value/env/
  * dict constructors and accessors it calls are declared in eigenscript.h; the
- * copies that used to sit here were free to drift from it (one still claimed
- * `observer_ensure_fresh` came from eval.c, a TU the bytecode VM replaced, and
- * `val_incref`/`val_decref`/`num_guard` are `static inline` in the header, so
- * `env_get_assign_count` is declared in eigenscript.h,
- * so the definitions are now checked against the declaration their callers
- * see. Do not add a new extern here; give the symbol a header. */
+ * copies that used to sit here were free to drift from it. Definitions are
+ * now checked against the declarations their callers see. The refcount
+ * helpers and num_guard are static inline in the header.
+ * Do not add a new extern here; give the symbol a header. */
 
 /* Inline fast-path for binding a single param into a fresh call env.
  * Caller guarantees `env->count == slot_idx` and `env->capacity > slot_idx`

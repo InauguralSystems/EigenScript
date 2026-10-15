@@ -1227,8 +1227,7 @@ int observer_slot_equilibrium(const ObserverSlot *s) {
     return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
 }
 
-/* Slot mirrors of the remaining four windowed predicates — identical logic to
- * the observer_*(Value*) versions above, reading the slot's window/entropy. */
+/* Windowed predicates over the binding's observer slot. */
 int observer_slot_improving(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_improving(s);
     size_t cnt = s ? obs_dh_count(s) : 0;
