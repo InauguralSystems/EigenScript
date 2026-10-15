@@ -20,6 +20,7 @@ cd "$(dirname "$0")/.." || exit 2
 run_gate() {   # run_gate <index> <class> <command...>
     local i="$1" class="$2" s rc; shift 2
     if { [ "$class" = bin ] || [ "$class" = portability ] || [ "$class" = selftest ]; } && [ -z "$BIN" ]; then
+        : > "$OUT/$i.log"
         echo "SKIP|0|no eigenscript binary (run make to include this gate)" > "$OUT/$i.st"; return
     fi
     s=$(date +%s)
@@ -60,13 +61,13 @@ if [ "${1:-}" = --selftest ]; then
     check darwin-skip 0 FAIL 'portability-parse: SKIPPED' Darwin
     run_gate generic-pass run "$stub" 0 'nested-check: SKIPPED'
     IFS='|' read -r got _ _ < "$OUT/generic-pass.st"
-    [ "$got" = PASS ] && echo 'PASS: generic gate -> PASS' || { echo "FAIL: generic gate wanted PASS, got $got"; fail=$((fail + 1)); }
+    [ "$got" = PASS ] && [ "$(cat "$OUT/generic-pass.log" 2>&1)" = 'nested-check: SKIPPED' ] && echo 'PASS: generic gate -> PASS with log' || { echo "FAIL: generic gate wanted PASS with log, got $got"; fail=$((fail + 1)); }
     run_gate generic-fail run "$stub" 7 'planted failure'
     IFS='|' read -r got _ _ < "$OUT/generic-fail.st"
-    [ "$got" = FAIL ] && echo 'PASS: failing gate -> FAIL' || { echo "FAIL: failing gate wanted FAIL, got $got"; fail=$((fail + 1)); }
-    BIN=""; run_gate no-binary bin "$stub" 99 'must not run'
+    [ "$got" = FAIL ] && [ "$(cat "$OUT/generic-fail.log" 2>&1)" = 'planted failure' ] && echo 'PASS: failing gate -> FAIL with log' || { echo "FAIL: failing gate wanted FAIL with log, got $got"; fail=$((fail + 1)); }
+    BIN=""; run_gate no-binary selftest "$stub" 99 'must not run'
     IFS='|' read -r got _ _ < "$OUT/no-binary.st"
-    [ "$got" = SKIP ] && echo 'PASS: no binary -> SKIP' || { echo "FAIL: no binary wanted SKIP, got $got"; fail=$((fail + 1)); }
+    [ "$got" = SKIP ] && [ -f "$OUT/no-binary.log" ] && [ ! -s "$OUT/no-binary.log" ] && echo 'PASS: no binary -> SKIP with empty log' || { echo "FAIL: no binary wanted SKIP with empty log, got $got"; fail=$((fail + 1)); }
     echo "precheck-selftest: $((10 - fail))/10 passed, $fail failed"
     [ "$fail" -eq 0 ]; exit
 fi
