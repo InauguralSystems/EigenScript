@@ -33,13 +33,10 @@ OSR=(-u EIGS_JIT_OFF -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_JIT_OSR_THRES
 OBS=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_GATE_STATS EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1)
 run() { # $1 out-file, $2 seconds, rest = env args (options first)
   local out="$1" sec="$2"; shift 2
-  local setting
-  setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog" >&2; exit 1; }
-  case "$setting" in
-    "") env "$@" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
-    EIGS_STRICT=0) env "$@" EIGS_STRICT=0 timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
-    *) echo "jit_diff: FAIL: unsupported suite environment for $prog: $setting" >&2; exit 1 ;;
-  esac
+  # The program's run conditions come from the shared loader, which refuses
+  # an unsupported one by name (tests/suite_program_env.sh).
+  suite_program_check "$prog" > /dev/null || { echo "jit_diff: FAIL: suite environment lookup failed for $prog" >&2; exit 1; }
+  suite_program_run "$prog" env "$@" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1
   echo "rc=$?" >> "$out"
 }
 arm_env() { case "$1" in
@@ -130,7 +127,7 @@ $obs_files
 EOF
 sort -o "$got" "$got"
 [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
-[ "$n_suite_env" -eq 10 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=10"; exit 1; }
+[ "$n_suite_env" -eq 15 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=15"; exit 1; }
 [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
 echo "jit_diff: OBS examined=$n_obs denied=$n_deny"
 if [ "${1:-}" = "--record" ]; then

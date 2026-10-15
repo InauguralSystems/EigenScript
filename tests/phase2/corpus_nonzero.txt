@@ -1,0 +1,39 @@
+# tests/phase2/corpus_nonzero.txt -- the corpus files whose BASELINE exits
+# nonzero when run standalone under their run conditions, each with that exit
+# code and the reason (#1758; tools/phase2_corpus_diff.sh). One row per file:
+#   <path from the repo root> <exit code> <reason>
+# An exit nobody declared is UNDECLARED-NONZERO, and a row whose file now
+# exits otherwise is STALE: both fail the differential. A file with run
+# conditions (tests/suite_program_env.txt) must complete and cannot be listed.
+tests/_runaway_guard_selftest.eigs 124 the suite runner's runaway-guard self-test fixture: it never terminates, by design
+tests/bool_fuzz_gen.eigs 1 a generator: tests/test_bool_fuzz.sh runs it with the binary's --api JSON as its argument
+tests/embed_roads/eigs_modules/entrywrapper/entrywrapper.eigs 1 a fixture of the embed-roads host (tools/embed_roads.py), which registers host_scope_clean
+tests/embed_roads/entry.eigs 1 a fixture of the embed-roads host (tools/embed_roads.py), which registers host_scope_clean
+tests/embed_roads/helper/functions.eigs 1 a fixture of the embed-roads host (tools/embed_roads.py), which registers host_scope_clean
+tests/embed_roads/helper/peer.eigs 1 a fixture of the embed-roads host (tools/embed_roads.py), which registers host_scope_clean
+tests/embed_roads/import_entry.eigs 1 a fixture of the embed-roads host (tools/embed_roads.py), which registers host_scope_clean
+tests/gfx_asan_corpus/06_rejected.eigs 1 a deliberate rejected gfx call: tests/test_asan_gfx.sh expects the raise
+tests/line_after_callback_halt.eigs 1 a deliberate error: the suite's line-after-return rows check its trace (#1434)
+tests/line_after_return_fn.eigs 1 a deliberate error: the suite's line-after-return rows check its trace
+tests/line_after_return_module.eigs 1 a deliberate error: the suite's line-after-return rows check its trace
+tests/line_after_return_null.eigs 1 a deliberate error: the suite's line-after-return rows check its trace
+tests/loader_mt_modules/lm_cyc_a.eigs 1 a circular-load fixture of tests/test_loader_mt.sh: loaded alone, it reports the cycle
+tests/loader_mt_modules/lm_cyc_b.eigs 1 a circular-load fixture of tests/test_loader_mt.sh: loaded alone, it reports the cycle
+tests/roads/assets/eval_loaded/caller.eigs 1 a fixture of tools/road_diff.py: it runs inside a generated project tree
+tests/roads/assets/hardlinks/b/child.eigs 1 a fixture of tools/road_diff.py: it runs inside a generated project tree
+tests/roads/assets/hardlinks/b/entry.eigs 1 a fixture of tools/road_diff.py: it runs inside a generated project tree
+tests/roads/assets/no_project/cwd_only.eigs 1 a fixture of tools/road_diff.py: it throws if a load falls back to the cwd
+tests/roads/assets/no_project/parent.eigs 1 a fixture of tools/road_diff.py: it throws if a load falls back to the parent
+tests/roads/assets/observer/assets/observer/target.eigs 1 a fixture of tools/road_diff.py: it runs inside a generated project tree
+tests/roads/assets/observer/entry.eigs 1 a fixture of tools/road_diff.py: it runs inside a generated project tree
+tests/task_deadlock.eigs 1 a deliberate deadlock: the suite's check_task_exit expects exit 1 naming it (#483, #509)
+tests/task_deadlock_worker_try.eigs 1 a deliberate deadlock inside a worker's try: the suite's check_task_exit expects exit 1
+tests/task_exit_detached_death.eigs 1 a deliberate worker death: the suite's check_task_exit expects exit 1 (#530)
+tests/task_exit_unjoined_death.eigs 1 a deliberate worker death: the suite's check_task_exit expects exit 1
+tests/test_assert_fail.eigs 1 a deliberate assert failure: the suite requires it to fail
+tests/test_db.eigs 1 needs the server-db build (the release build has no database capability)
+tests/test_http.eigs 1 needs the server build (the release build has no HTTP capability)
+tests/test_inflate.eigs 1 needs the zlib build (make zlib)
+tests/test_net.eigs 1 needs the server build (the release build has no network capability)
+tests/tsan_worker_exit.eigs 5 a deliberate exit 5 from a worker: tests/test_tsan.sh expects rc 5
+tests/ui_native_input.eigs 1 a fixture of tests/ui_native_input.py, which sends it native window events; alone it reaches its deadline

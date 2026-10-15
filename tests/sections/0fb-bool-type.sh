@@ -36,7 +36,7 @@ else
 fi
 unset BOOL_JIT_OUT BOOL_JIT_RC
 # The class gate (#1637 round 4): the number members are renamed, so a raw
-# read is a VAL_NUM_RAW / SLOT_NUM_RAW token; every token sits in a reviewed
+# read is a VAL_NUM_RAW / SLOT_F64_RAW token; every token sits in a reviewed
 # function with its exact count, and every builtin call passes the bool gate
 # (tools/num_read_check.sh).
 TOTAL=$((TOTAL + 1))

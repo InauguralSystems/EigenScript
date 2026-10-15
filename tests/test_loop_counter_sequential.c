@@ -40,9 +40,9 @@ static void step(Env *env, const char *label, int stall,
      * so sequential reads do not defeat the ordinary warm-cache path.
      * This getter returns a borrowed slot: do not decrement its ownership. */
     EigsSlot value = env_get_hashed_slot(env, counter, 0, &found);
-    int numeric = slot_is_num(value) ||
+    int numeric = slot_is_f64(value) ||
         (slot_is_ptr(value) && slot_as_ptr(value)->type == VAL_NUM);
-    double actual = slot_is_num(value) ? SLOT_NUM_RAW(value) :
+    double actual = slot_is_f64(value) ? SLOT_F64_RAW(value) :
         (numeric ? VAL_NUM_RAW(slot_as_ptr(value)) : -1);
     int assignments = env_get_assign_count(env, counter, 0);
     int ok = rc == 0 && !g_has_error && found && numeric &&

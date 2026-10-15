@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
         static EigsView escaped;
         Value *arg = make_list(1);
         list_append_num(arg, 1.0);
-        vm_borrow_compensate(arg, slot_view(slot_from_num(1665.0), &escaped), 1, NULL, NULL);
+        vm_borrow_compensate(arg, slot_view(slot_from_f64(1665.0), &escaped), 1, NULL, NULL);
         return 99;
     }
     Value *list = make_list(8);
@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
 
     /* Storage encodings: numbers immediate, null/bool singleton bits, refs heap. */
     EigsSlot *raw = list_values_storage(list);
-    CHECK(slot_is_num(raw[0]) && SLOT_NUM_RAW(raw[0]) == 3.0);
+    CHECK(slot_is_f64(raw[0]) && SLOT_F64_RAW(raw[0]) == 3.0);
     CHECK(slot_is_heap(raw[1]) && slot_is_heap(raw[2]));
     CHECK(raw[3].u == SLOT_NULL_BITS && raw[4].u == SLOT_TRUE_BITS);
     CHECK(str->refcount == 1);   /* one container ref; a list may also be GC-buffered */
@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
     CHECK(eigs_slot_num(list_slot(list, 0), "test") == 4.0);
     /* A boxed number or a singleton stored through a heap slot is re-encoded. */
     list_set_slot_owned(list, 2, slot_from_heap(make_num(5.0)));
-    CHECK(slot_is_num(list_values_storage(list)[2]));
+    CHECK(slot_is_f64(list_values_storage(list)[2]));
     list_set_owned(list, 3, make_bool(0));
     CHECK(list_values_storage(list)[3].u == SLOT_FALSE_BITS);
     /* The NaN guard: the default x86 NaN must never be stored as null bits. */
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
         g_strict = 0;
         list_set_num(list, 4, -__builtin_nan(""));
         g_strict = strict;
-        CHECK(slot_is_num(list_values_storage(list)[4]));
+        CHECK(slot_is_f64(list_values_storage(list)[4]));
     }
     EigsSlot taken = list_take_slot(list, 0);
     CHECK(eigs_slot_num(taken, "test") == 4.0);
@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
 
     /* Zero bits are 0.0: a calloc'd slot array reads as numbers. */
     Value *zeros = make_list(4);
-    CHECK(slot_is_num(list_values_storage(zeros)[0]) && zeros->data.list.count == 0);
+    CHECK(slot_is_f64(list_values_storage(zeros)[0]) && zeros->data.list.count == 0);
 
     Value *dict = make_dict(4);
     dict_set_owned(dict, "n", make_num(2));
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
     int ni = env_hash_find_dict(dict, "n", env_hash_name("n"));
     int si = env_hash_find_dict(dict, "s", env_hash_name("s"));
     CHECK(dict_value_type(dict, ni) == VAL_NUM && dict_value_get_ref(dict, ni) == NULL);
-    CHECK(slot_is_num(dict_values_storage(dict)[ni]));
+    CHECK(slot_is_f64(dict_values_storage(dict)[ni]));
     CHECK(eigs_slot_num(dict_value_slot(dict, ni), "test") == 2.0);
     { EIGS_VIEW(v); CHECK(eigs_num_arg(dict_value_get_view(dict, ni, &v), "test") == 2.0); }
     { EIGS_VIEW(v); Value *zv = dict_get_view(dict, "z", &v);

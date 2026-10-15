@@ -428,7 +428,9 @@ static double ent_child(Value *c) {
 }
 
 static double ent_child_slot(EigsSlot s) {
-    if (slot_is_num(s)) return entropy_of_num(SLOT_NUM_RAW(s));
+    if (slot_is_f64(s)) return entropy_of_num(SLOT_F64_RAW(s));
+    /* #1758: an int is observed as its double until round 3 (design 7). */
+    if (slot_is_smi(s)) return entropy_of_num((double)slot_smi_val(s));
     return ent_child(eigs_slot_ref(s));
 }
 
@@ -1381,9 +1383,12 @@ int observer_entropy_now(Env *e, int idx, double *out) {
     env_dump_lock(e);          /* exported #607 lock wrapper (defined below) */
     if (idx < e->count) {
         EigsSlot s = e->values[idx];
-        if (slot_is_num(s)) {
+        if (slot_is_f64(s)) {
             kind = 1;
-            num = SLOT_NUM_RAW(s);
+            num = SLOT_F64_RAW(s);
+        } else if (slot_is_smi(s)) {
+            kind = 1;          /* #1758: the numeric channel, as a double */
+            num = (double)slot_smi_val(s);
         } else if (slot_is_bool(s)) {
             held = make_bool(slot_as_bool(s));   /* #1637: immortal; incref no-op */
             kind = 2;
@@ -1870,20 +1875,26 @@ EigsSlot slot_from_value(Value *v) {
          * is dead. */
         double n = VAL_NUM_RAW(v);
         val_decref(v);
-        return slot_from_num(n);
+        return slot_from_f64(n);
     }
     if (v->type == VAL_BOOL) return slot_from_bool(v->data.boolean); /* singleton: borrowed */
     return slot_from_heap(v);
 }
 
 /* slot_to_value: produces a Value* the caller owns a ref to.
- *   - immediate number -> make_num
+ *   - immediate double -> make_num
  *   - immediate null -> g_null_singleton
  *   - immediate bool -> the true/false singleton (#1637)
  *   - heap/tracked pointer -> incref and return
+ *   - SMI (#1758) -> a fresh int Value. This is the ONE place that boxes an
+ *     SMI (the lifts, slot_bridge_unwrap, eigs_slot_box and the *_get_return
+ *     readers all route here); the int Value kind lands in R1.2a/R1.3, so
+ *     until then it is refused (eigs_int_unwired, deleted in R1.3).
+ *   - any other tag is a broken contract and aborts (it used to read back
+ *     as null, silently).
  */
 Value* slot_to_value(EigsSlot s) {
-    if (slot_is_num(s)) return make_num(SLOT_NUM_RAW(s));
+    if (slot_is_f64(s)) return make_num(SLOT_F64_RAW(s));
     if (slot_is_null(s)) return &g_null_singleton;
     if (slot_is_bool(s)) return make_bool(slot_as_bool(s));
     if (slot_is_heap(s)) {
@@ -1891,8 +1902,21 @@ Value* slot_to_value(EigsSlot s) {
         val_incref(v);
         return v;
     }
-    /* unknown tag: fall back to null */
-    return &g_null_singleton;
+    if (slot_is_smi(s)) eigs_int_unwired("slot_to_value", s.u);
+    eigs_slot_refuse("slot_to_value", s);
+}
+
+void eigs_slot_refuse(const char *who, EigsSlot s) {
+    fprintf(stderr, "EigenScript FATAL: %s: slot 0x%016llx (tag 0x%04llx) is not "
+            "a value this reader handles (#1758)\n", who,
+            (unsigned long long)s.u, (unsigned long long)(s.u >> 48));
+    abort();
+}
+
+void eigs_int_unwired(const char *who, uint64_t bits) {
+    fprintf(stderr, "EigenScript FATAL: %s: int 0x%016llx reached an arm whose "
+            "int handling lands in #1758 R1.3\n", who, (unsigned long long)bits);
+    abort();
 }
 
 Value* make_str(const char *s) {
@@ -2377,10 +2401,12 @@ static EigsSlot module_ns_project(Value *d, Env *e, const char *key, uint32_t h,
             *found = 1;
             return cur;
         }
-        if (slot_is_num(s) && slot_is_num(cur)) {
+        if (slot_is_f64(s) && slot_is_f64(cur)) {
             /* Number over number: a plain slot store with nothing to
-             * release, so no destructor runs under the hold. */
-            dict_value_rewrite_num(d, di, SLOT_NUM_RAW(s));
+             * release, so no destructor runs under the hold. (#1758: an
+             * int takes the general path below; slot_to_value boxes it and
+             * the dict store re-canonicalizes it.) */
+            dict_value_rewrite_num(d, di, SLOT_F64_RAW(s));
             env_shared_unlock(e);
             *found = 1;
             return dict_value_slot(d, di);

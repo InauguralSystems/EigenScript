@@ -739,7 +739,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         long long count = 0;
         for (int i = 0; i < e->lc_count && e->lc[i].line <= line; i++)
             count += e->lc[i].count;
-        *out = slot_from_num((double)count);
+        *out = slot_from_f64((double)count);
         return 1;
     }
 
@@ -754,7 +754,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         double r = (kind == 3) ? h->entropy
                  : (kind == 4) ? h->dH
                  : observer_settledness(h->dH);   /* #412: how = f(dH) */
-        *out = slot_from_num(r);
+        *out = slot_from_f64(r);
         return 1;
     }
 
@@ -803,7 +803,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
      * answerable without the entry, so it too only needs the range check. */
     if (kind == 2) {
         if (ordinal < 1 || ordinal > e->occ_total) return TRACE_WHEN_MISS;
-        *out = slot_from_num((double)ordinal);
+        *out = slot_from_f64((double)ordinal);
         return TRACE_WHEN_HIT;
     }
 
@@ -824,7 +824,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
         double r = (kind == 3) ? o->entropy
                  : (kind == 4) ? o->dH
                  : observer_settledness(o->dH);   /* #412: how = f(dH) */
-        *out = slot_from_num(r);
+        *out = slot_from_f64(r);
         return TRACE_WHEN_HIT;
     }
 
@@ -2834,11 +2834,15 @@ static void write_value_ptr(Value *v) {
 }
 
 static void write_slot(EigsSlot s) {
-    if (slot_is_num(s))  { tp_printf("%.17g", SLOT_NUM_RAW(s)); return; }
+    if (slot_is_f64(s))  { tp_printf("%.17g", SLOT_F64_RAW(s)); return; }
     if (slot_is_null(s)) { tp_puts("null"); return; }
     if (slot_is_bool(s)) { tp_puts(slot_as_bool(s) ? "true" : "false"); return; }
     if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
-    tp_puts("<unknown>");
+    /* #1758: an int needs tape v7 (ints as digits, floats marked), which
+     * lands with the first int value in R1.3; a v6 tape would replay it as a
+     * float. Any other tag used to be written as `<unknown>`, unreplayable. */
+    if (slot_is_smi(s)) eigs_int_unwired("write_slot", s.u);
+    eigs_slot_refuse("write_slot", s);
 }
 
 static void trace_assign_ex(const char *name, EigsSlot value, int filtered,

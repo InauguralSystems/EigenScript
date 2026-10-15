@@ -6,17 +6,22 @@ TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/suite_program_env.sh" || exit 1
 
-expected='test_buffer_nonfinite_read.eigs
+expected='test_audio.eigs
+test_buffer_nonfinite_read.eigs
 test_builtin_contracts.eigs
 test_builtin_indirect.eigs
+test_coalesce_legacy.eigs
 test_file_io.eigs
 test_file_rename.eigs
+test_gfx_argtypes.eigs
+test_gfx_text.eigs
 test_json_hard.eigs
 test_numeric_guard.eigs
 test_stdlib_fixes.eigs
 test_stream_io.eigs
-test_tensor_buffer_ops.eigs'
-actual=$(awk '$0 !~ /^[[:space:]]*#/ && NF { print $1 }' "$TESTS_DIR/suite_program_env.txt" | sort)
+test_tensor_buffer_ops.eigs
+test_ui_containment_gfx.eigs'
+actual=$(awk '$0 !~ /^[[:space:]]*#/ && NF { print $1 }' "$TESTS_DIR/suite_program_env.txt" | LC_ALL=C sort)
 [ "$actual" = "$expected" ] || { echo "FAIL: suite environment population changed:"; printf '%s\n' "$actual"; exit 1; }
 
 out=$(suite_program_run test_file_io.eigs "$TESTS_DIR/../src/eigenscript" "$TESTS_DIR/test_file_io.eigs" 2>&1); rc=$?
@@ -33,4 +38,4 @@ grep -q 'suite-env completed=\$n_suite_env' "$TESTS_DIR/../tools/jit_diff.sh" ||
     echo "FAIL: jit_diff does not report the suite-environment completion population"
     exit 1
 }
-echo "PASS: jit_diff and the suite share 10 per-program environments; fail-soft program reached its final marker"
+echo "PASS: jit_diff and the suite share 15 per-program environments; fail-soft program reached its final marker"
