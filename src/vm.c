@@ -1838,11 +1838,9 @@ int jit_helper_iter_next(void) {
  * >= 0 range check downstream, unchanged. */
 static inline int vm_index_is_int(double d, int *out) {
     int i = (int)d;
-    /* #1775: *out is written on every path (the truncation when the answer is
-     * 0, which no caller reads), so a caller's index local needs no
-     * initialiser for -Wmaybe-uninitialized at -O1. */
+    if ((double)i != d) return 0;
     *out = i;
-    return (double)i == d;
+    return 1;
 }
 
 /* 0.13.0: resolve negative index against len, then bounds-check.
@@ -2203,7 +2201,10 @@ void jit_helper_index_set(void) {
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
     if (slot_is_f64(idx_s) && slot_is_ptr(tgt_s)) {
         Value *target = slot_as_ptr(tgt_s);
-        int i, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
+        /* #1775: `i` is read only when _ok, but GCC at -O1 cannot see that
+         * through vm_index_resolve; this is one of the three sites it flags,
+         * and the only initialisations kept (callgrind: none costs Ir). */
+        int i = 0, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
         if (target->type == VAL_BUFFER && slot_is_f64(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                 target->data.buffer.data[i] = SLOT_F64_RAW(val_s);
@@ -3494,7 +3495,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-        double _ad, _bd; \
+        /* #1775: -O1 cannot see that the fast path's & of two successes \
+         * wrote _ad before num_to_i64_exact reads it; initialised here \
+         * only, where GCC warns (callgrind: no Ir cost; initialising the \
+         * other arms' locals cost +2% on DMG). */ \
+        double _ad = 0.0, _bd = 0.0; \
         if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) { \
             int64_t _ai, _bi; \
             if (__builtin_expect(!num_to_i64_exact(_ad, &_ai) || \
@@ -4694,7 +4699,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
         if (slot_is_f64(idx_s) && slot_is_ptr(tgt_s)) {
             Value *target = slot_as_ptr(tgt_s);
-            int i, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
+            int i = 0, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);   /* #1775, as in jit_helper_index_set */
             if (target->type == VAL_BUFFER && slot_is_f64(val_s)) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                     target->data.buffer.data[i] = SLOT_F64_RAW(val_s);

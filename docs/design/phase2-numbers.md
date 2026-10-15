@@ -636,11 +636,17 @@ result).**
   under -O2's 602 MB peak), after the warnings #1775 listed were fixed:
   `builtin_tensor_gather`'s missing return, and the maybe-uninitialized
   locals behind `num_to_i64_exact` and `vm_index_resolve`. The first fix
-  round initialised those locals in `vm_run_ex`'s hot arms, which cost
+  round initialised those locals at all nine declarations, which cost
   +2.07% Ir on DMG and +4.17% on a JIT-off float loop (the second R1.1
-  critic). The second fix round removed the initialisers: the readers
-  that fill them, `slot_f64_value` and `vm_index_is_int`, write their
-  out-parameter on every path, so the store sits on the cold path.
+  critic). Moving the write into the readers instead (`slot_f64_value`
+  writing 0.0, or the slot's bits, when it answers 0; `vm_index_is_int`
+  writing on both paths) cost the same: measured with callgrind, any of
+  them changed `vm_run_ex`'s code, +3.8% (+0.44% for `vm_index_is_int`
+  alone) on the float loop, which executes neither failure path. What
+  stays is the initialisation at exactly the three declarations GCC
+  flags at -O1 (`INT_BINOP_R`'s `_ad`/`_bd`, the `i` of `CASE(INDEX_SET)`
+  and of `jit_helper_index_set`): against R1.1, -0.0001% on the JIT-off
+  float loop, +0.0001% with the JIT, -0.08% on the DMG canary.
 - **Its runner reads each tool on its own channel.** The scan and the test
   each have a grammar; a line outside it, or any stderr, is a FAIL that
   prints the line (the R1.1 critic: Python 3.13's DeprecationWarning on the
