@@ -1106,7 +1106,7 @@ jobs:
       # Reuse this shard's instrumented runtime instead of building a second
       # sanitizer variant in the extensions job. The owning host runs in full.
       - if: needs.scope.outputs.code == 'true'
-        name: Embedding lifecycle and sequential loop publication (#1608, #1171)
+        name: "Embedding lifecycle and sequential loop publication (#1608, #1171)"
         timeout-minutes: 5
         run: |
           set -eu
