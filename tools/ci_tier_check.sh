@@ -24,7 +24,7 @@ def V(code, msg): bad.append(code); print(f"FAIL [{code}] {msg}")
 req = [l for l in open(os.environ["CT_REQ"], encoding="utf-8").read().split("\n") if l and not l.startswith("#")]
 if not req or len(req) != int(os.environ["CT_GREP"]) or len(set(req)) != len(req):
     V("vacuous", f"required-checks.txt: parsed {len(req)} names, {len(set(req))} distinct, grep counts {os.environ['CT_GREP']}")
-REQ = set(req); W = {}
+REQ = set(req); W = {}; PERMS = {}
 for fn in sorted(os.listdir(os.environ["CT_WF"])):
     if not fn.endswith((".yml", ".yaml")): continue
     try: doc = yaml.safe_load(open(os.path.join(os.environ["CT_WF"], fn), encoding="utf-8"))
@@ -34,6 +34,7 @@ for fn in sorted(os.listdir(os.environ["CT_WF"])):
     on = {on: {}} if isinstance(on, str) else {str(k): {} for k in on} if isinstance(on, list) else \
          {str(k): (v if isinstance(v, dict) else {}) for k, v in (on or {}).items()}
     W[fn] = (on, doc["jobs"], doc.get("env") or {})
+    PERMS[fn] = doc.get("permissions", "write-all")   # absent: the repository default, which may write
 def triggers(on, ev):
     if ev not in on: return False
     c = on[ev]
@@ -51,7 +52,7 @@ EV = re.compile(r"\bgithub\b(?!\s*(?:\.\s*(?!" + EVP + r")\w|\[\s*['\"](?!" + EV
 IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(needs|steps)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?"
                  r"\s*(?:\.\s*|\[\s*['\"])(outputs|result|outcome|conclusion)['\"]?\s*\]?(?:\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?)?", re.I)
 WAIVE = {("ci.yml", "scope", "detect"): "35784ca855b3e3fd",
-         ("ci.yml", "gate-selftests", "select"): "411e6c561962764a"}
+         ("ci.yml", "gate-selftests", "select"): "cd5e284eee927730"}
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)
 def bad_expr(e, wf, jid, pr_ok, depth=0):
@@ -170,10 +171,29 @@ for jid in sorted(HEAVY_WORKERS):
         V("heavy-missing", f"ci.yml:{jid}: declared heavy worker is missing")
     elif cond(ci[jid].get("if", "")) != "github.event_name != 'pull_request'":
         V("heavy-worker", f"ci.yml:{jid}: worker must skip only pull_request (and therefore run on merge_group and push)")
+# workflow_dispatch runs every non-PR path of ci.yml from ANY ref, so a job that
+# can write outside its run must be pinned to its reviewed text. A new writer, or
+# an edit to the one there is, stays red until someone re-reviews it for a dispatch
+# from a branch (every outward write gated on refs/heads/main) and re-pins it here.
+# Action pins (`uses:`) are left out of the hash, so a Dependabot bump does not
+# reopen the review.
+WRITERS = {"dev-image": "d98ad4b818cdc372"}  # pushes ci-<sha> from any ref; ci-main only on a push to refs/heads/main
+def writes(p): return p == "write-all" or (isinstance(p, dict) and "write" in p.values())
+def writer_pin(j):
+    body = {k: v for k, v in j.items() if k != "steps"}
+    body["steps"] = [{k: v for k, v in st.items() if k != "uses"} if isinstance(st, dict) else st for st in j.get("steps") or []]
+    return hashlib.sha256(yaml.safe_dump(body, sort_keys=True).encode()).hexdigest()[:16]
+wrote = set()
+for jid, j in ci.items():
+    if not writes(j["permissions"] if "permissions" in j else PERMS["ci.yml"]): continue
+    wrote.add(jid)
+    if WRITERS.get(jid) != writer_pin(j):
+        V("dispatch-write", f"ci.yml:{jid} can write outside its run and is not a pinned, reviewed writer (its text hashes to {writer_pin(j)}): workflow_dispatch runs it from any ref, so gate every outward write on refs/heads/main, then pin it in WRITERS")
+if set(WRITERS) - wrote: V("dispatch-write", f"writer pin(s) {sorted(set(WRITERS) - wrote)} match no ci.yml job that can write: stale; remove them")
 if set(WAIVE) - used: V("event-condition", f"waiver(s) {sorted(set(WAIVE) - used)} matched nothing — stale; remove or re-pin")
 if bad: print(f"ci-tier: FAIL — {len(bad)} violation(s): {' '.join(sorted(set(bad)))}"); sys.exit(1)
 print(f"ci-tier: OK — ci.yml jobs={len(ci)} (awk={os.environ['CT_AWK']}) required={counts['required']} worker={counts['worker']}; "
-      f"{len(req)} required names, each produced once on pull_request+merge_group; {len(path)} jobs on required paths, no push-only condition, no continue-on-error")
+      f"{len(req)} required names, each produced once on pull_request+merge_group; {len(path)} jobs on required paths, no push-only condition, no continue-on-error; {len(wrote)} writing job(s), each pinned")
 PY
 }
 live() {

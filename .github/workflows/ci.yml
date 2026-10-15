@@ -12,6 +12,14 @@ on:
   # true on push AND on merge_group — never `== 'push'`.
   merge_group:
     types: [checks_requested]
+  # The full main lane on demand, for a long-lived branch before it enters the
+  # queue: `gh workflow run ci.yml --ref <branch>` (docs/CI.md). A dispatch is
+  # not a pull request, so every heavy worker runs as on a push to main. It
+  # must never write main's state, because it can run from any ref: the only
+  # writer in this file is `dev-image`, which advances the rolling ci-main tag
+  # only on a push to refs/heads/main, and tools/ci_tier_check.sh pins every
+  # job holding a write permission to its reviewed text.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,8 +39,12 @@ env:
 # up (2026-08-18: three main-push runs — 214m/118m/81m — alive at once after
 # a valgrind flake, none superseding the others). Pairs with the per-job
 # timeout-minutes, which bounds a single hang; this bounds the *fan-out*.
+# A dispatch gets a group of its own (`ci-dispatch-<ref>`), so it never
+# cancels a push run on the same ref, main's included, nor a PR or merge-queue
+# run, and none of those cancels it. A newer dispatch on the same ref cancels
+# the older one.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.ref) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # Pull requests run the release suite plus build, lint/LSP, self-test,
@@ -128,15 +140,17 @@ jobs:
         env:
           OWNER: ${{ github.repository_owner }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork == true }}
-        # The event is read from the runner's GITHUB_EVENT_NAME, not an
-        # expression: tools/ci_tier_check.sh reds event-derived expression
-        # values on a required path (#1264). Only push advances ci-main.
+        # The event and ref are read from the runner's GITHUB_EVENT_NAME and
+        # GITHUB_REF, not expressions: tools/ci_tier_check.sh reds
+        # event-derived expression values on a required path (#1264). Only a
+        # push to main advances ci-main: a workflow_dispatch from any ref, main
+        # included, pushes only its own ci-<sha>.
         run: |
           BASE="ghcr.io/${OWNER,,}/eigenscript-dev"
           if [ "$IS_FORK" = "true" ]; then
             echo "image=$BASE:ci-main" >> "$GITHUB_OUTPUT"
             echo "tags=" >> "$GITHUB_OUTPUT"
-          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
             echo "image=$BASE:ci-${{ github.sha }}" >> "$GITHUB_OUTPUT"
             echo "tags=$BASE:ci-${{ github.sha }},$BASE:ci-main" >> "$GITHUB_OUTPUT"
           else
@@ -207,6 +221,9 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           base='${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
+          # A workflow_dispatch carries no base: select what the dispatched ref
+          # changes against main, as its PR would. An empty base selects nothing.
+          [ -n "$base" ] || base=origin/main
           bash tools/selftests.sh --changed "$base" --list > selection.txt
           cat selection.txt
           n=$(sed -n 's/^selftests: enrolment .*; \([0-9][0-9]*\) self-tests selected$/\1/p' selection.txt)

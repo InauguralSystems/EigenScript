@@ -189,6 +189,43 @@ on the commit that will land, before it lands — see **Platform tiers** below.
 #1138 and #1158 both carried lanes only CI could run. Contributors never wait
 on it and never rebase to satisfy it; the queue does both.
 
+### The main lane on demand (`workflow_dispatch`)
+
+A long-lived branch, such as an integration branch that lives through many
+review rounds, can run the full main lane before it enters the queue:
+
+    gh workflow run ci.yml --ref <branch>
+    gh run list --workflow ci.yml --event workflow_dispatch --branch <branch>
+
+- **What runs.** A dispatch is not a pull request, so every job runs as on a
+  push to `main`. That includes every heavy worker: the ASan shards, both TSan
+  variants, the native macOS suite, valgrind, the bench gate, the extension
+  suites and the db lane. The bench gate compares the branch with `origin/main`.
+  The changed-gate self-tests select what the branch changes against `main`.
+- **When.** Dispatch on an integration branch before it is queued, and again
+  after a rebase that pulls in a lot. The queue still runs everything on the
+  candidate commit, so a dispatch is never a substitute for it.
+- **What it never touches.** A dispatch writes nothing that belongs to `main`:
+  - the only `ci.yml` job that can write is `build dev/ci image`. It pushes the
+    run's own `ci-<sha>` image, and only a push to `main` advances the rolling
+    `ci-main` tag;
+  - its build cache is scoped by GitHub to the branch;
+  - artifacts stay in the run.
+
+  `tools/ci_tier_check.sh` pins every `ci.yml` job that holds a write
+  permission (`[dispatch-write]`, below).
+- **Concurrency.** A dispatch has its own group (`ci-dispatch-<ref>`). It never
+  cancels, and is never cancelled by, a push, pull-request or merge-queue run,
+  `main`'s included; a newer dispatch on the same ref cancels the older one.
+- **Where the results show.** The dispatch reports its checks on the branch's
+  head commit. If the branch has a pull request, those checks appear on it too,
+  under the same names as the pull-request run's, and a failure there is a real
+  failure of that check on that commit.
+
+GitHub accepts a dispatch only for a workflow whose file on the default
+branch declares `workflow_dispatch`, so this works once the trigger is on
+`main`.
+
 ## Nightly (`.github/workflows/nightly.yml`)
 
 - `macos-15-intel`, the full suite — the 35-minute job that used to set the PR
@@ -559,6 +596,15 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
 - `[uncovered]` — a `ci.yml` job is neither required nor the worker of exactly
   one required `if: always()` aggregator. A failing non-required job does not
   stop the queue, yet it colours the badge: the `macos-15-intel` shape.
+- `[dispatch-write]` — a `ci.yml` job that holds a write permission (its own,
+  or the workflow's, where a missing workflow-level block counts as the
+  repository default, which may write) must match its reviewed pin in
+  `WRITERS`. `workflow_dispatch` runs every non-PR path from any ref, so a
+  new writer, or an edit to the writer there is, stays red until someone
+  re-reviews it for a dispatch from a branch and re-pins it. Every outward
+  write is gated on `refs/heads/main`. Action pins (`uses:`) are left out of
+  the hash, so a Dependabot bump does not reopen the review. A pin that
+  matches no writing job is red.
 
 Whether an aggregator's script really fails on every non-success worker
 result remains a code-review question. The gate's other accepted limits
