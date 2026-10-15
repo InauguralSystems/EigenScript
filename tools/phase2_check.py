@@ -35,10 +35,15 @@ EIGS_JIT_STOPS.
 
 MECHANICAL ROUNDS (R1.1, R1.2, R2.1) have no rows of their own; --through
 one of them runs its gates instead: the token gate (every token a landed
-round deleted is absent from code), the int-source check (before R1.3 no
-runtime code calls slot_from_int or make_int outside the canonicalizing
-writers; make_int does not exist), the C slot test, and the corpus
-differential against --baseline (the binary from before the round).
+round deleted is absent from code), the int-source check in two halves --
+static: before R1.3 no runtime code calls slot_from_int or make_int outside
+the canonicalizing writers, make_int does not exist, and TAG_SMI or an SMI
+bit pattern is spelled only at its value_slot.h homes; dynamic (--smi-trap,
+R1.1/R1.2): the corpus differential against a `make smi-trap` build, on
+which every slot classifier aborts at an SMI -- the C slot test, and the
+corpus differential against --baseline (the binary from before the round).
+A gate tool that writes to stderr fails, with its words (tool()); the
+checker runs under `python3 -W error` (tools/phase2_check.sh).
 
 Exit 0 iff the population checks pass, every tier has examined == tag_fail
 == branch_pass > 0 (or the round is mechanical and every gate passed),
@@ -61,8 +66,8 @@ import phase2_inventory as inv  # noqa: E402  (strip_c: one C-comment grammar)
 ROUNDS = ['R1.1', 'R1.2', 'R1.3', 'R1.4', 'R1.5', 'R1.6', 'R1.7', 'R1.8',
           'R2.1', 'R2.2', 'R2.3', 'R2.4', 'R2.5', 'R2.6', 'R3']
 MECHANICAL = {
-    'R1.1': ('tokens', 'int-source', 'slot-test', 'corpus-diff'),
-    'R1.2': ('tokens', 'int-source', 'slot-test', 'corpus-diff'),
+    'R1.1': ('tokens', 'int-source', 'slot-test', 'corpus-diff', 'smi-trap'),
+    'R1.2': ('tokens', 'int-source', 'slot-test', 'corpus-diff', 'smi-trap'),
     'R2.1': ('tokens', 'slot-test', 'corpus-diff'),
 }
 ITEMS = ['N%d' % i for i in range(1, 15)] + ['N4b', 'A', 'B', 'T1', 'O1', 'O2', 'O3', 'O4']
@@ -73,10 +78,22 @@ DELETED_TOKENS = {
     'R1.3': ['eigs_int_unwired'],
     'R2.2': ['num_guard', 'num_guard_named', 'EIGS_NUM_MAX'],
 }
-# design 2.1: the canonicalizing writers, the only runtime callers of an int
-# writer allowed before R1.3 (they convert an existing VAL_INT).
-INT_SOURCE_ALLOWED = {'eigs_container_slot', 'eigs_slot_adopt', 'eigs_slot_store_owned',
-                      'eigs_slot_store_borrow', 'slot_from_value'}
+# design 2.1: the canonicalizing writers convert an existing VAL_INT, so they
+# are the only runtime callers of an int writer allowed once VAL_INT exists
+# (R1.2). In R1.1 no VAL_INT exists, so no runtime code may call one at all.
+INT_SOURCE_ALLOWED = {
+    'R1.1': set(),
+    'R1.2': {'eigs_container_slot', 'eigs_slot_adopt', 'eigs_slot_store_owned',
+             'eigs_slot_store_borrow', 'slot_from_value'},
+}
+# The SMI tag's own definitions, the only code that may name TAG_SMI or spell
+# its bits: a producer that writes the bits itself calls no writer, so a scan
+# of writer names never sees it (the R1.1 critic's P3 and P5).
+SMI_TAG_HOMES = {('value_slot.h', '#define TAG_SMI'), ('value_slot.h', '#define SLOT_SMI_TRAP'),
+                 ('value_slot.h', 'slot_is_smi'), ('value_slot.h', 'slot_from_int')}
+# TAG_SMI, or a literal whose top 16 bits are the tag: 0xFFFA itself (a tag
+# compare) or a 16-digit 0xFFFA............ (the full tag word).
+SMI_BITS_RE = re.compile(r'\bTAG_SMI\b|\b0[xX][fF]{3}[aA](?:[0-9a-fA-F]{12})?[uUlL]*\b')
 WITNESS_KINDS = {'none', 'leaf', 'leaf-gen', 'fn', 'fn-stop', 'osr', 'osr-stop'}
 TIERS = ['off', 'default', 'osr', 'trace']
 HOT_HDR = re.compile(r'^chunk\s+exec\s+jit\s+pct\s+adv\s+len\s+nat%\s+bked\s+osr\s+oadv\s+oent\s+stop$')
@@ -84,6 +101,16 @@ HOT_HDR = re.compile(r'^chunk\s+exec\s+jit\s+pct\s+adv\s+len\s+nat%\s+bked\s+osr
 
 def rindex(r):
     return ROUNDS.index(r)
+
+
+def read_text(path, **kw):
+    with open(path, encoding='utf-8', **kw) as f:
+        return f.read()
+
+
+def write_text(path, text):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(text)
 
 
 # ---- the MAP ---------------------------------------------------------------
@@ -103,7 +130,7 @@ def parse_witness(text):
 
 def parse_map(path):
     rows, bad, item = [], [], None
-    lines = open(path, encoding='utf-8').read().split('\n')
+    lines = read_text(path).split('\n')
     for n, line in enumerate(lines, 1):
         m = re.match(r'^### (\S+)\s*$', line)
         if m:
@@ -144,7 +171,7 @@ def parse_map(path):
 
 def header(path):
     h = {}
-    for line in open(path, encoding='utf-8'):
+    for line in read_text(path).split('\n'):
         m = re.match(r'^#\s*([A-Z-]+):\s*(.*?)\s*$', line)
         if not m:
             if line.strip() and not line.startswith('#'):
@@ -187,19 +214,32 @@ TIER_ENV = {'off': {'EIGS_JIT_OFF': '1'}, 'default': {}, 'osr': {'EIGS_JIT_OSR_T
             'trace': {'EIGS_TRACE': '@'}}
 
 
+HOT_TITLE = re.compile(r'^=== Hot chunks \(top (\d+) of (\d+)\) ===$')
+
+
 def hot_rows(err):
-    lines = err.split('\n')
-    try:
-        i = next(k for k, l in enumerate(lines) if HOT_HDR.match(l.strip()))
-    except StopIteration:
+    """The EIGS_JIT_HOT table, read against its own shape: the title declares
+    N rows; the column header, exactly N twelve-column rows and the
+    `native-byte share` line follow. Anything else is an instrument failure
+    (None), never a shorter table."""
+    lines = [l.strip() for l in err.split('\n')]
+    titles = [k for k, l in enumerate(lines) if HOT_TITLE.match(l)]
+    if len(titles) != 1:
+        return None
+    t = titles[0]
+    want = int(HOT_TITLE.match(lines[t]).group(1))
+    if t + 3 + want >= len(lines) or not lines[t + 1].startswith('total chunk entries:') \
+            or not HOT_HDR.match(lines[t + 2]):
         return None
     rows = {}
-    for l in lines[i + 1:]:
+    for l in lines[t + 3:t + 3 + want]:
         w = l.split()
-        if len(w) != 12 or not w[1].isdigit():
-            break
+        if len(w) != 12 or not w[1].isdigit() or w[0] in rows:
+            return None
         rows[w[0]] = dict(exec=int(w[1]), jit=w[2], adv=w[4], len=int(w[5]), osr=w[8],
                           oadv=int(w[9]), oent=int(w[10]), stop=w[11])
+    if not lines[t + 3 + want].startswith('native-byte share'):
+        return None
     return rows
 
 
@@ -209,16 +249,24 @@ def compiled(err):
 
 
 def bytecode(text, chunk):
-    ops, cur = {}, None
+    """offset -> opcode for <chunk> from EIGS_DUMP_BC. The chunk's header must
+    occur exactly once and its offsets must start at 0 and rise; otherwise {}
+    (an instrument failure, which the witness reports)."""
+    ops, cur, headers, last = {}, None, 0, -1
     for l in text.split('\n'):
         m = re.match(r'^=== (\S+) \((\S+?), (\d+) bytes', l)
         if m:
             cur = m.group(2)
+            headers += cur == chunk
             continue
         m = re.match(r'^(\d{4}) \[L\d+\] (\S+)', l)
         if m and cur == chunk:
-            ops[int(m.group(1))] = m.group(2)
-    return ops
+            off = int(m.group(1))
+            if off <= last or (last < 0 and off != 0):
+                return {}
+            ops[off] = m.group(2)
+            last = off
+    return ops if headers == 1 else {}
 
 
 def witness(binary, path, w, scratch):
@@ -265,8 +313,10 @@ def witness(binary, path, w, scratch):
         elif kind == 'osr':
             ok = ok and r['osr'] == 'yes' and r['oadv'] == r['len']
         else:
-            _, dout, derr = run(binary, path, dict(TIER_ENV[tier], EIGS_DUMP_BC='1'), scratch)
-            ops = bytecode(dout + '\n' + derr, c)
+            # EIGS_DUMP_BC writes to stderr; the program's own stdout is
+            # never read as a dump line (the R1.1 critic's class)
+            _, _, derr = run(binary, path, dict(TIER_ENV[tier], EIGS_DUMP_BC='1'), scratch)
+            ops = bytecode(derr, c)
             if kind == 'fn-stop':
                 at = None if r['adv'] in ('RET', '?') else int(r['adv'])
                 ok = ok and r['jit'] == 'yes' and at is not None and ops.get(at) == op
@@ -342,7 +392,7 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
            for t in TIERS}
     ctl_n = ctl_both = witnessed = 0
     for r, p, h in todo:
-        want = open(p.rsplit('.', 1)[0] + '.out', encoding='utf-8').read()
+        want = read_text(p.rsplit('.', 1)[0] + '.out')
         want_rc = int(h.get('EXPECT-RC', '0'))
         tiers = h.get('TIERS', ' '.join(TIERS)).split()
         is_ctl = r['kind'] == 'control'
@@ -402,7 +452,7 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
 
 # ---- mechanical gates ----------------------------------------------------------
 def code_text(path):
-    return inv.strip_c(open(path, encoding='utf-8', errors='replace').read())
+    return inv.strip_c(read_text(path, errors='replace'))
 
 
 def c_files(root, dirs=('src',), recurse_tests=True):
@@ -431,16 +481,20 @@ def token_gate(root, through, out):
     return bool(files) and bool(toks) and not hits
 
 
-def int_source(src, out):
-    """Before R1.3: runtime calls of slot_from_int / make_int only inside the
-    canonicalizing writers; make_int is not defined; slot_from_int is defined
-    exactly once."""
+def int_source(src, out, through='R1.1'):
+    """The static half of "no int before R1.3": no runtime call of
+    slot_from_int / make_int outside the round's allowed writers; make_int is
+    not defined; slot_from_int is defined exactly once; and nothing outside the
+    tag's own definitions names TAG_SMI or spells its bits. The dynamic half
+    is the smi-trap build (value_slot.h EIGS_SMI_TRAP)."""
+    allowed = INT_SOURCE_ALLOWED[through]
     files = sorted(os.path.join(src, f) for f in os.listdir(src) if f.endswith(('.c', '.h')))
     defs = {'slot_from_int': 0, 'make_int': 0}
-    calls, bad = [], []
+    calls, bad, tags, homes = [], [], [], set()
     for p in files:
+        rel = os.path.basename(p)
         text = code_text(p)
-        scope = inv.scopes_for(text, os.path.basename(p))
+        scope = inv.scopes_for(text, rel)
         for ln, line in enumerate(text.split('\n'), 1):
             for m in re.finditer(r'\b(slot_from_int|make_int)\s*\(', line):
                 fn = scope[ln].split('/')[0]
@@ -448,37 +502,62 @@ def int_source(src, out):
                 if fn == '<file scope>' or fn == name:
                     defs[name] += 1     # a definition or a prototype
                     continue
-                calls.append((os.path.basename(p), ln, fn, name))
-                if fn not in INT_SOURCE_ALLOWED:
-                    bad.append('%s:%d: %s calls %s' % (os.path.basename(p), ln, fn, name))
+                calls.append((rel, ln, fn, name))
+                if fn not in allowed:
+                    bad.append('%s:%d: %s calls %s' % (rel, ln, fn, name))
+            for m in SMI_BITS_RE.finditer(line):
+                fn = scope[ln].split('/')[0]
+                if (rel, fn) in SMI_TAG_HOMES:
+                    homes.add((rel, fn))
+                    continue
+                tags.append('%s:%d: %s spells the SMI tag (%s)' % (rel, ln, fn, m.group(0)))
     for b in bad:
         out('  INT-SOURCE %s: no int may be produced before R1.3' % b)
+    for t in tags:
+        out('  INT-SOURCE %s outside its definitions: a producer that writes the bits itself' % t)
     if defs['make_int']:
         out('  INT-SOURCE make_int is defined before R1.3')
     if defs['slot_from_int'] != 1:
         out('  INT-SOURCE slot_from_int is defined %d times, want 1 (did the scan find it?)'
             % defs['slot_from_int'])
-    out('int-source: files=%d slot_from_int_defs=%d make_int_defs=%d calls=%d outside_writers=%d' % (
-        len(files), defs['slot_from_int'], defs['make_int'], len(calls), len(bad)))
-    return bool(files) and not bad and not defs['make_int'] and defs['slot_from_int'] == 1
+    if homes != SMI_TAG_HOMES:
+        out('  INT-SOURCE the tag definitions found %d of %d homes (%s missing): the scan is blind'
+            % (len(homes), len(SMI_TAG_HOMES), sorted(SMI_TAG_HOMES - homes)))
+    out('int-source: through=%s files=%d slot_from_int_defs=%d make_int_defs=%d calls=%d '
+        'outside_writers=%d tag_homes=%d/%d tag_spellings_outside=%d' % (
+            through, len(files), defs['slot_from_int'], defs['make_int'], len(calls), len(bad),
+            len(homes), len(SMI_TAG_HOMES), len(tags)))
+    return (bool(files) and not bad and not tags and not defs['make_int']
+            and defs['slot_from_int'] == 1 and homes == SMI_TAG_HOMES)
 
 
-def tool(cmd, out, tail_re):
-    p = subprocess.run(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True)
-    text = (p.stdout + p.stderr).decode('utf-8', 'replace')
+def tool(cmd, out, tail_re, env=None):
+    """Run a gate tool; echo the lines matching tail_re. Its verdict is its
+    exit code, and a tool that writes to stderr fails here with its words:
+    its stdout is read beside nothing else (the R1.1 critic's class)."""
+    p = subprocess.run(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True,
+                       env=dict(os.environ, **(env or {})))
+    text = p.stdout.decode('utf-8', 'replace')
+    err = p.stderr.decode('utf-8', 'replace')
     for l in text.split('\n'):
         if re.match(tail_re, l):
             out('  ' + l)
-    return p.returncode == 0, text
+    for l in err.split('\n'):
+        if l:
+            out('  STDERR %s: %s' % (os.path.basename(cmd[1]), l))
+    return p.returncode == 0 and not err, text
 
 
-def mechanical(through, baseline, branch, out):
+DIFF_TAIL = r'^(corpus-diff: (seed pin|baseline|branch|examined|RESTRICTED|PASS|FAIL)|DIFF|DELETED|NEW|NONDET|REPLAYED|BOTH-|CAPPED)'
+
+
+def mechanical(through, baseline, branch, out, smi_trap=None):
     res = {}
     for g in MECHANICAL[through]:
         if g == 'tokens':
             res[g] = token_gate(ROOT, through, out)
         elif g == 'int-source':
-            res[g] = int_source(os.path.join(ROOT, 'src'), out)
+            res[g] = int_source(os.path.join(ROOT, 'src'), out, through)
         elif g == 'slot-test':
             res[g], _ = tool(['bash', 'tests/phase2/slot_layer.sh', 'release'], out,
                              r'^(slot-layer|slot-layer-population|slot-layer-test: (examined|FAIL))')
@@ -487,8 +566,15 @@ def mechanical(through, baseline, branch, out):
                 out('  corpus-diff: a mechanical round needs --baseline <the binary from before it>')
                 res[g] = False
             else:
-                res[g], _ = tool(['bash', 'tools/phase2_corpus_diff.sh', baseline, branch], out,
-                                 r'^(corpus-diff: (baseline|branch|examined|PASS|FAIL)|DIFF|DELETED|NEW|NONDET|BOTH-)')
+                res[g], _ = tool(['bash', 'tools/phase2_corpus_diff.sh', baseline, branch], out, DIFF_TAIL)
+        elif g == 'smi-trap':
+            # the dynamic half of the int-source check: the corpus on a build
+            # where every slot classifier aborts on an SMI (make smi-trap)
+            if not baseline or not smi_trap:
+                out('  smi-trap: %s needs --baseline and --smi-trap <a `make smi-trap` binary>' % through)
+                res[g] = False
+            else:
+                res[g], _ = tool(['bash', 'tools/phase2_corpus_diff.sh', baseline, smi_trap], out, DIFF_TAIL)
         out('mechanical %s: %s' % (g, 'PASS' if res[g] else 'FAIL'))
     return all(res.values()) and bool(res)
 
@@ -498,8 +584,7 @@ def plan_checks(map_rows, bad, out):
     for item in ITEMS:
         if not any(r['item'] == item for r in map_rows if r['kind'] != 'control'):
             bad.append('item %s has no row in the MAP' % item)
-    arms, lines, inside = {}, open(os.path.join(ROOT, 'docs/design/phase2-inventory.txt')).read(
-        ).split('\n'), False
+    arms, lines, inside = {}, read_text(os.path.join(ROOT, 'docs/design/phase2-inventory.txt')).split('\n'), False
     for l in lines:
         if l.startswith('## Numeric arms'):
             inside = True
@@ -552,7 +637,7 @@ def main_check(args, out):
             map_rows, args.rows, args.controls, args.tag, args.branch, args.through, scratch, out)
     mech_ok = None
     if args.through in MECHANICAL:
-        mech_ok = mechanical(args.through, args.baseline, args.branch, out)
+        mech_ok = mechanical(args.through, args.baseline, args.branch, out, args.smi_trap)
     if landed == 0:
         if mech_ok is None:
             out('  ZERO-ROWS: %s has no landed row and no mechanical gates' % args.through)
@@ -650,12 +735,12 @@ def calibrate(args, out):
     case('a round with neither rows nor gates fails', any('round R2.3' in b for b in pb), True)
     # the int-source check against a planted production call
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
-        shutil.copytree(os.path.join(ROOT, 'src'), os.path.join(d, 'src'))
+        shutil.copytree(os.path.join(ROOT, 'src'), os.path.join(d, 'src'), ignore=c_sources_only)
         p = os.path.join(d, 'src', 'trace.c')
-        text = open(p).read()
+        text = read_text(p)
         anchor = '        *out = slot_from_f64((double)count);'
         n_anchor = text.count(anchor)
-        open(p, 'w').write(text.replace(anchor, '        *out = slot_from_int(count);'))
+        write_text(p, text.replace(anchor, '        *out = slot_from_int(count);'))
         lines = []
         ok = int_source(os.path.join(d, 'src'), lines.append)
         case('int-source plant (slot_from_int(count) in trace.c) applied once', n_anchor, 1)
@@ -675,8 +760,76 @@ def calibrate(args, out):
         lines = []
         case('token plant (slot_is_num reintroduced): the gate fails',
              (token_gate(d, 'R1.1', lines.append), any('slot_is_num' in l for l in lines)), (False, True))
+    # the int-source plants of the R1.1 critic, both halves
+    for name, edits in INTSRC_PLANTS:
+        with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
+            shutil.copytree(os.path.join(ROOT, 'src'), os.path.join(d, 'src'), ignore=c_sources_only)
+            counts = []
+            for f, old, new in edits:
+                p = os.path.join(d, 'src', f)
+                text = read_text(p)
+                counts.append(text.count(old))
+                write_text(p, text.replace(old, new))
+            if counts != [1] * len(edits):
+                case('%s: every edit applied once' % name, counts, [1] * len(edits))
+                continue
+            for through in ('R1.1', 'R1.2'):
+                lines = []
+                ok = int_source(os.path.join(d, 'src'), lines.append, through)
+                want = not (name.startswith('P4') and through == 'R1.2')   # R1.2 allows that writer
+                case('%s, static half at %s: %s' % (name, through, 'fails, naming it' if want
+                                                   else 'passes (the dynamic half owns it)'),
+                     (not ok, any('INT-SOURCE' in l for l in lines)) if want else ok,
+                     (True, True) if want else True)
+    # the corpus differential's plants: A and B are wrapper branches, D a build
+    base = args.branch
+    files = ['tests/test_dispatch.eigs', 'tests/test_bool.eigs']
+    with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
+        a = wrapper_tree(os.path.join(d, 'A'), args.branch, files,
+                         'case "$*" in *test_dispatch.eigs*) "$REAL" "$@"; rc=$?; echo "PLANTED A"; exit $rc ;; esac\n'
+                         'exec "$REAL" "$@"')
+        rc, text, v = diff_restricted(base, a, files)
+        case('differential plant A (a deterministic file prints one more line): DIFF, control same',
+             (rc, v.get('tests/test_dispatch.eigs'), v.get('tests/test_bool.eigs'), v.get('<stderr>')),
+             (3, 'DIFF', 'same', None))
+        for phase in (0, 1):
+            bdir = os.path.join(d, 'B%d' % phase)
+            bw = wrapper_tree(bdir, args.branch, files,
+                              'case "$*" in *test_dispatch.eigs*) if [ $(((N + %d) %% 2)) -eq 0 ]; then\n'
+                              '  "$REAL" "$@"; rc=$?; echo "PLANTED B"; exit $rc; fi ;; esac\nexec "$REAL" "$@"' % phase)
+            rc, text, v = diff_restricted(base, bw, files)
+            case('differential plant B, phase %d (wrong on alternate runs): DIFF, never NONDET' % phase,
+                 (rc, v.get('tests/test_dispatch.eigs'), v.get('tests/test_bool.eigs'), v.get('<stderr>')),
+                 (3, 'DIFF', 'same', None))
     if args.build_plants:
-        args.planted_leaf_scan, args.planted_leaf_mul = build_leaf_plants(out)
+        args.planted_leaf_scan = build_plant('leaf-scan', out)
+        args.planted_leaf_mul = build_plant('leaf-mul', out)
+        args.planted_random_int = build_plant('random-int', out)
+        args.planted_p4_trap = build_plant('p4-trap', out)
+    if args.planted_random_int:
+        # test_system.eigs asserts random_int's bounds over 300 draws, so it
+        # sees the plant whatever the seed; test_optimize.eigs prints a search
+        # driven by random_int and is comparable live only because the seed
+        # is pinned (unpinned, its baseline disagrees with itself and a tape
+        # would serve the baseline's draws): this case calibrates the pin.
+        files = ['tests/test_system.eigs', 'tests/test_optimize.eigs', 'tests/test_bool.eigs']
+        rc, text, v = diff_restricted(base, args.planted_random_int, files)
+        case('differential plant D (random_int answers lo+1..hi+1): both files DIFF live',
+             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),), (3, 'DIFF', 'DIFF', 'same', None))
+    else:
+        out('CAL %-58s NOT RUN (no --planted-random-int binary; --build-plants builds it)' % 'plant D')
+        results.append(False)
+    if args.planted_p4_trap:
+        # both files bind 1 through slot_from_value (loop_iter_store ->
+        # env_set_local_hashed), where P4 makes an int
+        files = ['tests/test_bool.eigs', 'tests/test_system.eigs']
+        rc, text, v = diff_restricted(base, args.planted_p4_trap, files)
+        case('P4 on the smi-trap build (the dynamic half): each file DIFF, aborting at the int',
+             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'), 'slot_from_int under EIGS_SMI_TRAP' in text),
+             (3, 'DIFF', 'DIFF', None, True))
+    else:
+        out('CAL %-58s NOT RUN (no --planted-p4-trap binary; --build-plants builds it)' % 'P4 dynamic')
+        results.append(False)
     for label, flag, b in (('leaf-scanner-early-return', '--planted-leaf-scan', args.planted_leaf_scan),
                            ('leaf-mul-plus-one', '--planted-leaf-mul', args.planted_leaf_mul)):
         if not b:
@@ -696,55 +849,178 @@ def calibrate(args, out):
     return 0 if results and n_ok == len(results) else 1
 
 
-LEAF_PLANTS = (
-    # (file, original, planted): the two scratch builds of design 9.2
-    ('src/chunk.c', '    c->leaf_accessor = 0;\n    if (c->param_count > LEAF_ACCESSOR_MAX_DEPTH) return;',
-     '    c->leaf_accessor = 0;\n    return;   /* PLANT: the leaf scanner never admits a chunk */\n'
-     '    if (c->param_count > LEAF_ACCESSOR_MAX_DEPTH) return;'),
-    ('src/vm.c', '                r = a * b;\n', '                r = a * b + 1;   /* PLANT */\n'),
-)
+# The calibration's planted builds: (file, original, planted, make target).
+# Each is `git archive HEAD` into a scratch tree, one exact-once replacement,
+# plain make; the binary is that tree's src/eigenscript.
+BUILD_PLANTS = {
+    # design 9.2: a leaf scanner that never admits a chunk; a leaf MUL that adds 1
+    'leaf-scan': ('src/chunk.c', '    c->leaf_accessor = 0;\n    if (c->param_count > LEAF_ACCESSOR_MAX_DEPTH) return;',
+                  '    c->leaf_accessor = 0;\n    return;   /* PLANT: the leaf scanner never admits a chunk */\n'
+                  '    if (c->param_count > LEAF_ACCESSOR_MAX_DEPTH) return;', 'build'),
+    'leaf-mul': ('src/vm.c', '                r = a * b;\n', '                r = a * b + 1;   /* PLANT */\n', 'build'),
+    # the R1.1 critic's plant D: random_int answers lo+1..hi+1
+    'random-int': ('src/builtins.c', 'make_num(lo_i + (eigs_random_long() % (int64_t)span))',
+                   'make_num(lo_i + 1 + (eigs_random_long() % (int64_t)span))', 'build'),
+    # the critic's P4 (an int produced inside an allowed writer) on the smi-trap build
+    'p4-trap': ('src/eigenscript.c', '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n        return slot_from_f64(n);',
+                '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n'
+                '        if (n == 1.0) return slot_from_int(1);   /* PLANT P4 */\n        return slot_from_f64(n);',
+                'smi-trap'),
+}
 _PLANT_DIR = []
 
 
-def build_leaf_plants(out):
-    """git archive HEAD twice into scratch trees (no .git), apply one plant to
-    each (exactly once before, present after), build each with plain make."""
-    paths = []
-    for f, old, new in LEAF_PLANTS:
-        d = tempfile.mkdtemp(prefix='eigs-p2leaf-')
+def build_plant(name, out):
+    f, old, new, target = BUILD_PLANTS[name]
+    d = tempfile.mkdtemp(prefix='eigs-p2plant-')
+    _PLANT_DIR.append(d)
+    subprocess.run('git -C %s archive HEAD | tar -x -C %s' % (ROOT, d), shell=True, check=True)
+    p = os.path.join(d, f)
+    text = read_text(p)
+    if text.count(old) != 1:
+        out('  PLANT %s: the original occurs %d times in %s, want 1 (BROKEN)' % (name, text.count(old), f))
+        return None
+    write_text(p, text.replace(old, new))
+    r = subprocess.run(['make', target], cwd=d, capture_output=True)
+    b = os.path.join(d, 'src', 'eigenscript')
+    ok = r.returncode == 0 and os.access(b, os.X_OK)
+    out('  PLANT %s built in %s (make %s): %s' % (name, d, target,
+                                                 'ok' if ok else 'BROKEN (make rc=%d)' % r.returncode))
+    return b if ok else None
+
+
+# The R1.1 critic's int-source plants (/tmp/phase2-r11-critic/intsrc), as
+# exact-once replacements in a copy of src/: (name, [(file, old, new), ...]).
+_NUM_ONE = '    CASE(NUM_ONE): {\n        vm_push_slot(slot_from_f64(1.0));'
+INTSRC_PLANTS = [
+    ('P1 a call in builtins.c', [('builtins.c', 'Value* builtin_len(Value *arg) {',
+      'static EigsSlot p1_smi(int64_t n) { return slot_from_int(n); }\nValue* builtin_len(Value *arg) {')]),
+    ('P2 a header macro that calls the writer', [
+        ('value_slot.h', '/* Constructors */', '/* Constructors */\n#define SLOT_SMI_OF(i) slot_from_int(i)'),
+        ('vm.c', _NUM_ONE, '    CASE(NUM_ONE): {\n        vm_push_slot(SLOT_SMI_OF(1));')]),
+    ('P3 raw TAG_SMI bits in vm.c', [
+        ('vm.c', _NUM_ONE, '    CASE(NUM_ONE): {\n        { EigsSlot one; one.u = TAG_SMI | 1u; vm_push_slot(one); }')]),
+    ('P4 a producer inside an allowed writer', [
+        ('eigenscript.c', '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n        return slot_from_f64(n);',
+         '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n        if (n == 1.0) return slot_from_int(1);\n'
+         '        return slot_from_f64(n);')]),
+    ('P5 a raw-bits header macro', [
+        ('value_slot.h', '/* Constructors */', '/* Constructors */\n'
+         '#define SLOT_SMI_BITS(i) ((EigsSlot){ .u = TAG_SMI | ((uint64_t)(i) & SLOT_PAYLOAD_MASK) })'),
+        ('vm.c', _NUM_ONE, '    CASE(NUM_ONE): {\n        vm_push_slot(SLOT_SMI_BITS(1));')]),
+]
+
+
+def c_sources_only(d, names):
+    """copytree ignore: keep directories and C sources (the int-source check
+    reads nothing else), skip binaries and objects."""
+    return [n for n in names if not n.endswith(('.c', '.h')) and not os.path.isdir(os.path.join(d, n))]
+
+
+def diff_restricted(base, branch, files):
+    """The corpus differential over a restricted list (calibration only):
+    (rc, stdout, {file: 'DIFF'|'same'|...}). Anything on its stderr is shown
+    and recorded as the verdict '<stderr>' (the tool never writes there)."""
+    with tempfile.TemporaryDirectory(prefix='eigs-p2diff-') as d:
+        lst = os.path.join(d, 'files')
+        write_text(lst, '\n'.join(files) + '\n')
+        p = subprocess.run(['bash', os.path.join(ROOT, 'tools/phase2_corpus_diff.sh'), base, branch],
+                           cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True,
+                           env=dict(os.environ, PHASE2_DIFF_FILES=lst))
+    text = p.stdout.decode('utf-8', 'replace')
+    err = p.stderr.decode('utf-8', 'replace')
+    verdicts = {}
+    for l in text.split('\n'):
+        m = re.match(r'^\.\. \d+/\d+ (\S+) (\S+) ', l)
+        if m:
+            verdicts[m.group(1)] = m.group(2)
+    if err:
+        for l in err.split('\n'):
+            print('  STDERR phase2_corpus_diff.sh: ' + l, flush=True)
+        verdicts['<stderr>'] = 'present'
+    return p.returncode, text, verdicts
+
+
+def wrapper_tree(d, real, files, script):
+    """A fake branch tree: src/eigenscript runs `script` (bash, $REAL is the
+    real binary, $N the per-tree invocation count), tests/ holds the files."""
+    os.makedirs(os.path.join(d, 'src'))
+    for f in files:
+        os.makedirs(os.path.join(d, os.path.dirname(f)), exist_ok=True)
+        shutil.copy(os.path.join(ROOT, f), os.path.join(d, f))
+    w = os.path.join(d, 'src', 'eigenscript')
+    write_text(w, '#!/usr/bin/env bash\nREAL=%s\nSTATE=%s\nN=$(cat "$STATE" 2>/dev/null || echo 0)\n'
+                  'echo $((N + 1)) > "$STATE"\n%s\n' % (real, os.path.join(d, 'n'), script))
+    os.chmod(w, 0o755)
+    return w
+
+
+TAG = 'v0.46.0'
+
+
+def selftest(out):
+    """--selftest, a tools/selftests.txt row: the calibration runs when the
+    checker changes (docs/PRINCIPLES.md 5), never on every run. The branch
+    binary is this tree's src/eigenscript (the self-test job builds it first);
+    the tag binary is $PHASE2_TAG_BIN, else a build of v0.46.0 from `git
+    archive`; the planted binaries are built from HEAD. Plain make, one build
+    at a time."""
+    branch = os.path.join(ROOT, 'src', 'eigenscript')
+    if not os.access(branch, os.X_OK):
+        out('phase2-check: FAIL: --selftest needs a built %s (run make first)' % branch)
+        return 2
+    tag = os.environ.get('PHASE2_TAG_BIN')
+    if not tag:
+        if subprocess.run(['git', '-C', ROOT, 'rev-parse', '-q', '--verify', TAG + '^{commit}'],
+                          capture_output=True).returncode != 0:
+            out('phase2-check: FAIL: --selftest needs the tag %s in this clone (git fetch --tags)' % TAG)
+            return 2
+        d = tempfile.mkdtemp(prefix='eigs-p2tag-')
         _PLANT_DIR.append(d)
-        subprocess.run('git -C %s archive HEAD | tar -x -C %s' % (ROOT, d), shell=True, check=True)
-        p = os.path.join(d, f)
-        text = open(p).read()
-        if text.count(old) != 1:
-            out('  PLANT %s: the original occurs %d times, want 1 (BROKEN)' % (f, text.count(old)))
-            paths.append(None)
-            continue
-        open(p, 'w').write(text.replace(old, new))
+        subprocess.run('git -C %s archive %s | tar -x -C %s' % (ROOT, TAG, d), shell=True, check=True)
         r = subprocess.run(['make'], cwd=d, capture_output=True)
-        b = os.path.join(d, 'src', 'eigenscript')
-        ok = r.returncode == 0 and os.access(b, os.X_OK)
-        out('  PLANT %s built in %s: %s' % (f, d, 'ok' if ok else 'BROKEN (make rc=%d)' % r.returncode))
-        paths.append(b if ok else None)
-    return paths
+        tag = os.path.join(d, 'src', 'eigenscript')
+        if r.returncode != 0 or not os.access(tag, os.X_OK):
+            out('phase2-check: FAIL: the %s build failed (make rc=%d)' % (TAG, r.returncode))
+            return 2
+        out('  TAG %s built in %s' % (TAG, d))
+    args = argparse.Namespace(tag=os.path.abspath(tag), branch=branch, build_plants=True,
+                              planted_leaf_scan=None, planted_leaf_mul=None,
+                              planted_random_int=None, planted_p4_trap=None)
+    return calibrate(args, out)
 
 
 def main():
+    if sys.argv[1:] == ['--selftest']:
+        try:
+            return selftest(lambda s: print(s, flush=True))
+        finally:
+            for d in _PLANT_DIR:
+                shutil.rmtree(d, ignore_errors=True)
     ap = argparse.ArgumentParser(prog='tools/phase2_check.sh')
+    ap.add_argument('--selftest', action='store_true',
+                    help='the calibration with every plant built (alone: a tools/selftests.txt row)')
     ap.add_argument('tag', help='the v0.46.0 tag binary')
     ap.add_argument('branch', help='the branch binary')
     ap.add_argument('--through', default=ROUNDS[-1], choices=ROUNDS)
     ap.add_argument('--baseline', help='the binary from before a mechanical round (corpus differential)')
+    ap.add_argument('--smi-trap', help='R1.1/R1.2: a `make smi-trap` build of the branch (in its own tree)')
     ap.add_argument('--map', default=os.path.join(ROOT, 'tests/phase2/MAP.md'))
     ap.add_argument('--rows', default=os.path.join(ROOT, 'tests/phase2/rows'))
     ap.add_argument('--controls', default=os.path.join(ROOT, 'tests/phase2/controls'))
     ap.add_argument('--calibrate', action='store_true')
     ap.add_argument('--planted-leaf-scan', help='calibration: a build whose leaf scanner returns early')
     ap.add_argument('--planted-leaf-mul', help='calibration: a build whose leaf MUL computes a*b+1')
+    ap.add_argument('--planted-random-int', help='calibration: a build whose random_int answers lo+1..hi+1')
+    ap.add_argument('--planted-p4-trap', help='calibration: a smi-trap build with the P4 producer planted')
     ap.add_argument('--build-plants', action='store_true',
-                    help='calibration: build both planted binaries from HEAD (two release builds)')
+                    help='calibration: build the four planted binaries from HEAD')
     args = ap.parse_args()
-    for b in (args.tag, args.branch, args.baseline, args.planted_leaf_scan, args.planted_leaf_mul):
+    if args.selftest:
+        print('phase2-check: FAIL: --selftest takes no other argument')
+        return 2
+    for b in (args.tag, args.branch, args.baseline, args.smi_trap, args.planted_leaf_scan,
+              args.planted_leaf_mul, args.planted_random_int, args.planted_p4_trap):
         if b and not os.access(b, os.X_OK):
             print('phase2-check: FAIL: %s is not an executable' % b)
             return 2
