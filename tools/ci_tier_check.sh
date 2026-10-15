@@ -13,7 +13,7 @@ check() {
     CT_AWK=$(awk '/^jobs:/ {j=1; next} j && /^[^ #]/ {j=0}
                   j && /^  [A-Za-z0-9_-]+:[[:space:]]*(#.*)?$/ {n++} END {print n+0}' "$WF_DIR/ci.yml") \
     CT_GREP=$(grep -cvE '^(#|$)' "$REQ_FILE") CT_WF="$WF_DIR" CT_REQ="$REQ_FILE" python3 - <<'PY'
-import hashlib, itertools, os, re, sys; from fnmatch import fnmatchcase
+import hashlib, itertools, os, re, subprocess, sys, tempfile; from fnmatch import fnmatchcase
 def instrument(m): print(f"ci-tier: INSTRUMENT ERROR — {m}; nothing was checked"); sys.exit(2)
 try:
     import yaml
@@ -24,7 +24,7 @@ def V(code, msg): bad.append(code); print(f"FAIL [{code}] {msg}")
 req = [l for l in open(os.environ["CT_REQ"], encoding="utf-8").read().split("\n") if l and not l.startswith("#")]
 if not req or len(req) != int(os.environ["CT_GREP"]) or len(set(req)) != len(req):
     V("vacuous", f"required-checks.txt: parsed {len(req)} names, {len(set(req))} distinct, grep counts {os.environ['CT_GREP']}")
-REQ = set(req); W = {}; PERMS = {}
+REQ = set(req); W = {}; PERMS = {}; DOCS = {}
 for fn in sorted(os.listdir(os.environ["CT_WF"])):
     if not fn.endswith((".yml", ".yaml")): continue
     try: doc = yaml.safe_load(open(os.path.join(os.environ["CT_WF"], fn), encoding="utf-8"))
@@ -35,6 +35,7 @@ for fn in sorted(os.listdir(os.environ["CT_WF"])):
          {str(k): (v if isinstance(v, dict) else {}) for k, v in (on or {}).items()}
     W[fn] = (on, doc["jobs"], doc.get("env") or {})
     PERMS[fn] = doc.get("permissions", "write-all")   # absent: the repository default, which may write
+    DOCS[fn] = doc
 def triggers(on, ev):
     if ev not in on: return False
     c = on[ev]
@@ -47,8 +48,15 @@ def needs(j): n = j.get("needs") or []; return [n] if isinstance(n, str) else li
 def always(j): return cond(j.get("if", "")) == "always()"
 G = r"github\s*(?:\.\s*{0}\b|\[\s*['\"]{0}['\"]\s*\])"
 PR_ATOM = re.compile(G.format("event_name") + r"\s*[=!]=\s*['\"]pull_request['\"]|['\"]pull_request['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
-PR_BODY = re.compile(G.format("event") + r"\s*(?:\.\s*pull_request\b|\[\s*['\"]pull_request['\"]\s*\])", re.I); EVP = r"(?:event_name|event|ref|ref_name|ref_type|head_ref|base_ref)\b"
-EV = re.compile(r"\bgithub\b(?!\s*(?:\.\s*(?!" + EVP + r")\w|\[\s*['\"](?!" + EVP + r")\w+['\"]\s*\]))", re.I)
+PR_BODY = re.compile(G.format("event") + r"\s*(?:\.\s*pull_request\b|\[\s*['\"]pull_request['\"]\s*\])", re.I)
+# An ALLOWLIST (#1787): a condition may read only github fields that are the same for the
+# push, merge_group, pull_request and workflow_dispatch runs of this repository. Any other
+# field (ref_protected, workflow_ref, actor, sha, ...) or a bare `github` can select a lane.
+INVARIANT = {"repository", "repository_owner", "repository_id", "repository_owner_id", "server_url",
+             "api_url", "graphql_url", "workspace", "workflow", "job", "action", "token", "retention_days"}
+GH = re.compile(r"\bgithub\b(?:\s*\.\s*([A-Za-z_][\w-]*)|\s*\[\s*['\"]([^'\"]*)['\"]\s*\])?", re.I)
+def reads_event(t):
+    return next((m.group(0).strip() for m in GH.finditer(t) if (m.group(1) or m.group(2) or "").lower() not in INVARIANT), None)
 IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(needs|steps)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?"
                  r"\s*(?:\.\s*|\[\s*['\"])(outputs|result|outcome|conclusion)['\"]?\s*\]?(?:\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?)?", re.I)
 WAIVE = {("ci.yml", "scope", "detect"): "35784ca855b3e3fd",
@@ -57,7 +65,8 @@ used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)
 def bad_expr(e, wf, jid, pr_ok, depth=0):
     """Why expression `e` (in wf:jid) may differ between push and merge_group, or None."""; t = PR_BODY.sub("_", PR_ATOM.sub("_", e)) if pr_ok else e
-    if EV.search(t): return f"`{e.strip()}` reads the event"
+    hit = reads_event(t)
+    if hit: return f"`{e.strip()}` reads `{hit}`, not one of the event-invariant github fields"
     if re.search(r"\b(env|vars|steps|needs)\b", IND.sub("_", t), re.I): return f"`{e.strip()}` reads a context this gate cannot resolve"
     for m in IND.finditer(t):
         (ctx, name, kind, job, field, key), j = m.groups(), W[wf][1].get(jid, {})
@@ -73,9 +82,11 @@ def bad_expr(e, wf, jid, pr_ok, depth=0):
             if v is None: return f"`needs.{job}.outputs.{key}` is not declared"
             why = next((w for x in exprs(v) for w in [bad_expr(x, wf, job, pr_ok, depth + 1)] if w), None)
         else:
-            src = next((yaml.safe_dump(s, sort_keys=True) for s in j.get("steps") or [] if isinstance(s, dict) and s.get("id") == job), None); pin = WAIVE.get((wf, jid, job))
-            if pin and src is not None and hashlib.sha256(src.encode()).hexdigest()[:16] == pin: used.add((wf, jid, job)); continue
-            return f"`steps.{job}.outputs.{key}` comes from a script (not waived, or the waived script changed)"
+            st = next((s for s in j.get("steps") or [] if isinstance(s, dict) and s.get("id") == job), None); pin = WAIVE.get((wf, jid, job))
+            now = None if st is None else hashlib.sha256(yaml.safe_dump(st, sort_keys=True).encode()).hexdigest()[:16]
+            if pin and now == pin: used.add((wf, jid, job)); continue
+            return (f"`steps.{job}.outputs.{key}` comes from a script that is not waived" if not pin else
+                    f"`steps.{job}.outputs.{key}` comes from a waived script that changed (it now hashes to {now}): review it, then re-pin WAIVE")
         if why: return f"{m.group(0).strip()} -> {why}"
     return None
 def names(jid, j):
@@ -137,7 +148,7 @@ for wf, jid in sorted(path):
              if isinstance(st, dict) for k, v in (st.get("env") or {}).items()]
     for k, v in vals:
         for x in exprs(v):
-            if EV.search(PR_BODY.sub("_", PR_ATOM.sub("_", x))):
+            if reads_event(PR_BODY.sub("_", PR_ATOM.sub("_", x))):
                 V("event-condition", f"{wf}:{jid}: `{k}: ${{{{{x}}}}}` derives a value from the event")
     if j.get("continue-on-error") not in (None, False): V("continue-on-error", f"{wf}:{jid} sets continue-on-error: its failure would not fail the check")
     for i, st in enumerate(j.get("steps") or []):
@@ -171,29 +182,106 @@ for jid in sorted(HEAVY_WORKERS):
         V("heavy-missing", f"ci.yml:{jid}: declared heavy worker is missing")
     elif cond(ci[jid].get("if", "")) != "github.event_name != 'pull_request'":
         V("heavy-worker", f"ci.yml:{jid}: worker must skip only pull_request (and therefore run on merge_group and push)")
-# workflow_dispatch runs every non-PR path of ci.yml from ANY ref, so a job that
-# can write outside its run must be pinned to its reviewed text. A new writer, or
-# an edit to the one there is, stays red until someone re-reviews it for a dispatch
-# from a branch (every outward write gated on refs/heads/main) and re-pins it here.
-# Action pins (`uses:`) are left out of the hash, so a Dependabot bump does not
-# reopen the review.
-WRITERS = {"dev-image": "d98ad4b818cdc372"}  # pushes ci-<sha> from any ref; ci-main only on a push to refs/heads/main
+# workflow_dispatch runs every non-PR path of ci.yml from ANY ref (#1787), so the
+# writes are checked by what they do, not pinned by their text:
+# [ci-main]  the rolling ci-main tag is the one name ci.yml writes that main owns
+#   (fork PRs run in it). The step that computes the pushed tags is RUN across
+#   event x ref x "this SHA is main's tip"; ci-main must appear exactly on a push to
+#   refs/heads/main at main's tip (no dispatch, queue run or re-run of an older push).
+#   ci-<sha> tags go out from every non-fork ref by design. What the matrix cannot
+#   model (a custom shell, BASH_ENV, an expression it cannot evaluate) is refused.
+# [writer-actions]  a job that can write uses only allowlisted actions (compared
+#   without @ref), no ./ or docker:// actions, and no script but that tag step.
+# [secrets]  ci.yml reads no secret but GITHUB_TOKEN, so only permissions: can write.
 def writes(p): return p == "write-all" or (isinstance(p, dict) and "write" in p.values())
-def writer_pin(j):
-    body = {k: v for k, v in j.items() if k != "steps"}
-    body["steps"] = [{k: v for k, v in st.items() if k != "uses"} if isinstance(st, dict) else st for st in j.get("steps") or []]
-    return hashlib.sha256(yaml.safe_dump(body, sort_keys=True).encode()).hexdigest()[:16]
-wrote = set()
+ALLOWED = {"actions/checkout", "docker/setup-buildx-action", "docker/login-action", "docker/build-push-action"}
+EVENTS = ("push", "pull_request", "merge_group", "workflow_dispatch")
+REFS = ("refs/heads/main", "refs/heads/a-branch", "refs/pull/1/merge", "refs/heads/gh-readonly-queue/main/pr-1-0123abc")
+def env_value(v, fork):
+    """A tag-step env value, or None when the matrix cannot evaluate it."""
+    known = {"github.repository_owner": "Owner", "github.event.pull_request.head.repo.fork==true": "true" if fork else "false"}
+    out = str(v)
+    for x in exprs(out):
+        if re.sub(r"\s+", "", x) not in known: return None
+        out = out.replace("${{" + x + "}}", known[re.sub(r"\s+", "", x)])
+    return out
+def ci_main(jid, j, tag):
+    """Run the tag step across the matrix; returns how many runs it judged."""
+    where = f"ci.yml:{jid} step {tag.get('id')!r}"
+    if DOCS["ci.yml"].get("defaults") or j.get("defaults") or "shell" in tag:
+        V("ci-main", f"{where}: a custom shell (defaults: or shell:) can change what the step computes; the matrix runs it under bash -e only"); return 0
+    for scope, d in (("workflow", W["ci.yml"][2]), ("job", j.get("env") or {}), ("step", tag.get("env") or {})):
+        bad_env = [k for k in d if str(k).upper() in ("BASH_ENV", "ENV") or str(k).upper().startswith("GITHUB_")]
+        if bad_env: V("ci-main", f"{where}: {scope} env sets {bad_env}, which can change what the step computes"); return 0
+    script = str(tag.get("run", ""))
+    odd = sorted({x.strip() for x in exprs(script)} - {"github.sha"})
+    if odd or any(env_value(v, False) is None for v in (tag.get("env") or {}).values()):
+        V("ci-main", f"{where}: uses an expression the matrix cannot evaluate ({odd or 'in its env'})"); return 0
+    runs = 0
+    with tempfile.TemporaryDirectory() as t:
+        with open(os.path.join(t, "git"), "w") as f:   # a git that answers only `ls-remote origin refs/heads/main`
+            f.write('#!/bin/sh\n[ "$*" = "ls-remote origin refs/heads/main" ] || { echo "unexpected git $*" >&2; exit 97; }\n'
+                    '[ -n "$TIP" ] || exit 128\nprintf "%s\\trefs/heads/main\\n" "$TIP"\n')
+        os.chmod(os.path.join(t, "git"), 0o755)
+        cases = [(e, r, tip, False) for e in EVENTS for r in REFS for tip in (True, False, None)]
+        cases += [("pull_request", r, True, True) for r in REFS]                 # fork pull requests
+        for ev, ref, tip, fork in cases:
+            sha, out = "1" * 40, os.path.join(t, "out")
+            open(out, "w").close()
+            env = {"PATH": t + ":" + os.environ["PATH"], "HOME": t, "GITHUB_EVENT_NAME": ev, "GITHUB_REF": ref,
+                   "GITHUB_SHA": sha, "GITHUB_OUTPUT": out, "TIP": {True: sha, False: "2" * 40, None: ""}[tip],
+                   **{str(k): env_value(v, fork) for k, v in (tag.get("env") or {}).items()}}
+            p = subprocess.run(["bash", "-e", "-c", re.sub(r"\$\{\{\s*github\.sha\s*\}\}", sha, script)], env=env,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
+            runs += 1
+            tags = [x for line in open(out) if line.startswith("tags=") for x in line[5:].strip().split(",") if x]
+            has = any(x.endswith(":ci-main") for x in tags)
+            want = ev == "push" and ref == "refs/heads/main" and tip is True and not fork
+            what = f"event={ev} ref={ref} tip={'?' if tip is None else tip}{' fork' if fork else ''}"
+            if p.returncode != 0 and not (tip is None and ev == "push" and ref == "refs/heads/main"):
+                V("ci-main", f"{where} failed for {what}: {p.stderr.strip()[-200:]}")
+            elif has != want:
+                V("ci-main", f"{where} {'pushes' if has else 'does not push'} ci-main for {what}; ci-main is main's: only a push to refs/heads/main at main's tip may move it")
+    return runs
+if W["ci.yml"][0].get("push") != {"branches": ["main"]}:
+    V("ci-main", f"ci.yml: on.push is {W['ci.yml'][0].get('push')!r}, not exactly branches: [main]")
+writers, judged = [], 0
 for jid, j in ci.items():
     if not writes(j["permissions"] if "permissions" in j else PERMS["ci.yml"]): continue
-    wrote.add(jid)
-    if WRITERS.get(jid) != writer_pin(j):
-        V("dispatch-write", f"ci.yml:{jid} can write outside its run and is not a pinned, reviewed writer (its text hashes to {writer_pin(j)}): workflow_dispatch runs it from any ref, so gate every outward write on refs/heads/main, then pin it in WRITERS")
-if set(WRITERS) - wrote: V("dispatch-write", f"writer pin(s) {sorted(set(WRITERS) - wrote)} match no ci.yml job that can write: stale; remove them")
+    writers.append(jid)
+    if "uses" in j: V("writer-actions", f"ci.yml:{jid} can write and calls a reusable workflow ({j['uses']}) this check cannot vet")
+    steps = [st for st in j.get("steps") or [] if isinstance(st, dict)]
+    push = [st for st in steps if re.sub(r"@[^@]*$", "", str(st.get("uses", ""))).lower() == "docker/build-push-action"]
+    tag_ids = {m.group(1) for st in push for m in [re.fullmatch(r"\$\{\{\s*steps\.([\w-]+)\.outputs\.tags\s*\}\}", str((st.get("with") or {}).get("tags", "")).strip())] if m}
+    if len(tag_ids) != len(push) or len(tag_ids) > 1:
+        V("ci-main", f"ci.yml:{jid}: each image push must take its tags from one step (`tags: ${{{{ steps.<id>.outputs.tags }}}}`), the step the matrix runs")
+    tag = next((st for st in steps if st.get("id") in tag_ids), None)
+    for i, st in enumerate(steps):
+        u = str(st.get("uses", "")).strip()
+        if u and (u.startswith(("./", "docker://")) or re.sub(r"@[^@]*$", "", u).lower() not in ALLOWED):
+            V("writer-actions", f"ci.yml:{jid} step {i} uses {u!r}: a job that can write uses only {sorted(ALLOWED)} (any @ref), no ./ or docker:// action")
+        elif "run" in st and st is not tag:
+            V("writer-actions", f"ci.yml:{jid} step {i} ({st.get('name', '?')}) runs a script in a job that can write; only the tag step may, because the matrix runs it")
+    if tag is not None: judged += ci_main(jid, j, tag)
+if judged == 0: V("ci-main", "no image push in ci.yml took its tags from a step the matrix could run: the ci-main property was not checked")
+def strings(x):
+    if isinstance(x, str): yield x
+    elif isinstance(x, dict):
+        for k, v in x.items(): yield from strings(k); yield from strings(v)
+    elif isinstance(x, list):
+        for v in x: yield from strings(v)
+SECRET = re.compile(r"\bsecrets\b(?:\s*\.\s*([A-Za-z_][\w-]*)|\s*\[\s*['\"]([^'\"]*)['\"]\s*\])?", re.I)
+for x in {e for v in strings(DOCS["ci.yml"]) for e in exprs(v)}:
+    for m in SECRET.finditer(x):
+        if (m.group(1) or m.group(2) or "").upper() != "GITHUB_TOKEN":
+            V("secrets", f"ci.yml reads `{m.group(0)}` in `${{{{{x.strip()}}}}}`: only secrets.GITHUB_TOKEN may appear, so permissions: alone decide what ci.yml can write")
+for jid, j in ci.items():
+    if "secrets" in j: V("secrets", f"ci.yml:{jid} passes secrets ({j['secrets']!r}) to a reusable workflow")
 if set(WAIVE) - used: V("event-condition", f"waiver(s) {sorted(set(WAIVE) - used)} matched nothing — stale; remove or re-pin")
 if bad: print(f"ci-tier: FAIL — {len(bad)} violation(s): {' '.join(sorted(set(bad)))}"); sys.exit(1)
 print(f"ci-tier: OK — ci.yml jobs={len(ci)} (awk={os.environ['CT_AWK']}) required={counts['required']} worker={counts['worker']}; "
-      f"{len(req)} required names, each produced once on pull_request+merge_group; {len(path)} jobs on required paths, no push-only condition, no continue-on-error; {len(wrote)} writing job(s), each pinned")
+      f"{len(req)} required names, each produced once on pull_request+merge_group; {len(path)} jobs on required paths, no push-only condition, no continue-on-error; "
+      f"ci-main only on a push to main at its tip ({judged} event x ref x tip runs); {len(writers)} writing job(s), allowlisted actions only; no secret but GITHUB_TOKEN")
 PY
 }
 live() {

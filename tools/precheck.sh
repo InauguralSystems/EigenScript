@@ -118,12 +118,13 @@ lane 0 & p0=$!
 lane 1 & p1=$!
 wait "$p0" "$p1"
 # The self-tests can build scratch fixtures: run serially after the static lanes.
-# CI owns this row separately, with the event's base SHA rather than origin/main.
+# CI owns this row separately: the PR's or merge group's base SHA, the pushed range on
+# main, or origin/main on a workflow_dispatch (which carries no base).
 i=0
 while IFS='|' read -r class cmd; do
     if [ "$class" = selftest ]; then
         if [ "${PRECHECK_SELFTESTS:-1}" = 0 ]; then
-            echo "SKIP|0|CI runs the driver separately with the event base SHA" > "$OUT/$i.st"
+            echo "SKIP|0|CI runs the driver separately (event base SHA, or origin/main on a dispatch)" > "$OUT/$i.st"
         else
             run_gate "$i" "$class" $cmd
             cat "$OUT/$i.log"

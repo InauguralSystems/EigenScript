@@ -192,35 +192,57 @@ on it and never rebase to satisfy it; the queue does both.
 ### The main lane on demand (`workflow_dispatch`)
 
 A long-lived branch, such as an integration branch that lives through many
-review rounds, can run the full main lane before it enters the queue:
+review rounds, can run the full main lane before it enters the queue (#1787):
 
     gh workflow run ci.yml --ref <branch>
     gh run list --workflow ci.yml --event workflow_dispatch --branch <branch>
+    gh run list --workflow ci.yml --commit <sha>
 
 - **What runs.** A dispatch is not a pull request, so every job runs as on a
   push to `main`. That includes every heavy worker: the ASan shards, both TSan
   variants, the native macOS suite, valgrind, the bench gate, the extension
-  suites and the db lane. The bench gate compares the branch with `origin/main`.
-  The changed-gate self-tests select what the branch changes against `main`.
+  suites and the db lane.
+  - The bench gate measures the branch against its merge-base with `main`, so
+    the branch is charged for its own changes, as the queue will measure them.
+  - The changed-gate self-tests select what the branch changes against `main`.
 - **When.** Dispatch on an integration branch before it is queued, and again
   after a rebase that pulls in a lot. The queue still runs everything on the
   candidate commit, so a dispatch is never a substitute for it.
-- **What it never touches.** A dispatch writes nothing that belongs to `main`:
-  - the only `ci.yml` job that can write is `build dev/ci image`. It pushes the
-    run's own `ci-<sha>` image, and only a push to `main` advances the rolling
-    `ci-main` tag;
-  - its build cache is scoped by GitHub to the branch;
-  - artifacts stay in the run.
+- **Which `ci.yml` runs.** The dispatched ref's own copy, with its own
+  `tools/ci_tier_check.sh`. What follows holds for `main`'s text. A branch that
+  edits `ci.yml` can change it, exactly as its pull-request run already could,
+  since a pull request also runs the branch's own workflow file.
+- **What it writes.** In `main`'s `ci.yml`, the only job that can write is
+  `build dev/ci image`:
+  - Every non-fork run pushes the commit's own `ci-<sha>` image tag, a
+    dispatch included.
+  - The rolling `ci-main` tag is the one name written here that `main` owns
+    (fork PRs run in it). It moves only on a push to `main` whose SHA is still
+    `main`'s tip, so neither a dispatch from any ref nor a re-run of an older
+    push moves it (`[ci-main]`, below).
+  - The build cache goes to the run's ref scope. A dispatch on a branch writes
+    the branch's scope; a dispatch on `main` writes `main`'s, as a push does.
+  - Artifacts stay in the run.
 
-  `tools/ci_tier_check.sh` pins every `ci.yml` job that holds a write
-  permission (`[dispatch-write]`, below).
-- **Concurrency.** A dispatch has its own group (`ci-dispatch-<ref>`). It never
-  cancels, and is never cancelled by, a push, pull-request or merge-queue run,
-  `main`'s included; a newer dispatch on the same ref cancels the older one.
-- **Where the results show.** The dispatch reports its checks on the branch's
-  head commit. If the branch has a pull request, those checks appear on it too,
-  under the same names as the pull-request run's, and a failure there is a real
-  failure of that check on that commit.
+  A dispatch on `main` also adds runs to `main`'s commit, but the README badge
+  reads only push runs (`badge.svg?branch=main&event=push`).
+- **Concurrency.** There is one run per concurrency group.
+  - A dispatch's group is `ci-dispatch-<ref>`, separate from push,
+    pull-request and merge-queue runs, `main`'s included. GitHub compares group
+    names case-insensitively, so refs that differ only in case share one.
+  - The group never cancels a running dispatch. A newer dispatch on the same
+    ref waits, and a third replaces the waiting one before it starts any job.
+  - A later push to the branch does not stop a dispatch either. To drop an
+    outdated one, run `gh run cancel <run-id>` and dispatch again. A cancelled
+    run's `if: always()` aggregators then conclude failure under their required
+    names on that commit; that failure records the cancellation, not a test
+    result.
+- **Where the results show.** In the dispatch run itself: `gh run view
+  <run-id>`, or `gh run list --commit <sha>`. GitHub's status rollup for a
+  commit, which pull requests and the queue read, leaves out `workflow_dispatch`
+  suites. (Measured: a commit that carries only a dispatch's 49 check runs has
+  no rollup at all.) So a dispatch neither appears among a pull request's
+  checks nor gates it.
 
 GitHub reads the trigger from the dispatched ref's own copy of `ci.yml`. A
 branch whose copy predates the trigger is refused with HTTP 422, "Workflow
@@ -516,8 +538,9 @@ index headers and compiles `eigenlsp.c` with the trio in its flag bundle.
 Main CI did not finish green from 2026-09-16 to 2026-09-22 although every
 required check passed on every merge: one lane that no pull request had to pass
 (`macos / macos-15-intel`, main lane only) hit its timeout on nearly every
-push. The README badge is the status of the whole `ci.yml` workflow on `main`,
-so **any** `ci.yml` job that can fail there colours it, required or not.
+push. The README badge is the status of the whole `ci.yml` workflow's latest
+push run on `main` (`badge.svg?branch=main&event=push`), so **any** `ci.yml`
+job that can fail there colours it, required or not.
 
 The fix copies Rust (tiers plus a merge queue), CPython and Go:
 
@@ -579,7 +602,14 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   those must use exactly `github.event_name != 'pull_request'`. A step `if:`
   may mention the event only as `github.event_name ==/!= 'pull_request'`, or
   via the PR payload `github.event.pull_request.*` (empty on push and in the
-  queue alike). Dot and bracket syntax are both read. The same rule covers
+  queue alike). Beyond those two forms, a condition may read only the `github`
+  fields that are the same for the push, merge-queue, pull-request and dispatch
+  runs of this repository: `repository`, `repository_owner`, `repository_id`,
+  `repository_owner_id`, `server_url`, `api_url`, `graphql_url`, `workspace`,
+  `workflow`, `job`, `action`, `token` and `retention_days`. Any other field
+  (such as `ref_protected`, `workflow_ref`, `sha` or `actor`), or a bare
+  `github`, is red: that is an allowlist (#1787), not a list of known event
+  fields. Dot and bracket syntax are both read. The same rule covers
   indirection: an `env`, job `outputs`, workflow `env` or matrix value on a
   required path may not read the event (outside those two forms), and an
   `if:` that reads `env.*`, `needs.*.outputs` or `steps.*.outputs` is traced
@@ -597,15 +627,36 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
 - `[uncovered]` — a `ci.yml` job is neither required nor the worker of exactly
   one required `if: always()` aggregator. A failing non-required job does not
   stop the queue, yet it colours the badge: the `macos-15-intel` shape.
-- `[dispatch-write]` — a `ci.yml` job that holds a write permission (its own,
-  or the workflow's, where a missing workflow-level block counts as the
-  repository default, which may write) must match its reviewed pin in
-  `WRITERS`. `workflow_dispatch` runs every non-PR path from any ref, so a
-  new writer, or an edit to the writer there is, stays red until someone
-  re-reviews it for a dispatch from a branch and re-pins it. Every outward
-  write is gated on `refs/heads/main`. Action pins (`uses:`) are left out of
-  the hash, so a Dependabot bump does not reopen the review. A pin that
-  matches no writing job is red.
+- `[ci-main]` — `ci-main` is the one name `ci.yml` writes that `main` owns.
+  The check finds the step that computes the image push's tags and runs it,
+  under `bash -e`, across every event (push, pull request, merge queue,
+  dispatch), ref (`main`, a branch, a pull request's merge ref, the queue's
+  ref) and tip state (this SHA is `main`'s tip, is not, or the tip cannot be
+  read), plus fork pull requests. It requires `ci-main` exactly on a push to
+  `refs/heads/main` at `main`'s tip. Every non-fork run pushing its own
+  `ci-<sha>` is by design.
+  - `on.push` must be exactly `branches: [main]`.
+  - Each image push must take its tags from that one step.
+  - The check refuses what its matrix cannot model: a custom shell
+    (`defaults:` or `shell:`), `BASH_ENV`/`ENV`/`GITHUB_*` in any env scope,
+    or an expression it cannot evaluate.
+- `[writer-actions]` — a `ci.yml` job that can write uses only the allowlisted
+  actions `actions/checkout`, `docker/setup-buildx-action`,
+  `docker/login-action` and `docker/build-push-action`.
+  - The allowlist compares action identities without the `@ref`, so a
+    Dependabot bump stays green.
+  - No `./` or `docker://` action, and no reusable-workflow call.
+  - No script except the tag step that `[ci-main]` runs.
+
+  A job can write when it holds a write permission: its own, or the workflow's,
+  where a missing block counts as the repository default, which may write.
+- `[secrets]` — `ci.yml` reads no secret but `secrets.GITHUB_TOKEN`, in dot or
+  bracket syntax, and passes none to a reusable workflow. So `permissions:`
+  alone decide what it can write.
+
+These rules were each proven once, when written, against planted copies
+recorded in PR #1785 (`docs/PRINCIPLES.md` §5); none is re-proven on every
+run.
 
 Whether an aggregator's script really fails on every non-success worker
 result remains a code-review question. The gate's other accepted limits
@@ -673,7 +724,9 @@ The suite runs each gate's live check; `tools/selftests.sh --changed origin/main
 runs checker self-tests whose scripts, fixtures or helpers changed, including
 uncommitted and untracked files, and `make precheck` includes that selection.
 The required `gate self-tests (changed rows)` check uses the
-PR base SHA or merge-group base SHA, while nightly runs `tools/selftests.sh --all`
+PR base SHA or merge-group base SHA, the pushed range on `main`, or
+`origin/main` on a `workflow_dispatch` (which carries no base SHA), while
+nightly runs `tools/selftests.sh --all`
 and reports failures through its tracking issue.
 `tools/selftests.txt` owns the trigger globs, bounded commands and existing
 result pins; changing it or the driver selects every row.
