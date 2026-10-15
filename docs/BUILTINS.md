@@ -580,7 +580,7 @@ deterministically. A single-threaded program can be both ends of a
 connection: on loopback, `net_dial` completes against the listen
 backlog before `net_accept` runs (see `examples/net_echo.eigs`).
 Sockets left open at exit are closed by the runtime's handle-table
-drain. UDP is not yet exposed (#414 tracks it).
+drain. UDP is not yet exposed.
 
 ## Optional: HTTP Extension
 
