@@ -47,6 +47,16 @@ export PATH CC_GUARD_LOG
 : > "$CC_GUARD_LOG"
 make build || fail "make build failed"
 
+# TEMPORARY (#1778 demonstration, reverted by the next commit): the floor run
+# scores the wrapper observer around the candidate, with one floor verdict's
+# reading reversed in every arm. The REQUIRED check must go red.
+OBS_WRAP_SPEC=$(python3 -c 'import sys; sys.path.insert(0, "tools/observer_oracle"); import plants; print(plants.one_reversed("tools/observer_oracle")[0])')
+printf '#!/bin/sh\nexec python3 %s/tools/observer_oracle/plants.py wrap "$@"\n' "$PWD" > "$tmp/obs_planted"
+chmod +x "$tmp/obs_planted"
+OBS_WRAP_REAL=$PWD/src/eigenscript OBS_WRAP_MODE=spec OBS_PLANTED=$tmp/obs_planted
+export OBS_WRAP_SPEC OBS_WRAP_REAL OBS_WRAP_MODE OBS_PLANTED
+echo "planted $OBS_WRAP_SPEC: the floor run scores $OBS_PLANTED"
+
 phase "score the candidate against the committed floor (make observer-oracle)"
 rc=0
 make observer-oracle | tee "$tmp/oracle.out" || rc=$?
