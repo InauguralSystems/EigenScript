@@ -222,9 +222,10 @@ review rounds, can run the full main lane before it enters the queue:
   under the same names as the pull-request run's, and a failure there is a real
   failure of that check on that commit.
 
-GitHub accepts a dispatch only for a workflow whose file on the default
-branch declares `workflow_dispatch`, so this works once the trigger is on
-`main`.
+GitHub reads the trigger from the dispatched ref's own copy of `ci.yml`. A
+branch whose copy predates the trigger is refused with HTTP 422, "Workflow
+does not have 'workflow_dispatch' trigger" (measured on a stale branch). So
+rebase or merge `main` into a long-lived branch before its first dispatch.
 
 ## Nightly (`.github/workflows/nightly.yml`)
 
