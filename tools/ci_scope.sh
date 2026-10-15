@@ -29,12 +29,9 @@
 # as a shell case pattern, where `*` also crosses `/`; both sides of a rename
 # count here too.
 set -euo pipefail
-# TEMPORARY (#1778 demonstration (b), reverted by the next commit): without the
-# three lane paths this PR touches (Makefile, tools/observer_oracle/*, ci.yml),
-# the PR is outside the lane, so the required check must be skipped (passing).
-# ci_scope.sh --selftest fails in this run by construction.
 OBSERVER_PATHS=(src/eigenscript.c src/eigenscript.h src/vm.c src/vm.h src/compiler.c src/chunk.c src/state.c
-                'src/jit*' lib/observer.eigs .devcontainer/Dockerfile)
+                'src/jit*' lib/observer.eigs Makefile 'tools/observer_oracle/*' .github/workflows/ci.yml
+                .devcontainer/Dockerfile)
 
 classify() {
     local files
