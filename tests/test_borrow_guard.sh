@@ -25,6 +25,7 @@ set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 EIGS="$ROOT/src/eigenscript"
+. "$TESTS_DIR/lsan_classify.sh" || exit 1
 
 PASS=0
 FAIL=0
@@ -49,6 +50,32 @@ expect_out() {
     else
         fail "$name" "want '$want', got '$(echo "$got" | head -1)'"
     fi
+}
+
+# Identify the selected binary independently of the guard's own behaviour
+# (#1692). Both ELF and Mach-O expose ASan's initialization symbol through
+# nm; retain its diagnostics and fail closed if the symbol table is unusable.
+# The main symbol makes a stripped/empty table distinguishable from release.
+if ! nm -g "$EIGS" >"$TMPDIR/symbols" 2>"$TMPDIR/nm.err"; then
+    fail "borrow build probe" "nm could not inspect $EIGS"
+    cat "$TMPDIR/nm.err"
+    exit 1
+fi
+if grep -Eq '[[:space:]]_?__asan_init(@.*)?$' "$TMPDIR/symbols"; then
+    BORROW_ASAN=1
+elif grep -Eq '[[:space:]]_?main$' "$TMPDIR/symbols"; then
+    BORROW_ASAN=0
+else
+    fail "borrow build probe" "no ASan or main symbol in $EIGS"
+    cat "$TMPDIR/nm.err"
+    exit 1
+fi
+# A guard diagnostic followed by an unrelated failure is not its abort.
+# Reject sanitizer findings even when an abort_on_error setting yields 134.
+guard_abort() {
+    local classification=0
+    lsan_classify "$2" || classification=$?
+    [ "$1" -eq 134 ] && [ "$classification" -eq 2 ]
 }
 
 echo "  -- borrow protocol at out-of-VM call sites (#720) --"
@@ -90,14 +117,18 @@ echo "  -- borrow-scan guard (#548) --"
 
 # The test-only environment switch lowers the scan cap to zero; coalesce then
 # returns its first non-null direct child past that planted cap. No builtin is
-# added to the language surface. Release builds compile the guard out.
-printf 'r is coalesce of [null, 7]\nprint of r\n' > "$TMPDIR/past.eigs"
+# added to the language surface. A heap string exercises the direct-child
+# scan; an immediate numeric slot would never enter it. Release builds compile
+# the guard out.
+printf 'r is coalesce of [null, "borrowed"]\nprint of r\n' > "$TMPDIR/past.eigs"
 
 out=$(EIGS_BORROW_GUARD_PLANT=1 "$EIGS" "$TMPDIR/past.eigs" 2>&1)
 rc=$?
-if [ "$rc" -eq 0 ]; then
+if [ "$BORROW_ASAN" -eq 0 ] && [ "$rc" -eq 0 ] && [ "$out" = "borrowed" ]; then
     echo "  SKIP: non-sanitizer build — borrow guard compiled out (release is zero-cost by design)"
-elif echo "$out" | grep -q "borrow-scan guard (#548)" \
+elif [ "$BORROW_ASAN" -eq 0 ]; then
+    fail "release borrow plant control" "rc=$rc got: $out"
+elif guard_abort "$rc" "$out" && echo "$out" | grep -q "borrow-scan guard (#548)" \
    && echo "$out" | grep -q "coalesce" \
    && echo "$out" | grep -q "VM_BORROW_SCAN_CAP"; then
     ok "planted past-cap borrow aborts and names the builtin and cap (rc=$rc)"
@@ -107,7 +138,7 @@ fi
 
 # Without the plant the same ordinary builtin call must remain clean.
 out=$("$EIGS" "$TMPDIR/past.eigs" 2>&1); rc=$?
-if [ "$rc" -eq 0 ] && [ "$out" = "7" ]; then
+if [ "$rc" -eq 0 ] && [ "$out" = "borrowed" ]; then
     ok "borrow plant is opt-in; ordinary coalesce remains clean"
 else
     fail "borrow plant opt-in control" "rc=$rc got: $out"
@@ -120,13 +151,16 @@ fi
 printf 'define vm_view_plant() as:\n    xs is [7]\n    return xs[0].a\nprint of vm_view_plant of []\n' \
     > "$TMPDIR/vm_view.eigs"
 # `xs[0].a` on a number raises in every build, so a nonzero rc alone does not
-# say the plant ran: compare against the same program without the plant.
+# say the plant ran: ASan builds must name the numeric-view guard explicitly.
+# Release must still behave exactly like the unplanted control.
 base=$("$EIGS" "$TMPDIR/vm_view.eigs" 2>&1); base_rc=$?
 out=$(EIGS_VM_VIEW_GUARD_PLANT=1 "$EIGS" "$TMPDIR/vm_view.eigs" 2>&1)
 rc=$?
-if [ "$rc" -eq "$base_rc" ] && [ "$out" = "$base" ]; then
+if [ "$BORROW_ASAN" -eq 0 ] && [ "$rc" -eq "$base_rc" ] && [ "$out" = "$base" ]; then
     echo "  SKIP: non-borrow-guard build — VM view plant compiled out"
-elif echo "$out" | grep -q "numeric view refcount moved"; then
+elif [ "$BORROW_ASAN" -eq 0 ]; then
+    fail "release VM view plant control" "rc=$rc got: $out"
+elif guard_abort "$rc" "$out" && echo "$out" | grep -q "numeric view refcount moved"; then
     ok "planted VM numeric-view retention aborts before dispatch (rc=$rc)"
 else
     fail "planted VM numeric-view guard diagnostic" "rc=$rc got: $(echo "$out" | head -1)"
