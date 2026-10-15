@@ -1,0 +1,19 @@
+# #1736 row 1 with main BLOCKED in task_join on a different, healthy task: the
+# detached task's death stops the program at that join. Nothing else runs —
+# the joined task never finishes and main never resumes.
+# Expected: "MAIN_JOINING", the trace, rc 1, and none of SLOW_FINISHED /
+# JOINED / MARK_END.
+define die() as:
+    task_yield of null
+    missing
+define slow() as:
+    task_sleep of 100
+    print of "SLOW_FINISHED"
+    return 5
+d is task_spawn of die
+task_detach of d
+s is task_spawn of slow
+print of "MAIN_JOINING"
+v is task_join of s
+print of f"JOINED {v}"
+print of "MARK_END"

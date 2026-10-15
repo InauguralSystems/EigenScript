@@ -1,6 +1,7 @@
-# #530: a DETACHED worker that dies of an uncaught error is reaped at finish,
-# but its death must STILL fail the process — #493's guarantee survives the
-# reap via the scheduler-level counter. Expected: stderr trace + rc 1.
+# #1736 row 1 (flipped from #530): a DETACHED worker that dies of an uncaught
+# error can never be joined, so the program fails fast — its trace prints and
+# the process stops at main's next scheduling point (this task_yield).
+# Expected: "main continues", the trace, rc 1, and NO "MARK_END".
 define die() as:
     missing
 id is task_spawn of die

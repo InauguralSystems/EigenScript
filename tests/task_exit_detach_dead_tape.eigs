@@ -1,0 +1,23 @@
+# #1736 row 2 under record/replay: a joinable worker dies on its first six (a
+# taped random_int), main notices through task_alive, and then detaches it —
+# the stop. Record and replay must stop at the same task_detach after the
+# same main tick, and exit 1 both times.
+define roller() as:
+    n is 0
+    loop while true:
+        r is random_int of [1, 6]
+        n is n + 1
+        if r == 6:
+            throw of f"rolled a six on roll {n}"
+        task_yield of null
+t is task_spawn of roller
+i is 0
+loop while (task_alive of t) and i < 300:
+    i is i + 1
+    v is random_int of [1, 1000]
+    print of f"main tick {i}: {v}"
+    task_yield of null
+k is random_int of [1, 1000]
+print of f"worker gone after tick {i}; k={k}"
+task_detach of t
+print of "MARK_END"

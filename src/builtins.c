@@ -5184,10 +5184,12 @@ Value* builtin_task_self(Value *arg) {
  * (#530, the pthread_detach precedent): it is reaped the moment it finishes —
  * or immediately if already finished — releasing its handle slot for reuse,
  * so task-per-message workloads are bounded by CONCURRENT tasks, not lifetime
- * spawns. A detached task's uncaught death still prints its trace and still
- * fails the process at exit (#493 — a scheduler counter survives the reap).
- * Joining a reaped id returns null, like any unknown id. Deterministic; no
- * tape participation. */
+ * spawns. #1736: no join can ever see a detached task's failure, so its
+ * uncaught death prints its trace and STOPS the program at once (exit 1), and
+ * detaching a task that already died of an uncaught error nothing joined
+ * stops the program at this call instead of discarding the error (both
+ * uncatchable; task.c sched_fatal_stop). Joining a reaped id returns null,
+ * like any unknown id. Deterministic; no tape participation. */
 Value* builtin_task_detach(Value *arg) {
     if (!arg || arg->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "task_detach requires a task id (a number)");
@@ -5195,7 +5197,9 @@ Value* builtin_task_detach(Value *arg) {
     }
     int target = 0;
     if (!task_handle_resolve(arg, "task_detach", &target)) return make_num(0);
-    return make_num((double)task_do_detach(target));
+    int detached = task_do_detach(target);
+    if (detached < 0) return make_null();   /* #1736: the stop is already raised */
+    return make_num((double)detached);
 }
 
 /* task_sched_seed of n — install a scheduling seed. By default tasks run FIFO

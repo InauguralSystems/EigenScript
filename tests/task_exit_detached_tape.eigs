@@ -1,0 +1,23 @@
+# #1736 row 1 under record/replay: WHEN the detached worker dies is decided by
+# taped nondeterminism (it throws on its first six), so a replay that
+# re-derived the stop from anything but the tape would stop elsewhere. Record
+# and replay must print the same lines, stop at the same main tick, and exit
+# 1 both times. (5/6)^300 bounds the chance of no six at all.
+define roller() as:
+    n is 0
+    loop while true:
+        r is random_int of [1, 6]
+        n is n + 1
+        print of f"worker roll {n}: {r}"
+        if r == 6:
+            throw of f"rolled a six on roll {n}"
+        task_yield of null
+t is task_spawn of roller
+task_detach of t
+i is 0
+loop while i < 300:
+    i is i + 1
+    v is random_int of [1, 1000]
+    print of f"main tick {i}: {v}"
+    task_yield of null
+print of "MARK_END"
