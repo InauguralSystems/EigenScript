@@ -5,29 +5,39 @@
 #   tools/ci_scope.sh BASE HEAD     classify the diff BASE..HEAD
 #   tools/ci_scope.sh --selftest    build tiny histories and check each verdict
 #
-# Any path not ending in .md means the runtime could be affected. A symlink at
-# either side of the diff is code regardless of its name: its target can be a
-# runtime file even when the link itself ends in .md. CHANGELOG.md
-# and changes/ fragments are gated by tools/changelog_fragments.sh (precheck),
-# so they are not docs-only either (#1268). Both sides of a rename count
-# (#1311): `git mv src/foo.c notes.md` removes a C source from the build, and a
-# diff that shows only the NEW name read it as docs-only.
+# It fails CLOSED: a path is docs only when it is plainly docs, and anything it
+# cannot classify as plain docs is code. Plain docs means all of the following:
+# - the path ends in .md and is printed unquoted. git's quoting is pinned
+#   (core.quotePath=true), so a path with non-ASCII bytes, a quote, a backslash
+#   or a control character keeps its quotes, never ends in .md, and is code;
+# - the path is not CHANGELOG.md, not a changes/ fragment (both are gated by
+#   tools/changelog_fragments.sh, #1268) and not under tests/, which holds the
+#   suite's inputs (no test reads a .md there today, but a new fixture could);
+# - on each side of the diff the entry is absent or a regular file (mode 100644
+#   or 100755). A symlink can expose a runtime file under a .md name, and a
+#   submodule or a directory is never docs.
+# Both sides of a rename count (#1311): `git mv src/foo.c notes.md` removes a C
+# source from the build, and a diff that shows only the NEW name read it as
+# docs-only. An empty diff or a git failure is code too (the script stops).
 set -euo pipefail
 
 classify() {
     local files
-    files=$(git diff --name-only --no-renames "$1" "$2")
+    files=$(git -c core.quotePath=true diff --name-only --no-renames "$1" "$2")
     [ -n "$files" ] || { echo "ci_scope: empty diff $1..$2" >&2; echo "code=true"; return; }
     echo "changed files:" >&2; printf '%s\n' "$files" | sed 's/^/  /' >&2
-    local f old_entry new_entry
+    local f e old_entry new_entry
     while IFS= read -r f; do
         # name-only classification is insufficient for symlinks: docs/x.md may
-        # expose src/x.c. Inspect both trees so a changed or deleted link cannot
-        # hide behind a documentation suffix.
+        # expose src/x.c. Inspect both trees: only an absent entry or a regular
+        # file can be docs, so a changed or deleted link, a submodule or a
+        # directory cannot hide behind a documentation suffix.
         old_entry=$(git ls-tree "$1" -- "$f")
         new_entry=$(git ls-tree "$2" -- "$f")
-        case "$old_entry $new_entry" in *120000*) echo "code=true"; return ;; esac
-        case "$f" in CHANGELOG.md|changes/*) echo "code=true"; return ;; *.md) ;; *) echo "code=true"; return ;; esac
+        for e in "$old_entry" "$new_entry"; do
+            case "$e" in ""|"100644 "*|"100755 "*) ;; *) echo "code=true"; return ;; esac
+        done
+        case "$f" in CHANGELOG.md|changes/*|tests/*) echo "code=true"; return ;; *.md) ;; *) echo "code=true"; return ;; esac
     done <<< "$files"
     echo "code=false"
 }
@@ -58,7 +68,14 @@ selftest() {
     case_ "CHANGELOG.md edit"  true  'echo entry > CHANGELOG.md'
     case_ "changes/ fragment"  true  'mkdir -p changes/fixed && echo "- x" > changes/fixed/1-x.md'
     case_ "docs symlink to code" true 'mkdir -p docs && ln -s ../src/foo.c docs/link.md'
-    [ "$n" -eq 8 ] || { echo "ci_scope selftest: ran $n cases, want 8"; exit 1; }
+    # Fail closed (#1777): what git quotes, a .md under tests/ and a non-file entry are code.
+    case_ "non-ASCII docs path, quoted by git" true 'mkdir -p docs && echo x > "docs/$(printf "\303\251").md"'
+    case_ "non-ASCII code path" true 'echo "int z;" > "src/$(printf "\303\251").c"'
+    case_ "docs path with a space" false 'mkdir -p docs && echo x > "docs/a b.md"'
+    case_ "code path with a space" true 'echo "int s;" > "src/a b.c"'
+    case_ ".md under tests/" true 'mkdir -p tests && echo x > tests/fixture.md'
+    case_ "submodule named .md" true 'git update-index --add --cacheinfo 160000,"$(git rev-parse HEAD)",docs/sub.md && mkdir -p docs/sub.md'
+    [ "$n" -eq 14 ] || { echo "ci_scope selftest: ran $n cases, want 14"; exit 1; }
     echo "ci_scope selftest: $((n - fail))/$n passed"
     [ "$fail" -eq 0 ]
 }

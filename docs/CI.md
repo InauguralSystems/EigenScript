@@ -34,6 +34,18 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
 ## PR lane (`pull_request`)
 
 - `scope` skips runtime steps for a docs-only PR. The doc gates still run.
+  `tools/ci_scope.sh` fails closed. A PR is docs-only only when every
+  changed path is plainly docs:
+  - it is a `.md` file that git prints unquoted;
+  - wherever it exists on either side of the diff, it is a regular file,
+    not a symlink or a submodule;
+  - it is outside `tests/` and `changes/`, and it is not `CHANGELOG.md`.
+
+  Anything else is code (#1777). The merge queue runs every lane whatever
+  the PR's scope, so a PR-stage skip is never the last check on a merge
+  through the queue. The Protection ruleset lets an administrator bypass the
+  queue; then only the PR-stage checks have run, and there a lane skips only
+  a PR that is plainly docs.
 - Linux gcc and clang, HTTP+model, gfx, zlib, net, and the PostgreSQL full
   build each run the complete suite against their own binary.
 - The HTTP+model ASan binary runs the complete suite across weight-balanced
