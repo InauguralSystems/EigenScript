@@ -57,15 +57,21 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VOCAB = {
     # (a) type tests and type derivations
     'VAL_NUM': 'TAG',              # position decides: TEST/CASE/TAGSET/YIELD/EMIT
+                                   # (#1758 R1.2a: deprecated; R1.2z deletes it)
+    'VAL_FLOAT': 'TAG',            # R1.2a: was VAL_NUM
+    'VAL_INT': 'TAG',              # R1.2a: the int ValType (no producer before R1.3)
     'slot_is_f64': 'TEST',         # R1.1: was slot_is_num (slot_is_numeric deleted)
     'slot_is_smi': 'TEST',         # R1.1: the SMI tag test
     'NUM_REUSE': 'TEST',
     'AST_NUM': 'TAG',
     # (b) payload reads
-    'VAL_NUM_RAW': 'RAW',          # an lvalue: `VAL_NUM_RAW(v) = x` is a WRITE
+    'VAL_NUM_RAW': 'RAW',          # an lvalue: `VAL_NUM_RAW(v) = x` is a WRITE (deprecated, R1.2z)
+    'VAL_F64_RAW': 'RAW',          # R1.2a: was VAL_NUM_RAW
+    'VAL_I64_RAW': 'RAW',          # R1.2a: a VAL_INT's int64
     'SLOT_F64_RAW': 'RAW',         # R1.1: was SLOT_NUM_RAW
     'slot_smi_val': 'RAW',         # R1.1: an SMI's int (no int Value exists before R1.3)
-    'VAL_NUM_OFFSET': 'RAW',
+    'VAL_NUM_OFFSET': 'RAW',       # deprecated, R1.2z
+    'VAL_F64_OFFSET': 'RAW',       # R1.2a: was VAL_NUM_OFFSET
     'slot_f64_value': 'READ',      # R1.1: replaces vm.c's slot_as_double (floats only)
     'slot_int_value': 'READ',      # R1.1: an int's value (SMI; R1.2a adds the VAL_INT box)
     'eigs_num_arg': 'READ',
@@ -186,8 +192,9 @@ DISPATCHERS = {
 TOKEN_RE = re.compile(r'\b(' + '|'.join(sorted(VOCAB, key=len, reverse=True)) + r')\b')
 # Raw union members: the Value's double (`num_`) and the slot's (`d_`). Only
 # the accessor macros may name them; anywhere else is a bypass.
-RAW_MEMBER = re.compile(r'(?:\.|->)(d_|num_)\b')
-RAW_MEMBER_HOMES = {'#define VAL_NUM_RAW', '#define SLOT_F64_RAW', '#define VAL_NUM_OFFSET'}
+RAW_MEMBER = re.compile(r'(?:\.|->)(d_|num_|f64_|i64_)\b')
+RAW_MEMBER_HOMES = {'#define VAL_NUM_RAW', '#define SLOT_F64_RAW', '#define VAL_NUM_OFFSET',
+                    '#define VAL_F64_RAW', '#define VAL_I64_RAW', '#define VAL_F64_OFFSET'}
 C_KEYWORDS = {'if', 'while', 'for', 'switch', 'return', 'sizeof', 'do', 'else',
               'case', 'defined', '__attribute__', '__typeof__', '_Generic'}
 
@@ -354,6 +361,8 @@ def val_num_kind(line, start, end, token):
         return 'EMIT'            # JIT immediate operand of a type compare
     if (re.search(r'[({,]\s*$', before) or not before) and re.match(r'[)},]', after):
         return 'DATA'            # the tag as data: enumerator, kind table, argument
+    if not before and re.match(r'EIGS_R12_DEPRECATED\(', after):
+        return 'DATA'            # #1758 R1.2a-z: the deprecated alias enumerator itself
     return 'UNKNOWN'
 
 
@@ -390,7 +399,7 @@ def scan_file(path, rel):
             kind = VOCAB[tok]
             if kind == 'TAG':
                 kind = val_num_kind(line, m.start(), m.end(), tok)
-            elif tok in ('VAL_NUM_RAW', 'SLOT_F64_RAW'):
+            elif tok in ('VAL_NUM_RAW', 'VAL_F64_RAW', 'VAL_I64_RAW', 'SLOT_F64_RAW'):
                 kind = raw_kind(line, m.end())
             sites.append((rel, ln, scope[ln], tok, kind))
         if JIT_FILES.match(rel):
@@ -420,9 +429,9 @@ def classify(site):
 
 
 # ---- derived accessor check ----------------------------------------------
-READ_IN_BODY = re.compile(r'\b(VAL_NUM_RAW|SLOT_F64_RAW|eigs_num_arg|eigs_list_num|'
+READ_IN_BODY = re.compile(r'\b(VAL_NUM_RAW|VAL_F64_RAW|VAL_I64_RAW|SLOT_F64_RAW|eigs_num_arg|eigs_list_num|'
                           r'eigs_slot_num|list_get_num|dict_value_get_num|slot_f64_value)\b|'
-                          r'(?:\.|->)(?:d_|num_)\b')
+                          r'(?:\.|->)(?:d_|num_|f64_|i64_)\b')
 
 
 def derived_accessors(stripped_by_file, scope_by_file, sigs_by_file):
@@ -693,7 +702,7 @@ Q7_CLASSES = ['geometry', 'bounded', 'magnitude']
 # A LOSS row claims the body computes through a double; it must have one.
 DOUBLE_PATH = {'eigs_num_arg', 'eigs_list_num', 'eigs_slot_num', 'eigs_opt_num', 'eigs_slot_opt_num',
                'eigs_slot_elem_num', 'eigs_elem_num', 'buffer_read_num', 'make_num', 'slot_f64_value',
-               'VAL_NUM_RAW', 'SLOT_F64_RAW', 'strtod', 'atof', 'num_guard', 'list_set_num'}
+               'VAL_NUM_RAW', 'VAL_F64_RAW', 'SLOT_F64_RAW', 'strtod', 'atof', 'num_guard', 'list_set_num'}
 
 
 def read_table(doc):
@@ -762,7 +771,7 @@ def main():
     classified, unclassified = [], []
     rule_hits = [0] * len(ROLE_RULES)
     token_hits = {t: 0 for t in VOCAB}
-    token_hits.update({'d_': 0, 'num_': 0})
+    token_hits.update({'d_': 0, 'num_': 0, 'f64_': 0, 'i64_': 0})
     for site in sites:
         cat, rule = classify(site)
         if site[3] in token_hits:

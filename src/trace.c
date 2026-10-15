@@ -2818,6 +2818,9 @@ static void write_value_ptr(Value *v) {
     if (!v) { tp_puts("null"); return; }
     switch (v->type) {
         case VAL_NUM:          tp_printf("%.17g", VAL_NUM_RAW(v)); break;
+        /* #1758 R1.2a: an int is written as digits by tape v7 (R1.3); a v6
+         * tape cannot tell it from a float, so it is refused until then. */
+        case VAL_INT:          eigs_int_unwired("write_value_ptr", (uint64_t)VAL_I64_RAW(v));
         case VAL_NULL:         tp_puts("null"); break;
         case VAL_STR:          write_string(v->data.str); break;
         case VAL_LIST:         tp_printf("<list:%d>", v->data.list.count); break;
@@ -2956,6 +2959,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
     if (!v) { wf_puts("null", budget); return; }
     switch (v->type) {
         case VAL_NUM:  wf_printf(budget, "%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_INT:  eigs_int_unwired("write_value_ptr_full", (uint64_t)VAL_I64_RAW(v));   /* #1758: tape v7, R1.3 */
         case VAL_NULL: wf_puts("null", budget); break;
         case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
         case VAL_STR:  write_string_full(v->data.str, budget); break;

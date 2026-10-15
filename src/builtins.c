@@ -865,6 +865,7 @@ Value* builtin_type(Value *arg) {
     if (!arg) return make_str("none");
     switch (arg->type) {
         case VAL_NUM: return make_str("num");
+        case VAL_INT: return make_str("num");     /* #1758 (B): one number type at the surface */
         case VAL_STR: return make_str("str");
         case VAL_LIST: return make_str("list");
         case VAL_FN: return make_str("fn");
@@ -920,6 +921,12 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
              * different number. */
             char nb[32];
             eigs_num_text(nb, sizeof(nb), eigs_num_arg(v, __func__));
+            strbuf_append(out, nb);
+            break;
+        }
+        case VAL_INT: {     /* #1758 R1.2a: an int encodes as its exact digits */
+            char nb[24];
+            eigs_int_text(nb, sizeof(nb), VAL_I64_RAW(v));
             strbuf_append(out, nb);
             break;
         }
@@ -989,7 +996,15 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
             strbuf_append_char(out, '}');
             break;
         }
-        default:
+        /* #1758 R1.2a: the `default:` that answered "null" is gone, so a new
+         * ValType is a build error here (-Werror=switch) instead of a silent
+         * null. These are the types it covered, unchanged: null, fn and
+         * builtin (also caught above), raw JSON and a buffer. */
+        case VAL_NULL:
+        case VAL_FN:
+        case VAL_BUILTIN:
+        case VAL_JSON_RAW:
+        case VAL_BUFFER:
             strbuf_append(out, "null");
             break;
     }
@@ -2902,6 +2917,7 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
     if (!v || !desc_spend(ctx, 1)) return NULL;
     switch (v->type) {
     case VAL_NUM:
+    case VAL_INT:       /* #1758 R1.2a: an immutable scalar, like a float */
     case VAL_STR:
     case VAL_NULL:
     case VAL_JSON_RAW:

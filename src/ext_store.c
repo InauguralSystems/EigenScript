@@ -206,6 +206,12 @@ static void store_json_encode(Value *v, strbuf *out) {
                 strbuf_append_fmt(out, "%.15g", n);
             break;
         }
+        case VAL_INT: {     /* #1758 R1.2a: an int encodes as its exact digits */
+            char nb[24];
+            eigs_int_text(nb, sizeof(nb), VAL_I64_RAW(v));
+            strbuf_append(out, nb);
+            break;
+        }
         case VAL_STR: {
             eigs_json_escape_string(out, v->data.str);
             break;

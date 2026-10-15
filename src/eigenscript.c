@@ -306,7 +306,8 @@ const char* eigs_interrogative_word(int kind) {
 
 const char* val_type_name(ValType t) {
     switch (t) {
-        case VAL_NUM: return "num";
+        case VAL_FLOAT: return "num";
+        case VAL_INT: return "num";     /* #1758 (B): one number type at the surface */
         case VAL_STR: return "str";
         case VAL_LIST: return "list";
         case VAL_FN: return "fn";
@@ -439,6 +440,9 @@ static double compute_entropy_impl(Value *v) {
     switch (v->type) {
         case VAL_NULL: return 0.0;
         case VAL_NUM: return entropy_of_num(VAL_NUM_RAW(v));
+        /* #1758 R1.2a (design 7): an int's entropy is its double's; it joins
+         * the numeric channel when ints exist (R1.3). */
+        case VAL_INT: return entropy_of_num((double)VAL_I64_RAW(v));
         case VAL_STR:      return entropy_of_cstr(v->data.str);
         case VAL_JSON_RAW: return entropy_of_cstr(v->data.str);
         case VAL_LIST: {
@@ -1723,6 +1727,7 @@ void free_value(Value *v) {
          * that -Werror=switch (Makefile CFLAGS) makes a new ValType a build
          * error here instead of a silent leak. */
         case VAL_NUM:
+        case VAL_INT:      /* #1758 R1.2a: an int box owns nothing */
         case VAL_BUILTIN:
         case VAL_NULL:
         case VAL_BOOL:
@@ -2655,6 +2660,9 @@ static Value *chan_clone_rec(Value *v, int depth) {
         v->type != VAL_BOOL && v->type != VAL_STR) { val_incref(v); return v; }
     switch (v->type) {
         case VAL_NUM:  return make_num(VAL_NUM_RAW(v));
+        /* #1758 R1.2a: a channel gets a fresh int box, which needs make_int
+         * (R1.3); no int exists before then. */
+        case VAL_INT:  eigs_int_unwired("chan_clone_rec", (uint64_t)VAL_I64_RAW(v));
         case VAL_NULL: return make_null();
         case VAL_BOOL: return make_bool(v->data.boolean);
         case VAL_STR:  return make_str(v->data.str);
@@ -2843,6 +2851,7 @@ int is_truthy(Value *v) {
     switch (v->type) {
         case VAL_NULL: return 0;
         case VAL_NUM: return VAL_NUM_RAW(v) != 0.0;
+        case VAL_INT: return VAL_I64_RAW(v) != 0;   /* #1758 R1.2a */
         case VAL_STR: return v->data.str && v->data.str[0] != '\0';
         case VAL_LIST: return v->data.list.count > 0;
         case VAL_FN: return 1;
@@ -2894,6 +2903,7 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
     if (depth > 64 && (a->type == VAL_LIST || a->type == VAL_DICT)) return a == b;
     switch (a->type) {
         case VAL_NUM:  return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
+        case VAL_INT:  return VAL_I64_RAW(a) == VAL_I64_RAW(b);   /* #1758 R1.2a: both ints */
         case VAL_STR:  return strcmp(a->data.str, b->data.str) == 0;
         case VAL_NULL: return 1;
         case VAL_BOOL: return a->data.boolean == b->data.boolean;
@@ -2961,6 +2971,11 @@ int values_equal_op(Value *a, Value *b, const char *op) { return values_equal_im
  *
  * Every producer of number text now calls this, so a fourth copy cannot
  * appear with a fourth rule. Writes at most 32 bytes. */
+/* #1758 R1.2a: THE int->text rule: exact decimal digits, every int64. */
+void eigs_int_text(char *buf, size_t nbuf, int64_t i) {
+    snprintf(buf, nbuf, "%lld", (long long)i);
+}
+
 void eigs_num_text(char *buf, size_t nbuf, double n) {
     /* Exact integers up to 2^53 (the largest integer all doubles represent
      * exactly) print without a decimal point or exponent. The magnitude test
@@ -2988,6 +3003,10 @@ char* value_to_string(Value *v) {
         case VAL_NULL: return xstrdup("null");
         case VAL_NUM: {
             eigs_num_text(buf, sizeof(buf), VAL_NUM_RAW(v));
+            return xstrdup(buf);
+        }
+        case VAL_INT: {     /* #1758 R1.2a: an int prints its exact digits */
+            eigs_int_text(buf, sizeof(buf), VAL_I64_RAW(v));
             return xstrdup(buf);
         }
         case VAL_STR: return xstrdup(v->data.str);
@@ -4210,6 +4229,7 @@ static int gc_value_is_node(Value *v) {
         return 1;
     /* Leaves: no owned edges out, so no rows and never a cycle member. */
     case VAL_NUM:
+    case VAL_INT:
     case VAL_STR:
     case VAL_NULL:
     case VAL_JSON_RAW:

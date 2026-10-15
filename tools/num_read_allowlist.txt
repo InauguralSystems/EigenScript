@@ -6,6 +6,7 @@
 # Builtins never belong here: they read through eigs_num_arg / eigs_list_num /
 # eigs_opt_num / eigs_elem_num, which raise on a bool.
 builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel into a result buffer cell (EIGS_STRICT=0 path); a write, no Value is read
+builtins.c|eigs_json_encode_value|1|JSON encoder: case VAL_INT writes the int's exact digits (#1758 R1.2a)
 container.h|dict_value_get_num|1|accessor numeric fast path: reads the slot only behind its own slot_is_f64 test (#1665 arm D)
 container.h|dict_value_get_return|1|builtin-return read boxes an immediate only after slot_is_f64
 container.h|eigs_container_slot|1|Value-to-slot encoder reads a box only after type == VAL_NUM, then num_guards it
@@ -21,11 +22,11 @@ container.h|slot_view|2|numeric view copies a proven immediate into caller stora
 chunk.c|chunk_disassemble|1|debug disassembly prints a constant behind its own type == VAL_NUM test
 chunk.c|const_equal|2|constant-pool dedup compares two constants after testing both are VAL_NUM
 chunk.c|const_hash_value|1|constant-pool hash of a constant inside its type == VAL_NUM branch
-eigenscript.c|chan_clone_rec|1|channel deep-copy, switch case VAL_NUM
-eigenscript.c|compute_entropy_impl|1|observer entropy, switch case VAL_NUM
+eigenscript.c|chan_clone_rec|2|channel deep-copy, switch case VAL_NUM; case VAL_INT names the int it refuses (unwired, R1.3)
+eigenscript.c|compute_entropy_impl|2|observer entropy, switch case VAL_NUM, and case VAL_INT (an int's entropy is its double's, design 7)
 eigenscript.c|ent_child_slot|1|observer entropy reads an immediate only after slot_is_f64
 eigenscript.c|eigs_num_arg_slow|1|checking accessor itself: reads only after type == VAL_NUM, raises otherwise
-eigenscript.c|is_truthy|1|truthiness, switch case VAL_NUM (a bool has its own case)
+eigenscript.c|is_truthy|2|truthiness, switch case VAL_NUM and case VAL_INT (a bool has its own case)
 eigenscript.c|make_num|1|constructor: writes the number of a Value it just typed VAL_NUM
 eigenscript.c|make_num_permanent|1|constructor: writes the number of a Value it just typed VAL_NUM
 eigenscript.c|module_ns_project|1|mirror refresh: reads the binding slot after slot_is_f64 and stores it over a numeric mirror slot
@@ -35,13 +36,17 @@ eigenscript.c|observer_slot_sample_gated|1|observer sample after newval->type ==
 eigenscript.c|observer_slot_update|1|observer update after newval->type == VAL_NUM
 eigenscript.c|slot_from_value|1|NaN-boxing boundary, inside its VAL_NUM branch
 eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_f64
-eigenscript.c|values_equal_impl|2|equality, switch case VAL_NUM after the bool/num pair raised
-eigenscript.c|value_to_string|1|printing, switch case VAL_NUM
+eigenscript.c|values_equal_impl|4|equality, switch case VAL_NUM after the bool/num pair raised, and case VAL_INT (both ints)
+eigenscript.c|value_to_string|2|printing, switch case VAL_NUM and case VAL_INT (exact digits)
 eigenscript.h|#define VAL_NUM_OFFSET|1|the raw member offset definition (JIT)
+eigenscript.h|#define VAL_F64_OFFSET|1|the raw double member offset definition (JIT; #1758 R1.2a: was VAL_NUM_OFFSET)
 eigenscript.h|#define VAL_NUM_RAW|1|the raw read definition
+eigenscript.h|#define VAL_F64_RAW|1|the raw double read definition (#1758 R1.2a: was VAL_NUM_RAW)
+eigenscript.h|#define VAL_I64_RAW|1|the raw int64 read definition (#1758 R1.2a)
 eigenscript.h|eigs_num_arg|1|inline fast path of the checking accessor: reads only after type == VAL_NUM
 eigs_embed.c|eigs_value_as_num|1|embedding API: reads only after type == VAL_NUM; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
 embed_smoke.c|main|7|C test program: builds and inspects slots it constructed as numbers
+ext_store.c|store_json_encode|1|store record encoder: case VAL_INT writes the int's exact digits (#1758 R1.2a)
 jit.c|emit_load_numeric_operand|2|emits the load of data.num_ after the emitted type == VAL_NUM / refcount guard
 jit.c|jit_compile_to_thunk|2|emits loads/stores of data.num_ behind emitted immediate-number checks; reads a VAL_NUM constant
 jit_smoke.c|jit_helper_index_get|2|JIT smoke test program (stubbed helpers over slots it built as numbers)
@@ -52,8 +57,8 @@ jit_smoke.c|run_index_bail_cases|2|JIT smoke test program (stubbed helpers over 
 jit_smoke.c|run_reader_bail_cases|8|JIT smoke test program (stubbed helpers over slots it built as numbers)
 jit_smoke.c|run_store_cases|4|JIT smoke test program (stubbed helpers over slots it built as numbers)
 trace.c|write_slot|1|tape writer after slot_is_f64
-trace.c|write_value_ptr|1|tape writer, switch case VAL_NUM
-trace.c|write_value_ptr_full|1|tape writer, switch case VAL_NUM
+trace.c|write_value_ptr|2|tape writer, switch case VAL_NUM; case VAL_INT names the int it refuses (tape v7, R1.3)
+trace.c|write_value_ptr_full|2|tape writer, switch case VAL_NUM; case VAL_INT names the int it refuses (tape v7, R1.3)
 value_slot.h|#define SLOT_F64_RAW|1|the raw slot read definition (#1758: was SLOT_NUM_RAW)
 value_slot.h|slot_f64_value|2|float reader (#1758: was vm.c slot_as_double): an immediate after slot_is_f64, a box after type == VAL_NUM; 0 for an int
 value_slot.h|slot_from_f64|1|constructor: writes a double into a fresh slot (#1758: was slot_from_num)
@@ -68,7 +73,7 @@ vm.c|jit_helper_iter_next|1|JIT helper: loop state list [iterable, idx, snap] bu
 vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|loop_iter_store|1|writes the loop counter slot after slot_is_f64
 vm.c|obs_dump_scope|1|SIGUSR1 observer dump after slot_is_f64
-vm.c|obs_dump_value|2|SIGUSR1 observer dump after slot_is_f64 / case VAL_NUM
+vm.c|obs_dump_value|3|SIGUSR1 observer dump after slot_is_f64 / case VAL_NUM / case VAL_INT (exact digits)
 vm.c|obs_slot_num|1|observer numeric channel (#1758): reads an immediate after slot_is_f64; an int converts exactly
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_f64
 vm.c|slot_truthy|1|truthiness after slot_is_f64

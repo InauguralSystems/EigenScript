@@ -312,6 +312,7 @@ EigsValueType eigs_value_type(EigsValue *v) {
     if (!v) return EIGS_TYPE_NULL;
     switch (v->type) {
         case VAL_NUM:     return EIGS_TYPE_NUM;
+        case VAL_INT:     return EIGS_TYPE_NUM;   /* #1758 (Q3): one embed number type */
         case VAL_STR:     return EIGS_TYPE_STR;
         case VAL_LIST:    return EIGS_TYPE_LIST;
         case VAL_DICT:    return EIGS_TYPE_DICT;

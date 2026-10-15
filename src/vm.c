@@ -123,6 +123,7 @@ static void obs_dump_value(EigsSlot s, char *buf, size_t nbuf) {
         Value *v = slot_as_ptr(s);
         switch (v->type) {
             case VAL_NUM: obs_dump_num(VAL_NUM_RAW(v), buf, nbuf); break;
+            case VAL_INT: eigs_int_text(buf, nbuf, VAL_I64_RAW(v)); break;   /* #1758 R1.2a */
             case VAL_STR: {
                 size_t o = 0, i;
                 buf[o++] = '"';
@@ -5775,7 +5776,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             case VAL_BUFFER: len = target->data.buffer.count; break;
             /* Not sliceable. Enumerated rather than covered by a `default:`
              * so -Werror=switch forces a new ValType to choose here. */
-            case VAL_NUM: case VAL_FN: case VAL_BUILTIN: case VAL_NULL:
+            case VAL_NUM: case VAL_INT: case VAL_FN: case VAL_BUILTIN: case VAL_NULL:
             case VAL_JSON_RAW: case VAL_DICT: case VAL_TEXT_BUILDER: case VAL_BOOL:
                 rt_error(EK_TYPE, g_vm.current_line, "cannot slice %s",
                               val_type_name(target->type));

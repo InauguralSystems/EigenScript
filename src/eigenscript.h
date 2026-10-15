@@ -266,22 +266,43 @@ struct ASTNode {
 
 /* ---- Value types ---- */
 
+/* #1758 R1.2: deprecated spellings, kept only while R1.2b-n migrate their
+ * sites (the compiler's warnings are the progress meter); R1.2z deletes them,
+ * so a straggler stops compiling. */
+#if defined(__GNUC__) || defined(__clang__)
+#define EIGS_R12_DEPRECATED(msg) __attribute__((deprecated(msg)))
+#else
+#define EIGS_R12_DEPRECATED(msg)
+#endif
+
 typedef enum {
-    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER,
+    /* #1758 R1.2a: a double (was VAL_NUM). A number Value is a VAL_FLOAT or a
+     * VAL_INT; `type of` says "num" for both (decision (B)). */
+    VAL_FLOAT, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER,
     /* #1637: a distinct boolean. Two immortal singletons (make_bool); the
      * slot layer carries it as the TAG_BOOL immediate. Arithmetic on it and
      * `==` against a number raise. */
-    VAL_BOOL
+    VAL_BOOL,
+    /* #1758 R1.2a: an exact int64, boxed only outside the SMI range (design
+     * 2.1). Nothing produces one before R1.3 (make_int does not exist yet):
+     * every arm that handles it is dead code until then. */
+    VAL_INT,
+    VAL_NUM EIGS_R12_DEPRECATED("#1758 R1.2: VAL_FLOAT, with an explicit VAL_INT arm") = VAL_FLOAT
 } ValType;
 
 typedef struct Value Value;
 typedef Value* (*BuiltinFn)(Value* arg);
 
 /* #1637 round 4: the ONE raw way into a Value's number (an lvalue: also the
- * write). Only for a Value whose type is proven VAL_NUM, in a function listed
- * in tools/num_read_allowlist.txt with its use count. Everything else uses
- * eigs_num_arg / eigs_list_num / eigs_opt_num. VAL_NUM_OFFSET is the same
- * member for JIT-emitted loads and stores. */
+ * write). Only for a Value whose type is proven (VAL_FLOAT for the double,
+ * VAL_INT for the int64), in a function listed in tools/num_read_allowlist.txt
+ * with its use count. Everything else uses eigs_num_arg / eigs_list_num /
+ * eigs_opt_num. VAL_F64_OFFSET is the double member for JIT-emitted loads and
+ * stores (#1758 R1.2a: were VAL_NUM_RAW, VAL_NUM_OFFSET and the member num_). */
+#define VAL_F64_RAW(v)  ((v)->data.f64_)
+#define VAL_I64_RAW(v)  ((v)->data.i64_)
+#define VAL_F64_OFFSET  ((int32_t)offsetof(Value, data.f64_))
+/* Deprecated until R1.2z: both spell the deprecated member, so every use warns. */
 #define VAL_NUM_RAW(v)  ((v)->data.num_)
 #define VAL_NUM_OFFSET  ((int32_t)offsetof(Value, data.num_))
 
@@ -422,7 +443,9 @@ struct Value {
          * proven -- and every VAL_NUM_RAW use sits in a function on the
          * reviewed list tools/num_read_allowlist.txt, pinned by count
          * (tools/num_read_check.sh). */
-        double num_;
+        double f64_;    /* VAL_FLOAT (#1758 R1.2a: was num_) */
+        double num_ EIGS_R12_DEPRECATED("#1758 R1.2: f64_ through VAL_F64_RAW");
+        int64_t i64_;   /* VAL_INT (#1758 R1.2a; no producer before R1.3) */
         int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
         /* VAL_STR / VAL_JSON_RAW payload: NUL-terminated bytes.
          *
@@ -2249,6 +2272,7 @@ char* value_to_string(Value *v);
  * `str of`, all three JSON encoders, the SIGUSR1 observer dump — so a copy
  * with a different precision cannot reappear. Needs 32 bytes. */
 void eigs_num_text(char *buf, size_t nbuf, double n);
+void eigs_int_text(char *buf, size_t nbuf, int64_t i);   /* #1758 R1.2a: exact digits */
 void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
 /* #880: decode a JSON string body (s[*pos] = first byte after the opening
