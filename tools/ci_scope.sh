@@ -22,9 +22,6 @@
 set -euo pipefail
 
 classify() {
-    # TEMPORARY (#1777 demonstration c, reverted by the next commit): every
-    # diff reads as docs-only, so this PR shows a docs-only PR's scope.
-    echo "code=false"; return
     local files
     files=$(git -c core.quotePath=true diff --name-only --no-renames "$1" "$2")
     [ -n "$files" ] || { echo "ci_scope: empty diff $1..$2" >&2; echo "code=true"; return; }
