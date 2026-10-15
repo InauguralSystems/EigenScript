@@ -2150,7 +2150,8 @@ fire-and-forget worker's failure is never silently swallowed into a
 success exit. `task_join`-ing the dead task and `catch`-ing its error
 recovers normally (exit 0), exactly as for an inline `try`/`catch`. A
 task ended deliberately with `task_kill` is a teardown, not an uncaught
-error, and does not by itself fail the process.
+error, and does not by itself fail the process. A **detached** task (below)
+can never be joined, so its uncaught error does more: it stops the program.
 
 Tasks communicate through **mailboxes**. `task_send of [id, value]`
 appends a deep-copied message to task `id`'s FIFO mailbox (share-
@@ -2169,9 +2170,17 @@ A task nobody will ever join can be marked **fire-and-forget** with
 detached task releases all its resources the moment it finishes, so a
 long-running program can spawn an unbounded stream of short-lived
 tasks; an undetached task instead stays joinable until the program
-ends. A detached task that dies of an uncaught error still prints its
-trace and still makes the process exit non-zero — fire-and-forget
-never silently swallows a failure.
+ends. A detached task that dies of an uncaught error prints its trace
+and **stops the program** (exit status 1) at main's next scheduling
+point — the `task_yield`, or the blocking `task_join`/`task_recv`/
+`task_sleep`, during which it ran — or in the exit drain if main never
+yields. Detaching a task that has *already* died of an uncaught error
+nothing joined stops the program at that `task_detach` call instead of
+discarding the error. Neither stop is catchable, and both land at the
+same point on every run and under replay. A detached task that must
+survive its own errors catches them inside the task; the full rule,
+and why `spawn`ed OS threads differ, is in
+[CONCURRENCY.md](CONCURRENCY.md#when-a-task-dies-of-an-uncaught-error-1736).
 
 ```eigenscript
 worker_id is 0

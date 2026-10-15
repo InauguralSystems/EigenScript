@@ -254,6 +254,12 @@ EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
   calls wake, all VM threads unwind, and the process exits with N after worker
   teardown. Native I/O must return before teardown completes. Embedded outer
   evals have separate stop scopes; workers retain their spawning eval's scope.
+- A cooperative task (`task_spawn`) that dies of an uncaught error prints its
+  trace. Joinable: main carries on, and `try`/`catch` around `task_join`
+  recovers the error (never joined, the run exits 1). **Detached**
+  (`task_detach`): nothing can ever join it, so the error **stops the
+  program** (exit 1, not catchable), and so does detaching a task that already
+  died that way. A detached task that must survive its errors catches them.
 - **A number, string, list, dict, buffer, or text builder sent through a
   channel is DEEP-COPIED**; the receiver cannot see a later mutation by the
   sender. The same boundary applies to thread results and cooperative tasks.
