@@ -871,7 +871,6 @@ Value* builtin_type(Value *arg) {
         case VAL_BUILTIN:   /* #1060: a named native function reports as a user fn */
             return make_str(eigs_native_fn_name(arg->data.builtin) ? "fn" : "builtin");
         case VAL_NULL: return make_str("none");
-        case VAL_JSON_RAW: return make_str("json_raw");
         case VAL_DICT: return make_str("dict");
         case VAL_BUFFER: return make_str("buffer");
         case VAL_TEXT_BUILDER: return make_str("text_builder");
@@ -1489,8 +1488,6 @@ Value* builtin_json_build(Value *arg) {
             strbuf_append(&out, "null");
         } else if (val->type == VAL_BOOL) {   /* #1637: a JSON boolean, not the string "true" */
             strbuf_append(&out, val->data.boolean ? "true" : "false");
-        } else if (val->type == VAL_JSON_RAW) {
-            strbuf_append(&out, val->data.str);
         } else if (val->type == VAL_STR) {
             eigs_json_escape_string(&out, val->data.str);
         } else {
@@ -2904,7 +2901,6 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
     case VAL_NUM:
     case VAL_STR:
     case VAL_NULL:
-    case VAL_JSON_RAW:
     case VAL_BOOL:
         val_incref(v);
         return v;
