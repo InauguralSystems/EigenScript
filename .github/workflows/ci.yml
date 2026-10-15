@@ -12,6 +12,17 @@ on:
   # true on push AND on merge_group — never `== 'push'`.
   merge_group:
     types: [checks_requested]
+  # The full main lane on demand, for a long-lived branch before it enters the
+  # queue: `gh workflow run ci.yml --ref <branch>` (docs/CI.md, #1787). A
+  # dispatch is not a pull request, so every heavy worker runs as on a push to
+  # main. It runs the DISPATCHED ref's own copy of this file, so what follows
+  # holds for main's text; a branch that edits it can change it, exactly as its
+  # pull request run already could. In this text the one name main owns that is
+  # written here, the rolling ci-main tag, moves only on a push to
+  # refs/heads/main at main's tip; every non-fork ref pushes its own ci-<sha>.
+  # tools/ci_tier_check.sh checks those properties ([ci-main], [writer-actions],
+  # [secrets]).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,14 +37,22 @@ permissions:
 env:
   ASAN_SHARDS: 3
 
-# Only one CI run per ref in flight: a new push (or PR update) cancels the
-# older run for the same branch. Prevents superseded/hung runs from piling
+# One run per concurrency group in flight: a new push to main (or a PR update)
+# cancels the older run in its group. Prevents superseded/hung runs from piling
 # up (2026-08-18: three main-push runs — 214m/118m/81m — alive at once after
 # a valgrind flake, none superseding the others). Pairs with the per-job
 # timeout-minutes, which bounds a single hang; this bounds the *fan-out*.
+# A dispatch has its own group (`ci-dispatch-<ref>`), apart from push, PR and
+# merge-queue runs, main's included. GitHub compares group names
+# case-insensitively, so refs differing only in case share one. A dispatch is
+# never cancelled in progress: a newer dispatch on the same ref waits, and a
+# third replaces the waiting one before it starts any job. So no cancelled
+# dispatch leaves its `if: always()` aggregators failing under required names.
+# Nothing else stops a running dispatch either, a later push to its branch
+# included: cancel it with `gh run cancel <run-id>`.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.ref) || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 # Pull requests run the release suite plus build, lint/LSP, self-test,
 # precheck, and docs gates. Heavy variants report their required names with a
@@ -121,28 +140,41 @@ jobs:
 
       # GHCR requires a lowercase owner; compute the ref once and hand it to
       # the downstream jobs through a job output. `image` is what the Linux
-      # legs run in; `tags` is what this job pushes (empty on fork PRs —
-      # nothing is pushed; main pushes also advance the rolling ci-main tag).
+      # legs run in; `tags` is what this job pushes: empty on fork PRs, this
+      # commit's ci-<sha> on every other run, and the rolling ci-main tag on a
+      # push to main at main's tip only. tools/ci_tier_check.sh runs this step
+      # across event x ref x tip to check that ([ci-main]).
       - name: Compute image ref
         id: ref
         env:
           OWNER: ${{ github.repository_owner }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork == true }}
-        # The event is read from the runner's GITHUB_EVENT_NAME, not an
-        # expression: tools/ci_tier_check.sh reds event-derived expression
-        # values on a required path (#1264). Only push advances ci-main.
+        # The event and ref are read from the runner's GITHUB_EVENT_NAME and
+        # GITHUB_REF, not expressions: tools/ci_tier_check.sh reds
+        # event-derived expression values on a required path (#1264). Only a
+        # push to main whose SHA is main's tip moves ci-main: a dispatch from
+        # any ref, main included, and a re-run of an older push push only
+        # ci-<sha>. Do not gate on GITHUB_RUN_ATTEMPT: a re-run at the tip is
+        # legitimate. Keep it bash-3.2 clean (tr, not ${OWNER,,}): precheck runs
+        # it, and macOS ships bash 3.2.
         run: |
-          BASE="ghcr.io/${OWNER,,}/eigenscript-dev"
+          BASE="ghcr.io/$(printf %s "$OWNER" | tr '[:upper:]' '[:lower:]')/eigenscript-dev"
+          SHA="${{ github.sha }}"
           if [ "$IS_FORK" = "true" ]; then
             echo "image=$BASE:ci-main" >> "$GITHUB_OUTPUT"
             echo "tags=" >> "$GITHUB_OUTPUT"
-          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            echo "image=$BASE:ci-${{ github.sha }}" >> "$GITHUB_OUTPUT"
-            echo "tags=$BASE:ci-${{ github.sha }},$BASE:ci-main" >> "$GITHUB_OUTPUT"
-          else
-            echo "image=$BASE:ci-${{ github.sha }}" >> "$GITHUB_OUTPUT"
-            echo "tags=$BASE:ci-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          TAGS="$BASE:ci-$SHA"
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            # Move ci-main only while this SHA is main's tip, so re-running an
+            # older push run cannot point it back at an older image.
+            tip=$(git ls-remote origin refs/heads/main | cut -f1)
+            [ -n "$tip" ] || { echo "::error::cannot read main's tip; ci-main not moved"; exit 1; }
+            if [ "$tip" = "$SHA" ]; then TAGS="$TAGS,$BASE:ci-main"; else echo "main has moved to $tip: ci-main stays"; fi
+          fi
+          echo "image=$BASE:ci-$SHA" >> "$GITHUB_OUTPUT"
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
 
       - name: Build and push dev image
         if: github.event.pull_request.head.repo.fork != true
@@ -207,6 +239,9 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           base='${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}'
+          # A workflow_dispatch carries no base: select what the dispatched ref
+          # changes against main, as its PR would. An empty base selects nothing.
+          [ -n "$base" ] || base=origin/main
           bash tools/selftests.sh --changed "$base" --list > selection.txt
           cat selection.txt
           n=$(sed -n 's/^selftests: enrolment .*; \([0-9][0-9]*\) self-tests selected$/\1/p' selection.txt)
@@ -1530,12 +1565,20 @@ jobs:
         # not origin/main — otherwise a PR is charged for the Ir cost of the PRs
         # ahead of it and falsely rejected (#1273 code review). Read from the
         # event payload inside the script, never via ${{ }} (tier gate rule).
+        # On a dispatch the baseline is the branch's merge-base with main: the
+        # branch's own changes, as the queue will measure them, not main's
+        # changes since the fork counted against it (or hiding its own).
         run: |
           base=origin/main
           if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
             base=$(jq -r '.merge_group.base_sha' "$GITHUB_EVENT_PATH")
             [ -n "$base" ] && [ "$base" != null ] || { echo "merge_group event without base_sha"; exit 1; }
             git fetch --no-tags --depth=1 origin "$base"
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch --no-tags --unshallow origin main
+            else git fetch --no-tags origin main; fi
+            base=$(git merge-base origin/main HEAD)
+            echo "dispatch: the merge-base of $GITHUB_REF with origin/main ($(git rev-parse origin/main)) is $base"
           else
             git fetch --no-tags --depth=1 origin main
           fi
