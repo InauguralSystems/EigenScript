@@ -48,6 +48,7 @@ import difflib
 import glob
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -197,6 +198,29 @@ RAW_MEMBER_HOMES = {'#define VAL_NUM_RAW', '#define SLOT_F64_RAW', '#define VAL_
                     '#define VAL_F64_RAW', '#define VAL_I64_RAW', '#define VAL_F64_OFFSET'}
 C_KEYWORDS = {'if', 'while', 'for', 'switch', 'return', 'sizeof', 'do', 'else',
               'case', 'defined', '__attribute__', '__typeof__', '_Generic'}
+
+
+def source_files(src):
+    """The files the inventory scans: the TRACKED *.c and *.h directly in
+    `src`, sorted. Inside a git work tree the list comes from `git ls-files`:
+    an ignored, generated header (src/lsp_stdlib_index.h, which `make lsp`
+    writes) is not a source, and a fresh clone does not have it -- scanning
+    it made the committed inventory say `files=65` on a box that had run
+    `make lsp` and fail `--check` everywhere else (CI, the R1.1 fix round).
+    Outside a work tree (a `git archive` export, or a calibration copy that
+    holds only tracked files) every file present is tracked by construction.
+    A file listed but missing from disk is skipped (a deletion not yet
+    staged)."""
+    git = ['git', '-c', 'safe.directory=*', '-C', src]
+    inside = subprocess.run(git + ['rev-parse', '--is-inside-work-tree'], capture_output=True)
+    if inside.returncode == 0 and inside.stdout.strip() == b'true':
+        ls = subprocess.run(git + ['ls-files', '-z', '--', '*.c', '*.h'], capture_output=True)
+        if ls.returncode != 0:
+            raise SystemExit('phase2-inventory: FAIL: git ls-files in %s: %s'
+                             % (src, ls.stderr.decode('utf-8', 'replace').strip()))
+        names = [n for n in ls.stdout.decode('utf-8').split('\0') if n and '/' not in n]
+        return sorted(os.path.join(src, n) for n in names if os.path.isfile(os.path.join(src, n)))
+    return sorted(glob.glob(os.path.join(src, '*.c')) + glob.glob(os.path.join(src, '*.h')))
 
 
 def strip_c(text, keep_strings=False):
@@ -757,7 +781,7 @@ def main():
                     help='print the C slot test population (design 2.5) and exit')
     args = ap.parse_args()
 
-    files = sorted(glob.glob(os.path.join(args.src, '*.c')) + glob.glob(os.path.join(args.src, '*.h')))
+    files = source_files(args.src)
     sites, stripped_by_file, scope_by_file, sigs_by_file = [], {}, {}, {}
     for path in files:
         rel = os.path.basename(path)

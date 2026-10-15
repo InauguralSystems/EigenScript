@@ -500,7 +500,7 @@ def int_source(src, out, through='R1.1'):
     tag's own definitions names TAG_SMI or spells its bits. The dynamic half
     is the smi-trap build (value_slot.h EIGS_SMI_TRAP)."""
     allowed = INT_SOURCE_ALLOWED[through]
-    files = sorted(os.path.join(src, f) for f in os.listdir(src) if f.endswith(('.c', '.h')))
+    files = inv.source_files(src)   # the tracked sources (a generated header is not one)
     defs = {'slot_from_int': 0, 'make_int': 0}
     calls, bad, tags, homes = [], [], [], set()
     for p in files:
@@ -688,10 +688,22 @@ def calibrate(args, out):
     map_rows, bad = parse_map(os.path.join(cal, 'MAP.md'))
     results = []
 
-    def case(name, got, want):
+    def case(name, got, want, detail=None):
+        """One calibration case. An UNEXPECTED case prints the gate's own
+        output (`detail`, its last 40 lines with the elision counted), so a
+        failure on another machine says why (the R1.1 CI lane printed only
+        `got False`)."""
         ok = got == want
         results.append(ok)
         out('CAL %-58s want %-28s got %-28s %s' % (name, want, got, 'ok' if ok else 'UNEXPECTED'))
+        if not ok:
+            shown = [l for l in (detail or []) if l.strip()]
+            if len(shown) > 40:
+                out('    | ... %d earlier line(s) of the gate\'s output' % (len(shown) - 40))
+            for l in shown[-40:]:
+                out('    | ' + l)
+            if not shown:
+                out('    | (this case runs no gate with output of its own)')
 
     def quiet(_):
         pass
@@ -714,16 +726,16 @@ def calibrate(args, out):
 
     honest = [r['id'] for r in map_rows if not r['id'].endswith('-plant')]
     out('calibration fixtures: %d rows (%d honest) in %s' % (len(map_rows), len(honest), cal))
-    case('fixture MAP parses', not bad and len(map_rows) > 0, True)
-    (pop, rows_ok, _, n, cnt, wit), _ = sub(map_rows, honest, log=out)
-    case('honest rows: every tier tag_fail == branch_pass == examined', rows_ok, True)
+    case('fixture MAP parses', not bad and len(map_rows) > 0, True, detail=bad)
+    (pop, rows_ok, _, n, cnt, wit), lines = sub(map_rows, honest, log=out)
+    case('honest rows: every tier tag_fail == branch_pass == examined', rows_ok, True, detail=lines)
     case('honest rows: every witness holds', wit, sum(r['witness']['kind'] != 'none'
-                                                       for r in map_rows if r['id'] in honest))
-    (pop, rows_ok, _, n, cnt, _), _ = sub(map_rows, honest, tag=args.branch)
-    case('the branch passed as the tag too: branch_pass=0?', cnt['default']['tag_fail'], 0)
-    case('... and the check fails', rows_ok, False)
-    (pop, rows_ok, _, n, cnt, _), _ = sub(map_rows, honest, branch=args.tag)
-    case('the tag passed as the branch: branch_pass', cnt['default']['branch_pass'], 0)
+                                                       for r in map_rows if r['id'] in honest), detail=lines)
+    (pop, rows_ok, _, n, cnt, _), lines = sub(map_rows, honest, tag=args.branch)
+    case('the branch passed as the tag too: branch_pass=0?', cnt['default']['tag_fail'], 0, detail=lines)
+    case('... and the check fails', rows_ok, False, detail=lines)
+    (pop, rows_ok, _, n, cnt, _), lines = sub(map_rows, honest, branch=args.tag)
+    case('the tag passed as the branch: branch_pass', cnt['default']['branch_pass'], 0, detail=lines)
     victim = honest[0]
 
     def corrupt(rd):
@@ -731,42 +743,42 @@ def calibrate(args, out):
             f.write('corrupted\n')
     (pop, rows_ok, _, n, cnt, _), lines = sub(map_rows, honest, mutate=corrupt)
     case('a corrupted .out fails, naming the row', (rows_ok, any(
-        ('BRANCH-FAIL %s ' % victim) in l for l in lines)), (False, True))
+        ('BRANCH-FAIL %s ' % victim) in l for l in lines)), (False, True), detail=lines)
     (pop, rows_ok, _, n, cnt, _), lines = sub(map_rows, [])
-    case('an empty rows directory: examined=0 fails', (rows_ok, cnt['default']['examined']), (False, 0))
+    case('an empty rows directory: examined=0 fails', (rows_ok, cnt['default']['examined']), (False, 0), detail=lines)
 
     def drop(rd):
         os.remove(os.path.join(rd, victim + '.eigs'))
     (pop, rows_ok, _, n, cnt, _), lines = sub(map_rows, honest, mutate=drop)
-    case('a MAP id with no file fails', (pop, any('has no file' in l for l in lines)), (False, True))
+    case('a MAP id with no file fails', (pop, any('has no file' in l for l in lines)), (False, True), detail=lines)
 
     def stray(rd):
         shutil.copy(os.path.join(rd, victim + '.eigs'), os.path.join(rd, 'stray.row.eigs'))
     (pop, rows_ok, _, n, cnt, _), lines = sub(map_rows, honest, mutate=stray)
     case('a file with no MAP id fails', (pop, any('stray.row.eigs has no MAP id' in l for l in lines)),
-         (False, True))
+         (False, True), detail=lines)
     for r in map_rows:
         if r['id'].endswith('-plant'):
             (pop, rows_ok, _, n, cnt, wit), lines = sub(map_rows, [r['id']])
             case('plant %s: vacuous, named' % r['id'], (cnt['default']['vacuous'], any(
-                ('VACUOUS %s ' % r['id']) in l for l in lines)), (1, True))
+                ('VACUOUS %s ' % r['id']) in l for l in lines)), (1, True), detail=lines)
     # the plan-level checks against a mutated copy of the real MAP
     real, rbad = parse_map(os.path.join(ROOT, 'tests/phase2/MAP.md'))
     lines = []
     plan_checks(real, list(rbad), lines.append)
     pb = []
     plan_checks(real, pb, quiet)
-    case('plan checks on the real MAP pass', (rbad, pb), ([], []))
+    case('plan checks on the real MAP pass', (rbad, pb), ([], []), detail=pb)
     pb = []
     plan_checks([r for r in real if r['item'] != 'N4b'], pb, quiet)
-    case('a MAP with no N4b row fails, naming N4b', any('item N4b' in b for b in pb), True)
+    case('a MAP with no N4b row fails, naming N4b', any('item N4b' in b for b in pb), True, detail=pb)
     pb = []
     n_arms = plan_checks([dict(r, ops=[]) for r in real], pb, quiet)
     case('a MAP whose rows exercise no arm fails per arm (%d arms)' % n_arms,
-         sum('numeric arm' in b for b in pb) == n_arms > 0, True)
+         sum('numeric arm' in b for b in pb) == n_arms > 0, True, detail=pb)
     pb = []
     plan_checks([r for r in real if r['round'] != 'R2.3'], pb, quiet)
-    case('a round with neither rows nor gates fails', any('round R2.3' in b for b in pb), True)
+    case('a round with neither rows nor gates fails', any('round R2.3' in b for b in pb), True, detail=pb)
     # the int-source check against a planted production call
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
         shutil.copytree(os.path.join(ROOT, 'src'), os.path.join(d, 'src'), ignore=c_sources_only)
@@ -779,9 +791,9 @@ def calibrate(args, out):
         ok = int_source(os.path.join(d, 'src'), lines.append)
         case('int-source plant (slot_from_int(count) in trace.c) applied once', n_anchor, 1)
         case('int-source plant: the check fails, naming the caller', (ok, any(
-            'trace.c' in l and 'calls slot_from_int' in l for l in lines)), (False, True))
+            'trace.c' in l and 'calls slot_from_int' in l for l in lines)), (False, True), detail=lines)
     lines = []
-    case('int-source on the real tree passes', int_source(os.path.join(ROOT, 'src'), lines.append), True)
+    case('int-source on the real tree passes', int_source(os.path.join(ROOT, 'src'), lines.append), True, detail=lines)
     # the token gate against a reintroduced deleted token
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
         os.mkdir(os.path.join(d, 'src'))
@@ -793,7 +805,7 @@ def calibrate(args, out):
             f.write('\nstatic int stray_reader(EigsSlot s) { return slot_is_num(s); }\n')
         lines = []
         case('token plant (slot_is_num reintroduced): the gate fails',
-             (token_gate(d, 'R1.1', lines.append), any('slot_is_num' in l for l in lines)), (False, True))
+             (token_gate(d, 'R1.1', lines.append), any('slot_is_num' in l for l in lines)), (False, True), detail=lines)
     # the int-source plants of the R1.1 critic, both halves
     for name, edits in INTSRC_PLANTS:
         with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
@@ -814,7 +826,7 @@ def calibrate(args, out):
                 case('%s, static half at %s: %s' % (name, through, 'fails, naming it' if want
                                                    else 'passes (the dynamic half owns it)'),
                      (not ok, any('INT-SOURCE' in l for l in lines)) if want else ok,
-                     (True, True) if want else True)
+                     (True, True) if want else True, detail=lines)
     # the corpus differential's plants: A and B are wrapper branches, D a build
     base = args.branch
     files = ['tests/test_dispatch.eigs', 'tests/test_bool.eigs']
@@ -825,7 +837,7 @@ def calibrate(args, out):
         rc, text, v = diff_restricted(base, a, files)
         case('differential plant A (a deterministic file prints one more line): DIFF, control same',
              (rc, v.get('tests/test_dispatch.eigs'), v.get('tests/test_bool.eigs'), v.get('<stderr>')),
-             (3, 'DIFF', 'same', None))
+             (3, 'DIFF', 'same', None), detail=text.splitlines())
         for phase in (0, 1):
             bdir = os.path.join(d, 'B%d' % phase)
             bw = wrapper_tree(bdir, args.branch, files,
@@ -834,7 +846,7 @@ def calibrate(args, out):
             rc, text, v = diff_restricted(base, bw, files)
             case('differential plant B, phase %d (wrong on alternate runs): DIFF, never NONDET' % phase,
                  (rc, v.get('tests/test_dispatch.eigs'), v.get('tests/test_bool.eigs'), v.get('<stderr>')),
-                 (3, 'DIFF', 'same', None))
+                 (3, 'DIFF', 'same', None), detail=text.splitlines())
     # the run conditions and the nonzero ledger (the second R1.1 critic):
     # fake trees that run the real branch binary with one input changed
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
@@ -843,27 +855,27 @@ def calibrate(args, out):
         case('unplanted branch, conditioned files included: all same, nothing undeclared',
              (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),
              bool(re.search(r' incomplete=0 undeclared=0 stale=0 ledger_refused=0 ', text))),
-             (3, 'same', 'same', 'same', None, True))
+             (3, 'same', 'same', 'same', None, True), detail=text.splitlines())
         cut = wrapper_tree(os.path.join(d, 'cut'), args.branch, files[:1] + files[2:], 'exec "$REAL" "$@"',
                            {'tests/suite_program_env.txt':
                             lambda t: re.sub(r'(?m)^test_numeric_guard\.eigs .*\n', '', t)})
         rc, text, v = diff_restricted(base, cut, files[:1] + files[2:])
         case('a policy row removed: its file exits early on both, UNDECLARED-NONZERO',
              (rc, 'UNDECLARED-NONZERO tests/test_numeric_guard.eigs rc=1' in text,
-              ' undeclared=1 ' in text, v.get('<stderr>')), (3, True, True, None))
+              ' undeclared=1 ' in text, v.get('<stderr>')), (3, True, True, None), detail=text.splitlines())
         stale = wrapper_tree(os.path.join(d, 'stale'), args.branch, files[2:], 'exec "$REAL" "$@"',
                              {'tests/phase2/corpus_nonzero.txt':
                               lambda t: t + 'tests/test_bool.eigs 1 planted: test_bool completes\n'})
         rc, text, v = diff_restricted(base, stale, files[2:])
         case('a ledger row for a file that completes: STALE',
-             (rc, 'STALE tests/test_bool.eigs:' in text, ' stale=1 ' in text), (3, True, True))
+             (rc, 'STALE tests/test_bool.eigs:' in text, ' stale=1 ' in text), (3, True, True), detail=text.splitlines())
         inc = wrapper_tree(os.path.join(d, 'inc'), args.branch, ['tests/test_assert_fail.eigs'], 'exec "$REAL" "$@"',
                            {'tests/suite_program_env.txt': lambda t: t + 'test_assert_fail.eigs EIGS_STRICT=0\n',
                             'tests/phase2/corpus_nonzero.txt':
                             lambda t: re.sub(r'(?m)^tests/test_assert_fail\.eigs .*\n', '', t)})
         rc, text, v = diff_restricted(base, inc, ['tests/test_assert_fail.eigs'])
         case('a conditioned file that does not complete: INCOMPLETE, never compared',
-             (rc, v.get('tests/test_assert_fail.eigs'), ' incomplete=1 ' in text), (3, 'INCOMPLETE', True))
+             (rc, v.get('tests/test_assert_fail.eigs'), ' incomplete=1 ' in text), (3, 'INCOMPLETE', True), detail=text.splitlines())
     # the inventory gate (#1804): a classifier with no reviewed disposition,
     # and a committed inventory that is not the generated one
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
@@ -874,13 +886,13 @@ def calibrate(args, out):
         inv_args = ['--src', os.path.join(d, 'src'), '--doc', os.path.join(d, 'docs/design/phase2-numbers.md'),
                     '--out', os.path.join(d, 'docs/design/phase2-inventory.txt')]
         lines = []
-        case('inventory gate on an unchanged copy passes', inventory_gate(lines.append, inv_args), True)
+        case('inventory gate on an unchanged copy passes', inventory_gate(lines.append, inv_args), True, detail=lines)
         inv_path = os.path.join(d, 'docs/design/phase2-inventory.txt')
         committed = read_text(inv_path)
         write_text(inv_path, committed.replace('dispositions=', 'dispositions=0', 1))
         lines = []
         case('a committed inventory that is not the generated one: the gate fails, saying stale',
-             (inventory_gate(lines.append, inv_args), any('is stale' in l for l in lines)), (False, True))
+             (inventory_gate(lines.append, inv_args), any('is stale' in l for l in lines)), (False, True), detail=lines)
         write_text(inv_path, committed)
         with open(os.path.join(d, 'src', 'vm.c'), 'a') as f:
             f.write('\nint critic_new_reader(Value *v) {\n    EigsSlot s = slot_from_heap(v);\n'
@@ -888,7 +900,7 @@ def calibrate(args, out):
         lines = []
         case('an unreviewed slot classifier (critic_new_reader): the gate fails, naming it',
              (inventory_gate(lines.append, inv_args),
-              any('`vm.c:critic_new_reader` has no disposition row' in l for l in lines)), (False, True))
+              any('`vm.c:critic_new_reader` has no disposition row' in l for l in lines)), (False, True), detail=lines)
     if args.build_plants:
         args.planted_leaf_scan = build_plant('leaf-scan', out)
         args.planted_leaf_mul = build_plant('leaf-mul', out)
@@ -908,7 +920,7 @@ def calibrate(args, out):
             continue
         rc, text, v = diff_restricted(base, b, files)
         case('differential %s: DIFF where its conditioned file reaches it' % label,
-             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),), (3,) + want + (None,))
+             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),), (3,) + want + (None,), detail=text.splitlines())
     if args.planted_random_int:
         # test_system.eigs asserts random_int's bounds over 300 draws, so it
         # sees the plant whatever the seed; test_optimize.eigs prints a search
@@ -918,7 +930,7 @@ def calibrate(args, out):
         files = ['tests/test_system.eigs', 'tests/test_optimize.eigs', 'tests/test_bool.eigs']
         rc, text, v = diff_restricted(base, args.planted_random_int, files)
         case('differential plant D (random_int answers lo+1..hi+1): both files DIFF live',
-             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),), (3, 'DIFF', 'DIFF', 'same', None))
+             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),), (3, 'DIFF', 'DIFF', 'same', None), detail=text.splitlines())
     else:
         out('CAL %-58s NOT RUN (no --planted-random-int binary; --build-plants builds it)' % 'plant D')
         results.append(False)
@@ -929,7 +941,7 @@ def calibrate(args, out):
         rc, text, v = diff_restricted(base, args.planted_p4_trap, files)
         case('P4 on the smi-trap build (the dynamic half): each file DIFF, aborting at the int',
              (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'), 'slot_from_int under EIGS_SMI_TRAP' in text),
-             (3, 'DIFF', 'DIFF', None, True))
+             (3, 'DIFF', 'DIFF', None, True), detail=text.splitlines())
     else:
         out('CAL %-58s NOT RUN (no --planted-p4-trap binary; --build-plants builds it)' % 'P4 dynamic')
         results.append(False)
@@ -943,10 +955,10 @@ def calibrate(args, out):
         (pop, rows_ok, _, n, cnt, wit), lines = sub(map_rows, leaf, branch=b)
         if label == 'leaf-scanner-early-return':
             case('leaf row vs a scratch build whose leaf scanner returns early',
-                 (cnt['default']['vacuous'] > 0, rows_ok), (True, False))
+                 (cnt['default']['vacuous'] > 0, rows_ok), (True, False), detail=lines)
         else:
             case('L row vs a scratch build whose leaf MUL adds 1: trace differs',
-                 (cnt['trace']['branch_pass'], cnt['default']['branch_pass'] > 0, rows_ok), (len(leaf), False, False))
+                 (cnt['trace']['branch_pass'], cnt['default']['branch_pass'] > 0, rows_ok), (len(leaf), False, False), detail=lines)
     n_ok = sum(results)
     out('calibration: cases=%d as-expected=%d unexpected=%d' % (len(results), n_ok, len(results) - n_ok))
     return 0 if results and n_ok == len(results) else 1
@@ -1024,8 +1036,15 @@ INTSRC_PLANTS = [
 
 def c_sources_only(d, names):
     """copytree ignore: keep directories and C sources (the int-source check
-    reads nothing else), skip binaries and objects."""
-    return [n for n in names if not n.endswith(('.c', '.h')) and not os.path.isdir(os.path.join(d, n))]
+    reads nothing else), skip binaries and objects. In src/ itself, only the
+    TRACKED sources (inv.source_files): a copy must look like a fresh clone,
+    or a generated header such as src/lsp_stdlib_index.h makes the copy's
+    inventory differ from the committed one (the R1.1 CI lane)."""
+    keep = None
+    if os.path.realpath(d) == os.path.realpath(os.path.join(ROOT, 'src')):
+        keep = {os.path.basename(f) for f in inv.source_files(d)}
+    return [n for n in names if not os.path.isdir(os.path.join(d, n)) and
+            (not n.endswith(('.c', '.h')) or (keep is not None and n not in keep))]
 
 
 def diff_restricted(base, branch, files):
