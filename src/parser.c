@@ -687,6 +687,19 @@ static ASTNode* parse_postfix_chain(Parser *p, ASTNode *n) {
     return n;
 }
 
+/* Literal children are siblings, not an operator chain. Parse each from the
+ * same entry depth and retain the largest child charge, rather than adding
+ * all their charges together. The caller restores that maximum before any
+ * enclosing postfix/operator extends the AST: discarding it would let a deep
+ * child hide its chain depth inside a list or dict. */
+static ASTNode* parse_sibling_expression(Parser *p, int *max_depth) {
+    int saved_depth = g_parse_depth;
+    ASTNode *n = parse_expression(p);
+    if (g_parse_depth > *max_depth) *max_depth = g_parse_depth;
+    g_parse_depth = saved_depth;
+    return n;
+}
+
 static ASTNode* parse_primary(Parser *p) {
     Token *t = p_cur(p);
 
@@ -932,18 +945,19 @@ static ASTNode* parse_primary(Parser *p) {
             return n;
         }
 
-        ASTNode *first = parse_expression(p);
+        int max_depth = g_parse_depth;
+        ASTNode *first = parse_sibling_expression(p, &max_depth);
 
         if (p_cur(p)->type == TOK_FOR) {
             p_advance(p);
             Token *var_tok = p_cur(p);
             p_expect_ident_like(p);
             p_expect(p, TOK_IN);
-            ASTNode *iter = parse_expression(p);
+            ASTNode *iter = parse_sibling_expression(p, &max_depth);
             ASTNode *filter = NULL;
             if (p_cur(p)->type == TOK_IF) {
                 p_advance(p);
-                filter = parse_expression(p);
+                filter = parse_sibling_expression(p, &max_depth);
             }
             p_expect(p, TOK_RBRACKET);
             ASTNode *n = make_node(AST_LISTCOMP, t->line);
@@ -952,6 +966,7 @@ static ASTNode* parse_primary(Parser *p) {
             set_name_hash(n, n->data.listcomp.var);
             n->data.listcomp.iter = iter;
             n->data.listcomp.filter = filter;
+            g_parse_depth = max_depth;
             return n;
         }
 
@@ -969,7 +984,7 @@ static ASTNode* parse_primary(Parser *p) {
                 g_parse_errors++;
                 break;
             }
-            elems[count++] = parse_expression(p);
+            elems[count++] = parse_sibling_expression(p, &max_depth);
         }
         p_expect(p, TOK_RBRACKET);
 
@@ -977,6 +992,7 @@ static ASTNode* parse_primary(Parser *p) {
         n->data.list.elems = elems;
         n->data.list.count = count;
 
+        g_parse_depth = max_depth;
         while (p_cur(p)->type == TOK_LBRACKET) {
             if (chain_too_deep(p)) break;
             n = parse_subscript_suffix(p, n);
@@ -990,10 +1006,11 @@ static ASTNode* parse_primary(Parser *p) {
         ASTNode **keys = xmalloc_array(MAX_LIST, sizeof(ASTNode*));
         ASTNode **vals = xmalloc_array(MAX_LIST, sizeof(ASTNode*));
         int count = 0;
+        int max_depth = g_parse_depth;
         if (p_cur(p)->type != TOK_RBRACE) {
-            keys[count] = parse_expression(p);
+            keys[count] = parse_sibling_expression(p, &max_depth);
             p_expect(p, TOK_COLON);
-            vals[count] = parse_expression(p);
+            vals[count] = parse_sibling_expression(p, &max_depth);
             count++;
             while (p_cur(p)->type == TOK_COMMA) {
                 p_advance(p);
@@ -1006,9 +1023,9 @@ static ASTNode* parse_primary(Parser *p) {
                     g_parse_errors++;
                     break;
                 }
-                keys[count] = parse_expression(p);
+                keys[count] = parse_sibling_expression(p, &max_depth);
                 p_expect(p, TOK_COLON);
-                vals[count] = parse_expression(p);
+                vals[count] = parse_sibling_expression(p, &max_depth);
                 count++;
             }
         }
@@ -1018,6 +1035,7 @@ static ASTNode* parse_primary(Parser *p) {
         n->data.dict.vals = vals;
         n->data.dict.count = count;
         /* Handle postfix .key and [idx] */
+        g_parse_depth = max_depth;
         while (p_cur(p)->type == TOK_DOT || p_cur(p)->type == TOK_LBRACKET) {
             if (chain_too_deep(p)) break;
             if (p_cur(p)->type == TOK_DOT) {
