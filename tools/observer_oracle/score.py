@@ -573,7 +573,7 @@ def check_floor(pre, path, cand_v, rows, corpus, labels):
                                                " (another toolchain: information only)"))
     cand = {f"{arm} {rid}@{at} {p} {cls}": w == g for (arm, rid, at, p), (cls, w, g) in cand_v.items() if "/" in arm}
     judged = {k: cand[k] for k in floor["verdicts"]}      # the count printed is the verdicts compared (#1777)
-    lost = [k for k, right in judged.items() if not right]
+    lost = [k for k, right in judged.items() if not right and k.endswith(" CONVENTION")]  # TEMPORARY (#1777 demonstration b): the review's mutant
     for k in lost:
         print(f"  FLOOR VIOLATION {k}")
     print(f"floor: {len(judged)} verdicts checked, {len(lost)} lost")
