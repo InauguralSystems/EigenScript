@@ -267,7 +267,8 @@ static void r_v(char *b, size_t n, Value *v) {
     if (!v) { snprintf(b, n, "v:NULL"); return; }
     if (v == g_str) { snprintf(b, n, "v:H"); return; }
     switch (v->type) {
-        case VAL_NUM: snprintf(b, n, "v:num:%016llx", (unsigned long long)u64_of(VAL_NUM_RAW(v))); return;
+        case VAL_FLOAT: snprintf(b, n, "v:num:%016llx", (unsigned long long)u64_of(VAL_F64_RAW(v))); return;
+        case VAL_INT: snprintf(b, n, "v:int:%lld", (long long)VAL_I64_RAW(v)); return;   /* #1758 R1.2a */
         case VAL_NULL: snprintf(b, n, "v:null"); return;
         case VAL_BOOL: snprintf(b, n, "v:%s", v->data.boolean ? "true" : "false"); return;
         case VAL_STR: case VAL_LIST: case VAL_DICT: case VAL_FN: case VAL_BUILTIN:
