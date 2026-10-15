@@ -45,6 +45,11 @@ TMO=""
 if command -v timeout >/dev/null 2>&1; then TMO="timeout 300"
 elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 300"; fi
 
+# Each program runs under its run conditions from the one shared loader
+# (tests/suite_program_env.sh: the suite's, jit_diff's and the Phase 2
+# differential's), so a fail-soft test is replayed past its first strict raise.
+export EIGS_TEST_DIR="$ROOT/tests"
+. "$ROOT/tests/suite_program_env.sh" || exit 1
 corpus_dir() { printf '%s' "${REPLAY_DIFF_CORPUS:-$ROOT/tests}"; }
 eig_bin()    { printf '%s' "${REPLAY_DIFF_EIG:-./eigenscript}"; }
 norm() { sed -E 's/0x[0-9a-f]+/0xADDR/g' "$1"; }
@@ -60,7 +65,8 @@ ledger_count() {
 # exited 3 -- a phantom row from the environment, not the tape.
 run() {
     local out="$1" rc; shift
-    env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b" > "$out" 2>&1 </dev/null
+    suite_program_check "$b" > /dev/null || { echo "replay_diff: FAIL: run-condition lookup failed for $b" >&2; exit 1; }
+    suite_program_run "$b" env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b" > "$out" 2>&1 </dev/null
     rc=$?; echo "rc=$rc" >> "$out"
     # Runs include self-check and second adjudication arms. Never compare,
     # excuse as NONDET/boundary, or ledger a possibly incomplete exit-124 run.
