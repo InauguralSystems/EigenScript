@@ -13,6 +13,7 @@ export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
 . "$TESTS_DIR/suite_program_env.sh" || exit 1
+. "$TESTS_DIR/diagnostic_capture.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 
 # Shard and changed-sections modes (EIGS_SUITE_SHARD / EIGS_SUITE_CHANGED).
@@ -355,7 +356,7 @@ export CHILD_LEDGER
 # among them) and can be interrupted; without this the ledger leaks one file
 # per aborted run. The runner has no other trap — `trap ... EXIT` REPLACES
 # rather than accumulates, so if one is ever added it must call this too.
-trap 'rm -f "${CHILD_LEDGER:-}"' EXIT
+trap 'rm -f "${CHILD_LEDGER:-}"; suite_diagnostic_cleanup' EXIT
 # Children that legitimately emit no PASS:/FAIL: markers, so the vacuity rule
 # must not fire on them. Each is a waiver and states why; an entry that stops
 # being needed is a review event, and tools/child_exit_check.sh pins the list
@@ -637,8 +638,9 @@ echo ""
 
 echo "[0d] sandbox_run policy errors stay contained (#1426)"
 check_binary_fingerprint
-HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>"${TMPDIR:-/tmp}/eigs-host-frame.err"); HFL_RC=$?
-HFL_ERR=$(cat "${TMPDIR:-/tmp}/eigs-host-frame.err")
+suite_capture_diagnostic host-frame $EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs || exit 1
+HFL_OUT=$SUITE_DIAGNOSTIC_OUT; HFL_RC=$SUITE_DIAGNOSTIC_RC
+HFL_ERR=$SUITE_DIAGNOSTIC_ERR
 TOTAL=$((TOTAL + 1))
 if [ "$HFL_RC" -eq 0 ] && [ "$HFL_OUT" = "[false, false]" ] && [ -z "$HFL_ERR" ]; then
     PASS=$((PASS + 1)); echo "  PASS: sandbox policy errors return ok=false without stderr"
@@ -1718,8 +1720,9 @@ check_eigs_suite "budget rejects bombs ({ok:0}), allows small, cumulative, per-r
 # in its structured return value and must not emit an "uncaught" diagnostic.
 echo "[108a] sandbox_run Error Containment (#1426)"
 check_binary_fingerprint
-SB1426_OUT=$($EIGS_TMO ./eigenscript ../tests/test_sandbox_error_silence.eigs </dev/null 2>"${TMPDIR:-/tmp}/eigs-sandbox-1426.err"); SB1426_RC=$?
-SB1426_ERR=$(cat "${TMPDIR:-/tmp}/eigs-sandbox-1426.err")
+suite_capture_diagnostic sandbox-1426 $EIGS_TMO ./eigenscript ../tests/test_sandbox_error_silence.eigs || exit 1
+SB1426_OUT=$SUITE_DIAGNOSTIC_OUT; SB1426_RC=$SUITE_DIAGNOSTIC_RC
+SB1426_ERR=$SUITE_DIAGNOSTIC_ERR
 TOTAL=$((TOTAL + 1))
 if [ "$SB1426_RC" -eq 0 ] && echo "$SB1426_OUT" | grep -q "All tests passed" && [ -z "$SB1426_ERR" ]; then
     PASS=$((PASS + 1)); echo "  PASS: structured sandbox error returned with empty stderr"
