@@ -637,14 +637,26 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   `ci-<sha>` is by design.
   - `on.push` must be exactly `branches: [main]`.
   - Each image push must take its tags from that one step.
-  - The check refuses what its matrix cannot model: a custom shell
-    (`defaults:` or `shell:`), `BASH_ENV`/`ENV`/`GITHUB_*` in any env scope,
-    or an expression it cannot evaluate.
+  - The matrix runs the step with the workflow, job and step env merged as the
+    runner merges them, and reads its `tags` output in any case, quotes
+    stripped.
+  - The check refuses what its matrix cannot model:
+    - a custom shell or directory (`defaults:`, `shell:`,
+      `working-directory:`);
+    - env in any scope that redirects bash or git (`PATH`, `BASH_ENV`, `ENV`,
+      `SHELLOPTS`, `BASHOPTS`, `GITHUB_*`, `GIT_*`, `BASH_FUNC_*`, `LD_*`);
+    - an expression it cannot evaluate;
+    - a multi-line `tags<<` output.
 - `[writer-actions]` — a `ci.yml` job that can write uses only the allowlisted
   actions `actions/checkout`, `docker/setup-buildx-action`,
   `docker/login-action` and `docker/build-push-action`.
   - The allowlist compares action identities without the `@ref`, so a
     Dependabot bump stays green.
+  - Each action takes only the inputs vetted for it. So
+    `docker/build-push-action` takes no `outputs:` and only a `type=gha`
+    `cache-to:`: an `outputs:` or a registry cache can push to any name, and a
+    registry cache is shared across refs.
+  - A new input goes red until someone vets it and adds it to `INPUTS`.
   - No `./` or `docker://` action, and no reusable-workflow call.
   - No script except the tag step that `[ci-main]` runs.
 
