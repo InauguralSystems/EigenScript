@@ -953,6 +953,28 @@ emit_plan() {   # emit_plan <out> <plan builder> <args...>
     bash -n "$out" || die "emitted runner is not syntactically valid: $out"
     echo "$planline"
 }
+
+# Copy every literal test support file sourced by the runner into a scratch
+# tree.  Keep the runner as the one source of truth: a hand-maintained list
+# here is liable to miss the next helper added to its preamble (#1819).
+copy_runner_support_files() { # <runner source> <scratch tests dir>
+    local runner_source="$1" scratch_tests="$2" rel src dst files
+    files=$(sed -n 's|^[[:space:]]*\.[[:space:]][[:space:]]*"\$TESTS_DIR/\([^"]*\)".*$|\1|p' \
+        "$runner_source" | sort -u)
+    [ -n "$files" ] || die "no literal \$TESTS_DIR support files found in $runner_source"
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        src="$SP_ROOT/tests/$rel"
+        dst="$scratch_tests/$rel"
+        [ -f "$src" ] || die "runner-sourced support file was not copied because its source is missing: $rel"
+        mkdir -p "$(dirname "$dst")" || die "cannot create scratch directory for runner-sourced file: $rel"
+        cp "$src" "$dst" || die "could not copy runner-sourced support file: $rel"
+        [ -f "$dst" ] || die "runner-sourced support file was not copied: $rel"
+    done <<EOF
+$files
+EOF
+}
+
 # Calibration: every planted fault invokes the public arm it must turn red.
 selftest() {
     local dir out pass=0 fail=0 rc label want
@@ -1091,11 +1113,9 @@ selftest() {
     local stub="$dir/stub" i
     mkdir -p "$stub/tests" "$stub/tools" "$stub/src" "$stub/.github/workflows"
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/runner_text.sh" \
-       "$SP_ROOT/tools/read_werror_flags.sh" \
        "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
-    cp "$SP_ROOT/tests/diagnostic_capture.sh" "$SP_ROOT/tests/failure_output.sh" \
-       "$SP_ROOT/tests/suite_plan.sh" \
-       "$SP_ROOT/tests/suite_program_env.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
+    cp "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
+    copy_runner_support_files "$RUNNER_SOURCE" "$stub/tests"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
     printf '#!/bin/sh\nexit 0\n' > "$stub/src/eigenscript"
     chmod +x "$stub/src/eigenscript"
