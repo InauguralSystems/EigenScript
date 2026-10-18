@@ -2083,7 +2083,75 @@ Value* builtin_audio_sweep(Value *arg) {
     return list;
 }
 
-/* audio_noise of [duration, amplitude] — white noise */
+/* audio_noise's samples ride the tape in records of at most this many (#1803).
+ * One N record is capped at 64 KiB (TRACE_NONDET_MAX in trace.c) and replay
+ * refuses a truncated one, so a single record holds only about 3,000 samples
+ * -- lib/audio.eigs's snare asks for 4,410 and a 30-second burst for over a
+ * million. A sample is a finite number (the runtime saturates at 1e308), at
+ * most 24 bytes of %.17g plus ", ", so 2048 fit with room to spare: the same
+ * arithmetic as AUDIO_CAPTURE_READ_MAX. */
+#define AUDIO_NOISE_TAPE_CHUNK 2048
+
+/* Record half: the samples as consecutive N records of at most
+ * AUDIO_NOISE_TAPE_CHUNK each. The first record shorter than a full chunk
+ * ends the call -- an empty one when the count is a multiple of the chunk --
+ * so replay reads the call's extent off the tape, not off the count, which
+ * depends on the rate audio_open negotiated. The chunk copies are
+ * tape-internal, so they are made uncharged (make_list_heap): recording must
+ * not move a sandboxed program's budget. */
+static void audio_noise_record(Value *samples) {
+    int n = samples->data.list.count;
+    for (int at = 0;; at += AUDIO_NOISE_TAPE_CHUNK) {
+        int m = n - at < AUDIO_NOISE_TAPE_CHUNK ? n - at : AUDIO_NOISE_TAPE_CHUNK;
+        Value *chunk = make_list_heap(m);
+        for (int i = 0; i < m; i++)
+            list_append_slot(chunk, list_slot(samples, at + i));
+        trace_nondet_value("audio_noise", chunk);
+        val_decref(chunk);
+        if (m < AUDIO_NOISE_TAPE_CHUNK) return;
+    }
+}
+
+/* Replay half: one call's samples, rebuilt from its records. Returns 1 with
+ * *out set -- the samples, or the null of a take that raised (its error is
+ * already set) -- or 0 when the first record is a non-replayable marker, so
+ * the call runs live, as TRACE_NONDET_TAKE does. A marker after the first
+ * record raises instead: half a list cannot be finished from a live stream. */
+static int audio_noise_take(Value **out) {
+    Value *all;
+    if (!trace_replay_take("audio_noise", &all)) return 0;
+    int last = all->type == VAL_LIST ? all->data.list.count : 0;
+    while (last >= AUDIO_NOISE_TAPE_CHUNK) {
+        Value *more;
+        if (!trace_replay_take("audio_noise", &more)) {
+            rt_error(EK_IO, 0, "audio_noise: a recorded sample record is not replayable");
+            more = make_null();
+        }
+        if (more->type != VAL_LIST) {
+            val_decref(all);
+            *out = more;
+            return 1;
+        }
+        last = more->data.list.count;
+        for (int i = 0; i < last; i++)
+            list_append_slot(all, list_slot(more, i));
+        val_decref(more);
+    }
+    *out = all;
+    return 1;
+}
+
+/* audio_noise of [duration, amplitude] — white noise
+ *
+ * Uniform between -amp and amp. (The first line above is the LSP hover text:
+ * tools/gen_lsp_builtin_index.sh copies it into src/lsp_builtin_index.h.)
+ *
+ * #1803: the samples are a nondeterministic return. They are drawn from the
+ * shared drand48 stream behind `random` (eigs_random_double), so `seed_random`
+ * pins them, and they are recorded on the tape (audio_noise_record), so
+ * EIGS_REPLAY serves the recorded samples. They used to come from libc's rand,
+ * seeded by main's srand(time(NULL)) and recorded nowhere, so a replay drew new
+ * samples at rc 0. #960 moved random_normal off libc's rand for the same reason. */
 Value* builtin_audio_noise(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_noise");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
@@ -2105,14 +2173,41 @@ Value* builtin_audio_noise(Value *arg) {
     double amp = eigs_list_num(arg, 1, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
+    /* #1767's refusal (a duration over 30 s, or a sample count that does not
+     * fit an int, raises `value`) is an argument check like the guards above,
+     * and it is made BEFORE the tape seam below. A refused call records
+     * nothing, so its replay must refuse it again without taking a record:
+     * refused below the seam, a replay would take the NEXT call's records and
+     * every audio_noise after it would be served the wrong ones. The rate
+     * enters the verdict only through the int range of dur * rate, which a
+     * duration within the limit breaks only above INT_MAX / 30 (about 71.6
+     * MHz), so for any real device a replay refuses what the recording did. */
     if (!audio_generator_sample_count(dur, rate, "audio_noise", &n)) return make_null();
-    if (n <= 0) return make_list(0);
-
-    Value *list = make_list(n);
-    for (int i = 0; i < n; i++) {
-        double s = ((double)rand() / RAND_MAX * 2.0 - 1.0) * amp;
-        list_append_owned(list, make_num(s));
+    /* The tape seam: below every refusal, because a rejected or refused call
+     * is deterministic and must consume no record (#1007, #1767). Nothing
+     * below it may return without audio_noise_record, the empty answer
+     * included. Replay serves the samples and their extent off the tape,
+     * whatever rate audio_open negotiated; n above only decided whether to
+     * refuse. */
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *taped;
+        if (trace_replay_refuse_off_owner("audio_noise")) return make_null();
+        if (audio_noise_take(&taped)) return taped;
     }
+    Value *list;
+    if (n <= 0) {
+        list = make_list(0);
+    } else {
+        list = make_list(n);
+        for (int i = 0; i < n; i++) {
+            double s = (eigs_random_double() * 2.0 - 1.0) * amp;
+            list_append_owned(list, make_num(s));
+        }
+    }
+    /* Every live answer is recorded, the empty one included: replay takes a
+     * record for every call that is not refused, whatever its count, so a
+     * call that recorded nothing would take the next call's records. */
+    if (__builtin_expect(g_trace_enabled, 0)) audio_noise_record(list);
     return list;
 }
 

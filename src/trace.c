@@ -1934,6 +1934,7 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"args",                 TK_LIST_},
     {"audio_capture_open",   TK_NUM_},
     {"audio_capture_read",   TK_BUF_ | TK_NULL_},
+    {"audio_noise",          TK_LIST_},   /* one call = one or more sample chunks */
     {"audio_stream_queued",  TK_NUM_},
     {"clock_unix",           TK_NUM_},
     {"eigen_generate",       TK_LIST_ | TK_STR_},   /* str: the recorded over-length refusal */
