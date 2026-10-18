@@ -80,3 +80,8 @@ vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admi
 vm.c|vm_run_ex|49|the interpreter loop: every opcode reads numbers behind slot_is_f64 / type == VAL_NUM dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
 vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_f64
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_f64
+builtins.c|builtin_json_build|1|VAL_INT text is exact digits; float text retains the bridge (#1758 R1.2d)
+builtins.c|builtin_json_path|1|VAL_INT scalar text is exact digits before releasing root (#1758 R1.2d)
+builtins.c|builtin_dispatch|1|VAL_INT argument boxing refuses until make_int lands in R1.3 (#1758)
+builtins.c|builtin_sort_by|1|numeric key kind retained for exact mixed sorting (#1758 N2)
+builtins.c|sort_cmp_num|6|validated numeric slots viewed through slot_view; int comparisons are exact (#1758 N2)
