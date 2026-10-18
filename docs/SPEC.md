@@ -1760,9 +1760,10 @@ relative steps `Δv / max(|v|, |v_prev|, scale)` — `N` samples deep, 10
 `N` samples of the observation cadence cannot fold inside the window) —
 `converged` is a full window all
 under the settle deadband; `stable` all under the small-motion band;
-`equilibrium` zero-mean, variance under deadband²; `improving` monotone
-steps contracting geometrically (a summable tail — genuinely closing on
-a limit); `diverging` the #422 raw rule (non-vanishing same-sign steps —
+`equilibrium` zero-mean, variance under deadband²; `improving` decreasing
+steps contracting geometrically (the ML loss convention: lower is better;
+growth is never improving; a summable tail genuinely closing on a limit);
+`diverging` the #422 raw rule (non-vanishing same-sign steps —
 an additive runaway whose relative step vanishes is still unbounded) or
 a value at the saturation ceiling; `oscillating` deadband sign-flips,
 non-vanishing alternation (a perpetual oscillation below the deadband is

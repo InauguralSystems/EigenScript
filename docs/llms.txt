@@ -174,7 +174,9 @@ sqrt(2) = 1.414213562373095
   channel explicitly. Both read the named binding's trajectory.
 - Numeric verdicts are over the value's RELATIVE step, `Δv / max(|v|, |v_prev|,
   default 1e-3), an absolute floor `dh_zero*scale` below it; a decay toward
-  zero reads `improving` until inside the scale. A mode slower than N samples
+  zero reads `improving` until inside the scale. `improving` is directional:
+  lower is better, as for ML loss, so growth never qualifies even when its
+  steps contract toward a plateau. A mode slower than N samples
 - Trajectory is keyed to a binding's env slot, never to a value: a dict field,
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint
