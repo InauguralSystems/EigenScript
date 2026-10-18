@@ -1021,7 +1021,9 @@ jobs:
         run: |
           set -euo pipefail
           n="${{ env.ASAN_SHARDS }}"
-          found=$(ls shard-receipts 2>/dev/null | grep -c . || true)
+          shopt -s nullglob dotglob
+          receipts=(shard-receipts/*)
+          found=${#receipts[@]}
           echo "shard receipts: $found (expected $n)"
           [ "$found" = "$n" ] || { echo "::error::expected $n shard receipts, found $found"; exit 1; }
           total=0 bearing_total=0
@@ -1180,15 +1182,16 @@ jobs:
         run: |
           set -uo pipefail
           log="$GITHUB_WORKSPACE/shard.log"
-          : > shard-${{ matrix.shard }}.txt
-          grep -o 'PLAN: shard=[^"]*' "$log" | head -1 >> shard-${{ matrix.shard }}.txt || true
-          leaked=$(sed -n 's/.*NOTE: \([0-9][0-9]*\) test program(s) exited nonzero on LeakSanitizer.*/\1/p' "$log" | head -1)
-          echo "leaked=${leaked:-0}" >> shard-${{ matrix.shard }}.txt
-          # Which job-level extras this shard claimed. The aggregator requires
-          # exactly one claimant for each: a DERIVED owner that nobody turns out
-          # to be is how "it runs somewhere" becomes "it runs nowhere".
-          echo "gc_traversal=${gc_traversal:-no}" >> shard-${{ matrix.shard }}.txt
-          echo "lsp_asan=${lsp_asan:-no}" >> shard-${{ matrix.shard }}.txt
+          {
+            grep -o 'PLAN: shard=[^"]*' "$log" | head -1 || true
+            leaked=$(sed -n 's/.*NOTE: \([0-9][0-9]*\) test program(s) exited nonzero on LeakSanitizer.*/\1/p' "$log" | head -1)
+            echo "leaked=${leaked:-0}"
+            # Which job-level extras this shard claimed. The aggregator requires
+            # exactly one claimant for each: a DERIVED owner that nobody turns out
+            # to be is how "it runs somewhere" becomes "it runs nowhere".
+            echo "gc_traversal=${gc_traversal:-no}"
+            echo "lsp_asan=${lsp_asan:-no}"
+          } > "shard-${{ matrix.shard }}.txt"
           cat shard-${{ matrix.shard }}.txt
 
       - if: always() && needs.scope.outputs.code == 'true'
