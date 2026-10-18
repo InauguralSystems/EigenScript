@@ -42,7 +42,7 @@ eigenscript.h|#define VAL_NUM_RAW|1|the raw read definition
 eigenscript.h|#define VAL_F64_RAW|1|the raw double read definition (#1758 R1.2a: was VAL_NUM_RAW)
 eigenscript.h|#define VAL_I64_RAW|1|the raw int64 read definition (#1758 R1.2a)
 eigenscript.h|eigs_num_arg|1|inline fast path of the checking accessor: reads only after type == VAL_NUM
-eigs_embed.c|eigs_value_as_num|1|embedding API: reads only after type == VAL_NUM; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
+eigs_embed.c|eigs_value_as_num|2|embedding API: reads only after type == VAL_NUM; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
 embed_smoke.c|main|7|C test program: builds and inspects slots it constructed as numbers
 ext_store.c|store_json_encode|1|store record encoder: case VAL_INT writes the int's exact digits (#1758 R1.2a)
 jit.c|emit_load_numeric_operand|2|emits the load of data.num_ after the emitted type == VAL_NUM / refcount guard
