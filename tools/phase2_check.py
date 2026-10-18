@@ -989,8 +989,8 @@ BUILD_PLANTS = {
     'b2-trap': ('src/vm.c', '            if (target->type == VAL_BUFFER) {\n                if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {\n                    double v = buffer_read_num(target, i);\n                    slot_decref(tgt_s);\n                    vm_push_slot(slot_from_f64(v));\n                } else {\n                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));\n                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",\n',
                 '            if (target->type == VAL_BUFFER) {\n                if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {\n                    double v = buffer_read_num(target, i);\n                    slot_decref(tgt_s);\n                    if (isnan(target->data.buffer.data[i])) {   /* CRITIC PLANT B2: an int producer, bits spelled */\n                        EigsSlot p; p.u = (SLOT_QNAN_MASK | (UINT64_C(2) << 48)) | 7u;\n                        vm_push_slot(p);\n                    } else {\n                        vm_push_slot(slot_from_f64(v));\n                    }\n                } else {\n                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));\n                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",\n', 'smi-trap'),
     # the critic's P4 (an int produced inside an allowed writer) on the smi-trap build
-    'p4-trap': ('src/eigenscript.c', '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n        return slot_from_f64(n);',
-                '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n'
+    'p4-trap': ('src/eigenscript.c', '        double n = VAL_F64_RAW(v);\n        val_decref(v);\n        return slot_from_f64(n);',
+                '        double n = VAL_F64_RAW(v);\n        val_decref(v);\n'
                 '        if (n == 1.0) return slot_from_int(1);   /* PLANT P4 */\n        return slot_from_f64(n);',
                 'smi-trap'),
 }
@@ -1028,8 +1028,8 @@ INTSRC_PLANTS = [
     ('P3 raw TAG_SMI bits in vm.c', [
         ('vm.c', _NUM_ONE, '    CASE(NUM_ONE): {\n        { EigsSlot one; one.u = TAG_SMI | 1u; vm_push_slot(one); }')]),
     ('P4 a producer inside an allowed writer', [
-        ('eigenscript.c', '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n        return slot_from_f64(n);',
-         '        double n = VAL_NUM_RAW(v);\n        val_decref(v);\n        if (n == 1.0) return slot_from_int(1);\n'
+        ('eigenscript.c', '        double n = VAL_F64_RAW(v);\n        val_decref(v);\n        return slot_from_f64(n);',
+         '        double n = VAL_F64_RAW(v);\n        val_decref(v);\n        if (n == 1.0) return slot_from_int(1);\n'
          '        return slot_from_f64(n);')]),
     ('P5 a raw-bits header macro', [
         ('value_slot.h', '/* Constructors */', '/* Constructors */\n'
