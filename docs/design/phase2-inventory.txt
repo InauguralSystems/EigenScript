@@ -20,10 +20,10 @@ make_num                   364
 eigs_num_arg               151
 eigs_list_num              130
 VAL_INT                    124
-VAL_FLOAT                  117
+VAL_FLOAT                  122
 SLOT_F64_RAW                83
-VAL_NUM                     82
-VAL_NUM_RAW                 70
+VAL_NUM                     77
+VAL_NUM_RAW                 68
 num_guard                   60
 AST_NUM                     52
 eigs_slot_num               50
@@ -35,7 +35,7 @@ slot_is_smi                 37
 VAL_I64_RAW                 31
 buffer_read_byte            22
 list_set_num                22
-VAL_F64_RAW                 19
+VAL_F64_RAW                 21
 slot_smi_val                18
 slot_f64_value              16
 strtod                      16
@@ -50,7 +50,7 @@ eigs_slot_elem_num           6
 num_guard_named              6
 num_to_i64_exact             6
 num_val                      5
-VAL_NUM_OFFSET               4
+VAL_F64_OFFSET               4
 buf_num_arg                  4
 dict_value_rewrite_num       4
 list_rewrite_num             3
@@ -60,7 +60,7 @@ f64_                         2
 list_append_num              2
 make_num_permanent           2
 num_                         2
-VAL_F64_OFFSET               1
+VAL_NUM_OFFSET               1
 atof                         1
 d_                           1
 dict_value_get_num           1
@@ -1883,17 +1883,17 @@ jit.c:2343 <file scope> emit_load_numeric_operand EMIT d
 jit.c:2348 emit_load_numeric_operand TAG-IMM 0xFFF8 EMIT d
 jit.c:2353 emit_load_numeric_operand TAG-IMM 0xFFFB EMIT d
 jit.c:2356 emit_load_numeric_operand TAG-IMM 0xFFFD EMIT d
-jit.c:2363 emit_load_numeric_operand VAL_NUM EMIT d
-jit.c:2367 emit_load_numeric_operand VAL_NUM_OFFSET RAW d
-jit.c:2368 emit_load_numeric_operand VAL_NUM_OFFSET RAW d
+jit.c:2363 emit_load_numeric_operand VAL_FLOAT EMIT d
+jit.c:2367 emit_load_numeric_operand VAL_F64_OFFSET RAW d
+jit.c:2368 emit_load_numeric_operand VAL_F64_OFFSET RAW d
 jit.c:2397 emit_decref_binop_operands TAG-IMM 0xFFFB EMIT d
 jit.c:2425 emit_commit_binop TAG-IMM 0xFFFB EMIT d
 jit.c:2633 jit_compile_to_thunk max_normal_bits EMIT d
 jit.c:2634 jit_compile_to_thunk EIGS_NUM_MAX GUARD d
 jit.c:2634 jit_compile_to_thunk max_normal_bits EMIT d
 jit.c:2801 jit_compile_to_thunk/OP_NULL TAG-IMM 0xFFF8 EMIT d
-jit.c:2822 jit_compile_to_thunk/OP_CONST VAL_NUM TEST d
-jit.c:2825 jit_compile_to_thunk/OP_CONST VAL_NUM_RAW RAW d
+jit.c:2822 jit_compile_to_thunk/OP_CONST VAL_FLOAT TEST d
+jit.c:2825 jit_compile_to_thunk/OP_CONST VAL_F64_RAW RAW d
 jit.c:2828 jit_compile_to_thunk/OP_CONST TAG-IMM 0xFFFB EMIT d
 jit.c:3024 jit_compile_to_thunk/OP_SET_NAME TAG-IMM 0xFFFB EMIT d
 jit.c:3145 jit_compile_to_thunk/OP_LOCAL_DOT_GET emit_immediate_num_check_rax EMIT d
@@ -1902,8 +1902,8 @@ jit.c:3274 jit_compile_to_thunk/OP_LOCAL_DOT_SET emit_immediate_num_check_rdx EM
 jit.c:3452 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFF8 EMIT d
 jit.c:3457 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFFB EMIT d
 jit.c:3459 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFFD EMIT d
-jit.c:3465 jit_compile_to_thunk/OP_SET_LOCAL VAL_NUM EMIT d
-jit.c:3471 jit_compile_to_thunk/OP_SET_LOCAL VAL_NUM_OFFSET RAW d
+jit.c:3465 jit_compile_to_thunk/OP_SET_LOCAL VAL_FLOAT EMIT d
+jit.c:3471 jit_compile_to_thunk/OP_SET_LOCAL VAL_F64_OFFSET RAW d
 jit.c:3530 jit_compile_to_thunk/OP_MOD emit_load_numeric_operand EMIT d
 jit.c:3534 jit_compile_to_thunk/OP_MOD emit_load_numeric_operand EMIT d
 jit.c:3544 jit_compile_to_thunk/OP_MOD emit_btr_63_rsi EMIT d
@@ -1944,7 +1944,7 @@ jit.c:4107 jit_compile_to_thunk/OP_INDEX_SET emit_cvttsd2si_xmm0_r8d EMIT d
 jit.c:4108 jit_compile_to_thunk/OP_INDEX_SET emit_cvtsi2sd_r8d_xmm1 EMIT d
 jit.c:4109 jit_compile_to_thunk/OP_INDEX_SET emit_ucomisd_xmm0_xmm1 EMIT d
 jit.c:4117 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rax EMIT d
-jit.c:4375 jit_compile_to_thunk/OP_POP VAL_NUM TEST d
+jit.c:4375 jit_compile_to_thunk/OP_POP VAL_FLOAT TEST d
 jit_smoke.c:103 jit_helper_local_idx_get slot_from_f64 PRODUCE d
 jit_smoke.c:138 jit_helper_iter_next SLOT_F64_RAW RAW d
 jit_smoke.c:142 jit_helper_iter_next slot_from_f64 PRODUCE d
@@ -1971,8 +1971,8 @@ jit_smoke.c:539 run_reader_bail_cases SLOT_F64_RAW RAW d
 jit_smoke.c:540 run_reader_bail_cases SLOT_F64_RAW RAW d
 jit_smoke.c:541 run_reader_bail_cases SLOT_F64_RAW RAW d
 jit_smoke.c:541 run_reader_bail_cases SLOT_F64_RAW RAW d
-jit_smoke.c:601 run_exit_cases VAL_NUM TAGSET d
-jit_smoke.c:602 run_exit_cases VAL_NUM_RAW WRITE d
+jit_smoke.c:601 run_exit_cases VAL_FLOAT TAGSET d
+jit_smoke.c:602 run_exit_cases VAL_F64_RAW WRITE d
 jit_smoke.c:628 run_exit_cases slot_from_f64 PRODUCE d
 jit_smoke.c:637 run_exit_cases SLOT_F64_RAW RAW d
 jit_smoke.c:642 run_exit_cases SLOT_F64_RAW RAW d

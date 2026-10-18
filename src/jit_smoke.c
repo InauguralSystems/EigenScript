@@ -598,8 +598,8 @@ static int run_exit_cases(void) {
     vm->owner = thread;
     eigs_current = thread;
     state->jit_entry_threshold = state->jit_iter_threshold = 1;
-    Value limit = {.type = VAL_NUM};
-    VAL_NUM_RAW(&limit) = 4;
+    Value limit = {.type = VAL_FLOAT};
+    VAL_F64_RAW(&limit) = 4;
     Value *constants[] = {&limit};
     uint8_t code[] = {OP_NULL, OP_POP, OP_NULL, OP_POP,
                       OP_NUM_ONE, OP_ADD, OP_DUP, OP_CONST, 0, 0,
