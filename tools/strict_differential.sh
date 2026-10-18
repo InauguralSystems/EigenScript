@@ -1590,7 +1590,7 @@ fi
 # ------------------------------------------------ pixel differential
 printf 'print of (gfx_open of [8, 8, "pixdiff-probe"])\n' > "$TMP/open.eigs"
 NO_RENDERER=0
-if [ "$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)" != "1" ]; then
+if [ "$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)" != "true" ]; then
     NO_RENDERER=1
     echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
 fi
