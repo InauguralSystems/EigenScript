@@ -1894,6 +1894,30 @@ Value* builtin_audio_clear(Value *arg) {
     return make_null(); /* fs:VOID audio_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
+#define AUDIO_GENERATOR_MAX_SECONDS 30.0
+
+/* Validate the allocation size while it is still a double.  In particular,
+ * never cast an out-of-range (or NaN) sample count to int: that conversion is
+ * undefined in C. */
+static int audio_generator_sample_count(double duration, int rate,
+                                        const char *who, int *count) {
+    double samples = duration * (double)rate;
+    if (duration > AUDIO_GENERATOR_MAX_SECONDS) {
+        rt_error(EK_VALUE, 0, "%s: duration exceeds the 30 second limit", who);
+        return 0;
+    }
+    if (!(samples <= (double)INT_MAX)) {
+        rt_error(EK_VALUE, 0, "%s: duration produces a sample count that does not fit in int", who);
+        return 0;
+    }
+    if (samples <= 0.0) {
+        *count = 0;
+        return 1;
+    }
+    *count = (int)samples;
+    return 1;
+}
+
 /* audio_sine of [freq, duration, amplitude] — generate sine wave samples */
 Value* builtin_audio_sine(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "audio_sine");
@@ -1925,8 +1949,9 @@ Value* builtin_audio_sine(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_sine", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     for (int i = 0; i < n; i++) {
@@ -1960,8 +1985,9 @@ Value* builtin_audio_saw(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_saw", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     for (int i = 0; i < n; i++) {
@@ -1995,8 +2021,9 @@ Value* builtin_audio_square(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_square", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     for (int i = 0; i < n; i++) {
@@ -2035,8 +2062,9 @@ Value* builtin_audio_sweep(Value *arg) {
     double amp = eigs_list_num(arg, 3, __func__);
     int wave = (int)eigs_list_num(arg, 4, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_sweep", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     double phase = 0.0;
@@ -2076,8 +2104,9 @@ Value* builtin_audio_noise(Value *arg) {
     double dur = eigs_list_num(arg, 0, __func__);
     double amp = eigs_list_num(arg, 1, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_noise", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     for (int i = 0; i < n; i++) {
