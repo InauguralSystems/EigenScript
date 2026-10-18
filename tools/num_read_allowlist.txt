@@ -1,6 +1,6 @@
 # tools/num_read_allowlist.txt -- every raw number token, reviewed (#1637 round 4).
-# file|function|count|reason. tools/num_read_check.sh counts VAL_NUM_RAW /
-# SLOT_F64_RAW / VAL_NUM_OFFSET tokens per function and fails when a count
+# file|function|count|reason. tools/num_read_check.sh counts VAL_F64_RAW /
+# SLOT_F64_RAW / VAL_F64_OFFSET tokens per function and fails when a count
 # differs (a new raw read, however it is spelled across lines, changes the
 # count), when a function with raw tokens is missing here, or a row is stale.
 # Builtins never belong here: they read through eigs_num_arg / eigs_list_num /
@@ -18,16 +18,16 @@ container.h|eigs_slot_num|1|required numeric accessor reads only after slot_is_f
 container.h|eigs_slot_opt_num|1|optional numeric accessor reads only after slot_is_f64
 container.h|list_get_num|1|accessor numeric fast path: reads the slot only behind its own slot_is_f64 test (#1665 arm D)
 container.h|list_get_return|1|builtin-return read boxes an immediate only after slot_is_f64
-chunk.c|chunk_disassemble|2|debug disassembly prints a constant behind its own type == VAL_NUM test
-chunk.c|const_equal|4|constant-pool dedup compares two constants after testing both are VAL_NUM
-chunk.c|const_hash_value|2|constant-pool hash of a constant inside its type == VAL_NUM branch
-eigenscript.c|chan_clone_rec|2|channel deep-copy, switch case VAL_NUM; case VAL_INT names the int it refuses (unwired, R1.3)
-eigenscript.c|compute_entropy_impl|2|observer entropy, switch case VAL_NUM, and case VAL_INT (an int's entropy is its double's, design 7)
+chunk.c|chunk_disassemble|2|debug disassembly prints a constant behind its own type == VAL_FLOAT test
+chunk.c|const_equal|4|constant-pool dedup compares two constants after testing both are VAL_FLOAT
+chunk.c|const_hash_value|2|constant-pool hash of a constant inside its type == VAL_FLOAT branch
+eigenscript.c|chan_clone_rec|2|channel deep-copy, switch case VAL_FLOAT; case VAL_INT names the int it refuses (unwired, R1.3)
+eigenscript.c|compute_entropy_impl|2|observer entropy, switch case VAL_FLOAT, and case VAL_INT (an int's entropy is its double's, design 7)
 eigenscript.c|ent_child_slot|1|observer entropy reads an immediate only after slot_is_f64
 eigenscript.c|eigs_num_arg_slow|2|checked reader slow path: reads only after type == VAL_FLOAT, or VAL_INT (the bridge converts an int, design 2.7)
-eigenscript.c|is_truthy|2|truthiness, switch case VAL_NUM and case VAL_INT (a bool has its own case)
-eigenscript.c|make_num|1|constructor: writes the number of a Value it just typed VAL_NUM
-eigenscript.c|make_num_permanent|1|constructor: writes the number of a Value it just typed VAL_NUM
+eigenscript.c|is_truthy|2|truthiness, switch case VAL_FLOAT and case VAL_INT (a bool has its own case)
+eigenscript.c|make_num|1|constructor: writes the number of a Value it just typed VAL_FLOAT
+eigenscript.c|make_num_permanent|1|constructor: writes the number of a Value it just typed VAL_FLOAT
 eigenscript.c|module_ns_project|1|mirror refresh: reads the binding slot after slot_is_f64 and stores it over a numeric mirror slot
 eigenscript.c|observer_entropy_now|1|observer entropy of a slot after slot_is_f64
 eigenscript.c|observer_slot_sample_gated|2|observer sample inside val_is_number: the VAL_INT box as its double, else the VAL_FLOAT (design 7)
@@ -35,18 +35,16 @@ eigenscript.c|observer_slot_update|2|observer update inside val_is_number: the V
 eigenscript.c|slot_from_value|2|NaN-boxing boundary, inside its VAL_FLOAT branch and its VAL_INT branch (an SMI in range, design 2.1)
 eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_f64
 eigenscript.c|values_equal_impl|8|equality: the int/float pair by eigs_cmp_int_float (N2), each read inside its own type test; switch case VAL_FLOAT and case VAL_INT (both ints)
-eigenscript.c|value_to_string|2|printing, switch case VAL_NUM and case VAL_INT (exact digits)
-eigenscript.h|#define VAL_NUM_OFFSET|1|the raw member offset definition (JIT)
-eigenscript.h|#define VAL_F64_OFFSET|1|the raw double member offset definition (JIT; #1758 R1.2a: was VAL_NUM_OFFSET)
-eigenscript.h|#define VAL_NUM_RAW|1|the raw read definition
-eigenscript.h|#define VAL_F64_RAW|1|the raw double read definition (#1758 R1.2a: was VAL_NUM_RAW)
+eigenscript.c|value_to_string|2|printing, switch case VAL_FLOAT and case VAL_INT (exact digits)
+eigenscript.h|#define VAL_F64_OFFSET|1|the raw double member offset definition (JIT; #1758 R1.2a: was VAL_F64_OFFSET)
+eigenscript.h|#define VAL_F64_RAW|1|the raw double read definition (#1758 R1.2a: was VAL_F64_RAW)
 eigenscript.h|#define VAL_I64_RAW|1|the raw int64 read definition (#1758 R1.2a)
-eigenscript.h|eigs_num_arg|1|inline fast path of the checking accessor: reads only after type == VAL_NUM
-eigs_embed.c|eigs_value_as_num|2|embedding API: reads only after type == VAL_NUM; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
+eigenscript.h|eigs_num_arg|1|inline fast path of the checking accessor: reads only after type == VAL_FLOAT
+eigs_embed.c|eigs_value_as_num|2|embedding API: reads only after type == VAL_FLOAT; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
 embed_smoke.c|main|7|C test program: builds and inspects slots it constructed as numbers
 ext_store.c|store_json_encode|1|store record encoder: case VAL_INT writes the int's exact digits (#1758 R1.2a)
-jit.c|emit_load_numeric_operand|2|emits the load of data.num_ after the emitted type == VAL_NUM / refcount guard
-jit.c|jit_compile_to_thunk|2|emits loads/stores of data.num_ behind emitted immediate-number checks; reads a VAL_NUM constant
+jit.c|emit_load_numeric_operand|2|emits the load of data.f64_ after the emitted type == VAL_FLOAT / refcount guard
+jit.c|jit_compile_to_thunk|2|emits loads/stores of data.f64_ behind emitted immediate-number checks; reads a VAL_FLOAT constant
 jit_smoke.c|jit_helper_index_get|2|JIT smoke test program (stubbed helpers over slots it built as numbers)
 jit_smoke.c|jit_helper_iter_next|1|JIT smoke test program (stubbed helpers over slots it built as numbers)
 jit_smoke.c|jit_helper_set_name|4|JIT smoke test program (stubbed helpers over slots it built as numbers)
@@ -55,28 +53,28 @@ jit_smoke.c|run_index_bail_cases|2|JIT smoke test program (stubbed helpers over 
 jit_smoke.c|run_reader_bail_cases|8|JIT smoke test program (stubbed helpers over slots it built as numbers)
 jit_smoke.c|run_store_cases|4|JIT smoke test program (stubbed helpers over slots it built as numbers)
 trace.c|write_slot|1|tape writer after slot_is_f64
-trace.c|write_value_ptr|2|tape writer, switch case VAL_NUM; case VAL_INT names the int it refuses (tape v7, R1.3)
-trace.c|write_value_ptr_full|2|tape writer, switch case VAL_NUM; case VAL_INT names the int it refuses (tape v7, R1.3)
+trace.c|write_value_ptr|2|tape writer, switch case VAL_FLOAT; case VAL_INT names the int it refuses (tape v7, R1.3)
+trace.c|write_value_ptr_full|2|tape writer, switch case VAL_FLOAT; case VAL_INT names the int it refuses (tape v7, R1.3)
 value_slot.h|#define SLOT_F64_RAW|1|the raw slot read definition (#1758: was SLOT_NUM_RAW)
-value_slot.h|slot_f64_value|2|float reader (#1758: was vm.c slot_as_double): an immediate after slot_is_f64, a box after type == VAL_NUM; 0 for an int
+value_slot.h|slot_f64_value|2|float reader (#1758: was vm.c slot_as_double): an immediate after slot_is_f64, a box after type == VAL_FLOAT; 0 for an int
 value_slot.h|slot_from_f64|1|constructor: writes a double into a fresh slot (#1758: was slot_from_num)
 value_slot.h|slot_truthy_immediate|1|truthiness after slot_is_f64
-vm.c|#define ARITH_FAST|2|arithmetic fast path after both operands tested VAL_NUM; NUM_REUSE writes
+vm.c|#define ARITH_FAST|2|arithmetic fast path after both operands tested VAL_FLOAT; NUM_REUSE writes
 vm.c|#define INT_BINOP_R|2|integer op fast path after both slots slot_is_f64
-vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_NUM && b->type == VAL_NUM; NUM_REUSE writes
+vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_FLOAT && b->type == VAL_FLOAT; NUM_REUSE writes
 vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_f64
-vm.c|jit_helper_index_get|3|JIT helper: index read after slot_is_f64 / VAL_NUM tests on index and element
-vm.c|jit_helper_index_set|5|JIT helper: index store after slot_is_f64 / VAL_NUM tests on index and value
-vm.c|jit_helper_iter_next|2|JIT helper: loop state list [iterable, idx, snap] built by the VM, each read behind a VAL_NUM test
+vm.c|jit_helper_index_get|3|JIT helper: index read after slot_is_f64 / VAL_FLOAT tests on index and element
+vm.c|jit_helper_index_set|5|JIT helper: index store after slot_is_f64 / VAL_FLOAT tests on index and value
+vm.c|jit_helper_iter_next|2|JIT helper: loop state list [iterable, idx, snap] built by the VM, each read behind a VAL_FLOAT test
 vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|loop_iter_store|1|writes the loop counter slot after slot_is_f64
 vm.c|obs_dump_scope|1|SIGUSR1 observer dump after slot_is_f64
-vm.c|obs_dump_value|3|SIGUSR1 observer dump after slot_is_f64 / case VAL_NUM / case VAL_INT (exact digits)
+vm.c|obs_dump_value|3|SIGUSR1 observer dump after slot_is_f64 / case VAL_FLOAT / case VAL_INT (exact digits)
 vm.c|obs_slot_num|1|observer numeric channel (#1758): reads an immediate after slot_is_f64; an int converts exactly
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_f64
 vm.c|slot_truthy|1|truthiness after slot_is_f64
-vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admitted only as VAL_NUM (chunk_scan_leaf_accessor) and values behind VAL_NUM tests
-vm.c|vm_run_ex|42|the interpreter loop: every opcode reads numbers behind slot_is_f64 / type == VAL_NUM dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
+vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admitted only as VAL_FLOAT (chunk_scan_leaf_accessor) and values behind VAL_FLOAT tests
+vm.c|vm_run_ex|42|the interpreter loop: every opcode reads numbers behind slot_is_f64 / type == VAL_FLOAT dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
 vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_f64
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_f64
 builtins.c|builtin_json_build|1|VAL_INT text is exact digits; float text retains the bridge (#1758 R1.2d)

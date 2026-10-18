@@ -263,7 +263,7 @@ static inline int slot_int_value(EigsSlot s, int64_t *out) {
 /* Boundary shims declared here, defined in eigenscript.c.
  *
  * slot_from_value (takes ownership of the input ref):
- *   - VAL_NUM -> immediate double, input decref'd (#262 Step E: numbers never
+ *   - VAL_FLOAT -> immediate double, input decref'd (#262 Step E: numbers never
  *     carry observer state, so there is no tracked-pointer case).
  *   - VAL_NULL -> SLOT_NULL (incref skipped; null is borrowed).
  *   - any heap type -> TAG_HEAP pointer (incref).

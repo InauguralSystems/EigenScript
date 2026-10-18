@@ -4,8 +4,8 @@
 #
 # The Value union's number members are `f64_` (a VAL_FLOAT) and `i64_` (a
 # VAL_INT), and the EigsSlot union's double is `d_`, so no unreviewed spelling
-# compiles. (#1758 R1.2 renamed `num_`/VAL_NUM_RAW/VAL_NUM_OFFSET; until R1.2z
-# deletes them, the old spellings are counted too.) Code reaches a number in
+# compiles. #1758 R1.2z removed the deprecated numeric aliases; the scanner
+# also catches their reintroduction before compilation. Code reaches a number in
 # exactly two ways:
 #   - the checking accessors eigs_num_arg / eigs_list_num / eigs_opt_num,
 #     which raise a type error on a bool or any other non-number;
@@ -20,7 +20,7 @@
 # a count and goes red until someone reviews it.
 #
 # It also fails on:
-#   - `data.num_` / `.d_` spelled out anywhere except the macro definitions
+#   - raw Value payload members / `.d_` outside the macro definitions
 #     (a bypass of the macros);
 #   - a bare `->data.builtin(` call: every builtin call must pass the bool
 #     gate, eigs_call_builtin;

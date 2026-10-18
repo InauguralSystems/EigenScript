@@ -5820,7 +5820,7 @@ Value* builtin_list_contains(Value *arg) {
 /* sort_by of [list, key_fn] — sort list by numeric keys from key_fn.
  * Evaluates key_fn once per element, then qsorts by key (ascending).
  * Stable tiebreak by original index. Returns a NEW sorted list. */
-typedef struct { double key; int64_t int_key; int is_int; int index; } SortByPair;
+typedef struct { union { double key; int64_t int_key; }; int is_int; int index; } SortByPair;
 
 static int sort_by_pair_cmp(const void *a, const void *b) {
     const SortByPair *pa = a, *pb = b;

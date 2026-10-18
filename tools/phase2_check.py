@@ -87,6 +87,7 @@ ITEMS = ['N%d' % i for i in range(1, 15)] + ['N4b', 'A', 'B', 'T1', 'O1', 'O2', 
 # in the commit that deletes them (R1.6's bridge, 21 tokens, with R1.6).
 DELETED_TOKENS = {
     'R1.1': ['slot_is_num', 'slot_is_numeric', 'SLOT_NUM_RAW', 'slot_from_num', 'slot_as_double'],
+    'R1.2': ['VAL_NUM', 'VAL_NUM_RAW', 'VAL_NUM_OFFSET', 'num_'],
     'R1.3': ['eigs_int_unwired'],
     'R2.2': ['num_guard', 'num_guard_named', 'EIGS_NUM_MAX'],
 }

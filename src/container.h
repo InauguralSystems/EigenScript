@@ -136,7 +136,7 @@ static inline Value *dict_value_get_ref(const Value *dict, int i) {
 
 /* Numeric readers have the same strict/bool behavior as the Value readers:
  * required raises for every non-number, element raises for bool or in strict
- * mode, and optional treats null as absent.  The heap-VAL_NUM arms serve a
+ * mode, and optional treats null as absent.  The heap-VAL_FLOAT arms serve a
  * slot that did not come from container storage (a VM-internal box).
  * #1758: these are the bridge (design 2.7) -- until R1.6 deletes them a
  * number read is a double, so an int (an SMI) converts, exactly: |SMI| <

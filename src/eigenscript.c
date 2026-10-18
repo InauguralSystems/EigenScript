@@ -353,7 +353,7 @@ static void env_intern_scope_remove(char *name);
 /* #262 Phase-3 D: scalar entropy of a number, factored out so the slot
  * observer can update from a raw immediate double without materializing a
  * Value (the default path no longer promotes observed nums to tracked
- * pointers). Single source of truth for the VAL_NUM entropy formula. */
+ * pointers). Single source of truth for the VAL_FLOAT entropy formula. */
 static double entropy_of_num(double num) {
     /* #412: unity is the HORIZON, not a home point. The binary-entropy
      * formula is smooth and maximal at |x| = 1 (p = 0.5, H = 1.0); the old
@@ -1876,7 +1876,7 @@ int eigs_arg_has_bool(const Value *arg) {
  *
  * slot_from_value: takes ownership of the input ref.
  *   - NULL or VAL_NULL singleton -> immediate null (input is borrowed)
- *   - VAL_NUM -> immediate double; input released (#262 Step E: nums never
+ *   - VAL_FLOAT -> immediate double; input released (#262 Step E: nums never
  *     carry observer state, so there is no tracked-pointer case)
  *   - any other type -> TAG_HEAP; ref transferred
  *

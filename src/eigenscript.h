@@ -266,17 +266,8 @@ struct ASTNode {
 
 /* ---- Value types ---- */
 
-/* #1758 R1.2: deprecated spellings, kept only while R1.2b-n migrate their
- * sites (the compiler's warnings are the progress meter); R1.2z deletes them,
- * so a straggler stops compiling. */
-#if defined(__GNUC__) || defined(__clang__)
-#define EIGS_R12_DEPRECATED(msg) __attribute__((deprecated(msg)))
-#else
-#define EIGS_R12_DEPRECATED(msg)
-#endif
-
 typedef enum {
-    /* #1758 R1.2a: a double (was VAL_NUM). A number Value is a VAL_FLOAT or a
+    /* #1758 R1.2a: a double. A number Value is a VAL_FLOAT or a
      * VAL_INT; `type of` says "num" for both (decision (B)). */
     VAL_FLOAT, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER,
     /* #1637: a distinct boolean. Two immortal singletons (make_bool); the
@@ -287,7 +278,6 @@ typedef enum {
      * 2.1). Nothing produces one before R1.3 (make_int does not exist yet):
      * every arm that handles it is dead code until then. */
     VAL_INT,
-    VAL_NUM EIGS_R12_DEPRECATED("#1758 R1.2: VAL_FLOAT, with an explicit VAL_INT arm") = VAL_FLOAT
 } ValType;
 
 typedef struct Value Value;
@@ -315,13 +305,10 @@ static inline int eigs_cmp_int_float(int64_t i, double f) {
  * VAL_INT for the int64), in a function listed in tools/num_read_allowlist.txt
  * with its use count. Everything else uses eigs_num_arg / eigs_list_num /
  * eigs_opt_num. VAL_F64_OFFSET is the double member for JIT-emitted loads and
- * stores (#1758 R1.2a: were VAL_NUM_RAW, VAL_NUM_OFFSET and the member num_). */
+ * stores (#1758 R1.2). */
 #define VAL_F64_RAW(v)  ((v)->data.f64_)
 #define VAL_I64_RAW(v)  ((v)->data.i64_)
 #define VAL_F64_OFFSET  ((int32_t)offsetof(Value, data.f64_))
-/* Deprecated until R1.2z: both spell the deprecated member, so every use warns. */
-#define VAL_NUM_RAW(v)  ((v)->data.num_)
-#define VAL_NUM_OFFSET  ((int32_t)offsetof(Value, data.num_))
 
 /* EigsSlot union — full inline helpers in value_slot.h, which is
  * included below after the Value struct is fully declared. We need the
@@ -456,12 +443,11 @@ struct Value {
         /* #1637 round 4: renamed so no unchecked read compiles. A Value's
          * number is read through the checking accessors (eigs_num_arg,
          * eigs_list_num, eigs_opt_num), which raise on a bool or any other
-         * non-number, or through VAL_NUM_RAW where the type is already
-         * proven -- and every VAL_NUM_RAW use sits in a function on the
+         * non-number, or through VAL_F64_RAW where the type is already
+         * proven -- and every VAL_F64_RAW use sits in a function on the
          * reviewed list tools/num_read_allowlist.txt, pinned by count
          * (tools/num_read_check.sh). */
-        double f64_;    /* VAL_FLOAT (#1758 R1.2a: was num_) */
-        double num_ EIGS_R12_DEPRECATED("#1758 R1.2: f64_ through VAL_F64_RAW");
+        double f64_;    /* VAL_FLOAT (#1758 R1.2a) */
         int64_t i64_;   /* VAL_INT (#1758 R1.2a; no producer before R1.3) */
         int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
         /* VAL_STR / VAL_JSON_RAW payload: NUL-terminated bytes.
@@ -1417,7 +1403,7 @@ extern __thread EigsThread *eigs_current;
 int eigs_arg_has_bool(const Value *arg);
 /* #1637: THE checked number reads. C code turning a Value into a double goes
  * through one of these (tools/num_read_check.sh enforces it: a raw
- * `->data.num` read needs a VAL_NUM test in the same function, or a reviewed
+ * `->data.f64_` read needs a VAL_FLOAT test in the same function, or a reviewed
  * allowlist entry). A bool -- or any other non-number -- raises a type error
  * naming `who` (a `builtin_` prefix is dropped) and reads as 0.0; the caller
  * checks g_has_error before acting on the value.

@@ -12,7 +12,7 @@ a number without naming one of them. Two derived checks bound that blind spot:
     payload (a raw or checked read appears in its body) is a numeric accessor;
     it must be in VOCAB (its call sites are then sites) or in WRAPPERS with a
     reason. A new accessor nobody reviewed is UNCLASSIFIED.
-  - every VAL_NUM must sit in a syntactic position the classifier recognizes
+  - every VAL_FLOAT must sit in a syntactic position the classifier recognizes
     (test, case, tag store, type yield, emitter immediate); any other position
     is UNCLASSIFIED.
 Not in the population: src/freestanding/ (outside the src/*.c glob), and code
@@ -57,22 +57,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Kinds decide the default category (a/b/c/e) when no role rule matches.
 VOCAB = {
     # (a) type tests and type derivations
-    'VAL_NUM': 'TAG',              # position decides: TEST/CASE/TAGSET/YIELD/EMIT
-                                   # (#1758 R1.2a: deprecated; R1.2z deletes it)
-    'VAL_FLOAT': 'TAG',            # R1.2a: was VAL_NUM
+    'VAL_FLOAT': 'TAG',            # R1.2a: the float ValType
     'VAL_INT': 'TAG',              # R1.2a: the int ValType (no producer before R1.3)
     'slot_is_f64': 'TEST',         # R1.1: was slot_is_num (slot_is_numeric deleted)
     'slot_is_smi': 'TEST',         # R1.1: the SMI tag test
     'NUM_REUSE': 'TEST',
+    'val_is_number': 'TEST',       # the Value test admits both numeric kinds
     'AST_NUM': 'TAG',
     # (b) payload reads
-    'VAL_NUM_RAW': 'RAW',          # an lvalue: `VAL_NUM_RAW(v) = x` is a WRITE (deprecated, R1.2z)
-    'VAL_F64_RAW': 'RAW',          # R1.2a: was VAL_NUM_RAW
+    'VAL_F64_RAW': 'RAW',          # the float payload
     'VAL_I64_RAW': 'RAW',          # R1.2a: a VAL_INT's int64
     'SLOT_F64_RAW': 'RAW',         # R1.1: was SLOT_NUM_RAW
     'slot_smi_val': 'RAW',         # R1.1: an SMI's int (no int Value exists before R1.3)
-    'VAL_NUM_OFFSET': 'RAW',       # deprecated, R1.2z
-    'VAL_F64_OFFSET': 'RAW',       # R1.2a: was VAL_NUM_OFFSET
+    'VAL_F64_OFFSET': 'RAW',       # the JIT float payload offset
     'slot_f64_value': 'READ',      # R1.1: replaces vm.c's slot_as_double (floats only)
     'slot_int_value': 'READ',      # R1.1: an int's value (SMI; R1.2a adds the VAL_INT box)
     'eigs_num_arg': 'READ',
@@ -121,8 +118,8 @@ JIT_TOKEN_RE = re.compile(
     r'emit_(?:add|sub|mul|div)sd_xmm0_xmm1|emit_ucomisd_\w+|emit_cvttsd2si_\w+|'
     r'emit_cvtsi2sd_\w+|emit_btr_63_\w+|fmod)\b')
 
-# `data.num` is the AST literal's double (`data.num_` is the Value member,
-# reached only through VAL_NUM_RAW); matched as a member access, below.
+# `data.num` is the AST literal's double (`data.f64_` is the Value member,
+# reached only through VAL_F64_RAW); matched as a member access, below.
 AST_NUM_FIELD = re.compile(r'(?:->|\.)data\.num\b(?!_)')
 
 KIND_CATEGORY = {
@@ -191,11 +188,11 @@ DISPATCHERS = {
 }
 
 TOKEN_RE = re.compile(r'\b(' + '|'.join(sorted(VOCAB, key=len, reverse=True)) + r')\b')
-# Raw union members: the Value's double (`num_`) and the slot's (`d_`). Only
+# Raw union members: the Value's numeric payloads (`f64_`/`i64_`) and the slot's (`d_`). Only
 # the accessor macros may name them; anywhere else is a bypass.
-RAW_MEMBER = re.compile(r'(?:\.|->)(d_|num_|f64_|i64_)\b')
-RAW_MEMBER_HOMES = {'#define VAL_NUM_RAW', '#define SLOT_F64_RAW', '#define VAL_NUM_OFFSET',
-                    '#define VAL_F64_RAW', '#define VAL_I64_RAW', '#define VAL_F64_OFFSET'}
+RAW_MEMBER = re.compile(r'(?:\.|->)(d_|f64_|i64_)\b')
+RAW_MEMBER_HOMES = {'#define SLOT_F64_RAW', '#define VAL_F64_RAW',
+                    '#define VAL_I64_RAW', '#define VAL_F64_OFFSET'}
 C_KEYWORDS = {'if', 'while', 'for', 'switch', 'return', 'sizeof', 'do', 'else',
               'case', 'defined', '__attribute__', '__typeof__', '_Generic'}
 
@@ -370,7 +367,7 @@ def function_name(sig):
 
 
 def val_num_kind(line, start, end, token):
-    """Syntactic role of a VAL_NUM / AST_NUM occurrence."""
+    """Syntactic role of a VAL_FLOAT / AST_NUM occurrence."""
     before = line[:start].rstrip()
     after = line[end:].lstrip()
     if re.search(r'(==|!=)\s*$', before) or re.match(r'(==|!=)', after):
@@ -385,13 +382,11 @@ def val_num_kind(line, start, end, token):
         return 'EMIT'            # JIT immediate operand of a type compare
     if (re.search(r'[({,]\s*$', before) or not before) and re.match(r'[)},]', after):
         return 'DATA'            # the tag as data: enumerator, kind table, argument
-    if not before and re.match(r'EIGS_R12_DEPRECATED\(', after):
-        return 'DATA'            # #1758 R1.2a-z: the deprecated alias enumerator itself
     return 'UNKNOWN'
 
 
 def raw_kind(line, end):
-    """VAL_NUM_RAW(...)/SLOT_F64_RAW(...) followed by a plain `=` is a write."""
+    """VAL_F64_RAW(...)/SLOT_F64_RAW(...) followed by a plain `=` is a write."""
     depth, i = 0, end
     while i < len(line):
         ch = line[i]
@@ -423,7 +418,7 @@ def scan_file(path, rel):
             kind = VOCAB[tok]
             if kind == 'TAG':
                 kind = val_num_kind(line, m.start(), m.end(), tok)
-            elif tok in ('VAL_NUM_RAW', 'VAL_F64_RAW', 'VAL_I64_RAW', 'SLOT_F64_RAW'):
+            elif tok in ('VAL_F64_RAW', 'VAL_I64_RAW', 'SLOT_F64_RAW'):
                 kind = raw_kind(line, m.end())
             sites.append((rel, ln, scope[ln], tok, kind))
         if JIT_FILES.match(rel):
@@ -453,9 +448,9 @@ def classify(site):
 
 
 # ---- derived accessor check ----------------------------------------------
-READ_IN_BODY = re.compile(r'\b(VAL_NUM_RAW|VAL_F64_RAW|VAL_I64_RAW|SLOT_F64_RAW|eigs_num_arg|eigs_list_num|'
+READ_IN_BODY = re.compile(r'\b(VAL_F64_RAW|VAL_I64_RAW|SLOT_F64_RAW|eigs_num_arg|eigs_list_num|'
                           r'eigs_slot_num|list_get_num|dict_value_get_num|slot_f64_value)\b|'
-                          r'(?:\.|->)(?:d_|num_|f64_|i64_)\b')
+                          r'(?:\.|->)(?:d_|f64_|i64_)\b')
 
 
 def derived_accessors(stripped_by_file, scope_by_file, sigs_by_file):
@@ -726,7 +721,7 @@ Q7_CLASSES = ['geometry', 'bounded', 'magnitude']
 # A LOSS row claims the body computes through a double; it must have one.
 DOUBLE_PATH = {'eigs_num_arg', 'eigs_list_num', 'eigs_slot_num', 'eigs_opt_num', 'eigs_slot_opt_num',
                'eigs_slot_elem_num', 'eigs_elem_num', 'buffer_read_num', 'make_num', 'slot_f64_value',
-               'VAL_NUM_RAW', 'VAL_F64_RAW', 'SLOT_F64_RAW', 'strtod', 'atof', 'num_guard', 'list_set_num'}
+               'VAL_F64_RAW', 'SLOT_F64_RAW', 'strtod', 'atof', 'num_guard', 'list_set_num'}
 
 
 def read_table(doc):
@@ -795,14 +790,14 @@ def main():
     classified, unclassified = [], []
     rule_hits = [0] * len(ROLE_RULES)
     token_hits = {t: 0 for t in VOCAB}
-    token_hits.update({'d_': 0, 'num_': 0, 'f64_': 0, 'i64_': 0})
+    token_hits.update({'d_': 0, 'f64_': 0, 'i64_': 0})
     for site in sites:
         cat, rule = classify(site)
         if site[3] in token_hits:
             token_hits[site[3]] += 1
         if cat is None:
             why = ('raw union member outside its accessor macro' if site[4] == 'BYPASS'
-                   else 'VAL_NUM/AST_NUM in an unrecognized position')
+                   else 'VAL_FLOAT/VAL_INT/AST_NUM in an unrecognized position')
             unclassified.append((site, why))
             continue
         if rule is not None:
