@@ -29,6 +29,9 @@
 #        i-th draw: the same stream as `random`, and the uniform [-amp, amp)
 #        formula
 #   AN09 a rejected argument consumes no record (#1007): capture == replay
+#   AN10 a refused duration (#1767, over 30 s) raises and consumes no record, so
+#        its replay refuses it again and the next call keeps its own records:
+#        capture == replay
 #
 # Run directly or from run_all_tests.sh ([138]). Prints
 #   AUDIO_NOISE_TAPE: N passed, M failed
@@ -97,6 +100,13 @@ catch e:
     print of "rejected"
 print of (audio_noise of [0.0002, 0.5])
 EIGS
+cat > "$W/refuse.eigs" <<'EIGS'
+try:
+    x is audio_noise of [31, 0.5]
+catch e:
+    print of "refused"
+print of (audio_noise of [0.0002, 0.5])
+EIGS
 printf 'seed_random of 42\nprint of (audio_noise of [0.0002, 0.5])\n' > "$W/seed42.eigs"
 printf 'seed_random of 43\nprint of (audio_noise of [0.0002, 0.5])\n' > "$W/seed43.eigs"
 cat > "$W/stream.eigs" <<'EIGS'
@@ -112,11 +122,13 @@ EIGS
 eig "$W/rec"  "$W/noise.eigs"  EIGS_TRACE="$W/noise.tape"
 eig "$W/mrec" "$W/multi.eigs"  EIGS_TRACE="$W/multi.tape"
 eig "$W/jrec" "$W/reject.eigs" EIGS_TRACE="$W/reject.tape"
+eig "$W/frec" "$W/refuse.eigs" EIGS_TRACE="$W/refuse.tape"
 eig "$W/s42a" "$W/seed42.eigs"
 sleep 1
 eig "$W/rep1"  "$W/noise.eigs"  EIGS_REPLAY="$W/noise.tape"
 eig "$W/mrep1" "$W/multi.eigs"  EIGS_REPLAY="$W/multi.tape"
 eig "$W/jrep"  "$W/reject.eigs" EIGS_REPLAY="$W/reject.tape"
+eig "$W/frep"  "$W/refuse.eigs" EIGS_REPLAY="$W/refuse.tape"
 sleep 1
 eig "$W/rep2"  "$W/noise.eigs"  EIGS_REPLAY="$W/noise.tape"
 eig "$W/mrep2" "$W/multi.eigs"  EIGS_REPLAY="$W/multi.tape" EIGS_JIT_OFF=1 EIGS_REPLAY_STRICT=1
@@ -200,6 +212,19 @@ if [ "$(first_line "$W/jrec")" = "rejected" ] && [ "$N_REJ" = 1 ] && cmp -s "$W/
 else
     fail "AN09 a rejected argument moved the tape" \
          "records=$N_REJ rec='$(one_line "$W/jrec")' rep='$(one_line "$W/jrep")'"
+fi
+
+# ---- a refused duration consumes no record (#1767) ------------------------------
+# The refusal runs before the tape seam. Refused after a replay take, the replay
+# of the 31 s call would take the valid call's record and the valid call would
+# find the tape empty: its replay raises, so the transcripts differ.
+N_REF=$(grep -c '^N [0-9][0-9]* audio_noise=' "$W/refuse.tape")
+if [ "$(first_line "$W/frec")" = "refused" ] && [ "$(n_items "$(sed -n '2p' "$W/frec")")" = 8 ] &&
+   [ "$(tail -n 1 "$W/frec")" = "rc=0" ] && [ "$N_REF" = 1 ] && cmp -s "$W/frec" "$W/frep"; then
+    ok "AN10 a refused duration raises, consumes no record; capture == replay"
+else
+    fail "AN10 a refused duration moved the tape" \
+         "records=$N_REF rec='$(one_line "$W/frec")' rep='$(one_line "$W/frep")'"
 fi
 
 echo "AUDIO_NOISE_TAPE: $PASS passed, $FAIL failed"

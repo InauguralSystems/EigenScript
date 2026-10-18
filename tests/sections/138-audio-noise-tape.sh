@@ -6,7 +6,7 @@ check_binary_fingerprint
 AN_OUTPUT=$(bash "$TESTS_DIR/test_audio_noise_tape.sh" 2>&1); AN_RC=$?
 TOTAL=$((TOTAL + 1))
 if [ "$AN_RC" -eq 0 ] && rc_ok "$AN_RC" "$AN_OUTPUT" &&
-    grep -q '^AUDIO_NOISE_TAPE: 9 passed, 0 failed$' <<< "$AN_OUTPUT"; then
+    grep -q '^AUDIO_NOISE_TAPE: 10 passed, 0 failed$' <<< "$AN_OUTPUT"; then
     PASS=$((PASS + 1))
     echo "  PASS: audio_noise draws from the seeded stream and replays from the tape"
 else
