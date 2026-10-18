@@ -89,6 +89,7 @@ done
 
 echo "=== thread worker error handoff must be race-free (#1745) ==="
 for row in "thread_exit_join_catch.eigs:0:JOIN_CAUGHT" \
+           "thread_exit_join_throw_value.eigs:0:JOIN_VALUE_CAUGHT" \
            "thread_exit_join_uncaught.eigs:1:missing_thread_join_uncaught" \
            "thread_exit_unjoined_death.eigs:1:MARK_END"; do
     f=${row%%:*}; rest=${row#*:}; want=${rest%%:*}; marker=${rest#*:}

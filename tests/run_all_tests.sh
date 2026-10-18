@@ -5277,6 +5277,7 @@ check_thread_exit() {
     fi
 }
 check_thread_exit thread_exit_join_catch.eigs      0 "JOIN_CAUGHT"
+check_thread_exit thread_exit_join_throw_value.eigs 0 "JOIN_VALUE_CAUGHT"
 check_thread_exit thread_exit_join_uncaught.eigs   1 "missing_thread_join_uncaught"
 check_thread_exit thread_exit_unjoined_death.eigs  1 "MARK_END"
 

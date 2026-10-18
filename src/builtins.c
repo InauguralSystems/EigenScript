@@ -4188,10 +4188,11 @@ typedef struct EigsThreadHandle {
     struct TraceSpawnBinding *trace_binding; /* owned, reserved before launch */
     struct EigsThreadHandle *deferred_next;
     Value *result;
-    /* An error crosses the pthread boundary as plain C data, never as a
-     * Value from the worker's heap.  The handle owns error_message. */
+    /* Runtime-error metadata crosses as plain C data.  A user-thrown payload
+     * crosses as the same deep copy used by channels; the handle owns both. */
     ErrKind error_kind;
     char *error_message;
+    Value *error_value;
     volatile int done;
     pthread_t tid;
     /* A spawned function is still part of the evaluation that created it.
@@ -4317,6 +4318,8 @@ static void *thread_entry(void *arg) {
     if (g_has_error && !g_exit_requested) {
         h->error_kind = (ErrKind)g_error_kind;
         h->error_message = xstrdup(g_error_raw);
+        if (g_error_value)
+            h->error_value = val_clone_for_send(g_error_value);
         __atomic_add_fetch(&eigs_current->state->spawn_err_count, 1, __ATOMIC_RELAXED);
     }
     /* An uncaught throw on this thread leaves its structured payload in
@@ -4339,6 +4342,7 @@ static void *thread_entry(void *arg) {
 
 static void thread_handle_free(ThreadHandle *h) {
     if (h->result) val_decref(h->result);
+    if (h->error_value) val_decref(h->error_value);
     free(h->error_message);
     val_decref(h->fn);
     for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
@@ -4436,6 +4440,7 @@ Value* builtin_spawn(Value *arg) {
     h->result = NULL;
     h->error_kind = EK_INTERNAL;
     h->error_message = NULL;
+    h->error_value = NULL;
     h->done = 0;
     h->sandbox_loop_max = g_sandbox_loop_max;
     uint32_t hgen = 0;
@@ -4572,18 +4577,25 @@ Value* builtin_thread_join(Value *arg) {
     }
     pthread_join(h->tid, NULL);
     if (h->error_message) {
-        /* Claiming makes this the sole observer.  Copy the scalar kind and
-         * take the malloc'd message before freeing the handle; in particular,
-         * no worker-owned Value survives pthread_join.  Observation clears
+        /* Claiming makes this the sole observer. Take the handle-owned cross-
+         * thread payload and message before freeing it. Observation clears
          * the #493 exit-status count even when the raise below is caught. */
         ErrKind kind = h->error_kind;
         char *message = h->error_message;
+        Value *error_value = h->error_value;
         h->error_message = NULL;
+        h->error_value = NULL;
         thread_handle_free(h);
         __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);
         __atomic_sub_fetch(&st->spawn_err_count, 1, __ATOMIC_RELAXED);
         spawn_mt_maybe_clear(st);
         rt_error(kind, 0, "%s", message);
+        if (error_value) {
+            /* rt_error deliberately clears an older payload. Install this
+             * transferred user throw afterward so CHECK_ERROR binds it. */
+            g_error_value = error_value;
+            g_error_kind = (int)EK_USER;
+        }
         free(message);
         return make_null();
     }
