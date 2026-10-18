@@ -410,11 +410,11 @@ All six predicates are now windowed (the #202 series is complete):
 | Predicate | Windowed? | Tracked by |
 |-----------|-----------|------------|
 | `converged` | ✅ shipped (`vm.c` kind 0) | #204 (done) |
-| `stable` | ✅ shipped (`observer_stable`, `vm.c` kind 1 + report) | #205 (done) |
-| `oscillating` | ✅ shipped (`observer_oscillating`, `vm.c` kind 3 + report) | #206 (done) |
-| `improving` | ✅ shipped (`observer_improving`, `vm.c` kind 2 + report) | #207 (done) |
-| `diverging` | ✅ shipped (`observer_diverging`, `vm.c` kind 4 + report) | #208 (done) |
-| `equilibrium` | ✅ shipped (`observer_equilibrium`, `vm.c` kind 5 + report) | #209 (done) |
+| `stable` | ✅ shipped (`observer_slot_stable`, `vm.c` kind 1 + report) | #205 (done) |
+| `oscillating` | ✅ shipped (`observer_slot_oscillating`, `vm.c` kind 3 + report) | #206 (done) |
+| `improving` | ✅ shipped (`observer_slot_improving`, `vm.c` kind 2 + report) | #207 (done) |
+| `diverging` | ✅ shipped (`observer_slot_diverging`, `vm.c` kind 4 + report) | #208 (done) |
+| `equilibrium` | ✅ shipped (`observer_slot_equilibrium`, `vm.c` kind 5 + report) | #209 (done) |
 
 `report of x` follows the same windowed helpers (see The `report` builtin).
 The "Pointwise behavior replaced" note under each predicate records the

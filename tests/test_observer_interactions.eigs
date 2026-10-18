@@ -85,7 +85,7 @@ assert of [(when is test_val) > 0, "OI14 when-is gives observation age > 0"]
 # g_last_observer is a borrowed alias. Rebinding the observed value so
 # its last ref drops (`ob is null`) used to leave the alias dangling;
 # the next loop-condition stall check dereferenced freed memory
-# (heap-use-after-free in observer_ensure_fresh under ASan).
+# (heap-use-after-free during lazy entropy refresh under ASan).
 ob is buffer of 2
 loop while ob != null:
     ob is null

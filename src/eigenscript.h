@@ -630,9 +630,6 @@ int observer_slot_window(const struct ObserverSlot *s);
  * slot table if needed; returns 0 on OOM. */
 int observer_slot_set_window(struct Env *e, int idx, int n);
 
-/* Returns the current fill of v's dH window (0..OBSERVER_WINDOW_N). */
-size_t observer_window_size(const Value *v);
-
 /* #262 Phase-1 prototype slot-keyed observer API (behind EIGS_OBS_SHADOW). */
 void observer_slot_update(struct Env *e, int idx, Value *newval);
 /* #262 Phase-3 D: slot update from a raw immediate number (no Value needed). */
@@ -702,34 +699,6 @@ void observer_slot_record_value(struct ObserverSlot *s, double v);
  * a non-trajectory dict — the caller raises, never tolerates silently. */
 struct Value *observer_slot_trajectory(const struct ObserverSlot *s);
 int observer_slot_from_trajectory(struct ObserverSlot *out, struct Value *dict);
-
-/* Returns the dH at offset back from most recent (0 = most recent).
- * Caller must ensure offset < observer_window_size(v). */
-double observer_window_get(const Value *v, size_t offset_back);
-
-/* Windowed `improving` predicate (#207): NET entropy descent (sum<0) over the
- * window AND a sustained majority (>=60%) of genuine descent steps (dH <
- * -dh_small, honoring the #187 gray band). Shared by vm.c and builtins.c. */
-int observer_improving(const Value *v);
-
-/* Windowed `diverging` predicate (#208): mirror of observer_improving — NET
- * entropy ascent (sum>0) AND >=60% genuine ascent steps (dH > +dh_small).
- * Shared by vm.c and builtins.c. */
-int observer_diverging(const Value *v);
-
-/* Windowed `oscillating` predicate (#206): >= ceil(N/3) = 4 dH sign flips
- * across the window, each flip's two samples clearing dh_zero (deadband
- * escape, stays on dh_zero per #187). Shared by vm.c and builtins.c. */
-int observer_oscillating(const Value *v);
-
-/* Windowed `equilibrium` predicate (#209): full window (count==N), zero-mean
- * (|mean|<dh_zero) and low variance (<dh_zero^2). Shared by vm.c and builtins.c. */
-int observer_equilibrium(const Value *v);
-
-/* Windowed `stable` predicate (#205): full window, every |dH|<dh_small, entropy
- * >= h_low, and no consecutive sign flips (both clearing dh_zero). Shared by
- * vm.c and builtins.c. */
-int observer_stable(const Value *v);
 
 /* ---- Per-thread execution context ---------------------------------
  *
@@ -2249,7 +2218,6 @@ char* value_to_string(Value *v);
  * `str of`, all three JSON encoders, the SIGUSR1 observer dump — so a copy
  * with a different precision cannot reappear. Needs 32 bytes. */
 void eigs_num_text(char *buf, size_t nbuf, double n);
-void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
 /* #880: decode a JSON string body (s[*pos] = first byte after the opening
  * quote) into `out`, leaving *pos past the closing quote. Returns whether
