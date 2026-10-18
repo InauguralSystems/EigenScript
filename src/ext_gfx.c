@@ -2113,8 +2113,10 @@ static int audio_noise_take(Value **out) {
     return 1;
 }
 
-/* audio_noise of [duration, amplitude] — white noise, uniform between -amp
- * and amp.
+/* audio_noise of [duration, amplitude] — white noise
+ *
+ * Uniform between -amp and amp. (The first line above is the LSP hover text:
+ * tools/gen_lsp_builtin_index.sh copies it into src/lsp_builtin_index.h.)
  *
  * #1803: the samples are a nondeterministic return. They are drawn from the
  * shared drand48 stream behind `random` (eigs_random_double), so `seed_random`
