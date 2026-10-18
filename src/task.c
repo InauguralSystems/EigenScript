@@ -51,6 +51,16 @@ typedef struct {
     int   active;                 /* armed on first spawn */
     int   dead_letters;           /* inc 2: sends to finished/unknown tasks */
     int   detached_err_count;     /* #530: reaped detached tasks that died unobserved (#493 gate) */
+    /* #1736 fail-fast latch. Set at the one moment the runtime knows no
+     * task_join can ever see an uncaught error: a DETACHED task died of one
+     * (sched_finish), or task_detach was asked to release a task that already
+     * had (task_do_detach). The trampoline and task_sched_after_outermost
+     * consume it — the outermost evaluation on this thread stops with an
+     * uncaught error (sched_fatal_stop). Both set-points are pure functions of
+     * program order, so record and replay stop at the same instruction. */
+    int   fatal_stop;
+    int   fatal_owns_exit;        /* #1736: the latch raised the uncatchable unwind itself */
+    int   fatal_try_drop;         /* #1736: open `try`s that unwind skips (no TRY_END) */
     uint64_t spawn_counter;       /* #535: monotonically increasing; stamps Task.spawn_seq */
     double now;                   /* inc 3: virtual clock (logical, starts 0) */
     int   seeded;                 /* inc 4: 1 once task_sched_seed installs a seed */
@@ -651,24 +661,104 @@ static void task_reap(Task *t) {
     handle_release(id, gen);
 }
 
+/* #1736: one line naming the error a dead task holds — the stop message's
+ * only report of it when the task's own trace was suppressed (another task's
+ * open `try` held the process-global g_try_depth up when it died). A runtime
+ * error is a {kind, message, line} dict; a `throw` holds the thrown value. */
+static void task_error_summary(Value *ev, char *out, size_t cap) {
+    EigsView mv = {{0}}, lv = {{0}};
+    Value *msg = (ev && ev->type == VAL_DICT) ? dict_get_view(ev, "message", &mv) : NULL;
+    if (msg && msg->type == VAL_STR) {
+        Value *line = dict_get_view(ev, "line", &lv);
+        /* The checking accessor (#1637): the type is proven, so it cannot raise. */
+        double ln = (line && line->type == VAL_NUM) ? eigs_num_arg(line, __func__) : 0;
+        if (ln > 0)
+            snprintf(out, cap, "line %.0f: %s", ln, msg->data.str);
+        else
+            snprintf(out, cap, "%s", msg->data.str);
+        return;
+    }
+    char *s = ev ? value_to_string(ev) : NULL;
+    snprintf(out, cap, "%s", s ? s : "unknown error");
+    free(s);
+}
+
+/* #1736 row 2: task_detach of a task that already died of an uncaught error
+ * nothing observed. Detaching would discard an error the runtime holds, so
+ * the program stops AT this call instead: raise, uncatchably, and latch the
+ * stop for the scheduler. The unwind rides the one uncatchable path CHECK_ERROR
+ * already honours (g_exit_requested, the `exit of N` unwind) — every C
+ * boundary that propagates an exit propagates this — and sched_fatal_stop
+ * hands the flag back once the unwind reaches the scheduler, so no host sees
+ * an exit that nobody requested. The task stays joinable: it is not reaped. */
+static void sched_fatal_detach_dead(TaskScheduler *s, Task *t) {
+    char why[512];
+    task_error_summary(t->error_value, why, sizeof(why));
+    rt_error(EK_VALUE, 0,
+             "task_detach: task %.0f already died of an uncaught error (%s) "
+             "that nothing joined; detaching it would discard that error, so "
+             "the program stops here", task_handle_pack(t->id, t->hgen), why);
+    /* A stop is always reported. rt_error prints only while the process-global
+     * g_try_depth is 0, and a `try` around this call — or one held open by a
+     * suspended task — keeps it up even though nothing can catch this. */
+    if (g_try_depth != 0) {
+        if (eigs_current && eigs_current->vm && g_vm.frame_count > 0)
+            g_error_print_pending = 1;   /* CHECK_ERROR prints it, with the caret */
+        else
+            fprintf(stderr, "%s\n", g_error_msg);
+    }
+    /* The unwind drains every live frame without running TRY_END, so their
+     * open `try`s would stay counted in g_try_depth and silence every later
+     * uncaught error on this thread (a REPL, an embedder's next eval). */
+    int open_trys = 0;
+    if (eigs_current && eigs_current->vm)
+        for (int i = 0; i < g_vm.frame_count; i++) open_trys += g_vm.frames[i].try_count;
+    s->fatal_try_drop = open_trys;
+    if (!g_exit_requested) { g_exit_requested = 1; s->fatal_owns_exit = 1; }
+    s->fatal_stop = 1;
+}
+
 /* #530: mark `tid` fire-and-forget. A detached task is reaped the moment it
  * finishes — or immediately here if it already has — so its handle slot
- * returns to the pool instead of holding the table until process exit. An
- * already-dead unobserved error moves to the scheduler-level counter so the
- * #493 exit gate survives the reap. The RUNNING task may detach itself.
- * Returns 1 on success, 0 for main (task 0) or an unknown id. */
+ * returns to the pool instead of holding the table until process exit. The
+ * RUNNING task may detach itself. #1736: a task that already died of an
+ * uncaught error nothing observed is NOT detached — the program stops here
+ * (sched_fatal_detach_dead); one that finished cleanly, or whose error a join
+ * observed, is reaped as before.
+ * Returns 1 on success, 0 for main (task 0) or an unknown id, -1 for the stop. */
 int task_do_detach(int tid) {
     TaskScheduler *s = sched_get();
     if (!s || tid == 0) return 0;
     Task *t = sched_lookup(s, tid);
     if (!t) return 0;
     if (t->state == TASK_DONE || t->state == TASK_DEAD) {
-        if (t->err_unobserved) s->detached_err_count++;
+        if (t->err_unobserved) {
+            sched_fatal_detach_dead(s, t);
+            return -1;
+        }
         task_reap(t);
         return 1;
     }
     t->detached = 1;
     return 1;
+}
+
+/* #1736 row 1: a DETACHED task just died of an uncaught error. Nothing can
+ * ever join it, so this is the last moment the runtime holds the error: fail
+ * fast. Its trace printed at the raise unless another task's open `try` held
+ * the process-global g_try_depth up (#1808) — the dying task itself has none
+ * open (one would have caught the error) — so print the message in exactly
+ * that case and the stop is never silent. The error becomes the evaluation's
+ * uncaught error, the way main's own does at the end of the trampoline. An
+ * `exit of N` unwind also reaches sched_finish looking like a death (#1806);
+ * stopping on it is what `exit` asks for, and its code wins at main.c. */
+static void sched_fatal_detached_death(TaskScheduler *s, Task *t) {
+    if (g_try_depth != 0 && !g_exit_requested)
+        fprintf(stderr, "%s\n", g_error_msg);
+    eigs_clear_error_value();
+    g_error_value = t->error_value;   /* owned ref moves out before the reap */
+    t->error_value = NULL;
+    s->fatal_stop = 1;
 }
 
 static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
@@ -703,12 +793,65 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
         sched_ready_push(s, 0, SCAUSE_JOIN_RELEASE);
     /* #530: a detached task's outcome is nobody's to consume — reap the slot
      * now so task-per-message workloads aren't bounded by lifetime spawns.
-     * An uncaught death still fails the process: the #493 flag moves to the
-     * scheduler counter before the slot frees (the trace already printed). */
+     * #1736: an uncaught death stops the program (sched_fatal_detached_death
+     * latches it; the trampoline acts on it after this returns). The #493
+     * flag still moves to the scheduler counter before the slot frees. */
     if (t->id != 0 && t->detached) {
-        if (t->err_unobserved) s->detached_err_count++;
+        if (t->err_unobserved) {
+            s->detached_err_count++;
+            sched_fatal_detached_death(s, t);
+        }
         task_reap(t);
     }
+}
+
+/* #1736: release main's saved slice and every scheduling claim it holds, as
+ * task_sched_thread_free does at thread exit — but NOW, because a fail-fast
+ * stop ends the evaluation with main still parked at its scheduling point,
+ * and a REPL line or an embedder's next eval runs main's code again on this
+ * same scheduler. A stale slice would be overwritten without its refs being
+ * released, and a stale ready entry would resume main twice. The open-try
+ * rebalance mirrors task_do_kill / task_free (#726). */
+static void sched_main_abandon(TaskScheduler *s) {
+    Task *m = &s->main_task;
+    sched_ready_remove(s, 0);
+    if (m->saved_stack) {
+        for (int i = 0; i < m->saved_stack_len; i++) slot_decref(m->saved_stack[i]);
+        free(m->saved_stack); m->saved_stack = NULL; m->saved_stack_len = 0;
+    }
+    if (m->saved_frames) {
+        for (int i = 0; i < m->saved_frame_count; i++) {
+            g_try_depth -= m->saved_frames[i].try_count;
+            callframe_release(&m->saved_frames[i]);
+        }
+        if (g_try_depth < 0) g_try_depth = 0;
+        free(m->saved_frames); m->saved_frames = NULL; m->saved_frame_count = 0;
+    }
+    if (m->result) { val_decref(m->result); m->result = NULL; }
+    m->join_target = 0; m->join_target_gen = 0;
+    m->recv_blocked = 0; m->sleeping = 0;
+    m->state = TASK_RUNNING;
+}
+
+/* #1736: consume the fail-fast latch. `stopped` is the task whose slice
+ * task_detach unwound (row 2) — NULL when a detached task died between slices
+ * (row 1). Nothing else runs: no ready task, and not main. The stopped worker
+ * is torn down as task_kill would (its frames are already drained; its env,
+ * mailbox and joiners are not), main is abandoned where it stands, and the
+ * evaluation returns with g_has_error set — the exit-status path an uncaught
+ * error in main takes (rc 1 from the CLI; the error to an embedder). */
+static Value *sched_fatal_stop(TaskScheduler *s, Task *stopped, Value *r) {
+    if (r) val_decref(r);
+    s->fatal_stop = 0;
+    s->current = 0;   /* main runs the next eval (the normal returns do not reset it: #1807) */
+    if (stopped && stopped->id != 0) task_do_kill(stopped->id);
+    sched_main_abandon(s);
+    if (s->fatal_owns_exit) { g_exit_requested = 0; s->fatal_owns_exit = 0; }
+    g_try_depth -= s->fatal_try_drop;
+    if (g_try_depth < 0) g_try_depth = 0;
+    s->fatal_try_drop = 0;
+    g_has_error = 1;
+    return make_null();
 }
 
 /* On resuming a task that was blocked in task_join, replace the placeholder
@@ -830,6 +973,12 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
             r = task_start(t);   /* never-run task: bind args + run at base 0 */
         }
 
+        /* #1736 row 2: this slice called task_detach on a task holding an
+         * unobserved error, and the uncatchable unwind brought it back here.
+         * Checked before the finish/suspend bookkeeping: the slice neither
+         * finished nor yielded, it was stopped. */
+        if (s->fatal_stop) return sched_fatal_stop(s, t, r);
+
         if (t->state == TASK_SUSPENDED) {
             /* It suspended again. task_yield → re-enqueue; task_join → stay
              * blocked (woken by sched_finish); task_recv on an empty mailbox →
@@ -839,6 +988,10 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
                 sched_ready_push(s, id, SCAUSE_YIELD);
         } else {
             sched_finish(s, t, r);
+            /* #1736 row 1: a DETACHED task just died of an uncaught error —
+             * stop here, at main's scheduling point (or at the exit drain if
+             * main never yielded). No other task runs first. */
+            if (s->fatal_stop) return sched_fatal_stop(s, NULL, NULL);
             /* kill-outstanding: main ending tears the rest down deterministically. */
             if (id == 0) break;
         }
@@ -864,7 +1017,11 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
  * tasks are still live, drive them too (kill-outstanding at main's end). */
 Value *task_sched_after_outermost(Value *r) {
     TaskScheduler *s = sched_get();
-    if (!s || !s->active) return r;
+    if (!s) return r;
+    /* #1736 row 2 in main's initial run (before main ever suspended): the
+     * task_detach stop unwound it to here. Stop — no exit drain. */
+    if (s->fatal_stop) return sched_fatal_stop(s, &s->main_task, r);
+    if (!s->active) return r;
     if (s->main_task.state == TASK_SUSPENDED) {
         /* main's first suspension happened in the initial vm_run, outside the
          * trampoline — enqueue it now so it resumes round-robin, UNLESS it

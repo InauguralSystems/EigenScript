@@ -1,0 +1,13 @@
+# #1736 row 1 for a task that detaches ITSELF (task_detach of task_self) and
+# dies a slice later: detached is detached, whoever set it. Main's first yield
+# returns (the task only detached and yielded); its second is the stop.
+# Expected: "MAIN_AFTER_FIRST_YIELD", the trace, rc 1, and NO "MARK_END".
+define selfdie() as:
+    task_detach of (task_self of null)
+    task_yield of null
+    missing
+d is task_spawn of selfdie
+task_yield of null
+print of "MAIN_AFTER_FIRST_YIELD"
+task_yield of null
+print of "MARK_END"

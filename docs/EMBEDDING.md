@@ -660,7 +660,8 @@ between minor releases.
     registration against evaluation, and install one provider for the process.
   - The module-namespace table — **writer-locked**, with atomic entry publication
     and tombstones; rebuild retires backing tables while multithreaded (#1144).
-  - `g_random_seeded` and the PRNG used by `random`, `random_int`, and
+  - `g_random_seeded` and the PRNG used by `random`, `random_int`,
+    `random_normal`, `audio_noise`, `eigen_generate`'s sampling and
     `seed_random` are **locked** across states (#1150). Seed and draw
     operations share one process-wide stream; thread scheduling determines
     draw order.
