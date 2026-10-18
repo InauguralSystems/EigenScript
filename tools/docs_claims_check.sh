@@ -27,7 +27,7 @@ META_LINES = {
     '  callee re-collects a 2+-element arg list WHOLE (`one of [5, 6]` binds',
 }
 NEGATIVE_FAMILY_LINES = {
-    ('docs/BUILTINS.md', 'drain. UDP is not yet exposed (#414 tracks it).'),
+    ('docs/BUILTINS.md', 'drain. UDP is not yet exposed.'),
     ('ROADMAP.md', "  shipped: #414's title says TCP/UDP, and UDP is not exposed — see"),
 }
 errors = []
