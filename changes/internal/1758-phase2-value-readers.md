@@ -1,1 +1,1 @@
-Complete the allocation-free int readers: SMI type and Value views preserve VAL_INT and exact digits, and slot_int_value extracts boxed int64 values without converting through double.
+- Complete the allocation-free int readers: SMI type and Value views preserve VAL_INT and exact digits, and slot_int_value extracts boxed int64 values without converting through double.

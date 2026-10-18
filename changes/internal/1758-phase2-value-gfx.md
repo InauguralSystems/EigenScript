@@ -1,1 +1,1 @@
-Prepare graphics and audio numeric guards to admit ints through the unchanged bridge. Pin the audio corpus program to SDL's dummy driver so inherited disk audio settings cannot create sdlaudio.raw in the source tree.
+- Prepare graphics and audio numeric guards to admit ints through the unchanged bridge. Pin the audio corpus program to SDL's dummy driver so inherited disk audio settings cannot create sdlaudio.raw in the source tree.
