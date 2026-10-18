@@ -1,0 +1,1 @@
+- `thread_join` now re-raises an OS worker's uncaught error with its original kind and message. Catching that join observes the worker failure and allows a successful exit, matching `task_join`; an unjoined failed worker still fails the run.

@@ -5262,6 +5262,24 @@ TOTAL=$((TOTAL + RBE_PASS + RBE_FAIL)); PASS=$((PASS + RBE_PASS)); FAIL=$((FAIL 
 if [ "$RBE_FAIL" -gt 0 ]; then echo "  FAIL: replay boundary exit contract"; echo "$RBE_OUTPUT" | grep "^FAIL:" | head -5; else echo "  PASS: all $RBE_PASS replay-boundary exit checks (rc 1, no signal, both tiers)"; fi
 echo ""
 
+echo "[103b] thread_join propagates worker errors (#1745/#493)"
+check_thread_exit() {
+    TOTAL=$((TOTAL + 1))
+    local file="$1" want_rc="$2" marker="$3" out rc
+    out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
+    if [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker"; then
+        echo "  PASS: thread exit contract — $file (rc=$rc)"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: thread exit contract — $file (rc=$rc, want=$want_rc)"
+        echo "$out" | head -5
+        FAIL=$((FAIL + 1))
+    fi
+}
+check_thread_exit thread_exit_join_catch.eigs      0 "JOIN_CAUGHT"
+check_thread_exit thread_exit_join_uncaught.eigs   1 "missing_thread_join_uncaught"
+check_thread_exit thread_exit_unjoined_death.eigs  1 "MARK_END"
+
 echo "[104] Cooperative Tasks (#408)"
 # #408 cooperative task layer: spawn/alive/yield/join/deadlock + leak-clean
 # teardown of suspended/killed tasks (including heap values on saved stacks).

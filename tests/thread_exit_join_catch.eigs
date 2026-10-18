@@ -1,0 +1,12 @@
+# #1745: joining a failed OS worker observes and re-raises its error. Catching
+# that join makes the #493 observed-error rule a successful run.
+define die() as:
+    missing_thread_join_catch
+h is spawn of die
+try:
+    thread_join of h
+catch e:
+    assert of [e.kind == "undefined_name", "thread join preserves error kind"]
+    assert of [e.message == "undefined variable 'missing_thread_join_catch'", "thread join preserves error message"]
+    print of "JOIN_CAUGHT"
+print of "MARK_END"
