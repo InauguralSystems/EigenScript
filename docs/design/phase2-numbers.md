@@ -1,7 +1,9 @@
 # Phase 2 numbers (#1758): design (round 0, revised in design rounds 2 and 3)
 
-Status: the last design round before round 1 builds. Nothing here changes
-`src/`. Spec: issue #1758 (Revision 1), its owner decisions (A), (B), (C), the
+Status: design round 3, with R1.1/R1.2 implementation notes and R1.2
+fix-round verification in §12. The first program-visible int producer
+remains R1.3. Inventory and prototype measurements below describe the
+original design tree. Spec: issue #1758 (Revision 1), its owner decisions (A), (B), (C), the
 Q1-Q6 decisions
 ([comment](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6171744498))
 and the Q7-Q8 decisions
@@ -71,6 +73,7 @@ Contents:
 9. Test plan
 10. Lua differential tool
 11. Decided questions (Q1-Q8)
+12. R1.2 verification notes
 
 ---
 
@@ -2623,3 +2626,152 @@ The owner may overrule any of them; until then this design follows them.
   order here (probed for #1758: Lua's `table.sort` left a list holding NaNs
   unsorted without an error). Applied: R2.2, when NaN first becomes
   reachable; rows `N11.sort-total-order` and `N11.min-max-nan`.
+
+
+## 12. R1.2 verification notes
+
+The fix round merged `origin/main` at `540f0bcf` before measuring. It keeps
+`VAL_DICT = 7` after main's removal of `VAL_JSON_RAW`, with `VAL_INT` still
+appended. Main's taped `audio_noise` is included: the merged replay gate
+reported `258 programs record+replay; 21 at the documented boundary;
+0 nondeterministic; 1 ledgered`, confirming the retired `test_audio` row.
+
+**Float cost.** The former three-probe report missed for-in and boxed-index
+costs. `tools/phase2_cost.sh BASE CAND` now derives its in-repo workloads
+from `codspeed.yml`, deduplicates tier aliases and measures every workload
+with the JIT on and off. The CodSpeed list now includes all tracked
+`bench/*.eigs` and `tests/bench_*.eigs` files. A Git-derived coverage check
+rejects missing or stale entries; unsupported commands also fail before
+measurement. The three planted config faults were rejected (3/3), and the
+CodSpeed target check reported 19 declared targets with its 7/7 self-test. The declared regression threshold is +0.3% Ir;
+any result above +0.1% needs attribution. A failed program, sanitizer binary,
+missing instruction count or different result fails the tool; only printed
+elapsed milliseconds are normalized. Logs retain each run's stdout, stderr
+and cachegrind data. This is the narrow, externally anchored check required
+by principle 5, Checks are anchored outside the system, narrow, and few.
+
+Same-environment release builds (gcc 13.3.0, default Makefile -O2 flags),
+Valgrind 3.26.0.codspeed7, cache simulation disabled. Both columns compare
+against the fresh `540f0bcf` build. The unfixed `a49ebe58` binary failed
+with `workloads=15 rows=30 over_0.3pct=17 FAIL`; the corrected binary passed
+with `workloads=15 rows=30 over_0.3pct=0 PASS`. Every corrected delta is
+negative, so no positive delta above +0.1% needs attribution.
+
+| workload | unfixed JIT | corrected JIT | unfixed interpreter | corrected interpreter |
+|---|---:|---:|---:|---:|
+| `bench/alloc_heavy.eigs` | -0.7750% | -0.8015% | -1.3411% | -1.3247% |
+| `bench/conservative_observed_loop.eigs` | +2.4924% | -1.9758% | +1.2051% | -1.7020% |
+| `bench/conservative_unobserved_loop.eigs` | +3.1284% | -2.4944% | +1.3736% | -2.1230% |
+| `bench/dict_ops.eigs` | +0.7736% | -0.5208% | +0.7736% | -0.2752% |
+| `bench/observed_loop.eigs` | +4.6862% | -3.5071% | +1.7607% | -2.7203% |
+| `bench/scalar_loop.eigs` | +4.1131% | -3.1679% | +1.5824% | -2.5250% |
+| `bench/string_build.eigs` | +1.0707% | -0.0827% | +0.8484% | -0.0920% |
+| `bench/unobserved_armed_loop.eigs` | -0.5739% | -0.5734% | -2.6672% | -2.5973% |
+| `bench/unobserved_loop.eigs` | +4.6856% | -3.5065% | +1.7599% | -2.7201% |
+| `tests/bench_buf_mix.eigs` | -0.4679% | -0.4750% | -1.3133% | -1.6209% |
+| `tests/bench_buf_resample.eigs` | +0.3307% | -0.1916% | -0.6375% | -1.0595% |
+| `tests/bench_dmg_shape.eigs` | -0.1762% | -0.1807% | -1.5526% | -1.9744% |
+| `tests/bench_idxset.eigs` | +0.2827% | -0.4619% | +0.6823% | -0.5958% |
+| `tests/bench_pcm_codec.eigs` | -0.4691% | -0.4698% | -0.8728% | -1.3577% |
+| `tests/bench_perf.eigs` | +0.8874% | -0.9616% | -0.1238% | -1.4599% |
+
+Function counts and disassembly localized the remaining cost after merely
+moving the four refusals: numeric views and their cleanup checks still
+classified ints on float paths, and iterator metadata was read through
+unnecessary facades. The corrected iterator uses the checked float reader
+once per metadata slot and borrows its reference-valued iterable directly;
+int metadata still reaches the named R1.3 refusal after a failed float read.
+`slot_view` and valid-view cleanup now exit before int checks. Index
+validation and reference acquisition remain inline. No int producer was
+introduced, and the sort-key pair layout was retained.
+
+**Integer readers and refusals.** The supplied critic harness was rerun over
+all 341 supplied scenario blocks, in the interpreter, default JIT and forced
+OSR tiers, with float, SMI and boxed-int inputs. Across 6,138 transcript and
+exit-status files, results and statuses were unchanged from the critic's
+R1.2 binary. The only 198 byte differences were heap addresses in the named
+boxed-slot refusal diagnostic; comparisons retained the diagnostic, slot
+tag, SIGABRT status and every other output byte. There were no unexpected
+crashes. The separate C checks reported `checks=409 fails=0`, including
+`sizeof(SortByPair)=16`, union payload offset 0, kind offset 8 and index
+offset 12.
+
+A focused iterator probe used the state `[[42], 0.0, 1.0]`: the two float
+controls yielded 42; replacing either metadata slot with an SMI or boxed
+int reached its named R1.3 refusal in both executors. Result:
+`cases=10 float_controls=2 int_refusals=8 failures=0`.
+A separate malformed-iterable differential agreed with the original R1.2
+binary in four JIT-helper cases: two int-index refusals and two snapshot
+bails, with no failures. This preserves the helper's early-return order.
+
+**Earlier gate calibration.** The original R1.2 calibration inserted a
+`VAL_NUM` token in `builtin_usleep` (token hits=1 and compile exit 2),
+removed the JSON encoder's `VAL_INT` arm (compile exit 2 under
+`-Werror=switch`), and removed the boxed `slot_int_value` reader (five
+assertion failures). These are historical one-time fault checks, not
+additional reruns in this fix round. Restored slot coverage remains
+33 sites, 165 calls and 396 matrix cells with no failures.
+
+**Builds.** Default release builds at -O0, -O1 and -O2 each exited 0 with
+zero warnings. The final -O2 rebuild was byte-identical to the measured
+candidate (`04c10293ab1b94b92ac5ae56063655038c3b47b8a245ab3d763ca0978682614b`).
+
+**Completed suites.** Full release: `4289/4289 passed, 0 failed, 9 skipped`.
+Full ASan with `detect_leaks=1` and no virtual-memory limit:
+`4281/4281 passed, 0 failed, 8 skipped`; LeakSanitizer nonzero-exit
+tally 0 and sanitizer error reports 0. Both child-script ledgers reported
+0 nonzero exits. `make jit-smoke`: `JIT smoke: all cases passed.`
+
+**GUI conditions.** An initial native-X11 JIT differential run omitted the
+graphics memory cap and reported two extra OBS rows, `ui_canvas_events`
+and `ui_dock`. Both examples are among the nine nonterminating GUI
+comparisons already tracked by [#1823](https://github.com/InauguralSystems/EigenScript/issues/1823).
+A focused check on fresh main and the candidate used X11 and dummy SDL,
+REF and OBS, and a 1,500,000 KiB virtual-memory cap: all 16 runs agreed
+with empty output and exit 124. These are timeout agreements, not completed
+GUI comparisons. The existing ledger was retained.
+
+A process-wide 1,500,000 KiB JIT cap changed `handles_full` on both main
+and the candidate: uncapped REF/OBS each reported `spawned=255 raises=45`,
+while the blanket cap caused variable earlier spawn failures. The final
+JIT/replay invocations therefore apply the existing corpus graphics-source
+selector to each program, exec the same release binary, and leave nongraphics
+thread fixtures uncapped. Strict graphics checks use their existing child
+limit. The corpus graphics ceiling is now 1,500,000 KiB too; a restricted
+real-VM probe failed its ceiling assertion at the previous 2 GiB setting
+and passed at the machine setting (1/1 capped program), with the expected
+restricted exit 3 in both calibration runs. The temporary probes were removed.
+
+**JIT differential.** With graphics-only caps and dummy SDL, the unchanged
+ledger passed: `258 programs x {jit, osr} vs the interpreter; suite-env
+completed=15; OBS examined=647 denied=12; 32 arms adjudicated; 2 ledgered`.
+The nine interactive timeout agreements in #1823 remain a coverage limitation.
+
+**Replay differential.** The unchanged fidelity ledger passed under the same
+graphics-only resource policy: `258 programs record+replay; 21 at the
+documented boundary; 0 nondeterministic; 1 ledgered`.
+
+**Strict differential.** The real-X11 gate passed. Typed fixed-shape
+controls: `declared=139 examined=139 passed=130 failed=0 unavailable=9
+backend_absent=0 pending=0 unrun=0`. All 37 pixel rows were identical with
+strict mode off; the 23 wrong-input pixel rows all raised under strict
+mode, with silent=0 and misattributed=0.
+
+**Candidate corpus.** Against fresh main, the full corpus comparison reported
+`examined=458 same=452 same_nonzero=42 same_under_replay=4 nondet=1 diff=0
+new=14 deleted=0 crash_both=0 timeout_both=1 conditioned=15 incomplete=0
+undeclared=0 stale=0 ledger_refused=0 unpinned=1 capped=13` and PASS.
+The 11 newly merged deliberate-error fixtures account for the increase
+from the earlier 31 declared nonzero results to 42.
+
+**Final Phase 2 gate.** `phase2_check.sh --through R1.2` used the fresh
+main baseline and a separately built SMI-trap binary. The trap corpus
+reported the same full 458-file summary as the candidate corpus, including
+`diff=0 incomplete=0 undeclared=0 stale=0` and 13 graphics-only caps.
+Both corpus halves passed; `mechanical smi-trap: PASS` and
+`phase2-check: PASS`. The retired-token scan reported `tokens=9 files=90
+hits=0`; inventory `examined=2012 classified=2012 unclassified=0`; int
+source `make_int_defs=0 outside_writers=0`; slot matrix
+`examined=33 calls=165 matrix_cells=396 arm_rows=32 failures=0`.
+The changelog fragment check exited 0 after all fourteen malformed fragment
+bullets were repaired. No push or CI run is claimed by these local results.
