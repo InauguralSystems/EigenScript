@@ -1,0 +1,16 @@
+# #1736 row 1, exit-drain path: main never yields, so no task runs until main
+# has finished; the detached worker then dies in the exit drain and the
+# program stops THERE — the joinable task queued behind it never runs.
+# Expected: "MAIN_DONE", the trace, rc 1, and NO "AFTER_DRAIN_TASK".
+define die() as:
+    missing
+define after() as:
+    print of "AFTER_DRAIN_TASK"
+    return 0
+d is task_spawn of die
+task_detach of d
+a is task_spawn of after
+i is 0
+loop while i < 200000:
+    i is i + 1
+print of f"MAIN_DONE {i}"

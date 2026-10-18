@@ -564,6 +564,84 @@ scheduler, the victim saved no slice and its `vm_run` returned `null`
 mid-evaluation — a worker silently produced `null` instead of its
 result. `tests/test_tasks.eigs` now runs both models at once.
 
+## When a task dies of an uncaught error (#1736)
+
+A cooperative task that dies of an uncaught error prints its stack trace.
+What happens next depends on whether anything can still observe that error:
+
+| Case | Behaviour | Exit status |
+|---|---|---|
+| A **detached** task dies of an uncaught error | **Fail fast**: its trace prints and the program stops at main's next scheduling point, or in the exit drain if main never yields | 1 |
+| A task dies, **then** is detached | The program stops at that `task_detach` call: detaching would discard an error the runtime already holds | 1 |
+| A **joinable** task dies and is not yet joined | Unchanged (#493): main continues, and a later `try`/`catch` around `task_join` recovers the error; if it is never joined, the run still fails at exit | 1, or 0 if caught |
+| An **OS thread** (`spawn`) dies | Unchanged (#1112): main completes | 1 |
+
+**Why the line is `detached`.** A task id is a plain number: a program can
+rebuild one by arithmetic and still join through it, so the runtime can never
+know that a joinable task won't be joined. It holds the error and lets main
+carry on. `task_detach` is the one point where the runtime knows no join can
+ever see the failure, so from there on an uncaught error has nowhere to go but
+the end of the run. A task whose error a `task_join` already delivered — or one
+ended by `task_kill`, which is a teardown, not an error — detaches normally.
+
+**What "stops" means.** Nothing else runs: no other ready task, and not main.
+Main's next scheduling point is the call where it hands control to the
+scheduler — a `task_yield`, or a `task_join`, `task_recv` or `task_sleep` that
+blocks — and main never returns from it. In the second row nothing after the
+`task_detach` call executes, in main or in whichever task made the call. Every
+stop is reported: the `task_detach` stop prints its own message naming the task
+and the error it died of, and a detached death whose trace was suppressed (an
+open `try` in another task does that today, because the try depth that gates
+the print is process-wide, #1808) prints the error when it stops the run.
+Neither stop can be caught: a `try` around the `task_yield` or the
+`task_detach` does not see it, because it is not an error delivered to the
+program but the end of the run. In the REPL, or an embedder's eval, it ends
+the current evaluation the way an uncaught error in main does.
+
+**Both stop points are deterministic.** Where the run stops is a pure function
+of program order (and of the `task_sched_seed`, if one is installed), so a
+recorded run and its replay stop at the same instruction. Suite section
+[104b] pins both stops on the trace tape, with the moment of death chosen by a
+taped `random_int`; the section is `tests/sections/104b-task-death-fail-fast-1736.sh`.
+
+**Why OS threads stay as they are.** Thread scheduling is not on the trace tape
+(#148, see "Replay boundary" below). Measured on #1736: across 8 identical
+runs, a worker's failure surfaced anywhere from line 9 to line 42 of main's
+output while main's own tape stream stayed byte-identical. A fail-fast stop
+there would land at one point in a recording and at another in its replay.
+Closing that waits on per-thread tape streams (#1142). Until then, a
+long-running main that must stop when a worker fails should catch the error in
+the worker and call `exit of 1`, which does stop the whole state.
+
+**The stop is per thread.** Cooperative tasks live on the thread that spawned
+them, and so does the stop: a detached task that dies inside a `spawn`ed
+worker ends that worker's evaluation, and main sees a thread death — the last
+row.
+
+**A detached task that must survive its own errors catches them.**
+Fire-and-forget does not mean failure-and-forget:
+
+```eigenscript
+define serve(n) as:
+    try:
+        if n == 2:
+            throw of "bad input"
+        print of f"handled {n}"
+    catch e:
+        print of f"task {n} failed: {e}"
+
+for n in [1, 2, 3]:
+    task_detach of (task_spawn of [serve, n])
+task_yield of null
+print of "main finished"
+```
+```output
+handled 1
+task 2 failed: bad input
+handled 3
+main finished
+```
+
 ## The multithreaded performance cliff
 
 `spawn` flips the runtime into multithreaded mode (`g_vm_multithreaded`).
@@ -609,8 +687,10 @@ worker alike: `spawn of [recv, ch]` under `EIGS_REPLAY` prints the diagnostic
 and the process exits 1 (#1112 — it died by SIGSEGV before, because a worker
 that runs a builtin directly has no VM and the uncaught-error printer read
 it). The general rule behind that status: a `spawn`ed worker that dies of an
-uncaught error fails the run, joined or not, exactly as a cooperative task
-does (#493); an error caught inside the worker recovers normally. A worker's
+uncaught error fails the run, joined or not, with the exit status an unjoined
+cooperative task gets (#493), but it does not stop main the way a detached
+task's death does (#1736, see "When a task dies of an uncaught error" above);
+an error caught inside the worker recovers normally. A worker's
 `exit of N` instead requests an uncatchable stop of the whole state. The first
 request supplies the process status. VM threads observe it at loop back edges
 and builtin returns; blocked `recv`, `recv_timeout`, `thread_join`, and
