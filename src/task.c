@@ -670,8 +670,10 @@ static void task_error_summary(Value *ev, char *out, size_t cap) {
     Value *msg = (ev && ev->type == VAL_DICT) ? dict_get_view(ev, "message", &mv) : NULL;
     if (msg && msg->type == VAL_STR) {
         Value *line = dict_get_view(ev, "line", &lv);
-        if (line && line->type == VAL_NUM && VAL_NUM_RAW(line) > 0)
-            snprintf(out, cap, "line %.0f: %s", VAL_NUM_RAW(line), msg->data.str);
+        /* The checking accessor (#1637): the type is proven, so it cannot raise. */
+        double ln = (line && line->type == VAL_NUM) ? eigs_num_arg(line, __func__) : 0;
+        if (ln > 0)
+            snprintf(out, cap, "line %.0f: %s", ln, msg->data.str);
         else
             snprintf(out, cap, "%s", msg->data.str);
         return;
