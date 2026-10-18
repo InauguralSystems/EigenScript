@@ -1455,7 +1455,7 @@ Value* builtin_native_train_step(Value *arg) {
 
     float lr = 0.001f;
     if (list_elem_type(arg, 2) == VAL_BOOL) { eigs_slot_num(list_slot(arg, 2), __func__); return make_null(); }  /* #1637 */
-    if (list_elem_type(arg, 2) == VAL_NUM) lr = eigs_list_num(arg, 2, __func__);
+    if ((list_elem_type(arg, 2) == VAL_FLOAT || list_elem_type(arg, 2) == VAL_INT)) lr = eigs_list_num(arg, 2, __func__);
     else if (list_elem_type(arg, 2) == VAL_STR) lr = strtod(list_get_ref(arg, 2)->data.str, NULL);
     if (lr <= 0 || lr > 1) lr = 0.001f;
 

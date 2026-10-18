@@ -86,3 +86,4 @@ builtins.c|builtin_sort_by|1|numeric key kind retained for exact mixed sorting (
 builtins.c|sort_cmp_num|6|validated numeric slots viewed through slot_view; int comparisons are exact (#1758 N2)
 value_slot.h|slot_int_value|1|boxed VAL_INT payload after its type test (#1758 R1.2i)
 container.h|slot_view|3|typed float or int facade, preserving exact payload and kind (#1758 R1.2i)
+ext_db.c|db_build_query|1|VAL_INT parameters encode as exact digits after the kind test (#1758 R1.2)

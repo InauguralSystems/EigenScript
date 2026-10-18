@@ -581,7 +581,7 @@ Value* builtin_http_early_bind(Value *arg) {
         }
         arg = list_get_view(arg, 0, &port_view);
     }
-    if (arg && arg->type != VAL_NULL && arg->type != VAL_NUM) {
+    if (arg && arg->type != VAL_NULL && !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "http_early_bind: port must be a number or null");
         return make_null();
     }
@@ -945,7 +945,7 @@ Value* builtin_shared_incr(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     Value *key_v = list_get_view(arg, 0, &(EigsView){{0}});
     Value *delta_v = list_get_view(arg, 1, &(EigsView){{0}});
-    if (key_v->type != VAL_STR || delta_v->type != VAL_NUM) return make_null();
+    if (key_v->type != VAL_STR || !val_is_number(delta_v)) return make_null();
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
@@ -961,7 +961,7 @@ Value* builtin_shared_incr(Value *arg) {
         /* Read the number out BEFORE dropping the ref — decref may free it —
          * and drop it on the mismatch path too, which is the one an early
          * return makes easy to miss. */
-        int bad = (!parsed || parsed->type != VAL_NUM);
+        int bad = (!parsed || !val_is_number(parsed));
         if (!bad) cur = eigs_num_arg(parsed, __func__);
         val_decref(parsed);
         if (bad) {

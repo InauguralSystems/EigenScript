@@ -657,7 +657,7 @@ Value* builtin_eigen_eval_loss(Value *arg) {
         fprintf(stderr, "eigen_eval_loss: prompt_ids must be a list\n");
         ARG_GUARD(1, "eigen_eval_loss", "a list of prompt ids", make_num(-1.0));
     }
-    if (list_elem_type(arg, 1) != VAL_NUM) {
+    if ((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT)) {
         fprintf(stderr, "eigen_eval_loss: target_id must be a number\n");
         ARG_GUARD(1, "eigen_eval_loss", "a numeric target_id", make_num(-1.0));
     }

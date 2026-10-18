@@ -109,7 +109,7 @@ static double net_register_sock(int fd, EigsNetSockKind kind) {
 }
 
 static EigsNetSock* net_lookup(Value *v, EigsNetSockKind kind) {
-    if (!v || v->type != VAL_NUM) return NULL;
+    if (!v || !val_is_number(v)) return NULL;
     EigsNetSock *s = net_unpack(eigs_num_arg(v, __func__), NULL, NULL);
     if (!s || s->kind != kind) return NULL;
     return s;
@@ -155,7 +155,7 @@ static int net_num_at(Value *arg, int idx, int fallback) {
  * ephemeral port — read it back with net_port. Binds 0.0.0.0, matching
  * ext_http's server posture (SECURITY.md: the script is trusted). */
 Value* builtin_net_listen(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) {
+    if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "net_listen: expected a port number");
         return make_null();
     }
@@ -185,7 +185,7 @@ Value* builtin_net_listen(Value *arg) {
  * for a port-0 listen), or null on a bad/closed handle. Kernel-chosen,
  * so it rides the tape like every other environment outcome. */
 Value* builtin_net_port(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) {
+    if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "net_port: expected a listener handle");
         return make_null();
     }
@@ -212,7 +212,7 @@ Value* builtin_net_accept(Value *arg) {
         if (g_has_error) return make_null();   /* #1637: a bool timeout raised */
         arg = list_get_view(arg, 0, &listener_view);
     }
-    if (!arg || arg->type != VAL_NUM) {
+    if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "net_accept: expected a listener handle");
         return make_null();
     }
@@ -376,7 +376,7 @@ Value* builtin_net_send(Value *arg) {
  * idempotent bookkeeping, and under EIGS_REPLAY no handle exists so it
  * is a natural no-op (the audio_capture_close shape). */
 Value* builtin_net_close(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) {
+    if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "net_close: expected a socket handle");
         return make_null();
     }

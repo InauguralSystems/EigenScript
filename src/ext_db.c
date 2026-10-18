@@ -54,7 +54,10 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
             types[i] = DB_PARAM_OID_BOOL;
         } else if (v && v->type == VAL_STR) {
             params[i] = v->data.str;
-        } else if (v && v->type == VAL_NUM) {
+        } else if (v && v->type == VAL_INT) {
+            eigs_int_text(numbuf[i], 64, VAL_I64_RAW(v));
+            params[i] = numbuf[i];
+        } else if (v && v->type == VAL_FLOAT) {
             snprintf(numbuf[i], 64, "%g", eigs_num_arg(v, __func__));
             params[i] = numbuf[i];
         } else {
