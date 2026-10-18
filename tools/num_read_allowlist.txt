@@ -18,7 +18,6 @@ container.h|eigs_slot_num|1|required numeric accessor reads only after slot_is_f
 container.h|eigs_slot_opt_num|1|optional numeric accessor reads only after slot_is_f64
 container.h|list_get_num|1|accessor numeric fast path: reads the slot only behind its own slot_is_f64 test (#1665 arm D)
 container.h|list_get_return|1|builtin-return read boxes an immediate only after slot_is_f64
-container.h|slot_view|2|numeric view copies a proven immediate into caller storage
 chunk.c|chunk_disassemble|1|debug disassembly prints a constant behind its own type == VAL_NUM test
 chunk.c|const_equal|2|constant-pool dedup compares two constants after testing both are VAL_NUM
 chunk.c|const_hash_value|1|constant-pool hash of a constant inside its type == VAL_NUM branch
@@ -85,3 +84,5 @@ builtins.c|builtin_json_path|1|VAL_INT scalar text is exact digits before releas
 builtins.c|builtin_dispatch|1|VAL_INT argument boxing refuses until make_int lands in R1.3 (#1758)
 builtins.c|builtin_sort_by|1|numeric key kind retained for exact mixed sorting (#1758 N2)
 builtins.c|sort_cmp_num|6|validated numeric slots viewed through slot_view; int comparisons are exact (#1758 N2)
+value_slot.h|slot_int_value|1|boxed VAL_INT payload after its type test (#1758 R1.2i)
+container.h|slot_view|3|typed float or int facade, preserving exact payload and kind (#1758 R1.2i)

@@ -685,8 +685,8 @@ result).**
 | `container.h:list_get_num` | smi-arm | bridge reader: an int element converts to its double (D1) |
 | `container.h:list_get_ref` | smi-arm | NULL for a number by contract, an int included (D1) |
 | `container.h:list_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value` (unwired until R1.3) (D1) |
-| `container.h:slot_type` | unwired | an SMI's type is the int ValType, which lands in R1.2a; any other unknown tag refuses instead of being read as a pointer (D1) |
-| `container.h:slot_view` | unwired | an SMI's facade is a `VAL_INT` view (R1.2a) (D1) |
+| `container.h:slot_type` | smi-arm | an SMI's type is `VAL_INT` (R1.2); any other unknown tag refuses instead of being read as a pointer (D1) |
+| `container.h:slot_view` | smi-arm | an SMI's facade is an exact `VAL_INT` view (R1.2) (D1) |
 | `eigenscript.c:#define GC_EDGE_TABLE` | guarded | a GC edge exists only for `slot_is_ptr`; an SMI has no edge (D2) |
 | `eigenscript.c:ent_child_slot` | smi-arm | an int's entropy is its double's: the numeric channel until round 3 (design 7) (D1) |
 | `eigenscript.c:env_get_hashed` | guarded | a non-pointer slot goes through `slot_to_value` (compile-forced) and comes back boxed: the lift boxes on purpose (§2.1) (D2) |
@@ -713,7 +713,7 @@ result).**
 | `value_slot.h:slot_from_heap` | guarded | maps null and bool Values to their immediates and every other Value to a heap slot, so a `VAL_INT` box stays a box: the lifts depend on that (§2.1) (D3) |
 | `value_slot.h:slot_from_int` | not-a-classifier | the one int writer: an SMI inside [-2^47, 2^47); outside it the `VAL_INT` box is unwired until R1.3 (D3) |
 | `value_slot.h:slot_incref` | guarded | as `slot_decref` (D3) |
-| `value_slot.h:slot_int_value` | smi-arm | an SMI's int; the `VAL_INT` box arm lands in R1.2a with the type it names (D1) |
+| `value_slot.h:slot_int_value` | smi-arm | an SMI's int, or a heap `VAL_INT`'s exact int64 (R1.2) (D1) |
 | `value_slot.h:slot_is_bool` | guarded | exact tag test (D3) |
 | `value_slot.h:slot_is_f64` | guarded | the double test (was `slot_is_num`): an SMI answers 0 (D1) |
 | `value_slot.h:slot_is_heap` | guarded | exact tag test (D3) |
@@ -1922,8 +1922,7 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      and replay would turn ints into floats. The float token marks its kind
      now (`3.0`); N6's repr replaces it in R1.7, still inside v7.
    - `eigs_int_unwired` is deleted: `slot_to_value` boxes an SMI with
-     `make_int`, `slot_type` answers `VAL_INT`, `slot_view` gives a
-     `VAL_INT` facade, `write_slot` writes v7 digits, and `slot_from_int`
+     `make_int`, `write_slot` writes v7 digits, and `slot_from_int`
      boxes an int outside the SMI range (each R1.1 placeholder, 2.5).
    - The observer routes an SMI and a boxed int into the numeric channel
      (§7).

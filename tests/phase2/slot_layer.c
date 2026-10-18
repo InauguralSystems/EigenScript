@@ -132,7 +132,26 @@ static int r_store_json_encode_slot(int64_t v) {
     return bad;
 }
 static int r_slot_f64_value(int64_t v) { double d = -7.25; return slot_f64_value(smi(v), &d) != 0 || d != -7.25; }
-static int r_slot_int_value(int64_t v) { int64_t i = 7; return slot_int_value(smi(v), &i) != 1 || i != v; }
+static int r_slot_int_value(int64_t v) {
+    int64_t i = 7;
+    if (slot_int_value(smi(v), &i) != 1 || i != v) return 1;
+    /* The box arm is independent of SMI range and must not narrow through double. */
+    static const int64_t boxed[] = {INT64_MIN, INT64_MAX, INT64_C(9007199254740993)};
+    for (size_t n = 0; n < sizeof boxed / sizeof boxed[0]; n++) {
+        Value box = {.type = VAL_INT};
+        VAL_I64_RAW(&box) = boxed[n];
+        i = 7;
+        if (!slot_int_value(slot_from_heap(&box), &i) || i != boxed[n]) return 1;
+    }
+    return 0;
+}
+static int r_slot_type(int64_t v) { return slot_type(smi(v)) != VAL_INT; }
+static int r_slot_view(int64_t v) {
+    EIGS_VIEW(view);
+    Value *got = slot_view(smi(v), &view);
+    return got != &view.v || got->type != VAL_INT || VAL_I64_RAW(got) != v ||
+           got->refcount != EIGS_VIEW_RC;
+}
 static int r_slot_is_f64(int64_t v) { return slot_is_f64(smi(v)) != 0; }
 static int r_slot_is_smi(int64_t v) { return slot_is_smi(smi(v)) != 1; }
 static int r_slot_smi_val(int64_t v) { return slot_smi_val(smi(v)) != v; }
@@ -160,8 +179,6 @@ static int r_slot_is_ptr(int64_t v) { return slot_is_ptr(smi(v)) != 0; }
 /* ---- Part A: ABORT calls ------------------------------------------------ */
 
 static void a_eigs_slot_box(EigsSlot s) { (void)eigs_slot_box(s); }
-static void a_slot_type(EigsSlot s) { (void)slot_type(s); }
-static void a_slot_view(EigsSlot s) { EIGS_VIEW_NOCHECK(view); (void)slot_view(s, &view); }
 static void a_slot_to_value(EigsSlot s) { (void)slot_to_value(s); }
 static void a_write_slot(EigsSlot s) { write_slot(s); }
 static void a_obs_slot_observable(EigsSlot s) { (void)obs_slot_observable(s); }
@@ -203,8 +220,8 @@ static const Entry ENTRIES[] = {
     {"value_slot.h:slot_is_null", r_slot_is_null, 0, 0, "0"},
     {"value_slot.h:slot_is_ptr", r_slot_is_ptr, 0, 0, "0"},
     {"container.h:eigs_slot_box", 0, a_eigs_slot_box, "slot_to_value", "unwired: an int Value (R1.3)"},
-    {"container.h:slot_type", 0, a_slot_type, "slot_type", "unwired: the int ValType (R1.2a)"},
-    {"container.h:slot_view", 0, a_slot_view, "slot_view", "unwired: a VAL_INT facade (R1.2a)"},
+    {"container.h:slot_type", r_slot_type, 0, 0, "VAL_INT"},
+    {"container.h:slot_view", r_slot_view, 0, 0, "exact VAL_INT facade"},
     {"eigenscript.c:slot_to_value", 0, a_slot_to_value, "slot_to_value", "unwired: make_int (R1.3)"},
     {"trace.c:write_slot", 0, a_write_slot, "write_slot", "unwired: tape v7 (R1.3)"},
     {"vm.c:obs_slot_observable", 0, a_obs_slot_observable, "obs_slot_observable", "refuse"},
@@ -456,8 +473,8 @@ EXP(slot_box) {
     }
 }
 EXP(slot_type) {
-    static const char *names[] = {"t:num", "t:null", "t:bool", "", "t:str"};
-    if (kclass(k) == C_SMI || kclass(k) == C_RES) ABORT("slot_type");
+    static const char *names[] = {"t:num", "t:null", "t:bool", "t:num", "t:str"};
+    if (kclass(k) == C_RES) ABORT("slot_type");
     else snprintf(b, n, "%s", names[kclass(k)]);
 }
 EXP(slot_view) {
@@ -466,7 +483,7 @@ EXP(slot_view) {
         case C_NULL: snprintf(b, n, "v:null"); break;
         case C_BOOL: e_bool(b, n, k); break;
         case C_HEAP: snprintf(b, n, "v:H"); break;
-        case C_SMI: ABORT("slot_view"); break;
+        case C_SMI: snprintf(b, n, "v:int:5"); break;
         default: ABORT("slot_type");
     }
 }

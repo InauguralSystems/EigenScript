@@ -253,6 +253,10 @@ static inline int slot_f64_value(EigsSlot s, double *out) {
  * arm with the type it names. */
 static inline int slot_int_value(EigsSlot s, int64_t *out) {
     if (slot_is_smi(s)) { *out = slot_smi_val(s); return 1; }
+    if (slot_is_heap(s)) {
+        Value *v = slot_as_ptr(s);
+        if (v->type == VAL_INT) { *out = VAL_I64_RAW(v); return 1; }
+    }
     return 0;
 }
 

@@ -96,14 +96,14 @@ static inline int list_rewrite_num(const Value *list, int i, double d) {
 }
 
 /* Return the logical type of a borrowed slot without allocating.  #1758: an
- * SMI's type is the int ValType, which lands in R1.2a; until then it is
- * refused loudly rather than read as a pointer. */
+ * SMI's type is VAL_INT; any reserved tag refuses instead of being read
+ * as a pointer. */
 static inline ValType slot_type(EigsSlot s) {
     if (slot_is_f64(s)) return VAL_FLOAT;
     if (slot_is_null(s)) return VAL_NULL;
     if (slot_is_bool(s)) return VAL_BOOL;
     if (slot_is_heap(s)) return slot_as_ptr(s)->type;
-    if (slot_is_smi(s)) eigs_int_unwired("slot_type", s.u);
+    if (slot_is_smi(s)) return VAL_INT;
     eigs_slot_refuse("slot_type", s);
 }
 /* A slot's Value for a reader that wants a pointer: null and bool become
@@ -170,9 +170,14 @@ static inline int eigs_slot_opt_num(EigsSlot s, double *out, const char *who) {
 /* A numeric view is a caller-owned, allocation-free Value facade.  Reference
  * slots return their real pointer.  The cleanup guard catches retaining or
  * decrefing a numeric facade: its sentinel refcount must be unchanged.
- * #1758: an SMI's facade is a VAL_INT view (R1.2a); refused until then. */
+ * #1758: an SMI's facade preserves its exact int Value kind. */
 static inline Value *slot_view(EigsSlot s, EigsView *view) {
-    if (slot_is_smi(s)) eigs_int_unwired("slot_view", s.u);
+    if (slot_is_smi(s)) {
+        view->v.type = VAL_INT;
+        VAL_I64_RAW(&view->v) = slot_smi_val(s);
+        view->v.refcount = EIGS_VIEW_RC;
+        return &view->v;
+    }
     /* a heap VAL_INT box is a real Value: it is returned as itself */
     if (!slot_is_f64(s) && slot_type(s) != VAL_FLOAT) return eigs_slot_ref(s);
     view->v.type = VAL_FLOAT;
