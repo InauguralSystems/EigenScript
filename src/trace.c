@@ -13,7 +13,7 @@
  *   O <stream> win <name> <n>   per-binding observer window override (v3)
  *
  * Value encoding:
- *   <num>          numeric (immediate, tracked, or heap VAL_NUM)
+ *   <num>          numeric (immediate, tracked, or heap VAL_FLOAT)
  *   null           VAL_NULL / immediate null slot
  *   true|false
  *   "<str…>"       heap string, content truncated at TRACE_STR_MAX
@@ -1924,7 +1924,7 @@ static void replay_malformed_value(const char *value) {
  * API declare their kinds with eigs_trace_declare_kind; a name in neither
  * table is refused at replay. Bits are ValType (TK below). */
 #define TK(t) (1u << (t))
-#define TK_NUM_  TK(VAL_NUM)
+#define TK_NUM_  (TK(VAL_FLOAT) | TK(VAL_INT))
 #define TK_STR_  TK(VAL_STR)
 #define TK_BOOL_ TK(VAL_BOOL)
 #define TK_NULL_ TK(VAL_NULL)
@@ -2015,7 +2015,9 @@ static unsigned replay_expected_kinds(const char *fn) {
 
 /* "a bool", "a list or null" */
 static void kinds_text(unsigned kinds, char *buf, size_t n) {
-    static const ValType order[] = {VAL_NUM, VAL_STR, VAL_BOOL, VAL_LIST, VAL_DICT,
+    /* Both numeric kinds have the one surface name, num. */
+    if (kinds & TK(VAL_INT)) kinds |= TK(VAL_FLOAT);
+    static const ValType order[] = {VAL_FLOAT, VAL_STR, VAL_BOOL, VAL_LIST, VAL_DICT,
                                     VAL_BUFFER, VAL_NULL};
     size_t used = 0; int first = 1;
     buf[0] = '\0';
@@ -2817,7 +2819,7 @@ static void write_string(const char *s) {
 static void write_value_ptr(Value *v) {
     if (!v) { tp_puts("null"); return; }
     switch (v->type) {
-        case VAL_NUM:          tp_printf("%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_FLOAT:          tp_printf("%.17g", VAL_F64_RAW(v)); break;
         /* #1758 R1.2a: an int is written as digits by tape v7 (R1.3); a v6
          * tape cannot tell it from a float, so it is refused until then. */
         case VAL_INT:          eigs_int_unwired("write_value_ptr", (uint64_t)VAL_I64_RAW(v));
@@ -2958,7 +2960,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
     if (*budget <= 0) return;
     if (!v) { wf_puts("null", budget); return; }
     switch (v->type) {
-        case VAL_NUM:  wf_printf(budget, "%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_FLOAT:  wf_printf(budget, "%.17g", VAL_F64_RAW(v)); break;
         case VAL_INT:  eigs_int_unwired("write_value_ptr_full", (uint64_t)VAL_I64_RAW(v));   /* #1758: tape v7, R1.3 */
         case VAL_NULL: wf_puts("null", budget); break;
         case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
