@@ -1,9 +1,10 @@
-# #1736 rows 1 + 4: cooperative tasks are per-thread, and so is the stop. A
+# #1736 rows 1 + 5: cooperative tasks are per-thread, and so is the stop. A
 # detached task that dies inside a spawn()ed worker stops THAT worker's
-# evaluation — which, seen from main, is a thread death (row 4): main
-# completes and the process exits 1.
-# Expected: the inner trace, MAIN_JOINED, MARK_END, rc 1, and NO
-# WORKER_AFTER_YIELD.
+# evaluation — which, seen from main, is a thread death (rows 4-5): main's
+# thread_join raises it (#1745), the try catches it, main completes, and the
+# process exits 0 because a caught join counts as observed.
+# Expected: the inner trace, "MAIN_JOINED raised undefined_name", MARK_END,
+# rc 0, and NO WORKER_AFTER_YIELD.
 define inner_die() as:
     missing
 define worker() as:

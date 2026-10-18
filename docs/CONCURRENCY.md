@@ -626,8 +626,8 @@ message, or the value the worker `throw`s. Catching the join counts as
 observing the failure, so the run no longer fails at exit, exactly as catching
 a failed `task_join` does (#493). A raise nobody catches stops main at the
 join with the worker's error, and a worker nothing joins still fails the run
-at exit. Suite section [103b] pins both thread rows
-(`tests/thread_exit_*.eigs`).
+at exit. Suite sections [103b] and [104b] pin both thread rows
+(`tests/thread_exit_*.eigs`, `tests/task_exit_thread_*.eigs`).
 
 **The stop is per thread.** Cooperative tasks live on the thread that spawned
 them, and so does the stop: a detached task that dies inside a `spawn`ed

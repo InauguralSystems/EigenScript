@@ -1,5 +1,5 @@
 # [104b] #1736: what an uncaught error in a cooperative task does to the
-# program — the four-row rule in docs/CONCURRENCY.md ("When a task dies of an
+# program — the rule table in docs/CONCURRENCY.md ("When a task dies of an
 # uncaught error"). The line is `detached`: a task id is a plain number, so
 # the runtime can never know a JOINABLE task won't be joined, and task_detach
 # is the one point where it knows no join can ever see the failure.
@@ -11,7 +11,12 @@
 #                                           never joined, rc 1 — the never-
 #                                           joined half is check_task_exit
 #                                           task_exit_unjoined_death.eigs [104]
-#   row 4  an OS THREAD dies             -> main completes; rc 1 (#1112)
+#   row 4  an OS THREAD, never joined    -> main completes; rc 1 (#1112) — the
+#                                           check is check_thread_exit
+#                                           thread_exit_unjoined_death.eigs [103b]
+#   row 5  an OS THREAD, JOINED          -> thread_join raises the worker's error
+#                                           at the join (#1745): main continues
+#                                           past a caught join, rc 0 (observed)
 # Every program runs to a verdict on its exit status, on lines that MUST
 # print and on lines that must NOT (the stop is what keeps them unprinted),
 # and is refused on any sanitizer diagnostic (the check_task_exit
@@ -84,14 +89,20 @@ ff1736_check "row 3: main continues past a joinable death; a later try: task_joi
     task_exit_join_later.eigs 0 \
     "+at die (line" "+MAIN_CONTINUES" "+RECOVERED undefined_name" "+MARK_END"
 
-# Row 4 — an OS thread dies: unchanged (#1112). Thread timing is not on the
-# tape (#148), so a stop here would land somewhere different on every run.
-ff1736_check "row 4: an OS thread's death does not stop main" \
-    task_exit_thread_death.eigs 1 \
-    "+at w (line" "+MAIN_AFTER_DEATH" "+MARK_END"
-ff1736_check "rows 1+4: a detached task's death stops only its own thread" \
-    task_exit_thread_detached.eigs 1 \
-    "+at inner_die (line" "+MARK_END" "-WORKER_AFTER_YIELD"
+# Rows 4 and 5 — an OS thread dies. Thread timing is not on the tape (#148),
+# so a fail-fast stop here would land somewhere different on every run: the
+# death never stops main. Main's own program order decides what it sees. A
+# thread nothing joins fails the run at exit (row 4, #1112; pinned in [103b] by
+# thread_exit_unjoined_death.eigs). A thread main joins raises its error AT the
+# join (row 5, #1745), and a caught join counts as observed, so these two exit
+# 0: the JOIN_RAISED / "MAIN_JOINED raised" line proves the raise reached main,
+# and MAIN_AFTER_DEATH / MARK_END prove main went on past the death.
+ff1736_check "row 5: a joined OS thread's death raises at the join; main continues" \
+    task_exit_thread_death.eigs 0 \
+    "+at w (line" "+JOIN_RAISED undefined_name" "+MAIN_AFTER_DEATH" "+MARK_END"
+ff1736_check "rows 1+5: a detached task's death stops only its own thread; the join raises it" \
+    task_exit_thread_detached.eigs 0 \
+    "+at inner_die (line" "+MAIN_JOINED raised undefined_name" "+MARK_END" "-WORKER_AFTER_YIELD"
 
 # Rows 1 and 2 on the trace tape. WHEN the worker dies is decided by a taped
 # random_int, so only the tape can put the stop in the same place twice.
