@@ -592,11 +592,12 @@ result).**
 - **A fifth disposition, `unwired`.** Some D1 arms need what R1.1 does not
   have: an int Value (`make_int`, R1.3), the int ValType (R1.2a), or tape v7
   (R1.3). Each calls `eigs_int_unwired(who, bits)`, which aborts naming the
-  reader. R1.3 deletes `eigs_int_unwired`, so each one stops compiling in the
-  commit that makes ints reachable (2.7). They are `slot_to_value` (the one
+  reader. R1.2 completed `slot_type` and `slot_view` when `VAL_INT`
+  became available; it also completed `slot_int_value`'s boxed reader.
+  R1.3 deletes `eigs_int_unwired`, so the remaining arms in this group stop
+  compiling in the commit that makes ints reachable (2.7): `slot_to_value` (the one
   place that boxes an SMI: the lifts, `slot_bridge_unwrap`, `eigs_slot_box`
-  and the `*_get_return` readers route there), `slot_type`, `slot_view`,
-  `write_slot`, and `slot_from_int`'s out-of-range arm (the `VAL_INT` box).
+  and the `*_get_return` readers route there), `write_slot`, and `slot_from_int`'s out-of-range arm (the `VAL_INT` box).
 - **The permanent refusals** (`refuse`) go through `eigs_slot_refuse(who,
   slot)`, which prints the bits and aborts; `slot_as_ptr` refuses a non-heap
   slot under ASan and `-DEIGS_SLOT_CHECKED`. Readers that used to turn an
@@ -661,8 +662,11 @@ result).**
   scan's stderr was read as two classifiers). The Python runs with `-W
   error`.
 - **"The int's Value"** cannot be checked in R1.1: no int Value kind exists,
-  so `slot_to_value` and the readers that route to it are ABORT rows until
-  R1.3 turns them into RETURN rows.
+  so allocating readers were ABORT rows. R1.2 turned `slot_type` and `slot_view` into RETURN rows as scheduled
+  with the Value type (the R1.2i follow-up completed them). Their boxed
+  companion `slot_int_value` was completed in the same follow-up.
+  `slot_to_value` and the readers that allocate an int Value remain ABORT
+  rows until R1.3 introduces `make_int`.
 
 <!-- slot-table:begin -->
 | name | disposition | what an int (an SMI) does there, as of R1.1 |
@@ -1918,6 +1922,10 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      JSON text readers are completed here (§6), to avoid a later lossy
      conversion. The bridge's names are NOT touched; no behaviour changes
      before ints exist. 464 sites first forced.
+   - The three reader arms scheduled with the Value kind are complete in
+     R1.2i: `slot_type` types an SMI, `slot_view` exposes an exact int
+     facade, and `slot_int_value` extracts a boxed int. None produces an
+     int; R1.3 does not implement these arms a second time.
    - R1.2z: delete the deprecated aliases. A straggler fails to compile.
    - Gates (a mechanical round, zero MAP rows): the compile errors; the
      differential over the suite's `.eigs` corpus (identical to the
@@ -1938,7 +1946,8 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    - **Tape v7 in this commit**: a v6 writer would print `3` for both kinds
      and replay would turn ints into floats. The float token marks its kind
      now (`3.0`); N6's repr replaces it in R1.7, still inside v7.
-   - `eigs_int_unwired` is deleted: `slot_to_value` boxes an SMI with
+   - The remaining `eigs_int_unwired` placeholders are deleted, including:
+     `slot_to_value` boxes an SMI with
      `make_int`, `write_slot` writes v7 digits, and `slot_from_int`
      boxes an int outside the SMI range (each R1.1 placeholder, 2.5).
    - The observer routes an SMI and a boxed int into the numeric channel
