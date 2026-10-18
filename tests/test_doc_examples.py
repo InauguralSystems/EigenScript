@@ -328,7 +328,7 @@ POPULATION = {
     "docs/llms.txt":             (  9,    6,     2,      1,      0),
     "docs/SPEC.md":              ( 85,   81,     1,      3,      0),   # #1740: +1 paired (bitwise exact-int raises)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
-    "docs/CONCURRENCY.md":       (  7,    7,     0,      0,      0),
+    "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
     "docs/PREDICATES.md":        ( 13,    2,    10,      1,      4),

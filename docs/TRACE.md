@@ -322,12 +322,19 @@ perspective lands on the tape as an `N` record:
   `N audio_noise=[…]` records of at most 2048 samples each. The first
   record shorter than 2048 ends the call: a count that is a multiple of
   2048 ends with an empty record, and an empty call records `[]`. Replay
-  takes the records before reading the sample rate (which `audio_open`
-  negotiates with the device), so the recorded samples are served
-  whatever rate the device gives. A rejected argument consumes no
-  record, as above. Before #1803 the samples came from libc `rand()`,
-  seeded from the clock and recorded nowhere, so a replay drew new ones
-  at exit 0.
+  serves the recorded samples, and the call's extent, off the tape
+  whatever sample rate the device gives (`audio_open` negotiates it). A
+  rejected argument consumes no record, as above, and neither does a
+  refused duration (#1767: more than 30 seconds, or a sample count that
+  does not fit an `int`, raises `value`). Both are refused before the
+  tape is read or written, so a replay refuses the call again instead of
+  taking the next call's records. The rate reaches that verdict only
+  through the `int` range of the sample count, which a duration within
+  the limit breaks only above about 71.6 MHz; above that rate (no audio
+  hardware has one) a replay on a device with another rate could refuse
+  differently from its recording. Before #1803 the samples came from
+  libc `rand()`, seeded from the clock and recorded nowhere, so a replay
+  drew new ones at exit 0.
 
 The hook is the `TRACE_NONDET_RET` macro in `src/trace.h`, used at
 every nondet return site — adding a new nondet builtin means wrapping

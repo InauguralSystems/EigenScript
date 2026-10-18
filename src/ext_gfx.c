@@ -1894,6 +1894,30 @@ Value* builtin_audio_clear(Value *arg) {
     return make_null(); /* fs:VOID audio_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
+#define AUDIO_GENERATOR_MAX_SECONDS 30.0
+
+/* Validate the allocation size while it is still a double.  In particular,
+ * never cast an out-of-range (or NaN) sample count to int: that conversion is
+ * undefined in C. */
+static int audio_generator_sample_count(double duration, int rate,
+                                        const char *who, int *count) {
+    double samples = duration * (double)rate;
+    if (duration > AUDIO_GENERATOR_MAX_SECONDS) {
+        rt_error(EK_VALUE, 0, "%s: duration exceeds the 30 second limit", who);
+        return 0;
+    }
+    if (!(samples <= (double)INT_MAX)) {
+        rt_error(EK_VALUE, 0, "%s: duration produces a sample count that does not fit in int", who);
+        return 0;
+    }
+    if (samples <= 0.0) {
+        *count = 0;
+        return 1;
+    }
+    *count = (int)samples;
+    return 1;
+}
+
 /* audio_sine of [freq, duration, amplitude] — generate sine wave samples */
 Value* builtin_audio_sine(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "audio_sine");
@@ -1925,8 +1949,9 @@ Value* builtin_audio_sine(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_sine", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     for (int i = 0; i < n; i++) {
@@ -1960,8 +1985,9 @@ Value* builtin_audio_saw(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_saw", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     for (int i = 0; i < n; i++) {
@@ -1995,8 +2021,9 @@ Value* builtin_audio_square(Value *arg) {
     double dur = eigs_list_num(arg, 1, __func__);
     double amp = eigs_list_num(arg, 2, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_square", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     for (int i = 0; i < n; i++) {
@@ -2035,8 +2062,9 @@ Value* builtin_audio_sweep(Value *arg) {
     double amp = eigs_list_num(arg, 3, __func__);
     int wave = (int)eigs_list_num(arg, 4, __func__);
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
-    if (n <= 0 || n > rate * 30) return make_list(0);
+    int n;
+    if (!audio_generator_sample_count(dur, rate, "audio_sweep", &n)) return make_null();
+    if (n <= 0) return make_list(0);
 
     Value *list = make_list(n);
     double phase = 0.0;
@@ -2067,8 +2095,8 @@ Value* builtin_audio_sweep(Value *arg) {
 /* Record half: the samples as consecutive N records of at most
  * AUDIO_NOISE_TAPE_CHUNK each. The first record shorter than a full chunk
  * ends the call -- an empty one when the count is a multiple of the chunk --
- * so replay reads the call's extent off the tape and never needs the count,
- * which depends on the rate audio_open negotiated. The chunk copies are
+ * so replay reads the call's extent off the tape, not off the count, which
+ * depends on the rate audio_open negotiated. The chunk copies are
  * tape-internal, so they are made uncharged (make_list_heap): recording must
  * not move a sandboxed program's budget. */
 static void audio_noise_record(Value *samples) {
@@ -2141,25 +2169,33 @@ Value* builtin_audio_noise(Value *arg) {
     ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
               list_elem_type(arg, 1) != VAL_NUM,
               "audio_noise", "[number duration, number amplitude]", make_list(0));
-    /* The tape seam: below the argument guards, because a rejected argument is
-     * deterministic and must consume no record (#1007), and above the rate
-     * read, because the sample count depends on the device audio_open
-     * negotiated -- replay serves the recorded samples without asking it.
-     * Nothing below may return without audio_noise_record: a refusal that
-     * depends only on the arguments (a type, a duration limit) belongs above
-     * this line with the guards, or a raised call records nothing while its
-     * replay takes the next call's records. */
+    double dur = eigs_list_num(arg, 0, __func__);
+    double amp = eigs_list_num(arg, 1, __func__);
+    int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
+    int n;
+    /* #1767's refusal (a duration over 30 s, or a sample count that does not
+     * fit an int, raises `value`) is an argument check like the guards above,
+     * and it is made BEFORE the tape seam below. A refused call records
+     * nothing, so its replay must refuse it again without taking a record:
+     * refused below the seam, a replay would take the NEXT call's records and
+     * every audio_noise after it would be served the wrong ones. The rate
+     * enters the verdict only through the int range of dur * rate, which a
+     * duration within the limit breaks only above INT_MAX / 30 (about 71.6
+     * MHz), so for any real device a replay refuses what the recording did. */
+    if (!audio_generator_sample_count(dur, rate, "audio_noise", &n)) return make_null();
+    /* The tape seam: below every refusal, because a rejected or refused call
+     * is deterministic and must consume no record (#1007, #1767). Nothing
+     * below it may return without audio_noise_record, the empty answer
+     * included. Replay serves the samples and their extent off the tape,
+     * whatever rate audio_open negotiated; n above only decided whether to
+     * refuse. */
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *taped;
         if (trace_replay_refuse_off_owner("audio_noise")) return make_null();
         if (audio_noise_take(&taped)) return taped;
     }
-    double dur = eigs_list_num(arg, 0, __func__);
-    double amp = eigs_list_num(arg, 1, __func__);
-    int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int n = (int)(dur * rate);
     Value *list;
-    if (n <= 0 || n > rate * 30) {
+    if (n <= 0) {
         list = make_list(0);
     } else {
         list = make_list(n);
@@ -2168,9 +2204,9 @@ Value* builtin_audio_noise(Value *arg) {
             list_append_owned(list, make_num(s));
         }
     }
-    /* Every live answer is recorded, the empty one included: replay takes
-     * before the count is known, so a call that recorded nothing would take
-     * the next call's records. */
+    /* Every live answer is recorded, the empty one included: replay takes a
+     * record for every call that is not refused, whatever its count, so a
+     * call that recorded nothing would take the next call's records. */
     if (__builtin_expect(g_trace_enabled, 0)) audio_noise_record(list);
     return list;
 }

@@ -1,0 +1,15 @@
+# #1736 row 1 with main suspended INSIDE a try: the stop is not an error
+# delivered to main, so the catch never runs. g_try_depth is process-global,
+# and main's open try suppresses the dying task's own trace print, so the stop
+# prints the error itself — a fail-fast stop is never silent.
+# Expected: the error text, rc 1, and none of AFTER_YIELD / CAUGHT / MARK_END.
+define die() as:
+    missing
+d is task_spawn of die
+task_detach of d
+try:
+    task_yield of null
+    print of "AFTER_YIELD"
+catch e:
+    print of f"CAUGHT {e.kind}"
+print of "MARK_END"

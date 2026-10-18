@@ -1,0 +1,23 @@
+# #1736 row 2 is a STOP, not an error a handler may take: the task_detach
+# runs inside a sort_by key callback (a nested evaluation on the C stack),
+# under a try in the callback AND a try around the sort_by. Neither catches it.
+# Expected: the stop message, rc 1, and none of NESTED_CAUGHT /
+# NESTED_AFTER_DETACH / SORTED / OUTER_CAUGHT / MARK_END.
+define die() as:
+    missing
+d is task_spawn of die
+task_yield of null
+define keyfn(x) as:
+    if x == 2:
+        try:
+            task_detach of d
+        catch e:
+            print of "NESTED_CAUGHT"
+        print of "NESTED_AFTER_DETACH"
+    return x
+try:
+    r is sort_by of [[3, 1, 2], keyfn]
+    print of f"SORTED {r}"
+catch e:
+    print of f"OUTER_CAUGHT {e.kind}"
+print of "MARK_END"

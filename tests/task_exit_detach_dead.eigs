@@ -1,0 +1,13 @@
+# #1736 row 2: the worker dies while still joinable (main carries on, #493),
+# and THEN main detaches it. Detaching would discard an error the runtime
+# already holds, so the program stops at that task_detach call.
+# Expected: the worker's trace, "BEFORE_DETACH", the task_detach stop message,
+# rc 1, and none of AFTER_DETACH / MARK_END.
+define die() as:
+    missing
+d is task_spawn of die
+task_yield of null
+print of "BEFORE_DETACH"
+r is task_detach of d
+print of f"AFTER_DETACH {r}"
+print of "MARK_END"

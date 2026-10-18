@@ -1,0 +1,21 @@
+# #1736 row 2's boundary: only an error NOTHING observed stops the program.
+# A task_kill'ed task (a teardown, not an uncaught error) and a dead task
+# whose error a task_join already delivered both detach normally (1).
+# Expected: both detach lines, "MARK_END", rc 0.
+define waitmsg() as:
+    m is task_recv of null
+    return 0
+define die() as:
+    missing
+k is task_spawn of waitmsg
+task_yield of null
+task_kill of k
+print of f"DETACH_KILLED {task_detach of k}"
+d is task_spawn of die
+task_yield of null
+try:
+    task_join of d
+catch e:
+    print of f"JOIN_CAUGHT {e.kind}"
+print of f"DETACH_OBSERVED {task_detach of d}"
+print of "MARK_END"
