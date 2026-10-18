@@ -1,10 +1,15 @@
 # tools/num_read_allowlist.txt -- every raw number token, reviewed (#1637 round 4).
-# file|function|count|reason. tools/num_read_check.sh counts VAL_F64_RAW /
+# file|function|count|reason. tools/num_read_check.sh counts VAL_F64_RAW / VAL_I64_RAW /
 # SLOT_F64_RAW / VAL_F64_OFFSET tokens per function and fails when a count
 # differs (a new raw read, however it is spelled across lines, changes the
 # count), when a function with raw tokens is missing here, or a row is stale.
-# Builtins never belong here: they read through eigs_num_arg / eigs_list_num /
-# eigs_opt_num / eigs_elem_num, which raise on a bool.
+# Ordinary builtin argument reads use eigs_num_arg / eigs_list_num /
+# eigs_opt_num / eigs_elem_num, which raise on a bool. The explicitly reviewed
+# exceptions below preserve a numeric kind or exact int text (JSON and sorting),
+# name an unwired int refusal (dispatch), or write a typed sentinel (matmul).
+# A double bridge would lose int digits in the exact readers; each raw payload
+# read is behind its own kind test. Exceptions still need exact per-function
+# token counts and reasons; they do not exempt ordinary argument coercion.
 builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel into a result buffer cell (EIGS_STRICT=0 path); a write, no Value is read
 builtins.c|eigs_json_encode_value|1|JSON encoder: case VAL_INT writes the int's exact digits (#1758 R1.2a)
 container.h|dict_value_get_num|1|accessor numeric fast path: reads the slot only behind its own slot_is_f64 test (#1665 arm D)
@@ -36,8 +41,8 @@ eigenscript.c|slot_from_value|2|NaN-boxing boundary, inside its VAL_FLOAT branch
 eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_f64
 eigenscript.c|values_equal_impl|8|equality: the int/float pair by eigs_cmp_int_float (N2), each read inside its own type test; switch case VAL_FLOAT and case VAL_INT (both ints)
 eigenscript.c|value_to_string|2|printing, switch case VAL_FLOAT and case VAL_INT (exact digits)
-eigenscript.h|#define VAL_F64_OFFSET|1|the raw double member offset definition (JIT; #1758 R1.2a: was VAL_F64_OFFSET)
-eigenscript.h|#define VAL_F64_RAW|1|the raw double read definition (#1758 R1.2a: was VAL_F64_RAW)
+eigenscript.h|#define VAL_F64_OFFSET|1|the raw double member offset definition (JIT; #1758 R1.2a: was VAL_NUM_OFFSET)
+eigenscript.h|#define VAL_F64_RAW|1|the raw double read definition (#1758 R1.2a: was VAL_NUM_RAW)
 eigenscript.h|#define VAL_I64_RAW|1|the raw int64 read definition (#1758 R1.2a)
 eigenscript.h|eigs_num_arg|1|inline fast path of the checking accessor: reads only after type == VAL_FLOAT
 eigs_embed.c|eigs_value_as_num|2|embedding API: reads only after type == VAL_FLOAT; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
