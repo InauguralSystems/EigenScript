@@ -1045,7 +1045,7 @@ static int obs_num_diverging(const ObserverSlot *s) {
     return observer_slot_raw_diverging(s);
 }
 
-/* Improving: the step magnitudes are CONTRACTING — recent-half mean |Δv|
+/* Improving: values are DECREASING and the step magnitudes are CONTRACTING — recent-half mean |Δv|
  * at most CONTRACT x the older-half mean. Contraction at any ratio < 1
  * per step means the remaining travel is a summable (geometric-class)
  * tail: the trajectory is genuinely closing on a limit, which is what
@@ -1065,7 +1065,8 @@ static int obs_num_improving(const ObserverSlot *s) {
     obs_num_flags(s, &all_zero, &all_small);
     if (all_zero) return 0;                      /* already settled -> converged's claim */
     if (obs_num_oscillating(s)) return 0;        /* motion bands are exclusive */
-    /* Monotone: every raw step shares one sign. "Improving" claims a clean
+    /* Directional and monotone: every raw step is negative. "Improving" uses
+     * the ML/loss convention that lower is better, and claims a clean
      * approach toward a limit; measurement jitter (mixed signs) can land a
      * chance half-window contraction — a lab sensor reading 45.2, 44.8,
      * 44.9, 44.7, 44.85 flickered into `improving` on its final step and
@@ -1073,6 +1074,7 @@ static int obs_num_improving(const ObserverSlot *s) {
      * decay) is monotone; a damped oscillation belongs to `oscillating`. */
     {
         double first = observer_slot_vr_get(s, 0);
+        if (first >= 0.0) return 0;
         for (size_t i = 1; i < cnt; i++)
             if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
     }

@@ -117,4 +117,33 @@ elabel is classify of [(trajectory of wi1e), "entropy"]
 assert of [elabel == "improving", f"WI1e entropy channel lost its improving verdict: {elabel}"]
 print of "  PASS: WI1e entropy channel still reads improving via classify"
 
+# #1771: the numeric predicate is directional (ML loss convention). These
+# twins have equally contracting magnitudes, but only the decreasing one is
+# improving. Pin every checkpoint, including the partial-window prefix.
+define rising_improving(n) as:
+    x is 0.0
+    k is 1
+    out is ""
+    loop while k <= n:
+        x is 1.0 - (pow of [0.5, k])
+        out is out + (str of (improving of x)) + " "
+        k is k + 1
+    return out
+
+define falling_improving(n) as:
+    x is 1.0
+    k is 1
+    out is ""
+    loop while k <= n:
+        x is x * 0.5
+        out is out + (str of (improving of x)) + " "
+        k is k + 1
+    return out
+
+rise_verdicts is rising_improving of 14
+fall_verdicts is falling_improving of 14
+assert of [rise_verdicts == "false false false false false false false false false false false false false false ", f"rising plateau must never improve: {rise_verdicts}"]
+assert of [fall_verdicts == "false false false true true true true true true true true true true true ", f"falling loss must keep improving: {fall_verdicts}"]
+print of "  PASS: #1771 improving is directional (falling only)"
+
 print of "WINDOWED_IMPROVING_ALL_PASS"

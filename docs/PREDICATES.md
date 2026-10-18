@@ -15,9 +15,11 @@ evaluates, a canonical `dH`-sequence trace, and the pointwise behavior it
 replaces. ([`docs/OBSERVER.md`](OBSERVER.md) is the model; this is the
 operational target the runtime enforces.)
 
-These are **trajectory claims, not snapshot claims.** `improving` means
-"the value has been getting more determined *over its recent history*",
-not "the last single step happened to go down." The canonical use is a
+These are **trajectory claims, not snapshot claims.** On the numeric channel,
+`improving` means a decreasing value whose progress is contracting (lower is
+better); on the entropy channel it means "the value has been getting more
+determined *over its recent history*." Neither means merely that the last
+single step happened to go down. The canonical use is a
 loop condition — `loop while improving`, `loop while not stable` — which
 must be robust to a single noisy tick. That is why every predicate reads
 a **window** of the last `N` observations rather than the instantaneous
@@ -60,10 +62,7 @@ one question per predicate.
 windowed tests of the last `N` observations. Two limits are inherent: a window
 cannot see the values after n that `converged` and `stable` ask about, nor the
 whole sequence that `oscillating` and `diverging` describe. Beyond that, the
-runtime answers a different question for two predicates:
-- `improving`: the band is direction-agnostic. It fires on monotone steps that
-  contract, so a value rising to a plateau reads `improving`, which the ruling
-  says it is not (#1771; the oracle's `rise_to_1` row measures it).
+runtime answers a different question for one predicate:
 - `equilibrium`: the band tests that the window's relative steps have
   near-zero mean and variance, so a sequence whose steps have died down reads
   `equilibrium` although it is not constant (a decay settling on a limit,
@@ -105,7 +104,7 @@ steps `Δv` kept alongside — #422):
 | `converged` | full window, every `\|rel\| < dh_zero`, raw guards clean |
 | `stable` | full window, every `\|rel\| < dh_small`, no strong consecutive sign flips |
 | `equilibrium` | full window, `\|mean(rel)\| < dh_zero`, `variance(rel) < dh_zero²` |
-| `improving` | ≥ 4 samples, **monotone** raw steps whose mean *and* max contract to ≤ 0.7× the older half — a summable (geometric-class) tail, genuinely closing on a limit |
+| `improving` | ≥ 4 samples, **decreasing** raw steps whose mean *and* max contract to ≤ 0.7× the older half — lower is better; a summable (geometric-class) tail genuinely closing on a limit |
 | `diverging` | value at the saturation ceiling (any window fill), or non-vanishing same-sign raw steps (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
 | `oscillating` | ≥ 4 deadband sign-flips of `rel`; or non-vanishing raw alternation (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
 
@@ -515,6 +514,11 @@ gray region.
 full-window one.
 
 ### `improving` (kind 2)
+
+This section defines the entropy-channel predicate. The routed numeric
+predicate is the directional band in the numeric table above: values must be
+decreasing because `improving` follows the ML loss convention that lower is
+better. Contracting upward steps never qualify, including growth to a plateau.
 
 ```
 count >= 3

@@ -244,7 +244,9 @@ Python or JS hand-rolls — see
 > **What `improving` and the rest actually mean.** For numbers the
 > trajectory words read the value's own motion (#861): `converged` is the
 > standard stopping criterion — steps settled under a tolerance — and
-> `improving` means the steps are contracting toward a limit. For
+> `improving` uses the ML loss convention that lower is better: the value
+> must be decreasing, with steps contracting toward a limit. Growth is never
+> improving, even when it rises toward a plateau. For
 > non-numeric values the observer's entropy reading applies — a value
 > locating itself *from the inside*, with no external goal. The full
 > [docs/OBSERVER.md](docs/OBSERVER.md); the precise predicate semantics
