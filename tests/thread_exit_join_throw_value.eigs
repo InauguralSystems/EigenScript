@@ -1,0 +1,11 @@
+# #1745: a user throw keeps its structured value across the OS-thread
+# boundary; the joiner must not receive a reconstructed error dictionary.
+define die() as:
+    throw of {"code": 7, "msg": "boom"}
+h is spawn of die
+try:
+    thread_join of h
+catch e:
+    assert of [e["code"] == 7, "thread join preserves thrown value"]
+    print of "JOIN_VALUE_CAUGHT"
+print of "MARK_END"

@@ -2,9 +2,9 @@
 
 EigenScript has real OS-thread concurrency: `spawn` runs a closure on a new
 thread, `channel`/`send`/`recv` pass messages between threads, and `thread_join`
-waits for a worker and returns its result. This document is the contract for
-what is shared, what is copied, and what that costs — the questions a static
-type cannot answer for you.
+waits for a worker and returns its result, or re-raises its error. This
+document is the contract for what is shared, what is copied, and what that
+costs — the questions a static type cannot answer for you.
 
 Closures may capture bindings and containers by reference. **Any concurrent
 access to one of those shared bindings or containers is undefined, including
@@ -19,7 +19,8 @@ before reading them.
 ## The one rule: VALUES copy, HANDLES share
 
 **A value sent through a channel, or returned through `thread_join`, is COPIED**
-(`val_clone_for_send`). Numbers, strings, lists, dicts, buffers, and text
+(`val_clone_for_send`), and so is a value a worker `throw`s when `thread_join`
+re-raises it (#1745). Numbers, strings, lists, dicts, buffers, and text
 builders are share-nothing: the receiver gets an independent deep copy, so
 mutating the original after you send it cannot be observed by the other thread.
 
@@ -574,7 +575,8 @@ What happens next depends on whether anything can still observe that error:
 | A **detached** task dies of an uncaught error | **Fail fast**: its trace prints and the program stops at main's next scheduling point, or in the exit drain if main never yields | 1 |
 | A task dies, **then** is detached | The program stops at that `task_detach` call: detaching would discard an error the runtime already holds | 1 |
 | A **joinable** task dies and is not yet joined | Unchanged (#493): main continues, and a later `try`/`catch` around `task_join` recovers the error; if it is never joined, the run still fails at exit | 1, or 0 if caught |
-| An **OS thread** (`spawn`) dies | Unchanged (#1112): main completes | 1 |
+| An **OS thread** (`spawn`) dies and is **never joined** | Unchanged (#1112): main completes, and the run still fails at exit | 1 |
+| An **OS thread** dies and is **joined** | **Raised at the join** (#1745): `thread_join` re-raises the worker's error in the joiner, with its kind and message, or as the value the worker threw. Catching it observes the failure, as catching a failed `task_join` does | 1, or 0 if caught |
 
 **Why the line is `detached`.** A task id is a plain number: a program can
 rebuild one by arithmetic and still join through it, so the runtime can never
@@ -604,7 +606,7 @@ recorded run and its replay stop at the same instruction. Suite section
 [104b] pins both stops on the trace tape, with the moment of death chosen by a
 taped `random_int`; the section is `tests/sections/104b-task-death-fail-fast-1736.sh`.
 
-**Why OS threads stay as they are.** Thread scheduling is not on the trace tape
+**Why OS threads get no fail-fast.** Thread scheduling is not on the trace tape
 (#148, see "Replay boundary" below). Measured on #1736: across 8 identical
 runs, a worker's failure surfaced anywhere from line 9 to line 42 of main's
 output while main's own tape stream stayed byte-identical. A fail-fast stop
@@ -613,10 +615,24 @@ Closing that waits on per-thread tape streams (#1142). Until then, a
 long-running main that must stop when a worker fails should catch the error in
 the worker and call `exit of 1`, which does stop the whole state.
 
+**Why a join can raise.** A join is a point in main's own program order, not a
+moment in the worker's schedule. `thread_join` waits for the worker to finish
+and only then raises, so the error comes out at that call on every run,
+whether the worker died before main got there or while main waited in it. Only
+the raise is ordered: where the worker's own trace lands among main's output
+still varies from run to run, which is why the death itself cannot stop main.
+What crosses the join is copied, as a channel send is: the error's kind and
+message, or the value the worker `throw`s. Catching the join counts as
+observing the failure, so the run no longer fails at exit, exactly as catching
+a failed `task_join` does (#493). A raise nobody catches stops main at the
+join with the worker's error, and a worker nothing joins still fails the run
+at exit. Suite sections [103b] and [104b] pin both thread rows
+(`tests/thread_exit_*.eigs`, `tests/task_exit_thread_*.eigs`).
+
 **The stop is per thread.** Cooperative tasks live on the thread that spawned
 them, and so does the stop: a detached task that dies inside a `spawn`ed
 worker ends that worker's evaluation, and main sees a thread death — the last
-row.
+two rows.
 
 **A detached task that must survive its own errors catches them.**
 Fire-and-forget does not mean failure-and-forget:
@@ -687,10 +703,14 @@ worker alike: `spawn of [recv, ch]` under `EIGS_REPLAY` prints the diagnostic
 and the process exits 1 (#1112 — it died by SIGSEGV before, because a worker
 that runs a builtin directly has no VM and the uncaught-error printer read
 it). The general rule behind that status: a `spawn`ed worker that dies of an
-uncaught error fails the run, joined or not, with the exit status an unjoined
-cooperative task gets (#493), but it does not stop main the way a detached
-task's death does (#1736, see "When a task dies of an uncaught error" above);
-an error caught inside the worker recovers normally. A worker's
+uncaught error fails the run if it is never joined, with the exit status an
+unjoined cooperative task gets (#493), but it does not stop main the way a
+detached task's death does (#1736, see "When a task dies of an uncaught error"
+above). `thread_join` re-raises the dead worker's error at the join site, with
+the same kind and message (or the same thrown value, copied across as a channel
+send copies it, #1745); catching that join observes the failure, so the run can
+exit successfully, just as catching a failed `task_join` does. An error caught
+inside the worker recovers normally. A worker's
 `exit of N` instead requests an uncatchable stop of the whole state. The first
 request supplies the process status. VM threads observe it at loop back edges
 and builtin returns; blocked `recv`, `recv_timeout`, `thread_join`, and

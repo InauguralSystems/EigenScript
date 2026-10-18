@@ -1,0 +1,6 @@
+# #1745: preserving the existing fire-and-forget rule: an unjoined worker's
+# uncaught death still makes an otherwise completed run exit 1.
+define die() as:
+    missing_thread_unjoined
+h is spawn of die
+print of "MARK_END"

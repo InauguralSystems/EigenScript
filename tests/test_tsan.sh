@@ -87,6 +87,21 @@ for t in $SLICE; do
     fi
 done
 
+echo "=== thread worker error handoff must be race-free (#1745) ==="
+for row in "thread_exit_join_catch.eigs:0:JOIN_CAUGHT" \
+           "thread_exit_join_throw_value.eigs:0:JOIN_VALUE_CAUGHT" \
+           "thread_exit_join_uncaught.eigs:1:missing_thread_join_uncaught" \
+           "thread_exit_unjoined_death.eigs:1:MARK_END"; do
+    f=${row%%:*}; rest=${row#*:}; want=${rest%%:*}; marker=${rest#*:}
+    tsan_warnings "$TESTS_DIR/$f"
+    if [ "$WARNINGS" -eq 0 ] && [ "$LAST_RC" -eq "$want" ] && \
+       printf '%s\n' "$RUN_OUTPUT" | grep -q "$marker"; then
+        echo "  PASS: $f error handoff TSan-clean (rc=$LAST_RC)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $f warnings=$WARNINGS rc=$LAST_RC (want $want)"; FAIL=$((FAIL + 1))
+    fi
+done
+
 echo "=== concurrent random streams have no races or duplicate draws (#1150) ==="
 RANDOM_MT="$TESTS_DIR/random_mt_no_duplicates.eigs"
 for run in 1 2 3; do

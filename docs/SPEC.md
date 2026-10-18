@@ -2073,10 +2073,12 @@ catch e:
 value: thread_join: thread handle 1 has already been joined
 ```
 
-A worker that **dies of an uncaught error** prints its trace and the
-**process exits non-zero** (status 1) whether or not anything ever
-`thread_join`s it — the same rule as cooperative tasks below (#493), so a
+A worker that **dies of an uncaught error** prints its trace. If nothing ever
+`thread_join`s it, the **process exits non-zero** (status 1), so a
 fire-and-forget thread's failure is never swallowed into a success exit.
+Joining re-raises the same error kind and message at the join site; catching
+that raise observes the failure and permits exit 0, matching cooperative tasks
+below (#493).
 This covers a builtin spawned directly (`spawn of [recv, 5]` raises
 "invalid channel" on the worker) as well as a function body. An error
 `catch`-ed inside the worker recovers normally (exit 0). A worker's
