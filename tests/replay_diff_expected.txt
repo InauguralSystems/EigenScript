@@ -1,9 +1,4 @@
 # tests/replay_diff_expected.txt -- the programs whose record-vs-replay output
 # diverges reproducibly (tools/replay_diff.sh). A ledger to work down: a row
 # is a fidelity hole, with its issue on the line above it.
-#
-# test_audio.eigs -- #1803: audio_noise is not taped. Reached since the run
-# conditions (EIGS_STRICT=0) carried test_audio past its first strict raise;
-# it diverges on CI (job 116494830590) and not on the 4 GB dev box.
-test_audio.eigs
 test_store_corruption.eigs
