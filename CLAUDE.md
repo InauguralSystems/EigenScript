@@ -36,10 +36,12 @@ ours onto the new main. Rebasing our own costs nothing; asking them does. (Only
 ## Build & test
 
 ```
-make            # release build -> build/release/, src/eigenscript hard-links to it (HTTP/MODEL/DB off)
+make            # release -> build/release/eigenscript; gfx on, HTTP/MODEL/DB off
 make test       # build + full suite (tests/run_all_tests.sh)
 make test-changed  # only the sections your diff vs origin/main touches (#1347; CI runs the rest)
-make asan       # ASan+UBSan build — extensions OFF
+make asan       # ASan+UBSan -> build/asan/eigenscript; gfx on, HTTP/MODEL/DB off
+make gfx        # compatibility alias for make (no build/gfx/ artifact)
+make asan-gfx   # compatibility alias for make asan (no build/asan-gfx/ artifact)
 make asan-http  # ASan+UBSan *with* ext_http+model (CI gate; leaks still need RSS, see #731)
 make tsan-http  # TSan *with* ext_http+model+net (CI gate: EIGS_SUITE_SECTIONS='44 45a 45b', #1139)
 make http       # http+model variant — run tests/test_http_server.sh
@@ -53,6 +55,12 @@ bash tools/embed_stack_soak.sh  # embed REPL soak inside a 64 KiB stack rlimit (
 bash tools/consumer_acceptance.sh plan            # pinned consumers' CI commands or four explicit declarations; plan can print a full command
 bash tools/consumer_acceptance.sh run src/eigenscript   # run them serially against a candidate; record -> reports/consumer_acceptance/
 ```
+
+The Makefile's `SRC_V_*`, `FLAGS_*` and target prerequisites are the authority
+for profile features and artifact locations. Graphics is compiled into the
+hosted release and ASan profiles; SDL2 is loaded only when needed at runtime.
+For the direct-output `build.sh` profiles and how they differ from Make,
+see [Build from Source](README.md#build-from-source).
 
 - The suite must pass **both** release and ASan with leaks on:
   `make asan && cd tests && ASAN_OPTIONS=detect_leaks=1 bash run_all_tests.sh`

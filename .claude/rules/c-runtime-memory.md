@@ -53,8 +53,13 @@ iteration, or a collector that quietly stops working).
   touch `ext_http.c`, compile-check with `make http` — and **sanitize** it with
   `make asan-http` (ext_http + model under ASan/UBSan; CI runs the suite that
   way, and the HTTP sections are probe-gated so they pull in automatically).
-  Same for `ext_gfx.c` — in **no** default build; compile-check with
-  `make gfx`. Variants coexist in per-variant `build/<variant>/` objdirs
+  `ext_gfx.c` is included in the hosted release (`make`) and ASan (`make asan`)
+  profiles; SDL2 is lazy-loaded at runtime. `make gfx` aliases the release
+  build, and `make asan-gfx` aliases `make asan`: their artifacts are
+  `build/release/eigenscript` and `build/asan/eigenscript`, respectively,
+  with no separate graphics objdir. The Makefile's `SRC_V_*`, `FLAGS_*`
+  and target prerequisites define each profile. Variants coexist in
+  per-variant `build/<variant>/` objdirs
   (#740); `src/eigenscript` is a hard link to the last-built one, so a
   rebuild no longer destroys another variant's binary — but running any
   `make` variant target mid-suite still re-points the alias under the
