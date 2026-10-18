@@ -156,7 +156,7 @@ static int store_nonfinite_sentinel(const char *s, double *out) {
 /* Buffer elements use the 17-significant-digit form, as trace.c's buffer tape
  * encoding does: %.17g is the shortest width that round-trips a double
  * bit-exactly, and a buffer holding samples or weights would otherwise come
- * back subtly altered. (VAL_NUM's own %d/%.15g encoding is untouched.) */
+ * back subtly altered. (VAL_FLOAT's own %d/%.15g encoding is untouched.) */
 static void store_json_encode_buf_elem(strbuf *out, double d) {
     if (isnan(d)) { strbuf_append(out, "\"nan\""); return; }
     if (isinf(d)) { strbuf_append(out, d < 0 ? "\"-inf\"" : "\"inf\""); return; }
@@ -192,7 +192,7 @@ static void store_json_encode(Value *v, strbuf *out) {
         return;
     }
     switch (v->type) {
-        case VAL_NUM: {
+        case VAL_FLOAT: {
             double n = eigs_num_arg(v, __func__);
             /* #816: magnitude BEFORE the narrowing cast (same class as
              * #695) — converting a double beyond int's range is UB, and
@@ -370,7 +370,7 @@ static Value* store_buffer_from_tag(Value *dict) {
 
     Value *rv = list_get_view(shape, 0, &(EigsView){{0}});
     Value *cv = list_get_view(shape, 1, &(EigsView){{0}});
-    if (!rv || rv->type != VAL_NUM || !cv || cv->type != VAL_NUM) return NULL;
+    if (!rv || !val_is_number(rv) || !cv || !val_is_number(cv)) return NULL;
 
     /* Range-gate BEFORE narrowing. A stored shape is whatever double the file
      * holds, and (int)d is undefined when d is outside int's range (C11
@@ -400,7 +400,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     for (int i = 0; i < count; i++) {
         Value *e = list_get_view(body, i, &(EigsView){{0}});
         if (!e) return NULL;
-        if (e->type == VAL_NUM) continue;
+        if (val_is_number(e)) continue;
         if (e->type == VAL_STR && store_nonfinite_sentinel(e->data.str, NULL)) continue;
         return NULL;
     }
@@ -415,7 +415,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     for (int i = 0; i < count; i++) {
         Value *e = list_get_view(body, i, &(EigsView){{0}});
         double d = 0;
-        if (e->type == VAL_NUM) d = eigs_num_arg(e, __func__);
+        if (val_is_number(e)) d = eigs_num_arg(e, __func__);
         else store_nonfinite_sentinel(e->data.str, &d);
         buf->data.buffer.data[i] = d;
     }
@@ -753,7 +753,7 @@ static int store_load_catalog(Store *store) {
         }
         Value *rv = store_dict_get_view(col, "root", &(EigsView){{0}});
         Value *nv = store_dict_get_view(col, "next_id", &(EigsView){{0}});
-        if (!rv || rv->type != VAL_NUM || !nv || nv->type != VAL_NUM) {
+        if (!rv || !val_is_number(rv) || !nv || !val_is_number(nv)) {
             fprintf(stderr, "store_open: collection '%s' missing root or next_id\n", name);
             free(visited);
             return -1;
@@ -825,10 +825,10 @@ static Store* get_store_why(Value *v, int *why, int *out_id) {
     *out_id = 0;
     if (!v || v->type != VAL_DICT) return NULL;
     Value *sv = store_dict_get_view(v, "_store_id", &(EigsView){{0}});
-    if (!sv || sv->type != VAL_NUM) return NULL;
+    if (!sv || !val_is_number(sv)) return NULL;
     *out_id = (int)eigs_num_arg(sv, __func__);
     Value *gv = store_dict_get_view(v, "_store_gen", &(EigsView){{0}});
-    uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
+    uint32_t gen = (gv && val_is_number(gv)) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
     return (Store*)handle_lookup(*out_id, gen, HANDLE_STORE, why);
 }
 
@@ -990,9 +990,9 @@ static Value* builtin_store_close(Value *arg) {
     /* Release handle BEFORE freeing memory to prevent use-after-free
      * if another thread calls get_store() concurrently. */
     Value *id_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_id", &(EigsView){{0}}) : NULL;
-    int hid = (id_val && id_val->type == VAL_NUM) ? (int)eigs_num_arg(id_val, __func__) : -1;
+    int hid = (id_val && val_is_number(id_val)) ? (int)eigs_num_arg(id_val, __func__) : -1;
     Value *g_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_gen", &(EigsView){{0}}) : NULL;
-    uint32_t hgen = (g_val && g_val->type == VAL_NUM) ? (uint32_t)eigs_num_arg(g_val, __func__) : 0;
+    uint32_t hgen = (g_val && val_is_number(g_val)) ? (uint32_t)eigs_num_arg(g_val, __func__) : 0;
     handle_release(hid, hgen);
     store->dirty = 1; /* Force flush */
     store_flush_catalog(store);
@@ -1190,7 +1190,7 @@ static Value* builtin_store_get(Value *arg) {
     if (key_val->type == VAL_STR) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
-    } else if (key_val->type == VAL_NUM) {
+    } else if (val_is_number(key_val)) {
         snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
     } else {
         return make_null();
@@ -1354,7 +1354,7 @@ static Value* builtin_store_delete(Value *arg) {
     if (key_val->type == VAL_STR) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
-    } else if (key_val->type == VAL_NUM) {
+    } else if (val_is_number(key_val)) {
         snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
@@ -1510,7 +1510,7 @@ static Value* builtin_store_update(Value *arg) {
     if (key_val->type == VAL_STR) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
-    } else if (key_val->type == VAL_NUM) {
+    } else if (val_is_number(key_val)) {
         snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
