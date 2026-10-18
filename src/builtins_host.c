@@ -215,7 +215,7 @@ Value* builtin_stream_open(Value *arg) {
     Value *path_val = list_get_view(arg, 0, &path_val_view);
     EIGS_VIEW(count_val_view);
     Value *count_val = list_get_view(arg, 1, &count_val_view);
-    ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM,
+    ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || !val_is_number(count_val),
               "stream_open", "[a string path, a number count]", make_bool(0));
     if (eigs_num_arg(count_val, __func__) < 1 ||
         eigs_num_arg(count_val, __func__) > EIGS_TENSOR_MAX_ELEMENTS ||
@@ -252,7 +252,7 @@ Value* builtin_stream_write(Value *arg) {
      * state, and strict must not report it as a type error. Both halves still
      * answer make_bool(0) with strict off, in either order, so the non-strict
      * result is unchanged. */
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "stream_write", "a number", make_bool(0));
+    ARG_GUARD(!arg || !val_is_number(arg), "stream_write", "a number", make_bool(0));
     /* fs:ANSWER no stream is open — the state, not the argument (which the
      * guard above already accepted); 0 is the failure bit paired with the
      * make_bool(1) success value below. */
@@ -410,7 +410,7 @@ Value* builtin_build_corpus(Value *arg) {
 
     if (!file_list || file_list->type != VAL_LIST) return make_null();
     BOOL_REFUSE(topn_val, "build_corpus");
-    if (!topn_val || topn_val->type != VAL_NUM) return make_null();
+    if (!topn_val || !val_is_number(topn_val)) return make_null();
     if (!stream_path_val || stream_path_val->type != VAL_STR) return make_null();
     if (!vocab_path_val || vocab_path_val->type != VAL_STR) return make_null();
 
@@ -1103,7 +1103,7 @@ Value* builtin_read_bytes_buf(Value *arg) {
         if (arg->data.list.count >= 2) {
             EIGS_VIEW(mv_view);
             Value *mv = list_get_view(arg, 1, &mv_view);
-            if (!mv || mv->type != VAL_NUM) {
+            if (!mv || !val_is_number(mv)) {
                 rt_error(EK_VALUE, 0, "read_bytes_buf: max_bytes must be a number");
                 return make_null();
             }
@@ -1121,14 +1121,14 @@ Value* builtin_read_bytes_buf(Value *arg) {
 
     /* Tape boundary. Success records the VAL_BUFFER; unopenable file
      * records null; the over-cap raise records the observed SIZE as a
-     * VAL_NUM N record (unambiguous — no other path records a number) so
+     * VAL_FLOAT N record (unambiguous — no other path records a number) so
      * the identical raise is re-derived under EIGS_REPLAY without
      * touching the live filesystem. */
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *tv;
         if (trace_replay_refuse_off_owner("read_bytes_buf")) return make_null();
         if (trace_replay_take("read_bytes_buf", &tv)) {
-            if (tv && tv->type == VAL_NUM) {
+            if (tv && val_is_number(tv)) {
                 long long len = (long long)eigs_num_arg(tv, __func__);
                 val_decref(tv);
                 read_bytes_buf_cap_raise(path->data.str, len, cap);
@@ -1287,7 +1287,7 @@ Value* builtin_exec_capture(Value *arg) {
     Value *cmd_list = arg;
     if (arg->data.list.count == 2
         && list_elem_type(arg, 0) == VAL_LIST
-        && list_elem_type(arg, 1) == VAL_NUM) {
+        && (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)) {
         cmd_list = list_get_ref(arg, 0);
         timeout_sec = eigs_list_num(arg, 1, __func__);
         ARG_GUARD(cmd_list->data.list.count < 1,
@@ -1438,7 +1438,7 @@ Value* builtin_proc_read_buf(Value *arg) {
     Value *fd_v  = list_get_view(arg, 0, &fd_v_view);
     EIGS_VIEW(max_v_view);
     Value *max_v = list_get_view(arg, 1, &max_v_view);
-    if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
+    if (!fd_v || !val_is_number(fd_v) || !max_v || !val_is_number(max_v))
         return make_null();
     int fd = (int)eigs_num_arg(fd_v, __func__);
     int max = (int)eigs_num_arg(max_v, __func__);
@@ -1472,8 +1472,8 @@ Value* builtin_proc_read_buf(Value *arg) {
 Value* builtin_random_hex(Value *arg) {
     /* #971 Phase D: a non-number length answered "" (as does a length of 0,
      * which stays the answer). Taped: the soft half records as before. */
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_NUM, "random_hex", "a number of hex digits", make_str(""));
-    int n = (arg && arg->type == VAL_NUM) ? (int)eigs_num_arg(arg, __func__) : 0;
+    ARG_GUARD_TAPED(!arg || !val_is_number(arg), "random_hex", "a number of hex digits", make_str(""));
+    int n = (arg && val_is_number(arg)) ? (int)eigs_num_arg(arg, __func__) : 0;
     if (n <= 0 || n > 256) TRACE_NONDET_RET("random_hex", make_str(""));
     int bytes_needed = (n + 1) / 2;
     unsigned char raw[128];
@@ -1537,7 +1537,7 @@ Value* builtin_write_bytes(Value *arg) {
          * two zero bytes and reported success. Same class as join/str_replace
          * — no stand-in return, so invisible to the classifier. The free()
          * matters: STRICT_REQUIRE returns, and `out` is already allocated. */
-        if (data->type == VAL_LIST && list_elem_type(data, i) != VAL_NUM
+        if (data->type == VAL_LIST && (list_elem_type(data, i) != VAL_FLOAT && list_elem_type(data, i) != VAL_INT)
             && (g_strict || list_elem_type(data, i) == VAL_BOOL)) {   /* #1637: a bool in every mode */
             free(out);
             rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
