@@ -1093,7 +1093,8 @@ selftest() {
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/runner_text.sh" \
        "$SP_ROOT/tools/read_werror_flags.sh" \
        "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
-    cp "$SP_ROOT/tests/failure_output.sh" "$SP_ROOT/tests/suite_plan.sh" \
+    cp "$SP_ROOT/tests/diagnostic_capture.sh" "$SP_ROOT/tests/failure_output.sh" \
+       "$SP_ROOT/tests/suite_plan.sh" \
        "$SP_ROOT/tests/suite_program_env.sh" "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
     printf '#!/bin/sh\nexit 0\n' > "$stub/src/eigenscript"
