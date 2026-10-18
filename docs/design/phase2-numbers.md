@@ -882,8 +882,9 @@ its family, `buf_num_arg`, `make_num`/`make_num_permanent`, the container
 `buffer_read_num`. Through R1.5 they keep exactly today's meaning: a number
 read is a double (an int converts, as every number already is on the tag), a
 number produced is a float. R1.6 deletes the bridge, so every builtin site
-stops compiling in the commit that gives it its §6 semantics. R1.2 touches
-no builtin's behaviour.
+stops compiling in the commit that gives it its §6 semantics. R1.2 changes no reachable builtin behaviour: no int exists yet. Its exact
+sort and JSON text reader arms are the explicit exceptions to the bridge
+policy below; they retain final int semantics instead of converting to double.
 
 | commit | meaning change | token change in that commit | a missed site |
 |---|---|---|---|
@@ -901,7 +902,7 @@ no builtin's behaviour.
 catches a miss:
 - **R1.3, the int arms written in R1.1 and R1.2 go live.** They were forced
   then and written with their final semantics while no int could reach them.
-  Gate: R1.3's 42 MAP rows and the C slot test; and the int-source check
+  Gate: R1.3's 44 MAP rows and the C slot test; and the int-source check
   (§8) proves nothing before R1.3 could produce an int, so nothing earlier
   could have exercised an unfinished arm. The R1.1 arms that could not be
   final (`unwired`, 2.5) are token-forced instead: R1.3 deletes
@@ -1255,7 +1256,19 @@ exactly as an int. That is the path the bar critic found missing: payload
     (§2.6). (Byte consumers, which truncated and wrapped modulo 256 here in
     round 0, are int-requiring under Q1.)
 
-**The `loss` column.** `LOSS` marks a builtin whose *current* body reads its
+**Exact readers completed in R1.2.** `sort` and `sort_by` compare int
+values and numeric keys exactly, and `json_build` and `json_path` format an
+int as exact digits. These final semantics are retained: rounding through
+the double bridge would lose information above 2^53 (principle 2, No silent
+wrong answers). The sort comparators and `json_build` become reachable with
+R1.3's first int literals, so MAP `N2.sort-exact` is R1.3. `json_path`'s
+reader is ready too; its parser still starts producing integer values in
+R1.6. Float formatting stays on its existing path until R1.7, and the
+remaining builtin readers keep the bridge until R1.6.
+
+**The `loss` column.** This records the original inventory tree's risk,
+rather than remaining work in R1.2; the completed readers above retain their
+historical marks. `LOSS` marks a builtin whose inventoried body reads its
 argument through a double accessor, or builds its result from a computed
 double, on a path where its class needs an exact int. An int beyond 2^53
 would then come out silently wrong if the body were kept and its accessor
@@ -1441,10 +1454,10 @@ current state behind several rows:
 | `index_of` | int-preserving | - | - | byte index or -1 |
 | `inflate` | int-requiring | - | - | byte values: N5, then 0..255 (Q1; the modulo-256 wrap is gone) |
 | `join` | other | - | - | elements via value_to_string (N6) |
-| `json_build` | other | LOSS | - | N14 encoder; reads values through eigs_num_arg (a double) |
+| `json_build` | other | LOSS | - | N14 encoder; exact int text arm written in R1.2, live from R1.3; float text stays on the bridge until R1.7 |
 | `json_decode` | other | LOSS | - | N14 decoder; integer text decodes through strtod (a double) |
 | `json_encode` | other | LOSS | - | N13/N14 encoder; reads values through eigs_num_arg; its `default:` writes null (builtins.c:998) |
-| `json_path` | other | LOSS | - | decodes with strtod, then formats (N14, N6) |
+| `json_path` | other | LOSS | - | exact int text reader written in R1.2; decoder int production remains R1.6, float text R1.7 (N14, N6) |
 | `leaky_relu` | float-producing | - | - | ML activation (float tensors; no Lua counterpart) |
 | `len` | int-preserving | - | - | count (Lua `#` is an integer) |
 | `list_contains` | other | - | - | equality via values_equal (N2) |
@@ -1519,8 +1532,8 @@ current state behind several rows:
 | `sign_extend` | int-requiring | LOSS | - | `(int64_t)` of a double |
 | `sin` | float-producing | - | - | Lua math.sin |
 | `softmax` | float-producing | - | - | ML (float) |
-| `sort` | other | LOSS | - | sort_cmp_num compares doubles: ints beyond 2^53 tie (N2 needs exact); from R2.2 floats sort by IEEE totalOrder, NaN after +inf (Q8) |
-| `sort_by` | other | LOSS | - | key results compared as doubles; from R2.2 by IEEE totalOrder, NaN after +inf (Q8) |
+| `sort` | other | LOSS | - | exact int comparator written in R1.2, live from R1.3 (N2.sort-exact); from R2.2 floats sort by IEEE totalOrder, NaN after +inf (Q8) |
+| `sort_by` | other | LOSS | - | numeric key kind retained for exact comparison in R1.2, live from R1.3; from R2.2 by IEEE totalOrder, NaN after +inf (Q8) |
 | `spawn` | int-preserving | - | - | handle dict with int id/gen fields |
 | `sqrt` | float-producing | - | - | Lua math.sqrt; sqrt of -1 is NaN (N11) |
 | `state_at` | int-requiring | - | - | step index |
@@ -1867,7 +1880,7 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
 | the tape | R1.3: v7 writer and parser | ints as digits, floats marked as floats; a v6 tape is refused |
 | the JIT | nothing to convert: its guards bail on an SMI or a `VAL_INT` box (§4.1), and its scanner refuses `OP_INT_*` | interpreted |
 | the leaf evaluator | R1.1 (its arithmetic and index arms bail) | the generic path computes it |
-| builtins | the bridge (R1.2's number tests admit ints) | a double, exactly as the tag sees every number, until R1.6 |
+| builtins | R1.2's number tests admit ints; most readers retain the bridge | a double until R1.6, except the exact `sort`/`sort_by` comparators and `json_build` text reader (§6); `json_path`'s exact text reader is also complete, awaiting decoder int production in R1.6 |
 | JSON, store and db encoders | R1.2a (their `VAL_INT` arms) | exact digits |
 | the embed API (`eigs_value_as_num`) | R1.2 (its forced `VAL_NUM` test) | converts to a double (Q3) |
 | lint and the LSP | R1.3 (the AST payload rename) | the literal's kind |
@@ -1901,8 +1914,10 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      silently.
    - R1.2b-n: one commit per file group. Each forced site gets its final
      int arm (dead until R1.3), and a builtin's number test admits an int
-     and reads it through the bridge (§2.7). The bridge's names are NOT
-     touched: no builtin's behaviour changes. 464 sites first forced.
+     and normally reads it through the bridge (§2.7). The exact sorting and
+     JSON text readers are completed here (§6), to avoid a later lossy
+     conversion. The bridge's names are NOT touched; no behaviour changes
+     before ints exist. 464 sites first forced.
    - R1.2z: delete the deprecated aliases. A straggler fails to compile.
    - Gates (a mechanical round, zero MAP rows): the compile errors; the
      differential over the suite's `.eigs` corpus (identical to the
@@ -1915,6 +1930,8 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      CASEs; the JIT and leaf scanners refuse them by their `default:`);
      `make_int` is introduced. `OP_NUM_ZERO`/`OP_NUM_ONE`/`OP_CONST` keep
      their float meaning in all three executors.
+   - The exact `sort`/`sort_by` comparators and `json_build` reader written
+     in R1.2 go live; `N2.sort-exact` is checked here, not R1.6 (§6).
    - N3 with (A), N2's exact cross-kind comparison, N4b `-x`, N7 `num_type`;
      EQ/NE's only bit fast path is "both SMI" (§2.1).
    - The JIT scanner refuses `BAND`/`BOR`/`BXOR`/`SHL`/`SHR`/`BNOT`/`MOD`.
@@ -2154,10 +2171,10 @@ failing on zero rows:
 |---|---:|---|
 | R1.1 | 0 | mechanical: the compile errors (223 sites), the C slot test (§2.5; `examined` equals the derived classifier count), plant 1, the int-source check, and the differential over the suite's `.eigs` corpus |
 | R1.2 | 0 | mechanical: the compile errors (464 sites), the int-source check, and the differential over the suite's `.eigs` corpus (behaviour-preserving) |
-| R1.3 | 43 | |
+| R1.3 | 44 | |
 | R1.4 | 6 | |
 | R1.5 | 7 | |
-| R1.6 | 18 | `gate.N5.q7-readers`, and the per-builtin behaviour table (§9.4) |
+| R1.6 | 17 | `gate.N5.q7-readers`, and the per-builtin behaviour table (§9.4) |
 | R1.7 | 12 | `gate.N14.db-param-exact` |
 | R1.8 | 0 | `gate.N7.embed-int` (the embed smoke test), the executed doc fences (suite [89]/[90]), the LSP and lint suite sections |
 | R2.1 | 0 | mechanical: the C slot test's NaN-payload rows and plant 2 (no program can make a NaN before R2.2) |

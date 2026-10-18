@@ -168,9 +168,10 @@ gates (design §9.2).
 - `N2.membership-exact` [R1.3] `print of [list_contains of [[9007199254740993], 9007199254740992.0], list_index_of of [[1, 9007199254740993], 9007199254740992.0]]`
   -> `[false, -1]`
   tag: `[true, 1]` (read: everything is a double)
-- `N2.sort-exact` [R1.6] `print of (sort of [9007199254740993, 9007199254740992, -1])`
+- `N2.sort-exact` [R1.3] `print of (sort of [9007199254740993, 9007199254740992, -1])`
   -> `[-1, 9007199254740992, 9007199254740993]`
   tag: the literal rounds, so `[-1, 9007199254740992, 9007199254740992]` (probed main, same shape)
+  round: R1.2 wrote the exact int comparator; the first int literals make it live in R1.3.
 - `N2.fn-exact-compare` [R1.3] `define lt(a, b) as: t is a < b / return t`, called 60 times with `[9007199254740992, 9007199254740993]`; print the last result
   -> `true`
   tag: `false` (probed main)
