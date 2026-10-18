@@ -189,10 +189,10 @@ void chunk_patch_jump(EigsChunk *chunk, int offset) {
  * Equality is EXACTLY the old linear scan's tests, so pools stay
  * byte-identical (the AOT oracle depends on that): NaN never equals
  * itself (each NaN appends), and -0.0 merges with +0.0 (they hash the
- * same and compare ==). Non-NUM/STR constants are never deduped. */
+ * same and compare ==). Only numeric and string constants are deduped; numeric kinds stay distinct. */
 static uint32_t const_hash_value(const Value *v) {
-    if (v->type == VAL_NUM) {
-        double d = VAL_NUM_RAW(v);
+    if (v->type == VAL_FLOAT) {
+        double d = VAL_F64_RAW(v);
         if (d == 0.0) d = 0.0;   /* fold -0.0 into +0.0, matching == */
         uint64_t bits;
         memcpy(&bits, &d, sizeof bits);
@@ -200,6 +200,13 @@ static uint32_t const_hash_value(const Value *v) {
         bits *= 0xff51afd7ed558ccdULL;
         bits ^= bits >> 33;
         return (uint32_t)bits;
+    }
+    if (v->type == VAL_INT) {
+        uint64_t bits = (uint64_t)VAL_I64_RAW(v);
+        bits ^= bits >> 33;
+        bits *= 0xff51afd7ed558ccdULL;
+        bits ^= bits >> 33;
+        return (uint32_t)bits ^ 0x9e3779b9u;   /* kind is part of a constant's key */
     }
     uint32_t h = 2166136261u;    /* FNV-1a */
     for (const char *p = v->data.str; *p; p++) {
@@ -210,8 +217,10 @@ static uint32_t const_hash_value(const Value *v) {
 }
 
 static int const_equal(const Value *a, const Value *b) {
-    if (a->type == VAL_NUM && b->type == VAL_NUM)
-        return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
+    if (a->type == VAL_FLOAT && b->type == VAL_FLOAT)
+        return VAL_F64_RAW(a) == VAL_F64_RAW(b);
+    if (a->type == VAL_INT && b->type == VAL_INT)
+        return VAL_I64_RAW(a) == VAL_I64_RAW(b);
     if (a->type == VAL_STR && b->type == VAL_STR)
         return strcmp(a->data.str, b->data.str) == 0;
     return 0;
@@ -231,7 +240,7 @@ static void const_dedup_grow(EigsChunk *c) {
     c->const_dedup_cap = new_cap;
     for (int i = 0; i < c->const_count; i++) {
         Value *v = c->constants[i];
-        if (v->type == VAL_NUM || v->type == VAL_STR)
+        if (val_is_number(v) || v->type == VAL_STR)
             const_dedup_insert(c, const_hash_value(v), i);
     }
 }
@@ -240,7 +249,7 @@ static int chunk_add_constant_ex(EigsChunk *chunk, Value *val, int dedup) {
     /* Deduplicate numbers and strings via the hash index — the linear
      * scan here was O(pool) per add: 92% of compile time on a 12k-name
      * generated program (#341). */
-    int hashable = (val->type == VAL_NUM || val->type == VAL_STR);
+    int hashable = (val_is_number(val) || val->type == VAL_STR);
     uint32_t h = 0;
     if (hashable) {
         if ((chunk->const_count + 1) * 2 > chunk->const_dedup_cap)
@@ -418,8 +427,10 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
                 fprintf(stderr, " %d", arg);
                 if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
                     Value *v = chunk->constants[arg];
-                    if (v->type == VAL_NUM)
-                        fprintf(stderr, " (%.6g)", VAL_NUM_RAW(v));
+                    if (v->type == VAL_FLOAT)
+                        fprintf(stderr, " (%.6g)", VAL_F64_RAW(v));
+                    else if (v->type == VAL_INT)
+                        fprintf(stderr, " (%lld)", (long long)VAL_I64_RAW(v));
                     else if (v->type == VAL_STR)
                         fprintf(stderr, " (\"%s\")", v->data.str);
                 }
@@ -1087,7 +1098,7 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
             if (ip + 2 > end) return;
             uint16_t idx = (uint16_t)(ip[0] | (ip[1] << 8)); ip += 2;
             if (idx >= (uint16_t)c->const_count) return;
-            if (c->constants[idx]->type != VAL_NUM) return;
+            if (c->constants[idx]->type != VAL_FLOAT) return;
             depth++;
             break;
         }

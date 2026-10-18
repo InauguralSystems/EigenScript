@@ -18,9 +18,9 @@ container.h|eigs_slot_num|1|required numeric accessor reads only after slot_is_f
 container.h|eigs_slot_opt_num|1|optional numeric accessor reads only after slot_is_f64
 container.h|list_get_num|1|accessor numeric fast path: reads the slot only behind its own slot_is_f64 test (#1665 arm D)
 container.h|list_get_return|1|builtin-return read boxes an immediate only after slot_is_f64
-chunk.c|chunk_disassemble|1|debug disassembly prints a constant behind its own type == VAL_NUM test
-chunk.c|const_equal|2|constant-pool dedup compares two constants after testing both are VAL_NUM
-chunk.c|const_hash_value|1|constant-pool hash of a constant inside its type == VAL_NUM branch
+chunk.c|chunk_disassemble|2|debug disassembly prints a constant behind its own type == VAL_NUM test
+chunk.c|const_equal|4|constant-pool dedup compares two constants after testing both are VAL_NUM
+chunk.c|const_hash_value|2|constant-pool hash of a constant inside its type == VAL_NUM branch
 eigenscript.c|chan_clone_rec|2|channel deep-copy, switch case VAL_NUM; case VAL_INT names the int it refuses (unwired, R1.3)
 eigenscript.c|compute_entropy_impl|2|observer entropy, switch case VAL_NUM, and case VAL_INT (an int's entropy is its double's, design 7)
 eigenscript.c|ent_child_slot|1|observer entropy reads an immediate only after slot_is_f64
