@@ -114,6 +114,10 @@ int main(int argc, char **argv) {
 
     if (strcmp(argv[1], "write") == 0) return io_contract(0) ? 0 : 1;
     if (strcmp(argv[1], "send") == 0) return io_contract(1) ? 0 : 1;
+    if (strcmp(argv[1], "exec_capture") == 0)
+        return run_eval("r is exec_capture of [\"printf\", \"captured\"]\n"
+                        "assert of [r[0] == 0, \"exec_capture failed\"]\n"
+                        "r[1]\n", "captured") ? 0 : 1;
     if (strcmp(argv[1], "early") == 0)
         return run_eval("http_early_bind of 0\n", "bound") ? 0 : 1;
     if (strcmp(argv[1], "serve") == 0) {

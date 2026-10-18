@@ -1,0 +1,1 @@
+- Pin exec_capture preserving the host SIGPIPE handler and inherited ignored disposition, including the closed-stdout print path.
