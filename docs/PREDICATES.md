@@ -62,7 +62,12 @@ one question per predicate.
 windowed tests of the last `N` observations. Two limits are inherent: a window
 cannot see the values after n that `converged` and `stable` ask about, nor the
 whole sequence that `oscillating` and `diverging` describe. Beyond that, the
-runtime answers a different question for one predicate:
+runtime answers a different question for two predicates:
+- `improving`: the directional band approximates the convention's new lower
+  best by more than `min_delta` within the window on an eventually bounded
+  sequence, but is narrower: it requires every raw step to be negative and
+  both the mean and maximum step magnitudes to contract to at most 0.7× their
+  values in the older half of the window.
 - `equilibrium`: the band tests that the window's relative steps have
   near-zero mean and variance, so a sequence whose steps have died down reads
   `equilibrium` although it is not constant (a decay settling on a limit,
