@@ -189,8 +189,12 @@ into real values on replay:
 - Buffers get a leading `b` — `b[1,2,3]` — to disambiguate from lists.
 - Each record has a 64 KiB byte budget. On overflow the record ends
   with a `…<truncated:RESIDUAL>` marker so partial records remain
-  visually parseable (truncated records are not replayable; the builtin
-  falls back to its live source).
+  visually parseable. A truncated record is not replayable: replay
+  refuses it with exit 3 and does not run the builtin live (measured on
+  a 4,410-element `random_normal` list and a 20,000-byte `read_bytes_buf`
+  buffer, #1803). A builtin whose answer can outgrow the budget either
+  bounds what one call returns (`audio_capture_read`, `net_recv`) or
+  splits the answer across records (`audio_noise`, below).
 
 ## Derived, Not Recorded: The Scheduler Trace (#846)
 
@@ -299,8 +303,8 @@ perspective lands on the tape as an `N` record:
   microphone; the recorded device id and sample buffers (the `b[…]`
   encoding) are served instead. `audio_capture_read` returns at most
   2048 samples per call precisely so every `N` record fits the 64 KiB
-  record budget — an over-budget record would be `…<truncated>` and
-  replay would silently fall back to the live microphone. Drain loops
+  record budget — an over-budget record would be `…<truncated>`, and
+  replay refuses a truncated record. Drain loops
   ("read until empty") replay faithfully: one record per call, empties
   included. (`audio_capture_close` is deterministic — always `null` —
   and untraced; under replay it is a no-op because no device was
@@ -310,6 +314,20 @@ perspective lands on the tape as an `N` record:
   environment-dependent return (`0` on a machine with no audio) can
   steer a branch differently on replay — is accepted for now; closing
   it would change how existing tapes replay.
+- **Audio noise (gfx extension, #1803):** `audio_noise`. Its samples are
+  drawn from the shared `drand48` stream behind `random`, so
+  `seed_random` pins them, and they are recorded. One call can return
+  far more samples than one record holds (about 3,000; a 30-second
+  burst is over a million), so a call writes consecutive
+  `N audio_noise=[…]` records of at most 2048 samples each. The first
+  record shorter than 2048 ends the call: a count that is a multiple of
+  2048 ends with an empty record, and an empty call records `[]`. Replay
+  takes the records before reading the sample rate (which `audio_open`
+  negotiates with the device), so the recorded samples are served
+  whatever rate the device gives. A rejected argument consumes no
+  record, as above. Before #1803 the samples came from libc `rand()`,
+  seeded from the clock and recorded nowhere, so a replay drew new ones
+  at exit 0.
 
 The hook is the `TRACE_NONDET_RET` macro in `src/trace.h`, used at
 every nondet return site — adding a new nondet builtin means wrapping
