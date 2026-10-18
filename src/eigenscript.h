@@ -1962,7 +1962,8 @@ static inline double num_guard_named(double x, const char *who) {
  * inside on GC-enabled / not-collecting / single-threaded. */
 void gc_note_possible_root(Value *v);
 
-static inline void val_incref(Value *v) {
+/* Keep reference acquisition inline as the numeric slow paths grow (#1758). */
+static inline __attribute__((always_inline)) void val_incref(Value *v) {
     if (v && v->type != VAL_NULL && v->type != VAL_BOOL) {
         if (__builtin_expect(g_vm_multithreaded, 0))
             __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);

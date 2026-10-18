@@ -26,7 +26,7 @@ static inline EigsSlot eigs_container_slot(Value *v) {
     if (v->type == VAL_FLOAT) return slot_from_f64(num_guard(VAL_F64_RAW(v)));
     /* #1758 (design 2.1): container storage is canonical -- a small int is
      * an SMI, and only an int outside [-2^47, 2^47) stays its box. */
-    if (v->type == VAL_INT) {
+    if (__builtin_expect(v->type == VAL_INT, 0)) {
         int64_t i = VAL_I64_RAW(v);
         return (i >= SLOT_SMI_MIN && i <= SLOT_SMI_MAX) ? slot_from_int(i) : slot_from_heap(v);
     }
@@ -172,14 +172,17 @@ static inline int eigs_slot_opt_num(EigsSlot s, double *out, const char *who) {
  * decrefing a numeric facade: its sentinel refcount must be unchanged.
  * #1758: an SMI's facade preserves its exact int Value kind. */
 static inline Value *slot_view(EigsSlot s, EigsView *view) {
-    if (slot_is_smi(s)) {
-        view->v.type = VAL_INT;
-        VAL_I64_RAW(&view->v) = slot_smi_val(s);
-        view->v.refcount = EIGS_VIEW_RC;
-        return &view->v;
+    /* Float storage exits before any int classification (#1758 cost gate). */
+    if (!slot_is_f64(s)) {
+        if (slot_is_smi(s)) {
+            view->v.type = VAL_INT;
+            VAL_I64_RAW(&view->v) = slot_smi_val(s);
+            view->v.refcount = EIGS_VIEW_RC;
+            return &view->v;
+        }
+        /* A heap VAL_INT is a real Value, returned as itself. */
+        if (slot_type(s) != VAL_FLOAT) return eigs_slot_ref(s);
     }
-    /* a heap VAL_INT box is a real Value: it is returned as itself */
-    if (!slot_is_f64(s) && slot_type(s) != VAL_FLOAT) return eigs_slot_ref(s);
     view->v.type = VAL_FLOAT;
     VAL_F64_RAW(&view->v) = slot_is_f64(s) ? SLOT_F64_RAW(s)
                                            : eigs_num_arg(slot_as_ptr(s), "slot_view");
@@ -193,8 +196,9 @@ static inline Value *dict_value_get_view(const Value *dict, int i, EigsView *vie
     return slot_view(dict_value_slot(dict, i), view);
 }
 static inline void eigs_view_check(EigsView *view) {
-    if ((view->v.type == VAL_FLOAT || view->v.type == VAL_INT) && view->v.refcount != 0 &&
-        view->v.refcount != EIGS_VIEW_RC) {
+    /* A valid facade (or an unused zero view) exits before kind checks. */
+    if (view->v.refcount != 0 && view->v.refcount != EIGS_VIEW_RC &&
+        (view->v.type == VAL_FLOAT || view->v.type == VAL_INT)) {
         fprintf(stderr, "%s:%d: EigenScript FATAL: numeric view refcount moved (%d)\n",
                 __FILE__, __LINE__, view->v.refcount);
         abort();

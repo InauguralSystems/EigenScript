@@ -70,7 +70,6 @@ vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_FLOAT && b->type == VAL
 vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|jit_helper_index_get|3|JIT helper: index read after slot_is_f64 / VAL_FLOAT tests on index and element
 vm.c|jit_helper_index_set|5|JIT helper: index store after slot_is_f64 / VAL_FLOAT tests on index and value
-vm.c|jit_helper_iter_next|2|JIT helper: loop state list [iterable, idx, snap] built by the VM, each read behind a VAL_FLOAT test
 vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|loop_iter_store|1|writes the loop counter slot after slot_is_f64
 vm.c|obs_dump_scope|1|SIGUSR1 observer dump after slot_is_f64

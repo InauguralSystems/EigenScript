@@ -67,7 +67,7 @@
 # MEMORY. No blanket cap (a 2 GiB `ulimit -v` made handles_full.eigs's 300
 # spawns fail at 134-214, which read as nondeterminism -- the R1.1 critic).
 # Only a file that drives the gfx/ui/audio surface runs under
-# `ulimit -v 2097152` (an unbounded GUI run can freeze the 4 GB box); the
+# `ulimit -v 1500000` (an unbounded GUI run can freeze the 4 GB box); the
 # capped files are listed.
 #
 # A file only the branch tree has (a new fixture) is counted as `new`; a file
@@ -217,7 +217,7 @@ run() {
     {
         (
             cd "$BR_ROOT/src" || exit 99
-            [ "$cap" = 1 ] && ulimit -v 2097152
+            [ "$cap" = 1 ] && ulimit -v 1500000
             suite_program_run "$rel" env -u XAUTHORITY DISPLAY=:99 SDL_AUDIODRIVER=dummy LD_PRELOAD="$SHIM" \
                 PHASE2_URANDOM_MARK="$out.urandom" "$extra" timeout 60 "$bin" "../$rel"
         ) < /dev/null > "$out.rawout" 2> "$out.rawerr"
@@ -352,7 +352,7 @@ sed 's/^/NONDET (the baseline disagrees with itself, and its tape replays too) /
 sed 's/^/BOTH-CRASH-OR-TIMEOUT /' "$TMP/crash"
 sed 's/^/SAME-NONZERO (declared: both binaries exit so; compared up to the exit) /' "$TMP/samenz"
 sed 's/^/UNPINNED (opened \/dev\/urandom: random_hex values are live, by design) /' "$TMP/urandom"
-sed 's/^/CAPPED (gfx\/ui\/audio: ulimit -v 2097152) /' "$TMP/capped"
+sed 's/^/CAPPED (gfx\/ui\/audio: ulimit -v 1500000) /' "$TMP/capped"
 summary="examined=$examined same=$nsame same_nonzero=$same_nonzero same_under_replay=$nreplay nondet=$nondet diff=$ndiff new=$new deleted=$deleted crash_both=$crash_both timeout_both=$timeout_both conditioned=$conditioned incomplete=$incomplete undeclared=$undeclared stale=$stale ledger_refused=$ledger_bad unpinned=$unpinned capped=$capped"
 DONE=1
 if [ -n "${PHASE2_DIFF_FILES:-}" ]; then

@@ -1791,13 +1791,17 @@ int jit_helper_iter_next(void) {
     Value *state = slot_as_ptr(state_slot);
     if (!state || state->type != VAL_LIST || state->data.list.count < 2)
         return 1;
-    EIGS_VIEW(iterable_view);
-    Value *iterable = list_get_view(state, 0, &iterable_view);
+    /* Iterables are reference values; a numeric facade cannot be iterable. */
+    Value *iterable = list_get_ref(state, 0);
+    double idx_num;
+    EigsSlot idx_slot = list_slot(state, 1);
+    if (!slot_f64_value(idx_slot, &idx_num)) {
+        if (slot_type(idx_slot) == VAL_INT)
+            eigs_int_unwired("jit_helper_iter_next index", 0);
+        return 1;
+    }
+    int idx = (int)idx_num;
     if (!iterable) return 1;
-    if (list_elem_type(state, 1) == VAL_INT)
-        eigs_int_unwired("jit_helper_iter_next index", 0);
-    if (list_elem_type(state, 1) != VAL_FLOAT) return 1;
-    int idx = (int)eigs_slot_num(list_slot(state, 1), "for");
     int len = 0;
     if (iterable->type == VAL_LIST)        len = iterable->data.list.count;
     else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -1805,13 +1809,15 @@ int jit_helper_iter_next(void) {
     /* #491: cap by the entry-time snapshot (items[2]) — see make_iter_state.
      * Mirrors CASE(ITER_NEXT). */
     if (state->data.list.count >= 3) {
-        EIGS_VIEW(snap_v_view);
-        Value *snap_v = list_get_view(state, 2, &snap_v_view);
-        if (snap_v && snap_v->type == VAL_INT)
-            eigs_int_unwired("jit_helper_iter_next snapshot", (uint64_t)VAL_I64_RAW(snap_v));
-        if (snap_v && snap_v->type == VAL_FLOAT) {
-            int snap = (int)VAL_F64_RAW(snap_v);
+        EigsSlot snap_slot = list_slot(state, 2);
+        double snap_num;
+        if (slot_f64_value(snap_slot, &snap_num)) {
+            int snap = (int)snap_num;
             if (snap < len) len = snap;
+        } else if (slot_type(snap_slot) == VAL_INT) {
+            int64_t i = 0;
+            slot_int_value(snap_slot, &i);
+            eigs_int_unwired("jit_helper_iter_next snapshot", (uint64_t)i);
         }
     }
     if (idx >= len) return 1;
@@ -2193,10 +2199,7 @@ int jit_helper_loop_cap_check(void) {
 
 /* #1758 R1.2: an int subscript is its exact value in the VM's C-index
  * domain. Floats keep the existing integrality test. No int exists yet. */
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((noinline))
-#endif
-static int vm_value_index_is_int(const Value *v, int *out) {
+static inline int vm_value_index_is_int(const Value *v, int *out) {
     if (v->type == VAL_INT) {
         int64_t i = VAL_I64_RAW(v);
         if (i < INT_MIN || i > INT_MAX) return 0;
@@ -5038,29 +5041,35 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * but an untrusted chunk (vm_run_bytecode / sandbox_run) can reach a
          * bare ITER_NEXT with any list on TOS, and reading VAL_F64_RAW() off a
          * VAL_STR is a type confusion whose result then indexes items[] (#721). */
-        if (__builtin_expect(state && state->type == VAL_LIST && state->data.list.count >= 2 &&
-            list_elem_type(state, 1) == VAL_INT, 0))
-            eigs_int_unwired("ITER_NEXT index", 0);
-        if (!state || state->type != VAL_LIST || state->data.list.count < 2 ||
-            list_elem_type(state, 1) != VAL_FLOAT) {
+        if (!state || state->type != VAL_LIST || state->data.list.count < 2) {
             ip += exit_offset;
             DISPATCH();
         }
-        EIGS_VIEW_NOCHECK(iterable_view);
-        Value *iterable = list_get_view(state, 0, &iterable_view);
-        int idx = (int)eigs_slot_num(list_slot(state, 1), "for");
+        double idx_num;
+        EigsSlot idx_slot = list_slot(state, 1);
+        if (!slot_f64_value(idx_slot, &idx_num)) {
+            if (slot_type(idx_slot) == VAL_INT)
+                eigs_int_unwired("ITER_NEXT index", 0);
+            ip += exit_offset;
+            DISPATCH();
+        }
+        Value *iterable = list_get_ref(state, 0);
+        int idx = (int)idx_num;
         int len = 0;
-        if (iterable->type == VAL_LIST) len = iterable->data.list.count;
-        else if (iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
+        if (iterable && iterable->type == VAL_LIST) len = iterable->data.list.count;
+        else if (iterable && iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
         /* #491: cap by the entry-time snapshot (items[2]) so a body that
          * appends can't extend the loop; min() with the live length keeps a
          * remove from reading past the end. See make_iter_state. */
-        if (state->data.list.count >= 3 && list_elem_type(state, 2) == VAL_INT)
-            eigs_int_unwired("ITER_NEXT snapshot", 0);
-        if (state->data.list.count >= 3 &&
-            list_elem_type(state, 2) == VAL_FLOAT) {
-            int snap = (int)eigs_slot_num(list_slot(state, 2), "for");
-            if (snap < len) len = snap;
+        if (state->data.list.count >= 3) {
+            EigsSlot snap_slot = list_slot(state, 2);
+            double snap_num;
+            if (slot_f64_value(snap_slot, &snap_num)) {
+                int snap = (int)snap_num;
+                if (snap < len) len = snap;
+            } else if (slot_type(snap_slot) == VAL_INT) {
+                eigs_int_unwired("ITER_NEXT snapshot", 0);
+            }
         }
 
         /* Unsigned compare bounds BOTH ends in one branch: a negative index
@@ -5082,7 +5091,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 vm_push_slot(elem);
             }
         }
-        eigs_view_check(&iterable_view);
         DISPATCH();
     }
 

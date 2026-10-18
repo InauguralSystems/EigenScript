@@ -736,7 +736,7 @@ result).**
 | `vm.c:jit_helper_dot_set` | guarded | an int value skips the immediate store: the slow path pops it through `slot_bridge_unwrap` (D1) |
 | `vm.c:jit_helper_index_get` | guarded | an int index skips the fast path: the slow path lifts it through `slot_to_value` (D1) |
 | `vm.c:jit_helper_index_set` | guarded | an int index or value skips the fast path: the slow path pops it through `slot_bridge_unwrap` (D1) |
-| `vm.c:jit_helper_iter_next` | guarded | a non-pointer state slot returns 1 (bail); its index-kind test `!= VAL_NUM` is compile-forced (D2) |
+| `vm.c:jit_helper_iter_next` | unwired | float-first index and snapshot readers; an int takes the existing R1.3 refusal only after the float reader fails; a non-pointer state returns 1 (D1) |
 | `vm.c:jit_helper_local_dot_set` | guarded | an int value skips the immediate store: `vm_slot_lift` boxes it (D1) |
 | `vm.c:jit_helper_local_idx_dot_get` | guarded | as `jit_helper_dot_get` (D3) |
 | `vm.c:loop_iter_store` | guarded | the loop counter is a float the VM makes; a non-float slot takes the `make_num` path (D1) |
@@ -772,6 +772,7 @@ result).**
 | `vm.c:vm_slot_lift` | smi-arm | an int is boxed on purpose through `slot_to_value` (2.1; unwired until R1.3); a reserved tag refuses, where it became null (D1) |
 | `vm.c:vm_slot_value_opaque` | guarded | only a pointer can be a fn or builtin; an SMI answers "not opaque", which is right (D2) |
 | `vm.c:vm_store_local_slot` | guarded | an int skips the in-place float store; the generic swap stores the SMI (D1) |
+| `vm.c:vm_run_ex/CASE(ITER_NEXT)` | unwired | float-first index and snapshot readers; an int takes the existing R1.3 refusal only after the float reader fails (D1) |
 <!-- slot-table:end -->
 
 ### 2.6 The accessor API after round 1 (Alt 1R)
