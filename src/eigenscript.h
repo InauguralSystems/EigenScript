@@ -267,7 +267,9 @@ struct ASTNode {
 /* ---- Value types ---- */
 
 typedef enum {
-    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER,
+    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL,
+    /* #1690: keep the surviving type tag numbers unchanged. */
+    VAL_DICT = 7, VAL_BUFFER, VAL_TEXT_BUILDER,
     /* #1637: a distinct boolean. Two immortal singletons (make_bool); the
      * slot layer carries it as the TAG_BOOL immediate. Arithmetic on it and
      * `==` against a number raise. */
@@ -424,7 +426,7 @@ struct Value {
          * (tools/num_read_check.sh). */
         double num_;
         int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
-        /* VAL_STR / VAL_JSON_RAW payload: NUL-terminated bytes.
+        /* VAL_STR payload: NUL-terminated bytes.
          *
          * #1183: the member is `char *const` on purpose. Every other sequence
          * in this union caches its length (list.count, buffer.count,
@@ -578,7 +580,7 @@ static inline void eigs_env_park_mark(Env *e, int poison) {
 #  define eigs_env_park_unpoison(e) ((void)0)
 #endif
 
-/* Install a VAL_STR / VAL_JSON_RAW payload. `s` is adopted (the Value frees
+/* Install a VAL_STR payload. `s` is adopted (the Value frees
  * it) and `n` MUST equal strlen(s). This is the ONLY way to write the payload
  * — `v->data.str` is const, so the compiler refuses the alternative. */
 static inline void val_str_set(Value *v, char *s, size_t n) {
@@ -586,7 +588,7 @@ static inline void val_str_set(Value *v, char *s, size_t n) {
     v->data.strv.len = n;
 }
 
-/* Cached byte length of a VAL_STR / VAL_JSON_RAW payload — O(1).
+/* Cached byte length of a VAL_STR payload — O(1).
  *
  * EIGS_STR_LEN_CHECK (on in every asan/poison/valgrind build, so the whole
  * suite runs under it) re-derives the length and aborts on a mismatch. A

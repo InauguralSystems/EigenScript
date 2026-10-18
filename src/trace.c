@@ -2825,7 +2825,6 @@ static void write_value_ptr(Value *v) {
         case VAL_FN:           tp_puts("<fn>"); break;
         case VAL_BUILTIN:      tp_puts("<builtin>"); break;
         case VAL_BUFFER:       tp_printf("<buffer:%d>", v->data.buffer.count); break;
-        case VAL_JSON_RAW:     tp_puts("<json>"); break;
         case VAL_TEXT_BUILDER: tp_puts("<text>"); break;
         case VAL_BOOL:         tp_puts(v->data.boolean ? "true" : "false"); break;
         /* No `default:` — -Werror=switch (Makefile CFLAGS) forces a new
@@ -2998,7 +2997,6 @@ static void write_value_ptr_full(Value *v, int *budget) {
         /* Opaque placeholders (byte-identical to the old `default:` output;
          * these have no replayable N-record encoding). Enumerated so that
          * -Werror=switch forces a new ValType to choose its encoding here. */
-        case VAL_JSON_RAW:     wf_puts("<heap>", budget); break;
         case VAL_TEXT_BUILDER: wf_puts("<heap>", budget); break;
     }
 }
