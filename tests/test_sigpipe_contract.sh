@@ -53,13 +53,14 @@ row() {
 row 'pipe writes preserve handler, mask, pending state and errno' "$ROOT/build/$variant/test_sigpipe_contract" write
 row 'socket sends preserve handler, mask, pending state and errno' "$ROOT/build/$variant/test_sigpipe_contract" send
 row 'positive partial write uses the real production helper' "$ROOT/build/$variant/test_sigpipe_partial"
+row 'exec_capture preserves the host SIGPIPE handler' "$ROOT/build/$variant/test_sigpipe_contract" exec_capture
 row 'http_early_bind preserves the host SIGPIPE handler' "$ROOT/build/$http_variant/test_sigpipe_contract" early
 row 'http_serve preserves the host SIGPIPE handler after a real response' "$ROOT/build/$http_variant/test_sigpipe_contract" serve
 
 # A reader closed BEFORE launching the program makes one ordinary print
 # sufficient. Python itself ignores SIGPIPE; restore_signals selects the Unix
 # default or the inherited ignored disposition without a pipeline timing race.
-for mode in positive plain-default plain-ignore; do
+for mode in positive plain-default plain-ignore spawn-ignore; do
     row "bounded print control: $mode" python3 - "$EIGS" "$mode" <<'PY'
 import os
 import signal
@@ -68,6 +69,11 @@ import sys
 
 binary, mode = sys.argv[1:]
 source = 'print of "ok"\n'
+ignored = mode in ('plain-ignore', 'spawn-ignore')
+if mode == 'spawn-ignore':
+    source = ('r is exec_capture of ["printf", "captured"]\n'
+              'assert of [r[0] == 0 and r[1] == "captured", "exec_capture failed"]\n'
+              + source)
 if mode == 'positive':
     result = subprocess.run([binary, '-e', source], stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, timeout=10)
@@ -78,10 +84,10 @@ else:
     try:
         result = subprocess.run([binary, '-e', source], stdout=writer,
                                 stderr=subprocess.PIPE, timeout=10,
-                                restore_signals=mode != 'plain-ignore')
+                                restore_signals=not ignored)
     finally:
         os.close(writer)
-    if mode == 'plain-ignore':
+    if ignored:
         ok = result.returncode > 0 and b'print: stdout write failed:' in result.stderr
     else:
         ok = result.returncode == -signal.SIGPIPE
@@ -91,5 +97,5 @@ sys.stdout.buffer.write(result.stderr)
 sys.exit(0 if ok else 1)
 PY
 done
-echo "SIGPIPE contract: $pass passed, $fail failed (8 declared)"
-[ "$pass" -eq 8 ] && [ "$fail" -eq 0 ]
+echo "SIGPIPE contract: $pass passed, $fail failed (10 declared)"
+[ "$pass" -eq 10 ] && [ "$fail" -eq 0 ]

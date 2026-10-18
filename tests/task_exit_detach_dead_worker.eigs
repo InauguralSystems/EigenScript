@@ -1,0 +1,25 @@
+# #1736 row 2 from a WORKER: any task's task_detach of a dead, unjoined task
+# stops the program, not just main's. The ready task queued behind the
+# detacher never runs and main never resumes from its yield.
+# Expected: "WORKER_BEFORE_DETACH", the stop message, rc 1, and none of
+# WORKER_CAUGHT / WORKER_AFTER_DETACH / OTHER_TASK_RAN / MAIN_AFTER_YIELD /
+# MARK_END.
+define die() as:
+    missing
+define detacher(victim) as:
+    print of "WORKER_BEFORE_DETACH"
+    try:
+        task_detach of victim
+    catch e:
+        print of "WORKER_CAUGHT"
+    print of "WORKER_AFTER_DETACH"
+    return 0
+define other() as:
+    print of "OTHER_TASK_RAN"
+    return 0
+d is task_spawn of die
+w is task_spawn of [detacher, d]
+o is task_spawn of other
+task_yield of null
+print of "MAIN_AFTER_YIELD"
+print of "MARK_END"

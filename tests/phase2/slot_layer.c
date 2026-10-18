@@ -289,7 +289,7 @@ static void r_v(char *b, size_t n, Value *v) {
         case VAL_NULL: snprintf(b, n, "v:null"); return;
         case VAL_BOOL: snprintf(b, n, "v:%s", v->data.boolean ? "true" : "false"); return;
         case VAL_STR: case VAL_LIST: case VAL_DICT: case VAL_FN: case VAL_BUILTIN:
-        case VAL_BUFFER: case VAL_TEXT_BUILDER: case VAL_JSON_RAW:
+        case VAL_BUFFER: case VAL_TEXT_BUILDER:
             snprintf(b, n, "v:%s", val_type_name(v->type)); return;
     }
 }

@@ -147,7 +147,6 @@ static void obs_dump_value(EigsSlot s, char *buf, size_t nbuf) {
             case VAL_BUFFER: snprintf(buf, nbuf, "<buffer:%d>", v->data.buffer.count); break;
             case VAL_TEXT_BUILDER:
                 snprintf(buf, nbuf, "<text-builder:%zu>", v->data.text_builder.len); break;
-            case VAL_JSON_RAW: snprintf(buf, nbuf, "<json-raw>"); break;
             /* No `default:` — -Werror=switch (Makefile CFLAGS) forces a new
              * ValType to choose its observer-dump rendering here. */
             case VAL_NULL:   snprintf(buf, nbuf, "null"); break;
@@ -423,12 +422,10 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
 
 /* #744: this file no longer re-declares ANY cross-TU symbol. The value/env/
  * dict constructors and accessors it calls are declared in eigenscript.h; the
- * copies that used to sit here were free to drift from it (one still claimed
- * `observer_ensure_fresh` came from eval.c, a TU the bytecode VM replaced, and
- * `val_incref`/`val_decref`/`num_guard` are `static inline` in the header, so
- * `env_get_assign_count` is declared in eigenscript.h,
- * so the definitions are now checked against the declaration their callers
- * see. Do not add a new extern here; give the symbol a header. */
+ * copies that used to sit here were free to drift from it. Definitions are
+ * now checked against the declarations their callers see. The refcount
+ * helpers and num_guard are static inline in the header.
+ * Do not add a new extern here; give the symbol a header. */
 
 /* Inline fast-path for binding a single param into a fresh call env.
  * Caller guarantees `env->count == slot_idx` and `env->capacity > slot_idx`
@@ -1031,7 +1028,7 @@ volatile int *g_vm_abort_flag = &g_vm_abort_never;
  * raw-xcalloc buffer producers buf_from_list and reshape. Still exempt, with
  * reason: zeros_like (mirrors an already-charged input).
  * The pure string transforms (str_lower/str_upper/trim/
- * substr/json_raw/str_from_bytes) were the last exempt class: "output <= an
+ * substr/str_from_bytes) were the last exempt class: "output <= an
  * already-charged argument" was true PER CALL and false across a loop with a
  * reused input (50 uncharged ~20MB copies of one charged input). #965 closed
  * them at the make_str chokepoint: the copying constructor charges its
@@ -5789,7 +5786,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             /* Not sliceable. Enumerated rather than covered by a `default:`
              * so -Werror=switch forces a new ValType to choose here. */
             case VAL_FLOAT: case VAL_INT: case VAL_FN: case VAL_BUILTIN: case VAL_NULL:
-            case VAL_JSON_RAW: case VAL_DICT: case VAL_TEXT_BUILDER: case VAL_BOOL:
+            case VAL_DICT: case VAL_TEXT_BUILDER: case VAL_BOOL:
                 rt_error(EK_TYPE, g_vm.current_line, "cannot slice %s",
                               val_type_name(target->type));
                 slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);

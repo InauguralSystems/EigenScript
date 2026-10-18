@@ -16,6 +16,37 @@ assert_eq of [len of s3, 4410, "square 0.1s"]
 n is audio_noise of [0.1, 0.5]
 assert_eq of [len of n, 4410, "noise 0.1s"]
 
+# #1767: the documented 30-second allocation ceiling is inclusive. Crossing
+# it must raise (and name the generator), rather than masquerading as a valid
+# empty clip. Reusing `limit_clip` releases each large list before the next.
+limit_clip is audio_sine of [440, 29.999, 0.01]
+assert_true of [(len of limit_clip) > 0, "audio_sine works just under 30s"]
+limit_clip is audio_square of [440, 29.999, 0.01]
+assert_true of [(len of limit_clip) > 0, "audio_square works just under 30s"]
+limit_clip is audio_saw of [440, 29.999, 0.01]
+assert_true of [(len of limit_clip) > 0, "audio_saw works just under 30s"]
+limit_clip is audio_noise of [29.999, 0.01]
+assert_true of [(len of limit_clip) > 0, "audio_noise works just under 30s"]
+limit_clip is audio_sweep of [100, 200, 29.999, 0.01, 0]
+assert_true of [(len of limit_clip) > 0, "audio_sweep works just under 30s"]
+limit_clip is null
+
+define assert_audio_limit(thunk, builtin_name) as:
+    caught is null
+    try:
+        thunk of null
+    catch e:
+        caught is e
+    assert_true of [caught != null, builtin_name + " over 30s raises"]
+    assert_eq of [caught.kind, "value", builtin_name + " limit raises value"]
+    assert_true of [contains of [caught.message, builtin_name], builtin_name + " limit error names builtin"]
+
+assert_audio_limit of [(_) => audio_sine of [440, 30.001, 0.5], "audio_sine"]
+assert_audio_limit of [(_) => audio_square of [440, 30.001, 0.5], "audio_square"]
+assert_audio_limit of [(_) => audio_saw of [440, 30.001, 0.5], "audio_saw"]
+assert_audio_limit of [(_) => audio_noise of [30.001, 0.5], "audio_noise"]
+assert_audio_limit of [(_) => audio_sweep of [100, 200, 30.001, 0.5, 0], "audio_sweep"]
+
 # Mix preserves length
 m is audio_mix of [s, s2]
 assert_eq of [len of m, 4410, "mix preserves length"]

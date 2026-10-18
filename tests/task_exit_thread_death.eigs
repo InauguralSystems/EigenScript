@@ -1,0 +1,23 @@
+# #1736 + #1745, table row 5 (a JOINED OS thread): an OS THREAD that dies of an
+# uncaught error does not stop main. Thread timing is not on the trace tape
+# (#148), so a fail-fast stop here would land at a different point in main on
+# every run. What main sees is ordered by its own program instead: thread_join
+# RAISES the worker's error (#1745), the try catches it, and a caught join
+# counts as observed, so the run exits 0, as a caught task_join does. The join
+# also makes sure the death happened before main goes on.
+# Expected: the worker's trace, JOIN_RAISED undefined_name, MAIN_AFTER_DEATH,
+# MARK_END, rc 0. The never-joined half (row 4: main completes, rc 1) is
+# thread_exit_unjoined_death.eigs, section [103b].
+define w() as:
+    missing
+h is spawn of w
+try:
+    r is thread_join of h
+    print of f"JOINED {r}"
+catch e:
+    print of f"JOIN_RAISED {e.kind}"
+print of "MAIN_AFTER_DEATH"
+i is 0
+loop while i < 1000:
+    i is i + 1
+print of "MARK_END"

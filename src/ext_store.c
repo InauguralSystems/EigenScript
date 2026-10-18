@@ -265,14 +265,13 @@ static void store_json_encode(Value *v, strbuf *out) {
                               v->data.buffer.rows, v->data.buffer.cols);
             break;
         }
-        /* VAL_NULL/VAL_FN/VAL_BUILTIN are handled by the guard above; raw
-         * JSON and text builders have no store encoding. Enumerated rather
+        /* VAL_NULL/VAL_FN/VAL_BUILTIN are handled by the guard above; text
+         * builders have no store encoding. Enumerated rather
          * than covered by a `default:` so -Werror=switch forces a new ValType
          * to choose its store-JSON encoding here. */
         case VAL_NULL:
         case VAL_FN:
         case VAL_BUILTIN:
-        case VAL_JSON_RAW:
         case VAL_TEXT_BUILDER:
             strbuf_append(out, "null");
             break;

@@ -269,7 +269,9 @@ struct ASTNode {
 typedef enum {
     /* #1758 R1.2a: a double. A number Value is a VAL_FLOAT or a
      * VAL_INT; `type of` says "num" for both (decision (B)). */
-    VAL_FLOAT, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL, VAL_JSON_RAW, VAL_DICT, VAL_BUFFER, VAL_TEXT_BUILDER,
+    VAL_FLOAT, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL,
+    /* #1690: preserve surviving tags; #1758 appends VAL_INT below. */
+    VAL_DICT = 7, VAL_BUFFER, VAL_TEXT_BUILDER,
     /* #1637: a distinct boolean. Two immortal singletons (make_bool); the
      * slot layer carries it as the TAG_BOOL immediate. Arithmetic on it and
      * `==` against a number raise. */
@@ -450,7 +452,7 @@ struct Value {
         double f64_;    /* VAL_FLOAT (#1758 R1.2a) */
         int64_t i64_;   /* VAL_INT (#1758 R1.2a; no producer before R1.3) */
         int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
-        /* VAL_STR / VAL_JSON_RAW payload: NUL-terminated bytes.
+        /* VAL_STR payload: NUL-terminated bytes.
          *
          * #1183: the member is `char *const` on purpose. Every other sequence
          * in this union caches its length (list.count, buffer.count,
@@ -604,7 +606,7 @@ static inline void eigs_env_park_mark(Env *e, int poison) {
 #  define eigs_env_park_unpoison(e) ((void)0)
 #endif
 
-/* Install a VAL_STR / VAL_JSON_RAW payload. `s` is adopted (the Value frees
+/* Install a VAL_STR payload. `s` is adopted (the Value frees
  * it) and `n` MUST equal strlen(s). This is the ONLY way to write the payload
  * — `v->data.str` is const, so the compiler refuses the alternative. */
 static inline void val_str_set(Value *v, char *s, size_t n) {
@@ -612,7 +614,7 @@ static inline void val_str_set(Value *v, char *s, size_t n) {
     v->data.strv.len = n;
 }
 
-/* Cached byte length of a VAL_STR / VAL_JSON_RAW payload — O(1).
+/* Cached byte length of a VAL_STR payload — O(1).
  *
  * EIGS_STR_LEN_CHECK (on in every asan/poison/valgrind build, so the whole
  * suite runs under it) re-derives the length and aborts on a mismatch. A
@@ -655,9 +657,6 @@ int observer_slot_window(const struct ObserverSlot *s);
 /* Set / clear a binding's per-slot override (n == 0 clears). Grows the env's
  * slot table if needed; returns 0 on OOM. */
 int observer_slot_set_window(struct Env *e, int idx, int n);
-
-/* Returns the current fill of v's dH window (0..OBSERVER_WINDOW_N). */
-size_t observer_window_size(const Value *v);
 
 /* #262 Phase-1 prototype slot-keyed observer API (behind EIGS_OBS_SHADOW). */
 void observer_slot_update(struct Env *e, int idx, Value *newval);
@@ -728,34 +727,6 @@ void observer_slot_record_value(struct ObserverSlot *s, double v);
  * a non-trajectory dict — the caller raises, never tolerates silently. */
 struct Value *observer_slot_trajectory(const struct ObserverSlot *s);
 int observer_slot_from_trajectory(struct ObserverSlot *out, struct Value *dict);
-
-/* Returns the dH at offset back from most recent (0 = most recent).
- * Caller must ensure offset < observer_window_size(v). */
-double observer_window_get(const Value *v, size_t offset_back);
-
-/* Windowed `improving` predicate (#207): NET entropy descent (sum<0) over the
- * window AND a sustained majority (>=60%) of genuine descent steps (dH <
- * -dh_small, honoring the #187 gray band). Shared by vm.c and builtins.c. */
-int observer_improving(const Value *v);
-
-/* Windowed `diverging` predicate (#208): mirror of observer_improving — NET
- * entropy ascent (sum>0) AND >=60% genuine ascent steps (dH > +dh_small).
- * Shared by vm.c and builtins.c. */
-int observer_diverging(const Value *v);
-
-/* Windowed `oscillating` predicate (#206): >= ceil(N/3) = 4 dH sign flips
- * across the window, each flip's two samples clearing dh_zero (deadband
- * escape, stays on dh_zero per #187). Shared by vm.c and builtins.c. */
-int observer_oscillating(const Value *v);
-
-/* Windowed `equilibrium` predicate (#209): full window (count==N), zero-mean
- * (|mean|<dh_zero) and low variance (<dh_zero^2). Shared by vm.c and builtins.c. */
-int observer_equilibrium(const Value *v);
-
-/* Windowed `stable` predicate (#205): full window, every |dH|<dh_small, entropy
- * >= h_low, and no consecutive sign flips (both clearing dh_zero). Shared by
- * vm.c and builtins.c. */
-int observer_stable(const Value *v);
 
 /* ---- Per-thread execution context ---------------------------------
  *
@@ -2276,7 +2247,6 @@ char* value_to_string(Value *v);
  * with a different precision cannot reappear. Needs 32 bytes. */
 void eigs_num_text(char *buf, size_t nbuf, double n);
 void eigs_int_text(char *buf, size_t nbuf, int64_t i);   /* #1758 R1.2a: exact digits */
-void observer_ensure_fresh(Value *v);
 void eigs_json_escape_string(strbuf *out, const char *s);
 /* #880: decode a JSON string body (s[*pos] = first byte after the opening
  * quote) into `out`, leaving *pos past the closing quote. Returns whether

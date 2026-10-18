@@ -244,7 +244,9 @@ Python or JS hand-rolls — see
 > **What `improving` and the rest actually mean.** For numbers the
 > trajectory words read the value's own motion (#861): `converged` is the
 > standard stopping criterion — steps settled under a tolerance — and
-> `improving` means the steps are contracting toward a limit. For
+> `improving` uses the ML loss convention that lower is better: the value
+> must be decreasing, with steps contracting toward a limit. Growth is never
+> improving, even when it rises toward a plateau. For
 > non-numeric values the observer's entropy reading applies — a value
 > locating itself *from the inside*, with no external goal. The full
 > [docs/OBSERVER.md](docs/OBSERVER.md); the precise predicate semantics
@@ -639,7 +641,10 @@ get made and how contributors can earn commit access over time.
 ## Build from Source
 
 ```bash
-make                  # build
+make                  # hosted release with gfx -> build/release/eigenscript
+make gfx              # compatibility alias for make
+make asan             # ASan+UBSan with gfx -> build/asan/eigenscript
+make asan-gfx         # compatibility alias for make asan
 make test             # build and run the full suite
 make server           # build with HTTP + raw TCP sockets + model builtins
 make server-db        # server profile plus PostgreSQL
@@ -653,7 +658,19 @@ positional input, with separate server and database-capable binaries when
 needed. See [Consumer acceptance wave](docs/CI.md#consumer-acceptance-wave)
 for its profile options, compatibility aliases and recorded binary identities.
 
+The Makefile's `SRC_V_*`, `FLAGS_*` and target prerequisites define each
+profile's features and artifact location. Graphics in the hosted release and
+ASan profiles is lazy-loaded: using it still requires SDL2 at runtime.
+`make gfx` and `make asan-gfx` use the release and ASan artifacts above,
+not separate graphics directories. Make also hard-links the selected runtime
+to `src/eigenscript`.
+
 Or use the shell scripts directly: `./build.sh` and `./install.sh`.
+`build.sh` writes `src/eigenscript` directly, rather than a Make variant
+directory. It builds the hosted release by default, `server` (`http`/`net`
+aliases), or `server-db` (`full` alias); `build.sh lsp` instead writes the
+minimal, graphics-disabled `src/eigenlsp`. Sanitizer and zlib profiles are
+Make targets, not `build.sh` options.
 
 The minimal binary is a single C program with no runtime dependencies.
 

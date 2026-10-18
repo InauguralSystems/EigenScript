@@ -872,7 +872,6 @@ Value* builtin_type(Value *arg) {
         case VAL_BUILTIN:   /* #1060: a named native function reports as a user fn */
             return make_str(eigs_native_fn_name(arg->data.builtin) ? "fn" : "builtin");
         case VAL_NULL: return make_str("none");
-        case VAL_JSON_RAW: return make_str("json_raw");
         case VAL_DICT: return make_str("dict");
         case VAL_BUFFER: return make_str("buffer");
         case VAL_TEXT_BUILDER: return make_str("text_builder");
@@ -999,11 +998,10 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
         /* #1758 R1.2a: the `default:` that answered "null" is gone, so a new
          * ValType is a build error here (-Werror=switch) instead of a silent
          * null. These are the types it covered, unchanged: null, fn and
-         * builtin (also caught above), raw JSON and a buffer. */
+         * builtin (also caught above), and a buffer. */
         case VAL_NULL:
         case VAL_FN:
         case VAL_BUILTIN:
-        case VAL_JSON_RAW:
         case VAL_BUFFER:
             strbuf_append(out, "null");
             break;
@@ -1505,8 +1503,6 @@ Value* builtin_json_build(Value *arg) {
             strbuf_append(&out, "null");
         } else if (val->type == VAL_BOOL) {   /* #1637: a JSON boolean, not the string "true" */
             strbuf_append(&out, val->data.boolean ? "true" : "false");
-        } else if (val->type == VAL_JSON_RAW) {
-            strbuf_append(&out, val->data.str);
         } else if (val->type == VAL_STR) {
             eigs_json_escape_string(&out, val->data.str);
         } else {
@@ -2922,7 +2918,6 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
     case VAL_INT:       /* #1758 R1.2a: an immutable scalar, like a float */
     case VAL_STR:
     case VAL_NULL:
-    case VAL_JSON_RAW:
     case VAL_BOOL:
         val_incref(v);
         return v;
@@ -4210,6 +4205,11 @@ typedef struct EigsThreadHandle {
     struct TraceSpawnBinding *trace_binding; /* owned, reserved before launch */
     struct EigsThreadHandle *deferred_next;
     Value *result;
+    /* Runtime-error metadata crosses as plain C data.  A user-thrown payload
+     * crosses as the same deep copy used by channels; the handle owns both. */
+    ErrKind error_kind;
+    char *error_message;
+    Value *error_value;
     volatile int done;
     pthread_t tid;
     /* A spawned function is still part of the evaluation that created it.
@@ -4332,8 +4332,13 @@ static void *thread_entry(void *arg) {
      * process exit status at 0, the silent-success #493 closed for tasks.
      * Count it on the STATE so main fails the run. `exit of N` sets
      * g_has_error only to unwind and is latched separately — not a death. */
-    if (g_has_error && !g_exit_requested)
+    if (g_has_error && !g_exit_requested) {
+        h->error_kind = (ErrKind)g_error_kind;
+        h->error_message = xstrdup(g_error_raw);
+        if (g_error_value)
+            h->error_value = val_clone_for_send(g_error_value);
         __atomic_add_fetch(&eigs_current->state->spawn_err_count, 1, __ATOMIC_RELAXED);
+    }
     /* An uncaught throw on this thread leaves its structured payload in
      * thread-local storage; release it before the thread exits. */
     eigs_clear_error_value();
@@ -4354,6 +4359,8 @@ static void *thread_entry(void *arg) {
 
 static void thread_handle_free(ThreadHandle *h) {
     if (h->result) val_decref(h->result);
+    if (h->error_value) val_decref(h->error_value);
+    free(h->error_message);
     val_decref(h->fn);
     for (int i = 0; i < h->fn_arg_count; i++) val_decref(h->fn_args[i]);
     free(h->fn_args);
@@ -4448,6 +4455,9 @@ Value* builtin_spawn(Value *arg) {
     eigs_exit_scope_retain(h->exit_scope);
     h->deferred_next = NULL;
     h->result = NULL;
+    h->error_kind = EK_INTERNAL;
+    h->error_message = NULL;
+    h->error_value = NULL;
     h->done = 0;
     h->sandbox_loop_max = g_sandbox_loop_max;
     uint32_t hgen = 0;
@@ -4583,6 +4593,29 @@ Value* builtin_thread_join(Value *arg) {
         return make_null();
     }
     pthread_join(h->tid, NULL);
+    if (h->error_message) {
+        /* Claiming makes this the sole observer. Take the handle-owned cross-
+         * thread payload and message before freeing it. Observation clears
+         * the #493 exit-status count even when the raise below is caught. */
+        ErrKind kind = h->error_kind;
+        char *message = h->error_message;
+        Value *error_value = h->error_value;
+        h->error_message = NULL;
+        h->error_value = NULL;
+        thread_handle_free(h);
+        __atomic_sub_fetch(&st->live_workers, 1, __ATOMIC_ACQ_REL);
+        __atomic_sub_fetch(&st->spawn_err_count, 1, __ATOMIC_RELAXED);
+        spawn_mt_maybe_clear(st);
+        rt_error(kind, 0, "%s", message);
+        if (error_value) {
+            /* rt_error deliberately clears an older payload. Install this
+             * transferred user throw afterward so CHECK_ERROR binds it. */
+            g_error_value = error_value;
+            g_error_kind = (int)EK_USER;
+        }
+        free(message);
+        return make_null();
+    }
     Value *result = h->result ? h->result : make_null();
     h->result = NULL; /* transfer the worker's owned result to the caller */
     thread_handle_free(h);
@@ -5206,10 +5239,12 @@ Value* builtin_task_self(Value *arg) {
  * (#530, the pthread_detach precedent): it is reaped the moment it finishes —
  * or immediately if already finished — releasing its handle slot for reuse,
  * so task-per-message workloads are bounded by CONCURRENT tasks, not lifetime
- * spawns. A detached task's uncaught death still prints its trace and still
- * fails the process at exit (#493 — a scheduler counter survives the reap).
- * Joining a reaped id returns null, like any unknown id. Deterministic; no
- * tape participation. */
+ * spawns. #1736: no join can ever see a detached task's failure, so its
+ * uncaught death prints its trace and STOPS the program at once (exit 1), and
+ * detaching a task that already died of an uncaught error nothing joined
+ * stops the program at this call instead of discarding the error (both
+ * uncatchable; task.c sched_fatal_stop). Joining a reaped id returns null,
+ * like any unknown id. Deterministic; no tape participation. */
 Value* builtin_task_detach(Value *arg) {
     if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "task_detach requires a task id (a number)");
@@ -5217,7 +5252,9 @@ Value* builtin_task_detach(Value *arg) {
     }
     int target = 0;
     if (!task_handle_resolve(arg, "task_detach", &target)) return make_num(0);
-    return make_num((double)task_do_detach(target));
+    int detached = task_do_detach(target);
+    if (detached < 0) return make_null();   /* #1736: the stop is already raised */
+    return make_num((double)detached);
 }
 
 /* task_sched_seed of n — install a scheduling seed. By default tasks run FIFO

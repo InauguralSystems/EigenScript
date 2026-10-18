@@ -89,7 +89,12 @@ run_bounded "$T/c2" "$EIGS" "$T/c_fn.eigs"
 if [ "$RC" = "1" ] && grep -q MARK_END "$T/c2" && clean "$T/c2"; then ok "VAL_FN worker uncaught death (unjoined): rc=1"; else bad "VAL_FN worker uncaught death (unjoined): rc=${RC:-hung}"; fi
 printf 'define w() as:\n    return recv of 5\nh is spawn of w\nr is thread_join of h\nprint of "MARK_END"\n' > "$T/c_fnj.eigs"
 run_bounded "$T/c3" "$EIGS" "$T/c_fnj.eigs"
-if [ "$RC" = "1" ] && grep -q MARK_END "$T/c3" && clean "$T/c3"; then ok "VAL_FN worker uncaught death (joined): rc=1"; else bad "VAL_FN worker uncaught death (joined): rc=${RC:-hung}"; fi
+if [ "$RC" = "1" ] && ! grep -q MARK_END "$T/c3" && \
+   grep -q "invalid channel" "$T/c3" && clean "$T/c3"; then
+    ok "VAL_FN worker uncaught death re-raised by join: rc=1"
+else
+    bad "VAL_FN worker uncaught death (joined): rc=${RC:-hung}"
+fi
 
 # 5. Positive controls (the other half): a CAUGHT error in the worker, a
 #    worker's `exit of N`, and a clean worker all keep their exit status.

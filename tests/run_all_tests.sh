@@ -13,6 +13,7 @@ export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
 . "$TESTS_DIR/suite_program_env.sh" || exit 1
+. "$TESTS_DIR/diagnostic_capture.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 
 # Shard and changed-sections modes (EIGS_SUITE_SHARD / EIGS_SUITE_CHANGED).
@@ -355,7 +356,7 @@ export CHILD_LEDGER
 # among them) and can be interrupted; without this the ledger leaks one file
 # per aborted run. The runner has no other trap — `trap ... EXIT` REPLACES
 # rather than accumulates, so if one is ever added it must call this too.
-trap 'rm -f "${CHILD_LEDGER:-}"' EXIT
+trap 'rm -f "${CHILD_LEDGER:-}"; suite_diagnostic_cleanup' EXIT
 # Children that legitimately emit no PASS:/FAIL: markers, so the vacuity rule
 # must not fire on them. Each is a waiver and states why; an entry that stops
 # being needed is a review event, and tools/child_exit_check.sh pins the list
@@ -637,8 +638,9 @@ echo ""
 
 echo "[0d] sandbox_run policy errors stay contained (#1426)"
 check_binary_fingerprint
-HFL_OUT=$($EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs </dev/null 2>"${TMPDIR:-/tmp}/eigs-host-frame.err"); HFL_RC=$?
-HFL_ERR=$(cat "${TMPDIR:-/tmp}/eigs-host-frame.err")
+suite_capture_diagnostic host-frame $EIGS_TMO ./eigenscript ../tests/test_host_frame_line.eigs || exit 1
+HFL_OUT=$SUITE_DIAGNOSTIC_OUT; HFL_RC=$SUITE_DIAGNOSTIC_RC
+HFL_ERR=$SUITE_DIAGNOSTIC_ERR
 TOTAL=$((TOTAL + 1))
 if [ "$HFL_RC" -eq 0 ] && [ "$HFL_OUT" = "[false, false]" ] && [ -z "$HFL_ERR" ]; then
     PASS=$((PASS + 1)); echo "  PASS: sandbox policy errors return ok=false without stderr"
@@ -1718,8 +1720,9 @@ check_eigs_suite "budget rejects bombs ({ok:0}), allows small, cumulative, per-r
 # in its structured return value and must not emit an "uncaught" diagnostic.
 echo "[108a] sandbox_run Error Containment (#1426)"
 check_binary_fingerprint
-SB1426_OUT=$($EIGS_TMO ./eigenscript ../tests/test_sandbox_error_silence.eigs </dev/null 2>"${TMPDIR:-/tmp}/eigs-sandbox-1426.err"); SB1426_RC=$?
-SB1426_ERR=$(cat "${TMPDIR:-/tmp}/eigs-sandbox-1426.err")
+suite_capture_diagnostic sandbox-1426 $EIGS_TMO ./eigenscript ../tests/test_sandbox_error_silence.eigs || exit 1
+SB1426_OUT=$SUITE_DIAGNOSTIC_OUT; SB1426_RC=$SUITE_DIAGNOSTIC_RC
+SB1426_ERR=$SUITE_DIAGNOSTIC_ERR
 TOTAL=$((TOTAL + 1))
 if [ "$SB1426_RC" -eq 0 ] && echo "$SB1426_OUT" | grep -q "All tests passed" && [ -z "$SB1426_ERR" ]; then
     PASS=$((PASS + 1)); echo "  PASS: structured sandbox error returned with empty stderr"
@@ -5259,6 +5262,25 @@ TOTAL=$((TOTAL + RBE_PASS + RBE_FAIL)); PASS=$((PASS + RBE_PASS)); FAIL=$((FAIL 
 if [ "$RBE_FAIL" -gt 0 ]; then echo "  FAIL: replay boundary exit contract"; echo "$RBE_OUTPUT" | grep "^FAIL:" | head -5; else echo "  PASS: all $RBE_PASS replay-boundary exit checks (rc 1, no signal, both tiers)"; fi
 echo ""
 
+echo "[103b] thread_join propagates worker errors (#1745/#493)"
+check_thread_exit() {
+    TOTAL=$((TOTAL + 1))
+    local file="$1" want_rc="$2" marker="$3" out rc
+    out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
+    if [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker"; then
+        echo "  PASS: thread exit contract — $file (rc=$rc)"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: thread exit contract — $file (rc=$rc, want=$want_rc)"
+        echo "$out" | head -5
+        FAIL=$((FAIL + 1))
+    fi
+}
+check_thread_exit thread_exit_join_catch.eigs      0 "JOIN_CAUGHT"
+check_thread_exit thread_exit_join_throw_value.eigs 0 "JOIN_VALUE_CAUGHT"
+check_thread_exit thread_exit_join_uncaught.eigs   1 "missing_thread_join_uncaught"
+check_thread_exit thread_exit_unjoined_death.eigs  1 "MARK_END"
+
 echo "[104] Cooperative Tasks (#408)"
 # #408 cooperative task layer: spawn/alive/yield/join/deadlock + leak-clean
 # teardown of suspended/killed tasks (including heap values on saved stacks).
@@ -5361,7 +5383,8 @@ check_task_exit() {
 check_task_exit task_exit_unjoined_death.eigs 1 "MARK_END"         # #493 strict: main completes, rc 1
 check_task_exit task_exit_join_catch.eigs     0 "undefined_name"   # #493 caught: rc 0
 check_task_exit task_exit_killed.eigs         0 "MARK_END"         # #493 kill: rc 0
-check_task_exit task_exit_detached_death.eigs 1 "MARK_END"         # #530: a DETACHED death still fails the process
+# task_exit_detached_death.eigs moved to [104b] (tests/sections/104b-task-death-fail-fast-1736.sh):
+# #1736 flipped it — a DETACHED death now stops the program, so MARK_END must NOT print.
 check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 uncaught loud
 check_task_exit task_deadlock_worker_try.eigs 1 "deadlock"         # #509: deadlock goes to MAIN; a worker's try doesn't catch it
 

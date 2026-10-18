@@ -628,7 +628,9 @@ typedef struct Task {
     int        err_unobserved;
     /* #530: fire-and-forget. Set by task_detach; the task is reaped (freed +
      * handle slot released) the moment it finishes or is killed, instead of
-     * lingering joinable until process exit. */
+     * lingering joinable until process exit. #1736: no join can observe a
+     * detached task, so its uncaught death stops the program (task.c
+     * sched_fatal_stop) instead of waiting for the exit gate above. */
     int        detached;
     /* #535: monotonic spawn stamp (scheduler counter; main is 0). The
      * same-instant sleeper-wake tie-break orders by THIS, never by handle
@@ -659,7 +661,7 @@ int   task_mbox_has(void);           /* current task has a queued message? */
 Value *task_mbox_pop(void);          /* pop current task's front message (owned ref) */
 void  task_request_recv(void);       /* current task blocks awaiting a message */
 int   task_do_kill(int tid);         /* deterministic teardown of `tid`; 0 = bad target */
-int   task_do_detach(int tid);       /* #530: mark fire-and-forget (reap at finish); 0 = main/unknown */
+int   task_do_detach(int tid);       /* #530: mark fire-and-forget (reap at finish); 0 = main/unknown; -1 = #1736 stop raised */
 /* Inc 3 virtual time (builtins.c task_sleep/task_now). */
 void   task_request_sleep(double ticks); /* current task sleeps until virtual now + ticks */
 double task_virtual_now(void);           /* current virtual-clock value (0 with no scheduler) */

@@ -174,7 +174,9 @@ sqrt(2) = 1.414213562373095
   channel explicitly. Both read the named binding's trajectory.
 - Numeric verdicts are over the value's RELATIVE step, `Δv / max(|v|, |v_prev|,
   default 1e-3), an absolute floor `dh_zero*scale` below it; a decay toward
-  zero reads `improving` until inside the scale. A mode slower than N samples
+  zero reads `improving` until inside the scale. `improving` is directional:
+  lower is better, as for ML loss, so growth never qualifies even when its
+  steps contract toward a plateau. A mode slower than N samples
 - Trajectory is keyed to a binding's env slot, never to a value: a dict field,
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint
@@ -254,6 +256,12 @@ EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
   calls wake, all VM threads unwind, and the process exits with N after worker
   teardown. Native I/O must return before teardown completes. Embedded outer
   evals have separate stop scopes; workers retain their spawning eval's scope.
+- A cooperative task (`task_spawn`) that dies of an uncaught error prints its
+  trace. Joinable: main carries on, and `try`/`catch` around `task_join`
+  recovers the error (never joined, the run exits 1). **Detached**
+  (`task_detach`): nothing can ever join it, so the error **stops the
+  program** (exit 1, not catchable), and so does detaching a task that already
+  died that way. A detached task that must survive its errors catches them.
 - **A number, string, list, dict, buffer, or text builder sent through a
   channel is DEEP-COPIED**; the receiver cannot see a later mutation by the
   sender. The same boundary applies to thread results and cooperative tasks.

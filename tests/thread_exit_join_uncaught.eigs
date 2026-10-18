@@ -1,0 +1,6 @@
+# #1745: an uncaught join-site re-raise stops the joiner and exits 1.
+define die() as:
+    missing_thread_join_uncaught
+h is spawn of die
+thread_join of h
+print of "MUST_NOT_RUN"

@@ -195,7 +195,7 @@ int *trace_current_line_addr(void);
 /* 1 when the compiler has seen a `where`/`why`/`how ... at <line>`
  * interrogative anywhere in the program. Gates observer-state capture
  * in the assignment history: stamping entropy/dH per assign forces
- * observer_ensure_fresh (defeating the lazy-entropy optimization), so
+ * entropy refresh (defeating the lazy-entropy optimization), so
  * programs that never ask historical observer questions pay nothing.
  * Set during compile, before execution; code compiled later (eval,
  * load_file, REPL lines) enables capture from that point on. */
