@@ -32,8 +32,8 @@
 Value* builtin_buffer(Value *arg) {
     /* buffer of [rows, cols] -> shaped 2-D buffer (flat double[rows*cols]) */
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
-        list_elem_type(arg, 0) == VAL_NUM &&
-        list_elem_type(arg, 1) == VAL_NUM) {
+        (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT) &&
+        (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)) {
         int r = (int)eigs_list_num(arg, 0, __func__);
         int c = (int)eigs_list_num(arg, 1, __func__);
         if (r < 0) r = 0;
@@ -53,8 +53,8 @@ Value* builtin_buffer(Value *arg) {
     int count = 0;
     /* #971 Phase D: a non-number size (or a malformed [rows, cols]) made an
      * EMPTY buffer — a plausible object with nothing in it. */
-    STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "buffer", "a size or [rows, cols]");
-    if (arg && arg->type == VAL_NUM) count = (int)eigs_num_arg(arg, __func__);
+    STRICT_REQUIRE(!arg || !val_is_number(arg), "buffer", "a size or [rows, cols]");
+    if (arg && val_is_number(arg)) count = (int)eigs_num_arg(arg, __func__);
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000;
     if (!sandbox_charge((size_t)count * sizeof(double))) return make_null();  /* #292 */
@@ -75,8 +75,8 @@ Value* builtin_reshape(Value *arg) {
     Value *b = list_get_view(arg, 0, &b_view);
     if (b->type != VAL_BUFFER) return make_null();
     BOOL_REFUSE(arg, "reshape");   /* rows/cols; the buffer is not a bool */
-    if (list_elem_type(arg, 1) != VAL_NUM ||
-        list_elem_type(arg, 2) != VAL_NUM) return make_null();
+    if ((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
+        (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT)) return make_null();
     int r = (int)eigs_list_num(arg, 1, __func__);
     int c = (int)eigs_list_num(arg, 2, __func__);
     if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
@@ -138,11 +138,11 @@ Value* builtin_buf_set(Value *arg) {
     /* #1061: both operands were read through the num union member unchecked
      * -- a string index or value read garbage bits (the #1007 type-pun class).
      * Loud, like the `b[i] is v` opcode path. */
-    if (list_elem_type(arg, 1) != VAL_NUM) {
+    if ((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT)) {
         rt_error(EK_TYPE, 0, "buf_set: index must be a number, got %s", val_type_name(list_elem_type(arg, 1)));
         return make_null();
     }
-    if (list_elem_type(arg, 2) != VAL_NUM) {
+    if ((list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT)) {
         rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(list_elem_type(arg, 2)));
         return make_null();
     }
@@ -181,7 +181,7 @@ Value* builtin_buf_from_list(Value *arg) {
     v->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));
     v->refcount = 1;
     for (int i = 0; i < n; i++) {
-        if (list_elem_type(arg, i) == VAL_NUM) {
+        if ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT)) {
             v->data.buffer.data[i] = eigs_slot_num(list_slot(arg, i), __func__);
         } else {
             /* #1061: a non-number element silently stayed 0.0. */
@@ -203,14 +203,14 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
         EIGS_VIEW(item_view);
         Value *item = list_get_view(arg, i, &item_view);
         /* #1637: a bool byte is refused in every strict mode. */
-        if (!item || (item->type != VAL_NUM && (g_strict || item->type == VAL_BOOL))) {
+        if (!item || (!val_is_number(item) && (g_strict || item->type == VAL_BOOL))) {
             rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
             return 0;
         }
         /* EIGS_STRICT=0 legacy: a non-number element (a bool never reaches
          * here) ends the string as a NUL would -- the documented truncation
          * the compatibility mode keeps. It is never read as a number. */
-        if (nul_ends && (item->type != VAL_NUM
+        if (nul_ends && (!val_is_number(item)
                          || finite_num_to_byte(eigs_num_arg(item, __func__)) == 0)) break;
     }
     return 1;
@@ -236,7 +236,7 @@ Value* builtin_str_from_bytes(Value *arg) {
     int len = 0;
     for (int i = 0; i < n; i++) {
         double dv = arg->type == VAL_LIST
-                        ? (list_elem_type(arg, i) == VAL_NUM ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
+                        ? ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT) ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
                         : buffer_read_num(arg, i);
         if (g_has_error) { free(s); return make_null(); }
         int b = finite_num_to_byte(dv);
@@ -257,8 +257,8 @@ Value* builtin_str_from_bytes(Value *arg) {
  * explicit shifts, yielding the standard IEEE-754 layout on any platform. */
 Value* builtin_f64_to_bytes(Value *arg) {
     /* #971 Phase D: a non-number encoded as 0.0's eight bytes. */
-    STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "f64_to_bytes", "a number");
-    double d = (arg && arg->type == VAL_NUM) ? eigs_num_arg(arg, __func__) : 0.0;
+    STRICT_REQUIRE(!arg || !val_is_number(arg), "f64_to_bytes", "a number");
+    double d = (arg && val_is_number(arg)) ? eigs_num_arg(arg, __func__) : 0.0;
     uint64_t bits;
     memcpy(&bits, &d, sizeof(bits));
     Value *list = make_list(8);
@@ -276,7 +276,7 @@ Value* builtin_f64_from_bytes(Value *arg) {
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
         for (int i = 0; i < 8 && i < n; i++)
-            if (list_elem_type(arg, i) == VAL_NUM)
+            if ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT))
                 bytes_in[i] = eigs_slot_num(list_slot(arg, i), __func__);
     } else if (arg && arg->type == VAL_BUFFER) {
         int n = arg->data.buffer.count;
@@ -347,7 +347,7 @@ static int zlib_bytes_arg(Value *arg, const char *who,
     unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
     for (int i = 0; i < n; i++) {
         double dv = arg->type == VAL_LIST
-                        ? (list_elem_type(arg, i) == VAL_NUM ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
+                        ? ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT) ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
                         : buffer_read_num(arg, i);
         if (g_has_error) { free(b); return 0; }
         b[i] = finite_num_to_byte(dv);
@@ -490,7 +490,7 @@ Value* builtin_inflate(Value *arg)      { (void)arg; return zlib_unavailable("in
  * #490-#512 direction (buf_get/buf_set/set_at) — no silent truncation:
  * a clamped audio mix is a silently wrong render. */
 static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
-    if (slot_type(cnt) != VAL_NUM) {
+    if ((slot_type(cnt) != VAL_FLOAT && slot_type(cnt) != VAL_INT)) {
         rt_error(EK_VALUE, 0, "%s: count must be a number", who);
         return 0;
     }
@@ -506,7 +506,7 @@ static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
 
 static int buf_num_arg(const char *who, const char *what, EigsSlot s,
                        double *out) {
-    if (slot_type(s) != VAL_NUM) {
+    if ((slot_type(s) != VAL_FLOAT && slot_type(s) != VAL_INT)) {
         rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
         return 0;
     }
@@ -523,7 +523,7 @@ static int buf_window_arg(const char *who, Value *buf, EigsSlot off,
         rt_error(EK_TYPE, 0, "%s: expected a buffer", who);
         return 0;
     }
-    if (slot_type(off) != VAL_NUM) {
+    if ((slot_type(off) != VAL_FLOAT && slot_type(off) != VAL_INT)) {
         rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
         return 0;
     }
@@ -824,7 +824,7 @@ Value* builtin_buf_deinterleave(Value *arg) {
     Value *ch_v = list_get_view(arg, 1, &ch_v_view);
     EIGS_VIEW(nch_v_view);
     Value *nch_v = list_get_view(arg, 2, &nch_v_view);
-    if (!ch_v || ch_v->type != VAL_NUM || !nch_v || nch_v->type != VAL_NUM) {
+    if (!ch_v || !val_is_number(ch_v) || !nch_v || !val_is_number(nch_v)) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: channel and nch must be numbers");
         return make_null();
     }
