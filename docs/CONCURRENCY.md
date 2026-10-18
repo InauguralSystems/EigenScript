@@ -164,10 +164,11 @@ depth-64 tail  SHARES
 **The rows the table cannot construct in three lines, and why they behave the
 way they do.** `chan_clone_rec` (src/eigenscript.c) switches on `ValType` with
 no `default:`, so `-Werror=switch` forces every new type to choose a side; the
-switch handles each type explicitly: `VAL_NUM`, `VAL_NULL`, `VAL_STR`,
-`VAL_LIST`, `VAL_DICT`, `VAL_BUFFER`, and `VAL_TEXT_BUILDER` are rebuilt
+switch handles each type explicitly: `VAL_FLOAT`, `VAL_NULL`, `VAL_STR`,
+`VAL_LIST`, `VAL_DICT`, `VAL_BUFFER`, `VAL_BOOL`, and `VAL_TEXT_BUILDER` are rebuilt
 (copy), while `VAL_FN` and `VAL_BUILTIN` take a refcount
-(share).
+(share). `VAL_INT` has an explicit refusal until R1.3 supplies `make_int`
+for a fresh exact copy; R1.2 has no program-visible int producer.
 A new `ValType` must choose a side in the switch for the compiler to accept it.
 The copy is recursive but not an identity-preserving graph copy: two references
 to one list or dict become two independent copies. At recursion depth 65
@@ -175,7 +176,7 @@ to one list or dict become two independent copies. At recursion depth 65
 bound C-stack use. The final two executable rows pin both limits explicitly.
 Two kinds are not in the table: `null` and a builtin have no mutable state, so there is nothing to observe. And a **store
 handle** and a **thread handle** behave exactly like the channel row: they are
-`VAL_NUM` ids into the process handle table (CLAUDE.md, leak tally), so the
+`VAL_FLOAT` ids into the process handle table (CLAUDE.md, leak tally), so the
 NUMBER copies while the resource it names is shared — which is why the channel
 row says SHARES even though a number copies.
 

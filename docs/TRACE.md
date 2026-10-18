@@ -221,7 +221,7 @@ perspective lands on the tape as an `N` record:
   served and the directory is **not** created a second time — replay does not
   re-run the side effect, the same rule as the subprocess/audio boundary.
   `read_bytes_buf`'s over-cap **raise** (#601) also rides the tape: the
-  observed file size is recorded as a `VAL_NUM` `N` record (unambiguous —
+  observed file size is recorded as a `VAL_FLOAT` `N` record (unambiguous —
   success records a `VAL_BUFFER`, open-failure records null) and the
   identical `io` error is re-derived from it under `EIGS_REPLAY`, so an
   over-cap failure replays byte-identically with no live fs access
