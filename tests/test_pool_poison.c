@@ -54,9 +54,9 @@ static int plant_num(void) {
     val_decref(v);                       /* refcount 0 -> parked on the freelist */
     if (g_num_freelist != v) { puts("NOT-ARMED num: value not parked"); return 3; }
     printf("ARMED num: parked NUM %p, reading %p\n", (void *)v,
-           (void *)&VAL_NUM_RAW(v));
+           (void *)&VAL_F64_RAW(v));
     fflush(stdout);
-    volatile double stale = VAL_NUM_RAW(v);   /* the planted stale read */
+    volatile double stale = VAL_F64_RAW(v);   /* the planted stale read */
     printf("UNDETECTED num: read %g from a parked NUM\n", stale);
     return 0;
 }
@@ -112,7 +112,7 @@ static int control(void) {
     val_decref(v);
     Value *again = make_num(2.5);
     if (again != v) { puts("NOT-ARMED control: freelist did not reuse"); return 3; }
-    if (VAL_NUM_RAW(again) != 2.5 || again->refcount != 1) bad = 1;
+    if (VAL_F64_RAW(again) != 2.5 || again->refcount != 1) bad = 1;
     printf("control num reuse: %s\n", bad ? "WRONG" : "ok");
     val_decref(again);
 
@@ -143,7 +143,7 @@ static int control(void) {
     if (!r) { puts("control take: eval failed"); return 1; }
     eigs_value_release(r);
     Value *res = eigs_get_global("pool_poison_r");
-    int ok = res && res->type == VAL_NUM && VAL_NUM_RAW(res) == 8.0;
+    int ok = res && res->type == VAL_FLOAT && VAL_F64_RAW(res) == 8.0;
     if (res) eigs_value_release(res);
     int same = c->env_cache == first;
     printf("control env take: %s (re-parked same env: %s)\n",

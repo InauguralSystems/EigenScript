@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
     CHECK(raw[3].u == SLOT_NULL_BITS && raw[4].u == SLOT_TRUE_BITS);
     CHECK(str->refcount == 1);   /* one container ref; a list may also be GC-buffered */
 
-    CHECK(slot_type(list_slot(list, 0)) == VAL_NUM);
+    CHECK(slot_type(list_slot(list, 0)) == VAL_FLOAT);
     CHECK(list_elem_type(list, 1) == VAL_STR);
     CHECK(list_get_ref(list, 0) == NULL && list_get_ref(list, 1) != NULL);
     CHECK(eigs_slot_num(list_slot(list, 0), "test") == 3.0);
@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
     }
     Value *owned = list_get_owned(list, 0);
     Value *returned = list_get_return(list, 0);
-    CHECK(owned != returned && owned->type == VAL_NUM && VAL_NUM_RAW(owned) == 3.0);
+    CHECK(owned != returned && owned->type == VAL_FLOAT && VAL_F64_RAW(owned) == 3.0);
     val_decref(owned); val_decref(returned);
     list_set_num(list, 0, 4.0);
     list_set_slot_owned(list, 1, slot_from_heap(make_str("owned")));
@@ -103,7 +103,7 @@ int main(int argc, char **argv) {
     dict_set_owned(dict, "b", make_bool(0));
     int ni = env_hash_find_dict(dict, "n", env_hash_name("n"));
     int si = env_hash_find_dict(dict, "s", env_hash_name("s"));
-    CHECK(dict_value_type(dict, ni) == VAL_NUM && dict_value_get_ref(dict, ni) == NULL);
+    CHECK(dict_value_type(dict, ni) == VAL_FLOAT && dict_value_get_ref(dict, ni) == NULL);
     CHECK(slot_is_f64(dict_values_storage(dict)[ni]));
     CHECK(eigs_slot_num(dict_value_slot(dict, ni), "test") == 2.0);
     { EIGS_VIEW(v); CHECK(eigs_num_arg(dict_value_get_view(dict, ni, &v), "test") == 2.0); }
@@ -113,7 +113,7 @@ int main(int argc, char **argv) {
       CHECK(found && slot_is_null(zs));
       (void)dict_get_slot(dict, "missing", &found); CHECK(!found); }
     owned = dict_value_get_owned(dict, ni); returned = dict_value_get_return(dict, ni);
-    CHECK(owned != returned && VAL_NUM_RAW(owned) == 2.0);
+    CHECK(owned != returned && VAL_F64_RAW(owned) == 2.0);
     val_decref(owned); val_decref(returned);
     dict_value_set_num(dict, ni, 8.0);
     dict_value_set_slot_owned(dict, si, slot_from_heap(make_str("changed")));
