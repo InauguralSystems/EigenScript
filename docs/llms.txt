@@ -248,6 +248,9 @@ elements and raise catchable limit errors above it. stream_open requires
 an integral count from 1 through that cap; build_corpus includes file
 separators in its capped token count. These limits also raise with
 EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
+read_line of null returns stdin lines byte-exactly, including \r and the \n
+terminator; it returns null only at EOF. Pipes and redirected files behave the
+same, and the presence of a final newline is observable.
 
 ## Threads: VALUES copy through a channel, HANDLES share
 

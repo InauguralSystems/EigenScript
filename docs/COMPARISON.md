@@ -34,6 +34,10 @@ Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
 an integral count from 1 through that cap, and `build_corpus` includes file
 separators in its capped token count. These limits also raise under
 `EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
+Unlike Python text mode, `read_line of null` does not translate line endings:
+it returns each stdin line with its terminator. This follows Lua's preservation
+of the `\r` in CRLF input while additionally retaining `\n`, making the final
+newline observable and making pipes match redirected regular files byte for byte.
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
 

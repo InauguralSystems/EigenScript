@@ -318,6 +318,9 @@ Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
 an integral count from 1 through that cap, and `build_corpus` includes file
 separators in its capped token count. These limits also raise under
 `EIGS_STRICT=0`; see [BUILTINS.md](docs/BUILTINS.md) for the I/O contracts.
+`read_line of null` reads stdin one line at a time byte-exactly, including the
+line terminator, so pipes and redirected files preserve `\r` and expose whether
+the final line ended in `\n`.
 
 Each of them takes a nested list, a flat list, or a flat numeric **`buffer`**,
 and returns a buffer when every tensor operand was one. `zeros of n` returns a
