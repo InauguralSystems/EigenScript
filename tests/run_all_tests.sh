@@ -6998,7 +6998,7 @@ if [ ! -f "$EIGS_BIN" ]; then
     TOTAL=$((TOTAL - 1))
     section_skip "no binary to fingerprint"
 else
-    source "$TESTS_DIR/binary_swap.sh"
+    . "$TESTS_DIR/binary_swap.sh"
     SELFTEST_OUT=$(eigs_binary_swap_selftest 2>&1)
     SELFTEST_RC=$?
     RESTORE_OUT=$(python3 "$TESTS_DIR/test_binary_swap_restore.py" 2>&1)
