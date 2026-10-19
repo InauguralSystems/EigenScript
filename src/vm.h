@@ -655,6 +655,7 @@ void task_request_yield(void);       /* current task → tail of the ready queue
 int  task_request_join(int target, uint32_t gen); /* current task blocks on this exact handle */
 void task_sched_thread_free(void);   /* release the scheduler at thread detach */
 int  task_any_unobserved_error(void);/* #493: any worker died of an uncaught error and was never joined? */
+void task_observe_error(void);       /* task_join consumed one scheduler-local death */
 /* Inc 2 mailbox interface (builtins.c task_send/task_recv/task_try_recv/task_kill). */
 int   task_deliver(int tid, Value *msg_owned); /* append msg (ownership taken); 1 sent / 0 dropped-to-dead */
 int   task_mbox_has(void);           /* current task has a queued message? */

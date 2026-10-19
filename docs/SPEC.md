@@ -2150,7 +2150,9 @@ deadlock terminal (loud message, non-zero exit) — a handler inside a
 A task that **dies of an uncaught error** prints its stack trace, and if
 nothing ever `task_join`s it the **process still exits non-zero** — a
 fire-and-forget worker's failure is never silently swallowed into a
-success exit. `task_join`-ing the dead task and `catch`-ing its error
+success exit. This applies to every OS thread's cooperative scheduler: an
+unjoined task created inside a `spawn` worker also fails the process.
+`task_join`-ing the dead task and `catch`-ing its error
 recovers normally (exit 0), exactly as for an inline `try`/`catch`. A
 task ended deliberately with `task_kill` is a teardown, not an uncaught
 error, and does not by itself fail the process. A **detached** task (below)

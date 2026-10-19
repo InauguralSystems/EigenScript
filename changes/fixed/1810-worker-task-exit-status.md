@@ -1,0 +1,1 @@
+- Preserve unobserved cooperative-task failures from spawned worker threads so they make the process exit non-zero, just as they do on the main thread.
