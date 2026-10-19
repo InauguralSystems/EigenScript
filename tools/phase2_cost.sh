@@ -3,6 +3,19 @@
 # The target list has one home: codspeed.yml. Consumer targets live elsewhere.
 # Undeclared rows allow +0.3%; declared temporary costs are bounded per row.
 # TSV: workload, tier, max_delta_pct, recover_round, reason (no header).
+# A declared row is bounded on BOTH sides. Above its max it fails (OVER).
+# More than STALE_TOLERANCE points below its max it also fails (STALE): a
+# round recovered cost and the declaration must come down, or a NEW
+# regression could hide under the loose bound. A declaration is written as
+# ceil to 0.1 of (measured delta + NOISE), so a fresh one fires neither way
+# unless a re-run moves by more than NOISE (STALE_TOLERANCE = 2*NOISE + 0.1).
+# NOISE = 0.2 points, the largest measured shift rounded up (R1.3 CI fix):
+# run to run, a workload that prints elapsed time moved by 0.026 points; with
+# the same binaries a different workload path moved bench/alloc_heavy by
+# 0.160 points (the heap layout shifts a short string across a strlen
+# alignment boundary, a million times).
+# --declared TIER prints the validated rows of one tier (workload, max,
+# recover_round): bench/check_regression.sh reads the declarations this way.
 # --final requires the declarations file to be empty before integration merges,
 # and the observer oracle's (tests/phase2/oracle_expect.txt, score.py --declared,
 # #1830) as well: #1776 merges only when neither declares anything.
@@ -21,10 +34,14 @@ import sys
 import tempfile
 
 THRESHOLD_PCT = Decimal('0.3')
+NOISE = Decimal('0.2')
+STALE_TOLERANCE = 2 * NOISE + Decimal('0.1')
 root = Path.cwd()
 ap = argparse.ArgumentParser(prog='tools/phase2_cost.sh')
 ap.add_argument('--final', action='store_true',
                 help='require empty cost_expect.txt and oracle_expect.txt (the pre-merge condition)')
+ap.add_argument('--declared', choices=('jit', 'off'),
+                help='print the validated declarations of one tier (workload, max, recover_round) and exit')
 ap.add_argument('base', nargs='?')
 ap.add_argument('cand', nargs='?')
 args = ap.parse_args()
@@ -40,9 +57,10 @@ if args.final and not oracle_path.is_file():
 if args.final and oracle_path.read_text():
     sys.exit('phase2-cost: FAIL: --final requires an empty tests/phase2/oracle_expect.txt'
              ' (%d observer-oracle declaration(s) remain)' % len(oracle_path.read_text().splitlines()))
-if bool(args.base) != bool(args.cand) or (not args.base and not args.final):
-    ap.error('supply <base-bin> <cand-bin>, or --final alone')
-if not args.base:
+if bool(args.base) != bool(args.cand) or (not args.base and not args.final and not args.declared) \
+        or (args.declared and (args.base or args.final)):
+    ap.error('supply <base-bin> <cand-bin>, or --final alone, or --declared TIER alone')
+if not args.base and not args.declared:
     print('phase2-cost: final declarations=0 oracle_declarations=0 PASS')
     sys.exit(0)
 local_workload = re.compile(r'(?:bench/[^/]+|tests/bench_[^/]+)\.eigs')
@@ -90,6 +108,11 @@ for n, line in enumerate(expect_text.splitlines(), 1):
     if not re.fullmatch(r'R[1-9][0-9]*(?:\.[1-9][0-9]*)?', recover_round) or not reason:
         sys.exit('phase2-cost: FAIL: cost_expect.txt:%d: recover_round and reason are required' % n)
     expectations[key] = (maximum, recover_round, reason)
+if args.declared:
+    for (workload, tier), (maximum, recover_round, _) in sorted(expectations.items()):
+        if tier == args.declared:
+            print('%s\t%s\t%s' % (workload, maximum, recover_round))
+    sys.exit(0)
 if not shutil.which('valgrind'):
     sys.exit('phase2-cost: FAIL: valgrind is required')
 bins = [str(Path(p).resolve(strict=True)) for p in (args.base, args.cand)]
@@ -100,9 +123,10 @@ for binary in bins:
     if re.search(r'__(?:asan|ubsan)', symbols):
         sys.exit('phase2-cost: FAIL: sanitizer binary: ' + binary)
 logdir = Path(tempfile.mkdtemp(prefix='phase2-cost-'))
-print('phase2-cost: source=codspeed.yml workloads=%d tiers=2 undeclared_max=+%s%% declarations=%d logs=%s' %
-      (len(workloads), THRESHOLD_PCT, len(expectations), logdir), flush=True)
-over = 0
+print('phase2-cost: source=codspeed.yml workloads=%d tiers=2 undeclared_max=+%s%% declarations=%d '
+      'stale_below_max=%s logs=%s' %
+      (len(workloads), THRESHOLD_PCT, len(expectations), STALE_TOLERANCE, logdir), flush=True)
+over = stale = 0
 for workload in sorted(workloads):
     for tier in ('jit', 'off'):
         results = []
@@ -136,11 +160,14 @@ for workload in sorted(workloads):
         maximum, recover_round, reason = expectations.get((workload, tier),
                                                          (THRESHOLD_PCT, None, None))
         fail = Decimal((cand - base) * 100) > maximum * base
+        # STALE: clearly below a declared max (never for an undeclared row).
+        low = bool(recover_round) and Decimal((cand - base) * 100) < (maximum - STALE_TOLERANCE) * base
         over += fail
+        stale += low
         print('%-34s %-3s base=%12d cand=%12d delta=%+.4f%% max=+%s%% %s%s' %
-              (workload, tier, base, cand, delta, maximum, 'OVER' if fail else 'ok',
+              (workload, tier, base, cand, delta, maximum, 'OVER' if fail else 'STALE' if low else 'ok',
                (' recover_round=%s reason=%s' % (recover_round, reason)) if recover_round else ''), flush=True)
-print('phase2-cost: workloads=%d rows=%d over_declared_max=%d %s' %
-      (len(workloads), len(workloads) * 2, over, 'FAIL' if over else 'PASS'))
-sys.exit(bool(over))
+print('phase2-cost: workloads=%d rows=%d over_declared_max=%d stale_declarations=%d %s' %
+      (len(workloads), len(workloads) * 2, over, stale, 'FAIL' if over or stale else 'PASS'))
+sys.exit(bool(over or stale))
 PY

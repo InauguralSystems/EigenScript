@@ -1970,7 +1970,19 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      `max_delta_pct`, `recover_round`, `reason`); undeclared rows retain
      +0.3%. Declare only measured R1.3 costs with §3 as the reason and
      `recover_round=R5`, the JIT/leaf int fast-path round. A row above its
-     declared maximum fails. The observer oracle's known-wrong capability
+     declared maximum fails, and so does a row more than 0.5 points below it
+     (STALE, the R1.3 CI fix): a round that recovers cost must bring the
+     declaration down, or a new regression hides under it. A declaration is
+     the measured delta plus 0.2 points (the largest measured shift: a
+     different workload path moves `alloc_heavy` by 0.16 points), rounded up
+     to 0.1. A row whose cost another round moves names that component with
+     its measurement: R1.6's int `range` alone removes 58% (jit) and 66%
+     (off) of `scalar_loop`'s excess, and raises 14 other rows by up to 44
+     points (the range-int control, measured at R1.3).
+     `bench/check_regression.sh --vs` (CI's bench job, the default tier)
+     reads the same `jit` rows through `phase2_cost.sh --declared jit`: a
+     declared workload is bounded by its max and prints `DECLARED` with its
+     round; an undeclared one keeps the 5% bound. The observer oracle's known-wrong capability
      verdicts are declared the same way (#1830): `tests/phase2/oracle_expect.txt`
      (`arm`, `row@checkpoint`, `predicate`, `recover_round`, `reason`) lists the
      32 `int64_count` verdicts R1.3 first measures, `recover_round=R3`, the round
