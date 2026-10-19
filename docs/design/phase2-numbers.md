@@ -2053,6 +2053,20 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    - `buf_to_pcm16le` with a NaN sample;
    - the `numerical_grad` waiver.
 
+### Round 5 obligations (recorded by earlier rounds)
+
+Round 5 gives the JIT and the leaf evaluator their int fast paths (§4.4).
+Until then a check that needs EMITTED code for an int program cannot fire,
+so its fixture runs a float program instead. Each such fixture gets its int
+twin back when R5 compiles ints:
+- `tests/tsan_spawn_emitted_jit.eigs` (TSan shape fixture, R1.3 CI fix).
+  It races a spawn against emitted JIT code, and its row requires
+  `[jit] compiled>=1` and `hot`'s native RET after 80 warm calls. The R1.2
+  version multiplied ints and stopped compiling at R1.3. It now writes float
+  literals and float arguments. At R5 the int version returns beside it as
+  its own `SHAPE_FIXTURES` row with the same witness, and `SHAPE_DECLARED`
+  grows by one.
+
 ### Risks across both rounds
 
 - The AOT is a round of its own (ouroboros, pinned to the integration SHA).
