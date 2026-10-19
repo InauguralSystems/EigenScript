@@ -20,7 +20,7 @@ asking the running program about its own state and history.
 | | Python | JavaScript | Rust | Lisp | EigenScript |
 |---|---|---|---|---|---|
 | typing | dynamic | dynamic | static | dynamic | dynamic |
-| numbers | int + float | float | many | many | one: 64-bit float |
+| numbers | int + float | float | many | many | int64 + float64 |
 | assignment | `x = 1` | `let x = 1` | `let x = 1;` | `(define x 1)` | `x is 1` |
 | call | `f(x)` | `f(x)` | `f(x)` | `(f x)` | `f of x` |
 | blocks | indentation | braces | braces | parens | indentation |
@@ -62,7 +62,9 @@ print(7 / 2)        # 3.5
 print(7 // 2)       # 3   (floor division operator)
 ```
 
-EigenScript — one number type, true division; floor explicitly:
+EigenScript — int64 and float64 share the `num` type; `num_type of`
+distinguishes their kind. Int `+ - *` raise `value` on overflow; mixed-kind
+comparison is exact. Division returns a float; floor explicitly:
 
 ```eigenscript
 x is 42

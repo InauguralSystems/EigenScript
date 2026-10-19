@@ -137,11 +137,17 @@ examples (executed by the suite).
 ## Numbers
 
 **Promise:**
-- One numeric type: IEEE-754 double. Integers are exact up to 2^53.
+- One surface type, `num`, with exact signed int64 and finite IEEE-754 double
+  kinds. `num_type of` gives `"int"` or `"float"`, or null for a non-number.
+  Decimal integer literals within int64 and wrapping hexadecimal literals are
+  ints; a point or exponent produces a float, as does decimal overflow.
+  Int `+ - *` raise `value` on overflow; unary minus and `abs` raise at
+  INT64_MIN. Mixed arithmetic converts to float; cross-kind comparison is exact.
+  Float integer exactness ends at 2^53.
 - No NaN, no Infinity reaches a program. By default a NaN-producing
   operation, an out-of-domain argument or a wrong-typed argument raises a
   catchable error (strict is the default, #1361); division by zero raises
-  in every mode. Overflow saturates at ±1e308. Under the per-run opt-out
+  in every mode. Float overflow saturates at ±1e308. Under the per-run opt-out
   `EIGS_STRICT=0` the arithmetic is finite by construction instead: a NaN
   collapses to 0 and domain functions substitute a stand-in.
 - **Every clamp is recorded.** The finite invariant keeps a program
@@ -181,13 +187,15 @@ examples (executed by the suite).
   are what the finite invariant requires — the `overflow` flag is how
   you tell. Stated here because the trade should be visible rather than
   discovered.
-- `str of` produces the shortest representation that round-trips back to
-  the same double; `num of (str of x) == x`.
+- Ints print exact decimal digits. For floats, `str of` produces the shortest
+  representation that round-trips back to the same double. During the builtin
+  transition, `num of` and JSON decoders still produce floats; an integer above
+  2^53 must not be round-tripped through those readers yet.
 - **Every producer of number text obeys that same rule** — `str of`,
   `json_encode`, `json_build`, `json_path`, and the SIGUSR1 observer dump
   all share one implementation (`eigs_num_text`), so a JSON round-trip
   returns the same double and `json_encode of x` equals `str of x` for
-  every number (#875).
+  every float (#875).
 - `%` follows the dividend's sign (C semantics): `-7 % 3 == -1`.
 
 **Status:** Enforced — `tests/test_number_format.eigs`,
@@ -461,7 +469,7 @@ unary and `of` are right-associative.
 - Out-of-range indices (including too-negative, e.g. `a[-(len+1)]`)
   raise a runtime error.
 - A non-integer index **raises** (`a[1.5]` → error). Integer-valued doubles
-  are accepted (`a[2.0]` works), since EigenScript has a single number type;
+  are accepted (`a[2.0]` works), since ints and floats share the numeric surface type;
   but a fractional value is never silently truncated. Because `/` always
   yields a double, a division-derived index must be collapsed explicitly —
   `a[floor of ((lo + hi) / 2)]` — which keeps the rounding decision in the

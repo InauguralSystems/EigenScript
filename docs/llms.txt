@@ -210,8 +210,16 @@ sqrt(2) = 1.414213562373095
   `false`, `0`, `null`, `""`, `[]`, `{}` are falsy.
 - `+` concatenates **strings only**. List concatenation is `append of [xs, v]`
   (in place) or a comprehension — `xs + ys` is a runtime error.
-- Numbers are f64 and finite by construction: overflow saturates at ±1e308.
-  Integer bit ops are `bit_and`/`&` etc. on int64; exactness ends at 2^53.
+- Numbers are signed int64 or finite f64. Decimal integer literals within
+  int64 are exact; a point/exponent or out-of-range decimal literal gives
+  float. Hex literals wrap modulo 2^64. `type of` says "num" for both;
+  `num_type of` says "int"/"float", or null for a non-number. Int +, -, *
+  raise value on overflow; unary minus and abs raise at INT64_MIN. Mixed
+  arithmetic converts to float, while cross-kind comparison is exact.
+  Division and most builtin results remain floats at this stage.
+  Float overflow saturates at ±1e308.
+  Integer bit ops accept exact int64 operands; builtin results and infix
+  results still convert to float until the bitwise/builtin rounds.
   A bit-op operand that is not an exact integer (`1.5 | 0`, `1e30 & 1`)
   raises a `value` error; it is never truncated.
   Strict mode is the DEFAULT: out-of-domain math (`sqrt of -1`), a NaN

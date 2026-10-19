@@ -101,7 +101,7 @@ EigenScript is dynamically typed. The runtime types are:
 
 | type label | description | literal |
 |---|---|---|
-| `num` | 64-bit float (the only number type) | `42`, `3.14` |
+| `num` | signed int64 or 64-bit float | `42`, `3.14` |
 | `str` | immutable byte string | `"text"` |
 | `list` | mutable ordered sequence | `[1, 2, 3]` |
 | `dict` | mutable string-keyed map | `{"k": 1}` |
@@ -184,7 +184,20 @@ print of xs
 
 ## Numbers and arithmetic
 
-All numbers are 64-bit floats. Integer-valued numbers print without a
+Numbers have two kinds: signed int64 and 64-bit float. `type of` reports
+`"num"` for both; `num_type of` reports `"int"` or `"float"`, and null
+for a non-number. Decimal integer literals within int64 are exact ints.
+A decimal point or exponent makes a float; an out-of-range decimal integer
+literal falls back to float. Hex integer literals wrap modulo 2^64.
+
+Int `+`, `-` and `*` preserve the int kind and raise `value` on int64 overflow.
+Unary minus and `abs` also raise on INT64_MIN. Mixed int/float arithmetic
+converts the int to float; comparison across kinds is exact, including
+above 2^53. `/` still returns float; `%` retains truncating float remainder
+until the floor-division round. Builtins retain their documented float
+results during this transition, except `abs`, which preserves ints.
+
+Integer-valued floats print without a
 decimal point. Division is true division. `%` is modulo. There is no
 exponent operator; use `pow of [base, exp]`.
 
@@ -235,14 +248,15 @@ still running
 
 ### The numeric model (deliberate position)
 
-There is one number kind — the IEEE-754 f64 — and by design there is no
+The float kind is IEEE-754 f64; at this stage there is no
 bigint or decimal type. This is a chosen position, not an oversight; the
 consequences are contracts you can rely on:
 
-- **Integer exactness ends at 2^53.** Whole numbers up to `9007199254740992`
+- **Float integer exactness ends at 2^53.** Whole floats up to `9007199254740992`
   are exact; past that the gaps between representable values exceed 1, so
-  `+ 1` can be invisible. Keep integer identifiers, counters, and money-in-cents
-  below 2^53, or use the bitwise seam below for wider exact integer work
+  `+ 1` can be invisible. For exact identifiers, counters, and money-in-cents, keep values in
+  the int kind rather than converting them to float. The transitional bitwise seam below
+  accepts wider exact integer operands
   (its operands must be exact integers below 2^63 in magnitude; past 2^53 only
   the representable ones qualify).
 - **Finite by construction — no `NaN`, no `Infinity` ever reach your program.**
@@ -330,7 +344,7 @@ consequences are contracts you can rely on:
     `json_build`, `sort`, `random_int`, `random_hex`, `token_name`,
     sentinel for a valid-but-absent input — `index_of` miss `-1`,
     `file_exists` of a missing path `0` — is unchanged in both modes.
-  Overflow saturation is the same in both modes. (Division and modulo by zero
+  Float overflow saturation is the same in both modes; int overflow raises. (Division and modulo by zero
   raise in *both* modes — no defined value.)
   `zlib_*` forms) likewise reject a nonnumeric list element with a
   builtin-named `type_mismatch` error by default; `EIGS_STRICT=0` retains the
@@ -358,12 +372,8 @@ false
 1099511627776
 ```
 
-Bigint / decimal value kinds would be a VM representation change rippling through
-the JIT and the AOT (whose numeric speed rests on everything-being-a-double), so
-they are deferred until a consumer genuinely forces them — not adopted
-speculatively. Nothing above says "a number *is* an f64" any more than it must:
-the contracts are exactness-below-2^53, finiteness, and the int64 bitwise seam,
-which a future wider numeric kind could still honor.
+Ints are exact throughout int64; floats retain the finite model above. Bigint
+and decimal arithmetic remain library needs rather than additional core kinds.
 
 ## Strings
 

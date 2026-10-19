@@ -323,7 +323,11 @@ and returns a buffer when every tensor operand was one. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
 wants the flat container, and that is the name it reaches for.
 
-EigenScript numbers are finite by construction. Operations that would overflow
+EigenScript has exact signed int64 literals and finite float64 numbers.
+`type of` returns `"num"` for both, and `num_type of` distinguishes `"int"`
+from `"float"` (null for a non-number). Int `+ - *` raise `value` on
+overflow; unary minus and `abs` raise on INT64_MIN. Comparisons between
+ints and floats are exact, including beyond 2^53. Float operations that would overflow
 to infinity saturate at `+/-1e308`. Strict mode is the default: an
 out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
