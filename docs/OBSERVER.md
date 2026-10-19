@@ -254,7 +254,10 @@ native tiers must still witness a body. The predicate READS never run natively: 
 A row's capability is derived from its values (IEEE inf/-inf/NaN; an int a double cannot hold exactly). Such a row runs
 only on a binary whose probe shows the capability (one probe checks that `1e308 * 10` overflows to inf AND that inf × 0 is
 NaN; a binary that does one without the other is refused), skips are printed, `EXPECT=ieee,int64` makes an absent one
-fail, and every verdict on them must be right. By default the run also applies the committed floor,
+fail, and every verdict on them must be right, or be declared wrong: Phase 2 passes `--declared
+tests/phase2/oracle_expect.txt` (#1830), whose rows name an arm, a `row@checkpoint` and a predicate with the round
+that fixes it. An undeclared wrong verdict fails, so does a declaration whose verdict is right now or was not examined,
+and the integration merge (#1776) requires that file empty. By default the run also applies the committed floor,
 `tools/observer_oracle/floor.json` (#1764): it fails when it gets wrong any verdict the v0.46.0 tag got right. An empty
 `FLOOR=`, on the command line or in the environment, skips the floor. Its anchor is the binary
 `tools/observer_oracle/build_anchor.sh` builds from the tag into

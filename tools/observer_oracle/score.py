@@ -2,7 +2,7 @@
 """Score EigenScript's observer against a ground-truth corpus (#1746, #1758).
 
 usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp] [--expect CAP,...]
-                       [--floor FILE] [--write-floor FILE [--note TEXT]]
+                       [--floor FILE] [--declared FILE] [--write-floor FILE [--note TEXT]]
 
 labels.json must equal derive.py's derivation (the label gate). Each
 predicate is scored against ONE question (converged, stable, improving:
@@ -52,7 +52,13 @@ with the runtime, not independent evidence.
 
 Exit 1: a FINDING (any reading, REPORTED ones included, that differs
 between arms), a wrong verdict on a capability row, an expected capability
-absent, or (--floor) a floor verdict now wrong. There are no waivers: a
+absent, or (--floor) a floor verdict now wrong. --declared FILE (#1758, #1830:
+Phase 2's tests/phase2/oracle_expect.txt, the shape of cost_expect.txt) lists
+known-wrong CAPABILITY verdicts, one TSV row each: arm, row@checkpoint,
+predicate, recover_round, reason. A declared wrong verdict does not fail; an
+undeclared one does, and so does a STALE declaration, one whose verdict is
+right now or was not examined, so a fix forces the declaration out. A row the
+parser cannot read is a harness error. There are no waivers on the floor: a
 floor verdict agrees with its label, so losing it is wrong unless the label
 is, and a wrong label is fixed through derive/certify, which re-measures the
 floor. The floor's anchor is the binary build_anchor.sh builds from tag
@@ -512,6 +518,33 @@ def verdicts(res, corpus, labels):
     return out
 
 
+def load_declared(path, rows):
+    """--declared FILE -> {(arm, row, checkpoint, predicate): (recover_round, reason)}.
+    Only capability verdicts can be declared; anything unreadable is refused."""
+    arms, out = {f"{t}/{f}" for t, f in ARMS}, {}
+    with open(path) as f:
+        lines = f.read().splitlines()
+    for n, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        fields = [x.strip() for x in line.split("\t")]
+        if len(fields) != 5:
+            raise HarnessError(f"{path}:{n}: expected five TSV fields"
+                               " (arm, row@checkpoint, predicate, recover_round, reason)")
+        arm, rc, p, rnd, why = fields
+        rid, _, at = rc.partition("@")
+        row = rows.get(rid)
+        if (arm not in arms or not row or not row.get("capability") or not at.isdigit()
+                or int(at) not in row["checkpoints"] or p not in PREDS):
+            raise HarnessError(f"{path}:{n}: not a capability verdict: {arm} {rc} {p}")
+        if not re.fullmatch(r"R[1-9][0-9]*(?:\.[1-9][0-9]*)?", rnd) or not why:
+            raise HarnessError(f"{path}:{n}: recover_round (a round name) and reason are required")
+        if (arm, rid, int(at), p) in out:
+            raise HarnessError(f"{path}:{n}: duplicate declaration {arm} {rc} {p}")
+        out[(arm, rid, int(at), p)] = (rnd, why)
+    return out
+
+
 def findings(res):
     """Every (row, checkpoint, predicate) whose readings differ between arms,
     REPORTED readings included: a split is a fault whatever the label."""
@@ -679,7 +712,7 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
 
 def main(argv):
     args, opts = argv[1:], {}
-    for flag in ("--corpus", "--numbers", "--expect", "--floor", "--write-floor", "--note"):
+    for flag in ("--corpus", "--numbers", "--expect", "--floor", "--declared", "--write-floor", "--note"):
         if flag in args:
             i = args.index(flag)
             if i + 1 >= len(args):
@@ -689,7 +722,7 @@ def main(argv):
     expect = set(filter(None, opts.get("--expect", "").split(",")))
     if len(args) != 1 or opts.get("--numbers", "clamp") not in ("ieee", "clamp") or expect - set(CAPS):
         raise HarnessError("usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp] [--expect ieee,int64]"
-                           " [--floor FILE] [--write-floor FILE [--note TEXT]]")
+                           " [--floor FILE] [--declared FILE] [--write-floor FILE [--note TEXT]]")
     binary = os.path.abspath(args[0])
     if not (os.path.isfile(binary) and os.access(binary, os.X_OK)):
         raise HarnessError(f"binary not found or not executable: {binary}")
@@ -704,6 +737,7 @@ def main(argv):
     labels = load_labels(corpus, certs, os.path.join(cdir, "labels.json"))
     pre = floor_preflight(opts["--floor"]) if "--floor" in opts else None
     rows = {r["id"]: r for r in corpus["rows"]}
+    declared = load_declared(opts["--declared"], rows) if "--declared" in opts else None
     ieee, caps, probes = capabilities(binary, opts.get("--numbers"))
     with anchor_lock() if stamp else contextlib.nullcontext():
         res = measure(binary, corpus, caps)
@@ -724,9 +758,22 @@ def main(argv):
     missing = sorted(c for c in expect if not caps[c])
     print(f"\nCAPABILITY ROWS (every scored verdict must be right): {len(ran)} run, {len(res['skipped'])} skipped,"
           f" {len(capwrong)} wrong verdict(s); expected and absent: {missing or 'none'}")
+    stale = []
+    if declared is not None:
+        stale = sorted(k for k in declared if k not in capwrong)
+        print(f"DECLARED (--declared {opts['--declared']}): {len(declared)} declaration(s),"
+              f" {sum(1 for k in capwrong if k in declared)} wrong as declared,"
+              f" {sum(1 for k in capwrong if k not in declared)} undeclared wrong, {len(stale)} stale")
+        for k in sorted(k for k in capwrong if k in declared):
+            print(f"  DECLARED WRONG {k[0]} {k[1]}@{k[2]} {k[3]}: expected={str(v[k][1]).lower()}"
+                  f" recover_round={declared[k][0]} reason={declared[k][1]}")
+        for k in stale:
+            print(f"  STALE DECLARATION {k[0]} {k[1]}@{k[2]} {k[3]}: "
+                  + ("the verdict is right now; remove the declaration" if k in v else "not examined"))
+        capwrong = [k for k in capwrong if k not in declared]
     for arm, rid, at, p in capwrong:
         print(f"  CAPABILITY WRONG {arm} {rid}@{at} {p}: expected={str(v[(arm, rid, at, p)][1]).lower()}")
-    fail = 1 if split or capwrong or missing else 0
+    fail = 1 if split or capwrong or stale or missing else 0
     if pre:
         fail |= check_floor(pre, opts["--floor"], v, rows, corpus, labels)
     if stamp:

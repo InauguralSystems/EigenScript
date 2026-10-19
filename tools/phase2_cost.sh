@@ -3,7 +3,9 @@
 # The target list has one home: codspeed.yml. Consumer targets live elsewhere.
 # Undeclared rows allow +0.3%; declared temporary costs are bounded per row.
 # TSV: workload, tier, max_delta_pct, recover_round, reason (no header).
-# --final requires the declarations file to be empty before integration merges.
+# --final requires the declarations file to be empty before integration merges,
+# and the observer oracle's (tests/phase2/oracle_expect.txt, score.py --declared,
+# #1830) as well: #1776 merges only when neither declares anything.
 set -eu
 cd "$(dirname "$0")/.."
 exec python3 - "$@" <<'PY'
@@ -22,7 +24,7 @@ THRESHOLD_PCT = Decimal('0.3')
 root = Path.cwd()
 ap = argparse.ArgumentParser(prog='tools/phase2_cost.sh')
 ap.add_argument('--final', action='store_true',
-                help='require an empty cost_expect.txt (the pre-merge condition)')
+                help='require empty cost_expect.txt and oracle_expect.txt (the pre-merge condition)')
 ap.add_argument('base', nargs='?')
 ap.add_argument('cand', nargs='?')
 args = ap.parse_args()
@@ -32,10 +34,16 @@ if not expect_path.is_file():
 expect_text = expect_path.read_text()
 if args.final and expect_text:
     sys.exit('phase2-cost: FAIL: --final requires an empty tests/phase2/cost_expect.txt')
+oracle_path = root / 'tests/phase2/oracle_expect.txt'
+if args.final and not oracle_path.is_file():
+    sys.exit('phase2-cost: FAIL: missing tests/phase2/oracle_expect.txt')
+if args.final and oracle_path.read_text():
+    sys.exit('phase2-cost: FAIL: --final requires an empty tests/phase2/oracle_expect.txt'
+             ' (%d observer-oracle declaration(s) remain)' % len(oracle_path.read_text().splitlines()))
 if bool(args.base) != bool(args.cand) or (not args.base and not args.final):
     ap.error('supply <base-bin> <cand-bin>, or --final alone')
 if not args.base:
-    print('phase2-cost: final declarations=0 PASS')
+    print('phase2-cost: final declarations=0 oracle_declarations=0 PASS')
     sys.exit(0)
 local_workload = re.compile(r'(?:bench/[^/]+|tests/bench_[^/]+)\.eigs')
 workloads = set()

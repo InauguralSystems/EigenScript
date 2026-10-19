@@ -483,13 +483,16 @@ observer-anchor:
 # observer-anchor builds, or reuses, in the user cache. FLOOR=<file>, on the command
 # line or in the environment, names another floor; an empty FLOOR skips the floor
 # and the anchor. EXPECT=ieee,int64 fails when an expected capability is absent
-# (#1758). CI calls score.py directly, through tools/observer_oracle/ci_lane.sh
-# (the required check `observer oracle (floor)`).
+# (#1758). Both pass --declared tests/phase2/oracle_expect.txt: Phase 2's known-
+# wrong capability verdicts, each with its recover round (#1830); an undeclared
+# wrong verdict or a stale declaration fails, and #1776 merges only when the file
+# is empty (tools/phase2_cost.sh --final). CI calls score.py directly, through
+# tools/observer_oracle/ci_lane.sh (the required check `observer oracle (floor)`).
 .PHONY: observer-oracle
 observer-oracle: FLOOR ?= tools/observer_oracle/floor.json
 observer-oracle: build
 	$(if $(FLOOR),$(OBSERVER_ANCHOR))
-	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT))
+	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT)) --declared tests/phase2/oracle_expect.txt
 
 install-gfx: install
 	@echo "NOTE: 'make install-gfx' is a compatibility alias for 'make install'."

@@ -1970,9 +1970,18 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      `max_delta_pct`, `recover_round`, `reason`); undeclared rows retain
      +0.3%. Declare only measured R1.3 costs with §3 as the reason and
      `recover_round=R5`, the JIT/leaf int fast-path round. A row above its
-     declared maximum fails. **Pre-merge condition:**
-     `tools/phase2_cost.sh --final BASE CAND` must pass with the declarations file
-     empty; temporary costs must be recovered before integration merges.
+     declared maximum fails. The observer oracle's known-wrong capability
+     verdicts are declared the same way (#1830): `tests/phase2/oracle_expect.txt`
+     (`arm`, `row@checkpoint`, `predicate`, `recover_round`, `reason`) lists the
+     32 `int64_count` verdicts R1.3 first measures, `recover_round=R3`, the round
+     whose predicate definitions make `int64_count` its acceptance row.
+     `make observer-oracle` and CI's lane pass it to `score.py --declared`; an
+     undeclared wrong verdict fails, and so does a stale declaration (its verdict
+     is right now, or was not examined). **Pre-merge condition (#1776):**
+     `tools/phase2_cost.sh --final BASE CAND` must pass, which requires both
+     `tests/phase2/cost_expect.txt` and `tests/phase2/oracle_expect.txt` to be
+     empty; temporary costs and known-wrong verdicts must be recovered before
+     integration merges.
      Consumer hashes that relied on double rounding now raise
      ((A)); they move to the N9 wrapping builtins.
 4. **R1.4, N4.** `//` (token, parser, `OP_IDIV` appended,
