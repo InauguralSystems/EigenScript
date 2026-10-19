@@ -958,7 +958,15 @@ emit_plan() {   # emit_plan <out> <plan builder> <args...>
 # tree.  Keep the runner as the one source of truth: a hand-maintained list
 # here is liable to miss the next helper added to its preamble (#1819).
 copy_runner_support_files() { # <runner source> <scratch tests dir>
-    local runner_source="$1" scratch_tests="$2" rel src dst files
+    local runner_source="$1" scratch_tests="$2" rel src dst files unsupported
+    unsupported=$(awk '
+        /^[[:space:]]*(\.|source)[[:space:]]/ &&
+        $0 !~ /^[[:space:]]*\.[[:space:]][[:space:]]*"\$TESTS_DIR\/[^"]*".*$/ {
+            print NR ":" $0
+        }
+    ' "$runner_source")
+    [ -z "$unsupported" ] ||
+        die "runner source line is not the required literal . \"\$TESTS_DIR/<file>\" form: $unsupported"
     files=$(sed -n 's|^[[:space:]]*\.[[:space:]][[:space:]]*"\$TESTS_DIR/\([^"]*\)".*$|\1|p' \
         "$runner_source" | sort -u)
     [ -n "$files" ] || die "no literal \$TESTS_DIR support files found in $runner_source"
@@ -1115,7 +1123,7 @@ selftest() {
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/runner_text.sh" \
        "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
     cp "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
-    copy_runner_support_files "$RUNNER_SOURCE" "$stub/tests"
+    copy_runner_support_files "$RUNNER" "$stub/tests"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
     printf '#!/bin/sh\nexit 0\n' > "$stub/src/eigenscript"
     chmod +x "$stub/src/eigenscript"
