@@ -2,8 +2,8 @@ print of "=== HALTING: BOUNDED DESCENT TEST ==="
 print of "--- HD1: Entropy strictly decreases each iteration ---"
 
 counter is 0
-x is 10
-x is 10
+x is 10.0
+x is 10.0
 
 loop while not converged:
     counter is counter + 1
