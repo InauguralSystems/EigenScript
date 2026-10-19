@@ -17,6 +17,13 @@
 #   bash tools/jit_diff.sh            # compare against the ledger
 #   bash tools/jit_diff.sh --record   # rewrite data rows; keep '#' lines
 set -u
+# The arms run headless whatever the caller's display (#1758 R1.3 CI fix). With
+# a display a window-opening example (examples/ui_dock.eigs) maps a real window,
+# and one Escape key from any other client of that display ends one arm with
+# rc 0 while its twin runs to the timeout: a row. CI has no display. A program
+# that needs another driver names it in tests/suite_program_env.txt.
+unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
+export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT/src"
 export EIGS_TEST_DIR="$ROOT/tests"
 . "$ROOT/tests/suite_program_env.sh" || exit 1
@@ -66,12 +73,21 @@ gobs=$(env "${OBS[@]}" EIGS_OBS_GATE_STATS=1 timeout 30 "$EIG" "$T/elide.eigs" 2
 [ "$gref" = "obs-gate: unobserved" ] && [ "$gobs" = "obs-gate: observed" ] || {
   echo "jit_diff: FAIL: OBS and REF do not differ in gate state ($gref vs $gobs)"; exit 1; }
 # $1 arm, $2 timeout. $T/ref and $T/arm are already filled. $row is the ledger name.
+# A run near its budget times out on a loaded machine and not on an idle one,
+# so a timeout is re-run with 4x the budget before it counts (#1758 R1.3: the
+# tape record of examples/invariant_noperthedron.eigs takes 24-26 s against the
+# OBS loop's 25 s). A timeout that survives the long budget in the tape pair is
+# the instrument failing, and stops the run; it is never a row.
+timed_out() { [ "$(tail -n 1 "$1")" = "rc=124" ]; }
 consider() {
-  local arm="$1" sec="$2" tag rr ar
+  local arm="$1" sec="$2" tag long=$(( $2 * 4 ))
   tag=$(printf '%s' "$arm" | tr a-z A-Z)
-  rr=$(tail -n 1 "$T/ref"); ar=$(tail -n 1 "$T/arm")
-  if { [ "$rr" = "rc=124" ] && [ "$ar" != "rc=124" ]; } || { [ "$ar" = "rc=124" ] && [ "$rr" != "rc=124" ]; }; then
-    echo "$row $tag" >> "$got"; return
+  if { timed_out "$T/ref" && ! timed_out "$T/arm"; } || { timed_out "$T/arm" && ! timed_out "$T/ref"; }; then
+    run "$T/ref" "$long" "${REF[@]}"
+    run "$T/arm" "$long" "${AE[@]}"
+    if { timed_out "$T/ref" && ! timed_out "$T/arm"; } || { timed_out "$T/arm" && ! timed_out "$T/ref"; }; then
+      echo "$row $tag" >> "$got"; return
+    fi
   fi
   diff -q <(norm "$T/ref") <(norm "$T/arm") >/dev/null && return
   adjudicated=$((adjudicated + 1))
@@ -81,8 +97,11 @@ consider() {
     echo "$row $tag" >> "$got"; return
   fi
   rm -f "$T/tape"
-  run "$T/rref" "$sec" "${REF[@]}" EIGS_TRACE="$T/tape"
-  run "$T/rarm" "$sec" "${AE[@]}" EIGS_REPLAY="$T/tape"
+  run "$T/rref" "$long" "${REF[@]}" EIGS_TRACE="$T/tape"
+  run "$T/rarm" "$long" "${AE[@]}" EIGS_REPLAY="$T/tape"
+  if timed_out "$T/rref" || timed_out "$T/rarm"; then
+    echo "jit_diff: FAIL: $row $tag: the tape adjudication timed out after ${long}s (an instrument failure, not a row)"; exit 1
+  fi
   diff -q <(norm "$T/rref") <(norm "$T/rarm") >/dev/null && return
   echo "$row $tag" >> "$got"
 }
