@@ -192,11 +192,10 @@ assert_eq of [(0 - 1) << 1, 0 - 2, "SHL of a negative is defined (unsigned shift
 assert_eq of [bit_shl of [0 - 1, 1], (0 - 1) << 1, "bit_shl matches infix on a negative"]
 assert_eq of [1 << (0 - 1), int64_min, "a negative exact count is masked & 63"]
 
-# --- JIT tier: the native path must raise exactly where the VM does ---
-# Each callee is called > EIGS_JIT_ENTRY_THRESHOLD (50) times with integers
-# first, so its thunk exists before a non-integer operand arrives; the OSR
-# loop runs past EIGS_JIT_OSR_THRESHOLD (5000) back-edges before its bad
-# iteration. tools/jit_diff.sh runs this file JIT-off, default and forced OSR.
+# --- All execution settings must raise exactly where the VM does ---
+# R1.3 intentionally scanner-refuses these operators until R5. The hot
+# entry/OSR scaffolds below verify interpreted fallback in each setting;
+# Phase 2's ctl.scan.* rows independently witness the scanner refusals.
 define hot_or(a, b) as:
     return a | b
 define hot_shl(a, b) as:

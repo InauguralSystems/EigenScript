@@ -1761,6 +1761,16 @@ Value* make_num(double n) {
     return v;
 }
 
+/* #1758 R1.3: large int slots and Value API boundaries own ordinary heap
+ * Values. Int boxes never enter the float freelist and own no GC edges. */
+Value* make_int(int64_t n) {
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_INT;
+    VAL_I64_RAW(v) = n;
+    v->refcount = 1;
+    return v;
+}
+
 void recycle_intermediate(Value *v) {
     if (!v || v->type != VAL_FLOAT || v->refcount > 1) return;
 #ifdef EIGS_POOL_OFF_NUM
@@ -1909,8 +1919,7 @@ EigsSlot slot_from_value(Value *v) {
  *   - heap/tracked pointer -> incref and return
  *   - SMI (#1758) -> a fresh int Value. This is the ONE place that boxes an
  *     SMI (the lifts, slot_bridge_unwrap, eigs_slot_box and the *_get_return
- *     readers all route here); the int Value kind lands in R1.2a/R1.3, so
- *     until then it is refused (eigs_int_unwired, deleted in R1.3).
+ *     readers all route here).
  *   - any other tag is a broken contract and aborts (it used to read back
  *     as null, silently).
  */
@@ -1923,7 +1932,7 @@ Value* slot_to_value(EigsSlot s) {
         val_incref(v);
         return v;
     }
-    if (slot_is_smi(s)) eigs_int_unwired("slot_to_value", s.u);
+    if (slot_is_smi(s)) return make_int(slot_smi_val(s));
     eigs_slot_refuse("slot_to_value", s);
 }
 

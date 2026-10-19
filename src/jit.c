@@ -744,8 +744,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
         } else if (op == OP_DUP2) {
             i += 1; ops++; non_line_ops++;
         } else if (op == OP_ADD || op == OP_SUB ||
-                   op == OP_MUL || op == OP_DIV ||
-                   op == OP_MOD) {
+                   op == OP_MUL || op == OP_DIV) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
             /* Stage 5e: the tracked-operand loaders + commit decrefs
@@ -760,13 +759,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *extra_size += 320;   /* Stage 5e loaders + decrefs */
             /* #1637: the result is the false/true TAG_BOOL immediate, so
              * OP_POP after a comparison remains a no-op peephole. */
-        } else if (op == OP_BAND || op == OP_BOR || op == OP_BXOR ||
-                   op == OP_SHL || op == OP_SHR) {
-            i += 1; ops++; non_line_ops++;
-            *has_bail_op = 1;
-            /* Result is a double (whole-number-valued), so a subsequent
-             * OP_POP stays a no-op peephole. */
-        } else if (op == OP_NEG || op == OP_NOT || op == OP_BNOT) {
+        } else if (op == OP_NEG || op == OP_NOT) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
         } else if (op == OP_JUMP || op == OP_JUMP_BACK) {

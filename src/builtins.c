@@ -880,6 +880,14 @@ Value* builtin_type(Value *arg) {
     return make_str("none");
 }
 
+/* #1758 N7: inspect numeric representation without splitting surface type
+ * "num". Every other value, including bool, answers null. */
+Value* builtin_num_type(Value *arg) {
+    if (arg && arg->type == VAL_INT) return make_str("int");
+    if (arg && arg->type == VAL_FLOAT) return make_str("float");
+    return make_null();
+}
+
 /* Bound JSON nesting depth: each array/object descent is a C recursion, so
  * untrusted input like "[[[[...]]]]" would otherwise exhaust the C stack and
  * crash (SIGSEGV). 200 is far beyond any legitimate document. Shared by the
@@ -2067,6 +2075,14 @@ Value* builtin_round(Value *arg) {
 
 Value* builtin_abs(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "abs", "a number", make_num(0));
+    if (arg && arg->type == VAL_INT) {
+        int64_t n = VAL_I64_RAW(arg);
+        if (n == INT64_MIN) {
+            rt_error(EK_VALUE, 0, "abs: int64 overflow");
+            return make_null();
+        }
+        return make_int(n < 0 ? -n : n);
+    }
     return make_num(fabs(eigs_num_arg(arg, __func__)));
 }
 
@@ -3297,7 +3313,7 @@ static const char *SANDBOX_ALLOW[] = {
     /* path string manipulation (no fs access) */
     "path_base", "path_dir", "path_ext", "path_join",
     /* type / value utilities */
-    "type", "coalesce", "num_copy", "secure_equals",
+    "type", "num_type", "coalesce", "num_copy", "secure_equals",
     /* observer READS — touch only the sandbox's own values, never globals
      * (set_observer_thresholds / record_history are intentionally NOT here).
      * state_at is also excluded: temporal history belongs to the host thread,
@@ -6148,6 +6164,7 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
     {"write",          BA_ANY,  "renders any value"},
     {"str",            BA_ANY,  "converts any value to text (\"true\"/\"false\")"},
     {"type",           BA_ANY,  "names any value's type"},
+    {"num_type",       BA_ANY,  "names a numeric kind or returns null for any other value"},
     {"json_encode",    BA_ANY,  "JSON has true/false"},
     {"observe",        BA_ANY,  "the observer measures bools (entropy 0/1)"},
     {"classify",       BA_ANY,  "the observer classifies any value"},
@@ -6300,6 +6317,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "observe", make_builtin(builtin_observe));
     env_set_local_owned(env, "classify", make_builtin(builtin_classify));
     env_set_local_owned(env, "type", make_builtin(builtin_type));
+    env_set_local_owned(env, "num_type", make_builtin(builtin_num_type));
     env_set_local_owned(env, "math_flags", make_builtin(builtin_math_flags));            /* #865 */
     env_set_local_owned(env, "json_encode", make_builtin(builtin_json_encode));
     env_set_local_owned(env, "json_decode", make_builtin(builtin_json_decode));

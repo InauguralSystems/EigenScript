@@ -875,14 +875,45 @@ static inline int slot_truthy(EigsSlot s) {
     eigs_slot_refuse("slot_truthy", s);
 }
 
-/* #1758 R1.1: vm.c's slot_as_double is gone. Its readers now call
- * slot_f64_value (value_slot.h), which answers only for a FLOAT; each one
- * decided what an int does there: the arithmetic and equality arms send it to
- * their slow path, which lifts it through slot_to_value; the ordering,
- * bitwise, negation and `~` arms refuse it (eigs_int_unwired) where they used
- * to raise a type error, which a `try` turned into a wrong value. R1.3 gives
- * every one of them the int semantics and deletes eigs_int_unwired (design 8);
- * the leaf evaluator bails, so the generic call computes it (design 4.5). */
+/* #1758 R1.3: floats keep the existing fast paths. Integer and mixed
+ * arithmetic is computed here, outside the JIT/leaf float executors. */
+static EigsSlot vm_int_arith(int64_t a, int64_t b, char op, int line) {
+    int64_t r;
+    int overflow;
+    if (op == '+') overflow = __builtin_add_overflow(a, b, &r);
+    else if (op == '-') overflow = __builtin_sub_overflow(a, b, &r);
+    else overflow = __builtin_mul_overflow(a, b, &r);
+    if (overflow) {
+        rt_error(EK_VALUE, line, "integer overflow in '%c'", op);
+        return slot_null();
+    }
+    return slot_from_int(r);
+}
+
+/* A number as an int64 for the transitional bitwise operators (#1740).
+ * An int never round-trips through double; float operands retain the exact
+ * integer-representation rule. Return -1 for a type error, 0 for value. */
+static int vm_bit_operand(EigsSlot s, int64_t *out) {
+    double f;
+    if (slot_int_value(s, out)) return 1;
+    if (slot_f64_value(s, &f)) return num_to_i64_exact(f, out);
+    return -1;
+}
+
+/* Exact N2 ordering; 2 means unordered, and 0 return means not numbers. */
+static int vm_number_compare(EigsSlot a, EigsSlot b, int *out) {
+    int64_t ai, bi;
+    double af, bf;
+    int ia = slot_int_value(a, &ai), ib = slot_int_value(b, &bi);
+    if (ia && ib) { *out = (ai > bi) - (ai < bi); return 1; }
+    if (ia && slot_f64_value(b, &bf)) { *out = eigs_cmp_int_float(ai, bf); return 1; }
+    if (ib && slot_f64_value(a, &af)) {
+        int c = eigs_cmp_int_float(bi, af);
+        *out = c == 2 ? 2 : -c;
+        return 1;
+    }
+    return 0;
+}
 
 static inline uint16_t read_u16(uint8_t *ip) {
     return ip[0] | (ip[1] << 8);
@@ -3376,8 +3407,24 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     } \
 } while(0)
 
+    /* Float first, then exact integer slots. A small integer result is an
+     * SMI; only a result outside the SMI range allocates. This is the basic
+     * interpreter producer (§2.1); native JIT/leaf int paths remain R5. */
+#define INT_ARITH(OP) do { \
+    EigsSlot _as = g_vm.stack[g_vm.sp - 2], _bs = g_vm.stack[g_vm.sp - 1]; \
+    int64_t _ai, _bi; \
+    if (slot_int_value(_as, &_ai) && slot_int_value(_bs, &_bi)) { \
+        EigsSlot _r = vm_int_arith(_ai, _bi, (OP)[0], current_line); \
+        slot_decref(_as); slot_decref(_bs); \
+        g_vm.stack[g_vm.sp - 2] = _r; \
+        g_vm.sp--; \
+        DISPATCH(); \
+    } \
+} while (0)
+
     CASE(ADD): {
         ARITH_FAST(+, 0);
+        INT_ARITH("+");
         /* Slow path: handles string concat etc */
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_FLOAT && b->type == VAL_FLOAT) {
@@ -3385,6 +3432,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
             if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
             vm_push(make_num(r));
+        } else if (val_is_number(a) && val_is_number(b)) {
+            vm_push(make_num(num_guard(eigs_num_arg(a, "addition") + eigs_num_arg(b, "addition"))));
         } else if (a->type == VAL_STR && b->type == VAL_STR) {
             int la = val_str_len(a), lb = val_str_len(b);
             /* #292's byte budget charged only the size-controlled builtins;
@@ -3407,8 +3456,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             /* #1183: the length is already known — don't re-scan the result. */
             vm_push(make_str_owned_len(s, (size_t)la + lb));
         } else {
-            if (__builtin_expect(a->type == VAL_INT || b->type == VAL_INT, 0))
-                eigs_int_unwired("addition", 0);
             /* Strict: + adds two numbers or concatenates two strings; it does
              * not coerce across types ("3" + 4 was a footgun). For mixed
              * concatenation use an f-string — f"{a}{b}" — or str of. */
@@ -3434,6 +3481,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 #define NUM_BINOP(NAME, OP, OPNAME, UF) \
     CASE(NAME): { \
         ARITH_FAST(OP, UF); \
+        INT_ARITH(OPNAME); \
         Value *b = vm_pop(); Value *a = vm_pop(); \
         if (a->type == VAL_FLOAT && b->type == VAL_FLOAT) { \
             double r = num_guard(VAL_F64_RAW(a) OP VAL_F64_RAW(b)); \
@@ -3442,9 +3490,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); } \
             if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); } \
             vm_push(make_num(r)); \
+        } else if (val_is_number(a) && val_is_number(b)) { \
+            double ad = eigs_num_arg(a, OPNAME), bd = eigs_num_arg(b, OPNAME); \
+            double r = num_guard(ad OP bd); \
+            if ((UF) && r == 0.0 && ad != 0.0 && bd != 0.0) \
+                g_math_flags |= EIGS_MATH_UNDERFLOW; \
+            vm_push(make_num(r)); \
         } else { \
-            if (__builtin_expect(a->type == VAL_INT || b->type == VAL_INT, 0)) \
-                eigs_int_unwired(OPNAME, 0); \
             rt_error(EK_TYPE, current_line, "cannot apply '%s' to %s and %s", \
                 OPNAME, val_type_name(a->type), val_type_name(b->type)); \
             vm_push(make_num(0)); \
@@ -3465,23 +3517,21 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(DIV): {
         Value *b = vm_pop(); Value *a = vm_pop();
-        if (a->type == VAL_FLOAT && b->type == VAL_FLOAT) {
-            if (VAL_F64_RAW(b) == 0.0) {
+        if (val_is_number(a) && val_is_number(b)) {
+            if (eigs_num_arg(b, "division") == 0.0) {
                 rt_error(EK_VALUE, current_line, "division by zero");
                 vm_push(make_num(0));
             } else {
-                double r = num_guard(VAL_F64_RAW(a) / VAL_F64_RAW(b));
+                double r = num_guard(eigs_num_arg(a, "division") / eigs_num_arg(b, "division"));
                 /* divisor already known nonzero (the raise above), so a zero
                  * quotient from a nonzero dividend is underflow. */
-                if (r == 0.0 && VAL_F64_RAW(a) != 0.0)
+                if (r == 0.0 && eigs_num_arg(a, "division") != 0.0)
                     g_math_flags |= EIGS_MATH_UNDERFLOW;
                 if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
                 if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
                 vm_push(make_num(r));
             }
         } else {
-            if (__builtin_expect(a->type == VAL_INT || b->type == VAL_INT, 0))
-                eigs_int_unwired("division", 0);
             rt_error(EK_TYPE, current_line, "cannot apply '/' to %s and %s",
                 val_type_name(a->type), val_type_name(b->type));
             vm_push(make_num(0));
@@ -3492,15 +3542,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(MOD): {
         Value *b = vm_pop(); Value *a = vm_pop();
-        if (a->type == VAL_FLOAT && b->type == VAL_FLOAT && VAL_F64_RAW(b) != 0.0) {
-            double r = num_guard(fmod(VAL_F64_RAW(a), VAL_F64_RAW(b)));
+        if (val_is_number(a) && val_is_number(b) && eigs_num_arg(b, "modulo") != 0.0) {
+            double r = num_guard(fmod(eigs_num_arg(a, "modulo"), eigs_num_arg(b, "modulo")));
             if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
             if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
             vm_push(make_num(r));
         } else {
-            if (__builtin_expect(a->type == VAL_INT || b->type == VAL_INT, 0))
-                eigs_int_unwired("modulo", 0);
-            if (!(a->type == VAL_FLOAT && b->type == VAL_FLOAT))
+            if (!(val_is_number(a) && val_is_number(b)))
                 rt_error(EK_TYPE, current_line, "cannot apply '%%' to %s and %s",
                     val_type_name(a->type), val_type_name(b->type));
             else
@@ -3523,54 +3571,21 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-        /* #1775: -O1 cannot see that the fast path's & of two successes \
-         * wrote _ad before num_to_i64_exact reads it; initialised here \
-         * only, where GCC warns (callgrind: no Ir cost; initialising the \
-         * other arms' locals cost +2% on DMG). */ \
-        double _ad = 0.0, _bd = 0.0; \
-        if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) { \
-            int64_t _ai, _bi; \
-            if (__builtin_expect(!num_to_i64_exact(_ad, &_ai) || \
-                                 !num_to_i64_exact(_bd, &_bi), 0)) { \
-                slot_decref(_as); slot_decref(_bs); \
-                rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, OPNAME, \
-                    num_to_i64_exact(_ad, &_ai) ? _bd : _ad); \
-                g_vm.stack[g_vm.sp - 2] = slot_from_f64(0.0); \
-                g_vm.sp--; \
-                DISPATCH(); \
-            } \
-            double _r = (double)(INT_OP_##NAME(_ai, (RHS))); \
-            if (slot_is_ptr(_as)) { \
-                Value *_a = slot_as_ptr(_as); \
-                if (NUM_REUSE(_a)) { VAL_F64_RAW(_a) = _r; slot_decref(_bs); g_vm.sp--; DISPATCH(); } \
-            } \
-            if (slot_is_ptr(_bs)) { \
-                Value *_b = slot_as_ptr(_bs); \
-                if (NUM_REUSE(_b)) { VAL_F64_RAW(_b) = _r; g_vm.stack[g_vm.sp - 2] = _bs; slot_decref(_as); g_vm.sp--; DISPATCH(); } \
-            } \
-            slot_decref(_as); slot_decref(_bs); \
-            g_vm.stack[g_vm.sp - 2] = slot_from_f64(_r); \
-            g_vm.sp--; \
-            DISPATCH(); \
-        } \
-        /* #1758 R1.1: an int operand is not a type error (inside a try \
-         * it would become a wrong value). The arm refuses until R1.3 \
-         * gives it exact int64 operands, and deleting eigs_int_unwired \
-         * there forces that. */ \
-        if (slot_type(_as) == VAL_INT) \
-            eigs_int_unwired("bitwise '" OPNAME "'", _as.u); \
-        if (slot_type(_bs) == VAL_INT) \
-            eigs_int_unwired("bitwise '" OPNAME "'", _bs.u); \
-        /* Mixed/non-numeric: error rather than silently returning 0, \
-         * matching the arithmetic operators and the strict error model. \
-         * Capture type names before decref (cf. NUM_CMP above). */ \
-        { \
-            const char *_tna = slot_type_name(_as), *_tnb = slot_type_name(_bs); \
-            slot_decref(_as); slot_decref(_bs); \
+        int64_t _ai, _bi; \
+        int _ak = vm_bit_operand(_as, &_ai), _bk = vm_bit_operand(_bs, &_bi); \
+        double _r = 0.0; \
+        if (_ak == 1 && _bk == 1) { \
+            _r = (double)(INT_OP_##NAME(_ai, (RHS))); \
+        } else if (_ak < 0 || _bk < 0) { \
             rt_error(EK_TYPE, current_line, "cannot apply '%s' to %s and %s", \
-                OPNAME, _tna, _tnb); \
+                     OPNAME, slot_type_name(_as), slot_type_name(_bs)); \
+        } else { \
+            double _bad = 0.0; \
+            slot_f64_value(_ak == 0 ? _as : _bs, &_bad); \
+            rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, OPNAME, _bad); \
         } \
-        g_vm.stack[g_vm.sp - 2] = slot_from_f64(0.0); \
+        slot_decref(_as); slot_decref(_bs); \
+        g_vm.stack[g_vm.sp - 2] = slot_from_f64(_r); \
         g_vm.sp--; \
         DISPATCH(); \
     }
@@ -3606,10 +3621,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             g_vm.stack[g_vm.sp - 1] = slot_from_f64(-d);
             DISPATCH();
         }
-        /* #1758 R1.1: an int is refused, not a type error, until R1.3
-         * gives NEG its int arm (N4b) and deletes eigs_int_unwired. */
-        if (slot_type(s) == VAL_INT)
-            eigs_int_unwired("negation", s.u);
+        int64_t i;
+        if (slot_int_value(s, &i)) {
+            slot_decref(s);
+            if (i == INT64_MIN) {
+                rt_error(EK_VALUE, current_line, "integer overflow in unary '-'");
+                g_vm.stack[g_vm.sp - 1] = slot_null();
+            } else g_vm.stack[g_vm.sp - 1] = slot_from_int(-i);
+            DISPATCH();
+        }
         rt_error(EK_TYPE, current_line, "cannot negate %s", slot_type_name(s));   /* #1637: names bool */
         slot_decref(s);
         g_vm.stack[g_vm.sp - 1] = slot_from_f64(0.0);
@@ -3626,34 +3646,19 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(BNOT): {
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
-        double d;
-        if (__builtin_expect(slot_f64_value(s, &d), 1)) {
-            int64_t i;
-            if (__builtin_expect(!num_to_i64_exact(d, &i), 0)) {   /* #1740 */
-                slot_decref(s);
-                rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, "~", d);
-                g_vm.stack[g_vm.sp - 1] = slot_from_f64(0.0);
-                DISPATCH();
-            }
-            double r = (double)(~i);
-            if (slot_is_ptr(s)) {
-                Value *v = slot_as_ptr(s);
-                if (NUM_REUSE(v)) { VAL_F64_RAW(v) = r; DISPATCH(); }
-            }
-            slot_decref(s);
-            g_vm.stack[g_vm.sp - 1] = slot_from_f64(r);
-            DISPATCH();
+        int64_t i;
+        int k = vm_bit_operand(s, &i);
+        double r = 0.0;
+        if (k == 1) r = (double)(~i);
+        else if (k < 0)
+            rt_error(EK_TYPE, current_line, "cannot apply '~' to %s", slot_type_name(s));
+        else {
+            double bad = 0.0;
+            slot_f64_value(s, &bad);
+            rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, "~", bad);
         }
-        /* #1758 R1.1: an int is refused, not a type error, until R1.3
-         * gives the bitwise arms exact int64 operands. */
-        if (slot_type(s) == VAL_INT)
-            eigs_int_unwired("bitwise '~'", s.u);
-        {
-            const char *_tn = slot_type_name(s);
-            slot_decref(s);
-            rt_error(EK_TYPE, current_line, "cannot apply '~' to %s", _tn);
-        }
-        g_vm.stack[g_vm.sp - 1] = slot_from_f64(0.0);
+        slot_decref(s);
+        g_vm.stack[g_vm.sp - 1] = slot_from_f64(r);
         DISPATCH();
     }
 
@@ -3662,6 +3667,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(EQ): {
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1];
         EigsSlot _as = g_vm.stack[g_vm.sp - 2];
+        if (slot_is_smi(_as) && slot_is_smi(_bs)) {
+            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_as.u == _bs.u);
+            g_vm.sp--;
+            DISPATCH();
+        }
         double _ad, _bd;
         if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) {
             /* #1637: the result is a bool immediate. The old NUM_REUSE
@@ -3683,6 +3693,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(NE): {
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1];
         EigsSlot _as = g_vm.stack[g_vm.sp - 2];
+        if (slot_is_smi(_as) && slot_is_smi(_bs)) {
+            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_as.u != _bs.u);
+            g_vm.sp--;
+            DISPATCH();
+        }
         double _ad, _bd;
         if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) {
             /* #1637: the result is a bool immediate. The old NUM_REUSE
@@ -3726,13 +3741,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 DISPATCH(); \
             } \
         } \
-        /* #1758 R1.1: an int operand is refused, not a type error (which \
-         * a try would turn into a wrong `false`), until R1.3 gives this \
-         * arm N2's exact compare and deletes eigs_int_unwired. */ \
-        if (slot_type(_as) == VAL_INT) \
-            eigs_int_unwired("compare '" OPNAME "'", _as.u); \
-        if (slot_type(_bs) == VAL_INT) \
-            eigs_int_unwired("compare '" OPNAME "'", _bs.u); \
+        int _cmp; \
+        if (vm_number_compare(_as, _bs, &_cmp)) { \
+            int _r = _cmp != 2 && (_cmp OP 0); \
+            slot_decref(_as); slot_decref(_bs); \
+            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r); \
+            g_vm.sp--; \
+            DISPATCH(); \
+        } \
         /* Mixed/uncomparable types: error rather than silently returning \
          * false (e.g. "3" < 4 used to be 0). Capture type names before \
          * decref. ==/!= keep cross-type "not equal"; only ordering errors. */ \

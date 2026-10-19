@@ -194,6 +194,7 @@ static const char *builtin_docs[][2] = {
     {"norm", "norm of a → L2 (Euclidean) norm = sqrt(sum_i a[i]^2). Buffers and tensors."},
     {"num", "num — builtin; see docs/BUILTINS.md"},
     {"num_copy", "num_copy of val → fresh heap-allocated copy of a numeric Value."},
+    {"num_type", "num_type — builtin; see docs/BUILTINS.md"},
     {"numerical_grad", "numerical_grad of [loss_fn, param, eps]"},
     {"numerical_grad_cols", "numerical_grad_cols of [loss_fn, matrix, col_indices, eps]"},
     {"numerical_grad_rows", "numerical_grad_rows of [loss_fn, matrix, row_indices, eps]"},

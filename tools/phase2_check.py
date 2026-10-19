@@ -71,6 +71,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 import phase2_inventory as inv  # noqa: E402  (strip_c: one C-comment grammar)
 
+# The no-int-source mechanism ended at R1.3. Its static calibration uses
+# the exact last no-producer source; current runtime safety is the MAP/ASan gate.
+STATIC_INT_SOURCE_REF = '0c43ec88ca8915f9d365e3e63549cb1e322c76d3'
 ROUNDS = ['R1.1', 'R1.2', 'R1.3', 'R1.4', 'R1.5', 'R1.6', 'R1.7', 'R1.8',
           'R2.1', 'R2.2', 'R2.3', 'R2.4', 'R2.5', 'R2.6', 'R3']
 # Gates every mode runs: the token gate (a landed round's deleted tokens stay
@@ -688,6 +691,20 @@ def calibrate(args, out):
     cal = os.path.join(ROOT, 'tests/phase2/calib')
     map_rows, bad = parse_map(os.path.join(cal, 'MAP.md'))
     results = []
+    # Keep early-round calibration meaningful after the first int producers
+    # exist. Export only tracked src bytes from the pinned R1.2 checkpoint.
+    historical = tempfile.mkdtemp(prefix='eigs-p2-int-source-r12-')
+    _PLANT_DIR.append(historical)
+    try:
+        archive = subprocess.run(['git', '-C', ROOT, 'archive', STATIC_INT_SOURCE_REF, 'src'],
+                                 capture_output=True, check=True)
+        subprocess.run(['tar', '-x', '-C', historical], input=archive.stdout, check=True)
+    except subprocess.CalledProcessError as error:
+        out('phase2-check: FAIL: historical R1.2 int-source export failed: %s' % error)
+        return 2
+    historical_src = os.path.join(historical, 'src')
+    out('calibration: historical-int-source=%s (static only; dynamic no-SMI mode retired at R1.3)' %
+        STATIC_INT_SOURCE_REF)
 
     def case(name, got, want, detail=None):
         """One calibration case. An UNEXPECTED case prints the gate's own
@@ -782,7 +799,7 @@ def calibrate(args, out):
     case('a round with neither rows nor gates fails', any('round R2.3' in b for b in pb), True, detail=pb)
     # the int-source check against a planted production call
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
-        shutil.copytree(os.path.join(ROOT, 'src'), os.path.join(d, 'src'), ignore=c_sources_only)
+        shutil.copytree(historical_src, os.path.join(d, 'src'), ignore=c_sources_only)
         p = os.path.join(d, 'src', 'trace.c')
         text = read_text(p)
         anchor = '        *out = slot_from_f64((double)count);'
@@ -796,8 +813,8 @@ def calibrate(args, out):
     lines = []
     # at R1.2: from R1.2 the canonicalizing writers may convert a VAL_INT
     # (design 8), and the branch is past R1.1
-    case('int-source on the real tree passes (at R1.2)',
-         int_source(os.path.join(ROOT, 'src'), lines.append, 'R1.2'), True, detail=lines)
+    case('int-source on pinned R1.2 source passes',
+         int_source(historical_src, lines.append, 'R1.2'), True, detail=lines)
     # the token gate against a reintroduced deleted token
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
         os.mkdir(os.path.join(d, 'src'))
@@ -810,10 +827,10 @@ def calibrate(args, out):
         lines = []
         case('token plant (slot_is_num reintroduced): the gate fails',
              (token_gate(d, 'R1.1', lines.append), any('slot_is_num' in l for l in lines)), (False, True), detail=lines)
-    # the int-source plants of the R1.1 critic, both halves
+    # the int-source plants of the R1.1 critic, static half on the historical source
     for name, edits in INTSRC_PLANTS:
         with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
-            shutil.copytree(os.path.join(ROOT, 'src'), os.path.join(d, 'src'), ignore=c_sources_only)
+            shutil.copytree(historical_src, os.path.join(d, 'src'), ignore=c_sources_only)
             counts = []
             for f, old, new in edits:
                 p = os.path.join(d, 'src', f)

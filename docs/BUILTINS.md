@@ -64,6 +64,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `str` | `str of value` | Convert to string representation |
 | `num` | `num of value` | Convert to number (parse string or coerce). `num of "inf"` saturates to `1e308`; `num of "nan"` raises a `value` error naming `num` by default, while under `EIGS_STRICT=0` it is `0` and sets `math_flags.invalid` (#971). |
 | `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "none" (the null value — SPEC.md is normative and its gated example prints `none`; the string `"null"` is never produced) |
+| `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
 | `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
@@ -419,7 +420,7 @@ automatically at exit.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `abs` | `abs of x` | Absolute value |
+| `abs` | `abs of x` | Absolute value, preserving int or float kind. `abs` of INT64_MIN raises `value` because its positive magnitude does not fit in int64 (#1758 N4b). |
 | `min` | `min of [n1, n2, ...]` | Smallest of a list of numbers (any length >= 1) |
 | `max` | `max of [n1, n2, ...]` | Largest of a list of numbers (any length >= 1) |
 | `floor` | `floor of x` | Round down to integer |

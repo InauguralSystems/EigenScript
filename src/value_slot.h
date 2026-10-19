@@ -141,16 +141,15 @@ static inline int64_t  slot_smi_val(EigsSlot s) {
 
 /* #1758: the ONE double writer. Round 2 canonicalizes a NaN here. */
 static inline EigsSlot slot_from_f64(double d)       { EigsSlot s; SLOT_F64_RAW(s) = d;                                              return s; }
-/* #1758: the ONE int writer: an SMI inside [-2^47, 2^47). Outside it the
- * int needs a VAL_INT box, which cannot exist before R1.3 (make_int). Until
- * R1.3 nothing in the runtime calls this (tools/phase2_check.sh, the
- * int-source check); tests/phase2/slot_layer.c drives it. */
+static inline EigsSlot slot_from_heap(Value *v);
+/* #1758: the ONE int writer: an SMI inside [-2^47, 2^47), otherwise an
+ * owned VAL_INT heap box. */
 static inline EigsSlot slot_from_int(int64_t i) {
 #ifdef EIGS_SMI_TRAP
     eigs_int_unwired("slot_from_int under EIGS_SMI_TRAP", (uint64_t)i);
 #endif
     if (__builtin_expect(i < SLOT_SMI_MIN || i > SLOT_SMI_MAX, 0))
-        eigs_int_unwired("slot_from_int", (uint64_t)i);
+        return slot_from_heap(make_int(i));
     EigsSlot s; s.u = TAG_SMI | ((uint64_t)i & SLOT_PAYLOAD_MASK); return s;
 }
 static inline EigsSlot slot_null(void)               { EigsSlot s; s.u = SLOT_NULL_BITS;  return s; }

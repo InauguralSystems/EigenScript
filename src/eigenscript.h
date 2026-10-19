@@ -1767,6 +1767,7 @@ void   strbuf_free(strbuf *b);
 /* ---- Value constructors ---- */
 
 Value* make_num(double n);
+Value* make_int(int64_t n);   /* owned, unpooled int box; slots canonicalize small ints */
 void recycle_intermediate(Value *v);
 Value* make_str(const char *s);
 Value* make_str_len(const char *s, size_t n);   /* #1183: caller knows strlen(s) */

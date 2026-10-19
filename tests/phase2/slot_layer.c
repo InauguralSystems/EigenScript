@@ -20,9 +20,9 @@
  *      tags and the sentinel; each cell runs in a forked child.
  *   C  slot_from_int, the one int writer (plant 1's named check, design 9.3):
  *      inside [-2^47, 2^47) the tag is 0xFFFA and the int reads back exactly;
- *      outside, R1.1 refuses (the VAL_INT box lands in R1.3).
+ *      outside, an owned VAL_INT box preserves every int64 bit.
  *   D  the VM's operator arms: a host builtin puts an SMI into a list and a
- *      program applies each operator to it. Every arm must refuse by name,
+ *      program applies each operator to it. Every converted arm must compute its exact value,
  *      inside a `try` too; the same program with a double is the control.
  *
  * Output, every line in one grammar (tests/phase2/slot_layer.sh refuses any
@@ -178,11 +178,29 @@ static int r_slot_is_ptr(int64_t v) { return slot_is_ptr(smi(v)) != 0; }
 
 /* ---- Part A: ABORT calls ------------------------------------------------ */
 
-static void a_eigs_slot_box(EigsSlot s) { (void)eigs_slot_box(s); }
-static void a_slot_to_value(EigsSlot s) { (void)slot_to_value(s); }
+static int r_eigs_slot_box(int64_t v) {
+    Value *got = eigs_slot_box(smi(v));
+    int bad = !got || got->type != VAL_INT || VAL_I64_RAW(got) != v;
+    val_decref(got); return bad;
+}
+static int r_slot_to_value(int64_t v) {
+    Value *got = slot_to_value(smi(v));
+    int bad = !got || got->type != VAL_INT || VAL_I64_RAW(got) != v;
+    val_decref(got); return bad;
+}
 static void a_write_slot(EigsSlot s) { write_slot(s); }
+static int r_slot_bridge_unwrap(int64_t v) {
+    Value *got = slot_bridge_unwrap(smi(v));
+    int bad = !got || got->type != VAL_INT || VAL_I64_RAW(got) != v;
+    val_decref(got); return bad;
+}
+static int r_vm_bit_operand(int64_t v) {
+    int64_t got = 7; return vm_bit_operand(smi(v), &got) != 1 || got != v;
+}
+static int r_vm_number_compare(int64_t v) {
+    int got = 7; return !vm_number_compare(smi(v), smi(v), &got) || got != 0;
+}
 static void a_obs_slot_observable(EigsSlot s) { (void)obs_slot_observable(s); }
-static void a_slot_bridge_unwrap(EigsSlot s) { (void)slot_bridge_unwrap(s); }
 static void a_eigs_slot_ref(EigsSlot s) { (void)eigs_slot_ref(s); }
 static void a_slot_as_ptr(EigsSlot s) { (void)slot_as_ptr(s); }
 static void a_obs_slot_value(EigsSlot s) { (void)obs_slot_value(s); }
@@ -196,6 +214,8 @@ typedef struct {
 } Entry;
 
 static const Entry ENTRIES[] = {
+    {"vm.c:vm_bit_operand", r_vm_bit_operand, 0, 0, "exact int64 operand"},
+    {"vm.c:vm_number_compare", r_vm_number_compare, 0, 0, "exact numeric comparison"},
     {"container.h:eigs_slot_elem_num", r_eigs_slot_elem_num, 0, 0, "bridge: the int's double"},
     {"container.h:eigs_slot_num", r_eigs_slot_num, 0, 0, "bridge: the int's double"},
     {"container.h:eigs_slot_opt_num", r_eigs_slot_opt_num, 0, 0, "bridge: present, the int's double"},
@@ -219,13 +239,13 @@ static const Entry ENTRIES[] = {
     {"value_slot.h:slot_is_heap", r_slot_is_heap, 0, 0, "0"},
     {"value_slot.h:slot_is_null", r_slot_is_null, 0, 0, "0"},
     {"value_slot.h:slot_is_ptr", r_slot_is_ptr, 0, 0, "0"},
-    {"container.h:eigs_slot_box", 0, a_eigs_slot_box, "slot_to_value", "unwired: an int Value (R1.3)"},
+    {"container.h:eigs_slot_box", r_eigs_slot_box, 0, 0, "exact owned VAL_INT"},
     {"container.h:slot_type", r_slot_type, 0, 0, "VAL_INT"},
     {"container.h:slot_view", r_slot_view, 0, 0, "exact VAL_INT facade"},
-    {"eigenscript.c:slot_to_value", 0, a_slot_to_value, "slot_to_value", "unwired: make_int (R1.3)"},
+    {"eigenscript.c:slot_to_value", r_slot_to_value, 0, 0, "exact owned VAL_INT"},
     {"trace.c:write_slot", 0, a_write_slot, "write_slot", "unwired: tape v7 (R1.3)"},
     {"vm.c:obs_slot_observable", 0, a_obs_slot_observable, "obs_slot_observable", "refuse"},
-    {"vm.c:slot_bridge_unwrap", 0, a_slot_bridge_unwrap, "slot_to_value", "routes to the one SMI boxer"},
+    {"vm.c:slot_bridge_unwrap", r_slot_bridge_unwrap, 0, 0, "exact owned VAL_INT"},
     {"container.h:eigs_slot_ref", 0, a_eigs_slot_ref, "eigs_slot_ref", "refuse"},
     {"value_slot.h:slot_as_ptr", 0, a_slot_as_ptr, "slot_as_ptr", "refuse (checked builds)"},
     {"vm.c:obs_slot_value", 0, a_obs_slot_value, "slot_as_ptr", "precondition: pointer or bool only"},
@@ -329,12 +349,14 @@ CELL(is_bool) { snprintf(b, n, "i:%d", slot_is_bool(s)); }
 CELL(is_heap) { snprintf(b, n, "i:%d", slot_is_heap(s)); }
 CELL(is_null) { snprintf(b, n, "i:%d", slot_is_null(s)); }
 CELL(is_ptr) { snprintf(b, n, "i:%d", slot_is_ptr(s)); }
-CELL(slot_box) { Value *v = eigs_slot_box(s); r_v(b, n, v); if (v == g_str) val_decref(v); }
+CELL(slot_box) { Value *v = eigs_slot_box(s); r_v(b, n, v); val_decref(v); }
 CELL(slot_type) { snprintf(b, n, "t:%s", val_type_name(slot_type(s))); }
 CELL(slot_view) { EIGS_VIEW_NOCHECK(view); r_v(b, n, slot_view(s, &view)); }
-CELL(to_value) { Value *v = slot_to_value(s); r_v(b, n, v); if (v == g_str) val_decref(v); }
+CELL(to_value) { Value *v = slot_to_value(s); r_v(b, n, v); val_decref(v); }
 CELL(observable) { snprintf(b, n, "i:%d", obs_slot_observable(s)); }
-CELL(unwrap) { r_v(b, n, slot_bridge_unwrap(s)); }
+CELL(unwrap) { Value *v = slot_bridge_unwrap(s); r_v(b, n, v); if (!slot_is_ptr(s)) val_decref(v); }
+CELL(vm_bit_operand) { int64_t i = 7; int r = vm_bit_operand(s, &i); snprintf(b, n, "o:%d i:%lld", r, (long long)i); }
+CELL(vm_number_compare) { int cmp = 7; int r = vm_number_compare(s, smi(1), &cmp); snprintf(b, n, "o:%d c:%d", r, cmp); }
 CELL(slot_ref) { r_v(b, n, eigs_slot_ref(s)); }
 CELL(as_ptr) { r_v(b, n, slot_as_ptr(s)); }
 CELL(obs_value) { r_v(b, n, obs_slot_value(s)); }
@@ -468,7 +490,7 @@ EXP(slot_box) {
         case C_NULL: snprintf(b, n, "v:null"); break;
         case C_BOOL: e_bool(b, n, k); break;
         case C_HEAP: snprintf(b, n, "v:H"); break;
-        case C_SMI: ABORT("slot_to_value"); break;
+        case C_SMI: snprintf(b, n, "v:int:5"); break;
         default: ABORT("eigs_slot_ref");
     }
 }
@@ -493,6 +515,7 @@ EXP(to_value) {
         case C_NULL: snprintf(b, n, "v:null"); break;
         case C_BOOL: e_bool(b, n, k); break;
         case C_HEAP: snprintf(b, n, "v:H"); break;
+        case C_SMI: snprintf(b, n, "v:int:5"); break;
         default: ABORT("slot_to_value");
     }
 }
@@ -509,7 +532,7 @@ EXP(unwrap) {
         case C_NULL: snprintf(b, n, "v:null"); break;
         case C_BOOL: e_bool(b, n, k); break;
         case C_HEAP: snprintf(b, n, "v:H"); break;
-        case C_SMI: ABORT("slot_to_value"); break;
+        case C_SMI: snprintf(b, n, "v:int:5"); break;
         default: ABORT("slot_as_ptr");
     }
 }
@@ -533,7 +556,20 @@ typedef struct {
     void (*cell)(EigsSlot, char *, size_t);
     void (*expect)(int, char *, size_t);
 } MatrixEntry;
+EXP(vm_bit_operand) {
+    if (k == K_SMI) snprintf(b, n, "o:1 i:5");
+    else if (k == K_NZ) snprintf(b, n, "o:1 i:0");
+    else snprintf(b, n, "o:%d i:7", kclass(k) == C_F64 ? 0 : -1);
+}
+EXP(vm_number_compare) {
+    if (k == K_SMI) snprintf(b, n, "o:1 c:1");
+    else if (k == K_NAN) snprintf(b, n, "o:1 c:2");
+    else if (kclass(k) == C_F64) snprintf(b, n, "o:1 c:%d", k == K_NZ ? -1 : 1);
+    else snprintf(b, n, "o:0 c:7");
+}
 static const MatrixEntry MATRIX[] = {
+    {"vm.c:vm_bit_operand", c_vm_bit_operand, e_vm_bit_operand},
+    {"vm.c:vm_number_compare", c_vm_number_compare, e_vm_number_compare},
     {"container.h:eigs_slot_elem_num", c_elem_num, e_elem_num},
     {"container.h:eigs_slot_num", c_num, e_num},
     {"container.h:eigs_slot_opt_num", c_opt_num, e_opt_num},
@@ -641,9 +677,6 @@ static int part_b(void) {
 
 /* ---- Part C: slot_from_int (plant 1's named check) ----------------------- */
 
-static int64_t g_from_int_arg;
-static void c_from_int(EigsSlot s) { (void)s; (void)slot_from_int(g_from_int_arg); }
-
 static int part_c(void) {
     static const int64_t inside[] = {
         0, 1, -1, 12345, -12345, (INT64_C(1) << 47) - 1, -(INT64_C(1) << 47),
@@ -664,21 +697,20 @@ static int part_c(void) {
             FAILF("slot_smi_val(SMI %lld) = %lld", (long long)v, (long long)slot_smi_val(smi(v)));
     }
     for (size_t k = 0; k < sizeof outside / sizeof outside[0]; k++, rows++) {
-        g_from_int_arg = outside[k];
-        char what[64];
-        snprintf(what, sizeof what, "slot_from_int(%lld)", (long long)outside[k]);
-        (void)aborts_naming(c_from_int, slot_null(), "slot_from_int", what);
+        EigsSlot boxed = slot_from_int(outside[k]);
+        int64_t got = 0;
+        if (!slot_is_heap(boxed) || !slot_int_value(boxed, &got) || got != outside[k] ||
+            slot_as_ptr(boxed)->type != VAL_INT)
+            FAILF("slot_from_int(%lld): box loses exact int64", (long long)outside[k]);
+        slot_decref(boxed);
     }
     return rows;
 }
 
 /* ---- Part D: the VM's operator arms, with an int in a list ------------- */
 
-/* A host builtin puts a hand-built SMI (or, for the control run, the double
- * of the same value) into a list element, the way no program can before
- * R1.3. Each arm that met an int with a type error -- which a `try` turned
- * into a wrong value (the R1.1 critic) -- must now refuse it by name, inside
- * a `try` too; the control run proves the program reaches the arm. */
+/* A host builtin puts a hand-built SMI (or a float control) in a list.
+ * Every R1.3-converted arm computes its final value, including under try. */
 static int g_poke_smi;
 static EigsValue *h_poke(EigsValue *arg) {
     Value *t = list_get_ref(arg, 0);
@@ -688,24 +720,24 @@ static EigsValue *h_poke(EigsValue *arg) {
     slot_decref(old);
     return make_null();
 }
-typedef struct { const char *name, *expr, *f64_out, *aborts; int in_try; } Arm;
+typedef struct { const char *name, *expr, *f64_out, *int_out; int in_try; } Arm;
 static const Arm ARMS[] = {
-    {"lt", "xs[0] < 6", "true", "compare '<'", 0},
-    {"gt", "xs[0] > 6", "false", "compare '>'", 0},
-    {"le", "xs[0] <= 6", "true", "compare '<='", 0},
-    {"ge", "xs[0] >= 6", "false", "compare '>='", 0},
-    {"lt_in_try", "xs[0] < 6", "true", "compare '<'", 1},
-    {"band", "xs[0] & 3", "1", "bitwise '&'", 0},
-    {"bor", "xs[0] | 3", "7", "bitwise '|'", 0},
-    {"bxor", "xs[0] ^ 3", "6", "bitwise '^'", 0},
-    {"shl", "xs[0] << 1", "10", "bitwise '<<'", 0},
-    {"shr", "xs[0] >> 1", "2", "bitwise '>>'", 0},
-    {"band_in_try", "xs[0] & 3", "1", "bitwise '&'", 1},
-    {"neg", "-(xs[0])", "-5", "negation", 0},
-    {"neg_in_try", "-(xs[0])", "-5", "negation", 1},
-    {"bnot", "~(xs[0])", "-6", "bitwise '~'", 0},
-    {"eq", "xs[0] == 5", "true", "slot_to_value", 0},
-    {"add", "xs[0] + 1", "6", "slot_to_value", 0},
+    {"lt", "xs[0] < 6", "true", "true", 0},
+    {"gt", "xs[0] > 6", "false", "false", 0},
+    {"le", "xs[0] <= 6", "true", "true", 0},
+    {"ge", "xs[0] >= 6", "false", "false", 0},
+    {"lt_in_try", "xs[0] < 6", "true", "true", 1},
+    {"band", "xs[0] & 3", "1", "1", 0},
+    {"bor", "xs[0] | 3", "7", "7", 0},
+    {"bxor", "xs[0] ^ 3", "6", "6", 0},
+    {"shl", "xs[0] << 1", "10", "10", 0},
+    {"shr", "xs[0] >> 1", "2", "2", 0},
+    {"band_in_try", "xs[0] & 3", "1", "1", 1},
+    {"neg", "-(xs[0])", "-5", "-5", 0},
+    {"neg_in_try", "-(xs[0])", "-5", "-5", 1},
+    {"bnot", "~(xs[0])", "-6", "-6", 0},
+    {"eq", "xs[0] == 5", "true", "true", 0},
+    {"add", "xs[0] + 1", "6", "6", 0},
 };
 #define N_ARMS ((int)(sizeof ARMS / sizeof ARMS[0]))
 static const Arm *g_arm;
@@ -720,6 +752,7 @@ static void c_arm(EigsSlot s, char *b, size_t n) {
     EigsValue *r = eigs_eval_string(prog);
     fflush(stdout);
     snprintf(b, n, "%s", r ? "ran" : "eval-error");
+    eigs_value_release(r);
 }
 static int part_d(void) {
     eigs_register_function("phase2_poke", h_poke);
@@ -729,9 +762,12 @@ static int part_d(void) {
         int bad = 0;
         char got[512], want[256], pre[512], wpre[64];
         g_poke_smi = 1;
-        run_cell(c_arm, slot_null(), got, sizeof got, NULL, 0);
-        snprintf(want, sizeof want, "A:%s", g_arm->aborts);
-        if (strcmp(got, want) != 0) { FAILF("arm %s with an int: got %s, want %s", g_arm->name, got, want); bad++; }
+        run_cell(c_arm, slot_null(), got, sizeof got, pre, sizeof pre);
+        snprintf(want, sizeof want, "%s\n", g_arm->int_out);
+        if (strcmp(got, "ran") != 0 || strcmp(pre, want) != 0) {
+            FAILF("arm %s with an int: got %s printed %s, want ran and %s", g_arm->name, got, pre, want);
+            bad++;
+        }
         g_poke_smi = 0;
         run_cell(c_arm, slot_null(), got, sizeof got, pre, sizeof pre);
         snprintf(wpre, sizeof wpre, "%s\n", g_arm->f64_out);

@@ -65,7 +65,6 @@ value_slot.h|slot_f64_value|2|float reader (#1758: was vm.c slot_as_double): an 
 value_slot.h|slot_from_f64|1|constructor: writes a double into a fresh slot (#1758: was slot_from_num)
 value_slot.h|slot_truthy_immediate|1|truthiness after slot_is_f64
 vm.c|#define ARITH_FAST|2|arithmetic fast path after both operands tested VAL_FLOAT; NUM_REUSE writes
-vm.c|#define INT_BINOP_R|2|integer op fast path after both slots slot_is_f64
 vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_FLOAT && b->type == VAL_FLOAT; NUM_REUSE writes
 vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|jit_helper_index_get|3|JIT helper: index read after slot_is_f64 / VAL_FLOAT tests on index and element
@@ -78,7 +77,7 @@ vm.c|obs_slot_num|1|observer numeric channel (#1758): reads an immediate after s
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_f64
 vm.c|slot_truthy|1|truthiness after slot_is_f64
 vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admitted only as VAL_FLOAT (chunk_scan_leaf_accessor) and values behind VAL_FLOAT tests
-vm.c|vm_run_ex|42|the interpreter loop: every opcode reads numbers behind slot_is_f64 / type == VAL_FLOAT dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
+vm.c|vm_run_ex|34|the interpreter loop: every opcode reads numbers behind slot_is_f64 / type == VAL_FLOAT dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
 vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_f64
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_f64
 builtins.c|builtin_json_build|1|VAL_INT text is exact digits; float text retains the bridge (#1758 R1.2d)
@@ -90,3 +89,5 @@ value_slot.h|slot_int_value|1|boxed VAL_INT payload after its type test (#1758 R
 container.h|slot_view|3|typed float or int facade, preserving exact payload and kind (#1758 R1.2i)
 ext_db.c|db_build_query|1|VAL_INT parameters encode as exact digits after the kind test (#1758 R1.2)
 vm.c|vm_value_index_is_int|2|Guarded exact VAL_INT-to-C-index conversion; the other numeric kind keeps the float integrality test (#1758 R1.2)
+builtins.c|builtin_abs|1|N4b: proved VAL_INT payload, refuse INT64_MIN before negating
+eigenscript.c|make_int|1|int constructor initializes the exact signed payload
