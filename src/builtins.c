@@ -5077,7 +5077,10 @@ Value* builtin_task_join(Value *arg) {
     if (t->state == TASK_DONE || t->state == TASK_DEAD) {
         /* Already finished: deliver its result / error now, no suspend. */
         if (t->has_error) {
-            t->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
+            if (t->err_unobserved) {
+                t->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
+                task_observe_error();
+            }
             if (t->error_value) {
                 val_incref(t->error_value);
                 eigs_clear_error_value();

@@ -401,7 +401,8 @@ kind table and graph-depth limits are in `docs/CONCURRENCY.md`.
 One difference in failure: a Python thread's uncaught exception is printed
 and the process still exits 0. A `spawn`ed EigenScript worker that dies of
 an uncaught error and is never joined fails the whole run (exit status 1) —
-the exit status an unjoined cooperative task gets (see SPEC.md "Concurrency").
+the exit status an unjoined cooperative task gets, including one created on
+a spawned worker thread (see SPEC.md "Concurrency").
 A joined worker hands its error to the joiner instead: `thread_join`
 re-raises it, so catching that raise observes the failure and the run exits
 0, as with `task_join`; left uncaught, it ends the joiner like any uncaught

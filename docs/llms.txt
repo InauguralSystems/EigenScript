@@ -258,7 +258,8 @@ EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
   evals have separate stop scopes; workers retain their spawning eval's scope.
 - A cooperative task (`task_spawn`) that dies of an uncaught error prints its
   trace. Joinable: main carries on, and `try`/`catch` around `task_join`
-  recovers the error (never joined, the run exits 1). **Detached**
+  recovers the error (never joined, the run exits 1, including on a spawned
+  worker thread's scheduler). **Detached**
   (`task_detach`): nothing can ever join it, so the error **stops the
   program** (exit 1, not catchable), and so does detaching a task that already
   died that way. A detached task that must survive its errors catches them.

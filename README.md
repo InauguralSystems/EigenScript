@@ -22,6 +22,7 @@ layer whose numeric task IDs are opaque generation-checked handles, and a
 memory model documented in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) —
 *values* copy through a channel, including mutable buffers and text builders,
 while closure environments and resource handles stay shared by reference,
+a task's unjoined uncaught error fails the run on main or a spawned worker,
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 

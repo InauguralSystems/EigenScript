@@ -574,7 +574,7 @@ What happens next depends on whether anything can still observe that error:
 |---|---|---|
 | A **detached** task dies of an uncaught error | **Fail fast**: its trace prints and the program stops at main's next scheduling point, or in the exit drain if main never yields | 1 |
 | A task dies, **then** is detached | The program stops at that `task_detach` call: detaching would discard an error the runtime already holds | 1 |
-| A **joinable** task dies and is not yet joined | Unchanged (#493): main continues, and a later `try`/`catch` around `task_join` recovers the error; if it is never joined, the run still fails at exit | 1, or 0 if caught |
+| A **joinable** task dies and is not yet joined | Unchanged (#493): its OS thread continues, and a later `try`/`catch` around `task_join` recovers the error; if it is never joined, the run still fails at exit. This is identical on the main scheduler and a spawned worker's scheduler (#1810). | 1, or 0 if caught |
 | An **OS thread** (`spawn`) dies and is **never joined** | Unchanged (#1112): main completes, and the run still fails at exit | 1 |
 | An **OS thread** dies and is **joined** | **Raised at the join** (#1745): `thread_join` re-raises the worker's error in the joiner, with its kind and message, or as the value the worker threw. Catching it observes the failure, as catching a failed `task_join` does | 1, or 0 if caught |
 
