@@ -2769,7 +2769,7 @@ main baseline and a separately built SMI-trap binary. The trap corpus
 reported the same full 458-file summary as the candidate corpus, including
 `diff=0 incomplete=0 undeclared=0 stale=0` and 13 graphics-only caps.
 Both corpus halves passed; `mechanical smi-trap: PASS` and
-`phase2-check: PASS`. The retired-token scan reported `tokens=9 files=90
+`phase2-check: PASS`. The retired-token scan reported `tokens=9 files=89
 hits=0`; inventory `examined=2012 classified=2012 unclassified=0`; int
 source `make_int_defs=0 outside_writers=0`; slot matrix
 `examined=33 calls=165 matrix_cells=396 arm_rows=32 failures=0`.

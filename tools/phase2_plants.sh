@@ -125,8 +125,10 @@ run_plant 1 src/value_slot.h \
 # an SMI again (a `try` turns it into a wrong value). Named check: the slot
 # test's Part D row for `<`.
 run_plant arm-refusal src/vm.c \
-    "        if (slot_is_smi(_as) || slot_is_smi(_bs)) \\
-            eigs_int_unwired(\"compare '\" OPNAME \"'\", (slot_is_smi(_as) ? _as : _bs).u); \\
+    "        if (slot_type(_as) == VAL_INT) \\
+            eigs_int_unwired(\"compare '\" OPNAME \"'\", _as.u); \\
+        if (slot_type(_bs) == VAL_INT) \\
+            eigs_int_unwired(\"compare '\" OPNAME \"'\", _bs.u); \\
 " \
     "" \
     tests/phase2/slot_layer.c \
