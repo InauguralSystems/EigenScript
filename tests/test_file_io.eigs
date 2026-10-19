@@ -8,9 +8,16 @@ write_text of ["/tmp/eigen_test_rt1.txt", "hello"]
 content is read_text of "/tmp/eigen_test_rt1.txt"
 assert of [(len of content) > 0, "RT1 read existing file should be non-empty"]
 
-# RT2: read missing file returns empty string
-missing is read_text of "/tmp/eigenscript_no_such_file_xyz"
-assert of [missing == "", "RT2 missing file should return empty string"]
+# RT2: read missing file raises a catchable I/O error with the OS reason
+missing_kind is "none"
+missing_message is ""
+try:
+    missing is read_text of "/tmp/eigenscript_no_such_file_xyz"
+catch e:
+    missing_kind is e.kind
+    missing_message is e.message
+assert of [missing_kind == "io", "RT2 missing file should raise io"]
+assert of [contains of [missing_message, "No such file or directory"], "RT2 should expose OS reason"]
 
 # RT3: read with non-string arg returns empty string
 bad is read_text of 42

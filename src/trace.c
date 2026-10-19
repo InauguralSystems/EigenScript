@@ -1964,9 +1964,9 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"random_int",           TK_NUM_},
     {"random_normal",        TK_LIST_ | TK_NULL_},
     {"read_bytes",           TK_LIST_ | TK_NULL_},
-    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_},  /* num: the recorded over-cap size */
+    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_}, /* list: I/O error */
     {"read_line",            TK_STR_ | TK_NULL_},
-    {"read_text",            TK_STR_},
+    {"read_text",            TK_STR_ | TK_LIST_}, /* list: I/O error */
     {"tensor_load",          TK_LIST_ | TK_NULL_},  /* the [rows, cols] over-cap verdict */
 };
 

@@ -14,6 +14,8 @@
 
 # ---- read_lines: read file into list of lines ----
 define read_lines(path) as:
+    if not (file_exists of path):
+        return []
     text is read_text of path
     if text == "":
         return []
@@ -30,6 +32,8 @@ define write_lines(path, lines) as:
 # read_csv of "path.csv" -> [[col1, col2, ...], ...]
 # Simple CSV: no quoting, comma-delimited
 define read_csv(path) as:
+    if not (file_exists of path):
+        return []
     text is read_text of path
     if text == "":
         return []

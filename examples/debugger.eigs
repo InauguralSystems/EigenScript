@@ -25,7 +25,9 @@ _target_exists is file_exists of _target_path
 if (not _target_exists):
     _target_path is "examples/hello.eigs"
 
-_dbg_source is read_text of _target_path
+_dbg_source is ""
+if file_exists of _target_path:
+    _dbg_source is read_text of _target_path
 
 # Load the meta-circular interpreter
 load_file of "lib/eigen.eigs"

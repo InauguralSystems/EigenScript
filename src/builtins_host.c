@@ -1031,14 +1031,59 @@ Value* builtin_remove_file(Value *arg) {
 }
 
 /* ==== BUILTIN: read_text ==== */
-/* read_text of "path" → file contents as string, or "" on failure. */
+/* File-read errors use a one-string list on the trace tape.  That shape cannot
+ * be a successful result for any of these three builtins (read_bytes lists
+ * contain only numbers), so replay can reproduce the error without consulting
+ * the host filesystem. */
+static Value *file_read_error(const char *fn, const char *path, int err) {
+    char message[3900];
+    snprintf(message, sizeof(message), "%s: cannot open '%s': %s",
+             fn, path, strerror(err));
+    if (__builtin_expect(g_trace_enabled, 0)) {
+        Value *record = make_list(1);
+        list_append_owned(record, make_str(message));
+        trace_nondet_value(fn, record);
+        val_decref(record);
+    }
+    rt_error(EK_IO, 0, "%s", message);
+    return make_null();
+}
+
+/* Return NULL when no replay record was consumed.  An error record is turned
+ * back into the original EK_IO raise; an ordinary recorded value is returned. */
+static Value *file_read_replay(const char *fn) {
+    if (!__builtin_expect(g_replay_enabled, 0)) return NULL;
+    if (trace_replay_refuse_off_owner(fn)) return make_null();
+    Value *v = NULL;
+    if (!trace_replay_take(fn, &v)) return NULL;
+    if (v && v->type == VAL_LIST && v->data.list.count == 1 &&
+        list_elem_type(v, 0) == VAL_STR) {
+        const char *message = list_get_ref(v, 0)->data.str;
+        rt_error(EK_IO, 0, "%s", message);
+        val_decref(v);
+        return make_null();
+    }
+    return v;
+}
+
+static int file_is_directory(FILE *f) {
+    struct stat st;
+    return fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+/* read_text of "path" → file contents as string; I/O failure raises EK_IO. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
 Value* builtin_read_bytes(Value *arg) {
     /* #1008: the type check sits BEFORE the tape take (see ARG_GUARD_PRETAKE). */
     ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_bytes", "a string path", make_null());
-    TRACE_NONDET_TAKE("read_bytes");
+    Value *replayed = file_read_replay("read_bytes");
+    if (replayed) return replayed;
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) TRACE_NONDET_RECORD("read_bytes", make_null());
+    if (!f) return file_read_error("read_bytes", arg->data.str, errno);
+    if (file_is_directory(f)) {
+        fclose(f);
+        return file_read_error("read_bytes", arg->data.str, EISDIR);
+    }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -1071,7 +1116,7 @@ Value* builtin_read_bytes(Value *arg) {
  * holds one double per byte (8x expansion — 512 MB of file is already
  * ~4 GiB resident), so the ceiling keeps the opt-in from becoming an
  * unbounded fs->RAM amplifier while blocking no realistic asset.
- * Missing/unopenable file still returns null (existing contract). */
+ * Missing/unopenable files raise EK_IO, like the other file readers. */
 #define READ_BYTES_BUF_DEFAULT_CAP (10LL * 1024 * 1024)
 #define READ_BYTES_BUF_HARD_CAP    (512LL * 1024 * 1024)
 
@@ -1125,9 +1170,8 @@ Value* builtin_read_bytes_buf(Value *arg) {
      * the identical raise is re-derived under EIGS_REPLAY without
      * touching the live filesystem. */
     if (__builtin_expect(g_replay_enabled, 0)) {
-        Value *tv;
-        if (trace_replay_refuse_off_owner("read_bytes_buf")) return make_null();
-        if (trace_replay_take("read_bytes_buf", &tv)) {
+        Value *tv = file_read_replay("read_bytes_buf");
+        if (tv) {
             if (tv && tv->type == VAL_NUM) {
                 long long len = (long long)eigs_num_arg(tv, __func__);
                 val_decref(tv);
@@ -1138,7 +1182,11 @@ Value* builtin_read_bytes_buf(Value *arg) {
         }
     }
     FILE *f = fopen(path->data.str, "rb");
-    if (!f) TRACE_NONDET_RECORD("read_bytes_buf", make_null());
+    if (!f) return file_read_error("read_bytes_buf", path->data.str, errno);
+    if (file_is_directory(f)) {
+        fclose(f);
+        return file_read_error("read_bytes_buf", path->data.str, EISDIR);
+    }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -1174,9 +1222,14 @@ Value* builtin_read_bytes_buf(Value *arg) {
 Value* builtin_read_text(Value *arg) {
     /* #1008: the type check sits BEFORE the tape take (see ARG_GUARD_PRETAKE). */
     ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_text", "a string path", make_str(""));
-    TRACE_NONDET_TAKE("read_text");
+    Value *replayed = file_read_replay("read_text");
+    if (replayed) return replayed;
     FILE *f = fopen(arg->data.str, "r");
-    if (!f) TRACE_NONDET_RECORD("read_text", make_str(""));
+    if (!f) return file_read_error("read_text", arg->data.str, errno);
+    if (file_is_directory(f)) {
+        fclose(f);
+        return file_read_error("read_text", arg->data.str, EISDIR);
+    }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);

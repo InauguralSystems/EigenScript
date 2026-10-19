@@ -318,6 +318,11 @@ an integral count from 1 through that cap, and `build_corpus` includes file
 separators in its capped token count. These limits also raise under
 `EIGS_STRICT=0`; see [BUILTINS.md](docs/BUILTINS.md) for the I/O contracts.
 
+File reads follow Python's exception model: `read_text`, `read_bytes`, and
+`read_bytes_buf` raise a catchable `io` error naming the path and the operating
+system reason when a path is missing, unreadable, or a directory. Empty files
+remain successful empty values.
+
 Each of them takes a nested list, a flat list, or a flat numeric **`buffer`**,
 and returns a buffer when every tensor operand was one. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work

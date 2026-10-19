@@ -104,11 +104,13 @@ catch e:
 print of caught" \
 "value"
 
-# 6. Missing file: the existing null contract is unchanged (NOT a raise).
-run_case "missing file still returns null" \
-"b is read_bytes_buf of \"$TMPDIR/nope.bin\"
-print of f\"isnull={b == null}\"" \
-"isnull=true"
+# 6. Missing file raises I/O with the OS reason.
+run_case "missing file raises io with OS reason" \
+"try:
+    b is read_bytes_buf of \"$TMPDIR/nope.bin\"
+catch e:
+    print of f\"{e.kind}|{e.message}\"" \
+"io|read_bytes_buf: cannot open '$TMPDIR/nope.bin': No such file or directory"
 
 # 7. Record/replay: the over-cap raise is re-derived from the tape with
 #    the file DELETED — byte-identical output, no live fs dependence.

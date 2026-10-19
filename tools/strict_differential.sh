@@ -787,7 +787,6 @@ json_path of an absent key is "" (no value at that path)|print of f"[{json_path 
 json_path of a JSON null renders as ""|print of f"[{json_path of ["{\"a\": null}", "a"]}]"
 file_exists of a real absent path is 0 (#1008 Phase D)|print of (file_exists of "/nonexistent/eigs_971_probe")
 is_dir of a real absent path is 0|print of (is_dir of "/nonexistent/eigs_971_probe")
-read_text of a real absent path is ""|print of f"[{read_text of "/nonexistent/eigs_971_probe"}]"
 index_of miss is -1 even with the flag on|print of (index_of of ["abc", "z"])
 num of "inf" saturates (overflow, not NaN)|print of (num of "inf")
 pow of a negative base with an INTEGER exponent is defined|print of (pow of [0 - 2, 3])
