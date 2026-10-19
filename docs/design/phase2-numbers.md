@@ -1983,7 +1983,10 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      empty; temporary costs and known-wrong verdicts must be recovered before
      integration merges.
      Consumer hashes that relied on double rounding now raise
-     ((A)); they move to the N9 wrapping builtins.
+     ((A)); they move to the N9 wrapping builtins. The stdlib's own
+     real-valued formulas must not: `tools/phase2_lib_diff.sh` (§9.5, #1848)
+     runs every exported lib function with int arguments on main and the
+     branch, from R1.3 in every round.
 4. **R1.4, N4.** `//` (token, parser, `OP_IDIV` appended,
    `op_name`/`op_stack_effect`/obs marker/ABI test), `//=` beside `/=` (Q6),
    `%` floor modulo for ints and floats, int division by zero raises,
@@ -2523,6 +2526,38 @@ its gate must exercise every builtin with a VALID call.
 The int-fuzz sweep, if kept, shrinks to what the table does not do: a
 crash-only sweep (every builtin fed ints in every numeric slot must raise
 or return, never crash), in the shape of `tests/test_bool_fuzz.sh`.
+
+### 9.5 `tools/phase2_lib_diff.sh <main-binary> <branch-binary>` (#1848, from R1.3)
+
+A real-valued stdlib formula can compute in int64 through an int literal of
+its own and an int argument: `rest_energy of 103` (an int speed of light)
+and `poisson_pmf of [21, 5.0]` (an int `k!` denominator) raised where main
+answered. A grep cannot find the second kind, so this is a differential.
+- **Population:** every tracked `lib/*.eigs` module's import namespace (its
+  `fn` keys), checked against the modules' column-0 `define` lines in both
+  directions. A function is called once, through its own module, or through
+  a module that re-exports it when its own cannot be imported alone (`ui`'s
+  `ui_w_*` fragments). `lib/pkg.eigs` is the one declared non-library module
+  (importing it runs the `--pkg` CLI); any other unexamined module fails.
+- **Same input:** both binaries run a copy of the branch's `lib/` under a
+  scratch project root, so only the runtime differs.
+- **Calls, the stated range:** every int n in [-3, 110]; arity 1 calls f(n),
+  arity k >= 2 the diagonal and, per position, n there with 1 elsewhere.
+- **Verdict:** a call is listed when main completes it and the branch raises
+  or never reaches it. A listed function must be integer-domain and declared
+  in `tests/phase2/lib_int_domain.txt` with its reason (decision (A)); a
+  declaration no call needs is stale. Both fail.
+- At R1.3: 889 functions, 281,331 calls; `probability.factorial` is the one
+  declaration. `rest_energy`, `poisson_pmf`/`poisson_cdf` and
+  `fmt_num`/`fmt_percent` were fixed (a float constant, a float `k!`
+  denominator, a float scale factor). The fixed `poisson_pmf` is
+  byte-identical to main on 888 points and within 1.3e-13 of SciPy's
+  `poisson.pmf` (the oracle). Calibration: the int `SPEED_OF_LIGHT` planted
+  back lists `rest_energy` UNDECLARED; a declaration for `permutations` is
+  STALE.
+- **Range boundary:** ints at most 110 keep a polynomial of degree 9 in the
+  caller's own ints inside int64, so a listed call points at the library.
+  A literal that overflows only for larger arguments is not seen.
 
 ---
 
