@@ -6,9 +6,16 @@ explicit decision recorded in an issue, never by drift.
 
 ## 0. One novel thing, deterministic replay, standard everywhere else
 
+**EigenScript is for AI first, and usable by humans too.** Its first users are AI agents that write, run and
+verify code, and nothing in it may stop a person from reading or writing it. That is why the standard parts stay
+standard (an agent's instincts come from the frontier languages, so every divergence is a trap it walks into),
+why a wrong result must be loud (an agent trusts a clean exit), and why the novel parts measure and replay (an
+agent cannot watch a debugger). (owner, 2026-10-19)
+
 These are the owner's decisions; everything below elaborates them. EigenScript has **one novel thing: the
-observer**, i.e. measurement as a language primitive. Its open questions are the signal (distance vs entropy)
-and opt-in observation (#1667). **Deterministic replay** (the trace tape) is a product guarantee (principle 3).
+observer**, i.e. measurement as a language primitive. Its signal is distance |Δv|, not entropy (#1758 O1, on
+the oracle's measurement, #1667), and observation is opt-in by asking: a binding is observed when the program
+interrogates it (#1667). **Deterministic replay** (the trace tape) is a product guarantee (principle 3).
 **Everything else is standard**: where mature languages agree, EigenScript does what they do (principle 1).
 Owner intent lives in this file, in `kind:decision` issues and in the language contract. A design found only in
 the code is not owner intent (principle 8). (2026-10-07)
