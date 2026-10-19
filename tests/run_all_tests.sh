@@ -599,7 +599,7 @@ else
     # follows the store).
     EL_LIVE=$(sed -n 's/^LIVE: errline_1434=2 line \([0-9]*\)$/\1/p' <<< "$ERRLINE_OUT")
     EL_STEP=$(printf 'j 95\nt errline_1434\nq\n' | $EIGS_TMO ./eigenscript --step "$EL_TAPE" 2>&1 |
-              sed -n 's/^  #[0-9]* *line \([0-9]*\) *2 .*/\1/p')
+              sed -n 's/^  #[0-9]* *line \([0-9]*\) *2[.]0 .*/\1/p')
     rm -f "$EL_TAPE"
     TOTAL=$((TOTAL + 1))
     if [ -n "$EL_LIVE" ] && [ "$EL_LIVE" = "$EL_STEP" ]; then

@@ -1943,12 +1943,6 @@ void eigs_slot_refuse(const char *who, EigsSlot s) {
     abort();
 }
 
-void eigs_int_unwired(const char *who, uint64_t bits) {
-    fprintf(stderr, "EigenScript FATAL: %s: int 0x%016llx reached an arm whose "
-            "int handling lands in #1758 R1.3\n", who, (unsigned long long)bits);
-    abort();
-}
-
 Value* make_str(const char *s) {
     /* #965: the copying string constructor is the sandbox chokepoint for the
      * pure string transforms (str_lower/str_upper/trim/substr/
@@ -2911,7 +2905,7 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
     if (a->type != b->type) {
         /* #1758 N2 (design 7): an int and a float are both numbers and are
          * equal exactly when their values are; no conversion rounds either
-         * side. Dead until R1.3, when the first int Value exists. */
+         * side. */
         if (a->type == VAL_INT && b->type == VAL_FLOAT)
             return eigs_cmp_int_float(VAL_I64_RAW(a), VAL_F64_RAW(b)) == 0;
         if (a->type == VAL_FLOAT && b->type == VAL_INT)

@@ -2269,7 +2269,8 @@ static int unescape_string(const char **p, char *out, int out_cap) {
  *
  * Recognized shapes:
  *   null | true | false              immediates
- *   <num>                            strtod-parseable
+ *   <int digits>                     exact signed int64, no decimal point
+ *   <float>                          decimal point or exponent marks its kind
  *   "<str>"                          escapes per unescape_string
  *   [v, v, …]                        list
  *   b[num, num, …]                   buffer (the leading 'b' disambiguates
@@ -2406,9 +2407,32 @@ static Value *parse_value_p(const char **p) {
      * not replayable. Caller falls back to live source. */
     if (c == '<' || (unsigned char)c == 0xE2) return NULL;
 
+    /* v7: a decimal digit token without a point/exponent is an int. Parse
+     * its magnitude exactly, including INT64_MIN, without routing through a
+     * double (9007199254740993 must retain its low bit on replay). */
+    const char *digits = *p;
+    int negative = *digits == '-';
+    if (negative) digits++;
+    const char *end_digits = digits;
+    while (*end_digits >= '0' && *end_digits <= '9') end_digits++;
+    if (end_digits != digits && at_token_boundary(*end_digits)) {
+        uint64_t limit = negative ? UINT64_C(9223372036854775808)
+                                  : UINT64_C(9223372036854775807);
+        uint64_t magnitude = 0;
+        for (const char *q = digits; q != end_digits; q++) {
+            unsigned digit = (unsigned)(*q - '0');
+            if (magnitude > (limit - digit) / 10) return NULL;
+            magnitude = magnitude * 10 + digit;
+        }
+        int64_t i = negative
+                  ? -(int64_t)(magnitude - (magnitude != 0)) - (magnitude != 0)
+                  : (int64_t)magnitude;
+        *p = end_digits;
+        return make_int(i);
+    }
     char *end = NULL;
     double d = strtod(*p, &end);
-    if (end == *p) return NULL;
+    if (end == *p || !at_token_boundary(*end)) return NULL;
     *p = end;
     return make_num(d);
 }
@@ -2815,15 +2839,36 @@ static void write_string(const char *s) {
     tp_putc('"');
 }
 
+/* Tape float spelling is independent of ordinary display (N6, R1.7). The
+ * point/exponent is the v7 kind marker: integral floats, including negative
+ * zero, must never replay as ints. %.17g preserves the exact double bits. */
+static void tape_float_text(char *buf, size_t nbuf, double n) {
+    snprintf(buf, nbuf, "%.17g", n);
+    if (isfinite(n) && !strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E')) {
+        size_t used = strlen(buf);
+        if (used + 2 < nbuf) memcpy(buf + used, ".0", 3);
+    }
+}
+
+static void write_float(double n) {
+    char buf[32];
+    tape_float_text(buf, sizeof buf, n);
+    tp_puts(buf);
+}
+
+static void write_int(int64_t n) {
+    char buf[32];
+    eigs_int_text(buf, sizeof buf, n);
+    tp_puts(buf);
+}
+
 /* Format a heap or tracked Value*. Numeric heap values unwrap to their
  * number; collections show their size for at-a-glance scanning. */
 static void write_value_ptr(Value *v) {
     if (!v) { tp_puts("null"); return; }
     switch (v->type) {
-        case VAL_FLOAT:          tp_printf("%.17g", VAL_F64_RAW(v)); break;
-        /* #1758 R1.2a: an int is written as digits by tape v7 (R1.3); a v6
-         * tape cannot tell it from a float, so it is refused until then. */
-        case VAL_INT:          eigs_int_unwired("write_value_ptr", (uint64_t)VAL_I64_RAW(v));
+        case VAL_FLOAT:       write_float(VAL_F64_RAW(v)); break;
+        case VAL_INT:         write_int(VAL_I64_RAW(v)); break;
         case VAL_NULL:         tp_puts("null"); break;
         case VAL_STR:          write_string(v->data.str); break;
         case VAL_LIST:         tp_printf("<list:%d>", v->data.list.count); break;
@@ -2839,14 +2884,11 @@ static void write_value_ptr(Value *v) {
 }
 
 static void write_slot(EigsSlot s) {
-    if (slot_is_f64(s))  { tp_printf("%.17g", SLOT_F64_RAW(s)); return; }
+    if (slot_is_f64(s))  { write_float(SLOT_F64_RAW(s)); return; }
     if (slot_is_null(s)) { tp_puts("null"); return; }
     if (slot_is_bool(s)) { tp_puts(slot_as_bool(s) ? "true" : "false"); return; }
     if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
-    /* #1758: an int needs tape v7 (ints as digits, floats marked), which
-     * lands with the first int value in R1.3; a v6 tape would replay it as a
-     * float. Any other tag used to be written as `<unknown>`, unreplayable. */
-    if (slot_is_smi(s)) eigs_int_unwired("write_slot", s.u);
+    if (slot_is_smi(s))  { write_int(slot_smi_val(s)); return; }
     eigs_slot_refuse("write_slot", s);
 }
 
@@ -2960,8 +3002,18 @@ static void write_value_ptr_full(Value *v, int *budget) {
     if (*budget <= 0) return;
     if (!v) { wf_puts("null", budget); return; }
     switch (v->type) {
-        case VAL_FLOAT:  wf_printf(budget, "%.17g", VAL_F64_RAW(v)); break;
-        case VAL_INT:  eigs_int_unwired("write_value_ptr_full", (uint64_t)VAL_I64_RAW(v));   /* #1758: tape v7, R1.3 */
+        case VAL_FLOAT: {
+            char buf[32];
+            tape_float_text(buf, sizeof buf, VAL_F64_RAW(v));
+            wf_puts(buf, budget);
+            break;
+        }
+        case VAL_INT: {
+            char buf[32];
+            eigs_int_text(buf, sizeof buf, VAL_I64_RAW(v));
+            wf_puts(buf, budget);
+            break;
+        }
         case VAL_NULL: wf_puts("null", budget); break;
         case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
         case VAL_STR:  write_string_full(v->data.str, budget); break;

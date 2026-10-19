@@ -111,8 +111,8 @@ int main(void) {
      * 6001 calls make it hot for the JIT. The last element returns a string,
      * so sort_by raises after its final callback. */
     EigsValue *defs = eigs_eval_string(
-        "define ekey(x) as:\n    y is 0\n    i is 0\n    loop while i < 3:\n"
-        "        y is y + x\n        i is i + 1\n    if x < 0:\n"
+        "define ekey(x) as:\n    y is 0.0\n    i is 0.0\n    loop while i < 3.0:\n"
+        "        y is y + x\n        i is i + 1.0\n    if x < 0.0:\n"
         "        return \"s\"\n    return y\n");
     if (defs) eigs_value_release(defs);
     Value *ekey = eigs_get_global("ekey");

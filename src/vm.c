@@ -3188,6 +3188,8 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
     static void *dispatch_table[OP_COUNT] = {
         [OP_CONST] = &&lbl_CONST, [OP_NULL] = &&lbl_NULL,
         [OP_NUM_ZERO] = &&lbl_NUM_ZERO, [OP_NUM_ONE] = &&lbl_NUM_ONE,
+        [OP_INT_ZERO] = &&lbl_INT_ZERO, [OP_INT_ONE] = &&lbl_INT_ONE,
+        [OP_INT_CONST] = &&lbl_INT_CONST,
         [OP_TRUE] = &&lbl_TRUE, [OP_FALSE] = &&lbl_FALSE,
         [OP_ADD] = &&lbl_ADD, [OP_SUB] = &&lbl_SUB,
         [OP_MUL] = &&lbl_MUL, [OP_DIV] = &&lbl_DIV, [OP_MOD] = &&lbl_MOD,
@@ -3343,6 +3345,23 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             val_incref(v);
             vm_push(v);
         }
+        DISPATCH();
+    }
+
+    CASE(INT_ZERO): {
+        vm_push_slot(slot_from_int(0));
+        DISPATCH();
+    }
+    CASE(INT_ONE): {
+        vm_push_slot(slot_from_int(1));
+        DISPATCH();
+    }
+    CASE(INT_CONST): {
+        uint16_t idx = read_u16(ip); ip += 2;
+        Value *v = chunk->constants[idx];
+        int64_t i = VAL_I64_RAW(v);  /* verifier: OP_INT_CONST requires VAL_INT */
+        if (i >= SLOT_SMI_MIN && i <= SLOT_SMI_MAX) vm_push_slot(slot_from_int(i));
+        else { val_incref(v); vm_push(v); }
         DISPATCH();
     }
 

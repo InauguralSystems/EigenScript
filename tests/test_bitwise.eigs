@@ -181,12 +181,14 @@ assert_eq of [bw_raise of ["bit_shr", 1, big], "value", "bit_shr of [1, 1e30] ra
 assert_eq of [bw_raise of ["bit_not", 1.5, 0], "value", "bit_not of 1.5 raises value"]
 assert_eq of [bw_raise of ["bit_not", 9223372036854775808, 0], "value", "bit_not of 2^63 raises value"]
 # Exact integers at the edges stay valid, unchanged from #1739.
-int64_min is -9223372036854775808
+int64_min is -9223372036854775808.0
 assert_eq of [bw_raise of ["|", int64_min, 0], "no raise", "-2^63 | 0 is valid"]
 assert_eq of [int64_min | 0, int64_min, "-2^63 | 0 returns itself"]
 assert_eq of [bit_or of [int64_min, 0], int64_min, "bit_or of [-2^63, 0] returns itself"]
 assert_eq of [9223372036854774784 | 0, 9223372036854774784, "largest double below 2^63 is valid"]
-assert_eq of [~int64_min, 9223372036854775807, "~(-2^63) is INT64_MAX"]
+# R1.3: bitwise results remain floats until N8 (R1.5); N2 compares the
+# rounded float result exactly, so its expected value is explicitly float.
+assert_eq of [~int64_min, 9223372036854775808.0, "~(-2^63) retains the transitional float result"]
 assert_eq of [(0 - 0) | 0, 0, "zero is valid"]
 assert_eq of [(0 - 1) << 1, 0 - 2, "SHL of a negative is defined (unsigned shift)"]
 assert_eq of [bit_shl of [0 - 1, 1], (0 - 1) << 1, "bit_shl matches infix on a negative"]

@@ -709,8 +709,7 @@ result).**
 | `jit.c:jit_compile_to_thunk/OP_NULL` | not-a-classifier | the constant arm writes null and bool bits (D3) |
 | `jit_smoke.c:run_bool_cases` | not-a-classifier | test harness: expected bool bits (D3) |
 | `jit_smoke.c:run_index_bail_cases` | guarded | test harness: an exact null test of a result (D3) |
-| `trace.c:write_slot` | unwired | an int needs tape v7 (ints as digits, floats marked), R1.3; a v6 tape would replay it as a float. Any other tag refuses; it was written as `<unknown>` (D1) |
-| `value_slot.h:#define SLOT_SMI_TRAP` | refuse | the smi-trap build's check (`-DEIGS_SMI_TRAP`): every slot classifier aborts on an SMI before R1.3; nothing in other builds (D3) |
+| `trace.c:write_slot` | smi-arm | v7 writes an int as exact digits and marks floats with a point or exponent; an unknown tag refuses (R1.3) (D1) |
 | `value_slot.h:#define slot_as_heap` | refuse | alias of `slot_as_ptr` (D2) |
 | `value_slot.h:slot_as_ptr` | refuse | the raw dereference: R1.1 refuses a non-heap slot in ASan builds and under `-DEIGS_SLOT_CHECKED` (the C slot test) (D2) |
 | `value_slot.h:slot_decref` | guarded | acts only on tag `0xFFFB`; an SMI has no refcount (D3) |
@@ -769,6 +768,7 @@ result).**
 | `vm.c:vm_run_ex/CASE(DOT_GET)` | guarded | exact null test of a field (D3) |
 | `vm.c:vm_run_ex/CASE(DOT_SET)` | guarded | an int value skips the immediate store: the slow path pops it (D1) |
 | `vm.c:vm_run_ex/CASE(EQ)` | guarded | an int is not a float: the slow path (`values_equal_op` on the lifted Values); R1.3 adds N2 (D1) |
+| `vm.c:vm_run_ex/CASE(INT_CONST)` | not-a-classifier | int literal producer: a constant in the SMI range is emitted through `slot_from_int`; an out-of-range int borrows its constant-pool box into the stack with an owned reference (R1.3) (D3) |
 | `vm.c:vm_run_ex/CASE(INDEX_GET)` | guarded | an int index skips the fast path: the slow path lifts it through `slot_to_value` (D1) |
 | `vm.c:vm_run_ex/CASE(INDEX_SET)` | guarded | an int index or value skips the fast path: the slow path pops it (D1) |
 | `vm.c:vm_run_ex/CASE(LOCAL_DOT_SET)` | guarded | an int value: `vm_slot_lift` boxes it (D1) |

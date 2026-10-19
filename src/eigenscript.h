@@ -152,6 +152,13 @@ static inline int eigs_name_is_reserved(const char *name) {
 #define MAX_PARAMS      16
 #define MAX_MATCH_CASES 64
 
+/* #1758 R1.3: a source number retains its literal kind through lexing and
+ * parsing. Decimal integers outside int64 are floats; hex integers wrap. */
+typedef struct {
+    int is_int;
+    union { int64_t i64; double f64; } value;
+} EigsNum;
+
 /* ---- Tokenizer ---- */
 
 typedef enum {
@@ -185,7 +192,7 @@ typedef enum {
 
 typedef struct {
     TokType type;
-    double num_val;
+    EigsNum number;
     char *str_val;
     int line;
     int col;    /* 0-based column offset */
@@ -212,7 +219,7 @@ typedef enum {
     AST_TRY, AST_DICT, AST_DOT, AST_BREAK, AST_CONTINUE, AST_DOT_ASSIGN, AST_IMPORT,
     AST_MATCH, AST_LAMBDA, AST_UNOBSERVED, AST_INDEX_ASSIGN, AST_LIST_PATTERN_ASSIGN,
     AST_SLICE,
-    AST_BOOL      /* #1637: `true`/`false`; the value is data.num (1 or 0) */
+    AST_BOOL      /* #1637: `true`/`false`; the value is data.boolean (1 or 0) */
 } ASTType;
 
 typedef struct ASTNode ASTNode;
@@ -229,7 +236,8 @@ struct ASTNode {
                             * parenthesized literal list is a single call
                             * argument, never spread (#355) */
     union {
-        double num;
+        EigsNum number;
+        int boolean;
         char *str;
         struct { char *name; } ident;
         struct { char op[4]; ASTNode *left; ASTNode *right; } binop;
@@ -276,9 +284,8 @@ typedef enum {
      * slot layer carries it as the TAG_BOOL immediate. Arithmetic on it and
      * `==` against a number raise. */
     VAL_BOOL,
-    /* #1758 R1.2a: an exact int64, boxed only outside the SMI range (design
-     * 2.1). Nothing produces one before R1.3 (make_int does not exist yet):
-     * every arm that handles it is dead code until then. */
+    /* #1758: an exact int64. Stack/container slots use an SMI when it fits;
+     * the Value API and out-of-SMI values use make_int (design 2.1). */
     VAL_INT,
 } ValType;
 
@@ -291,7 +298,7 @@ typedef Value* (*BuiltinFn)(Value* arg);
 /* #1758 N2 (design 7): an int and a float compare exactly, by value. Returns
  * -1, 0 or 1 for i < f, i == f, i > f, and 2 when f is NaN (unordered: every
  * comparison is false except !=). Lua's LTintfloat/EQintfloat give the same
- * answers. Pure; no int Value exists before R1.3. */
+ * answers. Pure; neither operand is rounded through the other kind. */
 static inline int eigs_cmp_int_float(int64_t i, double f) {
     if (f != f) return 2;
     if (f >= 9223372036854775808.0) return -1;     /* f above every int64 */
@@ -450,7 +457,7 @@ struct Value {
          * reviewed list tools/num_read_allowlist.txt, pinned by count
          * (tools/num_read_check.sh). */
         double f64_;    /* VAL_FLOAT (#1758 R1.2a) */
-        int64_t i64_;   /* VAL_INT (#1758 R1.2a; no producer before R1.3) */
+        int64_t i64_;   /* VAL_INT (#1758) */
         int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
         /* VAL_STR payload: NUL-terminated bytes.
          *

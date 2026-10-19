@@ -32,14 +32,14 @@ static void lexer_error_at(const char *caret_source, int line, int col,
     eigs_print_caret_src(stderr, caret_source, line, col);
 }
 
-static void tok_add(TokenList *tl, TokType type, double num, const char *str, int line, int col) {
+static void tok_add(TokenList *tl, TokType type, EigsNum number, const char *str, int line, int col) {
     if (tl->count >= tl->capacity) {
         tl->capacity *= 2;
         tl->tokens = xrealloc_array(tl->tokens, tl->capacity, sizeof(Token));
     }
     Token *t = &tl->tokens[tl->count++];
     t->type = type;
-    t->num_val = num;
+    t->number = number;
     t->str_val = str ? xstrdup(str) : NULL;
     t->line = line;
     t->col = col;
@@ -131,7 +131,7 @@ static const char *fstr_interp_end(const char *p, int nesting, int *too_deep) {
  * reports the post-`}` column, since a zero length would read as
  * "column unknown" to the error recorder. */
 static void tok_add_synth(TokenList *tl, TokType type, const char *str, int line, int col) {
-    tok_add(tl, type, 0, str, line, col);
+    tok_add(tl, type, (EigsNum){0}, str, line, col);
     tl->tokens[tl->count - 1].synth = 1;
 }
 
@@ -434,7 +434,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
         snprintf(msg, sizeof(msg), "f-string nesting too deep (max %d levels)",
                  MAX_TOKENIZE_DEPTH);
         lexer_error_at(caret_source, initial_line, initial_col, msg);
-        tok_add(&tl, TOK_EOF, 0, NULL, initial_line, initial_col);
+        tok_add(&tl, TOK_EOF, (EigsNum){0}, NULL, initial_line, initial_col);
         return tl;
     }
     g_tokenize_depth++;
@@ -483,12 +483,12 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 } else {
                     indent_top++;
                     indent_stack[indent_top] = spaces;
-                    tok_add(&tl, TOK_INDENT, 0, NULL, line, col);
+                    tok_add(&tl, TOK_INDENT, (EigsNum){0}, NULL, line, col);
                 }
             } else {
                 while (indent_top > 0 && spaces < indent_stack[indent_top]) {
                     indent_top--;
-                    tok_add(&tl, TOK_DEDENT, 0, NULL, line, col);
+                    tok_add(&tl, TOK_DEDENT, (EigsNum){0}, NULL, line, col);
                 }
                 if (spaces != indent_stack[indent_top]) {
                     fprintf(stderr, "Syntax error line %d: indentation does not match any outer level\n", line);
@@ -522,7 +522,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 if (tl.count > 0 && tl.tokens[tl.count-1].type != TOK_NEWLINE
                     && tl.tokens[tl.count-1].type != TOK_INDENT
                     && tl.tokens[tl.count-1].type != TOK_DEDENT) {
-                    tok_add(&tl, TOK_NEWLINE, 0, NULL, line, col);
+                    tok_add(&tl, TOK_NEWLINE, (EigsNum){0}, NULL, line, col);
                 }
                 at_line_start = 1;
             }
@@ -644,7 +644,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                          * the post-`}` column sent LSP rename edits onto
                          * the closing quote). */
                         Token *it = &inner.tokens[ti];
-                        tok_add(&tl, it->type, it->num_val, it->str_val, it->line, it->col);
+                        tok_add(&tl, it->type, it->number, it->str_val, it->line, it->col);
                         tl.tokens[tl.count - 1].len = it->len;
                         tl.tokens[tl.count - 1].synth = it->synth;
                     }
@@ -708,7 +708,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 fprintf(stderr, "Syntax error line %d: unterminated string\n", tok_line);
                 lexer_error_at(caret_source, tok_line, tok_col, "unterminated string");
             }
-            tok_add(&tl, TOK_STR, 0, buf.data, tok_line, tok_col);
+            tok_add(&tl, TOK_STR, (EigsNum){0}, buf.data, tok_line, tok_col);
             tl.tokens[tl.count - 1].len = (int)(p - str_start);  /* true source span */
             strbuf_free(&buf);
             continue;
@@ -716,41 +716,58 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
 
         if (isdigit(*p) || (*p == '.' && isdigit(*(p+1)))) {
             const char *num_start = p;
-            /* Hex integer literals are lexed HERE, not via strtod: the
-             * freestanding mini_strtod has no hex path (documented
-             * divergence — hex used to break on EigenOS), and C99 strtod
-             * also accepts hex-FLOAT forms (0x1p4, 0xA.8) the language
-             * does not mean. Digits accumulate in a double, so values
-             * past 2^53 round exactly like long decimal literals do. */
+            /* Hex is parsed here rather than by strtod, whose hex-float
+             * grammar is wider than ours and absent from mini_strtod. N1:
+             * accumulate modulo 2^64, then interpret the signed int64 value
+             * without an implementation-defined uint64-to-int64 cast. */
             if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
                 if (isxdigit((unsigned char)p[2])) {
-                    double num = 0;
+                    uint64_t bits = 0;
                     p += 2; col += 2;
                     while (isxdigit((unsigned char)*p)) {
                         int d = *p <= '9' ? *p - '0' : (*p | 32) - 'a' + 10;
-                        num = num * 16 + d;
+                        bits = bits * UINT64_C(16) + (uint64_t)d;
                         p++; col++;
                     }
-                    tok_add(&tl, TOK_NUM, num, NULL, line, tok_col);
+                    int64_t value = bits <= INT64_MAX ? (int64_t)bits
+                        : -1 - (int64_t)(UINT64_MAX - bits);
+                    EigsNum number = { .is_int = 1, .value.i64 = value };
+                    tok_add(&tl, TOK_NUM, number, NULL, line, tok_col);
                     tl.tokens[tl.count - 1].len = (int)(p - num_start);
                     continue;
                 }
-                /* A 0x prefix with no hex digit (bare `0x`, or the
-                 * hex-FLOAT fraction form `0x.8`): lex just the `0` so
-                 * the rest re-lexes as an identifier/dot and the parse
-                 * fails loudly. strtod must NEVER see a hex prefix —
-                 * glibc would parse `0x.8` as 0.5 while mini_strtod
-                 * (no hex) reads 0, a silent profile divergence. */
-                tok_add(&tl, TOK_NUM, 0, NULL, line, tok_col);
+                /* A hex prefix without a digit lexes as `0` followed by
+                 * invalid suffix tokens, on hosted and freestanding builds. */
+                EigsNum zero = { .is_int = 1, .value.i64 = 0 };
+                tok_add(&tl, TOK_NUM, zero, NULL, line, tok_col);
                 tl.tokens[tl.count - 1].len = 1;
                 p++; col++;
                 continue;
             }
             char *end;
-            double num = strtod(p, &end);
+            double f = strtod(p, &end);
+            EigsNum number = { .is_int = 0, .value.f64 = f };
+            /* strtod determines the existing decimal grammar/span. Only a
+             * digits-only token can be an int: `3.0` and `1e3` stay floats.
+             * Parse the integer independently, so no double rounding occurs
+             * above 2^53, and fall back to the float on decimal overflow. */
+            int64_t integer = 0;
+            int fits = 1;
+            for (const char *q = p; q < end; q++) {
+                if (*q < '0' || *q > '9' ||
+                    integer > (INT64_MAX - (*q - '0')) / 10) {
+                    fits = 0;
+                    break;
+                }
+                integer = integer * 10 + (*q - '0');
+            }
+            if (fits) {
+                number.is_int = 1;
+                number.value.i64 = integer;
+            }
             col += (int)(end - p);
             p = end;
-            tok_add(&tl, TOK_NUM, num, NULL, line, tok_col);
+            tok_add(&tl, TOK_NUM, number, NULL, line, tok_col);
             tl.tokens[tl.count - 1].len = (int)(end - num_start);
             continue;
         }
@@ -768,7 +785,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 col++;
             }
             TokType tt = keyword_type(buf.data);
-            tok_add(&tl, tt, 0, buf.data, line, tok_col);
+            tok_add(&tl, tt, (EigsNum){0}, buf.data, line, tok_col);
             strbuf_free(&buf);
             continue;
         }
@@ -778,7 +795,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             TokType op_ty = 0;
             int op_n = lexer_operator_len(p, &op_ty);
             if (op_n > 1) {
-                tok_add(&tl, op_ty, 0, NULL, line, tok_col);
+                tok_add(&tl, op_ty, (EigsNum){0}, NULL, line, tok_col);
                 p += op_n;
                 col += op_n;
                 continue;
@@ -786,32 +803,32 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
         }
 
         switch (*p) {
-            case '+': tok_add(&tl, TOK_PLUS, 0, NULL, line, tok_col); p++; col++; break;
-            case '-': tok_add(&tl, TOK_MINUS, 0, NULL, line, tok_col); p++; col++; break;
-            case '*': tok_add(&tl, TOK_STAR, 0, NULL, line, tok_col); p++; col++; break;
-            case '/': tok_add(&tl, TOK_SLASH, 0, NULL, line, tok_col); p++; col++; break;
-            case '%': tok_add(&tl, TOK_PERCENT, 0, NULL, line, tok_col); p++; col++; break;
-            case '(': tok_add(&tl, TOK_LPAREN, 0, NULL, line, tok_col); p++; col++; bracket_depth++; break;
-            case ')': tok_add(&tl, TOK_RPAREN, 0, NULL, line, tok_col); p++; col++; if (bracket_depth > 0) bracket_depth--; break;
-            case '[': tok_add(&tl, TOK_LBRACKET, 0, NULL, line, tok_col); p++; col++; bracket_depth++; break;
-            case ']': tok_add(&tl, TOK_RBRACKET, 0, NULL, line, tok_col); p++; col++; if (bracket_depth > 0) bracket_depth--; break;
-            case '{': tok_add(&tl, TOK_LBRACE, 0, NULL, line, tok_col); p++; col++; bracket_depth++; break;
-            case '}': tok_add(&tl, TOK_RBRACE, 0, NULL, line, tok_col); p++; col++; if (bracket_depth > 0) bracket_depth--; break;
-            case ',': tok_add(&tl, TOK_COMMA, 0, NULL, line, tok_col); p++; col++; break;
-            case ':': tok_add(&tl, TOK_COLON, 0, NULL, line, tok_col); p++; col++; break;
-            case '.': tok_add(&tl, TOK_DOT, 0, NULL, line, tok_col); p++; col++; break;
-            case '<': tok_add(&tl, TOK_LT, 0, NULL, line, tok_col); p++; col++; break;
-            case '>': tok_add(&tl, TOK_GT, 0, NULL, line, tok_col); p++; col++; break;
+            case '+': tok_add(&tl, TOK_PLUS, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '-': tok_add(&tl, TOK_MINUS, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '*': tok_add(&tl, TOK_STAR, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '/': tok_add(&tl, TOK_SLASH, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '%': tok_add(&tl, TOK_PERCENT, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '(': tok_add(&tl, TOK_LPAREN, (EigsNum){0}, NULL, line, tok_col); p++; col++; bracket_depth++; break;
+            case ')': tok_add(&tl, TOK_RPAREN, (EigsNum){0}, NULL, line, tok_col); p++; col++; if (bracket_depth > 0) bracket_depth--; break;
+            case '[': tok_add(&tl, TOK_LBRACKET, (EigsNum){0}, NULL, line, tok_col); p++; col++; bracket_depth++; break;
+            case ']': tok_add(&tl, TOK_RBRACKET, (EigsNum){0}, NULL, line, tok_col); p++; col++; if (bracket_depth > 0) bracket_depth--; break;
+            case '{': tok_add(&tl, TOK_LBRACE, (EigsNum){0}, NULL, line, tok_col); p++; col++; bracket_depth++; break;
+            case '}': tok_add(&tl, TOK_RBRACE, (EigsNum){0}, NULL, line, tok_col); p++; col++; if (bracket_depth > 0) bracket_depth--; break;
+            case ',': tok_add(&tl, TOK_COMMA, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case ':': tok_add(&tl, TOK_COLON, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '.': tok_add(&tl, TOK_DOT, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '<': tok_add(&tl, TOK_LT, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '>': tok_add(&tl, TOK_GT, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
             case '!':
                 fprintf(stderr, "Syntax error line %d: expected '!=' after '!'\n", line);
                 lexer_error_at(caret_source, line, tok_col, "expected '!=' after '!'");
                 p++; col++;
                 break;
-            case '=': tok_add(&tl, TOK_ASSIGN, 0, NULL, line, tok_col); p++; col++; break;
-            case '|': tok_add(&tl, TOK_BITOR, 0, NULL, line, tok_col); p++; col++; break;
-            case '&': tok_add(&tl, TOK_AMP, 0, NULL, line, tok_col); p++; col++; break;
-            case '^': tok_add(&tl, TOK_CARET, 0, NULL, line, tok_col); p++; col++; break;
-            case '~': tok_add(&tl, TOK_TILDE, 0, NULL, line, tok_col); p++; col++; break;
+            case '=': tok_add(&tl, TOK_ASSIGN, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '|': tok_add(&tl, TOK_BITOR, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '&': tok_add(&tl, TOK_AMP, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '^': tok_add(&tl, TOK_CARET, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
+            case '~': tok_add(&tl, TOK_TILDE, (EigsNum){0}, NULL, line, tok_col); p++; col++; break;
             default:
                 {
                     /* Spell the offending byte, never echo it (#1048). A byte
@@ -838,14 +855,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
     }
 
     while (indent_top > 0) {
-        tok_add(&tl, TOK_DEDENT, 0, NULL, line, col);
+        tok_add(&tl, TOK_DEDENT, (EigsNum){0}, NULL, line, col);
         indent_top--;
     }
 
     if (tl.count > 0 && tl.tokens[tl.count-1].type != TOK_NEWLINE) {
-        tok_add(&tl, TOK_NEWLINE, 0, NULL, line, col);
+        tok_add(&tl, TOK_NEWLINE, (EigsNum){0}, NULL, line, col);
     }
-    tok_add(&tl, TOK_EOF, 0, NULL, line, col);
+    tok_add(&tl, TOK_EOF, (EigsNum){0}, NULL, line, col);
 
     g_tokenize_depth--;
     return tl;

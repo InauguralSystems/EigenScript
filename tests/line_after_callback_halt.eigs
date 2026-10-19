@@ -3,13 +3,13 @@
 # error-halts (sandbox_run swallows the error), then sqrt raises in hot_sb's
 # own expression on line 9. Pre-fix: "Error line 77: sqrt: ..." and
 # "at hot_sb (line 77)". LINE-NUMBER SENSITIVE ([0g] greps these numbers).
-ok77 is [1, [68,77,0,0,0, 3, 40], []]
-halt77 is [1, [68,77,0,0,0, 3, 2, 7, 40], []]
+ok77 is [1.0, [68.0,77.0,0.0,0.0,0.0, 3.0, 40.0], []]
+halt77 is [1.0, [68.0,77.0,0.0,0.0,0.0, 3.0, 2.0, 7.0, 40.0], []]
 define hot_sb(d, k) as:
-    r is sqrt of (k - (len of (sandbox_run of [d, 100])))
+    r is sqrt of (k - (len of (sandbox_run of [d, 100.0])))
     return r
-k is 60
-loop while k > 1:
+k is 60.0
+loop while k > 1.0:
     w is hot_sb of [ok77, k]
-    k is k - 1
-w is hot_sb of [halt77, 1]
+    k is k - 1.0
+w is hot_sb of [halt77, 1.0]

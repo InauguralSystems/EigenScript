@@ -88,7 +88,7 @@ VOCAB = {
     'buffer_read_byte': 'READ',    # a buffer element as a byte (Q1: N5, no wrap)
     'buf_num_arg': 'READ',         # builtins_buf.c wrapper of eigs_list_num
     'eigs_value_as_num': 'READ',   # embed API accessor
-    'num_val': 'RAW',              # lexer token payload (double)
+    'number': 'RAW',               # lexer/AST EigsNum payload (#1758 R1.3)
     # (c) producers
     'make_num': 'PRODUCE',
     'make_num_permanent': 'PRODUCE',
@@ -118,9 +118,9 @@ JIT_TOKEN_RE = re.compile(
     r'emit_(?:add|sub|mul|div)sd_xmm0_xmm1|emit_ucomisd_\w+|emit_cvttsd2si_\w+|'
     r'emit_cvtsi2sd_\w+|emit_btr_63_\w+|fmod)\b')
 
-# `data.num` is the AST literal's double (`data.f64_` is the Value member,
+# `data.number` is the AST literal's EigsNum (`data.f64_` is the Value member,
 # reached only through VAL_F64_RAW); matched as a member access, below.
-AST_NUM_FIELD = re.compile(r'(?:->|\.)data\.num\b(?!_)')
+AST_NUM_FIELD = re.compile(r'(?:->|\.)data\.number\b(?!_)')
 
 KIND_CATEGORY = {
     'TEST': 'a', 'CASE': 'a', 'YIELD': 'a', 'DATA': 'a',
@@ -432,7 +432,7 @@ def scan_file(path, rel):
         for m in AST_NUM_FIELD.finditer(line):
             rest = line[m.end():].lstrip()
             kind = 'WRITE' if re.match(r'=(?!=)', rest) else 'RAW'
-            sites.append((rel, ln, scope[ln], 'data.num', kind))
+            sites.append((rel, ln, scope[ln], 'data.number', kind))
     return sites, stripped, scope, sigs
 
 
@@ -893,7 +893,7 @@ def main():
     out.append('## Per token')
     for t in sorted(token_hits, key=lambda t: (-token_hits[t], t)):
         out.append('%-24s %5d' % (t, token_hits[t]))
-    out.append('%-24s %5d' % ('data.num (AST)', sum(1 for s in sites if s[3] == 'data.num')))
+    out.append('%-24s %5d' % ('data.number (AST)', sum(1 for s in sites if s[3] == 'data.number')))
     out.append('')
     out.append('## Per file (category counts)')
     for rel in sorted(per_file, key=lambda r: (-per_file[r], r)):

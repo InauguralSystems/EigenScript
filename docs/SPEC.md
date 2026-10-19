@@ -344,15 +344,15 @@ consequences are contracts you can rely on:
   seam for checksums, hashing, and byte protocols (see docs/BUILTINS.md).
 
 ```eigenscript
-print of (9007199254740992 + 1)              # +1 is invisible past 2^53
+print of (9007199254740992 + 1)              # exact int64 addition
 print of (9007199254740993 == 9007199254740992)
 print of (1e308 * 10)                        # saturates, never Infinity
 print of (bit_and of [0xFFFFFFFF, 0xFF])     # int64 bitwise
 print of (bit_shl of [1, 40])                # exact past 2^32
 ```
 ```output
-9007199254740992
-true
+9007199254740993
+false
 1e+308
 255
 1099511627776

@@ -926,15 +926,10 @@ def calibrate(args, out):
         args.planted_leaf_scan = build_plant('leaf-scan', out)
         args.planted_leaf_mul = build_plant('leaf-mul', out)
         args.planted_random_int = build_plant('random-int', out)
-        args.planted_p4_trap = build_plant('p4-trap', out)
         args.planted_value_eq = build_plant('value-eq-raw', out)
-        args.planted_b2_trap = build_plant('b2-trap', out)
     for label, b, files, want in (
             ('plant C (buffer equality reads raw elements), release build', args.planted_value_eq,
-             ['tests/test_numeric_guard.eigs', 'tests/test_bool.eigs'], ('DIFF', 'same')),
-            ('plant B2 (an int from spelled tag bits) on the smi-trap build', args.planted_b2_trap,
-             ['tests/test_buffer_nonfinite_read.eigs', 'tests/test_numeric_guard.eigs', 'tests/test_bool.eigs'],
-             ('DIFF', 'DIFF', 'same'))):
+             ['tests/test_numeric_guard.eigs', 'tests/test_bool.eigs'], ('DIFF', 'same')),):
         if not b:
             out('CAL %-58s NOT RUN (no binary; --build-plants builds it)' % label)
             results.append(False)
@@ -955,17 +950,9 @@ def calibrate(args, out):
     else:
         out('CAL %-58s NOT RUN (no --planted-random-int binary; --build-plants builds it)' % 'plant D')
         results.append(False)
-    if args.planted_p4_trap:
-        # both files bind 1 through slot_from_value (loop_iter_store ->
-        # env_set_local_hashed), where P4 makes an int
-        files = ['tests/test_bool.eigs', 'tests/test_system.eigs']
-        rc, text, v = diff_restricted(base, args.planted_p4_trap, files)
-        case('P4 on the smi-trap build (the dynamic half): each file DIFF, aborting at the int',
-             (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'), 'slot_from_int under EIGS_SMI_TRAP' in text),
-             (3, 'DIFF', 'DIFF', None, True), detail=text.splitlines())
-    else:
-        out('CAL %-58s NOT RUN (no --planted-p4-trap binary; --build-plants builds it)' % 'P4 dynamic')
-        results.append(False)
+    # P4/B2's dynamic no-SMI plants are retired: ints are legitimate at
+    # R1.3 and the trap mode is intentionally no-op. Their static source
+    # plants above still calibrate the historical R1.1/R1.2 mechanism.
     for label, flag, b in (('leaf-scanner-early-return', '--planted-leaf-scan', args.planted_leaf_scan),
                            ('leaf-mul-plus-one', '--planted-leaf-mul', args.planted_leaf_mul)):
         if not b:
@@ -1001,15 +988,7 @@ BUILD_PLANTS = {
     # elements (no read normalisation); the suite's [42c] goes red on it
     'value-eq-raw': ('src/eigenscript.c', '        case VAL_BUFFER: {\n            if (a->data.buffer.count != b->data.buffer.count) return 0;\n            for (int i = 0; i < a->data.buffer.count; i++) {\n                double av = buffer_read_num(a, i);\n                if (g_has_error) return 0;\n                double bv = buffer_read_num(b, i);\n',
                      '        case VAL_BUFFER: {\n            if (a->data.buffer.count != b->data.buffer.count) return 0;\n            for (int i = 0; i < a->data.buffer.count; i++) {\n                double av = a->data.buffer.data[i];   /* CRITIC PLANT C: raw element, no read normalisation */\n                if (g_has_error) return 0;\n                double bv = b->data.buffer.data[i];\n', 'build'),
-    # the second critic's plant B2: an int produced by spelling the tag's bits
-    # (no TAG_SMI, so the static half cannot see it), on the smi-trap build
-    'b2-trap': ('src/vm.c', '            if (target->type == VAL_BUFFER) {\n                if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {\n                    double v = buffer_read_num(target, i);\n                    slot_decref(tgt_s);\n                    vm_push_slot(slot_from_f64(v));\n                } else {\n                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));\n                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",\n',
-                '            if (target->type == VAL_BUFFER) {\n                if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {\n                    double v = buffer_read_num(target, i);\n                    slot_decref(tgt_s);\n                    if (isnan(target->data.buffer.data[i])) {   /* CRITIC PLANT B2: an int producer, bits spelled */\n                        EigsSlot p; p.u = (SLOT_QNAN_MASK | (UINT64_C(2) << 48)) | 7u;\n                        vm_push_slot(p);\n                    } else {\n                        vm_push_slot(slot_from_f64(v));\n                    }\n                } else {\n                    if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));\n                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",\n', 'smi-trap'),
-    # the critic's P4 (an int produced inside an allowed writer) on the smi-trap build
-    'p4-trap': ('src/eigenscript.c', '        double n = VAL_F64_RAW(v);\n        val_decref(v);\n        return slot_from_f64(n);',
-                '        double n = VAL_F64_RAW(v);\n        val_decref(v);\n'
-                '        if (n == 1.0) return slot_from_int(1);   /* PLANT P4 */\n        return slot_from_f64(n);',
-                'smi-trap'),
+
 }
 _PLANT_DIR = []
 
@@ -1143,8 +1122,7 @@ def selftest(out):
         out('  TAG %s built in %s' % (TAG, d))
     args = argparse.Namespace(tag=os.path.abspath(tag), branch=branch, build_plants=True,
                               planted_leaf_scan=None, planted_leaf_mul=None,
-                              planted_random_int=None, planted_p4_trap=None,
-                              planted_value_eq=None, planted_b2_trap=None)
+                              planted_random_int=None, planted_value_eq=None)
     return calibrate(args, out)
 
 
@@ -1170,18 +1148,15 @@ def main():
     ap.add_argument('--planted-leaf-scan', help='calibration: a build whose leaf scanner returns early')
     ap.add_argument('--planted-leaf-mul', help='calibration: a build whose leaf MUL computes a*b+1')
     ap.add_argument('--planted-random-int', help='calibration: a build whose random_int answers lo+1..hi+1')
-    ap.add_argument('--planted-p4-trap', help='calibration: a smi-trap build with the P4 producer planted')
     ap.add_argument('--planted-value-eq', help='calibration: a build whose buffer equality reads raw elements (C)')
-    ap.add_argument('--planted-b2-trap', help='calibration: a smi-trap build with the B2 producer planted')
     ap.add_argument('--build-plants', action='store_true',
-                    help='calibration: build the six planted binaries from HEAD')
+                    help='calibration: build the four active planted binaries from HEAD')
     args = ap.parse_args()
     if args.selftest:
         print('phase2-check: FAIL: --selftest takes no other argument')
         return 2
     for b in (args.tag, args.branch, args.baseline, args.smi_trap, args.planted_leaf_scan,
-              args.planted_leaf_mul, args.planted_random_int, args.planted_p4_trap,
-              args.planted_value_eq, args.planted_b2_trap):
+              args.planted_leaf_mul, args.planted_random_int, args.planted_value_eq):
         if b and not os.access(b, os.X_OK):
             print('phase2-check: FAIL: %s is not an executable' % b)
             return 2

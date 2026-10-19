@@ -11,8 +11,7 @@
  *   0xFFF8 tag 0 : NULL              (payload ignored)
  *   0xFFF9 tag 1 : BOOL              (low bit = value)
  *   0xFFFA tag 2 : SMI               (an int in [-2^47, 2^47): 48-bit two's
- *                                     complement payload; #1758. Nothing
- *                                     produces one before R1.3)
+ *                                     complement payload; #1758)
  *   0xFFFB tag 3 : HEAP pointer      (str/list/dict/fn/builtin/buffer/tb)
  *   0xFFFC tag 4 : reserved          (#262 Step E: was TRACKED — removed)
  *   0xFFFD tag 5 : reserved
@@ -63,14 +62,6 @@ typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_F64_RA
 #define EIGS_SLOT_NORETURN
 #endif
 EIGS_SLOT_NORETURN void eigs_slot_refuse(const char *who, EigsSlot s);
-/* #1758 R1.1: an int exists as an encoding (the SMI) before any int Value
- * kind does (VAL_INT lands in R1.2a, make_int in R1.3). A reader whose int
- * arm needs an int Value, the int's ValType or tape v7 calls this instead
- * of guessing; nothing produces an int before R1.3, so it never runs.
- * R1.3 DELETES it, so every caller stops compiling in the commit that makes
- * ints reachable and gets its real arm there (design 2.7). */
-EIGS_SLOT_NORETURN void eigs_int_unwired(const char *who, uint64_t bits);
-
 /* slot_as_ptr refuses a slot that is not a heap pointer in sanitizer builds
  * and under -DEIGS_SLOT_CHECKED (#1758 R1.1: an SMI must never be read as a
  * pointer). Release keeps the bare mask: it is on every hot path. */
@@ -82,22 +73,9 @@ EIGS_SLOT_NORETURN void eigs_int_unwired(const char *who, uint64_t bits);
 #  endif
 #endif
 
-/* #1758 R1.1, the dynamic half of the int-source check: built with
- * -DEIGS_SMI_TRAP (`make smi-trap`), every slot classifier below aborts the
- * moment it reads an SMI, and slot_from_int aborts on any call. Nothing may
- * make an int before R1.3, so the corpus must run on that build exactly as on
- * release; a producer that writes the tag bits itself, which no scan of names
- * sees, dies at its first reader. R1.3 retires the mode with eigs_int_unwired.
- * In every other build SLOT_SMI_TRAP is nothing. */
-#ifdef EIGS_SMI_TRAP
-#define SLOT_SMI_TRAP(s)                                                       \
-    do {                                                                       \
-        if (__builtin_expect(((s).u & SLOT_TAG_MASK) == TAG_SMI, 0))           \
-            eigs_slot_refuse("EIGS_SMI_TRAP: an int before #1758 R1.3", (s));  \
-    } while (0)
-#else
+/* #1758 R1.3: the pre-flip source trap is retired now that SMI values are
+ * valid. Keep its build spelling for through-round gate invocations. */
 #define SLOT_SMI_TRAP(s) ((void)0)
-#endif
 
 /* Predicates */
 
@@ -145,9 +123,6 @@ static inline EigsSlot slot_from_heap(Value *v);
 /* #1758: the ONE int writer: an SMI inside [-2^47, 2^47), otherwise an
  * owned VAL_INT heap box. */
 static inline EigsSlot slot_from_int(int64_t i) {
-#ifdef EIGS_SMI_TRAP
-    eigs_int_unwired("slot_from_int under EIGS_SMI_TRAP", (uint64_t)i);
-#endif
     if (__builtin_expect(i < SLOT_SMI_MIN || i > SLOT_SMI_MAX, 0))
         return slot_from_heap(make_int(i));
     EigsSlot s; s.u = TAG_SMI | ((uint64_t)i & SLOT_PAYLOAD_MASK); return s;

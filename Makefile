@@ -183,17 +183,12 @@ SRC_V_jit-checked := $(HOSTED_SOURCES)
 FLAGS_jit-checked := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_JIT_CHECKED $(VERDEF)
 LIBS_jit-checked  := $(LDFLAGS) -ldl
 
-# #1758 R1.1: the dynamic half of the int-source check. Every slot classifier
-# aborts when it reads an SMI and slot_from_int aborts on any call
-# (value_slot.h EIGS_SMI_TRAP); slot_as_ptr checks its tag too. Until R1.3 no
-# program may make an int, so this build must run the corpus exactly as
-# release does: tools/phase2_check.sh --through R1.1 --smi-trap <binary>.
-# -Wno-maybe-uninitialized: the trap's noreturn refusal inside every slot
-# predicate defeats GCC's flow analysis in vm_run_ex's four compare arms
-# (false positives on _ad, read only after both reads succeeded). Release
-# compiles the same source with the warning on and has none (#1775).
+# #1758: compatibility target for the pre-R1.3 int-source gate. R1.3 retires
+# EIGS_SMI_TRAP now that integer literals are producers; slot_as_ptr still
+# checks tags through EIGS_SLOT_CHECKED. Historical R1.1/R1.2 calibrations
+# build their pinned pre-flip source rather than treating this as a trap.
 SRC_V_smi-trap := $(HOSTED_SOURCES)
-FLAGS_smi-trap := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_SMI_TRAP -DEIGS_SLOT_CHECKED -Wno-maybe-uninitialized $(VERDEF)
+FLAGS_smi-trap := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_SMI_TRAP -DEIGS_SLOT_CHECKED $(VERDEF)
 LIBS_smi-trap  := $(LDFLAGS) -ldl
 
 VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked smi-trap
@@ -739,7 +734,7 @@ jit-checked: build/jit-checked/eigenscript
 #   tools/phase2_check.sh --through R1.1 --smi-trap <tree>/src/eigenscript ...
 smi-trap: build/smi-trap/eigenscript
 	$(call RELINK,smi-trap)
-	@echo "EigenScript $(VERSION) (smi-trap: an int before #1758 R1.3 aborts) built. Binary: $(BINARY)"
+	@echo "EigenScript $(VERSION) (smi-trap compatibility: checked slots; source trap retired in R1.3) built. Binary: $(BINARY)"
 
 
 # Profile-guided optimization. Builds an instrumented binary, runs the

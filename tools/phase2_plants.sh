@@ -18,8 +18,8 @@
 #
 # Plants land with their named checks: plant 1 with R1.1 (the C slot test);
 # 2-7 name MAP rows that land in R1.3-R2.2 and join this table then. The R1.1
-# fix round added three instrument plants on the slot test: an operator arm
-# that lost its int refusal (Part D), and a population scan that writes noise
+# fix round added three instrument plants on the slot test: an integer overflow
+# that wraps instead of raising (Part D), and a population scan that writes noise
 # to stderr or an unparsed line to stdout (the critic's class); and #1775's
 # plant, the missing return that makes the -O0 amalgamation warn.
 # Prints one line per plant and `plants=N killed=N survived=0 broken=0
@@ -121,20 +121,17 @@ run_plant 1 src/value_slot.h \
     '^slot-layer-test: FAIL slot_from_int\(0\): bits 0x' \
     bash tests/phase2/slot_layer.sh release
 
-# An operator arm that lost its int refusal: NUM_CMP raises a type error for
-# an SMI again (a `try` turns it into a wrong value). Named check: the slot
-# test's Part D row for `<`.
-run_plant arm-refusal src/vm.c \
-    "        if (slot_type(_as) == VAL_INT) \\
-            eigs_int_unwired(\"compare '\" OPNAME \"'\", _as.u); \\
-        if (slot_type(_bs) == VAL_INT) \\
-            eigs_int_unwired(\"compare '\" OPNAME \"'\", _bs.u); \\
-" \
-    "" \
+# R1.3 N3/(A): overflow must raise, never return the wrapped int64 result.
+# The builtin computes the wrapped bits through __builtin_*_overflow; dropping
+# the checked raise therefore reproduces the exact fault the row promises.
+# Named check: the slot test's Part D overflow_add row, with a float control.
+run_plant overflow-wrap src/vm.c \
+    '    if (overflow) {' \
+    '    if (overflow && 0) {   /* PLANT: return the wrapped int64 result */' \
     tests/phase2/slot_layer.c \
-    '        if (strcmp(got, want) != 0) { FAILF("arm %s with an int: got %s, want %s", g_arm->name, got, want); bad++; }' \
-    '        if (0) { FAILF("arm %s with an int: got %s, want %s", g_arm->name, got, want); bad++; }' \
-    "^slot-layer-test: FAIL arm lt with an int: got " \
+    '        if (strcmp(got, "ran") != 0 || strcmp(pre, want) != 0) {' \
+    '        if (0) {' \
+    "^slot-layer-test: FAIL arm overflow_add with an int: got " \
     bash tests/phase2/slot_layer.sh release
 
 # The critic's class: a population scan whose diagnostics reach the parser.

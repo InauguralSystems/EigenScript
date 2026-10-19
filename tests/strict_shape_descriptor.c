@@ -7,7 +7,7 @@
 #include "vm.h"
 
 int main(void) {
-    const char *source = "return 42\n";
+    const char *source = "return 42.0\n";
     EigsState *state = eigs_open();
     if (!state) return 1;
     TokenList tokens = tokenize(source);

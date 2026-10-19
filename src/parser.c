@@ -804,7 +804,7 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type == TOK_NUM) {
         p_advance(p);
         ASTNode *n = make_node(AST_NUM, t->line);
-        n->data.num = t->num_val;
+        n->data.number = t->number;
         while (p_cur(p)->type == TOK_LBRACKET) {
             if (chain_too_deep(p)) break;
             n = parse_subscript_suffix(p, n);
@@ -831,7 +831,7 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type == TOK_TRUE || t->type == TOK_FALSE) {   /* #1637 */
         p_advance(p);
         ASTNode *b = make_node(AST_BOOL, t->line);
-        b->data.num = (t->type == TOK_TRUE) ? 1.0 : 0.0;
+        b->data.boolean = (t->type == TOK_TRUE);
         return b;
     }
 

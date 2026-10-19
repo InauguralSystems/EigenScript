@@ -700,13 +700,13 @@ Value* builtin_build_corpus(Value *arg) {
                     tid = FIRST_IDENT + actual_top + hit;
                 }
             } else if (int_count > 0 && tid == TOK_NUM) {
-                /* Give small non-negative integer literals exact tokens; the
-                 * region sits directly after the slots. floor==value rejects
-                 * 3.5 etc.; the lexer emits '-' as its own token so num_val is
-                 * never negative for a literal, but guard anyway. */
-                double nv = tl.tokens[i].num_val;
-                if (nv >= 0.0 && nv < (double)int_count && nv == (double)(long)nv)
-                    tid = FIRST_IDENT + actual_top + slot_count + (int)nv;
+                /* Only int literals receive the compact integer token.
+                 * Preserve literal kinds: `3.0` remains TOK_NUM. Hex literals
+                 * can wrap negative, so check the range before the cast. */
+                EigsNum number = tl.tokens[i].number;
+                if (number.is_int && number.value.i64 >= 0 &&
+                    number.value.i64 < int_count)
+                    tid = FIRST_IDENT + actual_top + slot_count + (int)number.value.i64;
             }
             double d = (double)tid;
             fwrite(&d, sizeof(double), 1, stream_file);

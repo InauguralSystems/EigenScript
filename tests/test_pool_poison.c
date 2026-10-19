@@ -143,7 +143,8 @@ static int control(void) {
     if (!r) { puts("control take: eval failed"); return 1; }
     eigs_value_release(r);
     Value *res = eigs_get_global("pool_poison_r");
-    int ok = res && res->type == VAL_FLOAT && VAL_F64_RAW(res) == 8.0;
+    /* #1758 N1/N3: this natural integer program returns the exact int 8. */
+    int ok = res && res->type == VAL_INT && VAL_I64_RAW(res) == 8;
     if (res) eigs_value_release(res);
     int same = c->env_cache == first;
     printf("control env take: %s (re-parked same env: %s)\n",

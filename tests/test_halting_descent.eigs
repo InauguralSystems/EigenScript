@@ -8,12 +8,12 @@ print of "--- HD1: bare-predicate loop around a runaway exits via STALL ---"
 # honest exit reason.
 
 counter is 0
-x is 10
-x is 10
+x is 10.0
+x is 10.0
 
 loop while not converged:
     counter is counter + 1
-    x is x * 2
+    x is x * 2.0
 
 print of counter
 print of report of x

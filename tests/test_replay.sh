@@ -534,8 +534,8 @@ print of x
 EOF
 CONTRACT_TAPE="$TMPDIR/contract.tape"
 EIGS_TRACE="$CONTRACT_TAPE" "$EIGS" "$TMPDIR/p_tape_contract.eigs" >/dev/null 2>&1
-if head -1 "$CONTRACT_TAPE" | grep -q '^V 6 '; then
-    ok "tapes written by this build stamp format v6"
+if head -1 "$CONTRACT_TAPE" | grep -q '^V 7 '; then
+    ok "tapes written by this build stamp format v7"
 else
     fail "format stamp" "$(head -1 "$CONTRACT_TAPE")"
 fi
@@ -560,7 +560,7 @@ else
     fail "pre-v3 replay refusal" "rc=$OLD_REPLAY_RC $(cat "$TMPDIR/old-replay.err")"
 fi
 
-# O records remain part of v6 tapes and the stepper still folds them. Bound the
+# O records remain part of v7 tapes and the stepper still folds them. Bound the
 # multiplicative configuration-record x binding work even though programs can
 # no longer create those records through observer setter builtins.
 WORK_TAPE="$TMPDIR/observer-work-limit.tape"

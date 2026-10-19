@@ -1,7 +1,7 @@
 /* tests/phase2/slot_layer.c -- #1758 R1.1, the C slot test (design 2.5).
  *
- * Nothing in the runtime produces an SMI before R1.3, so no program can show
- * what a slot reader does with one. This test builds SMI slots BY HAND (the
+ * The classifier matrix exercises canonical and non-canonical states directly.
+ * This test builds SMI slots BY HAND (the
  * literal tag 0xFFFA, never slot_from_int) and drives every slot classifier
  * whose first parameter is an EigsSlot -- the population
  * `tools/phase2_inventory.py --slot-population` derives -- with the SMI
@@ -12,8 +12,7 @@
  *   A  every population entry x every SMI boundary value. An entry either
  *      RETURNS the int's answer (its truthiness, type name, double, digits,
  *      the slot unchanged), or ABORTS through a named refusal: the permanent
- *      ones (eigs_slot_refuse) and the R1.1 placeholders whose int arm needs
- *      the int Value kind (eigs_int_unwired, deleted in R1.3). An abort runs
+ *      reference-reader refusals (eigs_slot_refuse). An abort runs
  *      in a forked child, and its FATAL line must name the expected reader.
  *   B  every population entry x twelve slot kinds: a double, the canonical
  *      NaN, -0.0, null, both bools, an SMI, a heap pointer, the reserved
@@ -190,7 +189,14 @@ static int r_slot_to_value(int64_t v) {
     int bad = !got || got->type != VAL_INT || VAL_I64_RAW(got) != v;
     val_decref(got); return bad;
 }
-static void a_write_slot(EigsSlot s) { write_slot(s); }
+static int r_write_slot(int64_t v) {
+    size_t before = g_out_len;
+    write_slot(smi(v));
+    char want[32], got[32];
+    snprintf(want, sizeof want, "%lld", (long long)v);
+    snprintf(got, sizeof got, "%.*s", (int)(g_out_len - before), g_out + before);
+    return strcmp(want, got) != 0;
+}
 static int r_slot_bridge_unwrap(int64_t v) {
     Value *got = slot_bridge_unwrap(smi(v));
     int bad = !got || got->type != VAL_INT || VAL_I64_RAW(got) != v;
@@ -255,7 +261,7 @@ static const Entry ENTRIES[] = {
     {"container.h:slot_type", r_slot_type, 0, 0, "VAL_INT"},
     {"container.h:slot_view", r_slot_view, 0, 0, "exact VAL_INT facade"},
     {"eigenscript.c:slot_to_value", r_slot_to_value, 0, 0, "exact owned VAL_INT"},
-    {"trace.c:write_slot", 0, a_write_slot, "write_slot", "unwired: tape v7 (R1.3)"},
+    {"trace.c:write_slot", r_write_slot, 0, 0, "v7 exact int digits"},
     {"vm.c:obs_slot_observable", 0, a_obs_slot_observable, "obs_slot_observable", "refuse"},
     {"vm.c:slot_bridge_unwrap", r_slot_bridge_unwrap, 0, 0, "exact owned VAL_INT"},
     {"container.h:eigs_slot_ref", 0, a_eigs_slot_ref, "eigs_slot_ref", "refuse"},
@@ -435,11 +441,12 @@ EXP(store_json) {
 static char g_heap_tape[64];         /* what the tape writer prints for g_str */
 EXP(write_slot) {
     switch (kclass(k)) {
-        case C_F64: snprintf(b, n, "w:%.17g", KD(k)); break;
+        case C_F64: snprintf(b, n, "w:%s", k == K_NAN ? "nan" : k == K_NZ ? "-0.0" : "1.5"); break;
+        case C_SMI: snprintf(b, n, "w:5"); break;
         case C_NULL: snprintf(b, n, "w:null"); break;
         case C_BOOL: snprintf(b, n, "w:%s", k == K_TRUE ? "true" : "false"); break;
         case C_HEAP: snprintf(b, n, "w:%s", g_heap_tape); break;
-        default: ABORT("write_slot");             /* an SMI: tape v7 is R1.3's; a reserved tag refuses */
+        default: ABORT("write_slot");             /* a reserved tag refuses */
     }
 }
 EXP(f64_value) {
@@ -761,6 +768,7 @@ static const Arm ARMS[] = {
     {"bnot", "~(xs[0])", "-6", "-6", 0},
     {"eq", "xs[0] == 5", "true", "true", 0},
     {"add", "xs[0] + 1", "6", "6", 0},
+    {"overflow_add", "9223372036854775807 + xs[0]", "9.223372036854776e+18", "value", 1},
 };
 #define N_ARMS ((int)(sizeof ARMS / sizeof ARMS[0]))
 static const Arm *g_arm;
@@ -769,7 +777,7 @@ static void c_arm(EigsSlot s, char *b, size_t n) {
     char prog[512];
     if (g_arm->in_try)
         snprintf(prog, sizeof prog, "xs is [7.5]\nphase2_poke of ([xs])\ntry:\n    print of (%s)\n"
-                 "catch e:\n    print of \"caught\"\n", g_arm->expr);
+                 "catch e:\n    print of e.kind\n", g_arm->expr);
     else
         snprintf(prog, sizeof prog, "xs is [7.5]\nphase2_poke of ([xs])\nprint of (%s)\n", g_arm->expr);
     EigsValue *r = eigs_eval_string(prog);

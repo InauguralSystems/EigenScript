@@ -47,7 +47,7 @@ row_of() { case "$1" in tests/*/*) printf '%s' "$1" ;; tests/*) basename "$1" ;;
 # '#' lines and blank lines are reasons. Data rows are what the diff sees.
 ledger_data() { awk 'NF && substr($0,1,1) != "#" { print }' "$1" | sort; }
 ledger_count() { ledger_data "$1" | wc -l | tr -d ' '; }
-b=bench_idxset.eigs
+b=jit_env_flags_float.eigs
 selfcheck() { # $1 arm name, $2.. env args
   local arm="$1"; shift
   local st; st=$(env "$@" EIGS_JIT_STATS=1 timeout 60 "$EIG" "../tests/$b" 2>&1 >/dev/null | grep -o 'compiled=[0-9]*')

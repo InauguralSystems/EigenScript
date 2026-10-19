@@ -222,6 +222,11 @@ typedef enum {
                            * Appended to preserve the public bytecode ABI. */
     OP_TRUE,            /*obs:NONE*/ /* #1637: push the bool true immediate. Appended. */
     OP_FALSE,           /*obs:NONE*/ /* #1637: push the bool false immediate. Appended. */
+    /* #1758 R1.3: int literal opcodes append to preserve the bytecode ABI.
+     * The float literal opcodes above retain their original meanings. */
+    OP_INT_ZERO,        /*obs:NONE*/ /* push int 0 */
+    OP_INT_ONE,         /*obs:NONE*/ /* push int 1 */
+    OP_INT_CONST,       /*obs:NONE*/ /* [idx:16] push int constant pool entry */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 

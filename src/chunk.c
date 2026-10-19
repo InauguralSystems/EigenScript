@@ -346,6 +346,7 @@ const char *op_name(uint8_t op) {
     switch ((OpCode)op) {
 #define N(o) case o: return #o + 3;
     N(OP_CONST) N(OP_NULL) N(OP_NUM_ZERO) N(OP_NUM_ONE) N(OP_TRUE) N(OP_FALSE)
+    N(OP_INT_ZERO) N(OP_INT_ONE) N(OP_INT_CONST)
     N(OP_ADD) N(OP_SUB) N(OP_MUL) N(OP_DIV) N(OP_MOD)
     N(OP_BAND) N(OP_BOR) N(OP_BXOR) N(OP_SHL) N(OP_SHR)
     N(OP_NEG) N(OP_NOT) N(OP_BNOT)
@@ -392,7 +393,7 @@ const char *op_name(uint8_t op) {
  * desynchronized on 15 opcodes). */
 typedef enum {
     VR_RAW = 0,   /* count / kind / line / runtime-guarded slot — no bound */
-    VR_CONST,     /* constant-pool index — any value type (OP_CONST push) */
+    VR_CONST,     /* constant-pool index (OP_CONST or OP_INT_CONST push) */
     VR_NAME,      /* constant-pool index that MUST be a string: the VM derefs it
                    * as an interned name (const_interns[idx]), which is NULL for
                    * a non-string constant → NULL deref. Bound AND type-check. */
@@ -425,7 +426,7 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
             for (int k = 0; k < nops && i + 1 < chunk->code_len; k++) {
                 uint16_t arg = chunk->code[i] | (chunk->code[i + 1] << 8);
                 fprintf(stderr, " %d", arg);
-                if (op == OP_CONST && arg < (uint16_t)chunk->const_count) {
+                if ((op == OP_CONST || op == OP_INT_CONST) && arg < (uint16_t)chunk->const_count) {
                     Value *v = chunk->constants[arg];
                     if (v->type == VAL_FLOAT)
                         fprintf(stderr, " (%.6g)", VAL_F64_RAW(v));
@@ -475,7 +476,7 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
  * the disassembler's stepping table — one layout source, not two. */
 static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     switch ((OpCode)op8) {
-    case OP_CONST:
+    case OP_CONST: case OP_INT_CONST:
         roles[0] = VR_CONST; return 1;
     case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL: case OP_DOT_GET: case OP_DOT_SET:
@@ -519,6 +520,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     /* Operand-free opcodes — every one listed, so a new opcode cannot
      * silently walk wrong. */
     case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE: case OP_TRUE: case OP_FALSE:
+    case OP_INT_ZERO: case OP_INT_ONE:
     case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
     case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
     case OP_NEG: case OP_NOT: case OP_BNOT:
@@ -626,6 +628,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
     switch ((OpCode)op8) {
     /* Pushes, consuming nothing. */
     case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_INT_ZERO: case OP_INT_ONE: case OP_INT_CONST:
     case OP_TRUE: case OP_FALSE:
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_CLOSURE:
     case OP_LOCAL_DOT_GET: case OP_LOCAL_IDX_GET: case OP_LOCAL_IDX_DOT_GET:
@@ -793,6 +796,9 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
             case VR_CONST:
                 if (operand >= chunk->const_count) {
                     WHY("constant index %d out of range at offset %d", operand, i);
+                    ok = 0;
+                } else if (op == OP_INT_CONST && chunk->constants[operand]->type != VAL_INT) {
+                    WHY("integer constant index %d is not an int at offset %d", operand, i);
                     ok = 0;
                 }
                 break;
