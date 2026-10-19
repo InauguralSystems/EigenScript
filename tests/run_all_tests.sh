@@ -6554,7 +6554,7 @@ EIGS_ABS="$(pwd)/eigenscript"
 # RLIMIT_AS cannot coexist with ASan's multi-terabyte shadow mapping. Gfx is
 # now in the default sanitizer profile (#1415), so keep the runaway timeout
 # but omit only the address-space cap under ASan.
-EX_GFX_ULIMIT='ulimit -v 2000000 2>/dev/null'
+EX_GFX_ULIMIT='ulimit -v 1500000 2>/dev/null'
 if ASAN_OPTIONS=help=1 "$EIGS_ABS" --version 2>&1 | grep -q 'AddressSanitizer'; then
     EX_GFX_ULIMIT=':'
 fi
