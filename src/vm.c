@@ -6425,8 +6425,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (call_env) {
                 if (fn->data.fn.param_count > 0) {
                     env_rebind_param_slot(call_env, 0, arg_s);
-                } else {
-                    slot_decref(arg_s);
                 }
             } else {
             call_env = env_new(fn->data.fn.closure);
@@ -6436,8 +6434,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                                                        : env_hash_name(fn->data.fn.params[0]);
                 vm_bind_fresh_param(call_env, 0,
                     fn->data.fn.params[0], fn->data.fn.param_intern_tbl, ph, arg_s);
-            } else {
-                slot_decref(arg_s);
             }
             /* DISPATCH always feeds argc=1; underfed tail slots
              * [1..param_count) get null placeholders, then
@@ -6456,6 +6452,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (fn_chunk->local_count > dpc)
                 env_reserve_slots(call_env, fn_chunk->local_count);
             }
+            /* Both binding helpers retain their slot. Drop DISPATCH's popped
+             * argument reference after binding, including the zero-param case. */
+            slot_decref(arg_s);
             slot_decref(table_s);
 
             frame->ip = ip;
