@@ -1,0 +1,18 @@
+# A dispatch argument owns a popped stack reference. Binding must retain it,
+# then release the popped reference, in both fresh and recycled call envs.
+define echo(x) as:
+    return x
+
+define ignore() as:
+    return 0.5
+
+table is [echo]
+empty_params is [ignore]
+for value in [9007199254740993, "owned dispatch argument", ["nested argument"]]:
+    first is dispatch of [table, 0, value]
+    second is dispatch of [table, 0, value]
+    assert of [first == value, "fresh dispatch preserves argument"]
+    assert of [second == value, "recycled dispatch preserves argument"]
+    assert of [(dispatch of [empty_params, 0, value]) == 0.5, "zero-param dispatch drops argument"]
+
+print of "dispatch owned args: PASS"
