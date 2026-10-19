@@ -2457,6 +2457,10 @@ Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
 an integral count from 1 through that cap, and `build_corpus` includes file
 separators in its capped token count. These limits also raise under
 `EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
+`read_line of null` returns each stdin line byte-exactly, including its line
+terminator, and returns `null` only at EOF. Pipe and redirected-file input have
+the same semantics; in particular `\r` is preserved and a final `\n` is
+observable.
 
 ```eigenscript
 l is [1.0, 4.0, 9.0]
