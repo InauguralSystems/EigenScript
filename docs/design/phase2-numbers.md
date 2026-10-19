@@ -1965,7 +1965,15 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      from here.
    - Risks: JIT int loops leave the JIT (§3: +70% Ir on a counter loop),
      and the leaf stops computing int helpers; declare the CodSpeed baseline
-     move first. Consumer hashes that relied on double rounding now raise
+     move first. `tools/phase2_cost.sh` reads per-workload and per-tier TSV
+     declarations in `tests/phase2/cost_expect.txt` (`workload`, `tier`,
+     `max_delta_pct`, `recover_round`, `reason`); undeclared rows retain
+     +0.3%. Declare only measured R1.3 costs with §3 as the reason and
+     `recover_round=R5`, the JIT/leaf int fast-path round. A row above its
+     declared maximum fails. **Pre-merge condition:**
+     `tools/phase2_cost.sh --final BASE CAND` must pass with the declarations file
+     empty; temporary costs must be recovered before integration merges.
+     Consumer hashes that relied on double rounding now raise
      ((A)); they move to the N9 wrapping builtins.
 4. **R1.4, N4.** `//` (token, parser, `OP_IDIV` appended,
    `op_name`/`op_stack_effect`/obs marker/ABI test), `//=` beside `/=` (Q6),
