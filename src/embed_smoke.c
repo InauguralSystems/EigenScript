@@ -275,6 +275,18 @@ static void tape_sink(const char *bytes, size_t len, void *ud) {
     g_tape_len += len;
 }
 
+/* A tape assertion matches WHOLE lines. `want` is one or more complete lines,
+ * each ending in '\n', and it must begin at the start of a tape line. A bare
+ * strstr cannot tell `=100` from `=1000` or from v7's `=100.0`, so it passes
+ * on a v6 tape and on a v7 one alike. */
+static int tape_has_lines(const char *tape, const char *want) {
+    size_t wl = strlen(want);
+    if (wl == 0 || want[wl - 1] != '\n') return 0;   /* not whole lines: refuse */
+    for (const char *p = tape; (p = strstr(p, want)) != NULL; p++)
+        if (p == tape || p[-1] == '\n') return 1;
+    return 0;
+}
+
 /* Host function: adds two numbers. Multi-arg calls receive a VAL_LIST. */
 static EigsValue *host_add(EigsValue *arg) {
     if (eigs_value_type(arg) != EIGS_TYPE_LIST) return eigs_value_new_null();
@@ -918,15 +930,16 @@ int main(void) {
         SLOT_F64_RAW(s) = 1441.0;
         trace_assign(NM, s);
         g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
-        CHECK(strstr(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441\n") != NULL,
+        /* Tape v7 marks an integral float as a float: `1441.0`, never `1441`. */
+        CHECK(tape_has_lines(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441.0\n"),
               "native assignment after callback carries native scope");
     }
     eigs_set_trace_sink(NULL, NULL);
     CHECK(g_tape_len > 0, "sink captured tape bytes");
     g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
-    CHECK(strstr(g_tape, "N 0 host_sensor=100") != NULL, "tape has N record 100");
-    CHECK(strstr(g_tape, "N 0 host_sensor=101") != NULL, "tape has N record 101");
-    CHECK(strstr(g_tape, "A 0 s1=100") != NULL, "tape has assignment record");
+    CHECK(tape_has_lines(g_tape, "N 0 host_sensor=100.0\n"), "tape has N record 100.0");
+    CHECK(tape_has_lines(g_tape, "N 0 host_sensor=101.0\n"), "tape has N record 101.0");
+    CHECK(tape_has_lines(g_tape, "A 0 s1=100.0\n"), "tape has assignment record");
 
     /* recording stopped: another live read advances but adds no bytes */
     size_t tape_frozen = g_tape_len;
