@@ -27,6 +27,38 @@ else
     fail "REPL piped transcript" "rc=$RC out='$OUT'"
 fi
 
+# #1809: a clause that continues a compound statement is dedented to the
+# statement's level.  It must keep the current input unit open rather than
+# prematurely parsing the first arm and then treating the clause as a new unit.
+IN=$(cat <<'EOF'
+try:
+    missing_1809 is nope
+catch e:
+    print of f"caught {e.kind}"
+
+print of "after"
+if 1 > 10:
+    print of "big"
+elif 2 > 10:
+    print of "medium"
+else:
+    print of "small"
+
+exit
+EOF
+)
+OUT=$(printf '%s\n' "$IN" | "$EIGS" 2>&1)
+RC=$?
+if [ "$RC" = "0" ] \
+   && echo "$OUT" | grep -q "caught undefined_name$" \
+   && echo "$OUT" | grep -qx "eigs> after" \
+   && echo "$OUT" | grep -q "small$" \
+   && ! echo "$OUT" | grep -q "Parse error"; then
+    ok "REPL keeps dedented catch/elif/else clauses in their compound input unit (#1809)"
+else
+    fail "REPL dedented continuation clauses (#1809)" "rc=$RC out='$OUT'"
+fi
+
 # piped EOF (no exit command) still leaves rc 0 and the trailing newline
 OUT=$(printf '1 + 1\n' | "$EIGS" 2>/dev/null)
 RC=$?
