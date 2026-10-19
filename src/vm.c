@@ -1701,6 +1701,10 @@ static inline int obs_slot_observable(EigsSlot s) {
 static inline int obs_slot_num(EigsSlot s, double *out) {
     if (slot_is_f64(s)) { *out = SLOT_F64_RAW(s); return 1; }
     if (slot_is_smi(s)) { *out = (double)slot_smi_val(s); return 1; }
+    if (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_INT) {
+        *out = (double)VAL_I64_RAW(slot_as_ptr(s));
+        return 1;
+    }
     return 0;
 }
 static inline Value *obs_slot_value(EigsSlot s) {

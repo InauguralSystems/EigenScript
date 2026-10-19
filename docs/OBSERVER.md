@@ -243,8 +243,13 @@ lies past the loop's back-edge and `bked` is 0, so every iteration ran natively,
 tier only the OSR thunk's last exit is recorded, so the witness covers the last iteration's body: OSR compiles at the first
 back-edge, so `x_0` is always assigned interpreted, and an earlier iteration that bailed goes unwitnessed until #1768. A run
 whose body stops computing `x` on an inf, NaN or clamped value (the JIT's designed bail) is reported as interpreted and
-passes, so its readings grade the interpreter's observer for those iterations; any other run that does not witness fails as
-vacuous. The predicate READS never run natively: the JIT compiles neither `PREDICATE_SLOT` nor `PREDICATE_NAME`.
+passes, so its readings grade the interpreter's observer for those iterations. The non-capability floor uses float
+scaffolding and float recurrence operands, preserving its binary64 inputs and native witnesses after integer literals
+arrive. Exact int64 capability rows retain int literals; until the R5 int fast paths, their JIT-enabled arms may instead
+report an interpreted int-opcode refusal, requiring `INT_*` before observing `x`, no function thunk, and either no OSR
+thunk or its recorded prefix exit exactly at that int opcode. Their readings remain scored in every arm. Every other run that does not witness fails as vacuous, and both
+native tiers must still witness a body. The predicate READS never run natively: the JIT compiles neither
+`PREDICATE_SLOT` nor `PREDICATE_NAME`.
 
 A row's capability is derived from its values (IEEE inf/-inf/NaN; an int a double cannot hold exactly). Such a row runs
 only on a binary whose probe shows the capability (one probe checks that `1e308 * 10` overflows to inf AND that inf × 0 is

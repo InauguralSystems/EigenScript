@@ -73,7 +73,7 @@ vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|loop_iter_store|1|writes the loop counter slot after slot_is_f64
 vm.c|obs_dump_scope|1|SIGUSR1 observer dump after slot_is_f64
 vm.c|obs_dump_value|3|SIGUSR1 observer dump after slot_is_f64 / case VAL_FLOAT / case VAL_INT (exact digits)
-vm.c|obs_slot_num|1|observer numeric channel (#1758): reads an immediate after slot_is_f64; an int converts exactly
+vm.c|obs_slot_num|2|observer numeric channel (#1758): reads an immediate after slot_is_f64; an int explicitly converts to the observer double channel (precision can round above 2^53)
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_f64
 vm.c|slot_truthy|1|truthiness after slot_is_f64
 vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admitted only as VAL_FLOAT (chunk_scan_leaf_accessor) and values behind VAL_FLOAT tests

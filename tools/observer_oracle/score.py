@@ -29,7 +29,12 @@ unwitnessed until #1768. Value-bail exemption: a run whose thunk stops
 computing x (from the body's MUL to its OBSERVE_ASSIGN) on an inf, NaN or
 clamped value (the JIT's designed bail, #1758 N12) is reported as
 interpreted and passes, so its readings grade the interpreted observer for
-the bailed iterations; any other non-native run is VACUOUS (exit 2). No
+the bailed iterations. Int64 capability rows retain exact int literals;
+until R5 their JIT-enabled runs may explicitly witness an interpreted int
+opcode refusal (INT_* before observing x; no function thunk, and OSR
+absent or its actual prefix exit at that int opcode).
+All floor rows use float scaffolding and float recurrence operands, as on
+the pinned pre-int anchor; every other non-native run is VACUOUS (exit 2). No
 aggregate. Predicate reads always run interpreted: the JIT compiles neither
 PREDICATE_SLOT nor PREDICATE_NAME. Values are compared with the generator's
 exactly (a zero's sign through atan2, since the runtime prints -0.0 as 0),
@@ -140,8 +145,15 @@ def literal(v):
 def steps(row, xs, upto):
     """x_0..x_upto as the runtime assigns them: a literal, or x * a + b."""
     if row["gen"]["kind"] in IN_PROGRAM:
-        return program(row["gen"], upto)
-    return [("set", v) for v in xs[:upto + 1]]
+        out = program(row["gen"], upto)
+    else:
+        out = [("set", v) for v in xs[:upto + 1]]
+    # The non-capability floor measures the original binary64 observer.
+    # Python ints in its corpus JSON are exact mathematical values, not a
+    # request to change the measured execution tier after the int flip.
+    if row.get("capability") != "int64":
+        out = [(s[0], *(float(v) for v in s[1:])) for s in out]
+    return out
 
 
 def ck_line(at, ys, form):
@@ -204,18 +216,19 @@ def emit_loop(row, xs, ys, c, warm):
     observer state is its own."""
     st = steps(row, xs, c)
     aff = [s for s in st if s[0] == "aff"]
-    zero = 0 if row["gen"].get("int") else 0.0
-    out = table("OPS", [0 if s[0] == "set" else 1 for s in st])
+    integer = row.get("capability") == "int64"
+    zero, one = (0, 1) if integer else (0.0, 1.0)
+    out = table("OPS", [zero if s[0] == "set" else one for s in st])
     out += table("A", [zero if s[0] == "set" else s[1] for s in st] if aff else [])
     out += table("B", [s[1] if s[0] == "set" else s[2] for s in st])
     out += table("YB", ys[:c + 1]) if ys is not None else []
-    out += ["OUT is []", "OUTY is []", "define run_row(m) as:", "    i is 0", "    if m > 0:",
-            "        loop while true:", "            if OPS[i] == 0:", "                x is B[i]",
+    out += ["OUT is []", "OUTY is []", "define run_row(m) as:", f"    i is {literal(zero)}", "    if m > 0.0:",
+            "        loop while true:", f"            if OPS[i] == {literal(zero)}:", "                x is B[i]",
             "            else:", "                x is x * A[i] + B[i]", "            append of [OUT, x]"]
     out += ["            y is YB[i]", "            append of [OUTY, y]"] if ys is not None else []
-    out += ["            i is i + 1", "            if i >= m:", "                break",
-            "        " + ck_line(c, ys, "loop"), "    return 0",
-            f"for k in range of {warm}:", "    r is run_row of 0", f"r is run_row of {c + 1}",
+    out += [f"            i is i + {literal(one)}", "            if i >= m:", "                break",
+            "        " + ck_line(c, ys, "loop"), "    return 0.0",
+            f"for k in range of {warm}:", "    r is run_row of 0.0", f"r is run_row of {float(c + 1)!r}",
             "for k in range of (len of OUT):", '    print of f"V {k} {OUT[k]}"',
             "for k in range of (len of OUTY):", '    print of f"Y {k} {OUTY[k]}"']
     out += [sign_line("V", k, f"OUT[{k}]") for k in range(c + 1) if is_zero(xs[k])]
@@ -346,8 +359,8 @@ def grades(rid, tier, form, err, cks):
                            f" {sorted({o[0] for o in ops if o[0].startswith('OBSERVE_ASSIGN')})}")
 
 
-def witness(tier, rid, err, hot, held, c):
-    """("native" | "value bail" | "VACUOUS", detail) for the measured call's
+def witness(tier, rid, err, hot, held, c, integer=False, int64=False):
+    """("native" | "value bail" | "int refusal" | "VACUOUS", detail) for the measured call's
     loop. The thunk's last exit must lie past the loop's back-edge (the body
     ran to its `break` natively). jit: the function thunk, with bked = 0 (after
     a bail the rest of the call runs interpreted), so every iteration ran
@@ -377,6 +390,25 @@ def witness(tier, rid, err, hot, held, c):
     stop = f"{ops[at][0]}@{at}" if at in ops else f"the end of run_row ({at})" if at >= 0 else "no thunk"
     if ok:
         return "native", f"exits at {stop}, past the back-edge at {jb}"
+    # R1.3 through R5: exact int capability rows intentionally contain int
+    # opcodes which both JIT scanners refuse by default. Keep all their
+    # JIT-enabled verdicts scored, but name the actual interpreted tier.
+    # A float row or an int opcode after x's assignment cannot claim this
+    # witness. An OSR prefix may run the float indexing/control before the
+    # refusal; its recorded exit must be AT the int opcode, before observing
+    # x. Disabling the JIT globally still reds the native float rows.
+    head = jb + 3 - int(ops[jb][1])
+    observed = min((o for o, (op, _arg) in ops.items()
+                    if o >= head and op.startswith("OBSERVE_ASSIGN")), default=head)
+    intstops = {o: op for o, (op, _arg) in ops.items()
+                if head <= o < observed and op in ("INT_ZERO", "INT_ONE", "INT_CONST")}
+    osr_at = int(hrow[10]) + int(hrow[9]) if hrow[8] == "yes" and int(hrow[10]) == head else -1
+    absent = tier == "jit" and hrow[8] in ("?", "no")
+    function_absent = hrow[2] == "no" if tier == "jit" else hrow[2] in ("?", "no")
+    refused = (absent and hrow[11] in intstops.values()) or osr_at in intstops
+    if integer and int64 and intstops and function_absent and refused:
+        detail = "no OSR thunk" if absent else f"OSR prefix exits at {intstops[osr_at]}@{osr_at}, before x's observe@{observed}"
+        return "int refusal", f"x observed interpreted: no function thunk; {detail} (R5)"
     mul = min((o for o, (op, _a) in ops.items() if op == "MUL" and o < jb), default=jb)
     asg = min((o for o, (op, _a) in ops.items() if op.startswith("OBSERVE_ASSIGN") and o > mul), default=mul)
     bad = [v for v in held[max(0, k - 1):k + 1] if not math.isfinite(v) or abs(v) >= CLAMP]
@@ -441,7 +473,9 @@ def measure(binary, corpus, caps):
                 grades(rid, tier, form, err, cks)
                 res["runs"] += 1
                 if tier != "interp":
-                    res["wit"][(tier, rid, cks[0])] = witness(tier, rid, err, hot, xs, cks[0])
+                    res["wit"][(tier, rid, cks[0])] = witness(
+                        tier, rid, err, hot, xs, cks[0],
+                        integer=row.get("capability") == "int64", int64=caps["int64"])
                 for at in cks:
                     for p in PREDS:
                         res["read"][(tier, form, rid, at, p)] = got[at][p]
@@ -595,7 +629,8 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
             print(f"  {'EXPECTED ' if cap in expect else 'WARNING: '}{line}ABSENT, {n} row(s) SKIPPED")
     print(f"PATHS, checked in each of the {res['runs']} programs' EIGS_DUMP_BC listing: "
           + "; ".join(f"the {form} form observes x through {a} and reads it through {r}" for form, (a, r) in GRADES.items()))
-    print("\nTIER WITNESS, per run (n native, v interpreted: a value bail on a non-finite or clamped value, V VACUOUS;"
+    print("\nTIER WITNESS, per run (n native, v interpreted: a value bail on a non-finite or clamped value,"
+          " i interpreted int opcode refusal until R5, V VACUOUS;"
           " jit: every iteration, x_0 included; osr: the last iteration only, #1768):")
     for row in corpus["rows"]:
         if row["id"] in res["held"]:
@@ -605,10 +640,10 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
     for t in ("jit", "osr"):
         w = {k[1:]: x for k, x in res["wit"].items() if k[0] == t}
         print(f"  {t}: {sum(1 for x in w.values() if x[0] == 'native')} of {len(w)} runs witness a native body;"
-              f" minimum: every run that is not a value bail, and at least one")
+              f" minimum: every run except a value bail or witnessed int opcode refusal, and at least one")
         for (rid, c), (status, detail) in w.items():
             if status != "native":
-                print(f"    {status.upper() if status == 'VACUOUS' else 'interpreted (value bail)'} {t}"
+                print(f"    {status.upper() if status == 'VACUOUS' else 'interpreted (' + status + ')'} {t}"
                       f" {rid}@{c}: {detail}")
     print("  predicate reads run interpreted in every tier: the JIT compiles neither PREDICATE_SLOT nor PREDICATE_NAME")
     print("\nSCORED VERDICTS, one question per predicate: TP FP FN TN right/total")

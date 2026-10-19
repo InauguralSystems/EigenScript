@@ -56,7 +56,7 @@ from derive import PREDS     # the order score.py prints a CK line's readings in
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENV = os.path.expanduser("~/.local/venvs/oracle/bin/python")
-LOOP_HEAD, GUARD = "        loop while true:\n", "    if m > 0:\n"
+LOOP_HEAD, GUARD = "        loop while true:\n", "    if m > 0.0:\n"
 INJECT = {"osr_bail": ("osr", "cw is CW_S + CW_S"), "jit_bail_body": ("jit", "cw is CW_S + CW_S"),
           "num_body": (None, "cw is 1.0 + 2.0")}
 PROBE_ANSWERS = {"int64_fake": {"9223372036854775806": "true", "num_type": "int"},
@@ -375,6 +375,7 @@ def counts():
 # --- the plants -----------------------------------------------------------------
 
 def plants(tag, ieee):
+    from score import literal
     F = ["--floor", "{d}/floor.json"]
     sc = lambda *a: ["python3", "{d}/score.py", *a]
     cf = ["{venv}", "{d}/certify.py"]
@@ -513,13 +514,9 @@ def plants(tag, ieee):
         ("zero-sign", "the runtime's zero sign lines flipped (it would hold -0.0 where the generator holds 0.0)",
          lambda d: shim(d, "zero_sign", tag), sc("{d}/obs_zero_sign"), 2,
          r"runtime=0 \(sign bit True\) generator=0.0 \(values must agree in every bit\).*"),
-        ("intmin-literal", "CONTROL: an int row x <- x * INT64_MIN + 0 from 0: the spliced INT64_MIN literal"
+        ("intmin-literal", "CONTROL: x <- x * INT64_MIN + 0 from 0: the spliced INT64_MIN literal"
          " must keep its parentheses (x_1 = 0, not -1)",
-         lambda d: (edit_json(d, "corpus.json", keep_rows(extra=extra_row(d, "int_counter", id="intmin_a",
-             gen={"kind": "affine", "x0": 0, "a": -2 ** 63, "b": 0, "int": True}, n=10, checkpoints=[10],
-             props={"limit": 0.0, "tends_to": None, "bounded": True, "deterministic": True}))),
-                    certify_in(d), subprocess.run(["python3", f"{d}/derive.py", "--write"], check=True)),
-         sc(tag), 0, r"observer oracle exit 0: no gate failed.*"),
+         None, [tag, "-e", "x is 0\nx is x * " + literal(-2 ** 63) + " + 0\nprint of x"], 0, r"^0$"),
         ("double-scored", "converged scored against MATH and CONVENTION (the reported flag removed)",
          lambda d: edit_json(d, "corpus.json", lambda c: [x.pop("reported", None) for x in c["definitions"]]),
          sc(tag), 2, r"two scored definitions.*"),
@@ -567,7 +564,7 @@ def plants(tag, ieee):
          sc(tag), 2, r"\S+: checkpoint \d+ read after \['\d+'\] assignments,\s+not \d+.*"),
         ("late-read-loop", "loop-form read after one assignment too many",
          lambda d: (edit_text(d, "score.py", "st = steps(row, xs, c)", "st = steps(row, generate(row[\"gen\"], c + 1), c + 1)"),
-                    edit_text(d, "score.py", 'f"r is run_row of {c + 1}"', 'f"r is run_row of {c + 2}"')),
+                    edit_text(d, "score.py", 'f"r is run_row of {float(c + 1)!r}"', 'f"r is run_row of {float(c + 2)!r}"')),
          sc(tag), 2, r"\S+: checkpoint \d+ read after \['\d+'\] assignments,\s+not \d+.*"),
         ("L1", "a label flipped by hand in labels.json",
          lambda d: edit_text(d, "labels.json", '"geo_decay_0.5@60": {"converged": ["CONVENTION", true',
