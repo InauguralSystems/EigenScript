@@ -24,6 +24,8 @@
  *   D  the VM's operator arms: a host builtin puts an SMI into a list and a
  *      program applies each operator to it. Every converted arm must compute its exact value,
  *      inside a `try` too; the same program with a double is the control.
+ *   E  ITER_NEXT index and snapshot metadata in both executors, with float,
+ *      SMI and boxed-int metadata, including range and malformed controls.
  *
  * Output, every line in one grammar (tests/phase2/slot_layer.sh refuses any
  * other line): `ENTRY <file>:<function> <kind> values=<n> ok|FAIL` per Part A
@@ -200,6 +202,14 @@ static int r_vm_bit_operand(int64_t v) {
 static int r_vm_number_compare(int64_t v) {
     int got = 7; return !vm_number_compare(smi(v), smi(v), &got) || got != 0;
 }
+static int r_vm_iter_index(int64_t v) {
+    int got = 7, valid = v >= INT_MIN && v <= INT_MAX;
+    return vm_iter_index(smi(v), &got) != valid || got != (valid ? (int)v : 7);
+}
+static int r_vm_iter_limit(int64_t v) {
+    int want = v < 0 ? 0 : v < 10 ? (int)v : 10;
+    return vm_iter_limit(smi(v), 10) != want;
+}
 static void a_obs_slot_observable(EigsSlot s) { (void)obs_slot_observable(s); }
 static void a_eigs_slot_ref(EigsSlot s) { (void)eigs_slot_ref(s); }
 static void a_slot_as_ptr(EigsSlot s) { (void)slot_as_ptr(s); }
@@ -216,6 +226,8 @@ typedef struct {
 static const Entry ENTRIES[] = {
     {"vm.c:vm_bit_operand", r_vm_bit_operand, 0, 0, "exact int64 operand"},
     {"vm.c:vm_number_compare", r_vm_number_compare, 0, 0, "exact numeric comparison"},
+    {"vm.c:vm_iter_index", r_vm_iter_index, 0, 0, "checked C int metadata"},
+    {"vm.c:vm_iter_limit", r_vm_iter_limit, 0, 0, "bounded snapshot"},
     {"container.h:eigs_slot_elem_num", r_eigs_slot_elem_num, 0, 0, "bridge: the int's double"},
     {"container.h:eigs_slot_num", r_eigs_slot_num, 0, 0, "bridge: the int's double"},
     {"container.h:eigs_slot_opt_num", r_eigs_slot_opt_num, 0, 0, "bridge: present, the int's double"},
@@ -357,6 +369,8 @@ CELL(observable) { snprintf(b, n, "i:%d", obs_slot_observable(s)); }
 CELL(unwrap) { Value *v = slot_bridge_unwrap(s); r_v(b, n, v); if (!slot_is_ptr(s)) val_decref(v); }
 CELL(vm_bit_operand) { int64_t i = 7; int r = vm_bit_operand(s, &i); snprintf(b, n, "o:%d i:%lld", r, (long long)i); }
 CELL(vm_number_compare) { int cmp = 7; int r = vm_number_compare(s, smi(1), &cmp); snprintf(b, n, "o:%d c:%d", r, cmp); }
+CELL(vm_iter_index) { int i = 7; int r = vm_iter_index(s, &i); snprintf(b, n, "o:%d i:%d", r, i); }
+CELL(vm_iter_limit) { snprintf(b, n, "i:%d", vm_iter_limit(s, 10)); }
 CELL(slot_ref) { r_v(b, n, eigs_slot_ref(s)); }
 CELL(as_ptr) { r_v(b, n, slot_as_ptr(s)); }
 CELL(obs_value) { r_v(b, n, obs_slot_value(s)); }
@@ -567,9 +581,18 @@ EXP(vm_number_compare) {
     else if (kclass(k) == C_F64) snprintf(b, n, "o:1 c:%d", k == K_NZ ? -1 : 1);
     else snprintf(b, n, "o:0 c:7");
 }
+EXP(vm_iter_index) {
+    if (k == K_SMI) snprintf(b, n, "o:1 i:5");
+    else if (k == K_NZ) snprintf(b, n, "o:1 i:0");
+    else if (k == K_F) snprintf(b, n, "o:1 i:1");
+    else snprintf(b, n, "o:0 i:7");
+}
+EXP(vm_iter_limit) { snprintf(b, n, "i:%d", k == K_SMI ? 5 : k == K_NZ ? 0 : k == K_F ? 1 : 10); }
 static const MatrixEntry MATRIX[] = {
     {"vm.c:vm_bit_operand", c_vm_bit_operand, e_vm_bit_operand},
     {"vm.c:vm_number_compare", c_vm_number_compare, e_vm_number_compare},
+    {"vm.c:vm_iter_index", c_vm_iter_index, e_vm_iter_index},
+    {"vm.c:vm_iter_limit", c_vm_iter_limit, e_vm_iter_limit},
     {"container.h:eigs_slot_elem_num", c_elem_num, e_elem_num},
     {"container.h:eigs_slot_num", c_num, e_num},
     {"container.h:eigs_slot_opt_num", c_opt_num, e_opt_num},
@@ -782,6 +805,110 @@ static int part_d(void) {
     return rows;
 }
 
+/* ---- Part E: the four ITER_NEXT metadata sites (#1827) ------------------ */
+/* Construct a raw state because ordinary for loops deliberately keep float
+ * metadata until the builtin/iterator bridge round. Exercise the interpreter
+ * through an assembled chunk, and the actual JIT helper directly. */
+typedef struct { const char *name; int field, kind; int64_t value; int yields; } IterCase;
+static const IterCase ITER_CASES[] = {
+    {"float_control", 1, 0, 0, 1},
+    {"smi_index", 1, 1, 0, 1},
+    {"boxed_index", 1, 2, 0, 1},
+    {"smi_snapshot", 2, 1, 1, 1},
+    {"boxed_snapshot", 2, 2, 1, 1},
+    {"large_index", 1, 2, INT64_MAX, 0},
+    {"negative_index", 1, 2, INT64_MIN, 0},
+    {"large_snapshot", 2, 2, INT64_MAX, 1},
+    {"negative_snapshot", 2, 2, INT64_MIN, 0},
+    {"smi_negative_snapshot", 2, 1, -1, 0},
+    {"malformed_index", 1, 3, 0, 0},
+    {"malformed_snapshot", 2, 3, 0, 1},
+    {"malformed_iterable", 0, 2, 42, 0},
+};
+#define N_ITER_CASES ((int)(sizeof ITER_CASES / sizeof ITER_CASES[0]))
+static const IterCase *g_iter_case;
+static int g_iter_helper;
+static void c_iter(EigsSlot unused, char *b, size_t n) {
+    (void)unused;
+    const IterCase *t = g_iter_case;
+    Value *state = make_list(0), *items = make_list(0);
+    list_append_slot(items, slot_from_f64(42.0));
+    list_append_slot(state, slot_from_heap(items));
+    val_decref(items);
+    list_append_slot(state, slot_from_f64(0.0));
+    list_append_slot(state, slot_from_f64(1.0));
+    EigsSlot replacement = t->kind == 0 ? slot_from_f64((double)t->value) :
+                           t->kind == 1 ? smi(t->value) :
+                           t->kind == 2 ? slot_from_heap(make_int(t->value)) :
+                                          slot_from_heap(make_str("bad"));
+    /* Raw states can hold non-canonical small boxes. Bypass writers here
+     * deliberately, and prove which representation reaches each reader. */
+    EigsSlot old_metadata = state->data.list.items[t->field];
+    state->data.list.items[t->field] = replacement;
+    slot_decref(old_metadata);
+    EigsSlot stored_metadata = list_slot(state, t->field);
+    int representation_ok = t->kind == 0 ? slot_is_f64(stored_metadata) :
+                            t->kind == 1 ? slot_is_smi(stored_metadata) :
+                            t->kind == 2 ? (slot_is_heap(stored_metadata) &&
+                                           slot_as_ptr(stored_metadata)->type == VAL_INT &&
+                                           VAL_I64_RAW(slot_as_ptr(stored_metadata)) == t->value) :
+                                          (slot_is_heap(stored_metadata) &&
+                                           slot_as_ptr(stored_metadata)->type == VAL_STR);
+    if (!representation_ok) {
+        snprintf(b, n, "wrong-metadata-representation");
+        val_decref(state);
+        return;
+    }
+    Value *result;
+    if (g_iter_helper) {
+        vm_init();  /* direct helper calls need the VM allocated, as vm_execute does */
+        val_incref(state);
+        vm_push(state);
+        int rc = jit_helper_iter_next();
+        result = rc == 0 ? vm_pop() : make_null();
+        Value *popped_state = vm_pop();
+        val_decref(popped_state);
+    } else {
+        EigsChunk *chunk = chunk_new("<phase2-iterator>");
+        int ci = chunk_add_constant(chunk, state);
+        chunk_emit(chunk, OP_CONST, 1);
+        chunk_emit_u16(chunk, (uint16_t)ci, 1);
+        chunk_emit(chunk, OP_ITER_NEXT, 1);
+        chunk_emit_u16(chunk, 1, 1);  /* exhausted: skip the element RETURN */
+        chunk_emit(chunk, OP_RETURN, 1);
+        chunk_emit(chunk, OP_NULL, 1);
+        chunk_emit(chunk, OP_RETURN, 1);
+        result = vm_execute(chunk, g_global_env);
+        chunk_free(chunk);
+    }
+    if (result && result->type == VAL_FLOAT && VAL_F64_RAW(result) == 42.0) {
+        double next = -1;
+        int float_next = slot_f64_value(list_slot(state, 1), &next);
+        snprintf(b, n, "yield:42 float_next:%d", float_next && next == 1.0);
+    } else if (result && result->type == VAL_NULL) snprintf(b, n, "exhausted");
+    else snprintf(b, n, "unexpected");
+    val_decref(result);
+    val_decref(state);
+}
+static int part_e(void) {
+    int rows = 0;
+    for (int i = 0; i < N_ITER_CASES; i++) {
+        g_iter_case = &ITER_CASES[i];
+        for (g_iter_helper = 0; g_iter_helper < 2; g_iter_helper++) {
+            char got[512];
+            run_cell(c_iter, slot_null(), got, sizeof got, NULL, 0);
+            const char *want = g_iter_case->yields ? "yield:42 float_next:1" : "exhausted";
+            int bad = strcmp(got, want) != 0;
+            if (bad) FAILF("ITER_NEXT %s %s: got %s, want %s",
+                           g_iter_helper ? "jit_helper" : "interpreter", g_iter_case->name, got, want);
+            printf("ARM iter_%s_%s %s\n", g_iter_helper ? "jit" : "vm",
+                   g_iter_case->name, bad ? "FAIL" : "ok");
+            rows++;
+        }
+    }
+    return rows;
+}
+
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("slot-layer-test: FAIL eigs_open\n"); return 1; }
@@ -804,13 +931,14 @@ int main(void) {
     int matrix_cells = part_b();
     int from_int_rows = part_c();
     int arm_rows = part_d();
+    int iter_rows = part_e();
     printf("slot-layer-test: examined=%d smi_values=%d calls=%d matrix=%d kinds=%d matrix_cells=%d "
-           "from_int_rows=%d arm_rows=%d failures=%d\n", N_ENTRIES, N_SMI, calls, N_MATRIX, N_KINDS,
-           matrix_cells, from_int_rows, arm_rows, failures);
+           "from_int_rows=%d arm_rows=%d iter_rows=%d failures=%d\n", N_ENTRIES, N_SMI, calls, N_MATRIX, N_KINDS,
+           matrix_cells, from_int_rows, arm_rows, iter_rows, failures);
     val_decref(g_str);
     eigs_close(st);
     int ok = failures == 0 && N_ENTRIES > 0 && calls > 0 && N_MATRIX == N_ENTRIES &&
-             matrix_cells == N_MATRIX * N_KINDS && from_int_rows > 0 && arm_rows == 2 * N_ARMS;
+             matrix_cells == N_MATRIX * N_KINDS && from_int_rows > 0 && arm_rows == 2 * N_ARMS && iter_rows == 2 * N_ITER_CASES;
     printf("slot-layer-test: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

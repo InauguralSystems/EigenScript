@@ -6,7 +6,7 @@
 # Ordinary builtin argument reads use eigs_num_arg / eigs_list_num /
 # eigs_opt_num / eigs_elem_num, which raise on a bool. The explicitly reviewed
 # exceptions below preserve a numeric kind or exact int text (JSON and sorting),
-# name an unwired int refusal (dispatch), or write a typed sentinel (matmul).
+# box a typed dispatch argument, or write a typed sentinel (matmul).
 # A double bridge would lose int digits in the exact readers; each raw payload
 # read is behind its own kind test. Exceptions still need exact per-function
 # token counts and reasons; they do not exempt ordinary argument coercion.
@@ -26,7 +26,7 @@ container.h|list_get_return|1|builtin-return read boxes an immediate only after 
 chunk.c|chunk_disassemble|2|debug disassembly prints a constant behind its own type == VAL_FLOAT test
 chunk.c|const_equal|4|constant-pool dedup compares two constants after testing both are VAL_FLOAT
 chunk.c|const_hash_value|2|constant-pool hash of a constant inside its type == VAL_FLOAT branch
-eigenscript.c|chan_clone_rec|2|channel deep-copy, switch case VAL_FLOAT; case VAL_INT names the int it refuses (unwired, R1.3)
+eigenscript.c|chan_clone_rec|2|channel deep-copy, switch cases VAL_FLOAT and VAL_INT preserve the payload and numeric kind
 eigenscript.c|compute_entropy_impl|2|observer entropy, switch case VAL_FLOAT, and case VAL_INT (an int's entropy is its double's, design 7)
 eigenscript.c|ent_child_slot|1|observer entropy reads an immediate only after slot_is_f64
 eigenscript.c|eigs_num_arg_slow|2|checked reader slow path: reads only after type == VAL_FLOAT, or VAL_INT (the bridge converts an int, design 2.7)
@@ -82,7 +82,7 @@ vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_f64
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_f64
 builtins.c|builtin_json_build|1|VAL_INT text is exact digits; float text retains the bridge (#1758 R1.2d)
 builtins.c|builtin_json_path|1|VAL_INT scalar text is exact digits before releasing root (#1758 R1.2d)
-builtins.c|builtin_dispatch|1|VAL_INT argument boxing refuses until make_int lands in R1.3 (#1758)
+builtins.c|builtin_dispatch|1|typed dispatch argument boxing uses make_int after the VAL_INT kind test (#1758 R1.3)
 builtins.c|builtin_sort_by|1|numeric key kind retained for exact mixed sorting (#1758 N2)
 builtins.c|sort_cmp_num|6|validated numeric slots viewed through slot_view; int comparisons are exact (#1758 N2)
 value_slot.h|slot_int_value|1|boxed VAL_INT payload after its type test (#1758 R1.2i)

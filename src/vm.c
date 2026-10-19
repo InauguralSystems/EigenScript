@@ -915,6 +915,28 @@ static int vm_number_compare(EigsSlot a, EigsSlot b, int *out) {
     return 0;
 }
 
+/* Iterator state is normally float metadata made by make_iter_state. Raw
+ * bytecode may supply ints too. Check the C index range BEFORE conversion. */
+static int vm_iter_index(EigsSlot s, int *out) {
+    double f;
+    if (slot_f64_value(s, &f)) {
+        if (!(f >= INT_MIN && f <= INT_MAX)) return 0;
+        *out = (int)f;
+        return 1;
+    }
+    int64_t i;
+    if (!slot_int_value(s, &i) || i < INT_MIN || i > INT_MAX) return 0;
+    *out = (int)i;
+    return 1;
+}
+static int vm_iter_limit(EigsSlot s, int len) {
+    int i;
+    if (vm_iter_index(s, &i)) return i < len ? (i < 0 ? 0 : i) : len;
+    int64_t big;
+    if (slot_int_value(s, &big) && big < 0) return 0;
+    return len;
+}
+
 static inline uint16_t read_u16(uint8_t *ip) {
     return ip[0] | (ip[1] << 8);
 }
@@ -1824,14 +1846,8 @@ int jit_helper_iter_next(void) {
         return 1;
     /* Iterables are reference values; a numeric facade cannot be iterable. */
     Value *iterable = list_get_ref(state, 0);
-    double idx_num;
-    EigsSlot idx_slot = list_slot(state, 1);
-    if (!slot_f64_value(idx_slot, &idx_num)) {
-        if (slot_type(idx_slot) == VAL_INT)
-            eigs_int_unwired("jit_helper_iter_next index", 0);
-        return 1;
-    }
-    int idx = (int)idx_num;
+    int idx;
+    if (!vm_iter_index(list_slot(state, 1), &idx)) return 1;
     if (!iterable) return 1;
     int len = 0;
     if (iterable->type == VAL_LIST)        len = iterable->data.list.count;
@@ -1840,18 +1856,9 @@ int jit_helper_iter_next(void) {
     /* #491: cap by the entry-time snapshot (items[2]) — see make_iter_state.
      * Mirrors CASE(ITER_NEXT). */
     if (state->data.list.count >= 3) {
-        EigsSlot snap_slot = list_slot(state, 2);
-        double snap_num;
-        if (slot_f64_value(snap_slot, &snap_num)) {
-            int snap = (int)snap_num;
-            if (snap < len) len = snap;
-        } else if (slot_type(snap_slot) == VAL_INT) {
-            int64_t i = 0;
-            slot_int_value(snap_slot, &i);
-            eigs_int_unwired("jit_helper_iter_next snapshot", (uint64_t)i);
-        }
+        len = vm_iter_limit(list_slot(state, 2), len);
     }
-    if (idx >= len) return 1;
+    if ((unsigned)idx >= (unsigned)len) return 1;
     EigsSlot elem;
     if (iterable->type == VAL_BUFFER) {
         elem = slot_from_f64(num_guard(buffer_read_num(iterable, idx)));
@@ -5061,16 +5068,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             ip += exit_offset;
             DISPATCH();
         }
-        double idx_num;
-        EigsSlot idx_slot = list_slot(state, 1);
-        if (!slot_f64_value(idx_slot, &idx_num)) {
-            if (slot_type(idx_slot) == VAL_INT)
-                eigs_int_unwired("ITER_NEXT index", 0);
+        int idx;
+        if (!vm_iter_index(list_slot(state, 1), &idx)) {
             ip += exit_offset;
             DISPATCH();
         }
         Value *iterable = list_get_ref(state, 0);
-        int idx = (int)idx_num;
         int len = 0;
         if (iterable && iterable->type == VAL_LIST) len = iterable->data.list.count;
         else if (iterable && iterable->type == VAL_BUFFER) len = iterable->data.buffer.count;
@@ -5078,14 +5081,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * appends can't extend the loop; min() with the live length keeps a
          * remove from reading past the end. See make_iter_state. */
         if (state->data.list.count >= 3) {
-            EigsSlot snap_slot = list_slot(state, 2);
-            double snap_num;
-            if (slot_f64_value(snap_slot, &snap_num)) {
-                int snap = (int)snap_num;
-                if (snap < len) len = snap;
-            } else if (slot_type(snap_slot) == VAL_INT) {
-                eigs_int_unwired("ITER_NEXT snapshot", 0);
-            }
+            len = vm_iter_limit(list_slot(state, 2), len);
         }
 
         /* Unsigned compare bounds BOTH ends in one branch: a negative index

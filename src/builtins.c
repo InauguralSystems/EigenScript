@@ -6037,10 +6037,10 @@ Value* builtin_dispatch(Value *arg) {
         /* #1665: a numeric fn_arg is a stack view in THIS frame. A builtin
          * that returns its argument (`num`) would hand our caller a pointer
          * into a dead frame, so a number goes in as a fresh box we own. */
-        if (fn_arg && fn_arg->type == VAL_INT)
-            eigs_int_unwired("builtin_dispatch argument box", (uint64_t)VAL_I64_RAW(fn_arg));
-        if (fn_arg && fn_arg->type == VAL_FLOAT) {
-            Value *boxed = make_num(eigs_num_arg(fn_arg, __func__));
+        if (fn_arg && val_is_number(fn_arg)) {
+            Value *boxed = fn_arg->type == VAL_INT
+                         ? make_int(VAL_I64_RAW(fn_arg))
+                         : make_num(eigs_num_arg(fn_arg, __func__));
             Value *res = eigs_call_builtin(fn->data.builtin, boxed);
             if (res == boxed) return boxed;          /* our ref transfers */
             val_decref(boxed);

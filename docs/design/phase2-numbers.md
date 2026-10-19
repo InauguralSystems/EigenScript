@@ -740,7 +740,7 @@ result).**
 | `vm.c:jit_helper_dot_set` | guarded | an int value skips the immediate store: the slow path pops it through `slot_bridge_unwrap` (D1) |
 | `vm.c:jit_helper_index_get` | guarded | an int index skips the fast path: the slow path lifts it through `slot_to_value` (D1) |
 | `vm.c:jit_helper_index_set` | guarded | an int index or value skips the fast path: the slow path pops it through `slot_bridge_unwrap` (D1) |
-| `vm.c:jit_helper_iter_next` | unwired | float-first index and snapshot readers; an int takes the existing R1.3 refusal only after the float reader fails; a non-pointer state returns 1 (D1) |
+| `vm.c:jit_helper_iter_next` | guarded | state must be a pointer; index and snapshot metadata use the exact checked iterator readers, matching CASE(ITER_NEXT) (R1.3) (D1) |
 | `vm.c:jit_helper_local_dot_set` | guarded | an int value skips the immediate store: `vm_slot_lift` boxes it (D1) |
 | `vm.c:jit_helper_local_idx_dot_get` | guarded | as `jit_helper_dot_get` (D3) |
 | `vm.c:loop_iter_store` | guarded | the loop counter is a float the VM makes; a non-float slot takes the `make_num` path (D1) |
@@ -752,6 +752,8 @@ result).**
 | `vm.c:slot_bridge_unwrap` | smi-arm | an SMI materializes as an owned exact int through `slot_to_value` (R1.3) (D1) |
 | `vm.c:vm_bit_operand` | smi-arm | an int64 operand is read exactly; float operands keep the #1740 conversion rule (R1.3) (D1) |
 | `vm.c:vm_number_compare` | smi-arm | int and cross-kind comparisons use exact N2 order, without double rounding (R1.3) (D1) |
+| `vm.c:vm_iter_index` | smi-arm | index metadata accepts an exact int in the C-int range, otherwise exhausts without narrowing (R1.3) (D1) |
+| `vm.c:vm_iter_limit` | smi-arm | int snapshot metadata clamps the live length; negative snapshots exhaust and oversized positive snapshots keep the live length (R1.3) (D1) |
 | `vm.c:slot_truthy` | smi-arm | an int is truthy when it is not 0; a reserved tag refuses instead of being dereferenced (D1) |
 | `vm.c:slot_type_name` | smi-arm | an SMI reached the final `return "num"` by accident. R1.1 adds the explicit SMI arm ("num", (B)) and aborts on a reserved tag (D1 since R1.1) |
 | `vm.c:vm_borrow_scan` | guarded | compares heap slots with the result pointer; an SMI is not heap (D2) |
@@ -778,7 +780,6 @@ result).**
 | `vm.c:vm_slot_lift` | smi-arm | an SMI is boxed through `slot_to_value`; a reserved tag refuses (R1.3) (D1) |
 | `vm.c:vm_slot_value_opaque` | guarded | only a pointer can be a fn or builtin; an SMI answers "not opaque", which is right (D2) |
 | `vm.c:vm_store_local_slot` | guarded | an int skips the in-place float store; the generic swap stores the SMI (D1) |
-| `vm.c:vm_run_ex/CASE(ITER_NEXT)` | unwired | float-first index and snapshot readers; an int takes the existing R1.3 refusal only after the float reader fails (D1) |
 <!-- slot-table:end -->
 
 ### 2.6 The accessor API after round 1 (Alt 1R)

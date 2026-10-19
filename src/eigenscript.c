@@ -2685,9 +2685,7 @@ static Value *chan_clone_rec(Value *v, int depth) {
         v->type != VAL_BOOL && v->type != VAL_STR) { val_incref(v); return v; }
     switch (v->type) {
         case VAL_FLOAT: return make_num(VAL_F64_RAW(v));
-        /* #1758 R1.2a: a channel gets a fresh int box, which needs make_int
-         * (R1.3); no int exists before then. */
-        case VAL_INT:  eigs_int_unwired("chan_clone_rec", (uint64_t)VAL_I64_RAW(v));
+        case VAL_INT: return make_int(VAL_I64_RAW(v));
         case VAL_NULL: return make_null();
         case VAL_BOOL: return make_bool(v->data.boolean);
         case VAL_STR:  return make_str(v->data.str);
