@@ -97,6 +97,14 @@ gates (design §9.2).
 ---
 
 ### N1
+- `N1.leaf-float-kind` [R1.3] leaf helpers return 1.0, 0.0 and 0.5; `num_type` checks their kinds before N6 changes their display
+  -> `["float", "float", "float"]`
+  tag: `num_type` undefined.
+  shape: L  witness: leaf onef zerof halff  ops: NUM_ONE NUM_ZERO CONST
+- `N1.fn-float-kind` [R1.3] a hot function computes `a * 1.0 + 0.0`, then checks the result's kind
+  -> `["float", true]`
+  tag: `num_type` undefined.
+  shape: F  witness: fn f  ops: NUM_ONE NUM_ZERO MUL ADD
 - `N1.literal-kind` [R1.3] `print of [num_type of 3, num_type of 3.0, num_type of 1e3, num_type of 0x10]`
   -> `["int", "float", "float", "int"]`
   tag: `num_type` is undefined, an error (read)
@@ -128,7 +136,7 @@ gates (design §9.2).
   -> `2.0` (the JIT's `NUM_ONE`/`NUM_ZERO` emitters keep their float meaning)
   tag: `2` (probed main)
   shape: F  witness: fn f (witness probed main: `f 60 yes ... RET`)  ops: NUM_ONE NUM_ZERO MUL ADD
-- `N1.fn-int-literal` [R1.3] `define g(a) as: t is a + 1 / return t * 2`, called 60 times with `9007199254740992`; print the last result
+- `N1.fn-int-literal` [R1.3] `define g(a) as: warm is 0.5 / t is a + 1 / return t * 2`, called 60 times with `9007199254740992`; print the last result
   -> `18014398509481986`
   tag: `18014398509481984` (probed main)
   shape: F  witness: fn-stop g INT_ONE (the JIT scanner refuses the new opcode)  ops: INT_ONE
@@ -156,6 +164,9 @@ gates (design §9.2).
   shape: O  witness: osr-stop count INT_ONE (the OSR scanner stops at the literal `1`, the body's first int op)  ops: INT_ONE
 
 ### N2
+- `N2.sort-by-exact` [R1.3] numeric key callbacks return both int and float keys around 2^53, with a stable equal-key pair
+  -> `["low", "tie-a", "tie-b", "high"]`
+  tag: the high int rounds to the low float, so the input order survives.
 - `N2.int-eq-float-kinds` [R1.3] `print of [1 == 1.0, 1 != 1.0, num_type of 1, num_type of 1.0]`
   -> `[true, false, "int", "float"]`
   tag: `num_type` undefined (read)
@@ -242,7 +253,7 @@ gates (design §9.2).
   -> `value` (the leaf bails; the generic path raises with the caller's line)
   tag: `9.22337203700025e+18`, no raise (probed main)
   shape: L  witness: leaf-gen sq  ops: MUL
-- `A.fn-add-overflow` [R1.3] `define inc(a) as: t is a + 1 / return t`, called 60 times with small ints, then `{try print of (inc of 9223372036854775807) catch}`, printing `e.kind`
+- `A.fn-add-overflow` [R1.3] `define inc(a) as: warm is 0.5 / t is a + 1 / return t`, called 60 times with small ints, then `{try print of (inc of 9223372036854775807) catch}`, printing `e.kind`
   -> `value`
   tag: `9.223372036854776e+18`, no raise (probed main)
   shape: F  witness: fn-stop inc INT_ONE  ops: INT_ONE
@@ -295,7 +306,7 @@ gates (design §9.2).
 - `N4b.neg-min-raises` [R1.3] `m is -9223372036854775807 - 1 / {try print of (-m) catch}`
   -> `["value", true]`, the message naming the unary minus
   tag: a double, no raise. **Plant 5's named check.**
-- `N4b.abs-min-raises` [R1.6] `m is -9223372036854775807 - 1 / {try print of (abs of m) catch}`
+- `N4b.abs-min-raises` [R1.3] `m is -9223372036854775807 - 1 / {try print of (abs of m) catch}`
   -> `["value", true]`
   tag: `9.223372036854776e+18`, no raise
 - `N4b.floordiv-min-by-neg1-raises` [R1.4] `m is ... / {try print of (m // -1) catch}`
@@ -310,6 +321,9 @@ gates (design §9.2).
   shape: F  witness: fn-stop n NEG  ops: NEG
 
 ### N5
+- `gate.N5.iterator-metadata` [R1.3] `tests/phase2/slot_layer.sh` Part E builds raw iterator states and runs the interpreter and `jit_helper_iter_next`
+  -> float controls and both SMI/boxed index/snapshot metadata yield 42; range and malformed states preserve the pinned exhaustion/ignore rules.
+  tag: n/a (a C fixture of the four R1.2 refusal sites); final R1.3 arms accept exact C-int indices and clamp snapshots without narrowing.
 - `N5.substr-fraction-raises` [R1.6] `{try print of (substr of ["hello", 1.5, 2]) catch}`, printing `e.kind`
   -> `value`
   tag: `el` (probed main: truncation)
@@ -372,7 +386,7 @@ gates (design §9.2).
 - `N7.num-type-int` [R1.3] `print of [num_type of 0, num_type of -1, num_type of 9223372036854775807, num_type of (2 * 3)]`
   -> `["int", "int", "int", "int"]`
   tag: undefined
-- `N7.num-type-non-number` [R1.3] `print of [num_type of "3", num_type of null, num_type of true, num_type of [1]]`
+- `N7.num-type-non-number` [R1.3] `print of [num_type of "3", num_type of null, num_type of true, num_type of ([1])]`
   -> `[null, null, null, null]` (Lua `math.type` returns fail)
   tag: undefined
 - `gate.N7.embed-int` [R1.8] `make embed-smoke` with new rows: `eigs_value_new_int` round-trips 9007199254740993 exactly; `eigs_value_as_int` succeeds on an int and on an integral float, and fails with its flag on 1.5; `eigs_value_is_int` tells the kinds apart; `eigs_value_as_num` converts an int (Q3); `EIGS_TYPE_NUM` answers for both
@@ -380,6 +394,27 @@ gates (design §9.2).
   tag: n/a (a C test of new embed functions), so it is a gate
 
 ### N8
+- `ctl.N8.refuse-band` (control) a hot function applies `a & b` to float operands 6.0 and 3.0
+  -> `2` on both; the JIT scanner refuses this opcode at R1.3.
+  shape: F  witness: fn-stop f BAND  ops: BAND
+- `ctl.N8.refuse-bor` (control) a hot function applies `a | b` to float operands 6.0 and 3.0
+  -> `7` on both; the JIT scanner refuses this opcode at R1.3.
+  shape: F  witness: fn-stop f BOR  ops: BOR
+- `ctl.N8.refuse-bxor` (control) a hot function applies `a ^ b` to float operands 6.0 and 3.0
+  -> `5` on both; the JIT scanner refuses this opcode at R1.3.
+  shape: F  witness: fn-stop f BXOR  ops: BXOR
+- `ctl.N8.refuse-shl` (control) a hot function applies `a << b` to float operands 6.0 and 3.0
+  -> `48` on both; the JIT scanner refuses this opcode at R1.3.
+  shape: F  witness: fn-stop f SHL  ops: SHL
+- `ctl.N8.refuse-shr` (control) a hot function applies `a >> b` to float operands 6.0 and 3.0
+  -> `0` on both; the JIT scanner refuses this opcode at R1.3.
+  shape: F  witness: fn-stop f SHR  ops: SHR
+- `ctl.N8.refuse-bnot` (control) a hot function applies `~a` to float operands 6.0 and 3.0
+  -> `-7` on both; the JIT scanner refuses this opcode at R1.3.
+  shape: F  witness: fn-stop f BNOT  ops: BNOT
+- `ctl.N8.refuse-mod` (control) a hot function applies `a % b` to float operands 6.0 and 3.0
+  -> `0` on both; the JIT scanner refuses this opcode at R1.3.
+  shape: F  witness: fn-stop f MOD  ops: MOD
 - `N8.bitwise-results-int` [R1.5] `print of [6 & 3, 6 | 3, 6 ^ 3, ~0, num_type of (6 & 3)]`
   -> `[2, 7, 5, -1, "int"]`
   tag: `num_type` undefined
@@ -491,6 +526,15 @@ The builtin names are decided in round 1 (`<w-add-i64>` etc. below are placehold
   tag: no raise, bytes `0, 0` (probed main)
 
 ### N14
+- `N14.json-build-int-exact` [R1.3] `json_build` emits an SMI and both int64 endpoints as exact JSON digits
+  -> `{"small": 3, "big": 9223372036854775807, "min": -9223372036854775808}`
+  tag: big literals round through double.
+- `N14.json-encode-int-exact` [R1.3] `json_encode` walks int list and dict slots, including int64 endpoints
+  -> `[3,9223372036854775807,{"min":-9223372036854775808}]`
+  tag: big literals round through double.
+- `N14.json-path-int-exact` [R1.6] `print of (json_path of ["{\"n\":9223372036854775807}", "n"])`
+  -> `9223372036854775807`
+  tag: the decoder rounds before the exact text arm (written in R1.2) can read it.
 - `N14.encode-kinds` [R1.7] `print of (json_encode of [3, 3.0, 0.1, -0.0])`
   -> `[3,3.0,0.1,-0.0]`
   tag: `[3,3,0.1,0]` (probed main for the first three)
@@ -508,6 +552,9 @@ The builtin names are decided in round 1 (`<w-add-i64>` etc. below are placehold
   tag: n/a (a C test, not a program); today's `"%g"` binds `1.23457e+06` (#1762). It needs no PostgreSQL server, so it runs in CI as a gate.
 
 ### T1
+- `T1.float-kind-token` [R1.3] (sh row) record `x is 3.0 / z is -0.0`, assert the v7 assignment tokens mark both as floats, replay and compare stdout
+  -> `float tokens marked`, `float replay identical`
+  tag: v6 emits `x=3` and `z=-0`, losing kind. A planted v6-format float writer makes this row fail.
 - `T1.v7-header` [R1.3] (sh row) `EIGS_TRACE=t.tape eigenscript p.eigs; head -1 t.tape | cut -d' ' -f1-2`
   -> `V 7`
   tag: `V 6`
@@ -517,8 +564,8 @@ The builtin names are decided in round 1 (`<w-add-i64>` etc. below are placehold
 - `T1.twice-float` [R1.7] (sh row) the same procedure for `x is 3.0 / y is 0.1 + 0.2 / z is -0.0 / print of [x, y, z]`
   -> `tapes identical`, `replay identical`, `A 0 x=3.0`, `A 0 y=0.30000000000000004`, `A 0 z=-0.0` (the kind on the tape; the exact text is N6's, R1.7)
   tag: `A 0 x=3` and `A 0 z=-0` (read: `%.17g`)
-- `T1.int-replay-kind` [R1.3] (sh row) record `r is random_int of [1, 6] / print of [r, num_type of r]`, then replay
-  -> the same line twice, kind `"int"` on replay
+- `T1.int-replay-kind` [R1.3] (sh row) record a replayed `random_int` draw selecting an int literal; print its exact value and `num_type`, then replay and compare bytes
+  -> `int replay identical`, `int assignment exact` (the int is carried by the v7 assignment record; `random_int` retains the float bridge until R1.6)
   tag: `num_type` undefined
 - `T1.v6-refused` [R1.3] (sh row) `EIGS_REPLAY=tests/phase2/fixtures/v6.tape eigenscript p.eigs`; print the rc and whether stderr names version 6
   -> `rc!=0 names-6`

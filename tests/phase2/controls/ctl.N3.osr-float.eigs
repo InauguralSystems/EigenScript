@@ -1,0 +1,15 @@
+# ROW: ctl.N3.osr-float
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: O
+# WITNESS: osr totalf
+# OPS: ADD CONST NUM_ONE GE JUMP_IF_FALSE SET_LOCAL POP
+define totalf(n) as:
+    acc is 0.5
+    i is 0.0
+    loop while true:
+        acc is acc + 1.5
+        i is i + 1.0
+        if i >= n:
+            return acc
+print of (totalf of 100.0)

@@ -1,0 +1,7 @@
+# ROW: ctl.N2.float-eq
+# ITEMS: N2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [0.5 + 0.25 == 0.75, 1 == 1.0, 3 < 3.5]

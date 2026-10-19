@@ -1,0 +1,11 @@
+# ROW: N2.sort-by-exact
+# ITEMS: N2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+define key(r) as:
+    return r.k
+xs is [{"id": "high", "k": 9007199254740993}, {"id": "low", "k": 9007199254740991}, {"id": "tie-a", "k": 9007199254740992.0}, {"id": "tie-b", "k": 9007199254740992}]
+ys is sort_by of [xs, key]
+print of [ys[0].id, ys[1].id, ys[2].id, ys[3].id]

@@ -1,0 +1,7 @@
+# ROW: N7.num-type-float
+# ITEMS: N7
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [num_type of 3.0, num_type of -0.0, num_type of 1e300, num_type of 2.5]

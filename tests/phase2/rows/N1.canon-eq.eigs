@@ -1,0 +1,9 @@
+# ROW: N1.canon-eq
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+a is abs of -5
+b is 0 - 5
+print of [a == 5, -b == 5, num_type of a]

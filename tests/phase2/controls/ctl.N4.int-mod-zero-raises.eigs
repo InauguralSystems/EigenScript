@@ -1,0 +1,10 @@
+# ROW: ctl.N4.int-mod-zero-raises
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+try:
+    x is 7 % 0
+catch e:
+    print of e.kind

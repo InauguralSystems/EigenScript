@@ -2105,7 +2105,7 @@ now has one of four shapes:
   last entry ends at the return sentinel is to run the whole body natively
   first.
 
-The `L`, `F` and `O` rows (35 in the MAP) cover every JIT-emitter and leaf
+The `L`, `F` and `O` rows (44 in the MAP) cover every JIT-emitter and leaf
 arm that holds a numeric site (the inventory's `## Numeric arms`, 20 today;
 §9.2 checks the coverage): the literals (`NUM_ZERO`, `NUM_ONE`, `CONST` and
 the new `INT_*`), the arithmetic, `DIV`/`MOD`, `NEG`/`NOT`/`BNOT`, the
@@ -2189,7 +2189,7 @@ failing on zero rows:
 |---|---:|---|
 | R1.1 | 0 | mechanical: the compile errors (223 sites), the C slot test (§2.5; `examined` equals the derived classifier count), plant 1, the int-source check, and the differential over the suite's `.eigs` corpus |
 | R1.2 | 0 | mechanical: the compile errors (464 sites), the int-source check, and the differential over the suite's `.eigs` corpus (behaviour-preserving) |
-| R1.3 | 44 | |
+| R1.3 | 51 | `gate.N5.iterator-metadata` |
 | R1.4 | 6 | |
 | R1.5 | 7 | |
 | R1.6 | 17 | `gate.N5.q7-readers`, and the per-builtin behaviour table (§9.4) |
@@ -2250,8 +2250,9 @@ fails if a round named here has neither rows nor its mechanical gates.)
     also shown in their own counters.
 - **Output, one line per tier:** `tier=<t> examined=N rows tag_fail=N
   branch_pass=N vacuous=0 tag_timeout=K tag_signal=K`, then `controls=M
-  both_pass=M`, `witnessed=W` (the rows whose witness held), and an
-  environment banner (both binaries' `--version` and sha256).
+  both_pass=M`, `witnessed=W` (the rows whose witness held),
+  `controls_witnessed=C controls_vacuous=0` (shaped controls must prove their
+  tier on the branch too), and an environment banner (both binaries' `--version` and sha256).
 - **Exit 0** iff in every tier examined == tag_fail == branch_pass > 0
   (or, for a mechanical round under `--through`, its named gates pass),
   vacuous == 0, the controls all pass on both, and the population checks

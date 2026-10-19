@@ -406,7 +406,7 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
             bad.append('gate %s names no file or make target' % g['id'])
     cnt = {t: dict(examined=0, tag_fail=0, branch_pass=0, vacuous=0, tag_timeout=0, tag_signal=0)
            for t in TIERS}
-    ctl_n = ctl_both = witnessed = 0
+    ctl_n = ctl_both = witnessed = ctl_witnessed = ctl_vacuous = 0
     for r, p, h in todo:
         want = read_text(p.rsplit('.', 1)[0] + '.out')
         want_rc = int(h.get('EXPECT-RC', '0'))
@@ -442,6 +442,16 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
                 ctl_both += 1
             else:
                 out('  CONTROL-FAIL %s: %s' % (r['id'], passes))
+            # A control may claim a real tier too. Its preserved stdout is
+            # insufficient evidence that a JIT/leaf arm actually ran.
+            if r['witness']['kind'] != 'none' and all(passes[t]['branch'][0] for t in tiers):
+                holds, ev = witness(branch, p, r['witness'], scratch)
+                if holds:
+                    ctl_witnessed += 1
+                    out('  CONTROL-WITNESS %s %s holds [%s]' % (r['id'], r['witness']['kind'], ev))
+                else:
+                    ctl_vacuous += 1
+                    out('  CONTROL-VACUOUS %s %s [%s]' % (r['id'], r['witness']['kind'], ev))
             continue
         if r['witness']['kind'] != 'none' and all(passes[t]['branch'][0] for t in tiers):
             holds, ev = witness(branch, p, r['witness'], scratch)
@@ -461,9 +471,10 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
                c['tag_signal']))
     out('controls=%d both_pass=%d witnessed=%d mapped=%d gates=%d through=%s' % (
         ctl_n, ctl_both, witnessed, len(landed), len(gates), through))
+    out('controls_witnessed=%d controls_vacuous=%d' % (ctl_witnessed, ctl_vacuous))
     rows_ok = all(c['examined'] == c['tag_fail'] == c['branch_pass'] > 0 and c['vacuous'] == 0
                   for c in cnt.values())
-    return (not bad, rows_ok, ctl_n == ctl_both, len(landed), cnt, witnessed)
+    return (not bad, rows_ok, ctl_n == ctl_both and ctl_vacuous == 0, len(landed), cnt, witnessed)
 
 
 # ---- mechanical gates ----------------------------------------------------------

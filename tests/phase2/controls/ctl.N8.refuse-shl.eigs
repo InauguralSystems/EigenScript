@@ -1,0 +1,16 @@
+# ROW: ctl.N8.refuse-shl
+# ITEMS: N8
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop f SHL
+# OPS: SHL
+define f(a, b) as:
+    warm is 0.5
+    t is a << b
+    return t
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is f of [6.0, 3.0]
+    i is i + 1.0
+print of r
