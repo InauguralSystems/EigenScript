@@ -21,14 +21,18 @@ assert_eq of [1e300 % 3.0, 0, "remainder without overflowing the quotient produc
 
 # Independent small-number quotient oracle; identity and sign cover every
 # sign combination and exact multiples without permitting C truncation.
-for a in range of [-30, 31]:
-    for b in range of [-7, 8]:
+a is -30
+loop while a <= 30:
+    b is -7
+    loop while b <= 7:
         if b != 0:
             q is a // b
             rem is a % b
             assert_eq of [q, floor of (a / b), "small quotient oracle"]
             assert_eq of [q * b + rem, a, "division/modulo identity"]
             assert of [rem == 0 or ((rem > 0) == (b > 0)), "divisor sign"]
+        b is b + 1
+    a is a + 1
 
 # Exact boxed int cases: generated from Python integer // and %, so no
 # float round-trip can agree accidentally above 2^53.
@@ -65,8 +69,13 @@ assert_eq of [num_type of xs[1], "float", "compound float kind"]
 # missing decref measurable under LSan rather than hidden by live globals.
 define boxed(n) as:
     return 9223372036854775807 - n
-for k in range of [0, 80]:
+# range still yields floats through R1.5. Use a VM int counter and pin
+# the fresh operand kind so an immediate float cannot hide a missing decref.
+k is 0
+loop while k < 80:
     large is boxed of k
+    assert_eq of [num_type of large, "int", "ownership fixture is boxed int"]
+    assert of [large > 140737488355327, "ownership fixture exceeds the SMI range"]
     assert_eq of [large % -1, 0, "boxed modulo special divisor"]
     assert_eq of [large // 1, large, "boxed quotient retained"]
     for op in ["//", "%"]:
@@ -98,6 +107,7 @@ for k in range of [0, 80]:
         catch e:
             caught is e.kind == "type_mismatch"
         assert_eq of [caught, true, "boxed % type error owns both operands"]
+    k is k + 1
 
 # #1758 comment 6294926822: all zero divisors raise in R1.4, including
 # float/mixed // and //=; / and % retain their existing errors until N11.
