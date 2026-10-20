@@ -13,14 +13,18 @@
 # safe, so it no longer reports, and a positive control that has to RACE
 # cannot lean on it (#1489).
 #
-# The deliberate race is the racer pair: two closures race on NUMBER elements
-# of a list they share, a container race docs/CONCURRENCY.md still leaves to
+# The deliberate race is the racer pair: two closures race on NUMBER bindings
+# of the function env they share, a race docs/CONCURRENCY.md still leaves to
 # the program. It cannot corrupt memory (immediates: no store frees anything,
-# the list never grows) and it cannot miss: each racer spins until it READS
-# the other's write, so neither finishes without an unsynchronized read of the
-# other's store, and no lock or channel operation sits between the two
-# accesses to order them. `cell` lives in a captured function env, which no
-# lock guards. The spin caps only bound a broken run; it then reports vacuous.
+# no binding is created during the race) and it cannot miss: each racer spins
+# until it READS the other's store, so neither finishes without an
+# unsynchronized read of the other's write. Nothing sits between the two
+# accesses to order them: the env is not a shared root (no #607 lock), and a
+# number touches no refcount. (A race on list ELEMENTS was tried first: on
+# the Phase 2 branch its int-index path orders the two threads and TSan saw
+# nothing, while this one reports on both trees.) The spin caps only bound a
+# broken run; it then reports vacuous. If captured bindings ever become
+# atomic references (#1837), this stops racing and must be re-pointed.
 define lm_ur_worker(k) as:
     local i is 0
     local n is 0
@@ -31,18 +35,19 @@ define lm_ur_worker(k) as:
     return n
 
 define lm_ur_race_pair() as:
-    local cell is [0, 0]
+    local a is 0
+    local b is 0
     define racer_a as:
-        cell[0] is 1
+        a is 1
         local spins is 0
-        loop while cell[1] == 0 and spins < 2000000:
+        loop while b == 0 and spins < 2000000:
             spins is spins + 1
         return spins
     define racer_b as:
         local spins is 0
-        loop while cell[0] == 0 and spins < 2000000:
+        loop while a == 0 and spins < 2000000:
             spins is spins + 1
-        cell[1] is 1
+        b is 1
         return spins
     return [racer_a, racer_b]
 
