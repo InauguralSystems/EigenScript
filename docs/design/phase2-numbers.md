@@ -2084,6 +2084,15 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
 ### Round 5 obligations (recorded by earlier rounds)
 
 Round 5 gives the JIT and the leaf evaluator their int fast paths (§4.4).
+It must also recover the declared interpreter costs in
+`tests/phase2/cost_expect.txt`: an `off` row runs with `EIGS_JIT_OFF=1`, so
+native execution alone cannot recover it. R1.5's fresh R1.4 controls attribute
+the DMG-shaped benchmark's N8 increment to exact-int state reaching generic
+dictionary/boxed Value paths. The other moved rows have no bitwise operations;
+their measured increment is shared VM/helper code generation, including an
+out-of-line `slot_from_int`. Interpreter int/slot paths are therefore part of
+R5's recovery obligation; each row retains its measured bound and component.
+
 Until then a check that needs EMITTED code for an int program cannot fire,
 so its fixture runs a float program instead. Each such fixture gets its int
 twin back when R5 compiles ints:
