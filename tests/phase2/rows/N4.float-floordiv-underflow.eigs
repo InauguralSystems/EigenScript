@@ -3,5 +3,5 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 print of [1e-300 // -1e300, -1e-300 // 1e300, 1e-300 // 1e300, num_type of (1e-300 // -1e300)]

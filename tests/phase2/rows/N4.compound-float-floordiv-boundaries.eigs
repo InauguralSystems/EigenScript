@@ -3,7 +3,7 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 x is 1.0
 x //= 0.1
 d is {"x": 1}
