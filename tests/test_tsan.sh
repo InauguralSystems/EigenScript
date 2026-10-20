@@ -54,11 +54,12 @@ seeded_race_row() {
 
 rebind_call_row() {
     echo "=== #1171 call vs rebind of a shared binding must be race-free ==="
-    # Threads call two module-level functions while other threads rebind them
-    # to fresh heap-capturing closures; main also calls through inline caches
-    # it filled before spawning. Before #1171 a reader took its reference
-    # AFTER leaving the hold the rebind frees under: 40/41/40 reports on
-    # 965dfbd0, every one on the call/rebind path.
+    # Threads call module-level functions while other threads rebind them to
+    # fresh heap-capturing closures and reload a module that defines one;
+    # main also calls through inline caches it filled before spawning. On
+    # 965dfbd0 (a reader took its reference AFTER leaving the hold the rebind
+    # frees under, and a call dropped its callee before the frame held the
+    # chunk) all 3 runs crashed under TSan, with 76-286 reports.
     local fixture="$TESTS_DIR/rebind_call_race.eigs"
     if [ ! -f "$fixture" ]; then
         echo "  FAIL: rebind_call_race fixture missing ($fixture)"; FAIL=$((FAIL + 1)); return

@@ -2596,7 +2596,9 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         }
         for (int i = 0; i < argc; i++)
             slot_decref(g_vm.stack[--g_vm.sp]);
-        slot_decref(g_vm.stack[--g_vm.sp]); /* fn */
+        /* #1171: as CASE(CALL), the callee is released only after the frame
+         * holds its chunk; the stack's reference can be the last one. */
+        EigsSlot callee_s = g_vm.stack[--g_vm.sp];
 
         /* The caller frame's ip stays at the thunk's entry offset (the
          * jit_advance-relative contract); it is fixed to resume_off
@@ -2604,6 +2606,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
          * over mid-thunk. */
         CallFrame *frame = &g_vm.frames[g_vm.frame_count++];
         callframe_init(frame, fn_chunk, call_env, fn_val, 1, argc);
+        slot_decref(callee_s);
         g_loop_stall_count = 0;
         g_loop_iterations  = 0;
         fn_chunk->exec_count++;
@@ -4318,21 +4321,33 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
 
             /* Pop args + fn from stack (slot-direct; immediates never
-             * round-trip through make_num + free_value). */
+             * round-trip through make_num + free_value). #1171: the
+             * callee's reference is released only AFTER callframe_init has
+             * taken the frame's chunk reference. The stack can hold the
+             * function's LAST reference: a rebind of its name (another
+             * thread's, or this thread's own argument evaluation reloading
+             * the module) drops the binding's. A function from a
+             * load_file'd module is the only holder of its chunk, so
+             * dropping it first freed the chunk callframe_init then
+             * counted and executed (ASan: heap-use-after-free in
+             * chunk_incref <- callframe_init). Nothing reads the function
+             * value once the frame holds its chunk and env. */
             for (int i = 0; i < argc; i++)
                 slot_decref(g_vm.stack[--g_vm.sp]);
-            slot_decref(g_vm.stack[--g_vm.sp]);
+            EigsSlot callee_s = g_vm.stack[--g_vm.sp];
 
             /* Save current frame and push new one */
             frame->ip = ip;
             if (g_vm.frame_count >= VM_FRAMES_MAX) {
                 rt_error(EK_LIMIT, current_line, "call stack overflow");
                 env_decref(call_env);
+                slot_decref(callee_s);
                 vm_push(make_null());
                 DISPATCH();
             }
             frame = &g_vm.frames[g_vm.frame_count++];
             callframe_init(frame, fn_chunk, call_env, fn_val, 1, (int)argc);
+            slot_decref(callee_s);
             g_loop_stall_count = 0;
             g_loop_iterations  = 0;
             if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
@@ -6441,14 +6456,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 env_reserve_slots(call_env, fn_chunk->local_count);
             }
             /* Both binding helpers retain their slot. Drop DISPATCH's popped
-             * argument reference after binding, including the zero-param case. */
+             * argument reference after binding, including the zero-param case.
+             * #1171: the TABLE is what holds the callee (fn is a view into
+             * it), so its reference is released only after the frame holds
+             * the chunk, as CASE(CALL) releases its callee. */
             slot_decref(arg_s);
-            slot_decref(table_s);
 
             frame->ip = ip;
             if (g_vm.frame_count >= VM_FRAMES_MAX) {
                 rt_error(EK_LIMIT, current_line, "call stack overflow");
                 env_decref(call_env);
+                slot_decref(table_s);
                 vm_push(make_null());
                 eigs_view_check(&fn_view);
                 DISPATCH();
@@ -6460,6 +6478,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * The globals are deliberately NOT zeroed here (dispatch keeps
              * the caller's budget, matching pre-#743 behavior). */
             callframe_init(frame, fn_chunk, call_env, fn, 1, 1);
+            slot_decref(table_s);
             if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
 
             /* JIT hook (mirror of OP_CALL bytecode-fn path; #533 task gate,
