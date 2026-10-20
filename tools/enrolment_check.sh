@@ -39,7 +39,7 @@ if [ "${1:-}" = "--selftest" ]; then
     mkdir -p "$ST/tests/sections" "$ST/tools" "$ST/.github"
     cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tests/sections/*.sh "$ST/tests/sections/" \
         && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github/workflows "$ST/.github/" \
-        && for d in tools/*/; do cp -R "$d" "$ST/tools/"; done
+        && for d in tools/*/; do cp -R "${d%/}" "$ST/tools/"; done
     n=0; bad=0
     case_() {   # case_ <name> <want-rc> <want-substring>
         local out rc; n=$((n + 1))
