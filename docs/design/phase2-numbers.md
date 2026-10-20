@@ -2607,6 +2607,21 @@ answered. A grep cannot find the second kind, so this is a differential.
   `poisson.pmf` (the oracle). Calibration: the int `SPEED_OF_LIGHT` planted
   back lists `rest_energy` UNDECLARED; a declaration for `permutations` is
   STALE.
+- **R1.4, N4 successful value changes.** The original OK/RAISE differential
+  cannot see a changed successful remainder. The same tool now derives a
+  conservative modulo-user/named-caller closure from the tracked module
+  source (including private helpers), and compares JSON result values for
+  its exported functions, ignoring only numeric-kind differences. Every
+  changed function needs an `N4:` reason in
+  `tests/phase2/lib_floor_mod.txt`; an unused declaration is STALE. The
+  integer-domain raise declarations remain independent and unchanged.
+  Negative boundary probes (-7 and -719469) reach weekday and civil-era
+  boundaries missed by [-3, 110]. Typed probes cover the meta-interpreter's
+  source/AST entry points, accepted negative numeric checksum buffers, and
+  supervision's negative heartbeat observer feed as well as its return.
+  The closure is conservative by name, not a full resolver; the release
+  census reviews dynamic dispatch and caller domains separately. Successful
+  values outside that closure remain outside this extra N4 comparison.
 - **Range boundary:** ints at most 110 keep a polynomial of degree 9 in the
   caller's own ints inside int64, so a listed call points at the library.
   A literal that overflows only for larger arguments is not seen.
