@@ -2078,6 +2078,26 @@ twin back when R5 compiles ints:
   literals and float arguments. At R5 the int version returns beside it as
   its own `SHAPE_FIXTURES` row with the same witness, and `SHAPE_DECLARED`
   grows by one.
+- Five more JIT-purposed fixtures (#1858, the R1.3 hardening round). Each
+  compiled less, or nothing, once int literals were refused. Each now writes
+  floats in the code its JIT purpose needs. Each int twin returns at R5 beside
+  its float version, run by the same row:
+  - `tests/test_spawn_jit.eigs` (suite [100] and the TSan slice). The
+    main-thread `check`, the shared `helper` and `worker` count in floats.
+  - `tests/test_underarity_1661_repro.eigs` and
+    `tests/test_underarity_1661_trycatch.eigs` (suite [0fd], in all three tiers,
+    the forced-JIT tier included). `g` compares, counts and returns floats.
+  - `tests/tsan_mt_clear_respawn.eigs` (the TSan slice). `hot`, its argument,
+    and the module's two loops (OSR after each join) count in floats.
+  - `tests/test_spawn_jit_warm.eigs` (suite [129] and the TSan slice). `helper`,
+    `warm`, `worker` and `gmul` are floats, so `helper`'s thunk runs to its
+    return again.
+
+  The compile counts (`EIGS_JIT_STATS`, summed over threads) were 1, 1, 1, 4
+  and 1 on main 94657581. The tip before the change compiled 0, 0, 0, 2 and 1;
+  after it, 1, 1, 1, 4 and 1. These rows assert no JIT witness of their own
+  (#1858's second Done-when), so another refusal would again pass them
+  silently.
 
 ### Risks across both rounds
 
