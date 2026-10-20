@@ -1672,7 +1672,11 @@ numbers are at `0740af03`.
     needs no `EIGS_BYTECODE_ABI` bump.
   - Lexer: `//` lexes as two `TOK_SLASH` today, so a new `TOK_SLASH_SLASH`
     is appended to the token enum, the X2 table (lexer.c:241) and the token
-    text (lexer.c:357).
+    text (lexer.c:357). `//=` is appended too and uses the X3 table. Keep
+    both text homes (`tok_base_string` and `tok_type_name`) in lockstep;
+    `tok_base_string_id_count` follows the last appended token, since
+    `TOK_EOF` keeps its existing ID. Append-only compound tokens also need
+    the parser's compound predicate and conversion outside the old range.
   - parser.c (multiplicative level), fmt.c, lint, the LSP and ouroboros
     `frontend.eigs`;
   - JIT MOD (§4.2).

@@ -77,7 +77,7 @@ vm.c|obs_slot_num|2|observer numeric channel (#1758): reads an immediate after s
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_f64
 vm.c|slot_truthy|1|truthiness after slot_is_f64
 vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admitted only as VAL_FLOAT (chunk_scan_leaf_accessor) and values behind VAL_FLOAT tests
-vm.c|vm_run_ex|35|the interpreter loop: every opcode reads numbers behind slot_is_f64 / type == VAL_FLOAT dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
+vm.c|vm_run_ex|37|typed interpreter payload accesses: float slots/boxes behind slot_is_f64, VAL_FLOAT or NUM_REUSE; INT_CONST is verifier-typed, other int reads behind VAL_INT guards including both IDIV/MOD operands (#1758 N4) and temporal/slice/dispatch diagnostics; iterator state is VM-built
 vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_f64
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_f64
 builtins.c|builtin_json_build|1|VAL_INT text is exact digits; float text retains the bridge (#1758 R1.2d)
