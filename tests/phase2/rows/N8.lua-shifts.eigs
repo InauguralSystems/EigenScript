@@ -3,5 +3,5 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 print of [1 << 64, 1 << 63, 1 << -1, -1 >> 1, 8 >> -1]

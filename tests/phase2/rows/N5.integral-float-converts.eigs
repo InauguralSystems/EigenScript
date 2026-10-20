@@ -3,5 +3,5 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 print of [6.0 | 1, num_type of (6.0 | 1), (list_slice of [[1, 2, 3], 1.0, 2.0])]

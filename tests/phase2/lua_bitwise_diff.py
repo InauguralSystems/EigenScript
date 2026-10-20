@@ -6,6 +6,7 @@ Python enumerates source literals and compares records; it does no bitwise
 arithmetic. Each builtin is compared directly with Lua's matching operator.
 """
 import argparse
+from collections import Counter
 import json
 import os
 from pathlib import Path
@@ -61,6 +62,15 @@ def main():
     print(version, flush=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith('EIGS_')}
     population = list(cases())
+    # Independently pin all twelve operator/form populations: a missing
+    # generator arm must never look like agreement on a smaller grid.
+    expected_counts = {f'{op}/{form}': n for op, n in
+                       [('&', 529), ('|', 529), ('^', 529),
+                        ('<<', 3404), ('>>', 3404), ('~', 23)]
+                       for form in ('op', 'builtin')}
+    found = Counter(label.split('(', 1)[0] for label, _, _ in population)
+    if found != expected_counts:
+        raise RuntimeError(f'incomplete case populations: expected={expected_counts} actual={dict(found)}')
     mismatches = []
     agree = 0
     with tempfile.TemporaryDirectory(prefix='n8-lua-') as d:

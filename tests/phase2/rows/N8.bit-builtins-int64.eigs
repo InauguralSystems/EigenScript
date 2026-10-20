@@ -3,5 +3,5 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 print of [bit_or of [4611686018427387904, 1], bit_shl of [1, 64]]

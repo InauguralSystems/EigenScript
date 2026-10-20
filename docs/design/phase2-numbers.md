@@ -1393,8 +1393,8 @@ current state behind several rows:
 | `bit_and` | int-requiring | - | - | Lua `&` (§3.4.2): exact int64 operands, exact int64-pattern result (N8, R1.5) |
 | `bit_not` | int-requiring | - | - | Lua unary `~` |
 | `bit_or` | int-requiring | - | - | Lua `\|` |
-| `bit_shl` | int-requiring | - | - | Lua `<<` (R1.5): |count| >=64 gives 0; a negative count shifts logically right |
-| `bit_shr` | int-requiring | - | - | Lua `>>` (N8, R1.5) is logical; |count| >=64 gives 0; a negative count shifts left |
+| `bit_shl` | int-requiring | - | - | Lua `<<` (R1.5): count >=64 or <=-64 gives 0; a negative count shifts logically right |
+| `bit_shr` | int-requiring | - | - | Lua `>>` (N8, R1.5) is logical; count >=64 or <=-64 gives 0; a negative count shifts left |
 | `bit_xor` | int-requiring | - | - | Lua binary `~` |
 | `buf_copy` | int-requiring | - | - | offsets and counts |
 | `buf_deinterleave` | int-requiring | - | - | channel count and index |
