@@ -1,0 +1,86 @@
+# #1171: threads CALL two module-level functions while other threads REBIND
+# them to fresh closures that capture heap data. Every rebind drops the old
+# closure's last reference, so a reader that loaded the binding but took its
+# reference too late counted and called freed memory.
+#
+# Two read paths are covered:
+#   - a worker's GET_NAME resolves through the shared root env (the slow
+#     path that took its reference after leaving the #607 hold);
+#   - main's loop warms its inline caches, THEN spawns inside the same loop,
+#     so its cache entries were filled before the first spawn (the hit path
+#     reads with no lock; the flip must invalidate them).
+# g_leaf is a leaf accessor (frameless call), g_gen a generic body.
+#
+# The rebinders run under `unobserved:` on purpose: this file pins the
+# call/rebind path. Two threads folding one binding's observer slot is a
+# separate defect (#1171's observer half) that EIGS_OBS_FORCE=1 would reach.
+#
+# Conserved quantities, independent of the interleaving: every call returns
+# 2 for argument 1 whichever closure it lands on.
+define make_leaf(tag) as:
+    local payload is [tag, f"leaf-{tag}"]
+    define f(x) as:
+        return x * 2
+    return f
+
+define make_gen(tag) as:
+    local payload is [tag, f"gen-{tag}"]
+    define f(x) as:
+        return x * 2 + (len of payload) - 2
+    return f
+
+g_leaf is make_leaf of 0
+g_gen is make_gen of 0
+calls is 10000
+rebinds is 10000
+
+define caller(k) as:
+    local i is 0
+    local n is 0
+    loop while i < calls:
+        n is n + (g_leaf of 1) + (g_gen of 1)
+        i is i + 1
+    return n
+
+define rebinder(k) as:
+    local i is 0
+    unobserved:
+        loop while i < rebinds:
+            g_leaf is make_leaf of k
+            g_gen is make_gen of k
+            i is i + 1
+    return i
+
+# Every module-level name exists before the loop: a binding created after the
+# warm-up would move the global env's version and quietly retire main's cache
+# entries before the spawn, so the hit path would never be exercised.
+c0 is null
+c1 is null
+c2 is null
+r1 is null
+r2 is null
+total is 0
+mi is 0
+loop while mi < 20000:
+    if mi == 100:
+        c0 is spawn of [caller, 0]
+        c1 is spawn of [caller, 1]
+        c2 is spawn of [caller, 2]
+        r1 is spawn of [rebinder, 1]
+        r2 is spawn of [rebinder, 2]
+    total is total + (g_leaf of 1) + (g_gen of 1)
+    mi is mi + 1
+
+n0 is thread_join of c0
+n1 is thread_join of c1
+n2 is thread_join of c2
+b1 is thread_join of r1
+b2 is thread_join of r2
+assert of [n0 == 4 * calls, f"caller 0 summed {n0}"]
+assert of [n1 == 4 * calls, f"caller 1 summed {n1}"]
+assert of [n2 == 4 * calls, f"caller 2 summed {n2}"]
+assert of [b1 == rebinds, f"rebinder 1 ran {b1}"]
+assert of [b2 == rebinds, f"rebinder 2 ran {b2}"]
+assert of [total == 4 * 20000, f"main summed {total}"]
+assert of [(g_leaf of 1) + (g_gen of 1) == 4, "the surviving closures still answer"]
+print of "rebind call race: PASS"

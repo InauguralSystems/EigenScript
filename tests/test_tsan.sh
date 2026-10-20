@@ -52,6 +52,31 @@ seeded_race_row() {
     fi
 }
 
+rebind_call_row() {
+    echo "=== #1171 call vs rebind of a shared binding must be race-free ==="
+    # Threads call two module-level functions while other threads rebind them
+    # to fresh heap-capturing closures; main also calls through inline caches
+    # it filled before spawning. Before #1171 a reader took its reference
+    # AFTER leaving the hold the rebind frees under: 40/41/40 reports on
+    # 965dfbd0, every one on the call/rebind path.
+    local fixture="$TESTS_DIR/rebind_call_race.eigs"
+    if [ ! -f "$fixture" ]; then
+        echo "  FAIL: rebind_call_race fixture missing ($fixture)"; FAIL=$((FAIL + 1)); return
+    fi
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: rebind_call_race HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: rebind_call_race reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+        grep -A2 "WARNING: ThreadSanitizer" <<< "$RUN_OUTPUT" | head -6
+    elif [ "$LAST_RC" -ne 0 ] || ! grep -Fxq 'rebind call race: PASS' <<< "$RUN_OUTPUT"; then
+        echo "  FAIL: rebind_call_race exited $LAST_RC without its PASS line"; FAIL=$((FAIL + 1))
+        tail -5 <<< "$RUN_OUTPUT"
+    else
+        echo "  PASS: rebind_call_race TSan-clean, totals conserved"; PASS=$((PASS + 1))
+    fi
+}
+
 scope_boundary_row() {
     echo "=== #1144 scope boundary: the user-level race names NO loader structure ==="
     # tests/loader_mt_userrace.eigs races ON PURPOSE while workers load
@@ -100,15 +125,15 @@ if [ "${1:-}" = "--seeded-only" ]; then
     echo "Results: $PASS passed, $FAIL failed"
     [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 1 ]; exit
 fi
-
 # --row NAME (#1489): one row through the same function the full run calls,
 # so a row can be proven under load (taskset -c 0 nice -n 19) or against a
 # planted binary without running the whole lane.
 if [ "${1:-}" = "--row" ]; then
     case "${2:-}" in
         seeded)         seeded_race_row ;;
+        rebind-call)    rebind_call_row ;;
         scope-boundary) scope_boundary_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|scope-boundary"; exit 2 ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
@@ -495,6 +520,8 @@ else
     echo "  FAIL: loader fixtures examined == declared (examined=$LDR_EXAMINED declared=$LDR_TOTAL)"
     FAIL=$((FAIL + 1))
 fi
+
+rebind_call_row
 
 scope_boundary_row
 
