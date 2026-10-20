@@ -21,6 +21,26 @@ $ diff first.out second.out        # identical
 Both are off by default. The disabled cost at each hook site is one
 predicted-not-taken load + branch.
 
+## Math-library boundary (#1853)
+
+Trace does not record pure math results. The transcendental builtins `sin`,
+`cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, and `pow` call the
+platform libm in hosted builds (including glibc and macOS), while the
+freestanding build calls `src/freestanding/mini_libm.c`. These libms need not
+round identically in the last bit; see [FREESTANDING.md](FREESTANDING.md#mini-libclibm-exists-since-2026-07-02)
+for the pinned error bounds and trig-reduction range rather than treating a
+tape as a cross-platform math oracle. The observer's entropy calculation calls
+`log2`, so observer history has the same boundary. [#1854](https://github.com/InauguralSystems/EigenScript/issues/1854)
+tracks removing it.
+
+This does **not** affect replay between execution tiers on the same platform:
+the interpreter and JIT share those C calls. The #1853 probe recorded a loop of
+`sin`, `exp`, and `log`, then replayed it with `EIGS_JIT_OFF=1` and with the JIT
+on; both outputs were byte-identical to the recording. AOT was not checked (the
+sibling `ouroboros` checkout was unavailable). The measured boundary is
+concrete: for `exp(0x1.e6e9e49c2cccp-3)`, glibc returned
+`0x1.44b56892052cdp+0` and mini-libm returned `0x1.44b56892052ccp+0`.
+
 ## Tape Format
 
 The tape is plain text, one record per line:
