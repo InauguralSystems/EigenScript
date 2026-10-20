@@ -464,14 +464,16 @@ echo "=== loader from workers must be race-free (#1144) ==="
 # 8/12/5 warnings, p3_import_race 3/5/5 (free in module_ns_rebuild vs read in
 # module_ns_slot <- eigs_module_ns_env <- dict_get_hashed).
 #
-# tests/loader_mt_loadfile.eigs is DELIBERATELY NOT in this list. It is a
-# release-binary correctness row in tests/test_loader_mt.sh instead: two
-# workers loading the SAME module both REBIND the same global name, which is
-# the documented user-level shared-mutable-state race (docs/CONCURRENCY.md),
-# and TSan reports it on the binding's VALUE, its refcount and its observer
-# slot — the class #607 declares out of scope ("two threads racing on the
-# SAME slot's value or assign-count"; tracked as #1171). A row that can never be clean is not a
-# gate (§13/§23).
+# tests/loader_mt_loadfile.eigs (two workers load the SAME module, so both
+# REBIND the same global names) stays out of this list. #1171 made that rebind
+# race-free (the value and the assign-count are written inside the hold:
+# 965dfbd0 reported 3 per run, the #1171 tree 0 in 15 runs). But its workers
+# also CREATE global bindings on their first load, and an inline-cache check
+# on another thread reads the global env's binding_version without the lock:
+# a formal race on that one word (seen in 1 of 30 runs of
+# loader_mt_userrace.eigs on the Phase 2 branch), which would make a
+# zero-report row flaky. It is a release-binary correctness row in
+# tests/test_loader_mt.sh instead.
 LDR_FIXTURES="loader_mt_import loader_mt_cycle"
 LDR_DECLARED=2
 LDR_EXAMINED=0
