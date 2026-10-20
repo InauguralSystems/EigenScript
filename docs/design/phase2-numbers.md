@@ -1680,6 +1680,12 @@ numbers are at `0740af03`.
   - parser.c (multiplicative level), fmt.c, lint, the LSP and ouroboros
     `frontend.eigs`;
   - JIT MOD (§4.2).
+  - Float and mixed `//` follow CPython's `float_divmod` quotient correction
+    (#1882): derive `(a - fmod(a,b)) / b`, subtract one for an opposite-sign
+    nonzero remainder, then floor and snap upward when the fractional part
+    exceeds 0.5; a zero quotient takes the sign of `a/b`. This gives
+    `1.0 // 0.1 == 9.0` and `1e-300 // -1e300 == -1.0`, unlike `floor(a/b)`.
+    The VM's `CASE(IDIV)` is the only evaluator; the JIT and leaf refuse it.
   - Float `x % 0` (NaN), `x / 0` (inf) and float/mixed `x // 0`
     (`floor(x/0)`, ±inf or NaN) wait for N11 in round 2. All raise today;
     the `//` rule is #1758 comment 6294926822.

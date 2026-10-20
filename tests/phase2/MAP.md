@@ -313,6 +313,24 @@ gates (design §9.2).
   -> `["value", "division by zero"]` four times (same as `/`, until N11; #1758 comment 6294926822)
   tag: parse error
 
+- `N4.float-floordiv-rounding` [R1.4] Python float-divmod quotient at decimal boundaries: `1.0 // 0.1`, mixed `1 // 0.1`, negative pairs, `7.5 // 0.1`, opposite signs, `3.0 // -0.1` quotient snapping and result kind
+  -> `[9, 9, 9, 74, -10, -30, "float"]`
+  tag: parse error
+- `N4.float-floordiv-underflow` [R1.4] `1e-300 // -1e300`, the sign-reversed pair, a positive underflow and result kind
+  -> `[-1, -1, 0, "float"]`
+  tag: parse error
+- `N4.fn-float-floordiv-rounding` [R1.4] multi-statement `rd(a, b)` called 60 times with `[1.0, 0.1]`, then mixed/negative/7.5 and quotient-snapping boundaries
+  -> `[9, 9, 9, 74, -30, "float"]`
+  tag: parse error
+  shape: F  witness: fn-stop rd IDIV (the scanner's default refuses IDIV)  ops: IDIV
+- `N4.fn-float-floordiv-underflow` [R1.4] multi-statement `ud(a, b)` called 60 times with `[1e-300, -1e300]`, then the sign-reversed pair
+  -> `[-1, -1, "float"]`
+  tag: parse error
+  shape: F  witness: fn-stop ud IDIV (the scanner's default refuses IDIV)  ops: IDIV
+- `N4.compound-float-floordiv-boundaries` [R1.4] `//=` at the decimal boundary on a name and dict field, and both underflow signs on list indices
+  -> `[9, 9, [-1, -1], "float", "float"]`
+  tag: parse error
+
 ### N4b
 - `N4b.neg-min-raises` [R1.3] `m is -9223372036854775807 - 1 / {try print of (-m) catch}`
   -> `["value", true]`, the message naming the unary minus

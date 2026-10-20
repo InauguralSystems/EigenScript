@@ -19,6 +19,22 @@ assert_eq of [num_type of (7 % 3), "int", "int remainder kind"]
 assert_eq of [num_type of (7.0 % 3), "float", "mixed remainder kind"]
 assert_eq of [1e300 % 3.0, 0, "remainder without overflowing the quotient product"]
 
+# #1882: Python float_divmod rounds from fmod, including mixed operands.
+assert_eq of [1.0 // 0.1, 9.0, "decimal quotient boundary"]
+assert_eq of [1 // 0.1, 9.0, "mixed decimal quotient boundary"]
+assert_eq of [-1.0 // -0.1, 9.0, "negative decimal pair"]
+assert_eq of [7.5 // 0.1, 74.0, "fractional decimal quotient boundary"]
+assert_eq of [3.0 // -0.1, -30.0, "quotient snaps after floor correction"]
+assert_eq of [1e-300 // -1e300, -1.0, "negative quotient underflow floors"]
+assert_eq of [-1e-300 // 1e300, -1.0, "negative dividend underflow floors"]
+assert_eq of [num_type of (1 // 0.1), "float", "mixed boundary result kind"]
+rounding_target is 1.0
+rounding_target //= 0.1
+assert_eq of [rounding_target, 9.0, "compound decimal quotient boundary"]
+underflow_target is 1e-300
+underflow_target //= -1e300
+assert_eq of [underflow_target, -1.0, "compound quotient underflow"]
+
 # Independent small-number quotient oracle; identity and sign cover every
 # sign combination and exact multiples without permitting C truncation.
 a is -30

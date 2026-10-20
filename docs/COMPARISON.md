@@ -20,16 +20,22 @@ asking the running program about its own state and history.
 operation to its assignment target, like `/=`. Zero divisors raise `value`
 for all numeric operand kinds in this round. Two ints produce an int for
 `//` and `%`; a float operand produces a float. `/` always produces a float.
+Float and mixed `//` use Python’s `divmod` quotient correction: `1.0 // 0.1`
+is `9.0`, and `1e-300 // -1e300` is `-1.0`. `//=` uses the same rule.
 
 ```eigenscript
 x is -7
 x //= 2
 print of [x, 7 // -2, -7 % 3, 7 % -3, -7.5 % 2]
 print of [num_type of (7 // 2), num_type of (7.0 // 2)]
+y is 1.0
+y //= 0.1
+print of [1.0 // 0.1, 1 // 0.1, 1e-300 // -1e300, y, num_type of y]
 ```
 ```output
 [-4, -4, 2, -2, 0.5]
 ["int", "float"]
+[9, 9, -1, 9, "float"]
 ```
 
 ## At a glance

@@ -3610,7 +3610,22 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     rt_error(EK_VALUE, current_line, "division by zero");
                     vm_push(make_num(0));
                 } else {
-                    vm_push(make_num(num_guard(floor(eigs_num_arg(a, "floor division") / divisor))));
+                    /* #1882: Python float_divmod's quotient, not floor(a/b).
+                     * Derive it from fmod so decimal boundaries and an
+                     * underflowed opposite-sign ratio agree with floor %. */
+                    double dividend = eigs_num_arg(a, "floor division");
+                    double rem = fmod(dividend, divisor);
+                    double div = (dividend - rem) / divisor;
+                    if (rem != 0.0 && ((rem < 0.0) != (divisor < 0.0)))
+                        div -= 1.0;
+                    double floordiv;
+                    if (div != 0.0) {
+                        floordiv = floor(div);
+                        if (div - floordiv > 0.5) floordiv += 1.0;
+                    } else {
+                        floordiv = copysign(0.0, dividend / divisor);
+                    }
+                    vm_push(make_num(num_guard(floordiv)));
                 }
             }
         } else {
