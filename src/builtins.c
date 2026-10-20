@@ -4038,9 +4038,8 @@ Value* builtin_set_at(Value *arg) {
      * one. A non-number value is refused with buf_set's message rather than
      * silently type-punned. `at_index`'s negative-from-the-end rule applies
      * to buffers too. */
-    if ((argc == 3 || argc == 4) && BUILTIN_LIST_VIEW(arg, 0)
-        && BUILTIN_LIST_VIEW(arg, 0)->type == VAL_BUFFER) {
-        Value *buf = BUILTIN_LIST_VIEW(arg, 0);
+    Value *buf = (argc == 3 || argc == 4) ? list_get_ref(arg, 0) : NULL;
+    if (buf && buf->type == VAL_BUFFER) {
         Value *val = BUILTIN_LIST_VIEW(arg, argc == 3 ? 2 : 3);
         int64_t off;
         if (argc == 3) {
