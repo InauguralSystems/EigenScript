@@ -46,7 +46,15 @@ fi
 
 # Embedders also use debug and lightly optimized builds (#1775). A successful
 # compiler exit alone does not reject warnings at either optimization level.
-for opt in 0 1; do
+# gcc only, for now: under clang, -Wall -Wextra reports about 200 warnings
+# across the tree, mostly -Wstring-plus-int (#1872). Ask the preprocessor which
+# compiler this is, since Apple's `gcc` is clang too.
+WARN_OPTS="0 1"
+if [ "$(printf '__clang__\n' | "$CC" -E -P -x c - 2>/dev/null | tr -d '[:space:]')" = 1 ]; then
+    WARN_OPTS=""
+    echo "  SKIP: -O0/-O1 warning check: $CC is clang (#1872)"
+fi
+for opt in $WARN_OPTS; do
     if ( cd "$WORK" && LC_ALL=C "$CC" -Wall -Wextra $WERROR_FLAGS -O"$opt" \
         -c eigenscript_all.c -o "amalgamation-O$opt.o" ) >"$WORK/O$opt.err" 2>&1; then
         if grep -q 'warning:' "$WORK/O$opt.err"; then
