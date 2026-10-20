@@ -723,6 +723,7 @@ file:
 | `Scorecard analysis` (`scorecard.yml`) | advisory | runs on push, schedule and `branch_protection_rule`, never on a PR; a posture score |
 | `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |
 | `issue-triage / …` (`issue-triage.yml`), `release.yml` jobs | advisory | not triggered by PRs or pushes to `main` |
+| `phase2 (MAP rows + lib differential)` (`phase2.yml`) | advisory | #1758's integration branch only: a push to `phase2-numbers` or `workflow_dispatch`, never a PR or the queue; `tools/phase2_ci.sh` checks the MAP rows of every landed round and the stdlib int differential |
 
 ## Coverage on pull requests
 

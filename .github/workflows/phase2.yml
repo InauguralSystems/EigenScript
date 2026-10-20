@@ -1,0 +1,53 @@
+name: phase2
+
+# #1758 Phase 2's own gates on its integration branch: the MAP rows that have
+# landed, on the v0.46.0 anchor and this commit (tools/phase2_check.sh, design
+# 9.2), and the stdlib's int differential against origin/main
+# (tools/phase2_lib_diff.sh, design 9.5). Before this lane both had only run on
+# a builder's or a critic's machine (mechanical-gates section 151).
+# tools/phase2_ci.sh derives the round to check from the MAP and the row files.
+#
+# `gh workflow run phase2.yml --ref <branch>` dispatches it. GitHub accepts a
+# dispatch only for a workflow on the default branch, or one that has run at
+# least once; this file lives on phase2-numbers, so its first run is a push
+# there.
+
+on:
+  push:
+    branches: [phase2-numbers]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase2:
+    name: phase2 (MAP rows + lib differential)
+    runs-on: ubuntu-latest
+    # Measured locally (4 GB dev box): about 12 minutes, most of it the three
+    # builds; this bounds a hang.
+    timeout-minutes: 45
+    steps:
+      # fetch-depth 0 brings every branch and tag: origin/main and v0.46.0.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Build the v0.46.0 anchor, origin/main and this commit; run tools/phase2_ci.sh
+        run: |
+          set -euo pipefail
+          # The anchor: the observer oracle's recipe (make observer-anchor, a
+          # git archive of the tag built under env -i) in a scratch cache.
+          export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
+          make --no-print-directory observer-anchor
+          anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
+          # The baseline: origin/main's own tree, plain make.
+          mkdir -p "$RUNNER_TEMP/main"
+          git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
+          make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
+          # This commit, under the compiler guard (docs/CI.md, [99i]).
+          export CC_GUARD_LOG="$RUNNER_TEMP/cc-guard.log"
+          : > "$CC_GUARD_LOG"
+          PATH="$PWD/tools/cc-guard-bin:$PATH" make build
+          bash tools/cc_guard.sh --report
+          bash tools/phase2_ci.sh "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
