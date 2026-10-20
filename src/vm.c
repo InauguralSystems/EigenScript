@@ -3623,7 +3623,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                         floordiv = floor(div);
                         if (div - floordiv > 0.5) floordiv += 1.0;
                     } else {
-                        floordiv = copysign(0.0, dividend / divisor);
+                        floordiv = signbit(dividend / divisor) ? -0.0 : 0.0;
                     }
                     vm_push(make_num(num_guard(floordiv)));
                 }
