@@ -2163,7 +2163,7 @@ void jit_helper_index_set(void) {
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
     if (slot_is_num(idx_s) && slot_is_ptr(tgt_s)) {
         Value *target = slot_as_ptr(tgt_s);
-        int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
+        int i = 0, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
         if (target->type == VAL_BUFFER && slot_is_num(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                 target->data.buffer.data[i] = SLOT_NUM_RAW(val_s);
@@ -3460,7 +3460,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-        double _ad, _bd; \
+        double _ad = 0.0, _bd = 0.0; \
         if (__builtin_expect(slot_as_double(_as, &_ad) & slot_as_double(_bs, &_bd), 1)) { \
             int64_t _ai, _bi; \
             if (__builtin_expect(!num_to_i64_exact(_ad, &_ai) || \
