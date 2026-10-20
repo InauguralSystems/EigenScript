@@ -678,7 +678,7 @@ result).**
 | `builtins.c:sort_cmp_str` | guarded | reached only after `builtin_sort` proved every element a string (its homogeneity test names `VAL_NUM`, compile-forced) (D2) |
 | `builtins_host.c:ls_entry_cmp` | guarded | sorts the string entries `ls` built itself (D2) |
 | `container.h:dict_value_get_num` | smi-arm | bridge reader (2.7): an int element converts to its double, exactly (|SMI| < 2^47), until R1.6 deletes the bridge (D1) |
-| `container.h:dict_value_get_ref` | smi-arm | NULL for a number by contract, an int included; the caller then types the element (D1) |
+| `container.h:dict_value_get_ref` | smi-arm | NULL for an SMI or a double (container.h:137); since R1.3 a boxed int (\|i\| >= 2^47) is a heap slot and comes back as its non-NULL `VAL_INT` Value, so the caller types the element before reading it (D1) |
 | `container.h:dict_value_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value`, the one SMI boxer (unwired until R1.3) (D1) |
 | `container.h:eigs_container_slot` | not-a-classifier | the canonicalizing Value-to-slot writer (R1.2): it reads a Value, not a slot, and writes the bits; a `VAL_INT` box becomes an SMI inside [-2^47, 2^47) and stays a heap slot outside it (2.1) (D3) |
 | `container.h:eigs_slot_adopt` | guarded | decides ownership from what `eigs_container_slot` returned (compile-forced); a small int comes back as an SMI and its box is released (D3) |
@@ -690,7 +690,7 @@ result).**
 | `container.h:eigs_slot_store_borrow` | guarded | an SMI is canonical storage and comes back as it is, with no reference to take (D1) |
 | `container.h:eigs_slot_store_owned` | guarded | an SMI is canonical storage and comes back as it is, with no reference to release (D1) |
 | `container.h:list_get_num` | smi-arm | bridge reader: an int element converts to its double (D1) |
-| `container.h:list_get_ref` | smi-arm | NULL for a number by contract, an int included (D1) |
+| `container.h:list_get_ref` | smi-arm | NULL for an SMI or a double (container.h:133); since R1.3 a boxed int (\|i\| >= 2^47) is a heap slot and comes back as its non-NULL `VAL_INT` Value (D1) |
 | `container.h:list_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value` (unwired until R1.3) (D1) |
 | `container.h:slot_type` | smi-arm | an SMI's type is `VAL_INT` (R1.2); any other unknown tag refuses instead of being read as a pointer (D1) |
 | `container.h:slot_view` | smi-arm | an SMI's facade is an exact `VAL_INT` view (R1.2) (D1) |

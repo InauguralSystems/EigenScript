@@ -3,13 +3,14 @@
 
 /* Container slot boundary (#1665 arm D).  List items and dict values are
  * EigsSlot storage (B10, the flip).  Every stored slot is one of:
- *   - an immediate number, always num_guard'ed (the default x86 NaN
- *     0xFFF8... is SLOT_NULL_BITS, so an unguarded double could read back
- *     as null);
+ *   - an immediate number: a double, always num_guard'ed (the default x86
+ *     NaN 0xFFF8... is SLOT_NULL_BITS, so an unguarded double could read
+ *     back as null), or an SMI, an int in [-2^47, 2^47) (#1758 design 2.1);
  *   - SLOT_NULL_BITS or a bool encoding (the immortal singletons are never
  *     stored as heap pointers);
  *   - a TAG_HEAP pointer owning one counted reference to a Value whose type
- *     is none of NUM / NULL / BOOL.
+ *     is none of FLOAT / NULL / BOOL.  A VAL_INT there is an int outside the
+ *     SMI range, a box (eigs_container_slot below keeps it, since R1.3).
  * All-zero bits are the number 0.0, not a vacancy: calloc'd storage reads as
  * zeros, so only slots below `count` are meaningful.  Nothing outside this
  * header touches the storage arrays except the bulk alloc/grow/free code that
@@ -124,7 +125,9 @@ static inline ValType dict_value_type(const Value *dict, int i) {
 }
 
 /* Return the real heap pointer (including the immortal null/bool singleton),
- * or NULL when the element is numeric (#1758: an int included). */
+ * or NULL when the element is an immediate number: a double or an SMI.  A
+ * boxed int (|i| >= 2^47, #1758 R1.3) is a heap slot, so it comes back as its
+ * non-NULL VAL_INT Value; type the element (list_elem_type) before reading. */
 static inline Value *list_get_ref(const Value *list, int i) {
     EigsSlot s = list_slot(list, i);
     return (slot_is_f64(s) || slot_is_smi(s)) ? NULL : eigs_slot_ref(s);

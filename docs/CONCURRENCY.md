@@ -167,11 +167,12 @@ depth-64 tail  SHARES
 **The rows the table cannot construct in three lines, and why they behave the
 way they do.** `chan_clone_rec` (src/eigenscript.c) switches on `ValType` with
 no `default:`, so `-Werror=switch` forces every new type to choose a side; the
-switch handles each type explicitly: `VAL_FLOAT`, `VAL_NULL`, `VAL_STR`,
+switch handles each type explicitly: `VAL_FLOAT`, `VAL_INT`, `VAL_NULL`, `VAL_STR`,
 `VAL_LIST`, `VAL_DICT`, `VAL_BUFFER`, `VAL_BOOL`, and `VAL_TEXT_BUILDER` are rebuilt
 (copy), while `VAL_FN` and `VAL_BUILTIN` take a refcount
-(share). `VAL_INT` has an explicit refusal until R1.3 supplies `make_int`
-for a fresh exact copy; R1.2 has no program-visible int producer.
+(share). An int is a fresh exact copy, `make_int` of the same value
+(src/eigenscript.c:2682), and like the other scalars it is copied at any depth
+(src/eigenscript.c:2678).
 A new `ValType` must choose a side in the switch for the compiler to accept it.
 The copy is recursive but not an identity-preserving graph copy: two references
 to one list or dict become two independent copies. At recursion depth 65
