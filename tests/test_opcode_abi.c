@@ -39,6 +39,8 @@ ABI_ASSERT(OP_FALSE, 96);
 ABI_ASSERT(OP_INT_ZERO, 97);
 ABI_ASSERT(OP_INT_ONE, 98);
 ABI_ASSERT(OP_INT_CONST, 99);
+/* #1758 N4: append-only floor division; no descriptor ABI bump. */
+ABI_ASSERT(OP_IDIV, 100);
 
 /* #704: the revision the ABI-stamped descriptors in the .eigs fixtures under
  * tests/ declare. Those

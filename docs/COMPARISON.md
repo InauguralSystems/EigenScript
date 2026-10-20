@@ -15,6 +15,23 @@ fundamental way: **every assignment is observed**, and the language has
 first-class constructs (`converged`, `what is x`, `prev of x`) for
 asking the running program about its own state and history.
 
+
+`//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
+operation to its assignment target, like `/=`. Zero divisors raise `value`
+for all numeric operand kinds in this round. Two ints produce an int for
+`//` and `%`; a float operand produces a float. `/` always produces a float.
+
+```eigenscript
+x is -7
+x //= 2
+print of [x, 7 // -2, -7 % 3, 7 % -3, -7.5 % 2]
+print of [num_type of (7 // 2), num_type of (7.0 // 2)]
+```
+```output
+[-4, -4, 2, -2, 0.5]
+["int", "float"]
+```
+
 ## At a glance
 
 | | Python | JavaScript | Rust | Lisp | EigenScript |
@@ -68,14 +85,14 @@ print(7 // 2)       # 3   (floor division operator)
 
 EigenScript — int64 and float64 share the `num` type; `num_type of`
 distinguishes their kind. Int `+ - *` raise `value` on overflow; mixed-kind
-comparison is exact. Division returns a float; floor explicitly:
+comparison is exact. `/` returns a float; `//` floors the quotient:
 
 ```eigenscript
 x is 42
 x += 1
 print of x
 print of (7 / 2)
-print of (floor of (7 / 2))
+print of (7 // 2)
 ```
 ```output
 43

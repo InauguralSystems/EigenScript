@@ -131,6 +131,10 @@ EXPECTED=$(printf 'x is 1 + 2\n')
 check "--write mode" "$ACTUAL" "$EXPECTED"
 rm -f "$TMPFILE"
 
+# #1758 N4/Q6: formatter inherits the lexer's single operator table.
+ACTUAL=$(fmt_str "$(printf 'x is -7//2\nx//=2\n')")
+check "// and //= spaced whole" "$ACTUAL" "$(printf 'x is -7 // 2\nx //= 2\n')"
+
 # --- Multi-char operators must not be split (#729) ---
 # The third pass of fix_spacing is character-level; any operator missing from
 # its multi-char table gets split by the single-char branches, which silently

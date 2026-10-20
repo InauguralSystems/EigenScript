@@ -274,7 +274,7 @@ gates (design §9.2).
   -> `[3.5, 3.0, "float"]`
   tag: `[3.5, 3, ...]` then `num_type` undefined (probed main for `[3.5, 3]`)
 - `N4.floordiv` [R1.4] `print of [7 // 2, -7 // 2, 7.5 // 2, num_type of (7 // 2), num_type of (7.5 // 2)]`
-  -> `[3, -4, 3.0, "int", "float"]`
+  -> `[3, -4, 3, "int", "float"]` (R1.4 text; N6 adds `.0` to the float at R1.7)
   tag: parse error, `unexpected '/'` (probed main)
 - `N4.floor-mod` [R1.4] `print of [-7 % 3, 7 % -3, -7.5 % 2, 7 % 3]`
   -> `[2, -2, 0.5, 1]`
@@ -301,6 +301,17 @@ gates (design §9.2).
   -> `3.0`
   tag: `3` (probed main)
   shape: F  witness: fn-stop d DIV (SMI operands fail DIV's operand guard)  ops: DIV
+
+- `N4.fn-floordiv` [R1.4] a multi-statement `d(a, b)` returns `a // b`, called 60 times with `[-7.5, 2]`; print the value and kind
+  -> `[-4, "float"]` (R1.4 float text)
+  tag: parse error
+  shape: F  witness: fn-stop d IDIV (the scanner's default refuses IDIV)  ops: IDIV
+- `N4.compound-floordiv` [R1.4] apply `//=` to a name, a dict field and list indices, with int and float operands of both signs
+  -> `[-4, -4, [-4, -4], "int", "float"]`
+  tag: parse error
+- `N4.float-floordiv-zero-raises` [R1.4] float/mixed `// 0`, including `0.0 // 0.0` and negative zero
+  -> `["value", "division by zero"]` four times (same as `/`, until N11; #1758 comment 6294926822)
+  tag: parse error
 
 ### N4b
 - `N4b.neg-min-raises` [R1.3] `m is -9223372036854775807 - 1 / {try print of (-m) catch}`

@@ -160,6 +160,23 @@ Comparisons, `not` and predicates return `true`/`false`, a `bool`. A bool is
 not a number: `true + 1` and `(x > 0) == 1` raise, so test a bool directly
 (`if x > 0:`). See [docs/SPEC.md](docs/SPEC.md#booleans-comparison-and-logic).
 
+
+`//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
+operation to its assignment target, like `/=`. Zero divisors raise `value`
+for all numeric operand kinds in this round. Two ints produce an int for
+`//` and `%`; a float operand produces a float. `/` always produces a float.
+
+```eigenscript
+x is -7
+x //= 2
+print of [x, 7 // -2, -7 % 3, 7 % -3, -7.5 % 2]
+print of [num_type of (7 // 2), num_type of (7.0 // 2)]
+```
+```output
+[-4, -4, 2, -2, 0.5]
+["int", "float"]
+```
+
 ### Ask Your Code
 
 Every value quietly remembers how it has been changing — and you don't pay

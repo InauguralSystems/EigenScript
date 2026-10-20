@@ -347,7 +347,7 @@ const char *op_name(uint8_t op) {
 #define N(o) case o: return #o + 3;
     N(OP_CONST) N(OP_NULL) N(OP_NUM_ZERO) N(OP_NUM_ONE) N(OP_TRUE) N(OP_FALSE)
     N(OP_INT_ZERO) N(OP_INT_ONE) N(OP_INT_CONST)
-    N(OP_ADD) N(OP_SUB) N(OP_MUL) N(OP_DIV) N(OP_MOD)
+    N(OP_ADD) N(OP_SUB) N(OP_MUL) N(OP_DIV) N(OP_MOD) N(OP_IDIV)
     N(OP_BAND) N(OP_BOR) N(OP_BXOR) N(OP_SHL) N(OP_SHR)
     N(OP_NEG) N(OP_NOT) N(OP_BNOT)
     N(OP_EQ) N(OP_NE) N(OP_LT) N(OP_GT) N(OP_LE) N(OP_GE)
@@ -521,7 +521,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
      * silently walk wrong. */
     case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE: case OP_TRUE: case OP_FALSE:
     case OP_INT_ZERO: case OP_INT_ONE:
-    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
+    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD: case OP_IDIV:
     case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
     case OP_NEG: case OP_NOT: case OP_BNOT:
     case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
@@ -665,7 +665,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
      * DOT_GET, ITER_SETUP and the interrogatives. They still require their
      * operands: see the frame-base note above — vm_pop()'s guard is the bottom
      * of the whole VM stack, not the bottom of this frame's window. */
-    case OP_DIV: case OP_MOD:
+    case OP_DIV: case OP_MOD: case OP_IDIV:
         return EFF(2, 2, 1);
     case OP_DOT_GET: case OP_ITER_SETUP:
     case OP_INTERROGATE: case OP_INTERROGATE_NAMED:

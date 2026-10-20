@@ -216,7 +216,7 @@ sqrt(2) = 1.414213562373095
   `num_type of` says "int"/"float", or null for a non-number. Int +, -, *
   raise value on overflow; unary minus and abs raise at INT64_MIN. Mixed
   arithmetic converts to float, while cross-kind comparison is exact.
-  Division and most builtin results remain floats at this stage.
+  True division `/` and most builtin results remain floats at this stage.
   Float overflow saturates at ±1e308.
   Integer bit ops accept exact int64 operands; builtin results and infix
   results still convert to float until the bitwise/builtin rounds.
@@ -236,6 +236,23 @@ sqrt(2) = 1.414213562373095
   `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
   substitution. `str_from_bytes` stops at numeric NUL without inspecting later
   elements; byte codecs consume the complete list.
+
+`//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
+operation to its assignment target, like `/=`. Zero divisors raise `value`
+for all numeric operand kinds in this round. Two ints produce an int for
+`//` and `%`; a float operand produces a float. `/` always produces a float.
+
+```eigenscript
+x is -7
+x //= 2
+print of [x, 7 // -2, -7 % 3, 7 % -3, -7.5 % 2]
+print of [num_type of (7 // 2), num_type of (7.0 // 2)]
+```
+```output
+[-4, -4, 2, -2, 0.5]
+["int", "float"]
+```
+
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`. Each `{…}` converts with the builtin `str`, even if you rebind `str`.

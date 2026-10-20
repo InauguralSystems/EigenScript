@@ -221,7 +221,7 @@ static TokType keyword_type(const char *word) {
 }
 
 int tok_base_string_id_count(void) {
-    return (int)TOK_EOF + 1;
+    return (int)TOK_SLASH_SLASH_EQ + 1;
 }
 
 /* Recognised multi-char operators. Each operator is spelled once, as
@@ -229,6 +229,7 @@ int tok_base_string_id_count(void) {
 #define LEX_MULTI_OP_MAP(X2, X3) \
     X3(TOK_SHL_EQ, '<', '<', '=') \
     X3(TOK_SHR_EQ, '>', '>', '=') \
+    X3(TOK_SLASH_SLASH_EQ, '/', '/', '=') \
     X2(TOK_EQ, '=', '=') \
     X2(TOK_NE, '!', '=') \
     X2(TOK_LE, '<', '=') \
@@ -239,6 +240,7 @@ int tok_base_string_id_count(void) {
     X2(TOK_MINUS_EQ, '-', '=') \
     X2(TOK_STAR_EQ, '*', '=') \
     X2(TOK_SLASH_EQ, '/', '=') \
+    X2(TOK_SLASH_SLASH, '/', '/') \
     X2(TOK_PERCENT_EQ, '%', '=') \
     X2(TOK_AMP_EQ, '&', '=') \
     X2(TOK_BITOR_EQ, '|', '=') \
@@ -355,6 +357,8 @@ const char* tok_base_string(TokType t) {
         case TOK_MINUS:      return "- ";
         case TOK_STAR:       return "* ";
         case TOK_SLASH:      return "/ ";
+        case TOK_SLASH_SLASH: return "// ";
+        case TOK_SLASH_SLASH_EQ: return "//= ";
         case TOK_PERCENT:    return "% ";
         case TOK_LT:         return "< ";
         case TOK_GT:         return "> ";

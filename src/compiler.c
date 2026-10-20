@@ -322,7 +322,7 @@ static int op_stack_effect(uint8_t op8) {
     case OP_POP:
         return -1;
     /* Pop 2, push 1 = net -1 */
-    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
+    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD: case OP_IDIV:
     case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
     case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
     case OP_INDEX_GET:
@@ -663,6 +663,7 @@ static uint8_t binop_to_opcode(const char *op) {
     if (op[0] == '-' && op[1] == 0) return OP_SUB;
     if (op[0] == '*' && op[1] == 0) return OP_MUL;
     if (op[0] == '/' && op[1] == 0) return OP_DIV;
+    if (op[0] == '/' && op[1] == '/') return OP_IDIV;
     if (op[0] == '%' && op[1] == 0) return OP_MOD;
     if (op[0] == '&' && op[1] == 0) return OP_BAND;
     if (op[0] == '|' && op[1] == 0) return OP_BOR;

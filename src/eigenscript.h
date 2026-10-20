@@ -187,7 +187,8 @@ typedef enum {
     TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ,
     TOK_AMP_EQ, TOK_BITOR_EQ, TOK_CARET_EQ, TOK_SHL_EQ, TOK_SHR_EQ,
     TOK_NEWLINE, TOK_INDENT, TOK_DEDENT,
-    TOK_EOF
+    TOK_EOF,
+    TOK_SLASH_SLASH, TOK_SLASH_SLASH_EQ /* #1758 N4/Q6: append; existing token IDs stay fixed */
 } TokType;
 
 typedef struct {

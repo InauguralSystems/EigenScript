@@ -159,7 +159,7 @@ inner
 outer
 ```
 
-Compound assignment operators update in place: `+= -= *= /= %= &= |= ^=
+Compound assignment operators update in place: `+= -= *= /= //= %= &= |= ^=
 <<= >>=`. They work on plain names, dict fields, and indexed elements.
 
 ```eigenscript
@@ -193,13 +193,34 @@ literal falls back to float. Hex integer literals wrap modulo 2^64.
 Int `+`, `-` and `*` preserve the int kind and raise `value` on int64 overflow.
 Unary minus and `abs` also raise on INT64_MIN. Mixed int/float arithmetic
 converts the int to float; comparison across kinds is exact, including
-above 2^53. `/` still returns float; `%` retains truncating float remainder
-until the floor-division round. Builtins retain their documented float
+above 2^53. `/` returns float; `//` floors (an int for two ints, a float otherwise).
+`%` is floor modulo for both kinds, with the sign of the divisor. Both int
+operators are exact, and `INT64_MIN // -1` raises `value` while
+`INT64_MIN % -1` is the int 0. Division, floor division and modulo by zero
+raise `value`, including float and mixed operands (IEEE zero division waits
+for N11). Builtins retain their documented float
 results during this transition, except `abs`, which preserves ints.
 
 Integer-valued floats print without a
 decimal point. Division is true division. `%` is modulo. There is no
 exponent operator; use `pow of [base, exp]`.
+
+
+`//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
+operation to its assignment target, like `/=`. Zero divisors raise `value`
+for all numeric operand kinds in this round. Two ints produce an int for
+`//` and `%`; a float operand produces a float. `/` always produces a float.
+
+```eigenscript
+x is -7
+x //= 2
+print of [x, 7 // -2, -7 % 3, 7 % -3, -7.5 % 2]
+print of [num_type of (7 // 2), num_type of (7.0 // 2)]
+```
+```output
+[-4, -4, 2, -2, 0.5]
+["int", "float"]
+```
 
 Numeric literals accept the usual decimal forms plus a leading or
 trailing dot and scientific notation: `.5`, `1.`, `1e5`, `1E5` are all

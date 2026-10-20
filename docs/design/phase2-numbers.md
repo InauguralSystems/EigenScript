@@ -1676,7 +1676,9 @@ numbers are at `0740af03`.
   - parser.c (multiplicative level), fmt.c, lint, the LSP and ouroboros
     `frontend.eigs`;
   - JIT MOD (§4.2).
-  - Float `x % 0` (NaN) and `x / 0` (inf) wait for N11 in round 2.
+  - Float `x % 0` (NaN), `x / 0` (inf) and float/mixed `x // 0`
+    (`floor(x/0)`, ±inf or NaN) wait for N11 in round 2. All raise today;
+    the `//` rule is #1758 comment 6294926822.
 - **N4b (INT64_MIN edges):**
   - vm.c:3522 `CASE(NEG)` (int arm raises on INT64_MIN);
   - builtins.c `builtin_abs` (2056);
@@ -1738,6 +1740,10 @@ numbers are at `0740af03`.
   - eigenscript.h:1876 `num_guard`, `num_guard_named`, `EIGS_NUM_MAX` and
     `STRICT_DOMAIN`: the 74 clamp sites (`num_guard` 60, `num_guard_named`
     6, `EIGS_NUM_MAX` 8);
+  - vm.c `CASE(DIV)`, `CASE(MOD)` and the float/mixed arm of `CASE(IDIV)`:
+    all three zero-divisor checks raise through R1.4; N11 changes them together
+    to IEEE division, floor division (`floor(x/0)`, ±inf or NaN) and modulo
+    (NaN), per #1758 comment 6294926822. Int `// 0` and `% 0` still raise;
   - builtins_tensor.c `op_sqrt` (711) and `op_log_safe` (729);
   - builtins.c `asin`/`acos` domain;
   - state.c:62 `st->strict` defaults to 1 and must become opt-in;
@@ -2256,7 +2262,7 @@ failing on zero rows:
 | R1.1 | 0 | mechanical: the compile errors (223 sites), the C slot test (§2.5; `examined` equals the derived classifier count), plant 1, the int-source check, and the differential over the suite's `.eigs` corpus |
 | R1.2 | 0 | mechanical: the compile errors (464 sites), the int-source check, and the differential over the suite's `.eigs` corpus (behaviour-preserving) |
 | R1.3 | 51 | `gate.N5.iterator-metadata` |
-| R1.4 | 6 | |
+| R1.4 | 9 | |
 | R1.5 | 7 | |
 | R1.6 | 17 | `gate.N5.q7-readers`, and the per-builtin behaviour table (§9.4) |
 | R1.7 | 12 | `gate.N14.db-param-exact` |

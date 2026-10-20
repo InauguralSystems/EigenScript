@@ -227,6 +227,7 @@ typedef enum {
     OP_INT_ZERO,        /*obs:NONE*/ /* push int 0 */
     OP_INT_ONE,         /*obs:NONE*/ /* push int 1 */
     OP_INT_CONST,       /*obs:NONE*/ /* [idx:16] push int constant pool entry */
+    OP_IDIV,            /*obs:NONE*/ /* #1758 N4: floor division, appended */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 

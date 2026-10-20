@@ -64,6 +64,16 @@ int vm_sandbox_work_charge(uint64_t amount) {
     return 1;
 }
 
+/* #1758 N4: floor modulo. Avoid a - floor(a/b)*b: a/b can overflow or
+ * round across an integer boundary. As in Lua's luai_nummod, correct fmod's
+ * truncating remainder to have the divisor's sign. The executor uses only
+ * this floor result, never the truncating remainder. */
+static double vm_floor_mod(double a, double b) {
+    double rem = fmod(a, b);
+    if (rem != 0.0 && ((rem < 0.0) != (b < 0.0))) rem += b;
+    return rem;
+}
+
 /* #262 Phase-3 D: read the last-observed trajectory (dH, entropy) for the
  * observer loop-stall check. Prefers the slot model (the default); falls back
  * to the global last-observer Value when the slot isn't populated (e.g. a
@@ -3196,6 +3206,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_TRUE] = &&lbl_TRUE, [OP_FALSE] = &&lbl_FALSE,
         [OP_ADD] = &&lbl_ADD, [OP_SUB] = &&lbl_SUB,
         [OP_MUL] = &&lbl_MUL, [OP_DIV] = &&lbl_DIV, [OP_MOD] = &&lbl_MOD,
+        [OP_IDIV] = &&lbl_IDIV,
         [OP_BAND] = &&lbl_BAND, [OP_BOR] = &&lbl_BOR, [OP_BXOR] = &&lbl_BXOR,
         [OP_SHL] = &&lbl_SHL, [OP_SHR] = &&lbl_SHR,
         [OP_NEG] = &&lbl_NEG, [OP_NOT] = &&lbl_NOT, [OP_BNOT] = &&lbl_BNOT,
@@ -3573,19 +3584,73 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH();
     }
 
+    CASE(IDIV): {
+        Value *b = vm_pop(); Value *a = vm_pop();
+        if (val_is_number(a) && val_is_number(b)) {
+            if (a->type == VAL_INT && b->type == VAL_INT) {
+                int64_t ai = VAL_I64_RAW(a), bi = VAL_I64_RAW(b);
+                if (bi == 0) {
+                    rt_error(EK_VALUE, current_line, "division by zero");
+                    vm_push(make_int(0));
+                } else if (ai == INT64_MIN && bi == -1) {
+                    rt_error(EK_VALUE, current_line, "integer overflow in '//'");
+                    vm_push(make_int(0));
+                } else {
+                    int64_t q = ai / bi, rem = ai % bi;
+                    /* C truncates. A nonzero remainder with the opposite sign
+                     * to the divisor moves the quotient down by one (N4). */
+                    if (rem != 0 && ((rem < 0) != (bi < 0))) q--;
+                    vm_push(make_int(q));
+                }
+            } else {
+                double divisor = eigs_num_arg(b, "floor division");
+                /* #1758 comment 6294926822: exactly DIV's error through R1.4.
+                 * N11 changes this float arm with DIV/MOD to IEEE floor(x/0). */
+                if (divisor == 0.0) {
+                    rt_error(EK_VALUE, current_line, "division by zero");
+                    vm_push(make_num(0));
+                } else {
+                    vm_push(make_num(num_guard(floor(eigs_num_arg(a, "floor division") / divisor))));
+                }
+            }
+        } else {
+            rt_error(EK_TYPE, current_line, "cannot apply '//' to %s and %s",
+                     val_type_name(a->type), val_type_name(b->type));
+            vm_push(make_int(0));
+        }
+        /* vm_pop owns both boxes, including INT64_MIN and a boxed divisor;
+         * every result and raise path releases both references. */
+        val_decref(a); val_decref(b);
+        DISPATCH();
+    }
+
     CASE(MOD): {
         Value *b = vm_pop(); Value *a = vm_pop();
-        if (val_is_number(a) && val_is_number(b) && eigs_num_arg(b, "modulo") != 0.0) {
-            double r = num_guard(fmod(eigs_num_arg(a, "modulo"), eigs_num_arg(b, "modulo")));
-            if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
-            if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
-            vm_push(make_num(r));
+        if (val_is_number(a) && val_is_number(b)) {
+            if (a->type == VAL_INT && b->type == VAL_INT) {
+                int64_t ai = VAL_I64_RAW(a), bi = VAL_I64_RAW(b);
+                if (bi == 0) {
+                    rt_error(EK_VALUE, current_line, "modulo by zero");
+                    vm_push(make_int(0));
+                } else {
+                    /* N4b: x86 idiv faults for INT64_MIN / -1 even when only
+                     * the remainder is needed. Handle it before C's %. */
+                    int64_t rem = bi == -1 ? 0 : ai % bi;
+                    if (rem != 0 && ((rem < 0) != (bi < 0))) rem += bi;
+                    vm_push(make_int(rem));
+                }
+            } else {
+                double divisor = eigs_num_arg(b, "modulo");
+                if (divisor == 0.0) {
+                    rt_error(EK_VALUE, current_line, "modulo by zero");
+                    vm_push(make_num(0));
+                } else {
+                    vm_push(make_num(num_guard(vm_floor_mod(eigs_num_arg(a, "modulo"), divisor))));
+                }
+            }
         } else {
-            if (!(val_is_number(a) && val_is_number(b)))
-                rt_error(EK_TYPE, current_line, "cannot apply '%%' to %s and %s",
-                    val_type_name(a->type), val_type_name(b->type));
-            else
-                rt_error(EK_VALUE, current_line, "modulo by zero");
+            rt_error(EK_TYPE, current_line, "cannot apply '%%' to %s and %s",
+                     val_type_name(a->type), val_type_name(b->type));
             vm_push(make_num(0));
         }
         val_decref(a); val_decref(b);

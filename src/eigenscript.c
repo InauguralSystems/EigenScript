@@ -246,6 +246,8 @@ const char* tok_type_name(TokType t) {
         case TOK_MINUS: return "'-'";
         case TOK_STAR: return "'*'";
         case TOK_SLASH: return "'/'";
+        case TOK_SLASH_SLASH: return "'//'";
+        case TOK_SLASH_SLASH_EQ: return "'//='";
         case TOK_PERCENT: return "'%'";
         case TOK_LT: return "'<'";
         case TOK_GT: return "'>'";
