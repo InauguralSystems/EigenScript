@@ -1,0 +1,1 @@
+- Fixed `poisson_pmf` (and so `poisson_cdf`) returning wrong results at large parameters, where `lambda^k`, `e^-lambda` or `k!` leaves the double range: `poisson_pmf of [170, 170.0]` returned `2.04e-73` instead of `0.0306`. Results where the direct formula is valid are unchanged to the last digit. ([#1861](https://github.com/InauguralSystems/EigenScript/issues/1861))
