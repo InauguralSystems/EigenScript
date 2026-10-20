@@ -48,3 +48,4 @@ tests/task_exit_detached_tape.eigs 1 deliberate uncaught worker/task error: the 
 tests/task_exit_detached_try.eigs 1 deliberate uncaught worker/task error: the suite expects exit 1 (#1736)
 tests/thread_exit_join_uncaught.eigs 1 deliberate uncaught worker/task error: the suite expects exit 1 (#1745)
 tests/thread_exit_unjoined_death.eigs 1 deliberate uncaught worker/task error: the suite expects exit 1 (#1745)
+tests/task_exit_worker_unjoined_task.eigs 1 deliberate unjoined worker-task error: tests/sections/104c-worker-task-exit-1810.sh requires process exit 1 (#1810)
