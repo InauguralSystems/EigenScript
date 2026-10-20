@@ -4071,9 +4071,8 @@ Value* builtin_set_at(Value *arg) {
      * one. A non-number value is refused with buf_set's message rather than
      * silently type-punned. `at_index`'s negative-from-the-end rule applies
      * to buffers too. */
-    if ((argc == 3 || argc == 4) && BUILTIN_LIST_VIEW(arg, 0)
-        && BUILTIN_LIST_VIEW(arg, 0)->type == VAL_BUFFER) {
-        Value *buf = BUILTIN_LIST_VIEW(arg, 0);
+    Value *buf = (argc == 3 || argc == 4) ? list_get_ref(arg, 0) : NULL;
+    if (buf && buf->type == VAL_BUFFER) {
         Value *val = BUILTIN_LIST_VIEW(arg, argc == 3 ? 2 : 3);
         int64_t off;
         if (argc == 3) {
@@ -4508,8 +4507,15 @@ Value* builtin_spawn(Value *arg) {
      * every later spawn raced with already-running workers reading the flag in
      * env_incref / chunk_incref (the refcount-mode gate). Later spawns now only
      * READ it (the value is already published to all workers via the first
-     * write's happens-before through their pthread_create). */
-    if (!g_vm_multithreaded) g_vm_multithreaded = 1;
+     * write's happens-before through their pthread_create).
+     *
+     * #1171: before the flag goes up, make every inline-cache entry aimed at
+     * a shared env miss. A cache hit reads a binding with no lock, and from
+     * here on another thread may rebind it. */
+    if (!g_vm_multithreaded) {
+        env_mt_invalidate_shared_caches(eigs_current->state);
+        g_vm_multithreaded = 1;
+    }
     /* #827: #739's per-thread history is filtered by a PROCESS-global armed-name
      * set that the compiler grows. Single-threaded that is fine (compile, then
      * run), but a worker calling eval/load_file compiles concurrently with other
@@ -5110,7 +5116,10 @@ Value* builtin_task_join(Value *arg) {
     if (t->state == TASK_DONE || t->state == TASK_DEAD) {
         /* Already finished: deliver its result / error now, no suspend. */
         if (t->has_error) {
-            t->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
+            if (t->err_unobserved) {
+                t->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
+                task_observe_error();
+            }
             if (t->error_value) {
                 val_incref(t->error_value);
                 eigs_clear_error_value();

@@ -51,6 +51,7 @@ typedef struct {
     int   active;                 /* armed on first spawn */
     int   dead_letters;           /* inc 2: sends to finished/unknown tasks */
     int   detached_err_count;     /* #530: reaped detached tasks that died unobserved (#493 gate) */
+    int   joinable_err_count;     /* #1810: dead joinable tasks not yet observed on this scheduler */
     /* #1736 fail-fast latch. Set at the one moment the runtime knows no
      * task_join can ever see an uncaught error: a DETACHED task died of one
      * (sched_finish), or task_detach was asked to release a task that already
@@ -139,6 +140,14 @@ void task_sched_thread_free(void) {
     TaskScheduler *s = sched_get();
     if (!s) return;
     Task *m = &s->main_task;
+    /* #1810: the CLI exit gate runs on the main thread, but cooperative
+     * schedulers belong to OS threads. Preserve a spawned worker's
+     * unobserved joinable-task deaths on the shared state before this
+     * scheduler disappears. Detached-task deaths already unwind the worker
+     * and are counted by thread_entry, so they are deliberately excluded. */
+    if (eigs_current->is_spawn_worker && s->joinable_err_count > 0)
+        __atomic_add_fetch(&eigs_current->state->spawn_err_count,
+                           s->joinable_err_count, __ATOMIC_RELAXED);
     /* #483: main is USUALLY run-to-completion here (empty slice). But a fatal
      * exit while main is still SUSPENDED — a `deadlock`, or main blocked on a
      * join/recv that never resolves — leaves a live saved slice whose counted
@@ -181,11 +190,17 @@ int task_any_unobserved_error(void) {
     if (!g_task_sched) return 0;
     /* #530: reaped detached tasks that died unobserved are counted, not held. */
     if (((TaskScheduler *)g_task_sched)->detached_err_count > 0) return 1;
+    if (((TaskScheduler *)g_task_sched)->joinable_err_count > 0) return 1;
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
         Task *t = (Task *)handle_lookup_slot(i, HANDLE_TASK);
         if (t && t->err_unobserved) return 1;
     }
     return 0;
+}
+
+void task_observe_error(void) {
+    TaskScheduler *s = sched_get();
+    if (s && s->joinable_err_count > 0) s->joinable_err_count--;
 }
 
 Task *task_current_running(void) {
@@ -770,7 +785,10 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
          * if nothing ever joins it. Main (task 0) already propagates its own
          * error via the trampoline's return, so only mark workers here; a
          * later task_join on this task clears the flag. */
-        if (t->id != 0) t->err_unobserved = 1;
+        if (t->id != 0) {
+            t->err_unobserved = 1;
+            s->joinable_err_count++;
+        }
         if (r) val_decref(r);
         t->result = NULL;
     } else {
@@ -798,6 +816,7 @@ static void sched_finish(TaskScheduler *s, Task *t, Value *r) {
      * flag still moves to the scheduler counter before the slot frees. */
     if (t->id != 0 && t->detached) {
         if (t->err_unobserved) {
+            s->joinable_err_count--;
             s->detached_err_count++;
             sched_fatal_detached_death(s, t);
         }
@@ -873,7 +892,10 @@ void task_apply_join_result(Task *t) {
     }
     if (!jt) return;
     if (jt->has_error) {
-        jt->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
+        if (jt->err_unobserved) {
+            jt->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
+            s->joinable_err_count--;
+        }
         /* Re-raise: restore the error payload so the joiner's CHECK_ERROR
          * catches/propagates it as if the throw happened at the join. */
         if (jt->error_value) {

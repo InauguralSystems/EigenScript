@@ -7,14 +7,17 @@ document is the contract for what is shared, what is copied, and what that
 costs — the questions a static type cannot answer for you.
 
 Closures may capture bindings and containers by reference. **Any concurrent
-access to one of those shared bindings or containers is undefined, including
-a read racing a write.** This is not merely a lost-update rule: measured
+access to a shared container (a list, an ordinary dict), or to a binding a
+closure captured from a function's scope, is undefined, including a read
+racing a write.** This is not merely a lost-update rule: measured
 shared-list races have terminated in `realloc(): invalid old size` and
-`double free or corruption`, and a binding reader can retain a value after a
-writer has freed it. The lock added in #607 protects root-environment array
-growth only; it does not make a slot's value, a list, or an ordinary dict safe
-for concurrent access. Transfer values through channels, or join the writer
-before reading them.
+`double free or corruption`, and a reader of a captured binding can still
+retain a value after a writer has freed it. A **module-level** binding (the
+global scope, or a module namespace) is different since #1171: reading or
+calling it while another thread rebinds it never touches a freed value, and
+which value the reader sees is the program's own race (see "Loading from
+workers" below). Transfer values through channels, or join the writer before
+reading them.
 
 ## The one rule: VALUES copy, HANDLES share
 
@@ -498,17 +501,23 @@ A `spawn`ed worker that imports stdlib modules its siblings do not import is
 fine, and is gated (`tests/test_loader_mt.sh`, plus the loader rows in
 `tests/test_tsan.sh`).
 
-**Two threads writing one binding is a separate, tracked defect, not just a
-style rule.** Because a shared-root slot is read by BORROWING the value and
-taking the reference afterwards, a concurrent overwrite can free what the
-other thread is still running: two workers that `load_file` a module whose
-`define` rebinds one global report ~20 ThreadSanitizer races per run and dump
-core roughly 1 run in 5. That is the class the `#607` comment in
-`src/eigenscript.c` declares out of scope ("two threads racing on the SAME
-slot's value or assign-count"); it predates the loader work and is filed on
-its own as #1171 with a repro and a fix direction (a counted reference taken inside the
-hold). Until it is closed, treat the two patterns above as a requirement
-rather than advice.
+**Two threads writing one module-level binding no longer corrupt it
+(#1171).** A shared-root slot used to be read by BORROWING the value and
+taking the reference afterwards, so a concurrent overwrite could free what
+the other thread was about to call: two workers that `load_file` a module
+whose `define` rebinds one global dumped core. Now the read takes its counted
+reference inside the lock under which the rebind releases the old value, the
+assignment count is bumped inside the same lock, an inline cache filled
+before the first `spawn` cannot read such a binding without it, and a call
+keeps its callee until the new frame holds the callee's code. Which
+definition a racing caller gets is still the program's race, which is why
+the two patterns above remain the way to make it deterministic. Gated by
+`tests/rebind_call_race.eigs` (suite [0fo], and a zero-report row in
+`tests/test_tsan.sh`) and `tests/rebind_call_self.eigs` ([0fo]). Not covered
+yet: a binding in a FUNCTION's scope that closures running on two threads
+share (#1837), and the binding's observer slot, which two threads still fold
+without the lock once the binding is interrogated or `EIGS_OBS_FORCE=1` is
+set.
 
 **One shared slot the patterns above do NOT avoid: `__loop_iterations__`.**
 The runtime publishes a loop's iteration count as an ordinary binding in the
@@ -520,8 +529,8 @@ under multithreading uses the existing locked environment setter, including
 the assignment-count update, instead of the cached slot-write path. The
 calculation counter remains thread-local and call-frame scoped; the shared
 binding still holds the last published value, not a sum across threads.
-This narrow runtime-bookkeeping change does not establish safety for concurrent
-user access to shared bindings or complete the remaining work tracked by #1171.
+This narrow runtime-bookkeeping change came first; concurrent reads and
+rebinds of module-level bindings were made safe by #1171 (above).
 
 ## Observer arming sets are process-global and locked (#1145)
 
@@ -575,7 +584,7 @@ What happens next depends on whether anything can still observe that error:
 |---|---|---|
 | A **detached** task dies of an uncaught error | **Fail fast**: its trace prints and the program stops at main's next scheduling point, or in the exit drain if main never yields | 1 |
 | A task dies, **then** is detached | The program stops at that `task_detach` call: detaching would discard an error the runtime already holds | 1 |
-| A **joinable** task dies and is not yet joined | Unchanged (#493): main continues, and a later `try`/`catch` around `task_join` recovers the error; if it is never joined, the run still fails at exit | 1, or 0 if caught |
+| A **joinable** task dies and is not yet joined | Unchanged (#493): its OS thread continues, and a later `try`/`catch` around `task_join` recovers the error; if it is never joined, the run still fails at exit. This is identical on the main scheduler and a spawned worker's scheduler (#1810). | 1, or 0 if caught |
 | An **OS thread** (`spawn`) dies and is **never joined** | Unchanged (#1112): main completes, and the run still fails at exit | 1 |
 | An **OS thread** dies and is **joined** | **Raised at the join** (#1745): `thread_join` re-raises the worker's error in the joiner, with its kind and message, or as the value the worker threw. Catching it observes the failure, as catching a failed `task_join` does | 1, or 0 if caught |
 

@@ -168,14 +168,29 @@ eigs> double of 21
 ```
 
 Multi-line input (functions, loops, conditionals) is detected automatically
-when a line ends with `:`. A blank line ends the block. So does an unindented
-non-blank line — that line is part of the same unit and runs with the block:
+when a line ends with `:`. A dedented `catch`, `elif`, or `else` clause keeps
+the compound statement open so its suite can be entered. A blank line ends the
+block. So does any other unindented non-blank line — that line is part of the
+same unit and runs with the block:
 
 ```
 eigs> if 2 > 1:
 ...       total is 51 + 6
 ... total + 1
 => 58
+```
+
+For example, a top-level conditional can be entered as one input unit:
+
+```
+eigs> if 1 > 10:
+...       print of "big"
+... elif 2 > 10:
+...       print of "medium"
+... else:
+...       print of "small"
+...
+small
 ```
 
 If such a unit fails to tokenize, parse or compile, nothing in it ran, so the

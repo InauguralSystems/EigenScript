@@ -1196,9 +1196,10 @@ Value* builtin_read_text(Value *arg) {
 
 /* ==== BUILTIN: read_line ==== */
 /* read_line of null — blocking line read from stdin via getline(3):
- * returns the next line without its trailing newline (a "\r\n"
- * terminator is stripped as one unit), or null at EOF. An empty line is
- * "" — distinguishable from EOF. The stream-safe stdin primitive
+ * returns the next line including its line terminator, or null at EOF.
+ * Thus "\r\n" stays byte-exact and a terminated final line differs from
+ * an unterminated one. An empty line is "\n" — distinguishable from EOF.
+ * The stream-safe stdin primitive
  * (#558): read_text of "/dev/stdin" sizes with fseek/ftell, which fails
  * on an unseekable fd, so a PIPE silently reads as "" — any CLI meant to
  * sit in a shell pipeline needs this instead. Nondeterministic input →
@@ -1214,8 +1215,6 @@ Value* builtin_read_line(Value *arg) {
         free(line);
         TRACE_NONDET_RECORD("read_line", make_null());
     }
-    if (n > 0 && line[n - 1] == '\n') line[--n] = '\0';
-    if (n > 0 && line[n - 1] == '\r') line[--n] = '\0';
     Value *v = make_str(line);
     free(line);
     TRACE_NONDET_RECORD("read_line", v);

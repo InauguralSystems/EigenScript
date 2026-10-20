@@ -3188,16 +3188,20 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
  *   - g_module_env_lock serializes module-env structural mutation
  *     against the module-env hop of every chain walker;
  *   - grown-out arrays are RETIRED on the env (freed only when the env
- *     is parked/destroyed), so a post-resolve slot load OUTSIDE the lock
- *     can never touch freed memory (total waste is bounded by geometric
- *     doubling: < 2x the final array size);
- *   - the values/assign_counts pointers are published with release
- *     stores and read at the post-resolve sites via env_values_ptr /
- *     env_assign_counts_ptr (acquire), so the pointer word itself is
- *     synchronized.
- * Out of scope (pre-existing, separate class): two threads racing on
- * the SAME slot's value or assign-count — that is slot-value semantics,
- * not memory safety of the arrays. */
+ *     is parked/destroyed), so a reader still holding an old array
+ *     pointer can never touch freed memory (total waste is bounded by
+ *     geometric doubling: < 2x the final array size);
+ *   - the names/values/assign_counts pointers are published with release
+ *     stores.
+ * #1171 widened this from the arrays to the BINDING: two threads on the
+ * SAME slot (one rebinding, one reading or calling it) used to be declared
+ * out of scope here, and the reader could count and call a value the
+ * rebind had just freed. Now a shared env's slot is read and written only
+ * inside this hold: env_resolve_chain_ref takes the reader's reference
+ * inside it, env_store_slot drops the displaced value and bumps the
+ * assign-count inside it, and env_mt_invalidate_shared_caches keeps the
+ * lock-free inline-cache hits off shared envs while multithreaded. Which
+ * value a racing reader sees is still the program's logic race (#1837). */
 static pthread_mutex_t g_module_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* #1161: ONE definition of "shared env under MT". The old spelling was
@@ -3226,6 +3230,37 @@ void env_global_shared_unlock(void) { env_shared_unlock(g_global_env); }
 /* #1161: see Env::mt_shared. Idempotent, and deliberately one-way — an env
  * that has been published to another thread never becomes private again. */
 void env_mark_shared(Env *e) { if (e) e->mt_shared = 1; }
+
+/* #1171: the 0->1 multithreaded transition (builtin_spawn), called while the
+ * caller is still the state's only attached thread.
+ *
+ * Under MT another thread may rebind a shared env's binding at any moment, so
+ * the value is read only inside the hold (env_resolve_chain_ref). An inline
+ * cache hit reads it with no lock at all, which is why nothing populates the
+ * caches while multithreaded (#297; the JIT helpers too, since #1171). An
+ * entry populated BEFORE the flip is still HIT after it, though: measured on
+ * main, a module-level loop that spawned rebinding workers kept reading the
+ * global through its pre-spawn entry (TSan: the GET_NAME hit path against
+ * env_store_slot, 3 runs of 3). Every hit (EnvIC, and the JIT's inline copy
+ * of it) requires the target env's binding_version to be unchanged since the
+ * entry was filled, so moving the version of every shared env here sends each
+ * such entry to the locked path. Nothing is added to a single-threaded path.
+ *
+ * A state's shared envs are its global env, its builtin layer and its module
+ * namespace envs. eigs_module_ns_attach is always followed by
+ * eigs_module_cache_put, and the cache only shrinks at teardown, so the cache
+ * holds every namespace env. A sandbox_run root env is mt_shared too, but no
+ * other thread can reach it (spawn is not in the sandbox allowlist). */
+void env_mt_invalidate_shared_caches(EigsState *st) {
+    if (!st) return;
+    if (st->global_env)  st->global_env->binding_version++;
+    if (st->builtin_env) st->builtin_env->binding_version++;
+    pthread_mutex_lock(&st->module_lock);
+    for (size_t i = 0; i < st->module_cache_count; i++)
+        if (st->module_cache[i].env)
+            st->module_cache[i].env->binding_version++;
+    pthread_mutex_unlock(&st->module_lock);
+}
 
 /* #660: exported for the SIGUSR1 observer dump (vm.c) — the dump's
  * module-scope walk holds the existing #607 module-env lock under MT
@@ -3740,6 +3775,13 @@ void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val) {
 /* ---- Slot-flavored env helpers (Phase B-5 hot path) ----
  * env borrows the input slot and slot_incref's internally to take a ref.
  */
+/* A REBIND: the store and its `when is` assign-count bump, in ONE hold.
+ * #1171: every caller used to bump the count after this returned, outside
+ * the hold, so two threads rebinding one shared-root name raced on the count
+ * (TSan, vm.c SET_NAME vs SET_NAME). The displaced value's reference is
+ * dropped inside the hold, which is what lets a reader that takes its
+ * reference inside the same hold (env_resolve_chain_ref) never count a value
+ * this store has already freed. */
 void env_store_slot(Env *env, int idx, EigsSlot s) {
     env_shared_lock(env);   /* #607: a concurrent module-env grow would
                              * republish `values`; storing into the retired
@@ -3747,6 +3789,8 @@ void env_store_slot(Env *env, int idx, EigsSlot s) {
     slot_incref(s);
     slot_decref(env->values[idx]);
     env->values[idx] = s;
+    if (env->assign_counts)
+        env->assign_counts[idx]++;
     env_shared_unlock(env);
 }
 
@@ -3758,9 +3802,7 @@ void env_set_hashed_slot(Env *env, const char *name, uint32_t h, EigsSlot s) {
         int idx = env_hash_find(&e->hash, name, h, e->names);
         env_shared_unlock(e); /* env_store_slot re-locks; mutex is non-recursive */
         if (idx >= 0) {
-            env_store_slot(e, idx, s);
-            if (e->assign_counts)
-                env_assign_counts_ptr(e)[idx]++;
+            env_store_slot(e, idx, s);   /* bumps assign_counts in its hold */
             return;
         }
         e = e->parent;
@@ -3787,9 +3829,7 @@ void env_set_local_pre_interned_slot(Env *env, const char *interned,
     int idx = env_hash_find(&env->hash, interned, h, env->names);
     if (idx >= 0) {
         env_shared_unlock(env);
-        env_store_slot(env, idx, s);
-        int *ac = env_assign_counts_ptr(env);
-        if (ac) ac[idx]++;
+        env_store_slot(env, idx, s);   /* bumps assign_counts in its hold */
         return;
     }
     if (env->count >= env->capacity) {
@@ -3879,31 +3919,71 @@ void env_bind_fresh_param_slot(Env *env, const char *interned,
 
 /* Walk the env chain for `name`. On hit, returns target env, slot index in
  * that env, and depth (0 = starting env, 1 = parent, ...). On miss, returns
- * NULL. Used by VM IC populate path so we don't re-walk to discover depth. */
-Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
-                       int *out_slot, int *out_depth) {
+ * NULL. Used by VM IC populate path so we don't re-walk to discover depth.
+ * With out_val, also returns the binding's value with a counted reference
+ * taken inside the hold that found it (env_resolve_chain_ref, #1171). */
+static inline Env *env_resolve_walk(Env *start, const char *name, uint32_t h,
+                                    int *out_slot, int *out_depth,
+                                    EigsSlot *out_val) {
     if (h == 0) h = env_hash_name(name);
     Env *e = start;
     int depth = 0;
     while (e) {
         env_shared_lock(e);   /* #607: module hop vs main-thread binding
                                * creation (grow/rebuild frees the arrays
-                               * this probe walks). Post-resolve slot
-                               * access at the call sites goes through
-                               * env_values_ptr — see eigenscript.h. */
+                               * this probe walks). */
         int idx = env_hash_find(&e->hash, name, h, e->names);
-        env_shared_unlock(e);
         if (idx >= 0) {
+            if (out_val) {
+                EigsSlot s = e->values[idx];
+                slot_incref(s);
+                *out_val = s;
+            }
+            env_shared_unlock(e);
             if (out_slot)  *out_slot  = idx;
             if (out_depth) *out_depth = depth;
             return e;
         }
+        env_shared_unlock(e);
         e = e->parent;
         depth++;
     }
     return NULL;
 }
 
+Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
+                       int *out_slot, int *out_depth) {
+    return env_resolve_walk(start, name, h, out_slot, out_depth, NULL);
+}
+
+/* #1171: a READ of a binding's value. The reference is taken inside the hold
+ * that found the binding, never after it.
+ *
+ * GET_NAME used to resolve under the hold, release it, and only then load the
+ * slot word and incref it. env_store_slot drops the displaced value's
+ * reference INSIDE the hold, so a rebind on another thread could free the
+ * value between the reader's load and its incref: the reader then counted and
+ * CALLED freed memory (#1171's table, tests/loader_mt_userrace.eigs under
+ * TSan: 1 of 30 runs crashed on main, 12 of 30 on the Phase 2 branch, a jump
+ * into the binary's own mapping). With the incref inside the hold, either the reader
+ * counts the old value before the writer's decref (which then leaves it
+ * alive) or it loads the new one. That is #1837's rule for bindings: reading
+ * or writing a binding never tears or frees under a reader; WHICH value a
+ * racing reader gets is the program's logic race.
+ *
+ * The caller owns *out_val. For an env that is not shared, and whenever the
+ * process is single-threaded, the hold is the same predicted-false branch
+ * env_resolve_chain pays, and the load + incref are the ones the caller used
+ * to do itself. */
+Env *env_resolve_chain_ref(Env *start, const char *name, uint32_t h,
+                           int *out_slot, int *out_depth, EigsSlot *out_val) {
+    return env_resolve_walk(start, name, h, out_slot, out_depth, out_val);
+}
+
+/* Returns a BORROWED slot. The AOT runtime (ouroboros aot_rt.h) reads numbers
+ * through it, and an immediate needs no reference. A heap value read here is
+ * unprotected once the hold is released: a concurrent rebind may free it. A
+ * caller that keeps or calls the value uses env_resolve_chain_ref (#1171). */
 EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found) {
     if (h == 0) h = env_hash_name(name);
     Env *e = env;

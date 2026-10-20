@@ -2014,26 +2014,11 @@ static inline Value *eigs_call_builtin(BuiltinFn fn, Value *arg) {
 
 /* ---- Environment ---- */
 
-/* #607: post-resolve array access for an env the MAIN thread may grow
- * concurrently (the module env under spawn-multithreading — module-level
- * code is the only runtime creator of new module-env bindings, while
- * every worker global lookup walks into it). The MT grow path retires
- * (never frees) the old arrays and republishes the pointers with release
- * stores; readers outside g_module_env_lock load the pointer with an
- * acquire atomic so the pointer word itself is synchronized and the
- * block it addresses is guaranteed alive. Single-threaded: a plain load
- * behind one predicted-false branch. Use at every values/assign_counts
- * access that happens AFTER an env_resolve_chain, outside the lock. */
-static inline EigsSlot *env_values_ptr(Env *e) {
-    if (__builtin_expect(g_vm_multithreaded, 0))
-        return __atomic_load_n(&e->values, __ATOMIC_ACQUIRE);
-    return e->values;
-}
-static inline int *env_assign_counts_ptr(Env *e) {
-    if (__builtin_expect(g_vm_multithreaded, 0))
-        return __atomic_load_n(&e->assign_counts, __ATOMIC_ACQUIRE);
-    return e->assign_counts;
-}
+/* #1171: a shared env's values/assign_counts are read and written only inside
+ * the #607 hold (env_resolve_chain_ref, env_store_slot). The post-resolve
+ * accessors that loaded a slot AFTER the hold (env_values_ptr /
+ * env_assign_counts_ptr) are gone: the pointer was safe there, the VALUE was
+ * not, because a concurrent rebind could free it before the reader's incref. */
 
 /* #694: bounds-checked observer-slot access for an env the MAIN thread may
  * grow concurrently. Same class as env_values_ptr, but obs needs the CAP and
@@ -2137,14 +2122,22 @@ void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
  * TU (the AOT's inline caches) were relying on an implicit declaration. */
 int      env_hash_find_dict(Value *dict, const char *key, uint32_t h);
 EigsSlot env_get_hashed_slot(Env *env, const char *name, uint32_t h, int *found);
-/* Direct slot store used by VM inline-cache fast paths
- * after the slot index has been resolved out-of-band. Caller must update
- * binding_version/assign_counts as appropriate. */
+/* Rebind slot `idx` (resolved out-of-band): the store, the displaced value's
+ * decref and the assign_counts bump happen in ONE #607 hold (#1171). */
 void env_store_slot(Env *env, int idx, EigsSlot s);
 /* Walk env chain for `name`. Returns target env on hit (with *out_slot and
  * *out_depth populated), NULL on miss. Depth 0 = start env, 1 = parent, etc. */
 Env *env_resolve_chain(Env *start, const char *name, uint32_t h,
                        int *out_slot, int *out_depth);
+/* #1171: env_resolve_chain plus the binding's value, with a COUNTED reference
+ * taken inside the hold that found it (the caller owns *out_val). The read
+ * path for a value that is kept or called: a concurrent rebind can never free
+ * it between the load and the reference. */
+Env *env_resolve_chain_ref(Env *start, const char *name, uint32_t h,
+                           int *out_slot, int *out_depth, EigsSlot *out_val);
+/* #1171: on the 0->1 multithreaded transition, invalidate every inline-cache
+ * entry aimed at one of the state's shared envs (see eigenscript.c). */
+void env_mt_invalidate_shared_caches(EigsState *st);
 void dict_set_hashed(Value *dict, const char *key, uint32_t h, Value *val);
 /* #1057 module namespaces. `import M` binds a dict that is a LIVE VIEW of the
  * module's top-level Env: `M.x` reads the module's CURRENT binding and
