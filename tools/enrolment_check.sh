@@ -15,6 +15,17 @@
 # imports, globbed directories, mutant harnesses and python drivers, so
 # "invoked" has no single syntactic meaning for them.
 #
+# The same scan enrols tools/ (mechanical-gates section 151, #1758 R1.3: Phase
+# 2's two gate tools had run only on builders' machines). Every top-level
+# tools/*.sh and tools/*.py is an entry point, and so is each tools/<dir>/
+# package holding a script, by the directory listing, never a hand-kept list.
+# Each must be reached from a .github/workflows/*.yml step through invocations
+# (the suite, a top-level tests/ or tools/ shell script, a script beside it
+# called as "$(dirname "$0")/x"), or be listed in the same exemptions file as
+# local-only with its reason. Not seen: a tool run only through make, a Python
+# subprocess or an import; a package counts as reached when CI runs any of its
+# scripts.
+#
 # Usage: tools/enrolment_check.sh [--selftest]    exit 0 pass, 1 fail, 2 no instrument
 # ENROL_ROOT overrides the repository root (the selftest points it at a copy).
 set -u
@@ -27,7 +38,8 @@ if [ "${1:-}" = "--selftest" ]; then
     trap 'rm -rf "$ST"' EXIT
     mkdir -p "$ST/tests/sections" "$ST/tools" "$ST/.github"
     cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tests/sections/*.sh "$ST/tests/sections/" \
-        && cp tools/*.sh tools/selftests.txt "$ST/tools/" && cp -R .github/workflows "$ST/.github/"
+        && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github/workflows "$ST/.github/" \
+        && for d in tools/*/; do cp -R "$d" "$ST/tools/"; done
     n=0; bad=0
     case_() {   # case_ <name> <want-rc> <want-substring>
         local out rc; n=$((n + 1))
@@ -46,6 +58,13 @@ if [ "${1:-}" = "--selftest" ]; then
     rm "$ST/tests/test_clean.sh"
     echo 'tests/test_cli.sh | planted: test_cli.sh IS invoked' >> "$ST/$EXEMPT"
     case_ "an exemption for an invoked script is stale: red" 1 "exempts tests/test_cli.sh, which IS invoked"
+    sed -i.bak '$d' "$ST/$EXEMPT" && rm -f "$ST/$EXEMPT.bak"
+    printf '#!/bin/bash\nexit 1\n' > "$ST/tools/zz_plant_gate.sh"
+    case_ "an uninvoked tools/zz_plant_gate.sh is red and named" 1 "tools/zz_plant_gate.sh is invoked by no workflow"
+    mv "$ST/tools/zz_plant_gate.sh" "$ST/tools/zz_plant_gate.py"
+    case_ "an uninvoked tools/zz_plant_gate.py is red and named" 1 "tools/zz_plant_gate.py is invoked by no workflow"
+    rm "$ST/tools/zz_plant_gate.py"; mkdir "$ST/tools/zz_pkg"; printf 'raise SystemExit(1)\n' > "$ST/tools/zz_pkg/gate.py"
+    case_ "an uninvoked package tools/zz_pkg/ is red and named" 1 "tools/zz_pkg/ is invoked by no workflow"
     echo "  checks=$n"
     exit "$bad"
 fi
@@ -82,7 +101,9 @@ function strip(s,   c) {
         w = s; sub(/[[:space:]].*/, "", w); gsub(/["\047]/, "", w)
         if (w ~ /^(bash|sh|dash|python3?|source|\.)$/) {
             s = substr(s, length(w) + 1); sub(/^[[:space:]]+/, "", s)
-            while (s ~ /^-[A-Za-z]+[[:space:]]/) sub(/^-[A-Za-z]+[[:space:]]+/, "", s)
+            while (s ~ /^-[A-Za-z]+[[:space:]]/)   # python3 -W error x.py: -W and -X take a word
+                if (w ~ /^python/ && s ~ /^-[WX][[:space:]]/) sub(/^-[WX][[:space:]]+[^[:space:]]+[[:space:]]*/, "", s)
+                else sub(/^-[A-Za-z]+[[:space:]]+/, "", s)
             w = s; sub(/[[:space:]].*/, "", w); gsub(/["\047]/, "", w)
         } else if (closed && s !~ /[[:space:]]/) continue   # `x.sh)` is a case pattern
         b = w; sub(/.*\//, "", b); d = w; sub(/\/?[^\/]*$/, "", d)
@@ -90,7 +111,8 @@ function strip(s,   c) {
         # the dir of a tests/ script, or a bare name after `cd tests` — never $WORK/x (#1264 r2).
         intests = (d ~ /(^|\/)tests$|TESTS_DIR\}?$/) || (d == "$DIR" && FILENAME ~ /^tests\//) || (d == "" && FILENAME !~ /^tools\//)
         if (w !~ /tools\// && w ~ /\.(sh|py)$/ && intests && index(known, " " b " ")) print FILENAME "\ttests/" b
-        else if (w ~ /tools\/[^\/]*\.sh$/) print FILENAME "\ttools/" b
+        else if (w ~ /tools\/([^\/]+\/)?[^\/]+\.(sh|py)$/) { t = w; sub(/^.*tools\//, "tools/", t); print FILENAME "\t" t }
+        else if (d == "$DIR" && FILENAME ~ /^tools\// && w ~ /\.(sh|py)$/) { t = FILENAME; sub(/[^\/]*$/, b, t); print FILENAME "\t" t }
     }
 }' tests/run_all_tests.sh tests/sections/*.sh .github/workflows/*.yml tests/*.sh tools/*.sh | sort -u > "$EDGES"
 # Commands in the self-test table are reachable through its driver.
@@ -122,5 +144,18 @@ for f in tests/*.sh tests/*.py; do
     else echo "  FAIL: $f is invoked by nothing -- add a suite section in tests/sections/ (or a workflow step), or list it in $EXEMPT with a reason"; rc=1; fi
 done
 [ "$total" -gt 0 ] || { echo "test-enrolment: ABORTED: tests/*.sh + tests/*.py is empty"; exit 2; }
-[ "$rc" -eq 0 ] && echo "PASS: test-enrolment: examined=$total enrolled=$ok exempt=$ex"
+tt=0; tok=0; tex=0
+for f in tools/*.sh tools/*.py tools/*/; do
+    case "$f" in
+        */) pkg=0; for g in "$f"*.sh "$f"*.py; do [ -f "$g" ] && pkg=1; done; [ "$pkg" = 1 ] || continue
+            grep -q "^$f" <<< "$REACHED" && hit=1 || hit=0 ;;
+        *) [ -f "$f" ] || continue; grep -qxF "$f" <<< "$REACHED" && hit=1 || hit=0 ;;
+    esac
+    tt=$((tt + 1))
+    if [ "$hit" = 1 ]; then tok=$((tok + 1))
+    elif grep -q "^[[:space:]]*$f[[:space:]]*|" <<< "$EXEMPTED"; then tex=$((tex + 1))
+    else echo "  FAIL: $f is invoked by no workflow -- run it from a .github/workflows/ step (or a script one runs), or list it in $EXEMPT as local-only with a reason"; rc=1; fi
+done
+[ "$tt" -gt 0 ] || { echo "tool-enrolment: ABORTED: tools/*.sh + tools/*.py is empty"; exit 2; }
+[ "$rc" -eq 0 ] && echo "PASS: test-enrolment: examined=$total enrolled=$ok exempt=$ex; tools examined=$tt enrolled=$tok exempt=$tex"
 exit "$rc"

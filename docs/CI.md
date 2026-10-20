@@ -751,7 +751,9 @@ need no suite run — plus changed-gate self-tests, exit 1 on any failure; the d
 joins when a binary exists. Its gate list is the only copy: the
 `gate-selftests` CI job runs the same script. Among them,
 `tools/enrolment_check.sh` (also suite `[99ab]`) fails when a `tests/*.sh` or
-`tests/*.py` is invoked by no suite section, workflow step or enrolled script;
-exceptions live in `tests/enrolment_exemptions.txt` with a reason each.
+`tests/*.py` is invoked by no suite section, workflow step or enrolled script,
+and when a `tools/` entry point (a top-level `tools/*.sh` or `tools/*.py`, or a
+`tools/<dir>/` package) is reached from no workflow step that way; exceptions
+live in `tests/enrolment_exemptions.txt` with a reason each.
 Counts that grow with the suite (child-script sites, doc-claim populations)
 are floors: adding a test needs no count edit, a drop is red.
