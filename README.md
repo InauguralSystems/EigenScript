@@ -161,6 +161,21 @@ not a number: `true + 1` and `(x > 0) == 1` raise, so test a bool directly
 (`if x > 0:`). See [docs/SPEC.md](docs/SPEC.md#booleans-comparison-and-logic).
 
 
+Bitwise operators and `bit_*` builtins return ints, including when an
+operand is an integral float. They use Lua 5.4's 64-bit shift rules: `>>`
+zero-fills; a negative count shifts in the opposite direction; a count of
+64 or more, or -64 or less, gives zero. Each operand must be an exact int64;
+a fractional or out-of-range float raises `value`.
+
+```eigenscript
+print of [1 << 64, 1 << -1, -1 >> 1, 8 >> -1, 1 << 63]
+print of [bit_shr of [-1, 1], bit_shl of [8, -1], num_type of (3.0 & 1)]
+```
+```output
+[0, 0, 9223372036854775807, 16, -9223372036854775808]
+[9223372036854775807, 4, "int"]
+```
+
 `//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
 operation to its assignment target, like `/=`. Zero divisors raise `value`
 for all numeric operand kinds in this round. Two ints produce an int for

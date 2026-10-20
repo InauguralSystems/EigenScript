@@ -732,7 +732,7 @@ result).**
 | `value_slot.h:slot_truthy_immediate` | smi-arm | an int is truthy when it is not 0, like a double (D1) |
 | `vm.c:#define ARITH_FAST` | guarded | an int is not a float (`slot_f64_value`): the arm's slow path pops it through `slot_bridge_unwrap`; R1.3 gives that path int arithmetic (D1) |
 | `vm.c:#define INT_ARITH` | smi-arm | two exact integer slots use checked int64 arithmetic; the result is an SMI when it fits and an owned int box otherwise, and overflow raises (R1.3) (D1) |
-| `vm.c:#define INT_BINOP_R` | smi-arm | both operands use `vm_bit_operand`, retaining exact int64 bits and the transitional shift rules (R1.3) (D1) |
+| `vm.c:#define INT_BINOP_R` | smi-arm | both operands use `vm_bit_operand`; R1.5 returns the int kind and uses `eigs_bit_shift` for Lua counts and logical right shift (D1) |
 | `vm.c:#define NUM_CMP` | smi-arm | the float fast path remains; integer and cross-kind operands use exact N2 comparison (R1.3) (D1) |
 | `vm.c:#define READ_SLICE_BOUND` | smi-arm | an int bound is its value when a C `int` holds it, else a value error (D1) |
 | `vm.c:jit_helper_dot_get` | guarded | a non-null field is pushed as its bits; an SMI is a valid stack slot (D3) |
@@ -762,7 +762,7 @@ result).**
 | `vm.c:vm_leaf_accessor_exec/OP_LOCAL_DOT_GET` | guarded | a non-pointer target bails (`return 0`); a non-null field is borrowed as its bits, an SMI included (D2) |
 | `vm.c:vm_local_is_null` | guarded | exact null test (D3) |
 | `vm.c:vm_local_lift` | guarded | a non-pointer, non-null slot goes through `slot_to_value` (compile-forced) and is boxed on purpose (D2) |
-| `vm.c:vm_run_ex/CASE(BNOT)` | smi-arm | an int64 operand is read exactly; the result retains the transitional float bridge until R1.5 (R1.3) (D1) |
+| `vm.c:vm_run_ex/CASE(BNOT)` | smi-arm | an int64 operand is read exactly; R1.5 returns its exact complement as the int kind (D1) |
 | `vm.c:vm_run_ex/CASE(DESTRUCTURE_UNPACK)` | guarded | a non-pointer source takes the error path, which names the type through `slot_type_name` (D2) |
 | `vm.c:vm_run_ex/CASE(DISPATCH)` | smi-arm | an int key is its value when a C `int` holds it, else a value error; the result returns through `slot_bridge_unwrap` (D1) |
 | `vm.c:vm_run_ex/CASE(DOT_GET)` | guarded | exact null test of a field (D3) |
@@ -1390,12 +1390,12 @@ current state behind several rows:
 | `audio_stream_queued` | int-preserving | - | - | sample count |
 | `audio_sweep` | float-producing | - | magnitude | float samples; frequencies and amplitude stay floats; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude); the wave selector is integer-valued: N5 (Q1) |
 | `audio_volume` | int-requiring | - | bounded | channel index: N5 (Q1); the volume is a continuous gain: clamped to the mixer's range (Q7 bounded) |
-| `bit_and` | int-requiring | LOSS | - | Lua `&` (§3.4.2): N5 operands, int64-pattern result (N8); today a double result |
-| `bit_not` | int-requiring | LOSS | - | Lua unary `~` |
-| `bit_or` | int-requiring | LOSS | - | Lua `\|` |
-| `bit_shl` | int-requiring | LOSS | - | Lua `<<`; today masks the count mod 64, N8 needs >=64 gives 0 and negative shifts right |
-| `bit_shr` | int-requiring | LOSS | - | Lua `>>` is logical (N8); today an arithmetic shift with `& 63` |
-| `bit_xor` | int-requiring | LOSS | - | Lua binary `~` |
+| `bit_and` | int-requiring | - | - | Lua `&` (§3.4.2): exact int64 operands, exact int64-pattern result (N8, R1.5) |
+| `bit_not` | int-requiring | - | - | Lua unary `~` |
+| `bit_or` | int-requiring | - | - | Lua `\|` |
+| `bit_shl` | int-requiring | - | - | Lua `<<` (R1.5): |count| >=64 gives 0; a negative count shifts logically right |
+| `bit_shr` | int-requiring | - | - | Lua `>>` (N8, R1.5) is logical; |count| >=64 gives 0; a negative count shifts left |
+| `bit_xor` | int-requiring | - | - | Lua binary `~` |
 | `buf_copy` | int-requiring | - | - | offsets and counts |
 | `buf_deinterleave` | int-requiring | - | - | channel count and index |
 | `buf_dot` | float-producing | - | - | buffer dot product |
@@ -1900,7 +1900,7 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
 |---|---|---|
 | VM arithmetic, comparison, negation (N2, N3, N4b, (A)) | R1.1 forced the arms (`slot_as_double` deleted); R1.3 adds the int semantics | exact int64, overflow raises |
 | `/` and `%` | R1.3 (transitional) | converted to doubles, today's semantics, until R1.4 |
-| bitwise operators | R1.3 (transitional) | exact int64 operands (#1740's rule), today's shift rule until R1.5 |
+| bitwise operators | R1.5 | exact int64 operands (#1740), int results and Lua 5.4 shifts |
 | equality, ordering, hashing, the constant pool | R1.2 (forced arms) | by value across kinds (N2); the pool keys on kind |
 | printing (`value_to_string`, f-strings) | R1.2a (the exhaustive switch) | exact digits, as today for small ints |
 | `type of`, `num_type` | R1.2a (`val_type_name`), R1.3 (`num_type`) | `"num"`; `"int"` |

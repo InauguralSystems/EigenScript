@@ -900,7 +900,7 @@ static EigsSlot vm_int_arith(int64_t a, int64_t b, char op, int line) {
     return slot_from_int(r);
 }
 
-/* A number as an int64 for the transitional bitwise operators (#1740).
+/* A number as an int64 for the bitwise operators (#1740, #1758 N8).
  * An int never round-trips through double; float operands retain the exact
  * integer-representation rule. Return -1 for a type error, 0 for value. */
 static int vm_bit_operand(EigsSlot s, int64_t *out) {
@@ -3672,23 +3672,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH();
     }
 
-/* #1740: both operands must be exact integers in int64 (Lua 5.4's rule);
- * a fractional or out-of-range one raises `value` (see num_to_i64_exact).
- * RHS is the (possibly transformed) right operand _bi. For `& | ^`
- * it is the plain int64 operand; for the shifts it is masked to [0,63] so a
- * large or negative shift count is defined (mod-64), never C UB — the same
- * `& 63` the bit_shl/bit_shr builtins apply, honoring the LANGUAGE_CONTRACT
- * "shifts are defined, not UB" promise. Without the mask, `1 << 64` on the
- * infix path is undefined behavior (UBSan trips; only untested counts hid it). */
-#define INT_BINOP_R(NAME, OP, OPNAME, RHS) \
+/* #1758 N8: exact int64 operands (#1740), integer results, Lua shifts.
+ * Both popped operands are owned, including boxed ints on raise paths. */
+#define INT_BINOP_R(NAME, OPNAME, EXPR) \
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
         int64_t _ai, _bi; \
         int _ak = vm_bit_operand(_as, &_ai), _bk = vm_bit_operand(_bs, &_bi); \
-        double _r = 0.0; \
+        EigsSlot _r = slot_null(); \
         if (_ak == 1 && _bk == 1) { \
-            _r = (double)(INT_OP_##NAME(_ai, (RHS))); \
+            _r = slot_from_int(EXPR); \
         } else if (_ak < 0 || _bk < 0) { \
             rt_error(EK_TYPE, current_line, "cannot apply '%s' to %s and %s", \
                      OPNAME, slot_type_name(_as), slot_type_name(_bs)); \
@@ -3698,27 +3692,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, OPNAME, _bad); \
         } \
         slot_decref(_as); slot_decref(_bs); \
-        g_vm.stack[g_vm.sp - 2] = slot_from_f64(_r); \
+        g_vm.stack[g_vm.sp - 2] = _r; \
         g_vm.sp--; \
         DISPATCH(); \
     }
 
-/* SHL shifts unsigned: `<<` on a negative int64 is UB. Same bits as the
- * JIT's `shl`. */
-#define INT_OP_BAND(a, b) ((a) & (b))
-#define INT_OP_BOR(a, b)  ((a) | (b))
-#define INT_OP_BXOR(a, b) ((a) ^ (b))
-#define INT_OP_SHL(a, b)  ((int64_t)((uint64_t)(a) << (b)))
-#define INT_OP_SHR(a, b)  ((a) >> (b))
-
-/* Non-shift bitwise ops: RHS is the plain int64 operand. */
-#define INT_BINOP(NAME, OP, OPNAME) INT_BINOP_R(NAME, OP, OPNAME, _bi)
-
-    INT_BINOP(BAND, &, "&")
-    INT_BINOP(BOR, |, "|")
-    INT_BINOP(BXOR, ^, "^")
-    INT_BINOP_R(SHL, <<, "<<", (_bi & 63))
-    INT_BINOP_R(SHR, >>, ">>", (_bi & 63))
+    INT_BINOP_R(BAND, "&", _ai & _bi)
+    INT_BINOP_R(BOR, "|", _ai | _bi)
+    INT_BINOP_R(BXOR, "^", _ai ^ _bi)
+    INT_BINOP_R(SHL, "<<", eigs_bit_shift(_ai, _bi, 0))
+    INT_BINOP_R(SHR, ">>", eigs_bit_shift(_ai, _bi, 1))
 
     /* ---- Unary ---- */
 
@@ -3761,8 +3744,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
         int64_t i;
         int k = vm_bit_operand(s, &i);
-        double r = 0.0;
-        if (k == 1) r = (double)(~i);
+        EigsSlot r = slot_null();
+        if (k == 1) r = slot_from_int(~i);
         else if (k < 0)
             rt_error(EK_TYPE, current_line, "cannot apply '~' to %s", slot_type_name(s));
         else {
@@ -3771,7 +3754,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, "~", bad);
         }
         slot_decref(s);
-        g_vm.stack[g_vm.sp - 1] = slot_from_f64(r);
+        g_vm.stack[g_vm.sp - 1] = r;
         DISPATCH();
     }
 

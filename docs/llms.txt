@@ -218,8 +218,9 @@ sqrt(2) = 1.414213562373095
   arithmetic converts to float, while cross-kind comparison is exact.
   True division `/` and most builtin results remain floats at this stage.
   Float overflow saturates at ±1e308.
-  Integer bit ops accept exact int64 operands; builtin results and infix
-  results still convert to float until the bitwise/builtin rounds.
+  Integer bit ops and bit_* builtins accept exact int64 operands and return ints.
+  Right shifts zero-fill, negative counts reverse direction, and counts outside
+  (-64,64) give zero (Lua 5.4).
   A bit-op operand that is not an exact integer (`1.5 | 0`, `1e30 & 1`)
   raises a `value` error; it is never truncated.
   Strict mode is the DEFAULT: out-of-domain math (`sqrt of -1`), a NaN
@@ -236,6 +237,21 @@ sqrt(2) = 1.414213562373095
   `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
   substitution. `str_from_bytes` stops at numeric NUL without inspecting later
   elements; byte codecs consume the complete list.
+
+Bitwise operators and `bit_*` builtins return ints, including when an
+operand is an integral float. They use Lua 5.4's 64-bit shift rules: `>>`
+zero-fills; a negative count shifts in the opposite direction; a count of
+64 or more, or -64 or less, gives zero. Each operand must be an exact int64;
+a fractional or out-of-range float raises `value`.
+
+```eigenscript
+print of [1 << 64, 1 << -1, -1 >> 1, 8 >> -1, 1 << 63]
+print of [bit_shr of [-1, 1], bit_shl of [8, -1], num_type of (3.0 & 1)]
+```
+```output
+[0, 0, 9223372036854775807, 16, -9223372036854775808]
+[9223372036854775807, 4, "int"]
+```
 
 `//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
 operation to its assignment target, like `/=`. Zero divisors raise `value`

@@ -1,0 +1,7 @@
+# ROW: N8.bitwise-results-int
+# ITEMS: N8
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [6 & 3, 6 | 3, 6 ^ 3, ~0, num_type of (6 & 3)]

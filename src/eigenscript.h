@@ -1920,6 +1920,16 @@ static inline int num_to_i64_exact(double x, int64_t *out) {
     *out = i;
     return 1;
 }
+/* #1758 N8: Lua 5.4 shifts operate on an unsigned 64-bit pattern.
+ * Bound the signed count BEFORE negating it (INT64_MIN is valid input).
+ * Convert the result pattern without an out-of-range unsigned-to-signed cast. */
+static inline int64_t eigs_bit_shift(int64_t a, int64_t count, int right) {
+    if (count <= -64 || count >= 64) return 0;
+    if (count < 0) { count = -count; right = !right; }
+    uint64_t bits = right ? (uint64_t)a >> count : (uint64_t)a << count;
+    return bits <= INT64_MAX ? (int64_t)bits : -1 - (int64_t)(UINT64_MAX - bits);
+}
+
 #define EIGS_NO_INT_REP_FMT "'%s': number %.17g has no integer representation"
 
 static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {

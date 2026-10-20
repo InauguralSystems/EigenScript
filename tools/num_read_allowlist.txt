@@ -91,3 +91,4 @@ ext_db.c|db_build_query|1|VAL_INT parameters encode as exact digits after the ki
 vm.c|vm_value_index_is_int|2|Guarded exact VAL_INT-to-C-index conversion; the other numeric kind keeps the float integrality test (#1758 R1.2)
 builtins.c|builtin_abs|1|N4b: proved VAL_INT payload, refuse INT64_MIN before negating
 eigenscript.c|make_int|1|int constructor initializes the exact signed payload
+builtins.c|bit_int|1|N8 exact bitwise operand reader: VAL_INT guard precedes the int payload; float operands use #1740 conversion

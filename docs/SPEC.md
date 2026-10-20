@@ -282,10 +282,8 @@ consequences are contracts you can rely on:
 - **Float integer exactness ends at 2^53.** Whole floats up to `9007199254740992`
   are exact; past that the gaps between representable values exceed 1, so
   `+ 1` can be invisible. For exact identifiers, counters, and money-in-cents, keep values in
-  the int kind rather than converting them to float. The transitional bitwise seam below
-  accepts wider exact integer operands
-  (its operands must be exact integers below 2^63 in magnitude; past 2^53 only
-  the representable ones qualify).
+  the int kind rather than converting them to float. Bitwise operations preserve all int64 bits and return ints; integral float
+  operands convert only when they are exactly representable as int64.
 - **Finite by construction — no `NaN`, no `Infinity` ever reach your program.**
   Overflow saturates at `±1e308` instead of becoming `Infinity`. Every
   *defined* operation returns a usable finite number; an *undefined* one —
@@ -667,8 +665,24 @@ print of (bit_shl of [1, 32])
 Every operand, the shift count included, must be an **exact integer** in
 `[-2^63, 2^63)`, Lua 5.4's rule. A fractional operand or one outside int64
 has no integer representation, and the operation raises a catchable
-`value` error instead of truncating. A valid shift count is then masked
-to `[0, 63]`:
+`value` error instead of truncating.
+
+Bitwise operators and `bit_*` builtins return ints, including when an
+operand is an integral float. They use Lua 5.4's 64-bit shift rules: `>>`
+zero-fills; a negative count shifts in the opposite direction; a count of
+64 or more, or -64 or less, gives zero. Each operand must be an exact int64;
+a fractional or out-of-range float raises `value`.
+
+```eigenscript
+print of [1 << 64, 1 << -1, -1 >> 1, 8 >> -1, 1 << 63]
+print of [bit_shr of [-1, 1], bit_shl of [8, -1], num_type of (3.0 & 1)]
+```
+```output
+[0, 0, 9223372036854775807, 16, -9223372036854775808]
+[9223372036854775807, 4, "int"]
+```
+
+The operand checks also apply to shift counts:
 
 ```eigenscript
 print of ((-9223372036854775808 | 0) == -9223372036854775808)
@@ -688,7 +702,7 @@ catch e:
 ```
 ```output
 true
-1
+0
 value
 '<<': number 0.5 has no integer representation
 value

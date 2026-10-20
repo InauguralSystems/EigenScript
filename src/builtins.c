@@ -330,23 +330,12 @@ Value* builtin_text_builder_to_string(Value *arg) {
     return make_str_owned(xstrdup(arg->data.text_builder.data ? arg->data.text_builder.data : ""));
 }
 
-/* ==== Bitwise operations ====
- * Semantics: operate on 32-bit two's-complement ints. Shift amounts are
- * masked to [0,31] so large/negative shifts are defined behavior, not UB.
- * Non-numeric args raise a runtime error (consistent with the strict error
- * model used by the arithmetic operators and the '& | ^ << >> ~' operators). */
-
-/* The bit_* builtins are the SAME operation as the infix operators
- * (& | ^ << >>): int64 two's-complement over the numeric value (vm.c's
- * INT_BINOP). They used to be a second, divergent implementation —
- * (uint32_t)(int32_t) conversion, UB for inputs >= 2^31 and
- * sign-extended results — so `0xEDB88320 & x` worked while
- * `bit_and of [0xEDB88320, x]` returned garbage (found by the CRC-32
- * stdlib module, the first consumer needing the full unsigned-32
- * range). Shift counts are masked to 0..63 like the hardware would. */
-/* #1740: an operand that is not an exact int64 raises `value` (Lua 5.4's
- * rule, the same as the infix operators). Returns 0 after raising. */
-static int bit_int(double x, int64_t *out, const char *name) {
+/* #1758 N8: the bit_* builtins share Lua's exact int64 bit patterns and
+ * shift-count rules with the operators. No int operand crosses double. */
+/* #1740: an operand without an exact int64 representation raises value. */
+static int bit_int(Value *v, int64_t *out, const char *name) {
+    if (v->type == VAL_INT) { *out = VAL_I64_RAW(v); return 1; }
+    double x = eigs_num_arg(v, __func__);  /* caller proved VAL_FLOAT */
     if (num_to_i64_exact(x, out)) return 1;
     rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, name, x);
     return 0;
@@ -359,8 +348,8 @@ static int bit_pair(Value *arg, int64_t *a_out, int64_t *b_out, const char *name
     Value *va = BUILTIN_LIST_VIEW(arg, 0);
     Value *vb = BUILTIN_LIST_VIEW(arg, 1);
     if (!va || !val_is_number(va) || !vb || !val_is_number(vb)) return 0;
-    if (!bit_int(eigs_num_arg(va, __func__), a_out, name) ||
-        !bit_int(eigs_num_arg(vb, __func__), b_out, name)) return -1;
+    if (!bit_int(va, a_out, name) ||
+        !bit_int(vb, b_out, name)) return -1;
     return 1;
 }
 
@@ -369,7 +358,7 @@ Value* builtin_bit_and(Value *arg) {
     int64_t a, b;
     int ok = bit_pair(arg, &a, &b, "bit_and");
     if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_and expects [number, number]"); return make_null(); }
-    return make_num((double)(a & b));
+    return make_int(a & b);
 }
 
 Value* builtin_bit_or(Value *arg) {
@@ -377,7 +366,7 @@ Value* builtin_bit_or(Value *arg) {
     int64_t a, b;
     int ok = bit_pair(arg, &a, &b, "bit_or");
     if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_or expects [number, number]"); return make_null(); }
-    return make_num((double)(a | b));
+    return make_int(a | b);
 }
 
 Value* builtin_bit_xor(Value *arg) {
@@ -385,14 +374,14 @@ Value* builtin_bit_xor(Value *arg) {
     int64_t a, b;
     int ok = bit_pair(arg, &a, &b, "bit_xor");
     if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_xor expects [number, number]"); return make_null(); }
-    return make_num((double)(a ^ b));
+    return make_int(a ^ b);
 }
 
 Value* builtin_bit_not(Value *arg) {
     if (!arg || !val_is_number(arg)) { rt_error(EK_TYPE, 0, "bit_not expects a number"); return make_null(); }
     int64_t a;
-    if (!bit_int(eigs_num_arg(arg, __func__), &a, "bit_not")) return make_null();
-    return make_num((double)(~a));
+    if (!bit_int(arg, &a, "bit_not")) return make_null();
+    return make_int(~a);
 }
 
 Value* builtin_bit_shift_left(Value *arg) {
@@ -400,7 +389,7 @@ Value* builtin_bit_shift_left(Value *arg) {
     int64_t a, b;
     int ok = bit_pair(arg, &a, &b, "bit_shl");
     if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_shl expects [number, number]"); return make_null(); }
-    return make_num((double)(int64_t)((uint64_t)a << (b & 63)));  /* unsigned: no UB on negative a */
+    return make_int(eigs_bit_shift(a, b, 0));
 }
 
 Value* builtin_bit_shift_right(Value *arg) {
@@ -408,10 +397,7 @@ Value* builtin_bit_shift_right(Value *arg) {
     int64_t a, b;
     int ok = bit_pair(arg, &a, &b, "bit_shr");
     if (ok <= 0) { if (ok == 0) rt_error(EK_TYPE, 0, "bit_shr expects [number, number]"); return make_null(); }
-    /* Arithmetic shift, like the infix >> on int64 (negative operands
-     * keep their sign); mask a non-negative operand first for a
-     * logical u32 shift. */
-    return make_num((double)(a >> (b & 63)));
+    return make_int(eigs_bit_shift(a, b, 1));
 }
 
 /* monotonic_ns of null — nanoseconds from CLOCK_MONOTONIC */

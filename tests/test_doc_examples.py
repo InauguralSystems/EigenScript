@@ -324,10 +324,10 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (  8,    4,     4,      0,      0),
-    "docs/llms.txt":             ( 10,    7,     2,      1,      0),
-    "docs/SPEC.md":              ( 86,   82,     1,      3,      0),   # #1740: +1 paired (bitwise exact-int raises)
-    "docs/COMPARISON.md":        ( 20,   19,     1,      0,      0),
+    "README.md":                 (  9,    5,     4,      0,      0),
+    "docs/llms.txt":             ( 11,    8,     2,      1,      0),
+    "docs/SPEC.md":              ( 87,   83,     1,      3,      0),   # #1740: +1 paired (bitwise exact-int raises)
+    "docs/COMPARISON.md":        ( 21,   20,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
