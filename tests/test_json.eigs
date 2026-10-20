@@ -15,5 +15,14 @@ print of "--- JS4: Object decode ---"
 obj is json_decode of "{\"name\":\"eigen\"}"
 print of obj.name
 
+print of "--- JS5: Library key presence ---"
+import json
+assert of [(json.json_has of ["{\"present\":1}", "missing"]) == false, "json_has rejects a missing key"]
+assert of [(json.json_has of ["{\"present\":1}", "present"]) == true, "json_has finds a non-null value"]
+assert of [(json.json_has of ["{\"present\":null}", "present"]) == true, "json_has finds a null value"]
+assert of [(json.json_has of ["{\"outer\":{\"present\":1}}", "outer.present"]) == true, "json_has finds a nested key"]
+assert of [(json.json_has of ["{\"outer\":{\"present\":1}}", "outer.missing"]) == false, "json_has rejects a missing nested key"]
+print of "JS5 presence checks passed"
+
 print of ""
 print of "=== JSON COMPLETE ==="
