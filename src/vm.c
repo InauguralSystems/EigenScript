@@ -2596,9 +2596,10 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         }
         for (int i = 0; i < argc; i++)
             slot_decref(g_vm.stack[--g_vm.sp]);
-        /* #1171: as CASE(CALL), the callee is released only after the frame
-         * holds its chunk; the stack's reference can be the last one. */
-        EigsSlot callee_s = g_vm.stack[--g_vm.sp];
+        /* #1171: as CASE(CALL), the callee (fn_val, the slot popped here) is
+         * released only after the frame holds its chunk; the stack's
+         * reference can be the last one. */
+        g_vm.sp--;
 
         /* The caller frame's ip stays at the thunk's entry offset (the
          * jit_advance-relative contract); it is fixed to resume_off
@@ -2606,7 +2607,11 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
          * over mid-thunk. */
         CallFrame *frame = &g_vm.frames[g_vm.frame_count++];
         callframe_init(frame, fn_chunk, call_env, fn_val, 1, argc);
-        slot_decref(callee_s);
+        /* slot_decref of a VAL_FN, single-threaded (the multithreaded
+         * refusal above): no atomic, no cycle-root note. Spelled out because
+         * slot_decref re-reads the MT flag after the call, which measured
+         * +3.7% Ir in this helper (+0.31% on bench_dmg_shape). */
+        if (--fn_val->refcount <= 0) free_value(fn_val);
         g_loop_stall_count = 0;
         g_loop_iterations  = 0;
         fn_chunk->exec_count++;
