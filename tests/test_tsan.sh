@@ -52,11 +52,90 @@ seeded_race_row() {
     fi
 }
 
+rebind_call_row() {
+    echo "=== #1171 call vs rebind of a shared binding must be race-free ==="
+    # Threads call module-level functions while other threads rebind them to
+    # fresh heap-capturing closures and reload a module that defines one;
+    # main also calls through inline caches it filled before spawning. On
+    # 965dfbd0 (a reader took its reference AFTER leaving the hold the rebind
+    # frees under, and a call dropped its callee before the frame held the
+    # chunk) all 3 runs crashed under TSan, with 76-286 reports.
+    local fixture="$TESTS_DIR/rebind_call_race.eigs"
+    if [ ! -f "$fixture" ]; then
+        echo "  FAIL: rebind_call_race fixture missing ($fixture)"; FAIL=$((FAIL + 1)); return
+    fi
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: rebind_call_race HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: rebind_call_race reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+        grep -A2 "WARNING: ThreadSanitizer" <<< "$RUN_OUTPUT" | head -6
+    elif [ "$LAST_RC" -ne 0 ] || ! grep -Fxq 'rebind call race: PASS' <<< "$RUN_OUTPUT"; then
+        echo "  FAIL: rebind_call_race exited $LAST_RC without its PASS line"; FAIL=$((FAIL + 1))
+        tail -5 <<< "$RUN_OUTPUT"
+    else
+        echo "  PASS: rebind_call_race TSan-clean, totals conserved"; PASS=$((PASS + 1))
+    fi
+}
+
+scope_boundary_row() {
+    echo "=== #1144 scope boundary: the user-level race names NO loader structure ==="
+    # tests/loader_mt_userrace.eigs races ON PURPOSE while workers load
+    # modules. Asserting "zero reports" there would be a gate that can never
+    # be green; asserting nothing would leave "out of scope" as a sentence. So
+    # the row asserts what IS in scope: no LOADER STRUCTURE appears in any
+    # report (no in-flight load stack, no module cache, no module-namespace
+    # table). If #1144 regresses, one of those symbols comes back and this
+    # goes red.
+    #
+    # #1489: the exit status is NOT a verdict. A program that races by design
+    # may legally crash or hang, and requiring rc 0 from it turned the Phase 2
+    # lane red (run 39325694662, rc 124 after a TSan SEGV). The row judges the
+    # boundary on whatever reports the run produced, and REFUSES a capture
+    # with none (§121: a check that examined nothing is vacuous). The race is
+    # deterministic now (the fixture's spin handshake), so one run suffices
+    # and no retry can hide a control that stopped racing.
+    local fixture="$TESTS_DIR/loader_mt_userrace.eigs"
+    local forbidden='loading_stack|eigs_loading_|module_cache|module_lock|g_module_ns|module_ns_'
+    local loader
+    if [ ! -f "$fixture" ]; then
+        echo "  FAIL: scope-boundary fixture missing ($fixture)"; FAIL=$((FAIL + 1)); return
+    fi
+    tsan_warnings "$fixture"
+    loader=$(grep -cE "$forbidden" <<< "$RUN_OUTPUT" || true)
+    if [ "$WARNINGS" -eq 0 ]; then
+        echo "  FAIL (vacuous): the probe captured NO ThreadSanitizer report (rc=$LAST_RC): its"
+        echo "        deliberate race did not run, so the boundary check examined nothing"
+        FAIL=$((FAIL + 1))
+    elif [ "$loader" -ne 0 ]; then
+        echo "  FAIL (boundary): a LOADER STRUCTURE appears in the user-race reports ($loader line(s)) — #1144 regressed"
+        grep -E "$forbidden" <<< "$RUN_OUTPUT" | head -6
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $WARNINGS report(s) examined, 0 loader frames (probe rc=$LAST_RC: racy by design, not a verdict)"
+        PASS=$((PASS + 1))
+    fi
+}
+
 # --seeded-only (#1139): just the self-validation row, for a lane whose binary
 # is not the stock tsan build (tsan-http). The rest of this script links
 # build/tsan/*.o and is the stock lane's.
 if [ "${1:-}" = "--seeded-only" ]; then
     seeded_race_row
+    echo ""
+    echo "Results: $PASS passed, $FAIL failed"
+    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 1 ]; exit
+fi
+# --row NAME (#1489): one row through the same function the full run calls,
+# so a row can be proven under load (taskset -c 0 nice -n 19) or against a
+# planted binary without running the whole lane.
+if [ "${1:-}" = "--row" ]; then
+    case "${2:-}" in
+        seeded)         seeded_race_row ;;
+        rebind-call)    rebind_call_row ;;
+        scope-boundary) scope_boundary_row ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary"; exit 2 ;;
+    esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
     [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 1 ]; exit
@@ -385,14 +464,16 @@ echo "=== loader from workers must be race-free (#1144) ==="
 # 8/12/5 warnings, p3_import_race 3/5/5 (free in module_ns_rebuild vs read in
 # module_ns_slot <- eigs_module_ns_env <- dict_get_hashed).
 #
-# tests/loader_mt_loadfile.eigs is DELIBERATELY NOT in this list. It is a
-# release-binary correctness row in tests/test_loader_mt.sh instead: two
-# workers loading the SAME module both REBIND the same global name, which is
-# the documented user-level shared-mutable-state race (docs/CONCURRENCY.md),
-# and TSan reports it on the binding's VALUE, its refcount and its observer
-# slot — the class #607 declares out of scope ("two threads racing on the
-# SAME slot's value or assign-count"; tracked as #1171). A row that can never be clean is not a
-# gate (§13/§23).
+# tests/loader_mt_loadfile.eigs (two workers load the SAME module, so both
+# REBIND the same global names) stays out of this list. #1171 made that rebind
+# race-free (the value and the assign-count are written inside the hold:
+# 965dfbd0 reported 3 per run, the #1171 tree 0 in 15 runs). But its workers
+# also CREATE global bindings on their first load, and an inline-cache check
+# on another thread reads the global env's binding_version without the lock:
+# a formal race on that one word (seen in 1 of 30 runs of
+# loader_mt_userrace.eigs on the Phase 2 branch), which would make a
+# zero-report row flaky. It is a release-binary correctness row in
+# tests/test_loader_mt.sh instead.
 LDR_FIXTURES="loader_mt_import loader_mt_cycle"
 LDR_DECLARED=2
 LDR_EXAMINED=0
@@ -443,50 +524,9 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-echo "=== #1144 scope boundary: the user-level race names NO loader structure ==="
-# tests/loader_mt_userrace.eigs is the one loader-shaped program that is NOT
-# expected to be clean: two workers load a module whose `define` rebinds one
-# global that the other is calling — the same-slot value/assign-count class
-# `src/eigenscript.c`'s #607 comment declares out of scope, filed on its own.
-#
-# Asserting "zero reports" there would be a gate that can never be green.
-# Asserting nothing would leave "out of scope" as a sentence. So the row
-# asserts what IS in scope: that no LOADER STRUCTURE appears in any report —
-# no in-flight load stack, no module cache, no module-namespace table. If
-# #1144 regresses, one of those symbols comes back here and this goes red.
-#
-# A capture with zero reports cannot witness the boundary (§121: a check that
-# examined nothing is vacuous), so the row retries for a racing capture and
-# says so if it never gets one.
-UR_FIXTURE="$TESTS_DIR/loader_mt_userrace.eigs"
-UR_FORBIDDEN='loading_stack|eigs_loading_|module_cache|module_lock|g_module_ns|module_ns_'
-if [ -f "$UR_FIXTURE" ]; then
-    UR_OUT=""; UR_W=0; UR_RC=0; UR_TRIES=0
-    while [ "$UR_TRIES" -lt 3 ]; do
-        UR_TRIES=$((UR_TRIES + 1))
-        UR_OUT=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$UR_FIXTURE" 2>&1)
-        UR_RC=$?
-        UR_W=$(printf '%s\n' "$UR_OUT" | grep -c "WARNING: ThreadSanitizer" || true)
-        [ "$UR_W" -gt 0 ] && break
-    done
-    UR_LOADER=$(printf '%s\n' "$UR_OUT" | grep -cE "$UR_FORBIDDEN" || true)
-    if [ "$UR_RC" -ne 0 ]; then
-        echo "  FAIL: scope-boundary probe exited $UR_RC (want 0)"; FAIL=$((FAIL + 1))
-    elif [ "$UR_W" -eq 0 ]; then
-        echo "  FAIL: scope-boundary probe raced nothing in $UR_TRIES attempts — the"
-        echo "        boundary check examined an empty capture, which proves nothing"
-        FAIL=$((FAIL + 1))
-    elif [ "$UR_LOADER" -ne 0 ]; then
-        echo "  FAIL: a LOADER STRUCTURE appears in the user-race reports ($UR_LOADER line(s)) — #1144 regressed"
-        printf '%s\n' "$UR_OUT" | grep -E "$UR_FORBIDDEN" | head -6
-        FAIL=$((FAIL + 1))
-    else
-        echo "  PASS: user-race reports name no loader structure ($UR_W report(s) examined, 0 loader frames)"
-        PASS=$((PASS + 1))
-    fi
-else
-    echo "  FAIL: scope-boundary fixture missing ($UR_FIXTURE)"; FAIL=$((FAIL + 1))
-fi
+rebind_call_row
+
+scope_boundary_row
 
 echo "=== observer arming sets must be race-free (#1145) ==="
 # (a) the spawn shape, occurrence tier + the #827 history control.

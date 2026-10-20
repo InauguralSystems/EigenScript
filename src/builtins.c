@@ -4474,8 +4474,15 @@ Value* builtin_spawn(Value *arg) {
      * every later spawn raced with already-running workers reading the flag in
      * env_incref / chunk_incref (the refcount-mode gate). Later spawns now only
      * READ it (the value is already published to all workers via the first
-     * write's happens-before through their pthread_create). */
-    if (!g_vm_multithreaded) g_vm_multithreaded = 1;
+     * write's happens-before through their pthread_create).
+     *
+     * #1171: before the flag goes up, make every inline-cache entry aimed at
+     * a shared env miss. A cache hit reads a binding with no lock, and from
+     * here on another thread may rebind it. */
+    if (!g_vm_multithreaded) {
+        env_mt_invalidate_shared_caches(eigs_current->state);
+        g_vm_multithreaded = 1;
+    }
     /* #827: #739's per-thread history is filtered by a PROCESS-global armed-name
      * set that the compiler grows. Single-threaded that is fine (compile, then
      * run), but a worker calling eval/load_file compiles concurrently with other
