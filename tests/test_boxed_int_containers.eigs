@@ -1,0 +1,150 @@
+# Boxed ints (|i| >= 2^47, heap values with a refcount since R1.3) through
+# containers: list literals, append, index and slot stores, slices, copies,
+# destructuring, nested lists and dicts, dict stores and removal, membership,
+# reductions, sort and sort_by (exact order), json build/encode/decode/path,
+# string formatting, and the error paths (int dict keys, out-of-range index
+# and slice) looped under try/catch. Trimmed from the R1.3 memory review's
+# probe p02_containers.eigs (#1758). Section [0fp] runs it strictly leak-clean
+# under ASan, so a store that forgets to take a boxed int's reference (or one
+# that takes it twice) fails the suite. Every check asserts (a failed one
+# exits nonzero); the last line pins the count.
+CK is 0
+define ck(cond, msg) as:
+    assert of [cond, msg]
+    CK is CK + 1
+
+P47 is 140737488355328
+SMAX is 140737488355327
+IMAX is 9223372036854775807
+IMIN is -9223372036854775807 - 1
+B53 is 9007199254740993
+F47 is 140737488355328.0
+N is 100
+
+define work(base, n) as:
+    local k is 0
+    local total is 0
+    loop while k < n:
+        local b is base + k
+        # list build (literal) with boxed, SMI, float, string
+        local xs is [b, SMAX, IMAX, IMIN, 1, 2.5, "s"]
+        # append boxed and SMI
+        append of [xs, b + 1]
+        append of [xs, k]
+        # set: overwrite boxed with boxed, with SMI, with float, with string, and back
+        xs[0] is b + 2
+        xs[0] is 7
+        xs[0] is 7.5
+        xs[0] is "str"
+        xs[0] is b + 3
+        set_at of [xs, 1, b]
+        set_at of [xs, 1, IMIN]
+        xs[2] += 1 - 1
+        xs[5] is b
+        # index read
+        local r0 is xs[0]
+        local r1 is xs[-2]
+        local r2 is get_at of [xs, 3]
+        # slice and copies
+        local sl is xs[0:4]
+        local sl2 is xs[2:]
+        local cp is concat of [xs, [b]]
+        local cmp2 is [v for v in xs if v != "s"]
+        local dst is [0, 0, 0]
+        copy_into of [dst, 0, [b, IMAX, IMIN]]
+        local nc is num_copy of b
+        # destructure
+        [da, db] is [b, IMAX]
+        # nested containers
+        local nest is [[b, [IMAX, b]], {"k": [IMIN, {"z": b}]}]
+        nest[0][1][0] is b + 5
+        nest[1]["k"][1]["z"] is IMIN
+        # dict values
+        local d is {"a": b, "b": SMAX}
+        d.c is IMAX
+        d["e"] is IMIN
+        dict_set of [d, "f", b]
+        d.a is 3
+        d.a is b + 9
+        dict_remove of [d, "b"]
+        local ks is keys of d
+        local vs is values of d
+        # membership and reductions
+        local has is list_contains of [xs, IMAX]
+        local at is list_index_of of [xs, IMIN]
+        local mx is max of [b, IMAX - 1]
+        local sm is sum of [b, b]
+        # json
+        local js is json_encode of [nest, d, xs]
+        local back is json_decode of js
+        local jb is json_build of ["a", b, "b", IMIN]
+        local jp is json_path of [js, "0"]
+        # formatting
+        local s1 is f"{b}|{IMIN}|{IMAX}|{nest}"
+        local s2 is str of xs
+        total is total + len of s1 + len of s2 - len of s1 - len of s2
+        if not (has and at == 1 and r2 == IMIN and nc == b and da == b and len of cp == 10):
+            print of ["BAD", has, at, r2, nc, da, len of cp]
+            assert of [false, "work invariant"]
+        k is k + 1
+    return total
+
+ck of [(work of [P47, N]) == 0, "work"]
+
+# exact checks once
+xs is [P47, SMAX, IMAX, IMIN, 1]
+append of [xs, P47 + 1]
+ck of [xs[5] == 140737488355329, "append boxed"]
+xs[1] is IMIN
+ck of [xs[1] == IMIN, "set boxed over smi"]
+ck of [(str of xs[0:3]) == "[140737488355328, -9223372036854775808, 9223372036854775807]", "slice text"]
+srt is sort of [B53, 9007199254740992.0, 9007199254740992, IMAX, IMIN, F47, P47, -1]
+ck of [(str of srt) == "[-9223372036854775808, -1, 140737488355328, 140737488355328, 9007199254740992, 9007199254740992, 9007199254740993, 9223372036854775807]", "sort exact order"]
+ck of [(num_type of srt[2]) != (num_type of srt[3]), "sort keeps both kinds at the tie"]
+sb is sort_by of [[P47, 3, IMIN, IMAX], (v) => 0.0 - v]
+ck of [sb[0] == IMAX and sb[3] == IMIN, "sort_by order"]
+ck of [(json_encode of [3, IMAX, {"min": IMIN}]) == "[3,9223372036854775807,{\"min\":-9223372036854775808}]", "json exact"]
+ck of [(f"{P47}") == "140737488355328", "fstring digits"]
+
+# error paths, looped: int dict keys (refused), boxed index, boxed slice
+# bounds, a raise inside a sort_by key
+define errs(n) as:
+    local caught is 0
+    local k is 0
+    local ys is [P47, IMAX, IMIN, "s"]
+    local dd is {"a": P47}
+    loop while k < n:
+        try:
+            dd[P47 + k] is IMAX
+        catch e:
+            caught is caught + 1
+        try:
+            local q is {P47: IMIN}
+        catch e:
+            caught is caught + 1
+        try:
+            local q is dd[IMAX - k]
+        catch e:
+            caught is caught + 1
+        try:
+            local q is ys[P47 + k]
+        catch e:
+            caught is caught + 1
+        try:
+            ys[IMIN + k] is P47
+        catch e:
+            caught is caught + 1
+        try:
+            local q is ys[1:IMAX - k]
+        catch e:
+            caught is caught + 1
+        try:
+            local q is sort_by of [[P47, IMIN, k], (v) => 0 - v]
+        catch e:
+            caught is caught + 1
+        k is k + 1
+    return caught
+ec is errs of N
+ck of [ec == 7 * N, f"errs caught {ec}"]
+
+print of f"boxed int containers: PASS checks={CK}"
