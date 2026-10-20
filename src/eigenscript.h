@@ -1887,6 +1887,7 @@ static inline int num_to_i64_exact(double x, int64_t *out) {
 }
 #define EIGS_NO_INT_REP_FMT "'%s': number %.17g has no integer representation"
 
+__attribute__((unused))
 static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {
     double x = buffer_read_num(buffer, index);
     if (g_has_error) return 0;

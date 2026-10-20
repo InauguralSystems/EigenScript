@@ -56,6 +56,7 @@ static inline int slot_is_heap(EigsSlot s)    { return (s.u & SLOT_TAG_MASK) == 
 /* #262 Step E: TAG_TRACKED is gone — a number is always an immediate, never a
  * heap-boxed observer-tracked Value. Heap is the only pointer tag. */
 static inline int slot_is_ptr(EigsSlot s)     { return (s.u & SLOT_TAG_MASK) == TAG_HEAP; }
+__attribute__((unused))
 static inline int slot_is_numeric(EigsSlot s) { return slot_is_num(s); }
 
 /* Accessors (caller must check the predicate first) */
@@ -139,6 +140,7 @@ static inline void slot_decref(EigsSlot s) {
  * Immediate-number truthiness is a non-zero double; null and false
  * are falsy; everything else (heap, tracked) defers to caller-side
  * is_truthy() for now (Phase A keeps semantics identical). */
+__attribute__((unused))
 static inline int slot_truthy_immediate(EigsSlot s, int *out_decided) {
     if (slot_is_num(s)) { *out_decided = 1; return SLOT_NUM_RAW(s) != 0.0; }
     if (slot_is_null(s) || s.u == SLOT_FALSE_BITS) { *out_decided = 1; return 0; }
