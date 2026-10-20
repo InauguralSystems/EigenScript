@@ -289,6 +289,74 @@ def names(docs, api):
     if not known:
         red('--api returned no names')
 
+def stale_builtin_calls(api):
+    """Reject call-like builtin claims that have no registration anchor."""
+    source = Path('src/builtins.c').read_text()
+    registration = re.search(r'void register_builtins\(Env \*env\) \{(.*?)(?:\n\})',
+                             source, re.S)
+    if not registration:
+        red('src/builtins.c: register_builtins table is missing')
+        return
+    registered = set(re.findall(
+        r'env_set_local_owned\(env, "([a-z_][a-z_0-9]*)",', registration[1]))
+    if not registered:
+        red('src/builtins.c: register_builtins table yielded no names')
+        return
+
+    # --api is itself produced from the live registered environment, including
+    # registrations delegated to host/extension tables by register_builtins.
+    known = set(api.split())
+    for api_line in api.splitlines():
+        fields = api_line.split()
+        if fields[:1] == ['lib'] and len(fields) > 1:
+            lib_name = fields[1].split('(', 1)[0]
+            known.update((lib_name, lib_name.split('.', 1)[-1]))
+    known.update(('report_value', 'trajectory', 'prev'))  # reserved call forms
+    source_text = Path('src/eigenscript.c').read_text()
+    pred = re.search(r'EIGS_PREDICATE_NAMES\[.*?\{(.*?)\};', source_text, re.S)
+    if pred:
+        known.update(re.findall(r'"([a-z_]+)"', pred[1]))
+
+    examined = 0
+    # These are the observer contract pages damaged by the builtin removal.
+    # Restricting the walk keeps this check auditable; the general front-door
+    # call check above remains responsible for its declared document set.
+    for path in map(Path, ('docs/SPEC.md', 'docs/PREDICATES.md', 'docs/OBSERVER.md')):
+        text = path.read_text()
+        local = set(re.findall(r'define ([a-z_][a-z_0-9]*)', text))
+        local.update(re.findall(r'^ *([a-z_][a-z_0-9]*) is ', text, re.M))
+        local.update(re.findall(r'`(?:local )?([a-z_][a-z_0-9]*) is ', text))
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for name in re.findall(r'`([a-z_][a-z_0-9.]*) of(?:[ `]|$)', line):
+                examined += 1
+                base = name.split('.', 1)[-1]
+                if ('.' not in name and name != 'is' and name not in known and
+                    base not in known and name not in local):
+                    red(f'{path}:{lineno} calls {name} of, absent from registered API')
+
+    # A leading C signature/Usage comment asserts a builtin surface. A compiler
+    # comparison against a call callee gives that surface special semantics.
+    usage = re.compile(r'^\s*/\*\s*(?:Usage:\s*)?([a-z_][a-z_0-9]*) of(?:[ `]|$)')
+    for path in (Path('src/builtins.c'), Path('src/compiler.c')):
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            for name in usage.findall(line):
+                examined += 1
+                if name not in known:
+                    red(f'{path}:{lineno} documents {name} of, absent from registered API')
+    compiler = Path('src/compiler.c').read_text()
+    for match in re.finditer(
+            r'strcmp\((?:fn|callee)(?:_node)?->[^,]+, "([a-z_][a-z_0-9]*)"\)',
+            compiler):
+        name = match[1]
+        examined += 1
+        if name not in known:
+            lineno = compiler.count('\n', 0, match.start()) + 1
+            red(f'src/compiler.c:{lineno} scans for {name}, absent from registered API')
+    print(f'  REGISTERED BUILTIN CALLS: examined {examined} call claim(s), '
+          f'{len(registered)} direct registration row(s)')
+    if not examined:
+        red('REGISTERED BUILTIN CALLS examined 0 call claims')
+
 
 def builtin_families(docs, api):
     # A family mentioned in prose must have a public API marker. Negative
@@ -534,6 +602,7 @@ def main():
     targets(docs)
     api = run(binary, '--api')
     names(docs, api)
+    stale_builtin_calls(api)
     builtin_families(docs, api)
     stale_concurrency_claims()
     enrolment()

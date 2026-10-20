@@ -108,44 +108,33 @@ the module-level-`for` asymmetry and the closure-per-entity recipe are in
 
 The observer's experience is a smooth, continuous signal. Turning that
 into the vocabulary `converged` / `stable` / `improving` / … requires
-drawing lines on it — and a line is a decision made from outside. Those
-lines are the three thresholds:
+drawing lines on it — and a line is a decision made from outside. The runtime
+uses three fixed entropy thresholds (`dh_zero = 0.001`, `dh_small = 0.01`,
+`h_low = 0.1`), a fixed ten-sample window, and a value-channel characteristic
+scale of `0.001`.
 
-```eigenscript fragment dh_zero=0.001 dh_small=0.01 h_low=0.1 scale=0.001 n=10
-# defaults: 0.001, 0.01, 0.1
-# default: 0.001
+```eigenscript fragment
+dh_zero is 0.001
+dh_small is 0.01
+h_low is 0.1
+scale is 0.001
+window is 10
 ```
 
-act of naming.** The engine even refuses to let you collapse it
-(`dh_zero` must be `< dh_small`): you cannot configure an observer that
-has *no* ambiguous middle. Naming always leaves a gray zone.
-
-This is the no-outside principle applied one level up. The language ships
-*without* a built-in goal precisely so it doesn't choose your frame for
-you. The threshold is where meaning enters, and meaning is yours to set.
+Naming always leaves a gray zone; the language ships without
+a built-in goal precisely so it does not choose the user's frame.
 
 ## The trajectory vocabulary
 
-`report of x` and the bare predicates (`converged`, `improving`, …) read
-the value's `why` (and its `where`) and quantize them into bands:
-
-```
-|why| < dh_zero ............................ equilibrium / converged   (no signal)
-dh_zero <= |why| < dh_small ............... stable / oscillating       (signal, distrusted)
-|why| >= dh_small ......................... improving / diverging      (signal, trusted)
-```
-
-- **`converged`** — barely changing *and* low information (`where < h_low`).
-- **`equilibrium`** — barely changing, but still information-rich.
-- **`stable`** — changing only a little, not flipping sign.
-- **`oscillating`** — the sign of `why` keeps flipping.
-- **`improving`** — information is falling fast (becoming more determined).
-- **`diverging`** — information is rising fast (becoming less determined).
-
-Note the inner band is the *probabilistic* one: the signal exists but is
-treated as noise. The outer band is the *deterministic* one: the signal is
-taken as fact. Which band a given motion lands in is set entirely by where
-you put the thresholds — see [Resolution](#resolution).
+`report of x` and the bare predicates (`converged`, `improving`, …) route
+by the binding's current type. **Numeric bindings use the value channel**: it
+classifies relative steps `Δv / max(|v|, |v_prev|, scale)` and retained raw
+steps. **Non-numeric bindings use the entropy channel**: it classifies changes
+in `entropy(value)` against the entropy thresholds. The resulting vocabulary
+is `converged`, `equilibrium`, `stable`, `oscillating`, `improving`, and
+`diverging`; `report` can additionally answer `moving` when no band matches.
+See [PREDICATES](PREDICATES.md#which-channel-answers-861) for the precise
+windowed tests on each channel.
 
 - **`opaque`** (#708) — the binding currently holds a function or
   builtin. A function has no content the observer can sample, so no band
@@ -188,12 +177,13 @@ in the flat-entropy plateau around 5 — see #294.)
 `report_value of x` classifies the **value's own trajectory** instead, using
 the identical windowed logic and thresholds on the value's relative step
 `Δv / max(|x|, |x_prev|, scale)` (#1045 — relative to the step's own local
-scale, so the bands mean the same across value scales *and units*; `scale`,
-counts as zero and the deadband turns absolute). On the
+scale, so the bands mean the same across value scales *and units*; the runtime
+state's characteristic scale is `0.001` in a normal run, and below it the
+deadband turns absolute). On the
 same oracle it answers `moving`/`oscillating` — correctly never `converged`.
-The window the bands read is `N` samples deep — 10 by default,
-`N` samples of the observation cadence cannot fold inside it, so size the
-window to the slowest mode you expect (PREDICATES.md "The window").
+The window the bands read is fixed at `N = 10` samples. A mode slower than ten
+samples of the observation cadence cannot fold inside it, so choose the cadence
+to cover the slowest mode you expect (PREDICATES.md "The window").
 Its vocabulary is `oscillating` (sign of `Δv` keeps flipping), `diverging`
 (non-vanishing same-sign steps — see below), `converged` (a full window of
 ~zero relative steps), `stable` (small relative steps, no flips), `moving`
