@@ -461,7 +461,8 @@ def selftest():
     content |= {'Makefile', 'VERSION', 'CHANGELOG.md',
                 'tools/docs_claims_check.sh', 'tools/docs_claims_populations.txt',
                 'tools/werror_flags.txt', 'tests/test_doc_examples.py',
-                'src/eigenscript.c', 'src/lexer.c'}
+                'src/builtins.c', 'src/compiler.c', 'src/eigenscript.c',
+                'src/lexer.c'}
     # PATHS reads existence, not contents, of referenced tracked paths.
     refs = set()
     pat = r'`(?:' + '|'.join(map(re.escape, SEGMENTS)) + r')/[A-Za-z0-9_.*/-]*`'
