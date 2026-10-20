@@ -1,17 +1,26 @@
 # The SCOPE BOUNDARY of #1144, made executable.
 #
-# Two workers load_file the same module 40x while main loads another; the
-# shared module's `define` rebinds one global that the other thread is
-# calling. That is the user-level shared-mutable-state race
-# (docs/CONCURRENCY.md, "Loading from workers") and the same-slot value /
-# assign-count class `src/eigenscript.c`'s #607 comment declares out of scope
-# — it is filed on its own and is NOT expected to be ThreadSanitizer-clean.
+# Two workers load_file the same module 40x while main loads another, and a
+# second pair of workers races on purpose. What tests/test_tsan.sh asserts
+# about this program is not "zero reports" but "no LOADER STRUCTURE appears in
+# any report": no in-flight load stack, no module cache, no module-namespace
+# table. If #1144 regresses, one of those symbols comes back and the row goes
+# red, which is the executable form of "out of scope" instead of a sentence.
 #
-# What tests/test_tsan.sh asserts about this program is therefore not "zero
-# reports" but "no LOADER STRUCTURE appears in any report": no in-flight load
-# stack, no module cache, no module-namespace table. If #1144 regresses, one
-# of those symbols comes back and the row goes red — which is the executable
-# form of "out of scope", instead of a sentence.
+# The loaders' module `define` rebinds one global the other worker is calling.
+# That used to be this file's race (#1171): its reports were on the binding's
+# value and refcount, and on 965dfbd0 it could crash. #1171 made the rebind
+# safe, so it no longer reports, and a positive control that has to RACE
+# cannot lean on it (#1489).
+#
+# The deliberate race is the racer pair: two closures race on NUMBER elements
+# of a list they share, a container race docs/CONCURRENCY.md still leaves to
+# the program. It cannot corrupt memory (immediates: no store frees anything,
+# the list never grows) and it cannot miss: each racer spins until it READS
+# the other's write, so neither finishes without an unsynchronized read of the
+# other's store, and no lock or channel operation sits between the two
+# accesses to order them. `cell` lives in a captured function env, which no
+# lock guards. The spin caps only bound a broken run; it then reports vacuous.
 define lm_ur_worker(k) as:
     local i is 0
     local n is 0
@@ -20,10 +29,32 @@ define lm_ur_worker(k) as:
         n is n + (lm_rebind_fn of k)
         i is i + 1
     return n
+
+define lm_ur_race_pair() as:
+    local cell is [0, 0]
+    define racer_a as:
+        cell[0] is 1
+        local spins is 0
+        loop while cell[1] == 0 and spins < 2000000:
+            spins is spins + 1
+        return spins
+    define racer_b as:
+        local spins is 0
+        loop while cell[0] == 0 and spins < 2000000:
+            spins is spins + 1
+        cell[1] is 1
+        return spins
+    return [racer_a, racer_b]
+
+racers is lm_ur_race_pair of null
 h1 is spawn of [lm_ur_worker, 1]
 h2 is spawn of [lm_ur_worker, 2]
+h3 is spawn of racers[0]
+h4 is spawn of racers[1]
 mi is 0
 loop while mi < 40:
     load_file of "loader_mt_modules/lm_other.eigs"
     mi is mi + 1
+thread_join of h3
+thread_join of h4
 print of f"UR {thread_join of h1} {thread_join of h2}"
