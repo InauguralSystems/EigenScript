@@ -635,7 +635,7 @@ axis. Three controls bound it:
 | `http_serve` | `http_serve of port` | Start blocking HTTP server |
 | `http_request_body` | `http_request_body of null` | Get current request body |
 | `http_session_id` | `http_session_id of null` | Get current session ID |
-| `http_post` | `http_post of [url, headers, body]` | HTTP POST via curl (no shell). `headers` is a JSON **string**, either an object (`"{\"X-Key\": \"v\"}"`) or a flat alternating array (`"[\"X-Key\", \"v\"]"`); `""` means no headers. Any other parsed shape raises `type_mismatch` rather than silently sending none (#755). Max 32 headers; CR/LF is stripped from both halves |
+| `http_post` | `http_post of [url, headers, body]` | HTTP POST via curl (no shell). `headers` is a JSON **string**, either an object (`"{\"X-Key\": \"v\"}"`) or a flat alternating array (`"[\"X-Key\", \"v\"]"`); `""` means no headers. Any other parsed shape raises `type_mismatch` rather than silently sending none (#755). JSON integer header values within int64 retain every digit when sent as text (N14, B6). Max 32 headers; CR/LF is stripped from both halves |
 | `http_request_headers` | `http_request_headers of null` | Get current request headers |
 
 ### Per-worker code routes
@@ -675,7 +675,7 @@ server down with it. Total bytes are bounded by
 | `shared_keys` | `shared_keys of null` | Return list of keys. |
 | `shared_size` | `shared_size of null` | Return current key count. |
 | `shared_clear` | `shared_clear of null` | Drop all entries. |
-| `shared_incr` | `shared_incr of [key, delta]` | Atomic single-lock read-modify-write. Missing key treated as `0`. Returns new value, or `null` if existing value is non-numeric. |
+| `shared_incr` | `shared_incr of [key, delta]` | Atomic single-lock read-modify-write. Missing key treated as int `0`. Two ints produce an exact int; a float operand produces a float. Int64 overflow raises `value` without changing the counter. Returns new value, or `null` if existing value is non-numeric. |
 
 Individual op atomicity is guaranteed by the mutex. For
 read-modify-write atomicity use `shared_incr`; `shared_get`+`shared_set`

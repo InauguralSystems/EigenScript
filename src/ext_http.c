@@ -939,7 +939,8 @@ Value* builtin_shared_set(Value *arg) {
  * as 0 (so the first incr inserts the key with `delta` as its value);
  * an existing non-numeric value is a usage error, returns null without
  * mutating. Subject to the same byte cap as shared_set. Returns the new
- * value on success, null on bad args / over-cap / type mismatch. */
+ * value on success, null on bad args / over-cap / type mismatch. Ints add
+ * exactly and int64 overflow raises without mutating the counter (A). */
 Value* builtin_shared_incr(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "shared_incr");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
@@ -949,12 +950,13 @@ Value* builtin_shared_incr(Value *arg) {
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
-    double delta = eigs_num_arg(delta_v, __func__);
+    EigsNum delta = eigs_number_arg(delta_v, __func__);
+    if (g_has_error) return make_null();
     long cap = shared_max_bytes();
 
     pthread_mutex_lock(&s->shared_mu);
     int idx = shared_find(s, key_v->data.str);
-    double cur = 0;
+    EigsNum cur = { .is_int = 1, .value = { .i64 = 0 } };
     if (idx >= 0) {
         int pos = 0;
         Value *parsed = eigs_json_parse_root(s->shared[idx].json, &pos);   /* #777 */
@@ -962,22 +964,42 @@ Value* builtin_shared_incr(Value *arg) {
          * and drop it on the mismatch path too, which is the one an early
          * return makes easy to miss. */
         int bad = (!parsed || !val_is_number(parsed));
-        if (!bad) cur = eigs_num_arg(parsed, __func__);
+        if (!bad) cur = eigs_number_arg(parsed, __func__);
         val_decref(parsed);
-        if (bad) {
+        if (bad || g_has_error) {
             pthread_mutex_unlock(&s->shared_mu);
             return make_null();
         }
     }
-    double new_val = cur + delta;
-    /* eigs_json_encode borrows its argument, so the Value handed to it is
-     * ours to release. */
-    Value *new_v = make_num(new_val);
+    Value *new_v;
+    if (cur.is_int && delta.is_int) {
+        int64_t new_val;
+        if (__builtin_add_overflow(cur.value.i64, delta.value.i64, &new_val)) {
+            pthread_mutex_unlock(&s->shared_mu);
+            rt_error(EK_VALUE, 0, "shared_incr: integer overflow in '+'");
+            return make_null();
+        }
+        new_v = make_int(new_val);
+    } else {
+        double cur_f = cur.is_int ? (double)cur.value.i64 : cur.value.f64;
+        double delta_f = delta.is_int ? (double)delta.value.i64 : delta.value.f64;
+        new_v = make_float(cur_f + delta_f);
+    }
+    if (g_has_error) {
+        val_decref(new_v);
+        pthread_mutex_unlock(&s->shared_mu);
+        return make_null();
+    }
+    /* eigs_json_encode borrows new_v. Keep its owned ref for the return value
+     * on success and release it on every refusal before leaving the lock. */
     char *new_json = eigs_json_encode(new_v);
-    val_decref(new_v);
     /* A number can't exceed the depth bound, but don't leave a bare strlen on
      * a documented-nullable return. */
-    if (!new_json) { pthread_mutex_unlock(&s->shared_mu); return make_null(); }
+    if (!new_json) {
+        val_decref(new_v);
+        pthread_mutex_unlock(&s->shared_mu);
+        return make_null();
+    }
     long new_json_len = (long)strlen(new_json);
     long key_len = (long)val_str_len(key_v);
     long old_bytes = (idx >= 0) ? (long)strlen(s->shared[idx].json) : 0;
@@ -986,6 +1008,7 @@ Value* builtin_shared_incr(Value *arg) {
     if (s->shared_bytes + delta_bytes > cap) {
         pthread_mutex_unlock(&s->shared_mu);
         free(new_json);
+        val_decref(new_v);
         return make_null();
     }
     if (idx >= 0) {
@@ -1003,7 +1026,7 @@ Value* builtin_shared_incr(Value *arg) {
     }
     s->shared_bytes += delta_bytes;
     pthread_mutex_unlock(&s->shared_mu);
-    return make_num(new_val);
+    return new_v;
 }
 
 Value* builtin_shared_get(Value *arg) {

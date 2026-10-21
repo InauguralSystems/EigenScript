@@ -34,8 +34,9 @@ names as a value (a comparator, an op table entry; closure depth 4), contains
 a site, or if it calls the shared formatter or equality (SEMANTIC_LEAVES).
 Every numeric builtin must have exactly one row in the classification table
 of docs/design/phase2-numbers.md (class and loss columns from closed token
-sets), every row must name a numeric builtin, and a LOSS row must have a
-double path in its closure.
+sets), every row must name a numeric builtin, and the LOSS names must equal
+the frozen historical LOSS scope (§6). Migration
+removes lossy paths; it does not change those historical classifications.
 
 Usage: tools/phase2_inventory.py [--src DIR] [--doc FILE] [--out FILE]
                                  [--no-write] [--sites]
@@ -92,6 +93,7 @@ VOCAB = {
     # (c) producers
     'make_num': 'PRODUCE',
     'make_num_permanent': 'PRODUCE',
+    'make_int': 'PRODUCE',         # an int-only builtin must remain numeric after R1.6
     'slot_from_f64': 'PRODUCE',    # R1.1: was slot_from_num
     'slot_from_int': 'PRODUCE',    # R1.1: the one int writer (no runtime caller before R1.3)
     'list_set_num': 'PRODUCE',
@@ -741,10 +743,21 @@ LOSS_MARKS = {'LOSS', '-'}
 # Q7 (decided, #1758 comment 6174302316): the class of each continuous
 # parameter. A row names the classes it has, in this order, or `-`.
 Q7_CLASSES = ['geometry', 'bounded', 'magnitude']
-# A LOSS row claims the body computes through a double; it must have one.
-DOUBLE_PATH = {'eigs_num_arg', 'eigs_list_num', 'eigs_slot_num', 'eigs_opt_num', 'eigs_slot_opt_num',
-               'eigs_slot_elem_num', 'eigs_elem_num', 'buffer_read_num', 'make_num', 'slot_f64_value',
-               'VAL_F64_RAW', 'SLOT_F64_RAW', 'strtod', 'atof', 'num_guard', 'list_set_num'}
+# §6 defines LOSS as the original tree's risk, not today's remaining double
+# paths. Generated from the approved R1.6 bar import's §6 LOSS column:
+#   0a73adb0612f8612d75393891ae2ba2e1c803663:docs/design/phase2-numbers.md
+#   blob b2f583afd653e845887045795077823077388442
+# R1.6b-D3 (#1758 comment 6320170738) adds http_post: the original
+# header decoder rounded integers; the approved loss mark omitted it.
+# Keep this fixed historical scope in the script so git-archive calibrations
+# remain self-contained. Added AND removed marks require an explicit review.
+HISTORICAL_LOSS = frozenset('''
+abs add ceil db_execute db_query_json db_query_value floor hex http_post json_build
+json_decode json_encode json_path max min monotonic_ns multiply negative num
+num_copy random_int round scan_int_tokens scan_ints seed_random shared_incr
+sign_extend sort sort_by store_delete store_get store_put store_query
+store_update subtract sum task_sched_seed
+'''.split())
 
 
 def read_table(doc):
@@ -845,9 +858,10 @@ def main():
     b_unclassified = sorted(n for n in nb if table is None or n not in table)
     b_stale = sorted(n for n in (table or {}) if n not in nb)
     loss_rows = sorted(n for n, (c, l, q) in (table or {}).items() if l == 'LOSS')
-    for n in loss_rows:
-        if n in nb and not (set(nb[n][1]) & DOUBLE_PATH):
-            table_bad.append('`%s` is marked LOSS but its closure has no double-path token' % n)
+    for n in sorted(HISTORICAL_LOSS - set(loss_rows)):
+        table_bad.append('`%s` is missing its historical LOSS mark' % n)
+    for n in sorted(set(loss_rows) - HISTORICAL_LOSS):
+        table_bad.append('`%s` is marked LOSS but is not in the historical LOSS scope' % n)
     class_count = {}
     q7_count = {}
     for n, (c, l, q) in (table or {}).items():

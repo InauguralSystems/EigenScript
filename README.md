@@ -476,6 +476,19 @@ columns returned directly remain floats. Float parameter text stays in its
 existing format until R1.7. The executable DB examples and boundary assertions
 in `tests/test_db.eigs` run on the server-db profile with PostgreSQL.
 
+The HTTP shared counter `shared_incr` follows numeric `+`: two int operands
+return an exact int and int64 overflow raises `value` without changing the
+stored counter (A). A missing counter starts at int zero. A float operand
+produces a float. The stored operand is its JSON-decoded value; existing
+float text stays until R1.7, so an integer-valued float may read back as an
+int during this transition. Executable shared-counter examples in
+`tests/test_http.eigs` cover exact values, both overflow directions and the
+next operation after a raise.
+
+`http_post` also preserves every digit of JSON integer header values within
+int64 before sending them as text (N14, B6). The executed loopback example
+is `tests/phase2/builtins/builtins/http_post.eigs`.
+
 ## Standard Library
 
 Pure EigenScript libraries under `lib/`:

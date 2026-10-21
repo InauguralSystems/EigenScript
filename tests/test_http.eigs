@@ -87,4 +87,52 @@ catch e:
     header_shape is contains of [e.message, "requires"]
 assert_true of [header_shape, "HTTP17 response header shape raises"]
 
+# N3 / (A): shared counters preserve integer arithmetic, including boxed
+# ints. Follow every refused update with another operation to exercise the
+# lock cleanup and prove that storage was not changed by the raise.
+counter_big is 9007199254740992
+assert_true of [(num_type of counter_big) == "int", "HTTP18 N3 boxed counter fixture is int"]
+shared_set of ["phase2-big", counter_big]
+counter_next is shared_incr of ["phase2-big", 1]
+assert_true of [counter_next == 9007199254740993, "HTTP18 N3 shared counter adds exactly above 2^53"]
+assert_true of [(num_type of counter_next) == "int", "HTTP18 N3 shared result is int"]
+counter_read is shared_get of "phase2-big"
+assert_true of [counter_read == counter_next and (num_type of counter_read) == "int", "HTTP18 N14 stored boxed counter stays exact int"]
+
+shared_set of ["phase2-max", 9223372036854775807]
+counter_overflow is ""
+try:
+    shared_incr of ["phase2-max", 1]
+catch e:
+    counter_overflow is e.kind
+assert_true of [counter_overflow == "value", "HTTP19 A shared INT64_MAX overflow raises value"]
+assert_true of [(shared_get of "phase2-max") == 9223372036854775807, "HTTP19 A overflow leaves counter unchanged and unlocks"]
+assert_true of [(shared_incr of ["phase2-max", -1]) == 9223372036854775806, "HTTP19 A next increment succeeds after overflow"]
+
+counter_min is -9223372036854775807 - 1
+assert_true of [(num_type of counter_min) == "int", "HTTP20 N3 INT64_MIN fixture is int"]
+shared_set of ["phase2-min", counter_min]
+counter_underflow is ""
+try:
+    shared_incr of ["phase2-min", -1]
+catch e:
+    counter_underflow is e.kind
+assert_true of [counter_underflow == "value", "HTTP20 A shared INT64_MIN underflow raises value"]
+assert_true of [(shared_get of "phase2-min") == counter_min, "HTTP20 A underflow leaves counter unchanged and unlocks"]
+assert_true of [(shared_incr of ["phase2-min", 1]) == -9223372036854775807, "HTTP20 A next increment succeeds after underflow"]
+
+shared_set of ["phase2-float", 1.5]
+counter_float is shared_incr of ["phase2-float", 2]
+assert_true of [counter_float == 3.5 and (num_type of counter_float) == "float", "HTTP21 N3 float counter keeps float arithmetic"]
+shared_set of ["phase2-mixed", 1]
+counter_mixed is shared_incr of ["phase2-mixed", 0.5]
+assert_true of [counter_mixed == 1.5 and (num_type of counter_mixed) == "float", "HTTP21 N3 float delta produces float"]
+counter_new is shared_incr of ["phase2-new", 7]
+assert_true of [counter_new == 7 and (num_type of counter_new) == "int", "HTTP22 N3 absent counter starts at int zero"]
+counter_new_float is shared_incr of ["phase2-new-float", 0.5]
+assert_true of [counter_new_float == 0.5 and (num_type of counter_new_float) == "float", "HTTP22 N3 absent float counter stays float"]
+shared_set of ["phase2-string", "heap counter mismatch"]
+assert_true of [(shared_incr of ["phase2-string", 1]) == null, "HTTP23 nonnumeric shared counter still returns null"]
+assert_true of [(shared_get of "phase2-string") == "heap counter mismatch", "HTTP23 nonnumeric counter remains unchanged and unlocks"]
+
 test_summary of null

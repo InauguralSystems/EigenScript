@@ -219,12 +219,28 @@ return a status (`jit_helper_*`, the observer), a slot (`slot_from_value`,
 the container writers) or a truth value (`is_truthy`,
 `slot_truthy_immediate`).) The script fails if a numeric builtin has no
 row, a row names no numeric builtin, a class or loss mark is not one of the
-allowed tokens, or a `LOSS` row has no double path in its closure.
+allowed tokens, or the historical `LOSS` scope differs in either direction.
+`make_int` is a producer site too: an int-only builtin remains in the numeric
+population after its double bridge is removed.
+
+R1.6b aligns the `LOSS` check with §6's historical definition. The fixed set
+is generated from the approved pre-migration table at
+`0a73adb0612f8612d75393891ae2ba2e1c803663` (document blob
+`b2f583afd653e845887045795077823077388442`), and is kept in the inventory
+script so archive-based checks need no live git repository. R1.6b-D3
+(#1758 comment 6320170738) corrects the omitted historical `http_post`
+header loss, adding it to that approved scope. Both adding a
+mark outside that scope and removing one inside it fail. A successful
+migration therefore need not retain a lossy double path merely to satisfy
+the inventory; current builtin membership and classification checks remain.
 
 **Calibration: every check turns red on its plant.** Each plant runs
 against a scratch copy of `src/` and of this document (`--src`, `--doc`,
-`--no-write`), never the worktree; the unplanted copy passes first. All 20
-were KILLED on this tree, each by its own FAIL line:
+`--no-write`), never the worktree; the unplanted copy passes first. The
+recorded round-0 calibration killed all 20 plants below, each by its own
+FAIL line. R1.6b replaces G's then-current double-path predicate with the
+historical-scope predicate described above; its one-time calibration removes
+the `make_int` vocabulary entry and adds/removes historical `LOSS` marks.
 
 | plant | mutation | the red line |
 |---|---|---|
