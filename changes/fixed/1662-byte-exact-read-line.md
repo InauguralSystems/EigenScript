@@ -1,0 +1,1 @@
+- Made `read_line` preserve line-ending bytes so pipe and redirected-file input agree and callers can distinguish a terminated final line.

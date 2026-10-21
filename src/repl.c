@@ -117,9 +117,10 @@ static int repl_eval_buffer(Env *env, strbuf *input, int *failed) {
 /* ---- shared line accumulation (#1109) ----
  * Both input paths hand raw lines to one accumulator, so the multi-line
  * rules live in exactly one place: a line ending in ':' opens a block; a
- * blank line closes it; an unindented non-blank line closes it AND joins the
- * same unit. `exit`/`quit` are matched here too, so a line re-fed after a
- * failed unit is recognised exactly like a freshly typed one.
+ * dedented catch/elif/else clause continues its open compound statement; a
+ * blank line closes it; any other unindented non-blank line closes it AND
+ * joins the same unit. `exit`/`quit` are matched here too, so a line re-fed
+ * after a failed unit is recognised exactly like a freshly typed one.
  *
  * The bug this structure fixes: the closing unindented line is part of the
  * accumulated unit, so when that unit fails to tokenize/parse/compile it was
@@ -151,6 +152,24 @@ static int repl_is_exit_command(const char *line) {
     while (*line == ' ' || *line == '\t') line++;
     return strcmp(line, "exit\n")   == 0 || strcmp(line, "quit\n")   == 0 ||
            strcmp(line, "exit\r\n") == 0 || strcmp(line, "quit\r\n") == 0;
+}
+
+/* The parser's only clauses which follow a completed, dedented suite.  Match
+ * a whole leading keyword and require the same trailing colon that opens any
+ * REPL block; names such as `elsewhere` must remain ordinary terminators. */
+static int repl_is_continuation_clause(const char *line, size_t len) {
+    const char *end = line + len;
+    while (end > line && (end[-1] == '\n' || end[-1] == '\r' ||
+                          end[-1] == ' ' || end[-1] == '\t')) end--;
+    if (end == line || end[-1] != ':') return 0;
+
+    const char *word_end = line;
+    while (word_end < end && *word_end != ' ' && *word_end != '\t' &&
+           *word_end != ':') word_end++;
+    size_t word_len = (size_t)(word_end - line);
+    return (word_len == 5 && memcmp(line, "catch", 5) == 0) ||
+           (word_len == 4 && memcmp(line, "elif", 4) == 0) ||
+           (word_len == 4 && memcmp(line, "else", 4) == 0);
 }
 
 /* Feed one raw input line (trailing newline included) into the accumulator,
@@ -185,6 +204,8 @@ static int repl_feed_line(ReplAccum *st, const char *line) {
                 st->continuation = 0;    /* blank line: run the block */
             } else if (line[0] == ' ' || line[0] == '\t') {
                 return 0;                /* still indented, keep accumulating */
+            } else if (repl_is_continuation_clause(line, len)) {
+                return 0;                /* dedented clause still needs its suite */
             } else {
                 st->continuation = 0;    /* unindented: ends the block + included */
                 terminator = 1;

@@ -36,7 +36,6 @@ case|state.sm_can_send|__sm is sm_add_transition of [sm_new of "idle", "idle", "
 case|state.sm_is|__sm is sm_new of "idle"|__sm;;"idle"
 case|test_runner.is_test_file||"test_x.eigs"
 case|utf8.utf8_validate||(str_from_bytes of ([255]))
-one_sided|json.json_has|pre-existing bug, not #1637: it tests `type of val == "null"` but that type is "none", so it always answers true
 one_sided|observer.is_converged|the argument is a fresh parameter binding with no trajectory (#262)
 one_sided|observer.is_stable|the argument is a fresh parameter binding with no trajectory (#262)
 one_sided|observer.is_improving|the argument is a fresh parameter binding with no trajectory (#262)

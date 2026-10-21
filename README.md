@@ -22,6 +22,7 @@ layer whose numeric task IDs are opaque generation-checked handles, and a
 memory model documented in [docs/CONCURRENCY.md](docs/CONCURRENCY.md) —
 *values* copy through a channel, including mutable buffers and text builders,
 while closure environments and resource handles stay shared by reference,
+a task's unjoined uncaught error fails the run on main or a spawned worker,
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 
@@ -317,6 +318,9 @@ Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
 an integral count from 1 through that cap, and `build_corpus` includes file
 separators in its capped token count. These limits also raise under
 `EIGS_STRICT=0`; see [BUILTINS.md](docs/BUILTINS.md) for the I/O contracts.
+`read_line of null` reads stdin one line at a time byte-exactly, including the
+line terminator, so pipes and redirected files preserve `\r` and expose whether
+the final line ended in `\n`.
 
 File reads follow Python's exception model: `read_text`, `read_bytes`, and
 `read_bytes_buf` raise a catchable `io` error naming the path and the operating

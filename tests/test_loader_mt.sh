@@ -261,8 +261,10 @@ fi
 
 # 2. Every module-cache entry point takes st->module_lock, per site, and the
 #    file-wide total equals the declared site count.
-MODCACHE_SITES="eigs_module_cache_get eigs_module_cache_put eigs_module_cache_clear"
-MODCACHE_DECLARED=3
+# env_mt_invalidate_shared_caches (#1171) walks the cache's envs at the first
+# spawn; it is an entry point like the other three.
+MODCACHE_SITES="eigs_module_cache_get eigs_module_cache_put eigs_module_cache_clear env_mt_invalidate_shared_caches"
+MODCACHE_DECLARED=4
 mc_examined=0
 mc_bad=""
 for fn in $MODCACHE_SITES; do
@@ -290,7 +292,7 @@ for fn in $MODCACHE_SITES; do
 done
 mc_lock=$(grep -c 'pthread_mutex_lock(&st->module_lock)' "$ES_C" || true)
 mc_unlock=$(grep -c 'pthread_mutex_unlock(&st->module_lock)' "$ES_C" || true)
-MODCACHE_UNLOCK_DECLARED=4      # get 1 + put 2 (two exits) + clear 1
+MODCACHE_UNLOCK_DECLARED=5      # get 1 + put 2 (two exits) + clear 1 + invalidate 1
 if [ -z "$mc_bad" ] && [ "$mc_examined" -eq "$MODCACHE_DECLARED" ] \
    && [ "$mc_lock" -eq "$MODCACHE_DECLARED" ] \
    && [ "$mc_unlock" -eq "$MODCACHE_UNLOCK_DECLARED" ]; then

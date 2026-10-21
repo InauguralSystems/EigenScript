@@ -7,7 +7,7 @@
 #
 #   json_get of [json_str, "key"]           # extract top-level key
 #   json_get_path of [json_str, "a.b.c"]    # extract nested value
-#   json_has of [json_str, "key"]           # true if key exists
+#   json_has of [json_str, "key"]           # true if key exists, even if null
 #   json_keys of json_str                   # list of top-level keys
 #   json_from_pairs of pairs                # [[k,v], ...] -> JSON
 #   json_merge of [json_a, json_b]          # merge two JSON objects
@@ -21,12 +21,22 @@ define json_get(json_str, key) as:
 define json_get_path(json_str, path) as:
     return json_path of [json_str, path]
 
-# ---- json_has: check if top-level key exists ----
-# Returns true if key exists and value is not null, false otherwise
+# ---- json_has: check if a key or dotted path exists ----
+# Presence is independent of value: a present JSON null returns true. A missing
+# key returns false, including at any level of a dotted path.
 define json_has(json_str, key) as:
-    val is json_path of [json_str, key]
-    if (type of val) == "null":
-        return false
+    local current is json_decode of json_str
+    local parts is split of [key, "."]
+    for part in parts:
+        if (type of current) != "dict":
+            return false
+        local found is false
+        for candidate in keys of current:
+            if candidate == part:
+                found is true
+        if found == false:
+            return false
+        current is current[part]
     return true
 
 # ---- json_from_pairs: convert [[k,v], ...] to JSON string ----

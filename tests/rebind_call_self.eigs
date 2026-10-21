@@ -1,0 +1,22 @@
+# #1171, single-threaded: a call must hold its callee until the new frame
+# holds the callee's chunk.
+#
+# The callee is pushed BEFORE its argument is evaluated. Here the argument
+# reloads the module that defines the callee, rebinding its name, so the
+# stack holds the old function's LAST reference when the call pops it. The
+# function came from a load_file'd module, so it is also the only holder of
+# its chunk. CASE(CALL) used to drop it first: on 965dfbd0 every run under
+# ASan stopped with heap-use-after-free in chunk_incref <- callframe_init.
+load_file of "loader_mt_modules/lm_gen.eigs"
+
+define reload(v) as:
+    load_file of "loader_mt_modules/lm_gen.eigs"
+    return v
+
+total is 0
+i is 0
+loop while i < 50:
+    total is total + (lm_gen_fn of (reload of 3))
+    i is i + 1
+assert of [total == 300, f"summed {total}"]
+print of "rebind self call: PASS"

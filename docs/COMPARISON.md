@@ -34,6 +34,10 @@ Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
 an integral count from 1 through that cap, and `build_corpus` includes file
 separators in its capped token count. These limits also raise under
 `EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
+Unlike Python text mode, `read_line of null` does not translate line endings:
+it returns each stdin line with its terminator. This follows Lua's preservation
+of the `\r` in CRLF input while additionally retaining `\n`, making the final
+newline observable and making pipes match redirected regular files byte for byte.
 
 Like Python, EigenScript's `read_text`, `read_bytes`, and `read_bytes_buf`
 raise a catchable `io` error carrying the path and operating-system reason for
@@ -405,7 +409,8 @@ kind table and graph-depth limits are in `docs/CONCURRENCY.md`.
 One difference in failure: a Python thread's uncaught exception is printed
 and the process still exits 0. A `spawn`ed EigenScript worker that dies of
 an uncaught error and is never joined fails the whole run (exit status 1) —
-the exit status an unjoined cooperative task gets (see SPEC.md "Concurrency").
+the exit status an unjoined cooperative task gets, including one created on
+a spawned worker thread (see SPEC.md "Concurrency").
 A joined worker hands its error to the joiner instead: `thread_join`
 re-raises it, so catching that raise observes the failure and the run exits
 0, as with `task_join`; left uncaught, it ends the joiner like any uncaught

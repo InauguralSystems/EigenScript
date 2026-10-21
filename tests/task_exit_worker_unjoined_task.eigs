@@ -1,0 +1,11 @@
+define inner_die() as:
+    missing
+define worker() as:
+    d is task_spawn of inner_die
+    task_yield of null
+    print of "WORKER_AFTER_YIELD"
+    return 1
+h is spawn of worker
+r is thread_join of h
+print of f"MAIN_JOINED {r}"
+print of "MARK_END"

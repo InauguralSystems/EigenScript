@@ -1,0 +1,1 @@
+- Repaired observer documentation left incomplete when the observer configuration builtins were removed, removed their dead compiler scan and stale C comments, and added a docs-claims check for unregistered builtin call spellings.

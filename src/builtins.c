@@ -573,16 +573,6 @@ Value* builtin_report(Value *arg) {
     return make_str("equilibrium");
 }
 
-/* Set observer classification thresholds.
- * Usage: set_observer_thresholds of [dh_zero, dh_small, h_low]
- *   dh_zero:  |dH| below this is "essentially zero change"  (default 0.001)
- *   dh_small: |dH| below this is "small but nonzero change"  (default 0.01)
- *   h_low:    entropy below this is "low information content" (default 0.1)
- *
- * WARNING: Changing these affects ALL observer predicates (converged, stable,
- * improving, oscillating, diverging, equilibrium) and the report builtin.
- * The defaults are precisely tuned. Only adjust for studying slow convergence
- * or when working with values whose entropy changes are unusually small. */
 /* Get current observer thresholds.
  * Returns [dh_zero, dh_small, h_low]. */
 Value* builtin_get_observer_thresholds(Value *arg) {
@@ -594,30 +584,9 @@ Value* builtin_get_observer_thresholds(Value *arg) {
     return result;
 }
 
-/* #1044: the observer window depth.
- *
- * The bare form (a number) sets the per-state DEFAULT depth in samples
- * that every value-channel and entropy-channel verdict classifies over:
- * 4..64, 10 at start. Read live, like the thresholds: a binding already
- * carrying a trajectory classifies over the new depth at its next verdict
- * (its ring grows on the next sample; a smaller depth reads fewer
- * samples). The list form (["x", n]) is a per-BINDING override on the
- * binding `x` visible from the call site (the same scope walk `report of
- * x` does), affecting only that slot; n == 0 clears it back to the
- * default. An unbound name raises — there is no slot to widen. Both
- * return null.
- *
- * Why a depth knob: the window is in SAMPLES, and a mode slower than ~N
- * samples of the consumer's cadence cannot fold inside it — the phugoid
- * (T = 46.9 s) observed at 1 Hz read `diverging` on its rising quarter
- * cycles with the fixed 10. Widening the binding's window to cover a
- * period lets the folding rule see the fold. The ceiling is the ring
- * counters' width; the floor is the motion bands' two-samples-per-half. */
 /* #1388: the module namespace env on `start`'s chain -- the env whose parent
  * is the builtin layer. Only module code can resolve a name into the layer,
  * so a caller that reached it always has one. */
-/* set_observer_window of n | ["x", n] — set the default (n) or one binding's (["x", n]) observer window depth, 4..64 samples. */
-/* get_observer_window of null | "x" — the default window depth, or the depth in force on binding "x". */
 /* #1045: the characteristic scale of the value channel — the magnitude
  * below which a value counts as "at zero". The relative step is
  * Δv / max(|v|, |v_prev|, scale): above the scale a verdict is unit-free
@@ -626,8 +595,6 @@ Value* builtin_get_observer_thresholds(Value *arg) {
  * float noise around an exact zero is not motion. Default 0.001. Choose it
  * in the unit the binding is stored in — it is the one number a unit
  * choice still touches. */
-/* set_observer_scale of s — set the value channel's characteristic scale (the |v| below which a value counts as zero), s > 0. */
-/* get_observer_scale of null — the value channel's characteristic scale. */
 /* exit of N — request a clean process exit with code N (default 0). Sets the
  * unwind flag (g_has_error) so vm_run returns to main, plus g_exit_requested so
  * the unwind is UNCATCHABLE (a `try` must not swallow `exit`) and main exits
@@ -3231,9 +3198,8 @@ Value* builtin_sandbox_blocked(Value *arg) {
  * visible inside a sandbox_run; EVERY other name in the global env is shadowed
  * by the blocked stub. A blocklist (the previous design) was fail-OPEN — every
  * builtin was reachable unless someone remembered to deny it, so each new
- * builtin (and ones nobody flagged: set_observer_thresholds, which writes the
- * process-global observer thresholds; the screen_* terminal ops; the channel
- * ops; exit, which kills the host) silently widened the attack surface. With an
+ * builtin (including state-changing observer controls, terminal operations,
+ * channel operations, and exit, which kills the host) silently widened the attack surface. With an
  * allowlist a new builtin is SAFE by default; a missing entry only costs a
  * sandboxed program some functionality, never host safety.
  *
@@ -3281,8 +3247,8 @@ static const char *SANDBOX_ALLOW[] = {
     "path_base", "path_dir", "path_ext", "path_join",
     /* type / value utilities */
     "type", "coalesce", "num_copy", "secure_equals",
-    /* observer READS — touch only the sandbox's own values, never globals
-     * (set_observer_thresholds / record_history are intentionally NOT here).
+    /* observer reads touch only the sandbox's own values, never globals.
+     * record_history is intentionally not here.
      * state_at is also excluded: temporal history belongs to the host thread,
      * not the sealed sandbox environment. */
     "observe", "report", "get_observer_thresholds", "classify",
@@ -4038,9 +4004,8 @@ Value* builtin_set_at(Value *arg) {
      * one. A non-number value is refused with buf_set's message rather than
      * silently type-punned. `at_index`'s negative-from-the-end rule applies
      * to buffers too. */
-    if ((argc == 3 || argc == 4) && BUILTIN_LIST_VIEW(arg, 0)
-        && BUILTIN_LIST_VIEW(arg, 0)->type == VAL_BUFFER) {
-        Value *buf = BUILTIN_LIST_VIEW(arg, 0);
+    Value *buf = (argc == 3 || argc == 4) ? list_get_ref(arg, 0) : NULL;
+    if (buf && buf->type == VAL_BUFFER) {
         Value *val = BUILTIN_LIST_VIEW(arg, argc == 3 ? 2 : 3);
         int64_t off;
         if (argc == 3) {
@@ -4475,8 +4440,15 @@ Value* builtin_spawn(Value *arg) {
      * every later spawn raced with already-running workers reading the flag in
      * env_incref / chunk_incref (the refcount-mode gate). Later spawns now only
      * READ it (the value is already published to all workers via the first
-     * write's happens-before through their pthread_create). */
-    if (!g_vm_multithreaded) g_vm_multithreaded = 1;
+     * write's happens-before through their pthread_create).
+     *
+     * #1171: before the flag goes up, make every inline-cache entry aimed at
+     * a shared env miss. A cache hit reads a binding with no lock, and from
+     * here on another thread may rebind it. */
+    if (!g_vm_multithreaded) {
+        env_mt_invalidate_shared_caches(eigs_current->state);
+        g_vm_multithreaded = 1;
+    }
     /* #827: #739's per-thread history is filtered by a PROCESS-global armed-name
      * set that the compiler grows. Single-threaded that is fine (compile, then
      * run), but a worker calling eval/load_file compiles concurrently with other
@@ -5077,7 +5049,10 @@ Value* builtin_task_join(Value *arg) {
     if (t->state == TASK_DONE || t->state == TASK_DEAD) {
         /* Already finished: deliver its result / error now, no suspend. */
         if (t->has_error) {
-            t->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
+            if (t->err_unobserved) {
+                t->err_unobserved = 0;   /* #493: observed by this join (caught or not) */
+                task_observe_error();
+            }
             if (t->error_value) {
                 val_incref(t->error_value);
                 eigs_clear_error_value();

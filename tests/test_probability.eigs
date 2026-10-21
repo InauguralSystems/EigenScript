@@ -50,6 +50,20 @@ assert_near of [p0, 0.3679, 0.001, "poisson_pmf(0, 1)"]
 pcdf is probability.poisson_cdf of [5, 2]
 assert_near of [pcdf, 0.9834, 0.001, "poisson_cdf(5, 2)"]
 
+# Keep the direct-formula result bit-for-bit where neither intermediate
+# leaves the normal double range.
+assert_eq of [probability.poisson_pmf of [10, 2.5], 0.0002157251844958517, "poisson_pmf direct-formula parity"]
+
+# Large parameters need the log-domain path: pow(lambda, k) and/or k!
+# overflow even though the final probability is representable.
+assert_near of [probability.poisson_pmf of [170, 170.0], 0.030582481093917844, 3.0582481093917844e-14, "poisson_pmf(170, 170) log domain"]
+assert_near of [probability.poisson_pmf of [500, 480.0], 0.011826570883129252, 1.1826570883129252e-14, "poisson_pmf(500, 480) log domain"]
+assert_near of [probability.poisson_pmf of [1000, 1000.0], 0.012614611348719664, 1.2614611348719664e-14, "poisson_pmf(1000, 1000) log domain"]
+assert_near of [probability.poisson_cdf of [200, 190.0], 0.7784236536636114, 7.784236536636114e-13, "poisson_cdf(200, 190) log domain"]
+# A large lambda underflows e^-lambda to 0 even when the probability is a
+# normal double, so the direct formula would return exactly 0.
+assert_near of [probability.poisson_pmf of [100, 800.0], 8.005888215986707e-216, 8.005888215986707e-228, "poisson_pmf(100, 800) e^-lambda underflow"]
+
 # ---- Normal Distribution ----
 print of "--- Normal ---"
 # N(0, 0, 1) = 1/sqrt(2*pi) ~ 0.3989

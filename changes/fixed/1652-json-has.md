@@ -1,0 +1,1 @@
+- Made `json.json_has` test key presence rather than value, so missing keys return `false` while present keys containing JSON `null` return `true`, including along dotted paths.
