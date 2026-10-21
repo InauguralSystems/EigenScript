@@ -79,6 +79,41 @@ at_exit of hook
 EOF
 check_case "callbacks can use retained and newly-created handles" 0 "$WORK/handles.eigs" "made value"
 
+# A callback is a new outermost VM execution, but it must not restart the
+# program's abandoned cooperative queue.  In particular, the capped
+# supervisor below deliberately leaves its endlessly yielding child alive.
+cat >"$WORK/supervisor-leftover.eigs" <<'EOF'
+load_file of "lib/supervise.eigs"
+define hook() as:
+    print of "AT_EXIT ISOLATED RAN"
+at_exit of hook
+define wedged(slot) as:
+    loop while 1 == 1:
+        heartbeat of [slot, 7]
+        task_yield of null
+sup is supervisor_new of 0
+supervise of [sup, wedged, 0]
+supervise_run of [sup, 20]
+EOF
+out=$(timeout -k 2 20 "$EIGS" "$WORK/supervisor-leftover.eigs" 2>&1); rc=$?
+if [ "$rc" -eq 0 ] && [ "$(grep -cFx 'AT_EXIT ISOLATED RAN' <<<"$out" || true)" -eq 1 ]; then
+    echo "  PASS: callbacks do not resume a leftover supervisor task"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: callback isolation rc=$rc (124 means timeout)"
+    printf '%s\n' "$out"
+    FAIL=$((FAIL + 1))
+fi
+
+cat >"$WORK/hook-task-spawn.eigs" <<'EOF'
+define child() as:
+    print of "AT_EXIT CHILD MUST NOT RUN"
+define hook() as:
+    task_spawn of child
+at_exit of hook
+EOF
+check_case "task_spawn is refused during callbacks" 1 "$WORK/hook-task-spawn.eigs" "task_spawn is not allowed during at_exit callbacks"
+
 # Status precedence table: a program failure wins; otherwise a nonzero hook
 # exit wins, then a hook error, then success.  These are separate processes so
 # no row can accidentally inherit another row's state.

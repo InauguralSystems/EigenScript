@@ -1038,6 +1038,11 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
  * suspended, its slice is saved; drive the trampoline. If it finished but
  * tasks are still live, drive them too (kill-outstanding at main's end). */
 Value *task_sched_after_outermost(Value *r) {
+    /* at_exit callbacks start a fresh outermost VM execution, but teardown
+     * must not resume the program's ready queue (including supervisors left
+     * behind by task 0).  A callback cannot add to that queue: task_spawn is
+     * explicitly refused while this guard is set. */
+    if (g_exit_hook_depth > 0) return r;
     TaskScheduler *s = sched_get();
     if (!s) return r;
     /* #1736 row 2 in main's initial run (before main ever suspended): the

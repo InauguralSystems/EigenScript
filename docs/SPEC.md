@@ -2103,6 +2103,11 @@ callback runs even when an earlier one raises, and every callback error is
 reported. This applies to file evaluation and to interactive or piped REPL
 shutdown. Callbacks run before the final handle drain and before globals are
 destroyed, so they may use a handle retained in a global or create a handle.
+Each callback's VM execution is isolated from the program's cooperative-task
+queue: it neither schedules nor resumes pending tasks or supervisors.
+`task_spawn` raises during an exit callback rather than creating a task that
+could outlive teardown. The error follows the usual rule above, so later
+callbacks still run.
 
 Final status has strict precedence: a nonzero outcome from the program itself
 (a nonzero `exit`, uncaught error, unobserved task failure, or worker failure)

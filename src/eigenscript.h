@@ -1031,6 +1031,9 @@ struct EigsThread {
      * thread is not stuck with the first one's exit. */
     int          exit_requested;
     int          exit_code;
+    /* Exit callbacks are an isolated teardown execution: their outermost VM
+     * return must not hand control back to the program's cooperative queue. */
+    int          exit_hook_depth;
     int          first_error_line;
     int          first_error_col;   /* 0-based column of the first error, or 0 */
     int          first_error_len;   /* source length of the offending token
@@ -1659,6 +1662,7 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_task_sched          (eigs_current->task_sched)
 #define g_task_suspend_request (eigs_current->task_suspend_request)
 #define g_task_trace_on       (eigs_current->task_trace_on)
+#define g_exit_hook_depth     (eigs_current->exit_hook_depth)
 #define g_sandbox_loop_max    (eigs_current->sandbox_loop_max)
 #define g_sandbox_cap_hit     (eigs_current->sandbox_cap_hit)
 #define g_sandbox_active      (eigs_current->sandbox_active)

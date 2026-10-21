@@ -666,7 +666,9 @@ void eigs_run_exit_hooks(EigsState *st, int *exit_requested, int *exit_code,
         g_error_print_pending = 0;
         eigs_clear_error_value();
         Value *nul = make_null();
+        g_exit_hook_depth++;
         Value *result = call_eigs_fn(fn, nul);
+        g_exit_hook_depth--;
         val_decref(nul);
         if (result) val_decref(result);
         val_decref(fn);
@@ -4997,6 +4999,13 @@ void task_free(Task *t) {
  * a task never shares a mutable heap value with its spawner by
  * reference. The task does not run yet (1a); the scheduler starts it in 1b. */
 Value* builtin_task_spawn(Value *arg) {
+    /* A hook runs after program scheduling has ended.  Refuse a new
+     * cooperative task rather than enqueueing it onto the program's private
+     * scheduler, where it could neither be isolated nor honestly run. */
+    if (g_exit_hook_depth > 0) {
+        rt_error(EK_VALUE, 0, "task_spawn is not allowed during at_exit callbacks");
+        return make_null();
+    }
     Value *fn = arg;
     Value **args = NULL;
     int argc = 0;
