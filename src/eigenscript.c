@@ -598,10 +598,8 @@ static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_d
  * the fp-noise floor (a settled double wobbles by ULPs whose signs are
  * meaningless — 4·ε·(1+|v|) scales the floor to the value's magnitude), and
  * both hinge on the same question the relative channel cannot ask: are the
- * raw steps NON-VANISHING?  The calibrated #1891 rule combines the old
- * half-window mean comparison with Mann-Kendall's rank trend over the whole
- * window. Non-vanishing
- * same-sign steps sum without bound →
+ * raw steps NON-VANISHING (recent-half mean magnitude not below the
+ * older-half mean)? Non-vanishing same-sign steps sum without bound →
  * diverging, no matter how large |v| already is; non-vanishing
  * sign-alternating steps are a perpetual oscillation, no matter how small
  * the deadband-relative step. A damped (decaying-step) trajectory fails
@@ -614,13 +612,7 @@ static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_d
  * 'diverging'. A geometric decay's steps DO vanish (their sum converges);
  * only non-shrinking steps (a linear runaway's constant Δv, a polynomial
  * or geometric runaway's growing Δv) sum without bound. The 1e-9 slack
- * absorbs fp rounding in the two half-sums for exactly-constant steps.
- * #1891: a mean alone aliases modulation phase.  The pre-registered bench
- * (tools/observer_oracle/nonvanishing_bench.py) selected the persistence variant of the
- * standard Mann-Kendall S statistic: preserve a mean pass unless S < -13;
- * overturn a mean miss only for a persistent increasing trend, S >= 11.
- * Ties contribute zero.  At the four-step early-warning boundary |S| <= 6,
- * so this is exactly the historical mean rule (#861). */
+ * absorbs fp rounding in the two half-sums for exactly-constant steps. */
 /* #861: the raw tests run on PARTIAL windows too, from 4 samples (2+2 after
  * the half split). The motion bands have always been early-warning — the
  * entropy trajectory predicates fired from 3 samples — and requiring a full
@@ -633,42 +625,21 @@ static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
     size_t half = cnt / 2;
     double recent = 0.0, older = 0.0;
-    for (size_t i = 0; i < half; i++) {
-        double m = fabs(observer_slot_vr_get(s, i));
-        recent += m;
-    }
-    for (size_t i = half; i < cnt; i++) {
-        double m = fabs(observer_slot_vr_get(s, i));
-        older += m;
-    }
+    for (size_t i = 0; i < half; i++)        recent += fabs(observer_slot_vr_get(s, i));
+    for (size_t i = half; i < cnt; i++)      older  += fabs(observer_slot_vr_get(s, i));
     recent /= (double)half;
     older  /= (double)(cnt - half);
     if (older <= floor_eps || recent <= floor_eps) return 0;
-    int mean_pass = recent >= older * (1.0 - 1e-9);
-    int mk_s = 0;
-    /* vr_get is newest first; compare in chronological order. */
-    for (size_t i = 0; i < cnt; i++) {
-        double a = fabs(observer_slot_vr_get(s, cnt - 1 - i));
-        for (size_t j = i + 1; j < cnt; j++) {
-            double b = fabs(observer_slot_vr_get(s, cnt - 1 - j));
-            if (b > a) mk_s++;
-            else if (b < a) mk_s--;
-        }
-    }
-    return mean_pass ? mk_s >= -13 : mk_s >= 11;
+    return recent >= older * (1.0 - 1e-9);
 }
 
-static int observer_slot_raw_same_sign(const ObserverSlot *s) {
+static int observer_slot_raw_diverging(const ObserverSlot *s) {
+    if (!observer_slot_raw_nonvanishing(s)) return 0;
     size_t cnt = obs_v_count(s);
-    if (cnt < 2) return 0;
     double first = observer_slot_vr_get(s, 0);
     for (size_t i = 1; i < cnt; i++)
         if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
     return 1;
-}
-
-static int observer_slot_raw_diverging(const ObserverSlot *s) {
-    return observer_slot_raw_nonvanishing(s) && observer_slot_raw_same_sign(s);
 }
 
 static int observer_slot_raw_oscillating(const ObserverSlot *s) {
@@ -1152,7 +1123,12 @@ static int obs_num_equilibrium(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
     size_t N = (size_t)observer_slot_window(s);
     if (obs_v_count(s) < N) return 0;
-    if (observer_slot_raw_same_sign(s) || observer_slot_raw_oscillating(s)) return 0;
+    int observer_slot_raw_same_sign = 1;
+    double first_raw = observer_slot_vr_get(s, 0);
+    for (size_t i = 1; i < N && observer_slot_raw_same_sign; i++)
+        if (observer_slot_vr_get(s, i) * first_raw <= 0.0)
+            observer_slot_raw_same_sign = 0;
+    if (observer_slot_raw_same_sign || observer_slot_raw_oscillating(s)) return 0;
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) sum += observer_slot_v_get(s, i);
     double mean = sum / (double)N;

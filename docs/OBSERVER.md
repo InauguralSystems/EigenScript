@@ -193,14 +193,19 @@ binding). Use `report` to ask *how determined*; use `report_value` to ask
 
 **The raw-step signal (#422).** Relative normalization erases exactly two
 classes, so the value channel also keeps the window of *raw* steps `Δv` and
-asks one structural question of it: are the steps **non-vanishing**? The
-calibrated #1891 rule combines the historical half-window mean with the
-standard Mann-Kendall rank trend of the full raw-step window: retain a mean
-pass at `S >= -13`, and reverse a mean miss only at `S >= 11` (ties add zero).
-This preserves #861's four-sample latency while separating the measured
-modulated grids; a geometric decay's steps shrink with the value and DO
-vanish, #674 — above an
-fp-noise floor of `4·ε·(1+|x|)`)? Non-vanishing **same-sign** steps sum
+asks whether their recent-half mean magnitude is no smaller than the older
+half's. This historical rule remains because `N = 10` cannot distinguish a
+slow modulated decay from a modulated constant-envelope runaway. Real-binary
+measurements using steps `c*E^k*(1+m*cos(w*k+θ))`, 16 phases, both signs, and
+checkpoints 4–60 found false-`diverging` decay rates of 0.4% (`E=0.9, m=0.3,
+w=2`), 19.5% (`E=0.94, m=0.84, w=2`, the #1891 class), 45.0% (`E=0.99,
+m=0.84, w=2`), and 49.3% (`E=0.999, m=0.84, w=2`). Constant-envelope
+runaways at `G=1, m=0.3` or `0.84, w=2` read `diverging` on 50.0% of reads;
+`G=1.05, m=0.84, w=2` reads it on 73.1%. These are documented scored
+residuals, not floor waivers. More memory than `N = 10` remains the open
+direction on #1891. A geometric decay's steps shrink with the value and do
+vanish (#674). The comparison ignores steps below an fp-noise floor of
+`4·ε·(1+|x|)`. Non-vanishing **same-sign** steps sum
 without bound — an additive or polynomial runaway (`x → x + c` seeded large)
 whose `Δv/|x|` vanishes below the deadband is `diverging`, not `converged`.
 Non-vanishing **alternating** steps are a perpetual oscillation no matter how

@@ -1,1 +1,1 @@
-- Calibrated the observer's shared raw-step non-vanishing test with a Mann-Kendall persistence trend. A convergent damped or otherwise modulated trajectory no longer flickers to `diverging` merely because more carrier troughs landed in the older half-window. For consumers, `equilibrium` is now stricter: a converged one-direction tail is no longer `equilibrium`, because its deterministic mean still has a trend.
+- `equilibrium` no longer answers true for a one-direction tail; the #1891 flicker is documented with measured rates, not fixed.
