@@ -237,6 +237,7 @@ static const char *builtin_docs[][2] = {
     {"seed_random", "seed_random of n → seeds the RNG, returns 1"},
     {"send", "send — builtin; see docs/BUILTINS.md"},
     {"set_at", "set_at of [list, index, value] — sets list[index] = value, returns list"},
+    {"set_exit_code", "set_exit_code of N — set the status used if the state completes gracefully."},
     {"sgd_update", "sgd_update of [param, grad, lr] — in-place param = param - lr * grad"},
     {"sgd_update_cols", "sgd_update_cols of [matrix, grad, col_indices, lr]"},
     {"sgd_update_rows", "sgd_update_rows of [matrix, grad, row_indices, lr]"},

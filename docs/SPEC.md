@@ -73,6 +73,20 @@ print of "hello, world"
 hello, world
 ```
 
+`set_exit_code of N` sets the process status used after graceful completion,
+without stopping execution. This follows Node.js `process.exitCode`: `N` must
+be an integer from 0 through 255, the last call wins, and an explicit
+`exit of N` decides its own status. Uncaught runtime errors and unobserved task
+or worker failures remain nonzero rather than being replaced by this setting.
+
+```eigenscript
+set_exit_code of 0
+print of "still running"
+```
+```output
+still running
+```
+
 ## Lexical structure
 
 - Comments run from `#` to end of line.
