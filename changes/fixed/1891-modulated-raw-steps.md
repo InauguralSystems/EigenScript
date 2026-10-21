@@ -1,0 +1,1 @@
+- Made the observer's shared raw-step non-vanishing test compare both half-window means and peak envelopes. A convergent damped or otherwise modulated trajectory no longer flickers to `diverging` merely because more carrier troughs landed in the older half-window; monotone deterministic tails also no longer masquerade as `equilibrium` after entering the deadband.

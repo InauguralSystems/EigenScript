@@ -194,8 +194,10 @@ binding). Use `report` to ask *how determined*; use `report_value` to ask
 **The raw-step signal (#422).** Relative normalization erases exactly two
 classes, so the value channel also keeps the window of *raw* steps `Δv` and
 asks one structural question of it: are the steps **non-vanishing** (the
-recent half's mean magnitude not below the older half's — a geometric
-decay's steps shrink with the value and DO vanish, #674 — above an
+recent half's mean magnitude **and peak envelope** are each not below the
+older half's — the peak conjunct prevents a damped carrier's troughs from
+aliasing into a phase-dependent runaway, #1891; a geometric decay's steps
+shrink with the value and DO vanish, #674 — above an
 fp-noise floor of `4·ε·(1+|x|)`)? Non-vanishing **same-sign** steps sum
 without bound — an additive or polynomial runaway (`x → x + c` seeded large)
 whose `Δv/|x|` vanishes below the deadband is `diverging`, not `converged`.

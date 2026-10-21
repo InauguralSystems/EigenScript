@@ -110,12 +110,39 @@ steps `Δv` kept alongside — #422):
 | `stable` | full window, every `\|rel\| < dh_small`, no strong consecutive sign flips |
 | `equilibrium` | full window, `\|mean(rel)\| < dh_zero`, `variance(rel) < dh_zero²` |
 | `improving` | ≥ 4 samples, **decreasing** raw steps whose mean *and* max contract to ≤ 0.7× the older half — lower is better; a summable (geometric-class) tail genuinely closing on a limit |
-| `diverging` | value at the saturation ceiling (any window fill), or non-vanishing same-sign raw steps (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
-| `oscillating` | ≥ 4 deadband sign-flips of `rel`; or non-vanishing raw alternation (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
+| `diverging` | value at the saturation ceiling (any window fill), or same-sign raw steps whose recent-half **mean and peak** are each no smaller than the older half's (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
+| `oscillating` | ≥ 4 deadband sign-flips of `rel`; or raw alternation passing that same mean-and-peak test (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
 
-The quiescent lattice on this route: `converged ⊂ equilibrium` and
-`converged ⊂ stable` (all-under-deadband satisfies all three). The rest
-bands exclude the raw structure tests; the motion bands are mutually
+**Modulated raw steps (#1891).** A half-window mean alone is not an
+envelope: moving one trough of a damped carrier across the split can make the
+newer mean larger although every carrier peak is shrinking. The shared
+non-vanishing test therefore requires *both* `recent_mean >= older_mean` and
+`recent_peak >= older_peak` (with the `1e-9` rounding slack). This keeps the
+four-sample early-warning floor from #861 and adds no persistence latency.
+For the issue's executed 11-value window,
+
+```eigenscript
+decay is [3.4144933431842747e-12, 3.221483148286249e-12, 3.175583781293126e-12, 2.884364034434364e-12, 2.6829917904855467e-12, 2.656201406940636e-12, 2.43810485948457e-12, 2.2385174936625305e-12, 2.2170259412889097e-12, 2.0608058800068096e-12, 1.8717943868164032e-12]
+for k in range of (len of decay):
+    E is decay[k]
+print of (report_value of E)  # converged
+```
+
+the recent mean is slightly larger, but its peak is `2.181e-13` versus the
+older peak `2.912e-13`, so it cannot claim non-vanishing motion. No finite
+window decides an infinite-tail property. For
+`|d_k| = r^k(1 + m cos(·))`, `0 <= m < 1`, the peak test is guaranteed to
+reject every phase when `r(1+m) < 1-m`; when
+`r >= (1-m)/(1+m)`, a sufficiently slow rising modulation can still make
+both half statistics rise for one window. That is the exact residual class
+in `(r,m)` for which phase flicker remains possible (not inevitable); the
+oracle pins the issue's `r=0.94, m=0.84` phases rather than pretending a
+ten-sample observer can prove their whole-sequence limit.
+
+The quiescent lattice on this route has `converged ⊂ stable`. A converged
+one-direction tail is not `equilibrium`: its deterministic mean still has a
+trend, even though its remaining motion is below the convergence deadband.
+The rest bands exclude the raw structure tests; the motion bands are mutually
 exclusive. `report` resolves the canonical priority `oscillating →
 diverging → improving → converged → equilibrium → stable → moving`.
 

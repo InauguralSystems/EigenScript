@@ -2,6 +2,8 @@
  "sympy": "1.14.0",
  "rows": {
   "const_5": {"hash": "df5e478205771b5e9dfc083a3f6af67e831a80cd24d1e39bbea73119ef913cbb", "kind": "symbolic", "constant": true, "detail": "sympy.limit = 5.00000000000"},
+  "issue1891_row63": {"hash": "9e4e43daa47e7e4276607c8f3d196eb9f7347d54b6c4126126758db555483c51", "kind": "symbolic", "constant": false, "detail": "sympy.limit = 1.00000000000E-12"},
+  "issue1891_damped_cosine": {"hash": "89774d2bbfd711bd9ac29606d9c32d9e23a95d9b98fb6ebd2b2ecc9a2365e840", "kind": "symbolic", "constant": false, "detail": "sympy.limit = 0.982894995447"},
   "const_1e308_literal": {"hash": "f72a01eb7d289011029f6fdf37d89a3d2baa4f490fb599cb0a41eecf9c6e7181", "kind": "symbolic", "constant": true, "detail": "sympy.limit = 1.00000000000E+308"},
   "geo_decay_0.5": {"hash": "b570b1534583b439c921e996fb6129f4f4c24548122d7e87604d8fa6632d07c6", "kind": "symbolic", "constant": false, "detail": "exact closed form of x <- 0.5 x + 0.0 on the fed values from x_0 = 1.0: sympy.limit = 0"},
   "geo_decay_0.9": {"hash": "94d797b1e71853c5a4f795fb240c6bf638794ef4b0dbf789c9feb02a302cd888", "kind": "symbolic", "constant": false, "detail": "exact closed form of x <- 0.9 x + 0.0 on the fed values from x_0 = 1.0: sympy.limit = 0"},

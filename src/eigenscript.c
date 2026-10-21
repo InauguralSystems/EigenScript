@@ -598,8 +598,9 @@ static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_d
  * the fp-noise floor (a settled double wobbles by ULPs whose signs are
  * meaningless — 4·ε·(1+|v|) scales the floor to the value's magnitude), and
  * both hinge on the same question the relative channel cannot ask: are the
- * raw steps NON-VANISHING (recent-half mean magnitude not below the
- * older-half mean)? Non-vanishing same-sign steps sum without bound →
+ * raw steps NON-VANISHING (neither the recent-half mean nor its envelope
+ * peak is below the corresponding older-half statistic)? Non-vanishing
+ * same-sign steps sum without bound →
  * diverging, no matter how large |v| already is; non-vanishing
  * sign-alternating steps are a perpetual oscillation, no matter how small
  * the deadband-relative step. A damped (decaying-step) trajectory fails
@@ -612,7 +613,11 @@ static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_d
  * 'diverging'. A geometric decay's steps DO vanish (their sum converges);
  * only non-shrinking steps (a linear runaway's constant Δv, a polynomial
  * or geometric runaway's growing Δv) sum without bound. The 1e-9 slack
- * absorbs fp rounding in the two half-sums for exactly-constant steps. */
+ * absorbs fp rounding in the two half-sums for exactly-constant steps.
+ * #1891: a mean alone aliases modulation phase: a shrinking envelope can
+ * put more troughs in the older half and make its recent mean larger.  The
+ * peak conjunct makes the test an envelope test too.  It is the same
+ * mean-and-peak rule used by improving, with the inequalities reversed. */
 /* #861: the raw tests run on PARTIAL windows too, from 4 samples (2+2 after
  * the half split). The motion bands have always been early-warning — the
  * entropy trajectory predicates fired from 3 samples — and requiring a full
@@ -624,22 +629,35 @@ static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
     if (cnt < 4) return 0;
     double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
     size_t half = cnt / 2;
-    double recent = 0.0, older = 0.0;
-    for (size_t i = 0; i < half; i++)        recent += fabs(observer_slot_vr_get(s, i));
-    for (size_t i = half; i < cnt; i++)      older  += fabs(observer_slot_vr_get(s, i));
+    double recent = 0.0, older = 0.0, recent_max = 0.0, older_max = 0.0;
+    for (size_t i = 0; i < half; i++) {
+        double m = fabs(observer_slot_vr_get(s, i));
+        recent += m;
+        if (m > recent_max) recent_max = m;
+    }
+    for (size_t i = half; i < cnt; i++) {
+        double m = fabs(observer_slot_vr_get(s, i));
+        older += m;
+        if (m > older_max) older_max = m;
+    }
     recent /= (double)half;
     older  /= (double)(cnt - half);
     if (older <= floor_eps || recent <= floor_eps) return 0;
-    return recent >= older * (1.0 - 1e-9);
+    return recent >= older * (1.0 - 1e-9)
+        && recent_max >= older_max * (1.0 - 1e-9);
 }
 
-static int observer_slot_raw_diverging(const ObserverSlot *s) {
-    if (!observer_slot_raw_nonvanishing(s)) return 0;
+static int observer_slot_raw_same_sign(const ObserverSlot *s) {
     size_t cnt = obs_v_count(s);
+    if (cnt < 2) return 0;
     double first = observer_slot_vr_get(s, 0);
     for (size_t i = 1; i < cnt; i++)
         if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
     return 1;
+}
+
+static int observer_slot_raw_diverging(const ObserverSlot *s) {
+    return observer_slot_raw_nonvanishing(s) && observer_slot_raw_same_sign(s);
 }
 
 static int observer_slot_raw_oscillating(const ObserverSlot *s) {
@@ -1116,13 +1134,14 @@ static int obs_num_converged(const ObserverSlot *s) {
 }
 
 /* Equilibrium: balanced motion — window mean ~ 0 and variance under the
- * deadband², individual steps possibly larger. converged => equilibrium
- * (all-under-deadband forces both), preserving the quiescent lattice. */
+ * deadband², individual steps possibly larger. A one-direction trajectory
+ * is a trend, not an equilibrium, even after its steps enter the converged
+ * deadband (#1891 makes this distinction observable for damped tails). */
 static int obs_num_equilibrium(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
     size_t N = (size_t)observer_slot_window(s);
     if (obs_v_count(s) < N) return 0;
-    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    if (observer_slot_raw_same_sign(s) || observer_slot_raw_oscillating(s)) return 0;
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) sum += observer_slot_v_get(s, i);
     double mean = sum / (double)N;
