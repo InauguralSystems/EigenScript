@@ -354,7 +354,7 @@ run_jitoff "SM61c opt-out pow -> 0 with the JIT off" 0 0 "0" \
 run "SM62 strict: index_of miss is still -1"            1 0 "-1" 'print of (index_of of ["abc", "z"])'
 run "SM63 strict: file_exists of an absent path is false" 1 0 "false"  'print of (file_exists of "/nonexistent/eigs_971_probe")'
 run "SM64 strict: is_dir of an absent path is false"    1 0 "false"  'print of (is_dir of "/nonexistent/eigs_971_probe")'
-run "SM65 strict: read_text of an absent path is empty" 1 0 "[]" 'print of f"[{read_text of "/nonexistent/eigs_971_probe"}]"'
+run "SM65 strict: read_text of an absent path raises io" 1 1 "No such file or directory" 'read_text of "/nonexistent/eigs_971_probe"'
 run "SM66 strict index_of(num, str) raises"             1 1 "index_of: expected"    'print of (index_of of [42, "x"])'
 run "SM67 strict file_exists(num) raises"               1 1 "file_exists: expected" 'print of (file_exists of 42)'
 # --sweep candidates converted in this pass (each was a wrong type reading as

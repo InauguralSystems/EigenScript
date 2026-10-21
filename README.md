@@ -360,6 +360,11 @@ separators in its capped token count. These limits also raise under
 line terminator, so pipes and redirected files preserve `\r` and expose whether
 the final line ended in `\n`.
 
+File reads follow Python's exception model: `read_text`, `read_bytes`, and
+`read_bytes_buf` raise a catchable `io` error naming the path and the operating
+system reason when a path is missing, unreadable, or a directory. Empty files
+remain successful empty values.
+
 Each of them takes a nested list, a flat list, or a flat numeric **`buffer`**,
 and returns a buffer when every tensor operand was one. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work

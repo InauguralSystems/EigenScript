@@ -22,6 +22,8 @@ import validate
 # (validate.is_number: optional '-', digits, at most one '.'); everything
 # else, including "" and numeric-prefix text like "12abc", stays a string.
 define df_from_csv(path) as:
+    if not (file_exists of path):
+        return []
     text is read_text of path
     if text == "":
         return []

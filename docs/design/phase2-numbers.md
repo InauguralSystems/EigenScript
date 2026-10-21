@@ -1521,6 +1521,7 @@ current state behind several rows:
 | `range` | int-preserving | - | - | bounds by N5; the elements are ints (floats today, inside int range) |
 | `read_bytes` | int-preserving | - | - | byte values 0..255 |
 | `read_bytes_buf` | int-requiring | - | - | cap and length; bytes stored as floats |
+| `read_text` | other | - | - | string result; numeric over-cap size is internal tape metadata (#1668), with no numeric argument or successful numeric result |
 | `record_history` | other | - | - | truthiness flag in; previous flag out |
 | `recv` | int-requiring | - | - | channel handle ids |
 | `recv_timeout` | int-requiring | - | magnitude | the channel handle: N5 (Q1); the milliseconds are a continuous duration: a timeout the C long cannot hold raises (Q7 magnitude) |

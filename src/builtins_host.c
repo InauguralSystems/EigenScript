@@ -282,7 +282,12 @@ Value* builtin_stream_close(Value *arg) {
 /* ---- Filesystem ---- */
 
 
-/* mkdir of "path" → 1 on success, 0 on failure. Creates parents. */
+/* Forward declarations for the taped filesystem error representation shared
+ * by mkdir/ls and the file readers below. */
+static Value *file_io_error(const char *fn, const char *path, int err);
+static Value *file_io_replay(const char *fn);
+
+/* mkdir of "path" → 1 on success; I/O failure raises EK_IO. Creates parents. */
 /* #585: mkdir's return (a success bit) is filesystem-dependent, so it is a
  * taped nondeterminism source. Under EIGS_REPLAY the TAKE short-circuits
  * before any mkdir(2), so the recorded bit is served and the filesystem is
@@ -291,7 +296,8 @@ Value* builtin_stream_close(Value *arg) {
  * the tape (unlike a proc fd), so it is Recorded, not #148-non-replayable. */
 Value* builtin_mkdir(Value *arg) {
     ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "mkdir", "a string path", make_bool(0));
-    TRACE_NONDET_TAKE("mkdir");
+    Value *replayed = file_io_replay("mkdir");
+    if (replayed) return replayed;
     /* Simple recursive mkdir */
     char *path = xstrdup(arg->data.str);
     int len = strlen(path);
@@ -299,14 +305,21 @@ Value* builtin_mkdir(Value *arg) {
         if (path[i] == '/' || path[i] == '\0') {
             char saved = path[i];
             path[i] = '\0';
-            mkdir(path, 0755); /* ignore errors on intermediate dirs */
+            if (mkdir(path, 0755) != 0 && errno != EEXIST) {
+                int err = errno;
+                free(path);
+                return file_io_error("mkdir", arg->data.str, err);
+            }
             path[i] = saved;
         }
     }
     free(path);
     struct stat st;
-    TRACE_NONDET_RECORD("mkdir",
-        make_bool(stat(arg->data.str, &st) == 0 && S_ISDIR(st.st_mode)));
+    if (stat(arg->data.str, &st) != 0)
+        return file_io_error("mkdir", arg->data.str, errno);
+    if (!S_ISDIR(st.st_mode))
+        return file_io_error("mkdir", arg->data.str, ENOTDIR);
+    TRACE_NONDET_RECORD("mkdir", make_bool(1));
 }
 
 static int ls_entry_cmp(const void *a, const void *b) {
@@ -315,7 +328,7 @@ static int ls_entry_cmp(const void *a, const void *b) {
     return strcmp(va->data.str, vb->data.str);
 }
 
-/* ls of "path" → bytewise-sorted filenames, or [] on failure.
+/* ls of "path" → bytewise-sorted filenames; I/O failure raises EK_IO.
  * Matches `LC_ALL=C ls -1` default behavior: hidden entries (starting with '.')
  * are excluded and names are sorted bytewise. */
 Value* builtin_ls(Value *arg) {
@@ -323,10 +336,15 @@ Value* builtin_ls(Value *arg) {
     /* #585: builds its return (a list) via readdir, so under EIGS_REPLAY the
      * TAKE short-circuits before opendir — the recorded listing is served and
      * the live directory is never read. */
-    TRACE_NONDET_TAKE("ls");
+    Value *replayed = file_io_replay("ls");
+    if (replayed) return replayed;
     Value *list = make_list(0);
     DIR *d = opendir(arg->data.str);
-    if (!d) TRACE_NONDET_RECORD("ls", list);
+    if (!d) {
+        int err = errno;
+        val_decref(list);
+        return file_io_error("ls", arg->data.str, err);
+    }
     struct dirent *entry;
     while ((entry = readdir(d))) {
         if (entry->d_name[0] == '.') continue;
@@ -1010,7 +1028,8 @@ Value* builtin_is_file(Value *arg) {
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
- * a temp file, then atomically swap it in). Returns 1 on success, 0 on failure. */
+ * a temp file, then atomically swap it in). Returns 1 on success; I/O failure
+ * raises EK_IO. */
 Value* builtin_rename(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "rename");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -1021,30 +1040,122 @@ Value* builtin_rename(Value *arg) {
     Value *to = list_get_view(arg, 1, &to_view);
     ARG_GUARD(!from || from->type != VAL_STR || !to || to->type != VAL_STR,
               "rename", "two string paths", make_bool(0));
-    return make_bool(rename(from->data.str, to->data.str) == 0);
+    int ok = rename(from->data.str, to->data.str) == 0;
+    int err = ok ? 0 : errno;
+    /* #1668/#1885: mutation remains live during replay. Only its result is
+     * replayed, after the syscall, so changed live state cannot change the
+     * script-visible answer. */
+    Value *replayed = file_io_replay("rename");
+    if (replayed) return replayed;
+    if (!ok) {
+        char path[3900];
+        snprintf(path, sizeof(path), "%s' to '%s", from->data.str, to->data.str);
+        return file_io_error("rename", path, err);
+    }
+    TRACE_NONDET_RECORD("rename", make_bool(1));
 }
 
-/* remove_file of path — delete a file. Returns 1 on success, 0 on failure. */
+/* remove_file of path — delete a file. Returns 1 on success; I/O failure raises. */
 Value* builtin_remove_file(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_bool(0));
-    return make_bool(remove(arg->data.str) == 0);
+    int ok = remove(arg->data.str) == 0;
+    int err = ok ? 0 : errno;
+    Value *replayed = file_io_replay("remove_file");
+    if (replayed) return replayed;
+    if (!ok) return file_io_error("remove_file", arg->data.str, err);
+    TRACE_NONDET_RECORD("remove_file", make_bool(1));
 }
 
 /* ==== BUILTIN: read_text ==== */
-/* read_text of "path" → file contents as string, or "" on failure. */
+/* Taped filesystem errors use a result shape that cannot be successful: a
+ * one-string list for readers/mkdir, and [message, null] for ls (whose normal
+ * result may itself be a one-string list). */
+static Value *file_io_error(const char *fn, const char *path, int err) {
+    char message[3900];
+    snprintf(message, sizeof(message), "%s: '%s': %s",
+             fn, path, strerror(err));
+    int taped = strcmp(fn, "mkdir") == 0 || strcmp(fn, "ls") == 0 ||
+                strcmp(fn, "write_text") == 0 ||
+                strcmp(fn, "write_bytes") == 0 ||
+                strcmp(fn, "remove_file") == 0 ||
+                strcmp(fn, "rename") == 0 || strncmp(fn, "read_", 5) == 0;
+    if (taped && __builtin_expect(g_trace_enabled, 0)) {
+        Value *record = make_list(strcmp(fn, "ls") == 0 ? 2 : 1);
+        list_append_owned(record, make_str(message));
+        /* An ls success may itself be a one-string list.  The trailing null
+         * makes its error record an impossible successful directory listing. */
+        if (strcmp(fn, "ls") == 0) list_append_owned(record, make_null());
+        trace_nondet_value(fn, record);
+        val_decref(record);
+    }
+    rt_error(EK_IO, 0, "%s", message);
+    return make_null();
+}
+
+/* Return NULL when no replay record was consumed.  An error record is turned
+ * back into the original EK_IO raise; an ordinary recorded value is returned. */
+static Value *file_io_replay(const char *fn) {
+    if (!__builtin_expect(g_replay_enabled, 0)) return NULL;
+    if (trace_replay_refuse_off_owner(fn)) return make_null();
+    Value *v = NULL;
+    if (!trace_replay_take(fn, &v)) return NULL;
+    if (v && v->type == VAL_LIST && v->data.list.count >= 1 &&
+        list_elem_type(v, 0) == VAL_STR &&
+        ((strcmp(fn, "ls") != 0 && v->data.list.count == 1) ||
+         (strcmp(fn, "ls") == 0 && v->data.list.count == 2 &&
+          list_elem_type(v, 1) == VAL_NULL))) {
+        const char *message = list_get_ref(v, 0)->data.str;
+        rt_error(EK_IO, 0, "%s", message);
+        val_decref(v);
+        return make_null();
+    }
+    return v;
+}
+
+static int file_is_directory(FILE *f) {
+    struct stat st;
+    return fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+/* read_text of "path" → file contents as string; I/O failure raises EK_IO. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
 Value* builtin_read_bytes(Value *arg) {
     /* #1008: the type check sits BEFORE the tape take (see ARG_GUARD_PRETAKE). */
     ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_bytes", "a string path", make_null());
-    TRACE_NONDET_TAKE("read_bytes");
+    Value *replayed = file_io_replay("read_bytes");
+    if (replayed) {
+        if (val_is_number(replayed)) {
+            long long len = (long long)eigs_num_arg(replayed, __func__);
+            val_decref(replayed);
+            rt_error(EK_IO, 0, "read_bytes: '%s' is %lld bytes, over the %d-byte cap",
+                     arg->data.str, len, 10 * 1024 * 1024);
+            return make_null();
+        }
+        return replayed;
+    }
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) TRACE_NONDET_RECORD("read_bytes", make_null());
+    if (!f) return file_io_error("read_bytes", arg->data.str, errno);
+    if (file_is_directory(f)) {
+        fclose(f);
+        return file_io_error("read_bytes", arg->data.str, EISDIR);
+    }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0 || len > 10 * 1024 * 1024) { /* 10 MB cap */
+    if (len < 0) { /* unseekable stream: existing null contract (#1845) */
         fclose(f);
         TRACE_NONDET_RECORD("read_bytes", make_null());
+    }
+    if (len > 10 * 1024 * 1024) {
+        fclose(f);
+        if (__builtin_expect(g_trace_enabled, 0)) {
+            Value *sz = make_num((double)len);
+            trace_nondet_value("read_bytes", sz);
+            val_decref(sz);
+        }
+        rt_error(EK_IO, 0, "read_bytes: '%s' is %ld bytes, over the %d-byte cap",
+                 arg->data.str, len, 10 * 1024 * 1024);
+        return make_null();
     }
     unsigned char *buf = xmalloc(len);
     if (!buf) { fclose(f); TRACE_NONDET_RECORD("read_bytes", make_null()); }
@@ -1071,7 +1182,7 @@ Value* builtin_read_bytes(Value *arg) {
  * holds one double per byte (8x expansion — 512 MB of file is already
  * ~4 GiB resident), so the ceiling keeps the opt-in from becoming an
  * unbounded fs->RAM amplifier while blocking no realistic asset.
- * Missing/unopenable file still returns null (existing contract). */
+ * Missing/unopenable files raise EK_IO, like the other file readers. */
 #define READ_BYTES_BUF_DEFAULT_CAP (10LL * 1024 * 1024)
 #define READ_BYTES_BUF_HARD_CAP    (512LL * 1024 * 1024)
 
@@ -1125,9 +1236,8 @@ Value* builtin_read_bytes_buf(Value *arg) {
      * the identical raise is re-derived under EIGS_REPLAY without
      * touching the live filesystem. */
     if (__builtin_expect(g_replay_enabled, 0)) {
-        Value *tv;
-        if (trace_replay_refuse_off_owner("read_bytes_buf")) return make_null();
-        if (trace_replay_take("read_bytes_buf", &tv)) {
+        Value *tv = file_io_replay("read_bytes_buf");
+        if (tv) {
             if (tv && val_is_number(tv)) {
                 long long len = (long long)eigs_num_arg(tv, __func__);
                 val_decref(tv);
@@ -1138,7 +1248,11 @@ Value* builtin_read_bytes_buf(Value *arg) {
         }
     }
     FILE *f = fopen(path->data.str, "rb");
-    if (!f) TRACE_NONDET_RECORD("read_bytes_buf", make_null());
+    if (!f) return file_io_error("read_bytes_buf", path->data.str, errno);
+    if (file_is_directory(f)) {
+        fclose(f);
+        return file_io_error("read_bytes_buf", path->data.str, EISDIR);
+    }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -1174,15 +1288,40 @@ Value* builtin_read_bytes_buf(Value *arg) {
 Value* builtin_read_text(Value *arg) {
     /* #1008: the type check sits BEFORE the tape take (see ARG_GUARD_PRETAKE). */
     ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_text", "a string path", make_str(""));
-    TRACE_NONDET_TAKE("read_text");
+    Value *replayed = file_io_replay("read_text");
+    if (replayed) {
+        if (val_is_number(replayed)) {
+            long long len = (long long)eigs_num_arg(replayed, __func__);
+            val_decref(replayed);
+            rt_error(EK_IO, 0, "read_text: '%s' is %lld bytes, over the %d-byte cap",
+                     arg->data.str, len, 10 * 1024 * 1024);
+            return make_null();
+        }
+        return replayed;
+    }
     FILE *f = fopen(arg->data.str, "r");
-    if (!f) TRACE_NONDET_RECORD("read_text", make_str(""));
+    if (!f) return file_io_error("read_text", arg->data.str, errno);
+    if (file_is_directory(f)) {
+        fclose(f);
+        return file_io_error("read_text", arg->data.str, EISDIR);
+    }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0 || len > 10 * 1024 * 1024) { /* 10 MB cap */
+    if (len < 0) { /* unseekable stream: existing empty contract (#1845) */
         fclose(f);
         TRACE_NONDET_RECORD("read_text", make_str(""));
+    }
+    if (len > 10 * 1024 * 1024) {
+        fclose(f);
+        if (__builtin_expect(g_trace_enabled, 0)) {
+            Value *sz = make_num((double)len);
+            trace_nondet_value("read_text", sz);
+            val_decref(sz);
+        }
+        rt_error(EK_IO, 0, "read_text: '%s' is %ld bytes, over the %d-byte cap",
+                 arg->data.str, len, 10 * 1024 * 1024);
+        return make_null();
     }
     char *buf = xmalloc(len + 1);
     if (!buf) { fclose(f); TRACE_NONDET_RECORD("read_text", make_str("")); }
@@ -1221,7 +1360,7 @@ Value* builtin_read_line(Value *arg) {
 }
 
 /* ==== BUILTIN: write_text ==== */
-/* write_text of ["path", text] → 1 on success, 0 on failure. */
+/* write_text of ["path", text] → 1 on success; I/O failure raises EK_IO. */
 Value* builtin_write_text(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "write_text");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -1237,11 +1376,23 @@ Value* builtin_write_text(Value *arg) {
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
      * is xfopen_write failing (missing directory, permissions, sandbox), and
      * the header comment documents write_text as "1 on success, 0 on failure". */
-    if (!f) return make_bool(0);
+    if (!f) {
+        int err = errno;
+        Value *replayed = file_io_replay("write_text");
+        if (replayed) return replayed;
+        return file_io_error("write_text", path_val->data.str, err);
+    }
     size_t len = val_str_len(text_val);
     size_t written = fwrite(text_val->data.str, 1, len, f);
+    int write_err = written == len ? 0 : errno;
     int close_ok = (fclose(f) == 0);
-    return make_bool(written == len && close_ok);
+    int close_err = errno;
+    Value *replayed = file_io_replay("write_text");
+    if (replayed) return replayed;
+    if (written != len || !close_ok)
+        return file_io_error("write_text", path_val->data.str,
+                             write_err ? write_err : (close_err ? close_err : EIO));
+    TRACE_NONDET_RECORD("write_text", make_bool(1));
 }
 
 /* ==== BUILTIN: exec_capture ==== */
@@ -1491,7 +1642,7 @@ Value* builtin_random_hex(Value *arg) {
 /* write_bytes of [path, data, append?] — write raw bytes to a file.
  * `data` is a list of byte ints or a buffer (values taken mod 256). `append`
  * (optional, default 0): 0 truncates the file, nonzero appends. Returns the
- * number of bytes written, or 0 on failure. Unlike write_text this is
+ * number of bytes written; I/O failure raises EK_IO. Unlike write_text this is
  * binary-clean — NUL bytes are written verbatim, not treated as terminators —
  * so it can carry CBOR / arbitrary binary. Surfaced by tidelog's append-only
  * log (write_text is truncate-mode and NUL-truncating). */
@@ -1552,11 +1703,24 @@ Value* builtin_write_bytes(Value *arg) {
     /* fs:ANSWER the path was accepted by the guard above; a NULL FILE* is
      * xfopen_write failing, and the header documents write_bytes as yielding
      * "the number of bytes written, or 0 on failure" — 0 is that failure. */
-    if (!f) { free(out); return make_num(0); }
+    if (!f) {
+        int err = errno;
+        free(out);
+        Value *replayed = file_io_replay("write_bytes");
+        if (replayed) return replayed;
+        return file_io_error("write_bytes", path_val->data.str, err);
+    }
     size_t written = fwrite(out, 1, (size_t)n, f);
+    int write_err = written == (size_t)n ? 0 : errno;
     int close_ok = (fclose(f) == 0);
+    int close_err = errno;
     free(out);
-    return make_num((close_ok && written == (size_t)n) ? (double)written : 0);
+    Value *replayed = file_io_replay("write_bytes");
+    if (replayed) return replayed;
+    if (!close_ok || written != (size_t)n)
+        return file_io_error("write_bytes", path_val->data.str,
+                             write_err ? write_err : (close_err ? close_err : EIO));
+    TRACE_NONDET_RECORD("write_bytes", make_num((double)written));
 }
 
 void register_host_builtins(Env *env) {

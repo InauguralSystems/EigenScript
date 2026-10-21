@@ -246,8 +246,8 @@ check of ["VM: parameter binder restored",
 # These import a STDLIB module by NAME on purpose. `import` has to answer the
 # same module from any working directory: eigen.eigs used to read its module
 # with `read_text of ("lib/" + name + ".eigs")`, which is cwd-relative AND
-# answers "" for an absent path (read_text's documented answer) — so the
-# namespace came back silently EMPTY from every cwd but the repo root, and a
+# formerly answered "" for an absent path — so the namespace came back silently
+# EMPTY from every cwd but the repo root, and a
 # misspelt module name produced an empty namespace, not a raise.
 # `_eigen_module_path` now mirrors the C resolver's chain (cwd, then the
 # stdlib root beside the binary) and raises when nothing resolves; tests/test_exe_path.py gates the cwd half from host-launched processes.

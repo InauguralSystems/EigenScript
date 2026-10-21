@@ -38,6 +38,12 @@ define is_test_file(name) as:
 
 define discover_in_dir(dir) as:
     out is []
+    # A missing directory holds no tests: the caller then falls back from
+    # "tests" to ".". Any OTHER ls failure (permission denied, not a
+    # directory) raises (#1668), instead of silently discovering nothing
+    # and running the fallback's test set in its place.
+    if not (file_exists of dir):
+        return out
     names is sort of (ls of dir)
     for nm in names:
         if is_test_file of nm:

@@ -202,6 +202,8 @@ define validate_manifest_names(names) as:
 # ---- Manifest helpers ------------------------------------------------
 
 define read_manifest() as:
+    if not (file_exists of MANIFEST_PATH):
+        return {"name": "", "version": "0.0.0", "deps": {}}
     text is read_text of MANIFEST_PATH
     if text == "":
         return {"name": "", "version": "0.0.0", "deps": {}}
@@ -221,6 +223,8 @@ define write_manifest(manifest) as:
     write_text of [MANIFEST_PATH, encoded + "\n"]
 
 define read_lockfile() as:
+    if not (file_exists of LOCKFILE_PATH):
+        return {}
     text is read_text of LOCKFILE_PATH
     if text == "":
         return {}

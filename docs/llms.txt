@@ -299,6 +299,10 @@ read_line of null returns stdin lines byte-exactly, including \r and the \n
 terminator; it returns null only at EOF. Pipes and redirected files behave the
 same, and the presence of a final newline is observable.
 
+read_text, read_bytes, and read_bytes_buf use Python-style failure semantics:
+missing, unreadable, and directory paths raise catchable io errors containing
+the path and OS reason. Empty files successfully return empty values.
+
 ## Threads: VALUES copy through a channel, HANDLES share
 
 - `spawn of [fn, arg]` / `channel of n` / `send` / `recv` / `thread_join`.

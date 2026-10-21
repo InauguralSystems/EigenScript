@@ -2516,6 +2516,11 @@ terminator, and returns `null` only at EOF. Pipe and redirected-file input have
 the same semantics; in particular `\r` is preserved and a final `\n` is
 observable.
 
+`read_text`, `read_bytes`, and `read_bytes_buf` follow Python's exception
+model: a missing or unreadable path, or a directory in place of a file, raises
+a catchable `io` error whose message contains the path and the operating-system
+reason. An empty file is successful and returns the reader's empty value.
+
 ```eigenscript
 l is [1.0, 4.0, 9.0]
 b is buf_from_list of l

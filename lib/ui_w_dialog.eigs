@@ -396,7 +396,12 @@ define file_dialog_refresh(fd) as:
     fd.dir_label.text is fd.dir
     dirs is []
     files is []
-    entries is ls of fd.dir
+    entries is []
+    try:
+        entries is ls of fd.dir
+    catch e:
+        # A dialog can still show its parent entry when navigation fails.
+        entries is []
     if entries != null:
         for i in range of (len of entries):
             name is entries[i]

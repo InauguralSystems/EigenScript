@@ -237,18 +237,23 @@ perspective lands on the tape as an `N` record:
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585).
-  `mkdir` is a *write* whose return (a success bit) is filesystem-dependent:
-  it is Recorded rather than #148-non-replayable because that bit **is**
-  pinnable by the tape (unlike a subprocess fd). Under `EIGS_REPLAY` the
-  `TAKE` short-circuits before the `mkdir(2)` calls, so the recorded bit is
-  served and the directory is **not** created a second time — replay does not
-  re-run the side effect, the same rule as the subprocess/audio boundary.
-  `read_bytes_buf`'s over-cap **raise** (#601) also rides the tape: the
-  observed file size is recorded as a `VAL_FLOAT` `N` record (unambiguous —
-  success records a `VAL_BUFFER`, open-failure records null) and the
-  identical `io` error is re-derived from it under `EIGS_REPLAY`, so an
-  over-cap failure replays byte-identically with no live fs access
+  `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
+  `write_text`, `write_bytes`, `rename`, `remove_file` (#1668).
+  Successful `mkdir` and `ls` calls record their normal values, and replay
+  serves those values without repeating or consulting the filesystem. An I/O
+  failure from either builtin or any file reader records the complete `io` message (builtin, path, and `strerror` reason)
+  in a one-string list. Because a successful `ls` can have that shape, its
+  error record adds a trailing `null` tag. Replay recognizes these
+  otherwise-impossible result shapes and re-raises the
+  identical error without live filesystem access. The fixed-cap readers
+  `read_text`, `read_bytes`, and `read_bytes_buf` instead record an over-cap
+  file's observed size as a `VAL_FLOAT` `N` record and reconstruct the error
+  containing both size and active cap. Empty files remain ordinary successful
+  empty string/list/buffer records.
+  The four mutating file builtins are deliberately different: under replay
+  they still perform their operation live, then return the recorded success
+  value or re-raise the recorded `io` message, regardless of the live result.
+  Making replay side-effect-free is the wider model decision in #1885.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: `[rows, cols]` for an over-cap header,
   otherwise `null`. Replay reconstructs a recorded `limit` error before
