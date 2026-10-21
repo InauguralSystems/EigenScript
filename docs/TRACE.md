@@ -233,7 +233,8 @@ perspective lands on the tape as an `N` record:
 - **Random:** `random`, `random_int`, `random_normal`, `random_hex`
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585).
+  `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
+  `write_text`, `write_bytes`, `rename`, `remove_file` (#1668).
   Successful `mkdir` and `ls` calls record their normal values, and replay
   serves those values without repeating or consulting the filesystem. An I/O
   failure from either builtin or any file reader records the complete `io` message (builtin, path, and `strerror` reason)
@@ -245,6 +246,10 @@ perspective lands on the tape as an `N` record:
   file's observed size as a `VAL_NUM` `N` record and reconstruct the error
   containing both size and active cap. Empty files remain ordinary successful
   empty string/list/buffer records.
+  The four mutating file builtins are deliberately different: under replay
+  they still perform their operation live, then return the recorded success
+  value or re-raise the recorded `io` message, regardless of the live result.
+  Making replay side-effect-free is the wider model decision in #1885.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: `[rows, cols]` for an over-cap header,
   otherwise `null`. Replay reconstructs a recorded `limit` error before

@@ -1967,7 +1967,11 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_}, /* list: I/O error */
     {"read_line",            TK_STR_ | TK_NULL_},
     {"read_text",            TK_STR_ | TK_LIST_}, /* list: I/O error */
+    {"remove_file",          TK_BOOL_ | TK_LIST_}, /* list: I/O error */
+    {"rename",               TK_BOOL_ | TK_LIST_}, /* list: I/O error */
     {"tensor_load",          TK_LIST_ | TK_NULL_},  /* the [rows, cols] over-cap verdict */
+    {"write_bytes",          TK_NUM_ | TK_LIST_},  /* list: I/O error */
+    {"write_text",           TK_BOOL_ | TK_LIST_}, /* list: I/O error */
 };
 
 /* Host-declared kinds (eigs_trace_declare_kind). Small, append-only. */

@@ -1040,21 +1040,30 @@ Value* builtin_rename(Value *arg) {
     Value *to = list_get_view(arg, 1, &to_view);
     ARG_GUARD(!from || from->type != VAL_STR || !to || to->type != VAL_STR,
               "rename", "two string paths", make_bool(0));
-    if (rename(from->data.str, to->data.str) != 0) {
-        int err = errno;
+    int ok = rename(from->data.str, to->data.str) == 0;
+    int err = ok ? 0 : errno;
+    /* #1668/#1885: mutation remains live during replay. Only its result is
+     * replayed, after the syscall, so changed live state cannot change the
+     * script-visible answer. */
+    Value *replayed = file_io_replay("rename");
+    if (replayed) return replayed;
+    if (!ok) {
         char path[3900];
         snprintf(path, sizeof(path), "%s' to '%s", from->data.str, to->data.str);
         return file_io_error("rename", path, err);
     }
-    return make_bool(1);
+    TRACE_NONDET_RECORD("rename", make_bool(1));
 }
 
 /* remove_file of path — delete a file. Returns 1 on success; I/O failure raises. */
 Value* builtin_remove_file(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_bool(0));
-    if (remove(arg->data.str) != 0)
-        return file_io_error("remove_file", arg->data.str, errno);
-    return make_bool(1);
+    int ok = remove(arg->data.str) == 0;
+    int err = ok ? 0 : errno;
+    Value *replayed = file_io_replay("remove_file");
+    if (replayed) return replayed;
+    if (!ok) return file_io_error("remove_file", arg->data.str, err);
+    TRACE_NONDET_RECORD("remove_file", make_bool(1));
 }
 
 /* ==== BUILTIN: read_text ==== */
@@ -1066,7 +1075,10 @@ static Value *file_io_error(const char *fn, const char *path, int err) {
     snprintf(message, sizeof(message), "%s: '%s': %s",
              fn, path, strerror(err));
     int taped = strcmp(fn, "mkdir") == 0 || strcmp(fn, "ls") == 0 ||
-                strncmp(fn, "read_", 5) == 0;
+                strcmp(fn, "write_text") == 0 ||
+                strcmp(fn, "write_bytes") == 0 ||
+                strcmp(fn, "remove_file") == 0 ||
+                strcmp(fn, "rename") == 0 || strncmp(fn, "read_", 5) == 0;
     if (taped && __builtin_expect(g_trace_enabled, 0)) {
         Value *record = make_list(strcmp(fn, "ls") == 0 ? 2 : 1);
         list_append_owned(record, make_str(message));
@@ -1089,7 +1101,7 @@ static Value *file_io_replay(const char *fn) {
     if (!trace_replay_take(fn, &v)) return NULL;
     if (v && v->type == VAL_LIST && v->data.list.count >= 1 &&
         list_elem_type(v, 0) == VAL_STR &&
-        (v->data.list.count == 1 ||
+        ((strcmp(fn, "ls") != 0 && v->data.list.count == 1) ||
          (strcmp(fn, "ls") == 0 && v->data.list.count == 2 &&
           list_elem_type(v, 1) == VAL_NULL))) {
         const char *message = list_get_ref(v, 0)->data.str;
@@ -1364,15 +1376,23 @@ Value* builtin_write_text(Value *arg) {
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
      * is xfopen_write failing (missing directory, permissions, sandbox), and
      * the header comment documents write_text as "1 on success, 0 on failure". */
-    if (!f) return file_io_error("write_text", path_val->data.str, errno);
+    if (!f) {
+        int err = errno;
+        Value *replayed = file_io_replay("write_text");
+        if (replayed) return replayed;
+        return file_io_error("write_text", path_val->data.str, err);
+    }
     size_t len = val_str_len(text_val);
     size_t written = fwrite(text_val->data.str, 1, len, f);
     int write_err = written == len ? 0 : errno;
     int close_ok = (fclose(f) == 0);
+    int close_err = errno;
+    Value *replayed = file_io_replay("write_text");
+    if (replayed) return replayed;
     if (written != len || !close_ok)
         return file_io_error("write_text", path_val->data.str,
-                             write_err ? write_err : (errno ? errno : EIO));
-    return make_bool(1);
+                             write_err ? write_err : (close_err ? close_err : EIO));
+    TRACE_NONDET_RECORD("write_text", make_bool(1));
 }
 
 /* ==== BUILTIN: exec_capture ==== */
@@ -1686,16 +1706,21 @@ Value* builtin_write_bytes(Value *arg) {
     if (!f) {
         int err = errno;
         free(out);
+        Value *replayed = file_io_replay("write_bytes");
+        if (replayed) return replayed;
         return file_io_error("write_bytes", path_val->data.str, err);
     }
     size_t written = fwrite(out, 1, (size_t)n, f);
     int write_err = written == (size_t)n ? 0 : errno;
     int close_ok = (fclose(f) == 0);
+    int close_err = errno;
     free(out);
+    Value *replayed = file_io_replay("write_bytes");
+    if (replayed) return replayed;
     if (!close_ok || written != (size_t)n)
         return file_io_error("write_bytes", path_val->data.str,
-                             write_err ? write_err : (errno ? errno : EIO));
-    return make_num((double)written);
+                             write_err ? write_err : (close_err ? close_err : EIO));
+    TRACE_NONDET_RECORD("write_bytes", make_num((double)written));
 }
 
 void register_host_builtins(Env *env) {
