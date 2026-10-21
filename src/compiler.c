@@ -1585,7 +1585,9 @@ static void scan_for_env_bound(ASTNode *node, NameSet *out) {
 /* Collect module-level names (functions defined, top-level assignments).
  * Stops at function/lambda boundaries — those introduce their own scope.
  * Used to decide whether an assignment inside a function is updating a global
- * (slow name path) vs creating a fresh local (fast slot path). */
+ * (slow name path) vs creating a fresh local (fast slot path). An
+ * `unobserved:` block also takes its slot candidates from it, minus
+ * collect_by_name_binders (#1883); this set keeps every name. */
 static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out);
 static void collect_module_names_walk(ASTNode *node, NameSet *out) {
     if (!node) return;
@@ -1660,6 +1662,149 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
 }
 static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out) {
     for (int i = 0; i < count; i++) collect_module_names_walk(stmts[i], out);
+}
+
+/* #1883: the names this scope binds BY NAME. An `unobserved:` block reserves
+ * its module slots before it compiles its body, so every read of a promoted
+ * name in the block is GET_LOCAL; a binder that writes the env by name, or
+ * binds in a `for` loop's env, then splits the name and the reads see null or
+ * another scope's value. The binders, from the OP_SET_NAME_LOCAL emitters and
+ * the VM's own env writes: a `for` binder (in its loop env), a `catch`
+ * binder, a defined function's name, a comprehension binder, an `import`ed
+ * module name, `loop while`'s __loop_exit__ (compiler) and
+ * __loop_iterations__ (VM), and `local x is ...` while a `for` loop env is
+ * the current env (in_loop_env; anywhere else at module scope `local` binds
+ * in the env the slot stands for). A block walks its whole unit from the root
+ * and subtracts the set from its candidates, even when a name is also plainly
+ * assigned; the module-name set above keeps every name. Stops at function and
+ * lambda bodies: their binders write their own frame, and the escape analysis
+ * keeps the names they read off the slot path. (Function bodies use
+ * scan_for_env_bound, #633: a function picks slot or name per assignment in
+ * compile order.) */
+static void collect_by_name_binders(ASTNode *node, NameSet *out, int in_loop_env);
+static void collect_by_name_binders_block(ASTNode **stmts, int count, NameSet *out,
+                                          int in_loop_env) {
+    for (int i = 0; i < count; i++) collect_by_name_binders(stmts[i], out, in_loop_env);
+}
+static void collect_by_name_binders(ASTNode *node, NameSet *out, int in_loop_env) {
+    if (!node) return;
+    switch (node->type) {
+    case AST_FOR:
+        name_set_add(out, node->data.forloop.var);
+        collect_by_name_binders(node->data.forloop.iter, out, in_loop_env);
+        collect_by_name_binders_block(node->data.forloop.body, node->data.forloop.body_count, out, 1);
+        break;
+    case AST_TRY:
+        collect_by_name_binders_block(node->data.trycatch.try_body, node->data.trycatch.try_count, out, in_loop_env);
+        name_set_add(out, node->data.trycatch.err_name);   /* NULL (no binder) is ignored */
+        collect_by_name_binders_block(node->data.trycatch.catch_body, node->data.trycatch.catch_count, out, in_loop_env);
+        break;
+    case AST_FUNC:
+        name_set_add(out, node->data.func.name);   /* the body is its own scope */
+        break;
+    case AST_LISTCOMP:
+        name_set_add(out, node->data.listcomp.var);
+        collect_by_name_binders(node->data.listcomp.iter, out, in_loop_env);
+        collect_by_name_binders(node->data.listcomp.filter, out, in_loop_env);
+        collect_by_name_binders(node->data.listcomp.expr, out, in_loop_env);
+        break;
+    case AST_IMPORT:
+        name_set_add(out, node->data.import.module_name);
+        break;
+    case AST_LOOP:
+        name_set_add(out, "__loop_exit__");
+        name_set_add(out, "__loop_iterations__");
+        collect_by_name_binders(node->data.loop.cond, out, in_loop_env);
+        collect_by_name_binders_block(node->data.loop.body, node->data.loop.body_count, out, in_loop_env);
+        break;
+    case AST_ASSIGN:
+        if (node->data.assign.local_only && in_loop_env)
+            name_set_add(out, node->data.assign.name);
+        collect_by_name_binders(node->data.assign.expr, out, in_loop_env);
+        break;
+    /* The rest only nest: a comprehension can sit in any expression. */
+    case AST_IF:
+        collect_by_name_binders(node->data.cond.cond, out, in_loop_env);
+        collect_by_name_binders_block(node->data.cond.if_body, node->data.cond.if_count, out, in_loop_env);
+        collect_by_name_binders_block(node->data.cond.else_body, node->data.cond.else_count, out, in_loop_env);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        collect_by_name_binders_block(node->data.block.stmts, node->data.block.count, out, in_loop_env);
+        break;
+    case AST_PROGRAM:
+        collect_by_name_binders_block(node->data.program.stmts, node->data.program.count, out, in_loop_env);
+        break;
+    case AST_MATCH:
+        collect_by_name_binders(node->data.match.expr, out, in_loop_env);
+        for (int i = 0; i < node->data.match.case_count; i++) {
+            collect_by_name_binders(node->data.match.patterns[i], out, in_loop_env);
+            collect_by_name_binders_block(node->data.match.bodies[i], node->data.match.body_counts[i], out, in_loop_env);
+        }
+        break;
+    case AST_BINOP:
+        collect_by_name_binders(node->data.binop.left, out, in_loop_env);
+        collect_by_name_binders(node->data.binop.right, out, in_loop_env);
+        break;
+    case AST_UNARY:
+        collect_by_name_binders(node->data.unary.operand, out, in_loop_env);
+        break;
+    case AST_RELATION:
+        collect_by_name_binders(node->data.relation.left, out, in_loop_env);
+        collect_by_name_binders(node->data.relation.right, out, in_loop_env);
+        break;
+    case AST_RETURN:
+        collect_by_name_binders(node->data.ret.expr, out, in_loop_env);
+        break;
+    case AST_LIST:
+        collect_by_name_binders_block(node->data.list.elems, node->data.list.count, out, in_loop_env);
+        break;
+    case AST_INDEX:
+        collect_by_name_binders(node->data.index.target, out, in_loop_env);
+        collect_by_name_binders(node->data.index.index, out, in_loop_env);
+        break;
+    case AST_DICT:
+        collect_by_name_binders_block(node->data.dict.keys, node->data.dict.count, out, in_loop_env);
+        collect_by_name_binders_block(node->data.dict.vals, node->data.dict.count, out, in_loop_env);
+        break;
+    case AST_DOT:
+        collect_by_name_binders(node->data.dot.target, out, in_loop_env);
+        break;
+    case AST_DOT_ASSIGN:
+        collect_by_name_binders(node->data.dot_assign.target, out, in_loop_env);
+        collect_by_name_binders(node->data.dot_assign.expr, out, in_loop_env);
+        break;
+    case AST_INDEX_ASSIGN:
+        collect_by_name_binders(node->data.index_assign.target, out, in_loop_env);
+        collect_by_name_binders(node->data.index_assign.index, out, in_loop_env);
+        collect_by_name_binders(node->data.index_assign.expr, out, in_loop_env);
+        break;
+    case AST_LIST_PATTERN_ASSIGN:   /* its names store through emit_assign_for_tos */
+        collect_by_name_binders(node->data.list_pattern_assign.expr, out, in_loop_env);
+        break;
+    case AST_SLICE:
+        collect_by_name_binders(node->data.slice.target, out, in_loop_env);
+        collect_by_name_binders(node->data.slice.start, out, in_loop_env);
+        collect_by_name_binders(node->data.slice.end, out, in_loop_env);
+        break;
+    case AST_INTERROGATE:
+        collect_by_name_binders(node->data.interrogate.expr, out, in_loop_env);
+        collect_by_name_binders(node->data.interrogate.at_expr, out, in_loop_env);
+        collect_by_name_binders(node->data.interrogate.when_expr, out, in_loop_env);
+        break;
+    /* Leaves, and a lambda (its body is its own scope). Enumerated rather
+     * than covered by a `default:` so that -Werror=switch (Makefile CFLAGS)
+     * makes a new ASTType a build error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL: case AST_BOOL:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_LAMBDA:
+        break;
+    }
 }
 
 /* #459: does this compilation unit bind `dispatch` anywhere — module scope,
@@ -3247,6 +3392,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             NameSet outside  = {0};
             NameSet captured_here = {0};
             NameSet interrogated_here = {0};
+            NameSet by_name = {0};   /* #1883 */
 
             for (int i = 0; i < node->data.block.count; i++)
                 collect_module_names_walk(node->data.block.stmts[i], &assigned);
@@ -3255,12 +3401,18 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 scan_for_captures(node->data.block.stmts[i], &captured_here);
                 scan_for_interrogated(node->data.block.stmts[i], &interrogated_here);
             }
+            /* The whole unit's module scope, not only this block: a binder
+             * outside it (an import, a `loop while`, a comprehension whose
+             * expression never reads its binder) writes the same module
+             * binding, and is no reference `outside` records. */
+            collect_by_name_binders(c->root_ast, &by_name, 0);
 
             for (int i = 0; i < assigned.count; i++) {
                 const char *nm = assigned.names[i];
                 if (name_set_has(&outside, nm)) continue;
                 if (name_set_has(&captured_here, nm)) continue;
                 if (name_set_has(&interrogated_here, nm)) continue;
+                if (name_set_has(&by_name, nm)) continue;   /* #1883: written by name */
                 if (name_set_has(&c->module_slot_names, nm)) continue; /* already promoted */
                 uint32_t h = env_hash_name(nm);
                 if (c->env && env_get_hashed(c->env, nm, h)) continue;
@@ -3273,6 +3425,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             name_set_free(&outside);
             name_set_free(&captured_here);
             name_set_free(&interrogated_here);
+            name_set_free(&by_name);
         }
         emit(c, OP_UNOBSERVED_BEGIN, node->line);
         c->unobs_depth++;                                     /* #871 */
