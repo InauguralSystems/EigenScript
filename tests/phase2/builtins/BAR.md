@@ -263,6 +263,10 @@ agreed).
   the float 3.5; a bare `7` returns itself (the code's documented bare-number
   case). In an int/float tie the FIRST argument wins, kind included (agreed;
   Lua): `[3, 3.0]` gives the int 3 and `[3.0, 3]` the float 3, printed `3`.
+  An empty call raises `value`, in both call forms, `min of []` and
+  `min of ([])`, and likewise for `max` (R1.6b-D2, #1895): there is no
+  winning argument, and Lua's `pcall(math.min)` also refuses (`bad argument
+  #1 to 'math.min' (value expected)`). `pre` and the tag answer `0`.
 - `num_copy`: keeps its subtype (§6 note).
 - `hex`: the 2^53 refusal is a double compare (§6), and the C formatting type is
   `unsigned long long`. N5 then the C range accepts every non-negative int64,
@@ -272,6 +276,12 @@ agreed).
 - `sign_extend`: both arguments are integer-valued (a bit pattern and a width).
   The algorithm is unchanged and reads exactly: `[2^53+129, 8]`, low byte 0x81,
   gives `2^53+129-256` = `9007199254740865`. Results are ints (Q-SIGNEXT).
+  The subtraction is checked int64 arithmetic under rule (A), "overflow
+  raises, no wraparound" (R1.6b-D1, #1894): `[-9223372036854775553, 8]` has
+  low byte 0xFF, and subtracting 256 would give INT64_MIN - 1, so it raises
+  `value`, naming `sign_extend`. Lua's integer subtraction wraps the same
+  operation to 9223372036854775807; `pre` and the tag answer
+  `-9.223372036854776e+18`.
 - `random_int`: Lua `math.random(m, n)` is an integer. The bounds follow N5.
   `[2^53+1, 2^53+1]` has a span of 1, so the result is deterministic and exact.
 - `seed_random`: a seed's range is all of int64 (§6, design round 2). So seeds
@@ -656,7 +666,7 @@ by text (§10).
 | Q-R17: the writers' loss is R1.7's | agreed: the decoders change at R1.6; the writers' float loss is R1.7 | no change |
 | Q-DB253: the db 2^53 raise | agreed: exact int64; `db_check_exact_int`'s raise is deleted with its reason | no change (the db `.branch` files assumed it) |
 | Q-HEX | agreed: exact digits; negatives raise | `hex` (adds `hex of -1`) |
-| Q-SIGNEXT | agreed: an exact int from the existing operation | no change |
+| Q-SIGNEXT | agreed: an exact int from the existing operation; R1.6b-D1 (#1894): the subtraction is checked int64 arithmetic, so a result below INT64_MIN raises `value` | `sign_extend` (adds the overflow case) |
 | Q-CAP: rows the release profile cannot observe | A3: the `profile` column and matched builds | the 25 non-release rows |
 | Q-CLOCK | B2: the injected clock | `monotonic_ns` |
 | Q-ALREADY: int-requiring rows exact before R1.6 | A2: `closed_in` R1.5 (`bit_*`) and main (`chr`, `dispatch`) | 8 rows |
@@ -679,6 +689,7 @@ by text (§10).
 | the LIST arms of `add`/`subtract`/`multiply` | C4: elementwise through the scalar arm | `add subtract multiply` |
 | `sum of []` | C2: the int 0 | `sum` |
 | min/max int/float ties | agreed: the first argument wins, kind included | `min max` |
+| empty `min`/`max` | R1.6b-D2 (#1895): raises `value` in both call forms | `min max` (add `of []` and `of ([])`) |
 | `num of "-9223372036854775808"` | agreed: the int INT64_MIN | `num` |
 | integer text beyond int64 in the scanners | C3: raises `value`, naming the token | `scan_ints scan_int_tokens` |
 | the kind of a spawn handle's `done` | C1: an int (it is numeric) | `spawn` |
@@ -899,6 +910,17 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
     printed socket handles on `pre`; they print `> 0` or `!= null` now.
     `exec_capture`'s `1e300` line printed a timing-raced exit code on `pre`;
     it prints `type of` the answer now. No `.branch` line changed.
+- **R1.6b rulings, 2026-10-21** (frozen-bar amendments, listed with their
+  SHA-256 in `tests/phase2/builtins_changes.md`). Each new case is appended
+  after its probe's last line, so no existing line moves; the re-recorded
+  `.pre` and `.tag` keep every earlier line byte for byte.
+  - R1.6b-D1 `sign_extend`: adds `["overflow", "value"]` for
+    `sign_extend of [-9223372036854775553, 8]` (the subtraction is checked
+    int64 arithmetic; INT64_MIN - 1 raises). `pre` and the tag print
+    `["overflow-answer", -9.223372036854776e+18]`.
+  - R1.6b-D2 `min`, `max`: each adds `["empty", "value"]` (`of []`) and
+    `["empty-list", "value"]` (`of ([])`). `pre` and the tag print
+    `["empty-answer", 0]` and `["empty-list-answer", 0]`.
 
 ## Instrument notes
 - Check machinery, in lines (first version -> fix round -> R1.6a rulings):

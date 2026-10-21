@@ -234,3 +234,35 @@ Historical import records above are already included in the pin.
 
 | Path | SHA-256 | Ruling | Reason |
 |---|---|---|---|
+| `tests/phase2/builtins/builtins/max.branch` | `540ee7840bf80662918b4d4189add017778d08c503488529c6fec539d0e6bb8a` | R1.6b-D2 | an empty `max` raises `value` in both call forms, `max of []` and `max of ([])` (#1895) |
+| `tests/phase2/builtins/builtins/min.branch` | `f45bde7acd9b053b3379e15b35c9e06f2ba11243437f5a5926b62aad588d2118` | R1.6b-D2 | an empty `min` raises `value` in both call forms, `min of []` and `min of ([])` (#1895) |
+| `tests/phase2/builtins/builtins/sign_extend.branch` | `bfc48781e0e0ab7eb480899c9975ccdbb810c36cbd2b297fd62231b41ee03bdf` | R1.6b-D1 | the subtraction is checked int64 arithmetic under rule (A): `sign_extend of [-9223372036854775553, 8]` raises `value` (#1894) |
+
+## R1.6b bar amendments
+
+The orchestrator ruled on R1.6b's two stops (issues #1894 and #1895):
+
+> R1.6b-D1: sign_extend's subtraction is checked int64 arithmetic, under #1758's rule (A), "overflow raises, no wraparound". So sign_extend of [-9223372036854775553, 8] raises value, naming sign_extend.
+
+> R1.6b-D2: an empty min/max raises value, in both call forms (min of [] with zero arguments, and min of ([]) with one empty list), and likewise for max.
+
+Each new case is appended after its probe's last line, so every existing
+executable line number and stdout line number is unchanged (sign_extend's
+integral-float success stays stdout line 5). The three probes' `.pre` and
+`.tag` were re-recorded on the R1.5-tip and v0.46.0 release binaries; their
+earlier lines are byte-identical to the previous records, and only the new
+lines were added.
+
+| File | Ruling |
+|---|---|
+| `tests/phase2/builtins/BAR.md` | R1.6b-D1 and R1.6b-D2 |
+| `tests/phase2/builtins/builtins/max.eigs` | R1.6b-D2 |
+| `tests/phase2/builtins/builtins/max.pre` | R1.6b-D2 |
+| `tests/phase2/builtins/builtins/max.tag` | R1.6b-D2 |
+| `tests/phase2/builtins/builtins/min.eigs` | R1.6b-D2 |
+| `tests/phase2/builtins/builtins/min.pre` | R1.6b-D2 |
+| `tests/phase2/builtins/builtins/min.tag` | R1.6b-D2 |
+| `tests/phase2/builtins/builtins/sign_extend.eigs` | R1.6b-D1 |
+| `tests/phase2/builtins/builtins/sign_extend.pre` | R1.6b-D1 |
+| `tests/phase2/builtins/builtins/sign_extend.tag` | R1.6b-D1 |
+| `tests/phase2/builtins_changes.md` | R1.6b-D1 and R1.6b-D2 |

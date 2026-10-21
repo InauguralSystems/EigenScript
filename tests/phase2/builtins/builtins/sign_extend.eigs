@@ -18,3 +18,7 @@ catch e:
     print of ["value-fraction", e.kind]
 f is sign_extend of [255.0, 8.0]
 print of [f, nt of f]
+try:
+    print of ["overflow-answer", sign_extend of [-9223372036854775553, 8]]
+catch e:
+    print of ["overflow", e.kind]

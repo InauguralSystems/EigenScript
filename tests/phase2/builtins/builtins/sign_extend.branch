@@ -3,4 +3,5 @@
 ["bits-fraction", "value"]
 ["value-fraction", "value"]
 [-1, "int"]
+["overflow", "value"]
 rc=0

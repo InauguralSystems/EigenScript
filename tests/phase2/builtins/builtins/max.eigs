@@ -13,3 +13,11 @@ print of [c, nt of c]
 d is max of 7
 print of [d, nt of d]
 print of [max of [3, 3.0], nt of (max of [3, 3.0]), max of [3.0, 3], nt of (max of [3.0, 3])]
+try:
+    print of ["empty-answer", max of []]
+catch e:
+    print of ["empty", e.kind]
+try:
+    print of ["empty-list-answer", max of ([])]
+catch e:
+    print of ["empty-list", e.kind]

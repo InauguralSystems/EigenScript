@@ -3,4 +3,6 @@
 [2.5, "float"]
 [7, "float"]
 [3, "float", 3, "float"]
+["empty-answer", 0]
+["empty-list-answer", 0]
 rc=0
