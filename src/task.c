@@ -843,7 +843,7 @@ static void sched_main_abandon(TaskScheduler *s) {
 static Value *sched_fatal_stop(TaskScheduler *s, Task *stopped, Value *r) {
     if (r) val_decref(r);
     s->fatal_stop = 0;
-    s->current = 0;   /* main runs the next eval (the normal returns do not reset it: #1807) */
+    s->current = 0;   /* sched_fatal_stop must restore main before abandoning its slice. */
     if (stopped && stopped->id != 0) task_do_kill(stopped->id);
     sched_main_abandon(s);
     if (s->fatal_owns_exit) { g_exit_requested = 0; s->fatal_owns_exit = 0; }
