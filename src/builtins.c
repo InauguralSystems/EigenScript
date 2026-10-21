@@ -3958,9 +3958,12 @@ Value* builtin_range(Value *arg) {
     if (!sandbox_charge((size_t)count * (sizeof(Value) + sizeof(Value *)))) return make_list(0);
 
     Value *result = make_list(count);
-    /* Index by k: `i += step` overflowed int near INT_MAX. */
-    for (int k = 0; k < count; k++) {
-        Value *v = make_int((int64_t)start + (int64_t)k * step);
+    /* Keep the induction value in int64: int bounds/step and the 1M cap
+     * also keep the final increment in range. Count down without a second
+     * increasing index in this allocation loop. */
+    int64_t value = start;
+    for (int remaining = count; remaining > 0; --remaining, value += step) {
+        Value *v = make_int(value);
         list_append(result, v);
         val_decref(v);
     }
