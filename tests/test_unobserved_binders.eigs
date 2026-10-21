@@ -1,0 +1,66 @@
+# #1883: binders inside a module-level unobserved block must read from the
+# same storage to which their binding opcode writes.  In particular, catch
+# binds by name; module-slot promotion must not redirect its reads to a null
+# frame slot.
+load_file of "lib/test.eigs"
+
+unobserved:  # lint: allow W020 -- storage transparency is the subject
+    try:
+        catch_only_value is 1 / 0
+    catch catch_only:
+        assert_eq of [catch_only.kind, "value", "1883 catch-only binding is the error dictionary"]
+
+# Re-enter the catch through a loop, including forced OSR runs of this suite.
+repeated_kinds is []
+unobserved:  # lint: allow W020 -- storage transparency is the subject
+    for catch_iteration in range of 8:
+        try:
+            repeated_value is catch_iteration / 0
+        catch repeated_error:
+            append of [repeated_kinds, repeated_error.kind]
+assert_eq of [repeated_kinds,
+              ["value", "value", "value", "value", "value", "value", "value", "value"],
+              "1883 repeated catch bindings stay readable"]
+
+# An outside reference deliberately prevents promotion.  It pins the catch
+# binding's normal module visibility while the catch-only cases above pin the
+# formerly broken promotion decision.
+unobserved:  # lint: allow W020 -- storage transparency is the subject
+    try:
+        escaping_value is 1 / 0
+    catch escaping_error:
+        escaping_seen_inside is escaping_error.kind
+assert_eq of [escaping_error.kind, "value", "1883 catch binding remains readable after block"]
+assert_eq of [escaping_seen_inside, "value", "1883 escaping catch binding is readable inside too"]
+
+# Binder audit probes.  `for` and list-comprehension variables use name-based
+# binding and are deliberately not candidates for module-slot promotion.
+unobserved:
+    for binder_for in [7]:
+        binder_for_seen is binder_for
+    binder_comp_seen is [binder_comp for binder_comp in [8]]
+assert_eq of [binder_for_seen, 7, "1883 for binder reads its env write"]
+assert_eq of [binder_comp_seen, [8], "1883 comprehension binder reads its env write"]
+
+# Destructuring names are promotion candidates, but their stores go through
+# emit_assign_for_tos and therefore select the same slot as their reads.
+unobserved:
+    [binder_left, binder_right] is [9, 10]
+    binder_destructure_seen is binder_left + binder_right
+assert_eq of [binder_destructure_seen, 19, "1883 destructuring binder uses promoted slots consistently"]
+
+# Named function definitions also bind through OP_SET_NAME_LOCAL.  Their body
+# is a nested scope, and their name must remain on the name path at this scope.
+unobserved:  # lint: allow W020 -- binder storage is the subject
+    define binder_function(binder_function_parameter) as:
+        return binder_function_parameter + 2
+    binder_function_seen is binder_function of 10
+assert_eq of [binder_function_seen, 12, "1883 function-name binder reads its env write"]
+
+# Lambda parameters introduce a nested compiler scope and never reach the
+# module collector; this guards that boundary as part of the binder audit.
+unobserved:  # lint: allow W020 -- binder boundary is the subject
+    binder_lambda_seen is ((binder_parameter) => binder_parameter + 1) of 10
+assert_eq of [binder_lambda_seen, 11, "1883 lambda parameter stays in its nested scope"]
+
+test_summary of null

@@ -3273,6 +3273,13 @@ check_eigs_suite "unobserved: elided samples still enter the value window; entro
     test_unobserved_neutral.eigs "All tests passed"
 echo ""
 
+# [51b] #1883: module-slot promotion must not split a name-bound binder's
+# writes from its reads inside an unobserved block.
+echo "[51b] Unobserved Binder Storage (#1883)"
+check_eigs_suite "unobserved binders share read/write storage (#1883)" \
+    test_unobserved_binders.eigs "All tests passed"
+echo ""
+
 # [52] Stream I/O
 echo "[52] Stream Tensor I/O"
 # #1361 EIGS_STRICT=0: pins stream_open of wrong-typed args answering 0.

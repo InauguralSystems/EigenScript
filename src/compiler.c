@@ -1594,8 +1594,9 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
         name_set_add(out, node->data.assign.name);
         break;
     case AST_FUNC:
-        name_set_add(out, node->data.func.name);
-        /* Don't descend into function body */
+        /* Don't add func.name: AST_FUNC binds it through OP_SET_NAME_LOCAL,
+         * so it has the same split-storage hazard as catch/for binders.
+         * Don't descend into the new function scope either. */
         break;
     case AST_IF:
         collect_module_names_block(node->data.cond.if_body, node->data.cond.if_count, out);
@@ -1616,7 +1617,11 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
         break;
     case AST_TRY:
         collect_module_names_block(node->data.trycatch.try_body, node->data.trycatch.try_count, out);
-        if (node->data.trycatch.err_name) name_set_add(out, node->data.trycatch.err_name);
+        /* Don't add err_name: like a for-loop variable, the catch binder is
+         * installed by OP_SET_NAME_LOCAL.  Promoting reads to a frame slot
+         * would split the binding and leave that slot null (#1883).  Keep
+         * collecting ordinary assignments in both arms: those remain the
+         * common, fast slot-promotion case for unobserved blocks. */
         collect_module_names_block(node->data.trycatch.catch_body, node->data.trycatch.catch_count, out);
         break;
     case AST_MATCH:
