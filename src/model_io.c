@@ -567,6 +567,11 @@ int save_model_weights(const char *path, TransformerModel *model) {
 
 
 Value* builtin_eigen_model_load(Value *arg) {
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "eigen_model_load: not replayable under EIGS_REPLAY "
+                 "(model file-read boundary; see docs/TRACE.md)");
+        return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");
+    }
     const char *base_path = "";
     if (arg && arg->type == VAL_STR) base_path = arg->data.str;
 
@@ -1252,6 +1257,11 @@ Value* builtin_eigen_model_save_binary(Value *arg) {
 Value* builtin_eigen_checkpoint_info(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
         return make_str("{\"status\": \"error\", \"error\": \"requires path string\"}");
+    }
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "eigen_checkpoint_info: not replayable under EIGS_REPLAY "
+                 "(model file-read boundary; see docs/TRACE.md)");
+        return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");
     }
     const char *path = arg->data.str;
     int fmt = detect_checkpoint_format(path);

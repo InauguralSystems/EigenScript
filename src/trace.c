@@ -2320,7 +2320,9 @@ static Value *parse_value_p(const char **p) {
         if (!buf) return NULL;
         int n = unescape_string(&q, buf, (int)cap);
         if (n < 0) { free(buf); return NULL; }
-        Value *v = make_str(buf);
+        /* Tape strings may contain an escaped NUL.  Construct from the
+         * decoded length; make_str/strlen would silently discard the suffix. */
+        Value *v = make_str_len(buf, (size_t)n);
         free(buf);
         *p = q;
         return v;
@@ -2703,9 +2705,24 @@ int trace_replay_take(const char *fn, Value **out) {
  * chunk small enough that worst-case \xNN escaping cannot hit the 64 KiB
  * record ceiling.  The metadata is [ok, identity-or-error, byte_count]. */
 #define TRACE_SOURCE_CHUNK 12000
+#define TRACE_SOURCE_MAX (10u * 1024u * 1024u)
 void trace_source_record(const char *kind, const char *source, size_t size,
                          const char *identity, const char *error) {
     if (!__builtin_expect(g_trace_enabled, 0)) return;
+    if (!error && size > TRACE_SOURCE_MAX) {
+        char message[160];
+        snprintf(message, sizeof message,
+                 "%s: source is %zu bytes, over the %u-byte trace cap",
+                 kind, size, TRACE_SOURCE_MAX);
+        Value *meta = make_list(3);
+        list_append_owned(meta, make_bool(0));
+        list_append_owned(meta, make_str(message));
+        list_append_owned(meta, make_num(0));
+        trace_nondet_value(kind, meta);
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s", message);
+        return;
+    }
     Value *meta = make_list(3);
     list_append_owned(meta, make_bool(error == NULL));
     list_append_owned(meta, make_str(error ? error : (identity ? identity : "")));
@@ -2747,7 +2764,11 @@ int trace_source_replay(const char *kind, char **source, long *size,
     }
     *identity = xstrdup(detail);
     val_decref(meta);
-    if (n < 0) { rt_error(EK_IO, 0, "%s: invalid source size", kind); return -1; }
+    if (n < 0 || (unsigned long)n > TRACE_SOURCE_MAX) {
+        rt_error(EK_IO, 0, "%s: invalid source size %ld (maximum %u)",
+                 kind, n, TRACE_SOURCE_MAX);
+        return -1;
+    }
     char *buf = xmalloc((size_t)n + 1);
     size_t off = 0;
     char chunk_kind[96];
@@ -3018,11 +3039,11 @@ static void wf_printf(int *budget, const char *fmt, ...) {
     *budget -= n;
 }
 
-static void write_string_full(const char *s, int *budget) {
+static void write_string_full_len(const char *s, size_t len, int *budget) {
     wf_putc('"', budget);
     if (s) {
-        for (const char *p = s; *p && *budget > 0; p++) {
-            unsigned char c = (unsigned char)*p;
+        for (size_t i = 0; i < len && *budget > 0; i++) {
+            unsigned char c = (unsigned char)s[i];
             if (c == '"' || c == '\\') { wf_putc('\\', budget); wf_putc(c, budget); }
             else if (c == '\n')        { wf_puts("\\n", budget); }
             else if (c == '\r')        { wf_puts("\\r", budget); }
@@ -3033,6 +3054,10 @@ static void write_string_full(const char *s, int *budget) {
     wf_putc('"', budget);
 }
 
+static void write_string_full(const char *s, int *budget) {
+    write_string_full_len(s, s ? strlen(s) : 0, budget);
+}
+
 static void write_value_ptr_full(Value *v, int *budget) {
     if (*budget <= 0) return;
     if (!v) { wf_puts("null", budget); return; }
@@ -3040,7 +3065,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
         case VAL_NUM:  wf_printf(budget, "%.17g", VAL_NUM_RAW(v)); break;
         case VAL_NULL: wf_puts("null", budget); break;
         case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
-        case VAL_STR:  write_string_full(v->data.str, budget); break;
+        case VAL_STR:  write_string_full_len(v->data.str, val_str_len(v), budget); break;
         case VAL_LIST: {
             wf_putc('[', budget);
             int n = v->data.list.count;

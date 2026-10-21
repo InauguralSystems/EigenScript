@@ -2403,24 +2403,20 @@ static void tensor_load_record_verdict(uint32_t rows, uint32_t cols) {
 Value* builtin_tensor_load(Value *arg) {
     if (!arg || arg->type != VAL_STR) return make_null();
 
-    int replayed_verdict = 0;
     if (__builtin_expect(g_replay_enabled, 0)) {
-        Value *verdict;
+        /* Consume and structurally validate the v7 verdict so stream order and
+         * corrupt-tape diagnostics stay intact, but never use it as permission
+         * to open the payload: tensor bytes themselves were never taped. */
+        Value *verdict = NULL;
         if (trace_replay_refuse_off_owner("tensor_load")) return make_null();
-        if (trace_replay_take("tensor_load", &verdict)) {
-            replayed_verdict = 1;
-            if (verdict && verdict->type == VAL_LIST &&
-                verdict->data.list.count == 2 &&
-                list_elem_type(verdict, 0) == VAL_NUM &&
-                list_elem_type(verdict, 1) == VAL_NUM) {
-                uint32_t rows = (uint32_t)eigs_list_num(verdict, 0, __func__);
-                uint32_t cols = (uint32_t)eigs_list_num(verdict, 1, __func__);
-                val_decref(verdict);
-                tensor_load_limit_raise(arg->data.str, rows, cols);
-                return make_null();
-            }
-            val_decref(verdict);
+        if (trace_replay_take("tensor_load", &verdict) && verdict &&
+            verdict->type == VAL_LIST) {
+            (void)verdict->data.list.count;
         }
+        val_decref(verdict);
+        rt_error(EK_IO, 0, "tensor_load: not replayable under EIGS_REPLAY "
+                 "(file-read boundary; see docs/TRACE.md)");
+        return make_null();
     }
 
     FILE *f = fopen(arg->data.str, "rb");
@@ -2464,10 +2460,6 @@ Value* builtin_tensor_load(Value *arg) {
     uint64_t total64 = (uint64_t)rows_raw * (uint64_t)cols_raw;
     if (total64 > EIGS_TENSOR_MAX_ELEMENTS) {
         fclose(f);
-        /* A recorded non-cap decision still uses the historical live payload
-         * path. If that file has since grown beyond the cap, reject it with
-         * the old null stand-in rather than inventing a new catch branch. */
-        if (replayed_verdict) return make_null();
         tensor_load_record_verdict(rows_raw, cols_raw);
         tensor_load_limit_raise(arg->data.str, rows_raw, cols_raw);
         return make_null();

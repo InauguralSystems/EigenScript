@@ -1438,7 +1438,8 @@ Value* builtin_native_train_step(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         return make_str("{\"status\": \"error\", \"error\": \"requires [input_ids, output_ids, lr]\"}");
     }
-    if (__builtin_expect(g_replay_enabled, 0) && getenv("EIGS_TRAIN_DUMP")) {
+    if (__builtin_expect(g_replay_enabled, 0) &&
+        (g_train_dump_fp || getenv("EIGS_TRAIN_DUMP"))) {
         rt_error(EK_IO, 0, "native_train_step: not replayable with "
                  "EIGS_TRAIN_DUMP (file-write boundary; see docs/TRACE.md)");
         return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");

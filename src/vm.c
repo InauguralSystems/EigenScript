@@ -6077,9 +6077,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!source) {
             /* Raise with the real cause: there is no filesystem here,
              * and the registered provider (if any) had no entry. */
-            rt_error(EK_IO, current_line,
+            char message[1400];
+            snprintf(message, sizeof message,
                 "import: module '%s' not found — no filesystem in the "
                 "freestanding profile (no source-provider entry)", name);
+            if (__builtin_expect(g_trace_enabled, 0)) {
+                Value *warning_record = make_str("");
+                trace_nondet_value("import_warning", warning_record);
+                val_decref(warning_record);
+            }
+            trace_source_record("import_source", NULL, 0, NULL, message);
+            rt_error(EK_IO, current_line, "%s", message);
             vm_push(make_null());
             DISPATCH();
         }
@@ -6175,9 +6183,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
         if (!g_replay_enabled) {
             if (__builtin_expect(g_trace_enabled, 0)) {
-                Value *warning = make_str(import_warning);
-                trace_nondet_value("import_warning", warning);
-                val_decref(warning);
+                Value *warning_record = make_str(import_warning);
+                trace_nondet_value("import_warning", warning_record);
+                val_decref(warning_record);
             }
             trace_source_record("import_source", source, (size_t)source_size, abs_path, NULL);
         }

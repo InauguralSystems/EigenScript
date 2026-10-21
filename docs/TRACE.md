@@ -7,16 +7,22 @@ the same `monotonic_ns` timestamps, the same HTTP responses.
 
 ## Filesystem replay model (#1885)
 
-Replay is an **rr-style, side-effect-free execution**. Every program-execution
-filesystem read is served by the tape, including the source read by `import`
-and `load_file`; replay never falls back to a live file. Every replayable
+Replay is an **rr-style, side-effect-free execution**. Every filesystem read
+reachable from a running program is either served by the tape or refused
+before the read. Source read by `import` and `load_file`, ordinary file
+readers, hashes, directory queries, and process/network input are taped.
+Reads whose payload is not represented in format v7—tensor/model checkpoints,
+font and music assets, HTTP static serving, stores, and databases—are refused;
+replay never falls back to a live file. Every replayable
 mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, `remove_file`, and
 `rm`) returns or raises its recorded outcome before any filesystem syscall.
 Operations whose durable result cannot be represented by the tape remain loud
 boundaries: `mktemp`, stream output, corpus generation, and store operations
 are refused rather than partially run. The embedding API's initial program
-read and `eigenscript fmt` are host/tool input acquisition, not reads performed
-by a running EigenScript program, and therefore remain live.
+read, CLI/bundle discovery, tape input, JIT/runtime-library loading,
+lint/LSP/DAP inspection, and `eigenscript fmt` are host, tool, or runtime input
+acquisition—not reads performed by a running EigenScript program—and therefore
+remain live. The audited per-site classification, every read and write site with its reason, is in PR #1901's discussion (#1885).
 
 Two environment variables control it:
 
