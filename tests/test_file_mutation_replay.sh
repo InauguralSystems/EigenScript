@@ -44,15 +44,15 @@ EIGS_REPLAY="$TMP/tape" "$BIN" "$TMP/case.eigs" > "$TMP/replay.out" 2>&1
 replay_rc=$?
 
 if [ "$record_rc" -ne 0 ] || [ "$replay_rc" -ne 0 ]; then
-    echo "FILE MUTATION REPLAY: FAIL (record rc=$record_rc, replay rc=$replay_rc)"
+    echo "  FAIL: file mutation replay (record rc=$record_rc, replay rc=$replay_rc)"
     cat "$TMP/record.out" "$TMP/replay.out"
     exit 1
 fi
 if ! cmp -s "$TMP/record.out" "$TMP/replay.out"; then
-    echo "FILE MUTATION REPLAY: FAIL (stdout/stderr differ)"
+    echo "  FAIL: file mutation replay (stdout/stderr differ)"
     diff -u "$TMP/record.out" "$TMP/replay.out" || true
     exit 1
 fi
 
 cat "$TMP/record.out"
-echo "FILE MUTATION REPLAY: PASS (byte-identical after every live outcome changed)"
+echo "  PASS: file mutation results replay byte-identical after every live outcome changed"
