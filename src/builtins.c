@@ -646,8 +646,11 @@ Value* builtin_at_exit(Value *arg) {
     return make_null();
 }
 
-void eigs_run_exit_hooks(EigsState *st) {
+void eigs_run_exit_hooks(EigsState *st, int *exit_requested, int *exit_code,
+                         int *had_error) {
     int any_error = 0;
+    int any_exit = 0;
+    int chosen_exit_code = 0;
     while (st) {
         pthread_mutex_lock(&st->exit_hook_lock);
         Value *fn = st->exit_hook_count > 0
@@ -667,9 +670,24 @@ void eigs_run_exit_hooks(EigsState *st) {
         val_decref(nul);
         if (result) val_decref(result);
         val_decref(fn);
-        if (g_has_error && !g_exit_requested) any_error = 1;
+        if (g_exit_requested) {
+            if (!any_exit && g_exit_code != 0) {
+                any_exit = 1;
+                chosen_exit_code = g_exit_code;
+            }
+            /* `exit` only unwinds this callback.  As with a raised callback,
+             * it must not prevent the remaining LIFO callbacks from running. */
+            g_exit_requested = 0;
+            __atomic_store_n(&eigs_current->exit_scope->latched_storage, 0,
+                             __ATOMIC_RELEASE);
+        } else if (g_has_error) {
+            any_error = 1;
+        }
     }
-    g_has_error = any_error || g_has_error;
+    g_has_error = any_error;
+    if (exit_requested) *exit_requested = any_exit;
+    if (exit_code) *exit_code = chosen_exit_code;
+    if (had_error) *had_error = any_error;
 }
 
 Value* builtin_assert(Value *arg) {

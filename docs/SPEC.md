@@ -2100,8 +2100,15 @@ Callbacks run in last-in, first-out order after ordinary
 completion, after `exit of N` (like Python's `atexit` on `sys.exit`), and after
 an uncaught error, while the evaluation's globals are still available. Every
 callback runs even when an earlier one raises, and every callback error is
-reported. Any callback error changes an otherwise-zero status to 1, but does
-not mask an existing nonzero exit status. This is the mechanism used by
+reported. This applies to file evaluation and to interactive or piped REPL
+shutdown. Callbacks run before the final handle drain and before globals are
+destroyed, so they may use a handle retained in a global or create a handle.
+
+Final status has strict precedence: a nonzero outcome from the program itself
+(a nonzero `exit`, uncaught error, unobserved task failure, or worker failure)
+wins. Otherwise the first callback `exit of N` with nonzero N wins; otherwise
+a callback error gives 1; otherwise the result is 0. Thus a callback's
+`exit of 0` can never turn a failure into success. This is the mechanism used by
 `lib/test.eigs` to make a failed assertion report its summary and fail the
 process even when the file omits `test_summary`.
 

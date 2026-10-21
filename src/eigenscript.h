@@ -1787,7 +1787,8 @@ struct EigsChunk;
 void chunk_incref(struct EigsChunk *chunk);
 void chunk_decref(struct EigsChunk *chunk);
 Value* call_eigs_fn(Value *fn, Value *arg);
-void eigs_run_exit_hooks(EigsState *st);
+void eigs_run_exit_hooks(EigsState *st, int *exit_requested, int *exit_code,
+                         int *had_error);
 uint32_t env_hash_name(const char *name);
 char    *env_intern_name(const char *name);
 /* Sandbox intern ownership: begin a nested run scope, promote any returned

@@ -287,7 +287,37 @@ int main(int argc, char **argv) {
          * below leaves nothing to read it through — the script path at the
          * bottom of main already captures it first, for the same reason. */
         int repl_exit_code = 0;
-        (void)eigs_state_exit_requested(eigs_st, &repl_exit_code);
+        int repl_had_exit = eigs_state_exit_requested(eigs_st, &repl_exit_code);
+        int repl_error = g_has_error && !repl_had_exit;
+        EigsExitScope *repl_program_scope = eigs_current->exit_scope;
+        eigs_exit_scope_retain(repl_program_scope);
+        EigsExitScope *repl_hook_scope = xcalloc(1, sizeof(*repl_hook_scope));
+        repl_hook_scope->refs = 1;
+        eigs_thread_set_exit_scope(repl_hook_scope);
+        g_has_error = 0;
+        g_exit_requested = 0;
+        int hook_exit = 0, hook_code = 0, hook_error = 0;
+        eigs_run_exit_hooks(eigs_st, &hook_exit, &hook_code, &hook_error);
+        int repl_task_error = task_any_unobserved_error();
+        handle_table_drain(eigs_st);
+        int repl_worker_error =
+            __atomic_load_n(&eigs_st->spawn_err_count, __ATOMIC_RELAXED) > 0;
+        /* A worker may publish exit after the REPL itself finished.  It kept
+         * the program scope while hooks used their private, unlatched scope. */
+        repl_had_exit = __atomic_load_n(&repl_program_scope->latched_storage,
+                                        __ATOMIC_ACQUIRE);
+        if (repl_had_exit) repl_exit_code = repl_program_scope->code;
+        eigs_thread_set_exit_scope(repl_program_scope);
+        eigs_exit_scope_release(repl_program_scope);
+        eigs_exit_scope_release(repl_hook_scope);
+        if ((repl_had_exit && repl_exit_code != 0) || repl_error ||
+            repl_task_error || repl_worker_error) {
+            if (!(repl_had_exit && repl_exit_code != 0)) repl_exit_code = 1;
+        } else if (hook_exit) {
+            repl_exit_code = hook_code;
+        } else if (hook_error) {
+            repl_exit_code = 1;
+        }
         trace_shutdown();
         /* Drop the global scope's bindings (closures defined at top level
          * die here), then collect the env<->fn cycles those closures left
@@ -384,41 +414,37 @@ int main(int argc, char **argv) {
     if (eigs_env_flag("EIGS_DUMP_BC")) chunk_disassemble(script_chunk, "<module>");
     Value *result = vm_execute(script_chunk, global);
     if (result) val_decref(result);
-    /* #493: capture whether any worker died of an uncaught error without ever
-     * being joined — must be read BEFORE handle_table_drain frees the tasks. */
-    int unobserved_task_error = task_any_unobserved_error();
-    /* Program done: deterministically reap workers and free channels while the
-     * value world is still alive (channels/threads live in the handle table,
-     * not on a GC'd Value, so nothing else reclaims them). */
-    handle_table_drain(eigs_st);
-    /* #1112: spawn()ed workers that died of an uncaught error — read AFTER
-     * the drain above has joined every worker (pthread_join is the
-     * happens-before edge for the worker's increment). */
-    int spawn_worker_error = __atomic_load_n(&eigs_st->spawn_err_count, __ATOMIC_RELAXED) > 0;
     /* Python/C-style exit callbacks run after the program (also after an
      * uncaught error or `exit`) while its globals and closures remain alive.
      * Temporarily remove the unwind marker so callbacks can execute. */
-    int pre_hook_error = g_has_error && !g_exit_requested;
-    int pre_hook_exit = g_exit_requested;
-    int pre_hook_exit_code = g_exit_code;
+    int pre_hook_exit_code = 0;
+    int pre_hook_exit = eigs_state_exit_requested(eigs_st, &pre_hook_exit_code);
+    int pre_hook_error = g_has_error && !pre_hook_exit;
+    /* Workers retain the program scope.  Run callbacks on a private scope:
+     * this suspends a program exit without erasing it, and a late worker exit
+     * cannot make a callback's VM mistake the program stop for its own. */
+    EigsExitScope *program_scope = eigs_current->exit_scope;
+    eigs_exit_scope_retain(program_scope);
+    EigsExitScope *hook_scope = xcalloc(1, sizeof(*hook_scope));
+    hook_scope->refs = 1;
+    eigs_thread_set_exit_scope(hook_scope);
     g_has_error = 0;
     g_exit_requested = 0;
-    /* Workers are drained, so the main attachment is now the scope's sole
-     * executor. Suspend its published stop too: vm_run polls the scope as
-     * well as the thread-local unwind flag. */
-    if (pre_hook_exit)
-        __atomic_store_n(&eigs_current->exit_scope->latched_storage, 0,
-                         __ATOMIC_RELEASE);
-    eigs_run_exit_hooks(eigs_st);
-    int hook_error = g_has_error && !g_exit_requested;
-    if (pre_hook_exit) {
-        eigs_current->exit_scope->code = pre_hook_exit_code;
-        __atomic_store_n(&eigs_current->exit_scope->latched_storage, 1,
-                         __ATOMIC_RELEASE);
-        g_exit_requested = 1;
-        g_exit_code = pre_hook_exit_code;
-    }
-    if (pre_hook_error || hook_error) g_has_error = 1;
+    int hook_exit = 0, hook_exit_code = 0, hook_error = 0;
+    eigs_run_exit_hooks(eigs_st, &hook_exit, &hook_exit_code, &hook_error);
+    if (pre_hook_error) g_has_error = 1;
+    /* Hooks may use handles retained in globals and may create new handles.
+     * Drain only after every hook, so both sets stay usable and are reclaimed. */
+    int unobserved_task_error = task_any_unobserved_error();
+    handle_table_drain(eigs_st);
+    int spawn_worker_error = __atomic_load_n(&eigs_st->spawn_err_count,
+                                              __ATOMIC_RELAXED) > 0;
+    pre_hook_exit = __atomic_load_n(&program_scope->latched_storage,
+                                    __ATOMIC_ACQUIRE);
+    if (pre_hook_exit) pre_hook_exit_code = program_scope->code;
+    eigs_thread_set_exit_scope(program_scope);
+    eigs_exit_scope_release(program_scope);
+    eigs_exit_scope_release(hook_scope);
     /* An uncaught runtime error leaves g_has_error set (vm_run unwinds to
      * here rather than continuing with null). Report it as a non-zero exit
      * so scripts fail loudly for callers, Makefiles, and CI. */
@@ -429,9 +455,13 @@ int main(int argc, char **argv) {
      * a worker stops main and decides the process status. The unwind flag is
      * cleared only for an exit request observed on THIS thread. */
     int exit_code = 0;
-    if (!eigs_state_exit_requested(eigs_st, &exit_code))
-        exit_code = (g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0;
-    else if (exit_code == 0 && hook_error)
+    if (pre_hook_exit && pre_hook_exit_code != 0)
+        exit_code = pre_hook_exit_code;
+    else if (pre_hook_error || unobserved_task_error || spawn_worker_error)
+        exit_code = 1;
+    else if (hook_exit)
+        exit_code = hook_exit_code;
+    else if (hook_error)
         exit_code = 1;
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release

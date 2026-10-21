@@ -5637,6 +5637,21 @@ else
 fi
 echo ""
 
+# [81b1] at_exit teardown and status contract (#1839).
+echo "[81b1] at_exit teardown"
+AT_EXIT_OUTPUT=$(bash "$TESTS_DIR/test_at_exit.sh" </dev/null 2>&1)
+AT_EXIT_PASS=$(echo "$AT_EXIT_OUTPUT" | grep -c "PASS:" || true)
+AT_EXIT_FAIL=$(echo "$AT_EXIT_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + AT_EXIT_PASS + AT_EXIT_FAIL))
+PASS=$((PASS + AT_EXIT_PASS))
+FAIL=$((FAIL + AT_EXIT_FAIL))
+if [ "$AT_EXIT_FAIL" -gt 0 ]; then
+    echo "$AT_EXIT_OUTPUT"
+else
+    echo "  PASS: all $AT_EXIT_PASS at_exit checks"
+fi
+echo ""
+
 # [81c] Executable-relative imports survive relative/absolute/PATH/symlink launches.
 echo "[81c] Executable path and import anchors"
 EXEPATH_OUTPUT=$(python3 "$TESTS_DIR/test_exe_path.py" </dev/null 2>&1); EXEPATH_RC=$?
