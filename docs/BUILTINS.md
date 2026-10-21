@@ -835,9 +835,9 @@ Requires full build with libpq. PostgreSQL client.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `db_connect` | `db_connect of null` | Connect via DATABASE_URL env var; returns a status JSON, never raises |
-| `db_query_value` | `db_query_value of sql` or `db_query_value of [sql, p1, p2]` | Execute query, return row 0 col 0 typed by its SQL type; `null` for SQL NULL, `""` for no rows |
+| `db_query_value` | `db_query_value of sql` or `db_query_value of [sql, p1, p2]` | Execute query, return row 0 col 0 typed by its SQL type: exact int64 for integer columns, float for finite real columns; `null` for SQL NULL, `""` for no rows |
 | `db_execute` | `db_execute of sql` or `db_execute of [sql, p1, p2]` | Execute command with optional params; returns `"ok"` |
-| `db_query_json` | `db_query_json of sql` or `db_query_json of [sql, p1, p2]` | Execute query, return all rows as a JSON array of objects, each value typed by its SQL type |
+| `db_query_json` | `db_query_json of sql` or `db_query_json of [sql, p1, p2]` | Execute query, return all rows as a JSON array of objects, each value typed by its SQL type; integer columns retain exact int64 digits |
 
 ### Failures raise (#888)
 
@@ -880,7 +880,7 @@ Values carry their column's SQL type rather than arriving as strings:
 |---|---|---|
 | NULL (any column type) | `null` | Distinct from `""` — checked before the type |
 | `boolean` | `true` / `false` → `true` / `false` (bool) | `if row.is_admin:` means what it reads as |
-| `smallint`, `integer`, `bigint`, `oid` | number | `bigint` past 2^53 **raises** — see below |
+| `smallint`, `integer`, `bigint`, `oid` | int | Exact across the full SQL type's range, including `bigint` beyond 2^53 |
 | `real`, `double precision` | number | `NaN`/`Infinity` arrive as strings; JSON has no literal for them |
 | `numeric` | **string** | Deliberate — see below |
 | everything else | string | text, date, uuid, json, … unchanged |
@@ -890,20 +890,18 @@ row's value: a column that decoded as a number for row 1 and a string for
 row 100 would break `row.n + 1` on data rather than on schema.
 
 **`numeric` stays a string.** It is PostgreSQL's arbitrary-precision decimal
-— the money type — and an EigenScript number is a binary double, which
-cannot hold `numeric(38,10)` or even `0.1` exactly. Preserving the digits
+— the money type — and neither int64 nor binary float can hold every
+`numeric(38,10)` value exactly. Preserving the digits
 is the safe default; `SELECT amount::float8` is the one-token opt-in to a
 number when approximate is fine. Note `avg()` and `sum(numeric)` return
 `numeric`, so those want the cast; `count(*)` and `sum(integer)` return
-`bigint` and are already numbers.
+`bigint` and arrive as ints.
 
-**A `bigint` past 2^53 raises** instead of silently rounding, naming the
-column and the fix:
-
-```
-Error line 3: db: column 'id' value 9007199254740993 exceeds the exact-integer
-range of a number (2^53); select it as text (id::text) to keep the digits
-```
+**Integer columns preserve every int64 digit.** `db_query_value` returns an
+int directly, and `db_query_json` writes the exact decimal digits so that
+`json_decode` returns an int. This includes both int64 boundaries and values
+such as `9007199254740993`; no cast to text is needed to preserve an integer
+key. Numeric parameters also bind ints as exact digits.
 
 Before this, every value was a string: SQL `false` arrived as `"f"`, which
 is a non-empty string and therefore **truthy**, so `if row.is_admin:` passed

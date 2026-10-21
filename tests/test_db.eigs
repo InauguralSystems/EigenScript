@@ -218,20 +218,29 @@ if live:
     assert of [num_row.m == "1.10", "DB25 numeric keeps its scale"]
     assert of [(type of num_row.f) == "num", "DB25 ::float8 is the opt-in to a number"]
 
-    # An exact-integer column past 2^53 RAISES rather than silently rounding.
-    c26 is 0
-    m26 is ""
-    try:
-        db_query_json of "SELECT 9007199254740993::bigint AS big"
-    catch e:
-        c26 is 1
-        m26 is e.message
-    assert of [c26 == 1, "DB26 a bigint past 2^53 raises instead of rounding"]
-    assert of [(contains of [m26, "big"]), "DB26 message names the column"]
-    assert of [(contains of [m26, "::text"]), "DB26 message names the fix"]
-    # ...and the boundary itself is fine.
+    # N14 / Q-DB253: int64 SQL columns decode exactly, replacing the old
+    # 2^53 refusal now that the runtime represents those values as ints.
+    big53 is (json_decode of (db_query_json of "SELECT 9007199254740993::bigint AS big"))[0]
+    assert of [big53.big == 9007199254740993, "DB26 N14 bigint above 2^53 is exact"]
+    assert of [(num_type of big53.big) == "int", "DB26 N14 JSON integer column decodes as int"]
+    direct53 is db_query_value of "SELECT 9007199254740993::bigint"
+    assert of [direct53 == 9007199254740993, "DB26 N14 direct bigint above 2^53 is exact"]
+    assert of [(num_type of direct53) == "int", "DB26 N14 direct integer column is int"]
     ok53 is (json_decode of (db_query_json of "SELECT 9007199254740992::bigint AS big"))[0]
-    assert of [ok53.big == 9007199254740992, "DB26 2^53 itself is representable"]
+    assert of [ok53.big == 9007199254740992, "DB26 N14 2^53 itself remains exact"]
+    edges26 is (json_decode of (db_query_json of "SELECT '-9223372036854775808'::bigint AS lo, '9223372036854775807'::bigint AS hi"))[0]
+    assert of [edges26.lo == (-9223372036854775807 - 1), "DB26 N14 JSON INT64_MIN is exact"]
+    assert of [edges26.hi == 9223372036854775807, "DB26 N14 JSON INT64_MAX is exact"]
+    assert of [(num_type of edges26.lo) == "int" and (num_type of edges26.hi) == "int", "DB26 N14 JSON int64 edges retain kind"]
+    lo26 is db_query_value of "SELECT '-9223372036854775808'::bigint"
+    hi26 is db_query_value of "SELECT '9223372036854775807'::bigint"
+    assert of [lo26 == edges26.lo and hi26 == edges26.hi, "DB26 N14 direct int64 edges match JSON"]
+    assert of [(num_type of lo26) == "int" and (num_type of hi26) == "int", "DB26 N14 direct int64 edges retain kind"]
+    assert of [(num_type of (db_query_value of "SELECT 1::smallint")) == "int", "DB26 N14 smallint is int"]
+    assert of [(num_type of (db_query_value of "SELECT 1::integer")) == "int", "DB26 N14 integer is int"]
+    assert of [(db_query_value of "SELECT 4294967295::oid") == 4294967295, "DB26 N14 oid maximum is exact"]
+    assert of [(num_type of (db_query_value of "SELECT 1::oid")) == "int", "DB26 N14 oid is int"]
+    assert of [(num_type of (db_query_value of "SELECT 7::float8")) == "float", "DB26 N14 integral real column remains float"]
 
     # ---- #1637: a bool parameter binds as an SQL boolean, so a bool read
     # from a boolean column can be written back ----
