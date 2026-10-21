@@ -140,6 +140,9 @@ EigsValue *eigs_eval_file(const char *path);
 Both forms tokenize, parse, compile, and execute in the attached state's
 global env, REPL-style: top-level names land in the global env so they
 accumulate across calls and are visible to `eigs_get_global`.
+Each call runs its top-level code as cooperative task 0. After the call drains
+any spawned tasks, the next call again starts as task 0, including when the
+last worker was detached and reaped.
 
 Returns a counted ref to the script's last expression value, or `NULL`
 on parse / runtime error. On error, `eigs_last_error_message()` returns

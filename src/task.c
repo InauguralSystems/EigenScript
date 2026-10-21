@@ -862,7 +862,7 @@ static void sched_main_abandon(TaskScheduler *s) {
 static Value *sched_fatal_stop(TaskScheduler *s, Task *stopped, Value *r) {
     if (r) val_decref(r);
     s->fatal_stop = 0;
-    s->current = 0;   /* main runs the next eval (the normal returns do not reset it: #1807) */
+    s->current = 0;   /* sched_fatal_stop must restore main before abandoning its slice. */
     if (stopped && stopped->id != 0) task_do_kill(stopped->id);
     sched_main_abandon(s);
     if (s->fatal_owns_exit) { g_exit_requested = 0; s->fatal_owns_exit = 0; }
@@ -1042,8 +1042,11 @@ Value *task_sched_after_outermost(Value *r) {
     if (!s) return r;
     /* #1736 row 2 in main's initial run (before main ever suspended): the
      * task_detach stop unwound it to here. Stop — no exit drain. */
-    if (s->fatal_stop) return sched_fatal_stop(s, &s->main_task, r);
-    if (!s->active) return r;
+    if (s->fatal_stop) {
+        r = sched_fatal_stop(s, &s->main_task, r);
+        goto return_to_main;
+    }
+    if (!s->active) goto return_to_main;
     if (s->main_task.state == TASK_SUSPENDED) {
         /* main's first suspension happened in the initial vm_run, outside the
          * trampoline — enqueue it now so it resumes round-robin, UNLESS it
@@ -1053,7 +1056,8 @@ Value *task_sched_after_outermost(Value *r) {
         if (s->main_task.join_target == 0 && !s->main_task.recv_blocked &&
             !s->main_task.sleeping)
             sched_ready_push(s, 0, SCAUSE_YIELD);
-        return scheduler_trampoline(s);
+        r = scheduler_trampoline(s);
+        goto return_to_main;
     }
     /* main ran to completion without ever suspending. Record its result and,
      * if any spawned task is still runnable, drive them (kill-outstanding). */
@@ -1061,8 +1065,14 @@ Value *task_sched_after_outermost(Value *r) {
         s->main_task.state = TASK_DONE;
         s->main_task.result = r ? val_clone_for_send(r) : NULL;
         if (r) val_decref(r);
-        Value *mr = scheduler_trampoline(s);
-        return mr;
+        r = scheduler_trampoline(s);
     }
+return_to_main:
+    /* #1807: scheduler_trampoline leaves current naming the final worker it
+     * ran (which may already have been reaped).  An embedder can evaluate
+     * again on this same scheduler, and that evaluation starts by running
+     * main directly, outside the trampoline.  Restore the identity at this
+     * one outermost boundary so task_self and suspension save main's slice. */
+    s->current = 0;
     return r;
 }

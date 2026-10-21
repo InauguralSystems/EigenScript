@@ -1,0 +1,1 @@
+- REPL lines and repeated embed evaluations now restore cooperative task 0 after draining workers, so `task_self`, `task_yield`, and `task_join` behave like they do in a script.
