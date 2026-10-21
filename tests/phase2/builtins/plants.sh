@@ -9,12 +9,33 @@ TREE=${EIGS_TREE:-$(cd "$HERE/../../.." && pwd)}
 REPO=${EIGS_REPO:-$TREE}
 PRE=${PRE_BIN:-$TREE/build/release/eigenscript}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/r16plants.XXXXXX") || exit 2
+# The checker resolves its root from tests/phase2/builtins and reads the frozen
+# pin with git. Keep both the real layout and object database in every plant.
+T="$WORK/tree"; B="$T/tests/phase2/builtins"; D="$T/docs/design"
+cleanup() {
+    local rc=$?
+    trap - EXIT
+    if [ -f "$T/.git" ]; then
+        git -C "$REPO" worktree remove --force "$T" > "$WORK/cleanup.log" 2>&1 || {
+            cat "$WORK/cleanup.log" >&2
+            rc=1
+        }
+    fi
+    rm -rf "$WORK"
+    exit "$rc"
+}
+trap cleanup EXIT
+git -C "$REPO" worktree add --detach "$T" HEAD > "$WORK/worktree.log" 2>&1 || {
+    cat "$WORK/worktree.log" >&2
+    exit 2
+}
 mkdir -p "$WORK/bar0" "$WORK/tree0/docs/design" "$WORK/tree0/tools" || exit 2
 cp -r "$HERE/." "$WORK/bar0/" && cp "$TREE"/docs/design/phase2-numbers.md "$TREE"/docs/design/phase2-inventory.txt \
     "$WORK/tree0/docs/design/" && cp -r "$TREE/src" "$WORK/tree0/src" \
     && cp "$TREE/tools/phase2_inventory.py" "$WORK/tree0/tools/" \
-    && cp "$HERE/../observation_hooks.c" "$WORK/shim0.c" || exit 2
-B="$WORK/bar"; T="$WORK/tree"; D="$T/docs/design"
+    && cp "$HERE/../observation_hooks.c" "$WORK/shim0.c" \
+    && cp "$HERE/../builtins_changes.md" "$WORK/changes0.md" \
+    && cp "$HERE/../builtins_landed.txt" "$WORK/landed0.txt" || exit 2
 sub() {  # sub <file> <old> <new>: replace exactly one occurrence, or fail
     python3 - "$1" "$2" "$3" <<'EOF'
 import sys
@@ -25,7 +46,7 @@ open(p, "w").write(s.replace(old, new))
 EOF
 }
 table() { (cd "$B" && EIGS_TREE="$T" timeout 120 python3 make_table.py "$@" 2>&1); }
-runner() { (cd "$B" && TMPDIR="$WORK" PROBE_STDERR_DIR="$WORK/stderr" timeout 600 bash run_probes.sh "$@" 2>&1); }
+runner() { (cd "$B" && TMPDIR="$WORK" PROBE_STDERR_DIR="$WORK/stderr" PRE_BIN="$PRE" timeout 600 bash run_probes.sh "$@" 2>&1); }
 mutate() {
     case $1 in
     P1) python3 -c "import sys;p='$D/phase2-numbers.md';l=open(p).read().split('\n');k=[x for x in l if x.startswith('| \`abs\` |')];assert len(k)==1;l.remove(k[0]);open(p,'w').write('\n'.join(l))" ;;
@@ -38,9 +59,9 @@ mutate() {
     P8) rm "$B/builtins/hex.tag" ;;
     P9) : > "$B/builtins/p2stale.eigs" ;;
     P10) sub "$B/rowmeta.tsv" '\nhex\t-\trelease' '\nhex\tR1.5\trelease' ;;
-    P11) printf 'planted\n' >> "$B/builtins/abs.branch" ;;
+    P11) sub "$B/builtins/abs.pre" 'rc=0' 'planted\nrc=0' ;;
     P12) sub "$B/rowmeta.tsv" 'abs\tR1.2/R1.3\trelease' 'abs\t-\trelease' ;;
-    P13) cp "$B/builtins/hex.pre" "$B/builtins/hex.branch" ;;
+    P13) cp "$B/builtins/hex.branch" "$B/builtins/hex.pre" ;;
     P14) sub "$B/builtins/audio_stream_push.pre" 'hook-loaded pcm\n' '' ;;
     P15) sub "$B/builtins/abs.pre" 'rc=0' 'hook-loaded mix\nrc=0' ;;
     P16) printf '["capability", "value", "inflate: compiled without zlib support (rebuild with `make zlib`)"]\nrc=0\n' > "$B/builtins/inflate.pre" ;;
@@ -60,7 +81,19 @@ mutate() {
     G1) sub "$B/builtins.tsv" '\nlen\tbuiltins.c\tint-preserving\t-\t-\tb\t-\trelease\t-\t-\tyes\tyes\n' '\n' ;;
     G2) printf 'p2stale\tbuiltins.c\tother\t-\t-\tc\t-\trelease\t-\t-\tno\tno\n' >> "$B/builtins.tsv" ;;
     G3) sub "$B/builtins.tsv" '\nlen\tbuiltins.c\tint-preserving\t' '\nlen\tbuiltins.c\tother\t' ;;
-    G4) sub "$B/builtins/random_hex.branch" '\n6\nrc=0' '\n["integral-float", "value"]\nrc=0' ;;
+    G4) sub "$B/builtins/random_hex.eigs" '"stdout-line":3' '"stdout-line":2' ;;
+    F1) sub "$B/builtins/len.branch" 'rc=0' 'planted\nrc=0' ;;
+    F2) python3 - "$T/tests/phase2/builtins_changes.md" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = 'f45bde7acd9b053b3379e15b35c9e06f2ba11243437f5a5926b62aad588d2118'
+assert s.count(old) == 1
+open(p, 'w').write(s.replace(old, '0' * 64))
+EOF
+        ;;
+    F3) git -C "$T" show 0a73adb0612f8612d75393891ae2ba2e1c803663:tests/phase2/builtins/builtins/min.branch > "$B/builtins/min.branch" ;;
+    F4) sub "$B/builtins/sign_extend.branch" '["overflow", "value"]' '["overflow", "type_mismatch"]' ;;
     R1) sub "$B/run_probes.sh" 'out="$HERE/builtins/$2.$3"' 'out="$2.$3"' ;;
     R2|R3) sub "$B/run_probes.sh" '(LD_PRELOAD="$SHIM" ' '(' ;;
     R4) sub "$B/builtins/recv_timeout.eigs" 'send of [c, 7]\n' '' ;;
@@ -74,13 +107,13 @@ check() {
     case $1 in
     P18) table --final ;;
     P28) (cd "$B" && env -u EIGS_TREE EIGS_REPO="$REPO" EIGS_REV=4ac31e67 timeout 120 python3 make_table.py 2>&1) ;;
-    T1) (cd "$B" && TMPDIR="$WORK" PROBE_STDERR_DIR="$WORK/stderr" timeout 300 bash determinism.sh len 2>&1) ;;
-    P*|G*) table ;;
+    T1) (cd "$B" && TMPDIR="$WORK" PROBE_STDERR_DIR="$WORK/stderr" PRE_BIN="$PRE" timeout 300 bash determinism.sh len 2>&1) ;;
+    P*|G*|F*) table ;;
     R1) runner abs ;;
     R2) runner audio_stream_push ;;
     R3) runner audio_stream_push >/dev/null; table ;;
     R4) runner recv_timeout ;;
-    R5) (cd "$B" && PRE_BIN_ZLIB="$PRE" TAG_BIN_ZLIB="$PRE" TMPDIR="$WORK" timeout 120 bash run_probes.sh inflate 2>&1) ;;
+    R5) (cd "$B" && PRE_BIN="$PRE" PRE_BIN_ZLIB="$PRE" TAG_BIN_ZLIB="$PRE" TMPDIR="$WORK" timeout 120 bash run_probes.sh inflate 2>&1) ;;
     R6) runner proc_read_buf.hi ;;
     R7|R8) c=audio_stream_push; [ "$1" = R8 ] && c=audio_play
         runner "$c" >/dev/null
@@ -98,7 +131,7 @@ P7|q7 column edit|for gfx_clear$
 P8|case files vs cases.tsv (missing record)|in cases.tsv, not in builtins/\*\.tag: hex$
 P9|case files vs cases.tsv (stray probe)|in builtins/\*\.eigs, not in cases.tsv: p2stale$
 P10|closed_in needs .pre == .branch (A2)|hex: closed_in .R1\.5. but changes_vs_pre is yes
-P11|closed_in needs .pre == .branch after a .branch edit (A2)|abs: closed_in .R1\.2/R1\.3. but changes_vs_pre is yes
+P11|closed_in needs .pre == .branch after a .pre edit (A2)|abs: closed_in .R1\.2/R1\.3. but changes_vs_pre is yes
 P12|vacuity guard: closed_in removed|vacuous: abs is a
 P13|vacuity guard: .branch equal to .pre|vacuous: hex is a
 P14|hook record without its shim (table)|audio_stream_push\.pre holds \[\], not one .hook-loaded pcm. line
@@ -120,7 +153,11 @@ T1|determinism: a printed time (the R1.6a-D2 class)|^UNSTABLE len\.pre$
 G1|builtins.tsv missing row|in section 6, not in builtins\.tsv: len$
 G2|builtins.tsv stale row|in builtins\.tsv, not in section 6: p2stale$
 G3|builtins.tsv class edit|len: builtins\.tsv class .other. != derived .int-preserving.
-G4|integral-float success must be a result|random_hex: integral-float success stdout line 3 is an error or non-result
+G4|integral-float success must be a result|random_hex: integral-float success stdout line 2 is an error or non-result
+F1|frozen bar rejects an unlisted edit|len\.branch: unlisted frozen bar difference
+F2|frozen bar rejects a stale SHA|min\.branch: stale amendment R1\.6b-D2: SHA-256=0000
+F3|frozen bar rejects a restored pin|min\.branch: stale amendment R1\.6b-D2:
+F4|frozen bar rejects an edited amended line|sign_extend\.branch: stale amendment R1\.6b-D1:
 R1|runner: empty stdout with rc 0|FAIL: abs\.pre printed nothing with rc 0
 R2|runner: hook case without the shim|FAIL: audio_stream_push\.pre ran without its hook pcm
 R3|table: hook case recorded without the shim|audio_stream_push\.pre holds \[\], not one .hook-loaded pcm. line
@@ -129,15 +166,26 @@ R5|runner: profile witness refuses a release binary|FAIL: .* is not a zlib build
 R6|runner: missing stdin fixture|FAIL: proc_read_buf\.hi: no stdin fixture
 R7|pcm hook observes the delivered PCM (silence)|FAIL: audio_stream_push\.pre differs from the recorded \.pre: SDL_QueueAudio 3: 0 0 0
 R8|mix hook observes the mixed PCM (silence)|FAIL: audio_play\.pre differs from the recorded \.pre: \["mixed", false\]'
-fresh() { rm -rf "$B" "$T"; cp -r "$WORK/bar0" "$B" && cp -r "$WORK/tree0" "$T" && cp "$WORK/shim0.c" "$WORK/observation_hooks.c"; }
+fresh() {
+    # Preserve the linked worktree's .git. Restore only the owned fixture
+    # population, including amendments so one mutation cannot bless another.
+    rm -rf "$B" "$T/src" "$D"
+    mkdir -p "$T/tests/phase2" "$D" "$T/tools" || return
+    cp -r "$WORK/bar0" "$B" && cp -r "$WORK/tree0/src" "$T/src" \
+        && cp "$WORK/tree0/docs/design/"* "$D/" \
+        && cp "$WORK/tree0/tools/phase2_inventory.py" "$T/tools/" \
+        && cp "$WORK/shim0.c" "$T/tests/phase2/observation_hooks.c" \
+        && cp "$WORK/changes0.md" "$T/tests/phase2/builtins_changes.md" \
+        && cp "$WORK/landed0.txt" "$T/tests/phase2/builtins_landed.txt"
+}
 bad=0
-fresh; out=$(table); rc=$?
-if [ $rc -ne 0 ] || grep -q '^FAIL' <<<"$out"; then echo "BASELINE make_table not clean (rc $rc)"; bad=1; else echo "BASELINE make_table clean: $(grep '^guard:' <<<"$out")"; fi
-fresh; out=$(runner abs audio_stream_push gfx_poll.empty proc_read_buf.hi inflate); rc=$?
+fresh || exit 2; out=$(table); rc=$?
+if [ $rc -ne 0 ] || grep -q '^FAIL' <<<"$out"; then echo "BASELINE make_table not clean (rc $rc): $out"; bad=1; else echo "BASELINE make_table clean: $(grep '^guard:' <<<"$out")"; fi
+fresh || exit 2; out=$(runner abs audio_stream_push gfx_poll.empty proc_read_buf.hi inflate); rc=$?
 if [ $rc -ne 0 ] || grep -q '^FAIL' <<<"$out"; then echo "BASELINE runner not clean (rc $rc): $out"; bad=1; else echo "BASELINE runner clean: $(tail -1 <<<"$out")"; fi
 n=0; red=0
 while IFS='|' read -r id what want; do
-    n=$((n + 1)); fresh
+    n=$((n + 1)); fresh || exit 2
     if ! mutate "$id" >"$WORK/mutate.log" 2>&1; then echo "BROKEN $id ($what): the mutation did not apply: $(cat "$WORK/mutate.log")"; bad=1; continue; fi
     out=$(check "$id")
     line=$(grep -E -m1 -- "$want" <<<"$out")
@@ -145,5 +193,4 @@ while IFS='|' read -r id what want; do
 done <<<"$PLANTS"
 want_n=$(grep -c . <<<"$PLANTS")
 echo "plants examined=$n table=$want_n red=$red survived=$((n - red))"
-rm -rf "$WORK"
 [ "$n" -eq "$want_n" ] && [ "$n" -gt 0 ] && [ "$red" -eq "$n" ] && [ "$bad" -eq 0 ] || exit 1
