@@ -96,7 +96,7 @@ gfx_text_width	ext_gfx.c	int-preserving	-	magnitude	e	-	release	-	-	yes	yes
 gfx_ticks	ext_gfx.c	int-preserving	-	-	e	-	release	-	-	yes	yes
 hex	builtins.c	int-requiring	LOSS	-	b	-	release	-	-	yes	yes
 http_early_bind	ext_http.c	int-requiring	-	-	f	-	server	-	-	yes	yes
-http_post	ext_http.c	other	-	-	f	-	server	-	-	yes	yes
+http_post	ext_http.c	other	LOSS	-	b	-	server	-	-	yes	yes
 http_route	ext_http.c	other	-	-	f	-	server	-	-	no	no
 http_route_authed	ext_http.c	other	-	-	f	-	server	-	-	no	no
 http_serve	ext_http.c	int-requiring	-	-	f	-	server	-	-	yes	yes

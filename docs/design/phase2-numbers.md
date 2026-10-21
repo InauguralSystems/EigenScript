@@ -1462,7 +1462,7 @@ current state behind several rows:
 | `gfx_ticks` | int-preserving | - | - | SDL ticks (Uint32 ms) |
 | `hex` | int-requiring | LOSS | - | refuses above 2^53 by a double compare, so int 2^53+1 reads as 2^53 and passes silently |
 | `http_early_bind` | int-requiring | - | - | port |
-| `http_post` | other | - | - | header values via value_to_string (N6) |
+| `http_post` | other | LOSS | - | header JSON ints decode exactly (N14, B6); lossy before R1.6 |
 | `http_route` | other | - | - | formats via value_to_string |
 | `http_route_authed` | other | - | - | formats via value_to_string |
 | `http_serve` | int-requiring | - | - | port |
@@ -2057,11 +2057,11 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    | sub-round | work | table rows | MAP rows or mechanical gates |
    |---|---|---:|---|
    | R1.6a | No behaviour change: §2.6 readers except `eigs_geom_shape`; bounded and magnitude included; opt-in meter; pre-registered table and tool; round order and records | none migrate | mechanical: C reader test and table calibration |
-   | R1.6b | Every LOSS row in any file, plus `builtins.c`'s other int-preserving rows | 45 | `A.sum-overflow-raises`, `A.tensor-scalar-overflow-raises`, `N5.range-fraction-raises`, `N5.store-key-fraction-raises`, `N10.partial-refused`, `N10.radix`, `N10.int-or-float`, `N14.json-path-int-exact`, `N14.decode-kinds` |
+   | R1.6b | Every LOSS row in any file, plus `builtins.c`'s other int-preserving rows | 46 | `A.sum-overflow-raises`, `A.tensor-scalar-overflow-raises`, `N5.range-fraction-raises`, `N5.store-key-fraction-raises`, `N10.partial-refused`, `N10.radix`, `N10.int-or-float`, `N14.json-path-int-exact`, `N14.decode-kinds` |
    | R1.6c | Remaining `builtins.c`; `builtins_host.c` (including `read_text`); `vm.c`'s builtin | 76 | `N5.substr-fraction-raises` |
    | R1.6d | Non-LOSS `builtins_tensor.c`, `builtins_buf.c`, `model_io.c`, `model_infer.c`, `model_train.c`; re-decide `buffer_read_num` sites as f64, byte or index reads | 53 | `N5.gather-index-fraction-raises`, `N5.pcm16-byte-raises` |
    | R1.6e | `ext_gfx.c`, the Q7 readers and whole-shape `eigs_geom_shape` clipping (Liang-Barsky for lines) | 38 | `gate.N5.q7-readers`; table run |
-   | R1.6f | Non-LOSS `ext_store.c`, `ext_db.c`, `ext_http.c`, `ext_net.c` | 20 | mechanical: table run |
+   | R1.6f | Non-LOSS `ext_store.c`, `ext_db.c`, `ext_http.c`, `ext_net.c` | 19 | mechanical: table run |
    | R1.6g | N9's 77 new width-family builtins in `builtins_int.c`, Rust std oracle | +77 | `N9.wrapping`, `N9.checked-raises`, `N9.saturating`, `N9.unsigned-ops`, `N9.fround` |
    | R1.6z | Remaining bridge sites in runtime, containers, embed, trace, compiler and task; delete all 21 tokens and all helpers left without callers | none | mechanical: deletion compile and final full table |
 

@@ -470,7 +470,7 @@ gfx_text_width               builtin_gfx_text_width             int-preserving  
 gfx_ticks                    builtin_gfx_ticks                  int-preserving   -     -                        make_num
 hex                          builtin_hex                        int-requiring    LOSS  -                        eigs_list_num,eigs_num_arg,val_is_number
 http_early_bind              builtin_http_early_bind            int-requiring    -     -                        eigs_opt_num,val_is_number
-http_post                    builtin_http_post                  other            -     -                        eigs_num_text
+http_post                    builtin_http_post                  other            LOSS  -                        eigs_num_text
 http_route                   builtin_http_route                 other            -     -                        eigs_num_text
 http_route_authed            builtin_http_route_authed          other            -     -                        eigs_num_text
 http_serve                   builtin_http_serve                 int-requiring    -     -                        eigs_num_text,eigs_opt_num

@@ -266,3 +266,23 @@ lines were added.
 | `tests/phase2/builtins/builtins/sign_extend.pre` | R1.6b-D1 |
 | `tests/phase2/builtins/builtins/sign_extend.tag` | R1.6b-D1 |
 | `tests/phase2/builtins_changes.md` | R1.6b-D1 and R1.6b-D2 |
+
+
+## R1.6b-D3 — http_post historical LOSS and staging
+
+The orchestrator ruled on #1758, comment 6320170738: `http_post` is a LOSS
+row and lands in R1.6b. Its pre-R1.6 header path rounds 9007199254740993 to
+9007199254740992 (B6); §6's `-` loss mark was an error. The shared N14 JSON
+decoder fixes that loss. The class remains `other`; `round_of` assigns every
+LOSS row to b. Planned counts become b 46 and f 19.
+
+The probe, `.pre`, `.tag` and `.branch` are unchanged. The frozen `.branch`
+pin and its three D1/D2 SHA-256 amendments above are unchanged.
+
+| File | Ruling and change |
+|---|---|
+| `docs/design/phase2-numbers.md` | R1.6b-D3: correct §6 loss/note and b/f counts |
+| `docs/design/phase2-inventory.txt` | R1.6b-D3: mirror the corrected http_post LOSS classification |
+| `tests/phase2/builtins/make_table.py` | R1.6b-D3: planned b/f counts 46/19 |
+| `tests/phase2/builtins/builtins.tsv` | R1.6b-D3: generator assigns http_post to b |
+| `tests/phase2/builtins_changes.md` | R1.6b-D3: record ruling and complete amendment scope |
