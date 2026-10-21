@@ -702,7 +702,8 @@ write_text of ["cmp_live.eigs", "seen is 0\ndefine tick() as:\n    seen is seen 
 import cmp_live
 cmp_live.tick of null
 print of cmp_live.seen
-rm of "cmp_live.eigs"
+if file_exists of "cmp_live.eigs":
+    remove_file of "cmp_live.eigs"
 ```
 ```output
 1

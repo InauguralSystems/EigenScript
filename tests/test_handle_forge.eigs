@@ -70,5 +70,6 @@ catch e:
 assert of [raised == len of zero_answerers,
            f"all {len of zero_answerers} former zero-answerers raise on a non-handle (still answering:{answered})"]
 
-rm of "/tmp/test_handle.db"
+if file_exists of "/tmp/test_handle.db":
+    remove_file of "/tmp/test_handle.db"
 print of "PASS: handle table"

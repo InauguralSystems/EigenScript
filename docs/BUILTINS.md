@@ -338,7 +338,6 @@ Boolean keywords that check the most recently observed value:
 | `getcwd` | `getcwd of null` | Current working directory as string. Trace-recorded, so replay is deterministic (#585) |
 | `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH. Trace-recorded, so replay is deterministic (#585) |
 | `mktemp` | `mktemp of null` | Create a temporary file and return its path. Under `EIGS_REPLAY`, raises a catchable filesystem-boundary error before creating a file |
-| `rm` | `rm of "path"` | Remove a file. `true` on success, `false` on failure |
 | `write` | `write of value` | Write to stdout without newline |
 | `flush` | `flush of null` | Flush stdout |
 

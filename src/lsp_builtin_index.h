@@ -227,7 +227,6 @@ static const char *builtin_docs[][2] = {
     {"remove_file", "remove_file of path — delete a file. Returns 1 on success; I/O failure raises."},
     {"rename", "rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is"},
     {"reshape", "reshape of [buf, rows, cols] -> a shaped copy of the flat buffer (rows*cols"},
-    {"rm", "rm of \"path\" → 1 on success, 0 on failure"},
     {"round", "round — builtin; see docs/BUILTINS.md"},
     {"sandbox_run", "sandbox_run of [descriptor, max_iterations?, max_bytes?, max_work?] — run an EigenScript-assembled"},
     {"scan_int_tokens", "scan_int_tokens of text"},

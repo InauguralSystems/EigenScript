@@ -518,7 +518,7 @@ that the original tape neither captured nor re-creates:
 - **Temporary-file creation:** `mktemp`. Its fresh pathname is host state and
   the call creates the named file. Replay refuses before creating anything;
   ordinary execution still creates a file that the caller can remove with
-  `rm`.
+  `remove_file`.
 
 These builtins raise a catchable runtime error under
 `EIGS_REPLAY`, with the message format

@@ -27,7 +27,8 @@ try:
     import _test_bad_syntax_tmp
 catch e:
     err2 is e
-rm of bad_path
+if file_exists of bad_path:
+    remove_file of bad_path
 assert_true of [(len of err2) > 0, "import parse-error triggers error"]
 assert_true of [contains of [err2.message, "parse errors"], "import parse-error message contains 'parse errors'"]
 
@@ -48,7 +49,8 @@ assert_eq of [type of math, "dict", "import valid module returns dict"]
 empty_path is (_module_test_dir + "/_test_empty_tmp.eigs")
 write_text of [empty_path, "# empty module\n_private is 42"]
 import _test_empty_tmp
-rm of empty_path
+if file_exists of empty_path:
+    remove_file of empty_path
 assert_eq of [type of _test_empty_tmp, "dict", "import empty module returns dict"]
 
 # ---- Test 6: load_file surfaces a parse error instead of running a partial AST ----
@@ -63,7 +65,8 @@ try:
     load_file of bad_lf_path
 catch e:
     err_lf is e
-rm of bad_lf_path
+if file_exists of bad_lf_path:
+    remove_file of bad_lf_path
 assert_true of [(len of err_lf) > 0, "load_file parse-error raises (not a silent no-op)"]
 assert_true of [contains of [err_lf.message, "parse error"], "load_file parse-error message contains 'parse error'"]
 
@@ -71,7 +74,8 @@ assert_true of [contains of [err_lf.message, "parse error"], "load_file parse-er
 ok_lf_path is (_module_test_dir + "/_test_ok_loadfile_tmp.eigs")
 write_text of [ok_lf_path, "_lf_ok_marker is 1234\n"]
 load_file of ok_lf_path
-rm of ok_lf_path
+if file_exists of ok_lf_path:
+    remove_file of ok_lf_path
 assert_eq of [_lf_ok_marker, 1234, "clean load_file still executes normally"]
 
 test_summary of null
