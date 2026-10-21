@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_delay (other, Q7 magnitude; the milliseconds round, a delay Uint32 cannot hold raises)
+# R1.6 behaviour-table probe: gfx_delay (other, Q7 magnitude; the milliseconds round, a delay Uint32 cannot hold raises); phase2-exercises: {"q7":["magnitude"]}
 define nt(x) as:
     try:
         return num_type of x

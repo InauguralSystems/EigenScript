@@ -39,7 +39,7 @@ deleted is absent from code) and the inventory's own verdict
 disposition, and the committed docs/design/phase2-inventory.txt is exactly
 the generated one, #1804).
 
-MECHANICAL ROUNDS (R1.1, R1.2, R2.1) have no rows of their own; --through
+MECHANICAL ROUNDS (R1.1, R1.2, R1.6a/e/f/z, R2.1) have no rows of their own; --through
 one of them runs its gates instead: the int-source check in two halves --
 static: before R1.3 no runtime code calls slot_from_int or make_int outside
 the canonicalizing writers, make_int does not exist, and TAG_SMI or an SMI
@@ -60,6 +60,7 @@ vacuous == 0, and every landed control passes on both binaries.
 tests/phase2/calib/ and prints `calibration: cases=N as-expected=N`.
 """
 import argparse
+import importlib.util
 import os
 import re
 import shutil
@@ -74,7 +75,8 @@ import phase2_inventory as inv  # noqa: E402  (strip_c: one C-comment grammar)
 # The no-int-source mechanism ended at R1.3. Its static calibration uses
 # the exact last no-producer source; current runtime safety is the MAP/ASan gate.
 STATIC_INT_SOURCE_REF = '0c43ec88ca8915f9d365e3e63549cb1e322c76d3'
-ROUNDS = ['R1.1', 'R1.2', 'R1.3', 'R1.4', 'R1.5', 'R1.6', 'R1.7', 'R1.8',
+ROUNDS = ['R1.1', 'R1.2', 'R1.3', 'R1.4', 'R1.5',
+          'R1.6a', 'R1.6b', 'R1.6c', 'R1.6d', 'R1.6e', 'R1.6f', 'R1.6g', 'R1.6z', 'R1.7', 'R1.8',
           'R2.1', 'R2.2', 'R2.3', 'R2.4', 'R2.5', 'R2.6', 'R3']
 # Gates every mode runs: the token gate (a landed round's deleted tokens stay
 # deleted) and the inventory's own verdict, which includes the committed
@@ -83,15 +85,25 @@ EVERY_MODE = ('tokens', 'inventory')
 MECHANICAL = {
     'R1.1': ('int-source', 'slot-test', 'corpus-diff', 'smi-trap'),
     'R1.2': ('int-source', 'slot-test', 'corpus-diff', 'smi-trap'),
+    'R1.6a': ('reader-test', 'builtins-table'),
+    'R1.6e': ('builtins-table',),
+    'R1.6f': ('builtins-table',),
+    'R1.6z': ('builtins-table', 'bridge-deletion-compile'),
     'R2.1': ('slot-test', 'corpus-diff'),
 }
 ITEMS = ['N%d' % i for i in range(1, 15)] + ['N4b', 'A', 'B', 'T1', 'O1', 'O2', 'O3', 'O4']
 # design 2.7: the tokens each round deletes. A later round adds its list here
-# in the commit that deletes them (R1.6's bridge, 21 tokens, with R1.6).
+# in the commit that deletes them (R1.6's bridge, 21 tokens, with R1.6z).
 DELETED_TOKENS = {
     'R1.1': ['slot_is_num', 'slot_is_numeric', 'SLOT_NUM_RAW', 'slot_from_num', 'slot_as_double'],
     'R1.2': ['VAL_NUM', 'VAL_NUM_RAW', 'VAL_NUM_OFFSET', 'num_'],
     'R1.3': ['eigs_int_unwired'],
+    'R1.6z': ['eigs_num_arg', 'eigs_num_arg_slow', 'eigs_list_num', 'eigs_elem_num',
+               'eigs_opt_num', 'eigs_slot_num', 'eigs_slot_elem_num', 'eigs_slot_opt_num',
+               'buf_num_arg', 'make_num', 'make_num_permanent', 'list_set_num',
+               'list_append_num', 'list_rewrite_num', 'dict_value_set_num',
+               'dict_value_rewrite_num', 'list_get_num', 'dict_value_get_num',
+               'finite_num_to_byte', 'buffer_read_byte', 'buffer_read_num'],
     'R2.2': ['num_guard', 'num_guard_named', 'EIGS_NUM_MAX'],
 }
 # design 2.1: the canonicalizing writers convert an existing VAL_INT, so they
@@ -203,6 +215,52 @@ def row_file(d, rid):
         if os.path.exists(p):
             return p
     return None
+
+
+def builtin_landed(path=None):
+    """Use the table checker's declaration parser; one grammar for both gates."""
+    module_path = os.path.join(ROOT, 'tests/phase2/builtins/make_table.py')
+    spec = importlib.util.spec_from_file_location('phase2_builtin_table', module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.read_landed(path or os.path.join(ROOT, 'tests/phase2/builtins_landed.txt'))
+
+
+def derive_through(map_rows, rows_dir=None, landed=None):
+    """Last complete round before a gap, with diagnostics for partial rounds.
+
+    R1.6b..z need their table declaration as well as every MAP row file.
+    R1.6a migrates no builtin and need not be declared; its gates always run
+    in CI. An explicit a declaration can select its mechanical round.
+    Other rounds retain the existing all-files rule; rowless non-R1.6 rounds
+    do not select themselves. This function is also the CI entry point.
+    """
+    rows_dir = rows_dir or os.path.join(ROOT, 'tests/phase2/rows')
+    landed = set(builtin_landed() if landed is None else landed)
+    have = {}
+    for row in map_rows:
+        if row['kind'] == 'row' and row['round']:
+            have.setdefault(row['round'], []).append(
+                (row['id'], bool(row_file(rows_dir, row['id']))))
+    through, complete, diagnostics = None, True, []
+    for rnd in ROUNDS:
+        entries = have.get(rnd, [])
+        if rnd == 'R1.6a' and rnd not in landed:
+            continue
+        declared_round = rnd.startswith('R1.6')
+        if not entries and not declared_round:
+            continue
+        got = [rid for rid, exists in entries if exists]
+        ready = len(got) == len(entries) and (not declared_round or rnd in landed)
+        if complete and ready:
+            through = rnd
+            continue
+        complete = False
+        if got:
+            diagnostics.append('%s has %d of %d row files (%s): not checked until all land%s' % (
+                rnd, len(got), len(entries), ' '.join(got),
+                '; table round is undeclared' if declared_round and rnd not in landed else ''))
+    return through, diagnostics
 
 
 # ---- running ---------------------------------------------------------------
@@ -601,7 +659,7 @@ def every_mode(through, out):
     return all(res[g] for g in EVERY_MODE)
 
 
-def mechanical(through, baseline, branch, out, smi_trap=None):
+def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
     res = {}
     for g in MECHANICAL[through]:
         if g == 'int-source':
@@ -623,6 +681,25 @@ def mechanical(through, baseline, branch, out, smi_trap=None):
                 res[g] = False
             else:
                 res[g], _ = tool(['bash', 'tools/phase2_corpus_diff.sh', baseline, smi_trap], out, DIFF_TAIL)
+        elif g == 'reader-test':
+            res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release'], out,
+                                 r'^phase2-readers: ')
+            res[g] = res[g] and len(re.findall(r'^phase2-readers: PASS variant=release checks=[1-9][0-9]*$',
+                                               text, re.M)) == 1
+        elif g == 'builtins-table':
+            if not tag:
+                out('  builtins-table: needs the tag binary')
+                res[g] = False
+            else:
+                res[g], text = tool(['bash', 'tools/phase2_builtins.sh', tag, branch], out,
+                                     r'^phase2-builtins: ')
+                res[g] = res[g] and len(re.findall(
+                    r'^phase2-builtins: PASS rows=[1-9][0-9]* landed=\S+ migrated=[0-9]+ unchanged=[0-9]+$',
+                    text, re.M)) == 1
+        elif g == 'bridge-deletion-compile':
+            # token_gate checks the deleted vocabulary in both src and tests;
+            # a normal build proves no remaining caller depends on an alias.
+            res[g], _ = tool(['make', '--no-print-directory', 'build'], out, r'.*')
         out('mechanical %s: %s' % (g, 'PASS' if res[g] else 'FAIL'))
     return all(res.values()) and bool(res)
 
@@ -686,7 +763,7 @@ def main_check(args, out):
     always_ok = every_mode(args.through, out)
     mech_ok = None
     if args.through in MECHANICAL:
-        mech_ok = mechanical(args.through, args.baseline, args.branch, out, args.smi_trap)
+        mech_ok = mechanical(args.through, args.baseline, args.branch, out, args.smi_trap, args.tag)
     if landed == 0:
         if mech_ok is None:
             out('  ZERO-ROWS: %s has no landed row and no mechanical gates' % args.through)

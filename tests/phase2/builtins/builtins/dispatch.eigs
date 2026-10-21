@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: dispatch (int-requiring; integer table key, already exactness-checked)
+# R1.6 behaviour-table probe: dispatch (int-requiring; integer table key, already exactness-checked); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

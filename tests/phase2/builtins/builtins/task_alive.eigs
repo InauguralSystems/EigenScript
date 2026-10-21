@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: task_alive (int-requiring; task handle (packed below 2^53, exactness-checked))
+# R1.6 behaviour-table probe: task_alive (int-requiring; task handle (packed below 2^53, exactness-checked)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
 define nt(x) as:
     try:
         return num_type of x

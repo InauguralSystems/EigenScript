@@ -1,17 +1,8 @@
 name: phase2
 
-# #1758 Phase 2's own gates on its integration branch: the MAP rows that have
-# landed, on the v0.46.0 anchor and this commit (tools/phase2_check.sh, design
-# 9.2), and the stdlib's int differential against origin/main
-# (tools/phase2_lib_diff.sh, design 9.5). Before this lane both had only run on
-# a builder's or a critic's machine (mechanical-gates section 151).
-# tools/phase2_ci.sh derives the round to check from the MAP and the row files.
-#
-# `gh workflow run phase2.yml --ref <branch>` dispatches it. GitHub accepts a
-# dispatch only for a workflow on the default branch, or one that has run at
-# least once; this file lives on phase2-numbers, so its first run is a push
-# there.
-
+# #1758: landed MAP rows, the pre-registered builtin table on matched
+# capability profiles, the C readers and the stdlib differential. The shared
+# phase2_check.py helper derives the complete declared MAP prefix.
 on:
   push:
     branches: [phase2-numbers]
@@ -22,32 +13,65 @@ permissions:
 
 jobs:
   phase2:
-    name: phase2 (MAP rows + lib differential)
+    name: phase2 (MAP + builtins + readers + lib)
     runs-on: ubuntu-latest
-    # Measured locally (4 GB dev box): about 12 minutes, most of it the three
-    # builds; this bounds a hang.
-    timeout-minutes: 45
+    timeout-minutes: 60
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: eigs
+          POSTGRES_PASSWORD: eigs_test
+          POSTGRES_DB: eigs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eigs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
     steps:
-      # fetch-depth 0 brings every branch and tag: origin/main and v0.46.0.
+      # Every branch and tag is needed: origin/main and v0.46.0.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      - name: Build the v0.46.0 anchor, origin/main and this commit; run tools/phase2_ci.sh
+      - name: Install matched capability dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev zlib1g-dev libsdl2-2.0-0 libsdl2-mixer-2.0-0 libsdl2-ttf-2.0-0
+      - name: Build tag, main and branch profiles serially; run the phase2 lane
         run: |
           set -euo pipefail
-          # The anchor: the observer oracle's recipe (make observer-anchor, a
-          # git archive of the tag built under env -i) in a scratch cache.
           export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
           make --no-print-directory observer-anchor
           anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
-          # The baseline: origin/main's own tree, plain make.
-          mkdir -p "$RUNNER_TEMP/main"
+          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles"
           git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
+          git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
           make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
             || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
-          # This commit, under the compiler guard (docs/CI.md, [99i]).
+          # The table uses matching capability builds; a capability-unavailable
+          # transcript is a failure, including on the tag (ruling A3).
+          for profile in server zlib db; do
+            target="$profile"
+            [ "$profile" != db ] || target=server-db
+            make -C "$RUNNER_TEMP/tag-profiles" "$target" > "$RUNNER_TEMP/tag-$profile-build.log" 2>&1 \
+              || { tail -n 50 "$RUNNER_TEMP/tag-$profile-build.log"; echo "::error::the tag $profile build failed"; exit 1; }
+            printf -v "TAG_BIN_${profile^^}" '%s' "$RUNNER_TEMP/tag-profiles/build/$target/eigenscript"
+            export "TAG_BIN_${profile^^}"
+          done
           export CC_GUARD_LOG="$RUNNER_TEMP/cc-guard.log"
           : > "$CC_GUARD_LOG"
+          for profile in server zlib db; do
+            target="$profile"
+            [ "$profile" != db ] || target=server-db
+            PATH="$PWD/tools/cc-guard-bin:$PATH" make "$target"
+            printf -v "BRANCH_BIN_${profile^^}" '%s' "$PWD/build/$target/eigenscript"
+            export "BRANCH_BIN_${profile^^}"
+          done
+          # Restore the release alias before the MAP and library checks.
           PATH="$PWD/tools/cc-guard-bin:$PATH" make build
           bash tools/cc_guard.sh --report
           bash tools/phase2_ci.sh "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript

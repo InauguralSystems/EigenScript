@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: net_send (int-requiring; the handle and the byte values: N5, bytes then 0..255 (Q1); PROFILE server (make server), loopback only)
+# R1.6 behaviour-table probe: net_send (int-requiring; the handle and the byte values: N5, bytes then 0..255 (Q1); PROFILE server (make server), loopback only); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":5}}
 define nt(x) as:
     try:
         return num_type of x

@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: state_at (int-requiring; step index (the probe's own line numbers))
+# R1.6 behaviour-table probe: state_at (int-requiring; step index (the probe's own line numbers)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

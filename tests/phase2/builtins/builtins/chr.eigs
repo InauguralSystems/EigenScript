@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: chr (int-requiring; byte 1..255, already exactness-checked (Lua string.char))
+# R1.6 behaviour-table probe: chr (int-requiring; byte 1..255, already exactness-checked (Lua string.char)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

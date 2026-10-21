@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: inflate (int-requiring; byte values: N5, then 0..255 (Q1); PROFILE zlib (make zlib))
+# R1.6 behaviour-table probe: inflate (int-requiring; byte values: N5, then 0..255 (Q1); PROFILE zlib (make zlib)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":5}}
 define nt(x) as:
     try:
         return num_type of x

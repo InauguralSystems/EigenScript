@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: bit_and (int-requiring; Lua & (3.4.2): exact int64 operands (N8, R1.5))
+# R1.6 behaviour-table probe: bit_and (int-requiring; Lua & (3.4.2): exact int64 operands (N8, R1.5)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

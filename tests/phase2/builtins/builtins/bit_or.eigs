@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: bit_or (int-requiring; Lua |)
+# R1.6 behaviour-table probe: bit_or (int-requiring; Lua |); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

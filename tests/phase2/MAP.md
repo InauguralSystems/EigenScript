@@ -243,10 +243,10 @@ gates (design §9.2).
 - `A.mul-overflow-raises` [R1.3] `{try print of (4611686018427387904 * 2) catch}`, the same print with `"*"`
   -> `["value", true]`
   tag: `9.223372036854776e+18`, no raise
-- `A.sum-overflow-raises` [R1.6] `{try print of (sum of [9223372036854775807, 1]) catch}`
+- `A.sum-overflow-raises` [R1.6b] `{try print of (sum of [9223372036854775807, 1]) catch}`
   -> `["value", true]`, the message naming `sum`
   tag: a double sum, no raise
-- `A.tensor-scalar-overflow-raises` [R1.6] `{try print of (multiply of [4611686018427387904, 2]) catch}`
+- `A.tensor-scalar-overflow-raises` [R1.6b] `{try print of (multiply of [4611686018427387904, 2]) catch}`
   -> `["value", true]`
   tag: a double
 - `A.leaf-mul-overflow` [R1.3] `define sq(x) as: return x * x / {try print of (sq of 3037000500) catch}`, printing `e.kind`
@@ -353,10 +353,10 @@ gates (design §9.2).
 - `gate.N5.iterator-metadata` [R1.3] `tests/phase2/slot_layer.sh` Part E builds raw iterator states and runs the interpreter and `jit_helper_iter_next`
   -> float controls and both SMI/boxed index/snapshot metadata yield 42; range and malformed states preserve the pinned exhaustion/ignore rules.
   tag: n/a (a C fixture of the four R1.2 refusal sites); final R1.3 arms accept exact C-int indices and clamp snapshots without narrowing.
-- `N5.substr-fraction-raises` [R1.6] `{try print of (substr of ["hello", 1.5, 2]) catch}`, printing `e.kind`
+- `N5.substr-fraction-raises` [R1.6c] `{try print of (substr of ["hello", 1.5, 2]) catch}`, printing `e.kind`
   -> `value`
   tag: `el` (probed main: truncation)
-- `N5.store-key-fraction-raises` [R1.6] `s is store_open of "<tmp>/db" / k is store_put of [s, "c", {"v": 1}] / {try print of (store_get of [s, "c", 1.9]) catch}`
+- `N5.store-key-fraction-raises` [R1.6b] `s is store_open of "<tmp>/db" / k is store_put of [s, "c", {"v": 1}] / {try print of (store_get of [s, "c", 1.9]) catch}`
   -> `value`
   tag: returns record "1" (probed main)
 - `N5.bitwise-fraction-raises` [R1.5] `{try print of (1.5 | 0) catch}`, printing `e.kind`
@@ -365,16 +365,16 @@ gates (design §9.2).
 - `N5.integral-float-converts` [R1.5] `print of [6.0 | 1, num_type of (6.0 | 1), (list_slice of [[1, 2, 3], 1.0, 2.0])]`
   -> `[7, "int", [2]]`
   tag: `num_type` undefined
-- `N5.range-fraction-raises` [R1.6] `{try print of (range of 2.5) catch}`, printing `e.kind`
+- `N5.range-fraction-raises` [R1.6b] `{try print of (range of 2.5) catch}`, printing `e.kind`
   -> `value`
   tag: no raise (read: `range_bound` accepts any double inside the int range)
-- `N5.gather-index-fraction-raises` [R1.6] `t is buffer of [2, 3]` filled 10, 11, 12, 20, 21, 22 / `ib is buffer of 2 / ib[0] is 1.5 / ib[1] is 2.0 / {try g is gather of [t, ib] / print of [g[0], g[1]] catch}`, printing `e.kind`
+- `N5.gather-index-fraction-raises` [R1.6d] `t is buffer of [2, 3]` filled 10, 11, 12, 20, 21, 22 / `ib is buffer of 2 / ib[0] is 1.5 / ib[1] is 2.0 / {try g is gather of [t, ib] / print of [g[0], g[1]] catch}`, printing `e.kind`
   -> `value` (an index is integer-valued: N5)
   tag: `[11, 22]`: `flat_index_at` truncates 1.5 to 1 (probed main; the critic's `gather.eigs`)
-- `N5.pcm16-byte-raises` [R1.6] `b is buffer of 2 / b[0] is 300 / b[1] is 0 / {try buf_from_pcm16le of [b, 0, 1] catch}` printing `e.kind`, then the same with `b[0] is 1.5`
+- `N5.pcm16-byte-raises` [R1.6d] `b is buffer of 2 / b[0] is 300 / b[1] is 0 / {try buf_from_pcm16le of [b, 0, 1] catch}` printing `e.kind`, then the same with `b[0] is 1.5`
   -> `value` twice (byte values: N5, then 0..255; #1758 comment 6174964306)
   tag: no raise, samples `0.009155552842799158` and `4.577776421399579e-05` (probed main)
-- `gate.N5.q7-readers` [R1.6] `tests/phase2/q7_readers.c` (through the amalgamation, no SDL): `eigs_geom_shape` clips `RECT [-3e9, 0, 6e9, 10]` on a 640x480 drawable area to `[0, 0, 640, 10]` (saturating each argument would give half of that), clips a `LINE` with Liang-Barsky, bounds a `CIRCLE` of radius 3e9 to the visible rows; `eigs_bounded_arg` clamps 300 to 255; `eigs_magnitude_arg` raises `value` on 3e12 for a C `int`
+- `gate.N5.q7-readers` [R1.6e] `tests/phase2/q7_readers.c` (through the amalgamation, no SDL): `eigs_geom_shape` clips `RECT [-3e9, 0, 6e9, 10]` on a 640x480 drawable area to `[0, 0, 640, 10]` (saturating each argument would give half of that), clips a `LINE` with Liang-Barsky, bounds a `CIRCLE` of radius 3e9 to the visible rows; `eigs_bounded_arg` clamps 300 to 255; `eigs_magnitude_arg` raises `value` on 3e12 for a C `int`
   -> every case as stated
   tag: n/a (a C test of new readers), so it is a gate
 - `N5.leaf-buffer-index` [R1.7] `define bat(b, i) as: return b[i] / b is buffer of 3 / print of (bat of [b, 1])`
@@ -463,31 +463,31 @@ gates (design §9.2).
   shape: F  witness: fn-stop bits BOR (the scanner refuses the bitwise ops)  ops: BOR
 
 ### N9
-The builtin names are decided in round 1 (`<w-add-i64>` etc. below are placeholders the row files replace).
-- `N9.wrapping` [R1.6] `print of [<wrapping add i64> of [9223372036854775807, 1], <wrapping add u8> of [255, 1]]`
+Names, operands and operations follow the decided [#1758 comment 6304880619](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6304880619); Rust std is the oracle.
+- `N9.wrapping` [R1.6g] `print of [i64_wrapping_add of [9223372036854775807, 1], u8_wrapping_add of [255, 1]]`
   -> `[-9223372036854775808, 0]`
   tag: undefined
-- `N9.checked-raises` [R1.6] `{try print of (<checked add u8> of [200, 100]) catch}`
+- `N9.checked-raises` [R1.6g] `{try print of (u8_checked_add of [200, 100]) catch}`
   -> `["value", ...]`
   tag: undefined
-- `N9.saturating` [R1.6] `print of [<saturating sub i8> of [-100, 100], <saturating add u64> of [-1, 1]]`
+- `N9.saturating` [R1.6g] `print of [i8_saturating_sub of [-100, 100], u64_saturating_add of [-1, 1]]`
   -> `[-128, -1]`. A u64 is carried in an int64 bit pattern, so u64 max is `-1`.
   tag: undefined
-- `N9.unsigned-ops` [R1.6] `print of [<u64 compare> of [-1, 1], <u64 to string> of [-1], <u64 div> of [-1, 2]]`
+- `N9.unsigned-ops` [R1.6g] `print of [u64_compare of [-1, 1], u64_to_string of [-1], u64_div of [-1, 2]]`
   -> `[1, "18446744073709551615", 9223372036854775807]`
   tag: undefined
-- `N9.fround` [R1.6] `print of (fround of 0.1)`
+- `N9.fround` [R1.6g] `print of (fround of 0.1)`
   -> `0.10000000149011612`
   tag: undefined
 
 ### N10
-- `N10.partial-refused` [R1.6] `{try print of (num of "12abc") catch}`, printing `e.kind`
+- `N10.partial-refused` [R1.6b] `{try print of (num of "12abc") catch}`, printing `e.kind`
   -> `value`
   tag: `12` (probed main)
-- `N10.radix` [R1.6] `print of [num of "0x1F", num of "0b101", num of "0o17"]`
-  -> `[31, 5, 15]` (the prefix set is decided in round 1; `0x` is certain)
-  tag: `[31, 0, ...]` (probed main for the first two)
-- `N10.int-or-float` [R1.6] `print of [num_type of (num of "3"), num_type of (num of "3.0"), num_type of (num of "9223372036854775808"), num of "9007199254740993"]`
+- `N10.radix` [R1.6b] `print of [num of "0x1F", num of "0X1f"]`, then catch `num of "0b101"` and `num of "0o17"` separately and print each `e.kind`
+  -> `[31, 31]`, `value`, `value` (the lexer's own numeric grammar; #1758 comment 6304880619)
+  tag: `[31, 31]`, `0`, `0`; Lua agrees on hex and rejects both unsupported prefixes. Hex floats are the declared divergence: Lua accepts them, EigenScript's lexer and `num` refuse them.
+- `N10.int-or-float` [R1.6b] `print of [num_type of (num of "3"), num_type of (num of "3.0"), num_type of (num of "9223372036854775808"), num of "9007199254740993"]`
   -> `["int", "float", "float", 9007199254740993]`
   tag: `num_type` undefined
 
@@ -561,13 +561,13 @@ The builtin names are decided in round 1 (`<w-add-i64>` etc. below are placehold
 - `N14.json-encode-int-exact` [R1.3] `json_encode` walks int list and dict slots, including int64 endpoints
   -> `[3,9223372036854775807,{"min":-9223372036854775808}]`
   tag: big literals round through double.
-- `N14.json-path-int-exact` [R1.6] `print of (json_path of ["{\"n\":9223372036854775807}", "n"])`
+- `N14.json-path-int-exact` [R1.6b] `print of (json_path of ["{\"n\":9223372036854775807}", "n"])`
   -> `9223372036854775807`
   tag: the decoder rounds before the exact text arm (written in R1.2) can read it.
 - `N14.encode-kinds` [R1.7] `print of (json_encode of [3, 3.0, 0.1, -0.0])`
   -> `[3,3.0,0.1,-0.0]`
   tag: `[3,3,0.1,0]` (probed main for the first three)
-- `N14.decode-kinds` [R1.6] `v is json_decode of "[3, 3.0, 9223372036854775807, 18446744073709551615]" / print of [num_type of v[0], num_type of v[1], v[2], num_type of v[3]]`
+- `N14.decode-kinds` [R1.6b] `v is json_decode of "[3, 3.0, 9223372036854775807, 18446744073709551615]" / print of [num_type of v[0], num_type of v[1], v[2], num_type of v[3]]`
   -> `["int", "float", 9223372036854775807, "float"]`
   tag: `num_type` undefined
 - `N14.decode-overflow-raises` [R2.5] `{try print of (json_decode of "1e400") catch}`

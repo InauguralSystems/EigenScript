@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: random_int (int-requiring, LOSS; Lua math.random(m, n) is an integer)
+# R1.6 behaviour-table probe: random_int (int-requiring, LOSS; Lua math.random(m, n) is an integer); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

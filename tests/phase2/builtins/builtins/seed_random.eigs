@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: seed_random (int-requiring, LOSS; a seed's range is all of int64; Lua randomseed takes integers)
+# R1.6 behaviour-table probe: seed_random (int-requiring, LOSS; a seed's range is all of int64; Lua randomseed takes integers); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

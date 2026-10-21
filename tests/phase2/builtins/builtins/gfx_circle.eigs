@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_circle (other, Q7 geometry,bounded; the circle is clipped in float space, then rounded)
+# R1.6 behaviour-table probe: gfx_circle (other, Q7 geometry,bounded; the circle is clipped in float space, then rounded); phase2-exercises: {"q7":["geometry","bounded"]}
 define nt(x) as:
     try:
         return num_type of x

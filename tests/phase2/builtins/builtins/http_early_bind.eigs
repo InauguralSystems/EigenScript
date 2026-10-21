@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: http_early_bind (int-requiring; port; PROFILE server (make server); run in a child (it prints its cwd on stdout))
+# R1.6 behaviour-table probe: http_early_bind (int-requiring; port; PROFILE server (make server); run in a child (it prints its cwd on stdout)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

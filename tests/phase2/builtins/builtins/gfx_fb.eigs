@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_fb (int-requiring, Q7 geometry; w and h by N5, palette bytes by the Q1 byte reader, the destination rect clipped in float space)
+# R1.6 behaviour-table probe: gfx_fb (int-requiring, Q7 geometry; w and h by N5, palette bytes by the Q1 byte reader, the destination rect clipped in float space); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"q7":["geometry"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

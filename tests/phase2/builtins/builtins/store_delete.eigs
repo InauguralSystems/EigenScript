@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: store_delete (int-requiring, LOSS; key formatted %d of an (int) cast)
+# R1.6 behaviour-table probe: store_delete (int-requiring, LOSS; key formatted %d of an (int) cast); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

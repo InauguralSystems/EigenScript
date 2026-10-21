@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: list_remove_at (int-requiring; position (Lua table.remove))
+# R1.6 behaviour-table probe: list_remove_at (int-requiring; position (Lua table.remove)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

@@ -1,1 +1,3 @@
-PENDING-PROFILE server
+route registered
+route registered
+rc=0

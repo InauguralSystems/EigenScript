@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_text (other, Q7 geometry,bounded; each glyph cell is clipped in float space, then rounded (bitmap font: EIGS_GFX_FONT is a nonexistent path))
+# R1.6 behaviour-table probe: gfx_text (other, Q7 geometry,bounded; each glyph cell is clipped in float space, then rounded (bitmap font: EIGS_GFX_FONT is a nonexistent path)); phase2-exercises: {"q7":["geometry","bounded"]}
 define nt(x) as:
     try:
         return num_type of x

@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: net_listen (int-requiring; port; returns a handle; PROFILE server (make server), loopback only)
+# R1.6 behaviour-table probe: net_listen (int-requiring; port; returns a handle; PROFILE server (make server), loopback only); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

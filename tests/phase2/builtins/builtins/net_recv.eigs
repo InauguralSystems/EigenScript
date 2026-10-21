@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: net_recv (int-requiring; handle and max bytes; bytes stored as floats; PROFILE server (make server), loopback only)
+# R1.6 behaviour-table probe: net_recv (int-requiring; handle and max bytes; bytes stored as floats; PROFILE server (make server), loopback only); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

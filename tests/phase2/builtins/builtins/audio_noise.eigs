@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: audio_noise (float-producing, Q7 magnitude; float samples (seeded); a sample count the C int cannot hold raises)
+# R1.6 behaviour-table probe: audio_noise (float-producing, Q7 magnitude; float samples (seeded); a sample count the C int cannot hold raises); phase2-exercises: {"q7":["magnitude"]}
 define nt(x) as:
     try:
         return num_type of x

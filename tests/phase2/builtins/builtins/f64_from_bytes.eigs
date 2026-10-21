@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: f64_from_bytes (int-requiring; 8 byte values: N5, then 0..255 (Q1))
+# R1.6 behaviour-table probe: f64_from_bytes (int-requiring; 8 byte values: N5, then 0..255 (Q1)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

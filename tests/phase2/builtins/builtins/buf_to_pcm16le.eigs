@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: buf_to_pcm16le (other, Q7 bounded; samples clamp to [-1, 1] and round (today's behaviour); offsets and counts by N5)
+# R1.6 behaviour-table probe: buf_to_pcm16le (other, Q7 bounded; samples clamp to [-1, 1] and round (today's behaviour); offsets and counts by N5); phase2-exercises: {"q7":["bounded"]}
 define nt(x) as:
     try:
         return num_type of x

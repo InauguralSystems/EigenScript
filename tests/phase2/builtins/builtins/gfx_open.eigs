@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_open (other, Q7 magnitude; window sizes round, a size the C int cannot hold raises)
+# R1.6 behaviour-table probe: gfx_open (other, Q7 magnitude; window sizes round, a size the C int cannot hold raises); phase2-exercises: {"q7":["magnitude"]}
 define nt(x) as:
     try:
         return num_type of x

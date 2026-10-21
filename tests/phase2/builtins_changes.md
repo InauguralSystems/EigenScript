@@ -29,3 +29,196 @@ The first import d2437d6d is unchanged. This second import copies the author-app
 | `make_table.py` | R1.6a-D1 and R1.6a-D2 |
 | `plants.sh` | R1.6a-D1 and R1.6a-D2 |
 | `rowmeta.tsv` | R1.6a-D1 and R1.6a-D2 |
+
+## R1.6a implementation after the author-applied rulings
+
+No `.branch` expectation is changed. The five D2 deterministic probe bodies
+and the author's determinism.sh remain unchanged; exercise metadata is appended
+to existing first comment lines, preserving all executable source line numbers.
+All 37 author plants remain, with the four implementation controls named G1-G4.
+P18 explicitly plants a pending record so that it remains live after recording.
+Normal table checking reads the current tree. P28 explicitly archives 4ac31e67
+and still fails on its missing read_text population, using the shared inventory
+parser from that revision. The default checker does not rewrite the TSV.
+
+| File | Change and authority |
+|---|---|
+| `tests/phase2/builtins/make_table.py` | Shared inventory parser; check-only TSV membership/class validation, explicit --write, anchored class consistency, declared landed rounds and retained explicit-revision P28; brief 2, RULINGS A1-A5, R1.6a-D1/D2. |
+| `tests/phase2/builtins/run_probes.sh` | Same runner for recording and branch checks; --kind and --check, moved shim and automatic B6 capture fixture; brief 2.3, RULINGS A3-A5/B6. |
+| `tests/phase2/builtins/plants.sh` | Preserve P1-P28/T1/R1-R8; keep P18 live and add G1-G4 TSV/class calibration; brief 3, principle 5, R1.6a-D1/D2. |
+| `tests/phase2/builtins/http_capture.py` | One loopback HTTP request; echo exact X-Number bytes and preserve request on failure; RULINGS B6. |
+| `tests/phase2/builtins/builtins/audio_pause.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/zeros.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/random_int.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/list_slice.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/task_kill.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_open.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/eigen_generate.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_capture_open.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/sign_extend.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gather.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_rrect.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_music_play.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/set_at.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/bit_or.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/bit_shr.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/exec_capture.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_sweep.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_rect.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/task_join.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/close_channel.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/net_port.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/net_close.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/state_at.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/chr.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_music_volume.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/proc_read_buf.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_stream_open.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_clear.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/bit_shl.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/hex.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_fb.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/net_send.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/http_early_bind.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/write_bytes.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/bit_xor.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/buf_get.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_noise.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_stop.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_text_width.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_clip.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/native_train_step_builtin.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_open.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/http_serve.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/inflate.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/task_send.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/reshape.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/buffer.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/store_collections.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_read.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_square.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/channel_closed.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/list_truncate.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_sine.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/bit_not.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/seed_random.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_envelope.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/task_detach.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/token_name.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/store_count.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/str_from_bytes.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/dispatch.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_text.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/net_dial.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/buf_to_pcm16le.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/get_at.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/store_drop.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/sandbox_run.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_stream_push.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/ppu_render_frame.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/thread_join.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/stream_open.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/store_get.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_point.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/substr.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/store_delete.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/read_bytes_buf.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_delay.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/store_close.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/build_corpus.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_saw.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/recv.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/usleep.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/copy_into.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/net_listen.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_line.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/buf_deinterleave.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/buf_copy.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_volume.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_text_height.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/f64_from_bytes.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_play_loop.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/buf_set.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/net_accept.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/task_sched_seed.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/buf_from_pcm16le.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/random_hex.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/exit.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/fill.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/net_recv.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/char_at.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/task_alive.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/gfx_circle.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/recv_timeout.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/send.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/try_recv.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/bit_and.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/audio_play.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/list_insert_at.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/list_remove_at.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tests/phase2/builtins/builtins/vm_run_bytecode.eigs` | Identify the existing integral-float success stdout line (or exit status) and Q7 exercises; R1.6a brief 2.2, blind-review F3, RULINGS B1-B5/C1-C10. |
+| `tools/phase2_builtins.sh` | Dispatch the authoritative table checker/runner; brief 2 and principle 5. |
+| `tests/phase2/builtins_landed.txt` | Explicit landed-sub-round declaration; brief §9.4 amendment (c). |
+| `tests/phase2/observation_hooks.c` | Move the author shim byte-for-byte to its sole repository target; RULINGS A4 and BAR handoff. |
+| `tests/phase2/builtins/builtins/_hooks/observation_hooks.c` | Remove the previous shim location after the byte-identical move; RULINGS A4. |
+
+## Recorded observations after the rulings
+
+RULINGS A3/B6 and BAR handoff authorize replacing the 25 profile placeholders with matched make server, make zlib and make server-db observations of 4ac31e67 and v0.46.0, with PostgreSQL. R1.6a-D2 authorizes re-recording the five revised probes; R1.6a-D1 / #1668 authorizes read_text.pre on 1fd4422c. All .pre records were then observed on the in-scope 1fd4422c builds and determinism.sh re-observed matched 1fd4422c/tag three times. Only read_text differs between the old and current baselines. No .branch changes.
+
+| Recorded file | Authority |
+|---|---|
+| `builtins/db_execute.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/db_execute.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/db_query_json.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/db_query_json.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/db_query_value.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/db_query_value.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/eigen_eval_loss.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/eigen_eval_loss.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/eigen_generate.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/eigen_generate.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/eigen_model_load.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/eigen_model_load.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/exec_capture.pre` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/exec_capture.tag` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/http_early_bind.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_early_bind.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_post.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_post.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_route.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_route.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_route_authed.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_route_authed.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_serve.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_serve.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_static.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/http_static.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/inflate.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/inflate.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/model_load_weights.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/model_load_weights.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/native_train_step_builtin.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/native_train_step_builtin.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/net_accept.pre` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/net_accept.tag` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/net_close.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/net_close.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/net_dial.pre` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/net_dial.tag` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/net_listen.pre` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/net_listen.tag` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/net_port.pre` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/net_port.tag` | R1.6a-D2; RULINGS A3/B6 and BAR handoff |
+| `builtins/net_recv.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/net_recv.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/net_send.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/net_send.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/shared_delete.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/shared_delete.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/shared_incr.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/shared_incr.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/shared_size.pre` | RULINGS A3/B6 and BAR handoff |
+| `builtins/shared_size.tag` | RULINGS A3/B6 and BAR handoff |
+| `builtins/read_text.pre` | R1.6a-D1 / #1668: current baseline 1fd4422c |
+| `builtins.tsv` | Derived changes columns refreshed by the sole checker after authorized recordings; R1.6a-D1/D2 and RULINGS A1/A3 |

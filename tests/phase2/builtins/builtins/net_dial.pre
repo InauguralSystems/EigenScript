@@ -1,1 +1,5 @@
-PENDING-PROFILE server
+["float", true]
+["fraction-answer", true]
+["port-65536", "type_mismatch"]
+["float", true]
+rc=0

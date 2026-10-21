@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: channel_closed (int-requiring; channel handle ids)
+# R1.6 behaviour-table probe: channel_closed (int-requiring; channel handle ids); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

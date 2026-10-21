@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: recv_timeout (int-requiring, Q7 magnitude; handle by N5, a timeout the C long cannot hold raises)
+# R1.6 behaviour-table probe: recv_timeout (int-requiring, Q7 magnitude; handle by N5, a timeout the C long cannot hold raises); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"q7":["magnitude"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

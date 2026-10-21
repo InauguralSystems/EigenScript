@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: buf_from_pcm16le (int-requiring; byte values through the Q1 byte reader (#1758 comment 6174964306))
+# R1.6 behaviour-table probe: buf_from_pcm16le (int-requiring; byte values through the Q1 byte reader (#1758 comment 6174964306)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

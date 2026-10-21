@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: buffer (int-requiring; size or [rows, cols])
+# R1.6 behaviour-table probe: buffer (int-requiring; size or [rows, cols]); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

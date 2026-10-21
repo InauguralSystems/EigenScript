@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: vm_run_bytecode (int-requiring; opcode bytes and ABI numbers)
+# R1.6 behaviour-table probe: vm_run_bytecode (int-requiring; opcode bytes and ABI numbers); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":5}}
 define nt(x) as:
     try:
         return num_type of x

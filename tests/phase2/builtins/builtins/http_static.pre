@@ -1,1 +1,2 @@
-PENDING-PROFILE server
+static registered
+rc=0

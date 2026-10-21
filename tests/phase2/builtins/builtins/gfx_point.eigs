@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_point (other, Q7 geometry,bounded; a point outside the drawable area draws nothing)
+# R1.6 behaviour-table probe: gfx_point (other, Q7 geometry,bounded; a point outside the drawable area draws nothing); phase2-exercises: {"q7":["geometry","bounded"]}
 define nt(x) as:
     try:
         return num_type of x

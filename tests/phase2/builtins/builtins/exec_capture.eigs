@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: exec_capture (other, Q7 magnitude; the timeout seconds; returns exit status ints)
+# R1.6 behaviour-table probe: exec_capture (other, Q7 magnitude; the timeout seconds; returns exit status ints); phase2-exercises: {"q7":["magnitude"]}
 define nt(x) as:
     try:
         return num_type of x

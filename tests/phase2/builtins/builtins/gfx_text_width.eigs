@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_text_width (int-preserving, Q7 magnitude; pixel width; the scale rounds, a scale the C int cannot hold raises (bitmap font))
+# R1.6 behaviour-table probe: gfx_text_width (int-preserving, Q7 magnitude; pixel width; the scale rounds, a scale the C int cannot hold raises (bitmap font)); phase2-exercises: {"q7":["magnitude"]}
 define nt(x) as:
     try:
         return num_type of x

@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: stream_open (int-requiring; element count, already floor-checked)
+# R1.6 behaviour-table probe: stream_open (int-requiring; element count, already floor-checked); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

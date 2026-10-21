@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# plants.sh: plant one fault per check in a scratch copy of the bar (and of
-# docs/design and src at EIGS_REV, extracted with git archive), run the check,
-# and require its named FAIL line.
+# plants.sh: plant one fault per check in a scratch copy of the bar (and of the
+# tree's docs/design and src), run the check, and require its named FAIL line.
 # Prints RED or SURVIVED per plant; exit 1 if any plant survives, a mutation
 # does not apply, or a baseline is not clean. Run it on Xvfb (DISPLAY=:99).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-REPO=${EIGS_REPO:-/home/jon/src/InauguralSystems/EigenScriptEcosystem/EigenScript}
-REV=${EIGS_REV:-1fd4422c}
-PRE=${PRE_BIN:-/home/jon/src/wt/r15-critic/build/release/eigenscript}
+TREE=${EIGS_TREE:-$(cd "$HERE/../../.." && pwd)}
+REPO=${EIGS_REPO:-$TREE}
+PRE=${PRE_BIN:-$TREE/build/release/eigenscript}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/r16plants.XXXXXX") || exit 2
-mkdir -p "$WORK/bar0" "$WORK/tree0" || exit 2
-cp -r "$HERE/." "$WORK/bar0/" || exit 2
-git -C "$REPO" archive -o "$WORK/tree.tar" "$REV" docs/design src && tar -x -C "$WORK/tree0" -f "$WORK/tree.tar" \
-    || { echo "BROKEN: git archive $REV of $REPO"; exit 1; }
+mkdir -p "$WORK/bar0" "$WORK/tree0/docs/design" "$WORK/tree0/tools" || exit 2
+cp -r "$HERE/." "$WORK/bar0/" && cp "$TREE"/docs/design/phase2-numbers.md "$TREE"/docs/design/phase2-inventory.txt \
+    "$WORK/tree0/docs/design/" && cp -r "$TREE/src" "$WORK/tree0/src" \
+    && cp "$TREE/tools/phase2_inventory.py" "$WORK/tree0/tools/" \
+    && cp "$HERE/../observation_hooks.c" "$WORK/shim0.c" || exit 2
 B="$WORK/bar"; T="$WORK/tree"; D="$T/docs/design"
 sub() {  # sub <file> <old> <new>: replace exactly one occurrence, or fail
     python3 - "$1" "$2" "$3" <<'EOF'
@@ -45,11 +45,11 @@ mutate() {
     P15) sub "$B/builtins/abs.pre" 'rc=0' 'hook-loaded mix\nrc=0' ;;
     P16) printf '["capability", "value", "inflate: compiled without zlib support (rebuild with `make zlib`)"]\nrc=0\n' > "$B/builtins/inflate.pre" ;;
     P17) printf 'PENDING-PROFILE server\n' > "$B/builtins/len.pre" ;;
-    P18) : ;;
+    P18) printf 'PENDING-PROFILE zlib\n' > "$B/builtins/inflate.pre" ;;
     P19) sub "$B/rowmeta.tsv" 'abs\tR1.2/R1.3\trelease\n' '' ;;
     P20) sub "$B/rowmeta.tsv" 'abs\tR1.2/R1.3\trelease' 'abs\tR1.2/R1.3\tgpu' ;;
     P21) sub "$B/cases.tsv" 'gfx_poll\tgfx_poll\tevents' 'gfx_poll\tgfx_poll\tbogus' ;;
-    P22) sub "$B/builtins/_hooks/observation_hooks.c" 'hook_is("events")' 'hook_is("evnts")' ;;
+    P22) sub "$B/../observation_hooks.c" 'hook_is("events")' 'hook_is("evnts")' ;;
     P23) rm "$B/builtins/_stdin/hi" ;;
     P24) : > "$B/builtins/notes.txt" ;;
     P25) sub "$B/rowmeta.tsv" '\nlen\t-\trelease' '\nlen\tmain\trelease' ;;
@@ -57,6 +57,10 @@ mutate() {
     P27) sub "$B/cases.tsv" '\nlen\tlen\t-\t-\n' '\n' ;;
     P28) : ;;
     T1) printf 'print of (monotonic_ns of null)\n' >> "$B/builtins/len.eigs" ;;
+    G1) sub "$B/builtins.tsv" '\nlen\tbuiltins.c\tint-preserving\t-\t-\tb\t-\trelease\t-\t-\tyes\tyes\n' '\n' ;;
+    G2) printf 'p2stale\tbuiltins.c\tother\t-\t-\tc\t-\trelease\t-\t-\tno\tno\n' >> "$B/builtins.tsv" ;;
+    G3) sub "$B/builtins.tsv" '\nlen\tbuiltins.c\tint-preserving\t' '\nlen\tbuiltins.c\tother\t' ;;
+    G4) sub "$B/builtins/random_hex.branch" '\n6\nrc=0' '\n["integral-float", "value"]\nrc=0' ;;
     R1) sub "$B/run_probes.sh" 'out="$HERE/builtins/$2.$3"' 'out="$2.$3"' ;;
     R2|R3) sub "$B/run_probes.sh" '(LD_PRELOAD="$SHIM" ' '(' ;;
     R4) sub "$B/builtins/recv_timeout.eigs" 'send of [c, 7]\n' '' ;;
@@ -69,9 +73,9 @@ mutate() {
 check() {
     case $1 in
     P18) table --final ;;
-    P28) (cd "$B" && EIGS_REV=4ac31e67 timeout 120 python3 make_table.py 2>&1) ;;
+    P28) (cd "$B" && env -u EIGS_TREE EIGS_REPO="$REPO" EIGS_REV=4ac31e67 timeout 120 python3 make_table.py 2>&1) ;;
     T1) (cd "$B" && TMPDIR="$WORK" PROBE_STDERR_DIR="$WORK/stderr" timeout 300 bash determinism.sh len 2>&1) ;;
-    P*) table ;;
+    P*|G*) table ;;
     R1) runner abs ;;
     R2) runner audio_stream_push ;;
     R3) runner audio_stream_push >/dev/null; table ;;
@@ -113,6 +117,10 @@ P26|profile witnesses vs profiles|in the non-release profiles, not in builtins/_
 P27|primary case per row|in section 6, not in the primary cases: len$
 P28|population pinned to 1fd4422c: the pre-#1841 revision lacks read_text|in rowmeta\.tsv, not in section 6: read_text$
 T1|determinism: a printed time (the R1.6a-D2 class)|^UNSTABLE len\.pre$
+G1|builtins.tsv missing row|in section 6, not in builtins\.tsv: len$
+G2|builtins.tsv stale row|in builtins\.tsv, not in section 6: p2stale$
+G3|builtins.tsv class edit|len: builtins\.tsv class .other. != derived .int-preserving.
+G4|integral-float success must be a result|random_hex: integral-float success stdout line 3 is an error or non-result
 R1|runner: empty stdout with rc 0|FAIL: abs\.pre printed nothing with rc 0
 R2|runner: hook case without the shim|FAIL: audio_stream_push\.pre ran without its hook pcm
 R3|table: hook case recorded without the shim|audio_stream_push\.pre holds \[\], not one .hook-loaded pcm. line
@@ -121,7 +129,7 @@ R5|runner: profile witness refuses a release binary|FAIL: .* is not a zlib build
 R6|runner: missing stdin fixture|FAIL: proc_read_buf\.hi: no stdin fixture
 R7|pcm hook observes the delivered PCM (silence)|FAIL: audio_stream_push\.pre differs from the recorded \.pre: SDL_QueueAudio 3: 0 0 0
 R8|mix hook observes the mixed PCM (silence)|FAIL: audio_play\.pre differs from the recorded \.pre: \["mixed", false\]'
-fresh() { rm -rf "$B" "$T"; cp -r "$WORK/bar0" "$B" && cp -r "$WORK/tree0" "$T"; }
+fresh() { rm -rf "$B" "$T"; cp -r "$WORK/bar0" "$B" && cp -r "$WORK/tree0" "$T" && cp "$WORK/shim0.c" "$WORK/observation_hooks.c"; }
 bad=0
 fresh; out=$(table); rc=$?
 if [ $rc -ne 0 ] || grep -q '^FAIL' <<<"$out"; then echo "BASELINE make_table not clean (rc $rc)"; bad=1; else echo "BASELINE make_table clean: $(grep '^guard:' <<<"$out")"; fi

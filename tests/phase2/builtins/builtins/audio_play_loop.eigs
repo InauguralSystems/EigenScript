@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: audio_play_loop (int-requiring, Q7 bounded; loop count by N5; samples clamp and round to int16; returns a channel; HOOK mix: the delivered mixer PCM (ruling B1))
+# R1.6 behaviour-table probe: audio_play_loop (int-requiring, Q7 bounded; loop count by N5; samples clamp and round to int16; returns a channel; HOOK mix: the delivered mixer PCM (ruling B1)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"q7":["bounded"],"integral-float-success":{"stdout-line":2}}
 define nt(x) as:
     try:
         return num_type of x

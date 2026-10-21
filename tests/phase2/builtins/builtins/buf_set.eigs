@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: buf_set (int-requiring; index; the value converts to float storage (Q2))
+# R1.6 behaviour-table probe: buf_set (int-requiring; index; the value converts to float storage (Q2)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
 define nt(x) as:
     try:
         return num_type of x

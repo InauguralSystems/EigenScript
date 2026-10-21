@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: sign_extend (int-requiring, LOSS; (int64_t) of a double)
+# R1.6 behaviour-table probe: sign_extend (int-requiring, LOSS; (int64_t) of a double); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":5}}
 define nt(x) as:
     try:
         return num_type of x

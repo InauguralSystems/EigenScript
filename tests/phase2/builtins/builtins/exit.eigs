@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: exit (int-requiring; exit code: N5, then the C int range (Q1))
+# R1.6 behaviour-table probe: exit (int-requiring; exit code: N5, then the C int range (Q1)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"exit-code":3}}
 define nt(x) as:
     try:
         return num_type of x

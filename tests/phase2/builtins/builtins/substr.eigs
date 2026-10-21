@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: substr (int-requiring; start and length (Lua string.sub))
+# R1.6 behaviour-table probe: substr (int-requiring; start and length (Lua string.sub)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

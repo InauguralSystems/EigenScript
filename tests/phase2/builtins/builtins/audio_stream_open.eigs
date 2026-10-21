@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: audio_stream_open (int-requiring; freq and channels are counts: N5, then the C int range (Q1); returns a device id)
+# R1.6 behaviour-table probe: audio_stream_open (int-requiring; freq and channels are counts: N5, then the C int range (Q1); returns a device id); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
 define nt(x) as:
     try:
         return num_type of x

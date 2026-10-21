@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_clear (other, Q7 bounded; colour channels clamp to 0..255, then round)
+# R1.6 behaviour-table probe: gfx_clear (other, Q7 bounded; colour channels clamp to 0..255, then round); phase2-exercises: {"q7":["bounded"]}
 define nt(x) as:
     try:
         return num_type of x

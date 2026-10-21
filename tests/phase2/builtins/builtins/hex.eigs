@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: hex (int-requiring, LOSS; the 2^53 refusal is a double compare; nibbles is a count)
+# R1.6 behaviour-table probe: hex (int-requiring, LOSS; the 2^53 refusal is a double compare; nibbles is a count); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

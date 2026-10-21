@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: buf_copy (int-requiring; offsets and counts)
+# R1.6 behaviour-table probe: buf_copy (int-requiring; offsets and counts); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

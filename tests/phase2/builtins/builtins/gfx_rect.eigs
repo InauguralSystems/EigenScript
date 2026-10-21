@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: gfx_rect (other, Q7 geometry,bounded; the rect is intersected with the drawable area in float space, then rounded)
+# R1.6 behaviour-table probe: gfx_rect (other, Q7 geometry,bounded; the rect is intersected with the drawable area in float space, then rounded); phase2-exercises: {"q7":["geometry","bounded"]}
 define nt(x) as:
     try:
         return num_type of x

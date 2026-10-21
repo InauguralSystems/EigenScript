@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: bit_shl (int-requiring; Lua << (R1.5): count >=64 gives 0, a negative count shifts right)
+# R1.6 behaviour-table probe: bit_shl (int-requiring; Lua << (R1.5): count >=64 gives 0, a negative count shifts right); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

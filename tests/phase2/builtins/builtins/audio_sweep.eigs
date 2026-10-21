@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: audio_sweep (float-producing, Q7 magnitude; the duration is continuous; the wave selector is integer-valued (N5, Q1))
+# R1.6 behaviour-table probe: audio_sweep (float-producing, Q7 magnitude; the duration is continuous; the wave selector is integer-valued (N5, Q1)); phase2-exercises: {"q7":["magnitude"]}
 define nt(x) as:
     try:
         return num_type of x

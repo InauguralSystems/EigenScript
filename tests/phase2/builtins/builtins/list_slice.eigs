@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: list_slice (int-requiring; start and end indices)
+# R1.6 behaviour-table probe: list_slice (int-requiring; start and end indices); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x

@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: audio_stream_push (other, Q7 bounded; samples clamp to [-1, 1], then round to int16; HOOK pcm: the delivered SDL_QueueAudio PCM (ruling B1))
+# R1.6 behaviour-table probe: audio_stream_push (other, Q7 bounded; samples clamp to [-1, 1], then round to int16; HOOK pcm: the delivered SDL_QueueAudio PCM (ruling B1)); phase2-exercises: {"q7":["bounded"]}
 define nt(x) as:
     try:
         return num_type of x

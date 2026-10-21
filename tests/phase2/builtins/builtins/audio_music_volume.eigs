@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: audio_music_volume (other, Q7 bounded; the volume clamps to SDL_mixer's 0..128, then rounds; HOOK mixvol: the volume reaching Mix_VolumeMusic (ruling B1))
+# R1.6 behaviour-table probe: audio_music_volume (other, Q7 bounded; the volume clamps to SDL_mixer's 0..128, then rounds; HOOK mixvol: the volume reaching Mix_VolumeMusic (ruling B1)); phase2-exercises: {"q7":["bounded"]}
 define nt(x) as:
     try:
         return num_type of x

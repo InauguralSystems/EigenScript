@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: store_get (int-requiring, LOSS; key by N5 (eigs_int_arg, closes #1760); decodes records (N14))
+# R1.6 behaviour-table probe: store_get (int-requiring, LOSS; key by N5 (eigs_int_arg, closes #1760); decodes records (N14)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
 define nt(x) as:
     try:
         return num_type of x

@@ -1,4 +1,4 @@
-# R1.6 behaviour-table probe: eigen_generate (int-requiring; token ids and max_tokens are integer-valued (N5, Q1); PROFILE server (make server))
+# R1.6 behaviour-table probe: eigen_generate (int-requiring; token ids and max_tokens are integer-valued (N5, Q1); PROFILE server (make server)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
 define nt(x) as:
     try:
         return num_type of x
