@@ -197,6 +197,7 @@ static inline void slot_decref(EigsSlot s) {
  * Immediate-number truthiness is a non-zero double, or a non-zero int
  * (#1758: an SMI is 0 exactly when its payload is 0); null and false
  * are falsy; everything else (heap) defers to caller-side is_truthy(). */
+__attribute__((unused))
 static inline int slot_truthy_immediate(EigsSlot s, int *out_decided) {
     if (slot_is_f64(s)) { *out_decided = 1; return SLOT_F64_RAW(s) != 0.0; }
     if (slot_is_null(s) || s.u == SLOT_FALSE_BITS) { *out_decided = 1; return 0; }

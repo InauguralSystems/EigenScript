@@ -338,13 +338,13 @@ int chunk_add_function(EigsChunk *chunk, EigsChunk *fn) {
 /* #737: an exhaustive switch on OpCode with NO default arm —
  * -Werror=switch (already in CFLAGS) turns a missing opcode into a build
  * error instead of a silent "???". The strings are derived from the enum
- * spellings themselves (#o + 3 strips "OP_"), so a name can't drift from
+ * spellings themselves (&"OP_NAME"[3] strips "OP_"), so a name can't drift from
  * its opcode either. The old designated-initializer array was missing
  * four opcodes and nothing could notice. */
 const char *op_name(uint8_t op) {
     if (op >= OP_COUNT) return "???";
     switch ((OpCode)op) {
-#define N(o) case o: return #o + 3;
+#define N(o) case o: return &(#o)[3];
     N(OP_CONST) N(OP_NULL) N(OP_NUM_ZERO) N(OP_NUM_ONE) N(OP_TRUE) N(OP_FALSE)
     N(OP_INT_ZERO) N(OP_INT_ONE) N(OP_INT_CONST)
     N(OP_ADD) N(OP_SUB) N(OP_MUL) N(OP_DIV) N(OP_MOD) N(OP_IDIV)
