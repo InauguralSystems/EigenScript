@@ -38,7 +38,11 @@ define is_test_file(name) as:
 
 define discover_in_dir(dir) as:
     out is []
-    names is sort of (ls of dir)
+    names is []
+    try:
+        names is sort of (ls of dir)
+    catch e:
+        return out
     for nm in names:
         if is_test_file of nm:
             append of [out, path_join of [dir, nm]]

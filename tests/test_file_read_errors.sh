@@ -32,7 +32,7 @@ EOF
     else
         out=$("$BIN" "$TMP/case.eigs" 2>&1); rc=$?
     fi
-    if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qF "io|$builtin: cannot open '$path': $reason"; then
+    if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qF "io|$builtin: '$path': $reason"; then
         echo "  PASS: $builtin $label exposes path and OS reason"
         pass=$((pass + 1))
     else
@@ -40,6 +40,28 @@ EOF
         fail=$((fail + 1))
     fi
 }
+
+# The fixed-size readers report the observed size and cap rather than an empty value.
+truncate -s $((10 * 1024 * 1024 + 1)) "$TMP/over-cap"
+for builtin in read_text read_bytes; do
+    cat > "$TMP/cap.eigs" <<EOF
+try:
+    value is $builtin of "$TMP/over-cap"
+    print of "NO_ERROR"
+catch e:
+    print of f"{e.kind}|{e.message}"
+EOF
+    cap_out=$("$BIN" "$TMP/cap.eigs" 2>&1); cap_rc=$?
+    if [ "$cap_rc" -eq 0 ] && printf '%s\n' "$cap_out" | grep -qF "io|$builtin:" &&
+       printf '%s\n' "$cap_out" | grep -qF "10485761 bytes" &&
+       printf '%s\n' "$cap_out" | grep -qF "10485760-byte cap"; then
+        echo "  PASS: $builtin over-cap error carries size and cap"
+        pass=$((pass + 1))
+    else
+        echo "  FAIL: $builtin over-cap (rc=$cap_rc, output='$cap_out')"
+        fail=$((fail + 1))
+    fi
+done
 
 for builtin in read_text read_bytes read_bytes_buf; do
     run_error "$builtin" "$TMP/missing" "No such file or directory" "missing file"

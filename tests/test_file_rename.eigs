@@ -7,8 +7,10 @@ A is "/tmp/eigs_rename_a.bin"
 B is "/tmp/eigs_rename_b.bin"
 
 # clean slate
-remove_file of A
-remove_file of B
+if file_exists of A:
+    remove_file of A
+if file_exists of B:
+    remove_file of B
 
 write_bytes of [A, [10, 20, 30], 0]
 assert_eq of [file_exists of A, true, "source exists before rename"]
@@ -29,9 +31,19 @@ assert_eq of [buf_get of [read_bytes_buf of B, 0], 99, "dest holds new content"]
 assert_eq of [remove_file of B, true, "remove_file succeeds"]
 assert_eq of [file_exists of B, false, "file gone after remove_file"]
 
-# failures return 0, not a crash
-assert_eq of [rename of ["/tmp/eigs_no_such_file_zzz", B], false, "rename of missing -> 0"]
-assert_eq of [remove_file of "/tmp/eigs_no_such_file_zzz", false, "remove missing -> 0"]
+# failures raise catchable io errors instead of silent false answers
+rename_kind is "none"
+try:
+    rename of ["/tmp/eigs_no_such_file_zzz", B]
+catch e:
+    rename_kind is e.kind
+assert_eq of [rename_kind, "io", "rename of missing raises io"]
+remove_kind is "none"
+try:
+    remove_file of "/tmp/eigs_no_such_file_zzz"
+catch e:
+    remove_kind is e.kind
+assert_eq of [remove_kind, "io", "remove missing raises io"]
 
 # is_dir (#576): directory detection without the file_exists of "path/." probe
 D is "/tmp/eigs_isdir_probe/nested"

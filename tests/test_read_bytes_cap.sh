@@ -110,7 +110,7 @@ run_case "missing file raises io with OS reason" \
     b is read_bytes_buf of \"$TMPDIR/nope.bin\"
 catch e:
     print of f\"{e.kind}|{e.message}\"" \
-"io|read_bytes_buf: cannot open '$TMPDIR/nope.bin': No such file or directory"
+"io|read_bytes_buf: '$TMPDIR/nope.bin': No such file or directory"
 
 # 7. Record/replay: the over-cap raise is re-derived from the tape with
 #    the file DELETED — byte-identical output, no live fs dependence.

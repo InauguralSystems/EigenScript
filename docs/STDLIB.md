@@ -1149,8 +1149,10 @@ runtime's resolver does — `lib/NAME.eigs` and `NAME.eigs` relative to the
 working directory, then the stdlib root beside the interpreter binary — and
 **raises** `import: module 'NAME' not found` when nothing resolves. It used to
 read `lib/NAME.eigs` with `read_text`, which is working-directory-relative and
-answers `""` for an absent path (`read_text`'s documented answer), so an import
-that did not resolve produced a silently EMPTY namespace instead of an error. The
+formerly answered `""` for an absent path, so an import that did not resolve
+produced a silently EMPTY namespace instead of an error. File I/O failures now
+raise `io` with the path and OS reason, while an actually empty file still returns
+`""`. The
 namespace itself follows the runtime's rule (#1057): a public module binding is
 readable and writable through it (`M.x`, `M.x is v`), and a `_`-prefixed module
 binding is neither projected nor written. `tests/test_meta_parity.eigs` asserts

@@ -809,8 +809,8 @@ print of (max of [1, 5, 3])
 print of (file_exists of "..")
 print of (is_dir of ".")
 print of (is_file of ".")
-print of (read_text of "/nonexistent/eigs_1008_probe")
-print of (read_bytes of "/nonexistent/eigs_1008_probe")
+try:\n    print of (read_text of "/nonexistent/eigs_1008_probe")\ncatch e:\n    print of e.kind
+try:\n    print of (read_bytes of "/nonexistent/eigs_1008_probe")\ncatch e:\n    print of e.kind
 print of (env_get of "EIGS_1008_UNSET_PROBE")
 print of (min of [1, 5, 3])
 print of (max of 9)
