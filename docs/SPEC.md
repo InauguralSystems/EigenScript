@@ -1671,7 +1671,9 @@ As with other keywords, quoted dict keys and dot fields remain legal:
 **`report of x`** names the most specific band true of the same
 trajectory the predicates read (value channel for numerics, entropy
 otherwise — #861), resolving `oscillating` → `diverging` → `improving` →
-`converged` → `equilibrium` → `stable`. At a full window it agrees with the
+`converged` → `equilibrium` → `stable`. This arrow is report priority, not
+an implication lattice: a converged one-direction tail is not `equilibrium`.
+At a full window it agrees with the
 bare predicates by construction: it either names a band whose predicate is
 true, or — when a full window matches none of them — returns `moving`. The
 bands are not exhaustive, and `moving` is the honest answer for the gap

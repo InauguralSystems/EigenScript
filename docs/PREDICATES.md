@@ -110,16 +110,17 @@ steps `Δv` kept alongside — #422):
 | `stable` | full window, every `\|rel\| < dh_small`, no strong consecutive sign flips |
 | `equilibrium` | full window, `\|mean(rel)\| < dh_zero`, `variance(rel) < dh_zero²` |
 | `improving` | ≥ 4 samples, **decreasing** raw steps whose mean *and* max contract to ≤ 0.7× the older half — lower is better; a summable (geometric-class) tail genuinely closing on a limit |
-| `diverging` | value at the saturation ceiling (any window fill), or same-sign raw steps whose recent-half **mean and peak** are each no smaller than the older half's (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
-| `oscillating` | ≥ 4 deadband sign-flips of `rel`; or raw alternation passing that same mean-and-peak test (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
+| `diverging` | value at the saturation ceiling (any window fill), or same-sign raw steps passing the calibrated mean/Mann-Kendall persistence rule (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
+| `oscillating` | ≥ 4 deadband sign-flips of `rel`; or raw alternation passing that same persistence rule (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
 
-**Modulated raw steps (#1891).** A half-window mean alone is not an
-envelope: moving one trough of a damped carrier across the split can make the
-newer mean larger although every carrier peak is shrinking. The shared
-non-vanishing test therefore requires *both* `recent_mean >= older_mean` and
-`recent_peak >= older_peak` (with the `1e-9` rounding slack). This keeps the
-four-sample early-warning floor from #861 and adds no persistence latency.
-For the issue's executed 11-value window,
+**Modulated raw steps (#1891).** No half-window statistic can distinguish all
+slowly decaying modulations from constant-envelope runaways. The
+pre-registered calibration in `tools/observer_oracle/nonvanishing_bench.py` therefore measured
+the requested runaway and decay grids. The selected persistence rule uses the
+standard Mann-Kendall `S` rank statistic over `|d_k|` (ties contribute zero): a
+passing historical mean is retained for `S >= -13`, while a failed mean is
+reversed only for persistent growth, `S >= 11`. At four samples `|S| <= 6`, so
+#861's early answer is unchanged. For the issue's executed 11-value window,
 
 ```eigenscript
 decay is [3.4144933431842747e-12, 3.221483148286249e-12, 3.175583781293126e-12, 2.884364034434364e-12, 2.6829917904855467e-12, 2.656201406940636e-12, 2.43810485948457e-12, 2.2385174936625305e-12, 2.2170259412889097e-12, 2.0608058800068096e-12, 1.8717943868164032e-12]
@@ -128,16 +129,12 @@ for k in range of (len of decay):
 print of (report_value of E)  # converged
 ```
 
-the recent mean is slightly larger, but its peak is `2.181e-13` versus the
-older peak `2.912e-13`, so it cannot claim non-vanishing motion. No finite
-window decides an infinite-tail property. For
-`|d_k| = r^k(1 + m cos(·))`, `0 <= m < 1`, the peak test is guaranteed to
-reject every phase when `r(1+m) < 1-m`; when
-`r >= (1-m)/(1+m)`, a sufficiently slow rising modulation can still make
-both half statistics rise for one window. That is the exact residual class
-in `(r,m)` for which phase flicker remains possible (not inevitable); the
-oracle pins the issue's `r=0.94, m=0.84` phases rather than pretending a
-ten-sample observer can prove their whole-sequence limit.
+its rank trend rejects the phase-aliased mean. No finite window decides an
+infinite-tail property. The **measured residual classes and their exact
+false-`diverging` rates** are the nonzero decay rows in the evidence table;
+there is no claimed closed-form residual boundary. In particular,
+`r >= (1-m)/(1+m)` is only a conservative one-step amplitude bound, not a
+phase-existence theorem.
 
 The quiescent lattice on this route has `converged ⊂ stable`. A converged
 one-direction tail is not `equilibrium`: its deterministic mean still has a
@@ -606,15 +603,18 @@ the most specific via its priority order.
   `down_fraction`/`up_fraction` of 0 — never improving or diverging. This
   is the #187 contract enforced at the window level. The `stable`
   no-consecutive-flips clause likewise excludes `oscillating`.
-- **The quiescent lattice** (full-window, near-zero motion):
-  `converged ⊂ equilibrium`, and a *high-entropy* `equilibrium ⊂ stable`.
+- **The quiescent bands** (full-window, near-zero motion) overlap but do not
+  form the old `converged ⊂ equilibrium` lattice: a converged directional
+  tail is not an equilibrium. A *high-entropy* `equilibrium ⊂ stable`.
   Concretely a full quiet window is exactly one of:
-  - **low entropy** → `converged` (and `equilibrium`; `report` →
-    `converged`);
+  - **low entropy, balanced steps** → `converged` and `equilibrium`
+    (`report` → `converged`);
+  - **low entropy, one-direction tail** → `converged` but not
+    `equilibrium` (`report` → `converged`);
   - **high entropy** → `equilibrium` *and* `stable` (`report` →
     `equilibrium`).
-  So `equilibrium` never fires alone — it is always accompanied by
-  `converged` (low H) or `stable` (high H). A `stable` window that is *not*
+  So `equilibrium` never fires alone — it is accompanied by `converged`
+  (low H, balanced) or `stable` (high H). A `stable` window that is *not*
   equilibrium is one with steady directional drift (mean `|dH| > dh_zero`)
   **at high entropy**: moving a little, but settled.
 - **The bands are not exhaustive.** A full window with steady gray-band
