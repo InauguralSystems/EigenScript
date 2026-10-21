@@ -55,14 +55,16 @@ import tmp_user_module
 assert_eq of [type of tmp_user_module, "dict", "user module imports as dict"]
 assert_eq of [tmp_user_module.scaled of 6, 42, "user module function works"]
 assert_eq of [tmp_user_module.FACTOR, 7, "user module constant"]
-rm of (_module_test_dir + "/tmp_user_module.eigs")
+if file_exists of (_module_test_dir + "/tmp_user_module.eigs"):
+    remove_file of (_module_test_dir + "/tmp_user_module.eigs")
 
 # Names starting with _ are module-private: omitted from the dict.
 write_text of [(_module_test_dir + "/tmp_priv_module.eigs"), "_secret is 1\nvisible is 2\n"]
 import tmp_priv_module
 assert_eq of [has_key of [tmp_priv_module, "visible"], true, "public name exported"]
 assert_eq of [has_key of [tmp_priv_module, "_secret"], false, "_name stays private"]
-rm of (_module_test_dir + "/tmp_priv_module.eigs")
+if file_exists of (_module_test_dir + "/tmp_priv_module.eigs"):
+    remove_file of (_module_test_dir + "/tmp_priv_module.eigs")
 
 # --- #821: a project file with a stdlib module's name wins (project-first).
 # Before #821, `import physics` here silently bound the stdlib's
@@ -73,7 +75,8 @@ write_text of [(_module_test_dir + "/physics.eigs"), "SHADOW_MARKER is 821\n"]
 import physics
 assert_eq of [has_key of [physics, "SHADOW_MARKER"], true, "project file shadows stdlib (#821)"]
 assert_eq of [physics.SHADOW_MARKER, 821, "shadowing module's own binding read"]
-rm of (_module_test_dir + "/physics.eigs")
+if file_exists of (_module_test_dir + "/physics.eigs"):
+    remove_file of (_module_test_dir + "/physics.eigs")
 
 # Missing module raises a catchable error naming both tried paths.
 import_err is ""

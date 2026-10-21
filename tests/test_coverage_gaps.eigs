@@ -97,7 +97,8 @@ assert of [w1, "CG38 stream_write 1"]
 assert of [w3, "CG39 stream_write 3"]
 closed is stream_close of null
 assert of [closed, "CG40 stream_close"]
-rm of sfile
+if file_exists of sfile:
+    remove_file of sfile
 
 # --- numerical_grad_rows + sgd_update_rows ---
 # The loss fn is called with no arguments; it reads the matrix from its
@@ -189,7 +190,8 @@ assert of [save_ok, "CG61 tensor_save ok"]
 t_back is tensor_load of tfile
 assert of [t_back[0][0] == 1.5, "CG62 tensor_load round-trip 0,0"]
 assert of [t_back[1][1] == 4.5, "CG63 tensor_load round-trip 1,1"]
-rm of tfile
+if file_exists of tfile:
+    remove_file of tfile
 
 # --- tensor_shape: 1D and 2D ---
 sh1 is shape of [1.0, 2.0, 3.0, 4.0]

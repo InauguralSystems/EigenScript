@@ -213,13 +213,13 @@ else
 fi
 
 # ---- #1464: mktemp is a filesystem replay boundary ----
-# First pin the ordinary lifecycle with the issue's tiny mktemp/print/rm
-# shape: a fresh path exists, rm succeeds, and the path is gone afterwards.
+# First pin the ordinary lifecycle with the issue's tiny mktemp/print/remove_file
+# shape: a fresh path exists, remove_file succeeds, and the path is gone afterwards.
 cat > "$TMPDIR/p_mktemp_live.eigs" <<'EOF'
 p is mktemp of null
 print of p
 print of (file_exists of p)
-print of (rm of p)
+print of (remove_file of p)
 print of (file_exists of p)
 EOF
 MKT_LIVE=$("$EIGS" "$TMPDIR/p_mktemp_live.eigs" 2>&1); MKT_LIVE_RC=$?
@@ -227,7 +227,7 @@ MKT_PATH=$(printf '%s\n' "$MKT_LIVE" | sed -n '1p')
 MKT_STATE=$(printf '%s\n' "$MKT_LIVE" | sed -n '2,4p')
 if [ "$MKT_LIVE_RC" -eq 0 ] && [ "$MKT_STATE" = $'true\ntrue\nfalse' ] \
    && [ ! -e "$MKT_PATH" ]; then
-    ok "mktemp ordinary lifecycle: create, print, and rm"
+    ok "mktemp ordinary lifecycle: create, print, and remove_file"
 else
     fail "mktemp ordinary lifecycle" "rc=$MKT_LIVE_RC out='$MKT_LIVE'"
     case "$MKT_PATH" in /tmp/eigen_??????) rm -f "$MKT_PATH" ;; esac
@@ -240,7 +240,7 @@ fi
 cat > "$TMPDIR/p_mktemp_replay.eigs" <<'EOF'
 p is mktemp of null
 print of p
-removed is rm of p
+removed is remove_file of p
 EOF
 MKT_REPLAY=$(EIGS_REPLAY_STRICT=1 EIGS_REPLAY="$TMPDIR/block.tape" \
     "$EIGS" "$TMPDIR/p_mktemp_replay.eigs" 2>&1); MKT_REPLAY_RC=$?
@@ -264,7 +264,7 @@ caught_kind is ""
 caught_message is ""
 try:
     p is mktemp of null
-    removed is rm of p
+    removed is remove_file of p
 catch e:
     caught_kind is e.kind
     caught_message is e.message

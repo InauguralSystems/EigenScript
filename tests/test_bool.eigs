@@ -200,7 +200,12 @@ is_bool of [mkdir of scratch, "mkdir"]
 is_bool of [write_text of [scratch + "/a.txt", "x"], "write_text"]
 is_bool of [rename of [scratch + "/a.txt", scratch + "/b.txt"], "rename"]
 is_bool of [remove_file of (scratch + "/b.txt"), "remove_file"]
-is_bool of [rm of (scratch + "/nothing"), "rm (missing file)"]
+remove_missing_kind is "none"
+try:
+    remove_file of (scratch + "/nothing")
+catch e:
+    remove_missing_kind is e.kind
+same of [remove_missing_kind, "io", "remove_file (missing file) raises io"]
 exec_capture of ["rm", "-rf", scratch, scratch_file]
 mf is math_flags of null
 is_bool of [mf.overflow, "math_flags.overflow"]

@@ -4,7 +4,7 @@ load_file of "lib/lab.eigs"
 # Clean up from previous test runs
 if file_exists of "data":
     if file_exists of "data/experiments.db":
-        rm of "data/experiments.db"
+        remove_file of "data/experiments.db"
 
 # Create experiment
 exp is new_experiment of "test_thermal"
@@ -76,10 +76,11 @@ assert_true of [(len of exps) > 0, "experiment listed"]
 
 # Cleanup
 delete_experiment of "test_thermal"
-rm of "/tmp/test_lab_temp.csv"
+if file_exists of "/tmp/test_lab_temp.csv":
+    remove_file of "/tmp/test_lab_temp.csv"
 if file_exists of "data/experiments.db":
-    rm of "data/experiments.db"
+    remove_file of "data/experiments.db"
 if file_exists of "data":
-    rm of "data"
+    exec_capture of ["rmdir", "data"]
 
 test_summary of null
