@@ -138,7 +138,17 @@ finite_pair[1] is 0 - CAP
 assert of [raw_pair == finite_pair, "NG36 structural equality normalizes infinities"]
 assert of [(list_contains of [[raw_pair], finite_pair]), "NG36 list_contains shares normalized equality"]
 assert of [(list_index_of of [[raw_pair], finite_pair]) == 0, "NG36 list_index_of shares normalized equality"]
-assert of [(sum of raw_pair) == 0, "NG37 sum normalizes before cancellation"]
+# N13 / R1.6b: sum now crosses the final float-reader boundary, which
+# refuses non-finite buffer payloads in both strict modes. Other reductions
+# keep their earlier normalization policy until their own reader migration.
+define ng_sum_refuses_nonfinite(tensor_input, label) as:
+    local refused is false
+    try:
+        sum of tensor_input
+    catch e:
+        refused is e.kind == "value"
+    assert of [refused, label]
+ng_sum_refuses_nonfinite of [raw_pair, "NG37 N13 sum refuses non-finite elements before cancellation"]
 assert of [(mean of raw_pair) == 0, "NG37 mean normalizes before cancellation"]
 assert of [raw_nan_product == raw_nan_product, "NG38 same-buffer equality normalizes NaN"]
 zero_one is buffer of 1
@@ -167,6 +177,10 @@ empty is buffer of 0
 assert of [(sum of empty) == 0, "NG45 empty sum"]
 assert of [(mean of empty) == 0, "NG45 empty mean"]
 assert of [(norm of empty) == 0, "NG45 empty norm"]
+# N3/C2: empty sum becomes int, while a wrong-type soft stand-in keeps its
+# original float kind. This fixture runs with EIGS_STRICT=0.
+sum_soft_wrong_type is sum of "hello"
+assert of [sum_soft_wrong_type == 0 and (num_type of sum_soft_wrong_type) == "float", "NG45 N3 sum preserves the legacy float-zero type fallback"]
 short is buffer of 1
 short[0] is 2
 assert of [(dot of [finite, short]) == 6, "NG46 dot retains shorter-length policy"]
@@ -175,11 +189,11 @@ assert of [(buf_peak of [finite, 1, 1]) == 4, "NG47 peak keeps its window"]
 assert of [(buf_dot of [finite, finite_copy, 2, 2, 0]) == 0, "NG48 empty dot window"]
 assert of [(buf_peak of [finite, 2, 0]) == 0, "NG48 empty peak window"]
 
-# A containing list must retain the scalar buffer-read normalization rule.
-assert of [(sum of ([raw_pair])) == 0, "NG49 nested sum normalizes before cancellation"]
+# A containing list follows its reduction's reader policy (N13 for sum).
+ng_sum_refuses_nonfinite of [([raw_pair]), "NG49 N13 nested sum refuses non-finite elements"]
 assert of [(mean of ([raw_pair])) == 0, "NG49 nested mean normalizes before cancellation"]
 assert of [(norm of ([raw_pair])) == (norm of raw_pair), "NG49 nested norm uses normalized inputs"]
-assert of [(sum of ([raw_nan_product])) == 0, "NG50 nested NaN sum is zero"]
+ng_sum_refuses_nonfinite of [([raw_nan_product]), "NG50 N13 nested sum refuses NaN"]
 assert of [(mean of ([raw_nan_product])) == 0, "NG50 nested NaN mean is zero"]
 assert of [(norm of ([raw_nan_product])) == 0, "NG50 nested NaN norm is zero"]
 assert of [(sum of ([finite])) == 7, "NG51 nested finite sum"]

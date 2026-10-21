@@ -198,8 +198,8 @@ above 2^53. `/` returns float; `//` floors (an int for two ints, a float otherwi
 operators are exact, and `INT64_MIN // -1` raises `value` while
 `INT64_MIN % -1` is the int 0. Division, floor division and modulo by zero
 raise `value`, including float and mixed operands (IEEE zero division waits
-for N11). Builtins retain their documented float
-results during this transition, except `abs`, which preserves ints.
+for N11). Builtin result kinds are documented individually; int-preserving
+arithmetic and reductions use checked int64 operations.
 
 Integer-valued floats print without a
 decimal point. Division is true division. `%` is modulo. There is no
@@ -2427,6 +2427,35 @@ a tensor builtin needs no change, because a buffer supports all of those.
 `sum of a` returns the total of a buffer's (or tensor's) elements, and
 `norm of a` returns the L2 (Euclidean) norm, `sqrt(sum_i a[i]*a[i])`.
 
+`add`, `subtract` and `multiply` preserve exact ints for scalar operands and
+for each pair of list elements, with `value` on int64 overflow. `negative`
+preserves int scalar and list elements and raises at INT64_MIN. Buffer
+arithmetic remains float. An all-int `sum` returns an exact int, while a
+float anywhere in a nested input selects float addition for the entire
+reduction. A buffer selects float addition too. An empty list's sum is int
+zero, in both call forms. `sum` refuses non-finite buffer elements with a
+`value` error in every strict mode (N13).
+
+```eigenscript
+exact is sum of [9007199254740993, 1]
+print of [exact, num_type of exact]
+mixed is sum of [9223372036854775807, 1, 0.5]
+print of [num_type of mixed, mixed == 9223372036854775808.0]
+print of [num_type of (sum of []), num_type of (sum of ([]))]
+print of (add of [[9007199254740993, 2], [1, 3]])
+try:
+    negative of (-9223372036854775807 - 1)
+catch e:
+    print of e.kind
+```
+```output
+[9007199254740994, "int"]
+["float", true]
+["int", "int"]
+[9007199254740994, 5]
+value
+```
+
 ```eigenscript
 v is buffer of 4
 v[0] is 1
@@ -2461,12 +2490,13 @@ print of (dot of [a, b])
 25
 ```
 
-For all three reductions (`sum`, `norm`, `dot`) the summation **order
-(association) is unspecified**: callers must not depend on the exact low-bit
-rounding of the result. This is a deliberate opt-in — it licenses an
+For the floating forms of these reductions (`sum`, `norm`, `dot`), the
+summation **order (association) is unspecified**: callers must not depend on
+the exact low-bit rounding of the result. This is a deliberate opt-in — it licenses an
 optimizing backend (such as the AOT native compiler) to reassociate the sum
 across SIMD lanes, which a strict left-to-right `loop while` accumulation
-forbids. The no-NaN/no-Inf invariant still holds. Write the explicit loop when
+forbids. Integer `sum` checks int64 overflow and never silently rounds or
+wraps. The no-NaN/no-Inf invariant still holds. Write the explicit loop when
 you need a fixed reduction order.
 
 ### Shaped buffers (tensors)
@@ -2476,10 +2506,11 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 [buf, rows, cols]` shapes an existing flat buffer (the element count must
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
-Every element crossing the buffer/scalar boundary uses the numeric guard:
-infinity saturates at ±`1e308`, while a `NaN` raises in strict mode or becomes
-`0` and sets `math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer
-equality and scalar reductions normalize each input before comparison or
+At the buffer/scalar boundary, `sum` refuses non-finite elements in every
+strict mode (N13). Other consumers use the numeric guard: infinity saturates
+at ±`1e308`, while a `NaN` raises in strict mode or becomes `0` and sets
+`math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer equality and
+the other scalar reductions normalize each input before comparison or
 arithmetic. A strict read that raises inside a function retains that
 function's source location and call frame. Buffer-to-list tensor materialization
 and numeric byte/sample/device conversions apply the same read rule, stopping
@@ -2500,9 +2531,11 @@ elementwise, with a `[cols]` buffer broadcast over the rows of a
 `[rows × cols]` buffer and a number broadcast over every element; `relu`,
 `leaky_relu`, `softmax`, `log_softmax`, `sum`, `mean`, `norm`, `gather`
 compute on the shape, and `scatter_add` is `gather`'s in-place dual. The
-result is identical to the nested-list tensor form, so storing weights as
-shaped buffers is purely a performance choice — and it is the substrate the
-reverse-mode autograd tape in `lib/autograd.eigs` runs on.
+result for float inputs is identical to the nested-list tensor form. Int
+list arithmetic stays exact, while buffer storage converts ints to floats,
+so storing integer weights as shaped buffers can change their precision.
+Shaped buffers are the substrate the reverse-mode autograd tape in
+`lib/autograd.eigs` runs on.
 
 ### `gather` and an out-of-range index
 

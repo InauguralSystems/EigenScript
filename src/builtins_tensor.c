@@ -210,7 +210,7 @@ static Value* make_buffer_like(Value *a) {   /* same count + shape as a */
 /* ====================================================================
  * TENSOR SUBSTRATE BUILTINS
  * Expose tensor operations so the .eigs standard library can run natively.
- * Tensors are represented as nested VAL_LIST of VAL_FLOAT (1D or 2D).
+ * Tensors are nested numeric VAL_LIST values (1D or 2D), or float buffers.
  * ==================================================================== */
 
 /* --- Tensor helper: detect dimensions --- */
@@ -308,7 +308,7 @@ static Value* flat_to_tensor_2d(double *data, int rows, int cols) {
     for (int r = 0; r < rows; r++) {
         Value *row = make_list(cols);
         for (int c = 0; c < cols; c++) {
-            Value *item = make_num(data[r * cols + c]);
+            Value *item = make_float(data[r * cols + c]);
             if (g_has_error) {
                 val_decref(item); val_decref(row); val_decref(outer);
                 return make_null();
@@ -324,7 +324,7 @@ static Value* flat_to_tensor_2d(double *data, int rows, int cols) {
 static Value* flat_to_tensor_1d(double *data, int len) {
     Value *out = make_list(len);
     for (int i = 0; i < len; i++) {
-        Value *item = make_num(data[i]);
+        Value *item = make_float(data[i]);
         if (g_has_error) {
             val_decref(item); val_decref(out);
             return make_null();
@@ -485,11 +485,31 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
      * `arg` is what the guard macros test for a bool (#1637): either operand. */
     Value *arg = (a && a->type == VAL_BOOL) ? a : b;
     ARG_GUARD(!a || !b, "add/subtract/multiply/divide/pow",
-              "two tensor operands", make_num(0.0));
+              "two tensor operands", make_float(0.0));
 
     /* scalar op scalar */
-    if (val_is_number(a) && val_is_number(b))
-        return make_num(fn(eigs_num_arg(a, __func__), eigs_num_arg(b, __func__)));
+    if (val_is_number(a) && val_is_number(b)) {
+        const char *who = fn == op_add ? "add" : fn == op_sub ? "subtract" :
+                          fn == op_mul ? "multiply" : "divide/pow";
+        EigsNum x = eigs_number_arg(a, who), y = eigs_number_arg(b, who);
+        if (g_has_error) return make_null();
+        if (x.is_int && y.is_int && (fn == op_add || fn == op_sub || fn == op_mul)) {
+            int64_t result;
+            int overflow = fn == op_add ? __builtin_add_overflow(x.value.i64, y.value.i64, &result) :
+                           fn == op_sub ? __builtin_sub_overflow(x.value.i64, y.value.i64, &result) :
+                                          __builtin_mul_overflow(x.value.i64, y.value.i64, &result);
+            if (overflow) {
+                rt_error(EK_VALUE, 0, "%s: int64 overflow in '%s'", who,
+                         fn == op_add ? "+" : fn == op_sub ? "-" : "*");
+                return make_null();
+            }
+            return make_int(result);
+        }
+        double xd = x.is_int ? (double)x.value.i64 : x.value.f64;
+        double yd = y.is_int ? (double)y.value.i64 : y.value.f64;
+        double result = fn(xd, yd);
+        return g_has_error ? make_null() : make_float(result);
+    }
 
     /* #1093 buffers are flat numeric tensors. Buffer-only operands compute on
      * the flat doubles and return a buffer; a buffer MIXED with a list is
@@ -497,10 +517,16 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
      * (the rule: a buffer out iff every tensor operand was a buffer). */
     if (a->type == VAL_BUFFER && b->type == VAL_BUFFER)
         return buf_elementwise(a, b, fn);
-    if (a->type == VAL_BUFFER && val_is_number(b))
-        return buf_scalar_elementwise(a, eigs_num_arg(b, __func__), fn, 1);
-    if (val_is_number(a) && b->type == VAL_BUFFER)
-        return buf_scalar_elementwise(b, eigs_num_arg(a, __func__), fn, 0);
+    if (a->type == VAL_BUFFER && val_is_number(b)) {
+        double scalar = eigs_float_arg(b, __func__);
+        if (g_has_error) return make_null();
+        return buf_scalar_elementwise(a, scalar, fn, 1);
+    }
+    if (val_is_number(a) && b->type == VAL_BUFFER) {
+        double scalar = eigs_float_arg(a, __func__);
+        if (g_has_error) return make_null();
+        return buf_scalar_elementwise(b, scalar, fn, 0);
+    }
     if (a->type == VAL_BUFFER && b->type == VAL_LIST) {
         Value *al = buf_as_tensor_list(a);
         if (g_has_error) { val_decref(al); return make_null(); }
@@ -626,7 +652,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
      * function. That is the wrong-type case, and 0.0 was indistinguishable
      * from a real elementwise result. */
     ARG_GUARD(1, "add/subtract/multiply/divide/pow",
-              "numbers, lists or buffers as operands", make_num(0.0));
+              "numbers, lists or buffers as operands", make_float(0.0));
 }
 
 static Value* tensor_elementwise_slots(EigsSlot a, EigsSlot b, BinOpFn fn) {
@@ -678,9 +704,22 @@ Value* builtin_tensor_pow(Value *arg) {
 
 /* ---- Element-wise unary op ---- */
 typedef double (*UnaryOpFn)(double);
+static double op_neg(double x);
 static Value* tensor_unary(Value *v, UnaryOpFn fn) {
     Value *arg = v;   /* what the guard macros test for a bool (#1637) */
-    if (val_is_number(v)) return make_num(fn(eigs_num_arg(v, __func__)));
+    if (val_is_number(v)) {
+        EigsNum n = eigs_number_arg(v, fn == op_neg ? "negative" : "sqrt/exp/log");
+        if (g_has_error) return make_null();
+        if (fn == op_neg && n.is_int) {
+            if (n.value.i64 == INT64_MIN) {
+                rt_error(EK_VALUE, 0, "negative: int64 overflow in '-'");
+                return make_null();
+            }
+            return make_int(-n.value.i64);
+        }
+        double result = fn(n.is_int ? (double)n.value.i64 : n.value.f64);
+        return g_has_error ? make_null() : make_float(result);
+    }
     /* #1093: a buffer is a flat numeric tensor — same kernel, buffer out. */
     if (v->type == VAL_BUFFER) {
         Value *out = make_buffer_like(v);
@@ -693,7 +732,11 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
         Value *out = make_list(v->data.list.count);
         for (int i = 0; i < v->data.list.count; i++) {
             EIGS_VIEW(child_view);
-            list_append_owned(out, tensor_unary(list_get_view(v, i, &child_view), fn));
+            Value *item = tensor_unary(list_get_view(v, i, &child_view), fn);
+            if (g_has_error) {
+                val_decref(item); val_decref(out); return make_null();
+            }
+            list_append_owned(out, item);
         }
         return out;
     }
@@ -702,7 +745,7 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
      * by sqrt/exp/log/negative and by its own recursion, so the guard names
      * that surface rather than one call. */
     ARG_GUARD(1, "sqrt/exp/log/negative", "a number, a list or a buffer",
-              make_num(0.0));
+              make_float(0.0));
 }
 
 /* #865: `sqrt of -1` returns 0, which is indistinguishable from `sqrt of 0`.
@@ -1257,43 +1300,67 @@ Value* builtin_tensor_mean(Value *arg) {
 /* sum / norm are association-unspecified reductions (see docs/SPEC.md
  * "Reductions"): the summation order is not guaranteed, which lets an
  * optimizing backend reassociate across SIMD lanes. no-NaN/Inf preserved. */
-Value* builtin_tensor_sum(Value *arg) {
-    if (arg && arg->type == VAL_BUFFER) {
-        int n = arg->data.buffer.count;
-        double s = 0.0;
-        for (int i = 0; i < n; i++) {
-            double x = buffer_read_num(arg, i);
-            if (g_has_error) return make_null();
-            s = num_guard(s + x);
+/* C2/C4 and (A): decide the reduction kind before adding. A later float
+ * makes the whole reduction floating, so an int prefix must not overflow. */
+static int tensor_sum_has_float(Value *v) {
+    if (!v) return 0;
+    /* tensor_total previously checked every bool before any accumulation.
+     * Preserve that validation order while deciding the numeric kind. */
+    if (v->type == VAL_BOOL && !g_has_error)
+        rt_error(EK_TYPE, 0, "cannot use a bool as a number (branch on it: `if b:`)");
+    if (v->type == VAL_FLOAT || v->type == VAL_BUFFER) return 1;
+    if (v->type != VAL_LIST) return 0;
+    int has_float = 0;
+    for (int i = 0; i < v->data.list.count; i++) {
+        EIGS_VIEW(child);
+        has_float |= tensor_sum_has_float(list_get_view(v, i, &child));
+    }
+    return has_float;
+}
+
+static int tensor_sum_into(Value *v, EigsNum *sum) {
+    if (!v) return 1;
+    if (val_is_number(v)) {
+        EigsNum n = eigs_number_arg(v, "sum");
+        if (g_has_error) return 0;
+        if (sum->is_int) {
+            int64_t result;
+            if (__builtin_add_overflow(sum->value.i64, n.value.i64, &result)) {
+                rt_error(EK_VALUE, 0, "sum: int64 overflow in '+'");
+                return 0;
+            }
+            sum->value.i64 = result;
+        } else {
+            double d = n.is_int ? (double)n.value.i64 : n.value.f64;
+            sum->value.f64 = num_guard(sum->value.f64 + d);
+            if (g_has_error) return 0;
         }
-        return make_num(s);
+    } else if (v->type == VAL_BUFFER) {
+        for (int i = 0; i < v->data.buffer.count; i++) {
+            double d = buffer_read_f64(v, i);
+            if (g_has_error) return 0;
+            sum->value.f64 = num_guard(sum->value.f64 + d);
+            if (g_has_error) return 0;
+        }
+    } else if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++) {
+            EIGS_VIEW(child);
+            if (!tensor_sum_into(list_get_view(v, i, &child), sum)) return 0;
+        }
     }
-    /* Split from the empty case below. `tensor_total` answers 0 for an empty
-     * list AND for any non-tensor — a string, a dict, a function — so one
-     * `total == 0` line was carrying two opposite verdicts: `sum of []`
-     * is the identity, `sum of "hello"` is a laundered type mistake. The
-     * mixed line could not be classified honestly (a blind review caught it
-     * tagged fs:EMPTY, which would have blessed the laundering permanently),
-     * so the type half is hoisted out. Non-strict is byte-identical: both
-     * halves still answer 0.0. Closes the main half of #1008. */
-    ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST
-              && arg->type != VAL_BUFFER,   /* #1093 */
-              "sum", "a number, a list of numbers or a buffer", make_num(0.0));
-    int total = tensor_total(arg);
-    /* fs:EMPTY 0.0 is the additive identity this loop would accumulate over
-     * zero elements. The non-tensor case is guarded above, so `sum of []` is
-     * the only reading left here. */
-    if (total == 0) return make_num(0.0);
-    double *flat = xcalloc(total, sizeof(double));
-    int idx = 0;
-    if (!tensor_flatten_recursive(arg, flat, &idx)) {
-        free(flat);
-        return make_null();
-    }
-    double sum = 0.0;
-    for (int i = 0; i < total; i++) sum = num_guard(sum + flat[i]);
-    free(flat);
-    return make_num(sum);
+    return 1;
+}
+
+Value* builtin_tensor_sum(Value *arg) {
+    ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST && arg->type != VAL_BUFFER,
+              "sum", "a number, a list of numbers or a buffer", make_float(0.0));
+    EigsNum sum = { .is_int = !tensor_sum_has_float(arg), .value = { .i64 = 0 } };
+    if (g_has_error) return make_null();
+    /* Explicitly initialize the active union arm rather than assuming all-bits
+     * zero is the floating identity on every target. */
+    if (!sum.is_int) sum.value.f64 = 0.0;
+    if (!tensor_sum_into(arg, &sum)) return make_null();
+    return sum.is_int ? make_int(sum.value.i64) : make_float(sum.value.f64);
 }
 
 /* norm of a → L2 (Euclidean) norm = sqrt(sum_i a[i]^2). Buffers and tensors. */

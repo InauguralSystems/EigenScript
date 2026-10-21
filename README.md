@@ -379,10 +379,10 @@ to infinity saturate at `+/-1e308`. Strict mode is the default: an
 out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
-`asin`/`acos` clamp their inputs. The same rule applies when a raw tensor-kernel
-result is read from a `buffer`; one stored element never changes meaning with
-the operator that consumes it. Structural buffer equality and scalar reductions
-normalize each input by this rule too, as do mixed buffer/list materialization
+`asin`/`acos` clamp their inputs. Buffer consumers apply the same normalization,
+except `sum`, which refuses non-finite elements in every strict mode (N13).
+Structural buffer equality and the other scalar reductions normalize each
+input by this rule too, as do mixed buffer/list materialization
 and numeric byte or sample conversion. A raised read stops subsequent work.
 `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL, without inspecting later
@@ -428,6 +428,35 @@ catch e:
 value
 ```
 
+
+`add`, `subtract` and `multiply` preserve exact ints for scalar operands and
+for each pair of list elements, with `value` on int64 overflow. `negative`
+preserves int scalar and list elements and raises at INT64_MIN. Buffer
+arithmetic remains float. An all-int `sum` returns an exact int, while a
+float anywhere in a nested input selects float addition for the entire
+reduction. A buffer selects float addition too. An empty list's sum is int
+zero, in both call forms. `sum` refuses non-finite buffer elements with a
+`value` error in every strict mode (N13).
+
+```eigenscript
+exact is sum of [9007199254740993, 1]
+print of [exact, num_type of exact]
+mixed is sum of [9223372036854775807, 1, 0.5]
+print of [num_type of mixed, mixed == 9223372036854775808.0]
+print of [num_type of (sum of []), num_type of (sum of ([]))]
+print of (add of [[9007199254740993, 2], [1, 3]])
+try:
+    negative of (-9223372036854775807 - 1)
+catch e:
+    print of e.kind
+```
+```output
+[9007199254740994, "int"]
+["float", true]
+["int", "int"]
+[9007199254740994, 5]
+value
+```
 
 ## Standard Library
 

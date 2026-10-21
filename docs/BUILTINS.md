@@ -453,7 +453,8 @@ boxed `Value` per number, and the container the JIT and the AOT compile
 against. Every builtin in this section that accepts a flat numeric list accepts
 a buffer in the same position; a 1-D buffer reads as a 1-D tensor and a shaped
 buffer (`buffer of [r, c]`, `reshape of [buf, r, c]`) as its `r x c` 2-D
-tensor. The numbers are identical either way.
+tensor. Buffers store floats; integer list elements stay exact through
+`add`, `subtract`, `multiply`, `negative` and all-int `sum`.
 
 **Container of the result**: a builtin that returns a tensor returns a
 *buffer* when **every** tensor operand was a buffer, and a *list* otherwise
@@ -469,12 +470,12 @@ heterogeneous or nested data.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `add` | `add of [a, b]` | Element-wise addition |
-| `subtract` | `subtract of [a, b]` | Element-wise subtraction |
-| `multiply` | `multiply of [a, b]` | Element-wise multiplication |
+| `add` | `add of [a, b]` | Element-wise addition; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
+| `subtract` | `subtract of [a, b]` | Element-wise subtraction; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
+| `multiply` | `multiply of [a, b]` | Element-wise multiplication; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
 | `divide` | `divide of [a, b]` | Element-wise division; a zero denominator raises `divide: division by zero` by default (as the `/` operator does), while under `EIGS_STRICT=0` it returns 0; overflow saturates (#971). |
 | `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow saturates. A negative base with a fractional exponent raises a `value` error naming `pow` by default; under `EIGS_STRICT=0` its `NaN` collapses to `0` and sets `math_flags.invalid` (#971). |
-| `negative` | `negative of t` | Element-wise negation |
+| `negative` | `negative of t` | Element-wise negation; scalar and list ints remain exact ints, raising `value` at INT64_MIN. Float and buffer elements remain floats. |
 
 The arithmetic builtins listed above take shaped **buffers** wherever they take a flat
 numeric list (#1093/#973), through **one** implementation — the same
@@ -491,7 +492,8 @@ have (the one place the two containers still differ: buffers truncate flat, so
 `tests/test_autograd.eigs`); a non-numeric partner (a string, a dict) raises by
 default and answers `0` under `EIGS_STRICT=0`. Before #1093 only equal-count `add` had a buffer path and
 every other buffer case answered a silent `0`. Same `num_guard` kernels
-either way, so the numbers are byte-identical.
+for float inputs either way. Integer list arithmetic is exact; storing an int
+in a buffer first converts it to float and can round it.
 
 ### Functions
 
@@ -520,7 +522,7 @@ either way, so the numbers are byte-identical.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) |
-| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer) |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every strict mode (N13). An empty list returns int `0`. |
 
 ### Construction
 

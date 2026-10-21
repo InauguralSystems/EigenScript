@@ -247,7 +247,7 @@ gates (design §9.2).
   -> `["value", true]`, the message naming `sum`
   tag: a double sum, no raise
 - `A.tensor-scalar-overflow-raises` [R1.6b] `{try print of (multiply of [4611686018427387904, 2]) catch}`
-  -> `["value", true]`
+  -> `["value", true]`, the message naming `multiply`
   tag: a double
 - `A.leaf-mul-overflow` [R1.3] `define sq(x) as: return x * x / {try print of (sq of 3037000500) catch}`, printing `e.kind`
   -> `value` (the leaf bails; the generic path raises with the caller's line)

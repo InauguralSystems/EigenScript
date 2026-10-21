@@ -69,7 +69,6 @@ for spec in \
  'NG38 equality|x is raw == raw' \
  'NG39 distinct equality|zero is buffer of 1; x is raw == zero' \
  'NG42 buf_peak|x is buf_peak of [raw, 0, 1]' \
- 'NG50 nested sum|x is sum of ([raw])' \
  'NG50 nested mean|x is mean of ([raw])' \
  'NG50 nested norm|x is norm of ([raw])' \
  'NG52 scatter index|dst is buffer of 1; scatter_add of [dst, raw, 5]' \
@@ -82,6 +81,15 @@ for spec in \
 $op
 assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
 done
+# N13 / R1.6b: sum's final buffer reader refuses NaN in every strict mode.
+# Keep this in its own program, as for the neighboring flag witnesses.
+run "NG50 N13 nested sum refuses NaN" "$nan_setup
+caught is false
+try:
+    sum of ([raw])
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught, \"N13 sum refuses non-finite payload instead of substituting zero\"]"
 run "NG61 mixed materialization invalid" "$nan_setup
 x is add of [raw, [2]]
 assert of [x == [[2]] and (math_flags of null).invalid, \"mixed materialization observes invalid\"]"
