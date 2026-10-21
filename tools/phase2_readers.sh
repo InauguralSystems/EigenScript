@@ -3,18 +3,26 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VARIANT=${1:-release}
+FIXTURE=${2:-readers}
+LABEL=phase2-readers
+case "$FIXTURE" in
+    readers) ;;
+    q7_readers) LABEL=phase2-q7-readers ;;
+    *) echo "phase2-readers: FAIL unknown fixture $FIXTURE"; exit 2 ;;
+esac
+[ -f "$ROOT/tests/phase2/$FIXTURE.c" ] || { echo "$LABEL: FAIL missing tests/phase2/$FIXTURE.c"; exit 1; }
 case "$VARIANT" in release|asan) ;; *) echo "phase2-readers: FAIL unknown variant $VARIANT"; exit 2 ;; esac
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-readers.XXXXXX") || { echo 'phase2-readers: FAIL mktemp'; exit 2; }
 trap 'rm -rf "$TMP"' EXIT
-fail() { echo "phase2-readers: FAIL $*"; exit 1; }
-make -s -C "$ROOT" PHASE2_READERS_VARIANT="$VARIANT" phase2-readers-test > "$TMP/build" 2>&1
+fail() { echo "$LABEL: FAIL $*"; exit 1; }
+make -s -C "$ROOT" PHASE2_READERS_VARIANT="$VARIANT" PHASE2_READERS_FIXTURE="$FIXTURE" phase2-readers-test > "$TMP/build" 2>&1
 rc=$?
 if [ "$rc" -ne 0 ] || grep -q 'warning:' "$TMP/build"; then
     cat "$TMP/build"
-    rm -f "$ROOT/build/phase2/readers_$VARIANT"
+    rm -f "$ROOT/build/phase2/${FIXTURE}_$VARIANT"
     fail "build rc=$rc (all compiler warnings fail)"
 fi
-BIN="$ROOT/build/phase2/readers_$VARIANT"
+BIN="$ROOT/build/phase2/${FIXTURE}_$VARIANT"
 [ -x "$BIN" ] || fail "missing binary $BIN"
 if [ "$VARIANT" = asan ]; then
     ASAN_OPTIONS=detect_leaks=1 "$BIN" > "$TMP/out" 2> "$TMP/err"
@@ -26,6 +34,10 @@ fi
 cat "$TMP/out"
 if [ -s "$TMP/err" ]; then cat "$TMP/err"; fail 'reader fixture wrote stderr'; fi
 [ "$rc" -eq 0 ] || fail "reader fixture rc=$rc"
+if [ "$FIXTURE" = q7_readers ]; then
+    echo "$LABEL: PASS variant=$VARIANT"
+    exit 0
+fi
 [ "$(grep -c '^phase2-readers-test: PASS cases=[1-9][0-9]* forms=49 checks=[1-9][0-9]* failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete PASS'
 [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected fixture output'
 checks=$(sed -n 's/^phase2-readers-test: PASS .* checks=\([0-9][0-9]*\) failures=0$/\1/p' "$TMP/out")

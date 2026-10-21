@@ -2362,7 +2362,7 @@ failing on zero rows:
 | R1.6b | 9 | per-builtin table |
 | R1.6c | 1 | per-builtin table |
 | R1.6d | 2 | per-builtin table |
-| R1.6e | 0 | mechanical: per-builtin table; `gate.N5.q7-readers` |
+| R1.6e | 0 | mechanical: per-builtin table; `gate.N5.q7-readers` (compiled and executed through the no-SDL amalgamation here and at every later `--through`) |
 | R1.6f | 0 | mechanical: per-builtin table |
 | R1.6g | 5 | per-builtin table, including the new N9 rows |
 | R1.6z | 0 | mechanical: bridge-token deletion compile and final full table |

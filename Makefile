@@ -266,10 +266,14 @@ phase2-slot-test: build/phase2/slot_layer_$(PHASE2_SLOT_VARIANT)
 
 # #1758 R1.6a: final reader C fixture, through the no-SDL amalgamation.
 PHASE2_READERS_VARIANT ?= release
+PHASE2_READERS_FIXTURE ?= readers
 build/phase2/readers_%: tests/phase2/readers.c build/phase2/eigenscript_all.c tools/werror_flags.txt
 	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+# Q7 lands in R1.6e; an absent source is a build failure once selected.
+build/phase2/q7_readers_%: tests/phase2/q7_readers.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
 .PHONY: phase2-readers-test
-phase2-readers-test: build/phase2/readers_$(PHASE2_READERS_VARIANT)
+phase2-readers-test: build/phase2/$(PHASE2_READERS_FIXTURE)_$(PHASE2_READERS_VARIANT)
 	@echo "phase2 reader test built: $<"
 
 # Focused lifetime regression for sandbox descriptor interns (#964). Link the

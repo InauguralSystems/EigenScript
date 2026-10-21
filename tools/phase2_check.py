@@ -661,7 +661,12 @@ def every_mode(through, out):
 
 def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
     res = {}
-    for g in MECHANICAL[through]:
+    gates = list(MECHANICAL.get(through, ()))
+    # A landed gate stays live for every subsequent --through, including
+    # rounds with ordinary MAP rows and no other mechanical dispatch.
+    if ROUNDS.index(through) >= ROUNDS.index('R1.6e'):
+        gates.append('q7-readers')
+    for g in gates:
         if g == 'int-source':
             res[g] = int_source(os.path.join(ROOT, 'src'), out, through)
         elif g == 'slot-test':
@@ -686,6 +691,10 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
                                  r'^phase2-readers: ')
             res[g] = res[g] and len(re.findall(r'^phase2-readers: PASS variant=release checks=[1-9][0-9]*$',
                                                text, re.M)) == 1
+        elif g == 'q7-readers':
+            res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'q7_readers'], out, r'.*')
+            res[g] = res[g] and len(re.findall(
+                r'^phase2-q7-readers: PASS variant=release$', text, re.M)) == 1
         elif g == 'builtins-table':
             if not tag:
                 out('  builtins-table: needs the tag binary')
@@ -762,12 +771,12 @@ def main_check(args, out):
             map_rows, args.rows, args.controls, args.tag, args.branch, args.through, scratch, out)
     always_ok = every_mode(args.through, out)
     mech_ok = None
-    if args.through in MECHANICAL:
+    if args.through in MECHANICAL or ROUNDS.index(args.through) >= ROUNDS.index('R1.6e'):
         mech_ok = mechanical(args.through, args.baseline, args.branch, out, args.smi_trap, args.tag)
     if landed == 0:
-        if mech_ok is None:
-            out('  ZERO-ROWS: %s has no landed row and no mechanical gates' % args.through)
-        verdict = bool(mech_ok) and pop_ok and not bad and ctl_ok and always_ok
+        if args.through not in MECHANICAL:
+            out('  ZERO-ROWS: %s has no landed row and no round-specific mechanical gates' % args.through)
+        verdict = args.through in MECHANICAL and bool(mech_ok) and pop_ok and not bad and ctl_ok and always_ok
     else:
         verdict = rows_ok and pop_ok and not bad and ctl_ok and mech_ok is not False and always_ok
     out('phase2-check: %s' % ('PASS' if verdict else 'FAIL'))
