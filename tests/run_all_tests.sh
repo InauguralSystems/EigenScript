@@ -1266,6 +1266,9 @@ check "JS4 round-trip" "$JS3_RT" "[1,2,3]"
 
 JS4_KEY=$(echo "$JS_OUTPUT" | grep -A1 'JS4:' | tail -1)
 check "JS5 object decode key" "$JS4_KEY" "eigen"
+
+JS5_HAS=$(echo "$JS_OUTPUT" | grep 'JS5 presence checks passed')
+check "JS6 json_has presence semantics (#1652)" "$JS5_HAS" "JS5 presence checks passed"
 echo ""
 
 check_eigs_suite "reduction builtins dot/sum/norm (vs explicit loop + edge cases)" \

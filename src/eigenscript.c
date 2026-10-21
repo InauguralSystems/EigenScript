@@ -495,18 +495,12 @@ double compute_entropy(Value *v) {
  * aliasing temps tracks correctly. This is what fixed #262 — the value-path
  * observer model (state on the Value) was removed in Step E. */
 
-/* #1044: the window depth a slot classifies over. A per-binding override
- * (set_observer_window of ["x", n]) wins; otherwise the state default
- * (set_observer_window of n), read LIVE — like the thresholds, changing the
- * default changes every subsequent verdict, not only bindings first seen
- * after the call. The tape/step/DAP surfaces build slots without an env and
- * get the default through the same read. */
+/* The observer window has the fixed depth OBSERVER_WINDOW_N. Tape replay may
+ * restore a recorded state value; ordinary source programs have no window knob. */
 static inline int obs_win(const ObserverSlot *s) {
     if (s && s->win_override) return s->win_override;
-    /* g_obs_window is validated at the seam (builtin_set_observer_window
-     * clamps to [MIN, MAX]) and seeded at OBSERVER_WINDOW_N, so the hot
-     * path re-checks nothing: this read is one branch and two loads per
-     * observed assignment. */
+    /* The state is seeded at OBSERVER_WINDOW_N; tape replay may restore a
+     * recorded value. The hot path remains one branch and two loads. */
     return eigs_current ? eigs_current->state->obs_window : OBSERVER_WINDOW_N;
 }
 int observer_slot_window(const ObserverSlot *s) { return obs_win(s); }
@@ -682,7 +676,7 @@ static int observer_slot_raw_oscillating(const ObserverSlot *s) {
  * degrees (phugoid's spiral mode, 0.0124 rad = 0.71 deg). The step's own
  * local scale, max(|v|, |v_prev|), is the textbook relative step |Δx|/|x|
  * symmetrised so it is bounded (|rel| <= 2) and defined across a zero
- * crossing; `scale` (set_observer_scale, default 1e-3) is the magnitude
+ * crossing; `scale` (the runtime state floor, normally 1e-3) is the magnitude
  * below which a value counts as "at zero" and the tolerance turns absolute
  * — so float noise around an exact zero (Δv ~ 1e-16) reads 1e-13, not O(1).
  * Above the scale the verdict is unit-free: `converged` means every recent

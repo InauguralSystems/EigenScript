@@ -1671,7 +1671,8 @@ For a **numeric** binding the predicates classify the value's own
 trajectory (#861): the observed signal is the relative step
 `Δv / max(|v|, |v_prev|, scale)` (#1045) — the standard mixed-tolerance
 stopping criterion `|Δx| ≤ rtol·|x|` with the settle deadband as `rtol`
-and `dh_zero · scale` as the absolute floor (`scale` is
+and `dh_zero · scale` as the absolute floor. The runtime computes `scale`
+as the floor in `max(|v|, |v_prev|, scale)`; above that floor, the
 limit's magnitude and the **unit** the value is stored in do not matter.
 A loop converging to `5`, `5000` or `0.005` certifies identically, and a
 bank angle reads the same in radians and degrees. Non-numeric bindings (strings,

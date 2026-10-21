@@ -100,8 +100,8 @@ gave the same computation targeting 5000, 5 and 0.005 three different
 verdicts. The value channel scores 25/27; the two misses are the
 irreducible tolerance floor, not defects (see the honesty bound below).
 
-**The numeric definitions** (window `N` relative steps — `N = 10` by
-window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
+**The numeric definitions** (a fixed window of `N = 10` relative steps — see
+[The window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
 steps `Δv` kept alongside — #422):
 
 | band | fires when |
@@ -121,7 +121,8 @@ diverging → improving → converged → equilibrium → stable → moving`.
 
 **The relative step is scale-free (#1045).** `rel` divides the raw step
 by the step's own local scale, `max(|v|, |v_prev|)`, floored at the
-`0.001`). Above the scale a verdict is **unit-free**: one physical
+runtime state's characteristic scale (`0.001` in a normal run). Above the
+scale a verdict is **unit-free**: one physical
 trajectory stored in radians, degrees or milliradians reads the same
 (phugoid's spiral mode — bank angle `0.0124 rad = 0.71 deg = 12.4 mrad`,
 halving every 14.9 s, replayed at 1 Hz — reads `moving` in all three;
@@ -134,10 +135,8 @@ criterion, `converged` is `|Δx| ≤ rtol·|x|` with `rtol = dh_zero` and an
 absolute floor `atol = dh_zero · scale`. The previous step,
 `Δv/(1+|v|)`, was the entropy formula's normalisation borrowed as a step:
 below `|v| ~ 1` it was just `Δv`, an absolute deadband, and the unit the
-consumer stored the value in decided the verdict. The scale is the one
-number a unit choice still touches — choose it in the unit the binding
-is stored in (a bank angle kept in radians with milliradian relevance
-old absolute shape for values under 1). Why the local scale and not the
+consumer stored the value in decided the verdict. The scale is the one number a unit choice still touches; the runtime uses it
+as the fixed absolute floor. Why the local scale and not the
 window's running maximum: for a monotone decay that maximum is the
 *oldest* sample, so `rel = (1−r)·r^(N−1)` and any ratio under ~0.5 would
 certify `converged` at the first full window no matter how far from its
@@ -241,100 +240,39 @@ A fourth number, the value channel's characteristic scale (#1045):
 scale    = 0.001   |v| below this counts as "at zero": rel = Δv / max(|v|, |v_prev|, scale)
 ```
 
-reads it). See "The relative step is scale-free" above for what it means.
+See "The relative step is scale-free" above for what it means.
 
-Two derived window constants (functions of the window depth `N`, 10 by
-default):
+Two derived window constants (for the fixed window depth `N = 10`):
 
 ```
 VOTE  = 0.6                min fraction of genuine same-direction steps for improving/diverging
-FLIPS = ceil(N / 3)  = 4   min sign-flips in the window for oscillating (17 at N = 50)
+FLIPS = ceil(N / 3)  = 4   min sign-flips in the window for oscillating
 ```
 
 ## The window (#1044)
 
-Every predicate classifies over the last `N` **samples** — observed
-assignments, not seconds. The depth is configurable:
+Every predicate classifies over the last `N = 10` **samples** — observed
+assignments, not seconds. The depth is fixed by `OBSERVER_WINDOW_N`; a window
+must be full before a quiet verdict such as `converged` can fire.
 
-```eigenscript fragment u=1
+```eigenscript fragment
+window is 10
 ```
 
-Both forms take effect **live**, like the thresholds: a binding already
-carrying a trajectory classifies over the new depth at its next verdict
-(its ring grows on the next sample, keeping what it holds; a smaller
-depth reads fewer samples). The per-binding form resolves the name from
-the call site the way `report of x` does; a string-literal operand also
-marks a function local interrogated, so the knob reaches plain locals. An
-override lives on the **binding**, exactly like the trajectory it governs:
-a global keeps it for the run, a function local gets it per call (set it
-where the local is initialised). A `trajectory of x` snapshot carries its
-depth (`t.window`), so `classify` of it agrees with the live verdict. An
-unbound name, a depth outside `4..64` or a non-integer raise.
+**Time versus samples.** A mode slower than about ten samples of the consumer's
+cadence cannot fold inside the window. Choose an observation cadence that puts
+at least one period of the slowest mode inside those ten samples (`10 ≥ T / Δt`).
+A mode much faster than the cadence can alias too, so sample fast enough to
+preserve its reversals. The ring stores ten doubles per channel per binding
+(the value channel keeps two), and folding/variance tests are `O(10)` per
+verdict asked, not per assignment.
 
-**Time versus samples.** A mode slower than about `N` samples of the
-consumer's cadence cannot fold inside the window, and the failure is not
-insensitivity — the verdict is confidently wrong. The 747 phugoid
-(`T = 46.9 s`, physics truth `oscillating` throughout) replayed through
-a binding at 1 Hz with the default `N = 10` reads `diverging` on its
-rising quarter-cycles and `stable`/`improving` elsewhere; the same signal
-decimated to 5 s (9.4 samples per cycle) reads `oscillating` at every
-probe. The folding rule (≥ 2 reversals, net travel ≤ 0.3× path) is the
-right test; it just never saw a fold. Widened to cover a period —
-`oscillating` at every full-window sample and `diverging` never appears
-(`tests/test_observer_window_scale.eigs`; phugoid's
-`observer_check.eigs` rows `O.ph1s.*`). The rule of thumb: **the
-window must span at least one period of the slowest mode you expect to
-see, in samples of the cadence you observe at** — `N ≥ T / Δt` — and the
-window must be *full* before a slow mode's verdict is trustworthy (the
-motion bands are early-warning and fire from 4 samples: during the
-first `N` samples a rising quarter-cycle still reads `diverging`). The
-opposite mismatch exists too: a mode *faster* than a few samples
-(phugoid's roll mode, `t_half = 0.56 s` at 0.02 s cadence) needs the
-window narrower or the cadence coarser, or its contraction test never
-spans enough of the mode. Choose the depth in samples from the physics;
-a frame-locked consumer with several timescales gives each binding its
-own.
+## Configuration recorded on older tapes
 
-The window-widening cost: a ring of `N` doubles per channel per binding
-(the value channel keeps two), allocated at the depth in force on the
-first sample — the default depth allocates exactly what it did before
-#1044 — and the folding/variance tests are `O(N)` per verdict asked, not
-per assignment.
-
-## Configuration and the tape
-
-Every knob on this page — the three thresholds, the window depth in both
-its forms, and the scale — **rides the trace tape**, so a recorded run
-replayed or stepped classifies exactly as the live run did. It is carried
-as an event at the point the knob takes effect (`O cfg` / `O win` records,
-tape format v3), which is what makes a **mid-run** change reconstruct
-`converged` after reads exactly that at both stops under `--step` and in
-the DAP server. `EIGS_REPLAY` re-executes the program, so its knob calls
-run again by themselves.
-
-The reader folds the configuration up to the **stop position**, not up to the
-binding's last assignment, because the thresholds (and the window's
-full-window certifications) are consumed when a verdict is *reported*: a knob
-moved after the last assignment and before the stop changes the live verdict
-and therefore changes the stepped one too. The stepper's `p` view and the DAP
-binding cell answer "what would `report of x` say here"; the `t` trajectory
-rows stay per-moment, and name the settled label on a line of their own when
-it differs.
-
-A per-binding `O win` record names one **binding**, not a name: the reader
-resolves it along the recorded call chain and applies it to that history by
-identity, so two invocations of one function — or a function-local and a
-module-level global sharing a name — keep their own window depths.
-
-Two caveats remain, both narrow, both stated rather than papered over. (1) A
-binding the recorded call chain cannot reach — a closure over a captured
-name, whose environment parent is its definition site — resolves to nothing;
-the override is then applied only if that name is unique on the whole tape,
-and otherwise dropped, so the stepped verdict is the default-window one and
-never another binding's. (2) A tape recorded by a pre-v3 binary cannot carry
-any of this, so it is refused outright (exit 3), never classified at the
-defaults and presented as the recorded run. Both are written up in
-[TRACE.md](TRACE.md#observer-configuration-1044-1045).
+Tape formats retain observer-configuration events so recordings made when the
+configuration builtins existed still replay deterministically. Ordinary source
+programs cannot emit those events now; live runs use the fixed thresholds,
+ten-sample window, and characteristic scale above.
 
 ## Partial-window rule (applies to all six)
 
@@ -430,6 +368,7 @@ windowed-entropy formulas in the next section serve non-numeric bindings
 and the explicit `classify of [t, "entropy"]` channel. `report_value of
 x` (#294) is the value-channel classifier by name — on a numeric binding
 it and the predicate words are one classifier and cannot disagree.
+
 
 ## The six predicates — the ENTROPY route
 

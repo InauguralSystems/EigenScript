@@ -44,6 +44,31 @@ else
     fail "compile failed"; head -5 "$WORK/cc.err"
 fi
 
+# Embedders also use debug and lightly optimized builds (#1775). A successful
+# compiler exit alone does not reject warnings at either optimization level.
+# gcc only, for now: under clang, -Wall -Wextra reports about 200 warnings
+# across the tree, mostly -Wstring-plus-int (#1872). Ask the preprocessor which
+# compiler this is, since Apple's `gcc` is clang too.
+WARN_OPTS="0 1"
+if [ "$(printf '__clang__\n' | "$CC" -E -P -x c - 2>/dev/null | tr -d '[:space:]')" = 1 ]; then
+    WARN_OPTS=""
+    echo "  SKIP: -O0/-O1 warning check: $CC is clang (#1872)"
+fi
+for opt in $WARN_OPTS; do
+    if ( cd "$WORK" && LC_ALL=C "$CC" -Wall -Wextra $WERROR_FLAGS -O"$opt" \
+        -c eigenscript_all.c -o "amalgamation-O$opt.o" ) >"$WORK/O$opt.err" 2>&1; then
+        if grep -q 'warning:' "$WORK/O$opt.err"; then
+            fail "amalgamation emits warnings at -O$opt"
+            cat "$WORK/O$opt.err"
+        else
+            pass "amalgamation compiles warning-free at -O$opt"
+        fi
+    else
+        fail "amalgamation compile failed at -O$opt"
+        cat "$WORK/O$opt.err"
+    fi
+done
+
 OUT=$("$WORK/host" 2>&1 || true)
 if echo "$OUT" | grep -qx "42"; then pass "embedded eval runs (6 * 7 = 42)"; else fail "eval output wrong: $OUT"; fi
 if echo "$OUT" | grep -q "host ok"; then pass "host completes cleanly"; else fail "host did not complete"; fi
