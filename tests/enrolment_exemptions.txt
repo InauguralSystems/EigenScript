@@ -11,6 +11,7 @@ tools/gen_lsp_builtin_index.sh | a generator, not a gate: make regenerates src/l
 tools/gen_lsp_stdlib_index.sh | a generator, not a gate: make writes src/lsp_stdlib_index.h for `make lsp`, which CI runs
 tools/mutants.sh | the manual mutation trains (its header); its --selftest is a tools/selftests.txt row
 tools/phase2_corpus_diff.sh | the corpus differential of Phase 2's mechanical rounds (R1.1, R1.2, R2.1): tools/phase2_check.py runs it under such a --through and in its --selftest, and no landed round selects one
+tools/phase2_corpus_exclude.py | shared helper of the local-only phase2_corpus_diff.sh gate; that gate invokes it with both corpus inventories and validates declarations
 tools/phase2_cost.sh | each Phase 2 round's builder runs its BASE CAND gate (design section 8); CI's bench job reads its declarations through bench/check_regression.sh (--declared jit), which this scan does not read
 tools/phase2_plants.sh | self-test only, Phase 2's planted faults: its tools/selftests.txt row runs when the checks it names change, and nightly
 tools/release_skill_check.sh | checks the release runbook (.claude/skills/release/SKILL.md) by hand; only its --selftest runs, as a tools/selftests.txt row
