@@ -12,7 +12,7 @@ catch e:
 pt is net_port of l
 c is net_dial of ["127.0.0.1", pt]
 try:
-    print of ["fraction-answer", net_accept of [l + 0.5, 2000]]
+    print of ["fraction-answer", (net_accept of [l + 0.5, 2000]) != null]
 catch e:
     print of ["handle-fraction", e.kind]
 a is net_accept of [l + 0.0, 2000]

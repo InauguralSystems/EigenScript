@@ -1,7 +1,8 @@
 # R1.6 per-builtin behaviour table: the pre-registered bar (#1758, design §9.4)
 
 Written before any R1.6 migration. Every `.branch` is derived from the design
-(`docs/design/phase2-numbers.md` §6, §2.6, §9.4, §11 at `4ac31e67`), from the
+(`docs/design/phase2-numbers.md` §6, §2.6, §9.4, §11 at `4ac31e67`; for
+`read_text`, §6 and the code at `1fd4422c`, ruling R1.6a-D1), from the
 #1758 decisions (comment 6304880619 for N10), from the orchestrator's rulings
 (`RULINGS.md`) and from Lua 5.4.9. No `.branch` was copied from a binary. The
 binaries only produced `.pre` (R1.5 tip `4ac31e67`,
@@ -20,13 +21,25 @@ B1-B6 (witnesses), and C1-C10 plus the agreed answers (semantics). Each changed
 The 25 non-release rows' `.pre` and `.tag` read `PENDING-PROFILE <profile>`;
 R1.6a records them on matched builds.
 
+**R1.6a rulings, 2026-10-21.** R1.6a-D1: the population is 232 rows, taken at
+`1fd4422c` (the R1.6a start, sync #4, which carries main's #1841 and adds
+`read_text`). §6 and the inventory at `1fd4422c` differ from `4ac31e67` only by
+that row (field by field; the inventory's other changes are line moves and one
+accessor list). R1.6a-D2: no probe prints a value the OS or the environment
+chooses; `net_port`'s port line and its siblings print a predicate instead.
+
 ## Files
-- `builtins.tsv`, 231 rows: `builtin file class loss q7 round closed_in
+- `builtins.tsv`, 232 rows: `builtin file class loss q7 round closed_in
   profile hook stdin changes_vs_pre changes_vs_tag`. `make_table.py` writes
   it. Rows come from the §6 table, checked both ways against the inventory's
-  `## Builtins` list, field by field. `file` is the `src/*.c` file that
-  defines the inventory's C function. `round` follows the plan's rule, and the
-  counts are checked against b 45, c 75, d 53, e 38, f 20. The other columns:
+  `## Builtins` list, field by field. Both files and `src/` are extracted with
+  `git archive` from `EIGS_REPO` at `EIGS_REV` (default
+  `/home/jon/src/InauguralSystems/EigenScriptEcosystem/EigenScript` at
+  `1fd4422c`), so the population is pinned to the ruled commit, not to a
+  checkout's state; `EIGS_TREE` overrides it for the plants. `file` is the
+  `src/*.c` file that defines the inventory's C function. `round` follows the
+  plan's rule, and the counts are checked against b 45, c 76, d 53, e 38,
+  f 20. The other columns:
   - `closed_in` (ruling A2) and `profile` (A3) come from `rowmeta.tsv`;
   - `hook` (A4) and `stdin` (A5) list the hooks and the stdin fixtures of the
     row's cases, in case order. `-` means none, and stdin `-` is `/dev/null`;
@@ -38,7 +51,7 @@ R1.6a records them on matched builds.
     original one. It is recorded as an observation and never checked, because
     every probe calls `num_type` and the tag has no `num_type`.
 - `rowmeta.tsv`: `builtin closed_in profile`, one line per table row.
-- `cases.tsv`: `case builtin hook stdin`, 233 cases. A row's primary case is
+- `cases.tsv`: `case builtin hook stdin`, 234 cases. A row's primary case is
   `builtins/<b>`. A second case is `builtins/<b>.<label>`: `gfx_poll.empty`
   (B3) and `proc_read_buf.hi` (A5).
 - `builtins/<case>.eigs` is the probe. `<case>.branch` is the pre-registered
@@ -51,6 +64,9 @@ R1.6a records them on matched builds.
 - `builtins/_profiles/<profile>.eigs`: the profile witnesses (A3).
 - `run_probes.sh [case...]` records `.pre` and `.tag`, never `.branch`.
 - `make_table.py [--final]` writes `builtins.tsv` and runs every table check.
+- `determinism.sh [case...]` records the cases three times (twice normally,
+  then pinned to core 0 at nice 19) and fails on any `.pre` or `.tag` that
+  differs between the runs (R1.6a-D2's class).
 - `plants.sh` plants one fault per check in a scratch copy and requires the
   check's named FAIL line.
 - `oracle/<b>.lua` and `oracle/<b>.lua.out`: the Lua 5.4.9 expressions and
@@ -83,7 +99,10 @@ stdin fixture, shim) on the branch build and compares stdout plus `rc=` with
   A real clock prints only its kind and an ordering; `monotonic_ns` reads the
   injected clock (B2). Only loopback is used. No probe may block on any
   binary: a channel read has its values queued first, and a timeout (rc 124)
-  is a runner FAIL.
+  is a runner FAIL. No line prints a value the OS or the environment chooses
+  (a port, a pid, a socket handle, a time, a path); such a line prints a
+  predicate over it instead (R1.6a-D2), and `determinism.sh` fails when one
+  slips through.
 - Environment (`run_probes.sh`): `env -i` plus the suite's headless conditions
   for gfx and audio (`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`, as
   `tests/suite_program_env.txt` gives them to `test_audio.eigs` and
@@ -116,7 +135,7 @@ a binary built with the profile, derived from the design:
 | db | `make server-db`, plus `DATABASE_URL` naming a live PostgreSQL | `db_execute`, `db_query_json`, `db_query_value` (b) |
 | zlib | `make zlib` | `inflate` (d) |
 
-Profile counts: release 206, server 21, db 3, zlib 1.
+Profile counts: release 207, server 21, db 3, zlib 1.
 
 R1.6a records these rows on matched builds: the same profile built at
 `4ac31e67` and at v0.46.0, passed as `PRE_BIN_<P>` and `TAG_BIN_<P>` (`P` is
@@ -315,7 +334,7 @@ agreed).
   ints bind as exact digits (R1.2a), and int columns decode as ints (R1.6).
   See Q-DB253.
 
-## Per-row derivation, round c (75 rows; R1.6c)
+## Per-row derivation, round c (76 rows; R1.6c; `read_text` joined by R1.6a-D1)
 - Float-producing (`acos asin atan atan2 cos sin tan pi random clock_unix
   monotonic_ms get_observer_thresholds dot stream_write`): ints convert and the
   result is a float (Lua `math.*`). Clocks print only their kind and an
@@ -387,6 +406,35 @@ agreed).
 - `stream_open`: the fraction raises `value` by §9.4's class check; today it
   raises `limit`. An integral count outside 1..10,000,000 keeps `limit`
   (Q-STREAMOPEN, agreed): the count 0.
+- `read_text` (R1.6a-D1; round c, `builtins_host.c`, release profile, no hook,
+  no `closed_in`): §6 at `1fd4422c` says "string result; numeric over-cap size
+  is internal tape metadata (#1668), with no numeric argument or successful
+  numeric result", so R1.6 changes nothing and the `.branch` is the
+  `1fd4422c` code's answer. A missing file raises `io` (`file_io_error`; the
+  message names the path, so only the kind prints). A file of 10,485,761
+  bytes, written under `EIGS_PROBE_TMP` with `write_text`, raises `io` with
+  `read_text: '<path>' is %ld bytes, over the %d-byte cap`, a format the code
+  fixes, so the probe pins the digits after the path: `" is 10485761 bytes,
+  over the 10485760-byte cap"`, and checks the prefix with `starts_with`. A
+  2-byte file reads back as the string `"hi"`. Over-cap REPLAY is not
+  exercised: it is the open bug #1890, and a probe must not pin a known
+  defect.
+  - `.pre` and `.tag` are observations on binaries that predate #1841: there
+    `read_text` answers `""` for the missing file and for the over-cap file
+    (`["missing-answer", ""]`, `["over-cap-answer", 0]`), so this row's
+    `changes_vs_pre` reads `yes` today. Class `other` is not guarded. R1.6a
+    re-records `.pre` on `1fd4422c` as this row's in-scope baseline (#1668
+    changed it upstream), and then `changes_vs_pre` must read `no`.
+- `exec_capture`'s `1e300` line prints only `type of` the answer on `pre` and
+  the tag (R1.6a-D2's class, found by the determinism re-run). There
+  `(time_t)1e300` is undefined, and the deadline arithmetic
+  (`builtin_exec_capture`, builtins_host.c) overflows. While the clock stays
+  in the second the deadline was set in, the remaining time reads as huge;
+  once a second boundary passes before the read loop sees EOF, it reads as
+  already past, and the child is killed (`[-2, "hi\n"]` instead of
+  `[0, "hi\n"]`). The pinned nice-19 recording showed `-2` once, and 172
+  further runs of the old line did not. The branch raises `value` before the call, so
+  the `.branch` is unchanged.
 - Structural facts R1.6 does not touch (dict key order such as `{"ok": true,
   "result": 7}`, handle field names, error kinds of unrelated failures) were
   read from the source or from exploratory runs on `pre`. No numeric
@@ -486,6 +534,14 @@ agreed).
   `g_has_error` at line 363, before the byte conversion at line 364 and not
   after it, so the R1.6f byte reader's raise must also stop the send, and the
   probe pins that.
+- R1.6a-D2: on `pre` and the tag, a fractional handle or port truncates to a
+  live socket, so the call answers. Those answers are a port (`net_port`, the
+  OS's ephemeral choice: 39805 and 40863 on R1.6a's two matched builds) or a
+  socket handle (`net_listen`, `net_dial`, `net_accept`: a handle-table slot
+  plus a generation, which depend on the build's allocation order). Each such
+  line prints a predicate now: `(net_port of (l + 0.5)) == pt`, `(... ) > 0`
+  for a handle, and `(net_accept of ...) != null`. On the branch each call
+  raises `value` first, so no `.branch` changes.
 
 ## Per-row derivation, round e (38 rows; R1.6e)
 Every gfx probe opens a 64x48 window under `SDL_VIDEODRIVER=dummy` (the suite's
@@ -701,9 +757,15 @@ row fails visibly.
   wrong, the runner refuses the build (exit 2), so the failure is loud.
 - Build the B6 capture fixture to the spec in "B6 capture fixture", and export
   `R16_HTTP_CAPTURE_URL`.
-- Amend §9.4 with A1's measurement: `changes_vs_tag` is yes on 202 of the 206
+- Amend §9.4 with A1's measurement: `changes_vs_tag` is yes on 203 of the 207
   recorded rows (`make_table.py`'s `vs_tag` counts), because every probe calls
   `num_type` and the tag has none.
+- Re-record `read_text`'s `.pre` (and `.tag`) on `1fd4422c` as its in-scope
+  baseline (R1.6a-D1; #1668 changed it upstream of `4ac31e67`); its
+  `changes_vs_pre` must then read `no`.
+- Run `determinism.sh` on the matched builds too (with `PRE_BIN_<P>` and
+  `TAG_BIN_<P>`), since the profile rows' records have never been recorded
+  twice (R1.6a-D2's class).
 - Add the gate that runs each case on the branch build (same environment,
   stdin fixture and shim) and compares stdout plus `rc=` with `.branch`.
 - R1.6f's commit message states that the store `3.0` round trip is
@@ -720,7 +782,7 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   https://github.com/InauguralSystems/EigenScript/issues/1886
 - §6's counts prose is stale at the branch tip: "230 numeric", "51 other",
   "42 are LOSS" and "the six `bit_*`", against the table's and the
-  inventory's 231, 52 and 36. Filed:
+  inventory's 231, 52 and 36 (232 and 53 at `1fd4422c`). Filed:
   https://github.com/InauguralSystems/EigenScript/issues/1887
 - `nearest_in_range_all` returns, for EACH entity, its nearest active entity
   (itself included, at distance 0). BUILTINS.md says it "returns ALL active
@@ -817,13 +879,36 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
     -9223372036854775808, "int"]`; `min` and `max` add `[3, "int", 3,
     "float"]` (the ties `[3, 3.0]` and `[3.0, 3]`); `hex` adds `["negative",
     "value"]`; `stream_open` adds `["count-zero", "limit"]`.
+- **R1.6a rulings, 2026-10-21.** Files changed in this round, by mtime after
+  the previous round's last edit: the new case `read_text` (`.eigs`,
+  `.branch`) and five probes (`net_port`, `net_listen`, `net_dial`,
+  `net_accept`, `exec_capture`). No existing `.branch` changed.
+  - R1.6a-D1 `read_text` (new row and case): `["missing", "io"]`,
+    `["written", 10485761]`, `["over-cap", "io", true]`, `["over-cap-tail", "
+    is 10485761 bytes, over the 10485760-byte cap"]`, `["hi", "str"]`, derived
+    from §6 and `builtin_read_text` at `1fd4422c`. The `.branch` was written 37
+    s before the probe's first run. One exploratory call ran on `pre` before
+    it (`read_text` of a missing path answers `""` there, as the ruling says);
+    the expectation comes from the `1fd4422c` code, which differs from that.
+  - R1.6a-D2 `net_port`: `["fraction-answer", net_port of (l + 0.5)]` became
+    `["fraction-answer", (net_port of (l + 0.5)) == pt]`. The `.branch` line
+    on that path is the raise, `["handle-fraction", "value"]`, so its shape did
+    not change and the `.branch` is unchanged.
+  - R1.6a-D2, same class: `net_listen` (the 0.5 and 65536 lines), `net_dial`
+    (the `pt + 0.5` and 65536 lines) and `net_accept` (the `l + 0.5` line)
+    printed socket handles on `pre`; they print `> 0` or `!= null` now.
+    `exec_capture`'s `1e300` line printed a timing-raced exit code on `pre`;
+    it prints `type of` the answer now. No `.branch` line changed.
 
 ## Instrument notes
-- Check machinery, in lines (first version -> now): `run_probes.sh` 46 -> 94,
-  `make_table.py` 98 -> 212, `builtins/_hooks/observation_hooks.c` new, 159
-  (the critic's was 44), `builtins/_profiles/*.eigs` new, 37, and
-  `plants.sh` new, 132. Total 144 -> 634. `rowmeta.tsv` and `cases.tsv` are
-  declarations (231 and 233 lines plus headers).
+- Check machinery, in lines (first version -> fix round -> R1.6a rulings):
+  `run_probes.sh` 46 -> 94 -> 94, `make_table.py` 98 -> 212 -> 229 (the
+  pinned `git archive` source), `builtins/_hooks/observation_hooks.c` new,
+  159 (the critic's was 44), `builtins/_profiles/*.eigs` new, 37, `plants.sh`
+  new, 132 -> 140, and `determinism.sh` new in this round, 28 (it replaces a
+  scratch script, so R1.6a can run the same check on its matched builds).
+  Total 144 -> 634 -> 687. `rowmeta.tsv` and `cases.tsv` are declarations
+  (232 and 234 lines plus headers).
 - `run_probes.sh`:
   - The first version wrote stdout through a relative path after its `cd`,
     so every `.pre` and `.tag` held only `rc=0`. It writes an absolute path,
@@ -849,7 +934,8 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   runner on `abs audio_stream_push gfx_poll.empty proc_read_buf.hi inflate`.
   A mutation that does not apply counts as a failure: the first run caught
   two (an unanchored `hex` also matched `random_hex`, and `len` matched
-  `buf_len`). Result: `plants examined=35 table=35 red=35 survived=0`, exit 0.
+  `buf_len`). Result after the R1.6a rulings: `plants examined=37 table=37
+  red=37 survived=0`, exit 0 (35 in the fix round, plus P28 and T1).
   - table checks: P1 a §6 row deleted; P2 a §6 class edited; P3 a stale §6
     row; P4 an empty table (`examined=0 table=0`); P5 a second definition of
     `builtin_abs`; P6 an inventory class edited; P7 a q7 column dropped; P8 a
@@ -863,7 +949,11 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
     P19 a `rowmeta.tsv` row deleted; P20 an unknown profile; P21 a case hook
     that the shim lacks; P22 a shim hook renamed; P23 the stdin fixture
     removed; P24 a stray file in `builtins/`; P25 `closed_in` on an unguarded
-    row; P26 a profile witness removed; P27 a primary case removed.
+    row; P26 a profile witness removed; P27 a primary case removed; P28 the
+    pre-#1841 revision (`EIGS_REV=4ac31e67`), which lacks `read_text`: `FAIL:
+    in rowmeta.tsv, not in section 6: read_text`.
+  - determinism check: T1 a printed time (`monotonic_ns`) appended to the
+    `len` probe: `UNSTABLE len.pre` (R1.6a-D2's class).
   - runner and witness checks: R1 the relative output path; R2 a hook case
     run WITHOUT the shim (the orchestrator's plant): the runner prints
     `FAIL: audio_stream_push.pre ran without its hook pcm` and exits 2; R3 the
@@ -875,9 +965,9 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
     0 0 0` and `audio_play.pre` records `["mixed", false]`, both unequal to
     the recorded `.pre`. (The critic's F1: an all-silence mutation passed the
     first `audio_stream_push` row.)
-- Determinism: all 233 cases were recorded three times on both binaries:
-  twice normally and once pinned to core 0 at `nice 19` (`taskset -c 0 nice
-  -n 19`, load average about 2.3 from other jobs). `compared=466
+- Determinism, fix round: all 233 cases were recorded three times on both
+  binaries, twice normally and once pinned to core 0 at `nice 19` (`taskset
+  -c 0 nice -n 19`, load average about 2.3 from other jobs). `compared=466
   unstable=0`. The 50 pending records are among the 466 and are trivially
   stable. A fourth recording, after the last runner edit (an EXIT trap that
   removes the compiled shim), equals the pinned run: `run4-vs-run3
@@ -885,32 +975,41 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
 - `make_table.py --final` on today's records exits 1 with 50 FAIL lines, one
   per pending record (`FAIL: db_execute: .pre is PENDING-PROFILE db
   (--final)`, ...), as it must until R1.6a records the matched builds.
+- R1.6a rulings round: `determinism.sh` over the 234 cases first gave
+  `compared=468 records=468 unstable=1` (`UNSTABLE exec_capture.pre`; see
+  round c), then `unstable=0` after the fix. The earlier rounds' four
+  recordings had not shown it.
 
 ## COVERAGE
-Population, both directions:
-- §6's table equals the inventory's `## Builtins` list: 231 = 231, no name
+Population, both directions, at `1fd4422c`:
+- §6's table equals the inventory's `## Builtins` list: 232 = 232, no name
   missing either way, and class/loss/q7 equal on every row.
-- `rowmeta.tsv` equals the table (231 = 231), and each table row has its
+- `rowmeta.tsv` equals the table (232 = 232), and each table row has its
   primary case in `cases.tsv`.
-- The probe files equal `cases.tsv`: `.eigs .branch .pre .tag` are 233 each,
+- The probe files equal `cases.tsv`: `.eigs .branch .pre .tag` are 234 each,
   none missing and none extra, and `builtins/` holds nothing else except the
   three fixture directories.
 - The shim's hooks equal the cases' hooks (5 = 5: `pcm mix mixvol clock
   events`); `_stdin` equals the cases' stdin (1 = 1); `_profiles` equals the
   non-release profiles (3 = 3).
-- `make_table.py` prints `examined=231 section6=231 inventory=231
-  rowmeta=231 cases=233` and exits 0.
+- `make_table.py` prints `source=/home/jon/src/InauguralSystems/EigenScriptEcosystem/EigenScript@1fd4422c`
+  and `examined=232 section6=232 inventory=232 rowmeta=232 cases=234`, and
+  exits 0.
 - The Lua oracle set equals the rows whose note names a Lua counterpart, plus
-  `num`: 36 = 36. `min`, `max` and `num` gained the tie and INT64_MIN cases.
+  `num`: 36 = 36 (`read_text`'s note names none). `min`, `max` and `num`
+  gained the tie and INT64_MIN cases.
 
-Columns: `closed_in` on 17 rows; profile release 206, server 21, db 3, zlib
+Columns: `closed_in` on 17 rows; profile release 207, server 21, db 3, zlib
 1; hooks on 7 cases (7 rows); one stdin case.
 
 | round | rows | done | changes_vs_pre yes / no / pending-profile | changes_vs_tag yes / no / pending-profile |
 |---|---|---|---|---|
 | b | 45 | 45 | 36 / 5 / 4 | 41 / 0 / 4 |
-| c | 75 | 75 | 39 / 36 / 0 | 71 / 4 / 0 |
+| c | 76 | 76 | 40 / 36 / 0 | 72 / 4 / 0 |
 | d | 53 | 53 | 27 / 20 / 6 | 47 / 0 / 6 |
 | e | 38 | 38 | 32 / 6 / 0 | 38 / 0 / 0 |
 | f | 20 | 20 | 5 / 0 / 15 | 5 / 0 / 15 |
-| total | 231 | 231 | 139 / 67 / 25 | 202 / 4 / 25 |
+| total | 232 | 232 | 140 / 67 / 25 | 203 / 4 / 25 |
+
+`read_text`'s `yes` in round c is against a `.pre` that predates #1841; see
+its derivation.

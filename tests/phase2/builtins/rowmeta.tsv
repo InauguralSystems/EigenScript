@@ -160,6 +160,7 @@ random_normal	-	release
 range	-	release
 read_bytes	-	release
 read_bytes_buf	-	release
+read_text	-	release
 record_history	-	release
 recv	-	release
 recv_timeout	-	release

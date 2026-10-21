@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# plants.sh: plant one fault per check in a scratch copy of the bar (and of the
-# tree's docs/design and src), run the check, and require its named FAIL line.
+# plants.sh: plant one fault per check in a scratch copy of the bar (and of
+# docs/design and src at EIGS_REV, extracted with git archive), run the check,
+# and require its named FAIL line.
 # Prints RED or SURVIVED per plant; exit 1 if any plant survives, a mutation
 # does not apply, or a baseline is not clean. Run it on Xvfb (DISPLAY=:99).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-TREE=${EIGS_TREE:-/home/jon/src/wt/r15-critic}
-PRE=${PRE_BIN:-$TREE/build/release/eigenscript}
+REPO=${EIGS_REPO:-/home/jon/src/InauguralSystems/EigenScriptEcosystem/EigenScript}
+REV=${EIGS_REV:-1fd4422c}
+PRE=${PRE_BIN:-/home/jon/src/wt/r15-critic/build/release/eigenscript}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/r16plants.XXXXXX") || exit 2
-mkdir -p "$WORK/bar0" "$WORK/tree0/docs/design" || exit 2
-cp -r "$HERE/." "$WORK/bar0/" && cp "$TREE"/docs/design/phase2-numbers.md "$TREE"/docs/design/phase2-inventory.txt \
-    "$WORK/tree0/docs/design/" && cp -r "$TREE/src" "$WORK/tree0/src" || exit 2
+mkdir -p "$WORK/bar0" "$WORK/tree0" || exit 2
+cp -r "$HERE/." "$WORK/bar0/" || exit 2
+git -C "$REPO" archive -o "$WORK/tree.tar" "$REV" docs/design src && tar -x -C "$WORK/tree0" -f "$WORK/tree.tar" \
+    || { echo "BROKEN: git archive $REV of $REPO"; exit 1; }
 B="$WORK/bar"; T="$WORK/tree"; D="$T/docs/design"
 sub() {  # sub <file> <old> <new>: replace exactly one occurrence, or fail
     python3 - "$1" "$2" "$3" <<'EOF'
@@ -52,6 +55,8 @@ mutate() {
     P25) sub "$B/rowmeta.tsv" '\nlen\t-\trelease' '\nlen\tmain\trelease' ;;
     P26) rm "$B/builtins/_profiles/zlib.eigs" ;;
     P27) sub "$B/cases.tsv" '\nlen\tlen\t-\t-\n' '\n' ;;
+    P28) : ;;
+    T1) printf 'print of (monotonic_ns of null)\n' >> "$B/builtins/len.eigs" ;;
     R1) sub "$B/run_probes.sh" 'out="$HERE/builtins/$2.$3"' 'out="$2.$3"' ;;
     R2|R3) sub "$B/run_probes.sh" '(LD_PRELOAD="$SHIM" ' '(' ;;
     R4) sub "$B/builtins/recv_timeout.eigs" 'send of [c, 7]\n' '' ;;
@@ -64,6 +69,8 @@ mutate() {
 check() {
     case $1 in
     P18) table --final ;;
+    P28) (cd "$B" && EIGS_REV=4ac31e67 timeout 120 python3 make_table.py 2>&1) ;;
+    T1) (cd "$B" && TMPDIR="$WORK" PROBE_STDERR_DIR="$WORK/stderr" timeout 300 bash determinism.sh len 2>&1) ;;
     P*) table ;;
     R1) runner abs ;;
     R2) runner audio_stream_push ;;
@@ -104,6 +111,8 @@ P24|stray file in builtins/|builtins/notes\.txt is neither a case file nor a fix
 P25|closed_in only on guarded rows|len: closed_in .main. on a row the vacuity guard does not cover
 P26|profile witnesses vs profiles|in the non-release profiles, not in builtins/_profiles: zlib$
 P27|primary case per row|in section 6, not in the primary cases: len$
+P28|population pinned to 1fd4422c: the pre-#1841 revision lacks read_text|in rowmeta\.tsv, not in section 6: read_text$
+T1|determinism: a printed time (the R1.6a-D2 class)|^UNSTABLE len\.pre$
 R1|runner: empty stdout with rc 0|FAIL: abs\.pre printed nothing with rc 0
 R2|runner: hook case without the shim|FAIL: audio_stream_push\.pre ran without its hook pcm
 R3|table: hook case recorded without the shim|audio_stream_push\.pre holds \[\], not one .hook-loaded pcm. line

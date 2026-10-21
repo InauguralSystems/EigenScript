@@ -7,7 +7,7 @@ define nt(x) as:
 r is exec_capture of ["/bin/echo", "hi"]
 print of [r[0], nt of r[0], trim of r[1]]
 try:
-    print of ["huge-timeout-answer", exec_capture of [["/bin/echo", "hi"], 1e300]]
+    print of ["huge-timeout-answer", type of (exec_capture of [["/bin/echo", "hi"], 1e300])]
 catch e:
     print of ["timeout-magnitude", e.kind]
 t is exec_capture of [["/bin/echo", "hi"], 5]

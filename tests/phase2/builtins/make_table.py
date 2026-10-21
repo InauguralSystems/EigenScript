@@ -3,7 +3,10 @@
 
 Population: the section-6 table between the builtin-table markers of
 docs/design/phase2-numbers.md, checked both ways against the inventory's
-`## Builtins` list (docs/design/phase2-inventory.txt), field by field.
+`## Builtins` list (docs/design/phase2-inventory.txt), field by field. Both
+files and src/ come from EIGS_REPO at EIGS_REV (default 1fd4422c, the R1.6a
+start, by ruling R1.6a-D1), extracted with git archive; EIGS_TREE (a
+directory holding docs/design and src) overrides that, for the plants.
 file: the src/*.c file that DEFINES the inventory's C function. round: the
 R1.6 plan's rule. rowmeta.tsv gives each row's closed_in and profile (rulings
 A2, A3); cases.tsv gives each probe case's builtin, hook and stdin (A4, A5).
@@ -23,9 +26,21 @@ build). Exit 1 on any FAIL:
   pending. --final (R1.6a, after the matched builds): pending is a FAIL too.
 examined must equal the table and be > 0.
 """
-import os, re, sys
+import os, re, shutil, subprocess, sys, tempfile
 
-TREE = os.environ.get("EIGS_TREE", "/home/jon/src/wt/r15-critic")
+REPO = os.environ.get("EIGS_REPO", "/home/jon/src/InauguralSystems/EigenScriptEcosystem/EigenScript")
+REV = os.environ.get("EIGS_REV", "1fd4422c")
+TREE = os.environ.get("EIGS_TREE")
+if TREE:
+    SOURCE = TREE
+else:
+    TREE = tempfile.mkdtemp(prefix="r16table.")
+    arch = subprocess.run(["git", "-C", REPO, "archive", REV, "docs/design", "src"], capture_output=True)
+    untar = subprocess.run(["tar", "-x", "-C", TREE], input=arch.stdout, capture_output=True) if arch.returncode == 0 else None
+    if arch.returncode != 0 or untar.returncode != 0:
+        shutil.rmtree(TREE, True)
+        sys.exit("FAIL: could not extract docs/design and src at %s from %s: %s" % (REV, REPO, (arch.stderr or b"").decode().strip()))
+    SOURCE = "%s@%s" % (REPO, REV)
 HERE = os.path.dirname(os.path.abspath(__file__))
 BDIR = os.path.join(HERE, "builtins")
 FINAL = "--final" in sys.argv[1:]
@@ -187,7 +202,7 @@ for n in sorted(sec6):
     for kind, v in (("pre", vs_pre), ("tag", vs_tag)):
         tally[(r, kind, v)] = tally.get((r, kind, v), 0) + 1
 
-want = {"b": 45, "c": 75, "d": 53, "e": 38, "f": 20}
+want = {"b": 45, "c": 76, "d": 53, "e": 38, "f": 20}   # c gained read_text at 1fd4422c (ruling R1.6a-D1)
 if counts != want: fail.append("round counts %s, the plan says %s" % (counts, want))
 if not rows or len(rows) != len(sec6): fail.append("examined=%d table=%d" % (len(rows), len(sec6)))
 if guard["guarded"] != guard["yes"] + guard["closed_in"] + guard["pending-profile"] + guard["vacuous"]:
@@ -198,6 +213,7 @@ with open(os.path.join(HERE, "builtins.tsv"), "w") as out:
     for row in rows: out.write("\t".join(row) + "\n")
 
 prof = {p: sum(1 for _, q in meta.values() if q == p) for p in PROFILES}
+print("source=%s" % SOURCE)
 print("examined=%d section6=%d inventory=%d rowmeta=%d cases=%d" % (len(rows), len(sec6), len(inv), len(meta), len(cases)))
 print("closed_in=%d %s hook_cases=%d stdin_cases=%d" % (sum(1 for ci, _ in meta.values() if ci != "-"),
       " ".join("%s=%d" % kv for kv in prof.items()), sum(1 for v in cases.values() if v[1] != "-"),
@@ -209,4 +225,5 @@ for r in sorted(want):
 print("guard: guarded=%(guarded)d yes=%(yes)d closed_in=%(closed_in)d pending_profile=%(pending-profile)d vacuous=%(vacuous)d" % guard
       + (" (final)" if FINAL else ""))
 for f in fail: print("FAIL: " + f)
+if not os.environ.get("EIGS_TREE"): shutil.rmtree(TREE, True)
 sys.exit(1 if fail else 0)

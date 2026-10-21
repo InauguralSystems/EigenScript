@@ -13,11 +13,11 @@ pt is net_port of l
 c is net_dial of ["127.0.0.1", pt]
 print of [nt of c, c > 0]
 try:
-    print of ["fraction-answer", net_dial of ["127.0.0.1", pt + 0.5]]
+    print of ["fraction-answer", (net_dial of ["127.0.0.1", pt + 0.5]) > 0]
 catch e:
     print of ["port-fraction", e.kind]
 try:
-    print of ["65536-answer", net_dial of ["127.0.0.1", 65536]]
+    print of ["65536-answer", (net_dial of ["127.0.0.1", 65536]) > 0]
 catch e:
     print of ["port-65536", e.kind]
 d is net_dial of ["127.0.0.1", pt + 0.0]

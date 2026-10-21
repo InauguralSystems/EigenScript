@@ -162,6 +162,7 @@ random_normal	random_normal	-	-
 range	range	-	-
 read_bytes	read_bytes	-	-
 read_bytes_buf	read_bytes_buf	-	-
+read_text	read_text	-	-
 record_history	record_history	-	-
 recv	recv	-	-
 recv_timeout	recv_timeout	-	-

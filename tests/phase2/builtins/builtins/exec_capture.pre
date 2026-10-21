@@ -1,4 +1,4 @@
 [0, "float", "hi"]
-["huge-timeout-answer", [0, "hi\n"]]
+["huge-timeout-answer", "list"]
 [0, "float", "hi"]
 rc=0

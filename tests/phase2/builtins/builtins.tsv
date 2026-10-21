@@ -160,6 +160,7 @@ random_normal	builtins_tensor.c	float-producing	-	-	d	-	release	-	-	yes	yes
 range	builtins.c	int-preserving	-	-	b	-	release	-	-	yes	yes
 read_bytes	builtins_host.c	int-preserving	-	-	c	-	release	-	-	yes	yes
 read_bytes_buf	builtins_host.c	int-requiring	-	-	c	-	release	-	-	yes	yes
+read_text	builtins_host.c	other	-	-	c	-	release	-	-	yes	yes
 record_history	builtins.c	other	-	-	c	-	release	-	-	yes	yes
 recv	builtins.c	int-requiring	-	-	c	-	release	-	-	yes	yes
 recv_timeout	builtins.c	int-requiring	-	magnitude	c	-	release	-	-	yes	yes

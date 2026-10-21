@@ -12,7 +12,7 @@ catch e:
 pt is net_port of l
 print of [nt of pt, pt > 0]
 try:
-    print of ["fraction-answer", net_port of (l + 0.5)]
+    print of ["fraction-answer", (net_port of (l + 0.5)) == pt]
 catch e:
     print of ["handle-fraction", e.kind]
 print of ((net_port of (l + 0.0)) == pt)
