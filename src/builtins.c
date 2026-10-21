@@ -5411,6 +5411,8 @@ Value* builtin_nearest_in_range(Value *arg) {
      * us skip the hash probe entirely on every subsequent entity. */
     int hint_active = -1, hint_px = -1, hint_py = -1;
 
+    EigsView av_view = {{0}}, ex_view = {{0}}, ey_view = {{0}};
+
     /* Each entity dict is a separate heap allocation — touching n of them
      * pulls in ~12-15 cache lines per iteration. Prefetch the dict header
      * a few iterations ahead so its first cache line is in L1 by the time
@@ -5423,7 +5425,6 @@ Value* builtin_nearest_in_range(Value *arg) {
         Value *e = BUILTIN_LIST_VIEW(entities, i);
         if (!e || e->type != VAL_DICT) continue;
         char **keys = e->data.dict.keys;
-        EigsView av_view, ex_view, ey_view;
         int kcount = e->data.dict.count;
 
         Value *av;
@@ -5541,6 +5542,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     uint32_t h_py = env_hash_name(ipy);
     int hint_active = -1, hint_px = -1, hint_py = -1;
 
+    EigsView av_view = {{0}}, ex_view = {{0}}, ey_view = {{0}};
     enum { PFDIST = 8 };
     for (int i = 0; i < n; i++) {
         if (i + PFDIST < n)
@@ -5552,7 +5554,6 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             continue;
         }
         char **keys = e->data.dict.keys;
-        EigsView av_view, ex_view, ey_view;
         int kcount = e->data.dict.count;
 
         Value *av;

@@ -4651,7 +4651,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
         if (slot_is_num(idx_s) && slot_is_ptr(tgt_s)) {
             Value *target = slot_as_ptr(tgt_s);
-            int i, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
+            int i = 0, _ok = vm_index_is_int(SLOT_NUM_RAW(idx_s), &i);
             if (target->type == VAL_BUFFER && slot_is_num(val_s)) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
                     target->data.buffer.data[i] = SLOT_NUM_RAW(val_s);

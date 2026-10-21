@@ -193,6 +193,7 @@ static inline Value *list_get_return(const Value *list, int i) {
 static inline Value *dict_value_get_owned(const Value *dict, int i) {
     return slot_to_value(dict_value_slot(dict, i));
 }
+__attribute__((unused))
 static inline Value *dict_value_get_return(const Value *dict, int i) {
     EigsSlot s = dict_value_slot(dict, i);
     return slot_is_num(s) ? make_num(SLOT_NUM_RAW(s)) : eigs_slot_ref(s);
@@ -255,6 +256,7 @@ static inline void list_append_num(Value *list, double d) {
     if (!list_reserve_one(list)) return;
     list->data.list.items[list->data.list.count++] = slot_from_num(d);
 }
+__attribute__((unused))
 static inline void dict_value_set_num(Value *dict, int i, double d) {
     dict_value_rewrite_num(dict, i, num_guard(d));
 }
@@ -283,22 +285,27 @@ static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)
     qsort(list->data.list.items, (size_t)list->data.list.count, sizeof(EigsSlot), cmp);
 }
 
+__attribute__((unused))
 static inline int list_get_num(const Value *list, int i, double *out) {
     EigsSlot s = list_slot(list, i);
     if (!slot_is_num(s)) return 0;
     *out = SLOT_NUM_RAW(s);
     return 1;
 }
+__attribute__((unused))
 static inline int dict_value_get_num(const Value *dict, int i, double *out) {
     EigsSlot s = dict_value_slot(dict, i);
     if (!slot_is_num(s)) return 0;
     *out = SLOT_NUM_RAW(s);
     return 1;
 }
+__attribute__((unused))
 static inline int list_iter_count(const Value *list) { return list->data.list.count; }
+__attribute__((unused))
 static inline int dict_value_iter_count(const Value *dict) { return dict->data.dict.count; }
 
 /* Raw storage is confined to bulk allocation/movement/destruction code. */
+__attribute__((unused))
 static inline EigsSlot *list_values_storage(Value *list) { return list->data.list.items; }
 static inline EigsSlot **list_values_storage_ref(Value *list) { return &list->data.list.items; }
 static inline EigsSlot *dict_values_storage(Value *dict) { return dict->data.dict.vals; }
