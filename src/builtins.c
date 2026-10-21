@@ -2076,7 +2076,12 @@ static Value* minmax_reduce(Value *arg, int want_max) {
         EigsNum n = eigs_number_arg(arg, who);
         return g_has_error ? make_null() : builtin_number_value(n);
     }
-    ARG_GUARD(!arg || arg->type != VAL_LIST, who, "a number or a list of numbers", make_float(0));
+    /* Keep the public guard names literal for the source/probe census. */
+    if (want_max) {
+        ARG_GUARD(!arg || arg->type != VAL_LIST, "max", "a number or a list of numbers", make_float(0));
+    } else {
+        ARG_GUARD(!arg || arg->type != VAL_LIST, "min", "a number or a list of numbers", make_float(0));
+    }
     /* R1.6b-D2: no winner exists for an empty reduction, in either call
      * form and either strict mode. C2's integer identity belongs to sum. */
     if (arg->data.list.count < 1) {
@@ -2086,7 +2091,12 @@ static Value* minmax_reduce(Value *arg, int want_max) {
     EigsNum best = {0};
     for (int i = 0; i < arg->data.list.count; i++) {
         Value *v = BUILTIN_LIST_VIEW(arg, i);
-        ARG_GUARD(!v || !val_is_number(v), who, "every element to be a number", make_float(0));
+        /* Keep the public guard names literal for the source/probe census. */
+        if (want_max) {
+            ARG_GUARD(!v || !val_is_number(v), "max", "every element to be a number", make_float(0));
+        } else {
+            ARG_GUARD(!v || !val_is_number(v), "min", "every element to be a number", make_float(0));
+        }
         EigsNum n = eigs_number_arg(v, who);
         if (g_has_error) return make_null();
         int cmp = 0;
