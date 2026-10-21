@@ -5,6 +5,7 @@
 
 #include "ext_store_internal.h"
 #include "trace.h"
+#include <errno.h>
 
 #if EIGENSCRIPT_FREESTANDING
 /* The page store is file-backed end to end — carved out of the
@@ -171,7 +172,7 @@ static void store_json_encode(Value *v, strbuf *out);
  * the historical boxed-number path so persisted bytes remain identical. */
 static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
     if (slot_is_f64(slot)) {
-        double n = eigs_slot_num(slot, __func__);
+        double n = eigs_slot_float(slot, __func__);
         if (fabs(n) < 2147483648.0 && n == (int)n)
             strbuf_append_fmt(out, "%d", (int)n);
         else
@@ -193,7 +194,7 @@ static void store_json_encode(Value *v, strbuf *out) {
     }
     switch (v->type) {
         case VAL_FLOAT: {
-            double n = eigs_num_arg(v, __func__);
+            double n = eigs_float_arg(v, __func__);
             /* #816: magnitude BEFORE the narrowing cast (same class as
              * #695) — converting a double beyond int's range is UB, and
              * the old `n == (int)n && fabs(n) < 1e15` order ran the cast
@@ -329,11 +330,23 @@ static Value* store_json_parse_string(const char *s, int *pos) {
 }
 
 static Value* store_json_parse_number(const char *s, int *pos) {
+    const char *start = s + *pos;
     char *end = NULL;
-    double val = strtod(s + *pos, &end);
-    if (end == s + *pos) return NULL;  /* no digits consumed */
+    double val = strtod(start, &end);
+    if (end == start) return NULL;  /* no digits consumed */
     *pos = (int)(end - s);
-    return make_num(val);
+
+    /* #1758 N14: decimal integer text within int64 decodes exactly. A
+     * decimal point or exponent keeps the float kind even for a whole value.
+     * Keep strtod's existing token span and float fallback (including the
+     * guard in make_float); float text itself changes in R1.7, not here. */
+    char *int_end = NULL;
+    errno = 0;
+    long long integer = strtoll(start, &int_end, 10);
+    if (int_end == end && errno != ERANGE &&
+        integer >= INT64_MIN && integer <= INT64_MAX)
+        return make_int((int64_t)integer);
+    return make_float(val);
 }
 
 static Value* store_json_parse_array(const char *s, int *pos) {
@@ -371,19 +384,19 @@ static Value* store_buffer_from_tag(Value *dict) {
     Value *cv = list_get_view(shape, 1, &(EigsView){{0}});
     if (!rv || !val_is_number(rv) || !cv || !val_is_number(cv)) return NULL;
 
-    /* Range-gate BEFORE narrowing. A stored shape is whatever double the file
-     * holds, and (int)d is undefined when d is outside int's range (C11
-     * 6.3.1.4p1) — reachable here with e.g. [1e300, 0]. The negated form also
-     * rejects a NaN, which fails every comparison. Only once the value is
-     * known in-range is the exact `==` below meaningful: it is an INTEGRALITY
-     * test (is this dimension a whole number?), so exact equality is the
-     * correct operator and a tolerance would be the bug — 2.0000000000000004
-     * is not a row count. This also establishes rows/cols >= 0. */
-    double rd = eigs_num_arg(rv, __func__), cd = eigs_num_arg(cv, __func__);
-    if (!(rd >= 0 && rd <= (double)INT_MAX)) return NULL;
-    if (!(cd >= 0 && cd <= (double)INT_MAX)) return NULL;
-    int rows = (int)rd, cols = (int)cd;
-    if (rd != (double)rows || cd != (double)cols) return NULL;
+    /* This is an untrusted codec tag, so an invalid dimension leaves it a
+     * user dict, as before. Read integer text without passing through double;
+     * float dimensions must convert exactly before the C int range check. */
+    EigsNum rn = eigs_number_arg(rv, __func__);
+    EigsNum cn = eigs_number_arg(cv, __func__);
+    if (g_has_error) return NULL;
+    int64_t ri, ci;
+    if (rn.is_int) ri = rn.value.i64;
+    else if (!num_to_i64_exact(rn.value.f64, &ri)) return NULL;
+    if (cn.is_int) ci = cn.value.i64;
+    else if (!num_to_i64_exact(cn.value.f64, &ci)) return NULL;
+    if (ri < 0 || ri > INT_MAX || ci < 0 || ci > INT_MAX) return NULL;
+    int rows = (int)ri, cols = (int)ci;
 
     /* Accept exactly the (rows, cols, count) triples the buffer constructors
      * can produce, no more. rows>0 is a real 2-D shape, so rows*cols must be
@@ -414,7 +427,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     for (int i = 0; i < count; i++) {
         Value *e = list_get_view(body, i, &(EigsView){{0}});
         double d = 0;
-        if (val_is_number(e)) d = eigs_num_arg(e, __func__);
+        if (val_is_number(e)) d = eigs_float_arg(e, __func__);
         else store_nonfinite_sentinel(e->data.str, &d);
         buf->data.buffer.data[i] = d;
     }
@@ -1037,8 +1050,8 @@ static Value* builtin_store_put(Value *arg) {
         root_page = store_alloc_page(store);
         next_id = 1;
         col_info = make_dict(4);
-        dict_set_owned(col_info, "root", make_num(root_page));
-        dict_set_owned(col_info, "next_id", make_num(next_id));
+        dict_set_owned(col_info, "root", make_int(root_page));
+        dict_set_owned(col_info, "next_id", make_int(next_id));
         dict_set_owned(store->catalog, collection, col_info);  /* adopt make_dict ref */
         store->dirty = 1;
 
@@ -1052,8 +1065,13 @@ static Value* builtin_store_put(Value *arg) {
     } else {
         Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
         Value *nv = store_dict_get_view(col_info, "next_id", &(EigsView){{0}});
-        root_page = (uint32_t)(rv ? eigs_num_arg(rv, __func__) : 0);
-        next_id = (int)(nv ? eigs_num_arg(nv, __func__) : 1);
+        int64_t root = 0, next = 1;
+        if (rv && !eigs_int_arg_range(rv, 0, UINT32_MAX, &root, "store_put"))
+            return make_null();
+        if (nv && !eigs_int_arg_range(nv, INT_MIN, INT_MAX, &next, "store_put"))
+            return make_null();
+        root_page = (uint32_t)root;
+        next_id = (int)next;
     }
 
     /* Determine key */
@@ -1065,7 +1083,7 @@ static Value* builtin_store_put(Value *arg) {
     } else {
         snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", next_id);
         next_id++;
-        dict_set_owned(col_info, "next_id", make_num(next_id));
+        dict_set_owned(col_info, "next_id", make_int(next_id));
         store->dirty = 1;
     }
 
@@ -1190,7 +1208,9 @@ static Value* builtin_store_get(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (val_is_number(key_val)) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+        int64_t key = eigs_int_arg(key_val, "store_get");
+        if (g_has_error) return make_null();
+        eigs_int_text(key_buf, sizeof(key_buf), key);
     } else {
         return make_null();
     }
@@ -1199,7 +1219,9 @@ static Value* builtin_store_get(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_null();
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_null();
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    int64_t root;
+    if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &root, "store_get")) return make_null();
+    uint32_t pg = (uint32_t)root;
 
     size_t target_key_len = strlen(key_buf);
 
@@ -1257,7 +1279,9 @@ static int store_locate(Store *store, const char *collection,
     if (!col_info || col_info->type != VAL_DICT) return 0;
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return 0;
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    int64_t root;
+    if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &root, "store_locate")) return 0;
+    uint32_t pg = (uint32_t)root;
     size_t target_key_len = strlen(key_buf);
 
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1354,7 +1378,9 @@ static Value* builtin_store_delete(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (val_is_number(key_val)) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+        int64_t key = eigs_int_arg(key_val, "store_delete");
+        if (g_has_error) return make_bool(0);
+        eigs_int_text(key_buf, sizeof(key_buf), key);
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
@@ -1400,7 +1426,9 @@ static Value* builtin_store_query(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_list(0);
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_list(0);
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    int64_t root;
+    if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &root, "store_query")) return make_list(0);
+    uint32_t pg = (uint32_t)root;
 
     Value *results = make_list(16);
 
@@ -1510,7 +1538,9 @@ static Value* builtin_store_update(Value *arg) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
     } else if (val_is_number(key_val)) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+        int64_t key = eigs_int_arg(key_val, "store_update");
+        if (g_has_error) return make_bool(0);
+        eigs_int_text(key_buf, sizeof(key_buf), key);
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the

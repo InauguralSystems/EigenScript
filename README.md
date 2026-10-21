@@ -458,6 +458,16 @@ catch e:
 value
 ```
 
+`store_get`, `store_delete`, and `store_update` accept string keys or exact
+int64 numeric keys. Integral floats convert; fractional or out-of-range floats
+raise `value` before lookup or mutation. Numeric keys retain all int64 digits.
+Stored decimal integer text within int64 decodes as an int; a decimal point or
+exponent selects a float. Buffer payloads remain floats. Float persistence keeps
+its existing text format until R1.7, so a whole float such as `3.0` may read back
+as an int during this transition.
+
+See the [stored-record example](docs/SPEC.md#stored-records).
+
 ## Standard Library
 
 Pure EigenScript libraries under `lib/`:

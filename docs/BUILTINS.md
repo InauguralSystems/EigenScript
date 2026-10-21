@@ -804,6 +804,30 @@ should measure through `gfx_text_width`/`gfx_text_height` (as `lib/ui.eigs`
 does) rather than assuming the `6 * scale` monospace advance. Text
 rendering is output-only: no trace-tape records in either mode.
 
+## EigenStore
+
+EigenStore stores record dicts in named collections. A nonempty string `_id`
+field supplies an explicit record key; otherwise `store_put` generates one.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `store_put` | `store_put of [handle, collection, record]` | Write a record dict, add its `_id` field, and return the string key. Int64 fields are stored exactly. |
+| `store_get` | `store_get of [handle, collection, key]` | Return the record dict, or `null` for an absent key. Numeric keys convert exactly to int64 and use their full decimal digits. |
+| `store_delete` | `store_delete of [handle, collection, key]` | Delete the record and return `true`, or `false` when absent. Numeric keys follow the same rule as `store_get`. |
+| `store_update` | `store_update of [handle, collection, key, record]` | Replace the record and return `true`, or `false` when absent. Numeric keys follow the same rule as `store_get`. An oversized or non-dict replacement leaves the old record intact. |
+| `store_query` | `store_query of [handle, collection]` | Return the collection's records as a list of dicts. |
+
+`store_get`, `store_delete`, and `store_update` accept string keys or exact
+int64 numeric keys. Integral floats convert; fractional or out-of-range floats
+raise `value` before lookup or mutation. Numeric keys retain all int64 digits.
+Stored decimal integer text within int64 decodes as an int; a decimal point or
+exponent selects a float. Buffer payloads remain floats. Float persistence keeps
+its existing text format until R1.7, so a whole float such as `3.0` may read back
+as an int during this transition.
+
+An invalid, closed, or stale store handle raises `value`. For a complete
+example, see [stored records](SPEC.md#stored-records).
+
 ## Optional: Database Extension
 
 Requires full build with libpq. PostgreSQL client.

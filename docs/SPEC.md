@@ -922,6 +922,38 @@ print of ev.loop
 2
 ```
 
+### Stored records
+
+`store_get`, `store_delete`, and `store_update` accept string keys or exact
+int64 numeric keys. Integral floats convert; fractional or out-of-range floats
+raise `value` before lookup or mutation. Numeric keys retain all int64 digits.
+Stored decimal integer text within int64 decodes as an int; a decimal point or
+exponent selects a float. Buffer payloads remain floats. Float persistence keeps
+its existing text format until R1.7, so a whole float such as `3.0` may read back
+as an int during this transition.
+
+```eigenscript
+path is "store-numbers-example.db"
+if file_exists of path:
+    rm of path
+s is store_open of path
+store_put of [s, "c", {"_id": "9007199254740993", "n": 9007199254740993, "f": 2.5}]
+r is store_get of [s, "c", 9007199254740993]
+print of [r.n, num_type of r.n, num_type of r.f]
+try:
+    store_delete of [s, "c", 1.5]
+catch e:
+    print of e.kind
+print of ((store_get of [s, "c", 9007199254740993]) != null)
+store_close of s
+rm of path
+```
+```output
+[9007199254740993, "int", "float"]
+value
+true
+```
+
 ## Functions
 
 `define name(params) as:` introduces a function. `return` exits with a
