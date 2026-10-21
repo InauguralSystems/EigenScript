@@ -1,0 +1,13 @@
+# #1839: registration belongs to the interpreter state and is safe from every
+# OS worker. Each worker contributes one distinct closure; teardown must call
+# all of them exactly once. TSan additionally proves the hook vector is clean.
+define register_hook(id) as:
+    define hook() as:
+        print of f"AT_EXIT_WORKER {id}"
+    at_exit of hook
+
+handles is []
+for i in range of 24:
+    append of [handles, spawn of [register_hook, i]]
+for h in handles:
+    thread_join of h

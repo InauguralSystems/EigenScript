@@ -927,10 +927,13 @@ struct EigsState {
      * above instead. */
     int             spawn_err_count;
     /* Script exit callbacks, registered by `at_exit`. Values are retained
-     * until the owning evaluation runs them in LIFO order. */
+     * until the owning evaluation runs them in LIFO order. The dedicated
+     * lock protects this leaf array: registration is worker-safe, while user
+     * callbacks are always invoked after releasing it. */
     Value         **exit_hooks;
     size_t          exit_hook_count;
     size_t          exit_hook_cap;
+    pthread_mutex_t exit_hook_lock;
     /* Cycle-collector registry — the intrusive list of captured envs and its
      * live count. Per-STATE (not per-thread) so candidates created on any
      * thread survive that thread's death and stay collectable at exit; gc_lock

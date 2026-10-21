@@ -2095,11 +2095,13 @@ workers retain the scope of their spawning eval (see `docs/EMBEDDING.md`).
 The failure is always a clean exit, never a signal (#1112).
 
 `at_exit of callback` registers a zero-argument callback for the current CLI
-evaluation. Callbacks run in last-in, first-out order after ordinary
+evaluation. Registration is safe from any cooperative task or OS thread.
+Callbacks run in last-in, first-out order after ordinary
 completion, after `exit of N` (like Python's `atexit` on `sys.exit`), and after
-an uncaught error, while the evaluation's globals are still available. An
-error in a callback changes an otherwise-zero status to 1, but does not mask
-an existing nonzero exit status. This is the mechanism used by
+an uncaught error, while the evaluation's globals are still available. Every
+callback runs even when an earlier one raises, and every callback error is
+reported. Any callback error changes an otherwise-zero status to 1, but does
+not mask an existing nonzero exit status. This is the mechanism used by
 `lib/test.eigs` to make a failed assertion report its summary and fail the
 process even when the file omits `test_summary`.
 

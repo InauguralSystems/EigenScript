@@ -623,7 +623,10 @@ Value* builtin_exit(Value *arg) {
 }
 
 /* at_exit of fn — register a zero-argument callback for evaluation teardown.
- * Registration retains the closure; eigs_run_exit_hooks consumes it. */
+ * Registration retains the closure; eigs_run_exit_hooks consumes it. The
+ * hook array has its own lock rather than borrowing exit_mutex: exit_mutex
+ * protects the state-wide stop scope/condition, while this is an independent
+ * leaf container and must never hold a lock while calling user code. */
 Value* builtin_at_exit(Value *arg) {
     STRICT_LIST_MAX(arg, 1, "at_exit");
     if (!arg || (arg->type != VAL_FN && arg->type != VAL_BUILTIN)) {
@@ -631,25 +634,42 @@ Value* builtin_at_exit(Value *arg) {
         return make_null();
     }
     EigsState *st = eigs_current_state();
+    val_incref(arg);
+    pthread_mutex_lock(&st->exit_hook_lock);
     if (st->exit_hook_count == st->exit_hook_cap) {
         size_t cap = st->exit_hook_cap ? st->exit_hook_cap * 2 : 4;
         st->exit_hooks = xrealloc(st->exit_hooks, cap * sizeof(*st->exit_hooks));
         st->exit_hook_cap = cap;
     }
-    val_incref(arg);
     st->exit_hooks[st->exit_hook_count++] = arg;
+    pthread_mutex_unlock(&st->exit_hook_lock);
     return make_null();
 }
 
 void eigs_run_exit_hooks(EigsState *st) {
-    while (st && st->exit_hook_count > 0) {
-        Value *fn = st->exit_hooks[--st->exit_hook_count];
+    int any_error = 0;
+    while (st) {
+        pthread_mutex_lock(&st->exit_hook_lock);
+        Value *fn = st->exit_hook_count > 0
+                  ? st->exit_hooks[--st->exit_hook_count] : NULL;
+        pthread_mutex_unlock(&st->exit_hook_lock);
+        if (!fn) break;
+
+        /* Match Python's atexit discipline: an earlier handler failure must
+         * not suppress later handlers. CHECK_ERROR reports each uncaught
+         * failure while its callback is unwound; preserve only the aggregate
+         * failure bit between calls. */
+        g_has_error = 0;
+        g_error_print_pending = 0;
+        eigs_clear_error_value();
         Value *nul = make_null();
         Value *result = call_eigs_fn(fn, nul);
         val_decref(nul);
         if (result) val_decref(result);
         val_decref(fn);
+        if (g_has_error && !g_exit_requested) any_error = 1;
     }
+    g_has_error = any_error || g_has_error;
 }
 
 Value* builtin_assert(Value *arg) {

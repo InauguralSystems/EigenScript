@@ -1,0 +1,15 @@
+# #1839: LIFO execution continues through errors. The first and third
+# callbacks visibly run, and two distinct callback failures reach stderr.
+define runs_third() as:
+    print of "AT_EXIT THIRD RAN"
+    throw of "AT_EXIT THIRD ERROR"
+
+define fails_middle() as:
+    throw of "AT_EXIT MIDDLE ERROR"
+
+define runs_first() as:
+    print of "AT_EXIT FIRST RAN"
+
+at_exit of runs_third
+at_exit of fails_middle
+at_exit of runs_first

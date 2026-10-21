@@ -41,6 +41,7 @@ EigsState *eigs_state_new(void) {
     pthread_mutex_init(&st->handle_mutex, NULL);
     pthread_mutex_init(&st->exit_mutex, NULL);
     pthread_cond_init(&st->exit_cond, NULL);
+    pthread_mutex_init(&st->exit_hook_lock, NULL);
     pthread_mutex_init(&st->gc_lock, NULL);   /* cycle-collector registry */
     pthread_mutex_init(&st->module_lock, NULL);   /* #1144: import cache */
     st->handle_next = 1;  /* 0 reserved as invalid */
@@ -93,6 +94,7 @@ static void state_destroy_body(EigsState *st, int already_released) {
     for (size_t i = 0; i < st->exit_hook_count; i++)
         val_decref(st->exit_hooks[i]);
     free(st->exit_hooks);
+    pthread_mutex_destroy(&st->exit_hook_lock);
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
     free(st->module_cache);
