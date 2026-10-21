@@ -3,7 +3,10 @@
 # behaviour differential of a mechanical round (docs/design/phase2-numbers.md
 # 8, R1.1 and R1.2): "unchanged" is measured, not inferred from a green suite.
 #
-# Every .eigs file under the BRANCH tree's tests/ runs twice with each binary,
+# Every non-excluded .eigs file under the BRANCH tree's tests/ runs twice with each binary,
+# tests/phase2/corpus_exclude.txt declares directory ownership, with an owning
+# harness and reason. The same exclusions filter both inventories. Empty,
+# stale, overlapping, unsafe or ownerless declarations fail; each is reported.
 # all four runs from the branch tree's src/ (the suite's cwd) as
 # `../tests/<file>`, so a file and whatever it loads by a relative path are the
 # same bytes for both; only the binary and the stdlib next to it differ.
@@ -199,11 +202,20 @@ if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
 else
     (cd "$BR_ROOT" && find tests -name '*.eigs' -type f | LC_ALL=C sort) > "$TMP/files"
 fi
+# The exclusion ledger owns the population policy; fixtures run through their
+# named harness instead of being launched bare by a second implementation.
+(cd "$BASE_ROOT" && find tests -name '*.eigs' -type f | LC_ALL=C sort) > "$TMP/basefiles"
+printf '0\n' > "$TMP/excluded-count"
+if [ -f "$BR_ROOT/tests/phase2/corpus_exclude.txt" ]; then
+    python3 "$BR_ROOT/tools/phase2_corpus_exclude.py" "$BR_ROOT" "$TMP/files" "$TMP/basefiles" "$TMP/excluded-count" \
+        || { echo "corpus-diff: FAIL: declared exclusions"; DONE=1; exit 1; }
+fi
+excluded=$(cat "$TMP/excluded-count")
 listed=$(grep -c . "$TMP/files")
 [ "$listed" -gt 0 ] || { echo "corpus-diff: FAIL: no .eigs file to run"; DONE=1; exit 1; }
 echo "corpus-diff: baseline $BASE_BIN ($("$BASE_BIN" --version 2>&1 | head -1)) sha256 $(sha256sum "$BASE_BIN" | cut -c1-16)"
 echo "corpus-diff: branch   $BR_BIN ($("$BR_BIN" --version 2>&1 | head -1)) sha256 $(sha256sum "$BR_BIN" | cut -c1-16)"
-echo "corpus-diff: files=$listed declared_nonzero=$declared${PHASE2_DIFF_FILES:+ (RESTRICTED by PHASE2_DIFF_FILES)}"
+echo "corpus-diff: files=$listed excluded=$excluded declared_nonzero=$declared${PHASE2_DIFF_FILES:+ (RESTRICTED by PHASE2_DIFF_FILES)}"
 
 # run BIN REL OUT CAP [VAR=value] -> OUT.out OUT.err OUT.rc (and OUT.urandom
 # when the run opened /dev/urandom), root paths normalised; CAP=1 runs under
@@ -236,7 +248,7 @@ show_diff() {
 examined=0; nsame=0; same_nonzero=0; nreplay=0; nondet=0; ndiff=0; new=0; crash_both=0; timeout_both=0
 capped=0; conditioned=0; incomplete=0; undeclared=0; stale=0; unpinned=0
 for f in new nondet crash replayed capped samenz urandom used; do : > "$TMP/$f"; done
-(cd "$BASE_ROOT" && find tests -name '*.eigs' -type f | LC_ALL=C sort) > "$TMP/basefiles"
+# Baseline inventory was filtered with the branch inventory above.
 if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
     : > "$TMP/deleted"
 else
@@ -353,7 +365,7 @@ sed 's/^/BOTH-CRASH-OR-TIMEOUT /' "$TMP/crash"
 sed 's/^/SAME-NONZERO (declared: both binaries exit so; compared up to the exit) /' "$TMP/samenz"
 sed 's/^/UNPINNED (opened \/dev\/urandom: random_hex values are live, by design) /' "$TMP/urandom"
 sed 's/^/CAPPED (gfx\/ui\/audio: ulimit -v 1500000) /' "$TMP/capped"
-summary="examined=$examined same=$nsame same_nonzero=$same_nonzero same_under_replay=$nreplay nondet=$nondet diff=$ndiff new=$new deleted=$deleted crash_both=$crash_both timeout_both=$timeout_both conditioned=$conditioned incomplete=$incomplete undeclared=$undeclared stale=$stale ledger_refused=$ledger_bad unpinned=$unpinned capped=$capped"
+summary="examined=$examined excluded=$excluded same=$nsame same_nonzero=$same_nonzero same_under_replay=$nreplay nondet=$nondet diff=$ndiff new=$new deleted=$deleted crash_both=$crash_both timeout_both=$timeout_both conditioned=$conditioned incomplete=$incomplete undeclared=$undeclared stale=$stale ledger_refused=$ledger_bad unpinned=$unpinned capped=$capped"
 DONE=1
 if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
     echo "corpus-diff: RESTRICTED $summary"

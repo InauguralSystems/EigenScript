@@ -2481,7 +2481,16 @@ fails if a round named here has neither rows nor its mechanical gates.)
   whatever it loads by a relative path are the same bytes for both; only
   the binary and its stdlib differ. A file only the branch has (a new
   fixture) is counted as `new`; one only the baseline has is a DELETED
-  failure. **As corrected in the R1.1 fix round** (the critic's plants B
+  failure. R1.6a declares `tests/phase2/builtins/` in
+  `tests/phase2/corpus_exclude.txt`: those programs are owned by
+  `tools/phase2_builtins.sh`, which provides their fixtures, observation
+  hooks, matched capability profiles and stdin. The corpus applies the same
+  declared directory exclusions to both inventories and reports their paths,
+  counts, owners and reasons. Unsafe, overlapping, stale or ownerless
+  declarations, and a zero remaining population, fail. These probes remain
+  covered by §9.4's table gate and its once-only calibration plants.
+
+  **As corrected in the R1.1 fix round** (the critic's plants B
   and D passed the first version):
   - each binary runs each file TWICE. A file is deterministic when the
     baseline's two runs agree, and then any branch run that differs is a
