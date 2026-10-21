@@ -5,6 +5,19 @@ The tape captures every nondeterministic input a run consumed, so a
 replayed run produces byte-identical output: the same random sequence,
 the same `monotonic_ns` timestamps, the same HTTP responses.
 
+## Filesystem replay model (#1885)
+
+Replay is an **rr-style, side-effect-free execution**. Every program-execution
+filesystem read is served by the tape, including the source read by `import`
+and `load_file`; replay never falls back to a live file. Every replayable
+mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, `remove_file`, and
+`rm`) returns or raises its recorded outcome before any filesystem syscall.
+Operations whose durable result cannot be represented by the tape remain loud
+boundaries: `mktemp`, stream output, corpus generation, and store operations
+are refused rather than partially run. The embedding API's initial program
+read and `eigenscript fmt` are host/tool input acquisition, not reads performed
+by a running EigenScript program, and therefore remain live.
+
 Two environment variables control it:
 
 | Variable | Effect |
@@ -47,7 +60,7 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 6 0.44.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 7 0.46.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
@@ -234,9 +247,11 @@ perspective lands on the tape as an `N` record:
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
   `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
-  `write_text`, `write_bytes`, `rename`, `remove_file` (#1668).
-  Successful `mkdir` and `ls` calls record their normal values, and replay
-  serves those values without repeating or consulting the filesystem. An I/O
+  `write_text`, `write_bytes`, `rename`, `remove_file`, `rm`, and `md5_file` (#1668).
+  Module acquisition adds `import_source` / `load_file_source` metadata and
+  bounded `_chunk` records, so source larger than one record remains replayable.
+  The filesystem replay rules are defined once in [Filesystem replay model](#filesystem-replay-model-1885).
+  An I/O
   failure from either builtin or any file reader records the complete `io` message (builtin, path, and `strerror` reason)
   in a one-string list. Because a successful `ls` can have that shape, its
   error record adds a trailing `null` tag. Replay recognizes these
@@ -753,8 +768,9 @@ everywhere else in the runtime (version-and-reject, never migrate).
   answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
   on a v6 binary would hand a number where the program now gets a bool; it is
   refused instead (covered by the existing replay kind-validation cases in
-  `tests/test_replay.sh`). Within a
-  v6 tape, replay also refuses a recorded value of a kind its builtin cannot
+  `tests/test_replay.sh`). **v7** (#1885) adds metadata plus bounded chunk records for `import` and
+  `load_file` source, making module acquisition replayable without live reads.
+  Within a v7 tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return
   kinds in one table (`k_tape_kinds` in `src/trace.c`; for example

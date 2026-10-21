@@ -1950,9 +1950,17 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"is_dir",               TK_BOOL_},
     {"is_file",              TK_BOOL_},
     {"ls",                   TK_LIST_},
+    {"md5_file",             TK_STR_ | TK_LIST_},
+    {"import_source",        TK_LIST_},
+    {"import_source_chunk",  TK_STR_},
+    {"import_warning",       TK_STR_},
+    {"load_file_source",     TK_LIST_},
+    {"load_file_source_chunk", TK_STR_},
     {"mkdir",                TK_BOOL_},
     {"monotonic_ms",         TK_NUM_},
     {"monotonic_ns",         TK_NUM_},
+    {"observer_source",      TK_LIST_},
+    {"observer_source_chunk", TK_STR_},
     {"net_accept",           TK_NUM_ | TK_NULL_},
     {"net_dial",             TK_NUM_ | TK_NULL_},
     {"net_listen",           TK_NUM_ | TK_NULL_},
@@ -1963,12 +1971,13 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"random_hex",           TK_STR_},
     {"random_int",           TK_NUM_},
     {"random_normal",        TK_LIST_ | TK_NULL_},
-    {"read_bytes",           TK_LIST_ | TK_NULL_},
+    {"read_bytes",           TK_LIST_ | TK_NULL_ | TK_NUM_},
     {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_}, /* list: I/O error */
     {"read_line",            TK_STR_ | TK_NULL_},
-    {"read_text",            TK_STR_ | TK_LIST_}, /* list: I/O error */
+    {"read_text",            TK_STR_ | TK_LIST_ | TK_NUM_}, /* num: over-cap */
     {"remove_file",          TK_BOOL_ | TK_LIST_}, /* list: I/O error */
     {"rename",               TK_BOOL_ | TK_LIST_}, /* list: I/O error */
+    {"rm",                   TK_BOOL_},
     {"tensor_load",          TK_LIST_ | TK_NULL_},  /* the [rows, cols] over-cap verdict */
     {"write_bytes",          TK_NUM_ | TK_LIST_},  /* list: I/O error */
     {"write_text",           TK_BOOL_ | TK_LIST_}, /* list: I/O error */
@@ -2687,6 +2696,79 @@ int trace_replay_take(const char *fn, Value **out) {
     if (!v) { replay_take_unlock(); return 0; }
     *out = v;
     replay_take_unlock();
+    return 1;
+}
+
+/* Source text is an input, not a recipe to consult the host again.  Keep each
+ * chunk small enough that worst-case \xNN escaping cannot hit the 64 KiB
+ * record ceiling.  The metadata is [ok, identity-or-error, byte_count]. */
+#define TRACE_SOURCE_CHUNK 12000
+void trace_source_record(const char *kind, const char *source, size_t size,
+                         const char *identity, const char *error) {
+    if (!__builtin_expect(g_trace_enabled, 0)) return;
+    Value *meta = make_list(3);
+    list_append_owned(meta, make_bool(error == NULL));
+    list_append_owned(meta, make_str(error ? error : (identity ? identity : "")));
+    list_append_owned(meta, make_num(error ? 0.0 : (double)size));
+    trace_nondet_value(kind, meta);
+    val_decref(meta);
+    if (error) return;
+    char chunk_kind[96];
+    snprintf(chunk_kind, sizeof chunk_kind, "%s_chunk", kind);
+    for (size_t off = 0; off < size; off += TRACE_SOURCE_CHUNK) {
+        size_t n = size - off;
+        if (n > TRACE_SOURCE_CHUNK) n = TRACE_SOURCE_CHUNK;
+        Value *chunk = make_str_len(source + off, n);
+        trace_nondet_value(chunk_kind, chunk);
+        val_decref(chunk);
+    }
+}
+
+int trace_source_replay(const char *kind, char **source, long *size,
+                        char **identity, char **error) {
+    if (!__builtin_expect(g_replay_enabled, 0)) return 0;
+    *source = NULL; *identity = NULL; *error = NULL;
+    Value *meta = NULL;
+    if (!trace_replay_take(kind, &meta)) return 1;
+    if (!meta || meta->type != VAL_LIST || meta->data.list.count != 3 ||
+        list_elem_type(meta, 0) != VAL_BOOL || list_elem_type(meta, 1) != VAL_STR ||
+        list_elem_type(meta, 2) != VAL_NUM) {
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s: malformed source record", kind);
+        return 1;
+    }
+    int ok = list_get_ref(meta, 0)->data.boolean;
+    const char *detail = list_get_ref(meta, 1)->data.str;
+    long n = (long)eigs_slot_elem_num(list_slot(meta, 2), __func__);
+    if (!ok) {
+        *error = xstrdup(detail);
+        val_decref(meta);
+        return 1;
+    }
+    *identity = xstrdup(detail);
+    val_decref(meta);
+    if (n < 0) { rt_error(EK_IO, 0, "%s: invalid source size", kind); return 1; }
+    char *buf = xmalloc((size_t)n + 1);
+    size_t off = 0;
+    char chunk_kind[96];
+    snprintf(chunk_kind, sizeof chunk_kind, "%s_chunk", kind);
+    while (off < (size_t)n) {
+        Value *chunk = NULL;
+        if (!trace_replay_take(chunk_kind, &chunk) || !chunk || chunk->type != VAL_STR) {
+            val_decref(chunk); free(buf); free(*identity); *identity = NULL;
+            rt_error(EK_IO, 0, "%s: missing source chunk", kind);
+            return 1;
+        }
+        size_t got = val_str_len(chunk);
+        if (!got || got > (size_t)n - off) {
+            val_decref(chunk); free(buf); free(*identity); *identity = NULL;
+            rt_error(EK_IO, 0, "%s: invalid source chunk", kind);
+            return 1;
+        }
+        memcpy(buf + off, chunk->data.str, got); off += got;
+        val_decref(chunk);
+    }
+    buf[n] = '\0'; *source = buf; if (size) *size = n;
     return 1;
 }
 

@@ -37,6 +37,8 @@ char *eigs_executable_path(const char *argv0);
 /* Raise EK_IO naming every root the chain tried. Hosted. */
 void eigs_file_resolve_error(const char *operation, const char *base,
                             const char *path, int line);
+char *eigs_file_resolve_message(const char *operation, const char *base,
+                                const char *path);
 /* Owned subprocess pipe: configure its write end before it is published.
  * On macOS this prevents process-directed SIGPIPE without a signal wait. */
 int eigs_pipe_no_sigpipe(int fd[2]);

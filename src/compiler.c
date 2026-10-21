@@ -3850,6 +3850,13 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 
     if (chunk_scan_static_loads(chunk, obs_gate_note_load, &L)) { eigs_obs_enable_runtime(); goto done; }
     if (L.overflow) { eigs_obs_enable_runtime(); goto done; }   /* more loads than slots — see above */
+    /* A trace already records observer history.  If this unit names a static
+     * load, record and replay choose the same conservative gate answer rather
+     * than doing speculative filesystem I/O outside the runtime loader. */
+    if (g_trace_enabled || g_replay_enabled) {
+        if (L.count > 0) eigs_obs_enable_runtime();
+        goto done;
+    }
 
     /* See the comment above: fd-level suppression is process-global, so the
      * eager compile is not taken at all while another thread could be writing
@@ -3887,8 +3894,17 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     for (int i = 0; i < L.count && !g_obs_needed; i++) {
         long size = 0;
         char *source = NULL;
+        char *tape_identity = NULL, *tape_error = NULL;
         free(module_dir);
         module_dir = NULL;
+        int source_replayed = trace_source_replay("observer_source", &source, &size,
+                                                   &tape_identity, &tape_error);
+        if (source_replayed) {
+            if (tape_error) { free(tape_error); eigs_obs_enable_runtime(); break; }
+            snprintf(resolved, 8192, "%s", tape_identity);
+            free(tape_identity);
+            if (size == 0) { free(source); continue; } /* recorded memo hit/empty unit */
+        } else {
 #if !EIGENSCRIPT_FREESTANDING
         /* Guarded on the VALUE, and the guard must cover the CALLEES, not only
          * the helpers. builtins_host.c is a whole-TU carve-out in this profile,
@@ -3915,8 +3931,12 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
              * the reservation again before resuming the eager scan. */
             eigs_process_single_thread_end();
             single_thread_reserved = 0;
-            if (eigs_source_lookup(L.paths[i])) { eigs_obs_enable_runtime(); break; }
+            if (eigs_source_lookup(L.paths[i])) {
+                trace_source_record("observer_source", NULL, 0, NULL, "observer gate: provider source");
+                eigs_obs_enable_runtime(); break;
+            }
             if (g_vm_multithreaded || !eigs_process_single_thread_begin()) {
+                trace_source_record("observer_source", NULL, 0, NULL, "observer gate: concurrent source");
                 eigs_obs_enable_runtime(); break;
             }
             single_thread_reserved = 1;
@@ -3927,7 +3947,10 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 #else
         int resolved_ok = 0;
 #endif
-        if (!resolved_ok) { eigs_obs_enable_runtime(); break; }
+        if (!resolved_ok) {
+            trace_source_record("observer_source", NULL, 0, NULL, "observer gate: unresolved source");
+            eigs_obs_enable_runtime(); break;
+        }
 
 #if !EIGENSCRIPT_FREESTANDING
         /* STAT BEFORE OPEN. This pass reads files on behalf of code the program
@@ -3960,22 +3983,36 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         struct stat st;
         if (stat(resolved, &st) != 0 || !S_ISREG(st.st_mode) ||
             st.st_size > OBS_GATE_MAX_MODULE_BYTES) {
+            trace_source_record("observer_source", NULL, 0, NULL, "observer gate: inadmissible source");
             eigs_obs_enable_runtime(); break;
         }
         module_dir = eigs_file_directory(resolved);
         struct stat dir_st;
-        if (stat(module_dir, &dir_st) != 0) { eigs_obs_enable_runtime(); break; }
-        if (obs_memo_seen(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino)) continue;
+        if (stat(module_dir, &dir_st) != 0) {
+            trace_source_record("observer_source", NULL, 0, NULL, "observer gate: unavailable directory");
+            eigs_obs_enable_runtime(); break;
+        }
+        if (obs_memo_seen(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino)) {
+            trace_source_record("observer_source", "", 0, resolved, NULL);
+            continue;
+        }
         if (g_obs_spec_bytes + st.st_size > OBS_GATE_SPECULATIVE_BUDGET) {
+            trace_source_record("observer_source", NULL, 0, NULL, "observer gate: source budget");
             eigs_obs_enable_runtime(); break;
         }
         g_obs_spec_bytes += st.st_size;
         source = read_file_util(resolved, &size);
 #endif
-        if (!source) { eigs_obs_enable_runtime(); break; }
+        if (!source) {
+            trace_source_record("observer_source", NULL, 0, NULL,
+                                "observer gate: module source unavailable");
+            eigs_obs_enable_runtime(); break;
+        }
 #if !EIGENSCRIPT_FREESTANDING
         obs_memo_add(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino);
 #endif
+        trace_source_record("observer_source", source, (size_t)size, resolved, NULL);
+        }
 
         int muted = obs_gate_mute_stderr();
         if (muted < 0) { free(source); eigs_obs_enable_runtime(); break; }
@@ -4020,7 +4057,8 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * chunk's own list. Nothing compiles, so nothing arms trace recording
          * in the parent (the trace_arm_snapshot dance is gone with it). */
         L.base = module_dir;
-        if (obs_ast_scan(mast, &L) || L.overflow) eigs_obs_enable_runtime();
+        int scan_armed = obs_ast_scan(mast, &L) || L.overflow;
+        if (scan_armed) eigs_obs_enable_runtime();
         g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
         g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
         g_first_error_from_lexer = saved_fe_lexer;

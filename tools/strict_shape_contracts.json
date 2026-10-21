@@ -515,6 +515,24 @@
     }
   },
   {
+    "function": "builtin_md5_file",
+    "file": "src/hash.c",
+    "category": "scalar",
+    "reason": "The list inspected is an internal taped-error value; the public argument is a scalar string path.",
+    "public_names": [
+      "md5_file"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "60a04e884c3d648df2f53b0e8ae46c8cdb0e2cca46211af774e5f9947100d29f"
+    ],
+    "source_sha256": {
+      "builtin_md5_file": [
+        "60a04e884c3d648df2f53b0e8ae46c8cdb0e2cca46211af774e5f9947100d29f"
+      ]
+    }
+  },
+  {
     "function": "builtin_build_corpus",
     "file": "src/builtins_host.c",
     "category": "optional",

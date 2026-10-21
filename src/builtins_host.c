@@ -226,6 +226,11 @@ Value* builtin_stream_open(Value *arg) {
                  EIGS_TENSOR_MAX_ELEMENTS);
         return make_bool(0);
     }
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "stream_open: not replayable under EIGS_REPLAY "
+                 "(filesystem boundary; see docs/TRACE.md)");
+        return make_bool(0);
+    }
     if (g_stream_file) { fclose(g_stream_file); g_stream_file = NULL; }
     g_stream_file = xfopen_write(path_val->data.str, "wb");
     /* fs:ANSWER the arguments were already validated by the two guards above;
@@ -247,6 +252,11 @@ Value* builtin_stream_open(Value *arg) {
 }
 
 Value* builtin_stream_write(Value *arg) {
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "stream_write: not replayable under EIGS_REPLAY "
+                 "(filesystem boundary; see docs/TRACE.md)");
+        return make_bool(0);
+    }
     /* The two halves of the original single condition are separated because
      * only one of them is about the ARGUMENT: `!g_stream_file` is a stream
      * state, and strict must not report it as a type error. Both halves still
@@ -270,6 +280,11 @@ Value* builtin_stream_write(Value *arg) {
 
 Value* builtin_stream_close(Value *arg) {
     (void)arg;
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "stream_close: not replayable under EIGS_REPLAY "
+                 "(filesystem boundary; see docs/TRACE.md)");
+        return make_bool(0);
+    }
     /* fs:ANSWER stream_close ignores `arg` entirely ((void)arg above), so this
      * cannot be an argument guard: no stream is open, and 0 is the failure bit
      * paired with the ok?1:0 value below. */
@@ -288,12 +303,8 @@ static Value *file_io_error(const char *fn, const char *path, int err);
 static Value *file_io_replay(const char *fn);
 
 /* mkdir of "path" → 1 on success; I/O failure raises EK_IO. Creates parents. */
-/* #585: mkdir's return (a success bit) is filesystem-dependent, so it is a
- * taped nondeterminism source. Under EIGS_REPLAY the TAKE short-circuits
- * before any mkdir(2), so the recorded bit is served and the filesystem is
- * NOT mutated a second time — the same "don't re-run side effects on replay"
- * rule as the proc-star / audio-capture boundary. Its return IS pinnable by
- * the tape (unlike a proc fd), so it is Recorded, not #148-non-replayable. */
+/* #585/#1885: replay is side-effect-free: TAKE precedes mkdir(2), as it does
+ * for every replayable filesystem mutation. */
 Value* builtin_mkdir(Value *arg) {
     ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "mkdir", "a string path", make_bool(0));
     Value *replayed = file_io_replay("mkdir");
@@ -401,8 +412,10 @@ Value* builtin_mktemp(Value *arg) {
 
 /* rm of "path" → 1 on success, 0 on failure */
 Value* builtin_rm(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "rm", "a string path", make_bool(0));
-    return make_bool(unlink(arg->data.str) == 0);
+    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "rm", "a string path", make_bool(0));
+    Value *replayed = file_io_replay("rm");
+    if (replayed) return replayed;
+    TRACE_NONDET_RECORD("rm", make_bool(unlink(arg->data.str) == 0));
 }
 
 /* Identifier frequency entry */
@@ -413,6 +426,11 @@ typedef struct {
 
 Value* builtin_build_corpus(Value *arg) {
     STRICT_LIST_MAX(arg, 7, "build_corpus");
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "build_corpus: not replayable under EIGS_REPLAY "
+                 "(filesystem boundary; see docs/TRACE.md)");
+        return make_null();
+    }
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4)
         return make_null();
 
@@ -844,18 +862,43 @@ Value* builtin_load_file(Value *arg) {
     const char *path = arg->data.str;
     long size = 0;
     char *source = NULL;
+    char *tape_identity = NULL;
+    char *tape_error = NULL;
 
-    if (resolve_eigenscript_file(arg->data.str, resolved, sizeof(resolved))) {
+    if (trace_source_replay("load_file_source", &source, &size,
+                            &tape_identity, &tape_error)) {
+        if (tape_error) {
+            rt_error(EK_IO, 0, "%s", tape_error);
+            free(tape_error);
+            return make_null();
+        }
+        snprintf(resolved, sizeof resolved, "%s", tape_identity);
+        free(tape_identity);
+        tape_identity = NULL;
         path = resolved;
-        source = read_file_util(path, &size);
-    }
+    } else {
 
-    if (!source) {
+        if (resolve_eigenscript_file(arg->data.str, resolved, sizeof(resolved))) {
+            path = resolved;
+            source = read_file_util(path, &size);
+        }
+
+        if (!source) {
         /* #490: match import's severity — a missing path is a catchable io
          * error, not a stderr-warn + silent null (rc=0). Callers that ignore
          * the return otherwise run on half-initialized state. */
-        eigs_file_resolve_error("load_file", eigs_current_file_dir(), arg->data.str, 0);
-        return make_null();
+            char *message = eigs_file_resolve_message("load_file", eigs_current_file_dir(),
+                                                       arg->data.str);
+            trace_source_record("load_file_source", NULL, 0, NULL, message);
+            rt_error(EK_IO, 0, "%s", message);
+            free(message);
+            return make_null();
+        }
+        char canonical[8192];
+        if (!realpath(path, canonical)) snprintf(canonical, sizeof canonical, "%s", path);
+        trace_source_record("load_file_source", source, (size_t)size, canonical, NULL);
+        snprintf(resolved, sizeof resolved, "%s", canonical);
+        path = resolved;
     }
 
     /* #496: circular-load guard. load_file has no module cache — it
@@ -1040,13 +1083,11 @@ Value* builtin_rename(Value *arg) {
     Value *to = list_get_view(arg, 1, &to_view);
     ARG_GUARD(!from || from->type != VAL_STR || !to || to->type != VAL_STR,
               "rename", "two string paths", make_bool(0));
-    int ok = rename(from->data.str, to->data.str) == 0;
-    int err = ok ? 0 : errno;
-    /* #1668/#1885: mutation remains live during replay. Only its result is
-     * replayed, after the syscall, so changed live state cannot change the
-     * script-visible answer. */
     Value *replayed = file_io_replay("rename");
     if (replayed) return replayed;
+    int ok = rename(from->data.str, to->data.str) == 0;
+    int err = ok ? 0 : errno;
+    /* #1885: TAKE precedes rename(2); replay never mutates the filesystem. */
     if (!ok) {
         char path[3900];
         snprintf(path, sizeof(path), "%s' to '%s", from->data.str, to->data.str);
@@ -1058,10 +1099,10 @@ Value* builtin_rename(Value *arg) {
 /* remove_file of path — delete a file. Returns 1 on success; I/O failure raises. */
 Value* builtin_remove_file(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_bool(0));
-    int ok = remove(arg->data.str) == 0;
-    int err = ok ? 0 : errno;
     Value *replayed = file_io_replay("remove_file");
     if (replayed) return replayed;
+    int ok = remove(arg->data.str) == 0;
+    int err = ok ? 0 : errno;
     if (!ok) return file_io_error("remove_file", arg->data.str, err);
     TRACE_NONDET_RECORD("remove_file", make_bool(1));
 }
@@ -1372,14 +1413,14 @@ Value* builtin_write_text(Value *arg) {
     ARG_GUARD(!path_val || path_val->type != VAL_STR ||
               !text_val || text_val->type != VAL_STR,
               "write_text", "two strings", make_bool(0));
+    Value *replayed = file_io_replay("write_text");
+    if (replayed) return replayed;
     FILE *f = xfopen_write(path_val->data.str, "w");
     /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
      * is xfopen_write failing (missing directory, permissions, sandbox), and
      * the header comment documents write_text as "1 on success, 0 on failure". */
     if (!f) {
         int err = errno;
-        Value *replayed = file_io_replay("write_text");
-        if (replayed) return replayed;
         return file_io_error("write_text", path_val->data.str, err);
     }
     size_t len = val_str_len(text_val);
@@ -1387,8 +1428,6 @@ Value* builtin_write_text(Value *arg) {
     int write_err = written == len ? 0 : errno;
     int close_ok = (fclose(f) == 0);
     int close_err = errno;
-    Value *replayed = file_io_replay("write_text");
-    if (replayed) return replayed;
     if (written != len || !close_ok)
         return file_io_error("write_text", path_val->data.str,
                              write_err ? write_err : (close_err ? close_err : EIO));
@@ -1699,6 +1738,8 @@ Value* builtin_write_bytes(Value *arg) {
         if (g_has_error) { free(out); return make_null(); }
         out[i] = finite_num_to_byte(dv);
     }
+    Value *replayed = file_io_replay("write_bytes");
+    if (replayed) { free(out); return replayed; }
     FILE *f = xfopen_write(path_val->data.str, append ? "ab" : "wb");
     /* fs:ANSWER the path was accepted by the guard above; a NULL FILE* is
      * xfopen_write failing, and the header documents write_bytes as yielding
@@ -1706,8 +1747,6 @@ Value* builtin_write_bytes(Value *arg) {
     if (!f) {
         int err = errno;
         free(out);
-        Value *replayed = file_io_replay("write_bytes");
-        if (replayed) return replayed;
         return file_io_error("write_bytes", path_val->data.str, err);
     }
     size_t written = fwrite(out, 1, (size_t)n, f);
@@ -1715,8 +1754,6 @@ Value* builtin_write_bytes(Value *arg) {
     int close_ok = (fclose(f) == 0);
     int close_err = errno;
     free(out);
-    Value *replayed = file_io_replay("write_bytes");
-    if (replayed) return replayed;
     if (!close_ok || written != (size_t)n)
         return file_io_error("write_bytes", path_val->data.str,
                              write_err ? write_err : (close_err ? close_err : EIO));

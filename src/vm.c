@@ -6025,8 +6025,29 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * e.g. EigenOS's ROM bundle — is the only module source). */
         char abs_path[8192];         /* module-cache key */
         char *source = NULL;
+        long source_size = 0;
+        char *tape_identity = NULL;
+        char *tape_error = NULL;
+        char import_warning[4096] = "";
 
-        const char *provided = eigs_source_lookup(name);
+        if (trace_source_replay("import_source", &source, &source_size,
+                                &tape_identity, &tape_error)) {
+            if (tape_error) {
+                rt_error(EK_IO, current_line, "%s", tape_error);
+                free(tape_error);
+                vm_push(make_null());
+                DISPATCH();
+            }
+            snprintf(abs_path, sizeof abs_path, "%s", tape_identity);
+            free(tape_identity);
+            Value *warning = NULL;
+            if (trace_replay_take("import_warning", &warning) && warning &&
+                warning->type == VAL_STR && warning->data.str[0])
+                fputs(warning->data.str, stderr);
+            val_decref(warning);
+        }
+
+        const char *provided = source ? NULL : eigs_source_lookup(name);
         if (provided) {
             /* Copy immediately: downstream owns + frees `source`, and
              * the provider's pointer is only guaranteed for this call.
@@ -6034,12 +6055,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * start with, so provider modules can't collide with files. */
             source = xstrdup(provided);
             snprintf(abs_path, sizeof(abs_path), "\x01provider:%.1024s", name);
-            Value *cached_dict = NULL;
-            if (eigs_module_cache_get(abs_path, &cached_dict)) {
-                free(source);
-                vm_push(cached_dict);
-                DISPATCH();
-            }
+            source_size = (long)strlen(source);
         }
 #if EIGENSCRIPT_FREESTANDING
         if (!source) {
@@ -6072,7 +6088,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!eigs_import_resolve(resolve_base, name, path_buf, sizeof(path_buf),
                                      shadowed, sizeof(shadowed))) {
                 snprintf(request, sizeof(request), "%.1024s.eigs and lib/%.1024s.eigs", name, name);
-                eigs_file_resolve_error("import", resolve_base, request, current_line);
+                char *message = eigs_file_resolve_message("import", resolve_base, request);
+                trace_source_record("import_source", NULL, 0, NULL, message);
+                rt_error(EK_IO, current_line, "%s", message);
+                free(message);
                 vm_push(make_null());
                 DISPATCH();
             }
@@ -6080,11 +6099,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 char ureal[8192];
                 if (!realpath(path_buf, ureal))
                     snprintf(ureal, sizeof(ureal), "%s", path_buf);
-                fprintf(stderr, "Warning: import '%s' matches both a "
-                        "project file and a stdlib module — using '%s', "
-                        "shadowing '%s' (project-first; rename the file "
+                snprintf(import_warning, sizeof import_warning,
+                        "Warning: import '%.1024s' matches both a "
+                        "project file and a stdlib module — using '%.1024s', "
+                        "shadowing '%.1024s' (project-first; rename the file "
                         "to use the stdlib module)\n",
                         name, ureal, shadowed);
+                fputs(import_warning, stderr);
             }
 
             /* Module cache: canonicalize to absolute path so two different
@@ -6097,21 +6118,32 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                  * still functions when it does. */
                 snprintf(abs_path, sizeof(abs_path), "%s", path_buf);
             }
-            Value *cached_dict = NULL;
-            if (eigs_module_cache_get(abs_path, &cached_dict)) {
-                vm_push(cached_dict);
-                DISPATCH();
-            }
-
-            long src_size = 0;
-            source = read_file_util(path_buf, &src_size);
+            source = read_file_util(path_buf, &source_size);
             if (!source) {
-                rt_error(EK_IO, current_line, "import: cannot read '%s'", name);
+                char message[1400];
+                snprintf(message, sizeof message, "import: cannot read '%s'", name);
+                trace_source_record("import_source", NULL, 0, NULL, message);
+                rt_error(EK_IO, current_line, "%s", message);
                 vm_push(make_null());
                 DISPATCH();
             }
         }
 #endif /* !EIGENSCRIPT_FREESTANDING */
+
+        if (!g_replay_enabled) {
+            trace_source_record("import_source", source, (size_t)source_size, abs_path, NULL);
+            if (__builtin_expect(g_trace_enabled, 0)) {
+                Value *warning = make_str(import_warning);
+                trace_nondet_value("import_warning", warning);
+                val_decref(warning);
+            }
+        }
+        Value *cached_dict = NULL;
+        if (eigs_module_cache_get(abs_path, &cached_dict)) {
+            free(source);
+            vm_push(cached_dict);
+            DISPATCH();
+        }
 
         /* #496: circular-import guard. `abs_path` is a confirmed cache
          * miss here (both source branches above return on a hit), so if
