@@ -107,6 +107,25 @@ VOCAB = {
     # (e) formatting
     'eigs_num_text': 'FORMAT',
 }
+# #1758 R1.6a: the final checked families coexist with the bridge until
+# R1.6z. Future migrations must stay visible to the same inventory.
+for family in ('number', 'float', 'int', 'byte', 'int_range', 'bounded', 'magnitude'):
+    required = 'eigs_int_arg_range' if family == 'int_range' else 'eigs_' + family + '_arg'
+    for accessor in (required, 'eigs_list_' + family, 'eigs_elem_' + family,
+                     'eigs_opt_' + family, 'eigs_slot_' + family,
+                     'eigs_slot_elem_' + family, 'eigs_slot_opt_' + family):
+        VOCAB[accessor] = 'READ'
+for accessor in ('buffer_read_f64', 'buffer_byte_at', 'buffer_index_at'):
+    VOCAB[accessor] = 'READ'
+for family in ('f64', 'int'):
+    for container in ('list', 'dict_value'):
+        VOCAB[container + '_get_' + family] = 'READ'
+        for operation in ('set', 'rewrite'):
+            VOCAB[container + '_' + operation + '_' + family] = 'PRODUCE'
+    VOCAB['list_append_' + family] = 'PRODUCE'
+for producer in ('make_float', 'make_float_permanent'):
+    VOCAB[producer] = 'PRODUCE'
+
 # JIT-only vocabulary (jit.c, jit.h, jit_smoke.c): the emitted guards test
 # raw tag bits and never name a VOCAB token, so a token scan alone sees almost
 # none of them. These are the tag-range immediates and the emitters that
@@ -148,6 +167,7 @@ CATEGORY_NAMES = {
 # changes with them. (Derived check: a new such function must be added to
 # VOCAB or here, with a reason.)
 WRAPPERS = {
+    'eigs_value_buffer_get': 'embed buffer data reader: the buffer_read_num boundary inside it is already a site',
     'compute_entropy_impl': 'observer: returns an entropy, not the number; its payload read is the site',
     'ent_child_slot': 'observer: returns a child entropy, not the number; its payload read is the site',
     'observer_entropy_now': 'observer: writes an entropy, not the number; its payload read is the site',
@@ -448,9 +468,12 @@ def classify(site):
 
 
 # ---- derived accessor check ----------------------------------------------
-READ_IN_BODY = re.compile(r'\b(VAL_F64_RAW|VAL_I64_RAW|SLOT_F64_RAW|eigs_num_arg|eigs_list_num|'
-                          r'eigs_slot_num|list_get_num|dict_value_get_num|slot_f64_value)\b|'
-                          r'(?:\.|->)(?:d_|f64_|i64_)\b')
+# Derive the checked-read vocabulary from the same registry as the sites;
+# a double-returning wrapper around a final reader must not disappear.
+READ_IN_BODY = re.compile(
+    r'\b(' + '|'.join(sorted({name for name, kind in VOCAB.items() if kind == 'READ'} |
+                              {'VAL_F64_RAW', 'VAL_I64_RAW', 'SLOT_F64_RAW'})) + r')\b|'
+    r'(?:\.|->)(?:d_|f64_|i64_)\b')
 
 
 def derived_accessors(stripped_by_file, scope_by_file, sigs_by_file):

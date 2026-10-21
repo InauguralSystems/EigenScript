@@ -1734,7 +1734,8 @@ void free_value(Value *v) {
     free(v);
 }
 
-Value* make_num(double n) {
+static inline Value *make_float_pooled(double n) __attribute__((always_inline));
+static inline Value *make_float_pooled(double n) {
     n = num_guard(n);
     Value *v;
 #ifndef EIGS_POOL_OFF_NUM
@@ -1756,6 +1757,11 @@ Value* make_num(double n) {
     v->refcount = 1;
     return v;
 }
+
+/* Both names share the exact pooling and normalisation path while the
+ * bridge exists. R1.6a migrates no caller. */
+Value *make_float(double n) { return make_float_pooled(n); }
+Value *make_num(double n) { return make_float_pooled(n); }
 
 /* #1758 R1.3: large int slots and Value API boundaries own ordinary heap
  * Values. Int boxes never enter the float freelist and own no GC edges. */
@@ -1790,7 +1796,7 @@ void recycle_intermediate(Value *v) {
 
 /* Unpooled make_num: never touches the per-thread NUM freelist, so it is
  * safe without a current VM thread (C-level fixtures, tests/test_intern_owners.c). */
-Value* make_num_permanent(double n) {
+Value* make_float_permanent(double n) {
     n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_FLOAT;
@@ -1798,6 +1804,8 @@ Value* make_num_permanent(double n) {
     v->refcount = 1;
     return v;
 }
+
+Value *make_num_permanent(double n) { return make_float_permanent(n); }
 
 /* Forward decl of the VAL_NULL singleton — defined below near make_null. */
 static Value g_null_singleton;
@@ -1851,6 +1859,249 @@ double eigs_elem_num(const Value *v, const char *who) {
 
 int eigs_opt_num(const Value *v, double *out, const char *who) {
     return eigs_slot_opt_num(eigs_container_slot((Value *)v), out, who);
+}
+
+/* The final readers never own their argument. Keep the payload/type
+ * predicate here so all forms share it, including every refusal path. */
+static int eigs_number_read(const Value *v, EigsNum *out, const char *who) {
+    if (v && v->type == VAL_INT) {
+        out->is_int = 1; out->value.i64 = VAL_I64_RAW(v); return 1;
+    }
+    if (v && v->type == VAL_FLOAT) {
+        out->is_int = 0; out->value.f64 = VAL_F64_RAW(v); return 1;
+    }
+    if (!g_has_error)
+        rt_error(EK_TYPE, 0, "%s: expected a number, got %s", num_who(who),
+                 v ? val_type_name(v->type) : "nothing");
+    return 0;
+}
+
+EigsNum eigs_number_arg(const Value *v, const char *who) {
+    EigsNum n = { .is_int = 0, .value = { .f64 = 0.0 } };
+    if (!eigs_number_read(v, &n, who)) return n;
+    if (!n.is_int && !isfinite(n.value.f64)) {
+        if (!g_has_error)
+            rt_error(EK_VALUE, 0, "%s: expected a finite number", num_who(who));
+        n.value.f64 = 0.0;
+    }
+    return n;
+}
+
+double eigs_float_arg(const Value *v, const char *who) {
+    EigsNum n = eigs_number_arg(v, who);
+    return n.is_int ? (double)n.value.i64 : n.value.f64;
+}
+
+int64_t eigs_int_arg(const Value *v, const char *who) {
+    EigsNum n = { .is_int = 0, .value = { .f64 = 0.0 } };
+    if (!eigs_number_read(v, &n, who)) return 0;
+    if (n.is_int) return n.value.i64;
+    int64_t i;
+    if (num_to_i64_exact(n.value.f64, &i)) return i;
+    if (!g_has_error)
+        rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, num_who(who), n.value.f64);
+    return 0;
+}
+
+int eigs_int_arg_range(const Value *v, int64_t lo, int64_t hi,
+                       int64_t *out, const char *who) {
+    int64_t i = eigs_int_arg(v, who);
+    if (g_has_error) return 0;
+    if (i < lo || i > hi || lo > hi) {
+        rt_error(EK_VALUE, 0, "%s: integer %lld is outside [%lld, %lld]", num_who(who),
+                 (long long)i, (long long)lo, (long long)hi);
+        return 0;
+    }
+    *out = i;
+    return 1;
+}
+
+uint8_t eigs_byte_arg(const Value *v, const char *who) {
+    int64_t i;
+    return eigs_int_arg_range(v, 0, 255, &i, who) ? (uint8_t)i : 0;
+}
+
+int eigs_bounded_arg(const Value *v, double lo, double hi, int *out, const char *who) {
+    double x = eigs_float_arg(v, who);
+    if (g_has_error) return 0;
+    if (!isfinite(lo) || !isfinite(hi) || lo > hi) {
+        rt_error(EK_VALUE, 0, "%s: invalid bounded range", num_who(who)); return 0;
+    }
+    if (x < lo) x = lo;
+    if (x > hi) x = hi;
+    x = round(x);                 /* Q4: half away from zero, after clamping */
+    if (!(x >= (double)INT_MIN && x <= (double)INT_MAX)) {
+        rt_error(EK_VALUE, 0, "%s: bounded value does not fit a C int", num_who(who));
+        return 0;
+    }
+    *out = (int)x;
+    return 1;
+}
+
+int eigs_magnitude_arg(const Value *v, int64_t lo, int64_t hi,
+                       int64_t *out, const char *who) {
+    EigsNum n = eigs_number_arg(v, who);
+    if (g_has_error) return 0;
+    int64_t i;
+    if (n.is_int) i = n.value.i64;
+    else if (!num_to_i64_exact(round(n.value.f64), &i)) {
+        rt_error(EK_VALUE, 0, "%s: magnitude has no integer representation", num_who(who));
+        return 0;
+    }
+    if (i < lo || i > hi || lo > hi) {
+        rt_error(EK_VALUE, 0, "%s: magnitude is outside [%lld, %lld]", num_who(who),
+                 (long long)lo, (long long)hi);
+        return 0;
+    }
+    *out = i;
+    return 1;
+}
+
+/* Validate list shape once; readers below use borrowed views of its slot. */
+static const Value *eigs_reader_list_arg(const Value *list, int i,
+                                        EigsView *view, const char *who) {
+    if (list && list->type == VAL_LIST && i >= 0 && i < list->data.list.count)
+        return list_get_view(list, i, view);
+    if (!g_has_error)
+        rt_error(EK_TYPE, 0, "%s: expected a number as argument %d, got nothing",
+                 num_who(who), i);
+    return NULL;
+}
+static int eigs_reader_elem_default(const Value *v) {
+    return !g_strict && (!v || (!val_is_number(v) && v->type != VAL_BOOL));
+}
+
+EigsNum eigs_list_number(const Value *list, int i, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? (EigsNum){ .is_int = 0, .value = { .f64 = 0.0 } } : eigs_number_arg(v, who);
+}
+EigsNum eigs_elem_number(const Value *v, const char *who) {
+    return eigs_reader_elem_default(v) ? (EigsNum){ .is_int = 0, .value = { .f64 = 0.0 } } : eigs_number_arg(v, who);
+}
+int eigs_opt_number(const Value *v, EigsNum *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    EigsNum n = eigs_number_arg(v, who);
+    if (g_has_error) return 0;
+    *out = n; return 1;
+}
+
+double eigs_list_float(const Value *list, int i, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_float_arg(v, who);
+}
+double eigs_elem_float(const Value *v, const char *who) {
+    return eigs_reader_elem_default(v) ? 0 : eigs_float_arg(v, who);
+}
+int eigs_opt_float(const Value *v, double *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    double n = eigs_float_arg(v, who);
+    if (g_has_error) return 0;
+    *out = n; return 1;
+}
+
+int64_t eigs_list_int(const Value *list, int i, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_int_arg(v, who);
+}
+int64_t eigs_elem_int(const Value *v, const char *who) {
+    return eigs_reader_elem_default(v) ? 0 : eigs_int_arg(v, who);
+}
+int eigs_opt_int(const Value *v, int64_t *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    int64_t n = eigs_int_arg(v, who);
+    if (g_has_error) return 0;
+    *out = n; return 1;
+}
+
+uint8_t eigs_list_byte(const Value *list, int i, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_byte_arg(v, who);
+}
+uint8_t eigs_elem_byte(const Value *v, const char *who) {
+    return eigs_reader_elem_default(v) ? 0 : eigs_byte_arg(v, who);
+}
+int eigs_opt_byte(const Value *v, uint8_t *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    uint8_t n = eigs_byte_arg(v, who);
+    if (g_has_error) return 0;
+    *out = n; return 1;
+}
+
+int eigs_list_int_range(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_int_arg_range(v, lo, hi, out, who);
+}
+int eigs_elem_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    const Value zero = { .type = VAL_INT };
+    return eigs_int_arg_range(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+}
+int eigs_opt_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    return eigs_int_arg_range(v, lo, hi, out, who);
+}
+
+int eigs_list_bounded(const Value *list, int i, double lo, double hi, int *out, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_bounded_arg(v, lo, hi, out, who);
+}
+int eigs_elem_bounded(const Value *v, double lo, double hi, int *out, const char *who) {
+    const Value zero = { .type = VAL_INT };
+    return eigs_bounded_arg(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+}
+int eigs_opt_bounded(const Value *v, double lo, double hi, int *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    return eigs_bounded_arg(v, lo, hi, out, who);
+}
+
+int eigs_list_magnitude(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_magnitude_arg(v, lo, hi, out, who);
+}
+int eigs_elem_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    const Value zero = { .type = VAL_INT };
+    return eigs_magnitude_arg(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+}
+int eigs_opt_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    return eigs_magnitude_arg(v, lo, hi, out, who);
+}
+
+/* buffer_read_f64 is the renamed data boundary; callers that need exact
+ * bytes or indices instead call the corresponding checked conversion. */
+double buffer_read_f64(const Value *buffer, int64_t index) {
+    double x = buffer->data.buffer.data[index];
+    if (!isfinite(x)) {
+        if (!g_has_error)
+            rt_error(EK_VALUE, 0, "buffer_read_f64: expected a finite number");
+        return 0.0;
+    }
+    return num_guard(x);
+}
+int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char *who) {
+    if (!buffer || buffer->type != VAL_BUFFER || index < 0 || index >= buffer->data.buffer.count) {
+        if (!g_has_error) rt_error(EK_INDEX, 0, "%s: buffer index is out of range", num_who(who));
+        return 0;
+    }
+    Value v = { .type = VAL_FLOAT };
+    VAL_F64_RAW(&v) = buffer->data.buffer.data[index];
+    int64_t i = eigs_int_arg(&v, who);
+    if (g_has_error) return 0;
+    *out = i; return 1;
+}
+int buffer_byte_at(const Value *buffer, int64_t index, uint8_t *out, const char *who) {
+    int64_t i;
+    if (!buffer_index_at(buffer, index, &i, who)) return 0;
+    if (i < 0 || i > 255) {
+        rt_error(EK_VALUE, 0, "%s: byte is outside [0, 255]", num_who(who)); return 0;
+    }
+    *out = (uint8_t)i; return 1;
 }
 
 /* Two levels: the argument, an element of the argument list, or an element

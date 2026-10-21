@@ -275,6 +275,15 @@ struct ASTNode {
 
 /* ---- Value types ---- */
 
+/* #1758 R1.6: the bridge survives until R1.6z. Only an explicit meter
+ * build deprecates it; ordinary builds keep their zero-warning contract. */
+#if defined(EIGS_PHASE2_METER) && (defined(__GNUC__) || defined(__clang__))
+#define EIGS_R16_DEPRECATED(msg) __attribute__((deprecated(msg)))
+#else
+#define EIGS_R16_DEPRECATED(msg)
+#endif
+
+
 typedef enum {
     /* #1758 R1.2a: a double. A number Value is a VAL_FLOAT or a
      * VAL_INT; `type of` says "num" for both (decision (B)). */
@@ -1392,18 +1401,54 @@ int eigs_arg_has_bool(const Value *arg);
  *   eigs_opt_num(v, &d, who)   optional: absent/null -> 0 (use the default);
  *                              a number -> 1 with *d set; anything else raises
  *                              and returns 0 */
-double eigs_num_arg_slow(const Value *v, const char *who);
+double eigs_num_arg_slow(const Value *v, const char *who) EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_num_arg_slow by its decided numeric reader or producer");
+EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_num_arg by its decided numeric reader or producer")
 static inline double eigs_num_arg(const Value *v, const char *who) {
     if (__builtin_expect(v && v->type == VAL_FLOAT, 1)) return VAL_F64_RAW(v);
     return eigs_num_arg_slow(v, who);   /* #1758: an int converts there */
 }
-double eigs_list_num(const Value *list, int i, const char *who);
+double eigs_list_num(const Value *list, int i, const char *who) EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_list_num by its decided numeric reader or producer");
 /* #1637 round 4: an ELEMENT a builtin reads as a number (a tensor cell, a
  * byte). A bool raises in every strict mode; any other non-number raises
  * under EIGS_STRICT and reads as the documented 0.0 under EIGS_STRICT=0.
  * The caller checks g_has_error. */
-double eigs_elem_num(const Value *v, const char *who);
-int eigs_opt_num(const Value *v, double *out, const char *who);
+double eigs_elem_num(const Value *v, const char *who) EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_elem_num by its decided numeric reader or producer");
+int eigs_opt_num(const Value *v, double *out, const char *who) EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_opt_num by its decided numeric reader or producer");
+/* #1758 R1.6a: final numeric readers. All inputs are BORROWED, including
+ * on a raise: no reader allocates, retains, or releases its argument. Every
+ * floating input must be finite. Required/list reads reject non-numbers;
+ * element reads retain the legacy non-strict zero default (never for bool);
+ * optional reads return 0 for absent/null or a raise, leaving *out unchanged.
+ * A successful range/optional read returns 1. Callers stop on g_has_error. */
+EigsNum eigs_number_arg(const Value *v, const char *who);
+EigsNum eigs_list_number(const Value *list, int i, const char *who);
+EigsNum eigs_elem_number(const Value *v, const char *who);
+int eigs_opt_number(const Value *v, EigsNum *out, const char *who);
+double eigs_float_arg(const Value *v, const char *who);
+double eigs_list_float(const Value *list, int i, const char *who);
+double eigs_elem_float(const Value *v, const char *who);
+int eigs_opt_float(const Value *v, double *out, const char *who);
+int64_t eigs_int_arg(const Value *v, const char *who);
+int64_t eigs_list_int(const Value *list, int i, const char *who);
+int64_t eigs_elem_int(const Value *v, const char *who);
+int eigs_opt_int(const Value *v, int64_t *out, const char *who);
+uint8_t eigs_byte_arg(const Value *v, const char *who);
+uint8_t eigs_list_byte(const Value *list, int i, const char *who);
+uint8_t eigs_elem_byte(const Value *v, const char *who);
+int eigs_opt_byte(const Value *v, uint8_t *out, const char *who);
+int eigs_int_arg_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_list_int_range(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_elem_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_opt_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_bounded_arg(const Value *v, double lo, double hi, int *out, const char *who);
+int eigs_list_bounded(const Value *list, int i, double lo, double hi, int *out, const char *who);
+int eigs_elem_bounded(const Value *v, double lo, double hi, int *out, const char *who);
+int eigs_opt_bounded(const Value *v, double lo, double hi, int *out, const char *who);
+int eigs_magnitude_arg(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_list_magnitude(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_elem_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_opt_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+
 /* #1637: the builtin-call bool gate -- the structural half of "a bool is
  * not a number". Every call of a C builtin goes through eigs_call_builtin
  * (tools/num_read_check.sh refuses a bare `->data.builtin(` call). When the
@@ -1774,7 +1819,9 @@ void   strbuf_free(strbuf *b);
 
 /* ---- Value constructors ---- */
 
-Value* make_num(double n);
+Value* make_num(double n) EIGS_R16_DEPRECATED("#1758 R1.6: replace make_num by its decided numeric reader or producer");
+Value* make_float(double n);
+Value* make_float_permanent(double n);
 Value* make_int(int64_t n);   /* owned, unpooled int box; slots canonicalize small ints */
 void recycle_intermediate(Value *v);
 Value* make_str(const char *s);
@@ -1785,7 +1832,7 @@ Value* make_null(void);
 /* #1637: the immortal true/false singletons (refcount no-ops, like null). */
 Value* make_bool(int b);
 Value* make_list(int capacity);
-Value* make_num_permanent(double n);   /* unpooled make_num; needs no VM thread */
+Value* make_num_permanent(double n) EIGS_R16_DEPRECATED("#1758 R1.6: replace make_num_permanent by its decided numeric reader or producer");   /* unpooled make_num; needs no VM thread */
 Value* make_list_heap(int capacity);
 Value* make_text_builder(void);
 Value* make_fn(const char *name, char **params, int param_count, Env *closure);
@@ -1897,6 +1944,7 @@ static inline double num_guard(double x) {
  * finite-number invariant applies when an element crosses the buffer/scalar
  * boundary: every scalar read goes through this helper.  Keeping the guard at
  * that boundary also lets bulk kernels retain their unboxed representation. */
+EIGS_R16_DEPRECATED("#1758 R1.6: replace buffer_read_num by its decided numeric reader or producer")
 static inline double buffer_read_num(const Value *buffer, int64_t index) {
     return num_guard(buffer->data.buffer.data[index]);
 }
@@ -1904,6 +1952,7 @@ static inline double buffer_read_num(const Value *buffer, int64_t index) {
 /* Numeric byte consumers truncate and wrap modulo 256. Reduce in double
  * first: even a normalized finite number can be outside the C int range.
  * The caller must normalize the input and stop on a raised read first. */
+EIGS_R16_DEPRECATED("#1758 R1.6: replace finite_num_to_byte by its decided numeric reader or producer")
 static inline unsigned char finite_num_to_byte(double x) {
     return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
 }
@@ -1930,9 +1979,16 @@ static inline int64_t eigs_bit_shift(int64_t a, int64_t count, int right) {
     return bits <= INT64_MAX ? (int64_t)bits : -1 - (int64_t)(UINT64_MAX - bits);
 }
 
+/* Final buffer readers refuse non-finite payloads. A finite data read
+ * retains the current scalar guard; byte/index reads also require exactness. */
+double buffer_read_f64(const Value *buffer, int64_t index);
+int buffer_byte_at(const Value *buffer, int64_t index, uint8_t *out, const char *who);
+int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char *who);
+
 #define EIGS_NO_INT_REP_FMT "'%s': number %.17g has no integer representation"
 
 __attribute__((unused))
+EIGS_R16_DEPRECATED("#1758 R1.6: replace buffer_read_byte by its decided numeric reader or producer")
 static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {
     double x = buffer_read_num(buffer, index);
     if (g_has_error) return 0;

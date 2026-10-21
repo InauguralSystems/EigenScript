@@ -677,6 +677,8 @@ result).**
 | `builtins.c:bool_gate_name` | guarded | skips every non-pointer slot (`!slot_is_ptr`); an SMI is never a builtin (D2) |
 | `builtins.c:sort_cmp_str` | guarded | reached only after `builtin_sort` proved every element a string (its homogeneity test names `VAL_NUM`, compile-forced) (D2) |
 | `builtins_host.c:ls_entry_cmp` | guarded | sorts the string entries `ls` built itself (D2) |
+| `container.h:dict_value_get_f64` | guarded | final float-storage reader: an SMI returns 0 without writing the output; no allocation or ownership transfer (D1) |
+| `container.h:dict_value_get_int` | smi-arm | final int-storage reader: exact SMI or boxed int payload; no allocation or ownership transfer (D1) |
 | `container.h:dict_value_get_num` | smi-arm | bridge reader (2.7): an int element converts to its double, exactly (|SMI| < 2^47), until R1.6 deletes the bridge (D1) |
 | `container.h:dict_value_get_ref` | smi-arm | NULL for an SMI or a double (container.h:137); since R1.3 a boxed int (\|i\| >= 2^47) is a heap slot and comes back as its non-NULL `VAL_INT` Value, so the caller types the element before reading it (D1) |
 | `container.h:dict_value_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value`, the one SMI boxer (unwired until R1.3) (D1) |
@@ -689,6 +691,8 @@ result).**
 | `container.h:eigs_slot_ref` | refuse | an immediate double or an SMI was dereferenced as a pointer; every caller tests for a number first. R1.1 aborts on any slot that is not a pointer, null or bool, so a caller missed later fails loudly (D2) |
 | `container.h:eigs_slot_store_borrow` | guarded | an SMI is canonical storage and comes back as it is, with no reference to take (D1) |
 | `container.h:eigs_slot_store_owned` | guarded | an SMI is canonical storage and comes back as it is, with no reference to release (D1) |
+| `container.h:list_get_f64` | guarded | final float-storage reader: an SMI returns 0 without writing the output; no allocation or ownership transfer (D1) |
+| `container.h:list_get_int` | smi-arm | final int-storage reader: exact SMI or boxed int payload; no allocation or ownership transfer (D1) |
 | `container.h:list_get_num` | smi-arm | bridge reader: an int element converts to its double (D1) |
 | `container.h:list_get_ref` | smi-arm | NULL for an SMI or a double (container.h:133); since R1.3 a boxed int (\|i\| >= 2^47) is a heap slot and comes back as its non-NULL `VAL_INT` Value (D1) |
 | `container.h:list_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value` (unwired until R1.3) (D1) |
@@ -1598,8 +1602,22 @@ current state behind several rows:
 **Builtins to add**, outside the checked table until they exist:
 - `num_type` (N7);
 - `f64_bits` and `f64_from_bits`, plus buffer bits get/set (N12);
-- the N9 width family: wrapping, checked and saturating i8..i64 and u8..u64;
-  unsigned compare, div, rem and to-string; `fround`.
+- N9's decided width family ([#1758 comment 6304880619](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6304880619)):
+  `<type>_<mode>_<op>`, with types `i8 i16 i32 i64 u8 u16 u32 u64`, modes
+  `wrapping checked saturating`, and ops `add sub mul` (72 builtins, one
+  table-driven implementation in `builtins_int.c`). Examples:
+  `i64_wrapping_add`, `u8_checked_add`, `i8_saturating_sub`.
+  N5 accepts integral floats and refuses fractions; operands must then fit
+  the named type's range, without masking. `i64` and `u64` accept every
+  int64; u64 uses its int64 bit pattern (`-1` is u64 max). Results are ints:
+  wrapping reduces modulo the width, checked raises `value` naming the
+  builtin on overflow, and saturating clamps to the type's range.
+- `u64_compare` (returns -1, 0 or 1), `u64_div`, `u64_rem`, and unary
+  `u64_to_string`; a zero divisor raises. Rust's std is the oracle, with
+  `as u64` / `as i64` mapping the bit pattern. No width-family negation,
+  shifts, division, remainder or power are added.
+- `fround`: `(double)(float)x`, converting an int first and returning a
+  float (JavaScript's `Math.fround`). Together these are 77 new builtins.
 
 ---
 
@@ -1743,10 +1761,19 @@ numbers are at `0740af03`.
     logical) and 3548 `CASE(BNOT)`;
   - builtins.c:349-414 `bit_*`;
   - JIT bitwise is refused (§4.2).
-- **N9 (width builtins):** new code (builtins.c or a new `builtins_int.c`);
-  `fround` (`(double)(float)x`).
-- **N10 (`num of`):** builtins.c:494 `builtin_num` (partial input #1638,
-  radix prefixes, int or float result).
+- **N9 (width builtins):** new `builtins_int.c`, with §6's decided names,
+  operand rules and Rust std oracle; `fround` (`(double)(float)x`).
+- **N10 (`num of`):** builtins.c:494 `builtin_num`; the decided grammar is
+  exactly the lexer's numeric-literal grammar, plus surrounding ASCII
+  whitespace and an optional leading sign (#1758 comment 6304880619).
+  Decimal integer text is an int when it fits int64 and a float otherwise;
+  a decimal point or exponent selects float. Hex `0x`/`0X` integer text
+  wraps as the literal does. Partial input (#1638), empty/blank text,
+  underscore separators, `0b`, `0o`, hex floats, `inf` and `nan` raise
+  `value`. `try_parse` stays the non-raising form. Lua 5.4.9's `tonumber`
+  is the oracle, with its `nil` corresponding to a raise; hex floats are
+  the declared divergence because Lua accepts them and this lexer does not.
+  MAP `N10.radix` pins both hex spellings and the two refused prefixes.
 - **N11 (IEEE doubles; strict becomes opt-in):**
   - eigenscript.h:1876 `num_guard`, `num_guard_named`, `EIGS_NUM_MAX` and
     `STRICT_DOMAIN`: the 74 clamp sites (`num_guard` 60, `num_guard_named`
@@ -2022,18 +2049,64 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    `INT64_MIN % -1` is 0.
 5. **R1.5, N8.** Bitwise operators on ints with Lua's shift rules.
 6. **R1.6, the bridge deletion: every builtin's §6 semantics.** The bridge's
-   21 tokens are deleted (743 sites first forced), in per-file-group commits
-   that each migrate their sites off the deprecated bridge and give those
-   builtins their final behaviour in the same commit:
-   - every int-preserving and int-requiring row, the 42 LOSS rows first;
-   - Q1: integer-valued parameters through `eigs_int_arg_range`,
-     `eigs_byte_arg`, `buffer_byte_at` and `buffer_index_at`;
-   - Q7: continuous parameters through `eigs_geom_shape`,
-     `eigs_bounded_arg` and `eigs_magnitude_arg` (§2.6);
-   - Q4 `round`; `num of` (#1638) and the decoders' int kinds for integer
-     text (`json_decode`, `json_path`, `store_query`, `db_query_value`); the
-     N9 width family;
-   - gate: the per-builtin behaviour table (§9.4), on the tag and the branch.
+   21 tokens are deleted in per-file-group commits. Each commit moves its
+   sites off the bridge and gives those builtins their final behaviour in
+   that same commit (§2.7). The binding R1.6 plan splits the work as follows;
+   a builtin's file is where its inventory C function is defined.
+
+   | sub-round | work | table rows | MAP rows or mechanical gates |
+   |---|---|---:|---|
+   | R1.6a | No behaviour change: §2.6 readers except `eigs_geom_shape`; bounded and magnitude included; opt-in meter; pre-registered table and tool; round order and records | none migrate | mechanical: C reader test and table calibration |
+   | R1.6b | Every LOSS row in any file, plus `builtins.c`'s other int-preserving rows | 45 | `A.sum-overflow-raises`, `A.tensor-scalar-overflow-raises`, `N5.range-fraction-raises`, `N5.store-key-fraction-raises`, `N10.partial-refused`, `N10.radix`, `N10.int-or-float`, `N14.json-path-int-exact`, `N14.decode-kinds` |
+   | R1.6c | Remaining `builtins.c`; `builtins_host.c` (including `read_text`); `vm.c`'s builtin | 76 | `N5.substr-fraction-raises` |
+   | R1.6d | Non-LOSS `builtins_tensor.c`, `builtins_buf.c`, `model_io.c`, `model_infer.c`, `model_train.c`; re-decide `buffer_read_num` sites as f64, byte or index reads | 53 | `N5.gather-index-fraction-raises`, `N5.pcm16-byte-raises` |
+   | R1.6e | `ext_gfx.c`, the Q7 readers and whole-shape `eigs_geom_shape` clipping (Liang-Barsky for lines) | 38 | `gate.N5.q7-readers`; table run |
+   | R1.6f | Non-LOSS `ext_store.c`, `ext_db.c`, `ext_http.c`, `ext_net.c` | 20 | mechanical: table run |
+   | R1.6g | N9's 77 new width-family builtins in `builtins_int.c`, Rust std oracle | +77 | `N9.wrapping`, `N9.checked-raises`, `N9.saturating`, `N9.unsigned-ops`, `N9.fround` |
+   | R1.6z | Remaining bridge sites in runtime, containers, embed, trace, compiler and task; delete all 21 tokens and all helpers left without callers | none | mechanical: deletion compile and final full table |
+
+   The existing rows sum to 232. Ruling R1.6a-D1 adds `read_text`, already
+   present in the R1.6a start (`1fd4422c`) through main's #1841/#1668, to
+   round c: the original plan's c=75 and total=231 become c=76 and total=232.
+   `tools/phase2_builtins.sh` derives and checks the sub-round by this rule. Every sub-round uses the table gate
+   (§9.4); later builders add their completed round to
+   `tests/phase2/builtins_landed.txt` in that commit. R1.6a leaves it empty;
+   it migrates no builtin and its declaration is not required for later
+   sub-rounds to advance the derived prefix. Its reader/table gates always run.
+   The declaration and complete MAP row files together determine CI's
+   `--through`, so a file that arrived early cannot advance it.
+
+   **R1.6a meter.** `EIGS_R16_DEPRECATED(msg)` marks the 21 bridge tokens
+   only with `make EIGS_PHASE2_METER=1`; ordinary builds have no deprecation
+   attribute. The meter is a progress count, not a behaviour change.
+   Native Make meter builds use the server-db and zlib profiles to include
+   every capability. Counts below include emitted diagnostics per profile
+   and the union of distinct file:line:column warning locations (a header
+   location repeated across translation units counts once in that union).
+
+   | File | server-db emitted | zlib emitted | Distinct locations |
+   |---|---:|---:|---:|
+   | `src/builtins.c` | 218 | 218 | 201 |
+   | `src/builtins_buf.c` | 49 | 53 | 51 |
+   | `src/builtins_host.c` | 38 | 38 | 37 |
+   | `src/builtins_tensor.c` | 123 | 123 | 119 |
+   | `src/compiler.c` | 1 | 1 | 1 |
+   | `src/container.h` | 420 | 348 | 12 |
+   | `src/eigenscript.c` | 21 | 21 | 21 |
+   | `src/eigenscript.h` | 105 | 87 | 3 |
+   | `src/eigs_embed.c` | 2 | 2 | 2 |
+   | `src/ext_db.c` | 2 | 0 | 2 |
+   | `src/ext_gfx.c` | 194 | 194 | 194 |
+   | `src/ext_http.c` | 11 | 0 | 11 |
+   | `src/ext_net.c` | 14 | 0 | 14 |
+   | `src/ext_store.c` | 34 | 34 | 33 |
+   | `src/model_infer.c` | 15 | 0 | 15 |
+   | `src/model_train.c` | 4 | 0 | 4 |
+   | `src/task.c` | 5 | 5 | 5 |
+   | `src/trace.c` | 1 | 1 | 1 |
+   | `src/vm.c` | 80 | 80 | 67 |
+   | **Total** | **1337** | **1205** | **793** |
+
 7. **R1.7, the float text (N6) and N14's writers.**
    - Python-repr floats; ints as exact digits.
    - The constant dedup compares bits, so `-0.0` survives.
@@ -2270,7 +2343,8 @@ deliberate edit of the row.
 **The landed-round filter.** Each MAP row names the commit that makes it
 pass (`[R1.3]`; a row needing two commits names both, `[R2.1/R2.4]`, and
 lands with the later). `--through Rk` selects the rows that have landed by
-Rk, in the order R1.1 < R1.2 < ... < R1.8 < R2.1 < ... < R2.6 < R3; controls
+Rk, in the order R1.1 < ... < R1.5 < R1.6a < R1.6b < R1.6c < R1.6d <
+R1.6e < R1.6f < R1.6g < R1.6z < R1.7 < R1.8 < R2.1 < ... < R2.6 < R3; controls
 run in every mode; the default is the whole plan. A round is checked against
 exactly its landed rows, so R1.3's check cannot fail on an R1.7 row, and the
 final check runs all of them. Each round has a non-zero set of its own rows,
@@ -2282,9 +2356,16 @@ failing on zero rows:
 | R1.1 | 0 | mechanical: the compile errors (223 sites), the C slot test (§2.5; `examined` equals the derived classifier count), plant 1, the int-source check, and the differential over the suite's `.eigs` corpus |
 | R1.2 | 0 | mechanical: the compile errors (464 sites), the int-source check, and the differential over the suite's `.eigs` corpus (behaviour-preserving) |
 | R1.3 | 51 | `gate.N5.iterator-metadata` |
-| R1.4 | 9 | |
+| R1.4 | 14 | |
 | R1.5 | 7 | |
-| R1.6 | 17 | `gate.N5.q7-readers`, and the per-builtin behaviour table (§9.4) |
+| R1.6a | 0 | mechanical: C reader test (`tools/phase2_readers.sh`) and the per-builtin table (§9.4) |
+| R1.6b | 9 | per-builtin table |
+| R1.6c | 1 | per-builtin table |
+| R1.6d | 2 | per-builtin table |
+| R1.6e | 0 | mechanical: per-builtin table; `gate.N5.q7-readers` |
+| R1.6f | 0 | mechanical: per-builtin table |
+| R1.6g | 5 | per-builtin table, including the new N9 rows |
+| R1.6z | 0 | mechanical: bridge-token deletion compile and final full table |
 | R1.7 | 12 | `gate.N14.db-param-exact` |
 | R1.8 | 0 | `gate.N7.embed-int` (the embed smoke test), the executed doc fences (suite [89]/[90]), the LSP and lint suite sections |
 | R2.1 | 0 | mechanical: the C slot test's NaN-payload rows and plant 2 (no program can make a NaN before R2.2) |
@@ -2551,53 +2632,93 @@ run (docs/PRINCIPLES.md 5).
 
 ### 9.4 The per-builtin behaviour table (R1.6's gate; replaces the int-fuzz class check)
 
-Round 2 planned an int-fuzz gate asserting "the result is an int for int
-inputs". The critic showed what it cannot see: builtins whose int result
-comes from a non-numeric input (`len`, `ord`, `index_of`, `buf_len`,
-`scan_ints`, `read_bytes`: fed an int they raise `type_mismatch` on both
-binaries), and builtins that need a valid argument to run at all
-(`shared_size` raises `value` on a bare int). R1.6 changes about 114 rows, so
-its gate must exercise every builtin with a VALID call.
+The table exercises every numeric builtin with a valid call. Integer
+results can come from non-numeric inputs (`len`, `ord`, `index_of`,
+`buf_len`, `scan_ints`, `read_bytes`); other calls need a valid handle or
+shape (`shared_size`). Feeding every builtin a bare int cannot classify
+those results.
 
-`tests/phase2/builtins.tsv` (written in R1.6, checked by
-`tools/phase2_builtins.sh <tag-binary> <branch-binary>`):
-- **One row per numeric builtin of §6, both directions** (the population is
-  the inventory file's `## Builtins` list, not a hand list): `builtin`,
-  `class` (must equal §6's), `probe` (a short program that calls it validly
-  and prints the result, plus `num_type of` it where the result is a
-  number), `branch` (the exact expected stdout and rc), `tag` (the tag's
-  observed stdout and rc), `changes` (`yes`/`no`).
-- **Checks:**
-  1. the row set equals §6's numeric builtins, both directions; zero rows
-     is a FAIL;
-  2. `class` equals §6's class, and the row's `branch` output is consistent
-     with it: an `int-preserving` row prints `"int"` for its result's
-     `num_type`; a `float-producing` row prints `"float"`; an
-     `int-requiring` row's probe passes a fractional value in an
-     integer-valued parameter and expects `value` (and a second line with
-     an integral float that converts); a Q7 row's probe exercises one
-     out-of-range value of each class it names (a clipped shape draws
-     nothing, a bounded value clamps, a magnitude raises);
-  3. the branch's actual output equals `branch`, and the tag's equals
-     `tag`;
-  4. `changes` is `yes` exactly when `branch` and `tag` differ, and every
-     `LOSS`, `int-requiring` and Q7 row has `changes: yes`: a probe that
-     does not show the tag/branch difference for a builtin §6 says changes
-     is VACUOUS.
-- **What it sees that the fuzz could not:** `len of [1, 2]` must print
-  `[2, "int"]`; `ord of "A"` `[65, "int"]`; `shared_size` is probed with a
-  valid shared value; every `int-requiring` row raises on 1.5; `gather` and
-  `scatter_add` raise on an index of 1.5; `buf_from_pcm16le` raises on a
-  byte of 300 and of 1.5.
-- **Calibration plants** (one-time, in the commit that adds it): `len`
-  reverted to `make_float`: its row red; an `int-requiring` builtin reverted
-  to truncation: red; a row deleted, and a stale row added: membership red
-  both ways; a class edited: red; a `LOSS` row whose probe stays below 2^53:
-  VACUOUS.
+**R1.6a amendments**, pre-registered before migration and recorded with the
+orchestrator's rulings in `tests/phase2/builtins/{BAR,RULINGS}.md`:
 
-The int-fuzz sweep, if kept, shrinks to what the table does not do: a
-crash-only sweep (every builtin fed ints in every numeric slot must raise
-or return, never crash), in the shape of `tests/test_bool_fuzz.sh`.
+- **(a) Migration changes compare `.branch` with `.pre`, the R1.5 baseline.**
+  `changes_vs_pre` is the vacuity guard; `changes_vs_tag` remains an observed
+  comparison. The original release bar recorded 202 differences from
+  v0.46.0 among 206 rows. After ruling R1.6a-D1 adds `read_text`, the updated
+  pre-registered bar records 203 among 207. These are historical tag
+  comparisons: the tag has no `num_type`, so comparing only with `.tag`
+  would make the migration check vacuous. The remaining 25 rows use matched
+  `server`, `zlib` or `server-db` builds, with PostgreSQL for db probes
+  (ruling A3).
+  The original `.pre` records came from `4ac31e67`; R1.6a checks them against
+  its start, `1fd4422c`, and records the permitted #1668 file-failure or
+  file-replay changes. The new `read_text` row's in-scope `.pre` is recorded
+  on `1fd4422c`, where #1841/#1668 already landed, so its `changes_vs_pre`
+  is `no`. Its `.tag` remains the v0.46.0 observation. The current explicit
+  baseline instruction supersedes BAR.md's handoff parenthetical suggesting
+  that `.tag` also be recorded on `1fd4422c`.
+- **(b) Probes and expectations are files.** `builtins/<case>.eigs` is a
+  program; `.branch`, `.pre` and `.tag` are exact stdout followed by a
+  final `rc=<N>` line. Stderr is retained for diagnostics and is never
+  compared. `cases.tsv` names secondary cases, hook and stdin fixtures;
+  `rowmeta.tsv` records each builtin's profile and any earlier closure.
+  Ruling R1.6a-D2 makes probes print predicates over OS-selected ports,
+  handles, clocks and paths instead of those variable values themselves.
+  The deterministic injected-clock witness still asserts its exact payload.
+- **(c) Landed sub-rounds are declared.**
+  `tests/phase2/builtins_landed.txt` holds completed `R1.6a`..`R1.6z`
+  tokens, one per line (comments and blank lines allowed). Each later
+  builder adds its round in the completing commit. Empty in R1.6a means
+  every current row must still equal `.pre`. A row's round follows §8's
+  rule applied to the file defining its inventory C function.
+
+`tests/phase2/builtins/builtins.tsv` is checked by
+`tools/phase2_builtins.sh <tag-binary> <branch-binary>`, which calls the bar's
+single table checker and runner. Its checks are:
+
+1. **Membership, both directions.** Rows equal the inventory's `## Builtins`
+   list and are nonempty; `class`, `loss` and `q7` equal §6, parsed with the
+   inventory's own table parser; the defining C file determines `round`.
+2. **Class consistency of `.branch`.** An int-preserving result shows
+   `"int"`; a float-producing result shows `"float"`; an int-requiring
+   call raises `value` on a fraction and succeeds with an integral float.
+   Every Q7 class named in the row is exercised. Where stdout cannot
+   identify that property, a machine-readable probe header names the
+   exercised path and the checker validates it. Boundary hooks assert
+   delivered PCM, mixer gain/volume, an injected clock or injected events.
+3. **Run.** A landed row equals `.branch`; every other row equals `.pre`.
+   The tag equals `.tag`. Each run gets a fresh `EIGS_PROBE_TMP`, headless
+   graphics and audio as in the suite, the recorded stdin, hooks and
+   capabilities. Non-release profiles use `TAG_BIN_SERVER/ZLIB/DB` and
+   `BRANCH_BIN_SERVER/ZLIB/DB`; db rows require `DATABASE_URL`. A missing
+   capability or a timeout fails, rather than supplying an expectation.
+4. **Vacuity.** `changes_vs_pre` is `yes` exactly when `.branch` differs
+   from `.pre`. Every LOSS, int-requiring and Q7 row needs `yes`, except an
+   individually recorded `closed_in` ruling (A2). That earlier closure is
+   checked by requiring `.pre == .branch` on all its cases. No blanket
+   waiver is allowed; `.branch` files are never edited by a builder.
+
+A passing run prints exactly one
+`phase2-builtins: PASS rows=<N> landed=<list> migrated=<M> unchanged=<U>`
+line; a failure names the row and reason. `make_table.py --final` rejects
+pending profile records. Table changes after the first unchanged import
+are recorded with the reason and orchestrator ruling in
+`tests/phase2/builtins_changes.md`.
+
+**Calibration**, once when the gate is written or changed: a `len` result
+planted as `make_float(count)` turns its row red; declaring R1.6b landed
+on the R1.6a build turns every b row with changes red; deleting a row and
+adding a stale row fail membership in both directions; editing `class`
+fails; making a LOSS row's `.branch` equal `.pre` is VACUOUS. The bar's
+own plants additionally pin its fixture, profile, hook and stdin checks.
+After the matched profile records are complete, `determinism.sh` records
+all cases three times (including a pinned, lowered-priority run) and
+compares every `.pre` and `.tag`; any unstable record fails (R1.6a-D2).
+`read_text` uses the `1fd4422c` pre binary for each recording, while every
+tag recording continues to use v0.46.0.
+
+The int-fuzz sweep, if kept, is only a crash sweep: each builtin fed ints
+in numeric slots must raise or return, never crash.
 
 ### 9.5 `tools/phase2_lib_diff.sh <main-binary> <branch-binary>` (#1848, from R1.3)
 

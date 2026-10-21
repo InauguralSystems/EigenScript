@@ -31,8 +31,8 @@ eigenscript.c|compute_entropy_impl|2|observer entropy, switch case VAL_FLOAT, an
 eigenscript.c|ent_child_slot|1|observer entropy reads an immediate only after slot_is_f64
 eigenscript.c|eigs_num_arg_slow|2|checked reader slow path: reads only after type == VAL_FLOAT, or VAL_INT (the bridge converts an int, design 2.7)
 eigenscript.c|is_truthy|2|truthiness, switch case VAL_FLOAT and case VAL_INT (a bool has its own case)
-eigenscript.c|make_num|1|constructor: writes the number of a Value it just typed VAL_FLOAT
-eigenscript.c|make_num_permanent|1|constructor: writes the number of a Value it just typed VAL_FLOAT
+eigenscript.c|make_float_pooled|1|shared float constructors: writes the number of a Value it just typed VAL_FLOAT
+eigenscript.c|make_float_permanent|1|unpooled float constructor: writes the number of a Value it just typed VAL_FLOAT
 eigenscript.c|module_ns_project|1|mirror refresh: reads the binding slot after slot_is_f64 and stores it over a numeric mirror slot
 eigenscript.c|observer_entropy_now|1|observer entropy of a slot after slot_is_f64
 eigenscript.c|observer_slot_sample_gated|2|observer sample inside val_is_number: the VAL_INT box as its double, else the VAL_FLOAT (design 7)
@@ -92,3 +92,5 @@ vm.c|vm_value_index_is_int|2|Guarded exact VAL_INT-to-C-index conversion; the ot
 builtins.c|builtin_abs|1|N4b: proved VAL_INT payload, refuse INT64_MIN before negating
 eigenscript.c|make_int|1|int constructor initializes the exact signed payload
 builtins.c|bit_int|1|N8 exact bitwise operand reader: VAL_INT guard precedes the int payload; float operands use #1740 conversion
+eigenscript.c|eigs_number_read|2|final checked reader: exact int and float payloads are read only behind their corresponding Value type tests (#1758 R1.6a)
+eigenscript.c|buffer_index_at|1|writes the raw buffer float into a borrowed stack facade; eigs_int_arg performs the finite/exact int conversion (#1758 R1.6a)

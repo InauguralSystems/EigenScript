@@ -12,6 +12,12 @@ endif
 # build error instead of an ignorable warning.
 CFLAGS  := -Wall -Wextra -Werror=implicit-function-declaration $(WERROR_FLAGS) -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 
+# #1758 R1.6: an opt-in progress meter, never part of ordinary CI warnings.
+# Flags do not invalidate existing objects; use make -B for a meter census.
+ifeq ($(EIGS_PHASE2_METER),1)
+override CFLAGS += -DEIGS_PHASE2_METER
+endif
+
 # RELRO/BIND_NOW are ELF concepts; macOS's ld64 rejects -z, and PIE is
 # already the default there. Without this split every Makefile link target
 # (notably `make lsp`) fails on macOS even though build.sh works.
@@ -257,6 +263,14 @@ build/phase2/slot_layer_%: tests/phase2/slot_layer.c build/phase2/eigenscript_al
 .PHONY: phase2-slot-test
 phase2-slot-test: build/phase2/slot_layer_$(PHASE2_SLOT_VARIANT)
 	@echo "phase2 slot test built: $<"
+
+# #1758 R1.6a: final reader C fixture, through the no-SDL amalgamation.
+PHASE2_READERS_VARIANT ?= release
+build/phase2/readers_%: tests/phase2/readers.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+.PHONY: phase2-readers-test
+phase2-readers-test: build/phase2/readers_$(PHASE2_READERS_VARIANT)
+	@echo "phase2 reader test built: $<"
 
 # Focused lifetime regression for sandbox descriptor interns (#964). Link the
 # public embedding/runtime surface without CLI-only translation units so the

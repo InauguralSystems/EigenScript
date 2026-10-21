@@ -83,12 +83,14 @@ static inline EigsSlot dict_value_slot(const Value *dict, int i) {
  * slot is guarded at its producer), skipping the redundant num_guard on the
  * assignment hot path.  A plain slot store: the previous occupant is
  * released after the store, so a destructor it runs sees the new value. */
+EIGS_R16_DEPRECATED("#1758 R1.6: replace dict_value_rewrite_num by its decided numeric reader or producer")
 static inline int dict_value_rewrite_num(const Value *dict, int i, double d) {
     EigsSlot old = dict->data.dict.vals[i];
     dict->data.dict.vals[i] = slot_from_f64(d);
     slot_decref(old);
     return 1;
 }
+EIGS_R16_DEPRECATED("#1758 R1.6: replace list_rewrite_num by its decided numeric reader or producer")
 static inline int list_rewrite_num(const Value *list, int i, double d) {
     EigsSlot old = list->data.list.items[i];
     list->data.list.items[i] = slot_from_f64(d);
@@ -144,6 +146,7 @@ static inline Value *dict_value_get_ref(const Value *dict, int i) {
  * #1758: these are the bridge (design 2.7) -- until R1.6 deletes them a
  * number read is a double, so an int (an SMI) converts, exactly: |SMI| <
  * 2^47. */
+EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_slot_num by its decided numeric reader or producer")
 static inline double eigs_slot_num(EigsSlot s, const char *who) {
     if (slot_is_f64(s)) return SLOT_F64_RAW(s);
     if (slot_is_smi(s)) return (double)slot_smi_val(s);
@@ -151,6 +154,7 @@ static inline double eigs_slot_num(EigsSlot s, const char *who) {
         return eigs_num_arg(slot_as_ptr(s), who);   /* #1758: an int box converts (the bridge) */
     return eigs_num_arg_slow(eigs_slot_ref(s), who);
 }
+EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_slot_elem_num by its decided numeric reader or producer")
 static inline double eigs_slot_elem_num(EigsSlot s, const char *who) {
     if (slot_is_f64(s)) return SLOT_F64_RAW(s);
     if (slot_is_smi(s)) return (double)slot_smi_val(s);
@@ -159,6 +163,7 @@ static inline double eigs_slot_elem_num(EigsSlot s, const char *who) {
     if (g_strict || (v && v->type == VAL_BOOL)) return eigs_num_arg_slow(v, who);
     return 0.0;
 }
+EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_slot_opt_num by its decided numeric reader or producer")
 static inline int eigs_slot_opt_num(EigsSlot s, double *out, const char *who) {
     if (slot_is_null(s) || (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NULL)) return 0;
     if (slot_is_f64(s)) { *out = SLOT_F64_RAW(s); return 1; }
@@ -216,6 +221,93 @@ static inline void eigs_view_check(EigsView *view) {
  * out of their protected scope).  Dispatch loops use this form and call
  * eigs_view_check explicitly before every exit from the view's scope. */
 #define EIGS_VIEW_NOCHECK(name) EigsView name = {{0}}
+
+/* Final slot readers borrow a facade for the duration of the call. The
+ * facade is never retained, so SMI, boxed-int and raise paths own no refs. */
+__attribute__((unused))
+static inline EigsNum eigs_slot_number(EigsSlot s, const char *who) {
+    EIGS_VIEW(view); return eigs_number_arg(slot_view(s, &view), who);
+}
+__attribute__((unused))
+static inline EigsNum eigs_slot_elem_number(EigsSlot s, const char *who) {
+    EIGS_VIEW(view); return eigs_elem_number(slot_view(s, &view), who);
+}
+__attribute__((unused))
+static inline int eigs_slot_opt_number(EigsSlot s, EigsNum *out, const char *who) {
+    EIGS_VIEW(view); return eigs_opt_number(slot_view(s, &view), out, who);
+}
+__attribute__((unused))
+static inline double eigs_slot_float(EigsSlot s, const char *who) {
+    EIGS_VIEW(view); return eigs_float_arg(slot_view(s, &view), who);
+}
+__attribute__((unused))
+static inline double eigs_slot_elem_float(EigsSlot s, const char *who) {
+    EIGS_VIEW(view); return eigs_elem_float(slot_view(s, &view), who);
+}
+__attribute__((unused))
+static inline int eigs_slot_opt_float(EigsSlot s, double *out, const char *who) {
+    EIGS_VIEW(view); return eigs_opt_float(slot_view(s, &view), out, who);
+}
+__attribute__((unused))
+static inline int64_t eigs_slot_int(EigsSlot s, const char *who) {
+    EIGS_VIEW(view); return eigs_int_arg(slot_view(s, &view), who);
+}
+__attribute__((unused))
+static inline int64_t eigs_slot_elem_int(EigsSlot s, const char *who) {
+    EIGS_VIEW(view); return eigs_elem_int(slot_view(s, &view), who);
+}
+__attribute__((unused))
+static inline int eigs_slot_opt_int(EigsSlot s, int64_t *out, const char *who) {
+    EIGS_VIEW(view); return eigs_opt_int(slot_view(s, &view), out, who);
+}
+__attribute__((unused))
+static inline uint8_t eigs_slot_byte(EigsSlot s, const char *who) {
+    EIGS_VIEW(view); return eigs_byte_arg(slot_view(s, &view), who);
+}
+__attribute__((unused))
+static inline uint8_t eigs_slot_elem_byte(EigsSlot s, const char *who) {
+    EIGS_VIEW(view); return eigs_elem_byte(slot_view(s, &view), who);
+}
+__attribute__((unused))
+static inline int eigs_slot_opt_byte(EigsSlot s, uint8_t *out, const char *who) {
+    EIGS_VIEW(view); return eigs_opt_byte(slot_view(s, &view), out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_int_range(EigsSlot s, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view); return eigs_int_arg_range(slot_view(s, &view), lo, hi, out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_elem_int_range(EigsSlot s, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view); return eigs_elem_int_range(slot_view(s, &view), lo, hi, out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_opt_int_range(EigsSlot s, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view); return eigs_opt_int_range(slot_view(s, &view), lo, hi, out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_bounded(EigsSlot s, double lo, double hi, int *out, const char *who) {
+    EIGS_VIEW(view); return eigs_bounded_arg(slot_view(s, &view), lo, hi, out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_elem_bounded(EigsSlot s, double lo, double hi, int *out, const char *who) {
+    EIGS_VIEW(view); return eigs_elem_bounded(slot_view(s, &view), lo, hi, out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_opt_bounded(EigsSlot s, double lo, double hi, int *out, const char *who) {
+    EIGS_VIEW(view); return eigs_opt_bounded(slot_view(s, &view), lo, hi, out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_magnitude(EigsSlot s, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view); return eigs_magnitude_arg(slot_view(s, &view), lo, hi, out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_elem_magnitude(EigsSlot s, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view); return eigs_elem_magnitude(slot_view(s, &view), lo, hi, out, who);
+}
+__attribute__((unused))
+static inline int eigs_slot_opt_magnitude(EigsSlot s, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view); return eigs_opt_magnitude(slot_view(s, &view), lo, hi, out, who);
+}
 
 /* Owned/return reads make numeric storage independent.  Reference values are
  * increfed by the owned form; return preserves the builtin direct-child
@@ -289,19 +381,94 @@ static inline void list_append_slot(Value *list, EigsSlot s) {
     if (!list_reserve_one(list)) return;
     list->data.list.items[list->data.list.count++] = eigs_slot_store_borrow(s);
 }
+EIGS_R16_DEPRECATED("#1758 R1.6: replace list_set_num by its decided numeric reader or producer")
 static inline __attribute__((always_inline)) void
 list_set_num(Value *list, int i, double d) {
     list_rewrite_num(list, i, num_guard(d));
 }
+EIGS_R16_DEPRECATED("#1758 R1.6: replace list_append_num by its decided numeric reader or producer")
 static inline void list_append_num(Value *list, double d) {
     d = num_guard(d);
     if (!list_reserve_one(list)) return;
     list->data.list.items[list->data.list.count++] = slot_from_f64(d);
 }
 __attribute__((unused))
+EIGS_R16_DEPRECATED("#1758 R1.6: replace dict_value_set_num by its decided numeric reader or producer")
 static inline void dict_value_set_num(Value *dict, int i, double d) {
     dict_value_rewrite_num(dict, i, num_guard(d));
 }
+/* Typed container writers own exactly one stored reference. _rewrite_f64
+ * receives an already-normalised double, matching the existing fast store.
+ * An int outside the SMI range owns the box slot_from_int creates. */
+__attribute__((unused))
+static inline int list_rewrite_f64(const Value *v, int i, double n) {
+    EigsSlot old = list_slot(v, i);
+    v->data.list.items[i] = slot_from_f64(n);
+    slot_decref(old); return 1;
+}
+__attribute__((unused))
+static inline void list_set_f64(Value *v, int i, double n) {
+    list_rewrite_f64(v, i, num_guard(n));
+}
+__attribute__((unused))
+static inline int list_get_f64(const Value *v, int i, double *out) {
+    return slot_f64_value(list_slot(v, i), out);
+}
+__attribute__((unused))
+static inline int dict_value_rewrite_f64(const Value *v, int i, double n) {
+    EigsSlot old = dict_value_slot(v, i);
+    v->data.dict.vals[i] = slot_from_f64(n);
+    slot_decref(old); return 1;
+}
+__attribute__((unused))
+static inline void dict_value_set_f64(Value *v, int i, double n) {
+    dict_value_rewrite_f64(v, i, num_guard(n));
+}
+__attribute__((unused))
+static inline int dict_value_get_f64(const Value *v, int i, double *out) {
+    return slot_f64_value(dict_value_slot(v, i), out);
+}
+__attribute__((unused))
+static inline void list_append_f64(Value *v, double n) {
+    n = num_guard(n);
+    if (!list_reserve_one(v)) return;
+    v->data.list.items[v->data.list.count++] = slot_from_f64(n);
+}
+__attribute__((unused))
+static inline int list_rewrite_int(const Value *v, int i, int64_t n) {
+    EigsSlot old = list_slot(v, i);
+    v->data.list.items[i] = slot_from_int(n);
+    slot_decref(old); return 1;
+}
+__attribute__((unused))
+static inline void list_set_int(Value *v, int i, int64_t n) {
+    list_rewrite_int(v, i, n);
+}
+__attribute__((unused))
+static inline int list_get_int(const Value *v, int i, int64_t *out) {
+    return slot_int_value(list_slot(v, i), out);
+}
+__attribute__((unused))
+static inline int dict_value_rewrite_int(const Value *v, int i, int64_t n) {
+    EigsSlot old = dict_value_slot(v, i);
+    v->data.dict.vals[i] = slot_from_int(n);
+    slot_decref(old); return 1;
+}
+__attribute__((unused))
+static inline void dict_value_set_int(Value *v, int i, int64_t n) {
+    dict_value_rewrite_int(v, i, n);
+}
+__attribute__((unused))
+static inline int dict_value_get_int(const Value *v, int i, int64_t *out) {
+    return slot_int_value(dict_value_slot(v, i), out);
+}
+__attribute__((unused))
+static inline void list_append_int(Value *v, int64_t n) {
+
+    if (!list_reserve_one(v)) return;
+    v->data.list.items[v->data.list.count++] = slot_from_int(n);
+}
+
 /* Remove element i, shifting the tail down; the caller owns the result. */
 static inline EigsSlot list_take_slot(Value *list, int i) {
     EigsSlot s = list->data.list.items[i];
@@ -330,6 +497,7 @@ static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)
 /* #1758: bridge readers (design 2.7): an int element converts to its double
  * until R1.6 deletes them. */
 __attribute__((unused))
+EIGS_R16_DEPRECATED("#1758 R1.6: replace list_get_num by its decided numeric reader or producer")
 static inline int list_get_num(const Value *list, int i, double *out) {
     EigsSlot s = list_slot(list, i);
     if (slot_is_smi(s)) { *out = (double)slot_smi_val(s); return 1; }
@@ -338,6 +506,7 @@ static inline int list_get_num(const Value *list, int i, double *out) {
     return 1;
 }
 __attribute__((unused))
+EIGS_R16_DEPRECATED("#1758 R1.6: replace dict_value_get_num by its decided numeric reader or producer")
 static inline int dict_value_get_num(const Value *dict, int i, double *out) {
     EigsSlot s = dict_value_slot(dict, i);
     if (slot_is_smi(s)) { *out = (double)slot_smi_val(s); return 1; }

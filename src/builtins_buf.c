@@ -504,6 +504,7 @@ static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
     return 1;
 }
 
+EIGS_R16_DEPRECATED("#1758 R1.6: decide buf_num_arg as a final reader")
 static int buf_num_arg(const char *who, const char *what, EigsSlot s,
                        double *out) {
     if ((slot_type(s) != VAL_FLOAT && slot_type(s) != VAL_INT)) {
