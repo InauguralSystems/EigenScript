@@ -1,0 +1,1 @@
+- Made `lib/test.eigs` assertion failures print their summary and exit nonzero even when the test file omits `test_summary`. ([#1839](https://github.com/InauguralSystems/EigenScript/issues/1839))

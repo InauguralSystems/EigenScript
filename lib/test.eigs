@@ -15,6 +15,16 @@
 _test_pass is 0
 _test_fail is 0
 _test_errors is []
+_test_summarized is 0
+
+# Only failed suites need an implicit report. Passing suites retain their
+# historical output, and an explicit test_summary marks itself to avoid a
+# second report from the exit callback.
+define _test_exit_summary as:
+    if _test_fail > 0 and _test_summarized == 0:
+        test_summary of null
+
+at_exit of _test_exit_summary
 
 # ---- assert_eq: check exact equality ----
 define assert_eq(actual, expected, desc) as:
@@ -70,6 +80,7 @@ define assert_false(cond, desc) as:
 
 # ---- test_summary: print results and exit with status ----
 define test_summary as:
+    _test_summarized is 1
     total is _test_pass + _test_fail
     print of ""
     print of ("Tests: " + (str of total) + " | Pass: " + (str of _test_pass) + " | Fail: " + (str of _test_fail))

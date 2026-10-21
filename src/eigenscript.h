@@ -926,6 +926,11 @@ struct EigsState {
      * `exit of N` is a request, not a death, and goes through the latch
      * above instead. */
     int             spawn_err_count;
+    /* Script exit callbacks, registered by `at_exit`. Values are retained
+     * until the owning evaluation runs them in LIFO order. */
+    Value         **exit_hooks;
+    size_t          exit_hook_count;
+    size_t          exit_hook_cap;
     /* Cycle-collector registry — the intrusive list of captured envs and its
      * live count. Per-STATE (not per-thread) so candidates created on any
      * thread survive that thread's death and stay collectable at exit; gc_lock
@@ -1779,6 +1784,7 @@ struct EigsChunk;
 void chunk_incref(struct EigsChunk *chunk);
 void chunk_decref(struct EigsChunk *chunk);
 Value* call_eigs_fn(Value *fn, Value *arg);
+void eigs_run_exit_hooks(EigsState *st);
 uint32_t env_hash_name(const char *name);
 char    *env_intern_name(const char *name);
 /* Sandbox intern ownership: begin a nested run scope, promote any returned

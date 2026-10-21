@@ -88,6 +88,11 @@ static void state_destroy_body(EigsState *st, int already_released) {
 #if EIGENSCRIPT_EXT_DB
     ext_db_state_destroy(st);   /* #739: close this state's libpq connection */
 #endif
+    /* A host which destroys a state without completing its evaluation still
+     * owns registrations. Do not call user code here, but release the refs. */
+    for (size_t i = 0; i < st->exit_hook_count; i++)
+        val_decref(st->exit_hooks[i]);
+    free(st->exit_hooks);
     /* Module-cache refs were dropped at gc_collect_at_exit; the array
      * itself may still be allocated (capacity bumped past zero). */
     free(st->module_cache);

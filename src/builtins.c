@@ -622,6 +622,36 @@ Value* builtin_exit(Value *arg) {
     return make_null();
 }
 
+/* at_exit of fn — register a zero-argument callback for evaluation teardown.
+ * Registration retains the closure; eigs_run_exit_hooks consumes it. */
+Value* builtin_at_exit(Value *arg) {
+    STRICT_LIST_MAX(arg, 1, "at_exit");
+    if (!arg || (arg->type != VAL_FN && arg->type != VAL_BUILTIN)) {
+        rt_error(EK_TYPE, 0, "at_exit: expected a function");
+        return make_null();
+    }
+    EigsState *st = eigs_current_state();
+    if (st->exit_hook_count == st->exit_hook_cap) {
+        size_t cap = st->exit_hook_cap ? st->exit_hook_cap * 2 : 4;
+        st->exit_hooks = xrealloc(st->exit_hooks, cap * sizeof(*st->exit_hooks));
+        st->exit_hook_cap = cap;
+    }
+    val_incref(arg);
+    st->exit_hooks[st->exit_hook_count++] = arg;
+    return make_null();
+}
+
+void eigs_run_exit_hooks(EigsState *st) {
+    while (st && st->exit_hook_count > 0) {
+        Value *fn = st->exit_hooks[--st->exit_hook_count];
+        Value *nul = make_null();
+        Value *result = call_eigs_fn(fn, nul);
+        val_decref(nul);
+        if (result) val_decref(result);
+        val_decref(fn);
+    }
+}
+
 Value* builtin_assert(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "assert");
     /* Failure path raises a normal runtime error (g_has_error + g_error_msg)
@@ -6225,6 +6255,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
     env_set_local_owned(env, "assert", make_builtin(builtin_assert));
     env_set_local_owned(env, "exit", make_builtin(builtin_exit));
+    env_set_local_owned(env, "at_exit", make_builtin(builtin_at_exit));
     env_set_local_owned(env, "throw", make_builtin(builtin_throw));
     env_set_local_owned(env, "keys", make_builtin(builtin_keys));
     env_set_local_owned(env, "values", make_builtin(builtin_values));

@@ -395,6 +395,30 @@ int main(int argc, char **argv) {
      * the drain above has joined every worker (pthread_join is the
      * happens-before edge for the worker's increment). */
     int spawn_worker_error = __atomic_load_n(&eigs_st->spawn_err_count, __ATOMIC_RELAXED) > 0;
+    /* Python/C-style exit callbacks run after the program (also after an
+     * uncaught error or `exit`) while its globals and closures remain alive.
+     * Temporarily remove the unwind marker so callbacks can execute. */
+    int pre_hook_error = g_has_error && !g_exit_requested;
+    int pre_hook_exit = g_exit_requested;
+    int pre_hook_exit_code = g_exit_code;
+    g_has_error = 0;
+    g_exit_requested = 0;
+    /* Workers are drained, so the main attachment is now the scope's sole
+     * executor. Suspend its published stop too: vm_run polls the scope as
+     * well as the thread-local unwind flag. */
+    if (pre_hook_exit)
+        __atomic_store_n(&eigs_current->exit_scope->latched_storage, 0,
+                         __ATOMIC_RELEASE);
+    eigs_run_exit_hooks(eigs_st);
+    int hook_error = g_has_error && !g_exit_requested;
+    if (pre_hook_exit) {
+        eigs_current->exit_scope->code = pre_hook_exit_code;
+        __atomic_store_n(&eigs_current->exit_scope->latched_storage, 1,
+                         __ATOMIC_RELEASE);
+        g_exit_requested = 1;
+        g_exit_code = pre_hook_exit_code;
+    }
+    if (pre_hook_error || hook_error) g_has_error = 1;
     /* An uncaught runtime error leaves g_has_error set (vm_run unwinds to
      * here rather than continuing with null). Report it as a non-zero exit
      * so scripts fail loudly for callers, Makefiles, and CI. */
@@ -407,6 +431,8 @@ int main(int argc, char **argv) {
     int exit_code = 0;
     if (!eigs_state_exit_requested(eigs_st, &exit_code))
         exit_code = (g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0;
+    else if (exit_code == 0 && hook_error)
+        exit_code = 1;
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release
      * it so exit is leak-clean. */

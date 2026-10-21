@@ -49,7 +49,6 @@ EIGS
 cat > "$WORK/test_fail.eigs" << 'EIGS'
 load_file of "lib/test.eigs"
 assert_eq of [1 + 1, 3, "wrong"]
-test_summary of null
 EIGS
 # Not a test_*.eigs file — must be ignored by discovery.
 echo 'print of "ignore me"' > "$WORK/helper.eigs"
@@ -63,6 +62,25 @@ check_contains "human summary" "$OUT" "Files: 2 | Passed: 1 | Failed: 1"
 check_contains "human shows failing assert" "$OUT" "expected 3, got 2"
 check_contains "non-test file ignored" "$( [ -z "$(echo "$OUT" | grep helper.eigs)" ] && echo OK )" "OK"
 check_eq "exit nonzero when a file fails" "$RC" "1"
+
+# #1839: lib/test.eigs owns the final verdict even without test_summary.
+DIRECT_OUT=$($EIGS "$WORK/test_fail.eigs" 2>&1 || true)
+DIRECT_RC=$($EIGS "$WORK/test_fail.eigs" >/dev/null 2>&1; echo $?)
+check_eq "direct assertion failure exits nonzero" "$DIRECT_RC" "1"
+check_contains "implicit failure summary" "$DIRECT_OUT" "Tests: 1 | Pass: 0 | Fail: 1"
+check_eq "implicit failure summary once" "$(grep -c '^Tests:' <<<"$DIRECT_OUT")" "1"
+
+IMPLICIT_PASS_FILE=$(mktemp /tmp/test_implicit_pass_XXXXXX.eigs)
+cat > "$IMPLICIT_PASS_FILE" << 'EIGS'
+load_file of "lib/test.eigs"
+assert_eq of [1 + 1, 2, "right"]
+EIGS
+IMPLICIT_PASS_OUT=$($EIGS "$IMPLICIT_PASS_FILE" 2>&1)
+check_eq "implicit passing file keeps quiet output" "$IMPLICIT_PASS_OUT" ""
+rm -f "$IMPLICIT_PASS_FILE"
+
+EXPLICIT_OUT=$($EIGS "$WORK/test_pass.eigs" 2>&1)
+check_eq "explicit summary printed once" "$(grep -c '^Tests:' <<<"$EXPLICIT_OUT")" "1"
 
 # --- JSON mode: valid JSON, correct aggregate, exit 1 ---
 JSON=$($EIGS --test "$WORK" --json 2>/dev/null || true)

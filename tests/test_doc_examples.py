@@ -326,7 +326,7 @@ POPULATION = {
     # file                       fences paired fragment nocheck value-comments
     "README.md":                 (  7,    3,     4,      0,      0),
     "docs/llms.txt":             (  9,    6,     2,      1,      0),
-    "docs/SPEC.md":              ( 85,   81,     1,      3,      0),   # #1740: +1 paired (bitwise exact-int raises)
+    "docs/SPEC.md":              ( 86,   82,     1,      3,      0),   # #1839: +1 paired (at_exit callback)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),

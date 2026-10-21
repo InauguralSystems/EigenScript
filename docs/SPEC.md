@@ -2094,6 +2094,26 @@ return the target's result. Embedded outer evals have separate stop scopes;
 workers retain the scope of their spawning eval (see `docs/EMBEDDING.md`).
 The failure is always a clean exit, never a signal (#1112).
 
+`at_exit of callback` registers a zero-argument callback for the current CLI
+evaluation. Callbacks run in last-in, first-out order after ordinary
+completion, after `exit of N` (like Python's `atexit` on `sys.exit`), and after
+an uncaught error, while the evaluation's globals are still available. An
+error in a callback changes an otherwise-zero status to 1, but does not mask
+an existing nonzero exit status. This is the mechanism used by
+`lib/test.eigs` to make a failed assertion report its summary and fail the
+process even when the file omits `test_summary`.
+
+```eigenscript
+define goodbye as:
+    print of "done"
+at_exit of goodbye
+print of "body"
+```
+```output
+body
+done
+```
+
 ## Cooperative tasks
 
 `task_spawn` creates a **cooperative task** on the single interpreter

@@ -11,6 +11,7 @@ static const char *builtin_docs[][2] = {
     {"args", "args of null → list of command-line arguments (after the script name)."},
     {"asin", "asin — builtin; see docs/BUILTINS.md"},
     {"assert", "assert — builtin; see docs/BUILTINS.md"},
+    {"at_exit", "at_exit of fn — register a zero-argument callback for evaluation teardown."},
     {"atan", "atan — builtin; see docs/BUILTINS.md"},
     {"atan2", "atan2 — builtin; see docs/BUILTINS.md"},
     {"audio_capture_close", "audio_capture_close of null — stop and close the recording device."},
