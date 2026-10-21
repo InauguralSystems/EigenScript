@@ -5,10 +5,18 @@
 
 #include "ext_db_internal.h"
 #include "ext_names.h"
+#include "trace.h"
 #if EIGENSCRIPT_EXT_DB
 
 
 #define DB_MAX_PARAMS 16
+
+static int db_replay_blocks(const char *fn) {
+    if (!__builtin_expect(g_replay_enabled, 0)) return 0;
+    rt_error(EK_IO, 0, "%s: not replayable under EIGS_REPLAY "
+             "(database boundary; see docs/TRACE.md)", fn);
+    return 1;
+}
 
 /* Postgres's boolean type OID (pinned by the wire protocol; see the
  * DB_OID_* block below, which carries the same value). */
@@ -80,6 +88,7 @@ static PGresult* db_exec_from_arg(Value *arg) {
 
 Value* builtin_db_connect(Value *arg) {
     (void)arg;
+    if (db_replay_blocks("db_connect")) return make_null();
     const char *url = getenv("DATABASE_URL");
     if (!url || !url[0]) {
         return make_str("{\"status\": \"no_database\", \"message\": \"DATABASE_URL not set\"}");
@@ -265,6 +274,7 @@ static int db_emit_json_value(strbuf *sb, unsigned int oid, int isnull,
 
 /* ---- DB query builtins ---- */
 Value* builtin_db_query_value(Value *arg) {
+    if (db_replay_blocks("db_query_value")) return make_null();
     /* Run a SQL query and return row 0 col 0, typed by its SQL type (#887).
      * Usage: db_query_value of "SELECT COUNT(*) FROM table"
      *    or: db_query_value of ["SELECT name FROM t WHERE id=$1", id]
@@ -318,6 +328,7 @@ Value* builtin_db_query_value(Value *arg) {
 }
 
 Value* builtin_db_execute(Value *arg) {
+    if (db_replay_blocks("db_execute")) return make_null();
     /* Run a SQL command with optional params. Returns "ok"; raises on failure.
      * Usage: db_execute of "INSERT INTO ..." (no params)
      *    or: db_execute of ["INSERT INTO t (a) VALUES ($1)", param1] */
@@ -337,6 +348,7 @@ Value* builtin_db_execute(Value *arg) {
 }
 
 Value* builtin_db_query_json(Value *arg) {
+    if (db_replay_blocks("db_query_json")) return make_null();
     /* Run SQL and return all rows as a JSON array of objects, each value
      * carrying its SQL type (#887).
      * Usage: db_query_json of "SELECT id, name FROM table"

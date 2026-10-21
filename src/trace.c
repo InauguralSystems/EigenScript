@@ -2729,13 +2729,13 @@ int trace_source_replay(const char *kind, char **source, long *size,
     if (!__builtin_expect(g_replay_enabled, 0)) return 0;
     *source = NULL; *identity = NULL; *error = NULL;
     Value *meta = NULL;
-    if (!trace_replay_take(kind, &meta)) return 1;
+    if (!trace_replay_take(kind, &meta)) return -1;
     if (!meta || meta->type != VAL_LIST || meta->data.list.count != 3 ||
         list_elem_type(meta, 0) != VAL_BOOL || list_elem_type(meta, 1) != VAL_STR ||
         list_elem_type(meta, 2) != VAL_NUM) {
         val_decref(meta);
         rt_error(EK_IO, 0, "%s: malformed source record", kind);
-        return 1;
+        return -1;
     }
     int ok = list_get_ref(meta, 0)->data.boolean;
     const char *detail = list_get_ref(meta, 1)->data.str;
@@ -2747,7 +2747,7 @@ int trace_source_replay(const char *kind, char **source, long *size,
     }
     *identity = xstrdup(detail);
     val_decref(meta);
-    if (n < 0) { rt_error(EK_IO, 0, "%s: invalid source size", kind); return 1; }
+    if (n < 0) { rt_error(EK_IO, 0, "%s: invalid source size", kind); return -1; }
     char *buf = xmalloc((size_t)n + 1);
     size_t off = 0;
     char chunk_kind[96];
@@ -2757,13 +2757,13 @@ int trace_source_replay(const char *kind, char **source, long *size,
         if (!trace_replay_take(chunk_kind, &chunk) || !chunk || chunk->type != VAL_STR) {
             val_decref(chunk); free(buf); free(*identity); *identity = NULL;
             rt_error(EK_IO, 0, "%s: missing source chunk", kind);
-            return 1;
+            return -1;
         }
         size_t got = val_str_len(chunk);
         if (!got || got > (size_t)n - off) {
             val_decref(chunk); free(buf); free(*identity); *identity = NULL;
             rt_error(EK_IO, 0, "%s: invalid source chunk", kind);
-            return 1;
+            return -1;
         }
         memcpy(buf + off, chunk->data.str, got); off += got;
         val_decref(chunk);

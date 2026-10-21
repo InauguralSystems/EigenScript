@@ -2291,6 +2291,16 @@ Value* builtin_tensor_save(Value *arg) {
               || !path_val || path_val->type != VAL_STR,   /* #1093 */
               "tensor_save", "[a list or buffer tensor, a string path]", make_bool(0));
 
+    /* Unlike the small mutation builtins, tensor_save's durable binary payload
+     * is not represented on the tape.  Refuse the boundary rather than claim
+     * a recorded boolean while silently omitting (or performing) the write. */
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0,
+                 "tensor_save: not replayable under EIGS_REPLAY "
+                 "(file-write boundary; see docs/TRACE.md)");
+        return make_bool(0);
+    }
+
     int rows, cols;
     int ndim = tensor_dims(tensor, &rows, &cols);
     /* tensor_dims answers 0 for an empty list or one whose first element is

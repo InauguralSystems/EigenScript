@@ -6,6 +6,7 @@
 #include "model_internal.h"
 #include "env_flag.h"
 #include "ext_names.h"
+#include "trace.h"
 
 /* ================================================================
  * TERNARY QUANTIZATION — BitNet b1.58 weight-only (Option A)
@@ -1436,6 +1437,11 @@ Value* builtin_native_train_step(Value *arg) {
      * Output: JSON string with status, loss, tokens, model_age, training_samples */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         return make_str("{\"status\": \"error\", \"error\": \"requires [input_ids, output_ids, lr]\"}");
+    }
+    if (__builtin_expect(g_replay_enabled, 0) && getenv("EIGS_TRAIN_DUMP")) {
+        rt_error(EK_IO, 0, "native_train_step: not replayable with "
+                 "EIGS_TRAIN_DUMP (file-write boundary; see docs/TRACE.md)");
+        return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");
     }
     /* #1637: a bool id or rate raises in every mode, before the no-model
      * answer (the ids were only read once a model was loaded). */

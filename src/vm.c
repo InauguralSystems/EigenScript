@@ -6030,8 +6030,18 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         char *tape_error = NULL;
         char import_warning[4096] = "";
 
-        if (trace_source_replay("import_source", &source, &source_size,
-                                &tape_identity, &tape_error)) {
+        Value *warning = NULL;
+        if (g_replay_enabled && trace_replay_take("import_warning", &warning) &&
+            warning && warning->type == VAL_STR && warning->data.str[0])
+            fputs(warning->data.str, stderr);
+        val_decref(warning);
+        int replay_source = trace_source_replay("import_source", &source, &source_size,
+                                                 &tape_identity, &tape_error);
+        if (replay_source < 0) {
+            vm_push(make_null());
+            DISPATCH();
+        }
+        if (replay_source > 0) {
             if (tape_error) {
                 rt_error(EK_IO, current_line, "%s", tape_error);
                 free(tape_error);
@@ -6040,11 +6050,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
             snprintf(abs_path, sizeof abs_path, "%s", tape_identity);
             free(tape_identity);
-            Value *warning = NULL;
-            if (trace_replay_take("import_warning", &warning) && warning &&
-                warning->type == VAL_STR && warning->data.str[0])
-                fputs(warning->data.str, stderr);
-            val_decref(warning);
         }
 
         const char *provided = source ? NULL : eigs_source_lookup(name);
@@ -6053,8 +6058,19 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * the provider's pointer is only guaranteed for this call.
              * Cache key uses a NUL-adjacent prefix no real path can
              * start with, so provider modules can't collide with files. */
-            source = xstrdup(provided);
             snprintf(abs_path, sizeof(abs_path), "\x01provider:%.1024s", name);
+            Value *provider_cached = NULL;
+            if (eigs_module_cache_get(abs_path, &provider_cached)) {
+                if (__builtin_expect(g_trace_enabled, 0)) {
+                    Value *warning_record = make_str("");
+                    trace_nondet_value("import_warning", warning_record);
+                    val_decref(warning_record);
+                    trace_source_record("import_source", "", 0, abs_path, NULL);
+                }
+                vm_push(provider_cached);
+                DISPATCH();
+            }
+            source = xstrdup(provided);
             source_size = (long)strlen(source);
         }
 #if EIGENSCRIPT_FREESTANDING
@@ -6089,6 +6105,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                                      shadowed, sizeof(shadowed))) {
                 snprintf(request, sizeof(request), "%.1024s.eigs and lib/%.1024s.eigs", name, name);
                 char *message = eigs_file_resolve_message("import", resolve_base, request);
+                if (__builtin_expect(g_trace_enabled, 0)) {
+                    Value *warning_record = make_str("");
+                    trace_nondet_value("import_warning", warning_record);
+                    val_decref(warning_record);
+                }
                 trace_source_record("import_source", NULL, 0, NULL, message);
                 rt_error(EK_IO, current_line, "%s", message);
                 free(message);
@@ -6108,6 +6129,23 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 fputs(import_warning, stderr);
             }
 
+            /* The resolver has supplied the stable cache identity; consult it
+             * before opening the module.  A cached module remains usable even
+             * if its backing file was removed or replaced by a directory. */
+            if (!realpath(path_buf, abs_path))
+                snprintf(abs_path, sizeof(abs_path), "%s", path_buf);
+            Value *early_cached = NULL;
+            if (eigs_module_cache_get(abs_path, &early_cached)) {
+                if (__builtin_expect(g_trace_enabled, 0)) {
+                    Value *warning_record = make_str(import_warning);
+                    trace_nondet_value("import_warning", warning_record);
+                    val_decref(warning_record);
+                    trace_source_record("import_source", "", 0, abs_path, NULL);
+                }
+                vm_push(early_cached);
+                DISPATCH();
+            }
+
             /* Module cache: canonicalize to absolute path so two different
              * importers (different cwds, different relative paths) hash to
              * the same entry. A miss re-executes; a hit binds the same dict
@@ -6122,6 +6160,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             if (!source) {
                 char message[1400];
                 snprintf(message, sizeof message, "import: cannot read '%s'", name);
+                if (__builtin_expect(g_trace_enabled, 0)) {
+                    Value *warning_record = make_str(import_warning);
+                    trace_nondet_value("import_warning", warning_record);
+                    val_decref(warning_record);
+                }
                 trace_source_record("import_source", NULL, 0, NULL, message);
                 rt_error(EK_IO, current_line, "%s", message);
                 vm_push(make_null());
@@ -6131,12 +6174,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
         if (!g_replay_enabled) {
-            trace_source_record("import_source", source, (size_t)source_size, abs_path, NULL);
             if (__builtin_expect(g_trace_enabled, 0)) {
                 Value *warning = make_str(import_warning);
                 trace_nondet_value("import_warning", warning);
                 val_decref(warning);
             }
+            trace_source_record("import_source", source, (size_t)source_size, abs_path, NULL);
         }
         Value *cached_dict = NULL;
         if (eigs_module_cache_get(abs_path, &cached_dict)) {

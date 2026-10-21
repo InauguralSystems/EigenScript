@@ -865,8 +865,14 @@ Value* builtin_load_file(Value *arg) {
     char *tape_identity = NULL;
     char *tape_error = NULL;
 
-    if (trace_source_replay("load_file_source", &source, &size,
-                            &tape_identity, &tape_error)) {
+    int replay_source = trace_source_replay("load_file_source", &source, &size,
+                                             &tape_identity, &tape_error);
+    if (replay_source < 0) {
+        /* The tape reader already raised the precise structural error.  This
+         * is not a cache miss: never resolve or read a live path after it. */
+        return make_null();
+    }
+    if (replay_source > 0) {
         if (tape_error) {
             rt_error(EK_IO, 0, "%s", tape_error);
             free(tape_error);

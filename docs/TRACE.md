@@ -261,10 +261,10 @@ perspective lands on the tape as an `N` record:
   file's observed size as a `VAL_NUM` `N` record and reconstruct the error
   containing both size and active cap. Empty files remain ordinary successful
   empty string/list/buffer records.
-  The four mutating file builtins are deliberately different: under replay
-  they still perform their operation live, then return the recorded success
-  value or re-raise the recorded `io` message, regardless of the live result.
-  Making replay side-effect-free is the wider model decision in #1885.
+  Mutating file builtins return their taped success value or re-raise their
+  taped `io` message **before** making any live filesystem call. Mutations whose
+  payload is not represented on the tape (including `tensor_save`) are refused
+  loudly under replay, also before opening their path.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: `[rows, cols]` for an over-cap header,
   otherwise `null`. Replay reconstructs a recorded `limit` error before
@@ -530,6 +530,9 @@ that the original tape neither captured nor re-creates:
   already-live handle but before any file or catalog access (relevant to embedders that enable replay mid-state).
   Consequently a database may be changed or absent during replay without
   being read, recreated, or modified.
+- **PostgreSQL:** the entire `db_*` extension family. A connection and the
+  database it addresses are external mutable state absent from the tape;
+  replay refuses before connecting, querying, or executing SQL.
 - **Temporary-file creation:** `mktemp`. Its fresh pathname is host state and
   the call creates the named file. Replay refuses before creating anything;
   ordinary execution still creates a file that the caller can remove with

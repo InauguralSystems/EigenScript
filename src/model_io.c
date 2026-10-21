@@ -4,6 +4,7 @@
  */
 
 #include "model_internal.h"
+#include "trace.h"
 
 /* Process-wide BY DESIGN — a documented opt-out from the per-EigsState seam
  * (#739 item 4, decided 2026-08-02). Per-state weights would multiply a
@@ -1233,6 +1234,11 @@ Value* builtin_eigen_model_save_binary(Value *arg) {
     if (!g_model.loaded) {
         return make_str("{\"status\": \"error\", \"error\": \"No model loaded\"}");
     }
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "eigen_model_save_binary: not replayable under "
+                 "EIGS_REPLAY (file-write boundary; see docs/TRACE.md)");
+        return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");
+    }
     const char *path = arg->data.str;
     fprintf(stderr, "[eigen-save] Saving .eigen to: %s\n", path);
 
@@ -1309,6 +1315,11 @@ Value* builtin_model_save_weights(Value *arg) {
      * Output: JSON status */
     if (!arg || arg->type != VAL_STR || arg->data.str[0] == '\0') {
         return make_str("{\"status\": \"error\", \"error\": \"requires path string\"}");
+    }
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "model_save_weights: not replayable under "
+                 "EIGS_REPLAY (file-write boundary; see docs/TRACE.md)");
+        return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");
     }
     const char *path = arg->data.str;
     fprintf(stderr, "[model-save] Saving to: %s\n", path);
