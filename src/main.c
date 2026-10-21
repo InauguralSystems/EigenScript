@@ -286,7 +286,7 @@ int main(int argc, char **argv) {
          * (state latch, reached through eigs_current), so eigs_thread_detach
          * below leaves nothing to read it through — the script path at the
          * bottom of main already captures it first, for the same reason. */
-        int repl_exit_code = 0;
+        int repl_exit_code = eigs_state_graceful_exit_code(eigs_st);
         (void)eigs_state_exit_requested(eigs_st, &repl_exit_code);
         trace_shutdown();
         /* Drop the global scope's bindings (closures defined at top level
@@ -406,7 +406,8 @@ int main(int argc, char **argv) {
      * cleared only for an exit request observed on THIS thread. */
     int exit_code = 0;
     if (!eigs_state_exit_requested(eigs_st, &exit_code))
-        exit_code = (g_has_error || unobserved_task_error || spawn_worker_error) ? 1 : 0;
+        exit_code = (g_has_error || unobserved_task_error || spawn_worker_error)
+                  ? 1 : eigs_state_graceful_exit_code(eigs_st);
     if (g_exit_requested) g_has_error = 0;
     /* An uncaught `throw` leaves its structured payload stashed; release
      * it so exit is leak-clean. */

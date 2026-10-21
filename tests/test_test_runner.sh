@@ -88,6 +88,69 @@ check_contains "all-pass json failed=0" "$JSON" '"failed":0'
 OUT=$($EIGS --test "$WORK/test_pass.eigs" 2>/dev/null || true)
 check_contains "single-file runs" "$OUT" "Files: 1 | Passed: 1 | Failed: 0"
 
+# #1839: assertions make failures loud even when callers omit test_summary.
+cat > "$WORK/test_no_summary_fail.eigs" << 'EIGS'
+load_file of "lib/test.eigs"
+assert_eq of [2 + 2, 5, "deliberately wrong"]
+EIGS
+RC=$($EIGS "$WORK/test_no_summary_fail.eigs" >/dev/null 2>&1; echo $?)
+check_eq "direct assertion failure exits nonzero without summary" "$RC" "1"
+OUT=$($EIGS --test "$WORK/test_no_summary_fail.eigs" 2>/dev/null || true)
+RC=$($EIGS --test "$WORK/test_no_summary_fail.eigs" >/dev/null 2>&1; echo $?)
+check_contains "single failing file is FAIL" "$OUT" "FAIL  $WORK/test_no_summary_fail.eigs"
+check_eq "single failing file exits nonzero" "$RC" "1"
+
+WORK4=$(mktemp -d /tmp/trun_mixed_XXXXXX)
+cp "$WORK/test_no_summary_fail.eigs" "$WORK4/test_fail.eigs"
+cat > "$WORK4/test_pass.eigs" << 'EIGS'
+load_file of "lib/test.eigs"
+assert_true of [true, "passes"]
+EIGS
+RC=$($EIGS --test "$WORK4" >/dev/null 2>&1; echo $?)
+check_eq "mixed directory exits nonzero" "$RC" "1"
+
+cat > "$WORK/test_late_fail.eigs" << 'EIGS'
+load_file of "lib/test.eigs"
+assert_true of [true, "first pass"]
+test_summary of null
+assert_false of [true, "late failure"]
+EIGS
+RC=$($EIGS "$WORK/test_late_fail.eigs" >/dev/null 2>&1; echo $?)
+check_eq "failure after passing summary exits nonzero" "$RC" "1"
+
+cat > "$WORK/test_exit_override.eigs" << 'EIGS'
+load_file of "lib/test.eigs"
+assert_eq of [1, 2, "record failure"]
+exit of 0
+EIGS
+RC=$($EIGS "$WORK/test_exit_override.eigs" >/dev/null 2>&1; echo $?)
+check_eq "explicit exit 0 overrides recorded failure" "$RC" "0"
+
+RC=$($EIGS -e 'set_exit_code of 0
+missing_name' >/dev/null 2>&1; echo $?)
+check_eq "uncaught error remains nonzero" "$RC" "1"
+
+for BAD in 256 1.5; do
+    OUT=$($EIGS -e "try:
+    set_exit_code of $BAD
+catch e:
+    print of e.kind" 2>/dev/null)
+    check_eq "set_exit_code rejects $BAD as value" "$OUT" "value"
+done
+
+RC=$($EIGS -e 'define set_from_worker as:
+    set_exit_code of 7
+h is spawn of set_from_worker
+thread_join of h' >/dev/null 2>&1; echo $?)
+check_eq "spawned worker sets graceful exit code" "$RC" "7"
+
+RC=$($EIGS -e 'set_exit_code of 7
+set_exit_code of 3' >/dev/null 2>&1; echo $?)
+check_eq "last graceful exit code wins" "$RC" "3"
+
+RC=$(printf 'set_exit_code of 6\n' | $EIGS >/dev/null 2>&1; echo $?)
+check_eq "REPL returns graceful exit code at EOF" "$RC" "6"
+
 # --- No test files: friendly message, exit 0 ---
 WORK3=$(mktemp -d /tmp/trun_empty_XXXXXX)
 OUT=$($EIGS --test "$WORK3" 2>/dev/null || true)
@@ -95,7 +158,7 @@ RC=$($EIGS --test "$WORK3" >/dev/null 2>&1; echo $?)
 check_contains "no-tests message" "$OUT" "No test files found"
 check_eq "no-tests exit 0" "$RC" "0"
 
-rm -rf "$WORK" "$WORK2" "$WORK3"
+rm -rf "$WORK" "$WORK2" "$WORK3" "$WORK4"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"

@@ -36,10 +36,12 @@ after_bad_fail is _test_fail
 assert of [(after_bad_fail - before_fail_2) == 1, "SF7 assert_near non-numeric counts as fail"]
 
 # Reset counters so [41b] doesn't report a spurious failure from
-# the deliberately-wrong assert_near above.
+# the deliberately-wrong assert_near above. The process status is part of the
+# same intentional probe state and must be reset explicitly (#1839).
 _test_pass is 0
 _test_fail is 0
 _test_errors is []
+set_exit_code of 0
 
 # --- template.render injection ---
 # A variable's value containing {{other}} must be emitted verbatim,
