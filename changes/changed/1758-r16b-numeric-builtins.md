@@ -2,3 +2,4 @@
 - EigenStore numeric lookup, update, and delete keys use all int64 digits (N5), including keys above 2^53. Fractional or out-of-range floats raise before record changes. Record integer text decodes exactly (N14); float persistence text remains unchanged until R1.7.
 - HTTP POST JSON integer headers retain all int64 digits (N14, B6, R1.6b-D3); the pre-R1.6 decoder could round integer values above 2^53.
 - CI follow-up: construct ranges with an int64 induction value and a descending element count, avoiding a redundant loop counter while preserving bounds, integer results, limits, and ownership.
+- CI follow-up: preserve stored float payload formatting, including canonical NaN, until the scheduled N13 encoder refusal; remove the migrated abs raw-read exception.

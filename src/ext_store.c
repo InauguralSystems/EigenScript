@@ -172,7 +172,9 @@ static void store_json_encode(Value *v, strbuf *out);
  * the historical boxed-number path so persisted bytes remain identical. */
 static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
     if (slot_is_f64(slot)) {
-        double n = eigs_slot_float(slot, __func__);
+        /* This is persisted float data, not a finite builtin argument.
+         * Keep the existing NaN/inf spelling until N13 (R2.3). */
+        double n = SLOT_F64_RAW(slot);
         if (fabs(n) < 2147483648.0 && n == (int)n)
             strbuf_append_fmt(out, "%d", (int)n);
         else
@@ -194,7 +196,9 @@ static void store_json_encode(Value *v, strbuf *out) {
     }
     switch (v->type) {
         case VAL_FLOAT: {
-            double n = eigs_float_arg(v, __func__);
+            /* The switch proves VAL_FLOAT; serialization also accepts the
+             * historical non-finite payloads until N13 (R2.3). */
+            double n = VAL_F64_RAW(v);
             /* #816: magnitude BEFORE the narrowing cast (same class as
              * #695) — converting a double beyond int's range is UB, and
              * the old `n == (int)n && fabs(n) < 1e15` order ran the cast

@@ -11,7 +11,7 @@ files=64 tokens=115 role_rules=8 derived_accessors=32 wrappers=8
 (e) number formatting                     18   CASE=2 FORMAT=3 PARSE=1 RAW=4 READ=3 TEST=5
 (f) equality, ordering and hashing        53   CASE=2 PRODUCE=4 RAW=15 READ=9 TEST=23
 (g) tape encode and decode                30   CASE=4 DATA=5 PARSE=7 PRODUCE=6 RAW=6 TEST=2
-(h) JSON, store and db encoders           87   CASE=4 FORMAT=3 PARSE=5 PRODUCE=22 RAW=6 READ=26 TEST=21
+(h) JSON, store and db encoders           87   CASE=4 FORMAT=3 PARSE=5 PRODUCE=22 RAW=8 READ=24 TEST=21
 (i) observer numeric paths               109   CASE=6 FORMAT=1 GUARD=1 PARSE=1 PRODUCE=35 RAW=24 READ=7 TEST=34
 (j) embed API                             68   CASE=2 DATA=2 GUARD=1 PRODUCE=1 RAW=6 READ=51 TEST=2 WRITE=3
 
@@ -22,10 +22,10 @@ VAL_INT                    154
 VAL_FLOAT                  153
 eigs_num_arg               128
 eigs_list_num              125
-SLOT_F64_RAW                83
+SLOT_F64_RAW                84
 make_int                    73
 num_guard                   67
-VAL_F64_RAW                 56
+VAL_F64_RAW                 57
 AST_NUM                     52
 VAL_I64_RAW                 51
 slot_is_f64                 50
@@ -40,8 +40,8 @@ eigs_number_arg             23
 buffer_read_byte            22
 list_set_num                22
 slot_f64_value              21
-eigs_float_arg              20
 slot_smi_val                20
+eigs_float_arg              19
 eigs_int_arg                16
 strtod                      16
 eigs_int_arg_range          13
@@ -92,7 +92,6 @@ eigs_list_float              2
 eigs_list_int_range          2
 eigs_list_magnitude          2
 eigs_list_number             2
-eigs_slot_float              2
 f64_                         2
 list_append_num              2
 list_rewrite_f64             2
@@ -115,6 +114,7 @@ eigs_slot_elem_int           1
 eigs_slot_elem_int_range     1
 eigs_slot_elem_magnitude     1
 eigs_slot_elem_number        1
+eigs_slot_float              1
 eigs_slot_int                1
 eigs_slot_int_range          1
 eigs_slot_magnitude          1
@@ -564,16 +564,16 @@ sort_by                      builtin_sort_by                    other           
 spawn                        builtin_spawn                      int-preserving   -     -                        make_int
 sqrt                         builtin_tensor_sqrt                float-producing  -     -                        eigs_number_arg,make_float,make_int,val_is_number
 state_at                     builtin_state_at                   int-requiring    -     -                        eigs_num_arg,val_is_number
-store_close                  builtin_store_close                int-requiring    -     -                        VAL_FLOAT,VAL_I64_RAW,VAL_INT,eigs_float_arg,eigs_num_arg,eigs_slot_float,slot_is_f64,slot_is_smi,slot_smi_val,val_is_number
+store_close                  builtin_store_close                int-requiring    -     -                        SLOT_F64_RAW,VAL_F64_RAW,VAL_FLOAT,VAL_I64_RAW,VAL_INT,eigs_num_arg,slot_is_f64,slot_is_smi,slot_smi_val,val_is_number
 store_collections            builtin_store_collections          int-requiring    -     -                        eigs_num_arg,val_is_number
 store_count                  builtin_store_count                int-requiring    -     -                        eigs_num_arg,make_num,val_is_number
 store_delete                 builtin_store_delete               int-requiring    LOSS  -                        eigs_int_arg,eigs_int_arg_range,eigs_num_arg,val_is_number
-store_drop                   builtin_store_drop                 int-requiring    -     -                        VAL_FLOAT,VAL_I64_RAW,VAL_INT,eigs_float_arg,eigs_num_arg,eigs_slot_float,slot_is_f64,slot_is_smi,slot_smi_val,val_is_number
+store_drop                   builtin_store_drop                 int-requiring    -     -                        SLOT_F64_RAW,VAL_F64_RAW,VAL_FLOAT,VAL_I64_RAW,VAL_INT,eigs_num_arg,slot_is_f64,slot_is_smi,slot_smi_val,val_is_number
 store_get                    builtin_store_get                  int-requiring    LOSS  -                        eigs_float_arg,eigs_int_arg,eigs_int_arg_range,eigs_num_arg,eigs_number_arg,make_float,make_int,num_to_i64_exact,strtod,val_is_number
 store_open                   builtin_store_open                 int-preserving   -     -                        eigs_num_arg,make_float,make_int,make_num,strtod,val_is_number
-store_put                    builtin_store_put                  other            LOSS  -                        VAL_FLOAT,VAL_I64_RAW,VAL_INT,eigs_float_arg,eigs_int_arg_range,eigs_num_arg,eigs_slot_float,make_int,slot_is_f64,slot_is_smi,slot_smi_val,val_is_number
+store_put                    builtin_store_put                  other            LOSS  -                        SLOT_F64_RAW,VAL_F64_RAW,VAL_FLOAT,VAL_I64_RAW,VAL_INT,eigs_int_arg_range,eigs_num_arg,make_int,slot_is_f64,slot_is_smi,slot_smi_val,val_is_number
 store_query                  builtin_store_query                other            LOSS  -                        eigs_float_arg,eigs_int_arg_range,eigs_num_arg,eigs_number_arg,make_float,make_int,num_to_i64_exact,strtod,val_is_number
-store_update                 builtin_store_update               other            LOSS  -                        VAL_FLOAT,VAL_I64_RAW,VAL_INT,eigs_float_arg,eigs_int_arg,eigs_int_arg_range,eigs_num_arg,eigs_slot_float,make_int,slot_is_f64,slot_is_smi,slot_smi_val,val_is_number
+store_update                 builtin_store_update               other            LOSS  -                        SLOT_F64_RAW,VAL_F64_RAW,VAL_FLOAT,VAL_I64_RAW,VAL_INT,eigs_int_arg,eigs_int_arg_range,eigs_num_arg,make_int,slot_is_f64,slot_is_smi,slot_smi_val,val_is_number
 str                          builtin_str                        other            -     -                        eigs_num_text
 str_from_bytes               builtin_str_from_bytes             int-requiring    -     -                        VAL_FLOAT,VAL_INT,buffer_read_num,eigs_num_arg,eigs_slot_num,finite_num_to_byte,val_is_number
 stream_open                  builtin_stream_open                int-requiring    -     -                        eigs_num_arg,val_is_number
@@ -2230,62 +2230,62 @@ ext_net.c:364 builtin_net_send finite_num_to_byte READ b
 ext_net.c:379 builtin_net_close val_is_number TEST a
 ext_net.c:385 builtin_net_close eigs_num_arg READ b
 ext_store.c:174 store_json_encode_slot slot_is_f64 TEST h
-ext_store.c:175 store_json_encode_slot eigs_slot_float READ h
-ext_store.c:182 store_json_encode_slot slot_is_smi TEST h
-ext_store.c:184 store_json_encode_slot slot_smi_val RAW h
-ext_store.c:196 store_json_encode VAL_FLOAT CASE h
-ext_store.c:197 store_json_encode eigs_float_arg READ h
-ext_store.c:210 store_json_encode VAL_INT CASE h
-ext_store.c:212 store_json_encode VAL_I64_RAW RAW h
-ext_store.c:335 store_json_parse_number strtod PARSE h
-ext_store.c:348 store_json_parse_number make_int PRODUCE h
-ext_store.c:349 store_json_parse_number make_float PRODUCE h
-ext_store.c:385 store_buffer_from_tag val_is_number TEST h
-ext_store.c:385 store_buffer_from_tag val_is_number TEST h
-ext_store.c:390 store_buffer_from_tag eigs_number_arg READ h
-ext_store.c:391 store_buffer_from_tag eigs_number_arg READ h
-ext_store.c:395 store_buffer_from_tag num_to_i64_exact READ h
-ext_store.c:397 store_buffer_from_tag num_to_i64_exact READ h
-ext_store.c:415 store_buffer_from_tag val_is_number TEST h
-ext_store.c:430 store_buffer_from_tag eigs_float_arg READ h
-ext_store.c:430 store_buffer_from_tag val_is_number TEST h
-ext_store.c:768 store_load_catalog val_is_number TEST h
-ext_store.c:768 store_load_catalog val_is_number TEST h
-ext_store.c:773 store_load_catalog eigs_num_arg READ h
-ext_store.c:840 get_store_why val_is_number TEST h
-ext_store.c:841 get_store_why eigs_num_arg READ h
-ext_store.c:843 get_store_why eigs_num_arg READ h
-ext_store.c:843 get_store_why val_is_number TEST h
-ext_store.c:991 builtin_store_open make_num PRODUCE h
-ext_store.c:992 builtin_store_open make_num PRODUCE h
-ext_store.c:1005 builtin_store_close eigs_num_arg READ h
-ext_store.c:1005 builtin_store_close val_is_number TEST h
-ext_store.c:1007 builtin_store_close eigs_num_arg READ h
-ext_store.c:1007 builtin_store_close val_is_number TEST h
-ext_store.c:1053 builtin_store_put make_int PRODUCE h
-ext_store.c:1054 builtin_store_put make_int PRODUCE h
-ext_store.c:1069 builtin_store_put eigs_int_arg_range READ h
-ext_store.c:1071 builtin_store_put eigs_int_arg_range READ h
-ext_store.c:1086 builtin_store_put make_int PRODUCE h
-ext_store.c:1210 builtin_store_get val_is_number TEST h
-ext_store.c:1211 builtin_store_get eigs_int_arg READ h
-ext_store.c:1223 builtin_store_get eigs_int_arg_range READ h
-ext_store.c:1283 store_locate eigs_int_arg_range READ h
-ext_store.c:1380 builtin_store_delete val_is_number TEST h
-ext_store.c:1381 builtin_store_delete eigs_int_arg READ h
-ext_store.c:1430 builtin_store_query eigs_int_arg_range READ h
-ext_store.c:1466 builtin_store_count make_num PRODUCE h
-ext_store.c:1474 builtin_store_count make_num PRODUCE h
-ext_store.c:1475 builtin_store_count make_num PRODUCE h
+ext_store.c:177 store_json_encode_slot SLOT_F64_RAW RAW h
+ext_store.c:184 store_json_encode_slot slot_is_smi TEST h
+ext_store.c:186 store_json_encode_slot slot_smi_val RAW h
+ext_store.c:198 store_json_encode VAL_FLOAT CASE h
+ext_store.c:201 store_json_encode VAL_F64_RAW RAW h
+ext_store.c:214 store_json_encode VAL_INT CASE h
+ext_store.c:216 store_json_encode VAL_I64_RAW RAW h
+ext_store.c:339 store_json_parse_number strtod PARSE h
+ext_store.c:352 store_json_parse_number make_int PRODUCE h
+ext_store.c:353 store_json_parse_number make_float PRODUCE h
+ext_store.c:389 store_buffer_from_tag val_is_number TEST h
+ext_store.c:389 store_buffer_from_tag val_is_number TEST h
+ext_store.c:394 store_buffer_from_tag eigs_number_arg READ h
+ext_store.c:395 store_buffer_from_tag eigs_number_arg READ h
+ext_store.c:399 store_buffer_from_tag num_to_i64_exact READ h
+ext_store.c:401 store_buffer_from_tag num_to_i64_exact READ h
+ext_store.c:419 store_buffer_from_tag val_is_number TEST h
+ext_store.c:434 store_buffer_from_tag eigs_float_arg READ h
+ext_store.c:434 store_buffer_from_tag val_is_number TEST h
+ext_store.c:772 store_load_catalog val_is_number TEST h
+ext_store.c:772 store_load_catalog val_is_number TEST h
+ext_store.c:777 store_load_catalog eigs_num_arg READ h
+ext_store.c:844 get_store_why val_is_number TEST h
+ext_store.c:845 get_store_why eigs_num_arg READ h
+ext_store.c:847 get_store_why eigs_num_arg READ h
+ext_store.c:847 get_store_why val_is_number TEST h
+ext_store.c:995 builtin_store_open make_num PRODUCE h
+ext_store.c:996 builtin_store_open make_num PRODUCE h
+ext_store.c:1009 builtin_store_close eigs_num_arg READ h
+ext_store.c:1009 builtin_store_close val_is_number TEST h
+ext_store.c:1011 builtin_store_close eigs_num_arg READ h
+ext_store.c:1011 builtin_store_close val_is_number TEST h
+ext_store.c:1057 builtin_store_put make_int PRODUCE h
+ext_store.c:1058 builtin_store_put make_int PRODUCE h
+ext_store.c:1073 builtin_store_put eigs_int_arg_range READ h
+ext_store.c:1075 builtin_store_put eigs_int_arg_range READ h
+ext_store.c:1090 builtin_store_put make_int PRODUCE h
+ext_store.c:1214 builtin_store_get val_is_number TEST h
+ext_store.c:1215 builtin_store_get eigs_int_arg READ h
+ext_store.c:1227 builtin_store_get eigs_int_arg_range READ h
+ext_store.c:1287 store_locate eigs_int_arg_range READ h
+ext_store.c:1384 builtin_store_delete val_is_number TEST h
+ext_store.c:1385 builtin_store_delete eigs_int_arg READ h
+ext_store.c:1434 builtin_store_query eigs_int_arg_range READ h
+ext_store.c:1470 builtin_store_count make_num PRODUCE h
 ext_store.c:1478 builtin_store_count make_num PRODUCE h
-ext_store.c:1484 builtin_store_count make_num PRODUCE h
+ext_store.c:1479 builtin_store_count make_num PRODUCE h
+ext_store.c:1482 builtin_store_count make_num PRODUCE h
 ext_store.c:1488 builtin_store_count make_num PRODUCE h
-ext_store.c:1489 builtin_store_count eigs_num_arg READ h
-ext_store.c:1500 builtin_store_count make_num PRODUCE h
-ext_store.c:1506 builtin_store_count make_num PRODUCE h
-ext_store.c:1540 builtin_store_update val_is_number TEST h
-ext_store.c:1541 builtin_store_update eigs_int_arg READ h
-ext_store.c:1684 builtin_store_drop eigs_num_arg READ h
+ext_store.c:1492 builtin_store_count make_num PRODUCE h
+ext_store.c:1493 builtin_store_count eigs_num_arg READ h
+ext_store.c:1504 builtin_store_count make_num PRODUCE h
+ext_store.c:1510 builtin_store_count make_num PRODUCE h
+ext_store.c:1544 builtin_store_update val_is_number TEST h
+ext_store.c:1545 builtin_store_update eigs_int_arg READ h
+ext_store.c:1688 builtin_store_drop eigs_num_arg READ h
 jit.c:1275 emit_conditional_incref_rax TAG-IMM 0xFFFB EMIT d
 jit.c:1399 emit_addsd_xmm0_xmm1 emit_addsd_xmm0_xmm1 EMIT d
 jit.c:1403 emit_subsd_xmm0_xmm1 emit_subsd_xmm0_xmm1 EMIT d
