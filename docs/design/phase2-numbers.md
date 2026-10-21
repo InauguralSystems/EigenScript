@@ -2487,8 +2487,13 @@ fails if a round named here has neither rows nor its mechanical gates.)
   hooks, matched capability profiles and stdin. The corpus applies the same
   declared directory exclusions to both inventories and reports their paths,
   counts, owners and reasons. Unsafe, overlapping, stale or ownerless
-  declarations, and a zero remaining population, fail. These probes remain
-  covered by §9.4's table gate and its once-only calibration plants.
+  declarations, and a zero remaining population, fail. This file is the sole
+  ownership list: JIT/OBS, replay, the Phase 2 corpus differential, the full
+  Valgrind corpus and the road fixture walker all use
+  `tools/phase2_corpus_exclude.py`. Each filters its broad population before
+  narrowing to its existing subset, reports the excluded count and rejects a
+  declaration that excludes zero files. These probes remain covered by §9.4's
+  table gate and its once-only calibration plants.
 
   **As corrected in the R1.1 fix round** (the critic's plants B
   and D passed the first version):

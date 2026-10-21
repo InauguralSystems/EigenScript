@@ -194,14 +194,7 @@ done < "$LEDGER"
 declared=$(grep -c . "$TMP/ledger")
 
 # ---- the population ------------------------------------------------------
-if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
-    LC_ALL=C sort "$PHASE2_DIFF_FILES" > "$TMP/files"
-    while IFS= read -r rel; do
-        [ -f "$BR_ROOT/$rel" ] || { echo "corpus-diff: FAIL: restricted list names $rel, absent from the branch tree"; DONE=1; exit 1; }
-    done < "$TMP/files"
-else
-    (cd "$BR_ROOT" && find tests -name '*.eigs' -type f | LC_ALL=C sort) > "$TMP/files"
-fi
+(cd "$BR_ROOT" && find tests -name '*.eigs' -type f | LC_ALL=C sort) > "$TMP/files"
 # The exclusion ledger owns the population policy; fixtures run through their
 # named harness instead of being launched bare by a second implementation.
 (cd "$BASE_ROOT" && find tests -name '*.eigs' -type f | LC_ALL=C sort) > "$TMP/basefiles"
@@ -209,6 +202,16 @@ printf '0\n' > "$TMP/excluded-count"
 if [ -f "$BR_ROOT/tests/phase2/corpus_exclude.txt" ]; then
     python3 "$BR_ROOT/tools/phase2_corpus_exclude.py" "$BR_ROOT" "$TMP/files" "$TMP/basefiles" "$TMP/excluded-count" \
         || { echo "corpus-diff: FAIL: declared exclusions"; DONE=1; exit 1; }
+elif [ -z "${PHASE2_DIFF_FILES:-}" ]; then
+    echo 'corpus-diff: FAIL: missing tests/phase2/corpus_exclude.txt'; DONE=1; exit 1
+fi
+if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
+    LC_ALL=C sort "$PHASE2_DIFF_FILES" > "$TMP/requested"
+    while IFS= read -r rel; do
+        [ -f "$BR_ROOT/$rel" ] || { echo "corpus-diff: FAIL: restricted list names $rel, absent from the branch tree"; DONE=1; exit 1; }
+    done < "$TMP/requested"
+    LC_ALL=C comm -12 "$TMP/files" "$TMP/requested" > "$TMP/selected"
+    mv "$TMP/selected" "$TMP/files"
 fi
 excluded=$(cat "$TMP/excluded-count")
 listed=$(grep -c . "$TMP/files")

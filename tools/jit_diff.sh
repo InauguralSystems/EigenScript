@@ -43,7 +43,9 @@ run() { # $1 out-file, $2 seconds, rest = env args (options first)
   # The program's run conditions come from the shared loader, which refuses
   # an unsupported one by name (tests/suite_program_env.sh).
   suite_program_check "$prog" > /dev/null || { echo "jit_diff: FAIL: suite environment lookup failed for $prog" >&2; exit 1; }
-  suite_program_run "$prog" env "$@" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1
+  ( if grep -Eq '(gfx|ui|audio)_[a-z_]+' "$prog"; then ulimit -v 1500000; fi
+    suite_program_run "$prog" env "$@" timeout "$sec" "$EIG" "$prog"
+  ) </dev/null > "$out" 2>&1
   echo "rc=$?" >> "$out"
 }
 arm_env() { case "$1" in
@@ -105,7 +107,17 @@ consider() {
   diff -q <(norm "$T/rref") <(norm "$T/rarm") >/dev/null && return
   echo "$row $tag" >> "$got"
 }
-for f in "$ROOT"/tests/test_*.eigs; do
+if ! obs_files=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
+  echo "jit_diff: FAIL: cannot enumerate the tracked OBS corpus" >&2; exit 1
+fi
+[ -n "$obs_files" ] || { echo "jit_diff: FAIL: tracked OBS corpus is empty" >&2; exit 1; }
+printf '%s\n' "$obs_files" > "$T/tracked"
+(cd "$ROOT" && find tests -type f -name '*.eigs') > "$T/test-corpus"
+LC_ALL=C sort -u "$T/tracked" "$T/test-corpus" > "$T/corpus"
+python3 "$ROOT/tools/phase2_corpus_exclude.py" "$ROOT" "$T/corpus" || exit 1
+while IFS= read -r rel; do
+  case "$rel" in tests/*/*) continue ;; tests/test_*.eigs) ;; *) continue ;; esac
+  f="$ROOT/$rel"
   n=$((n + 1)); row=$(basename "$f"); prog="$f"
   run "$T/ref" 180 "${REF[@]}"
   suite_setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog"; exit 1; }
@@ -122,16 +134,13 @@ for f in "$ROOT"/tests/test_*.eigs; do
     fi
     consider "$arm" 180
   done
-done
+done < "$T/corpus"
 # Denied up front: *gfx*|*paint*|*_game* opens a window; *seeded_race* and
 # *userrace* (a user data race: undefined, can crash either side, #1171) are
 # nondeterministic on purpose; *state_at*|*statedump* prints hash-order output.
-if ! obs_files=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
-  echo "jit_diff: FAIL: cannot enumerate the tracked OBS corpus" >&2; exit 1
-fi
-[ -n "$obs_files" ] || { echo "jit_diff: FAIL: tracked OBS corpus is empty" >&2; exit 1; }
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
+  grep -qxF "$rel" "$T/tracked" || continue
   case "$rel" in
     *gfx*|*paint*|*_game*|*seeded_race*|*userrace*|*state_at*|*statedump*) n_deny=$((n_deny + 1)); continue ;;
   esac
@@ -141,9 +150,7 @@ while IFS= read -r rel; do
   arm_env obs
   run "$T/arm" 25 "${AE[@]}"
   consider obs 25
-done <<EOF
-$obs_files
-EOF
+done < "$T/corpus"
 sort -o "$got" "$got"
 [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
 [ "$n_suite_env" -eq 15 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=15"; exit 1; }

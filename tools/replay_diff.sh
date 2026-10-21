@@ -70,7 +70,9 @@ ledger_count() {
 run() {
     local out="$1" rc; shift
     suite_program_check "$b" > /dev/null || { echo "replay_diff: FAIL: run-condition lookup failed for $b" >&2; exit 1; }
-    suite_program_run "$b" env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b" > "$out" 2>&1 </dev/null
+    ( if grep -Eq '(gfx|ui|audio)_[a-z_]+' "$(corpus_dir)/$b"; then ulimit -v 1500000; fi
+      suite_program_run "$b" env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b"
+    ) > "$out" 2>&1 </dev/null
     rc=$?; echo "rc=$rc" >> "$out"
     # Runs include self-check and second adjudication arms. Never compare,
     # excuse as NONDET/boundary, or ledger a possibly incomplete exit-124 run.
@@ -203,17 +205,25 @@ fi
 # ---------------------------------------------------------------- the gate
 EIG="$(eig_bin)"; CORPUS="$(corpus_dir)"; BASE="${REPLAY_DIFF_BASE:-$ROOT/tests/replay_diff_expected.txt}"
 FLOOR="${REPLAY_DIFF_FLOOR:-100}"
+(cd "$ROOT" && find tests -type f -name '*.eigs' | LC_ALL=C sort) > "$T/corpus"
+python3 "$ROOT/tools/phase2_corpus_exclude.py" "$ROOT" "$T/corpus" || exit 1
+: > "$T/files"
+for f in "$CORPUS"/test_*.eigs; do
+    [ -f "$f" ] || continue
+    case "$f" in "$ROOT"/*) grep -qxF "${f#"$ROOT"/}" "$T/corpus" || continue ;; esac
+    printf '%s\n' "$f" >> "$T/files"
+done
 got="$T/got"; : > "$got"; n=0; boundary=0; nondet=0
 # self-check on a known-deterministic program
 b=test_math_underflow.eigs
-[ -f "$CORPUS/$b" ] || b=$(ls "$CORPUS"/test_*.eigs | head -1 | xargs basename)
+[ -f "$CORPUS/$b" ] || b=$(head -n 1 "$T/files"); b=${b##*/}
 rm -f "$T/tape0"; run "$T/r0" EIGS_TRACE="$T/tape0"
 [ -s "$T/tape0" ] || { echo "replay_diff: FAIL: the record arm wrote no tape for $b -- check EIGS_TRACE"; exit 1; }
 run "$T/p0" EIGS_REPLAY="$T/tape0"
 crash_check rec "$T/r0"; crash_check rep "$T/p0"
 [ "$crash" -eq 0 ] || { echo "replay_diff: FAIL: the self-check program $b died by signal"; exit 1; }
 diff -q <(norm "$T/r0") <(norm "$T/p0") >/dev/null || { echo "replay_diff: FAIL: the self-check program $b does not replay its own tape"; diff <(norm "$T/r0") <(norm "$T/p0") | head -5; exit 1; }
-for f in "$CORPUS"/test_*.eigs; do
+while IFS= read -r f; do
   b=$(basename "$f"); n=$((n + 1))
   rm -f "$T/tape"
   run "$T/rec" EIGS_TRACE="$T/tape"
@@ -235,7 +245,7 @@ for f in "$CORPUS"/test_*.eigs; do
   if ! diff -q <(norm "$T/rec") <(norm "$T/rec2") >/dev/null; then nondet=$((nondet + 1)); echo "  NONDET $b (record arm differs from itself)"; continue; fi
   if diff -q <(norm "$T/rec2") <(norm "$T/rep2") >/dev/null; then nondet=$((nondet + 1)); echo "  NONDET $b (replay diverged once, then matched)"; continue; fi
   echo "$b" >> "$got"
-done
+done < "$T/files"
 sort -o "$got" "$got"
 [ "$n" -ge "$FLOOR" ] || { echo "replay_diff: only $n programs found -- the scan is vacuous (floor $FLOOR)"; exit 1; }
 if [ "$crash" -gt 0 ]; then

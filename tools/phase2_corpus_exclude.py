@@ -5,8 +5,14 @@ import re
 import sys
 
 
-def main():
-    root, branch, baseline, count = map(Path, sys.argv[1:])
+def is_owned(path, entries):
+    return any(path.startswith(prefix) for prefix, _, _ in entries)
+
+
+def filter_paths(root, selected):
+    """Filter a broad corpus before callers narrow it to their own file shapes."""
+    root = Path(root)
+    selected = list(selected)
     entries = []
     for number, line in enumerate((root / 'tests/phase2/corpus_exclude.txt').read_text().splitlines(), 1):
         if not line.strip() or line.lstrip().startswith('#'):
@@ -28,18 +34,30 @@ def main():
         if not matches:
             raise ValueError('stale directory ' + prefix)
         entries.append((prefix, owner, reason))
-    selected = branch.read_text().splitlines()
-    excluded = lambda path: any(path.startswith(prefix) for prefix, _, _ in entries)
-    kept = [path for path in selected if not excluded(path)]
+    kept = [path for path in selected if not is_owned(path, entries)]
     if not kept:
         raise ValueError('zero programs remain after exclusions')
-    base = [path for path in baseline.read_text().splitlines() if not excluded(path)]
     for prefix, owner, reason in entries:
         size = sum(path.startswith(prefix) for path in selected)
+        if not size:
+            raise ValueError('stale directory %s excludes ZERO files from the corpus' % prefix)
         print('EXCLUDED %s files=%d owner=%s reason=%s' % (prefix, size, owner, reason))
+    return kept, entries
+
+
+def main():
+    if len(sys.argv) not in (3, 5):
+        raise ValueError('usage: phase2_corpus_exclude.py ROOT FILES [BASELINE COUNT]')
+    root, branch = map(Path, sys.argv[1:3])
+    selected = branch.read_text().splitlines()
+    kept, entries = filter_paths(root, selected)
     branch.write_text(''.join(path + '\n' for path in kept))
-    baseline.write_text(''.join(path + '\n' for path in base))
-    count.write_text(str(len(selected) - len(kept)) + '\n')
+    if len(sys.argv) == 5:
+        baseline, count = map(Path, sys.argv[3:])
+        base = [p for p in baseline.read_text().splitlines()
+                if not is_owned(p, entries)]
+        baseline.write_text(''.join(path + '\n' for path in base))
+        count.write_text(str(len(selected) - len(kept)) + '\n')
     return 0
 
 
