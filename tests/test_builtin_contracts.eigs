@@ -11,7 +11,14 @@ assert_eq of [max of [1, 2, 3], 3, "max reduces past the first two elements"]
 assert_eq of [min of [4, 2, 9, 1, 5], 1, "min N-ary reduction"]
 assert_eq of [max of [-3, -1, -2], -1, "max of all-negative list"]
 assert_eq of [min of (7), 7, "min of a bare number is itself (mirrors sum)"]
-assert_eq of [max of [], 0, "max of empty list keeps the 0 fallback"]
+# R1.6b-D2 / #1895: no numeric winner exists, including in soft mode.
+for thunk in [(x) => min of [], (x) => min of ([]), (x) => max of [], (x) => max of ([])]:
+    empty_kind is ""
+    try:
+        thunk of null
+    catch e:
+        empty_kind is e.kind
+    assert_eq of [empty_kind, "value", "R1.6b-D2 empty min/max raises"]
 assert_eq of [max of ["a", 5], 0, "non-number element keeps the 0 fallback"]
 
 # ---- #316: string predicates reject non-string operands ----

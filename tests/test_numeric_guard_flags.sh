@@ -24,12 +24,15 @@ run "NG24 other association clean" 'x is 1e200 * (1e200 / 1e200)
 assert of [not (math_flags of null).overflow, "other order clean"]'
 run "NG26 capped literal stays valid" 'x is 0.0 * 1e400
 assert of [x == 0 and not (math_flags of null).invalid, "capped literal is valid"]'
-run "NG30 num nan" 'x is num of "nan"
-assert of [x == 0 and (math_flags of null).invalid, "num nan invalid"]'
-run "NG30 num inf" 'x is num of "inf"
-assert of [(math_flags of null).overflow, "num inf overflow"]'
-run "NG30 num abc" 'x is num of "abc"
-assert of [x == 0 and not (math_flags of null).invalid, "junk clean"]'
+# N10: grammar refusal is unconditional and does not touch arithmetic flags.
+for invalid in nan inf abc; do
+run "NG30 N10 num $invalid refused" "caught is false
+try:
+    num of \"$invalid\"
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught and not ((math_flags of null).invalid or (math_flags of null).overflow), \"N10 refusal leaves flags clean\"]"
+done
 run "NG30 num 42" 'x is num of "42"
 assert of [x == 42 and not ((math_flags of null).invalid or (math_flags of null).overflow), "42 clean"]'
 run "NG27 log controls/zero" 'a is log of 1e-15

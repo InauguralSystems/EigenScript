@@ -60,9 +60,9 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `print` | `print of value` | Output value to stdout with newline |
-| `len` | `len of value` | Length of string or list count |
+| `len` | `len of value` | Exact int length of string, list, dict, buffer or text builder |
 | `str` | `str of value` | Convert to string representation |
-| `num` | `num of value` | Convert to number (parse string or coerce). `num of "inf"` saturates to `1e308`; `num of "nan"` raises a `value` error naming `num` by default, while under `EIGS_STRICT=0` it is `0` and sets `math_flags.invalid` (#971). |
+| `num` | `num of value` | Parse complete numeric-literal text (N10): decimal integer text fitting int64 and wrapped hex integers give ints; a point/exponent or decimal overflow gives a float. Optional sign and surrounding ASCII whitespace are accepted. Partial/empty text, separators, 0b/0o, hex floats, inf and nan raise `value` in every strict mode. Numbers retain their kind; existing non-text coercions remain. |
 | `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "none" (the null value — SPEC.md is normative and its gated example prints `none`; the string `"null"` is never produced) |
 | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
@@ -72,9 +72,18 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `throw` | `throw of message` | Raise catchable error |
 
 Numeric values are finite by construction. `NaN` collapses to `0`, and
-overflow or infinity saturates at `+/-1e308`. This applies to numeric
-literals, `num` conversion, scalar arithmetic, tensor arithmetic, and the
+overflow or infinity saturates at `+/-1e308`. This applies to float-producing numeric
+literals, scalar arithmetic, tensor arithmetic, and the
 numeric fast paths used by reassignment and `unobserved` blocks.
+
+Counts, byte codes and indices (`len`, `ord`, `index_of`, `list_index_of`),
+`range` elements, channel/thread handle id and generation fields, `spawn`'s
+numeric `done` flag, and task ids (`task_spawn`, `task_self`) are ints.
+`task_sched_seed` accepts an exact int64 seed by N5; no double conversion
+loses its low bits. `scan_ints` returns exact int64 tokens, skips non-integer
+tokens, and raises `value` naming any integer token outside int64.
+`abs` preserves its input kind and raises at INT64_MIN. Numeric sorting and
+`sort_by` retain exact int64 ordering.
 
 ### Lists
 
@@ -82,18 +91,18 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 |------|-----------|-------------|
 | `append` | `append of [list, item]` | Append item to list (mutates list) |
 | `concat` | `concat of [a, b]` | Concatenate two lists into new list |
-| `range` | `range of n` or `range of [start, end]` | Generate integer list [0..n) or [start..end) |
+| `range` | `range of n` or `range of [start, end]` | Generate int elements for [0..n), [start..end), or [start..end) by step. Every bound/step follows N5: integral floats convert, fractions raise `value`, then C int bounds and the existing element cap apply. |
 | `set_at` | `set_at of [list, index, value]` | Set element at index (mutates list); negative indices count from the end, like `[]`. Also takes a **buffer** in the first position — `set_at of [buf, i, v]`, or `set_at of [shaped_buf, row, col, v]` — where a non-number value is refused (`cannot store str in a buffer`) |
 | `get_at` | `get_at of [list, index]` | Get element at index; negative indices count from the end, like `[]`. Also takes a **buffer**: `get_at of [buf, i]`, or `get_at of [shaped_buf, row, col]` |
 | `copy_into` | `copy_into of [dest, offset, src]` | Copy src elements into dest starting at offset — a list into a list, or a buffer / list of numbers into a buffer. Returns dest. Wrong arity, a non-number offset (the doc used to list `[dest, src, offset]`, the code has always read `[dest, offset, src]`), a bad type, or a non-number element bound for a buffer RAISES (#1069; it silently returned null) |
 | `list_slice` | `list_slice of [list, start, end]` | New list with the elements of [start, end) — dual of `copy_into`. Negative indices count from the end, like `[]`; bounds then clamp to [0, len]. `start >= end` gives `[]`. Never raises on bounds |
-| `num_copy` | `num_copy of value` | Create independent copy of numeric value |
-| `hex` | `hex of n` or `hex of [n, nibbles]` | Uppercase hex string of a non-negative integer, zero-padded to `nibbles` (never truncated). Raises on negatives, fractions, non-numbers |
+| `num_copy` | `num_copy of value` | Create an independent numeric copy, preserving int/float kind and every int64 bit |
+| `hex` | `hex of n` or `hex of [n, nibbles]` | Exact uppercase hex digits for any non-negative int64. Value and optional nibble count follow N5; fractions raise, integral floats convert. Width clamps to 0..16, never truncating digits. |
 | `sort` | `sort of list` | Sort an all-number or all-string list in-place (numeric / lexicographic). Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list. A non-list argument raises by default; under `EIGS_STRICT=0` it is handed back unchanged (#971). |
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list |
 | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list |
 | `list_insert_at` | `list_insert_at of [list, index, value]` | Insert value at index, shift tail up (mutates) — dual of `list_remove_at`. `index == len` appends; any other out-of-bounds index is a no-op. Returns the list |
-| `list_index_of` | `list_index_of of [list, value]` | Index of the first element structurally equal to `value` (the same comparison `==` uses — nested lists and dicts match by structure), -1 if none |
+| `list_index_of` | `list_index_of of [list, value]` | First structural match index as an int, or int -1 when absent; exact numeric equality (N2). |
 | `list_contains` | `list_contains of [list, value]` | `true` if any element structurally equals `value`, else `false` — the list counterpart of the string-only `contains` |
 | `sort_by` | `sort_by of [list, key_fn]` | Sort list by numeric keys from key_fn (qsort, O(n log n), stable). Returns a new sorted list |
 | `dispatch` | `dispatch of [table, key, arg]` | Index list `table` by numeric `key` and call the resulting function with `arg` — a jump table (mirrors the `OP_DISPATCH` fast path). `key` must be a number. An ordinary builtin, not a special form: a user binding of the name wins (#459 — the fast path steps aside for any unit that rebinds `dispatch`, references `eval`, or compiles against an env where it is already rebound), and the parenthesized `dispatch of ([t, k, a])` form is one argument per #355/#405 |
@@ -108,10 +117,10 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `contains` | `contains of [haystack, needle]` | `true` if haystack contains needle, else `false` (non-string operands are `false`, never a spurious match) |
 | `starts_with` | `starts_with of [s, prefix]` | `true` if s starts with prefix, else `false` |
 | `ends_with` | `ends_with of [s, suffix]` | `true` if s ends with suffix, else `false` |
-| `index_of` | `index_of of [haystack, needle]` | First index of needle in haystack, or -1 (non-string operands are -1) |
+| `index_of` | `index_of of [haystack, needle]` | First byte index as an int, or int -1 when absent (legacy non-string fallback is -1) |
 | `substr` | `substr of [s, start, length]` | Extract substring |
 | `split` | `split of [s, delim]` | Split string by delimiter into list. A non-string `s` or `delim` raises by default; under `EIGS_STRICT=0`, `s` splits as `""` (so answers `[""]`) and `delim` falls back to `" "` (#971). |
-| `scan_int_tokens` | `scan_int_tokens of s` or `scan_int_tokens of [s, comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]` |
+| `scan_int_tokens` | `scan_int_tokens of s` or `scan_int_tokens of [s, comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]`; all numeric fields are ints. Integer text beyond int64 raises `value` naming the token (C3). |
 | `trim` | `trim of s` | Strip leading/trailing whitespace |
 | `str_replace` | `str_replace of [s, old, new]` | Replace all occurrences of old with new |
 | `chr` | `chr of byte` | One-byte string from a byte value 1–255 (the writing inverse of `ord`). Raises outside 1–255 — including 0, since strings are NUL-terminated — and on fractions; for a Unicode *codepoint* use `utf8_encode` (lib/utf8.eigs). |
@@ -154,7 +163,7 @@ builtin-call forms below are retained for backward compatibility.
 | `bit_not` | `bit_not of x` | Bitwise NOT (prefer `~x`) |
 | `bit_shl` | `bit_shl of [a, b]` | Left shift (prefer `a << b`) |
 | `bit_shr` | `bit_shr of [a, b]` | Unsigned right shift (prefer `a >> b`) |
-| `sign_extend` | `sign_extend of [val, bits]` | Sign-extend val from given bit width. E.g. `sign_extend of [0xFF, 8]` returns -1 |
+| `sign_extend` | `sign_extend of [val, bits]` | Exact int64 result from the existing 1..32-bit sign-extension operation; value and width follow N5 (integral floats convert, fractions raise). Its subtraction is checked: int64 underflow raises `value`, naming `sign_extend` (R1.6b-D1). Bits above the width retain the existing behavior (#1896 is separate). |
 
 ### Buffers
 
@@ -227,9 +236,9 @@ Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
-| `json_decode` | `json_decode of s` | Parse JSON string to value. Raises past the same 200-level limit, so a document that decodes always re-encodes. `\uXXXX` surrogate pairs are combined into one code point; unpaired surrogates, an escaped NUL, and malformed `\u` escapes raise (strict decode — lenient callers such as `json_path` receive the complete document with U+FFFD in place of the bad scalar). |
+| `json_decode` | `json_decode of s` | Parse JSON string to value. Integer text fitting int64 decodes exactly as int; decimal overflow, a point or exponent produces float (N14). Raises past the same 200-level limit, so a document that decodes always re-encodes. `\uXXXX` surrogate pairs are combined into one code point; unpaired surrogates, an escaped NUL, and malformed `\u` escapes raise (strict decode — lenient callers such as `json_path` receive the complete document with U+FFFD in place of the bad scalar). |
 | `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs. `json_build of null` is `{}`; any other non-list raises by default and answers `{}` under `EIGS_STRICT=0` (#971). |
-| `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value by dot-notation path; `""` when there is no value at that path (absent key, index out of range, JSON `null`). The document is parsed leniently: a malformed document is walked as far as it parsed, so a parse failure also answers `""` or a partial value. By default, a document that `json_decode` would reject (structural error, a repaired `\u` scalar, trailing garbage) raises a catchable `value` error `json_path: invalid JSON at position N` instead (#971 Phase C); JSON `false`/`null`/absent keys stay answers in both modes. |
+| `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value as text by dot-notation path, with exact int64 digits (N14); `""` when there is no value at that path (absent key, index out of range, JSON `null`). The document is parsed leniently: a malformed document is walked as far as it parsed, so a parse failure also answers `""` or a partial value. By default, a document that `json_decode` would reject (structural error, a repaired `\u` scalar, trailing garbage) raises a catchable `value` error `json_path: invalid JSON at position N` instead (#971 Phase C); JSON `false`/`null`/absent keys stay answers in both modes. |
 
 ## Dictionaries
 
@@ -381,14 +390,14 @@ stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `random` | `random of null` | Random float in [0, 1) |
-| `random_int` | `random_int of [lo, hi]` | Random integer in [lo, hi] inclusive; raises on non-finite or out-of-int64 bounds and on a span over 2^31. A malformed argument (not `[lo, hi]`, or non-numeric bounds) raises by default; under `EIGS_STRICT=0` it answers `0` (#971). |
-| `seed_random` | `seed_random of n` | Seed the RNG for deterministic sequences |
+| `random_int` | `random_int of [lo, hi]` | Random int in [lo, hi] inclusive. Bounds follow N5: integral floats convert; fractions and out-of-int64 values raise `value`. The existing span limit is 2^31. Malformed arguments raise by default and return int 0 under `EIGS_STRICT=0`. |
+| `seed_random` | `seed_random of n` | Seed the RNG from an exact int64 (N5); fractional floats raise. The existing srand48 generator uses the low 32 seed bits. |
 
 ## Time
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `monotonic_ns` | `monotonic_ns of null` | Nanoseconds from `CLOCK_MONOTONIC` (jump-free) |
+| `monotonic_ns` | `monotonic_ns of null` | Exact int64 nanoseconds from `CLOCK_MONOTONIC` (jump-free); raises `value` if the nanosecond count overflows int64. |
 | `monotonic_ms` | `monotonic_ms of null` | Milliseconds from `CLOCK_MONOTONIC` |
 | `clock_unix` | `clock_unix of null` | Seconds since the Unix epoch (float, wall clock; tape-captured for replay) |
 | `usleep` | `usleep of microseconds` | Pause execution |
@@ -421,11 +430,11 @@ automatically at exit.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `abs` | `abs of x` | Absolute value, preserving int or float kind. `abs` of INT64_MIN raises `value` because its positive magnitude does not fit in int64 (#1758 N4b). |
-| `min` | `min of [n1, n2, ...]` | Smallest of a list of numbers (any length >= 1) |
-| `max` | `max of [n1, n2, ...]` | Largest of a list of numbers (any length >= 1) |
-| `floor` | `floor of x` | Round down to integer |
-| `ceil` | `ceil of x` | Round up to integer |
-| `round` | `round of x` | Round to nearest integer |
+| `min` | `min of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. First argument wins ties.  Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
+| `max` | `max of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. First argument wins ties.  Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
+| `floor` | `floor of x` | Round down; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
+| `ceil` | `ceil of x` | Round up; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
+| `round` | `round of x` | Round half away from zero; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
 | `sin` | `sin of x` | Sine (radians) |
 | `cos` | `cos of x` | Cosine (radians) |
 | `tan` | `tan of x` | Tangent (radians) |

@@ -1,6 +1,7 @@
 # validate.is_number / is_integer — a decimal string needs a digit (#1235).
 # '.' and '-.' used to pass the character scan, and is_integer then treated
-# num-of-them as zero. All-pass prints VALIDATE_ALL_PASS.
+# num-of-them as zero. N10 now refuses that conversion. All-pass prints
+# VALIDATE_ALL_PASS.
 import validate
 
 fails is 0
@@ -15,8 +16,9 @@ print of "=== VALIDATE (lib/validate.eigs) ==="
 
 # The pre-#1235 rule: optional leading '-', at most one '.', digits or a
 # dot, and no requirement that a digit appear. '.' and '-.' return 1, and
-# the integer path accepts them because num of them is 0. The library must
-# disagree with this scan on those two strings.
+# the historical integer path accepted them because num of them was 0.
+# The library must disagree with the scan; N10 now also rejects the old
+# integer path's invalid numeric text (#1758 comment 6304880619).
 define _pre1235_is_number(value) as:
     if (type of value) != "str":
         return 0
@@ -46,8 +48,15 @@ define _pre1235_is_integer(value) as:
 
 check of ["pre-fix scan accepts '.'", _pre1235_is_number of ".", 1]
 check of ["pre-fix scan accepts '-.'", _pre1235_is_number of "-.", 1]
-check of ["pre-fix is_integer accepts '.' as zero", _pre1235_is_integer of ".", true]
-check of ["pre-fix is_integer accepts '-.' as zero", _pre1235_is_integer of "-.", true]
+# N10: keep the historical character-scan witness, then prove the runtime
+# refuses its digit-free false positives instead of silently producing zero.
+for digit_free in [".", "-."]:
+    refused_kind is ""
+    try:
+        _pre1235_is_integer of digit_free
+    catch e:
+        refused_kind is e.kind
+    check of [f"N10 old integer path refuses '{digit_free}'", refused_kind, "value"]
 
 check of ["is_number rejects '.'", validate.is_number of ".", false]
 check of ["is_number rejects '-.'", validate.is_number of "-.", false]

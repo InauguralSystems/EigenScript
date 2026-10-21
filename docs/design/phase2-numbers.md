@@ -1487,9 +1487,9 @@ current state behind several rows:
 | `matmul` | float-producing | - | - | float tensors |
 | `matmul_at` | float-producing | - | - | float tensors |
 | `matmul_bt` | float-producing | - | - | float tensors |
-| `max` | int-preserving | LOSS | - | Lua math.max returns the winning argument with its own subtype; a NaN argument makes the result NaN (Q8: IEEE 754-2019 maximum) |
+| `max` | int-preserving | LOSS | - | Lua math.max returns the winning argument with its own subtype; empty input raises `value` in both call forms and strict modes (R1.6b-D2, #1895); a NaN argument makes the result NaN (Q8: IEEE 754-2019 maximum) |
 | `mean` | float-producing | - | - | arithmetic mean |
-| `min` | int-preserving | LOSS | - | Lua math.min; a NaN argument makes the result NaN (Q8: IEEE 754-2019 minimum) |
+| `min` | int-preserving | LOSS | - | Lua math.min; empty input raises `value` in both call forms and strict modes (R1.6b-D2, #1895); a NaN argument makes the result NaN (Q8: IEEE 754-2019 minimum) |
 | `model_load_weights` | other | - | - | alias of eigen_model_load |
 | `monotonic_ms` | float-producing | - | - | fractional milliseconds |
 | `monotonic_ns` | int-preserving | LOSS | - | exact below 2^53 ns (104 days of uptime), a rounded double after; an exact int under N1 |
@@ -1546,7 +1546,7 @@ current state behind several rows:
 | `shared_delete` | int-preserving | - | - | removed count |
 | `shared_incr` | int-preserving | LOSS | - | shared counter: delta and stored value in doubles |
 | `shared_size` | int-preserving | - | - | entry count |
-| `sign_extend` | int-requiring | LOSS | - | `(int64_t)` of a double |
+| `sign_extend` | int-requiring | LOSS | - | N5 exact int64 arguments and result; existing subtraction is checked under (A), raising `value` naming sign_extend on underflow (R1.6b-D1, #1894); high-bit masking is separate (#1896) |
 | `sin` | float-producing | - | - | Lua math.sin |
 | `softmax` | float-producing | - | - | ML (float) |
 | `sort` | other | LOSS | - | exact int comparator written in R1.2, live from R1.3 (N2.sort-exact); from R2.2 floats sort by IEEE totalOrder, NaN after +inf (Q8) |
@@ -1817,7 +1817,7 @@ numbers are at `0740af03`.
   - ext_http.c request/response JSON;
   - model_io.c `json_*` (model files).
 - **(A) (overflow raises, no wraparound):** the N3 and N4b sites; `sum`,
-  `shared_incr`, the `add`/`subtract`/`multiply` scalar arms; the N9
+  `shared_incr`, `sign_extend`'s subtraction (R1.6b-D1), the `add`/`subtract`/`multiply` scalar arms; the N9
   builtins provide explicit wrapping.
 - **(B):** as N7; `type of` and the 54 consumer `type of ... == "num"` lines
   keep working.

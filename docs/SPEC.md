@@ -345,7 +345,7 @@ consequences are contracts you can rely on:
   - **The `NaN`→`0` collapse.** Under `EIGS_STRICT=0` a `NaN` still collapses to
     `0` and sets `math_flags.invalid`. In strict mode every reachable `NaN`
     source raises a catchable `value` error naming the builtin: `pow` of a
-    negative base with a fractional exponent, `num of "nan"`,
+    negative base with a fractional exponent,
     `f64_from_bytes` of a `NaN` bit pattern, `matmul` when its accumulation
     reaches `inf - inf`, `tensor_load` of a file carrying `NaN` bytes — and
     the elementwise `divide` by zero, which answers `0` under `EIGS_STRICT=0` where the
@@ -455,21 +455,61 @@ mine
 ```
 
 Convert explicitly with `str of n` and `num of s`. `num of` accepts
-decimal and hex-integer strings (hex converts identically on every
-profile and stops at the first non-hex character); a string with no
-leading number converts to `0`:
+exactly the numeric-literal grammar, with an optional sign and surrounding
+ASCII whitespace (N10). Decimal integer text fitting int64 gives an int;
+hex integers wrap modulo 2^64. A point/exponent or decimal overflow gives
+a float. Partial or empty text, `_`, `0b`/`0o`, hex floats, `inf` and `nan`
+raise `value` in every strict mode. Unlike Lua's `tonumber`, hex floats are
+refused because the language lexer refuses them:
 
 ```eigenscript
 print of ("value is " + (str of 42))
 print of ((num of "10") + 5)
 print of (num of "0xFF")
-print of (num of "zebra")
+try:
+    print of (num of "zebra")
+catch e:
+    print of e.kind
 ```
 ```output
 value is 42
 15
 255
-0
+value
+```
+
+
+Empty `min`/`max` raises `value` in both call forms (R1.6b-D2); empty
+`sum` remains int zero (C2). `sign_extend` reads exact int64 arguments and
+raises `value` if its existing subtraction underflows (R1.6b-D1).
+
+Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
+return an int when the result fits int64. `min`/`max` return the winning
+argument with its kind; the first argument wins a tie. `num` requires a
+complete numeric-literal string (N10). JSON integer text fitting int64
+decodes exactly (N14).
+
+```eigenscript
+print of [num_type of (len of "abc"), num_type of (floor of -2.5)]
+print of [num of "9007199254740993", num_type of (num of "3.0")]
+print of [num_type of (min of [3, 3.0]), num_type of (min of [3.0, 3])]
+print of (json_path of ["{\"n\":9223372036854775807}", "n"])
+try:
+    min of []
+catch e:
+    print of [e.kind, (index_of of [e.message, "min"]) >= 0]
+try:
+    print of (num of "12abc")
+catch e:
+    print of e.kind
+```
+```output
+["int", "int"]
+[9007199254740993, "float"]
+["int", "float"]
+9223372036854775807
+["value", true]
+value
 ```
 
 ### Text and Unicode (bytes by definition)

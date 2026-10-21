@@ -58,11 +58,14 @@ assert of [tensor_tiny_div == CAP, "NG10 tensor near-zero division caps"]
 literal_inf is 1e309
 assert of [literal_inf == CAP, "NG11 overflowing literal caps"]
 
-string_nan is num of "nan"
-assert of [string_nan == 0, "NG12 string nan collapses to 0"]
-
-string_inf is num of "inf"
-assert of [string_inf == CAP, "NG13 string inf caps"]
+# N10: these are invalid grammar in both strict modes, not float sources.
+for invalid_text in ["nan", "inf"]:
+    refused is false
+    try:
+        num of invalid_text
+    catch e:
+        refused is e.kind == "value"
+    assert of [refused, "N10 non-literal numeric text raises"]
 
 neg_mul_inf is -1e308 * 2
 assert of [neg_mul_inf == (0 - CAP), "NG14 negative overflow caps"]

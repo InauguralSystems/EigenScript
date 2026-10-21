@@ -395,6 +395,40 @@ The optional model extension raises a catchable `value` error when
 model's `max_seq_len`. Training applies the same limit to the combined input
 and output lengths; callers must choose their context window explicitly.
 
+Empty `min`/`max` raises `value` in both call forms (R1.6b-D2); empty
+`sum` remains int zero (C2). `sign_extend` reads exact int64 arguments and
+raises `value` if its existing subtraction underflows (R1.6b-D1).
+
+Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
+return an int when the result fits int64. `min`/`max` return the winning
+argument with its kind; the first argument wins a tie. `num` requires a
+complete numeric-literal string (N10). JSON integer text fitting int64
+decodes exactly (N14).
+
+```eigenscript
+print of [num_type of (len of "abc"), num_type of (floor of -2.5)]
+print of [num of "9007199254740993", num_type of (num of "3.0")]
+print of [num_type of (min of [3, 3.0]), num_type of (min of [3.0, 3])]
+print of (json_path of ["{\"n\":9223372036854775807}", "n"])
+try:
+    min of []
+catch e:
+    print of [e.kind, (index_of of [e.message, "min"]) >= 0]
+try:
+    print of (num of "12abc")
+catch e:
+    print of e.kind
+```
+```output
+["int", "int"]
+[9007199254740993, "float"]
+["int", "float"]
+9223372036854775807
+["value", true]
+value
+```
+
+
 ## Standard Library
 
 Pure EigenScript libraries under `lib/`:

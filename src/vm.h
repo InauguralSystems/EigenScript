@@ -682,7 +682,7 @@ int    task_handle_unpack(double packed, int *id, uint32_t *gen);
 Value *task_sched_trace_read(void);   /* list of {seq, tick, task, cause} dicts; [] when off / no scheduler */
 void   task_sched_trace_clear(void);  /* discard the recorded history (no-op without a scheduler) */
 /* Inc 4 seeded scheduling strategy (builtins.c task_sched_seed). */
-void   task_sched_set_seed(double seed); /* install a seed → seeded pick; ensures the scheduler */
+void   task_sched_set_seed(int64_t seed); /* install a seed → seeded pick; ensures the scheduler */
 
 /* ---- Public API ---- */
 
