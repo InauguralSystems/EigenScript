@@ -1,7 +1,8 @@
 # #1883: binders inside a module-level unobserved block must read from the
 # same storage to which their binding opcode writes.  In particular, catch
 # binds by name; module-slot promotion must not redirect its reads to a null
-# frame slot.
+# frame slot.  Every binder that writes by name stays off the slot path, even
+# when the block also assigns its name with `is`.
 load_file of "lib/test.eigs"
 
 unobserved:  # lint: allow W020 -- storage transparency is the subject
@@ -62,5 +63,167 @@ assert_eq of [binder_function_seen, 12, "1883 function-name binder reads its env
 unobserved:  # lint: allow W020 -- binder boundary is the subject
     binder_lambda_seen is ((binder_parameter) => binder_parameter + 1) of 10
 assert_eq of [binder_lambda_seen, 11, "1883 lambda parameter stays in its nested scope"]
+
+# Review finding 1: the module-name prepass keeps a defined function's name
+# and a catch binder; only slot promotion leaves them out.  A function that
+# assigns such a name updates the module binding instead of making a local.
+define module_fn_target() as:
+    return 1
+define module_fn_retarget() as:
+    module_fn_target is 42
+    return 0
+module_fn_status is module_fn_retarget of []
+assert_eq of [module_fn_target, 42, "1883 a function's write reaches a module function name"]
+
+# The same, with the definition inside an unobserved block.
+unobserved:
+    define module_fn_target_in_block() as:
+        return 1
+define module_fn_retarget_in_block() as:
+    module_fn_target_in_block is 42
+    return 0
+module_fn_status_in_block is module_fn_retarget_in_block of []
+assert_eq of [module_fn_target_in_block, 42, "1883 a function's write reaches a module function name defined in an unobserved block"]
+
+# A module-level catch binder is a module name too.
+try:
+    module_catch_value is 1 / 0
+catch module_catch_target:
+    module_catch_kind is module_catch_target.kind
+define module_catch_retarget() as:
+    module_catch_target is 42
+    return 0
+module_catch_status is module_catch_retarget of []
+assert_eq of [module_catch_target, 42, "1883 a function's write reaches a module catch binder"]
+
+# The same, with the catch inside an unobserved block.
+unobserved:
+    try:
+        module_catch_value_in_block is 1 / 0
+    catch module_catch_target_in_block:
+        module_catch_kind_in_block is module_catch_target_in_block.kind
+define module_catch_retarget_in_block() as:
+    module_catch_target_in_block is 42
+    return 0
+module_catch_status_in_block is module_catch_retarget_in_block of []
+assert_eq of [module_catch_target_in_block, 42, "1883 a function's write reaches a module catch binder bound in an unobserved block"]
+
+# Review finding 2: a catch body that assigns its own binder leaves it bound by
+# name, so the block must not promote it.  From here on each tested name is
+# used only inside its block, which is what makes it a promotion candidate.
+unobserved:
+    try:
+        self_catch_value is 1 / 0
+    catch self_catch_error:
+        self_catch_error is self_catch_error
+        self_catch_seen is self_catch_error
+self_catch_kind is "not a dict"
+if (type of self_catch_seen) == "dict":
+    self_catch_kind is self_catch_seen.kind
+assert_eq of [self_catch_kind, "value", "1883 catch e: e is e keeps the error dictionary"]
+
+# The same with `e is e.kind`.  Unfixed, reading e.kind raises; the outer try
+# records that instead of ending the file.
+kind_catch_seen is "unset"
+try:
+    unobserved:
+        try:
+            kind_catch_value is 1 / 0
+        catch kind_catch_error:
+            kind_catch_error is kind_catch_error.kind
+            kind_catch_seen is kind_catch_error
+catch kind_catch_raised:
+    kind_catch_seen is "raised: " + kind_catch_raised.message
+assert_eq of [kind_catch_seen, "value", "1883 catch e: e is e.kind reads the error's kind"]
+
+# The other binders that write by name, found from the OP_SET_NAME_LOCAL
+# emitters and the VM's env writes, each also assigned by the block.  A `for`
+# binder that its body assigns:
+unobserved:
+    for_binder_seen is []
+    for for_binder_var in [1, 2, 3]:
+        append of [for_binder_seen, for_binder_var]
+        for_binder_var is 0
+assert_eq of [for_binder_seen, [1, 2, 3], "1883 a for binder that its body assigns reads each element"]
+
+# A comprehension binder:
+unobserved:
+    comp_binder_var is 5
+    comp_binder_seen is [comp_binder_var for comp_binder_var in [1, 2, 3]]
+assert_eq of [comp_binder_seen, [1, 2, 3], "1883 a comprehension binder that the block assigns reads each element"]
+
+# A defined function's name:
+unobserved:
+    define defined_binder_fn() as:
+        return 1
+    defined_binder_seen is type of defined_binder_fn
+    defined_binder_fn is 2
+assert_eq of [defined_binder_seen, "fn", "1883 a defined function that the block reassigns reads as a function"]
+
+# An imported module's name:
+unobserved:
+    import math
+    import_binder_seen is type of math
+    math is 0
+assert_eq of [import_binder_seen, "dict", "1883 an imported module name that the block reassigns reads the module"]
+
+# `loop while` publishes __loop_exit__ (compiler) and __loop_iterations__ (VM):
+unobserved:
+    __loop_exit__ is "unset"
+    loop_exit_counter is 0
+    loop while loop_exit_counter < 3:
+        loop_exit_counter is loop_exit_counter + 1
+    loop_exit_seen is __loop_exit__
+assert_eq of [loop_exit_seen, "normal", "1883 __loop_exit__ that the block assigns reads the loop's exit"]
+
+# A binder OUTSIDE the block writes the same module binding.  Here a `loop
+# while` before the block publishes __loop_iterations__.  The VM's count carries
+# over earlier loops (only a stall resets it), so the row compares with the
+# binding read by name through eval, which the escape analysis does not see as
+# a reference.
+loop_iterations_counter is 0
+loop while loop_iterations_counter < 3:
+    loop_iterations_counter is loop_iterations_counter + 1
+loop_iterations_want is eval of "__loop_iterations__"
+unobserved:
+    loop_iterations_seen is __loop_iterations__
+    __loop_iterations__ is -1
+assert_true of [loop_iterations_want >= 3, "1883 the loop published its count"]
+assert_eq of [loop_iterations_seen, loop_iterations_want, "1883 __loop_iterations__ from a loop before the block reads the loop's count"]
+
+# A module imported before the block:
+import json
+unobserved:
+    import_outside_seen is type of json
+    json is 0
+assert_eq of [import_outside_seen, "dict", "1883 a module imported before the block reads the module"]
+
+# A comprehension before the block whose expression never reads its binder:
+comp_outside_list is [0 for comp_outside_var in [1, 2, 3]]
+unobserved:
+    comp_outside_seen is comp_outside_var
+    comp_outside_var is 9
+assert_eq of [comp_outside_seen, 3, "1883 a comprehension binder bound before the block reads its last element"]
+
+# `local` in a `for` body binds in the loop env, not the module slot:
+unobserved:
+    local_for_name is "outer"
+    for local_for_iter in [1]:
+        local local_for_name is "inner"
+    local_for_seen is local_for_name
+assert_eq of [local_for_seen, "outer", "1883 a local in a for body stays in the loop env"]
+
+# A block inside a module-level `for` body: its own `local` binds in that loop
+# env, which every iteration clears.
+nested_local_seen is []
+for nested_local_iter in [1, 2]:
+    unobserved:
+        if nested_local_iter == 2:
+            try:
+                append of [nested_local_seen, nested_local_name]
+            catch nested_local_unbound:
+                append of [nested_local_seen, nested_local_unbound.kind]
+        local nested_local_name is "inner"
+assert_eq of [nested_local_seen, ["undefined_name"], "1883 a local in a block inside a for loop is per iteration"]
 
 test_summary of null
