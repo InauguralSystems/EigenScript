@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: sort (other, LOSS; exact int comparator written in R1.2, live from R1.3)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+xs is [9007199254740993, 9007199254740992, 3, 2.5]
+sort of xs
+print of xs
+print of [nt of xs[0], nt of xs[1]]

@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: audio_envelope (float-producing, Q7 magnitude; attack and release are continuous durations: a sample count the C int cannot hold raises)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+s is audio_envelope of [[1, 1, 1, 1], 0, 0, 0.5, 0]
+print of [s, nt of s[0]]
+try:
+    print of ["huge-attack-answer", len of (audio_envelope of [[1, 1], 1e300, 0, 0.5, 0])]
+catch e:
+    print of ["attack-magnitude", e.kind]
+try:
+    print of ["huge-release-answer", len of (audio_envelope of [[1, 1], 0, 0, 0.5, 1e300])]
+catch e:
+    print of ["release-magnitude", e.kind]

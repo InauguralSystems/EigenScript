@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: pow (float-producing; mirrors ^ (Lua 3.4.1: exponentiation is always float))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is pow of [2, 10]
+print of [a, nt of a]
+b is pow of [2, 0.5]
+print of [b, nt of b]

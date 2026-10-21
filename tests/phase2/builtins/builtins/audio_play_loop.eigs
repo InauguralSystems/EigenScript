@@ -1,0 +1,27 @@
+# R1.6 behaviour-table probe: audio_play_loop (int-requiring, Q7 bounded; loop count by N5; samples clamp and round to int16; returns a channel; HOOK mix: the delivered mixer PCM (ruling B1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define wait_for(path, want) as:
+    local i is 0
+    loop while i < 200:
+        if contains of [read_text of path, want]:
+            return true
+        usleep of 20000
+        i is i + 1
+    return false
+log is env_get of "R16_HOOK_LOG"
+d is audio_open of [44100, 1]
+audio_pause of 1
+try:
+    print of ["fraction-answer", audio_play_loop of [[0.1, 0.2], 2.5]]
+catch e:
+    print of ["loops-fraction", e.kind]
+c is audio_play_loop of [[0.5, -3], 2.0]
+print of [c, nt of c]
+audio_pause of 0
+print of ["mixed", wait_for of [log, "mix:"]]
+audio_close of null
+write of (read_text of log)

@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: f64_from_bytes (int-requiring; 8 byte values: N5, then 0..255 (Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+v is f64_from_bytes of [63, 240, 0, 0, 0, 0, 0, 0]
+print of [v, nt of v]
+try:
+    print of ["fraction-answer", f64_from_bytes of [63.5, 240, 0, 0, 0, 0, 0, 0]]
+catch e:
+    print of ["byte-fraction", e.kind]
+try:
+    print of ["319-answer", f64_from_bytes of [319, 240, 0, 0, 0, 0, 0, 0]]
+catch e:
+    print of ["byte-319", e.kind]
+w is f64_from_bytes of [64.0, 4.0, 0, 0, 0, 0, 0, 0]
+print of [w, nt of w]

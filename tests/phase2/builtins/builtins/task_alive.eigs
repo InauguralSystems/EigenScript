@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: task_alive (int-requiring; task handle (packed below 2^53, exactness-checked))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define w(x) as:
+    return x * 2
+t is task_spawn of [w, 21]
+try:
+    print of ["fraction-answer", task_alive of (t + 0.5)]
+catch e:
+    print of ["id-fraction", e.kind]
+print of (task_alive of (t + 0.0))
+r is task_join of t
+print of [r, task_alive of t]

@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: task_send (int-requiring; task handle)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define w(x) as:
+    local m is task_recv of null
+    return m
+t is task_spawn of [w, 0]
+try:
+    print of ["fraction-answer", task_send of [t + 0.5, "lost"]]
+catch e:
+    print of ["id-fraction", e.kind]
+print of (task_send of [t + 0.0, "hello"])
+print of (task_join of t)

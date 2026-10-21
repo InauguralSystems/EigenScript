@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: http_post (other; header values via value_to_string; PROFILE server (make server); FIXTURE R16_HTTP_CAPTURE_URL: R1.6a's loopback capture server answers with the received X-Number header (ruling B6))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    url is env_get of "R16_HTTP_CAPTURE_URL"
+    r is http_post of [url, "{\"X-Number\": 9007199254740993}", "ping"]
+    print of [r, type of r]
+catch e:
+    print of ["capability", e.kind, e.message]

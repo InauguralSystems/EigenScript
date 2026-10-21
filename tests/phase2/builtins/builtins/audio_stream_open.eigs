@@ -1,0 +1,13 @@
+# R1.6 behaviour-table probe: audio_stream_open (int-requiring; freq and channels are counts: N5, then the C int range (Q1); returns a device id)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    print of ["fraction-answer", audio_stream_open of [44100.5, 1]]
+catch e:
+    print of ["freq-fraction", e.kind]
+s is audio_stream_open of [44100.0, 1.0]
+print of [s >= 0, nt of s]
+audio_stream_close of null

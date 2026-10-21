@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: read_bytes_buf (int-requiring; cap and length; bytes stored as floats)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+f is p + "/b.bin"
+write_bytes of [f, [1, 2, 3]]
+b is read_bytes_buf of f
+print of [buf_len of b, b[0], nt of b[0]]
+try:
+    c is read_bytes_buf of [f, 8.5]
+    print of ["fraction accepted", buf_len of c]
+catch e:
+    print of ["cap-fraction", e.kind]
+d is read_bytes_buf of [f, 8.0]
+print of [buf_len of d, nt of d[2]]

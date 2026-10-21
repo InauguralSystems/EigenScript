@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: chr (int-requiring; byte 1..255, already exactness-checked (Lua string.char))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (chr of 65)
+try:
+    print of ["fraction-answer", chr of 65.5]
+catch e:
+    print of ["byte-fraction", e.kind]
+try:
+    print of ["256-answer", chr of 256]
+catch e:
+    print of ["byte-256", e.kind]
+print of (chr of 66.0)

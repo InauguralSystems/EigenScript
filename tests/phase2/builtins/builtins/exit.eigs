@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: exit (int-requiring; exit code: N5, then the C int range (Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of "start"
+try:
+    exit of 2.5
+catch e:
+    print of ["code-fraction", e.kind]
+try:
+    exit of 4294967296
+catch e:
+    print of ["code-past-int", e.kind]
+exit of 3.0

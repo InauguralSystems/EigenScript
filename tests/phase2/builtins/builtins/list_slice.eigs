@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: list_slice (int-requiring; start and end indices)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (list_slice of [[1, 2, 3], 1, 3])
+try:
+    print of ["fraction-answer", list_slice of [[1, 2, 3], 0.5, 2]]
+catch e:
+    print of ["start-fraction", e.kind]
+try:
+    print of ["fraction-answer", list_slice of [[1, 2, 3], 0, 2.5]]
+catch e:
+    print of ["end-fraction", e.kind]
+print of (list_slice of [[1, 2, 3], 1.0, 2.0])

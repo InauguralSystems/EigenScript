@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: list_truncate (int-requiring; new length)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+xs is [1, 2, 3, 4]
+list_truncate of [xs, 2]
+print of xs
+try:
+    list_truncate of [xs, 1.5]
+    print of ["fraction accepted", xs]
+catch e:
+    print of ["length-fraction", e.kind]
+list_truncate of [xs, 1.0]
+print of xs

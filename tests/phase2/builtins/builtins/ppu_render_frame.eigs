@@ -1,0 +1,27 @@
+# R1.6 behaviour-table probe: ppu_render_frame (int-requiring; the memory buffer's bytes by N5, then 0..255 (Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+mem is buffer of 65536
+fb is buffer of 23040
+fb[0] is 7
+ppu_render_frame of [mem, fb]
+print of ["lcd-off", fb[0]]
+mem[65351] is 255
+mem[65344] is 145.5
+try:
+    ppu_render_frame of [mem, fb]
+    print of ["fraction accepted", fb[0]]
+catch e:
+    print of ["lcdc-fraction", e.kind]
+mem[65344] is 401
+try:
+    ppu_render_frame of [mem, fb]
+    print of ["401 accepted", fb[0]]
+catch e:
+    print of ["lcdc-401", e.kind]
+mem[65344] is 145.0
+ppu_render_frame of [mem, fb]
+print of ["bg-on", fb[0], fb[23039], nt of fb[0]]

@@ -1,0 +1,24 @@
+# R1.6 behaviour-table probe: store_get (int-requiring, LOSS; key by N5 (eigs_int_arg, closes #1760); decodes records (N14))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+s is store_open of (p + "/db")
+k1 is store_put of [s, "c", {"v": 1}]
+k2 is store_put of [s, "c", {"big": 9007199254740993}]
+k3 is store_put of [s, "c", {"_id": "4294967297", "w": 3}]
+print of [k1, k2, k3]
+r is store_get of [s, "c", 2.0]
+print of [r["big"], nt of r["big"]]
+try:
+    print of (store_get of [s, "c", 1.9])
+catch e:
+    print of ["key-fraction", e.kind]
+q is store_get of [s, "c", 4294967297]
+print of ["key-past-int32-found", q != null]
+k4 is store_put of [s, "c", {"_id": "9007199254740993", "x": 5}]
+q2 is store_get of [s, "c", 9007199254740993]
+print of ["key-2^53+1-found", q2 != null]
+store_close of s

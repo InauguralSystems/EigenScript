@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: audio_sweep (float-producing, Q7 magnitude; the duration is continuous; the wave selector is integer-valued (N5, Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+s is audio_sweep of [440, 880, 0.001, 0.5, 0]
+print of [len of s, nt of s[0]]
+try:
+    print of ["fraction-answer", len of (audio_sweep of [440, 880, 0.001, 0.5, 0.5])]
+catch e:
+    print of ["wave-fraction", e.kind]
+print of (len of (audio_sweep of [440, 880, 0.001, 0.5, 1.0]))
+try:
+    print of ["huge-duration-answer", len of (audio_sweep of [440, 880, 1e300, 0.5, 0])]
+catch e:
+    print of ["duration-magnitude", e.kind]

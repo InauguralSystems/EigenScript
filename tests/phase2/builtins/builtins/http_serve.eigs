@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: http_serve (int-requiring; port; PROFILE server (make server); each call in a child under a timeout (a valid call serves forever))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define run_child(name, lines, secs) as:
+    local f is p + "/" + name + ".eigs"
+    write_text of [f, join of [lines, "\n"]]
+    local r is exec_capture of [[exe_path of null, f], secs]
+    for line in split of [r[1], "\n"]:
+        if starts_with of [line, "R16|"]:
+            print of (substr of [line, 4, 100000])
+    print of [name + "-rc", r[0]]
+p is env_get of "EIGS_PROBE_TMP"
+run_child of ["serve_a", ["define say(v) as:", "    print of (\"R16|\" + (str of v))", "try:", "    http_serve of 0.5", "    say of \"http_serve returned\"", "catch e:", "    say of [\"port-fraction\", e.kind, contains of [e.message, \"capability\"]]"], 5]
+run_child of ["serve_c", ["define say(v) as:", "    print of (\"R16|\" + (str of v))", "try:", "    http_serve of 65536", "    say of \"http_serve returned\"", "catch e:", "    say of [\"port-65536\", e.kind, contains of [e.message, \"capability\"]]"], 5]
+run_child of ["serve_b", ["define say(v) as:", "    print of (\"R16|\" + (str of v))", "try:", "    http_serve of 0.0", "    say of \"http_serve returned\"", "catch e:", "    say of [\"integral-float-error\", e.kind, contains of [e.message, \"capability\"]]"], 3]

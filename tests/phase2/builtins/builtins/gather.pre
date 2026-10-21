@@ -1,0 +1,5 @@
+["fraction-answer", 11, 22]
+[11, 22, "float"]
+[[2, 3], "float"]
+["fraction-answer", [1, 3]]
+rc=0

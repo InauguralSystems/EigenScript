@@ -1,0 +1,22 @@
+# R1.6 behaviour-table probe: buf_copy (int-requiring; offsets and counts)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+s is buf_from_list of [1, 2, 3, 4]
+d is buffer of 4
+buf_copy of [s, 1, d, 0, 2]
+print of [d[0], d[1], d[2]]
+try:
+    buf_copy of [s, 0.5, d, 0, 1]
+    print of ["fraction accepted", d[0]]
+catch e:
+    print of ["offset-fraction", e.kind]
+try:
+    buf_copy of [s, 0, d, 0, 1.5]
+    print of ["fraction accepted", d[0]]
+catch e:
+    print of ["count-fraction", e.kind]
+buf_copy of [s, 0.0, d, 2.0, 2.0]
+print of [d[0], d[2], d[3]]

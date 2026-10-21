@@ -1,0 +1,13 @@
+# R1.6 behaviour-table probe: audio_music_volume (other, Q7 bounded; the volume clamps to SDL_mixer's 0..128, then rounds; HOOK mixvol: the volume reaching Mix_VolumeMusic (ruling B1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+log is env_get of "R16_HOOK_LOG"
+p is env_get of "EIGS_PROBE_TMP"
+wav is p + "/m.wav"
+write_bytes of [wav, [82, 73, 70, 70, 44, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, 100, 97, 116, 97, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+print of (audio_music_play of [wav, 1])
+print of [audio_music_volume of 300, audio_music_volume of -20, audio_music_volume of 64.5]
+write of (read_text of log)

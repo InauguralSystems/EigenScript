@@ -1,0 +1,11 @@
+# R1.6 behaviour-table probe: audio_stream_queued (int-preserving; sample count; a kind and a range only (the device drains in real time))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+s is audio_stream_open of [44100, 1]
+audio_stream_push of [0.1, 0.2, 0.3]
+q is audio_stream_queued of null
+print of [nt of q, q >= 0, q <= 3]
+audio_stream_close of null

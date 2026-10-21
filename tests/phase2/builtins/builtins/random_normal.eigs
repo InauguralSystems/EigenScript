@@ -1,0 +1,20 @@
+# R1.6 behaviour-table probe: random_normal (float-producing; dims int; samples float)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+seed_random of 7
+r is random_normal of [2, 3, 1.0]
+print of [len of r, len of r[0], nt of r[0][0]]
+try:
+    print of ["fraction-answer", len of (random_normal of [2.5, 3, 1.0])]
+catch e:
+    print of ["rows-fraction", e.kind]
+v is random_normal of [4, 1.0]
+print of [len of v, nt of v[0]]
+try:
+    print of ["fraction-answer", len of (random_normal of [4.5, 1.0])]
+catch e:
+    print of ["len-fraction", e.kind]
+print of (len of (random_normal of [3.0, 1.0]))

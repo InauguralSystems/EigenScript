@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: random_int (int-requiring, LOSS; Lua math.random(m, n) is an integer)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+seed_random of 7
+a is random_int of [5, 5]
+print of [a, nt of a]
+big is random_int of [9007199254740993, 9007199254740993]
+print of [big, nt of big]
+try:
+    print of (random_int of [1.5, 3])
+catch e:
+    print of ["fraction", e.kind]
+f is random_int of [2.0, 2.0]
+print of [f, nt of f]

@@ -1,0 +1,19 @@
+# R1.6 behaviour-table probe: stream_open (int-requiring; element count, already floor-checked)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+f is p + "/s.tensor"
+print of (stream_open of [f, 2])
+try:
+    print of ["fraction-answer", stream_open of [f, 2.5]]
+catch e:
+    print of ["count-fraction", e.kind]
+print of (stream_open of [f, 2.0])
+try:
+    print of ["zero-answer", stream_open of [f, 0]]
+catch e:
+    print of ["count-zero", e.kind]
+stream_close of null

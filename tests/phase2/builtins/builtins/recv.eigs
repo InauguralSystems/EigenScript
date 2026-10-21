@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: recv (int-requiring; channel handle ids)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+c is channel of null
+id is c["_channel_id"]
+gen is c["_channel_gen"]
+send of [c, 5]
+send of [c, 6]
+try:
+    print of ["fraction-answer", recv of {"_channel_id": id + 0.5, "_channel_gen": gen}]
+catch e:
+    print of ["id-fraction", e.kind]
+v is recv of {"_channel_id": id + 0.0, "_channel_gen": gen + 0.0}
+print of [v, nt of v]

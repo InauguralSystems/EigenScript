@@ -1,0 +1,20 @@
+# R1.6 behaviour-table probe: write_bytes (int-requiring; byte values: N5, then 0..255 (Q1); returns bytes written)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+f is p + "/w.bin"
+n is write_bytes of [f, [65, 66, 67]]
+print of [n, nt of n]
+try:
+    print of ["300-answer", write_bytes of [f, [65, 300]]]
+catch e:
+    print of ["byte-300", e.kind]
+try:
+    print of ["fraction-answer", write_bytes of [f, [65.5]]]
+catch e:
+    print of ["byte-fraction", e.kind]
+m is write_bytes of [f, [72.0, 105.0]]
+print of [m, read_text of f]

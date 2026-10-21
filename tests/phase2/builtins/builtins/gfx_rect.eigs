@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: gfx_rect (other, Q7 geometry,bounded; the rect is intersected with the drawable area in float space, then rounded)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+ok is gfx_open of [64, 48, "r16"]
+print of ["open", ok]
+gfx_clear of [0, 0, 0]
+gfx_rect of [-3e9, 0, 6e9, 4, 0, 255, 0]
+print of [gfx_read of [0, 1], gfx_read of [32, 1], gfx_read of [63, 3], gfx_read of [32, 5]]
+gfx_rect of [10, 10, 4, 4, 300, -20, 127.6]
+print of (gfx_read of [11, 11])
+gfx_rect of [20.5, 20, 2, 2, 0, 0, 255]
+print of [gfx_read of [20, 20], gfx_read of [21, 20], gfx_read of [22, 20]]
+gfx_close of null

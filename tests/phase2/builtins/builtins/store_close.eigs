@@ -1,0 +1,21 @@
+# R1.6 behaviour-table probe: store_close (int-requiring; handle id/gen)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+s is store_open of (p + "/db")
+try:
+    store_close of {"_store_id": s["_store_id"] + 0.5, "_store_gen": s["_store_gen"], "_type": "eigenstore"}
+    print of "id fraction closed it"
+catch e:
+    print of ["id-fraction", e.kind]
+try:
+    print of (store_close of {"_store_id": s["_store_id"] + 0.0, "_store_gen": s["_store_gen"] + 0.0, "_type": "eigenstore"})
+catch e:
+    print of ["integral-close", e.kind]
+try:
+    print of ["count-after-close", store_count of [s, "c"]]
+catch e:
+    print of ["after-close", e.kind]

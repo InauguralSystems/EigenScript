@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: audio_saw (float-producing, Q7 magnitude; float samples; a sample count the C int cannot hold raises)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+s is audio_saw of [440, 0.001, 0.5]
+print of [len of s, nt of s[0], nt of s[43]]
+try:
+    print of ["huge-duration-answer", len of (audio_saw of [440, 1e300, 0.5])]
+catch e:
+    print of ["duration-magnitude", e.kind]

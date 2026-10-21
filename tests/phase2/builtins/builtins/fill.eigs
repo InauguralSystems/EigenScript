@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: fill (int-requiring; count)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (fill of [3, 0])
+try:
+    print of ["fraction-answer", fill of [2.5, 0]]
+catch e:
+    print of ["count-fraction", e.kind]
+print of (fill of [2.0, 1])

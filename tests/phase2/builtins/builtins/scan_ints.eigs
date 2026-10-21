@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: scan_ints (int-preserving, LOSS; integers accumulate in a double)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is scan_ints of "1 -2 +3 9007199254740993 x7 8"
+print of r
+print of [nt of r[0], nt of r[3]]
+c is scan_ints of ["# 5\n6", "#"]
+print of c
+try:
+    print of ["beyond-answer", scan_ints of "1 9223372036854775808"]
+catch e:
+    print of ["beyond-int64", e.kind, contains of [e.message, "9223372036854775808"]]

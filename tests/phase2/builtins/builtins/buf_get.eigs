@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: buf_get (int-requiring; index; returns the float element)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+b is buf_from_list of [10, 20, 30]
+g is buf_get of [b, 1]
+print of [g, nt of g]
+try:
+    print of ["fraction-answer", buf_get of [b, 1.5]]
+catch e:
+    print of ["index-fraction", e.kind]
+h is buf_get of [b, 2.0]
+print of [h, nt of h]

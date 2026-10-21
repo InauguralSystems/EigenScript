@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: bit_xor (int-requiring; Lua binary ~)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is bit_xor of [9007199254740993, 1]
+print of [a, nt of a]
+try:
+    print of ["fraction-answer", bit_xor of [1.5, 1]]
+catch e:
+    print of ["fraction", e.kind]
+f is bit_xor of [6.0, 3.0]
+print of [f, nt of f]

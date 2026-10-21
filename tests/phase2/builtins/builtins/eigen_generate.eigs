@@ -1,0 +1,33 @@
+# R1.6 behaviour-table probe: eigen_generate (int-requiring; token ids and max_tokens are integer-valued (N5, Q1); PROFILE server (make server))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define mk_mat(r, c) as:
+    local m is []
+    for i in range of r:
+        local row is []
+        for j in range of c:
+            append of [row, 0.5]
+        append of [m, row]
+    return m
+define mk_vec(k, v) as:
+    local out is []
+    for i in range of k:
+        append of [out, v]
+    return out
+p is env_get of "EIGS_PROBE_TMP"
+lay is "{\"w_q\":" + (json_encode of (mk_mat of [4, 4])) + ",\"w_k\":" + (json_encode of (mk_mat of [4, 4])) + ",\"w_v\":" + (json_encode of (mk_mat of [4, 4])) + ",\"w_o\":" + (json_encode of (mk_mat of [4, 4]))
+lay is lay + ",\"w_ff1\":" + (json_encode of (mk_mat of [4, 8])) + ",\"w_ff2\":" + (json_encode of (mk_mat of [8, 4]))
+lay is lay + ",\"ln1_gamma\":" + (json_encode of (mk_vec of [4, 1.0])) + ",\"ln1_beta\":" + (json_encode of (mk_vec of [4, 0.0])) + ",\"ln2_gamma\":" + (json_encode of (mk_vec of [4, 1.0])) + ",\"ln2_beta\":" + (json_encode of (mk_vec of [4, 0.0])) + "}"
+cfg is "{\"vocab_size\":8,\"d_model\":4,\"n_layers\":1,\"d_ff\":8,\"max_seq_len\":16}"
+model is "{\"format_version\":2,\"weight_format\":\"ternary_weight_only\",\"config\":" + cfg + ",\"token_embeddings\":" + (json_encode of (mk_mat of [8, 4])) + ",\"output_proj\":" + (json_encode of (mk_mat of [4, 8])) + ",\"layers\":[" + lay + "]}"
+write_text of [p + "/model.json", model]
+child is ["define nt(x) as:", "    try:", "        return num_type of x", "    catch e:", "        return e.kind", "define say(v) as:", "    print of (\"R16|\" + (str of v))", "p is env_get of \"EIGS_PROBE_TMP\"", "try:", "    s is eigen_model_load of (p + \"/model.json\")", "catch e:", "    say of [\"capability\", e.kind, e.message]", "    exit of 0", "g is eigen_generate of [[1, 2, 3], 0, 4]", "say of [len of g, nt of g[0]]", "try:", "    say of [\"fraction-answer\", len of (eigen_generate of [[1.5, 2], 0, 4])]", "catch e:", "    say of [\"token-fraction\", e.kind]", "try:", "    say of [\"fraction-answer\", len of (eigen_generate of [[1, 2], 0, 2.5])]", "catch e:", "    say of [\"max_tokens-fraction\", e.kind]", "h is eigen_generate of [[1.0, 2.0], 0, 2.0]", "say of [len of h, nt of h[0]]"]
+write_text of [p + "/child.eigs", join of [child, "\n"]]
+r is exec_capture of [exe_path of null, p + "/child.eigs"]
+for line in split of [r[1], "\n"]:
+    if starts_with of [line, "R16|"]:
+        print of (substr of [line, 4, 100000])
+print of ["child-rc", r[0]]

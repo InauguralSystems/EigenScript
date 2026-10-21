@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: proc_read_buf (int-requiring; fd and max bytes (stdin must be /dev/null, as in the suite))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of ["eof", proc_read_buf of [0, 16]]
+try:
+    print of ["fraction-answer", proc_read_buf of [0.5, 16]]
+catch e:
+    print of ["fd-fraction", e.kind]
+try:
+    print of ["fraction-answer", proc_read_buf of [0, 16.5]]
+catch e:
+    print of ["max-fraction", e.kind]
+print of ["integral-float", proc_read_buf of [0.0, 16.0]]

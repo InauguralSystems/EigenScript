@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: store_drop (int-requiring; handle and page ids)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+s is store_open of (p + "/db")
+k is store_put of [s, "c", {"v": 1}]
+try:
+    print of ["fraction-answer", store_drop of [{"_store_id": s["_store_id"] + 0.5, "_store_gen": s["_store_gen"], "_type": "eigenstore"}, "c"]]
+catch e:
+    print of ["id-fraction", e.kind]
+d is store_drop of [{"_store_id": s["_store_id"] + 0.0, "_store_gen": s["_store_gen"] + 0.0, "_type": "eigenstore"}, "c"]
+print of [d, store_collections of s]
+store_close of s

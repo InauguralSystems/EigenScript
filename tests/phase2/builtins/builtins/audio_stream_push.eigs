@@ -1,0 +1,11 @@
+# R1.6 behaviour-table probe: audio_stream_push (other, Q7 bounded; samples clamp to [-1, 1], then round to int16; HOOK pcm: the delivered SDL_QueueAudio PCM (ruling B1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+log is env_get of "R16_HOOK_LOG"
+s is audio_stream_open of [44100, 1]
+print of [s >= 0, audio_stream_push of [2.5, -3, 0.5]]
+audio_stream_close of null
+write of (read_text of log)

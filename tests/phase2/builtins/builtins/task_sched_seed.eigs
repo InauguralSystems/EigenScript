@@ -1,0 +1,31 @@
+# R1.6 behaviour-table probe: task_sched_seed (int-requiring, LOSS; (int64_t) of a double)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define worker(i) as:
+    task_send of [0, i]
+    return i
+define order_for(seed) as:
+    task_sched_seed of seed
+    local ts is []
+    for i in range of 3:
+        append of [ts, task_spawn of [worker, i]]
+    local got is []
+    for i in range of 3:
+        append of [got, task_recv of null]
+    for t in ts:
+        task_join of t
+    return got
+a is order_for of 9007199254740992
+b is order_for of 9007199254740993
+print of ["seeds-2^53-and-2^53+1-differ", a != b]
+try:
+    task_sched_seed of 1.5
+    print of "fraction accepted"
+catch e:
+    print of ["fraction", e.kind]
+c is order_for of 5.0
+d is order_for of 5
+print of ["integral-float-seed", c == d]

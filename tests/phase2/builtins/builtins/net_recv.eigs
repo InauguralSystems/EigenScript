@@ -1,0 +1,25 @@
+# R1.6 behaviour-table probe: net_recv (int-requiring; handle and max bytes; bytes stored as floats; PROFILE server (make server), loopback only)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    l is net_listen of 0
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0
+pt is net_port of l
+c is net_dial of ["127.0.0.1", pt]
+a is net_accept of [l, 2000]
+n is net_send of [c, "hi"]
+try:
+    print of ["fraction-answer", net_recv of [a + 0.5, 16, 2000]]
+catch e:
+    print of ["handle-fraction", e.kind]
+try:
+    print of ["fraction-answer", net_recv of [a, 16.5, 2000]]
+catch e:
+    print of ["max-fraction", e.kind]
+b is net_recv of [a + 0.0, 16.0, 2000]
+print of [str_from_bytes of b, nt of b[0]]

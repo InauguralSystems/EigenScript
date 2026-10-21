@@ -1,0 +1,19 @@
+# R1.6 behaviour-table probe: zeros (int-requiring; size or [rows, cols]; elements are float 0.0)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+z is zeros of 3
+print of [buf_len of z, nt of z[0]]
+try:
+    print of ["fraction-answer", buf_len of (zeros of 2.5)]
+catch e:
+    print of ["size-fraction", e.kind]
+m is zeros of [2, 2]
+print of [m, nt of m[0][0]]
+try:
+    print of ["fraction-answer", zeros of [2, 1.5]]
+catch e:
+    print of ["cols-fraction", e.kind]
+print of (buf_len of (zeros of 2.0))

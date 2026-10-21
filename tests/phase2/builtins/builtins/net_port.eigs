@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: net_port (int-requiring; socket handle; returns a port; PROFILE server (make server), loopback only)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    l is net_listen of 0
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0
+pt is net_port of l
+print of [nt of pt, pt > 0]
+try:
+    print of ["fraction-answer", net_port of (l + 0.5)]
+catch e:
+    print of ["handle-fraction", e.kind]
+print of ((net_port of (l + 0.0)) == pt)

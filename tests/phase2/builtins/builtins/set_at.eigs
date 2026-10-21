@@ -1,0 +1,19 @@
+# R1.6 behaviour-table probe: set_at (int-requiring; index, row and col; a buffer value converts to float)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+xs is [10, 20, 30]
+set_at of [xs, 1, 99]
+print of xs
+try:
+    set_at of [xs, 1.5, 7]
+    print of ["fraction accepted", xs]
+catch e:
+    print of ["index-fraction", e.kind]
+set_at of [xs, 2.0, 5]
+print of xs
+b is buffer of 2
+set_at of [b, 0, 7]
+print of [b[0], nt of b[0]]

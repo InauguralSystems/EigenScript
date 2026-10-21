@@ -1,0 +1,19 @@
+# R1.6 behaviour-table probe: copy_into (int-requiring; offset; values convert to float storage (Q2))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+xs is [0, 0, 0]
+copy_into of [xs, 1, [7, 8]]
+print of xs
+try:
+    copy_into of [xs, 0.5, [9]]
+    print of ["fraction accepted", xs]
+catch e:
+    print of ["offset-fraction", e.kind]
+copy_into of [xs, 0.0, [5]]
+print of xs
+b is buffer of 2
+copy_into of [b, 0, [3, 4]]
+print of [b[0], nt of b[0]]

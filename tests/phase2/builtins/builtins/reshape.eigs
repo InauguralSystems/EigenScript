@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: reshape (int-requiring; rows and cols)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+b is buf_from_list of [1, 2, 3, 4]
+print of (shape of (reshape of [b, 2, 2]))
+try:
+    q is reshape of [b, 2.5, 2]
+    print of ["fraction accepted", shape of q]
+catch e:
+    print of ["rows-fraction", e.kind]
+print of (shape of (reshape of [b, 1.0, 4.0]))

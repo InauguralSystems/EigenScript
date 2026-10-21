@@ -1,0 +1,21 @@
+# R1.6 behaviour-table probe: hex (int-requiring, LOSS; the 2^53 refusal is a double compare; nibbles is a count)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (hex of 9007199254740993)
+print of (hex of [255, 4])
+try:
+    print of (hex of [255, 4.5])
+catch e:
+    print of ["nibbles-fraction", e.kind]
+print of (hex of [255.0, 4.0])
+try:
+    print of (hex of 2.5)
+catch e:
+    print of ["fraction", e.kind]
+try:
+    print of ["negative-answer", hex of -1]
+catch e:
+    print of ["negative", e.kind]

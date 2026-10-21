@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: gfx_text_height (int-preserving, Q7 magnitude; pixel height; the scale rounds, a scale the C int cannot hold raises (bitmap font))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+h is gfx_text_height of 2
+print of [h, nt of h]
+print of (gfx_text_height of 1.6)
+try:
+    print of ["huge-scale-answer", gfx_text_height of 3e9]
+catch e:
+    print of ["scale-magnitude", e.kind]
+print of (gfx_text_height of null)
