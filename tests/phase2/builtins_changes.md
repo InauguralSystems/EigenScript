@@ -222,3 +222,15 @@ RULINGS A3/B6 and BAR handoff authorize replacing the 25 profile placeholders wi
 | `builtins/shared_size.tag` | RULINGS A3/B6 and BAR handoff |
 | `builtins/read_text.pre` | R1.6a-D1 / #1668: current baseline 1fd4422c |
 | `builtins.tsv` | Derived changes columns refreshed by the sole checker after authorized recordings; R1.6a-D1/D2 and RULINGS A1/A3 |
+
+## Frozen .branch amendments
+
+The shared table checker compares every `.branch` path and byte against the
+pinned author-ruled import in `make_table.py`. Only orchestrator rulings may
+amend that bar. Add one row per changed path, with its complete repository path,
+the new bytes' lowercase SHA-256, ruling id and reason. An authorized deletion
+uses `DELETED` in the SHA-256 column. Unchanged or stale amendments fail.
+Historical import records above are already included in the pin.
+
+| Path | SHA-256 | Ruling | Reason |
+|---|---|---|---|

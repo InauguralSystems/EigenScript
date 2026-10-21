@@ -7,9 +7,68 @@ Default execution never overwrites builtins.tsv or any expectation. --final
 refuses pending profile observations. --run TAG BRANCH runs the same runner
 used to record observations and emits the phase2-builtins PASS contract.
 """
-import argparse, atexit, importlib.util, json, os, re, shutil, subprocess, sys, tempfile
+import argparse, atexit, hashlib, importlib.util, json, os, re, shutil, subprocess, sys, tempfile
 
 ROUNDS = ("R1.6a", "R1.6b", "R1.6c", "R1.6d", "R1.6e", "R1.6f", "R1.6g", "R1.6z")
+
+
+# Author-ruled import, independent of the candidate's expectation files.
+BAR_PIN = "0a73adb0612f8612d75393891ae2ba2e1c803663"
+BAR_DIR = "tests/phase2/builtins/"
+
+
+def frozen_bar(root):
+    """Compare the complete pathname/content set; amendments waive exact bytes."""
+    def git(*args):
+        result = subprocess.run(["git", "-C", root, *args], capture_output=True)
+        if result.returncode:
+            raise ValueError("frozen bar pin %s unavailable: %s (fetch the pin explicitly)" %
+                             (BAR_PIN, result.stderr.decode(errors="replace").strip()))
+        return result.stdout
+
+    paths = git("ls-tree", "-r", "--name-only", BAR_PIN, "--", BAR_DIR).decode().splitlines()
+    pinned = {p: git("show", BAR_PIN + ":" + p) for p in paths if p.endswith(".branch")}
+    if not pinned:
+        raise ValueError("frozen bar pin %s contains no .branch paths under %s" % (BAR_PIN, BAR_DIR))
+    amendments = {}
+    changes = os.path.join(root, "tests/phase2/builtins_changes.md")
+    with open(changes, encoding="utf-8") as stream:
+        section = stream.read().split("## Frozen .branch amendments\n", 1)
+    if len(section) == 2:
+        for line in section[1].split("\n## ", 1)[0].splitlines():
+            if not line.startswith("|"): continue
+            fields = [v.strip().strip("`") for v in line.strip("|").split("|")]
+            if fields[0] == "Path" or all(re.fullmatch(r"[-:]+", v) for v in fields): continue
+            if len(fields) != 4:
+                raise ValueError("malformed frozen bar amendment: " + line)
+            path, digest, ruling, reason = fields
+            if (not path.startswith(BAR_DIR) or not path.endswith(".branch") or
+                    any(part in ("", ".", "..") for part in path.split("/"))):
+                raise ValueError("invalid frozen bar amendment path: " + path)
+            if path in amendments:
+                raise ValueError("duplicate frozen bar amendment: " + path)
+            if not re.fullmatch(r"[0-9a-f]{64}|DELETED", digest) or not ruling or not reason:
+                raise ValueError("%s: amendment needs SHA-256 (or DELETED), ruling id and reason" % path)
+            amendments[path] = (digest, ruling)
+    from pathlib import Path
+    actual = {p.relative_to(root).as_posix(): p.read_bytes()
+              for p in (Path(root) / BAR_DIR).rglob("*.branch") if p.is_file()}
+    bad = []
+    changed = {p for p in pinned.keys() | actual.keys() if pinned.get(p) != actual.get(p)}
+    for path in sorted(changed | amendments.keys()):
+        if path not in amendments:
+            bad.append("%s: unlisted frozen bar %s relative to %s" %
+                       (path, "addition" if path not in pinned else "deletion" if path not in actual else "difference", BAR_PIN))
+            continue
+        digest, ruling = amendments[path]
+        observed = hashlib.sha256(actual[path]).hexdigest() if path in actual else "DELETED"
+        if path not in changed or digest != observed:
+            bad.append("%s: stale amendment %s: SHA-256=%s actual=%s (must differ from pin)" %
+                       (path, ruling, digest, observed))
+        else:
+            print("frozen-bar: accepted amendment %s path=%s SHA-256=%s" % (ruling, path, digest))
+    if bad: raise ValueError("\nFAIL: ".join(bad))
+    print("frozen-bar: pin=%s paths=%d amendments=%d PASS" % (BAR_PIN, len(pinned), len(amendments)))
 
 
 def read_landed(path):
@@ -32,6 +91,11 @@ def main():
     parser.add_argument("--run", nargs=2, metavar=("TAG_BINARY", "BRANCH_BINARY"))
     args = parser.parse_args()
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    try:
+        frozen_bar(ROOT)
+    except (OSError, ValueError) as error:
+        print("FAIL: " + str(error))
+        return 1
     TREE = os.environ.get("EIGS_TREE")
     if not TREE and os.environ.get("EIGS_REV"):
         rev = os.environ["EIGS_REV"]

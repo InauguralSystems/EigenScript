@@ -2710,9 +2710,13 @@ single table checker and runner. Its checks are:
 A passing run prints exactly one
 `phase2-builtins: PASS rows=<N> landed=<list> migrated=<M> unchanged=<U>`
 line; a failure names the row and reason. `make_table.py --final` rejects
-pending profile records. Table changes after the first unchanged import
-are recorded with the reason and orchestrator ruling in
-`tests/phase2/builtins_changes.md`.
+pending profile records. The same checker enforces the complete `.branch`
+pathname/content set against the approved git object pinned in `make_table.py`,
+read with `git ls-tree` and `git show`. A missing pin fails; the phase2 workflow
+fetches it explicitly. Every changed, added or deleted path needs an exact
+amendment in `tests/phase2/builtins_changes.md`, with its new SHA-256 (or
+`DELETED`), orchestrator ruling and reason. Accepted amendments print their
+ruling id; unlisted differences and stale amendments fail by path.
 
 **Calibration**, once when the gate is written or changed: a `len` result
 planted as `make_float(count)` turns its row red; declaring R1.6b landed

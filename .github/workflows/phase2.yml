@@ -37,6 +37,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+      - name: Fetch the approved builtin bar object
+        run: |
+          git fetch --no-tags origin 0a73adb0612f8612d75393891ae2ba2e1c803663
+          git cat-file -e '0a73adb0612f8612d75393891ae2ba2e1c803663^{tree}'
       - name: Install matched capability dependencies
         run: |
           sudo apt-get update
