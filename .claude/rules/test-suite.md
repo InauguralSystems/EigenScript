@@ -65,6 +65,12 @@ paths:
   own probe (`command -v timeout`, else `gtimeout`, else no bound —
   `EIGS_TMO`, run_all_tests.sh:39). `tools/jit_diff.sh` may call `timeout`
   only because its CI job is ubuntu-only.
+- **A child `.sh` reports each check as `PASS:`, `FAIL:` or `SKIP:`, with the
+  colon.** The runner's #988 accounting fails a child that exits 0 without one
+  of those markers ("reported no checks at all"). So a summary-only line like
+  `FILE MUTATION REPLAY: PASS (...)` is red, as #1841's [18c] showed in CI
+  (2026-10-20). Print `  PASS: <what>` for each check, and have the section
+  match that line whole (`grep -qxF`).
 - **A child `.sh` runs with cwd `src/`, not the repo root** (the runner does
   `cd "$(dirname "$0")/../src"`). Invoking one from the repo root to reproduce
   a failure gives `check ./eigenscript` errors that look like a real failure

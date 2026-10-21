@@ -1363,8 +1363,8 @@ define _env_unset_local(env, name) as:
 # of those bases — the working directory and `exe_path` — so those are what
 # is mirrored, longest-standing first.
 #
-# The `file_exists` probe is the point: `read_text` answers "" for an absent
-# path — its documented answer, not a bug — so the previous
+# The `file_exists` probe preserves this resolver's tailored search diagnostic
+# instead of letting `read_text` raise at the first absent candidate. The previous
 # `read_text of ("lib/" + name + ".eigs")` made an unresolvable import produce
 # an EMPTY namespace rather than an error, and made a resolvable one depend on
 # the process's working directory. Deciding with `file_exists` and raising

@@ -118,14 +118,23 @@ str_upper is B_upper
 for r in results:
     assert_true of [r[0], r[1]]
 
-remove_file of f_mod
-remove_file of f_own
-remove_file of f_other
-remove_file of f_hole
-remove_file of f_cache
-remove_file of f_wa
-remove_file of f_wb
-remove_file of f_wc
-remove_file of f_wd
+if file_exists of f_mod:
+    remove_file of f_mod
+if file_exists of f_own:
+    remove_file of f_own
+if file_exists of f_other:
+    remove_file of f_other
+if file_exists of f_hole:
+    remove_file of f_hole
+if file_exists of f_cache:
+    remove_file of f_cache
+if file_exists of f_wa:
+    remove_file of f_wa
+if file_exists of f_wb:
+    remove_file of f_wb
+if file_exists of f_wc:
+    remove_file of f_wc
+if file_exists of f_wd:
+    remove_file of f_wd
 
 test_summary of null
