@@ -3,3 +3,4 @@
 - HTTP POST JSON integer headers retain all int64 digits (N14, B6, R1.6b-D3); the pre-R1.6 decoder could round integer values above 2^53.
 - CI follow-up: construct ranges with an int64 induction value and a descending element count, avoiding a redundant loop counter while preserving bounds, integer results, limits, and ownership.
 - CI follow-up: preserve stored float payload formatting, including canonical NaN, until the scheduled N13 encoder refusal; remove the migrated abs raw-read exception.
+- CI follow-up: keep validate.is_alpha recognizing letters after N10 by removing an unused numeric-text conversion; retain its string membership checks.

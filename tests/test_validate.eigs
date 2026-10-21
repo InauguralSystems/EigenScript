@@ -99,6 +99,16 @@ check of ["is_integer rejects two dots", validate.is_integer of "1.2.3", false]
 check of ["validate_all reports a failed check", validate.validate_all of [[["", validate.is_nonempty, "name"], ["x", validate.is_nonempty, "ok"]]], ["name"]]
 check of ["validate_all with every check passing", validate.validate_all of [[["a@b.co", validate.is_email, "email"]]], []]
 
+# N10: testing letter membership must not parse each character as a number.
+check of ["is_alpha accepts lowercase letters", validate.is_alpha of "abc", true]
+check of ["is_alpha accepts uppercase letters", validate.is_alpha of "AZ", true]
+check of ["is_alpha accepts mixed-case letters", validate.is_alpha of "Hello", true]
+check of ["is_alpha rejects a digit", validate.is_alpha of "1", false]
+check of ["is_alpha rejects a trailing digit", validate.is_alpha of "abc1", false]
+check of ["is_alpha rejects whitespace", validate.is_alpha of "a b", false]
+check of ["is_alpha rejects empty", validate.is_alpha of "", false]
+check of ["is_alpha rejects a non-string", validate.is_alpha of 12, false]
+
 if fails == 0:
     print of "VALIDATE_ALL_PASS"
 if fails > 0:
