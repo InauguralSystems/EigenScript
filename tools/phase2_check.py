@@ -1078,9 +1078,10 @@ BUILD_PLANTS = {
                   '    c->leaf_accessor = 0;\n    return;   /* PLANT: the leaf scanner never admits a chunk */\n'
                   '    if (c->param_count > LEAF_ACCESSOR_MAX_DEPTH) return;', 'build'),
     'leaf-mul': ('src/vm.c', '                r = a * b;\n', '                r = a * b + 1;   /* PLANT */\n', 'build'),
-    # the R1.1 critic's plant D: random_int answers lo+1..hi+1
-    'random-int': ('src/builtins.c', 'make_num(lo_i + (eigs_random_long() % (int64_t)span))',
-                   'make_num(lo_i + 1 + (eigs_random_long() % (int64_t)span))', 'build'),
+    # The R1.1 critic's plant D: random_int answers lo+1..hi+1.
+    # R1.6b/N3 preserves the int result; the fault remains the shifted range.
+    'random-int': ('src/builtins.c', 'make_int(lo_i + (eigs_random_long() % (int64_t)span))',
+                   'make_int(lo_i + 1 + (eigs_random_long() % (int64_t)span))', 'build'),
     # the second R1.1 critic's plant C: equality of two buffers reads raw
     # elements (no read normalisation); the suite's [42c] goes red on it
     'value-eq-raw': ('src/eigenscript.c', '        case VAL_BUFFER: {\n            if (a->data.buffer.count != b->data.buffer.count) return 0;\n            for (int i = 0; i < a->data.buffer.count; i++) {\n                double av = buffer_read_num(a, i);\n                if (g_has_error) return 0;\n                double bv = buffer_read_num(b, i);\n',
