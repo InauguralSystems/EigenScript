@@ -93,8 +93,9 @@ scope_boundary_row() {
     # lane red (run 39325694662, rc 124 after a TSan SEGV). The row judges the
     # boundary on whatever reports the run produced, and REFUSES a capture
     # with none (§121: a check that examined nothing is vacuous). The race is
-    # deterministic now (the fixture's spin handshake), so one run suffices
-    # and no retry can hide a control that stopped racing.
+    # deterministic now: a ready/release barrier rendezvous workers before
+    # their one-shot accesses to a separate race word, so one run suffices and
+    # no retry can hide a control that stopped racing.
     local fixture="$TESTS_DIR/loader_mt_userrace.eigs"
     local forbidden='loading_stack|eigs_loading_|module_cache|module_lock|g_module_ns|module_ns_'
     local loader
