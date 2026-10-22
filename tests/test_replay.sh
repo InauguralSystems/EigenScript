@@ -671,7 +671,10 @@ EOF
 echo "$VHDR" > "$TMPDIR/empty-train-dump.tape"
 MODEL_EIGS="${MODEL_EIGS:-$SRC_DIR/../build/server/eigenscript}"
 if [ ! -x "$MODEL_EIGS" ]; then
-    make -s -C "$SRC_DIR/.." server >/dev/null
+    # Build the FILE target, never the phony `server` goal: the phony goal
+    # hard-links src/eigenscript to the server variant, which swaps the binary
+    # under the running suite ("src/eigenscript changed during the run").
+    make -s -C "$SRC_DIR/.." build/server/eigenscript >/dev/null
 fi
 EMPTY_DUMP=$(EIGS_TRAIN_DUMP= EIGS_REPLAY="$TMPDIR/empty-train-dump.tape" \
     "$MODEL_EIGS" "$TMPDIR/p_empty_train_dump.eigs" 2>&1)
