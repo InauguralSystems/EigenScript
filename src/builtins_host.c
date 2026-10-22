@@ -1122,10 +1122,7 @@ Value* builtin_remove_file(Value *arg) {
 /* Taped filesystem errors use a result shape that cannot be successful: a
  * one-string list for readers/mkdir, and [message, null] for ls (whose normal
  * result may itself be a one-string list). */
-static Value *file_io_error(const char *fn, const char *path, int err) {
-    char message[3900];
-    snprintf(message, sizeof(message), "%s: '%s': %s",
-             fn, path, strerror(err));
+static Value *file_io_error_message(const char *fn, const char *message) {
     int taped = strcmp(fn, "mkdir") == 0 || strcmp(fn, "ls") == 0 ||
                 strcmp(fn, "write_text") == 0 ||
                 strcmp(fn, "write_bytes") == 0 ||
@@ -1142,6 +1139,21 @@ static Value *file_io_error(const char *fn, const char *path, int err) {
     }
     rt_error(EK_IO, 0, "%s", message);
     return make_null();
+}
+
+static Value *file_io_error(const char *fn, const char *path, int err) {
+    char message[3900];
+    snprintf(message, sizeof(message), "%s: '%s': %s",
+             fn, path, strerror(err));
+    return file_io_error_message(fn, message);
+}
+
+static Value *file_stream_cap_error(const char *fn, const char *path,
+                                    size_t cap) {
+    char message[3900];
+    snprintf(message, sizeof(message), "%s: '%s' is more than %zu bytes",
+             fn, path, cap);
+    return file_io_error_message(fn, message);
 }
 
 /* Return zero only when replay is disabled.  Once replay is enabled every
@@ -1176,6 +1188,60 @@ static int file_is_directory(FILE *f) {
     return fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
+#define FILE_READER_CAP (10L * 1024 * 1024)
+
+/* A seekable regular file keeps the historical size-then-read path below.
+ * When tell cannot supply a size, grow only as data arrives and stop after
+ * cap+1 bytes: that is enough to distinguish success from the capped error
+ * without turning an infinite stream into an unbounded allocation. */
+static int read_stream_bounded(FILE *f, size_t cap, unsigned char **out,
+                               size_t *out_len, int *read_err) {
+    unsigned char *buf = NULL;
+    size_t len = 0, alloc = 0;
+    while (len <= cap) {
+        size_t room = alloc - len;
+        if (room == 0) {
+            size_t next = alloc ? alloc * 2 : 65536;
+            if (next > cap + 1) next = cap + 1;
+            unsigned char *grown = realloc(buf, next ? next : 1);
+            if (!grown) { free(buf); *read_err = ENOMEM; return 0; }
+            buf = grown;
+            alloc = next;
+            room = alloc - len;
+        }
+        /* Do not mistake the preceding failed seek's ESPIPE for a read error
+         * on implementations where stdio sets ferror without setting errno. */
+        errno = 0;
+        size_t got = fread(buf + len, 1, room, f);
+        len += got;
+        if (got < room) {
+            if (ferror(f)) {
+                *read_err = errno ? errno : EIO;
+                free(buf);
+                return 0;
+            }
+            break;
+        }
+        if (len == cap + 1) break;
+    }
+    *out = buf;
+    *out_len = len;
+    return 1;
+}
+
+static int replay_reader_size(const char *fn, Value *v, long long *out) {
+    double n = eigs_num_arg(v, __func__);
+    int64_t exact;
+    if (!isfinite(n) || n < 0.0 || !num_to_i64_exact(n, &exact)) {
+        rt_error(EK_IO, 0,
+                 "%s: replay record size is not an exact integer in range; "
+                 "refusing to replay", fn);
+        return 0;
+    }
+    *out = (long long)exact;
+    return 1;
+}
+
 /* read_text of "path" → file contents as string; I/O failure raises EK_IO. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
 Value* builtin_read_bytes(Value *arg) {
@@ -1184,7 +1250,11 @@ Value* builtin_read_bytes(Value *arg) {
     Value *replayed = NULL;
     if (file_io_replay("read_bytes", &replayed)) {
         if (replayed->type == VAL_NUM) {
-            long long len = (long long)eigs_num_arg(replayed, __func__);
+            long long len;
+            if (!replay_reader_size("read_bytes", replayed, &len)) {
+                val_decref(replayed);
+                return make_null();
+            }
             val_decref(replayed);
             rt_error(EK_IO, 0, "read_bytes: '%s' is %lld bytes, over the %d-byte cap",
                      arg->data.str, len, 10 * 1024 * 1024);
@@ -1201,9 +1271,26 @@ Value* builtin_read_bytes(Value *arg) {
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0) { /* unseekable stream: existing null contract (#1845) */
+    if (len < 0) {
+        clearerr(f);
+        unsigned char *buf = NULL;
+        size_t nread = 0;
+        int read_err = 0;
+        if (!read_stream_bounded(f, FILE_READER_CAP, &buf, &nread, &read_err)) {
+            fclose(f);
+            return file_io_error("read_bytes", arg->data.str, read_err);
+        }
         fclose(f);
-        TRACE_NONDET_RECORD("read_bytes", make_null());
+        if (nread > FILE_READER_CAP) {
+            free(buf);
+            return file_stream_cap_error("read_bytes", arg->data.str,
+                                         FILE_READER_CAP);
+        }
+        Value *result = make_list((int)nread);
+        for (size_t i = 0; i < nread; i++)
+            list_append_owned(result, make_num((double)buf[i]));
+        free(buf);
+        TRACE_NONDET_RECORD("read_bytes", result);
     }
     if (len > 10 * 1024 * 1024) {
         fclose(f);
@@ -1290,15 +1377,18 @@ Value* builtin_read_bytes_buf(Value *arg) {
     if (!path || path->type != VAL_STR) return make_null();
 
     /* Tape boundary. Success records the VAL_BUFFER; unopenable file
-     * records null; the over-cap raise records the observed SIZE as a
-     * VAL_NUM N record (unambiguous — no other path records a number) so
-     * the identical raise is re-derived under EIGS_REPLAY without
-     * touching the live filesystem. */
+     * records an impossible-success error list. A regular-file over-cap
+     * raise records its known size as a VAL_NUM; an unseekable stream records
+     * its non-exact error message. Both replay without live filesystem I/O. */
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *tv = NULL;
         if (file_io_replay("read_bytes_buf", &tv)) {
             if (tv && tv->type == VAL_NUM) {
-                long long len = (long long)eigs_num_arg(tv, __func__);
+                long long len;
+                if (!replay_reader_size("read_bytes_buf", tv, &len)) {
+                    val_decref(tv);
+                    return make_null();
+                }
                 val_decref(tv);
                 read_bytes_buf_cap_raise(path->data.str, len, cap);
                 return make_null();
@@ -1315,9 +1405,28 @@ Value* builtin_read_bytes_buf(Value *arg) {
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0) { /* unseekable (pipe/fifo): existing null contract */
+    if (len < 0) {
+        clearerr(f);
+        unsigned char *buf = NULL;
+        size_t nread = 0;
+        int read_err = 0;
+        if (!read_stream_bounded(f, (size_t)cap, &buf, &nread, &read_err)) {
+            fclose(f);
+            return file_io_error("read_bytes_buf", path->data.str, read_err);
+        }
         fclose(f);
-        TRACE_NONDET_RECORD("read_bytes_buf", make_null());
+        if (nread > (size_t)cap) {
+            free(buf);
+            return file_stream_cap_error("read_bytes_buf", path->data.str,
+                                         (size_t)cap);
+        }
+        Value *v = xcalloc(1, sizeof(Value));
+        v->type = VAL_BUFFER; v->data.buffer.count = (int)nread;
+        v->data.buffer.data = xcalloc(nread ? nread : 1, sizeof(double));
+        v->refcount = 1;
+        for (size_t i = 0; i < nread; i++) v->data.buffer.data[i] = (double)buf[i];
+        free(buf);
+        TRACE_NONDET_RECORD("read_bytes_buf", v);
     }
     if ((long long)len > cap) {
         fclose(f);
@@ -1350,7 +1459,11 @@ Value* builtin_read_text(Value *arg) {
     Value *replayed = NULL;
     if (file_io_replay("read_text", &replayed)) {
         if (replayed->type == VAL_NUM) {
-            long long len = (long long)eigs_num_arg(replayed, __func__);
+            long long len;
+            if (!replay_reader_size("read_text", replayed, &len)) {
+                val_decref(replayed);
+                return make_null();
+            }
             val_decref(replayed);
             rt_error(EK_IO, 0, "read_text: '%s' is %lld bytes, over the %d-byte cap",
                      arg->data.str, len, 10 * 1024 * 1024);
@@ -1367,9 +1480,25 @@ Value* builtin_read_text(Value *arg) {
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0) { /* unseekable stream: existing empty contract (#1845) */
+    if (len < 0) {
+        clearerr(f);
+        unsigned char *stream = NULL;
+        size_t nread = 0;
+        int read_err = 0;
+        if (!read_stream_bounded(f, FILE_READER_CAP, &stream, &nread, &read_err)) {
+            fclose(f);
+            return file_io_error("read_text", arg->data.str, read_err);
+        }
         fclose(f);
-        TRACE_NONDET_RECORD("read_text", make_str(""));
+        if (nread > FILE_READER_CAP) {
+            free(stream);
+            return file_stream_cap_error("read_text", arg->data.str,
+                                         FILE_READER_CAP);
+        }
+        char *buf = xmalloc(nread + 1);
+        memcpy(buf, stream, nread); buf[nread] = '\0'; free(stream);
+        Value *result = make_str(buf); free(buf);
+        TRACE_NONDET_RECORD("read_text", result);
     }
     if (len > 10 * 1024 * 1024) {
         fclose(f);
@@ -1397,10 +1526,9 @@ Value* builtin_read_text(Value *arg) {
  * returns the next line including its line terminator, or null at EOF.
  * Thus "\r\n" stays byte-exact and a terminated final line differs from
  * an unterminated one. An empty line is "\n" — distinguishable from EOF.
- * The stream-safe stdin primitive
- * (#558): read_text of "/dev/stdin" sizes with fseek/ftell, which fails
- * on an unseekable fd, so a PIPE silently reads as "" — any CLI meant to
- * sit in a shell pipeline needs this instead. Nondeterministic input →
+ * The line-oriented stdin primitive (#558). Unlike read_text of
+ * "/dev/stdin", this returns one line per call rather than consuming the
+ * stream through EOF. Nondeterministic input →
  * tape-first: TAKE/RECORD like read_bytes, so under EIGS_REPLAY the
  * recorded lines are served and no live stdin read runs. */
 Value* builtin_read_line(Value *arg) {
