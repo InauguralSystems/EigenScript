@@ -995,9 +995,23 @@ def calibrate(args, out):
         changed_good = wrapper_tree(os.path.join(d, 'modified-good'), args.branch, files[2:], 'exec "$REAL" "$@"',
                                     {'tests/test_bool.eigs': lambda t: t + '\n# modified passing fixture\n'})
         rc, text, v = diff_restricted(failing_base, changed_good, files[2:])
-        case('a modified program the baseline cannot complete and branch passes is branch-only MODIFIED',
-             (rc, v.get('tests/test_bool.eigs'), ' modified=1 modified_failed=0 branch_only=1 ' in text),
-             (3, 'MODIFIED', True), detail=text.splitlines())
+        case('a modified program the baseline cannot complete and branch passes is DIFF-BEHAVIOUR',
+             (rc, v.get('tests/test_bool.eigs'),
+              'DIFF-BEHAVIOUR tests/test_bool.eigs (changed; the baseline cannot complete it: rc 19/19)' in text,
+              ' diff=1 ' in text, ' modified=1 modified_failed=0 branch_only=1 ' in text,
+              '[ "$ndiff" -eq 0 ]' in read_text(os.path.join(ROOT, 'tools/phase2_corpus_diff.sh'))),
+             (3, 'DIFF', True, True, True, True), detail=text.splitlines())
+        changed_good_conditioned = wrapper_tree(
+            os.path.join(d, 'modified-good-conditioned'), args.branch, files[2:], 'exec "$REAL" "$@"',
+            {'tests/test_bool.eigs': lambda t: t + '\n# modified conditioned passing fixture\n',
+             'tests/suite_program_env.txt': lambda t: t + 'test_bool.eigs EIGS_STRICT=0\n'})
+        rc, text, v = diff_restricted(failing_base, changed_good_conditioned, files[2:])
+        case('a conditioned modified program the baseline cannot complete and branch passes is DIFF-BEHAVIOUR',
+             (rc, v.get('tests/test_bool.eigs'),
+              'DIFF-BEHAVIOUR tests/test_bool.eigs (changed; the baseline cannot complete it: rc 19/19)' in text,
+              ' diff=1 ' in text, ' incomplete=0 undeclared=0 ' in text,
+              ' modified=1 modified_failed=0 branch_only=1 ' in text),
+             (3, 'DIFF', True, True, True, True), detail=text.splitlines())
         new_rel = 'tests/test_phase2_new_fixture.eigs'
         new_branch = wrapper_tree(os.path.join(d, 'new-bad'), args.branch, files[2:],
                                   'case "$*" in *test_phase2_new_fixture.eigs*) exit 20 ;; esac\nexec "$REAL" "$@"')

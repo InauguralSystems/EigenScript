@@ -73,14 +73,18 @@
 # `ulimit -v 1500000` (an unbounded GUI run can freeze the 4 GB box); the
 # capped files are listed.
 #
-# CHANGED FILES (the rule, defined here once). A MODIFIED or NEW file is judged
-# on the branch alone only when the baseline cannot complete it: its run
-# conditions produce a nonzero baseline exit (INCOMPLETE), or its repeated
-# nonzero baseline exit is undeclared (UNDECLARED-NONZERO). The branch must
-# then complete (rc 0, or the declared code), otherwise it is a red
-# MODIFIED-FAIL/NEW-FAIL. Every other changed file is compared exactly like an
-# unchanged file. `modified` and `new` count every changed file examined;
-# `branch_only` counts and lists just the files to which the exception applied.
+# CHANGED FILES (the rule, defined here once). When a MODIFIED or NEW file's
+# baseline cannot complete it -- its run conditions produce a nonzero baseline
+# exit (formerly INCOMPLETE), or its repeated nonzero baseline exit is
+# undeclared (formerly UNDECLARED-NONZERO) -- the branch must complete (rc 0,
+# or the declared code). If the branch also fails, the result is a red
+# MODIFIED-FAIL/NEW-FAIL. If the branch completes, the result is one red
+# `DIFF-BEHAVIOUR <file> (changed; the baseline cannot complete it: rc X/Y)`
+# row, counted in `diff`; it is never INCOMPLETE or UNDECLARED-NONZERO. This
+# rule applies whether or not the file has run conditions. Every other changed
+# file is compared exactly like an unchanged file. `modified` and `new` count
+# every changed file examined; `branch_only` counts and lists just the files
+# whose branch completion was judged without a baseline comparison.
 # A file only the branch tree has (a new fixture) is counted as `new`; a file
 # only the baseline tree has is a DELETED row (a deleted test hides a change).
 # Prints `.. <n>/<N> <file> <verdict> <s>s` per file, the named rows, then
@@ -258,7 +262,7 @@ show_diff() {
     diff "$1.err" "$2.err" | head -8 | sed 's/^/    stderr: /'
 }
 
-examined=0; nsame=0; same_nonzero=0; nreplay=0; nondet=0; ndiff=0; diff_failed=0; new=0; new_failed=0; modified_count=0; modified_failed=0; branch_only_count=0; crash_both=0; timeout_both=0
+examined=0; nsame=0; same_nonzero=0; nreplay=0; nondet=0; ndiff=0; new=0; new_failed=0; modified_count=0; modified_failed=0; branch_only_count=0; crash_both=0; timeout_both=0
 capped=0; conditioned=0; incomplete=0; undeclared=0; stale=0; unpinned=0
 for f in new modified branch_only diffs nondet crash replayed capped samenz urandom used; do : > "$TMP/$f"; done
 # Baseline inventory was filtered with the branch inventory above.
@@ -317,12 +321,6 @@ while IFS= read -r rel; do
             branch_only=$changed
         elif [ "$rb1" = "$rb2" ] && [ "$rb1" != 0 ] && [ -z "$want" ]; then
             branch_only=$changed
-            # Preserve visibility of the deterministic behaviour change that
-            # the old tool reported as DIFF, without making this branch-only
-            # pass a failing comparison.
-            if ! same "$TMP/b1" "$TMP/r1" || ! same "$TMP/b1" "$TMP/r2"; then
-                ndiff=$((ndiff + 1)); echo "$rel (branch-only pass)" >> "$TMP/diffs"
-            fi
         fi
     fi
     if [ -n "$branch_only" ]; then
@@ -332,7 +330,9 @@ while IFS= read -r rel; do
         if { [ -n "$cond" ] && [ "$rr" = 0 ] && [ "$rr2" = 0 ]; } \
                 || { [ -z "$cond" ] && { { [ "$rr" = 0 ] && [ "$rr2" = 0 ]; } \
                 || { [ -n "$want" ] && [ "$rr" = "$want" ] && [ "$rr2" = "$want" ]; }; }; }; then
-            echo ".. $examined/$listed $rel $branch_only rc=$rr $(took)s"
+            ndiff=$((ndiff + 1))
+            echo "$rel (changed; the baseline cannot complete it: rc $rb1/$rb2)" >> "$TMP/diffs"
+            echo ".. $examined/$listed $rel DIFF $(took)s"
         else
             [ "$branch_only" = MODIFIED ] && modified_failed=$((modified_failed + 1)) || new_failed=$((new_failed + 1))
             echo ".. $examined/$listed $rel $branch_only-FAIL rc=$rr $(took)s"
@@ -374,7 +374,7 @@ while IFS= read -r rel; do
             continue
         fi
         ndiff=$((ndiff + 1))
-        diff_failed=$((diff_failed + 1)); echo "$rel" >> "$TMP/diffs"
+        echo "$rel" >> "$TMP/diffs"
         echo ".. $examined/$listed $rel DIFF $(took)s"
         if same "$TMP/b1" "$TMP/r1"; then wrong=r2; else wrong=r1; fi
         echo "DIFF $rel: the baseline is deterministic (two runs agree); branch run $wrong differs: rc baseline=$rb1 branch=$(cat "$TMP/$wrong.rc")"
@@ -388,7 +388,7 @@ while IFS= read -r rel; do
         echo ".. $examined/$listed $rel same-under-replay $(took)s"
     elif [ "$ra" -eq 1 ]; then
         ndiff=$((ndiff + 1)); verdict=DIFF-under-replay
-        diff_failed=$((diff_failed + 1)); echo "$rel (under replay)" >> "$TMP/diffs"
+        echo "$rel (under replay)" >> "$TMP/diffs"
         echo ".. $examined/$listed $rel DIFF-under-replay $(took)s"
         echo "DIFF $rel: replaying the baseline's tape, rc baseline=$(cat "$TMP/p1.rc") branch=$(cat "$TMP/q1.rc")"
         show_diff "$TMP/p1" "$TMP/q1"
@@ -426,7 +426,7 @@ if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
     exit 3
 fi
 echo "corpus-diff: $summary"
-if [ "$examined" -eq "$listed" ] && [ "$examined" -gt 0 ] && [ "$diff_failed" -eq 0 ] && [ "$new_failed" -eq 0 ] && [ "$modified_failed" -eq 0 ] && [ "$deleted" -eq 0 ] \
+if [ "$examined" -eq "$listed" ] && [ "$examined" -gt 0 ] && [ "$ndiff" -eq 0 ] && [ "$new_failed" -eq 0 ] && [ "$modified_failed" -eq 0 ] && [ "$deleted" -eq 0 ] \
         && [ "$incomplete" -eq 0 ] && [ "$undeclared" -eq 0 ] && [ "$stale" -eq 0 ] && [ "$ledger_bad" -eq 0 ]; then
     echo "corpus-diff: PASS"; exit 0
 fi
