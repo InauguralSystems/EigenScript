@@ -39,6 +39,14 @@ static Value *builtin_dict_view(Value *dict, const char *key, EigsView *view) {
 
 static void wake_channels_for_exit(EigsState *st);
 
+/* N5 followed by the range of the C API receiving the argument. Borrowed
+ * input; callers stop on the error latch before indexing or doing work. */
+static int builtin_c_int(const Value *v, const char *who) {
+    int64_t n = 0;
+    eigs_int_arg_range(v, INT_MIN, INT_MAX, &n, who);
+    return (int)n;
+}
+
 /* #744: the extension ENTRY POINTS, not the extensions' private headers.
  * This TU calls five registrars and uses no extension type; pulling
  * ext_db_internal.h for one declaration dragged <libpq-fe.h> into the core
@@ -334,11 +342,8 @@ Value* builtin_text_builder_to_string(Value *arg) {
  * shift-count rules with the operators. No int operand crosses double. */
 /* #1740: an operand without an exact int64 representation raises value. */
 static int bit_int(Value *v, int64_t *out, const char *name) {
-    if (v->type == VAL_INT) { *out = VAL_I64_RAW(v); return 1; }
-    double x = eigs_num_arg(v, __func__);  /* caller proved VAL_FLOAT */
-    if (num_to_i64_exact(x, out)) return 1;
-    rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, name, x);
-    return 0;
+    *out = eigs_int_arg(v, name);
+    return !g_has_error;
 }
 
 /* 1 = both operands converted; 0 = wrong shape (caller raises `type`);
@@ -632,12 +637,13 @@ Value* builtin_exit(Value *arg) {
     STRICT_LIST_MAX(arg, 1, "exit");
     int code = 0;
     if (arg && val_is_number(arg)) {
-        code = (int)eigs_num_arg(arg, __func__);
+        code = builtin_c_int(arg, "exit");
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1 &&
                BUILTIN_LIST_VIEW(arg, 0) &&
                val_is_number(BUILTIN_LIST_VIEW(arg, 0))) {
-        code = (int)eigs_list_num(arg, 0, __func__);
+        code = builtin_c_int(BUILTIN_LIST_VIEW(arg, 0), "exit");
     }
+    if (g_has_error) return make_null();
     g_exit_code = code;
     g_exit_requested = 1;      /* this thread's unwind: uncatchable */
     eigs_state_request_exit(eigs_current_state(), code);
@@ -653,11 +659,8 @@ Value* builtin_set_exit_code(Value *arg) {
         rt_error(EK_VALUE, 0, "set_exit_code requires an integer in 0..255");
         return make_null();
     }
-    double num = eigs_num_arg(arg, __func__);
-    if (num < 0 || num > 255 || num != (double)(int)num) {
-        rt_error(EK_VALUE, 0, "set_exit_code requires an integer in 0..255 (got %g)", num);
-        return make_null();
-    }
+    int64_t num;
+    if (!eigs_int_arg_range(arg, 0, 255, &num, "set_exit_code")) return make_null();
     eigs_state_set_graceful_exit_code(eigs_current_state(), (int)num);
     return make_null();
 }
@@ -1892,7 +1895,8 @@ Value* builtin_char_at(Value *arg) {
     Value *idx_val = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!str_val || str_val->type != VAL_STR || !idx_val || !val_is_number(idx_val),
               "char_at", "[string, number]", make_str(""));
-    int idx = (int)eigs_num_arg(idx_val, __func__);
+    int idx = builtin_c_int(idx_val, "char_at");
+    if (g_has_error) return make_null();
     int len = val_str_len(str_val);
     if (idx < 0) idx += len;
     /* fs:ANSWER an index outside the string has no character; "" is the
@@ -1929,8 +1933,9 @@ Value* builtin_substr(Value *arg) {
     ARG_GUARD(!start_val || !val_is_number(start_val), "substr", "a number as its start", make_str(""));
     ARG_GUARD(!len_val || !val_is_number(len_val), "substr", "a number as its length", make_str(""));
     int slen = val_str_len(str_val);
-    int start = (int)eigs_num_arg(start_val, __func__);
-    int rlen = (int)eigs_num_arg(len_val, __func__);
+    int start = builtin_c_int(start_val, "substr");
+    int rlen = builtin_c_int(len_val, "substr");
+    if (g_has_error) return make_null();
     /* #504: a negative start counts from the end, matching char_at and the
      * [] operator (was a flat clamp-to-0 — inconsistent). A start still
      * negative after the adjustment (before the string) clamps to 0. */
@@ -2561,7 +2566,8 @@ Value* builtin_token_name(Value *arg) {
     /* #971 Phase D: "?" is the documented answer for an UNKNOWN id (below);
      * for a non-number it was laundering a type mistake into that answer. */
     ARG_GUARD(!arg || !val_is_number(arg), "token_name", "a token id", make_str("?"));
-    int id = (int)eigs_num_arg(arg, __func__);
+    int id = builtin_c_int(arg, "token_name");
+    if (g_has_error) return make_null();
     static const char *names[] = {
         "NUM", "STR", "IDENT",
         "IS", "OF", "DEFINE", "AS",
@@ -2598,7 +2604,9 @@ Value* builtin_token_name(Value *arg) {
 Value* builtin_state_at(Value *arg) {
     BOOL_REFUSE(arg, "state_at");
     if (!arg || !val_is_number(arg)) return make_null();
-    Value *d = trace_state_at((int)eigs_num_arg(arg, __func__));
+    int line = builtin_c_int(arg, "state_at");
+    if (g_has_error) return make_null();
+    Value *d = trace_state_at(line);
     return d ? d : make_null();
 }
 
@@ -2648,12 +2656,13 @@ Value* builtin_chr(Value *arg) {
         rt_error(EK_TYPE, 0, "chr requires a number");
         return make_null();
     }
-    double num = eigs_num_arg(arg, __func__);
-    if (num != (double)(long long)num || num < 1 || num > 255) {
+    int64_t num = eigs_int_arg(arg, "chr");
+    if (g_has_error) return make_null();
+    if (num < 1 || num > 255) {
         if (num == 0)
             rt_error(EK_VALUE, 0, "chr of 0: strings are NUL-terminated and cannot hold a NUL byte (use a buffer for binary with NULs)");
         else
-            rt_error(EK_VALUE, 0, "chr requires an integer byte in 1..255 (got %g); for a codepoint use utf8_encode (lib/utf8.eigs)", num);
+            rt_error(EK_VALUE, 0, "chr requires an integer byte in 1..255 (got %lld); for a codepoint use utf8_encode (lib/utf8.eigs)", (long long)num);
         return make_null();
     }
     char buf[2] = { (char)(int)num, '\0' };
@@ -2831,12 +2840,14 @@ static const char *vm_desc_abi_error(Value *desc, char *buf, size_t buflen) {
                  EIGS_BYTECODE_ABI, rev ? val_type_name(rev->type) : "nothing");
         return buf;
     }
-    if ((int)eigs_num_arg(rev, __func__) != EIGS_BYTECODE_ABI) {
+    int revision = builtin_c_int(rev, "vm_run_bytecode");
+    if (g_has_error) return "bytecode ABI revision must be an integer";
+    if (revision != EIGS_BYTECODE_ABI) {
         snprintf(buf, buflen,
                  "chunk was produced for bytecode ABI revision %d, but this "
                  "runtime speaks revision %d — regenerate it with a matching "
                  "producer",
-                 (int)eigs_num_arg(rev, __func__), EIGS_BYTECODE_ABI);
+                 revision, EIGS_BYTECODE_ABI);
         return buf;
     }
     return NULL;
@@ -3055,7 +3066,9 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
             vm_desc_error(why, whyn, "descriptor code must be a list of byte numbers");
             return NULL;
         }
-        chunk_emit(chunk, (uint8_t)((int)eigs_num_arg(b, __func__) & 0xFF), 1);
+        uint8_t byte = eigs_byte_arg(b, "vm_run_bytecode");
+        if (g_has_error) { chunk_free(chunk); return NULL; }
+        chunk_emit(chunk, byte, 1);
     }
     /* Positional: the code stream indexes this pool by position, so neither
      * the dedup collapse nor a skipped NULL may shift an entry (#721). A hole
@@ -3112,7 +3125,8 @@ static EigsChunk *vm_build_chunk_desc_body(Value *desc, int off, int sandbox_mod
         return NULL;
     }
     int param_count = (n >= 4 && d[3] && val_is_number(d[3]))
-                      ? (int)eigs_num_arg(d[3], __func__) : 0;
+                      ? builtin_c_int(d[3], "vm_run_bytecode") : 0;
+    if (g_has_error) { chunk_free(chunk); return NULL; }
     chunk->param_count = param_count;
     chunk->first_default = param_count;        /* no defaults */
 
@@ -3205,12 +3219,14 @@ static EigsChunk *vm_build_chunk_desc(Value *desc, int off, int sandbox_mode,
 Value* builtin_vm_run_bytecode(Value *arg) {
     char abibuf[256];
     const char *abi_err = vm_desc_abi_error(arg, abibuf, sizeof abibuf);
+    if (g_has_error) return make_null();
     if (abi_err) { rt_error(EK_VALUE, 0, "%s", abi_err); return make_null(); }
     char why[192];
     EigsChunk *chunk = vm_build_chunk_desc(arg, 1, 0, why, sizeof why);
     if (!chunk) {
-        rt_error(EK_VALUE, 0, "invalid chunk descriptor: %s",
-                 why[0] ? why : "verification failed");
+        if (!g_has_error)
+            rt_error(EK_VALUE, 0, "invalid chunk descriptor: %s",
+                     why[0] ? why : "verification failed");
         return make_null();
     }
     /* #915: ARM the observer for what this descriptor itself does, exactly as
@@ -3429,15 +3445,24 @@ Value* builtin_sandbox_run(Value *arg) {
     int max_iter = 1000000;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
         BUILTIN_LIST_VIEW(arg, 1) && val_is_number(BUILTIN_LIST_VIEW(arg, 1)))
-        max_iter = (int)eigs_list_num(arg, 1, __func__);
+        max_iter = builtin_c_int(BUILTIN_LIST_VIEW(arg, 1), "sandbox_run");
+    if (g_has_error) return make_null();
     /* #292: optional max_bytes (3rd element) — the allocation budget for this
      * run. Default 256 MiB: ample for the short generated snippets grade()
      * runs, small enough that even a few of them can't thrash a 4 GB box. */
     size_t max_bytes = (size_t)256 * 1024 * 1024;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3 &&
-        BUILTIN_LIST_VIEW(arg, 2) && val_is_number(BUILTIN_LIST_VIEW(arg, 2)) &&
-        eigs_list_num(arg, 2, __func__) > 0)
-        max_bytes = (size_t)eigs_list_num(arg, 2, __func__);
+        BUILTIN_LIST_VIEW(arg, 2) && val_is_number(BUILTIN_LIST_VIEW(arg, 2))) {
+        int64_t requested = eigs_list_int(arg, 2, "sandbox_run");
+        if (g_has_error) return make_null();
+        if (requested > 0) {
+            if ((uint64_t)requested > SIZE_MAX) {
+                rt_error(EK_VALUE, 0, "sandbox_run: byte limit exceeds size_t");
+                return make_null();
+            }
+            max_bytes = (size_t)requested;
+        }
+    }
     /* VM instructions, cumulative across callback re-entry and function
      * frames.  This is intentionally distinct from the compatibility loop
      * limit.  Ten million keeps normal generated programs comfortable while
@@ -3445,11 +3470,9 @@ Value* builtin_sandbox_run(Value *arg) {
     uint64_t max_work = UINT64_C(10000000);
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 4 &&
         BUILTIN_LIST_VIEW(arg, 3) && val_is_number(BUILTIN_LIST_VIEW(arg, 3))) {
-        double requested = eigs_list_num(arg, 3, __func__);
-        /* A double rounds UINT64_MAX up to 2^64, so use a strict bound;
-         * accepting equality and casting it would itself be undefined. */
-        if (isfinite(requested) && requested >= 1.0 &&
-            requested < 18446744073709551616.0)
+        int64_t requested = eigs_list_int(arg, 3, "sandbox_run");
+        if (g_has_error) return make_null();
+        if (requested >= 1)
             max_work = (uint64_t)requested;
     }
 
@@ -3465,8 +3488,25 @@ Value* builtin_sandbox_run(Value *arg) {
      * gets its own message — a grading ladder must be able to tell "your
      * producer is stale" from "your bytecode is malformed" without re-running. */
     char abibuf[256];
+    /* A descriptor is guest data: numeric validation failures join the
+     * existing structured descriptor rejection. Optional HOST limits above
+     * still raise to the caller (N5, Q-SANDBOX). Suppress an uncaught print
+     * until this boundary has consumed a numeric reader's error latch. */
+    int validation_try_depth = g_try_depth;
+    int validation_latched = g_sandbox_error_latched;
+    int validation_pending = g_error_print_pending;
+    g_try_depth++;
     const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
     EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1, NULL, 0);
+    g_try_depth = validation_try_depth;
+    if (g_has_error && g_error_kind == EK_VALUE) {
+        snprintf(abibuf, sizeof abibuf, "%.255s", g_error_raw);
+        abi_err = abibuf;
+        g_has_error = 0;
+        g_sandbox_error_latched = validation_latched;
+        g_error_print_pending = validation_pending;
+        eigs_clear_error_value();
+    }
     if (chunk && chunk_reads_shared_temporal(chunk)) {
         chunk_free(chunk);
         chunk = NULL;
@@ -3487,7 +3527,7 @@ Value* builtin_sandbox_run(Value *arg) {
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_VALUE)));
         dict_set_owned(ev, "message",
                        make_str(abi_err ? abi_err : "invalid chunk descriptor"));
-        dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "line", make_int(0));
         dict_set_owned(out, "error", ev);
         return sandbox_finish_run(out);
     }
@@ -3668,7 +3708,7 @@ Value* builtin_sandbox_run(Value *arg) {
                  "loop budget exhausted (max_iterations=%d): partial run",
                  loop_max);
         dict_set_owned(ev, "message", make_str(capmsg));
-        dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "line", make_int(0));
         dict_set_owned(out, "error", ev);
     }
     if (!ok && g_sandbox_refusal) {
@@ -3680,7 +3720,7 @@ Value* builtin_sandbox_run(Value *arg) {
         dict_set_owned(ev, "kind",
                        make_str(err_kind_name((ErrKind)g_sandbox_refusal_kind)));
         dict_set_owned(ev, "message", make_str(g_sandbox_refusal_msg));
-        dict_set_owned(ev, "line", make_num((double)g_sandbox_refusal_line));
+        dict_set_owned(ev, "line", make_int(g_sandbox_refusal_line));
         dict_set_owned(out, "error", ev);
         if (g_has_error) {
             g_has_error = 0;
@@ -3694,7 +3734,7 @@ Value* builtin_sandbox_run(Value *arg) {
         Value *ev = make_dict(3);
         dict_set_owned(ev, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
         dict_set_owned(ev, "message", make_str(g_error_raw));
-        dict_set_owned(ev, "line", make_num((double)g_error_line));
+        dict_set_owned(ev, "line", make_int(g_error_line));
         dict_set_owned(out, "error", ev);
         g_has_error = 0;
         eigs_clear_error_value();
@@ -3728,7 +3768,7 @@ Value* builtin_sandbox_run(Value *arg) {
                                   "budget); refusing to cross the boundary"
                                 : "sandbox result contains a callable; "
                                   "functions cannot cross the sandbox boundary"));
-        dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "line", make_int(0));
         dict_set_owned(out, "error", ev);
     }
 
@@ -3798,7 +3838,8 @@ Value* builtin_copy_into(Value *arg) {
                  offv ? val_type_name(offv->type) : "null");
         return make_null();
     }
-    int offset = (int)eigs_num_arg(offv, __func__);
+    int offset = builtin_c_int(offv, "copy_into");
+    if (g_has_error) return make_null();
     if (offset < 0) { rt_error(EK_INDEX, 0, "copy_into: offset %d is negative", offset); return make_null(); }
     if (dest && dest->type == VAL_BUFFER) {
         /* buffer destination: numbers from a buffer or a list of numbers */
@@ -3815,7 +3856,9 @@ Value* builtin_copy_into(Value *arg) {
                              it ? val_type_name(it->type) : "null", i);
                     return make_null();
                 }
-                dest->data.buffer.data[offset + i] = eigs_num_arg(it, __func__);
+                double value = eigs_float_arg(it, "copy_into");
+                if (g_has_error) return make_null();
+                dest->data.buffer.data[offset + i] = value;
             }
             return dest;   /* borrowed, like the list path below */
         }
@@ -3851,8 +3894,9 @@ Value* builtin_list_slice(Value *arg) {
     if (!start_v || !val_is_number(start_v) || !end_v || !val_is_number(end_v))
         return make_null();
     int n = list->data.list.count;
-    int start = (int)eigs_num_arg(start_v, __func__);
-    int end = (int)eigs_num_arg(end_v, __func__);
+    int start = builtin_c_int(start_v, "list_slice");
+    int end = builtin_c_int(end_v, "list_slice");
+    if (g_has_error) return make_null();
     if (start < 0) start += n;
     if (end < 0) end += n;
     if (start < 0) start = 0;
@@ -4005,7 +4049,7 @@ Value* builtin_fill(Value *arg) {
         return make_list(0);
     }
     BOOL_REFUSE(BUILTIN_LIST_VIEW(arg, 0), "fill");   /* the count; the value may be anything */
-    int count = (int)eigs_list_num(arg, 0, __func__);
+    int count = builtin_c_int(BUILTIN_LIST_VIEW(arg, 0), "fill");
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     EigsSlot val = list_slot(arg, 1);
     if (count < 0) count = 0;
@@ -4031,11 +4075,12 @@ static int at_index(Value *idx_val, int count, const char *what,
         rt_error(EK_VALUE, 0, "%s index must be an integer", what);
         return 0;
     }
-    int idx = (int)eigs_num_arg(idx_val, __func__);
+    int idx = builtin_c_int(idx_val, what);
+    if (g_has_error) return 0;
     if (idx < 0) idx += count;          /* #312: negative counts from end */
     if (idx < 0 || idx >= count) {
         rt_error(EK_INDEX, 0, "index %d out of range (list length %d)",
-                 (int)eigs_num_arg(idx_val, __func__), count);
+                 builtin_c_int(idx_val, what), count);
         return 0;
     }
     *out = idx;
@@ -4045,17 +4090,18 @@ static int at_index(Value *idx_val, int count, const char *what,
 /* #1093: the buffer twin of at_index — same negative-from-the-end rule, but
  * the diagnostic `b[i]` and `buf_get` already use for a buffer, so `set_at of
  * [buf, 9, v]` and `buf[9]` do not report the same fault two different ways. */
-static int buf_at_index(Value *idx_val, int count, int *out) {
+static int buf_at_index(Value *idx_val, int count, int *out, const char *who) {
     if (!idx_val || !val_is_number(idx_val)) {
         rt_error(EK_VALUE, 0, "buffer index must be a number, got %s",
                  val_type_name(idx_val ? idx_val->type : VAL_NULL));
         return 0;
     }
-    int idx = (int)eigs_num_arg(idx_val, __func__);
+    int idx = builtin_c_int(idx_val, who);
+    if (g_has_error) return 0;
     if (idx < 0) idx += count;
     if (idx < 0 || idx >= count) {
         rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 (int)eigs_num_arg(idx_val, __func__), count);
+                 builtin_c_int(idx_val, who), count);
         return 0;
     }
     *out = idx;
@@ -4081,14 +4127,14 @@ Value* builtin_set_at(Value *arg) {
         if (argc == 3) {
             int idx;
             if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.count,
-                              &idx)) return make_null();
+                              &idx, "set_at")) return make_null();
             off = idx;
         } else if (argc == 4 && buf->data.buffer.rows > 0) {
             int row, col;
             if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.rows,
-                              &row)) return make_null();
+                              &row, "set_at")) return make_null();
             if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 2), buf->data.buffer.cols,
-                              &col)) return make_null();
+                              &col, "set_at")) return make_null();
             off = (int64_t)row * buf->data.buffer.cols + col;
         } else {
             rt_error(EK_TYPE, 0, "set_at: [buffer, row, col, value] needs a "
@@ -4100,7 +4146,9 @@ Value* builtin_set_at(Value *arg) {
                      val_type_name(val ? val->type : VAL_NULL));
             return make_null();
         }
-        buf->data.buffer.data[off] = eigs_num_arg(val, __func__);
+        double value = eigs_float_arg(val, "set_at");
+        if (g_has_error) return make_null();
+        buf->data.buffer.data[off] = value;
         /* Direct child of the arg vector — the borrow protocol (#720,
          * vm_borrow_compensate) compensates at the call site, exactly as for
          * the list path's `return list`. */
@@ -4160,16 +4208,16 @@ Value* builtin_get_at(Value *arg) {
         if (argc == 2) {
             int idx;
             if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.count,
-                              &idx)) return make_null();
-            return make_num(buffer_read_num(buf, idx));
+                              &idx, "get_at")) return make_null();
+            return make_float(buffer_read_f64(buf, idx));
         }
         if (argc == 3 && buf->data.buffer.rows > 0) {
             int row, col;
             if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 1), buf->data.buffer.rows,
-                              &row)) return make_null();
+                              &row, "get_at")) return make_null();
             if (!buf_at_index(BUILTIN_LIST_VIEW(arg, 2), buf->data.buffer.cols,
-                              &col)) return make_null();
-            return make_num(buffer_read_num(buf, (int64_t)row * buf->data.buffer.cols + col));
+                              &col, "get_at")) return make_null();
+            return make_float(buffer_read_f64(buf, (int64_t)row * buf->data.buffer.cols + col));
         }
         rt_error(EK_TYPE, 0, "get_at: [buffer, row, col] needs a shaped buffer "
                  "(see reshape)");
@@ -4589,8 +4637,11 @@ Value* builtin_thread_join(Value *arg) {
         rt_error(EK_TYPE, 0, "thread_join requires a thread handle");
         return make_null();
     }
-    int hid = (int)eigs_num_arg(hv, __func__);
-    uint32_t hgen = (gv && val_is_number(gv)) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
+    int hid = builtin_c_int(hv, "thread_join");
+    int64_t gen = 0;
+    if (gv && val_is_number(gv)) eigs_int_arg_range(gv, 0, UINT32_MAX, &gen, "thread_join");
+    if (g_has_error) return make_null();
+    uint32_t hgen = (uint32_t)gen;
     int why = HANDLE_CLAIM_GONE;
     ThreadHandle *h = (ThreadHandle*)handle_claim(hid, hgen, HANDLE_THREAD, &why);
     if (!h) {
@@ -4688,23 +4739,25 @@ static void wake_channels_for_exit(EigsState *st) {
  * `_channel_gen` is forged or stripped is reachable right now and must be
  * refused rather than served. `out_id` is set even on failure so the refusal
  * can name the slot. */
-static Channel* get_channel_why(Value *v, int *why, int *out_id) {
+static Channel* get_channel_why(Value *v, int *why, int *out_id, const char *who) {
     *why = HANDLE_CLAIM_BADVALUE;
     *out_id = 0;
     if (!v || v->type != VAL_DICT) return NULL;
     Value *cv = BUILTIN_DICT_VIEW(v, "_channel_id");
     if (!cv || !val_is_number(cv)) return NULL;
-    *out_id = (int)eigs_num_arg(cv, __func__);
+    *out_id = builtin_c_int(cv, who);
     Value *gv = BUILTIN_DICT_VIEW(v, "_channel_gen");
-    uint32_t gen = (gv && val_is_number(gv)) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
-    return (Channel*)handle_lookup(*out_id, gen, HANDLE_CHANNEL, why);
+    int64_t gen = 0;
+    if (gv && val_is_number(gv)) eigs_int_arg_range(gv, 0, UINT32_MAX, &gen, who);
+    if (g_has_error) return NULL;
+    return (Channel*)handle_lookup(*out_id, (uint32_t)gen, HANDLE_CHANNEL, why);
 }
 
 /* Non-raising form. ONE caller by design: `channel_closed`, whose documented
  * ANSWER for an unknown/reclaimed channel is 1 (#971 Phase D), not an error. */
 static Channel* get_channel(Value *v) {
     int why = 0, id = 0;
-    return get_channel_why(v, &why, &id);
+    return get_channel_why(v, &why, &id, "channel_closed");
 }
 
 /* ROUND 2 (#1146 G2/G3): resolve or RAISE, in the shared wording. Every
@@ -4713,8 +4766,8 @@ static Channel* get_channel(Value *v) {
  * tell a stale handle from one that was never valid. */
 static Channel* channel_arg(Value *v, const char *who) {
     int why = 0, id = 0;
-    Channel *ch = get_channel_why(v, &why, &id);
-    if (!ch) handle_raise_unresolved(who, "channel", id, why, "closed");
+    Channel *ch = get_channel_why(v, &why, &id, who);
+    if (!ch && !g_has_error) handle_raise_unresolved(who, "channel", id, why, "closed");
     return ch;
 }
 
@@ -4850,10 +4903,8 @@ Value* builtin_try_recv(Value *arg) {
     return val ? val : make_null();
 }
 
-/* recv_timeout of [channel, ms] — bounded wait. Returns the value if one
- * arrives (or is already buffered) before the deadline, else null. ms is
- * interpreted as milliseconds; fractional values are honored (ns precision
- * on Linux). Negative ms degenerates to a try_recv. */
+/* recv_timeout of [channel, ms] — milliseconds rounded half away from zero
+ * (Q7 magnitude), within the wait call's long range. Negative ms polls. */
 Value* builtin_recv_timeout(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "recv_timeout");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
@@ -4862,29 +4913,21 @@ Value* builtin_recv_timeout(Value *arg) {
     }
     Channel *ch = channel_arg(BUILTIN_LIST_VIEW(arg, 0), "recv_timeout");
     if (!ch) return make_null();
-    if (replay_blocks("recv_timeout")) return make_null();   /* #1072: after validation */
     Value *ms_v = BUILTIN_LIST_VIEW(arg, 1);
     if (!val_is_number(ms_v)) {
         rt_error(EK_TYPE, 0, "recv_timeout: ms must be a number");
         return make_null();
     }
-    double ms = eigs_num_arg(ms_v, __func__);
-    /* Sanitize ms before the (long) cast (#151). NaN, +inf, or any value
-     * above ~LONG_MAX is undefined behavior when cast to long, and in
-     * practice produced a garbage deadline that fired immediately or
-     * waited essentially forever. Cap at one year of ms (3.15e10) — well
-     * below LONG_MAX on 32-bit time_t hosts and far beyond any plausible
-     * channel timeout. NaN degenerates to try_recv (ms=0). */
-    if (isnan(ms))      ms = 0.0;
-    else if (ms < 0.0)  ms = 0.0;
-    else if (ms > 3.15e10) ms = 3.15e10;
+    int64_t ms;
+    if (!eigs_magnitude_arg(ms_v, LONG_MIN, LONG_MAX, &ms, "recv_timeout")) return make_null();
+    if (ms < 0) ms = 0;
+    if (replay_blocks("recv_timeout")) return make_null();   /* all refusals precede replay */
 
     struct timespec deadline;
     clock_gettime(EIGS_CHANNEL_CLOCK, &deadline);
     long whole_ms = (long)ms;
-    long extra_ns = (long)((ms - (double)whole_ms) * 1e6);
     deadline.tv_sec  += whole_ms / 1000;
-    deadline.tv_nsec += (whole_ms % 1000) * 1000000L + extra_ns;
+    deadline.tv_nsec += (whole_ms % 1000) * 1000000L;
     if (deadline.tv_nsec >= 1000000000L) {
         deadline.tv_sec  += deadline.tv_nsec / 1000000000L;
         deadline.tv_nsec %= 1000000000L;
@@ -5060,8 +5103,11 @@ Value* builtin_task_spawn(Value *arg) {
 static Task *task_handle_resolve(Value *arg, const char *who, int *out_id) {
     int id = 0;
     uint32_t gen = 0;
-    if (!arg || !val_is_number(arg) ||
-        !task_handle_unpack(eigs_num_arg(arg, __func__), &id, &gen)) return NULL;
+    if (!arg || !val_is_number(arg)) return NULL;
+    int64_t packed = eigs_int_arg(arg, who);
+    if (g_has_error || packed <= 0 || packed > INT64_C(9007199254740992)) return NULL;
+    /* The packed handle API is a double, but every allowed id is exact. */
+    if (!task_handle_unpack((double)packed, &id, &gen)) return NULL;
     int why = HANDLE_CLAIM_GONE;
     Task *t = (Task *)handle_lookup(id, gen, HANDLE_TASK, &why);
     if (!t && (why == HANDLE_CLAIM_STALE || why == HANDLE_CLAIM_TYPE))
@@ -5112,7 +5158,9 @@ Value* builtin_task_yield(Value *arg) {
  * returns immediately. Joining an unknown id, self, or with no scheduler
  * returns null. Same nesting restriction as task_yield. */
 Value* builtin_task_join(Value *arg) {
-    if (!arg || !val_is_number(arg) || !g_task_sched) return make_null();
+    if (!arg || !val_is_number(arg)) return make_null();
+    (void)eigs_int_arg(arg, "task_join");
+    if (g_has_error || !g_task_sched) return make_null();
     int target = 0;
     Task *t = task_handle_resolve(arg, "task_join", &target);
     if (!t) return make_null();
@@ -5161,11 +5209,12 @@ Value* builtin_task_send(Value *arg) {
     /* fs:ANSWER no scheduler means there is no task to deliver to, which is
      * the dead-letter drop this function's contract documents ("0 if
      * dropped") — split out of the arity guard above, which is a mistake. */
-    if (!g_task_sched) return make_bool(0);
+    int64_t packed = eigs_int_arg(idv, "task_send");
+    if (g_has_error || !g_task_sched) return make_bool(0);
     int target = 0;
     /* Main is the reserved public id 0 and has no handle-table generation,
      * but it does have a scheduler mailbox (reply-to-supervisor pattern). */
-    if (eigs_num_arg(idv, __func__) != 0 &&
+    if (packed != 0 &&
         !task_handle_resolve(idv, "task_send", &target)) return make_bool(0);
     Value *copy = val_clone_for_send(BUILTIN_LIST_VIEW(arg, 1));   /* share-nothing */
     int sent = task_deliver(target, copy);
@@ -5191,7 +5240,8 @@ Value* builtin_task_kill(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "task_kill", "a task id (number)", make_bool(0));
     /* fs:ANSWER no scheduler means no such target; 0 is the documented
      * "bad/self/finished target" answer, split from the type guard above. */
-    if (!g_task_sched) return make_bool(0);
+    (void)eigs_int_arg(arg, "task_kill");
+    if (g_has_error || !g_task_sched) return make_bool(0);
     int target = 0;
     if (!task_handle_resolve(arg, "task_kill", &target)) return make_bool(0);
     return make_bool(task_do_kill(target));
@@ -5279,10 +5329,10 @@ Value* builtin_task_detach(Value *arg) {
         return make_null();
     }
     int target = 0;
-    if (!task_handle_resolve(arg, "task_detach", &target)) return make_num(0);
+    if (!task_handle_resolve(arg, "task_detach", &target)) return make_int(0);
     int detached = task_do_detach(target);
     if (detached < 0) return make_null();   /* #1736: the stop is already raised */
-    return make_num((double)detached);
+    return make_int(detached);
 }
 
 /* task_sched_seed of n — install a scheduling seed. By default tasks run FIFO
@@ -5769,7 +5819,8 @@ Value* builtin_list_truncate(Value *arg) {
         rt_error(EK_TYPE, 0, "list_truncate: new_len must be a number");
         return make_null();
     }
-    int new_len = (int)eigs_num_arg(len_val, __func__);
+    int new_len = builtin_c_int(len_val, "list_truncate");
+    if (g_has_error) return make_null();
     /* #503: a negative new_len used to silently empty the list (an
      * undocumented soft clamp to 0). Raise instead. */
     if (new_len < 0) {
@@ -5796,7 +5847,8 @@ Value* builtin_list_remove_at(Value *arg) {
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
     ARG_GUARD(!idx_val || !val_is_number(idx_val), "list_remove_at", "a number index", list);
-    int idx = (int)eigs_num_arg(idx_val, __func__);
+    int idx = builtin_c_int(idx_val, "list_remove_at");
+    if (g_has_error) return make_null();
     if (idx < 0 || idx >= list->data.list.count) return list;
     slot_decref(list_slot(list, idx));
     int tail = list->data.list.count - idx - 1;
@@ -5818,7 +5870,8 @@ Value* builtin_list_insert_at(Value *arg) {
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
     ARG_GUARD(!idx_val || !val_is_number(idx_val), "list_insert_at", "a number index", list);
-    int idx = (int)eigs_num_arg(idx_val, __func__);
+    int idx = builtin_c_int(idx_val, "list_insert_at");
+    if (g_has_error) return make_null();
     int count = list->data.list.count;
     if (idx < 0 || idx > count) return list;
     if (idx == count) {
@@ -6024,12 +6077,8 @@ Value* builtin_dispatch(Value *arg) {
         rt_error(EK_TYPE, 0, "dispatch: key must be a number");
         return make_null();
     }
-    int key = (int)eigs_num_arg(key_v, __func__);
-    if ((double)key != eigs_num_arg(key_v, __func__)) {
-        rt_error(EK_VALUE, 0, "dispatch key must be an integer, got %g",
-                      eigs_num_arg(key_v, __func__));
-        return make_null();
-    }
+    int key = builtin_c_int(key_v, "dispatch");
+    if (g_has_error) return make_null();
 
     if (!table || table->type != VAL_LIST) {
         rt_error(EK_TYPE, 0, "dispatch: table must be a list");
@@ -6047,15 +6096,18 @@ Value* builtin_dispatch(Value *arg) {
         /* free_val CONSUMES a reference, and fn_arg is a child of our own
          * arg vector, which still points at it — lend it a ref of our own
          * making rather than the arg vector's (#720). */
-        /* #1665: a numeric fn_arg is a stack view in THIS frame. A builtin
-         * that returns its argument (`num`) would hand our caller a pointer
-         * into a dead frame, so a number goes in as a fresh box we own. */
+        /* #1665: an immediate numeric fn_arg is a stack view in THIS frame.
+         * Lift it before calling a builtin that returns its argument (`num`).
+         * HEAP numbers stay shared and follow the direct-child borrow rule. */
         if (fn_arg && val_is_number(fn_arg)) {
-            Value *boxed = fn_arg->type == VAL_INT
-                         ? make_int(VAL_I64_RAW(fn_arg))
-                         : make_num(eigs_num_arg(fn_arg, __func__));
+            Value *boxed = list_get_owned(arg, 2);
             Value *res = eigs_call_builtin(fn->data.builtin, boxed);
-            if (res == boxed) return boxed;          /* our ref transfers */
+            if (res == boxed) {
+                /* A HEAP number can alias our direct child. Return that
+                 * borrow for the outer scan; only fresh boxes transfer. */
+                if (boxed == fn_arg) val_decref(boxed);
+                return res;
+            }
             val_decref(boxed);
             return res ? res : make_null();
         }

@@ -83,7 +83,6 @@ vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_f64
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_f64
 builtins.c|builtin_json_build|1|VAL_INT text is exact digits; float text retains the bridge (#1758 R1.2d)
 builtins.c|builtin_json_path|1|VAL_INT scalar text is exact digits before releasing root (#1758 R1.2d)
-builtins.c|builtin_dispatch|1|typed dispatch argument boxing uses make_int after the VAL_INT kind test (#1758 R1.3)
 builtins.c|builtin_sort_by|1|numeric key kind retained for exact mixed sorting (#1758 N2)
 builtins.c|sort_cmp_num|6|validated numeric slots viewed through slot_view; int comparisons are exact (#1758 N2)
 value_slot.h|slot_int_value|1|boxed VAL_INT payload after its type test (#1758 R1.2i)
@@ -91,6 +90,5 @@ container.h|slot_view|3|typed float or int facade, preserving exact payload and 
 ext_db.c|db_build_query|1|VAL_INT parameters encode as exact digits after the kind test (#1758 R1.2)
 vm.c|vm_value_index_is_int|2|Guarded exact VAL_INT-to-C-index conversion; the other numeric kind keeps the float integrality test (#1758 R1.2)
 eigenscript.c|make_int|1|int constructor initializes the exact signed payload
-builtins.c|bit_int|1|N8 exact bitwise operand reader: VAL_INT guard precedes the int payload; float operands use #1740 conversion
 eigenscript.c|eigs_number_read|2|final checked reader: exact int and float payloads are read only behind their corresponding Value type tests (#1758 R1.6a)
 eigenscript.c|buffer_index_at|1|writes the raw buffer float into a borrowed stack facade; eigs_int_arg performs the finite/exact int conversion (#1758 R1.6a)

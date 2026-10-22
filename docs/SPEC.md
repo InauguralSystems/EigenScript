@@ -368,9 +368,11 @@ consequences are contracts you can rely on:
     operand can hold an infinity), so any other source hits a backstop that
     raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
     result, so both tiers raise from the same guard. Buffer storage may retain
-    a raw non-finite kernel result internally, but every scalar read uses the
-    same rule: infinity saturates at ±`1e308`, while under `EIGS_STRICT=0` a
+    a raw non-finite kernel result internally. Ordinary indexed reads apply
+    that guard: infinity saturates at ±`1e308`, while under `EIGS_STRICT=0` a
     `NaN` becomes `0` and sets `math_flags.invalid` (strict mode raises).
+    `sum`, `get_at` instead refuse non-finite buffer
+    elements in every strict mode (N13).
   - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
     document is walked leniently and a parse failure answers the same `""`
     an absent key does. Under strict `json_path` applies `json_decode`'s
@@ -1311,6 +1313,27 @@ expressions match too
 ## Error handling
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
+
+The positions and counts of `char_at`, `substr`, `get_at`, `set_at`,
+`copy_into`, `fill` and the `list_*` mutation/slice builtins use exact conversion
+(N5). So do handle fields, bytecode ABI/counts/bytes, sandbox limits and numeric
+exit codes. Integral floats are accepted; fractions and values outside the
+receiving C type raise `value` before indexing or effects.
+`recv_timeout` rounds milliseconds half away from zero and raises beyond the
+C long range, with no one-year cap. `task_detach` and sandbox error lines return ints.
+
+```eigenscript
+print of (substr of ["hello", 1.0, 2.0])
+try:
+    print of (substr of ["hello", 1.5, 2])
+catch e:
+    print of e.kind
+```
+```output
+el
+value
+```
+
 
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
@@ -2581,16 +2604,16 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 [buf, rows, cols]` shapes an existing flat buffer (the element count must
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
-At the buffer/scalar boundary, `sum` refuses non-finite elements in every
-strict mode (N13). Other consumers use the numeric guard: infinity saturates
+At the buffer/scalar boundary, `sum`, `get_at` refuse
+non-finite elements in every strict mode (N13). Other consumers use the numeric guard: infinity saturates
 at ±`1e308`, while a `NaN` raises in strict mode or becomes `0` and sets
 `math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer equality and
 the other scalar reductions normalize each input before comparison or
 arithmetic. A strict read that raises inside a function retains that
 function's source location and call frame. Buffer-to-list tensor materialization
 and numeric byte/sample/device conversions apply the same read rule, stopping
-at the first raised read. Numeric bytes truncate and wrap modulo 256 after
-normalization; audio samples then clamp to their documented sample range.
+at the first raised read. Numeric bytes truncate and wrap modulo 256 after normalization.
+Audio samples clamp to their documented sample range.
 Raw buffer copies, typed serialization and internal buffer-only kernel work
 areas retain their stored representation.
 

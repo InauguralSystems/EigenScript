@@ -17,7 +17,11 @@ print of ((buf_get of [infs, 0]) % 3)
 print of ((buf_get of [infs, 0]) * 0.5 > 1e308)
 print of ((buf_get of [infs, 0]) + 0 > 1e308)
 print of (buf_get of [infs, 0])
-print of (get_at of [infs, 0])
+# N13 / R1.6c: the final get_at reader refuses non-finite buffer cells.
+try:
+    print of (get_at of [infs, 0])
+catch e:
+    print of e.kind
 print of (gather of [infs, [0, 0]])[0]
 
 left is buffer of [1, 2]
@@ -29,7 +33,10 @@ right[1] is 0 - 1e200
 nans is matmul of [left, right]
 print of nans[0]
 print of (buf_get of [nans, 0])
-print of (get_at of [nans, 0])
+try:
+    print of (get_at of [nans, 0])
+catch e:
+    print of e.kind
 print of (gather of [nans, [0]])[0]
 print of (math_flags of null).invalid
 

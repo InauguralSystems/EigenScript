@@ -33,6 +33,27 @@ evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
 
+The positions and counts of `char_at`, `substr`, `get_at`, `set_at`,
+`copy_into`, `fill` and the `list_*` mutation/slice builtins use exact conversion
+(N5). So do handle fields, bytecode ABI/counts/bytes, sandbox limits and numeric
+exit codes. Integral floats are accepted; fractions and values outside the
+receiving C type raise `value` before indexing or effects.
+`recv_timeout` rounds milliseconds half away from zero and raises beyond the
+C long range, with no one-year cap. `task_detach` and sandbox error lines return ints.
+
+```eigenscript
+print of (substr of ["hello", 1.0, 2.0])
+try:
+    print of (substr of ["hello", 1.5, 2])
+catch e:
+    print of e.kind
+```
+```output
+el
+value
+```
+
+
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
 ## Try it in your browser
@@ -380,10 +401,11 @@ out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
 `asin`/`acos` clamp their inputs. Buffer consumers apply the same normalization,
-except `sum`, which refuses non-finite elements in every strict mode (N13).
+except `sum`, `get_at`, which refuse non-finite
+buffer elements in every strict mode (N13).
 Structural buffer equality and the other scalar reductions normalize each
 input by this rule too, as do mixed buffer/list materialization
-and numeric byte or sample conversion. A raised read stops subsequent work.
+and the remaining numeric byte or sample conversions. A raised read stops subsequent work.
 `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL, without inspecting later
 elements; byte codecs consume the complete list.

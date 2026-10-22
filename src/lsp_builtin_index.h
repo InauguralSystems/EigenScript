@@ -220,7 +220,7 @@ static const char *builtin_docs[][2] = {
     {"read_text", "read_text of \"path\" → file contents as string; I/O failure raises EK_IO."},
     {"record_history", "record_history of flag — enable (nonzero) or disable (0) per-assignment"},
     {"recv", "recv — builtin; see docs/BUILTINS.md"},
-    {"recv_timeout", "recv_timeout of [channel, ms] — bounded wait. Returns the value if one"},
+    {"recv_timeout", "recv_timeout of [channel, ms] — milliseconds rounded half away from zero"},
     {"regex_find", "regex_find — builtin; see docs/BUILTINS.md"},
     {"regex_match", "regex_match — builtin; see docs/BUILTINS.md"},
     {"regex_replace", "regex_replace of [string, pattern, replacement] -> string"},

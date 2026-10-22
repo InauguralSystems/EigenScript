@@ -121,7 +121,13 @@ nan_right[1] is 0 - 1e200
 raw_nan_product is matmul of [nan_left, nan_right]
 assert of [raw_nan_product[0] == 0, "NG32 indexed NaN read collapses to zero"]
 assert of [(buf_get of [raw_nan_product, 0]) == 0, "NG33 buf_get NaN read collapses to zero"]
-assert of [(get_at of [raw_nan_product, 0]) == 0, "NG34 get_at NaN read collapses to zero"]
+# N13 / R1.6c: get_at now uses the final finite-only buffer reader.
+ng_get_at_refused is false
+try:
+    get_at of [raw_nan_product, 0]
+catch e:
+    ng_get_at_refused is e.kind == "value"
+assert of [ng_get_at_refused, "NG34 N13 get_at refuses non-finite payload"]
 nan_gathered is gather of [raw_nan_product, [0]]
 assert of [nan_gathered[0] == 0, "NG35 gather NaN read collapses to zero"]
 

@@ -851,17 +851,17 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 3,
-    "reason": "Exact 2/3 branches; other lengths raise.",
+    "reason": "Exact 2/3 branches; other lengths raise. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged.",
     "public_names": [
       "get_at"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "e59c44bc54e46cbb61a478fb1c7431779980708478ff77cb24e40d8296b5f2ea"
+      "fbb8ec0e99fce7347b11d4c0cd5d41899d515efb9363ac793471fd51ba39ec0c"
     ],
     "source_sha256": {
       "builtin_get_at": [
-        "e59c44bc54e46cbb61a478fb1c7431779980708478ff77cb24e40d8296b5f2ea"
+        "fbb8ec0e99fce7347b11d4c0cd5d41899d515efb9363ac793471fd51ba39ec0c"
       ]
     }
   },
@@ -1889,17 +1889,17 @@
     "category": "exact_rejection",
     "minimum": 3,
     "maximum": 4,
-    "reason": "Exact 3/4 branches; other lengths raise. Nested list/buffer data is not tuple width.",
+    "reason": "Exact 3/4 branches; other lengths raise. Nested list/buffer data is not tuple width. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged.",
     "public_names": [
       "set_at"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "8fce9150c57b84d33cc2141136385108955fa7e2433212849ef742f4f4c9c617"
+      "70a4f2140df980ea3977c7a4ab1d5bc139356176a26788e829602851bdc84f9a"
     ],
     "source_sha256": {
       "builtin_set_at": [
-        "8fce9150c57b84d33cc2141136385108955fa7e2433212849ef742f4f4c9c617"
+        "70a4f2140df980ea3977c7a4ab1d5bc139356176a26788e829602851bdc84f9a"
       ]
     }
   },
@@ -2829,23 +2829,23 @@
     "category": "descriptor_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole ABI-stamped descriptor is data validated by vm_desc_abi_error; it is not a fixed builtin argument tuple. No descriptor execution is needed for this classification.",
+    "reason": "Whole ABI-stamped descriptor is data validated by vm_desc_abi_error; it is not a fixed builtin argument tuple. No descriptor execution is needed for this classification. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged.",
     "public_names": [
       "vm_run_bytecode"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "4dd5404fce4972794915a54f5d48e9b5daf24bad0797b756922e5e4967d41b3f"
+      "31f710077eb51755891af7925741c7d6ca5a3fc0a6e8f147a10d0b7f4398864a"
     ],
     "source_sha256": {
       "builtin_vm_run_bytecode": [
-        "4dd5404fce4972794915a54f5d48e9b5daf24bad0797b756922e5e4967d41b3f"
+        "31f710077eb51755891af7925741c7d6ca5a3fc0a6e8f147a10d0b7f4398864a"
       ],
       "vm_build_chunk_desc": [
         "fce8334d124e479de21cd22dfed262a8edcc656341a1f7c272507762481c57fc"
       ],
       "vm_desc_abi_error": [
-        "d68adff43db3fe20e9f49ef018917f6d7e926f5093b9af3c7467fe78050df28d"
+        "1154cd7b7944b25c1dbfff4cbe08eafe537bd04b54e874701c38e0cf3b3b69dd"
       ]
     }
   },

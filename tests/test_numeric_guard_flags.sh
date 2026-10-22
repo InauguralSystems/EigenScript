@@ -64,7 +64,6 @@ raw is matmul of [left, right]'
 for spec in \
  'NG32 index|x is raw[0]' \
  'NG33 buf_get|x is buf_get of [raw, 0]' \
- 'NG34 get_at|x is get_at of [raw, 0]' \
  'NG35 gather|x is (gather of [raw, [0]])[0]' \
  'NG38 equality|x is raw == raw' \
  'NG39 distinct equality|zero is buffer of 1; x is raw == zero' \
@@ -81,6 +80,14 @@ for spec in \
 $op
 assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
 done
+# N13 / R1.6c: get_at's final reader refuses NaN in both strict modes.
+run "NG34 N13 get_at refuses NaN" "$nan_setup
+caught is false
+try:
+    get_at of [raw, 0]
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught, \"N13 get_at refuses non-finite payload\"]"
 # N13 / R1.6b: sum's final buffer reader refuses NaN in every strict mode.
 # Keep this in its own program, as for the neighboring flag witnesses.
 run "NG50 N13 nested sum refuses NaN" "$nan_setup

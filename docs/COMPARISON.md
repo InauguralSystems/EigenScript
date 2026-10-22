@@ -83,6 +83,27 @@ missing, unreadable, and directory paths. Empty files return empty values.
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
 
+The positions and counts of `char_at`, `substr`, `get_at`, `set_at`,
+`copy_into`, `fill` and the `list_*` mutation/slice builtins use exact conversion
+(N5). So do handle fields, bytecode ABI/counts/bytes, sandbox limits and numeric
+exit codes. Integral floats are accepted; fractions and values outside the
+receiving C type raise `value` before indexing or effects.
+`recv_timeout` rounds milliseconds half away from zero and raises beyond the
+C long range, with no one-year cap. `task_detach` and sandbox error lines return ints.
+
+```eigenscript
+print of (substr of ["hello", 1.0, 2.0])
+try:
+    print of (substr of ["hello", 1.5, 2])
+catch e:
+    print of e.kind
+```
+```output
+el
+value
+```
+
+
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
 `lib/eigen.eigs` snapshots the host values used by its tokenizer, parser, evaluator, import helpers, and fresh meta environments when it loads (#1386). Later host builtin rebinding does not change those dependencies, including entropy's `log`/`divide` calls. For `load_file`, the snapshots use values visible during initialization; loaded code still shares the host scope. String conversion still uses the pristine reserved f-string bridge. Explicit custom environments, debug hooks, and rebinding the interpreter's own helper names remain caller-controlled; captured caller-defined functions retain their own binding behavior.
@@ -363,13 +384,15 @@ the rest accept either, and hand back a buffer when every operand was one.
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.
 Raw non-finite results may remain in a buffer's internal work area, but every
-scalar read applies EigenScript's numeric guard: infinity saturates at
+ordinary indexed read applies EigenScript's numeric guard: infinity saturates at
 ±`1e308`, and a NaN raises in strict mode (or becomes `0` and sets the invalid
-math flag under `EIGS_STRICT=0`). Structural buffer equality and scalar
-reductions normalize each input before comparison or arithmetic; the reduction
+math flag under `EIGS_STRICT=0`). `sum`, `get_at`
+instead refuse non-finite buffer elements in every strict mode (N13).
+Structural buffer equality and the remaining scalar reductions normalize each
+input before comparison or arithmetic; the reduction
 association contracts remain unchanged. Mixed buffer/list tensor operations and
 numeric byte/sample/device conversions also normalize reads and stop on the
-first error. Byte conversion truncates and wraps modulo 256 after normalization.
+first error. Numeric bytes truncate and wrap modulo 256 after normalization.
 Raw copies, typed serialization and buffer-only work areas preserve their data.
 `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL and does not inspect later
