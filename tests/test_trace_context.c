@@ -29,20 +29,20 @@ static EigsValue *advance_callback(EigsValue *arg) {
 }
 
 static const char file_tape[] =
-    "V 7 " EIGENSCRIPT_VERSION "\n"
+    "V 8 " EIGENSCRIPT_VERSION "\n"
     "B 0 1 1 0 root -\nB 1 2 2 0 host 70656572\n"
     "N 1 peer=12\nN 0 root=11\nN 0 root=13\n"
-    "V 7 " EIGENSCRIPT_VERSION "\n"
+    "V 8 " EIGENSCRIPT_VERSION "\n"
     "B 0 1 1 0 root -\nB 1 2 2 0 host 70656572\n"
     "N 0 root=21\nN 1 peer=22\n";
 static const char memory_tape[] =
-    "V 7 " EIGENSCRIPT_VERSION "\n"
+    "V 8 " EIGENSCRIPT_VERSION "\n"
     "B 0 101 11 0 root -\nB 1 102 12 0 host 70656572\n"
     "N 1 peer=102\nN 0 root=101\nN 0 root=103\n"
-    "V 7 " EIGENSCRIPT_VERSION "\n"
+    "V 8 " EIGENSCRIPT_VERSION "\n"
     "B 0 101 11 0 root -\nN 0 root=201\n";
 static const char replacement[] =
-    "V 7 " EIGENSCRIPT_VERSION "\n"
+    "V 8 " EIGENSCRIPT_VERSION "\n"
     "B 0 201 21 0 root -\nB 1 202 22 0 host 70656572\n"
     "N 1 peer=302\nN 0 root=301\n";
 static const char refused[] = "V 5 " EIGENSCRIPT_VERSION "\n";   /* #1637: v5 predates bool values */
@@ -51,10 +51,10 @@ static const char refused[] = "V 5 " EIGENSCRIPT_VERSION "\n";   /* #1637: v5 pr
  * installs `tape` and takes `name`; the refusal is _exit(3) with `want` on
  * stderr, so it runs in a forked child. */
 static const char host_kind_tape[] =
-    "V 7 " EIGENSCRIPT_VERSION "\n"
+    "V 8 " EIGENSCRIPT_VERSION "\n"
     "B 0 401 41 0 root -\nN 0 root=true\n";
 static const char host_undeclared_tape[] =
-    "V 7 " EIGENSCRIPT_VERSION "\n"
+    "V 8 " EIGENSCRIPT_VERSION "\n"
     "B 0 501 51 0 root -\nN 0 ghost=7\n";
 static int child_refuses(const char *tape, size_t len, const char *name, const char *want) {
     int fds[2];
@@ -238,7 +238,7 @@ int main(void) {
           !eigs_trace_declare_kind("nokind", 0),
           "a runtime name, an empty name, a FN kind and no kind are refused");
 
-    /* #1758 v7: unlike the bridge builtins, a host can supply actual int
+    /* #1758 v8: unlike the bridge builtins, a host can supply actual int
      * N values now. Exercise the production writer AND parser, with values
      * whose low bits would be lost by a double intermediate. */
     used = 0; journal[0] = 0; bad_sink = 0;
@@ -255,14 +255,14 @@ int main(void) {
           strstr(journal, " sample=-9223372036854775808\n") &&
           strstr(journal, " sample=9223372036854775807\n") &&
           strstr(journal, " sample=3.0\n") && strstr(journal, " sample=-0.0\n"),
-          "v7 writer spells exact int digits and marks integral floats");
-    check(eigs_set_replay_tape(journal, used, 1), "v7 numeric-kind journal installs");
+          "v8 writer spells exact int digits and marks integral floats");
+    check(eigs_set_replay_tape(journal, used, 1), "v8 numeric-kind journal installs");
     const int64_t exact[] = {3, INT64_C(9007199254740993), INT64_MIN, INT64_MAX};
     for (size_t i = 0; i < sizeof exact / sizeof exact[0]; i++) {
         EigsValue *v = NULL;
         int got = eigs_replay_take("sample", &v);
         check(got && v && v->type == VAL_INT && VAL_I64_RAW(v) == exact[i],
-              "v7 int replay retains exact kind and int64 payload");
+              "v8 int replay retains exact kind and int64 payload");
         eigs_value_release(v);
     }
     for (int i = 0; i < 2; i++) {
@@ -271,10 +271,10 @@ int main(void) {
         check(got && v && v->type == VAL_FLOAT &&
               VAL_F64_RAW(v) == (i ? -0.0 : 3.0) &&
               (!!signbit(VAL_F64_RAW(v)) == i),
-              "v7 float replay retains kind and signed zero");
+              "v8 float replay retains kind and signed zero");
         eigs_value_release(v);
     }
-    check(eigs_set_replay_tape(NULL, 0, 0), "v7 numeric-kind replay releases its source");
+    check(eigs_set_replay_tape(NULL, 0, 0), "v8 numeric-kind replay releases its source");
     if (!eigs_thread_switch(peer)) return 2;
     eigs_thread_detach(); eigs_state_destroy(peer);
     if (!eigs_thread_switch(root)) return 2;

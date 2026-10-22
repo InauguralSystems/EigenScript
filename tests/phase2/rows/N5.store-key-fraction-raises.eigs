@@ -11,4 +11,4 @@ try:
 catch e:
     print of e.kind
 store_close of s
-rm of "store-key-fraction.db"
+remove_file of "store-key-fraction.db"

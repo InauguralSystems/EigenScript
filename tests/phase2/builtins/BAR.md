@@ -21,15 +21,24 @@ B1-B6 (witnesses), and C1-C10 plus the agreed answers (semantics). Each changed
 The 25 non-release rows' `.pre` and `.tag` read `PENDING-PROFILE <profile>`;
 R1.6a records them on matched builds.
 
-**R1.6a rulings, 2026-10-21.** R1.6a-D1: the population is 232 rows, taken at
+**R1.6a rulings, 2026-10-21 (historical, before R1.6-S2).** R1.6a-D1:
+the population was 232 rows, taken at
 `1fd4422c` (the R1.6a start, sync #4, which carries main's #1841 and adds
 `read_text`). §6 and the inventory at `1fd4422c` differ from `4ac31e67` only by
 that row (field by field; the inventory's other changes are line moves and one
 accessor list). R1.6a-D2: no probe prints a value the OS or the environment
 chooses; `net_port`'s port line and its siblings print a predicate instead.
 
+**Sync #5, R1.6-S1/S2.** Main's `rm` deletion removes no table row: the
+number-reading bar never included it. R1.6-S2 adds main's `set_exit_code`
+as an int-requiring release-profile row in round c, closed by main #1909.
+The current population is 233 rows and 235 cases, with round counts b 46,
+c 77, d 53, e 38 and f 19 (b/f include R1.6b-D3's `http_post` correction).
+The new `.branch` is an authorized addition recorded by SHA-256 under
+R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
+
 ## Files
-- `builtins.tsv`, 232 rows: `builtin file class loss q7 round closed_in
+- `builtins.tsv`, 233 rows: `builtin file class loss q7 round closed_in
   profile hook stdin changes_vs_pre changes_vs_tag`. `make_table.py` writes
   it. Rows come from the §6 table, checked both ways against the inventory's
   `## Builtins` list, field by field. Both files and `src/` are extracted with
@@ -38,8 +47,8 @@ chooses; `net_port`'s port line and its siblings print a predicate instead.
   `1fd4422c`), so the population is pinned to the ruled commit, not to a
   checkout's state; `EIGS_TREE` overrides it for the plants. `file` is the
   `src/*.c` file that defines the inventory's C function. `round` follows the
-  plan's rule, and the counts are checked against b 45, c 76, d 53, e 38,
-  f 20. The other columns:
+  plan's rule, and the counts are checked against b 46, c 77, d 53, e 38,
+  f 19 (R1.6b-D3 and R1.6-S2). The other columns:
   - `closed_in` (ruling A2) and `profile` (A3) come from `rowmeta.tsv`;
   - `hook` (A4) and `stdin` (A5) list the hooks and the stdin fixtures of the
     row's cases, in case order. `-` means none, and stdin `-` is `/dev/null`;
@@ -49,9 +58,9 @@ chooses; `net_port`'s port line and its siblings print a predicate instead.
     matched build;
   - `changes_vs_tag` (A1) is the same comparison against `.tag`, §9.4's
     original one. It is recorded as an observation and never checked, because
-    every probe calls `num_type` and the tag has no `num_type`.
+    the tag has no `num_type`, and `set_exit_code` also postdates the tag.
 - `rowmeta.tsv`: `builtin closed_in profile`, one line per table row.
-- `cases.tsv`: `case builtin hook stdin`, 234 cases. A row's primary case is
+- `cases.tsv`: `case builtin hook stdin`, 235 cases. A row's primary case is
   `builtins/<b>`. A second case is `builtins/<b>.<label>`: `gfx_poll.empty`
   (B3) and `proc_read_buf.hi` (A5).
 - `builtins/<case>.eigs` is the probe. `<case>.branch` is the pre-registered
@@ -344,7 +353,7 @@ agreed).
   ints bind as exact digits (R1.2a), and int columns decode as ints (R1.6).
   See Q-DB253.
 
-## Per-row derivation, round c (76 rows; R1.6c; `read_text` joined by R1.6a-D1)
+## Per-row derivation, round c (77 rows; R1.6c; R1.6a-D1 and R1.6-S2 additions)
 - Float-producing (`acos asin atan atan2 cos sin tan pi random clock_unix
   monotonic_ms get_observer_thresholds dot stream_write`): ints convert and the
   result is a float (Lua `math.*`). Clocks print only their kind and an
@@ -399,6 +408,11 @@ agreed).
   and the tag, each of the three raise cases consumes one, and none blocks.
 - `exit`: N5, then the C int range. `2.5` and `4294967296` raise `value`, and
   `3.0` exits with rc 3 (today `2.5` exits with rc 2).
+- `set_exit_code` (R1.6-S2): N5, then 0..255, already checked by main #1909.
+  `1.5`, `256` and `-1` raise `value`; `3.0` succeeds, execution continues,
+  and graceful completion uses rc 3. Its `.pre` equals `.branch`, with
+  `closed_in` R1.6-S2; the tag has no such builtin. This row stays in round c
+  with `exit` until their bridge migration.
 - Host (`random_hex read_bytes_buf proc_read_buf build_corpus token_name
   state_at sandbox_run vm_run_bytecode write_bytes stream_open`): counts, caps,
   fds, ids, line numbers, limits, ABI numbers and opcode bytes follow N5. Byte
@@ -791,7 +805,7 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   and 4294967297 give one stream on v0.46.0 and on 4ac31e67; Lua tells them
   apart. That contradicts §6's "a seed's range is all of int64". Filed:
   https://github.com/InauguralSystems/EigenScript/issues/1886
-- §6's counts prose is stale at the branch tip: "230 numeric", "51 other",
+- §6's counts prose was stale at the then-current branch tip: "230 numeric", "51 other",
   "42 are LOSS" and "the six `bit_*`", against the table's and the
   inventory's 231, 52 and 36 (232 and 53 at `1fd4422c`). Filed:
   https://github.com/InauguralSystems/EigenScript/issues/1887
@@ -929,8 +943,9 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   159 (the critic's was 44), `builtins/_profiles/*.eigs` new, 37, `plants.sh`
   new, 132 -> 140, and `determinism.sh` new in this round, 28 (it replaces a
   scratch script, so R1.6a can run the same check on its matched builds).
-  Total 144 -> 634 -> 687. `rowmeta.tsv` and `cases.tsv` are declarations
-  (232 and 234 lines plus headers).
+  Total 144 -> 634 -> 687. At that R1.6a import, `rowmeta.tsv` and
+  `cases.tsv` were declarations of 232 and 234 lines plus headers;
+  R1.6-S2's current populations are 233 and 235.
 - `run_probes.sh`:
   - The first version wrote stdout through a relative path after its `cd`,
     so every `.pre` and `.tag` held only `rc=0`. It writes an absolute path,
@@ -1002,7 +1017,11 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   round c), then `unstable=0` after the fix. The earlier rounds' four
   recordings had not shown it.
 
-## COVERAGE
+## COVERAGE (historical R1.6a import, before R1.6-S2)
+The following counts and transcripts describe the population at `1fd4422c`.
+They are retained as recorded, including the then-pending profile observations;
+they are not current checker results. Sync #5's S2 addition makes the current
+table 233 rows (c 77) and its case files 235 each, as described above.
 Population, both directions, at `1fd4422c`:
 - §6's table equals the inventory's `## Builtins` list: 232 = 232, no name
   missing either way, and class/loss/q7 equal on every row.

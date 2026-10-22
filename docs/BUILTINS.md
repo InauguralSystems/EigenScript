@@ -67,6 +67,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
 | `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). |
+| `set_exit_code` | `set_exit_code of N` | Set the status (integer 0..255) used when the process ends gracefully, without ending it. The last call wins. Explicit `exit` and runtime failures retain their own status. |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
 | `eval` | `eval of code_string` | Execute EigenScript code, return result |
 | `throw` | `throw of message` | Raise catchable error |
@@ -347,7 +348,6 @@ Boolean keywords that check the most recently observed value:
 | `getcwd` | `getcwd of null` | Current working directory as string. Trace-recorded, so replay is deterministic (#585) |
 | `exe_path` | `exe_path of null` | Absolute path of the running interpreter binary. Lets a script re-invoke the same interpreter (e.g. `exec_capture of [exe_path of null, file]`) without assuming `eigenscript` is on PATH. Trace-recorded, so replay is deterministic (#585) |
 | `mktemp` | `mktemp of null` | Create a temporary file and return its path. Under `EIGS_REPLAY`, raises a catchable filesystem-boundary error before creating a file |
-| `rm` | `rm of "path"` | Remove a file. `true` on success, `false` on failure |
 | `write` | `write of value` | Write to stdout without newline |
 | `flush` | `flush of null` | Flush stdout |
 

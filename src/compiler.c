@@ -1609,7 +1609,9 @@ static void scan_for_env_bound(ASTNode *node, NameSet *out) {
 /* Collect module-level names (functions defined, top-level assignments).
  * Stops at function/lambda boundaries — those introduce their own scope.
  * Used to decide whether an assignment inside a function is updating a global
- * (slow name path) vs creating a fresh local (fast slot path). */
+ * (slow name path) vs creating a fresh local (fast slot path). An
+ * `unobserved:` block also takes its slot candidates from it, minus
+ * collect_by_name_binders (#1883); this set keeps every name. */
 static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out);
 static void collect_module_names_walk(ASTNode *node, NameSet *out) {
     if (!node) return;
@@ -1684,6 +1686,149 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
 }
 static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out) {
     for (int i = 0; i < count; i++) collect_module_names_walk(stmts[i], out);
+}
+
+/* #1883: the names this scope binds BY NAME. An `unobserved:` block reserves
+ * its module slots before it compiles its body, so every read of a promoted
+ * name in the block is GET_LOCAL; a binder that writes the env by name, or
+ * binds in a `for` loop's env, then splits the name and the reads see null or
+ * another scope's value. The binders, from the OP_SET_NAME_LOCAL emitters and
+ * the VM's own env writes: a `for` binder (in its loop env), a `catch`
+ * binder, a defined function's name, a comprehension binder, an `import`ed
+ * module name, `loop while`'s __loop_exit__ (compiler) and
+ * __loop_iterations__ (VM), and `local x is ...` while a `for` loop env is
+ * the current env (in_loop_env; anywhere else at module scope `local` binds
+ * in the env the slot stands for). A block walks its whole unit from the root
+ * and subtracts the set from its candidates, even when a name is also plainly
+ * assigned; the module-name set above keeps every name. Stops at function and
+ * lambda bodies: their binders write their own frame, and the escape analysis
+ * keeps the names they read off the slot path. (Function bodies use
+ * scan_for_env_bound, #633: a function picks slot or name per assignment in
+ * compile order.) */
+static void collect_by_name_binders(ASTNode *node, NameSet *out, int in_loop_env);
+static void collect_by_name_binders_block(ASTNode **stmts, int count, NameSet *out,
+                                          int in_loop_env) {
+    for (int i = 0; i < count; i++) collect_by_name_binders(stmts[i], out, in_loop_env);
+}
+static void collect_by_name_binders(ASTNode *node, NameSet *out, int in_loop_env) {
+    if (!node) return;
+    switch (node->type) {
+    case AST_FOR:
+        name_set_add(out, node->data.forloop.var);
+        collect_by_name_binders(node->data.forloop.iter, out, in_loop_env);
+        collect_by_name_binders_block(node->data.forloop.body, node->data.forloop.body_count, out, 1);
+        break;
+    case AST_TRY:
+        collect_by_name_binders_block(node->data.trycatch.try_body, node->data.trycatch.try_count, out, in_loop_env);
+        name_set_add(out, node->data.trycatch.err_name);   /* NULL (no binder) is ignored */
+        collect_by_name_binders_block(node->data.trycatch.catch_body, node->data.trycatch.catch_count, out, in_loop_env);
+        break;
+    case AST_FUNC:
+        name_set_add(out, node->data.func.name);   /* the body is its own scope */
+        break;
+    case AST_LISTCOMP:
+        name_set_add(out, node->data.listcomp.var);
+        collect_by_name_binders(node->data.listcomp.iter, out, in_loop_env);
+        collect_by_name_binders(node->data.listcomp.filter, out, in_loop_env);
+        collect_by_name_binders(node->data.listcomp.expr, out, in_loop_env);
+        break;
+    case AST_IMPORT:
+        name_set_add(out, node->data.import.module_name);
+        break;
+    case AST_LOOP:
+        name_set_add(out, "__loop_exit__");
+        name_set_add(out, "__loop_iterations__");
+        collect_by_name_binders(node->data.loop.cond, out, in_loop_env);
+        collect_by_name_binders_block(node->data.loop.body, node->data.loop.body_count, out, in_loop_env);
+        break;
+    case AST_ASSIGN:
+        if (node->data.assign.local_only && in_loop_env)
+            name_set_add(out, node->data.assign.name);
+        collect_by_name_binders(node->data.assign.expr, out, in_loop_env);
+        break;
+    /* The rest only nest: a comprehension can sit in any expression. */
+    case AST_IF:
+        collect_by_name_binders(node->data.cond.cond, out, in_loop_env);
+        collect_by_name_binders_block(node->data.cond.if_body, node->data.cond.if_count, out, in_loop_env);
+        collect_by_name_binders_block(node->data.cond.else_body, node->data.cond.else_count, out, in_loop_env);
+        break;
+    case AST_BLOCK:
+    case AST_UNOBSERVED:
+        collect_by_name_binders_block(node->data.block.stmts, node->data.block.count, out, in_loop_env);
+        break;
+    case AST_PROGRAM:
+        collect_by_name_binders_block(node->data.program.stmts, node->data.program.count, out, in_loop_env);
+        break;
+    case AST_MATCH:
+        collect_by_name_binders(node->data.match.expr, out, in_loop_env);
+        for (int i = 0; i < node->data.match.case_count; i++) {
+            collect_by_name_binders(node->data.match.patterns[i], out, in_loop_env);
+            collect_by_name_binders_block(node->data.match.bodies[i], node->data.match.body_counts[i], out, in_loop_env);
+        }
+        break;
+    case AST_BINOP:
+        collect_by_name_binders(node->data.binop.left, out, in_loop_env);
+        collect_by_name_binders(node->data.binop.right, out, in_loop_env);
+        break;
+    case AST_UNARY:
+        collect_by_name_binders(node->data.unary.operand, out, in_loop_env);
+        break;
+    case AST_RELATION:
+        collect_by_name_binders(node->data.relation.left, out, in_loop_env);
+        collect_by_name_binders(node->data.relation.right, out, in_loop_env);
+        break;
+    case AST_RETURN:
+        collect_by_name_binders(node->data.ret.expr, out, in_loop_env);
+        break;
+    case AST_LIST:
+        collect_by_name_binders_block(node->data.list.elems, node->data.list.count, out, in_loop_env);
+        break;
+    case AST_INDEX:
+        collect_by_name_binders(node->data.index.target, out, in_loop_env);
+        collect_by_name_binders(node->data.index.index, out, in_loop_env);
+        break;
+    case AST_DICT:
+        collect_by_name_binders_block(node->data.dict.keys, node->data.dict.count, out, in_loop_env);
+        collect_by_name_binders_block(node->data.dict.vals, node->data.dict.count, out, in_loop_env);
+        break;
+    case AST_DOT:
+        collect_by_name_binders(node->data.dot.target, out, in_loop_env);
+        break;
+    case AST_DOT_ASSIGN:
+        collect_by_name_binders(node->data.dot_assign.target, out, in_loop_env);
+        collect_by_name_binders(node->data.dot_assign.expr, out, in_loop_env);
+        break;
+    case AST_INDEX_ASSIGN:
+        collect_by_name_binders(node->data.index_assign.target, out, in_loop_env);
+        collect_by_name_binders(node->data.index_assign.index, out, in_loop_env);
+        collect_by_name_binders(node->data.index_assign.expr, out, in_loop_env);
+        break;
+    case AST_LIST_PATTERN_ASSIGN:   /* its names store through emit_assign_for_tos */
+        collect_by_name_binders(node->data.list_pattern_assign.expr, out, in_loop_env);
+        break;
+    case AST_SLICE:
+        collect_by_name_binders(node->data.slice.target, out, in_loop_env);
+        collect_by_name_binders(node->data.slice.start, out, in_loop_env);
+        collect_by_name_binders(node->data.slice.end, out, in_loop_env);
+        break;
+    case AST_INTERROGATE:
+        collect_by_name_binders(node->data.interrogate.expr, out, in_loop_env);
+        collect_by_name_binders(node->data.interrogate.at_expr, out, in_loop_env);
+        collect_by_name_binders(node->data.interrogate.when_expr, out, in_loop_env);
+        break;
+    /* Leaves, and a lambda (its body is its own scope). Enumerated rather
+     * than covered by a `default:` so that -Werror=switch (Makefile CFLAGS)
+     * makes a new ASTType a build error here instead of a silent no-op. */
+    case AST_NUM:
+    case AST_STR:
+    case AST_IDENT:
+    case AST_NULL: case AST_BOOL:
+    case AST_PREDICATE:
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_LAMBDA:
+        break;
+    }
 }
 
 /* #459: does this compilation unit bind `dispatch` anywhere — module scope,
@@ -3278,6 +3423,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             NameSet outside  = {0};
             NameSet captured_here = {0};
             NameSet interrogated_here = {0};
+            NameSet by_name = {0};   /* #1883 */
 
             for (int i = 0; i < node->data.block.count; i++)
                 collect_module_names_walk(node->data.block.stmts[i], &assigned);
@@ -3286,12 +3432,18 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 scan_for_captures(node->data.block.stmts[i], &captured_here);
                 scan_for_interrogated(node->data.block.stmts[i], &interrogated_here);
             }
+            /* The whole unit's module scope, not only this block: a binder
+             * outside it (an import, a `loop while`, a comprehension whose
+             * expression never reads its binder) writes the same module
+             * binding, and is no reference `outside` records. */
+            collect_by_name_binders(c->root_ast, &by_name, 0);
 
             for (int i = 0; i < assigned.count; i++) {
                 const char *nm = assigned.names[i];
                 if (name_set_has(&outside, nm)) continue;
                 if (name_set_has(&captured_here, nm)) continue;
                 if (name_set_has(&interrogated_here, nm)) continue;
+                if (name_set_has(&by_name, nm)) continue;   /* #1883: written by name */
                 if (name_set_has(&c->module_slot_names, nm)) continue; /* already promoted */
                 uint32_t h = env_hash_name(nm);
                 if (c->env && env_get_hashed(c->env, nm, h)) continue;
@@ -3304,6 +3456,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             name_set_free(&outside);
             name_set_free(&captured_here);
             name_set_free(&interrogated_here);
+            name_set_free(&by_name);
         }
         emit(c, OP_UNOBSERVED_BEGIN, node->line);
         c->unobs_depth++;                                     /* #871 */
@@ -3881,6 +4034,13 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 
     if (chunk_scan_static_loads(chunk, obs_gate_note_load, &L)) { eigs_obs_enable_runtime(); goto done; }
     if (L.overflow) { eigs_obs_enable_runtime(); goto done; }   /* more loads than slots — see above */
+    /* A trace already records observer history.  If this unit names a static
+     * load, record and replay choose the same conservative gate answer rather
+     * than doing speculative filesystem I/O outside the runtime loader. */
+    if (g_trace_enabled || g_replay_enabled) {
+        if (L.count > 0) eigs_obs_enable_runtime();
+        goto done;
+    }
 
     /* See the comment above: fd-level suppression is process-global, so the
      * eager compile is not taken at all while another thread could be writing
@@ -3918,8 +4078,17 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
     for (int i = 0; i < L.count && !g_obs_needed; i++) {
         long size = 0;
         char *source = NULL;
+        char *tape_identity = NULL, *tape_error = NULL;
         free(module_dir);
         module_dir = NULL;
+        int source_replayed = trace_source_replay("observer_source", &source, &size,
+                                                   &tape_identity, &tape_error);
+        if (source_replayed) {
+            if (tape_error) { free(tape_error); eigs_obs_enable_runtime(); break; }
+            snprintf(resolved, 8192, "%s", tape_identity);
+            free(tape_identity);
+            if (size == 0) { free(source); continue; } /* recorded memo hit/empty unit */
+        } else {
 #if !EIGENSCRIPT_FREESTANDING
         /* Guarded on the VALUE, and the guard must cover the CALLEES, not only
          * the helpers. builtins_host.c is a whole-TU carve-out in this profile,
@@ -3946,8 +4115,12 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
              * the reservation again before resuming the eager scan. */
             eigs_process_single_thread_end();
             single_thread_reserved = 0;
-            if (eigs_source_lookup(L.paths[i])) { eigs_obs_enable_runtime(); break; }
+            if (eigs_source_lookup(L.paths[i])) {
+                trace_source_record("observer_source", NULL, 0, NULL, "observer gate: provider source");
+                eigs_obs_enable_runtime(); break;
+            }
             if (g_vm_multithreaded || !eigs_process_single_thread_begin()) {
+                trace_source_record("observer_source", NULL, 0, NULL, "observer gate: concurrent source");
                 eigs_obs_enable_runtime(); break;
             }
             single_thread_reserved = 1;
@@ -3958,7 +4131,10 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
 #else
         int resolved_ok = 0;
 #endif
-        if (!resolved_ok) { eigs_obs_enable_runtime(); break; }
+        if (!resolved_ok) {
+            trace_source_record("observer_source", NULL, 0, NULL, "observer gate: unresolved source");
+            eigs_obs_enable_runtime(); break;
+        }
 
 #if !EIGENSCRIPT_FREESTANDING
         /* STAT BEFORE OPEN. This pass reads files on behalf of code the program
@@ -3991,22 +4167,36 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         struct stat st;
         if (stat(resolved, &st) != 0 || !S_ISREG(st.st_mode) ||
             st.st_size > OBS_GATE_MAX_MODULE_BYTES) {
+            trace_source_record("observer_source", NULL, 0, NULL, "observer gate: inadmissible source");
             eigs_obs_enable_runtime(); break;
         }
         module_dir = eigs_file_directory(resolved);
         struct stat dir_st;
-        if (stat(module_dir, &dir_st) != 0) { eigs_obs_enable_runtime(); break; }
-        if (obs_memo_seen(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino)) continue;
+        if (stat(module_dir, &dir_st) != 0) {
+            trace_source_record("observer_source", NULL, 0, NULL, "observer gate: unavailable directory");
+            eigs_obs_enable_runtime(); break;
+        }
+        if (obs_memo_seen(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino)) {
+            trace_source_record("observer_source", "", 0, resolved, NULL);
+            continue;
+        }
         if (g_obs_spec_bytes + st.st_size > OBS_GATE_SPECULATIVE_BUDGET) {
+            trace_source_record("observer_source", NULL, 0, NULL, "observer gate: source budget");
             eigs_obs_enable_runtime(); break;
         }
         g_obs_spec_bytes += st.st_size;
         source = read_file_util(resolved, &size);
 #endif
-        if (!source) { eigs_obs_enable_runtime(); break; }
+        if (!source) {
+            trace_source_record("observer_source", NULL, 0, NULL,
+                                "observer gate: module source unavailable");
+            eigs_obs_enable_runtime(); break;
+        }
 #if !EIGENSCRIPT_FREESTANDING
         obs_memo_add(st.st_dev, st.st_ino, dir_st.st_dev, dir_st.st_ino);
 #endif
+        trace_source_record("observer_source", source, (size_t)size, resolved, NULL);
+        }
 
         int muted = obs_gate_mute_stderr();
         if (muted < 0) { free(source); eigs_obs_enable_runtime(); break; }
@@ -4051,7 +4241,8 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
          * chunk's own list. Nothing compiles, so nothing arms trace recording
          * in the parent (the trace_arm_snapshot dance is gone with it). */
         L.base = module_dir;
-        if (obs_ast_scan(mast, &L) || L.overflow) eigs_obs_enable_runtime();
+        int scan_armed = obs_ast_scan(mast, &L) || L.overflow;
+        if (scan_armed) eigs_obs_enable_runtime();
         g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
         g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
         g_first_error_from_lexer = saved_fe_lexer;

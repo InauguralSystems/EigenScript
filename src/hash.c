@@ -4,6 +4,7 @@
  */
 
 #include "eigenscript.h"
+#include "trace.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -278,9 +279,34 @@ Value* builtin_md5_file(Value *arg) {
          * file loud); this is only the C return value. */
         return make_str("");
     }
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *v = NULL;
+        int taken = trace_replay_take("md5_file", &v);
+        if (!taken) {
+            rt_error(EK_IO, 0, "md5_file: recorded result is not replayable");
+            return make_str("");
+        }
+        {
+            if (v && v->type == VAL_LIST && v->data.list.count == 1 &&
+                list_elem_type(v, 0) == VAL_STR) {
+                rt_error(EK_IO, 0, "%s", list_get_ref(v, 0)->data.str);
+                val_decref(v);
+                return make_str("");
+            }
+            return v;
+        }
+    }
     FILE *f = fopen(arg->data.str, "rb");
     if (!f) {
-        rt_error(EK_IO, 0, "md5_file: cannot open '%s'", arg->data.str);
+        char message[4096];
+        snprintf(message, sizeof message, "md5_file: cannot open '%s'", arg->data.str);
+        if (__builtin_expect(g_trace_enabled, 0)) {
+            Value *record = make_list(1);
+            list_append_owned(record, make_str(message));
+            trace_nondet_value("md5_file", record);
+            val_decref(record);
+        }
+        rt_error(EK_IO, 0, "%s", message);
 /* fs:CHANNEL the rt_error above raised UNCONDITIONALLY (#511 made this
          * file loud); this is only the C return value. */
         return make_str("");
@@ -296,7 +322,9 @@ Value* builtin_md5_file(Value *arg) {
     md5_final(&ctx, hash);
     char hex[33];
     bytes_to_hex(hash, 16, hex, sizeof(hex));
-    return make_str(hex);
+    Value *result = make_str(hex);
+    if (__builtin_expect(g_trace_enabled, 0)) trace_nondet_value("md5_file", result);
+    return result;
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 

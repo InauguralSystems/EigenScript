@@ -5,6 +5,44 @@ The tape captures every nondeterministic input a run consumed, so a
 replayed run produces byte-identical output: the same random sequence,
 the same `monotonic_ns` timestamps, the same HTTP responses.
 
+## Filesystem replay model (#1885)
+
+Replay is an **rr-style, side-effect-free execution**. Every filesystem read
+reachable from a running program is either served by the tape or refused
+before the read. Source read by `import` and `load_file`, ordinary file
+readers, hashes, directory queries, and process/network input are taped.
+Reads whose payload is not represented in format v8—tensor checkpoints,
+font and music assets, HTTP static serving, stores, and databases—are refused;
+replay never falls back to a live file. Model checkpoints are the exception:
+the verdict of `eigen_model_load` or `eigen_checkpoint_info` is taped, their
+payload is never opened or read during replay, and taped inference results are
+served before the model is consulted. Every replayable
+mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, and
+`remove_file`) returns or raises its recorded outcome before any filesystem syscall.
+Operations whose durable result cannot be represented by the tape remain loud
+boundaries: `mktemp`, stream output, corpus generation, and store operations
+are refused rather than partially run. The embedding API's initial program
+read, CLI/bundle discovery, tape input, JIT/runtime-library loading,
+lint/LSP/DAP inspection, and `eigenscript fmt` are host, tool, or runtime input
+acquisition—not reads performed by a running EigenScript program—and therefore
+remain live. The audited per-site classification, every read and write site with its reason, is in PR #1901's discussion (#1885).
+
+The same boundary applies outside the filesystem: raw TCP and HTTP-client
+socket results (including sends) and the script-visible clocks (`clock_unix`,
+`monotonic_ns`, `monotonic_ms`) are tape-served before their host calls (the
+SDL clock behind `gfx_ticks` is not yet taped: #1914); subprocess execution and HTTP serving (including
+`http_early_bind`) are refused before touching the host. SDL capture input and
+generated noise are tape-served; file-backed fonts and music are refused.
+SDL window/playback opening and subsequent drawing/device output are output
+boundaries rather than nondeterministic inputs and remain live. Runtime-only scheduler clocks/sleeps and signal
+handling are not program-observable host operations. The CLI's `setenv` calls
+configure trace/replay before program execution; no EigenScript builtin writes
+the process environment. Thus replay performs no program-requested network,
+process, signal, or environment-write operation; display/audio output is the
+explicit non-filesystem exception. Program sleeps (`usleep`, `gfx_delay`) still
+wait live under replay. They have no effect beyond elapsed time, and whether a
+replay should skip them is #1914.
+
 Two environment variables control it:
 
 | Variable | Effect |
@@ -47,7 +85,7 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 7 0.46.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 8 0.46.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
@@ -202,7 +240,7 @@ into real values on replay:
 
 - Ints are exact signed decimal digits; floats retain a decimal point or
   exponent (`3.0`, `-0.0`, `1e+300`) so replay preserves the numeric kind
-  (format v7, #1758). An out-of-range int digit token is malformed rather
+  (format v8, #1758). An out-of-range int digit token is malformed rather
   than rounded through a double. Version 6 tapes are refused by the format
   check; re-record them with this binary. `null` is written verbatim; a bool
   is written `true` or `false` and read back as a bool (#1637).
@@ -238,31 +276,32 @@ perspective lands on the tape as an `N` record:
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
   `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
-  `write_text`, `write_bytes`, `rename`, `remove_file` (#1668).
-  Successful `mkdir` and `ls` calls record their normal values, and replay
-  serves those values without repeating or consulting the filesystem. An I/O
+  `write_text`, `write_bytes`, `rename`, `remove_file`, and `md5_file` (#1668).
+  Module acquisition adds `import_source` / `load_file_source` metadata and
+  bounded `_chunk` records, so source larger than one record remains replayable.
+  The filesystem replay rules are defined once in [Filesystem replay model](#filesystem-replay-model-1885).
+  An I/O
   failure from either builtin or any file reader records the complete `io` message (builtin, path, and `strerror` reason)
   in a one-string list. Because a successful `ls` can have that shape, its
   error record adds a trailing `null` tag. Replay recognizes these
   otherwise-impossible result shapes and re-raises the
   identical error without live filesystem access. The fixed-cap readers
   `read_text`, `read_bytes`, and `read_bytes_buf` instead record an over-cap
-  file's observed size as a `VAL_FLOAT` `N` record and reconstruct the error
+  file's observed size as a `VAL_INT` `N` record and reconstruct the error
   containing both size and active cap. Empty files remain ordinary successful
   empty string/list/buffer records.
-  The four mutating file builtins are deliberately different: under replay
-  they still perform their operation live, then return the recorded success
-  value or re-raise the recorded `io` message, regardless of the live result.
-  Making replay side-effect-free is the wider model decision in #1885.
+  Mutating file builtins return their taped success value or re-raise their
+  taped `io` message **before** making any live filesystem call. Mutations whose
+  payload is not represented on the tape (including `tensor_save`) are refused
+  loudly under replay, also before opening their path.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: `[rows, cols]` for an over-cap header,
-  otherwise `null`. Replay reconstructs a recorded `limit` error before
-  filesystem access, preserving its catch branch and diagnostic after file
-  removal or replacement. A recorded non-cap decision keeps the historical
-  null stand-in if the live file has since grown beyond the cap. Successful
-  tensor payloads remain live and untaped; this observation does not guarantee
-  their replay after file changes. Invalid path argument types consume no
-  observation. The following nondeterministic call retains its own record.
+  otherwise `null`. On replay, every structurally valid verdict raises the
+  same generic `io` file-read-boundary error before filesystem access; an
+  over-cap verdict does not reconstruct its recorded `limit` error. Tensor
+  payloads are untaped and are never read live during replay. Invalid path
+  argument types consume no observation. The following nondeterministic call
+  retains its own record.
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)
@@ -288,7 +327,10 @@ perspective lands on the tape as an `N` record:
   so suppressing it would be meaningless. (`net_close` is deterministic
   and untraced — under replay no socket exists and it is a natural
   no-op, the `audio_capture_close` shape.)
-- **Model extension (#960):** `eigen_generate`. Sampling at temperature
+- **Model extension (#960):** `eigen_model_load`, `eigen_checkpoint_info`, and
+  `eigen_generate`. A load or inspection call records its verdict; replay
+  returns that verdict before probing the path or reading any checkpoint
+  payload. Sampling at temperature
   above 0 draws from the shared `drand48` stream, so the emitted token list
   is a nondeterministic return — untaped, a generating program could not be
   replayed at all. **One record per call carries the whole token list**, not
@@ -519,10 +561,13 @@ that the original tape neither captured nor re-creates:
   already-live handle but before any file or catalog access (relevant to embedders that enable replay mid-state).
   Consequently a database may be changed or absent during replay without
   being read, recreated, or modified.
+- **PostgreSQL:** the entire `db_*` extension family. A connection and the
+  database it addresses are external mutable state absent from the tape;
+  replay refuses before connecting, querying, or executing SQL.
 - **Temporary-file creation:** `mktemp`. Its fresh pathname is host state and
   the call creates the named file. Replay refuses before creating anything;
   ordinary execution still creates a file that the caller can remove with
-  `rm`.
+  `remove_file`.
 
 These builtins raise a catchable runtime error under
 `EIGS_REPLAY`, with the message format
@@ -757,10 +802,11 @@ everywhere else in the runtime (version-and-reject, never migrate).
   answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
   on a v6 binary would hand a number where the program now gets a bool; it is
   refused instead (covered by the existing replay kind-validation cases in
-  `tests/test_replay.sh`). **v7** (#1758) gives integer digit tokens their
-  exact int64 value and marks integral floats with `.0`. A v6 digit token
-  cannot establish its numeric kind, so v6 is refused by replay, stepping
-  and DAP. Within a current-format tape, replay also refuses a recorded value of a kind its builtin cannot
+  `tests/test_replay.sh`). **v8** combines Phase2's int digit tokens and integral-float `.0`
+  markers (#1758) with main's chunked module-source records (#1885).
+  The two branches previously assigned different meanings to v7; neither
+  v7 format can establish both contracts. Every older format, including
+  either v7, is refused by replay, stepping and DAP. Within a current-format tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return
   kinds in one table (`k_tape_kinds` in `src/trace.c`; for example

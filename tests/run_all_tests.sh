@@ -1058,7 +1058,8 @@ check "WC3 single transient breaks convergence" "$WC3" "false"
 WC4=$(echo "$WC_OUTPUT" | grep -A2 'WC4:' | tail -1)
 check "WC4 newton sqrt CERTIFIES converged (#861: dead zone gone)" "$WC4" "converged=true equilibrium=true"
 WC5=$(echo "$WC_OUTPUT" | grep -A1 'WC5:' | tail -1)
-check "WC5 rebind-from-temp loop converges (issue #260)" "$WC5" "converged=true equilibrium=true"
+# #1891: a converged one-direction tail is not equilibrium.
+check "WC5 rebind-from-temp loop converges (issue #260)" "$WC5" "converged=true equilibrium=false"
 echo ""
 
 echo "[8c] Predicate Matrix"
@@ -3271,6 +3272,13 @@ echo ""
 echo "[51a] Unobserved Verdict Neutrality (#1049)"
 check_eigs_suite "unobserved: elided samples still enter the value window; entropy channel still elided (#1049)" \
     test_unobserved_neutral.eigs "All tests passed"
+echo ""
+
+# [51b] #1883: module-slot promotion must not split a name-bound binder's
+# writes from its reads inside an unobserved block.
+echo "[51b] Unobserved Binder Storage (#1883)"
+check_eigs_suite "unobserved binders share read/write storage (#1883)" \
+    test_unobserved_binders.eigs "All tests passed"
 echo ""
 
 # [52] Stream I/O

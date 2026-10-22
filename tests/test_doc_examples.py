@@ -326,7 +326,7 @@ POPULATION = {
     # file                       fences paired fragment nocheck value-comments
     "README.md":                 (11, 7, 4, 0, 0), # R1.6b: +1 core and +1 tensor paired example
     "docs/llms.txt":             (13, 10, 2, 1, 0), # R1.6b: +1 core and +1 tensor paired example
-    "docs/SPEC.md":              (90, 86, 1, 3, 0), # R1.6b: core, tensor and store paired examples
+    "docs/SPEC.md":              (91, 87, 1, 3, 0), # R1.6b examples + #1839 graceful exit status
     "docs/COMPARISON.md":        (23, 22, 1, 0, 0), # R1.6b: +1 core and +1 tensor paired example
     "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),

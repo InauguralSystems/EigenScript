@@ -581,11 +581,11 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   tag: n/a (a C test, not a program); today's `"%g"` binds `1.23457e+06` (#1762). It needs no PostgreSQL server, so it runs in CI as a gate.
 
 ### T1
-- `T1.float-kind-token` [R1.3] (sh row) record `x is 3.0 / z is -0.0`, assert the v7 assignment tokens mark both as floats, replay and compare stdout
+- `T1.float-kind-token` [R1.3] (sh row) record `x is 3.0 / z is -0.0`, assert the v8 assignment tokens mark both as floats, replay and compare stdout
   -> `float tokens marked`, `float replay identical`
   tag: v6 emits `x=3` and `z=-0`, losing kind. A planted v6-format float writer makes this row fail.
 - `T1.v7-header` [R1.3] (sh row) `EIGS_TRACE=t.tape eigenscript p.eigs; head -1 t.tape | cut -d' ' -f1-2`
-  -> `V 7`
+  -> `V 8`
   tag: `V 6`
 - `T1.twice-int` [R1.3] (sh row) the Done-when's "record twice": record `define sq(x) as: return x * x / x is 9007199254740993 / y is sq of 94906267 / print of [x, y]` twice (`EIGS_TRACE=t1.tape`, then `t2.tape`); print whether `cmp t1.tape t2.tape` finds them identical; replay `t1.tape` with `EIGS_REPLAY_STRICT=1` and print whether its stdout byte-equals the live run's (the live run computes `sq` in the leaf, the recording on the generic path); print the A records for `x` and `y`
   -> `tapes identical`, `replay identical`, `A 0 x=9007199254740993`, `A 0 y=9007199515875289`
@@ -594,7 +594,7 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   -> `tapes identical`, `replay identical`, `A 0 x=3.0`, `A 0 y=0.30000000000000004`, `A 0 z=-0.0` (the kind on the tape; the exact text is N6's, R1.7)
   tag: `A 0 x=3` and `A 0 z=-0` (read: `%.17g`)
 - `T1.int-replay-kind` [R1.3] (sh row) record a replayed `random_int` draw selecting an int literal; print its exact value and `num_type`, then replay and compare bytes
-  -> `int replay identical`, `int assignment exact` (the int is carried by the v7 assignment record; `random_int` retains the float bridge until R1.6)
+  -> `int replay identical`, `int assignment exact` (the int is carried by the v8 assignment record; `random_int` retains the float bridge until R1.6)
   tag: `num_type` undefined
 - `T1.v6-refused` [R1.3] (sh row) `EIGS_REPLAY=tests/phase2/fixtures/v6.tape eigenscript p.eigs`; print the rc and whether stderr names version 6
   -> `rc!=0 names-6`
@@ -606,7 +606,7 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   -> `tapes identical`, `replay identical`, `A 0 x=nan`
   tag: `A 0 x=0` (the clamp, then `inf - inf` collapses to 0)
 
-The `O cfg` record's v7 shape is pinned by `O3.ocfg-no-hlow` (its file lists
+The `O cfg` record's v8 shape is pinned by `O3.ocfg-no-hlow` (its file lists
 `# ITEMS: O3 T1`).
 
 ### O1

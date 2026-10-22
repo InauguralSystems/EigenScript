@@ -261,7 +261,7 @@ static const Entry ENTRIES[] = {
     {"container.h:slot_type", r_slot_type, 0, 0, "VAL_INT"},
     {"container.h:slot_view", r_slot_view, 0, 0, "exact VAL_INT facade"},
     {"eigenscript.c:slot_to_value", r_slot_to_value, 0, 0, "exact owned VAL_INT"},
-    {"trace.c:write_slot", r_write_slot, 0, 0, "v7 exact int digits"},
+    {"trace.c:write_slot", r_write_slot, 0, 0, "v8 exact int digits"},
     {"vm.c:obs_slot_observable", 0, a_obs_slot_observable, "obs_slot_observable", "refuse"},
     {"vm.c:slot_bridge_unwrap", r_slot_bridge_unwrap, 0, 0, "exact owned VAL_INT"},
     {"container.h:eigs_slot_ref", 0, a_eigs_slot_ref, "eigs_slot_ref", "refuse"},

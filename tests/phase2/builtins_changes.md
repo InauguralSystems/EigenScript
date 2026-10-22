@@ -237,6 +237,7 @@ Historical import records above are already included in the pin.
 | `tests/phase2/builtins/builtins/max.branch` | `540ee7840bf80662918b4d4189add017778d08c503488529c6fec539d0e6bb8a` | R1.6b-D2 | an empty `max` raises `value` in both call forms, `max of []` and `max of ([])` (#1895) |
 | `tests/phase2/builtins/builtins/min.branch` | `f45bde7acd9b053b3379e15b35c9e06f2ba11243437f5a5926b62aad588d2118` | R1.6b-D2 | an empty `min` raises `value` in both call forms, `min of []` and `min of ([])` (#1895) |
 | `tests/phase2/builtins/builtins/sign_extend.branch` | `bfc48781e0e0ab7eb480899c9975ccdbb810c36cbd2b297fd62231b41ee03bdf` | R1.6b-D1 | the subtraction is checked int64 arithmetic under rule (A): `sign_extend of [-9223372036854775553, 8]` raises `value` (#1894) |
+| `tests/phase2/builtins/builtins/set_exit_code.branch` | `6e6f540c7b879ca35185d74c3840327c3f14ef37c5eb74c5d60531aef340620b` | R1.6-S2 | new int-requiring round-c builtin; main already rejects fractions and values outside 0..255; matched main and merged output agree |
 
 ## R1.6b bar amendments
 
@@ -286,3 +287,26 @@ pin and its three D1/D2 SHA-256 amendments above are unchanged.
 | `tests/phase2/builtins/make_table.py` | R1.6b-D3: planned b/f counts 46/19 |
 | `tests/phase2/builtins/builtins.tsv` | R1.6b-D3: generator assigns http_post to b |
 | `tests/phase2/builtins_changes.md` | R1.6b-D3: record ruling and complete amendment scope |
+
+## Main sync #5 — R1.6-S1 and R1.6-S2
+
+R1.6-S1 (re-scoped): take main's rm deletion and remove_file bridge. rm
+had no frozen table row, so no row is removed. The N5.store-key-fraction-raises
+MAP cleanup now calls remove_file; MAP source files have no SHA pin, and its
+assertion/output remain unchanged.
+
+R1.6-S2: set_exit_code is int-requiring, round c, release profile, closed_in
+R1.6-S2 because main already has its final fractional/range refusal. Its .pre
+is the merged output; .branch is independently recorded on exact main; they
+match. Its .tag is recorded on matched v0.46.0, which lacks the builtin.
+The new frozen amendment above authorizes only the added .branch. The pin
+remains unchanged; current totals are 233 rows, c=77, and 235 cases.
+
+The probe header identifies fractional and integral-float-success exercises
+and rc=3. The checker now accepts that process-status witness for exit and
+set_exit_code only, keeping the precise called symbol and recorded rc check.
+
+Files: docs/design/phase2-numbers.md; tests/phase2/builtins/{BAR.md,make_table.py,
+rowmeta.tsv,cases.tsv,builtins.tsv,builtins/set_exit_code.eigs,
+builtins/set_exit_code.pre,builtins/set_exit_code.branch,builtins/set_exit_code.tag};
+tests/phase2/rows/N5.store-key-fraction-raises.eigs; this amendment record.

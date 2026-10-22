@@ -1937,7 +1937,9 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"audio_noise",          TK_LIST_},   /* one call = one or more sample chunks */
     {"audio_stream_queued",  TK_NUM_},
     {"clock_unix",           TK_NUM_},
+    {"eigen_checkpoint_info", TK_STR_},
     {"eigen_generate",       TK_LIST_ | TK_STR_},   /* str: the recorded over-length refusal */
+    {"eigen_model_load",     TK_STR_},
     {"env_get",              TK_STR_},
     {"exe_path",             TK_STR_},
     {"file_exists",          TK_BOOL_},
@@ -1950,9 +1952,17 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"is_dir",               TK_BOOL_},
     {"is_file",              TK_BOOL_},
     {"ls",                   TK_LIST_},
+    {"md5_file",             TK_STR_ | TK_LIST_},
+    {"import_source",        TK_LIST_},
+    {"import_source_chunk",  TK_STR_},
+    {"import_warning",       TK_STR_},
+    {"load_file_source",     TK_LIST_},
+    {"load_file_source_chunk", TK_STR_},
     {"mkdir",                TK_BOOL_},
     {"monotonic_ms",         TK_NUM_},
     {"monotonic_ns",         TK_NUM_},
+    {"observer_source",      TK_LIST_},
+    {"observer_source_chunk", TK_STR_},
     {"net_accept",           TK_NUM_ | TK_NULL_},
     {"net_dial",             TK_NUM_ | TK_NULL_},
     {"net_listen",           TK_NUM_ | TK_NULL_},
@@ -1963,13 +1973,13 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"random_hex",           TK_STR_},
     {"random_int",           TK_NUM_},
     {"random_normal",        TK_LIST_ | TK_NULL_},
-    {"read_bytes",           TK_LIST_ | TK_NULL_},
-    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_}, /* list: I/O error */
+    {"read_bytes",           TK_LIST_ | TK_NULL_ | TK(VAL_INT)},
+    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK(VAL_INT) | TK_LIST_}, /* list: I/O error */
     {"read_line",            TK_STR_ | TK_NULL_},
-    {"read_text",            TK_STR_ | TK_LIST_}, /* list: I/O error */
+    {"read_text",            TK_STR_ | TK_LIST_ | TK(VAL_INT)}, /* num: over-cap */
     {"remove_file",          TK_BOOL_ | TK_LIST_}, /* list: I/O error */
     {"rename",               TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"tensor_load",          TK_LIST_ | TK_NULL_},  /* the [rows, cols] over-cap verdict */
+    {"tensor_load",          TK_LIST_ | TK_NULL_},  /* structurally validated boundary verdict */
     {"write_bytes",          TK_NUM_ | TK_LIST_},  /* list: I/O error */
     {"write_text",           TK_BOOL_ | TK_LIST_}, /* list: I/O error */
 };
@@ -2314,7 +2324,9 @@ static Value *parse_value_p(const char **p) {
         if (!buf) return NULL;
         int n = unescape_string(&q, buf, (int)cap);
         if (n < 0) { free(buf); return NULL; }
-        Value *v = make_str(buf);
+        /* Tape strings may contain an escaped NUL.  Construct from the
+         * decoded length; make_str/strlen would silently discard the suffix. */
+        Value *v = make_str_len(buf, (size_t)n);
         free(buf);
         *p = q;
         return v;
@@ -2411,7 +2423,7 @@ static Value *parse_value_p(const char **p) {
      * not replayable. Caller falls back to live source. */
     if (c == '<' || (unsigned char)c == 0xE2) return NULL;
 
-    /* v7: a decimal digit token without a point/exponent is an int. Parse
+    /* v8: a decimal digit token without a point/exponent is an int. Parse
      * its magnitude exactly, including INT64_MIN, without routing through a
      * double (9007199254740993 must retain its low bit on replay). */
     const char *digits = *p;
@@ -2716,6 +2728,111 @@ int trace_replay_take(const char *fn, Value **out) {
     return 1;
 }
 
+/* Source text is an input, not a recipe to consult the host again.  Keep each
+ * chunk small enough that worst-case \xNN escaping cannot hit the 64 KiB
+ * record ceiling.  The metadata is [ok, identity-or-error, byte_count]. */
+#define TRACE_SOURCE_CHUNK 12000
+#define TRACE_SOURCE_MAX (10u * 1024u * 1024u)
+void trace_source_record(const char *kind, const char *source, size_t size,
+                         const char *identity, const char *error) {
+    if (!__builtin_expect(g_trace_enabled, 0)) return;
+    if (!error && size > TRACE_SOURCE_MAX) {
+        char message[160];
+        snprintf(message, sizeof message,
+                 "%s: source is %zu bytes, over the %u-byte trace cap",
+                 kind, size, TRACE_SOURCE_MAX);
+        Value *meta = make_list(3);
+        list_append_owned(meta, make_bool(0));
+        list_append_owned(meta, make_str(message));
+        list_append_owned(meta, make_int(0));
+        trace_nondet_value(kind, meta);
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s", message);
+        return;
+    }
+    Value *meta = make_list(3);
+    list_append_owned(meta, make_bool(error == NULL));
+    list_append_owned(meta, make_str(error ? error : (identity ? identity : "")));
+    list_append_owned(meta, make_int(error ? 0 : (int64_t)size));
+    trace_nondet_value(kind, meta);
+    val_decref(meta);
+    if (error) return;
+    char chunk_kind[96];
+    snprintf(chunk_kind, sizeof chunk_kind, "%s_chunk", kind);
+    for (size_t off = 0; off < size; off += TRACE_SOURCE_CHUNK) {
+        size_t n = size - off;
+        if (n > TRACE_SOURCE_CHUNK) n = TRACE_SOURCE_CHUNK;
+        Value *chunk = make_str_len(source + off, n);
+        trace_nondet_value(chunk_kind, chunk);
+        val_decref(chunk);
+    }
+}
+
+int trace_source_replay(const char *kind, char **source, long *size,
+                        char **identity, char **error) {
+    if (!__builtin_expect(g_replay_enabled, 0)) return 0;
+    *source = NULL; *identity = NULL; *error = NULL;
+    Value *meta = NULL;
+    if (!trace_replay_take(kind, &meta)) return -1;
+    if (!meta || meta->type != VAL_LIST || meta->data.list.count != 3 ||
+        list_elem_type(meta, 0) != VAL_BOOL || list_elem_type(meta, 1) != VAL_STR ||
+        (list_elem_type(meta, 2) != VAL_INT && list_elem_type(meta, 2) != VAL_FLOAT)) {
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s: malformed source record", kind);
+        return -1;
+    }
+    int ok = list_get_ref(meta, 0)->data.boolean;
+    const char *detail = list_get_ref(meta, 1)->data.str;
+    /* v8 metadata counts are exact ints. A float is refused with the
+     * existing numeric-size diagnostic, including an integral float. */
+    if (list_elem_type(meta, 2) != VAL_INT) {
+        double bad_size = 0.0;
+        slot_f64_value(list_slot(meta, 2), &bad_size);
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s: invalid source size %.17g (maximum %u)",
+                 kind, bad_size, TRACE_SOURCE_MAX);
+        return -1;
+    }
+    int64_t taped_size = 0;
+    slot_int_value(list_slot(meta, 2), &taped_size);
+    if (!ok) {
+        *error = xstrdup(detail);
+        val_decref(meta);
+        return 1;
+    }
+    if (taped_size < 0 || taped_size > TRACE_SOURCE_MAX) {
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s: invalid source size %.17g (maximum %u)",
+                 kind, (double)taped_size, TRACE_SOURCE_MAX);
+        return -1;
+    }
+    long n = (long)taped_size;
+    *identity = xstrdup(detail);
+    val_decref(meta);
+    char *buf = xmalloc((size_t)n + 1);
+    size_t off = 0;
+    char chunk_kind[96];
+    snprintf(chunk_kind, sizeof chunk_kind, "%s_chunk", kind);
+    while (off < (size_t)n) {
+        Value *chunk = NULL;
+        if (!trace_replay_take(chunk_kind, &chunk) || !chunk || chunk->type != VAL_STR) {
+            val_decref(chunk); free(buf); free(*identity); *identity = NULL;
+            rt_error(EK_IO, 0, "%s: missing source chunk", kind);
+            return -1;
+        }
+        size_t got = val_str_len(chunk);
+        if (!got || got > (size_t)n - off) {
+            val_decref(chunk); free(buf); free(*identity); *identity = NULL;
+            rt_error(EK_IO, 0, "%s: invalid source chunk", kind);
+            return -1;
+        }
+        memcpy(buf + off, chunk->data.str, got); off += got;
+        val_decref(chunk);
+    }
+    buf[n] = '\0'; *source = buf; if (size) *size = n;
+    return 1;
+}
+
 /* #739: release THIS THREAD's prev-table. Idempotent, and a no-op with no
  * thread attached (the atexit path runs detached). Must run while
  * `eigs_current` still points at the owning thread — the slots it drops are
@@ -2844,7 +2961,7 @@ static void write_string(const char *s) {
 }
 
 /* Tape float spelling is independent of ordinary display (N6, R1.7). The
- * point/exponent is the v7 kind marker: integral floats, including negative
+ * point/exponent is the v8 kind marker: integral floats, including negative
  * zero, must never replay as ints. %.17g preserves the exact double bits. */
 static void tape_float_text(char *buf, size_t nbuf, double n) {
     snprintf(buf, nbuf, "%.17g", n);
@@ -2987,11 +3104,11 @@ static void wf_printf(int *budget, const char *fmt, ...) {
     *budget -= n;
 }
 
-static void write_string_full(const char *s, int *budget) {
+static void write_string_full_len(const char *s, size_t len, int *budget) {
     wf_putc('"', budget);
     if (s) {
-        for (const char *p = s; *p && *budget > 0; p++) {
-            unsigned char c = (unsigned char)*p;
+        for (size_t i = 0; i < len && *budget > 0; i++) {
+            unsigned char c = (unsigned char)s[i];
             if (c == '"' || c == '\\') { wf_putc('\\', budget); wf_putc(c, budget); }
             else if (c == '\n')        { wf_puts("\\n", budget); }
             else if (c == '\r')        { wf_puts("\\r", budget); }
@@ -3000,6 +3117,10 @@ static void write_string_full(const char *s, int *budget) {
         }
     }
     wf_putc('"', budget);
+}
+
+static void write_string_full(const char *s, int *budget) {
+    write_string_full_len(s, s ? strlen(s) : 0, budget);
 }
 
 static void write_value_ptr_full(Value *v, int *budget) {
@@ -3020,7 +3141,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
         }
         case VAL_NULL: wf_puts("null", budget); break;
         case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
-        case VAL_STR:  write_string_full(v->data.str, budget); break;
+        case VAL_STR:  write_string_full_len(v->data.str, val_str_len(v), budget); break;
         case VAL_LIST: {
             wf_putc('[', budget);
             int n = v->data.list.count;

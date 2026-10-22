@@ -29,7 +29,7 @@ typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_F64_RA
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 7   /* v7: int digits; float tokens retain their kind (#1758) */
+#define TRACE_FORMAT_VERSION 8   /* v8: int digits/float kinds (#1758) + chunked module-source records (#1885) */
 #define TRACE_STREAM_KEY_MAX 1024
 
 /* B payload parser shared with the non-executing tape reader. key_hex points
@@ -314,6 +314,14 @@ struct Value;
  * substrate: on Phase 3 replay, each nondet call returns the recorded
  * value instead of re-invoking the underlying source. */
 void trace_nondet_value(const char *fn, struct Value *v);
+/* Module sources are split into bounded string records so even a source whose
+ * escaped spelling exceeds the per-record budget remains replayable. */
+void trace_source_record(const char *kind, const char *source, size_t size,
+                         const char *identity, const char *error);
+/* 0 = replay disabled, 1 = complete source or recorded source error,
+ * -1 = malformed/truncated tape (the replay error has already been raised). */
+int trace_source_replay(const char *kind, char **source, long *size,
+                        char **identity, char **error);
 
 /* Phase 3.0a — `prev of x` query.
  *

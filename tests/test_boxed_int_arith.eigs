@@ -2,7 +2,7 @@
 # arithmetic: the SMI boundary, the raise paths (overflow, division by zero,
 # type errors) inside try/catch, mixed int/float operands, bitwise operators
 # and comparisons. Trimmed from the R1.3 memory review's probe p01_arith.eigs
-# (#1758). Section [0fp] runs it strictly leak-clean under ASan, so a raise path
+# (#1758). Section [0fr] runs it strictly leak-clean under ASan, so a raise path
 # that forgets to release a boxed operand leaks and fails the suite. Every
 # check asserts (a failed one exits nonzero); the last line pins the count.
 CK is 0

@@ -4,7 +4,7 @@
 # reductions, sort and sort_by (exact order), json build/encode/decode/path,
 # string formatting, and the error paths (int dict keys, out-of-range index
 # and slice) looped under try/catch. Trimmed from the R1.3 memory review's
-# probe p02_containers.eigs (#1758). Section [0fp] runs it strictly leak-clean
+# probe p02_containers.eigs (#1758). Section [0fr] runs it strictly leak-clean
 # under ASan, so a store that forgets to take a boxed int's reference (or one
 # that takes it twice) fails the suite. Every check asserts (a failed one
 # exits nonzero); the last line pins the count.

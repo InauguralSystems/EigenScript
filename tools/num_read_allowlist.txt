@@ -59,8 +59,8 @@ jit_smoke.c|run_index_bail_cases|2|JIT smoke test program (stubbed helpers over 
 jit_smoke.c|run_reader_bail_cases|8|JIT smoke test program (stubbed helpers over slots it built as numbers)
 jit_smoke.c|run_store_cases|4|JIT smoke test program (stubbed helpers over slots it built as numbers)
 trace.c|write_slot|1|tape writer after slot_is_f64
-trace.c|write_value_ptr|2|v7 tape writer, switch cases VAL_FLOAT and VAL_INT mark floats and preserve exact integer digits
-trace.c|write_value_ptr_full|2|full v7 tape writer, switch cases VAL_FLOAT and VAL_INT mark floats and preserve exact integer digits
+trace.c|write_value_ptr|2|v8 tape writer, switch cases VAL_FLOAT and VAL_INT mark floats and preserve exact integer digits
+trace.c|write_value_ptr_full|2|full v8 tape writer, switch cases VAL_FLOAT and VAL_INT mark floats and preserve exact integer digits
 value_slot.h|#define SLOT_F64_RAW|1|the raw slot read definition (#1758: was SLOT_NUM_RAW)
 value_slot.h|slot_f64_value|2|float reader (#1758: was vm.c slot_as_double): an immediate after slot_is_f64, a box after type == VAL_FLOAT; 0 for an int
 value_slot.h|slot_from_f64|1|constructor: writes a double into a fresh slot (#1758: was slot_from_num)

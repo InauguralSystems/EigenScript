@@ -126,18 +126,17 @@ for jit_off in 0 1; do
     fi
     for model_state in unchanged missing larger smaller; do
         replay_name="CW-replay-$jit_off-$model_state"
-        replay_script="$HARNESS"
-        replay_err="$EXPECTED_ERR"
+        # Replay serves eigen_model_load's taped verdict and never reads the
+        # model file (#1885). Every state replays the recorded program, and the
+        # live loader's diagnostic does not print: no load happens.
         if [ "$model_state" = missing ]; then
             rm "$MODEL"
-            replay_script="$WORK/generation.eigs"
-            replay_err=''
         elif [ "$model_state" = unchanged ]; then
             cp "$WORK/original.json" "$MODEL"
         else
             cp "$WORK/$model_state.json" "$MODEL"
         fi
-        run_clean "$replay_name" "$replay_err" env EIGS_JIT_OFF="$jit_off" EIGS_REPLAY="$tape" EIGS_REPLAY_STRICT=1 "$EIGS" "$replay_script"
+        run_clean "$replay_name" '' env EIGS_JIT_OFF="$jit_off" EIGS_REPLAY="$tape" EIGS_REPLAY_STRICT=1 "$EIGS" "$HARNESS"
         sed -n '/^CW transcript$/,$p' "$WORK/$replay_name.out" > "$WORK/replayed.out"
         refusals=$(grep -Fxc 'value: eigen_generate: prompt length 17 exceeds model max_seq_len 16' "$WORK/replayed.out")
         if [ "$refusals" = 1 ] && cmp -s "$WORK/recorded.out" "$WORK/replayed.out"; then

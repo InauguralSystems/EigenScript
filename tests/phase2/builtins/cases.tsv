@@ -176,6 +176,7 @@ scatter_add	scatter_add	-	-
 seed_random	seed_random	-	-
 send	send	-	-
 set_at	set_at	-	-
+set_exit_code	set_exit_code	-	-
 sgd_update	sgd_update	-	-
 sgd_update_cols	sgd_update_cols	-	-
 sgd_update_rows	sgd_update_rows	-	-

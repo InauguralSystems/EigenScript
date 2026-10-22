@@ -8,7 +8,7 @@
 # with its check count.
 #   test_boxed_int_arith.eigs       VM arithmetic and its raise paths
 #   test_boxed_int_containers.eigs  container stores, copies, json, sort
-echo "[0fp] Boxed-int ownership (#1758 R1.3)"
+echo "[0fr] Boxed-int ownership (#1758 R1.3)"
 check_binary_fingerprint
 for __bio in "test_boxed_int_arith.eigs:boxed int arith: PASS checks=41" \
              "test_boxed_int_containers.eigs:boxed int containers: PASS checks=10"; do

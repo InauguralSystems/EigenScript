@@ -585,4 +585,4 @@ sibling outcomes prevent advance, and memory replay preserves a suspended file.
 See docs/TRACE.md and docs/EMBEDDING.md for binding and format compatibility.
 Replay refuses unreconstructable host effects: `mktemp` raises a catchable
 filesystem-boundary error before creating a file; ordinary `mktemp` still
-creates the file and returns its path for later `rm`.
+creates the file and returns its path for later `remove_file`.

@@ -515,6 +515,24 @@
     }
   },
   {
+    "function": "builtin_md5_file",
+    "file": "src/hash.c",
+    "category": "scalar",
+    "reason": "The list inspected is an internal taped-error value; the public argument is a scalar string path.",
+    "public_names": [
+      "md5_file"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "e6da4984d629cc162d7e417bcc94b69395ec238b56d09a52bae119668501121c"
+    ],
+    "source_sha256": {
+      "builtin_md5_file": [
+        "e6da4984d629cc162d7e417bcc94b69395ec238b56d09a52bae119668501121c"
+      ]
+    }
+  },
+  {
     "function": "builtin_build_corpus",
     "file": "src/builtins_host.c",
     "category": "optional",
@@ -610,11 +628,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "669dc58628bb911edaa53afcc37a9c2ca7dfd0faee8bef0613e72cfba6904c73"
+      "2a0585cb8bc27e8913bc2a4934e967620b36e00f161615aaee7dd370b8e93a27"
     ],
     "source_sha256": {
       "builtin_db_execute": [
-        "669dc58628bb911edaa53afcc37a9c2ca7dfd0faee8bef0613e72cfba6904c73"
+        "2a0585cb8bc27e8913bc2a4934e967620b36e00f161615aaee7dd370b8e93a27"
       ],
       "db_build_query": [
         "2c0c401e39d0237a8d4e5b3b591b2491352d41f7e2de9a33c8bffb2a11eac1aa"
@@ -636,11 +654,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "e559a3ab473fd70fd92e45e951d97161970a0b2d9aa1d0a0a811ea32a4ec5426"
+      "8a9f95ec2486f9b31c02ec5270907c5a71621f649032afbee29d719fd10bdd1a"
     ],
     "source_sha256": {
       "builtin_db_query_json": [
-        "e559a3ab473fd70fd92e45e951d97161970a0b2d9aa1d0a0a811ea32a4ec5426"
+        "8a9f95ec2486f9b31c02ec5270907c5a71621f649032afbee29d719fd10bdd1a"
       ],
       "db_build_query": [
         "2c0c401e39d0237a8d4e5b3b591b2491352d41f7e2de9a33c8bffb2a11eac1aa"
@@ -662,11 +680,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "a328617e8b8bd3f9ef2dced4fa19ec7cd2b0218d72317a5db1abda38fb8cf157"
+      "262eca9e695df0252f105ed851da32e059830a811560860acef9199e80067c25"
     ],
     "source_sha256": {
       "builtin_db_query_value": [
-        "a328617e8b8bd3f9ef2dced4fa19ec7cd2b0218d72317a5db1abda38fb8cf157"
+        "262eca9e695df0252f105ed851da32e059830a811560860acef9199e80067c25"
       ],
       "db_build_query": [
         "2c0c401e39d0237a8d4e5b3b591b2491352d41f7e2de9a33c8bffb2a11eac1aa"
@@ -1039,11 +1057,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "668fd2cd0502cf0c57c636522504b553a15eac1a83b79a16d583bf729bf68c55"
+      "b4d5ea615ed0e6e32965a3c2353512f50b823c79e3e360e66b2197dfe7f25341"
     ],
     "source_sha256": {
       "builtin_http_early_bind": [
-        "668fd2cd0502cf0c57c636522504b553a15eac1a83b79a16d583bf729bf68c55"
+        "b4d5ea615ed0e6e32965a3c2353512f50b823c79e3e360e66b2197dfe7f25341"
       ],
       "eigs_opt_num": [
         "a59259f1f1c8f200ce3f1c7e6f668b797fbfa1219686fb8f9078719cdc9d129e"
@@ -1358,11 +1376,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "9fbdc8ec1b09c7f735d88f18c18f5b74993d84971e634c05d8612ab9b561b8ef"
+      "c7bb54d37a935ddbbcbfaa8a1e0ebf207b3587b53b58b4b1b911c7ed3538de5c"
     ],
     "source_sha256": {
       "builtin_ls": [
-        "9fbdc8ec1b09c7f735d88f18c18f5b74993d84971e634c05d8612ab9b561b8ef"
+        "c7bb54d37a935ddbbcbfaa8a1e0ebf207b3587b53b58b4b1b911c7ed3538de5c"
       ]
     }
   },
@@ -2331,11 +2349,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "c3710ef41cb4dfa0502da1377a8d20f45a5e133b14e2a54a5eaeee8b5093a84c"
+      "5d8bb4327209a39a7771eb85a7f2073f20ce2fff22d6114cd1b42ef6797ccea8"
     ],
     "source_sha256": {
       "builtin_tensor_load": [
-        "c3710ef41cb4dfa0502da1377a8d20f45a5e133b14e2a54a5eaeee8b5093a84c"
+        "5d8bb4327209a39a7771eb85a7f2073f20ce2fff22d6114cd1b42ef6797ccea8"
       ]
     }
   },

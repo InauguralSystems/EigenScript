@@ -160,6 +160,14 @@ int eigs_state_exit_requested(EigsState *st, int *code) {
     return requested;
 }
 
+void eigs_state_set_graceful_exit_code(EigsState *st, int code) {
+    if (st) __atomic_store_n(&st->graceful_exit_code, code, __ATOMIC_RELEASE);
+}
+
+int eigs_state_graceful_exit_code(EigsState *st) {
+    return st ? __atomic_load_n(&st->graceful_exit_code, __ATOMIC_ACQUIRE) : 0;
+}
+
 void eigs_state_begin_eval(EigsState *st) {
     if (!st || !eigs_current || eigs_current->state != st) return;
     EigsExitScope *scope = xcalloc(1, sizeof(*scope));

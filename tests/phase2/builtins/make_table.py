@@ -284,9 +284,10 @@ def main():
                 fail.append("%s: integral-float success needs an identified stdout line or exit code" % n)
             elif set(success) == {"exit-code"}:
                 code = success["exit-code"]
-                # A terminal exit has no result line: its requested process
-                # status is the successful observable result.
-                if (type(code) is not int or not re.search(r"\bexit of %d\.0(?:\D|$)" % code, probe)
+                # exit and set_exit_code expose successful integral-float
+                # conversion through the requested process status (R1.6-S2).
+                if (n not in ("exit", "set_exit_code") or type(code) is not int
+                        or not re.search(r"\b%s of %d\.0(?:\D|$)" % (re.escape(n), code), probe)
                         or not lines or lines[-1] != "rc=%d" % code):
                     fail.append("%s: integral-float success exit code is not witnessed in .branch" % n)
             elif set(success) == {"stdout-line"}:
@@ -329,7 +330,7 @@ def main():
         for kind, v in (("pre", vs_pre), ("tag", vs_tag)):
             tally[(r, kind, v)] = tally.get((r, kind, v), 0) + 1
 
-    want = {"b": 46, "c": 76, "d": 53, "e": 38, "f": 19}  # R1.6a-D1 read_text; R1.6b-D3 http_post LOSS
+    want = {"b": 46, "c": 77, "d": 53, "e": 38, "f": 19}  # R1.6a-D1 read_text; R1.6b-D3 http_post LOSS; R1.6-S2 set_exit_code
     if counts != want: fail.append("round counts %s, the plan says %s" % (counts, want))
     if not rows or len(rows) != len(sec6): fail.append("examined=%d table=%d" % (len(rows), len(sec6)))
     if guard["guarded"] != guard["yes"] + guard["closed_in"] + guard["pending-profile"] + guard["vacuous"]:

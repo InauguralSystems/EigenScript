@@ -1127,14 +1127,32 @@ static int obs_num_converged(const ObserverSlot *s) {
     return 1;
 }
 
+/* A trend needs evidence of motion: exact-zero steps are neutral because
+ * repeated sampling must neither break a direction nor manufacture one. */
+static int observer_slot_raw_one_direction(const ObserverSlot *s, size_t n) {
+    int first_negative = 0;
+    size_t nonzero = 0;
+    for (size_t i = 0; i < n; i++) {
+        double step = observer_slot_vr_get(s, i);
+        if (step == 0.0) continue;
+        if (nonzero == 0)
+            first_negative = signbit(step) ? 1 : 0;
+        else if ((signbit(step) ? 1 : 0) != first_negative)
+            return 0;
+        nonzero++;
+    }
+    return nonzero >= 2;
+}
+
 /* Equilibrium: balanced motion — window mean ~ 0 and variance under the
- * deadband², individual steps possibly larger. converged => equilibrium
- * (all-under-deadband forces both), preserving the quiescent lattice. */
+ * deadband², individual steps possibly larger. A one-direction trajectory
+ * is a trend, not an equilibrium, even after its steps enter the converged
+ * deadband (#1891 makes this distinction observable for damped tails). */
 static int obs_num_equilibrium(const ObserverSlot *s) {
     if (observer_slot_saturated(s)) return 0;
     size_t N = (size_t)observer_slot_window(s);
     if (obs_v_count(s) < N) return 0;
-    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    if (observer_slot_raw_one_direction(s, N) || observer_slot_raw_oscillating(s)) return 0;
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) sum += observer_slot_v_get(s, i);
     double mean = sum / (double)N;

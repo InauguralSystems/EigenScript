@@ -969,6 +969,9 @@ struct EigsState {
      * `exit of N` is a request, not a death, and goes through the latch
      * above instead. */
     int             spawn_err_count;
+    /* Graceful-completion status, analogous to Node.js process.exitCode.
+     * Any runtime thread may update it; the last atomic store wins. */
+    int             graceful_exit_code;
     /* Cycle-collector registry — the intrusive list of captured envs and its
      * live count. Per-STATE (not per-thread) so candidates created on any
      * thread survive that thread's death and stay collectable at exit; gc_lock
@@ -2544,6 +2547,8 @@ void   handle_release(int id, uint32_t gen);
  * retain the scope captured at spawn, including across later host evals. */
 void   eigs_state_request_exit(struct EigsState *st, int code);
 int    eigs_state_exit_requested(struct EigsState *st, int *code);
+void   eigs_state_set_graceful_exit_code(struct EigsState *st, int code);
+int    eigs_state_graceful_exit_code(struct EigsState *st);
 void   eigs_state_begin_eval(struct EigsState *st);
 void   eigs_exit_scope_retain(EigsExitScope *scope);
 void   eigs_exit_scope_release(EigsExitScope *scope);

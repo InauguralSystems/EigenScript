@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: set_exit_code (int-requiring; N5, 0..255; R1.6-S2); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"exit-code":3}}
+print of "start"
+try:
+    set_exit_code of 1.5
+catch e:
+    print of ["code-fraction", e.kind]
+try:
+    set_exit_code of 256
+catch e:
+    print of ["code-past-byte", e.kind]
+try:
+    set_exit_code of -1
+catch e:
+    print of ["code-negative", e.kind]
+set_exit_code of 3.0
+print of "continued"

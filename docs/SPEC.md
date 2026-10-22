@@ -73,6 +73,20 @@ print of "hello, world"
 hello, world
 ```
 
+`set_exit_code of N` sets the process status used after graceful completion,
+without stopping execution. This follows Node.js `process.exitCode`: `N` must
+be an integer from 0 through 255, the last call wins, and an explicit
+`exit of N` decides its own status. Uncaught runtime errors and unobserved task
+or worker failures remain nonzero rather than being replaced by this setting.
+
+```eigenscript
+set_exit_code of 0
+print of "still running"
+```
+```output
+still running
+```
+
 ## Lexical structure
 
 - Comments run from `#` to end of line.
@@ -935,7 +949,7 @@ as an int during this transition.
 ```eigenscript
 path is "store-numbers-example.db"
 if file_exists of path:
-    rm of path
+    remove_file of path
 s is store_open of path
 store_put of [s, "c", {"_id": "9007199254740993", "n": 9007199254740993, "f": 2.5}]
 r is store_get of [s, "c", 9007199254740993]
@@ -946,7 +960,7 @@ catch e:
     print of e.kind
 print of ((store_get of [s, "c", 9007199254740993]) != null)
 store_close of s
-rm of path
+remove_file of path
 ```
 ```output
 [9007199254740993, "int", "float"]
@@ -1494,7 +1508,8 @@ write_text of ["spec_shapes.eigs", "PI is 3.14159\ndefine area(r) as:\n    retur
 import spec_shapes
 print of spec_shapes.PI
 print of (spec_shapes.area of 2)
-rm of "spec_shapes.eigs"
+if file_exists of "spec_shapes.eigs":
+    remove_file of "spec_shapes.eigs"
 ```
 ```output
 3.14159
@@ -1551,7 +1566,8 @@ write_text of ["spec_cached.eigs", "print of \"side effect\"\nn is 1\n"]
 import spec_cached
 import spec_cached
 print of spec_cached.n
-rm of "spec_cached.eigs"
+if file_exists of "spec_cached.eigs":
+    remove_file of "spec_cached.eigs"
 ```
 ```output
 side effect
@@ -1571,7 +1587,8 @@ spec_live.record of null
 print of spec_live.hits
 spec_live.hits is 10
 print of (spec_live.total of null)
-rm of "spec_live.eigs"
+if file_exists of "spec_live.eigs":
+    remove_file of "spec_live.eigs"
 ```
 ```output
 2
@@ -1680,7 +1697,8 @@ define len(x) as:
 import spec_iso
 print of (spec_iso.count of ([1, 2, 3]))
 print of (len of [1, 2, 3])
-rm of "spec_iso.eigs"
+if file_exists of "spec_iso.eigs":
+    remove_file of "spec_iso.eigs"
 ```
 ```output
 3
@@ -1815,7 +1833,9 @@ As with other keywords, quoted dict keys and dot fields remain legal:
 **`report of x`** names the most specific band true of the same
 trajectory the predicates read (value channel for numerics, entropy
 otherwise — #861), resolving `oscillating` → `diverging` → `improving` →
-`converged` → `equilibrium` → `stable`. At a full window it agrees with the
+`converged` → `equilibrium` → `stable`. This arrow is report priority, not
+an implication lattice: a converged one-direction tail is not `equilibrium`.
+At a full window it agrees with the
 bare predicates by construction: it either names a band whose predicate is
 true, or — when a full window matches none of them — returns `moving`. The
 bands are not exhaustive, and `moving` is the honest answer for the gap

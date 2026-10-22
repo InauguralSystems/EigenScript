@@ -203,12 +203,12 @@ tree has:
 
 **Builtins.** The registration table is derived from the
 `env_set_local_owned(env, "name", make_builtin(fn))` lines plus the
-`ext_names.h` X-lists. It holds 311 names, and it was calibrated once against
-the runtime's own `eigenscript --api --json` (223 core + 88 extension = 311;
-equal in both directions). A builtin is numeric when a site is contained in
+`ext_names.h` X-lists. It holds 312 names after sync #5. The initial 311-name population was
+calibrated against the runtime's own `eigenscript --api --json`
+(223 core + 88 extension = 311; equal in both directions). A builtin is numeric when a site is contained in
 its function, in a same-file function it calls or names as a value (a
 comparator, an op-table entry; closure depth 4), or in the shared formatter
-or equality it calls. That gives 230 numeric builtins, and §6
+or equality it calls. The current population is 233 numeric builtins (R1.6-S2), and §6
 classifies every one. (The closure does not follow a call into another
 file, so a header helper that reads a number must itself be in the
 vocabulary for its callers to count: `buffer_read_byte` entered the
@@ -729,7 +729,8 @@ result).**
 | `jit.c:jit_compile_to_thunk/OP_NULL` | not-a-classifier | the constant arm writes null and bool bits (D3) |
 | `jit_smoke.c:run_bool_cases` | not-a-classifier | test harness: expected bool bits (D3) |
 | `jit_smoke.c:run_index_bail_cases` | guarded | test harness: an exact null test of a result (D3) |
-| `trace.c:write_slot` | smi-arm | v7 writes an int as exact digits and marks floats with a point or exponent; an unknown tag refuses (R1.3) (D1) |
+| `trace.c:trace_source_replay` | guarded | source-size metadata requires `VAL_INT` before the exact int reader; a rejected float is read only for main's unchanged diagnostic (sync #5, #1885) (D1) |
+| `trace.c:write_slot` | smi-arm | v8 retains R1.3's exact int digits and float point/exponent markers; an unknown tag refuses (D1) |
 | `value_slot.h:#define slot_as_heap` | refuse | alias of `slot_as_ptr` (D2) |
 | `value_slot.h:slot_as_ptr` | refuse | the raw dereference: R1.1 refuses a non-heap slot in ASan builds and under `-DEIGS_SLOT_CHECKED` (the C slot test) (D2) |
 | `value_slot.h:slot_decref` | guarded | acts only on tag `0xFFFB`; an SMI has no refcount (D3) |
@@ -1341,21 +1342,20 @@ column against the note both ways: a row's note says "continuous" exactly
 when its `q7` column is not `-`. Counts: geometry 9, bounded 13, magnitude 13.
 
 **Counts** (from the table below, checked by `tools/phase2_inventory.py`,
-which prints them): 230 numeric builtins (`ppu_render_frame` joined when
-`buffer_read_byte` entered the vocabulary). By class: 37 int-preserving, 57
-float-producing, 85 int-requiring, 51 other. The decided Q1 moved 16 rows
+which prints them): 233 numeric builtins (including `set_exit_code`, R1.6-S2). By class: 37
+int-preserving, 57 float-producing, 86 int-requiring, 53 other. The decided Q1 moved 16 rows
 from other to int-requiring (counts, byte values, handles, flags and
 selectors); `ppu_render_frame` is a new int-requiring row; design round 3
 moved `buf_from_pcm16le` from float-producing to int-requiring (its inputs are
 byte values, #1758 comment 6174964306) and corrected `gather` (its indices
-truncate today). 42 are LOSS:
+truncate today). The current table has 37 LOSS rows:
 - arithmetic: `abs`, `add`, `subtract`, `multiply`, `negative`, `sum`,
   `num_copy`;
 - min/max and rounding: `min`, `max`, `floor`, `ceil`, `round`;
-- bitwise: the six `bit_*`, `sign_extend`, `hex`;
+- bitwise: `sign_extend`, `hex`;
 - clock, RNG and seeds: `monotonic_ns`, `random_int`, `seed_random`,
   `task_sched_seed`;
-- shared counters: `shared_incr`;
+- shared counters and HTTP header decoding: `shared_incr`, `http_post` (R1.6b-D3);
 - integer scanners: `scan_ints`, `scan_int_tokens`;
 - ordering: `sort`, `sort_by`;
 - store keys: `store_get`, `store_delete`, `store_update`, plus
@@ -1555,6 +1555,7 @@ current state behind several rows:
 | `seed_random` | int-requiring | LOSS | - | `(long)` of a double; Lua randomseed takes integers |
 | `send` | int-requiring | - | - | channel handle ids |
 | `set_at` | int-requiring | - | - | index, row and col; a buffer value converts to float |
+| `set_exit_code` | int-requiring | - | - | graceful exit code: N5, then 0..255 (Q1); main #1909 already checks fractions and range; R1.6-S2 stages the bridge migration with exit in round c |
 | `sgd_update` | float-producing | - | - | float update |
 | `sgd_update_cols` | float-producing | - | - | column indices int |
 | `sgd_update_rows` | float-producing | - | - | row indices int |
@@ -2074,16 +2075,19 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    |---|---|---:|---|
    | R1.6a | No behaviour change: §2.6 readers except `eigs_geom_shape`; bounded and magnitude included; opt-in meter; pre-registered table and tool; round order and records | none migrate | mechanical: C reader test and table calibration |
    | R1.6b | Every LOSS row in any file, plus `builtins.c`'s other int-preserving rows | 46 | `A.sum-overflow-raises`, `A.tensor-scalar-overflow-raises`, `N5.range-fraction-raises`, `N5.store-key-fraction-raises`, `N10.partial-refused`, `N10.radix`, `N10.int-or-float`, `N14.json-path-int-exact`, `N14.decode-kinds` |
-   | R1.6c | Remaining `builtins.c`; `builtins_host.c` (including `read_text`); `vm.c`'s builtin | 76 | `N5.substr-fraction-raises` |
+   | R1.6c | Remaining `builtins.c` (including `set_exit_code`); `builtins_host.c` (including `read_text`); `vm.c`'s builtin | 77 | `N5.substr-fraction-raises` |
    | R1.6d | Non-LOSS `builtins_tensor.c`, `builtins_buf.c`, `model_io.c`, `model_infer.c`, `model_train.c`; re-decide `buffer_read_num` sites as f64, byte or index reads | 53 | `N5.gather-index-fraction-raises`, `N5.pcm16-byte-raises` |
    | R1.6e | `ext_gfx.c`, the Q7 readers and whole-shape `eigs_geom_shape` clipping (Liang-Barsky for lines) | 38 | `gate.N5.q7-readers`; table run |
    | R1.6f | Non-LOSS `ext_store.c`, `ext_db.c`, `ext_http.c`, `ext_net.c` | 19 | mechanical: table run |
    | R1.6g | N9's 77 new width-family builtins in `builtins_int.c`, Rust std oracle | +77 | `N9.wrapping`, `N9.checked-raises`, `N9.saturating`, `N9.unsigned-ops`, `N9.fround` |
    | R1.6z | Remaining bridge sites in runtime, containers, embed, trace, compiler and task; delete all 21 tokens and all helpers left without callers | none | mechanical: deletion compile and final full table |
 
-   The existing rows sum to 232. Ruling R1.6a-D1 adds `read_text`, already
+   The existing rows sum to 233. Ruling R1.6a-D1 added `read_text`, already
    present in the R1.6a start (`1fd4422c`) through main's #1841/#1668, to
-   round c: the original plan's c=75 and total=231 become c=76 and total=232.
+   round c: the original plan's c=75 and total=231 became c=76 and total=232
+   at that import. Sync #5's R1.6-S2 adds main's `set_exit_code` to round c,
+   so the current counts are c=77 and total=233; `rm` had no table row and
+   its deletion under R1.6-S1 does not change the counts.
    `tools/phase2_builtins.sh` derives and checks the sub-round by this rule. Every sub-round uses the table gate
    (§9.4); later builders add their completed round to
    `tests/phase2/builtins_landed.txt` in that commit. R1.6a leaves it empty;

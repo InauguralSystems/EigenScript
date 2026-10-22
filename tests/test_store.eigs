@@ -2,7 +2,7 @@ load_file of "lib/test.eigs"
 
 # Clean up any leftover test database
 if file_exists of "/tmp/test_eigenstore.db":
-    rm of "/tmp/test_eigenstore.db"
+    remove_file of "/tmp/test_eigenstore.db"
 
 # Open creates file
 db is store_open of "/tmp/test_eigenstore.db"
@@ -224,9 +224,12 @@ assert of [(open_status of "/tmp/eigs_store_badmagic.db") != "opened", "bad magi
 write_text of ["/tmp/eigs_store_badver.db", "EIGSwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"]
 assert of [(open_status of "/tmp/eigs_store_badver.db") != "opened", "bad version rejected"]
 
-rm of "/tmp/eigs_store_short.db"
-rm of "/tmp/eigs_store_badmagic.db"
-rm of "/tmp/eigs_store_badver.db"
+if file_exists of "/tmp/eigs_store_short.db":
+    remove_file of "/tmp/eigs_store_short.db"
+if file_exists of "/tmp/eigs_store_badmagic.db":
+    remove_file of "/tmp/eigs_store_badmagic.db"
+if file_exists of "/tmp/eigs_store_badver.db":
+    remove_file of "/tmp/eigs_store_badver.db"
 
 # #816: number encoding at and beyond int's range. The old guard ran the
 # double->int cast BEFORE the magnitude check (UB past int's range; the
@@ -241,7 +244,8 @@ assert_eq of [bn.imin, 0 - 2147483648, "int min boundary round-trips (#816)"]
 assert_eq of [bn.huge, 1e300, "1e300 round-trips, cast never runs (#816)"]
 assert_eq of [bn.nhuge, 0 - 1e300, "-1e300 round-trips (#816)"]
 store_close of bdb
-rm of "/tmp/eigs816_bounds.db"
+if file_exists of "/tmp/eigs816_bounds.db":
+    remove_file of "/tmp/eigs816_bounds.db"
 
 # --- #1006: a REJECTED update must not destroy the record it was updating ---
 # store_update is delete-then-put, and store_put has real failure returns
@@ -253,7 +257,7 @@ rm of "/tmp/eigs816_bounds.db"
 # file must be unchanged, because the tombstone is undone in place and the
 # JSON body is never touched.
 if file_exists of "/tmp/eigs1006_update.db":
-    rm of "/tmp/eigs1006_update.db"
+    remove_file of "/tmp/eigs1006_update.db"
 udb is store_open of "/tmp/eigs1006_update.db"
 # Neighbours on both sides, plus a 1-char key: the tombstone overwrites the
 # 4 bytes after key_len, which for a short key runs into json_len as well, so
@@ -285,9 +289,12 @@ write_text of ["/tmp/eigs1006_fp_c", "abcc"]
 assert of [(db_fingerprint of "/tmp/eigs1006_fp_a") != 0, "#1006: db_fingerprint reads a non-empty file as non-zero"]
 assert of [(db_fingerprint of "/tmp/eigs1006_fp_a") != (db_fingerprint of "/tmp/eigs1006_fp_b"), "#1006: db_fingerprint sees one changed byte"]
 assert of [(db_fingerprint of "/tmp/eigs1006_fp_a") != (db_fingerprint of "/tmp/eigs1006_fp_c"), "#1006: db_fingerprint sees an appended byte"]
-rm of "/tmp/eigs1006_fp_a"
-rm of "/tmp/eigs1006_fp_b"
-rm of "/tmp/eigs1006_fp_c"
+if file_exists of "/tmp/eigs1006_fp_a":
+    remove_file of "/tmp/eigs1006_fp_a"
+if file_exists of "/tmp/eigs1006_fp_b":
+    remove_file of "/tmp/eigs1006_fp_b"
+if file_exists of "/tmp/eigs1006_fp_c":
+    remove_file of "/tmp/eigs1006_fp_c"
 
 before_bytes is db_fingerprint of "/tmp/eigs1006_update.db"
 
@@ -365,10 +372,12 @@ assert_eq of [store_update of [udb, "docs", "doc1", {"body": "replaced"}], true,
 assert_eq of [(store_get of [udb, "docs", "doc1"]).body, "replaced", "#1006: a valid update still replaces"]
 assert_eq of [store_count of [udb, "docs"], 3, "#1006: a valid update does not duplicate the row"]
 store_close of udb
-rm of "/tmp/eigs1006_update.db"
+if file_exists of "/tmp/eigs1006_update.db":
+    remove_file of "/tmp/eigs1006_update.db"
 
 # Clean up
-rm of "/tmp/test_eigenstore.db"
+if file_exists of "/tmp/test_eigenstore.db":
+    remove_file of "/tmp/test_eigenstore.db"
 
 # --- #1758 R1.6b: N5 keys, N14 boxed decode, and owned rejection paths ---
 define r16b_store_expect_error(action, kind, label) as:
@@ -383,7 +392,7 @@ define r16b_store_expect_error(action, kind, label) as:
 
 define r16b_store_boxed_checks(path) as:
     if file_exists of path:
-        rm of path
+        remove_file of path
     local big is 9007199254740993
     local low is -9223372036854775807 - 1
     local high is 9223372036854775807
@@ -468,7 +477,7 @@ define r16b_store_boxed_checks(path) as:
     assert_true of [(store_get of [s, "c", low]).key == low, "minimum key survives neighbour deletion"]
     assert_true of [(store_get of [s, "c", high]).key == high, "maximum key survives neighbour deletion"]
     store_close of s
-    rm of path
+    remove_file of path
 
 r16b_store_boxed_checks of "/tmp/eigs1758_r16b_boxed_store.db"
 

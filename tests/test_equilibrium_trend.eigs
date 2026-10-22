@@ -1,0 +1,120 @@
+# Regression for #1891: numeric equilibrium rejects a full-window raw trend.
+# Each case is exercised as a module binding and as a function-local loop.
+
+define want(tag, got, expected) as:
+    assert of [got == expected, f"{tag}: expected {expected}, got {got}"]
+    print of f"  PASS: {tag}"
+
+define loop_case(tag, values, expected) as:
+    local x is values[0]
+    for i in range of 10:
+        x is values[i + 1]
+    want of [tag + " loop", equilibrium of x, expected]
+
+# geometric
+a is 1
+a is 0.1
+a is 0.01
+a is 0.001
+a is 0.0001
+a is 1e-05
+a is 1e-06
+a is 1e-07
+a is 1e-08
+a is 1e-09
+a is 1e-10
+want of ["geometric module", equilibrium of a, false]
+loop_case of ["geometric", [1, 0.1, 0.01, 0.001, 0.0001, 1e-05, 1e-06, 1e-07, 1e-08, 1e-09, 1e-10], false]
+
+# harmonic
+b is 1.00000001
+b is 1.00000000999001
+b is 1.00000000998004
+b is 1.0000000099700896
+b is 1.0000000099601594
+b is 1.0000000099502488
+b is 1.0000000099403579
+b is 1.0000000099304867
+b is 1.000000009920635
+b is 1.0000000099108028
+b is 1.00000000990099
+want of ["harmonic module", equilibrium of b, false]
+loop_case of ["harmonic", [1.00000001, 1.00000000999001, 1.00000000998004, 1.0000000099700896, 1.0000000099601594, 1.0000000099502488, 1.0000000099403579, 1.0000000099304867, 1.000000009920635, 1.0000000099108028, 1.00000000990099], false]
+
+# repeated
+c is 1.0
+c is 1.0
+c is 0.999999999999
+c is 0.999999999999
+c is 0.999999999998
+c is 0.999999999998
+c is 0.999999999997
+c is 0.999999999997
+c is 0.999999999996
+c is 0.999999999996
+c is 0.999999999995
+want of ["repeated module", equilibrium of c, false]
+loop_case of ["repeated", [1.0, 1.0, 0.999999999999, 0.999999999999, 0.999999999998, 0.999999999998, 0.999999999997, 0.999999999997, 0.999999999996, 0.999999999996, 0.999999999995], false]
+
+# underflow
+d is 1e-160
+d is 9.999999999e-161
+d is 9.999999998e-161
+d is 9.999999997e-161
+d is 9.999999996e-161
+d is 9.999999995e-161
+d is 9.999999994e-161
+d is 9.999999993e-161
+d is 9.999999992e-161
+d is 9.999999991e-161
+d is 9.99999999e-161
+want of ["underflow module", equilibrium of d, false]
+loop_case of ["underflow", [1e-160, 9.999999999e-161, 9.999999998e-161, 9.999999997e-161, 9.999999996e-161, 9.999999995e-161, 9.999999994e-161, 9.999999993e-161, 9.999999992e-161, 9.999999991e-161, 9.99999999e-161], false]
+
+# settled
+e is 2.0
+e is 2.0
+e is 2.0
+e is 2.0
+e is 2.0
+e is 2.0
+e is 2.0
+e is 2.0
+e is 2.0
+e is 2.0
+e is 2.0
+want of ["settled module", equilibrium of e, true]
+loop_case of ["settled", [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0], true]
+
+# isolated
+f is 3.0
+f is 3.0
+f is 3.0
+f is 3.0
+f is 3.0
+f is 2.99999999
+f is 2.99999999
+f is 2.99999999
+f is 2.99999999
+f is 2.99999999
+f is 2.99999999
+want of ["isolated module", equilibrium of f, true]
+loop_case of ["isolated", [3.0, 3.0, 3.0, 3.0, 3.0, 2.99999999, 2.99999999, 2.99999999, 2.99999999, 2.99999999, 2.99999999], true]
+
+# balanced
+g is 4.0
+g is 4.000000000001
+g is 4.000000000002
+g is 4.000000000003
+g is 4.000000000004
+g is 4.000000000005
+g is 4.000000000004
+g is 4.000000000003
+g is 4.000000000002
+g is 4.000000000001
+g is 4.0
+want of ["balanced module", equilibrium of g, true]
+loop_case of ["balanced", [4.0, 4.000000000001, 4.000000000002, 4.000000000003, 4.000000000004, 4.000000000005, 4.000000000004, 4.000000000003, 4.000000000002, 4.000000000001, 4.0], true]
+
+EQUILIBRIUM_TREND_ALL_PASS is true
+print of "EQUILIBRIUM_TREND_ALL_PASS"

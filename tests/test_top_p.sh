@@ -32,7 +32,7 @@ MODEL=/tmp/eigs_tp_tiny.json
 HARNESS=/tmp/eigs_tp_harness.eigs
 TAPE=/tmp/eigs_tp_gen.tape
 REPLAY_MODEL=/tmp/eigs_tp_tiny_replay.json
-cleanup() { rm -f "$MODEL" "$HARNESS" "$TAPE" "$REPLAY_MODEL" /tmp/eigs_tp_*.log; }
+cleanup() { rm -f "$MODEL" "$HARNESS" "$TAPE" "$REPLAY_MODEL" /tmp/eigs_tp_*.log /tmp/eigs_tp_info.*; }
 trap cleanup EXIT
 
 if ! "$EIGS" "$TESTS_DIR/gen_tiny_model.eigs" > "$MODEL" 2>/tmp/eigs_tp_gen.log; then
@@ -171,6 +171,21 @@ if [ -n "$REC" ] && [ "$REP_NOMODEL" = "$REC" ]; then
     ok "TP08 replay serves the recorded tokens with the model file deleted"
 else
     fail "TP08 replay still needs the model" "recorded='$REC' replayed='$REP_NOMODEL'"
+fi
+
+# Checkpoint inspection is the other model payload reader.  Its compact JSON
+# verdict is taped too, so replay must not reopen the inspected checkpoint.
+cp "$MODEL" "$REPLAY_MODEL"
+cat > "$HARNESS" <<EIGS
+print of (eigen_checkpoint_info of "$REPLAY_MODEL")
+EIGS
+EIGS_TRACE="$TAPE" "$EIGS" "$HARNESS" > /tmp/eigs_tp_info.record 2>/dev/null
+rm -f "$REPLAY_MODEL"
+EIGS_REPLAY="$TAPE" "$EIGS" "$HARNESS" > /tmp/eigs_tp_info.replay 2>/dev/null
+if cmp /tmp/eigs_tp_info.record /tmp/eigs_tp_info.replay >/dev/null; then
+    ok "TP08b checkpoint-info verdict replays after its file is deleted"
+else
+    fail "TP08b checkpoint-info replay still reads its checkpoint"
 fi
 
 # ---- #960 residual: the randn tensor fills draw from the same stream --------

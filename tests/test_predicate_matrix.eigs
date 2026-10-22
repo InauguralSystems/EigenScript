@@ -106,11 +106,12 @@ g is 2.0
 g is 2.0
 g is 2.0
 pg is [converged, stable, improving, diverging, oscillating, equilibrium, report of g]
-# #861: quiescent lattice — a settled value certifies converged, which implies equilibrium AND stable
+# #1891: a settled value independently certifies equilibrium; converged implies stable
 expect of ["equilibrium+stable", pg, true, true, false, false, false, true, "converged"]
 
 # --- converged: low-entropy value, FULL window (>= N=10). converged is a
-#     strict subset of equilibrium, so BOTH fire; report resolves to converged. ---
+#     strict subset of stable. These zero steps also independently satisfy
+#     equilibrium; report resolves to converged. ---
 k is 1000000.0
 k is 1000000.0
 k is 1000000.0
@@ -143,8 +144,8 @@ pd is [converged, stable, improving, diverging, oscillating, equilibrium, report
 expect of ["osc-only (no longer co-fires diverging)", pd, false, false, false, false, true, false, "oscillating"]
 
 # --- EDGE: converged at the entropy boundary. FULL window at rest with entropy
-#     JUST BELOW h_low (|x|=100 -> H~0.080 < 0.1) -> converged (and equilibrium,
-#     its superset). The h_low clause is the whole difference from `g` above
+#     JUST BELOW h_low (|x|=100 -> H~0.080 < 0.1) -> converged. Its zero steps
+#     independently satisfy equilibrium. The h_low clause is the whole difference from `g` above
 #     (|x|=2, H~0.92): same quiet window, opposite verdict. report=converged. ---
 h is 100.0
 h is 100.0
@@ -187,8 +188,10 @@ loop while mi < 30:
     m is m * 0.5
     mi is mi + 1
 pm is [converged of m, stable of m, improving of m, diverging of m, oscillating of m, equilibrium of m, report of m]
-# #861: the value route CERTIFIES this settle — a decay toward zero is exactly what converged should claim once a full window of steps sits under the floor (ten more halvings: steps 4e-7 .. 8e-10). The #735 no-band gray state remains constructible only on the entropy channel (non-numeric bindings)
-expect of ["full-window residual drift (#735)", pm, true, true, false, false, false, true, "converged"]
+# #1891: the value route certifies convergence once the full one-direction tail
+# sits under the floor (ten more negative, nonzero halvings: -4.29e-7 ..
+# -8.38e-10), but that same-sign raw window is not equilibrium.
+expect of ["full-window residual drift (#735)", pm, true, true, false, false, false, false, "converged"]
 
 # --- The full-window agreement guarantee (PREDICATES.md "The report builtin"),
 #     asserted directly instead of in prose. At a full window `report of x` must

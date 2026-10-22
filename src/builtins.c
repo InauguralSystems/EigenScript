@@ -646,6 +646,22 @@ Value* builtin_exit(Value *arg) {
     return make_null();
 }
 
+/* set_exit_code of N — set the status used if the state completes gracefully.
+ * Like Node.js process.exitCode, this does not stop execution. Last store wins. */
+Value* builtin_set_exit_code(Value *arg) {
+    if (!arg || !val_is_number(arg)) {
+        rt_error(EK_VALUE, 0, "set_exit_code requires an integer in 0..255");
+        return make_null();
+    }
+    double num = eigs_num_arg(arg, __func__);
+    if (num < 0 || num > 255 || num != (double)(int)num) {
+        rt_error(EK_VALUE, 0, "set_exit_code requires an integer in 0..255 (got %g)", num);
+        return make_null();
+    }
+    eigs_state_set_graceful_exit_code(eigs_current_state(), (int)num);
+    return make_null();
+}
+
 Value* builtin_assert(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "assert");
     /* Failure path raises a normal runtime error (g_has_error + g_error_msg)
@@ -6305,6 +6321,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "get_observer_thresholds", make_builtin(builtin_get_observer_thresholds));
     env_set_local_owned(env, "assert", make_builtin(builtin_assert));
     env_set_local_owned(env, "exit", make_builtin(builtin_exit));
+    env_set_local_owned(env, "set_exit_code", make_builtin(builtin_set_exit_code));
     env_set_local_owned(env, "throw", make_builtin(builtin_throw));
     env_set_local_owned(env, "keys", make_builtin(builtin_keys));
     env_set_local_owned(env, "values", make_builtin(builtin_values));

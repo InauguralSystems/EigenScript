@@ -9,6 +9,6 @@ Gauss-Seidel  Ax=b -> <buffer:3>
 
 Power iteration dominant eigenvalue -> 2  (14 iters, expect ~2)
 
-PageRank stationary distribution -> <buffer:3>  (44 iters)
+PageRank stationary distribution -> <buffer:3>  (48 iters)
 
 DONE

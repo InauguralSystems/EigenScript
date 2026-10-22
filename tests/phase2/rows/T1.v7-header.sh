@@ -1,4 +1,5 @@
 # ROW: T1.v7-header
+# Historical row id; sync #5 combines the two v7 formats as v8.
 # ITEMS: T1
 # EXPECT-RC: 0
 # SHAPE: S
