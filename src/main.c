@@ -282,6 +282,9 @@ int main(int argc, char **argv) {
         Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
 
         eigenscript_repl(global);
+        /* Match file execution: workers may still publish an exit code after
+         * stdin closes, so join them before sampling the state latch. */
+        handle_table_drain(eigs_st);
         /* #739: take the exit code BEFORE teardown. It is a bridge macro now
          * (state latch, reached through eigs_current), so eigs_thread_detach
          * below leaves nothing to read it through — the script path at the

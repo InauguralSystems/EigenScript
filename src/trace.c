@@ -1945,6 +1945,7 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"file_exists",          TK_BOOL_},
     {"getcwd",               TK_STR_},
     {"gfx_read",             TK_LIST_ | TK_NULL_},
+    {"gfx_ticks",            TK_NUM_},
     {"http_post",            TK_STR_},
     {"http_request_body",    TK_STR_},
     {"http_request_headers", TK_STR_},
@@ -2716,9 +2717,9 @@ int trace_replay_take(const char *fn, Value **out) {
  * record ceiling.  The metadata is [ok, identity-or-error, byte_count]. */
 #define TRACE_SOURCE_CHUNK 12000
 #define TRACE_SOURCE_MAX (10u * 1024u * 1024u)
-void trace_source_record(const char *kind, const char *source, size_t size,
-                         const char *identity, const char *error) {
-    if (!__builtin_expect(g_trace_enabled, 0)) return;
+int trace_source_record(const char *kind, const char *source, size_t size,
+                        const char *identity, const char *error) {
+    if (!__builtin_expect(g_trace_enabled, 0)) return 1;
     if (!error && size > TRACE_SOURCE_MAX) {
         char message[160];
         snprintf(message, sizeof message,
@@ -2731,7 +2732,7 @@ void trace_source_record(const char *kind, const char *source, size_t size,
         trace_nondet_value(kind, meta);
         val_decref(meta);
         rt_error(EK_IO, 0, "%s", message);
-        return;
+        return 0;
     }
     Value *meta = make_list(3);
     list_append_owned(meta, make_bool(error == NULL));
@@ -2739,7 +2740,7 @@ void trace_source_record(const char *kind, const char *source, size_t size,
     list_append_owned(meta, make_num(error ? 0.0 : (double)size));
     trace_nondet_value(kind, meta);
     val_decref(meta);
-    if (error) return;
+    if (error) return 1;
     char chunk_kind[96];
     snprintf(chunk_kind, sizeof chunk_kind, "%s_chunk", kind);
     for (size_t off = 0; off < size; off += TRACE_SOURCE_CHUNK) {
@@ -2749,6 +2750,7 @@ void trace_source_record(const char *kind, const char *source, size_t size,
         trace_nondet_value(chunk_kind, chunk);
         val_decref(chunk);
     }
+    return 1;
 }
 
 int trace_source_replay(const char *kind, char **source, long *size,

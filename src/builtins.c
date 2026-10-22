@@ -163,6 +163,7 @@ Value* builtin_usleep(Value *arg) {
     BOOL_REFUSE(arg, "usleep");
     if (!arg || arg->type != VAL_NUM) return make_null();
     int us = (int)eigs_num_arg(arg, __func__);
+    if (g_replay_enabled) return make_null();
     if (us > 0) {
         struct timespec deadline;
         clock_gettime(CLOCK_REALTIME, &deadline);

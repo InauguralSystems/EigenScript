@@ -293,7 +293,11 @@ Value* builtin_md5_file(Value *arg) {
                 val_decref(v);
                 return make_str("");
             }
-            return v;
+            if (v && v->type == VAL_STR) return v;
+            if (v) val_decref(v);
+            rt_error(EK_IO, 0,
+                     "md5_file: recorded result has invalid replay shape");
+            return make_str("");
         }
     }
     FILE *f = fopen(arg->data.str, "rb");
