@@ -1122,10 +1122,7 @@ Value* builtin_remove_file(Value *arg) {
 /* Taped filesystem errors use a result shape that cannot be successful: a
  * one-string list for readers/mkdir, and [message, null] for ls (whose normal
  * result may itself be a one-string list). */
-static Value *file_io_error(const char *fn, const char *path, int err) {
-    char message[3900];
-    snprintf(message, sizeof(message), "%s: '%s': %s",
-             fn, path, strerror(err));
+static Value *file_io_error_message(const char *fn, const char *message) {
     int taped = strcmp(fn, "mkdir") == 0 || strcmp(fn, "ls") == 0 ||
                 strcmp(fn, "write_text") == 0 ||
                 strcmp(fn, "write_bytes") == 0 ||
@@ -1142,6 +1139,21 @@ static Value *file_io_error(const char *fn, const char *path, int err) {
     }
     rt_error(EK_IO, 0, "%s", message);
     return make_null();
+}
+
+static Value *file_io_error(const char *fn, const char *path, int err) {
+    char message[3900];
+    snprintf(message, sizeof(message), "%s: '%s': %s",
+             fn, path, strerror(err));
+    return file_io_error_message(fn, message);
+}
+
+static Value *file_stream_cap_error(const char *fn, const char *path,
+                                    size_t cap) {
+    char message[3900];
+    snprintf(message, sizeof(message), "%s: '%s' is more than %zu bytes",
+             fn, path, cap);
+    return file_io_error_message(fn, message);
 }
 
 /* Return zero only when replay is disabled.  Once replay is enabled every
@@ -1183,7 +1195,7 @@ static int file_is_directory(FILE *f) {
  * cap+1 bytes: that is enough to distinguish success from the capped error
  * without turning an infinite stream into an unbounded allocation. */
 static int read_stream_bounded(FILE *f, size_t cap, unsigned char **out,
-                               size_t *out_len) {
+                               size_t *out_len, int *read_err) {
     unsigned char *buf = NULL;
     size_t len = 0, alloc = 0;
     while (len <= cap) {
@@ -1192,15 +1204,22 @@ static int read_stream_bounded(FILE *f, size_t cap, unsigned char **out,
             size_t next = alloc ? alloc * 2 : 65536;
             if (next > cap + 1) next = cap + 1;
             unsigned char *grown = realloc(buf, next ? next : 1);
-            if (!grown) { free(buf); return 0; }
+            if (!grown) { free(buf); *read_err = ENOMEM; return 0; }
             buf = grown;
             alloc = next;
             room = alloc - len;
         }
+        /* Do not mistake the preceding failed seek's ESPIPE for a read error
+         * on implementations where stdio sets ferror without setting errno. */
+        errno = 0;
         size_t got = fread(buf + len, 1, room, f);
         len += got;
         if (got < room) {
-            if (ferror(f)) { free(buf); return 0; }
+            if (ferror(f)) {
+                *read_err = errno ? errno : EIO;
+                free(buf);
+                return 0;
+            }
             break;
         }
         if (len == cap + 1) break;
@@ -1256,20 +1275,16 @@ Value* builtin_read_bytes(Value *arg) {
         clearerr(f);
         unsigned char *buf = NULL;
         size_t nread = 0;
-        if (!read_stream_bounded(f, FILE_READER_CAP, &buf, &nread)) {
+        int read_err = 0;
+        if (!read_stream_bounded(f, FILE_READER_CAP, &buf, &nread, &read_err)) {
             fclose(f);
-            TRACE_NONDET_RECORD("read_bytes", make_null());
+            return file_io_error("read_bytes", arg->data.str, read_err);
         }
         fclose(f);
         if (nread > FILE_READER_CAP) {
             free(buf);
-            if (__builtin_expect(g_trace_enabled, 0)) {
-                Value *sz = make_num((double)nread);
-                trace_nondet_value("read_bytes", sz); val_decref(sz);
-            }
-            rt_error(EK_IO, 0, "read_bytes: '%s' is %zu bytes, over the %d-byte cap",
-                     arg->data.str, nread, 10 * 1024 * 1024);
-            return make_null();
+            return file_stream_cap_error("read_bytes", arg->data.str,
+                                         FILE_READER_CAP);
         }
         Value *result = make_list((int)nread);
         for (size_t i = 0; i < nread; i++)
@@ -1362,10 +1377,9 @@ Value* builtin_read_bytes_buf(Value *arg) {
     if (!path || path->type != VAL_STR) return make_null();
 
     /* Tape boundary. Success records the VAL_BUFFER; unopenable file
-     * records null; the over-cap raise records the observed SIZE as a
-     * VAL_NUM N record (unambiguous — no other path records a number) so
-     * the identical raise is re-derived under EIGS_REPLAY without
-     * touching the live filesystem. */
+     * records an impossible-success error list. A regular-file over-cap
+     * raise records its known size as a VAL_NUM; an unseekable stream records
+     * its non-exact error message. Both replay without live filesystem I/O. */
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *tv = NULL;
         if (file_io_replay("read_bytes_buf", &tv)) {
@@ -1395,19 +1409,16 @@ Value* builtin_read_bytes_buf(Value *arg) {
         clearerr(f);
         unsigned char *buf = NULL;
         size_t nread = 0;
-        if (!read_stream_bounded(f, (size_t)cap, &buf, &nread)) {
+        int read_err = 0;
+        if (!read_stream_bounded(f, (size_t)cap, &buf, &nread, &read_err)) {
             fclose(f);
-            TRACE_NONDET_RECORD("read_bytes_buf", make_null());
+            return file_io_error("read_bytes_buf", path->data.str, read_err);
         }
         fclose(f);
         if (nread > (size_t)cap) {
             free(buf);
-            if (__builtin_expect(g_trace_enabled, 0)) {
-                Value *sz = make_num((double)nread);
-                trace_nondet_value("read_bytes_buf", sz); val_decref(sz);
-            }
-            read_bytes_buf_cap_raise(path->data.str, (long long)nread, cap);
-            return make_null();
+            return file_stream_cap_error("read_bytes_buf", path->data.str,
+                                         (size_t)cap);
         }
         Value *v = xcalloc(1, sizeof(Value));
         v->type = VAL_BUFFER; v->data.buffer.count = (int)nread;
@@ -1473,20 +1484,16 @@ Value* builtin_read_text(Value *arg) {
         clearerr(f);
         unsigned char *stream = NULL;
         size_t nread = 0;
-        if (!read_stream_bounded(f, FILE_READER_CAP, &stream, &nread)) {
+        int read_err = 0;
+        if (!read_stream_bounded(f, FILE_READER_CAP, &stream, &nread, &read_err)) {
             fclose(f);
-            TRACE_NONDET_RECORD("read_text", make_str(""));
+            return file_io_error("read_text", arg->data.str, read_err);
         }
         fclose(f);
         if (nread > FILE_READER_CAP) {
             free(stream);
-            if (__builtin_expect(g_trace_enabled, 0)) {
-                Value *sz = make_num((double)nread);
-                trace_nondet_value("read_text", sz); val_decref(sz);
-            }
-            rt_error(EK_IO, 0, "read_text: '%s' is %zu bytes, over the %d-byte cap",
-                     arg->data.str, nread, 10 * 1024 * 1024);
-            return make_null();
+            return file_stream_cap_error("read_text", arg->data.str,
+                                         FILE_READER_CAP);
         }
         char *buf = xmalloc(nread + 1);
         memcpy(buf, stream, nread); buf[nread] = '\0'; free(stream);
