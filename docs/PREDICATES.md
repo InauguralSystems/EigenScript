@@ -594,22 +594,28 @@ the most specific via its priority order.
   `down_fraction`/`up_fraction` of 0 — never improving or diverging. This
   is the #187 contract enforced at the window level. The `stable`
   no-consecutive-flips clause likewise excludes `oscillating`.
-- **The numeric value-channel quiescent bands** (full-window, near-zero
-  motion) overlap but do not form an implication lattice between `converged`
-  and `equilibrium`: the value route's raw-step trend guard means a converged
-  directional tail is not an equilibrium. A *high-entropy* value-channel
-  `equilibrium ⊂ stable`. Concretely a full quiet numeric window is exactly
-  one of:
-  - **low entropy, balanced steps** → `converged` and `equilibrium`
-    (`report` → `converged`);
-  - **low entropy, one-direction tail** → `converged` but not
-    `equilibrium` (`report` → `converged`);
-  - **high entropy** → `equilibrium` *and* `stable` (`report` →
-    `equilibrium`).
-  So `equilibrium` never fires alone — it is accompanied by `converged`
-  (low H, balanced) or `stable` (high H). A `stable` window that is *not*
-  equilibrium is one with steady directional drift (mean `|dH| > dh_zero`)
-  **at high entropy**: moving a little, but settled.
+- **The numeric value-channel quiescent bands.** For a numeric binding,
+  `converged`, `equilibrium` and `stable` read the window's relative steps
+  and NEVER the entropy. All three need a full window, and none fires on a
+  raw runaway or a raw oscillation.
+  - `converged ⊂ stable`. Every relative step under the settle deadband
+    implies every step under `dh_small`, with no sign flip above the deadband.
+  - `equilibrium` is not implied by `converged`. It needs balanced motion,
+    meaning a window mean and variance under the deadband. It also rejects a
+    one-direction trend: at least two nonzero raw steps, all of one sign.
+    Exact-zero steps are neutral.
+
+  Concretely, a full window whose relative steps are all under the deadband
+  is one of:
+  - **balanced or settled** (raw steps mixed in sign, or exactly zero) →
+    `converged`, `equilibrium` and `stable` (`report` → `converged`);
+  - **a one-direction tail** → `converged` and `stable` but not
+    `equilibrium` (`report` → `converged`).
+
+  `equilibrium` can fire without `converged`. A balanced window whose mean
+  and variance are under the deadband can still hold individual steps above
+  it. A `stable` window that is not `converged` has every step under
+  `dh_small` but some above the deadband: small, steady motion.
 - **The entropy-channel quiescent bands have a separate lattice.** Entropy
   predicates operate on the `dH` window and do not apply the numeric route's
   raw-value-step trend guard. When a full low-entropy window has every
