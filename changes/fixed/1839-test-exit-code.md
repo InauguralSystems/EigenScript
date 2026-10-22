@@ -1,0 +1,1 @@
+- Make test assertions set a graceful nonzero process status through the new `set_exit_code` builtin.

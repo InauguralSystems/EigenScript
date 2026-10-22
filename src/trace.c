@@ -1977,8 +1977,7 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"read_text",            TK_STR_ | TK_LIST_ | TK_NUM_}, /* num: over-cap */
     {"remove_file",          TK_BOOL_ | TK_LIST_}, /* list: I/O error */
     {"rename",               TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"rm",                   TK_BOOL_},
-    {"tensor_load",          TK_LIST_ | TK_NULL_},  /* the [rows, cols] over-cap verdict */
+    {"tensor_load",          TK_LIST_ | TK_NULL_},  /* structurally validated boundary verdict */
     {"write_bytes",          TK_NUM_ | TK_LIST_},  /* list: I/O error */
     {"write_text",           TK_BOOL_ | TK_LIST_}, /* list: I/O error */
 };

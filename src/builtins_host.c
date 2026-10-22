@@ -410,14 +410,6 @@ Value* builtin_mktemp(Value *arg) {
     return make_str(tmpl);
 }
 
-/* rm of "path" → 1 on success, 0 on failure */
-Value* builtin_rm(Value *arg) {
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_STR, "rm", "a string path", make_bool(0));
-    Value *replayed = NULL;
-    if (file_io_replay("rm", &replayed)) return replayed;
-    TRACE_NONDET_RECORD("rm", make_bool(unlink(arg->data.str) == 0));
-}
-
 /* Identifier frequency entry */
 typedef struct {
     char *name;
@@ -1792,7 +1784,6 @@ void register_host_builtins(Env *env) {
     env_set_local_owned(env, "getcwd", make_builtin(builtin_getcwd));
     env_set_local_owned(env, "exe_path", make_builtin(builtin_exe_path));
     env_set_local_owned(env, "mktemp", make_builtin(builtin_mktemp));
-    env_set_local_owned(env, "rm", make_builtin(builtin_rm));
     env_set_local_owned(env, "stream_open", make_builtin(builtin_stream_open));
     env_set_local_owned(env, "stream_write", make_builtin(builtin_stream_write));
     env_set_local_owned(env, "stream_close", make_builtin(builtin_stream_close));

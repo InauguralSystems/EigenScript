@@ -73,6 +73,20 @@ print of "hello, world"
 hello, world
 ```
 
+`set_exit_code of N` sets the process status used after graceful completion,
+without stopping execution. This follows Node.js `process.exitCode`: `N` must
+be an integer from 0 through 255, the last call wins, and an explicit
+`exit of N` decides its own status. Uncaught runtime errors and unobserved task
+or worker failures remain nonzero rather than being replaced by this setting.
+
+```eigenscript
+set_exit_code of 0
+print of "still running"
+```
+```output
+still running
+```
+
 ## Lexical structure
 
 - Comments run from `#` to end of line.
@@ -1350,7 +1364,8 @@ write_text of ["spec_shapes.eigs", "PI is 3.14159\ndefine area(r) as:\n    retur
 import spec_shapes
 print of spec_shapes.PI
 print of (spec_shapes.area of 2)
-rm of "spec_shapes.eigs"
+if file_exists of "spec_shapes.eigs":
+    remove_file of "spec_shapes.eigs"
 ```
 ```output
 3.14159
@@ -1407,7 +1422,8 @@ write_text of ["spec_cached.eigs", "print of \"side effect\"\nn is 1\n"]
 import spec_cached
 import spec_cached
 print of spec_cached.n
-rm of "spec_cached.eigs"
+if file_exists of "spec_cached.eigs":
+    remove_file of "spec_cached.eigs"
 ```
 ```output
 side effect
@@ -1427,7 +1443,8 @@ spec_live.record of null
 print of spec_live.hits
 spec_live.hits is 10
 print of (spec_live.total of null)
-rm of "spec_live.eigs"
+if file_exists of "spec_live.eigs":
+    remove_file of "spec_live.eigs"
 ```
 ```output
 2
@@ -1536,7 +1553,8 @@ define len(x) as:
 import spec_iso
 print of (spec_iso.count of ([1, 2, 3]))
 print of (len of [1, 2, 3])
-rm of "spec_iso.eigs"
+if file_exists of "spec_iso.eigs":
+    remove_file of "spec_iso.eigs"
 ```
 ```output
 3

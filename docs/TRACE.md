@@ -14,8 +14,8 @@ readers, hashes, directory queries, and process/network input are taped.
 Reads whose payload is not represented in format v7—tensor/model checkpoints,
 font and music assets, HTTP static serving, stores, and databases—are refused;
 replay never falls back to a live file. Every replayable
-mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, `remove_file`, and
-`rm`) returns or raises its recorded outcome before any filesystem syscall.
+mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, and
+`remove_file`) returns or raises its recorded outcome before any filesystem syscall.
 Operations whose durable result cannot be represented by the tape remain loud
 boundaries: `mktemp`, stream output, corpus generation, and store operations
 are refused rather than partially run. The embedding API's initial program
@@ -266,7 +266,7 @@ perspective lands on the tape as an `N` record:
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
   `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
-  `write_text`, `write_bytes`, `rename`, `remove_file`, `rm`, and `md5_file` (#1668).
+  `write_text`, `write_bytes`, `rename`, `remove_file`, and `md5_file` (#1668).
   Module acquisition adds `import_source` / `load_file_source` metadata and
   bounded `_chunk` records, so source larger than one record remains replayable.
   The filesystem replay rules are defined once in [Filesystem replay model](#filesystem-replay-model-1885).
@@ -286,13 +286,12 @@ perspective lands on the tape as an `N` record:
   loudly under replay, also before opening their path.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: `[rows, cols]` for an over-cap header,
-  otherwise `null`. Replay reconstructs a recorded `limit` error before
-  filesystem access, preserving its catch branch and diagnostic after file
-  removal or replacement. A recorded non-cap decision keeps the historical
-  null stand-in if the live file has since grown beyond the cap. Successful
-  tensor payloads remain live and untaped; this observation does not guarantee
-  their replay after file changes. Invalid path argument types consume no
-  observation. The following nondeterministic call retains its own record.
+  otherwise `null`. On replay, every structurally valid verdict raises the
+  same generic `io` file-read-boundary error before filesystem access; an
+  over-cap verdict does not reconstruct its recorded `limit` error. Tensor
+  payloads are untaped and are never read live during replay. Invalid path
+  argument types consume no observation. The following nondeterministic call
+  retains its own record.
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)
@@ -555,7 +554,7 @@ that the original tape neither captured nor re-creates:
 - **Temporary-file creation:** `mktemp`. Its fresh pathname is host state and
   the call creates the named file. Replay refuses before creating anything;
   ordinary execution still creates a file that the caller can remove with
-  `rm`.
+  `remove_file`.
 
 These builtins raise a catchable runtime error under
 `EIGS_REPLAY`, with the message format

@@ -13,7 +13,8 @@ assert_eq of [md5 of "hello world", "5eb63bbbe01eeed093cb22bb8f5acdc3", "md5 hel
 # File hashing
 write_text of ["/tmp/test_hash.txt", "hello world"]
 assert_eq of [md5_file of "/tmp/test_hash.txt", "5eb63bbbe01eeed093cb22bb8f5acdc3", "md5_file"]
-rm of "/tmp/test_hash.txt"
+if file_exists of "/tmp/test_hash.txt":
+    remove_file of "/tmp/test_hash.txt"
 
 # Edge cases — #511: non-string input and a missing file now RAISE (were the
 # empty-string sentinel, i.e. a silent wrong/absent digest).

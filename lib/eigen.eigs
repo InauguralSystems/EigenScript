@@ -2076,8 +2076,8 @@ _default_path_dir is _eigen_path_dir
 _default_path_base is path_base
 _default_path_ext is path_ext
 _default_mkdir is mkdir
+_default_remove_file is remove_file
 _default_ls is ls
-_default_rm is rm
 _default_regex_match is regex_match
 _default_regex_find is regex_find
 _default_regex_replace is regex_replace
@@ -2160,8 +2160,8 @@ define _make_default_env as:
     _default_env_set_local of [env, "path_base", _default_path_base]
     _default_env_set_local of [env, "path_ext", _default_path_ext]
     _default_env_set_local of [env, "mkdir", _default_mkdir]
+    _default_env_set_local of [env, "remove_file", _default_remove_file]
     _default_env_set_local of [env, "ls", _default_ls]
-    _default_env_set_local of [env, "rm", _default_rm]
     _default_env_set_local of [env, "regex_match", _default_regex_match]
     _default_env_set_local of [env, "regex_find", _default_regex_find]
     _default_env_set_local of [env, "regex_replace", _default_regex_replace]

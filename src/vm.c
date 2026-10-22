@@ -6031,9 +6031,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         char import_warning[4096] = "";
 
         Value *warning = NULL;
-        if (g_replay_enabled && trace_replay_take("import_warning", &warning) &&
-            warning && warning->type == VAL_STR && warning->data.str[0])
-            fputs(warning->data.str, stderr);
+        if (g_replay_enabled) {
+            int warning_taken = trace_replay_take("import_warning", &warning);
+            if (!warning_taken) {
+                rt_error(EK_IO, current_line,
+                         "import_warning: recorded result is not replayable");
+                vm_push(make_null());
+                DISPATCH();
+            }
+            if (warning && warning->type == VAL_STR && warning->data.str[0])
+                fputs(warning->data.str, stderr);
+        }
         val_decref(warning);
         int replay_source = trace_source_replay("import_source", &source, &source_size,
                                                  &tape_identity, &tape_error);

@@ -111,7 +111,8 @@ for f in files:
         ok is 1
         passed_files is passed_files + 1
         if trace_on_fail == 1:
-            rm of tape
+            if file_exists of tape:
+                remove_file of tape
             tape is ""
     ap is extract_count of [output, "Pass:"]
     af is extract_count of [output, "Fail:"]

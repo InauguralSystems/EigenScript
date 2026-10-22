@@ -55,7 +55,10 @@ catch e:
     count_t is tag of e.message
 fresh_v is (store_get of [fresh, "c", "k"]).v
 store_close of fresh
-rm of f"{d}/s0.db"
-rm of f"{d}/cyc.db"
-rm of f"{d}/fresh.db"
+if file_exists of f"{d}/s0.db":
+    remove_file of f"{d}/s0.db"
+if file_exists of f"{d}/cyc.db":
+    remove_file of f"{d}/cyc.db"
+if file_exists of f"{d}/fresh.db":
+    remove_file of f"{d}/fresh.db"
 print of f"same_slot={same} get={get_m} put={put_t} query={query_t} count={count_t} fresh={fresh_v}"

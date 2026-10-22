@@ -281,7 +281,12 @@ Value* builtin_md5_file(Value *arg) {
     }
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *v = NULL;
-        if (trace_replay_take("md5_file", &v)) {
+        int taken = trace_replay_take("md5_file", &v);
+        if (!taken) {
+            rt_error(EK_IO, 0, "md5_file: recorded result is not replayable");
+            return make_str("");
+        }
+        {
             if (v && v->type == VAL_LIST && v->data.list.count == 1 &&
                 list_elem_type(v, 0) == VAL_STR) {
                 rt_error(EK_IO, 0, "%s", list_get_ref(v, 0)->data.str);

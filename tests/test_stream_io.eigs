@@ -29,5 +29,6 @@ assert_eq of [stream_write of 1.0, false, "stream_write fails after close"]
 assert_eq of [stream_close of null, false, "stream_close on closed stream returns 0"]
 assert_eq of [stream_open of ["nonsense", "not-a-number"], false, "stream_open rejects bad args"]
 
-rm of path
+if file_exists of path:
+    remove_file of path
 test_summary of null
