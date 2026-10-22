@@ -25,8 +25,9 @@ acquisition—not reads performed by a running EigenScript program—and therefo
 remain live. The audited per-site classification, every read and write site with its reason, is in PR #1901's discussion (#1885).
 
 The same boundary applies outside the filesystem: raw TCP and HTTP-client
-socket results (including sends) and clock values are tape-served before their
-host calls; subprocess execution and HTTP serving (including
+socket results (including sends) and the script-visible clocks (`clock_unix`,
+`monotonic_ns`, `monotonic_ms`) are tape-served before their host calls (the
+SDL clock behind `gfx_ticks` is not yet taped: #1914); subprocess execution and HTTP serving (including
 `http_early_bind`) are refused before touching the host. SDL capture input and
 generated noise are tape-served; file-backed fonts and music are refused.
 SDL window/playback opening and subsequent drawing/device output are output
@@ -34,8 +35,10 @@ boundaries rather than nondeterministic inputs and remain live. Runtime-only sch
 handling are not program-observable host operations. The CLI's `setenv` calls
 configure trace/replay before program execution; no EigenScript builtin writes
 the process environment. Thus replay performs no program-requested network,
-process, signal, sleep, or environment-write operation; display/audio output is
-the explicit non-filesystem exception.
+process, signal, or environment-write operation; display/audio output is the
+explicit non-filesystem exception. Program sleeps (`usleep`, `gfx_delay`) still
+wait live under replay. They have no effect beyond elapsed time, and whether a
+replay should skip them is #1914.
 
 Two environment variables control it:
 
