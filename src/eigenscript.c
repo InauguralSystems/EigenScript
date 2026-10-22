@@ -2077,6 +2077,11 @@ int eigs_opt_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, con
  * bytes or indices instead call the corresponding checked conversion. */
 double buffer_read_f64(const Value *buffer, int64_t index) {
     double x = buffer->data.buffer.data[index];
+    /* #1417: a strict NaN scalar read retains the first NaN diagnostic and
+     * INVALID flag. Do this before the generic nonfinite refusal; callers
+     * must stop before reading a later infinity. The finite-only refusal in
+     * non-strict mode and the infinity refusal remain unchanged. */
+    if (g_strict && x != x && !g_has_error) return num_guard(x);
     if (!isfinite(x)) {
         if (!g_has_error)
             rt_error(EK_VALUE, 0, "buffer_read_f64: expected a finite number");

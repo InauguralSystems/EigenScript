@@ -522,7 +522,7 @@ in a buffer first converts it to float and can round it.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) |
-| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every strict mode (N13). An empty list returns int `0`. |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every strict mode (N13). In strict mode the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. |
 
 ### Construction
 

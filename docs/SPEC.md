@@ -2487,7 +2487,7 @@ arithmetic remains float. An all-int `sum` returns an exact int, while a
 float anywhere in a nested input selects float addition for the entire
 reduction. A buffer selects float addition too. An empty list's sum is int
 zero, in both call forms. `sum` refuses non-finite buffer elements with a
-`value` error in every strict mode (N13).
+`value` error in every strict mode (N13). In strict mode, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
 
 ```eigenscript
 exact is sum of [9007199254740993, 1]

@@ -779,6 +779,22 @@ static void container_and_buffer(void) {
         check(k < 8 ? !g_has_error && f == cells[k] : g_has_error && g_error_kind == EK_VALUE,
               "buffer_read_f64 finite data and nonfinite refusal");
     }
+    int saved_strict = g_strict;
+    unsigned saved_flags = g_math_flags;
+    for (int strict = 0; strict <= 1; strict++) {
+        g_strict = strict;
+        g_math_flags = 0;
+        reset_error();
+        f = buffer_read_f64(&buf, 8);
+        check(g_has_error && g_error_kind == EK_VALUE && f == 0.0,
+              "buffer_read_f64 NaN refusal in both modes");
+        check(g_math_flags == (strict ? EIGS_MATH_INVALID : 0),
+              "buffer_read_f64 strict NaN retains INVALID only");
+        check(strstr(g_error_raw, strict ? "not a number" : "expected a finite number") != NULL,
+              "buffer_read_f64 strict NaN retains its diagnostic");
+    }
+    g_strict = saved_strict;
+    g_math_flags = saved_flags;
     reset_error(); check(!buffer_index_at(&buf, -1, &i, "reader") && g_error_kind == EK_INDEX, "buffer negative index");
     reset_error(); check(!buffer_byte_at(&buf, buf.data.buffer.count, (uint8_t *)&i, "reader") && g_error_kind == EK_INDEX, "buffer upper index");
     reset_error();
