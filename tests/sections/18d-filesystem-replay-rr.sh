@@ -44,3 +44,15 @@ else
 fi
 printf '%s\n' "$FIX3_OUTPUT"
 unset FIX3_OUTPUT FIX3_RC
+
+echo ""
+FIX1914_OUTPUT=$(EIGS="$EIGENSCRIPT" bash "$TESTS_DIR/test_issue_1914_followup.sh" 2>&1); FIX1914_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$FIX1914_RC" -eq 0 ] && rc_ok "$FIX1914_RC" "$FIX1914_OUTPUT" &&
+   grep -q '^ISSUE 1914 FOLLOW-UP: 5 passed, 0 failed$' <<< "$FIX1914_OUTPUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: #1914 replay follow-up regressions"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: #1914 replay follow-up (rc=$FIX1914_RC)"
+fi
+printf '%s\n' "$FIX1914_OUTPUT"
+unset FIX1914_OUTPUT FIX1914_RC

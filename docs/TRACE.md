@@ -29,8 +29,8 @@ remain live. The audited per-site classification, every read and write site with
 
 The same boundary applies outside the filesystem: raw TCP and HTTP-client
 socket results (including sends) and the script-visible clocks (`clock_unix`,
-`monotonic_ns`, `monotonic_ms`) are tape-served before their host calls (the
-SDL clock behind `gfx_ticks` is not yet taped: #1914); subprocess execution and HTTP serving (including
+`monotonic_ns`, `monotonic_ms`, and `gfx_ticks`) are tape-served before their
+host calls; subprocess execution and HTTP serving (including
 `http_early_bind`) are refused before touching the host. SDL capture input and
 generated noise are tape-served; file-backed fonts and music are refused.
 SDL window/playback opening and subsequent drawing/device output are output
@@ -39,9 +39,13 @@ handling are not program-observable host operations. The CLI's `setenv` calls
 configure trace/replay before program execution; no EigenScript builtin writes
 the process environment. Thus replay performs no program-requested network,
 process, signal, or environment-write operation; display/audio output is the
-explicit non-filesystem exception. Program sleeps (`usleep`, `gfx_delay`) still
-wait live under replay. They have no effect beyond elapsed time, and whether a
-replay should skip them is #1914.
+explicit non-filesystem exception. Program sleeps (`usleep`, `gfx_delay`) wait
+live under replay. A wait can order spawned workers' observable output: in the
+`sleep_orders_spawned_output` regression, a worker waiting 50 ms prints before
+one waiting 600 ms. Skipping both waits makes that recorded order depend on the
+host scheduler during replay, so the pre-registered fallback requires live
+waits. The 550 ms margin is deliberately wide enough for a loaded CI runner to
+start both workers before the slower worker becomes eligible to print.
 
 Two environment variables control it:
 
@@ -326,7 +330,9 @@ perspective lands on the tape as an `N` record:
 - **Model extension (#960):** `eigen_model_load`, `eigen_checkpoint_info`, and
   `eigen_generate`. A load or inspection call records its verdict; replay
   returns that verdict before probing the path or reading any checkpoint
-  payload. Sampling at temperature
+  payload. A replayed successful load does re-emit `Loading model from:` using
+  the recording-resolved path in that verdict, preserving stdout; it does not
+  emit the live-weights diagnostic because no live probe occurred. Sampling at temperature
   above 0 draws from the shared `drand48` stream, so the emitted token list
   is a nondeterministic return — untaped, a generating program could not be
   replayed at all. **One record per call carries the whole token list**, not

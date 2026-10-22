@@ -1,0 +1,1 @@
+- Make replay stop oversized imports, strictly validate taped hashes, tape SDL ticks, keep ordering sleeps live, preserve worker exit codes, and reproduce model-load output.

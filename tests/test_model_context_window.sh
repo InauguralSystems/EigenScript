@@ -127,8 +127,9 @@ for jit_off in 0 1; do
     for model_state in unchanged missing larger smaller; do
         replay_name="CW-replay-$jit_off-$model_state"
         # Replay serves eigen_model_load's taped verdict and never reads the
-        # model file (#1885). Every state replays the recorded program, and the
-        # live loader's diagnostic does not print: no load happens.
+        # model file (#1885). Every state replays the recorded program. The
+        # stdout banner is reconstructed from the taped resolved path, while
+        # the live loader's stderr diagnostic does not print: no probe happens.
         if [ "$model_state" = missing ]; then
             rm "$MODEL"
         elif [ "$model_state" = unchanged ]; then
@@ -137,6 +138,11 @@ for jit_off in 0 1; do
             cp "$WORK/$model_state.json" "$MODEL"
         fi
         run_clean "$replay_name" '' env EIGS_JIT_OFF="$jit_off" EIGS_REPLAY="$tape" EIGS_REPLAY_STRICT=1 "$EIGS" "$HARNESS"
+        if [ "$(head -1 "$WORK/$replay_name.out")" = "Loading model from: $MODEL" ]; then
+            ok "$replay_name re-emits the taped model path"
+        else
+            fail "$replay_name taped model banner" "first line=$(head -1 "$WORK/$replay_name.out")"
+        fi
         sed -n '/^CW transcript$/,$p' "$WORK/$replay_name.out" > "$WORK/replayed.out"
         refusals=$(grep -Fxc 'value: eigen_generate: prompt length 17 exceeds model max_seq_len 16' "$WORK/replayed.out")
         if [ "$refusals" = 1 ] && cmp -s "$WORK/recorded.out" "$WORK/replayed.out"; then

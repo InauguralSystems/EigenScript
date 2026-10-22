@@ -316,8 +316,9 @@ struct Value;
 void trace_nondet_value(const char *fn, struct Value *v);
 /* Module sources are split into bounded string records so even a source whose
  * escaped spelling exceeds the per-record budget remains replayable. */
-void trace_source_record(const char *kind, const char *source, size_t size,
-                         const char *identity, const char *error);
+/* Returns 0 when recording raised (currently, an over-cap source). */
+int trace_source_record(const char *kind, const char *source, size_t size,
+                        const char *identity, const char *error);
 /* 0 = replay disabled, 1 = complete source or recorded source error,
  * -1 = malformed/truncated tape (the replay error has already been raised). */
 int trace_source_replay(const char *kind, char **source, long *size,
