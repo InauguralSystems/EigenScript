@@ -371,7 +371,7 @@ consequences are contracts you can rely on:
     a raw non-finite kernel result internally. Ordinary indexed reads apply
     that guard: infinity saturates at ±`1e308`, while under `EIGS_STRICT=0` a
     `NaN` becomes `0` and sets `math_flags.invalid` (strict mode raises).
-    `sum`, `get_at` and `dot` instead refuse non-finite buffer
+    `sum`, `get_at`, `dot` and `write_bytes` instead refuse non-finite buffer
     elements in every strict mode (N13).
   - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
     document is walked leniently and a parse failure answers the same `""`
@@ -1323,6 +1323,10 @@ receiving C type raise `value` before indexing or effects.
 C long range, with no one-year cap. `usleep` rounds microseconds and raises
 beyond the C int range. `record_history` returns its previous flag as an int;
 nonzero numeric flags still enable history. `task_detach` and sandbox error lines return ints.
+`read_bytes` produces int bytes; `write_bytes` requires exact bytes in 0..255
+and returns an int count. File caps and corpus/stream counts follow N5; an
+integral stream count outside its cap still raises `limit`. Subprocess exit
+statuses are ints, and timeout seconds round to representable poll milliseconds.
 
 ```eigenscript
 print of (substr of ["hello", 1.0, 2.0])
@@ -1336,6 +1340,15 @@ try:
     usleep of 1e300
 catch e:
     print of e.kind
+path is mktemp of null
+written is write_bytes of [path, [65.0, 66.0]]
+bytes is read_bytes of path
+print of [num_type of written, num_type of bytes[0], str_from_bytes of bytes]
+try:
+    write_bytes of [path, [65.5]]
+catch e:
+    print of e.kind
+remove_file of path
 ```
 ```output
 el
@@ -1343,8 +1356,9 @@ value
 int
 null
 value
+["int", "int", "AB"]
+value
 ```
-
 
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
@@ -2615,7 +2629,7 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 [buf, rows, cols]` shapes an existing flat buffer (the element count must
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
-At the buffer/scalar boundary, `sum`, `get_at` and `dot` refuse
+At the buffer/scalar boundary, `sum`, `get_at`, `dot` and `write_bytes` refuse
 non-finite elements in every strict mode (N13). Other consumers use the numeric guard: infinity saturates
 at ±`1e308`, while a `NaN` raises in strict mode or becomes `0` and sets
 `math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer equality and
@@ -2623,7 +2637,8 @@ the other scalar reductions normalize each input before comparison or
 arithmetic. A strict read that raises inside a function retains that
 function's source location and call frame. Buffer-to-list tensor materialization
 and numeric byte/sample/device conversions apply the same read rule, stopping
-at the first raised read. Numeric bytes truncate and wrap modulo 256 after normalization.
+at the first raised read. `write_bytes` requires exact bytes in 0..255 (N5/Q1);
+the remaining byte converters retain truncation and wrapping at this stage.
 Audio samples clamp to their documented sample range.
 Raw buffer copies, typed serialization and internal buffer-only kernel work
 areas retain their stored representation.

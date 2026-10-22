@@ -229,11 +229,12 @@ sqrt(2) = 1.414213562373095
   opt-out that brings the finite stand-ins back (`NaN` collapses to `0`,
   `sqrt of -1` is `0`, `abs of "x"` is `0`).
   Non-finite tensor results receive the scalar guard when read from a buffer;
-  `sum`, `get_at` and `dot` instead refuse non-finite buffer
+  `sum`, `get_at`, `dot` and `write_bytes` instead refuse non-finite buffer
   elements in every strict mode (N13). Structural buffer
   equality, the other scalar reductions, mixed buffer/list materialization
   and numeric byte/sample/device conversions normalize their inputs and stop at
-  the first raised read. Numeric bytes truncate and wrap modulo 256 after normalization.
+  the first raised read. `write_bytes` requires exact bytes in 0..255
+  (N5/Q1); other byte converters retain truncation and wrapping at this stage;
   raw copies, serialization and buffer-only work areas preserve representation.
   `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
   substitution. `str_from_bytes` stops at numeric NUL without inspecting later
@@ -459,6 +460,10 @@ receiving C type raise `value` before indexing or effects.
 C long range, with no one-year cap. `usleep` rounds microseconds and raises
 beyond the C int range. `record_history` returns its previous flag as an int;
 nonzero numeric flags still enable history. `task_detach` and sandbox error lines return ints.
+`read_bytes` produces int bytes; `write_bytes` requires exact bytes in 0..255
+and returns an int count. File caps and corpus/stream counts follow N5; an
+integral stream count outside its cap still raises `limit`. Subprocess exit
+statuses are ints, and timeout seconds round to representable poll milliseconds.
 
 ```eigenscript
 print of (substr of ["hello", 1.0, 2.0])
@@ -472,6 +477,15 @@ try:
     usleep of 1e300
 catch e:
     print of e.kind
+path is mktemp of null
+written is write_bytes of [path, [65.0, 66.0]]
+bytes is read_bytes of path
+print of [num_type of written, num_type of bytes[0], str_from_bytes of bytes]
+try:
+    write_bytes of [path, [65.5]]
+catch e:
+    print of e.kind
+remove_file of path
 ```
 ```output
 el
@@ -479,8 +493,9 @@ value
 int
 null
 value
+["int", "int", "AB"]
+value
 ```
-
 
 Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 

@@ -2112,8 +2112,13 @@ int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char
         if (!g_has_error) rt_error(EK_INDEX, 0, "%s: buffer index is out of range", num_who(who));
         return 0;
     }
+    /* #1417: exact byte/index reads share the data boundary's first-NaN
+     * diagnostic and INVALID flag. Stop before converting its stand-in or
+     * reading a later cell; non-strict nonfinite inputs still refuse (N13). */
+    double cell = buffer_read_f64(buffer, index);
+    if (g_has_error) return 0;
     Value v = { .type = VAL_FLOAT };
-    VAL_F64_RAW(&v) = buffer->data.buffer.data[index];
+    VAL_F64_RAW(&v) = cell;
     int64_t i = eigs_int_arg(&v, who);
     if (g_has_error) return 0;
     *out = i; return 1;

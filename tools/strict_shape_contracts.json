@@ -784,20 +784,20 @@
     "category": "variadic",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole string list is argv; exactly [argv-list, timeout] is alternate form. Rejecting all >2 breaks valid commands.",
+    "reason": "Whole string list is argv; exactly [argv-list, timeout] is alternate form. Rejecting all >2 breaks valid commands. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged.",
     "public_names": [
       "exec_capture"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "4070717c832c2e4150564bdd324ccc1fb81f427c5cd2b7ab1c3b6397b3b0ba98"
+      "5e9886f655fbb21594fe3fe2413307e8256cb9e7259196dbf2dbb128e14c51c8"
     ],
     "source_sha256": {
       "builtin_exec_capture": [
-        "4070717c832c2e4150564bdd324ccc1fb81f427c5cd2b7ab1c3b6397b3b0ba98"
+        "5e9886f655fbb21594fe3fe2413307e8256cb9e7259196dbf2dbb128e14c51c8"
       ],
-      "eigs_list_num": [
-        "25755c9b1f519fb0447e2d648dc0272419914db805f9249954cd2e146b48a3bc"
+      "eigs_list_float": [
+        "7742c72ce566aaacdfbf62a4a65569897bbbae97493aff0c5d3017606422503a"
       ]
     }
   },

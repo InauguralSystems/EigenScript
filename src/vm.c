@@ -1312,8 +1312,9 @@ void jit_helper_set_name(EigsChunk *chunk, int idx) {
         return;
     }
     env_set_local_pre_interned_slot(env_binding_home(start), name, chunk->intern_tbl, h, s);
+    /* Resolver outputs are initialized only on a successful lookup. */
     Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
-    if (!g_vm_multithreaded && t2 == start) {   /* #1171 */
+    if (!g_vm_multithreaded && t2 && t2 == start) {   /* #1171 */
         ic->starting_env = start;
         ic->starting_ver = start->binding_version;
         ic->target_ver   = start->binding_version;
@@ -1343,7 +1344,7 @@ void jit_helper_set_name_local(EigsChunk *chunk, int idx) {
     env_set_local_pre_interned_slot(start, name, chunk->intern_tbl, h, s);
     int slot_idx, depth;
     Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
-    if (!g_vm_multithreaded && target == start) {   /* #1171 */
+    if (!g_vm_multithreaded && target && target == start) {   /* #1171 */
         ic->starting_env = start;
         ic->starting_ver = start->binding_version;
         ic->target_ver   = start->binding_version;
@@ -1392,7 +1393,7 @@ void jit_helper_set_fn_name_local(EigsChunk *chunk, int idx) {
     env_set_local_pre_interned_slot(target, name, chunk->intern_tbl, h, s);
     int slot_idx, depth;
     Env *resolved = env_resolve_chain(target, name, h, &slot_idx, &depth);
-    if (!g_vm_multithreaded && resolved == target) {   /* #1171 */
+    if (!g_vm_multithreaded && resolved && resolved == target) {   /* #1171 */
         ic->starting_env = target;
         ic->starting_ver = target->binding_version;
         ic->target_ver   = target->binding_version;
@@ -2139,7 +2140,7 @@ static void loop_iter_store(Env *env, double n) {
     Env *target = env_resolve_chain(env, "__loop_iterations__",
                                     env_hash_name("__loop_iterations__"),
                                     &slot_idx, &depth);
-    if (target == env && depth == 0) {
+    if (target && target == env && depth == 0) {
         c->env = env;
         c->version = env->binding_version;
         c->slot = slot_idx;
@@ -4015,7 +4016,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * scope (#959), then populate IC. */
         env_set_local_pre_interned_slot(env_binding_home(start), name, chunk->intern_tbl, h, s);
         Env *t2 = env_resolve_chain(start, name, h, &slot_idx, &depth);
-        if (!g_vm_multithreaded && t2 == start) {   /* #297: see above */
+        if (!g_vm_multithreaded && t2 && t2 == start) {   /* #297: see above */
             ic->starting_env = start;
             ic->starting_ver = start->binding_version;
             ic->target_ver   = start->binding_version;
@@ -4046,7 +4047,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         env_set_local_pre_interned_slot(start, name, chunk->intern_tbl, h, s);
         int slot_idx, depth;
         Env *target = env_resolve_chain(start, name, h, &slot_idx, &depth);
-        if (!g_vm_multithreaded && target == start) {   /* #297: see above */
+        if (!g_vm_multithreaded && target && target == start) {   /* #297: see above */
             ic->starting_env = start;
             ic->starting_ver = start->binding_version;
             ic->target_ver   = start->binding_version;
@@ -4085,7 +4086,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         env_set_local_pre_interned_slot(target, name, chunk->intern_tbl, h, s);
         int slot_idx, depth;
         Env *resolved = env_resolve_chain(target, name, h, &slot_idx, &depth);
-        if (!g_vm_multithreaded && resolved == target) {   /* #297: see above */
+        if (!g_vm_multithreaded && resolved && resolved == target) {   /* #297: see above */
             ic->starting_env = target;
             ic->starting_ver = target->binding_version;
             ic->target_ver   = target->binding_version;

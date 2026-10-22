@@ -386,6 +386,7 @@ static inline __attribute__((always_inline)) void
 list_set_num(Value *list, int i, double d) {
     list_rewrite_num(list, i, num_guard(d));
 }
+__attribute__((unused))
 EIGS_R16_DEPRECATED("#1758 R1.6: replace list_append_num by its decided numeric reader or producer")
 static inline void list_append_num(Value *list, double d) {
     d = num_guard(d);

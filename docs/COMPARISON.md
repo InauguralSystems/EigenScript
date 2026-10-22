@@ -92,6 +92,10 @@ receiving C type raise `value` before indexing or effects.
 C long range, with no one-year cap. `usleep` rounds microseconds and raises
 beyond the C int range. `record_history` returns its previous flag as an int;
 nonzero numeric flags still enable history. `task_detach` and sandbox error lines return ints.
+`read_bytes` produces int bytes; `write_bytes` requires exact bytes in 0..255
+and returns an int count. File caps and corpus/stream counts follow N5; an
+integral stream count outside its cap still raises `limit`. Subprocess exit
+statuses are ints, and timeout seconds round to representable poll milliseconds.
 
 ```eigenscript
 print of (substr of ["hello", 1.0, 2.0])
@@ -105,6 +109,15 @@ try:
     usleep of 1e300
 catch e:
     print of e.kind
+path is mktemp of null
+written is write_bytes of [path, [65.0, 66.0]]
+bytes is read_bytes of path
+print of [num_type of written, num_type of bytes[0], str_from_bytes of bytes]
+try:
+    write_bytes of [path, [65.5]]
+catch e:
+    print of e.kind
+remove_file of path
 ```
 ```output
 el
@@ -112,8 +125,9 @@ value
 int
 null
 value
+["int", "int", "AB"]
+value
 ```
-
 
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
@@ -397,13 +411,14 @@ containers. They do not fuse the multiplication and addition.
 Raw non-finite results may remain in a buffer's internal work area, but every
 ordinary indexed read applies EigenScript's numeric guard: infinity saturates at
 ±`1e308`, and a NaN raises in strict mode (or becomes `0` and sets the invalid
-math flag under `EIGS_STRICT=0`). `sum`, `get_at` and `dot`
+math flag under `EIGS_STRICT=0`). `sum`, `get_at`, `dot` and `write_bytes`
 instead refuse non-finite buffer elements in every strict mode (N13).
 Structural buffer equality and the remaining scalar reductions normalize each
 input before comparison or arithmetic; the reduction
 association contracts remain unchanged. Mixed buffer/list tensor operations and
 numeric byte/sample/device conversions also normalize reads and stop on the
-first error. Numeric bytes truncate and wrap modulo 256 after normalization.
+first error. `write_bytes` requires exact bytes in 0..255 (N5/Q1); other byte
+converters retain truncation and wrapping at this stage.
 Raw copies, typed serialization and buffer-only work areas preserve their data.
 `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL and does not inspect later
