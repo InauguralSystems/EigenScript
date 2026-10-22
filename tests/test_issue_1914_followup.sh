@@ -25,12 +25,12 @@ else bad "oversized import" "rc=$rc out=$(cat "$T/import.out") err=$(cat "$T/imp
 printf 'try:\n    print of (md5_file of "never-open")\ncatch e:\n    print of e\n' > "$T/md5.eigs"
 vh=$(head -1 "$T/import.tape")
 shape_ok=1
-for shape in '[]' '[1]' '["a", "b"]'; do
+for shape in '[]' '[1]' '["a", "b"]' '"x"' '"0123456789abcdef0123456789abcdeF"' '"0123456789abcdef0123456789abcdef0"'; do
     printf '%s\nB 0 1 1 0 root -\nN 0 md5_file=%s\n' "$vh" "$shape" > "$T/md5.tape"
     out=$(EIGS_REPLAY="$T/md5.tape" "$EIGS" "$T/md5.eigs" 2>&1)
     echo "$out" | grep -q 'md5_file: recorded result has invalid replay shape' || shape_ok=0
 done
-[ "$shape_ok" -eq 1 ] && ok "malformed md5_file error lists are refused" || bad "md5_file shapes" "one was accepted"
+[ "$shape_ok" -eq 1 ] && ok "malformed md5_file results are refused" || bad "md5_file shapes" "one was accepted"
 
 # 4: changing the host clock cannot change a replayed SDL tick value.
 printf 'print of (gfx_ticks of null)\n' > "$T/ticks.eigs"
@@ -41,19 +41,31 @@ if cmp -s "$T/ticks.record" "$T/ticks.replay" && grep -q ' gfx_ticks=' "$T/ticks
     ok "gfx_ticks is tape-served"
 else bad "gfx_ticks tape" "record=$(cat "$T/ticks.record") replay=$(cat "$T/ticks.replay")"; fi
 
-# 5: replay validates the argument but skips the program-requested wait.
-printf 'usleep of 1500000\nprint of "awake"\n' > "$T/sleep.eigs"
-EIGS_TRACE="$T/sleep.tape" "$EIGS" "$T/sleep.eigs" >/dev/null
-start=$(python3 -c 'import time; print(time.monotonic())')
-out=$(EIGS_REPLAY="$T/sleep.tape" "$EIGS" "$T/sleep.eigs")
-elapsed=$(python3 - "$start" <<'PY'
-import sys,time
-print(time.monotonic()-float(sys.argv[1]))
-PY
-)
-if [ "$out" = awake ] && python3 - "$elapsed" -c 'import sys; raise SystemExit(not float(sys.argv[1]) < 1.0)'; then
-    ok "replay skips usleep"
-else bad "replay sleep" "elapsed=$elapsed out=$out"; fi
+# 5: sleep_orders_spawned_output -- waits must remain live so they continue to
+# order observable worker output.  The 550 ms margin gives a loaded runner ample
+# time to start both workers before the slow worker is eligible to print.
+cat > "$T/sleep.eigs" <<'EOF'
+define slow() as:
+    usleep of 600000
+    print of "slow"
+define fast() as:
+    usleep of 50000
+    print of "fast"
+slow_handle is spawn of slow
+fast_handle is spawn of fast
+thread_join of slow_handle
+thread_join of fast_handle
+EOF
+EIGS_TRACE="$T/sleep.tape" "$EIGS" "$T/sleep.eigs" > "$T/sleep.record"
+sleep_ok=1
+[ "$(cat "$T/sleep.record")" = $'fast\nslow' ] || sleep_ok=0
+for attempt in $(seq 1 20); do
+    EIGS_REPLAY="$T/sleep.tape" "$EIGS" "$T/sleep.eigs" > "$T/sleep.replay" || sleep_ok=0
+    cmp -s "$T/sleep.record" "$T/sleep.replay" || sleep_ok=0
+done
+if [ "$sleep_ok" -eq 1 ]; then
+    ok "sleep_orders_spawned_output matches across 20 replays"
+else bad "replay sleep ordering" "record=$(cat "$T/sleep.record") replay=$(cat "$T/sleep.replay")"; fi
 
 # 6: EOF joins the worker before the REPL samples graceful_exit_code.
 set +e

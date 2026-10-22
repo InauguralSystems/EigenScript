@@ -1,1 +1,1 @@
-- Make replay stop oversized imports, validate taped hashes, tape SDL ticks, skip inert waits, preserve worker exit codes, and reproduce model-load output.
+- Make replay stop oversized imports, strictly validate taped hashes, tape SDL ticks, keep ordering sleeps live, preserve worker exit codes, and reproduce model-load output.

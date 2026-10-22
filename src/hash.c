@@ -293,7 +293,16 @@ Value* builtin_md5_file(Value *arg) {
                 val_decref(v);
                 return make_str("");
             }
-            if (v && v->type == VAL_STR) return v;
+            if (v && v->type == VAL_STR) {
+                const char *digest = v->data.str;
+                size_t i;
+                for (i = 0; i < 32; i++) {
+                    if (!digest[i] || !((digest[i] >= '0' && digest[i] <= '9') ||
+                                        (digest[i] >= 'a' && digest[i] <= 'f')))
+                        break;
+                }
+                if (i == 32 && digest[i] == '\0') return v;
+            }
             if (v) val_decref(v);
             rt_error(EK_IO, 0,
                      "md5_file: recorded result has invalid replay shape");

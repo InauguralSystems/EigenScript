@@ -855,7 +855,7 @@ Value* builtin_gfx_delay(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "gfx_delay", "number milliseconds",
               make_null());
     Uint32 ms = (Uint32)eigs_num_arg(arg, __func__);
-    if (!g_replay_enabled && g_sdl_lib) p_SDL_Delay(ms);
+    if (g_sdl_lib) p_SDL_Delay(ms);
     return make_null(); /* fs:VOID gfx_delay answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 

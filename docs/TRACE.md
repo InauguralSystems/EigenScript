@@ -39,12 +39,13 @@ handling are not program-observable host operations. The CLI's `setenv` calls
 configure trace/replay before program execution; no EigenScript builtin writes
 the process environment. Thus replay performs no program-requested network,
 process, signal, or environment-write operation; display/audio output is the
-explicit non-filesystem exception. Program sleeps (`usleep`, `gfx_delay`) are
-validated but skipped under replay. The #1914 decision measurement ran
-`tools/replay_diff.sh` both with and without live replay waits: all 261 programs
-(including its concurrent and task programs) were byte-identical in both runs,
-with 23 documented boundaries, zero nondeterministic results, and one ledgered
-case. The pre-registered rule therefore keeps the skip.
+explicit non-filesystem exception. Program sleeps (`usleep`, `gfx_delay`) wait
+live under replay. A wait can order spawned workers' observable output: in the
+`sleep_orders_spawned_output` regression, a worker waiting 50 ms prints before
+one waiting 600 ms. Skipping both waits makes that recorded order depend on the
+host scheduler during replay, so the pre-registered fallback requires live
+waits. The 550 ms margin is deliberately wide enough for a loaded CI runner to
+start both workers before the slower worker becomes eligible to print.
 
 Two environment variables control it:
 
