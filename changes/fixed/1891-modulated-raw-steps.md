@@ -1,0 +1,1 @@
+- `equilibrium` no longer answers true for a one-direction tail; the #1891 flicker is documented with measured rates, not fixed.

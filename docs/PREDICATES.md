@@ -113,9 +113,24 @@ steps `Δv` kept alongside — #422):
 | `diverging` | value at the saturation ceiling (any window fill), or non-vanishing same-sign raw steps (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
 | `oscillating` | ≥ 4 deadband sign-flips of `rel`; or non-vanishing raw alternation (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
 
-The quiescent lattice on this route: `converged ⊂ equilibrium` and
-`converged ⊂ stable` (all-under-deadband satisfies all three). The rest
-bands exclude the raw structure tests; the motion bands are mutually
+**Modulated raw steps (#1891).** The historical half-window mean rule is
+kept. With only `N = 10` samples, it cannot separate a slowly modulated decay
+from a modulated constant-envelope runaway, so replacing it would merely move
+silent wrong answers between the two classes. Measurements on the real binary
+used steps `c*E^k*(1+m*cos(w*k+θ))`, 16 phases, both signs, and checkpoints
+4–60. The false-`diverging` rates for decay were 0.4% at `E=0.9, m=0.3,
+w=2`; 19.5% at `E=0.94, m=0.84, w=2` (the #1891 class); 45.0% at
+`E=0.99, m=0.84, w=2`; and 49.3% at `E=0.999, m=0.84, w=2`. For runaways,
+`G=1` (constant envelope), `m=0.3` or `0.84`, `w=2` read `diverging` on
+50.0% of reads, while `G=1.05, m=0.84, w=2` read `diverging` on 73.1%.
+These scored disagreements are the documented residual, not waived oracle
+floor losses. More observer memory than `N = 10` is the open direction on
+#1891.
+
+The quiescent lattice on this route has `converged ⊂ stable`. A converged
+one-direction tail is not `equilibrium`: its deterministic mean still has a
+trend, even though its remaining motion is below the convergence deadband.
+The rest bands exclude the raw structure tests; the motion bands are mutually
 exclusive. `report` resolves the canonical priority `oscillating →
 diverging → improving → converged → equilibrium → stable → moving`.
 
@@ -579,17 +594,36 @@ the most specific via its priority order.
   `down_fraction`/`up_fraction` of 0 — never improving or diverging. This
   is the #187 contract enforced at the window level. The `stable`
   no-consecutive-flips clause likewise excludes `oscillating`.
-- **The quiescent lattice** (full-window, near-zero motion):
-  `converged ⊂ equilibrium`, and a *high-entropy* `equilibrium ⊂ stable`.
-  Concretely a full quiet window is exactly one of:
-  - **low entropy** → `converged` (and `equilibrium`; `report` →
-    `converged`);
-  - **high entropy** → `equilibrium` *and* `stable` (`report` →
-    `equilibrium`).
-  So `equilibrium` never fires alone — it is always accompanied by
-  `converged` (low H) or `stable` (high H). A `stable` window that is *not*
-  equilibrium is one with steady directional drift (mean `|dH| > dh_zero`)
-  **at high entropy**: moving a little, but settled.
+- **The numeric value-channel quiescent bands.** For a numeric binding,
+  `converged`, `equilibrium` and `stable` read the window's relative steps
+  and NEVER the entropy. All three need a full window, and none fires on a
+  raw runaway or a raw oscillation.
+  - `converged ⊂ stable`. Every relative step under the settle deadband
+    implies every step under `dh_small`, with no sign flip above the deadband.
+  - `equilibrium` is not implied by `converged`. It needs balanced motion,
+    meaning a window mean and variance under the deadband. It also rejects a
+    one-direction trend: at least two nonzero raw steps, all of one sign.
+    Exact-zero steps are neutral.
+
+  Concretely, a full window whose relative steps are all under the deadband
+  is one of:
+  - **balanced or settled** (raw steps mixed in sign, or exactly zero) →
+    `converged`, `equilibrium` and `stable` (`report` → `converged`);
+  - **a one-direction tail** → `converged` and `stable` but not
+    `equilibrium` (`report` → `converged`).
+
+  `equilibrium` can fire without `converged`. A balanced window whose mean
+  and variance are under the deadband can still hold individual steps above
+  it. A `stable` window that is not `converged` has every step under
+  `dh_small` but some above the deadband: small, steady motion.
+- **The entropy-channel quiescent bands have a separate lattice.** Entropy
+  predicates operate on the `dH` window and do not apply the numeric route's
+  raw-value-step trend guard. When a full low-entropy window has every
+  `|dH| < dh_zero`, both `converged` and `equilibrium` are true, including
+  when all its nonzero `dH` steps point in one direction (`report` →
+  `converged`). At high entropy, `equilibrium ⊂ stable` as before. Thus the
+  entropy route permits `converged` and `equilibrium` to co-fire for a
+  same-direction quiet window; the numeric value route deliberately does not.
 - **The bands are not exhaustive.** A full window with steady gray-band
   drift at *low* entropy fires nothing: the steps are under `dh_small` so
   `improving`/`diverging` are excluded by the #187 rule, the mean is over
