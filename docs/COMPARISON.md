@@ -89,7 +89,9 @@ The positions and counts of `char_at`, `substr`, `get_at`, `set_at`,
 exit codes. Integral floats are accepted; fractions and values outside the
 receiving C type raise `value` before indexing or effects.
 `recv_timeout` rounds milliseconds half away from zero and raises beyond the
-C long range, with no one-year cap. `task_detach` and sandbox error lines return ints.
+C long range, with no one-year cap. `usleep` rounds microseconds and raises
+beyond the C int range. `record_history` returns its previous flag as an int;
+nonzero numeric flags still enable history. `task_detach` and sandbox error lines return ints.
 
 ```eigenscript
 print of (substr of ["hello", 1.0, 2.0])
@@ -97,9 +99,18 @@ try:
     print of (substr of ["hello", 1.5, 2])
 catch e:
     print of e.kind
+print of (num_type of (record_history of 0.5))
+print of (usleep of 1.5)
+try:
+    usleep of 1e300
+catch e:
+    print of e.kind
 ```
 ```output
 el
+value
+int
+null
 value
 ```
 

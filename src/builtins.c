@@ -170,7 +170,8 @@ Value* builtin_flush(Value *arg) {
 Value* builtin_usleep(Value *arg) {
     BOOL_REFUSE(arg, "usleep");
     if (!arg || !val_is_number(arg)) return make_null();
-    int us = (int)eigs_num_arg(arg, __func__);
+    int64_t us;
+    if (!eigs_magnitude_arg(arg, INT_MIN, INT_MAX, &us, "usleep")) return make_null();
     if (us > 0) {
         struct timespec deadline;
         clock_gettime(CLOCK_REALTIME, &deadline);
@@ -790,9 +791,9 @@ Value* builtin_observe(Value *arg) {
     (void)arg;
     Value *list = make_list(4);
     list_append_owned(list, make_str("equilibrium"));
-    list_append_owned(list, make_num(0.0));
-    list_append_owned(list, make_num(0.0));
-    list_append_owned(list, make_num(0.0));
+    list_append_owned(list, make_float(0.0));
+    list_append_owned(list, make_float(0.0));
+    list_append_owned(list, make_float(0.0));
     return list;
 }
 
@@ -3800,12 +3801,14 @@ Value* builtin_record_history(Value *arg) {
         return make_null();
     }
     int prev = g_trace_hist;
-    int on = (eigs_num_arg(arg, __func__) != 0.0) ? 1 : 0;
+    double flag = eigs_float_arg(arg, "record_history");
+    if (g_has_error) return make_null();
+    int on = flag != 0.0;
     /* #827: no name to narrow on — a self-hosted compiler calling this is
      * standing in for the whole-program arming, so it gets the wildcard. */
     if (on) { trace_arm_history_all(); trace_flag_store(g_trace_obs_hist_storage, 1); }
     else    trace_history_disable();
-    return make_num((double)prev);
+    return make_int(prev);
 }
 
 /* ==== BUILTIN: tensor_save ==== */
@@ -5276,9 +5279,10 @@ Value* builtin_task_sleep(Value *arg) {
         rt_error(EK_TYPE, 0, "task_sleep requires a number of ticks");
         return make_null();
     }
-    if (!g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
+    double ticks = eigs_float_arg(arg, "task_sleep");
+    if (g_has_error || !g_task_sched) return make_null();   /* no scheduler: nothing to wait for */
     if (no_yield_forbidden("task_sleep")) return make_null();   /* #488 */
-    task_request_sleep(eigs_num_arg(arg, __func__));
+    task_request_sleep(ticks);
     return make_null();   /* placeholder: execution resumes when the clock wakes it */
 }
 
@@ -6218,7 +6222,7 @@ static Value* builtin_dot(Value *arg) {
  * BA_POS(i) is element i of the argument list (`f of [x, true]` is position
  * 1; a one-argument builtin given a list sees the list's elements here).
  * The gate scans the first EIGS_BOOL_GATE_SCAN positions; beyond that the
- * builtin's own typed reads (eigs_num_arg family, ARG_GUARD) decide.
+ * builtin's own typed readers and ARG_GUARD decide.
  * tests/test_bool_fuzz.sh is the oracle: it puts true and false in every
  * slot of every builtin and checks this table against its own reviewed
  * any-value list (tests/bool_fuzz_anyvalue.txt). */
