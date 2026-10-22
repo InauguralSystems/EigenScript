@@ -517,6 +517,8 @@ in a buffer first converts it to float and can round it.
 | `gather` | `gather of [matrix, indices, dim]` | Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
 | `scatter_add` | `scatter_add of [dst, indices, values]` | The gradient of `gather`, accumulated **in place** into the buffer `dst` (returned). A shaped `[rows × cols]` dst does `dst[i][indices[i]] += values[i]` per row; a 1-D dst does the flat `dst[indices[j]] += values[j]`. `values` is a buffer, a list of numbers, or one number broadcast to every index; repeats accumulate. Lengths must line up exactly — a non-scalar `values` shorter or longer than `indices`, or a per-row `dst` whose row count differs from the index count, raises `value` rather than truncating (a dropped gradient entry is a silent wrong number). Every index is validated **before** anything is written, so a raise (`index_range`, `value`, or `type_mismatch` for a non-buffer dst / non-numeric index or value) leaves `dst` untouched (#973) |
 
+Buffer arithmetic stops at its first raised kernel result and releases its partial output; later elements are not read (#1417).
+
 ### Reductions
 
 | Name | Signature | Description |

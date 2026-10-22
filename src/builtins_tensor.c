@@ -436,9 +436,11 @@ static Value* buf_elementwise(Value *a, Value *b, BinOpFn fn) {
             Value *out = make_shaped_buffer(rows, cols);
             if (!out) return make_null();
             for (int r = 0; r < rows; r++)
-                for (int c = 0; c < cols; c++)
+                for (int c = 0; c < cols; c++) {
                     out->data.buffer.data[r * cols + c] =
                         fn(ad[r * cols + c], (bn == cols) ? bd[c] : bd[r]);
+                    if (g_has_error) { val_decref(out); return make_null(); }
+                }
             return out;
         }
     }
@@ -449,32 +451,42 @@ static Value* buf_elementwise(Value *a, Value *b, BinOpFn fn) {
             Value *out = make_shaped_buffer(rows, cols);
             if (!out) return make_null();
             for (int r = 0; r < rows; r++)
-                for (int c = 0; c < cols; c++)
+                for (int c = 0; c < cols; c++) {
                     out->data.buffer.data[r * cols + c] =
                         fn((an == cols) ? ad[c] : ad[r], bd[r * cols + c]);
+                    if (g_has_error) { val_decref(out); return make_null(); }
+                }
             return out;
         }
     }
     if (an == bn) {                      /* same length: keep a's shape */
         Value *out = make_buffer_like(a);
         if (!out) return make_null();
-        for (int i = 0; i < an; i++) out->data.buffer.data[i] = fn(ad[i], bd[i]);
+        for (int i = 0; i < an; i++) {
+            out->data.buffer.data[i] = fn(ad[i], bd[i]);
+            if (g_has_error) { val_decref(out); return make_null(); }
+        }
         return out;
     }
     /* Mismatched lengths truncate to the shorter operand, as the list path does. */
     int n = an < bn ? an : bn;
     Value *out = make_shaped_buffer(0, n);
     if (!out) return make_null();
-    for (int i = 0; i < n; i++) out->data.buffer.data[i] = fn(ad[i], bd[i]);
+    for (int i = 0; i < n; i++) {
+        out->data.buffer.data[i] = fn(ad[i], bd[i]);
+        if (g_has_error) { val_decref(out); return make_null(); }
+    }
     return out;
 }
 
 static Value* buf_scalar_elementwise(Value *buf, double sc, BinOpFn fn, int buf_left) {
     Value *out = make_buffer_like(buf);
     if (!out) return make_null();
-    for (int i = 0; i < buf->data.buffer.count; i++)
+    for (int i = 0; i < buf->data.buffer.count; i++) {
         out->data.buffer.data[i] = buf_left ? fn(buf->data.buffer.data[i], sc)
                                             : fn(sc, buf->data.buffer.data[i]);
+        if (g_has_error) { val_decref(out); return make_null(); }
+    }
     return out;
 }
 
@@ -491,7 +503,9 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     if (val_is_number(a) && val_is_number(b)) {
         const char *who = fn == op_add ? "add" : fn == op_sub ? "subtract" :
                           fn == op_mul ? "multiply" : "divide/pow";
-        EigsNum x = eigs_number_arg(a, who), y = eigs_number_arg(b, who);
+        EigsNum x = eigs_number_arg(a, who);
+        if (g_has_error) return make_null();
+        EigsNum y = eigs_number_arg(b, who);
         if (g_has_error) return make_null();
         if (x.is_int && y.is_int && (fn == op_add || fn == op_sub || fn == op_mul)) {
             int64_t result;
@@ -724,8 +738,10 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
     if (v->type == VAL_BUFFER) {
         Value *out = make_buffer_like(v);
         if (!out) return make_null();
-        for (int i = 0; i < v->data.buffer.count; i++)
+        for (int i = 0; i < v->data.buffer.count; i++) {
             out->data.buffer.data[i] = fn(v->data.buffer.data[i]);
+            if (g_has_error) { val_decref(out); return make_null(); }
+        }
         return out;
     }
     if (v->type == VAL_LIST) {

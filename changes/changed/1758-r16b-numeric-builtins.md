@@ -6,3 +6,4 @@
 - CI follow-up: keep validate.is_alpha recognizing letters after N10 by removing an unused numeric-text conversion; retain its string membership checks.
 - CI follow-up: retain literal min/max guard names in the shared reducer so the strict guard census and its probes agree.
 - CI follow-up: retain the first strict NaN diagnostic and invalid flag when `sum` reads a buffer (#1417), before reading a later infinity. Checked int64 sum overflow remains a `value` error.
+- CI follow-up: stop shared tensor buffer kernels after their first raised result, releasing partial buffers and preserving the original diagnostic and math flags (#1417).

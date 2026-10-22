@@ -640,22 +640,39 @@ int main(void) {
         EigsValue *nf_raw = eigs_value_new_buffer(2);
         EigsValue *nf_finite = eigs_value_new_buffer(2);
         EigsValue *nf_later = eigs_value_new_buffer(2);
+        EigsValue *nf_finite3 = eigs_value_new_buffer(3);
+        EigsValue *nf_prefix = eigs_value_new_buffer(3);
         eigs_value_buffer_set(nf_raw, 0, NAN);
         eigs_value_buffer_set(nf_raw, 1, INFINITY);
         eigs_value_buffer_set(nf_finite, 0, 3.0);
         eigs_value_buffer_set(nf_finite, 1, 4.0);
         eigs_value_buffer_set(nf_later, 0, INFINITY);
         eigs_value_buffer_set(nf_later, 1, 4.0);
+        eigs_value_buffer_set(nf_finite3, 0, 3.0);
+        eigs_value_buffer_set(nf_finite3, 1, 4.0);
+        eigs_value_buffer_set(nf_finite3, 2, 5.0);
+        eigs_value_buffer_set(nf_prefix, 0, 3.0);
+        eigs_value_buffer_set(nf_prefix, 1, NAN);
+        eigs_value_buffer_set(nf_prefix, 2, INFINITY);
         eigs_set_global("nf_raw", nf_raw);
         eigs_set_global("nf_finite", nf_finite);
         eigs_set_global("nf_later", nf_later);
+        eigs_set_global("nf_finite3", nf_finite3);
+        eigs_set_global("nf_prefix", nf_prefix);
         eigs_value_release(nf_raw);
         eigs_value_release(nf_finite);
         eigs_value_release(nf_later);
+        eigs_value_release(nf_finite3);
+        eigs_value_release(nf_prefix);
         eigs_state_set_strict(st, 1);
         r = eigs_eval_string("nf_shaped is reshape of [nf_raw, 1, 2]");
         CHECK(r != NULL && !eigs_has_error(),
               "#1417 prepare shaped materialization control");
+        eigs_value_release(r);
+        r = eigs_eval_string("num_type of (add of [9007199254740993, 1])");
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_STR &&
+                  strcmp(eigs_value_as_string(r), "int") == 0,
+              "#1417 recursive failure prefix has a boxed int result");
         eigs_value_release(r);
         const char *nf_reads[] = {
             "nf_raw == nf_raw", "nf_raw == nf_finite",
@@ -663,6 +680,10 @@ int main(void) {
             "list_index_of of [[nf_raw, nf_later], nf_finite]",
             "sum of nf_raw", "mean of nf_raw", "norm of nf_raw",
             "sum of ([nf_raw, nf_later])",
+            "sum of nf_shaped",
+            "sum of ([9223372036854775807, 1, nf_raw, nf_later])",
+            "sum of (negative of nf_raw)",
+            "sum of (negative of ([9007199254740993, nf_raw, nf_later]))",
             "mean of ([nf_raw, nf_later])",
             "norm of ([nf_raw, nf_later])",
             "dot of [nf_raw, nf_finite]",
@@ -674,6 +695,21 @@ int main(void) {
             "add of [nf_raw, [0, 0]]", "add of [[0, 0], nf_raw]",
             "subtract of [nf_raw, [0, 0]]", "subtract of [[0, 0], nf_raw]",
             "multiply of [nf_raw, [0, 0]]", "multiply of [[0, 0], nf_raw]",
+            /* #1417: stop after a buffer kernel raises too, including both
+             * operand orders, shaped broadcasts, truncation and recursion.
+             * The nested int prefix owns a boxed result before the failure. */
+            "add of [nf_raw, nf_finite]", "add of [nf_finite, nf_raw]",
+            "subtract of [nf_raw, nf_finite]", "subtract of [nf_finite, nf_raw]",
+            "multiply of [nf_raw, nf_finite]", "multiply of [nf_finite, nf_raw]",
+            "add of [nf_raw, 1]", "add of [1, nf_raw]",
+            "subtract of [nf_raw, 1]", "subtract of [1, nf_raw]",
+            "multiply of [nf_raw, 1]", "multiply of [1, nf_raw]",
+            "add of [nf_shaped, nf_finite]", "add of [nf_finite, nf_shaped]",
+            "add of [nf_raw, nf_finite3]", "add of [nf_finite3, nf_raw]",
+            "add of [nf_prefix, nf_finite3]",
+            "add of [[9007199254740993, nf_raw, nf_later], [1, nf_finite, nf_finite]]",
+            "exp of nf_prefix",
+            "divide of [nf_raw, nf_finite]", "pow of [nf_raw, nf_finite]",
             "divide of [nf_raw, [1, 1]]", "divide of [[1, 1], nf_raw]",
             "pow of [nf_raw, [1, 1]]", "pow of [[1, 1], nf_raw]",
             "add of [nf_shaped, [[0, 0]]]", "add of [[[0, 0]], nf_shaped]",

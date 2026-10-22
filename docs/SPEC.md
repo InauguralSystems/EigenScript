@@ -2483,7 +2483,9 @@ a tensor builtin needs no change, because a buffer supports all of those.
 `add`, `subtract` and `multiply` preserve exact ints for scalar operands and
 for each pair of list elements, with `value` on int64 overflow. `negative`
 preserves int scalar and list elements and raises at INT64_MIN. Buffer
-arithmetic remains float. An all-int `sum` returns an exact int, while a
+arithmetic remains float. A buffer kernel stops at its first raised result,
+releases its partial output and does not read later elements (#1417).
+An all-int `sum` returns an exact int, while a
 float anywhere in a nested input selects float addition for the entire
 reduction. A buffer selects float addition too. An empty list's sum is int
 zero, in both call forms. `sum` refuses non-finite buffer elements with a
