@@ -371,7 +371,7 @@ consequences are contracts you can rely on:
     a raw non-finite kernel result internally. Ordinary indexed reads apply
     that guard: infinity saturates at ±`1e308`, while under `EIGS_STRICT=0` a
     `NaN` becomes `0` and sets `math_flags.invalid` (strict mode raises).
-    `sum`, `get_at` instead refuse non-finite buffer
+    `sum`, `get_at` and `dot` instead refuse non-finite buffer
     elements in every strict mode (N13).
   - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
     document is walked leniently and a parse failure answers the same `""`
@@ -2604,7 +2604,7 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 [buf, rows, cols]` shapes an existing flat buffer (the element count must
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
-At the buffer/scalar boundary, `sum`, `get_at` refuse
+At the buffer/scalar boundary, `sum`, `get_at` and `dot` refuse
 non-finite elements in every strict mode (N13). Other consumers use the numeric guard: infinity saturates
 at ±`1e308`, while a `NaN` raises in strict mode or becomes `0` and sets
 `math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer equality and

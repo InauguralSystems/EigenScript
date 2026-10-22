@@ -424,7 +424,7 @@ Value* builtin_monotonic_ms(Value *arg) {
     (void)arg;
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    TRACE_NONDET_RET("monotonic_ms", make_num((double)ts.tv_sec * 1e3 + (double)ts.tv_nsec / 1e6));
+    TRACE_NONDET_RET("monotonic_ms", make_float((double)ts.tv_sec * 1e3 + (double)ts.tv_nsec / 1e6));
 }
 
 /* clock_unix of null — seconds since the Unix epoch from CLOCK_REALTIME
@@ -435,7 +435,7 @@ Value* builtin_clock_unix(Value *arg) {
     (void)arg;
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    TRACE_NONDET_RET("clock_unix", make_num((double)ts.tv_sec + (double)ts.tv_nsec / 1e9));
+    TRACE_NONDET_RET("clock_unix", make_float((double)ts.tv_sec + (double)ts.tv_nsec / 1e9));
 }
 
 Value* builtin_len(Value *arg) {
@@ -607,9 +607,9 @@ Value* builtin_report(Value *arg) {
 Value* builtin_get_observer_thresholds(Value *arg) {
     (void)arg;
     Value *result = make_list(3);
-    list_append_owned(result, make_num(g_obs_dh_zero));
-    list_append_owned(result, make_num(g_obs_dh_small));
-    list_append_owned(result, make_num(g_obs_h_low));
+    list_append_owned(result, make_float(g_obs_dh_zero));
+    list_append_owned(result, make_float(g_obs_dh_small));
+    list_append_owned(result, make_float(g_obs_h_low));
     return result;
 }
 
@@ -1986,60 +1986,60 @@ Value* builtin_index_of(Value *arg) {
  * ================================================================ */
 
 Value* builtin_sin(Value *arg) {
-    ARG_GUARD(!arg || !val_is_number(arg), "sin", "a number", make_num(0));
-    return make_num(sin(eigs_num_arg(arg, __func__)));
+    ARG_GUARD(!arg || !val_is_number(arg), "sin", "a number", make_float(0));
+    return make_float(sin(eigs_float_arg(arg, __func__)));
 }
 
 Value* builtin_cos(Value *arg) {
-    ARG_GUARD(!arg || !val_is_number(arg), "cos", "a number", make_num(0));
-    return make_num(cos(eigs_num_arg(arg, __func__)));
+    ARG_GUARD(!arg || !val_is_number(arg), "cos", "a number", make_float(0));
+    return make_float(cos(eigs_float_arg(arg, __func__)));
 }
 
 Value* builtin_tan(Value *arg) {
-    ARG_GUARD(!arg || !val_is_number(arg), "tan", "a number", make_num(0));
-    return make_num(tan(eigs_num_arg(arg, __func__)));
+    ARG_GUARD(!arg || !val_is_number(arg), "tan", "a number", make_float(0));
+    return make_float(tan(eigs_float_arg(arg, __func__)));
 }
 
 Value* builtin_asin(Value *arg) {
-    ARG_GUARD(!arg || !val_is_number(arg), "asin", "a number", make_num(0));
-    double x = eigs_num_arg(arg, __func__);
+    ARG_GUARD(!arg || !val_is_number(arg), "asin", "a number", make_float(0));
+    double x = eigs_float_arg(arg, __func__);
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
         /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
-        if (g_strict) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_num(0); }
+        if (g_strict) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_float(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
     }
-    return make_num(asin(x));
+    return make_float(asin(x));
 }
 
 Value* builtin_acos(Value *arg) {
-    ARG_GUARD(!arg || !val_is_number(arg), "acos", "a number", make_num(0));
-    double x = eigs_num_arg(arg, __func__);
+    ARG_GUARD(!arg || !val_is_number(arg), "acos", "a number", make_float(0));
+    double x = eigs_float_arg(arg, __func__);
     /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
      * unless strict math is on, in which case it raises. */
     if (x < -1.0 || x > 1.0) {
         /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
-        if (g_strict) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_num(0); }
+        if (g_strict) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_float(0); }
         g_math_flags |= EIGS_MATH_INVALID;
         x = (x < -1.0) ? -1.0 : 1.0;
     }
-    return make_num(acos(x));
+    return make_float(acos(x));
 }
 
 Value* builtin_atan(Value *arg) {
-    ARG_GUARD(!arg || !val_is_number(arg), "atan", "a number", make_num(0));
-    return make_num(atan(eigs_num_arg(arg, __func__)));
+    ARG_GUARD(!arg || !val_is_number(arg), "atan", "a number", make_float(0));
+    return make_float(atan(eigs_float_arg(arg, __func__)));
 }
 
 Value* builtin_atan2(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "atan2");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "atan2", "[y, x]", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "atan2", "[y, x]", make_float(0));
     Value *y = BUILTIN_LIST_VIEW(arg, 0);
     Value *x = BUILTIN_LIST_VIEW(arg, 1);
-    ARG_GUARD(!y || !val_is_number(y) || !x || !val_is_number(x), "atan2", "two numbers", make_num(0));
-    return make_num(atan2(eigs_num_arg(y, __func__), eigs_num_arg(x, __func__)));
+    ARG_GUARD(!y || !val_is_number(y) || !x || !val_is_number(x), "atan2", "two numbers", make_float(0));
+    return make_float(atan2(eigs_float_arg(y, __func__), eigs_float_arg(x, __func__)));
 }
 
 Value* builtin_floor(Value *arg) {
@@ -2139,7 +2139,7 @@ Value* builtin_max(Value *arg) { return minmax_reduce(arg, 1); }
 
 Value* builtin_pi(Value *arg) {
     (void)arg;
-    return make_num(3.14159265358979323846);
+    return make_float(3.14159265358979323846);
 }
 
 /* ================================================================
@@ -2195,7 +2195,7 @@ Value* builtin_random(Value *arg) {
     /* Seed is part of the live source so a replay take / fail-loud raise
      * does not race g_random_seeded (#1142 TSan on two workers under
      * EIGS_REPLAY). */
-    TRACE_NONDET_RET("random", make_num(eigs_random_double()));
+    TRACE_NONDET_RET("random", make_float(eigs_random_double()));
 }
 
 /* random_int of [lo, hi] → integer in [lo, hi] inclusive */
@@ -5498,11 +5498,11 @@ Value* builtin_nearest_in_range(Value *arg) {
     Value *entities = BUILTIN_LIST_VIEW(arg, 0);
     if (!entities || entities->type != VAL_LIST) return make_null();
     BOOL_REFUSE(arg, "nearest_in_range");   /* x, y, range, world: numbers */
-    double px = eigs_list_num(arg, 1, __func__);
-    double py = eigs_list_num(arg, 2, __func__);
-    double range = eigs_list_num(arg, 3, __func__);
-    double ww = eigs_list_num(arg, 4, __func__);
-    double wh = eigs_list_num(arg, 5, __func__);
+    double px = eigs_list_float(arg, 1, __func__);
+    double py = eigs_list_float(arg, 2, __func__);
+    double range = eigs_list_float(arg, 3, __func__);
+    double ww = eigs_list_float(arg, 4, __func__);
+    double wh = eigs_list_float(arg, 5, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
     if (arg->data.list.count >= 7 && BUILTIN_LIST_VIEW(arg, 6)->type == VAL_STR)
@@ -5559,7 +5559,7 @@ Value* builtin_nearest_in_range(Value *arg) {
         }
         /* #1637: "active" is a bool (false skips); the older 1/0 number
          * still reads as before. */
-        if (av && ((val_is_number(av) && eigs_num_arg(av, __func__) != 1.0)
+        if (av && ((val_is_number(av) && eigs_float_arg(av, __func__) != 1.0)
                    || (av->type == VAL_BOOL && !av->data.boolean))) continue;
 
         Value *ex;
@@ -5583,13 +5583,14 @@ Value* builtin_nearest_in_range(Value *arg) {
         /* #1637 round 4: a bool coordinate raises (any other non-number
          * keeps the documented skip). */
         if ((ex && ex->type == VAL_BOOL) || (ey && ey->type == VAL_BOOL)) {
-            eigs_num_arg_slow((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range");
+            eigs_float_arg((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range");
             return make_null();
         }
         if (!ex || !ey || !val_is_number(ex) || !val_is_number(ey)) continue;
 
-        double dx = eigs_num_arg(ex, __func__) - px;
-        double dy = eigs_num_arg(ey, __func__) - py;
+        double dx = eigs_float_arg(ex, __func__) - px;
+        double dy = eigs_float_arg(ey, __func__) - py;
+        if (g_has_error) return make_null();
         double hw = ww * 0.5, hh = wh * 0.5;
         if (dx > hw) dx -= ww; else if (dx < -hw) dx += ww;
         if (dy > hh) dy -= wh; else if (dy < -hh) dy += wh;
@@ -5603,10 +5604,10 @@ Value* builtin_nearest_in_range(Value *arg) {
     }
     if (best_idx < 0) return make_null();
     Value *result = make_dict(8);
-    dict_set_owned(result, "index", make_num(best_idx));
-    dict_set_owned(result, "dist", make_num(sqrt(best_sq)));
-    dict_set_owned(result, "dx", make_num(best_dx));
-    dict_set_owned(result, "dy", make_num(best_dy));
+    dict_set_owned(result, "index", make_int(best_idx));
+    dict_set_owned(result, "dist", make_float(sqrt(best_sq)));
+    dict_set_owned(result, "dx", make_float(best_dx));
+    dict_set_owned(result, "dy", make_float(best_dy));
     return result;
 }
 
@@ -5631,9 +5632,9 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     Value *entities = BUILTIN_LIST_VIEW(arg, 0);
     if (!entities || entities->type != VAL_LIST) return make_null();
     BOOL_REFUSE(arg, "nearest_in_range_all");   /* range, world: numbers */
-    double range = eigs_list_num(arg, 1, __func__);
-    double ww = eigs_list_num(arg, 2, __func__);
-    double wh = eigs_list_num(arg, 3, __func__);
+    double range = eigs_list_float(arg, 1, __func__);
+    double ww = eigs_list_float(arg, 2, __func__);
+    double wh = eigs_list_float(arg, 3, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
     if (arg->data.list.count >= 5 && BUILTIN_LIST_VIEW(arg, 4)->type == VAL_STR)
@@ -5688,7 +5689,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         }
         /* active default: 1 (matches single-call behavior where missing/non-num
          * is treated as active). Explicit 0/non-1 value flips to inactive. */
-        active_arr[i] = (av && ((val_is_number(av) && eigs_num_arg(av, __func__) != 1.0)
+        active_arr[i] = (av && ((val_is_number(av) && eigs_float_arg(av, __func__) != 1.0)
                                 || (av->type == VAL_BOOL && !av->data.boolean))) ? 0 : 1;   /* #1637 */
 
         Value *ex;
@@ -5708,15 +5709,16 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             ey = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ey_view) : NULL;
         }
         if ((ex && ex->type == VAL_BOOL) || (ey && ey->type == VAL_BOOL)) {   /* #1637 round 4 */
-            eigs_num_arg_slow((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range_all");
+            eigs_float_arg((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range_all");
             break;
         }
         if (!ex || !ey || !val_is_number(ex) || !val_is_number(ey)) {
             valid_arr[i] = 0;
             continue;
         }
-        px_arr[i] = eigs_num_arg(ex, __func__);
-        py_arr[i] = eigs_num_arg(ey, __func__);
+        px_arr[i] = eigs_float_arg(ex, __func__);
+        py_arr[i] = eigs_float_arg(ey, __func__);
+        if (g_has_error) break;
         valid_arr[i] = 1;
     }
     if (g_has_error) {   /* #1637 round 4: a bool coordinate raised above */
@@ -5757,10 +5759,10 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             list_append_owned(result, make_null());
         } else {
             Value *r = make_dict(8);
-            dict_set_owned(r, "index", make_num(best_idx));
-            dict_set_owned(r, "dist", make_num(sqrt(best_sq)));
-            dict_set_owned(r, "dx", make_num(best_dx));
-            dict_set_owned(r, "dy", make_num(best_dy));
+            dict_set_owned(r, "index", make_int(best_idx));
+            dict_set_owned(r, "dist", make_float(sqrt(best_sq)));
+            dict_set_owned(r, "dx", make_float(best_dx));
+            dict_set_owned(r, "dy", make_float(best_dy));
             list_append_owned(result, r);  /* adopt the freshly-built dict */
         }
     }
@@ -6181,21 +6183,21 @@ Value* builtin_dispatch(Value *arg) {
  * the result still respects EigenScript's no-NaN/Inf invariant. */
 static Value* builtin_dot(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "dot");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "dot", "[a, b]", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "dot", "[a, b]", make_float(0));
     Value *a = BUILTIN_LIST_VIEW(arg, 0);
     Value *b = BUILTIN_LIST_VIEW(arg, 1);
-    ARG_GUARD(!a || !b || a->type != VAL_BUFFER || b->type != VAL_BUFFER, "dot", "two buffers", make_num(0));
+    ARG_GUARD(!a || !b || a->type != VAL_BUFFER || b->type != VAL_BUFFER, "dot", "two buffers", make_float(0));
     int n = a->data.buffer.count;
     if (b->data.buffer.count < n) n = b->data.buffer.count;
     double s = 0.0;
     for (int i = 0; i < n; i++) {
-        double av = buffer_read_num(a, i);
+        double av = buffer_read_f64(a, i);
         if (g_has_error) return make_null();
-        double bv = buffer_read_num(b, i);
+        double bv = buffer_read_f64(b, i);
         if (g_has_error) return make_null();
         s = num_guard(s + num_guard(av * bv));
     }
-    return make_num(s);
+    return make_float(s);
 }
 
 #if EIGS_BORROW_GUARD

@@ -386,7 +386,7 @@ containers. They do not fuse the multiplication and addition.
 Raw non-finite results may remain in a buffer's internal work area, but every
 ordinary indexed read applies EigenScript's numeric guard: infinity saturates at
 ±`1e308`, and a NaN raises in strict mode (or becomes `0` and sets the invalid
-math flag under `EIGS_STRICT=0`). `sum`, `get_at`
+math flag under `EIGS_STRICT=0`). `sum`, `get_at` and `dot`
 instead refuse non-finite buffer elements in every strict mode (N13).
 Structural buffer equality and the remaining scalar reductions normalize each
 input before comparison or arithmetic; the reduction

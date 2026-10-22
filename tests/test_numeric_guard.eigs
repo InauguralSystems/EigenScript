@@ -160,7 +160,13 @@ assert of [raw_nan_product == raw_nan_product, "NG38 same-buffer equality normal
 zero_one is buffer of 1
 assert of [raw_nan_product == zero_one, "NG39 distinct-buffer equality normalizes NaN"]
 zero_pair is buffer of 2
-assert of [(dot of [raw_pair, zero_pair]) == 0, "NG40 dot normalizes before multiplying by zero"]
+# N13 / R1.6c: dot also refuses instead of substituting finite operands.
+ng_dot_refused is false
+try:
+    dot of [raw_pair, zero_pair]
+catch e:
+    ng_dot_refused is e.kind == "value"
+assert of [ng_dot_refused, "NG40 N13 dot refuses non-finite payload"]
 assert of [(buf_dot of [raw_pair, zero_pair, 0, 0, 2]) == 0, "NG41 buf_dot normalizes each operand"]
 assert of [(buf_peak of [raw_nan_product, 0, 1]) == 0, "NG42 buf_peak reads NaN as zero"]
 

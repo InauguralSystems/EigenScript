@@ -193,6 +193,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `write_bytes` | `write_bytes of [path, <list\|buffer> {, append}]` | Write raw bytes to a file. Binary-clean (NUL written verbatim, unlike `write_text`). `append` (default 0): 0 truncates, nonzero appends. Returns bytes written; I/O failure raises `io` with the path and OS reason. Trace-recorded result. |
 | `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns `true`; I/O failure raises `io` with both paths and the OS reason. Trace-recorded result. |
 | `remove_file` | `remove_file of path` | Delete a file. Returns `true`; I/O failure raises `io` with the path and OS reason. Trace-recorded result. |
+| `dot` | `dot of [a, b]` | Dot product of float buffers, returning a float; summation association is unspecified. Non-finite input cells raise `value` in every strict mode (N13). |
 
 ### Self-hosting
 
@@ -286,7 +287,7 @@ Query a binding's assignment history. Always on for top-level bindings;
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
-| `get_observer_thresholds` | `get_observer_thresholds of null` | `[dh_zero, dh_small, h_low]` |
+| `get_observer_thresholds` | `get_observer_thresholds of null` | `[dh_zero, dh_small, h_low]`. Numeric inputs convert to float; numeric results are floats. |
 | `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default, entropy-channel with `"entropy"`. Raises `type_mismatch` on a non-snapshot — a bare value never silently classifies |
 
 **`report` and `report_value` are reserved** (#1102). They cannot be bound or
@@ -391,7 +392,7 @@ stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `random` | `random of null` | Random float in [0, 1) |
+| `random` | `random of null` | Random float in [0, 1). Numeric inputs convert to float; numeric results are floats. |
 | `random_int` | `random_int of [lo, hi]` | Random int in [lo, hi] inclusive. Bounds follow N5: integral floats convert; fractions and out-of-int64 values raise `value`. The existing span limit is 2^31. Malformed arguments raise by default and return int 0 under `EIGS_STRICT=0`. |
 | `seed_random` | `seed_random of n` | Seed the RNG from an exact int64 (N5); fractional floats raise. The existing srand48 generator uses the low 32 seed bits. |
 
@@ -400,8 +401,8 @@ stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `monotonic_ns` | `monotonic_ns of null` | Exact int64 nanoseconds from `CLOCK_MONOTONIC` (jump-free); raises `value` if the nanosecond count overflows int64. |
-| `monotonic_ms` | `monotonic_ms of null` | Milliseconds from `CLOCK_MONOTONIC` |
-| `clock_unix` | `clock_unix of null` | Seconds since the Unix epoch (float, wall clock; tape-captured for replay) |
+| `monotonic_ms` | `monotonic_ms of null` | Milliseconds from `CLOCK_MONOTONIC`. Numeric inputs convert to float; numeric results are floats. |
+| `clock_unix` | `clock_unix of null` | Seconds since the Unix epoch (float, wall clock; tape-captured for replay). Numeric inputs convert to float; numeric results are floats. |
 | `usleep` | `usleep of microseconds` | Pause execution |
 
 ## Trace & Replay
@@ -437,14 +438,14 @@ automatically at exit.
 | `floor` | `floor of x` | Round down; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
 | `ceil` | `ceil of x` | Round up; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
 | `round` | `round of x` | Round half away from zero; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
-| `sin` | `sin of x` | Sine (radians) |
-| `cos` | `cos of x` | Cosine (radians) |
-| `tan` | `tan of x` | Tangent (radians) |
-| `asin` | `asin of x` | Inverse sine; input is clamped to [-1, 1] |
-| `acos` | `acos of x` | Inverse cosine; input is clamped to [-1, 1] |
-| `atan` | `atan of x` | Inverse tangent |
-| `atan2` | `atan2 of [y, x]` | Two-argument inverse tangent |
-| `pi` | `pi of null` | The constant &pi; (3.14159265...) |
+| `sin` | `sin of x` | Sine (radians). Numeric inputs convert to float; numeric results are floats. |
+| `cos` | `cos of x` | Cosine (radians). Numeric inputs convert to float; numeric results are floats. |
+| `tan` | `tan of x` | Tangent (radians). Numeric inputs convert to float; numeric results are floats. |
+| `asin` | `asin of x` | Inverse sine; input is clamped to [-1, 1]. Numeric inputs convert to float; numeric results are floats. |
+| `acos` | `acos of x` | Inverse cosine; input is clamped to [-1, 1]. Numeric inputs convert to float; numeric results are floats. |
+| `atan` | `atan of x` | Inverse tangent. Numeric inputs convert to float; numeric results are floats. |
+| `atan2` | `atan2 of [y, x]` | Two-argument inverse tangent. Numeric inputs convert to float; numeric results are floats. |
+| `pi` | `pi of null` | The constant &pi; (3.14159265...). Numeric inputs convert to float; numeric results are floats. |
 
 ## Tensor Math
 
@@ -513,7 +514,7 @@ in a buffer first converts it to float and can round it.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; by default that raises a catchable `value` error naming `matmul` (#971). Kernels may retain raw non-finite values in buffer storage. Ordinary indexed reads apply the numeric guard (#1417): infinity saturates at ±`1e308`, and with strict mode off a `NaN` becomes `0` and sets `math_flags.invalid`. `sum`, `get_at` instead refuse non-finite buffer elements in every strict mode (N13). |
+| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; by default that raises a catchable `value` error naming `matmul` (#971). Kernels may retain raw non-finite values in buffer storage. Ordinary indexed reads apply the numeric guard (#1417): infinity saturates at ±`1e308`, and with strict mode off a `NaN` becomes `0` and sets `math_flags.invalid`. `sum`, `get_at` and `dot` instead refuse non-finite buffer elements in every strict mode (N13). |
 | `matmul_at` | `matmul_at of [a, b]` | `aᵀ·b` without materialising the transpose: `a` is `(m × k)`, `b` is `(m × n)`, result `(k × n)` — the weight gradient `dW = Xᵀ·dY` of a linear layer. Buffers and nested lists; byte-identical to `matmul` of the explicitly transposed operand (same tiled kernel order). Two 1-D operands give their `(k × n)` outer product. Shape/type/size errors raise like `matmul` (#973) |
 | `matmul_bt` | `matmul_bt of [a, b]` | `a·bᵀ`: `a` is `(m × k)`, `b` is `(n × k)`, result `(m × n)` — the input gradient `dX = dY·Wᵀ`. A 1-D left operand is a row vector and yields a 1-D result, as for `matmul` (#973) |
 | `gather` | `gather of [matrix, indices, dim]` | Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
@@ -965,8 +966,8 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `nearest_in_range` | `nearest_in_range of [entities, x, y, range, world_w, world_h]` | Find the nearest active entity within `range` using torus (wrapping) distance. `entities` is a list of dicts with `"px"`, `"py"`, `"active"` keys. Returns `{"index", "dist", "dx", "dy"}` or `null`. Optional extra args: custom key names `[..., px_key, py_key, active_key]`. |
-| `nearest_in_range_all` | `nearest_in_range_all of [entities, range, world_w, world_h]` | Like `nearest_in_range`, but returns ALL active entities within `range` (torus distance) as a list, not just the closest. Optional trailing custom key names `[..., px_key, py_key, active_key]`. |
+| `nearest_in_range` | `nearest_in_range of [entities, x, y, range, world_w, world_h]` | Find the nearest active entity within `range` using torus (wrapping) distance. `entities` is a list of dicts with `"px"`, `"py"`, `"active"` keys. Returns `{"index", "dist", "dx", "dy"}` or `null`. Optional extra args: custom key names `[..., px_key, py_key, active_key]`. The index field is an int; distance and displacements are floats. |
+| `nearest_in_range_all` | `nearest_in_range_all of [entities, range, world_w, world_h]` | For each entity, find the nearest active entity (including itself) within torus distance; return a parallel list of records or nulls. Optional trailing custom key names `[..., px_key, py_key, active_key]`. The index field is an int; distance and displacements are floats. |
 
 ## Audio (additional)
 

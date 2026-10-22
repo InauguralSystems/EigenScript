@@ -401,7 +401,7 @@ out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
 `asin`/`acos` clamp their inputs. Buffer consumers apply the same normalization,
-except `sum`, `get_at`, which refuse non-finite
+except `sum`, `get_at` and `dot`, which refuse non-finite
 buffer elements in every strict mode (N13).
 Structural buffer equality and the other scalar reductions normalize each
 input by this rule too, as do mixed buffer/list materialization

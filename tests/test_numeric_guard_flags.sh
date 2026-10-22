@@ -109,10 +109,14 @@ b[1] is 0 - 1e200
 b[2] is 1e200
 b[3] is 0 - 1e200
 raw is matmul of [a, b]'
-run "NG40 normalized dot stays valid" "$inf_setup
+run "NG40 N13 dot refuses infinity" "$inf_setup
 zero is buffer of 2
-x is dot of [raw, zero]
-assert of [x == 0 and not (math_flags of null).invalid, \"normalized dot stays valid\"]"
+caught is false
+try:
+    dot of [raw, zero]
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught, \"N13 dot refuses non-finite payload\"]"
 run "NG41 normalized buf_dot stays valid" "$inf_setup
 zero is buffer of 2
 x is buf_dot of [raw, zero, 0, 0, 2]

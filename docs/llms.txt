@@ -229,7 +229,7 @@ sqrt(2) = 1.414213562373095
   opt-out that brings the finite stand-ins back (`NaN` collapses to `0`,
   `sqrt of -1` is `0`, `abs of "x"` is `0`).
   Non-finite tensor results receive the scalar guard when read from a buffer;
-  `sum`, `get_at` instead refuse non-finite buffer
+  `sum`, `get_at` and `dot` instead refuse non-finite buffer
   elements in every strict mode (N13). Structural buffer
   equality, the other scalar reductions, mixed buffer/list materialization
   and numeric byte/sample/device conversions normalize their inputs and stop at
