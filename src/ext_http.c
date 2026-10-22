@@ -561,6 +561,11 @@ Value* builtin_http_response_header(Value *arg) {
 }
 
 Value* builtin_http_early_bind(Value *arg) {
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "http_early_bind: not replayable under EIGS_REPLAY "
+                 "(network boundary; see docs/TRACE.md)");
+        return make_null();
+    }
     EIGS_VIEW(port_view);
     const char *live_path = NULL;
     if (arg && arg->type == VAL_LIST) {

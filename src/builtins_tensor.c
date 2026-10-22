@@ -2409,11 +2409,16 @@ Value* builtin_tensor_load(Value *arg) {
          * to open the payload: tensor bytes themselves were never taped. */
         Value *verdict = NULL;
         if (trace_replay_refuse_off_owner("tensor_load")) return make_null();
-        if (trace_replay_take("tensor_load", &verdict) && verdict &&
-            verdict->type == VAL_LIST) {
-            (void)verdict->data.list.count;
-        }
+        int taken = trace_replay_take("tensor_load", &verdict);
+        int valid = taken && verdict &&
+            (verdict->type == VAL_NULL ||
+             (verdict->type == VAL_LIST && verdict->data.list.count == 2 &&
+              list_elem_type(verdict, 0) == VAL_NUM &&
+              list_elem_type(verdict, 1) == VAL_NUM));
+        if (!valid && !g_has_error)
+            rt_error(EK_IO, 0, "tensor_load: malformed replay verdict");
         val_decref(verdict);
+        if (!valid) return make_null();
         rt_error(EK_IO, 0, "tensor_load: not replayable under EIGS_REPLAY "
                  "(file-read boundary; see docs/TRACE.md)");
         return make_null();

@@ -32,3 +32,15 @@ else
 fi
 printf '%s\n' "$FIX2_OUTPUT"
 unset FIX2_OUTPUT FIX2_RC
+
+echo ""
+FIX3_OUTPUT=$(EIGS="$EIGENSCRIPT" bash "$TESTS_DIR/test_trace_replay_fix3.sh" 2>&1); FIX3_RC=$?
+TOTAL=$((TOTAL + 1))
+if [ "$FIX3_RC" -eq 0 ] && rc_ok "$FIX3_RC" "$FIX3_OUTPUT" &&
+   [ "$(grep -c '^PASS:' <<< "$FIX3_OUTPUT")" -eq 5 ]; then
+    PASS=$((PASS + 1)); echo "  PASS: #1885 third-follow-up replay regressions"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: #1885 third follow-up (rc=$FIX3_RC)"
+fi
+printf '%s\n' "$FIX3_OUTPUT"
+unset FIX3_OUTPUT FIX3_RC

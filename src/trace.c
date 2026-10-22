@@ -2756,19 +2756,22 @@ int trace_source_replay(const char *kind, char **source, long *size,
     }
     int ok = list_get_ref(meta, 0)->data.boolean;
     const char *detail = list_get_ref(meta, 1)->data.str;
-    long n = (long)eigs_slot_elem_num(list_slot(meta, 2), __func__);
+    double taped_size = eigs_slot_elem_num(list_slot(meta, 2), __func__);
     if (!ok) {
         *error = xstrdup(detail);
         val_decref(meta);
         return 1;
     }
-    *identity = xstrdup(detail);
-    val_decref(meta);
-    if (n < 0 || (unsigned long)n > TRACE_SOURCE_MAX) {
-        rt_error(EK_IO, 0, "%s: invalid source size %ld (maximum %u)",
-                 kind, n, TRACE_SOURCE_MAX);
+    if (!isfinite(taped_size) || taped_size < 0 ||
+        taped_size > (double)TRACE_SOURCE_MAX || taped_size != floor(taped_size)) {
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s: invalid source size %.17g (maximum %u)",
+                 kind, taped_size, TRACE_SOURCE_MAX);
         return -1;
     }
+    long n = (long)taped_size;
+    *identity = xstrdup(detail);
+    val_decref(meta);
     char *buf = xmalloc((size_t)n + 1);
     size_t off = 0;
     char chunk_kind[96];
