@@ -1176,6 +1176,53 @@ static int file_is_directory(FILE *f) {
     return fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
+#define FILE_READER_CAP (10L * 1024 * 1024)
+
+/* A seekable regular file keeps the historical size-then-read path below.
+ * When tell cannot supply a size, grow only as data arrives and stop after
+ * cap+1 bytes: that is enough to distinguish success from the capped error
+ * without turning an infinite stream into an unbounded allocation. */
+static int read_stream_bounded(FILE *f, size_t cap, unsigned char **out,
+                               size_t *out_len) {
+    unsigned char *buf = NULL;
+    size_t len = 0, alloc = 0;
+    while (len <= cap) {
+        size_t room = alloc - len;
+        if (room == 0) {
+            size_t next = alloc ? alloc * 2 : 65536;
+            if (next > cap + 1) next = cap + 1;
+            unsigned char *grown = realloc(buf, next ? next : 1);
+            if (!grown) { free(buf); return 0; }
+            buf = grown;
+            alloc = next;
+            room = alloc - len;
+        }
+        size_t got = fread(buf + len, 1, room, f);
+        len += got;
+        if (got < room) {
+            if (ferror(f)) { free(buf); return 0; }
+            break;
+        }
+        if (len == cap + 1) break;
+    }
+    *out = buf;
+    *out_len = len;
+    return 1;
+}
+
+static int replay_reader_size(const char *fn, Value *v, long long *out) {
+    double n = eigs_num_arg(v, __func__);
+    int64_t exact;
+    if (!isfinite(n) || n < 0.0 || !num_to_i64_exact(n, &exact)) {
+        rt_error(EK_IO, 0,
+                 "%s: replay record size is not an exact integer in range; "
+                 "refusing to replay", fn);
+        return 0;
+    }
+    *out = (long long)exact;
+    return 1;
+}
+
 /* read_text of "path" → file contents as string; I/O failure raises EK_IO. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
 Value* builtin_read_bytes(Value *arg) {
@@ -1184,7 +1231,11 @@ Value* builtin_read_bytes(Value *arg) {
     Value *replayed = NULL;
     if (file_io_replay("read_bytes", &replayed)) {
         if (replayed->type == VAL_NUM) {
-            long long len = (long long)eigs_num_arg(replayed, __func__);
+            long long len;
+            if (!replay_reader_size("read_bytes", replayed, &len)) {
+                val_decref(replayed);
+                return make_null();
+            }
             val_decref(replayed);
             rt_error(EK_IO, 0, "read_bytes: '%s' is %lld bytes, over the %d-byte cap",
                      arg->data.str, len, 10 * 1024 * 1024);
@@ -1201,9 +1252,30 @@ Value* builtin_read_bytes(Value *arg) {
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0) { /* unseekable stream: existing null contract (#1845) */
+    if (len < 0) {
+        clearerr(f);
+        unsigned char *buf = NULL;
+        size_t nread = 0;
+        if (!read_stream_bounded(f, FILE_READER_CAP, &buf, &nread)) {
+            fclose(f);
+            TRACE_NONDET_RECORD("read_bytes", make_null());
+        }
         fclose(f);
-        TRACE_NONDET_RECORD("read_bytes", make_null());
+        if (nread > FILE_READER_CAP) {
+            free(buf);
+            if (__builtin_expect(g_trace_enabled, 0)) {
+                Value *sz = make_num((double)nread);
+                trace_nondet_value("read_bytes", sz); val_decref(sz);
+            }
+            rt_error(EK_IO, 0, "read_bytes: '%s' is %zu bytes, over the %d-byte cap",
+                     arg->data.str, nread, 10 * 1024 * 1024);
+            return make_null();
+        }
+        Value *result = make_list((int)nread);
+        for (size_t i = 0; i < nread; i++)
+            list_append_owned(result, make_num((double)buf[i]));
+        free(buf);
+        TRACE_NONDET_RECORD("read_bytes", result);
     }
     if (len > 10 * 1024 * 1024) {
         fclose(f);
@@ -1298,7 +1370,11 @@ Value* builtin_read_bytes_buf(Value *arg) {
         Value *tv = NULL;
         if (file_io_replay("read_bytes_buf", &tv)) {
             if (tv && tv->type == VAL_NUM) {
-                long long len = (long long)eigs_num_arg(tv, __func__);
+                long long len;
+                if (!replay_reader_size("read_bytes_buf", tv, &len)) {
+                    val_decref(tv);
+                    return make_null();
+                }
                 val_decref(tv);
                 read_bytes_buf_cap_raise(path->data.str, len, cap);
                 return make_null();
@@ -1315,9 +1391,31 @@ Value* builtin_read_bytes_buf(Value *arg) {
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0) { /* unseekable (pipe/fifo): existing null contract */
+    if (len < 0) {
+        clearerr(f);
+        unsigned char *buf = NULL;
+        size_t nread = 0;
+        if (!read_stream_bounded(f, (size_t)cap, &buf, &nread)) {
+            fclose(f);
+            TRACE_NONDET_RECORD("read_bytes_buf", make_null());
+        }
         fclose(f);
-        TRACE_NONDET_RECORD("read_bytes_buf", make_null());
+        if (nread > (size_t)cap) {
+            free(buf);
+            if (__builtin_expect(g_trace_enabled, 0)) {
+                Value *sz = make_num((double)nread);
+                trace_nondet_value("read_bytes_buf", sz); val_decref(sz);
+            }
+            read_bytes_buf_cap_raise(path->data.str, (long long)nread, cap);
+            return make_null();
+        }
+        Value *v = xcalloc(1, sizeof(Value));
+        v->type = VAL_BUFFER; v->data.buffer.count = (int)nread;
+        v->data.buffer.data = xcalloc(nread ? nread : 1, sizeof(double));
+        v->refcount = 1;
+        for (size_t i = 0; i < nread; i++) v->data.buffer.data[i] = (double)buf[i];
+        free(buf);
+        TRACE_NONDET_RECORD("read_bytes_buf", v);
     }
     if ((long long)len > cap) {
         fclose(f);
@@ -1350,7 +1448,11 @@ Value* builtin_read_text(Value *arg) {
     Value *replayed = NULL;
     if (file_io_replay("read_text", &replayed)) {
         if (replayed->type == VAL_NUM) {
-            long long len = (long long)eigs_num_arg(replayed, __func__);
+            long long len;
+            if (!replay_reader_size("read_text", replayed, &len)) {
+                val_decref(replayed);
+                return make_null();
+            }
             val_decref(replayed);
             rt_error(EK_IO, 0, "read_text: '%s' is %lld bytes, over the %d-byte cap",
                      arg->data.str, len, 10 * 1024 * 1024);
@@ -1367,9 +1469,29 @@ Value* builtin_read_text(Value *arg) {
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (len < 0) { /* unseekable stream: existing empty contract (#1845) */
+    if (len < 0) {
+        clearerr(f);
+        unsigned char *stream = NULL;
+        size_t nread = 0;
+        if (!read_stream_bounded(f, FILE_READER_CAP, &stream, &nread)) {
+            fclose(f);
+            TRACE_NONDET_RECORD("read_text", make_str(""));
+        }
         fclose(f);
-        TRACE_NONDET_RECORD("read_text", make_str(""));
+        if (nread > FILE_READER_CAP) {
+            free(stream);
+            if (__builtin_expect(g_trace_enabled, 0)) {
+                Value *sz = make_num((double)nread);
+                trace_nondet_value("read_text", sz); val_decref(sz);
+            }
+            rt_error(EK_IO, 0, "read_text: '%s' is %zu bytes, over the %d-byte cap",
+                     arg->data.str, nread, 10 * 1024 * 1024);
+            return make_null();
+        }
+        char *buf = xmalloc(nread + 1);
+        memcpy(buf, stream, nread); buf[nread] = '\0'; free(stream);
+        Value *result = make_str(buf); free(buf);
+        TRACE_NONDET_RECORD("read_text", result);
     }
     if (len > 10 * 1024 * 1024) {
         fclose(f);
@@ -1397,10 +1519,9 @@ Value* builtin_read_text(Value *arg) {
  * returns the next line including its line terminator, or null at EOF.
  * Thus "\r\n" stays byte-exact and a terminated final line differs from
  * an unterminated one. An empty line is "\n" — distinguishable from EOF.
- * The stream-safe stdin primitive
- * (#558): read_text of "/dev/stdin" sizes with fseek/ftell, which fails
- * on an unseekable fd, so a PIPE silently reads as "" — any CLI meant to
- * sit in a shell pipeline needs this instead. Nondeterministic input →
+ * The line-oriented stdin primitive (#558). Unlike read_text of
+ * "/dev/stdin", this returns one line per call rather than consuming the
+ * stream through EOF. Nondeterministic input →
  * tape-first: TAKE/RECORD like read_bytes, so under EIGS_REPLAY the
  * recorded lines are served and no live stdin read runs. */
 Value* builtin_read_line(Value *arg) {

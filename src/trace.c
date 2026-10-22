@@ -2424,7 +2424,14 @@ static Value *parse_value_p(const char **p) {
     double d = strtod(*p, &end);
     if (end == *p) return NULL;
     *p = end;
-    return make_num(d);
+    /* Preserve the tape's numeric verdict verbatim.  In particular, do not
+     * let make_num's language-level finite-number guard turn a hand-edited
+     * `nan`/`inf` into zero before a replay consumer can validate it.  Tape
+     * values are untrusted serialized input; each typed consumer owns the
+     * range/integrality check required before conversion (#1914). */
+    Value *v = make_num(0.0);
+    VAL_NUM_RAW(v) = d;
+    return v;
 }
 
 static Value *parse_value(const char *s) {

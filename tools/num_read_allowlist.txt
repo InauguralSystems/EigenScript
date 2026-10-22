@@ -77,3 +77,4 @@ vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admi
 vm.c|vm_run_ex|57|the interpreter loop: every opcode reads numbers behind slot_is_num / type == VAL_NUM dispatch; NUM_REUSE in-place writes; the iterator state list is VM-built
 vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_num
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_num
+trace.c|parse_value_p|1|writes an untrusted tape number verbatim so typed replay consumers can reject non-finite verdicts before conversion
