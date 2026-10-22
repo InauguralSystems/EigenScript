@@ -9,7 +9,7 @@
 #                 AND |mean(window)| < dh_zero
 #                 AND variance(window) < dh_zero^2
 # The value is sitting still on average with negligible spread, regardless of
-# entropy. `converged` is the strict subset that also sits at low entropy; a
+# entropy. A low-entropy value can independently read `converged`; a
 # high-entropy equilibrium also reads `stable`. Self-asserting; prints marker.
 
 print of "=== WINDOWED EQUILIBRIUM (docs/PREDICATES.md, #209) ==="
@@ -32,7 +32,7 @@ a is 2.0
 a is 2.0
 want of ["WE1 quiet high-entropy fires", equilibrium, true]
 
-# WE2: full-window quiet at LOW entropy -> equilibrium (converged is a subset)
+# WE2: full-window SETTLED at LOW entropy -> equilibrium (all raw steps are zero)
 b is 1000000.0
 b is 1000000.0
 b is 1000000.0
@@ -44,7 +44,7 @@ b is 1000000.0
 b is 1000000.0
 b is 1000000.0
 b is 1000000.0
-want of ["WE2 quiet low-entropy fires (converged subset)", equilibrium, true]
+want of ["WE2 settled low-entropy fires", equilibrium, true]
 
 # WE3: partial window (count == 9 < N) -> does NOT fire (full-window rule)
 c is 2.0
