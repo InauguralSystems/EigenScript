@@ -6,6 +6,7 @@
 #include "model_internal.h"
 #include "env_flag.h"
 #include "ext_names.h"
+#include "trace.h"
 
 /* ================================================================
  * TERNARY QUANTIZATION — BitNet b1.58 weight-only (Option A)
@@ -667,6 +668,11 @@ static FILE *g_train_dump_fp = NULL;
 static int   g_train_dump_init = 0;
 static int   g_train_dump_inhibit = 0;
 
+static int train_dump_enabled(void) {
+    const char *path = getenv("EIGS_TRAIN_DUMP");
+    return path && *path;
+}
+
 static float l2_norm_f(const float *a, int64_t n) {
     double s = 0.0;
     for (int64_t i = 0; i < n; i++) s += (double)a[i] * (double)a[i];
@@ -714,7 +720,7 @@ static float obs_drift_eps(void) {
 static void train_dump_open_if_needed(TransformerModel *model) {
     if (g_train_dump_init || g_train_dump_inhibit) return;
     const char *path = getenv("EIGS_TRAIN_DUMP");
-    if (!path || !*path) { g_train_dump_inhibit = 1; return; }
+    if (!train_dump_enabled()) { g_train_dump_inhibit = 1; return; }
     g_train_dump_fp = xfopen_write(path, "w");
     if (!g_train_dump_fp) {
         fprintf(stderr, "[train-dump] failed to open %s\n", path);
@@ -1436,6 +1442,12 @@ Value* builtin_native_train_step(Value *arg) {
      * Output: JSON string with status, loss, tokens, model_age, training_samples */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         return make_str("{\"status\": \"error\", \"error\": \"requires [input_ids, output_ids, lr]\"}");
+    }
+    if (__builtin_expect(g_replay_enabled, 0) &&
+        (g_train_dump_fp || train_dump_enabled())) {
+        rt_error(EK_IO, 0, "native_train_step: not replayable with "
+                 "EIGS_TRAIN_DUMP (file-write boundary; see docs/TRACE.md)");
+        return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");
     }
     /* #1637: a bool id or rate raises in every mode, before the no-model
      * answer (the ids were only read once a model was loaded). */

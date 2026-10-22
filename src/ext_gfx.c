@@ -999,6 +999,11 @@ Value* builtin_gfx_text(Value *arg) {
               "gfx_text",
               "[number x, number y, string text, number r, number g, number b] and an optional number scale",
               make_null());
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "gfx_text: not replayable under "
+                 "EIGS_REPLAY (file-read boundary; see docs/TRACE.md)");
+        return make_null();
+    }
     if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_text answers null on every path -- the return value, not a rejected-argument stand-in */
     int x = (int)eigs_list_num(arg, 0, __func__);
     int y = (int)eigs_list_num(arg, 1, __func__);
@@ -1086,6 +1091,11 @@ Value* builtin_gfx_text_width(Value *arg) {
      * width for scale 1 is still computed and returned. STRICT_REQUIRE
      * leaves the default path byte-identical by construction. */
     STRICT_REQUIRE(bad_scale, "gfx_text_width", "[string text, number scale]");
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "gfx_text_width: not replayable under EIGS_REPLAY "
+                 "(font file-read boundary; see docs/TRACE.md)");
+        return make_num(0);
+    }
     if (scale < 1) scale = 1;
     if (*text && ttf_available()) {
         void *font = ttf_font_for_scale(scale);
@@ -1110,6 +1120,11 @@ Value* builtin_gfx_text_height(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 1
                         && list_elem_type(arg, 0) == VAL_NUM),
                    "gfx_text_height", "number scale, [number scale] or null");
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "gfx_text_height: not replayable under EIGS_REPLAY "
+                 "(font file-read boundary; see docs/TRACE.md)");
+        return make_num(0);
+    }
     if (arg && arg->type == VAL_NUM) {
         scale = (int)eigs_num_arg(arg, __func__);
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
@@ -1702,6 +1717,11 @@ Value* builtin_audio_music_play(Value *arg) {
     STRICT_REQUIRE(arg->data.list.count >= 2
                    && list_elem_type(arg, 1) != VAL_NUM,
                    "audio_music_play", "[string path, number loops]");
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "audio_music_play: not replayable under EIGS_REPLAY "
+                 "(audio file-read boundary; see docs/TRACE.md)");
+        return make_bool(0);
+    }
     const char *path = list_get_ref(arg, 0)->data.str;
     int loops = (arg->data.list.count >= 2 && list_elem_type(arg, 1) == VAL_NUM)
                 ? (int)eigs_list_num(arg, 1, __func__) : -1;

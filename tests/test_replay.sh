@@ -534,8 +534,8 @@ print of x
 EOF
 CONTRACT_TAPE="$TMPDIR/contract.tape"
 EIGS_TRACE="$CONTRACT_TAPE" "$EIGS" "$TMPDIR/p_tape_contract.eigs" >/dev/null 2>&1
-if head -1 "$CONTRACT_TAPE" | grep -q '^V 6 '; then
-    ok "tapes written by this build stamp format v6"
+if head -1 "$CONTRACT_TAPE" | grep -q '^V 7 '; then
+    ok "tapes written by this build stamp format v7"
 else
     fail "format stamp" "$(head -1 "$CONTRACT_TAPE")"
 fi
@@ -560,7 +560,7 @@ else
     fail "pre-v3 replay refusal" "rc=$OLD_REPLAY_RC $(cat "$TMPDIR/old-replay.err")"
 fi
 
-# O records remain part of v6 tapes and the stepper still folds them. Bound the
+# O records remain part of v7 tapes and the stepper still folds them. Bound the
 # multiplicative configuration-record x binding work even though programs can
 # no longer create those records through observer setter builtins.
 WORK_TAPE="$TMPDIR/observer-work-limit.tape"
@@ -586,6 +586,103 @@ if bash "$TESTS_DIR/test_store_replay.sh" "$EIGS"; then
     PASS=$((PASS + 1))
 else
     FAIL=$((FAIL + 1))
+fi
+
+# ---- #1885 final review: main's removed rm builtin stays removed ----
+if ! grep -Eq 'builtin_rm|{"rm",[[:space:]]+TK_' "$SRC_DIR"/*.c \
+   && ! grep -q '`rm`' "$SRC_DIR/../docs/TRACE.md"; then
+    ok "merge keeps main's rm deletion out of replay code and documentation"
+else
+    fail "removed rm merge resolution" "rm replay references remain"
+fi
+
+# A recognized marker is a consumed but unservable record. md5_file must not
+# turn that result into permission to read the live path.
+cat > "$TMPDIR/p_md5_marker.eigs" <<EOF
+try:
+    print of (md5_file of "$INPUT")
+catch e:
+    print of e
+EOF
+cat > "$TMPDIR/md5-marker.tape" <<EOF
+$VHDR
+B 0 1 1 0 root -
+N 0 md5_file=<heap>
+EOF
+MD5_MARKER=$(EIGS_REPLAY="$TMPDIR/md5-marker.tape" "$EIGS" "$TMPDIR/p_md5_marker.eigs" 2>&1)
+if echo "$MD5_MARKER" | grep -q 'md5_file: recorded result is not replayable'; then
+    ok "md5_file refuses an unservable marker without a live fopen"
+else
+    fail "md5_file marker refusal" "out='$MD5_MARKER'"
+fi
+
+# import_warning is part of import's taped input sequence. It cannot be skipped
+# when its value is a recognized marker, even if source records follow.
+cat > "$TMPDIR/p_import_warning_marker.eigs" <<'EOF'
+try:
+    import marker_module
+catch e:
+    print of e
+EOF
+cat > "$TMPDIR/import-warning-marker.tape" <<EOF
+$VHDR
+B 0 1 1 0 root -
+N 0 import_warning=<heap>
+EOF
+IMPORT_MARKER=$(EIGS_REPLAY="$TMPDIR/import-warning-marker.tape" "$EIGS" "$TMPDIR/p_import_warning_marker.eigs" 2>&1)
+if echo "$IMPORT_MARKER" | grep -q 'import_warning: recorded result is not replayable'; then
+    ok "import refuses an unservable import_warning marker"
+else
+    fail "import_warning marker refusal" "out='$IMPORT_MARKER'"
+fi
+
+# Both valid tensor verdict shapes describe an untaped payload, so both hit the
+# identical generic I/O boundary rather than reviving the old cap verdict.
+cat > "$TMPDIR/p_tensor_boundary.eigs" <<'EOF'
+try:
+    tensor_load of "missing.tensor"
+catch e:
+    print of e
+EOF
+for verdict in null '[999999,999999]'; do
+    cat > "$TMPDIR/tensor-$verdict.tape" <<EOF
+$VHDR
+B 0 1 1 0 root -
+N 0 tensor_load=$verdict
+EOF
+done
+TENSOR_NULL=$(EIGS_REPLAY="$TMPDIR/tensor-null.tape" "$EIGS" "$TMPDIR/p_tensor_boundary.eigs" 2>&1)
+TENSOR_CAP=$(EIGS_REPLAY="$TMPDIR/tensor-[999999,999999].tape" "$EIGS" "$TMPDIR/p_tensor_boundary.eigs" 2>&1)
+if [ "$TENSOR_NULL" = "$TENSOR_CAP" ] \
+   && echo "$TENSOR_NULL" | grep -q 'not replayable under EIGS_REPLAY' \
+   && ! echo "$TENSOR_CAP" | grep -q 'limit' \
+   && grep -q 'every structurally valid verdict raises the' \
+       "$SRC_DIR/../docs/TRACE.md"; then
+    ok "all structurally valid tensor verdicts raise the generic I/O boundary"
+else
+    fail "tensor verdict replay contract" "null='$TENSOR_NULL' cap='$TENSOR_CAP'"
+fi
+
+# An explicitly empty dump path is disabled, exactly like an absent variable.
+# With no model loaded this call reaches its ordinary deterministic answer.
+cat > "$TMPDIR/p_empty_train_dump.eigs" <<'EOF'
+print of (native_train_step_builtin of [[1], [1], 0.01])
+EOF
+echo "$VHDR" > "$TMPDIR/empty-train-dump.tape"
+MODEL_EIGS="${MODEL_EIGS:-$SRC_DIR/../build/server/eigenscript}"
+if [ ! -x "$MODEL_EIGS" ]; then
+    # Build the FILE target, never the phony `server` goal: the phony goal
+    # hard-links src/eigenscript to the server variant, which swaps the binary
+    # under the running suite ("src/eigenscript changed during the run").
+    make -s -C "$SRC_DIR/.." build/server/eigenscript >/dev/null
+fi
+EMPTY_DUMP=$(EIGS_TRAIN_DUMP= EIGS_REPLAY="$TMPDIR/empty-train-dump.tape" \
+    "$MODEL_EIGS" "$TMPDIR/p_empty_train_dump.eigs" 2>&1)
+if echo "$EMPTY_DUMP" | grep -q '"Model not loaded"' \
+   && ! echo "$EMPTY_DUMP" | grep -q 'replay refused'; then
+    ok "empty EIGS_TRAIN_DUMP is disabled during replay"
+else
+    fail "empty EIGS_TRAIN_DUMP predicate" "out='$EMPTY_DUMP'"
 fi
 
 echo

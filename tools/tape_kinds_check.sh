@@ -7,7 +7,8 @@
 # replay, on a user's tape. This gate fails first, at build review:
 #   taped    = every name src/*.c records or takes: TRACE_NONDET_TAKE/RET/
 #              RECORD("x"), ARG_GUARD_TAPED/PRETAKE(..., "x", ...),
-#              trace_replay_take("x"), trace_nondet_value("x")
+#              trace_replay_take("x"), trace_nondet_value("x"), and
+#              trace_source_record/replay("x") (which also emits `x_chunk`)
 #   declared = every {"x", ...} row of k_tape_kinds
 # and requires taped == declared, both non-empty. The smoke/embedding test
 # programs (embed_*.c, jit_smoke.c) record host names and declare them
@@ -27,6 +28,11 @@ for f in "$SRC_DIR"/*.c; do
         while (match(s, /(TRACE_NONDET_(TAKE|RET|RECORD)|trace_replay_take|trace_nondet_value)[(]"[a-z_0-9]+"/)) {
             m = substr(s, RSTART, RLENGTH); sub(/^[^"]*"/, "", m); sub(/"$/, "", m)
             print m
+            s = substr(s, RSTART + RLENGTH)
+        }
+        while (match(s, /trace_source_(record|replay)[(]"[a-z_0-9]+"/)) {
+            m = substr(s, RSTART, RLENGTH); sub(/^[^"]*"/, "", m); sub(/"$/, "", m)
+            print m; print m "_chunk"
             s = substr(s, RSTART + RLENGTH)
         }
     }

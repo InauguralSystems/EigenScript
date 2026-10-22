@@ -225,11 +225,20 @@ static char *project_directory(const char *base) {
     return NULL;
 }
 
-void eigs_file_resolve_error(const char *operation, const char *base,
-                            const char *path, int line) {
+char *eigs_file_resolve_message(const char *operation, const char *base,
+                                const char *path) {
     char *project = project_directory(base);
     const char *home = getenv("HOME");
-    rt_error(EK_IO, line,
+    int n = snprintf(NULL, 0,
+        "%s: cannot read '%s' (not found or unreadable); tried containing directory '%s', "
+        "eigs_modules walk, %s%s; stdlib roots '%s/../<path>', "
+        "'%s/../lib/eigenscript', '%s/.local/lib/eigenscript' "
+        "(also stripping lib/; absolute paths are used as-is)",
+        operation, path, base, project ? "project root " : "no eigs.json above ",
+        project ? project : base, g_exe_dir, g_exe_dir,
+        home ? home : "<HOME unset>");
+    char *message = xmalloc((size_t)n + 1);
+    snprintf(message, (size_t)n + 1,
         "%s: cannot read '%s' (not found or unreadable); tried containing directory '%s', "
         "eigs_modules walk, %s%s; stdlib roots '%s/../<path>', "
         "'%s/../lib/eigenscript', '%s/.local/lib/eigenscript' "
@@ -238,6 +247,14 @@ void eigs_file_resolve_error(const char *operation, const char *base,
         project ? project : base, g_exe_dir, g_exe_dir,
         home ? home : "<HOME unset>");
     free(project);
+    return message;
+}
+
+void eigs_file_resolve_error(const char *operation, const char *base,
+                            const char *path, int line) {
+    char *message = eigs_file_resolve_message(operation, base, path);
+    rt_error(EK_IO, line, "%s", message);
+    free(message);
 }
 
 /* Phase 0c: walk from `base` upward looking for

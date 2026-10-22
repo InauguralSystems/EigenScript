@@ -29,20 +29,20 @@ static EigsValue *advance_callback(EigsValue *arg) {
 }
 
 static const char file_tape[] =
-    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "V 7 " EIGENSCRIPT_VERSION "\n"
     "B 0 1 1 0 root -\nB 1 2 2 0 host 70656572\n"
     "N 1 peer=12\nN 0 root=11\nN 0 root=13\n"
-    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "V 7 " EIGENSCRIPT_VERSION "\n"
     "B 0 1 1 0 root -\nB 1 2 2 0 host 70656572\n"
     "N 0 root=21\nN 1 peer=22\n";
 static const char memory_tape[] =
-    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "V 7 " EIGENSCRIPT_VERSION "\n"
     "B 0 101 11 0 root -\nB 1 102 12 0 host 70656572\n"
     "N 1 peer=102\nN 0 root=101\nN 0 root=103\n"
-    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "V 7 " EIGENSCRIPT_VERSION "\n"
     "B 0 101 11 0 root -\nN 0 root=201\n";
 static const char replacement[] =
-    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "V 7 " EIGENSCRIPT_VERSION "\n"
     "B 0 201 21 0 root -\nB 1 202 22 0 host 70656572\n"
     "N 1 peer=302\nN 0 root=301\n";
 static const char refused[] = "V 5 " EIGENSCRIPT_VERSION "\n";   /* #1637: v5 predates bool values */
@@ -51,10 +51,10 @@ static const char refused[] = "V 5 " EIGENSCRIPT_VERSION "\n";   /* #1637: v5 pr
  * installs `tape` and takes `name`; the refusal is _exit(3) with `want` on
  * stderr, so it runs in a forked child. */
 static const char host_kind_tape[] =
-    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "V 7 " EIGENSCRIPT_VERSION "\n"
     "B 0 401 41 0 root -\nN 0 root=true\n";
 static const char host_undeclared_tape[] =
-    "V 6 " EIGENSCRIPT_VERSION "\n"
+    "V 7 " EIGENSCRIPT_VERSION "\n"
     "B 0 501 51 0 root -\nN 0 ghost=7\n";
 static int child_refuses(const char *tape, size_t len, const char *name, const char *want) {
     int fds[2];
