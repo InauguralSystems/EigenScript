@@ -3,7 +3,7 @@
 # behaviour differential of a mechanical round (docs/design/phase2-numbers.md
 # 8, R1.1 and R1.2): "unchanged" is measured, not inferred from a green suite.
 #
-# Every non-excluded .eigs file under the BRANCH tree's tests/ runs twice with each binary,
+# Every non-excluded .eigs file under the BRANCH tree's tests/ normally runs twice with each binary,
 # tests/phase2/corpus_exclude.txt declares directory ownership, with an owning
 # harness and reason. The same exclusions filter both inventories. Empty,
 # stale, overlapping, unsafe or ownerless declarations fail; each is reported.
@@ -73,6 +73,8 @@
 # `ulimit -v 1500000` (an unbounded GUI run can freeze the 4 GB box); the
 # capped files are listed.
 #
+# A file present in both trees whose bytes differ is MODIFIED: it runs only on
+# the branch binary and must complete (or return its declared nonzero code).
 # A file only the branch tree has (a new fixture) is counted as `new`; a file
 # only the baseline tree has is a DELETED row (a deleted test hides a change).
 # Prints `.. <n>/<N> <file> <verdict> <s>s` per file, the named rows, then
@@ -243,14 +245,16 @@ run() {
     sed "s|$BASE_ROOT|<ROOT>|g; s|$BR_ROOT|<ROOT>|g" "$out.rawerr" > "$out.err"
 }
 same() { cmp -s "$1.out" "$2.out" && cmp -s "$1.err" "$2.err" && cmp -s "$1.rc" "$2.rc"; }
+# The one definition of MODIFIED: both tree copies exist and differ bytewise.
+modified() { [ -f "$BASE_ROOT/$1" ] && ! cmp -s "$BASE_ROOT/$1" "$BR_ROOT/$1"; }
 show_diff() {
     diff "$1.out" "$2.out" | head -8 | sed 's/^/    stdout: /'
     diff "$1.err" "$2.err" | head -8 | sed 's/^/    stderr: /'
 }
 
-examined=0; nsame=0; same_nonzero=0; nreplay=0; nondet=0; ndiff=0; new=0; crash_both=0; timeout_both=0
+examined=0; nsame=0; same_nonzero=0; nreplay=0; nondet=0; ndiff=0; new=0; new_failed=0; modified_count=0; modified_failed=0; crash_both=0; timeout_both=0
 capped=0; conditioned=0; incomplete=0; undeclared=0; stale=0; unpinned=0
-for f in new nondet crash replayed capped samenz urandom used; do : > "$TMP/$f"; done
+for f in new modified nondet crash replayed capped samenz urandom used; do : > "$TMP/$f"; done
 # Baseline inventory was filtered with the branch inventory above.
 if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
     : > "$TMP/deleted"
@@ -276,7 +280,12 @@ replay_adjudicate() {
 while IFS= read -r rel; do
     examined=$((examined + 1))
     t0=$(date +%s)
-    [ -f "$BASE_ROOT/$rel" ] || { new=$((new + 1)); echo "$rel" >> "$TMP/new"; }
+    branch_only=
+    if [ ! -f "$BASE_ROOT/$rel" ]; then
+        new=$((new + 1)); echo "$rel" >> "$TMP/new"; branch_only=NEW
+    elif modified "$rel"; then
+        modified_count=$((modified_count + 1)); echo "$rel" >> "$TMP/modified"; branch_only=MODIFIED
+    fi
     if ! cond=$(suite_program_check "$rel" 2> "$TMP/cond.err"); then
         sed 's/^/  /' "$TMP/cond.err"
         echo "corpus-diff: FAIL: the run conditions of $rel were refused"; DONE=1; exit 1
@@ -285,6 +294,21 @@ while IFS= read -r rel; do
     cap=0
     if grep -Eq '(gfx|ui|audio)_[a-z_]+' "$BR_ROOT/$rel"; then
         cap=1; capped=$((capped + 1)); echo "$rel" >> "$TMP/capped"
+    fi
+    if [ -n "$branch_only" ]; then
+        run "$BR_BIN" "$rel" "$TMP/r1" "$cap"
+        rr=$(cat "$TMP/r1.rc")
+        want=$(awk -v p="$rel" '$1 == p { print $2 }' "$TMP/ledger")
+        [ -n "$want" ] && [ "$want" = "$rr" ] && echo "$rel" >> "$TMP/used"
+        if { [ -n "$cond" ] && [ "$rr" = 0 ]; } || { [ -z "$cond" ] && { [ "$rr" = 0 ] || { [ -n "$want" ] && [ "$rr" = "$want" ]; }; }; }; then
+            echo ".. $examined/$listed $rel $branch_only rc=$rr $(took)s"
+        else
+            [ "$branch_only" = MODIFIED ] && modified_failed=$((modified_failed + 1)) || new_failed=$((new_failed + 1))
+            echo ".. $examined/$listed $rel $branch_only-FAIL rc=$rr $(took)s"
+            echo "$branch_only-FAIL $rel: branch exits $rr; expected ${want:-0}${cond:+ under its run conditions ($cond)}"
+            sed -n '1,6p' "$TMP/r1.err" | sed 's/^/    branch stderr: /'
+        fi
+        continue
     fi
     run "$BASE_BIN" "$rel" "$TMP/b1" "$cap"
     run "$BASE_BIN" "$rel" "$TMP/b2" "$cap"
@@ -362,20 +386,21 @@ while IFS=' ' read -r lpath lrc; do
 done < "$TMP/ledger"
 unpinned=$(grep -c . "$TMP/urandom")
 sed 's/^/NEW (only the branch tree has it) /' "$TMP/new"
+sed 's/^/MODIFIED (tree copies differ; run only on the branch) /' "$TMP/modified"
 sed 's/^/REPLAYED (compared on the baseline tape; its nondeterministic builtins did not run live) /' "$TMP/replayed"
 sed 's/^/NONDET (the baseline disagrees with itself, and its tape replays too) /' "$TMP/nondet"
 sed 's/^/BOTH-CRASH-OR-TIMEOUT /' "$TMP/crash"
 sed 's/^/SAME-NONZERO (declared: both binaries exit so; compared up to the exit) /' "$TMP/samenz"
 sed 's/^/UNPINNED (opened \/dev\/urandom: random_hex values are live, by design) /' "$TMP/urandom"
 sed 's/^/CAPPED (gfx\/ui\/audio: ulimit -v 1500000) /' "$TMP/capped"
-summary="examined=$examined excluded=$excluded same=$nsame same_nonzero=$same_nonzero same_under_replay=$nreplay nondet=$nondet diff=$ndiff new=$new deleted=$deleted crash_both=$crash_both timeout_both=$timeout_both conditioned=$conditioned incomplete=$incomplete undeclared=$undeclared stale=$stale ledger_refused=$ledger_bad unpinned=$unpinned capped=$capped"
+summary="examined=$examined excluded=$excluded same=$nsame same_nonzero=$same_nonzero same_under_replay=$nreplay nondet=$nondet diff=$ndiff new=$new new_failed=$new_failed modified=$modified_count modified_failed=$modified_failed deleted=$deleted crash_both=$crash_both timeout_both=$timeout_both conditioned=$conditioned incomplete=$incomplete undeclared=$undeclared stale=$stale ledger_refused=$ledger_bad unpinned=$unpinned capped=$capped"
 DONE=1
 if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
     echo "corpus-diff: RESTRICTED $summary"
     exit 3
 fi
 echo "corpus-diff: $summary"
-if [ "$examined" -eq "$listed" ] && [ "$examined" -gt 0 ] && [ "$ndiff" -eq 0 ] && [ "$deleted" -eq 0 ] \
+if [ "$examined" -eq "$listed" ] && [ "$examined" -gt 0 ] && [ "$ndiff" -eq 0 ] && [ "$new_failed" -eq 0 ] && [ "$modified_failed" -eq 0 ] && [ "$deleted" -eq 0 ] \
         && [ "$incomplete" -eq 0 ] && [ "$undeclared" -eq 0 ] && [ "$stale" -eq 0 ] && [ "$ledger_bad" -eq 0 ]; then
     echo "corpus-diff: PASS"; exit 0
 fi

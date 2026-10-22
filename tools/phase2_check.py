@@ -974,6 +974,20 @@ def calibrate(args, out):
              (rc,) + tuple(v.get(f) for f in files) + (v.get('<stderr>'),
              bool(re.search(r' incomplete=0 undeclared=0 stale=0 ledger_refused=0 ', text))),
              (3, 'same', 'same', 'same', None, True), detail=text.splitlines())
+        changed = wrapper_tree(os.path.join(d, 'modified'), args.branch, files[2:], 'exec "$REAL" "$@"',
+                               {'tests/test_bool.eigs': lambda t: t + '\n# modified-test fixture\n'})
+        rc, text, v = diff_restricted(base, changed, files[2:])
+        case('a changed program runs only on the branch and is listed MODIFIED',
+             (rc, v.get('tests/test_bool.eigs'),
+              'MODIFIED (tree copies differ; run only on the branch) tests/test_bool.eigs' in text,
+              ' modified=1 modified_failed=0 ' in text),
+             (3, 'MODIFIED', True, True), detail=text.splitlines())
+        changed_bad = wrapper_tree(os.path.join(d, 'modified-bad'), args.branch, files[2:], 'exec "$REAL" "$@"',
+                                   {'tests/test_bool.eigs': lambda t: t + '\nassert of [false, "modified plant"]\n'})
+        rc, text, v = diff_restricted(base, changed_bad, files[2:])
+        case('a failing changed program is red as MODIFIED-FAIL',
+             (rc, v.get('tests/test_bool.eigs'), ' modified=1 modified_failed=1 ' in text),
+             (3, 'MODIFIED-FAIL', True), detail=text.splitlines())
         cut = wrapper_tree(os.path.join(d, 'cut'), args.branch, files[:1] + files[2:], 'exec "$REAL" "$@"',
                            {'tests/suite_program_env.txt':
                             lambda t: re.sub(r'(?m)^test_numeric_guard\.eigs .*\n', '', t)})
