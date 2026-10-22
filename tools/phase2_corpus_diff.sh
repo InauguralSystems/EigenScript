@@ -73,8 +73,14 @@
 # `ulimit -v 1500000` (an unbounded GUI run can freeze the 4 GB box); the
 # capped files are listed.
 #
-# A file present in both trees whose bytes differ is MODIFIED: it runs only on
-# the branch binary and must complete (or return its declared nonzero code).
+# CHANGED FILES (the rule, defined here once). A MODIFIED or NEW file is judged
+# on the branch alone only when the baseline cannot complete it: its run
+# conditions produce a nonzero baseline exit (INCOMPLETE), or its repeated
+# nonzero baseline exit is undeclared (UNDECLARED-NONZERO). The branch must
+# then complete (rc 0, or the declared code), otherwise it is a red
+# MODIFIED-FAIL/NEW-FAIL. Every other changed file is compared exactly like an
+# unchanged file. `modified` and `new` count every changed file examined;
+# `branch_only` counts and lists just the files to which the exception applied.
 # A file only the branch tree has (a new fixture) is counted as `new`; a file
 # only the baseline tree has is a DELETED row (a deleted test hides a change).
 # Prints `.. <n>/<N> <file> <verdict> <s>s` per file, the named rows, then
@@ -252,9 +258,9 @@ show_diff() {
     diff "$1.err" "$2.err" | head -8 | sed 's/^/    stderr: /'
 }
 
-examined=0; nsame=0; same_nonzero=0; nreplay=0; nondet=0; ndiff=0; new=0; new_failed=0; modified_count=0; modified_failed=0; crash_both=0; timeout_both=0
+examined=0; nsame=0; same_nonzero=0; nreplay=0; nondet=0; ndiff=0; diff_failed=0; new=0; new_failed=0; modified_count=0; modified_failed=0; branch_only_count=0; crash_both=0; timeout_both=0
 capped=0; conditioned=0; incomplete=0; undeclared=0; stale=0; unpinned=0
-for f in new modified nondet crash replayed capped samenz urandom used; do : > "$TMP/$f"; done
+for f in new modified branch_only diffs nondet crash replayed capped samenz urandom used; do : > "$TMP/$f"; done
 # Baseline inventory was filtered with the branch inventory above.
 if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
     : > "$TMP/deleted"
@@ -280,11 +286,11 @@ replay_adjudicate() {
 while IFS= read -r rel; do
     examined=$((examined + 1))
     t0=$(date +%s)
-    branch_only=
+    changed=
     if [ ! -f "$BASE_ROOT/$rel" ]; then
-        new=$((new + 1)); echo "$rel" >> "$TMP/new"; branch_only=NEW
+        new=$((new + 1)); echo "$rel" >> "$TMP/new"; changed=NEW
     elif modified "$rel"; then
-        modified_count=$((modified_count + 1)); echo "$rel" >> "$TMP/modified"; branch_only=MODIFIED
+        modified_count=$((modified_count + 1)); echo "$rel" >> "$TMP/modified"; changed=MODIFIED
     fi
     if ! cond=$(suite_program_check "$rel" 2> "$TMP/cond.err"); then
         sed 's/^/  /' "$TMP/cond.err"
@@ -295,30 +301,47 @@ while IFS= read -r rel; do
     if grep -Eq '(gfx|ui|audio)_[a-z_]+' "$BR_ROOT/$rel"; then
         cap=1; capped=$((capped + 1)); echo "$rel" >> "$TMP/capped"
     fi
-    if [ -n "$branch_only" ]; then
-        run "$BR_BIN" "$rel" "$TMP/r1" "$cap"
-        rr=$(cat "$TMP/r1.rc")
-        want=$(awk -v p="$rel" '$1 == p { print $2 }' "$TMP/ledger")
-        [ -n "$want" ] && [ "$want" = "$rr" ] && echo "$rel" >> "$TMP/used"
-        if { [ -n "$cond" ] && [ "$rr" = 0 ]; } || { [ -z "$cond" ] && { [ "$rr" = 0 ] || { [ -n "$want" ] && [ "$rr" = "$want" ]; }; }; }; then
-            echo ".. $examined/$listed $rel $branch_only rc=$rr $(took)s"
-        else
-            [ "$branch_only" = MODIFIED ] && modified_failed=$((modified_failed + 1)) || new_failed=$((new_failed + 1))
-            echo ".. $examined/$listed $rel $branch_only-FAIL rc=$rr $(took)s"
-            echo "$branch_only-FAIL $rel: branch exits $rr; expected ${want:-0}${cond:+ under its run conditions ($cond)}"
-            sed -n '1,6p' "$TMP/r1.err" | sed 's/^/    branch stderr: /'
-        fi
-        continue
-    fi
     run "$BASE_BIN" "$rel" "$TMP/b1" "$cap"
     run "$BASE_BIN" "$rel" "$TMP/b2" "$cap"
     run "$BR_BIN" "$rel" "$TMP/r1" "$cap"
     run "$BR_BIN" "$rel" "$TMP/r2" "$cap"
     rb1=$(cat "$TMP/b1.rc"); rb2=$(cat "$TMP/b2.rc")
+    want=$(awk -v p="$rel" '$1 == p { print $2 }' "$TMP/ledger")
     # The runs that opened /dev/urandom (random_hex): its values are live.
     urand=0
     for a in b1 b2 r1 r2; do [ -e "$TMP/$a.urandom" ] && urand=1; done
-    # jit_diff's rule: a file with run conditions completes, or it is never compared.
+    # Apply the changed-file exception only at the two former noise outcomes.
+    branch_only=
+    if [ -n "$changed" ]; then
+        if [ -n "$cond" ] && { [ "$rb1" != 0 ] || [ "$rb2" != 0 ]; }; then
+            branch_only=$changed
+        elif [ "$rb1" = "$rb2" ] && [ "$rb1" != 0 ] && [ -z "$want" ]; then
+            branch_only=$changed
+            # Preserve visibility of the deterministic behaviour change that
+            # the old tool reported as DIFF, without making this branch-only
+            # pass a failing comparison.
+            if ! same "$TMP/b1" "$TMP/r1" || ! same "$TMP/b1" "$TMP/r2"; then
+                ndiff=$((ndiff + 1)); echo "$rel (branch-only pass)" >> "$TMP/diffs"
+            fi
+        fi
+    fi
+    if [ -n "$branch_only" ]; then
+        branch_only_count=$((branch_only_count + 1)); echo "$rel $branch_only" >> "$TMP/branch_only"
+        rr=$(cat "$TMP/r1.rc"); rr2=$(cat "$TMP/r2.rc")
+        [ -n "$want" ] && [ "$want" = "$rr" ] && [ "$want" = "$rr2" ] && echo "$rel" >> "$TMP/used"
+        if { [ -n "$cond" ] && [ "$rr" = 0 ] && [ "$rr2" = 0 ]; } \
+                || { [ -z "$cond" ] && { { [ "$rr" = 0 ] && [ "$rr2" = 0 ]; } \
+                || { [ -n "$want" ] && [ "$rr" = "$want" ] && [ "$rr2" = "$want" ]; }; }; }; then
+            echo ".. $examined/$listed $rel $branch_only rc=$rr $(took)s"
+        else
+            [ "$branch_only" = MODIFIED ] && modified_failed=$((modified_failed + 1)) || new_failed=$((new_failed + 1))
+            echo ".. $examined/$listed $rel $branch_only-FAIL rc=$rr $(took)s"
+            echo "$branch_only-FAIL $rel: branch exits $rr/$rr2; expected ${want:-0}${cond:+ under its run conditions ($cond)}"
+            sed -n '1,6p' "$TMP/r1.err" | sed 's/^/    branch stderr: /'
+        fi
+        continue
+    fi
+    # jit_diff's rule for unchanged files: a conditioned baseline completes.
     if [ -n "$cond" ] && { [ "$rb1" != 0 ] || [ "$rb2" != 0 ]; }; then
         incomplete=$((incomplete + 1))
         echo ".. $examined/$listed $rel INCOMPLETE $(took)s"
@@ -328,7 +351,6 @@ while IFS= read -r rel; do
     fi
     # A nonzero exit the baseline repeats must be declared with that code.
     if [ "$rb1" = "$rb2" ] && [ "$rb1" != 0 ]; then
-        want=$(awk -v p="$rel" '$1 == p { print $2 }' "$TMP/ledger")
         if [ -z "$want" ]; then
             undeclared=$((undeclared + 1))
             echo "UNDECLARED-NONZERO $rel rc=$rb1: the baseline exits $rb1 and tests/phase2/corpus_nonzero.txt does not declare it (an early exit compares nothing: give it run conditions in tests/suite_program_env.txt, or declare it with a reason)"
@@ -352,6 +374,7 @@ while IFS= read -r rel; do
             continue
         fi
         ndiff=$((ndiff + 1))
+        diff_failed=$((diff_failed + 1)); echo "$rel" >> "$TMP/diffs"
         echo ".. $examined/$listed $rel DIFF $(took)s"
         if same "$TMP/b1" "$TMP/r1"; then wrong=r2; else wrong=r1; fi
         echo "DIFF $rel: the baseline is deterministic (two runs agree); branch run $wrong differs: rc baseline=$rb1 branch=$(cat "$TMP/$wrong.rc")"
@@ -365,6 +388,7 @@ while IFS= read -r rel; do
         echo ".. $examined/$listed $rel same-under-replay $(took)s"
     elif [ "$ra" -eq 1 ]; then
         ndiff=$((ndiff + 1)); verdict=DIFF-under-replay
+        diff_failed=$((diff_failed + 1)); echo "$rel (under replay)" >> "$TMP/diffs"
         echo ".. $examined/$listed $rel DIFF-under-replay $(took)s"
         echo "DIFF $rel: replaying the baseline's tape, rc baseline=$(cat "$TMP/p1.rc") branch=$(cat "$TMP/q1.rc")"
         show_diff "$TMP/p1" "$TMP/q1"
@@ -386,21 +410,23 @@ while IFS=' ' read -r lpath lrc; do
 done < "$TMP/ledger"
 unpinned=$(grep -c . "$TMP/urandom")
 sed 's/^/NEW (only the branch tree has it) /' "$TMP/new"
-sed 's/^/MODIFIED (tree copies differ; run only on the branch) /' "$TMP/modified"
+sed 's/^/MODIFIED (tree copies differ) /' "$TMP/modified"
+sed 's/^/BRANCH-ONLY (baseline cannot complete; judged on branch) /' "$TMP/branch_only"
+sed 's/^/DIFF-BEHAVIOUR /' "$TMP/diffs"
 sed 's/^/REPLAYED (compared on the baseline tape; its nondeterministic builtins did not run live) /' "$TMP/replayed"
 sed 's/^/NONDET (the baseline disagrees with itself, and its tape replays too) /' "$TMP/nondet"
 sed 's/^/BOTH-CRASH-OR-TIMEOUT /' "$TMP/crash"
 sed 's/^/SAME-NONZERO (declared: both binaries exit so; compared up to the exit) /' "$TMP/samenz"
 sed 's/^/UNPINNED (opened \/dev\/urandom: random_hex values are live, by design) /' "$TMP/urandom"
 sed 's/^/CAPPED (gfx\/ui\/audio: ulimit -v 1500000) /' "$TMP/capped"
-summary="examined=$examined excluded=$excluded same=$nsame same_nonzero=$same_nonzero same_under_replay=$nreplay nondet=$nondet diff=$ndiff new=$new new_failed=$new_failed modified=$modified_count modified_failed=$modified_failed deleted=$deleted crash_both=$crash_both timeout_both=$timeout_both conditioned=$conditioned incomplete=$incomplete undeclared=$undeclared stale=$stale ledger_refused=$ledger_bad unpinned=$unpinned capped=$capped"
+summary="examined=$examined excluded=$excluded same=$nsame same_nonzero=$same_nonzero same_under_replay=$nreplay nondet=$nondet diff=$ndiff new=$new new_failed=$new_failed modified=$modified_count modified_failed=$modified_failed branch_only=$branch_only_count deleted=$deleted crash_both=$crash_both timeout_both=$timeout_both conditioned=$conditioned incomplete=$incomplete undeclared=$undeclared stale=$stale ledger_refused=$ledger_bad unpinned=$unpinned capped=$capped"
 DONE=1
 if [ -n "${PHASE2_DIFF_FILES:-}" ]; then
     echo "corpus-diff: RESTRICTED $summary"
     exit 3
 fi
 echo "corpus-diff: $summary"
-if [ "$examined" -eq "$listed" ] && [ "$examined" -gt 0 ] && [ "$ndiff" -eq 0 ] && [ "$new_failed" -eq 0 ] && [ "$modified_failed" -eq 0 ] && [ "$deleted" -eq 0 ] \
+if [ "$examined" -eq "$listed" ] && [ "$examined" -gt 0 ] && [ "$diff_failed" -eq 0 ] && [ "$new_failed" -eq 0 ] && [ "$modified_failed" -eq 0 ] && [ "$deleted" -eq 0 ] \
         && [ "$incomplete" -eq 0 ] && [ "$undeclared" -eq 0 ] && [ "$stale" -eq 0 ] && [ "$ledger_bad" -eq 0 ]; then
     echo "corpus-diff: PASS"; exit 0
 fi

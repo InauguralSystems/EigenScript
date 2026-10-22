@@ -57,5 +57,5 @@ tools/observer_oracle/* | timeout 600 python3 tools/observer_oracle/plants.py --
 # #1758 Phase 2: the row checker's calibration (5 release builds: v0.46.0 and four planted binaries; 662 s on
 # the 4 GB dev box) and the slot test's planted faults (two -O0 slot-test builds per plant; 446 s there).
 # Keyed on the checkers, never on src/ (#1352).
-tools/phase2_check.py tools/phase2_check.sh tools/phase2_corpus_diff.sh tools/phase2_inventory.py tests/phase2/calib/* tests/phase2/corpus_nonzero.txt tests/suite_program_env.sh tests/suite_program_env.txt | timeout 3600 python3 -W error tools/phase2_check.py --selftest | [{"pattern":"^calibration: cases=51 as-expected=51 unexpected=0$","count":1}]
+tools/phase2_check.py tools/phase2_check.sh tools/phase2_corpus_diff.sh tools/phase2_inventory.py tests/phase2/calib/* tests/phase2/corpus_nonzero.txt tests/suite_program_env.sh tests/suite_program_env.txt | timeout 3600 python3 -W error tools/phase2_check.py --selftest | [{"pattern":"^calibration: cases=53 as-expected=53 unexpected=0$","count":1}]
 tools/phase2_plants.sh tests/phase2/slot_layer.sh tests/phase2/slot_layer.c tools/phase2_inventory.py | timeout 1500 bash tools/phase2_plants.sh --selftest | [{"pattern":"^plants=5 killed=5 survived=0 broken=0 transverse=5$","count":1}]

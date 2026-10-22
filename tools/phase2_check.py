@@ -977,17 +977,36 @@ def calibrate(args, out):
         changed = wrapper_tree(os.path.join(d, 'modified'), args.branch, files[2:], 'exec "$REAL" "$@"',
                                {'tests/test_bool.eigs': lambda t: t + '\n# modified-test fixture\n'})
         rc, text, v = diff_restricted(base, changed, files[2:])
-        case('a changed program runs only on the branch and is listed MODIFIED',
+        case('a changed program the baseline completes is compared and listed MODIFIED',
              (rc, v.get('tests/test_bool.eigs'),
-              'MODIFIED (tree copies differ; run only on the branch) tests/test_bool.eigs' in text,
-              ' modified=1 modified_failed=0 ' in text),
-             (3, 'MODIFIED', True, True), detail=text.splitlines())
-        changed_bad = wrapper_tree(os.path.join(d, 'modified-bad'), args.branch, files[2:], 'exec "$REAL" "$@"',
-                                   {'tests/test_bool.eigs': lambda t: t + '\nassert of [false, "modified plant"]\n'})
-        rc, text, v = diff_restricted(base, changed_bad, files[2:])
-        case('a failing changed program is red as MODIFIED-FAIL',
-             (rc, v.get('tests/test_bool.eigs'), ' modified=1 modified_failed=1 ' in text),
+              'MODIFIED (tree copies differ) tests/test_bool.eigs' in text,
+              ' modified=1 modified_failed=0 branch_only=0 ' in text),
+             (3, 'same', True, True), detail=text.splitlines())
+        failing_base = wrapper_tree(os.path.join(d, 'failing-base'), args.branch, files[2:],
+                                    'case "$*" in *test_bool.eigs*|*test_phase2_new_fixture.eigs*) exit 19 ;; esac\n'
+                                    'exec "$REAL" "$@"')
+        changed_bad = wrapper_tree(os.path.join(d, 'modified-bad'), args.branch, files[2:],
+                                   'case "$*" in *test_bool.eigs*) exit 20 ;; esac\nexec "$REAL" "$@"',
+                                   {'tests/test_bool.eigs': lambda t: t + '\n# modified failing fixture\n'})
+        rc, text, v = diff_restricted(failing_base, changed_bad, files[2:])
+        case('a modified program the baseline cannot complete and branch fails is MODIFIED-FAIL',
+             (rc, v.get('tests/test_bool.eigs'), ' modified=1 modified_failed=1 branch_only=1 ' in text),
              (3, 'MODIFIED-FAIL', True), detail=text.splitlines())
+        changed_good = wrapper_tree(os.path.join(d, 'modified-good'), args.branch, files[2:], 'exec "$REAL" "$@"',
+                                    {'tests/test_bool.eigs': lambda t: t + '\n# modified passing fixture\n'})
+        rc, text, v = diff_restricted(failing_base, changed_good, files[2:])
+        case('a modified program the baseline cannot complete and branch passes is branch-only MODIFIED',
+             (rc, v.get('tests/test_bool.eigs'), ' modified=1 modified_failed=0 branch_only=1 ' in text),
+             (3, 'MODIFIED', True), detail=text.splitlines())
+        new_rel = 'tests/test_phase2_new_fixture.eigs'
+        new_branch = wrapper_tree(os.path.join(d, 'new-bad'), args.branch, files[2:],
+                                  'case "$*" in *test_phase2_new_fixture.eigs*) exit 20 ;; esac\nexec "$REAL" "$@"')
+        os.rename(os.path.join(os.path.dirname(os.path.dirname(new_branch)), 'tests/test_bool.eigs'),
+                  os.path.join(os.path.dirname(os.path.dirname(new_branch)), new_rel))
+        rc, text, v = diff_restricted(failing_base, new_branch, [new_rel])
+        case('a new program the baseline cannot complete and branch fails is NEW-FAIL',
+             (rc, v.get(new_rel), ' new=1 new_failed=1 ' in text, ' branch_only=1 ' in text),
+             (3, 'NEW-FAIL', True, True), detail=text.splitlines())
         cut = wrapper_tree(os.path.join(d, 'cut'), args.branch, files[:1] + files[2:], 'exec "$REAL" "$@"',
                            {'tests/suite_program_env.txt':
                             lambda t: re.sub(r'(?m)^test_numeric_guard\.eigs .*\n', '', t)})
