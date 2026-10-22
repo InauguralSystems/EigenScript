@@ -594,10 +594,12 @@ the most specific via its priority order.
   `down_fraction`/`up_fraction` of 0 — never improving or diverging. This
   is the #187 contract enforced at the window level. The `stable`
   no-consecutive-flips clause likewise excludes `oscillating`.
-- **The quiescent bands** (full-window, near-zero motion) overlap but do not
-  form an implication lattice between `converged` and `equilibrium`: a converged
-  directional tail is not an equilibrium. A *high-entropy* `equilibrium ⊂ stable`.
-  Concretely a full quiet window is exactly one of:
+- **The numeric value-channel quiescent bands** (full-window, near-zero
+  motion) overlap but do not form an implication lattice between `converged`
+  and `equilibrium`: the value route's raw-step trend guard means a converged
+  directional tail is not an equilibrium. A *high-entropy* value-channel
+  `equilibrium ⊂ stable`. Concretely a full quiet numeric window is exactly
+  one of:
   - **low entropy, balanced steps** → `converged` and `equilibrium`
     (`report` → `converged`);
   - **low entropy, one-direction tail** → `converged` but not
@@ -608,6 +610,14 @@ the most specific via its priority order.
   (low H, balanced) or `stable` (high H). A `stable` window that is *not*
   equilibrium is one with steady directional drift (mean `|dH| > dh_zero`)
   **at high entropy**: moving a little, but settled.
+- **The entropy-channel quiescent bands have a separate lattice.** Entropy
+  predicates operate on the `dH` window and do not apply the numeric route's
+  raw-value-step trend guard. When a full low-entropy window has every
+  `|dH| < dh_zero`, both `converged` and `equilibrium` are true, including
+  when all its nonzero `dH` steps point in one direction (`report` →
+  `converged`). At high entropy, `equilibrium ⊂ stable` as before. Thus the
+  entropy route permits `converged` and `equilibrium` to co-fire for a
+  same-direction quiet window; the numeric value route deliberately does not.
 - **The bands are not exhaustive.** A full window with steady gray-band
   drift at *low* entropy fires nothing: the steps are under `dh_small` so
   `improving`/`diverging` are excluded by the #187 rule, the mean is over
