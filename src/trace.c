@@ -1937,7 +1937,9 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"audio_noise",          TK_LIST_},   /* one call = one or more sample chunks */
     {"audio_stream_queued",  TK_NUM_},
     {"clock_unix",           TK_NUM_},
+    {"eigen_checkpoint_info", TK_STR_},
     {"eigen_generate",       TK_LIST_ | TK_STR_},   /* str: the recorded over-length refusal */
+    {"eigen_model_load",     TK_STR_},
     {"env_get",              TK_STR_},
     {"exe_path",             TK_STR_},
     {"file_exists",          TK_BOOL_},

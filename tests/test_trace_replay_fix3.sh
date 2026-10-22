@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -eu
-EIGS=${EIGS:-$(cd "$(dirname "$0")/.." && pwd)/build/release/eigenscript}
+EIGS=${EIGS:-${EIGENSCRIPT:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 fail() { echo "FAIL: $*"; exit 1; }; ok() { echo "PASS: $*"; }
 
@@ -17,7 +17,8 @@ write_text of ["$T/victim", "changed"]
 EOF
 echo original >"$T/victim"
 EIGS_TRACE="$T/write.tape" "$EIGS" "$T/write.eigs" >/dev/null
-sed -i 's/write_text=true/write_text=<heap>/' "$T/write.tape"
+sed 's/write_text=true/write_text=<heap>/' "$T/write.tape" > "$T/write.edited"
+mv "$T/write.edited" "$T/write.tape"
 echo original >"$T/victim"
 if EIGS_REPLAY="$T/write.tape" "$EIGS" "$T/write.eigs" >/dev/null 2>"$T/e"; then fail "marker replay succeeded"; fi
 [ "$(cat "$T/victim")" = original ] || fail "marker fell through to live write"
@@ -26,7 +27,8 @@ ok "unservable filesystem records cannot mutate live files"
 echo 'tensor_load of "missing"' >"$T/tensor.eigs"
 for bad in '[]' '[1]' '["x", 2]'; do
   EIGS_TRACE="$T/tensor.tape" "$EIGS" "$T/tensor.eigs" >/dev/null
-  sed -i "s/tensor_load=null/tensor_load=$bad/" "$T/tensor.tape"
+  sed "s/tensor_load=null/tensor_load=$bad/" "$T/tensor.tape" > "$T/tensor.edited"
+  mv "$T/tensor.edited" "$T/tensor.tape"
   if EIGS_REPLAY="$T/tensor.tape" "$EIGS" "$T/tensor.eigs" >/dev/null 2>"$T/e"; then fail "tensor verdict $bad succeeded"; fi
   grep -F 'tensor_load: malformed replay verdict' "$T/e" >/dev/null || fail "tensor verdict $bad lacked diagnostic"
 done

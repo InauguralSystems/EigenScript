@@ -11,9 +11,12 @@ Replay is an **rr-style, side-effect-free execution**. Every filesystem read
 reachable from a running program is either served by the tape or refused
 before the read. Source read by `import` and `load_file`, ordinary file
 readers, hashes, directory queries, and process/network input are taped.
-Reads whose payload is not represented in format v7—tensor/model checkpoints,
+Reads whose payload is not represented in format v7—tensor checkpoints,
 font and music assets, HTTP static serving, stores, and databases—are refused;
-replay never falls back to a live file. Every replayable
+replay never falls back to a live file. Model checkpoints are the exception:
+the verdict of `eigen_model_load` or `eigen_checkpoint_info` is taped, their
+payload is never opened or read during replay, and taped inference results are
+served before the model is consulted. Every replayable
 mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, and
 `remove_file`) returns or raises its recorded outcome before any filesystem syscall.
 Operations whose durable result cannot be represented by the tape remain loud
@@ -320,7 +323,10 @@ perspective lands on the tape as an `N` record:
   so suppressing it would be meaningless. (`net_close` is deterministic
   and untraced — under replay no socket exists and it is a natural
   no-op, the `audio_capture_close` shape.)
-- **Model extension (#960):** `eigen_generate`. Sampling at temperature
+- **Model extension (#960):** `eigen_model_load`, `eigen_checkpoint_info`, and
+  `eigen_generate`. A load or inspection call records its verdict; replay
+  returns that verdict before probing the path or reading any checkpoint
+  payload. Sampling at temperature
   above 0 draws from the shared `drand48` stream, so the emitted token list
   is a nondeterministic return — untaped, a generating program could not be
   replayed at all. **One record per call carries the whole token list**, not

@@ -567,11 +567,12 @@ int save_model_weights(const char *path, TransformerModel *model) {
 
 
 Value* builtin_eigen_model_load(Value *arg) {
-    if (__builtin_expect(g_replay_enabled, 0)) {
-        rt_error(EK_IO, 0, "eigen_model_load: not replayable under EIGS_REPLAY "
-                 "(model file-read boundary; see docs/TRACE.md)");
-        return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");
-    }
+    /* The checkpoint contents are needed only to compute this call's status
+     * and to supply later inference.  Both observable results ride the tape,
+     * so replay can take the status before path probing or payload I/O; a
+     * replayed eigen_generate likewise takes its recorded result before it
+     * consults g_model. */
+    TRACE_NONDET_TAKE("eigen_model_load");
     const char *base_path = "";
     if (arg && arg->type == VAL_STR) base_path = arg->data.str;
 
@@ -596,9 +597,10 @@ Value* builtin_eigen_model_load(Value *arg) {
     int result = load_model_weights(path, &g_model);
 
     if (result == 0) {
-        return model_load_status_json(path);
+        TRACE_NONDET_RECORD("eigen_model_load", model_load_status_json(path));
     } else {
-        return make_str("{\"status\": \"error\", \"error\": \"Failed to load model weights\"}");
+        TRACE_NONDET_RECORD("eigen_model_load",
+            make_str("{\"status\": \"error\", \"error\": \"Failed to load model weights\"}"));
     }
 }
 
@@ -1258,29 +1260,29 @@ Value* builtin_eigen_checkpoint_info(Value *arg) {
     if (!arg || arg->type != VAL_STR) {
         return make_str("{\"status\": \"error\", \"error\": \"requires path string\"}");
     }
-    if (__builtin_expect(g_replay_enabled, 0)) {
-        rt_error(EK_IO, 0, "eigen_checkpoint_info: not replayable under EIGS_REPLAY "
-                 "(model file-read boundary; see docs/TRACE.md)");
-        return make_str("{\"status\": \"error\", \"error\": \"replay refused\"}");
-    }
+    TRACE_NONDET_TAKE("eigen_checkpoint_info");
     const char *path = arg->data.str;
     int fmt = detect_checkpoint_format(path);
     if (fmt == 0) {
-        return make_str("{\"status\": \"error\", \"error\": \"cannot open file\"}");
+        TRACE_NONDET_RECORD("eigen_checkpoint_info",
+            make_str("{\"status\": \"error\", \"error\": \"cannot open file\"}"));
     }
     if (fmt != 'E') {
-        return make_str("{\"status\": \"ok\", \"format\": \"json\"}");
+        TRACE_NONDET_RECORD("eigen_checkpoint_info",
+            make_str("{\"status\": \"ok\", \"format\": \"json\"}"));
     }
 
     FILE *f = fopen(path, "rb");
-    if (!f) return make_str("{\"status\": \"error\"}");
+    if (!f) TRACE_NONDET_RECORD("eigen_checkpoint_info",
+        make_str("{\"status\": \"error\"}"));
 
     EigenPreamble preamble;
     EigenSectionEntry *toc = NULL;
     long file_size = 0;
     if (eigen_read_header(f, path, &preamble, &toc, &file_size) != 0) {
         fclose(f);
-        return make_str("{\"status\": \"error\", \"error\": \"invalid eigen checkpoint\"}");
+        TRACE_NONDET_RECORD("eigen_checkpoint_info",
+            make_str("{\"status\": \"error\", \"error\": \"invalid eigen checkpoint\"}"));
     }
 
     /* Find config section */
@@ -1301,7 +1303,8 @@ Value* builtin_eigen_checkpoint_info(Value *arg) {
     ModelConfig cfg = { vs, dm, nl, df, ms };
     char err[128];
     if (!model_config_valid(&cfg, err, sizeof(err))) {
-        return make_str("{\"status\": \"error\", \"error\": \"invalid eigen config\"}");
+        TRACE_NONDET_RECORD("eigen_checkpoint_info",
+            make_str("{\"status\": \"error\", \"error\": \"invalid eigen config\"}"));
     }
 
     char buf[1024];
@@ -1316,7 +1319,7 @@ Value* builtin_eigen_checkpoint_info(Value *arg) {
         (preamble.flags & EIGEN_FLAG_HAS_OBSERVER) ? "true" : "false",
         preamble.model_age, preamble.training_samples,
         vs, dm, nl, df, ms);
-    return make_str(buf);
+    TRACE_NONDET_RECORD("eigen_checkpoint_info", make_str(buf));
 }
 
 Value* builtin_model_save_weights(Value *arg) {
