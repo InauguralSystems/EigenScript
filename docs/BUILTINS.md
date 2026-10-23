@@ -199,7 +199,7 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 |------|-----------|-------------|
 | `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` by default and convert to numeric zero under `EIGS_STRICT=0`. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
 | `f64_to_bytes` | `f64_to_bytes of x` | List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number raises by default; under `EIGS_STRICT=0` it encodes as `0.0` (#971). |
-| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Decode a double from the first 8 big-endian IEEE-754 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern raises a `value` error by default; under `EIGS_STRICT=0` it collapses to `0` and sets `math_flags.invalid` (#971). |
+| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Decode a double from the first 8 big-endian IEEE-754 bytes; the input must contain at least 8 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern raises a `value` error by default; under `EIGS_STRICT=0` it collapses to `0` and sets `math_flags.invalid` (#971). |
 
 Buffers also support direct indexing (`buf[i]`, `buf[i] is val`) and
 compound assignment (`buf[i] += val`).

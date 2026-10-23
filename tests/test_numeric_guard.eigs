@@ -201,7 +201,9 @@ assert of [index_selected[0] == 7, "NG53 non-strict gather NaN index selects zer
 assert of [(str_from_bytes of (buf_from_list of [65.75, 321, -191])) == "AAA", "NG54 finite byte truncation and wrapping"]
 assert of [(f64_from_bytes of (buf_from_list of (f64_to_bytes of 12.5))) == 12.5, "NG54 finite f64 byte round trip"]
 assert of [(str_from_bytes of raw_nan_product) == "", "NG55 non-strict NaN byte is NUL"]
-assert of [(f64_from_bytes of raw_nan_product) == 0, "NG56 non-strict NaN byte decodes zero"]
+raw_nan_bytes is buffer of 8
+raw_nan_bytes[0] is raw_nan_product[0]
+assert of [(f64_from_bytes of raw_nan_bytes) == 0, "NG56 non-strict NaN byte decodes zero"]
 assert of [(str_from_bytes of raw_pair) == "", "NG57 normalized infinity wraps to byte zero"]
 encoded_nan is buf_to_pcm16le of [raw_nan_product, 0, 1]
 assert of [encoded_nan == (buf_from_list of [0, 0]), "NG58 non-strict NaN PCM sample is silence"]

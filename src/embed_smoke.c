@@ -678,6 +678,14 @@ int main(void) {
         eigs_set_global("nf_raw", nf_raw);
         eigs_set_global("nf_finite", nf_finite);
         eigs_set_global("nf_later", nf_later);
+        /* #1926: f64_from_bytes refuses fewer than 8 bytes before reading
+         * any, so its row keeps the NaN-then-infinity prefix in a full
+         * 8-byte input. */
+        EigsValue *nf_raw8 = eigs_value_new_buffer(8);
+        eigs_value_buffer_set(nf_raw8, 0, NAN);
+        eigs_value_buffer_set(nf_raw8, 1, INFINITY);
+        eigs_set_global("nf_raw8", nf_raw8);
+        eigs_value_release(nf_raw8);
         eigs_value_release(nf_raw);
         eigs_value_release(nf_finite);
         eigs_value_release(nf_later);
@@ -697,7 +705,7 @@ int main(void) {
             "dot of [nf_raw, nf_finite]",
             "buf_dot of [nf_raw, nf_finite, 0, 0, 2]",
             "buf_peak of [nf_raw, 0, 2]",
-            "str_from_bytes of nf_raw", "f64_from_bytes of nf_raw",
+            "str_from_bytes of nf_raw", "f64_from_bytes of nf_raw8",
             "buf_from_pcm16le of [nf_raw, 0, 1]",
             "buf_to_pcm16le of [nf_raw, 0, 2]",
             "add of [nf_raw, [0, 0]]", "add of [[0, 0], nf_raw]",
