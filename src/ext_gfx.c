@@ -813,39 +813,39 @@ Value* builtin_gfx_poll(Value *arg) {
         case MY_SDL_KEYDOWN:
             dict_set_owned(d, "type", make_str("keydown"));
             dict_set_owned(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
-            dict_set_owned(d, "scancode", make_num(ev.key.keysym.scancode));
+            dict_set_owned(d, "scancode", make_int(ev.key.keysym.scancode));
             poll_set_mods(d, ev.key.keysym.mod);
             break;
         case MY_SDL_KEYUP:
             dict_set_owned(d, "type", make_str("keyup"));
             dict_set_owned(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
-            dict_set_owned(d, "scancode", make_num(ev.key.keysym.scancode));
+            dict_set_owned(d, "scancode", make_int(ev.key.keysym.scancode));
             poll_set_mods(d, ev.key.keysym.mod);
             break;
         case MY_SDL_MOUSEMOTION:
             dict_set_owned(d, "type", make_str("mousemove"));
-            dict_set_owned(d, "x", make_num(ev.motion.x));
-            dict_set_owned(d, "y", make_num(ev.motion.y));
+            dict_set_owned(d, "x", make_int(ev.motion.x));
+            dict_set_owned(d, "y", make_int(ev.motion.y));
             poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEBUTTONDOWN:
             dict_set_owned(d, "type", make_str("mousedown"));
-            dict_set_owned(d, "button", make_num(ev.button.button));
-            dict_set_owned(d, "x", make_num(ev.button.x));
-            dict_set_owned(d, "y", make_num(ev.button.y));
+            dict_set_owned(d, "button", make_int(ev.button.button));
+            dict_set_owned(d, "x", make_int(ev.button.x));
+            dict_set_owned(d, "y", make_int(ev.button.y));
             poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEBUTTONUP:
             dict_set_owned(d, "type", make_str("mouseup"));
-            dict_set_owned(d, "button", make_num(ev.button.button));
-            dict_set_owned(d, "x", make_num(ev.button.x));
-            dict_set_owned(d, "y", make_num(ev.button.y));
+            dict_set_owned(d, "button", make_int(ev.button.button));
+            dict_set_owned(d, "x", make_int(ev.button.x));
+            dict_set_owned(d, "y", make_int(ev.button.y));
             poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEWHEEL:
             dict_set_owned(d, "type", make_str("wheel"));
-            dict_set_owned(d, "x", make_num(ev.wheel.x));
-            dict_set_owned(d, "y", make_num(ev.wheel.y));
+            dict_set_owned(d, "x", make_int(ev.wheel.x));
+            dict_set_owned(d, "y", make_int(ev.wheel.y));
             /* #822: x/y are scroll DELTAS. Carry the pointer as mx/my so
              * a consumer can zoom about the cursor without shadowing
              * mousemove (stale before the first motion event). Queried
@@ -855,8 +855,8 @@ Value* builtin_gfx_poll(Value *arg) {
             if (p_SDL_GetMouseState) {
                 int wmx = 0, wmy = 0;
                 p_SDL_GetMouseState(&wmx, &wmy);
-                dict_set_owned(d, "mx", make_num(wmx));
-                dict_set_owned(d, "my", make_num(wmy));
+                dict_set_owned(d, "mx", make_int(wmx));
+                dict_set_owned(d, "my", make_int(wmy));
             }
             poll_set_mods(d, poll_mod_state());
             break;
@@ -864,8 +864,8 @@ Value* builtin_gfx_poll(Value *arg) {
             /* SDL_WINDOWEVENT_SIZE_CHANGED = 6 (RESIZED is 5). */
             if (ev.window.event == 6) {
                 dict_set_owned(d, "type", make_str("resize"));
-                dict_set_owned(d, "w", make_num(ev.window.data1));
-                dict_set_owned(d, "h", make_num(ev.window.data2));
+                dict_set_owned(d, "w", make_int(ev.window.data1));
+                dict_set_owned(d, "h", make_int(ev.window.data2));
             } else {
                 /* #1007: `d` is already allocated. Returning without
                  * releasing it leaked 584 bytes / 6 allocations per
@@ -885,7 +885,7 @@ Value* builtin_gfx_poll(Value *arg) {
 /* gfx_ticks of null — milliseconds since SDL_Init */
 Value* builtin_gfx_ticks(Value *arg) {
     (void)arg;
-    return make_num(g_sdl_lib ? (double)p_SDL_GetTicks() : 0.0);
+    return make_int(g_sdl_lib ? (int64_t)p_SDL_GetTicks() : 0);
 }
 
 /* gfx_delay of ms */
@@ -1370,12 +1370,20 @@ Value* builtin_audio_open(Value *arg) {
          * before reading it. */
         ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
                   (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
-                  "audio_open", "[number freq, number channels]", make_num(0));
+                  "audio_open", "[number freq, number channels]", make_int(0));
     }
-    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
+    /* R1.6e-D1: channels are exact counts in 1..255. Validate all
+     * deterministic arguments before SDL, device changes or a tape record. */
+    int64_t freq = 44100, channels = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &freq, "audio_open")
+            || !eigs_list_int_range(arg, 1, 1, 255, &channels, "audio_open"))
+            return make_int(0);
+    }
+    if (!g_sdl_lib) { if (!load_sdl2()) return make_int(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
     if (!p_SDL_OpenAudioDevice) {
         fprintf(stderr, "audio_open: SDL2 audio symbols not available\n");
-        return make_num(0);  /* fs:ANSWER SDL2 audio symbols missing -- same no-device-id 0, detail on stderr above */
+        return make_int(0);  /* fs:ANSWER SDL2 audio symbols missing -- same no-device-id 0, detail on stderr above */
     }
     p_SDL_Init(MY_SDL_INIT_AUDIO);
 
@@ -1386,18 +1394,15 @@ Value* builtin_audio_open(Value *arg) {
     want.samples = 1024;
     want.callback = audio_mix_callback;
 
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        /* Type-checked at the top of the function, before the SDL load. */
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
-    }
+    want.freq = (int)freq;
+    want.channels = (Uint8)channels;
 
     g_audio_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (g_audio_device < 2) { g_audio_device = 0; return make_num(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the no-device result and g_audio_device is reset to match */
+    if (g_audio_device < 2) { g_audio_device = 0; return make_int(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the no-device result and g_audio_device is reset to match */
     g_audio_freq = have.freq;
     g_audio_channels = have.channels;
     p_SDL_PauseAudioDevice(g_audio_device, 0); /* start playing */
-    return make_num(g_audio_device);
+    return make_int(g_audio_device);
 }
 
 /* audio_close of null */
@@ -1418,9 +1423,12 @@ Value* builtin_audio_pause(Value *arg) {
      * device check, the [135] rule. */
     STRICT_REQUIRE(arg && arg->type != VAL_NULL && !val_is_number(arg),
                    "audio_pause", "number flag (1 = pause, 0 = unpause) or null");
+    int64_t pause = 1;
+    if (arg && val_is_number(arg)
+        && !eigs_int_arg_range(arg, INT_MIN, INT_MAX, &pause, "audio_pause"))
+        return make_null();
     if (!g_audio_device) return make_null();  /* fs:VOID no device open: audio_pause answers null on every path -- the return value, not a rejected-argument stand-in */
-    int pause = (arg && val_is_number(arg)) ? (int)eigs_num_arg(arg, __func__) : 1;
-    p_SDL_PauseAudioDevice(g_audio_device, pause);
+    p_SDL_PauseAudioDevice(g_audio_device, (int)pause);
     return make_null(); /* fs:VOID audio_pause answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
@@ -1513,15 +1521,23 @@ Value* builtin_audio_capture_open(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
                   (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
-                  "audio_capture_open", "[number freq, number channels]", make_num(0));
+                  "audio_capture_open", "[number freq, number channels]", make_int(0));
+    }
+    /* R1.6e-D1: channels are exact counts in 1..255. Validate all
+     * deterministic arguments before SDL, device changes or a tape record. */
+    int64_t freq = 44100, channels = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &freq, "audio_capture_open")
+            || !eigs_list_int_range(arg, 1, 1, 255, &channels, "audio_capture_open"))
+            return make_int(0);
     }
     TRACE_NONDET_TAKE("audio_capture_open");
     if (!g_sdl_lib) {
-        if (!load_sdl2()) TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+        if (!load_sdl2()) TRACE_NONDET_RECORD("audio_capture_open", make_int(0));
     }
     if (!p_SDL_OpenAudioDevice || !p_SDL_DequeueAudio) {
         fprintf(stderr, "audio_capture_open: SDL2 capture symbols not available\n");
-        TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+        TRACE_NONDET_RECORD("audio_capture_open", make_int(0));
     }
     p_SDL_Init(MY_SDL_INIT_AUDIO);
 
@@ -1532,11 +1548,8 @@ Value* builtin_audio_capture_open(Value *arg) {
     want.samples = 1024;
     want.callback = NULL;   /* queue mode: drain via SDL_DequeueAudio */
 
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        /* Type-checked at the top of the function, before the SDL load. */
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
-    }
+    want.freq = (int)freq;
+    want.channels = (Uint8)channels;
 
     if (g_capture_device) {
         p_SDL_CloseAudioDevice(g_capture_device);
@@ -1545,10 +1558,10 @@ Value* builtin_audio_capture_open(Value *arg) {
     g_capture_device = p_SDL_OpenAudioDevice(NULL, 1, &want, &have, 0);
     if (g_capture_device < 2) {
         g_capture_device = 0;
-        TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+        TRACE_NONDET_RECORD("audio_capture_open", make_int(0));
     }
     p_SDL_PauseAudioDevice(g_capture_device, 0); /* start recording */
-    TRACE_NONDET_RECORD("audio_capture_open", make_num(g_capture_device));
+    TRACE_NONDET_RECORD("audio_capture_open", make_int(g_capture_device));
 }
 
 /* audio_capture_read of null — drain accumulated samples since the
@@ -1642,12 +1655,20 @@ Value* builtin_audio_stream_open(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
         ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
                   (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
-                  "audio_stream_open", "[number freq, number channels]", make_num(0));
+                  "audio_stream_open", "[number freq, number channels]", make_int(0));
     }
-    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER BUILTINS.md audio_stream_open: "0 when SDL/audio is unavailable"; libSDL2 absent is environment state */
+    /* R1.6e-D1: channels are exact counts in 1..255. Validate all
+     * deterministic arguments before SDL, device changes or a tape record. */
+    int64_t freq = 44100, channels = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &freq, "audio_stream_open")
+            || !eigs_list_int_range(arg, 1, 1, 255, &channels, "audio_stream_open"))
+            return make_int(0);
+    }
+    if (!g_sdl_lib) { if (!load_sdl2()) return make_int(0); }  /* fs:ANSWER BUILTINS.md audio_stream_open: "0 when SDL/audio is unavailable"; libSDL2 absent is environment state */
     if (!p_SDL_OpenAudioDevice || !p_SDL_QueueAudio) {
         fprintf(stderr, "audio_stream_open: SDL2 audio symbols not available\n");
-        return make_num(0);  /* fs:ANSWER SDL2 queue-audio symbols missing -- the same documented 0-when-unavailable result */
+        return make_int(0);  /* fs:ANSWER SDL2 queue-audio symbols missing -- the same documented 0-when-unavailable result */
     }
     p_SDL_Init(MY_SDL_INIT_AUDIO);
 
@@ -1658,23 +1679,19 @@ Value* builtin_audio_stream_open(Value *arg) {
     want.samples = 1024;
     want.callback = NULL;   /* queue mode: feed via SDL_QueueAudio */
 
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
-        && (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT)
-        && (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)) {
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
-    }
+    want.freq = (int)freq;
+    want.channels = (Uint8)channels;
 
     if (g_stream_device) {
         p_SDL_CloseAudioDevice(g_stream_device);
         g_stream_device = 0;
     }
     g_stream_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (g_stream_device < 2) { g_stream_device = 0; return make_num(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the documented unavailable result and g_stream_device is reset */
+    if (g_stream_device < 2) { g_stream_device = 0; return make_int(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the documented unavailable result and g_stream_device is reset */
     g_stream_freq = have.freq;
     g_stream_channels = have.channels;
     p_SDL_PauseAudioDevice(g_stream_device, 0);  /* start playing */
-    return make_num(g_stream_device);
+    return make_int(g_stream_device);
 }
 
 /* audio_stream_push of samples — queue a block of float samples [-1, 1]
@@ -1718,10 +1735,10 @@ Value* builtin_audio_stream_queued(Value *arg) {
     (void)arg;
     TRACE_NONDET_TAKE("audio_stream_queued");
     if (!g_stream_device || !p_SDL_GetQueuedAudioSize)
-        TRACE_NONDET_RECORD("audio_stream_queued", make_num(0));
+        TRACE_NONDET_RECORD("audio_stream_queued", make_int(0));
     Uint32 bytes = p_SDL_GetQueuedAudioSize(g_stream_device);
     TRACE_NONDET_RECORD("audio_stream_queued",
-                        make_num((double)(bytes / sizeof(int16_t))));
+                        make_int((int64_t)(bytes / sizeof(int16_t))));
 }
 
 /* audio_stream_clear of null — drop any buffered audio on the live
@@ -1759,14 +1776,17 @@ Value* builtin_audio_music_play(Value *arg) {
     STRICT_REQUIRE(arg->data.list.count >= 2
                    && (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
                    "audio_music_play", "[string path, number loops]");
+    int64_t loops = -1;
+    if (arg->data.list.count >= 2
+        && (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)
+        && !eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &loops, "audio_music_play"))
+        return make_bool(0);
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "audio_music_play: not replayable under EIGS_REPLAY "
                  "(audio file-read boundary; see docs/TRACE.md)");
         return make_bool(0);
     }
     const char *path = list_get_ref(arg, 0)->data.str;
-    int loops = (arg->data.list.count >= 2 && (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT))
-                ? (int)eigs_list_num(arg, 1, __func__) : -1;
     if (!load_sdl2()) return make_bool(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
     if (!load_sdl_mixer()) return make_bool(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
@@ -1788,7 +1808,7 @@ Value* builtin_audio_music_play(Value *arg) {
                 p_SDL_GetError ? p_SDL_GetError() : "?");
         return make_bool(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
     }
-    if (p_Mix_PlayMusic(g_music, loops) < 0) {
+    if (p_Mix_PlayMusic(g_music, (int)loops) < 0) {
         fprintf(stderr, "audio_music: play failed: %s\n",
                 p_SDL_GetError ? p_SDL_GetError() : "?");
         return make_bool(0);  /* fs:ANSWER Mix_PlayMusic failed -- documented 0; line 1378 returns 1 only when the track is actually playing */
@@ -1912,35 +1932,38 @@ Value* builtin_audio_volume(Value *arg) {
 Value* builtin_audio_stop(Value *arg) {
     /* #1007: the mixed condition split, as its #971 deferral marker asked. */
     ARG_GUARD(!arg || !val_is_number(arg), "audio_stop", "number channel",
-              make_num(0));
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active", and with no device open none is */
-    int c = (int)eigs_num_arg(arg, __func__) - 1;
-    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active" -- the same value line 1465 returns for an inactive in-range channel */
+              make_int(0));
+    int64_t channel = 0;
+    if (!eigs_int_arg_range(arg, INT_MIN, INT_MAX, &channel, "audio_stop"))
+        return make_int(0);
+    if (!g_audio_device) return make_int(0);  /* fs:ANSWER 0 means "the channel was not active", and with no device open none is */
+    if (channel < 1 || channel > AUDIO_MAX_CHANNELS) return make_int(0);  /* fs:ANSWER 0 means "the channel was not active" -- an out-of-range id is inactive */
+    int c = (int)channel - 1;
     p_SDL_LockAudioDevice(g_audio_device);
     int ok = g_audio_ch[c].active;
     g_audio_ch[c].active = 0;
     p_SDL_UnlockAudioDevice(g_audio_device);
-    return make_num(ok);
+    return make_int(ok);
 }
 
 /* audio_queue_size of null — bytes queued */
 Value* builtin_audio_queue_size(Value *arg) {
     (void)arg;
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 bytes queued: with no device no channel holds unplayed samples, which is exactly the total lines 1477-1485 sum for an idle device */
+    if (!g_audio_device) return make_int(0);  /* fs:ANSWER 0 bytes queued: with no device no channel holds unplayed samples, which is exactly the total lines 1477-1485 sum for an idle device */
     /* Mixer equivalent of the old queued-bytes count: unplayed bytes
      * summed over active FINITE channels (infinite loops would be
      * infinity; they are excluded so refill-style polls terminate). */
-    double bytes = 0;
+    int64_t bytes = 0;
     p_SDL_LockAudioDevice(g_audio_device);
     for (int c = 0; c < AUDIO_MAX_CHANNELS; c++) {
         AudioChannel *ch = &g_audio_ch[c];
         if (!ch->active || ch->loops < 0) continue;
-        double rem = (double)(ch->count - ch->pos)
-                   + (double)(ch->loops - 1) * (double)ch->count;
-        bytes += rem * (double)sizeof(int16_t);
+        int64_t rem = (int64_t)(ch->count - ch->pos)
+                    + ((int64_t)ch->loops - 1) * (int64_t)ch->count;
+        bytes += rem * (int64_t)sizeof(int16_t);
     }
     p_SDL_UnlockAudioDevice(g_audio_device);
-    return make_num(bytes);
+    return make_int(bytes);
 }
 
 /* audio_clear of null — stop all mixer channels and free their clips */
@@ -2295,12 +2318,13 @@ Value* builtin_audio_mix(Value *arg) {
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double sa = (i < a->data.list.count && (list_elem_type(a, i) == VAL_FLOAT || list_elem_type(a, i) == VAL_INT)) ? eigs_slot_num(list_slot(a, i), __func__) : 0;
-        double sb = (i < b->data.list.count && (list_elem_type(b, i) == VAL_FLOAT || list_elem_type(b, i) == VAL_INT)) ? eigs_slot_num(list_slot(b, i), __func__) : 0;
+        double sa = (i < a->data.list.count && (list_elem_type(a, i) == VAL_FLOAT || list_elem_type(a, i) == VAL_INT)) ? eigs_list_float(a, i, "audio_mix") : 0;
+        double sb = (i < b->data.list.count && (list_elem_type(b, i) == VAL_FLOAT || list_elem_type(b, i) == VAL_INT)) ? eigs_list_float(b, i, "audio_mix") : 0;
+        if (g_has_error) { val_decref(out); return make_list(0); }
         double mixed = sa + sb;
         if (mixed > 1.0) mixed = 1.0;
         if (mixed < -1.0) mixed = -1.0;
-        list_append_owned(out, make_num(mixed));
+        list_append_owned(out, make_float(mixed));
     }
     return out;
 }
@@ -2328,16 +2352,18 @@ Value* builtin_audio_gain(Value *arg) {
      * beside it was not, which is the same next-line asymmetry as gfx_open. */
     ARG_GUARD((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
               "audio_gain", "[samples, number volume]", make_list(0));
-    double vol = eigs_list_num(arg, 1, __func__);
+    double vol = eigs_list_float(arg, 1, "audio_gain");
+    if (g_has_error) return make_list(0);
     int n = samples->data.list.count;
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double s = ((list_elem_type(samples, i) == VAL_FLOAT || list_elem_type(samples, i) == VAL_INT)) ? eigs_slot_num(list_slot(samples, i), __func__) : 0;
+        double s = ((list_elem_type(samples, i) == VAL_FLOAT || list_elem_type(samples, i) == VAL_INT)) ? eigs_list_float(samples, i, "audio_gain") : 0;
+        if (g_has_error) { val_decref(out); return make_list(0); }
         s *= vol;
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
-        list_append_owned(out, make_num(s));
+        list_append_owned(out, make_float(s));
     }
     return out;
 }

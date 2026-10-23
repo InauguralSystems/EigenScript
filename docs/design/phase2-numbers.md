@@ -1394,14 +1394,14 @@ current state behind several rows:
 | `assert` | other | - | - | message via value_to_string (N6) |
 | `atan` | float-producing | - | - | Lua math.atan |
 | `atan2` | float-producing | - | - | Lua math.atan(y, x) |
-| `audio_capture_open` | int-requiring | - | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
+| `audio_capture_open` | int-requiring | - | - | freq (samples per second): N5, then the C int range; channels: N5, then the domain 1..255 (Q1; R1.6e-D1), checked before SDL/device/tape operations; returns an int device id |
 | `audio_envelope` | float-producing | - | magnitude | float samples; the attack and release times are continuous durations: a sample count the C int cannot hold raises (Q7 magnitude) |
 | `audio_gain` | float-producing | - | - | float samples |
 | `audio_mix` | float-producing | - | - | float samples |
 | `audio_music_play` | int-requiring | - | - | loop count: N5, then the C int range (Q1) |
 | `audio_music_volume` | other | - | bounded | the volume is a continuous gain: clamped to SDL_mixer's 0..128, then rounded (Q7 bounded) |
 | `audio_noise` | float-producing | - | magnitude | float samples; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude) |
-| `audio_open` | int-requiring | - | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
+| `audio_open` | int-requiring | - | - | freq (samples per second): N5, then the C int range; channels: N5, then the domain 1..255 (Q1; R1.6e-D1), checked before SDL/device/tape operations; returns an int device id |
 | `audio_pause` | int-requiring | - | - | the pause flag is discrete: N5 (Q1; today `(int)0.5` silently un-pauses) |
 | `audio_play` | other | - | bounded | the samples are continuous: clamped to [-1, 1], then rounded to int16 (Q7 bounded; today they truncate); returns a channel number |
 | `audio_play_loop` | int-requiring | - | bounded | loop count: N5, then the C int range (Q1); the samples are continuous: clamped and rounded to int16 (Q7 bounded); returns a channel |
@@ -1410,7 +1410,7 @@ current state behind several rows:
 | `audio_sine` | float-producing | - | magnitude | float samples; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude) |
 | `audio_square` | float-producing | - | magnitude | float samples; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude) |
 | `audio_stop` | int-requiring | - | - | channel number |
-| `audio_stream_open` | int-requiring | - | - | freq (samples per second) and channels are counts: N5, then the C int range (Q1); returns a device id |
+| `audio_stream_open` | int-requiring | - | - | freq (samples per second): N5, then the C int range; channels: N5, then the domain 1..255 (Q1; R1.6e-D1), checked before SDL/device/tape operations; returns an int device id |
 | `audio_stream_push` | other | - | bounded | the samples are continuous: clamped to [-1, 1], then rounded to int16 (Q7 bounded) |
 | `audio_stream_queued` | int-preserving | - | - | sample count |
 | `audio_sweep` | float-producing | - | magnitude | float samples; frequencies and amplitude stay floats; the duration is continuous: a sample count the C int cannot hold raises (Q7 magnitude); the wave selector is integer-valued: N5 (Q1) |
@@ -2387,7 +2387,7 @@ failing on zero rows:
 | R1.6b | 9 | per-builtin table |
 | R1.6c | 1 | per-builtin table |
 | R1.6d | 2 | per-builtin table |
-| R1.6e | 0 | mechanical: per-builtin table; `gate.N5.q7-readers` (compiled and executed through the no-SDL amalgamation here and at every later `--through`) |
+| R1.6e | 1 | `N5.audio-channel-domain` (R1.6e-D1); mechanical: per-builtin table, `gate.N5.q7-readers` through the no-SDL amalgamation, and the pre-registered `gate.N13.audio-buffer-boundary` / `gate.N5.gfx-byte-boundary` actual-client fixtures (all compiled and executed here and at every later `--through`) |
 | R1.6f | 0 | mechanical: per-builtin table |
 | R1.6g | 5 | per-builtin table, including the new N9 rows |
 | R1.6z | 0 | mechanical: bridge-token deletion compile and final full table |
