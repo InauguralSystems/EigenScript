@@ -305,6 +305,23 @@ static EigsValue *host_swallow(EigsValue *arg) {
     return eigs_value_new_null();
 }
 
+/* #1925: runs on a thread that never attaches to a state. */
+typedef struct {
+    EigsValue *buf;
+    double got;
+    int len;
+    int had_error;
+} UnattachedBufferProbe;
+
+static void *unattached_buffer_probe(void *arg) {
+    UnattachedBufferProbe *p = arg;
+    p->got = eigs_value_buffer_get(p->buf, 5);
+    eigs_value_buffer_set(p->buf, 5, 9.0);
+    p->len = eigs_value_buffer_len(NULL);
+    p->had_error = eigs_has_error();
+    return NULL;
+}
+
 int main(void) {
     EigsState *st = eigs_open();
     CHECK(st != NULL, "eigs_open");
@@ -943,6 +960,22 @@ int main(void) {
           "non-buffer set is a no-op and leaves type_mismatch");
     eigs_clear_error();
     eigs_value_release(notbuf);
+
+    /* #1925: a thread with no attached state has no error channel, so a bad
+     * buffer access there keeps the sentinel alone. It must not crash, and
+     * it must not raise on this attached thread either. */
+    {
+        pthread_t tid;
+        EigsValue *ub = eigs_value_new_buffer(2);
+        UnattachedBufferProbe probe = { ub, 1.0, -1, -1 };
+        CHECK(pthread_create(&tid, NULL, unattached_buffer_probe, &probe) == 0 &&
+                  pthread_join(tid, NULL) == 0,
+              "unattached buffer probe thread ran");
+        CHECK(probe.got == 0.0 && probe.len == 0 && probe.had_error == 0 &&
+                  eigs_value_buffer_get(ub, 1) == 0.0 && !eigs_has_error(),
+              "unattached buffer misuse keeps sentinels and records no error");
+        eigs_value_release(ub);
+    }
 
     /* eval_source owns a fresh pending-error scope even when the host did not
      * explicitly clear an accessor error. */

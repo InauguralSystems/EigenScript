@@ -193,7 +193,8 @@ void           eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val);
 EigsValue     *eigs_value_new_buffer(int count);   /* zeroed, 1-D (unshaped) */
 /* Wrong-type inputs (including NULL) leave a pending type_mismatch error.
  * Out-of-range get/set leave index_range. Sentinels and no-op behavior remain
- * unchanged; inspect/clear the error through the error API above. */
+ * unchanged; inspect/clear the error through the error API above. A thread
+ * with no attached state has no error channel and gets the sentinel alone. */
 int            eigs_value_buffer_len(EigsValue *v);          /* wrong type: 0 + error */
 double         eigs_value_buffer_get(EigsValue *v, int i);   /* OOB: 0.0 + error */
 void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op + error */

@@ -13,6 +13,7 @@
 #include "vm.h"
 #include "trace.h"
 #include "eigs_embed.h"
+#include <stdarg.h>
 
 /* ---- Lifecycle ---------------------------------------------------- */
 
@@ -383,9 +384,25 @@ EigsValue *eigs_value_new_buffer(int count) {
     return v;
 }
 
+/* #1925: a bad buffer access is reported through the pending error, as
+ * #1322's embed_refuse_reserved does. A thread with no attached state has no
+ * error channel (eigs_has_error answers 0 there), so it gets the sentinel
+ * alone rather than a write through a NULL eigs_current. */
+static void embed_buffer_error(ErrKind kind, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
+static void embed_buffer_error(ErrKind kind, const char *fmt, ...) {
+    if (!eigs_current) return;
+    char msg[160];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof msg, fmt, ap);
+    va_end(ap);
+    rt_error(kind, 0, "%s", msg);
+}
+
 int eigs_value_buffer_len(EigsValue *v) {
     if (!v || v->type != VAL_BUFFER) {
-        rt_error(EK_TYPE, 0, "eigs_value_buffer_len: expected a buffer");
+        embed_buffer_error(EK_TYPE, "eigs_value_buffer_len: expected a buffer");
         return 0;
     }
     return v->data.buffer.count;
@@ -393,13 +410,13 @@ int eigs_value_buffer_len(EigsValue *v) {
 
 double eigs_value_buffer_get(EigsValue *v, int i) {
     if (!v || v->type != VAL_BUFFER) {
-        rt_error(EK_TYPE, 0, "eigs_value_buffer_get: expected a buffer");
+        embed_buffer_error(EK_TYPE, "eigs_value_buffer_get: expected a buffer");
         return 0.0;
     }
     if (i < 0 || i >= v->data.buffer.count) {
-        rt_error(EK_INDEX, 0,
-                 "eigs_value_buffer_get: buffer index %d out of range (length %d)",
-                 i, v->data.buffer.count);
+        embed_buffer_error(EK_INDEX,
+                           "eigs_value_buffer_get: buffer index %d out of range (length %d)",
+                           i, v->data.buffer.count);
         return 0.0;
     }
     return buffer_read_num(v, i);
@@ -407,13 +424,13 @@ double eigs_value_buffer_get(EigsValue *v, int i) {
 
 void eigs_value_buffer_set(EigsValue *v, int i, double x) {
     if (!v || v->type != VAL_BUFFER) {
-        rt_error(EK_TYPE, 0, "eigs_value_buffer_set: expected a buffer");
+        embed_buffer_error(EK_TYPE, "eigs_value_buffer_set: expected a buffer");
         return;
     }
     if (i < 0 || i >= v->data.buffer.count) {
-        rt_error(EK_INDEX, 0,
-                 "eigs_value_buffer_set: buffer index %d out of range (length %d)",
-                 i, v->data.buffer.count);
+        embed_buffer_error(EK_INDEX,
+                           "eigs_value_buffer_set: buffer index %d out of range (length %d)",
+                           i, v->data.buffer.count);
         return;
     }
     v->data.buffer.data[i] = x;
