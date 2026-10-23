@@ -153,7 +153,8 @@ while IFS= read -r rel; do
 done < "$T/corpus"
 sort -o "$got" "$got"
 [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
-[ "$n_suite_env" -eq 15 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=15"; exit 1; }
+# 16: R1.6e enrolled tests/test_phase2_gfx_q7.eigs (SDL dummy drivers) in tests/suite_program_env.txt.
+[ "$n_suite_env" -eq 16 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=16"; exit 1; }
 [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
 echo "jit_diff: OBS examined=$n_obs denied=$n_deny"
 if [ "${1:-}" = "--record" ]; then
