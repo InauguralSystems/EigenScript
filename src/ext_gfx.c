@@ -1876,10 +1876,8 @@ Value* builtin_audio_volume(Value *arg) {
               "audio_volume", "[number channel, number volume]", make_int(0));
     int64_t channel;
     if (!eigs_list_int_range(arg,0,INT_MIN,INT_MAX,&channel,"audio_volume")) return make_int(0);
-    double vol=eigs_list_float(arg,1,"audio_volume");
-    if (g_has_error) return make_int(0);
-    if (vol<0) vol=0;
-    if (vol>4) vol=4; /* continuous gain stays fractional; the callback stores a double */
+    int vol;
+    if (!eigs_list_bounded(arg,1,0,4,&vol,"audio_volume")) return make_int(0);
     if (!g_audio_device || channel<1 || channel>AUDIO_MAX_CHANNELS) return make_int(0); /* fs:ANSWER inactive channel */
     int c=(int)channel-1;
     p_SDL_LockAudioDevice(g_audio_device);
