@@ -17,6 +17,7 @@ test_gfx_argtypes.eigs
 test_gfx_text.eigs
 test_json_hard.eigs
 test_numeric_guard.eigs
+test_phase2_gfx_q7.eigs
 test_stdlib_fixes.eigs
 test_stream_io.eigs
 test_tensor_buffer_ops.eigs
@@ -38,4 +39,4 @@ grep -q 'suite-env completed=\$n_suite_env' "$TESTS_DIR/../tools/jit_diff.sh" ||
     echo "FAIL: jit_diff does not report the suite-environment completion population"
     exit 1
 }
-echo "PASS: jit_diff and the suite share 15 per-program environments; fail-soft program reached its final marker"
+echo "PASS: jit_diff and the suite share 16 per-program environments; fail-soft program reached its final marker"
