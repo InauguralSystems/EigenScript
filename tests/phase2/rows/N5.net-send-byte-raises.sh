@@ -4,14 +4,13 @@
 # SHAPE: S
 # WITNESS: none
 # OPS:
+# PROFILE: server
 # R1.6d-D1 / RULINGS C7: invalid byte payloads send no prefix.
 # R1.6f-D2: the raw stored-byte socketpair fixture is the mechanical gate
 # gate.N5.net-byte-boundary (tools/phase2_readers.sh), built once outside
 # this row's per-tier 30 s timeout.
 set -eu
 binary=$1
-case "$binary" in */build/release/eigenscript) binary="${binary%/release/eigenscript}/server/eigenscript" ;; esac
-[ -x "$binary" ] || { echo "missing matched server binary: $binary" >&2; exit 2; }
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/bytes.eigs" <<'EIGS'

@@ -6,6 +6,9 @@ ROWS. tests/phase2/MAP.md maps the #1758 items to rows; a row is
 tests/phase2/rows/<id>.eigs (or <id>.sh, run as `bash <id>.sh <binary>`) with
 its exact branch stdout in <id>.out and a header (`# ROW:`, `# ITEMS:`,
 `# EXPECT-RC:`, `# SHAPE:`, `# WITNESS:`, `# OPS:`, optional `# TIERS:`).
+A row that needs a capability build declares `# PROFILE: server|db|zlib`:
+it runs on $TAG_BIN_<P> and $BRANCH_BIN_<P>, the per-builtin table's matched
+builds (ruling A3), each first proven by its _profiles/<p>.eigs witness.
 Controls (ctl.*) live in tests/phase2/controls/ and must pass on BOTH
 binaries. `--through Rk` selects the rows whose [Rn] has landed by Rk.
 
@@ -284,6 +287,34 @@ def run(binary, path, env_extra, scratch):
         shutil.rmtree(cwd, ignore_errors=True)
 
 
+PROFILES = ('server', 'db', 'zlib')
+PROFILE_WITNESS = os.path.join(ROOT, 'tests', 'phase2', 'builtins', 'builtins', '_profiles')
+
+
+def profile_bins(profile, scratch):
+    """The (tag, branch) binaries for a `# PROFILE:` row, or (None, why).
+    A row never rewrites its own binary path. R1.6f-D4: CI passes
+    src/eigenscript, which the rows' release->server rewrite did not match,
+    so both server rows ran a build without HTTP or NET. Each matched build
+    must also print profile-ok from its capability witness."""
+    if profile not in PROFILES:
+        return None, 'PROFILE %r is not one of release|%s' % (profile, '|'.join(PROFILES))
+    picked = []
+    for side in ('TAG', 'BRANCH'):
+        var = '%s_BIN_%s' % (side, profile.upper())
+        b = os.environ.get(var, '')
+        if not b or not os.access(b, os.X_OK):
+            return None, '$%s is unset or not executable' % var
+        rc, so, _ = run(b, os.path.join(PROFILE_WITNESS, profile + '.eigs'), {}, scratch)
+        # The table's own predicate (run_probes.sh profile_ok): rc 0 and a
+        # line that is exactly profile-ok. The server witness's model probe
+        # prints a loader banner first.
+        if rc != 0 or 'profile-ok' not in so.split('\n'):
+            return None, '$%s (%s) lacks the %s capability (witness rc=%d)' % (var, b, profile, rc)
+        picked.append(os.path.abspath(b))
+    return tuple(picked), None
+
+
 TIER_ENV = {'off': {'EIGS_JIT_OFF': '1'}, 'default': {}, 'osr': {'EIGS_JIT_OSR_THRESHOLD': '1'},
             'trace': {'EIGS_TRACE': '@'}}
 
@@ -429,7 +460,7 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
     for f in ctl_files:
         if f.rsplit('.', 1)[0] not in ids:
             bad.append('control file %s has no MAP id' % f)
-    todo = []
+    todo, profile_cache = [], {}
     for r in landed + (controls if want_controls else []):
         d = ctl_dir if r['kind'] == 'control' else rows_dir
         p = row_file(d, r['id'])
@@ -448,7 +479,15 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
         if not os.path.exists(p.rsplit('.', 1)[0] + '.out'):
             bad.append('%s: no .out' % p)
             continue
-        todo.append((r, p, h))
+        bins = (tag, branch)
+        if h.get('PROFILE', 'release') != 'release':
+            if h['PROFILE'] not in profile_cache:
+                profile_cache[h['PROFILE']] = profile_bins(h['PROFILE'], scratch)
+            bins, why = profile_cache[h['PROFILE']]
+            if not bins:
+                bad.append('%s: %s' % (p, why))
+                continue
+        todo.append((r, p, h, bins))
     for g in gates:
         # a gate names a check the Done-when runs on its own: its file or
         # make target must exist (it is listed, never run or counted here)
@@ -465,7 +504,7 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
     cnt = {t: dict(examined=0, tag_fail=0, branch_pass=0, vacuous=0, tag_timeout=0, tag_signal=0)
            for t in TIERS}
     ctl_n = ctl_both = witnessed = ctl_witnessed = ctl_vacuous = 0
-    for r, p, h in todo:
+    for r, p, h, (row_tag, row_branch) in todo:
         want = read_text(p.rsplit('.', 1)[0] + '.out')
         want_rc = int(h.get('EXPECT-RC', '0'))
         tiers = h.get('TIERS', ' '.join(TIERS)).split()
@@ -473,7 +512,7 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
         passes = {}
         for t in tiers:
             res = {}
-            for who, b in (('tag', tag), ('branch', branch)):
+            for who, b in (('tag', row_tag), ('branch', row_branch)):
                 rc, so, se = run(b, p, TIER_ENV[t], scratch)
                 res[who] = (rc == want_rc and so == want, rc)
             passes[t] = res
@@ -503,7 +542,7 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
             # A control may claim a real tier too. Its preserved stdout is
             # insufficient evidence that a JIT/leaf arm actually ran.
             if r['witness']['kind'] != 'none' and all(passes[t]['branch'][0] for t in tiers):
-                holds, ev = witness(branch, p, r['witness'], scratch)
+                holds, ev = witness(row_branch, p, r['witness'], scratch)
                 if holds:
                     ctl_witnessed += 1
                     out('  CONTROL-WITNESS %s %s holds [%s]' % (r['id'], r['witness']['kind'], ev))
@@ -512,7 +551,7 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
                     out('  CONTROL-VACUOUS %s %s [%s]' % (r['id'], r['witness']['kind'], ev))
             continue
         if r['witness']['kind'] != 'none' and all(passes[t]['branch'][0] for t in tiers):
-            holds, ev = witness(branch, p, r['witness'], scratch)
+            holds, ev = witness(row_branch, p, r['witness'], scratch)
             if holds:
                 witnessed += 1
                 out('  WITNESS %s %s holds [%s]' % (r['id'], r['witness']['kind'], ev))

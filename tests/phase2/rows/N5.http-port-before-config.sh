@@ -4,10 +4,10 @@
 # SHAPE: S
 # WITNESS: none
 # OPS:
+# PROFILE: server
 # C6: invalid effective port refuses before changing configuration state.
 set -eu
 binary=$1
-case "$binary" in */build/release/eigenscript) binary="${binary%/release/eigenscript}/server/eigenscript" ;; esac
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/port.eigs" <<'EIGS'

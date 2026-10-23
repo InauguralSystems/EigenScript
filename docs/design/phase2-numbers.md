@@ -2408,6 +2408,11 @@ fails if a round named here has neither rows nor its mechanical gates.)
   `# ROW: <id>`, `# ITEMS: N1 N2`, `# EXPECT-RC: <n>`, `# SHAPE: S|L|F|O`,
   `# WITNESS: <kind> <chunk>... [<OP>]`, `# OPS: <OP>...`, plus `<id>.out`
   (the exact branch stdout). Controls live in `tests/phase2/controls/`.
+  A row that needs a capability build adds `# PROFILE: server|db|zlib`. The
+  checker then runs it on `$TAG_BIN_<P>`/`$BRANCH_BIN_<P>`, the per-builtin
+  table's matched builds (ruling A3), after each prints `profile-ok` from its
+  `_profiles/<p>.eigs` witness. An unset or wrong build is a population
+  failure; a row never rewrites its own binary path (R1.6f-D4).
 - **Population:**
   - the row set is the directory listing (it cannot drift from a list);
   - every row id appears in MAP.md and every MAP id has a file (both
