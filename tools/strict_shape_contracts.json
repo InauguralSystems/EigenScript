@@ -1057,20 +1057,20 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 2,
-    "reason": "List overload requires exactly port/path; numeric/null scalar form remains.",
+    "reason": "List overload requires exactly port/path; numeric/null scalar form remains. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "http_early_bind"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "b4d5ea615ed0e6e32965a3c2353512f50b823c79e3e360e66b2197dfe7f25341"
+      "a2f8feecd5dc977c7525d97184e42b6c56197cb1ca29935db19340a31e4a051a"
     ],
     "source_sha256": {
       "builtin_http_early_bind": [
-        "b4d5ea615ed0e6e32965a3c2353512f50b823c79e3e360e66b2197dfe7f25341"
+        "a2f8feecd5dc977c7525d97184e42b6c56197cb1ca29935db19340a31e4a051a"
       ],
-      "eigs_opt_num": [
-        "a59259f1f1c8f200ce3f1c7e6f668b797fbfa1219686fb8f9078719cdc9d129e"
+      "eigs_int_arg_range": [
+        "5af5651c7d114bc4a39d96ef9bb2502730dd4810d9c11304c8c3c2e01af1b95b"
       ]
     }
   },
@@ -1543,26 +1543,26 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 2,
-    "reason": "net_require_list(2,2) on list overload; scalar handle also valid.",
+    "reason": "net_require_list(2,2) on list overload; scalar handle also valid. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "net_accept"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "efb036db9f06e2cdc00ead9b2345d1c956fa94b59d779ec752637c981cf44d9f"
+      "edffbc272082a37c933e2a2cfb187a35daf22826ad5d910f62eec2caad9fb93a"
     ],
     "source_sha256": {
       "builtin_net_accept": [
-        "efb036db9f06e2cdc00ead9b2345d1c956fa94b59d779ec752637c981cf44d9f"
+        "edffbc272082a37c933e2a2cfb187a35daf22826ad5d910f62eec2caad9fb93a"
       ],
-      "net_lookup": [
-        "eeb07c145ad60f6a504c6679e0b67b07ec6c4e604f4ef6b150635a279e9daebd"
-      ],
-      "net_num_at": [
-        "7310ee4a771073b341da2ed594f8263422358a2cb7178a1a6c7d38ad906bafb5"
+      "eigs_int_arg": [
+        "edf4be05d4866ca3b2d0b9292b4f38e721050e3690882351b4c7d5bc4a082875"
       ],
       "net_require_list": [
         "70f27bee56a0ff146a34de05597e8738a16f02cbe766b461ddc89e945d654a97"
+      ],
+      "net_timeout_at": [
+        "101e9b408f0eee395b0f0573a34dfbef049251849b3ba70c47a026fd91e16538"
       ]
     }
   },
@@ -1572,23 +1572,26 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 3,
-    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout.",
+    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "net_dial"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "59fcc93fc059015b3795c8516aca72ee9e24edfb595548ec84cfecc1bc397f30"
+      "633ad4dc6b40e82689edd01e1fbf8cec1e54dc480b80838eab49053c2024db0d"
     ],
     "source_sha256": {
       "builtin_net_dial": [
-        "59fcc93fc059015b3795c8516aca72ee9e24edfb595548ec84cfecc1bc397f30"
+        "633ad4dc6b40e82689edd01e1fbf8cec1e54dc480b80838eab49053c2024db0d"
       ],
-      "net_num_at": [
-        "7310ee4a771073b341da2ed594f8263422358a2cb7178a1a6c7d38ad906bafb5"
+      "eigs_list_int_range": [
+        "3738005e8c9f9df7666a34a68b9ad86439a792da14ec4c00d650c4928787b71c"
       ],
       "net_require_list": [
         "70f27bee56a0ff146a34de05597e8738a16f02cbe766b461ddc89e945d654a97"
+      ],
+      "net_timeout_at": [
+        "101e9b408f0eee395b0f0573a34dfbef049251849b3ba70c47a026fd91e16538"
       ]
     }
   },
@@ -1598,23 +1601,26 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 3,
-    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout.",
+    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "net_recv"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "58e5ac677b29c882b0c86bf5e561c3218c2c198538ca1a0101cef67798a2877f"
+      "243f13d85f8035fc02798888bb424e7810357715d00f1d6c3658c09f4c06f4c4"
     ],
     "source_sha256": {
       "builtin_net_recv": [
-        "58e5ac677b29c882b0c86bf5e561c3218c2c198538ca1a0101cef67798a2877f"
+        "243f13d85f8035fc02798888bb424e7810357715d00f1d6c3658c09f4c06f4c4"
       ],
-      "net_num_at": [
-        "7310ee4a771073b341da2ed594f8263422358a2cb7178a1a6c7d38ad906bafb5"
+      "net_count_at": [
+        "b4479afbe57f82092ce6ff8426d6facb9c3e685979bbba7a78e0a74fe3f5ce9b"
       ],
       "net_require_list": [
         "70f27bee56a0ff146a34de05597e8738a16f02cbe766b461ddc89e945d654a97"
+      ],
+      "net_timeout_at": [
+        "101e9b408f0eee395b0f0573a34dfbef049251849b3ba70c47a026fd91e16538"
       ]
     }
   },
@@ -1624,17 +1630,17 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 2,
-    "reason": "net_require_list(2,2) before tape/socket work.",
+    "reason": "net_require_list(2,2) before tape/socket work. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "net_send"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "263feddb275ed7d3687086049d1c092254c81bb5b29240612056d2f1332a82b5"
+      "ffb94a4de7afb1e42d23f1ad5848df67f8b282ba3cdcb23ceba38841a5aab348"
     ],
     "source_sha256": {
       "builtin_net_send": [
-        "263feddb275ed7d3687086049d1c092254c81bb5b29240612056d2f1332a82b5"
+        "ffb94a4de7afb1e42d23f1ad5848df67f8b282ba3cdcb23ceba38841a5aab348"
       ],
       "net_require_list": [
         "70f27bee56a0ff146a34de05597e8738a16f02cbe766b461ddc89e945d654a97"
