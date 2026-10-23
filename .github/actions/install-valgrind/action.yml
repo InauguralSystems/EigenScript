@@ -1,0 +1,27 @@
+name: Install cached Valgrind
+description: Install Valgrind from an image/version-specific archive cache
+runs:
+  using: composite
+  steps:
+    - name: Compute Valgrind archive cache key
+      id: cache-key
+      shell: bash
+      run: |
+        set -euo pipefail
+        candidate=$(apt-cache policy valgrind | awk '/Candidate:/ { print $2; exit }')
+        [ -n "$candidate" ] || candidate=none
+        image_os=${ImageOS:-unknown-os}
+        image_version=${ImageVersion:-unknown-version}
+        printf 'key=valgrind-debs-%s-%s-%s\n' "$image_os" "$image_version" "$candidate" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Valgrind archive cache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ runner.temp }}/valgrind-debs
+        key: ${{ steps.cache-key.outputs.key }}
+
+    - name: Install Valgrind
+      shell: bash
+      env:
+        VALGRIND_DEB_CACHE_DIR: ${{ runner.temp }}/valgrind-debs
+      run: bash "$GITHUB_WORKSPACE/tools/install_valgrind.sh"
