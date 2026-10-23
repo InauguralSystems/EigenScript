@@ -168,11 +168,11 @@ void           eigs_value_retain(EigsValue *v);
 void           eigs_value_release(EigsValue *v);
 
 EigsValueType  eigs_value_type(EigsValue *v);
-double         eigs_value_as_num(EigsValue *v);     /* NaN for a bool (#1637), 0.0 for any other non-num */
-int            eigs_value_as_bool(EigsValue *v);    /* #1637: 1 for true, 0 for false or not a bool */
+double         eigs_value_as_num(EigsValue *v);     /* wrong type: sentinel + error; bool sentinel is NaN */
+int            eigs_value_as_bool(EigsValue *v);    /* wrong type: 0 + error */
 const char    *eigs_value_as_string(EigsValue *v);  /* NULL if not str; borrowed */
 
-int            eigs_value_list_len(EigsValue *v);
+int            eigs_value_list_len(EigsValue *v);   /* wrong type: 0 + error */
 EigsValue     *eigs_value_list_get(EigsValue *v, int i);   /* counted ref */
 /* Appends `item` to `v`. The list retains its own ref; the caller's ref on
  * `item` is left untouched. */
