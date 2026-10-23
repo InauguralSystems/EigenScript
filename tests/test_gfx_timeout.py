@@ -111,8 +111,14 @@ def main():
                 raise AssertionError("%s: watchdog=%s rc=%s stdout=%r stderr=%r"
                                      % (name, expired, proc.returncode, out, err))
             if completion:
-                child_started = float(startfile.read_text()) if startfile.exists() else started
-                completion_walls.append(time.monotonic() - child_started)
+                # Measure from launch, not from the child's first line: the
+                # suspected macOS cost is process start (#1916), which a
+                # child-side clock would leave out. time.monotonic() is the
+                # system clock in both processes.
+                ended = time.monotonic()
+                child_started = float(startfile.read_text()) if startfile.exists() else None
+                completion_walls.append((ended - started,
+                                         None if child_started is None else child_started - started))
             checks += 1
             return out.decode()
 
@@ -155,10 +161,11 @@ def main():
         out = run("SDL timeout is a failure", sdl, "ignore", 1)
         if "SDL availability probe failed (rc=137" not in out:
             raise AssertionError("SDL timeout was reported as absent library")
-    ordered = sorted(completion_walls)
-    p50 = ordered[(len(ordered) - 1) // 2]
-    print("gfx-timeout controls: completion wall max=%.3fs p50=%.3fs n=%d"
-          % (max(ordered), p50, len(ordered)))
+    walls = sorted(w for w, _ in completion_walls)
+    starts = sorted(s for _, s in completion_walls if s is not None)
+    p50 = walls[(len(walls) - 1) // 2]
+    print("gfx-timeout controls: completion wall max=%.3fs p50=%.3fs start max=%s n=%d"
+          % (walls[-1], p50, "%.3fs" % starts[-1] if starts else "n/a", len(walls)))
     print("gfx-timeout controls: %d passed, 0 failed" % checks)
     return 0
 
