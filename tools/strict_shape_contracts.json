@@ -137,20 +137,20 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Whole sample list/buffer data has no fixed tuple maximum. R1.6e N13 reviews the changed audio_convert_samples closure: finite continuous samples clamp and round; stored NaN/infinity refuse at the data boundary, independently of payload length.",
     "public_names": [
       "audio_play"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "093742db555c0b87c29dea9095751714c0320123fb999941490bd1357b72640a"
+      "3e3afdd58532f70eea6ee159b7db709acc0c5adac30514f1ce807521f248cb9d"
     ],
     "source_sha256": {
       "audio_convert_samples": [
-        "7461217b99129cc5df928ab02218d62c5cd7730fd88d3582f614396b0f935981"
+        "c250013eb6f543baf910f1cb8d75c9aac8139814b255dd69fd15cd8e156c58ac"
       ],
       "builtin_audio_play": [
-        "093742db555c0b87c29dea9095751714c0320123fb999941490bd1357b72640a"
+        "3e3afdd58532f70eea6ee159b7db709acc0c5adac30514f1ce807521f248cb9d"
       ],
       "gfx_bad_samples": [
         "e7a582dc8b9ceffb2b939333e7467aa938420443f7595154a72be448b01d70b6"
@@ -223,7 +223,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Whole sample list/buffer data has no fixed tuple maximum. R1.6e N13 reviews the changed audio_convert_samples closure: finite continuous samples clamp and round; stored NaN/infinity refuse at the data boundary, independently of payload length.",
     "public_names": [
       "audio_stream_push"
     ],
@@ -233,7 +233,7 @@
     ],
     "source_sha256": {
       "audio_convert_samples": [
-        "7461217b99129cc5df928ab02218d62c5cd7730fd88d3582f614396b0f935981"
+        "c250013eb6f543baf910f1cb8d75c9aac8139814b255dd69fd15cd8e156c58ac"
       ],
       "builtin_audio_stream_push": [
         "b838449be37f5d9d6d58b12d588dbb5deb389a90343061ea18e2bd579a68f057"

@@ -320,3 +320,12 @@ remains C int. Counts within the channel domain pass to SDL without a duplicated
 support table. MAP N5.audio-channel-domain pre-registers 0, 256, 257, -1, 1.5
 refusal and 255/1 reader success before migration. No frozen expectation changes.
 The three design notes are corrected with their behavior migration commit.
+
+
+## R1.6e — legacy audio suite expectation
+
+The ordinary `tests/test_audio.eigs` assertion for `audio_play_loop` with
+`1e20` loops now catches `value`: N5 and the existing §6 C-int range require
+refusal before the mixer, in both strict modes. The former zero stand-in
+assertion predates the numeric readers. The in-range legacy 10000-loop
+ceiling stays unchanged. No frozen probe or expectation is amended.
