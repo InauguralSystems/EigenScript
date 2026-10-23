@@ -1,1 +1,0 @@
-Migrate graphics and audio numeric arguments to the Phase 2 exact integer and Q7 readers: clip complete geometry before rounding, clamp bounded quantities, and refuse unrepresentable magnitudes. Buffer-backed audio and framebuffer reads reject stored non-finite samples at the scalar boundary.
