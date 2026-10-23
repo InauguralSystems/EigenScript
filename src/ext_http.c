@@ -590,20 +590,25 @@ Value* builtin_http_early_bind(Value *arg) {
         rt_error(EK_TYPE, 0, "http_early_bind: port must be a number or null");
         return make_null();
     }
+    int64_t port_value = 5000;
+    if (arg && arg->type != VAL_NULL
+        && !eigs_int_arg_range(arg, 0, 65535, &port_value, "http_early_bind")) return make_null();
+    int port = (int)port_value;
     if (g_server.early_bind_fd >= 0 || g_server.serving || g_server.response_header_rejected) {
         rt_error(EK_VALUE, 0, "http_early_bind: server already bound/serving or http_response_header rejected");
         return make_null();
     }
-    int port = 5000;
-    double port_d = 0;
-    if (eigs_opt_num(arg, &port_d, "http_serve")) port = (int)port_d;   /* #1637: a bool raises */
-    if (g_has_error) return make_null();
+
     const char *env_port = getenv("PORT");
     if (env_port && atoi(env_port) > 0) {
         port = atoi(env_port);
         printf("[deploy] PORT env=%s, binding port %d\n", env_port, port);
     } else {
         printf("[deploy] No PORT env, using default %d\n", port);
+    }
+    if (port < 0 || port > 65535) {
+        rt_error(EK_VALUE, 0, "http_early_bind: port outside [0, 65535]");
+        return make_null();
     }
     char cwd[512];
     if (getcwd(cwd, sizeof(cwd))) {
@@ -651,6 +656,10 @@ Value* builtin_http_early_bind(Value *arg) {
 }
 
 Value* builtin_http_serve(Value *arg) {
+    int64_t port_value = 5000;
+    if (arg && arg->type != VAL_NULL
+        && !eigs_int_arg_range(arg, 0, 65535, &port_value, "http_serve")) return make_null();
+    int port = (int)port_value;
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "http_serve: not replayable under EIGS_REPLAY "
                  "(server/static-file boundary; see docs/TRACE.md)");
@@ -667,13 +676,14 @@ Value* builtin_http_serve(Value *arg) {
         rt_error(EK_VALUE, 0, "http_response_header: rejected configuration; http_serve cannot start");
         return make_null();
     }
-    int port = 5000;
-    double port_d = 0;
-    if (eigs_opt_num(arg, &port_d, "http_serve")) port = (int)port_d;   /* #1637: a bool raises */
-    if (g_has_error) return make_null();
+
     const char *env_port = getenv("PORT");
     if (env_port && atoi(env_port) > 0) {
         port = atoi(env_port);
+    }
+    if (port < 0 || port > 65535) {
+        rt_error(EK_VALUE, 0, "http_serve: port outside [0, 65535]");
+        return make_null();
     }
     printf("Starting HTTP server on port %d...\n", port);
     fflush(stdout);
@@ -1065,9 +1075,9 @@ Value* builtin_shared_has(Value *arg) {
 }
 
 Value* builtin_shared_delete(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);  /* fs:TODO #971 guards a non-string key; deferred: variant-only build */
+    if (!arg || arg->type != VAL_STR) return make_int(0);  /* fs:TODO #971 guards a non-string key; deferred: variant-only build */
     Server *s = eigs_http_active;
-    if (!s) return make_num(0);  /* fs:ANSWER 0 means "nothing removed" -- the same value line 761 returns via `removed` when the key is absent */
+    if (!s) return make_int(0);  /* fs:ANSWER 0 means "nothing removed" -- the same value line 761 returns via `removed` when the key is absent */
     pthread_mutex_lock(&s->shared_mu);
     int idx = shared_find(s, arg->data.str);
     int removed = 0;
@@ -1083,7 +1093,7 @@ Value* builtin_shared_delete(Value *arg) {
         removed = 1;
     }
     pthread_mutex_unlock(&s->shared_mu);
-    return make_num(removed);
+    return make_int(removed);
 }
 
 Value* builtin_shared_keys(Value *arg) {
@@ -1102,11 +1112,11 @@ Value* builtin_shared_keys(Value *arg) {
 Value* builtin_shared_size(Value *arg) {
     (void)arg;
     Server *s = eigs_http_active;
-    if (!s) return make_num(0);  /* fs:ANSWER 0 is the store's key count, the same quantity line 784 returns; with no active server the store is empty */
+    if (!s) return make_int(0);  /* fs:ANSWER 0 is the store's key count, the same quantity line 784 returns; with no active server the store is empty */
     pthread_mutex_lock(&s->shared_mu);
     int n = s->shared_count;
     pthread_mutex_unlock(&s->shared_mu);
-    return make_num(n);
+    return make_int(n);
 }
 
 Value* builtin_shared_clear(Value *arg) {

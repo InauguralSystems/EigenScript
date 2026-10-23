@@ -600,6 +600,8 @@ backlog before `net_accept` runs (see `examples/net_echo.eigs`).
 Sockets left open at exit are closed by the runtime's handle-table
 drain. UDP is not yet exposed.
 
+`http_early_bind` and `http_serve` require an exact integer port in 0..65535; integral floats convert and port zero requests an ephemeral port. Fractional or out-of-range ports raise `value` before binding. `shared_delete` and `shared_size` return integer counts.
+
 ## Optional: HTTP Extension
 
 Requires full build. Provides an embedded HTTP server.
@@ -638,7 +640,7 @@ axis. Three controls bound it:
 | `http_static` | `http_static of [prefix, directory]` | Serve static files (realpath-confined to `directory`). Register before `http_serve`: once serving it raises, including from a `code` route (#1140) |
 | `http_early_bind` | `http_early_bind of port`, `http_early_bind of null`, or `http_early_bind of [port, "/livez"]` | Bind/listen before initialization. `null` defaults to 5000; a positive `PORT` environment override still wins. During init every request receives **503 Service Unavailable** with `Retry-After: 1`; never a fake 200 for arbitrary paths. Only an explicitly supplied liveness path answers GET/HEAD with 200, `text/plain`, body `OK` (HEAD has no body), by exact request-target match, including any query string. The path must start with `/` and contain no whitespace, CR, LF or NUL; invalid paths raise. The two scalar spellings configure no liveness path. Init-window capacity is the same number as the serving connection cap (`HTTP_MAX_CONCURRENT_CONNS`, 256): an idle or slow client cannot delay any other in-flight answer, a newcomer past that cap is accepted and answered a bodyless 503 (Content-Length 0, identical on the wire for every method including HEAD) immediately, and a client that never sends a complete request line is answered 503 at a 1 s per-client deadline. Init-window replies (liveness 200, init 503, capacity shed, handoff/teardown drain) are best-effort to a peer that is not reading: the responder never waits on a client. Once `http_serve` takes over, normal routing applies even to that path (404 unless registered) |
 | `http_response_header` | `http_response_header of [name, value]` | Register before `http_serve`, including before or after `http_early_bind`; returns `"response header registered"`. Both arguments must be strings. Name: RFC 7230 token, **1–64 bytes**. Value: **0–1024 bytes**, visible ASCII, space or tab only; **no CR/LF/NUL**. Runtime-owned and runtime-emitted names (`Content-Length`, `Content-Type`, `Transfer-Encoding`, `Connection`, `Cache-Control`, `Retry-After`, `Allow`, `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`) are refused case-insensitively. An existing name is **replaced case-insensitively**, including at capacity; at most **16** distinct headers. Every violation raises a loud error naming the builtin and rule; a rejected registration prevents `http_serve` from starting even if caught. Registered headers accompany **every** response: routes (string/file/code/authed), static files, HEAD, OPTIONS, errors, load shedding, init 503s and optional liveness 200s. Content-Type, Content-Length, status and body bytes are unchanged. Registration is deterministic configuration and adds no tape records |
-| `http_serve` | `http_serve of port` | Start blocking HTTP server |
+| `http_serve` | `http_serve of port` | Start blocking HTTP server on an exact integer port in 0..65535 (integral floats convert). |
 | `http_request_body` | `http_request_body of null` | Get current request body |
 | `http_session_id` | `http_session_id of null` | Get current session ID |
 | `http_post` | `http_post of [url, headers, body]` | HTTP POST via curl (no shell). `headers` is a JSON **string**, either an object (`"{\"X-Key\": \"v\"}"`) or a flat alternating array (`"[\"X-Key\", \"v\"]"`); `""` means no headers. Any other parsed shape raises `type_mismatch` rather than silently sending none (#755). JSON integer header values within int64 retain every digit when sent as text (N14, B6). Max 32 headers; CR/LF is stripped from both halves |
@@ -677,9 +679,9 @@ server down with it. Total bytes are bounded by
 | `shared_set` | `shared_set of [key, value]` | Store `value` (JSON-encoded). Returns `null` if over byte cap. |
 | `shared_get` | `shared_get of key` | Return stored value (re-parsed) or `null` if absent. |
 | `shared_has` | `shared_has of key` | Return `true` if key present, else `false`. |
-| `shared_delete` | `shared_delete of key` | Remove key; return `1` if removed, `0` if absent. |
+| `shared_delete` | `shared_delete of key` | Remove key; return integer `1` if removed, `0` if absent. |
 | `shared_keys` | `shared_keys of null` | Return list of keys. |
-| `shared_size` | `shared_size of null` | Return current key count. |
+| `shared_size` | `shared_size of null` | Return current integer key count. |
 | `shared_clear` | `shared_clear of null` | Drop all entries. |
 | `shared_incr` | `shared_incr of [key, delta]` | Atomic single-lock read-modify-write. Missing key treated as int `0`. Two ints produce an exact int; a float operand produces a float. Int64 overflow raises `value` without changing the counter. Returns new value, or `null` if existing value is non-numeric. |
 

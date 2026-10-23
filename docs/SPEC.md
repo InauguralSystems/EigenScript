@@ -982,6 +982,8 @@ columns returned directly remain floats. Float parameter text stays in its
 existing format until R1.7. The executable DB examples and boundary assertions
 in `tests/test_db.eigs` run on the server-db profile with PostgreSQL.
 
+`http_early_bind` and `http_serve` require an exact integer port in 0..65535; integral floats convert and port zero requests an ephemeral port. Fractional or out-of-range ports raise `value` before binding. `shared_delete` and `shared_size` return integer counts.
+
 The HTTP shared counter `shared_incr` follows numeric `+`: two int operands
 return an exact int and int64 overflow raises `value` without changing the
 stored counter (A). A missing counter starts at int zero. A float operand
