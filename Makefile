@@ -890,3 +890,7 @@ build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary: tests/test_trace_
 .PHONY: trace-history-boundary-test
 trace-history-boundary-test: build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary
 	@echo "Trace history boundary test built: $<"
+
+# R1.6d-D1: actual net_send client with raw stored bytes and a real socketpair.
+build/phase2/net_byte_boundary_%: tests/phase2/net_byte_boundary.c src/ext_net.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
