@@ -72,13 +72,25 @@ for spec in \
  'NG52 scatter index|dst is buffer of 1; scatter_add of [dst, raw, 5]' \
  'NG53 gather index|dst is buffer of [1, 1]; x is gather of [dst, raw]' \
  'NG55 str_from_bytes|x is str_from_bytes of raw' \
- 'NG56 f64_from_bytes|bytes is [raw[0], 0, 0, 0, 0, 0, 0, 0]; x is f64_from_bytes of bytes' \
  'NG58 PCM encode|x is buf_to_pcm16le of [raw, 0, 1]'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n/g')
  run "$name invalid" "$nan_setup
 $op
 assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
 done
+# NG56 needs 8 stored bytes since #1926 refuses a short input. Keep the NaN
+# in buffer storage so the decoder's own read sets the flag: an index read
+# first (raw[0]) would set it before f64_from_bytes ever ran.
+run "NG56 f64_from_bytes invalid" 'left is buffer of [8, 2]
+for i in range of 16:
+    left[i] is 1e200
+right is buffer of [2, 1]
+right[0] is 1e200
+right[1] is 0 - 1e200
+raw is matmul of [left, right]
+assert of [not (math_flags of null).invalid, "NaN setup leaves invalid clear"]
+x is f64_from_bytes of raw
+assert of [x == 0 and (math_flags of null).invalid, "decoder NaN read sets invalid"]'
 run "NG61 mixed materialization invalid" "$nan_setup
 x is add of [raw, [2]]
 assert of [x == [[2]] and (math_flags of null).invalid, \"mixed materialization observes invalid\"]"
