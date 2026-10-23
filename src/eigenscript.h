@@ -1967,6 +1967,8 @@ static inline double buffer_read_num(const Value *buffer, int64_t index) {
  * first: even a normalized finite number can be outside the C int range.
  * The caller must normalize the input and stop on a raised read first. */
 EIGS_R16_DEPRECATED("#1758 R1.6: replace finite_num_to_byte by its decided numeric reader or producer")
+/* ext_net.c remains a caller until R1.6f/z; minimal amalgamations omit it. */
+__attribute__((unused))
 static inline unsigned char finite_num_to_byte(double x) {
     return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
 }
