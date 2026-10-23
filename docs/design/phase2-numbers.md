@@ -2388,7 +2388,7 @@ failing on zero rows:
 | R1.6c | 1 | per-builtin table |
 | R1.6d | 2 | per-builtin table |
 | R1.6e | 1 | `N5.audio-channel-domain` (R1.6e-D1); mechanical: per-builtin table, `gate.N5.q7-readers` through the no-SDL amalgamation, and the pre-registered `gate.N13.audio-buffer-boundary` / `gate.N5.gfx-byte-boundary` actual-client fixtures (all compiled and executed here and at every later `--through`) |
-| R1.6f | 0 | mechanical: per-builtin table |
+| R1.6f | 2 | R1.6f-D1 shared store handle refusals; R1.6d-D1 net_send byte boundary; per-builtin table |
 | R1.6g | 5 | per-builtin table, including the new N9 rows |
 | R1.6z | 0 | mechanical: bridge-token deletion compile and final full table |
 | R1.7 | 12 | `gate.N14.db-param-exact` |
