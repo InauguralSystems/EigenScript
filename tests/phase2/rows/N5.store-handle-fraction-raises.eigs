@@ -5,6 +5,9 @@
 # WITNESS: none
 # OPS:
 # R1.6f-D1, #1924 comment 6367017285: all shared-reader callers.
+# R1.6f-D3: stores live under /tmp and start clean, as tests/test_store.eigs does.
+# The corpus differential runs this file from src/, where a relative store left by
+# an earlier failed run poisoned the next one.
 define call_store(name, h) as:
     if name == "store_close":
         return store_close of h
@@ -26,7 +29,9 @@ define call_store(name, h) as:
         return store_update of [h, "c", "k", {"v": 2}]
 for name in ["store_close", "store_collections", "store_count", "store_drop", "store_get", "store_put", "store_delete", "store_query", "store_update"]:
     for field in ["_store_id", "_store_gen"]:
-        path is name + field + ".db"
+        path is "/tmp/eigs_r16f_store_" + name + field + ".db"
+        if file_exists of path:
+            remove_file of path
         s is store_open of path
         key is store_put of [s, "c", {"_id": "k", "v": 1}]
         h is {"_store_id": s["_store_id"], "_store_gen": s["_store_gen"], "_type": "eigenstore"}
