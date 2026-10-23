@@ -914,3 +914,17 @@ fractional ids or token counts raise `value`. `eigen_generate` returns int
 token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
 training learning rates remain float quantities. Model JSON weights stay
 float data; the loader status strings are unchanged.
+
+Graphics and audio magnitudes round half away from zero and raise `value`
+when the result exceeds the C call's range. This refusal happens even before
+SDL is loaded:
+
+```eigenscript
+try:
+    gfx_delay of 1e300
+catch e:
+    print of e.kind
+```
+```output
+value
+```

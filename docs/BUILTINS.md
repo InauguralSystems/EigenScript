@@ -710,7 +710,7 @@ first use, so no SDL2 headers or link-time SDL dependency are needed.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Returns `true` on success or `false` when libSDL2 is unavailable. A non-numeric size raises by default; under `EIGS_STRICT=0` it returns `false` (#1007 — it used to be read without a type check, so a string opened a `0x0` window and still answered `1`). |
+| `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Continuous sizes round half away from zero; a rounded size outside the C int range raises `value`. Returns `true` on success or `false` when libSDL2 is unavailable. A non-numeric size raises by default; under `EIGS_STRICT=0` it returns `false` (#1007). |
 | `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
 | `gfx_clear` | `gfx_clear of [r, g, b]` / `gfx_clear of null` | Clear backbuffer to color; channels clamp to 0..255, then round half away from zero. `null` clears to black |
 | `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle; intersect the whole rectangle with the drawable area in float space, then round |
@@ -721,12 +721,12 @@ first use, so no SDL2 headers or link-time SDL dependency are needed.
 | `gfx_clip` | `gfx_clip of [x, y, w, h]` / `gfx_clip of null` | Intersect the continuous clip rectangle with the drawable area, then round; `null` clears it |
 | `gfx_read` | `gfx_read of [x, y]` | Read back one rendered pixel as integer channels `[r, g, b]`; coordinates round half away from zero and an outside point returns null — the render-decode oracle primitive (#823). Reads the current back buffer: call after drawing, **before** `gfx_present`. Null with no window or a failed read. Nondeterministic input (font raster, driver), so it records/replays on the trace tape |
 | `gfx_text` | `gfx_text of [x, y, text, r, g, b]` or `[..., scale]` | Text. Proportional antialiased TTF when libSDL2_ttf + a font are available (#593); the 5x7 bitmap font otherwise — see the font note below the table |
-| `gfx_text_width` | `gfx_text_width of [text, scale?]` or `of "text"` | Pixel width of `text` under the active text renderer: TTF metrics when active, `len * 6 * scale` in bitmap mode. Works before `gfx_open` |
-| `gfx_text_height` | `gfx_text_height of scale?` | Pixel line height under the active text renderer: TTF font height when active, `7 * scale` in bitmap mode |
+| `gfx_text_width` | `gfx_text_width of [text, scale?]` or `of "text"` | Integer pixel width under the active text renderer: TTF metrics when active, `len * 6 * scale` in bitmap mode. Scale rounds half away from zero; a rounded scale outside the C int range raises `value`. Works before `gfx_open`. |
+| `gfx_text_height` | `gfx_text_height of scale?` | Integer pixel line height under the active text renderer: TTF font height when active, `7 * scale` in bitmap mode. Scale rounds half away from zero; a rounded scale outside the C int range raises `value`. |
 | `gfx_present` | `gfx_present of null` | Flip backbuffer to screen |
 | `gfx_poll` | `gfx_poll of null` | Return next event as dict (`quit`, `keydown`, `keyup`, `mousemove`, `mousedown`, `mouseup`, `wheel`, `resize`), or null. Key, mouse, and wheel events carry `shift`/`ctrl`/`alt` (bools); wheel `x`/`y` are scroll deltas |
 | `gfx_ticks` | `gfx_ticks of null` | Milliseconds since `SDL_Init` |
-| `gfx_delay` | `gfx_delay of ms` | Sleep for ms (SDL-coordinated) |
+| `gfx_delay` | `gfx_delay of ms` | Sleep for continuous milliseconds, rounded half away from zero. A rounded delay outside 0..4294967295 raises `value`. |
 | `gfx_title` | `gfx_title of "text"` | Update window title |
 | `gfx_fb` | `gfx_fb of [buf, w, h, x, y, scale]` | Blit a palette buffer; `w` and `h` require exact integers in the C `int` range. The continuous destination is clipped before rounding and retains the original source-pixel mapping |
 | `ppu_render_frame` | `ppu_render_frame of [mem_buf, fb_buf]` | Full Game Boy PPU render (BG/window/sprites) into framebuffer; each memory byte must be an exact integer in 0..255 |
@@ -983,11 +983,12 @@ receiver.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `audio_open` | `audio_open of [freq, channels]` or `of null` | Open the mixer playback device. Defaults `[44100, 1]`. Returns the device id (`>= 2`), or `0` when SDL/audio is unavailable. Non-numeric `freq`/`channels` raise by default and answer `0` under `EIGS_STRICT=0` (#1007 — they used to be read without a type check, so a string opened the device against a garbage spec and still answered a real id, taking the device with it). A **short or non-list** argument also raises by default; with `EIGS_STRICT=0`, it opens at the defaults and returns the device id or `0` if unavailable (#1007). `of null` is still the defaults. |
-| `audio_sine` | `audio_sine of [freq, duration, amplitude]` | Generate a sine-wave sample list. `duration` is limited to 30 seconds; a longer duration raises `value`. |
-| `audio_square` | `audio_square of [freq, duration, amplitude]` | Generate a square-wave sample list. `duration` is limited to 30 seconds; a longer duration raises `value`. |
-| `audio_saw` | `audio_saw of [freq, duration, amplitude]` | Generate a sawtooth-wave sample list. `duration` is limited to 30 seconds; a longer duration raises `value`. |
-| `audio_noise` | `audio_noise of [duration, amplitude]` | Generate a white-noise sample list. The samples come from the stream behind `random`, so `seed_random` pins them, and they are trace-recorded: under `EIGS_REPLAY` the recorded samples are served (#1803). `duration` is limited to 30 seconds; a longer duration raises `value` and records nothing. |
-| `audio_sweep` | `audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]` | Generate a frequency sweep with continuous phase. `waveform`: 0=sine, 1=sawtooth. Returns a sample list. `duration` is limited to 30 seconds; a longer duration raises `value`. |
+| `audio_sine` | `audio_sine of [freq, duration, amplitude]` | Generate a sine-wave list of float samples. Duration is limited to 30 seconds; a longer duration raises `value`. |
+| `audio_square` | `audio_square of [freq, duration, amplitude]` | Generate a square-wave list of float samples. Duration is limited to 30 seconds; a longer duration raises `value`. |
+| `audio_saw` | `audio_saw of [freq, duration, amplitude]` | Generate a sawtooth-wave list of float samples. Duration is limited to 30 seconds; a longer duration raises `value`. |
+| `audio_noise` | `audio_noise of [duration, amplitude]` | Generate a white-noise list of float samples. `seed_random` pins the samples; trace replay serves the recorded samples (#1803). Duration is limited to 30 seconds; a longer duration raises `value` and records nothing. |
+| `audio_sweep` | `audio_sweep of [freq_start, freq_end, duration, amplitude, waveform]` | Generate a frequency sweep as float samples with continuous phase. The waveform selector follows N5: zero selects sine; any other exact integer selects sawtooth. Duration is limited to 30 seconds; a longer duration raises `value`. |
+| `audio_envelope` | `audio_envelope of [samples, attack, decay, sustain_level, release]` | Return float samples with an ADSR envelope. Attack, decay and release times are continuous seconds: their sample counts round half away from zero and raise `value` outside the C int range. |
 | `audio_play` | `audio_play of samples` | Play a clip once on a free mixer channel (oldest finite channel recycled when all 16 are busy). Returns the channel id, or `0` on bad args / closed device. A non-numeric element in `samples` raises a `type_mismatch` error (#1007 — it used to be coerced to 0, so a wrong-typed list played silence on a real channel id), and so does a `samples` that is not a list or buffer at all (#1007 — `audio_play of 42` answered the documented "nothing to play" `0`, indistinguishable from an empty clip). `of null` still plays nothing. Numeric channel answers are ints. Samples cross the finite data boundary, clamp to [-1,1], then round half away from zero to PCM16; stored lenient NaN and every infinity raise `value` (N13). |
 | `audio_play_loop` | `audio_play_loop of [samples, loops]` | Play `samples` `loops` times on one mixer channel; `loops == -1` loops forever (the mixer rewinds — no memory multiplication). Returns the channel id, or `0` on bad args / closed device. `loops` must be a number equal to `-1` or in `1..10000`; anything else raises by default and answers `0` under `EIGS_STRICT=0` (#1007), and so does a `samples` slot that is not a list or buffer. Loop counts follow N5, then the C int range and the existing -1 or 1..10000 playback policy. Channel answers are ints; samples use the same finite/Q7 PCM conversion as `audio_play`. |
 | `audio_volume` | `audio_volume of [channel, vol]` | Live per-channel volume, `0.0`–`4.0`. Returns `1`, or `0` on a bad/inactive channel. A non-numeric `channel` or `vol` raises by default and answers `0` under `EIGS_STRICT=0` (#1007); an out-of-range channel is simply inactive and stays quiet. Channel numbers follow N5 and the C int range. Continuous gain clamps to [0,4], then rounds half away from zero; numeric status answers are ints. |
@@ -1000,6 +1001,11 @@ receiver.
 | `audio_stream_queued` | `audio_stream_queued of null` | Samples still buffered (not yet played) on the live stream — the refill pump pushes another block only while this stays under its latency target. Returns `0` when no stream is open. Trace-recorded (a live, timing-dependent value) — replay serves the recorded depth, keeping the session deterministic. |
 | `audio_stream_clear` | `audio_stream_clear of null` | Drop any buffered audio on the live stream (flush for a panic / all-notes-off). Safe with no device. |
 | `audio_stream_close` | `audio_stream_close of null` | Stop and close the live stream device, dropping buffered audio. Safe to call twice or with no device open. |
+
+The sine, saw, square, noise and sweep generators reject non-finite durations
+and rounded sample counts outside the C int range. Their validated counts
+still truncate: at 44100 Hz, 0.00101 seconds produces 44 samples. The sample
+count rounding change is staged for R2.6 (RULINGS B5).
 
 ## Internal (sanitizer builds only)
 

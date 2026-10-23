@@ -459,8 +459,11 @@ Value* builtin_gfx_open(Value *arg) {
     ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
               (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
               "gfx_open", "[number width, number height, title]", make_bool(0));
-    int w = (int)eigs_list_num(arg, 0, __func__);
-    int h = (int)eigs_list_num(arg, 1, __func__);
+    int64_t width, height;
+    if (!eigs_list_magnitude(arg, 0, INT_MIN, INT_MAX, &width, "gfx_open") ||
+        !eigs_list_magnitude(arg, 1, INT_MIN, INT_MAX, &height, "gfx_open"))
+        return make_null();
+    int w = (int)width, h = (int)height;
     const char *title = list_elem_type(arg, 2) == VAL_STR ? list_get_ref(arg, 2)->data.str : "EigenScript";
 
     if (!load_sdl2()) {
@@ -889,7 +892,10 @@ Value* builtin_gfx_ticks(Value *arg) {
 Value* builtin_gfx_delay(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "gfx_delay", "number milliseconds",
               make_null());
-    if (g_sdl_lib) p_SDL_Delay((Uint32)eigs_num_arg(arg, __func__));
+    int64_t milliseconds;
+    if (!eigs_magnitude_arg(arg, 0, UINT32_MAX, &milliseconds, "gfx_delay"))
+        return make_null();
+    if (g_sdl_lib) p_SDL_Delay((Uint32)milliseconds);
     return make_null(); /* fs:VOID gfx_delay answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
@@ -1121,16 +1127,19 @@ Value* builtin_gfx_text_width(Value *arg) {
                && list_elem_type(arg, 0) == VAL_STR) {
         text = list_get_ref(arg, 0)->data.str;
         if (arg->data.list.count >= 2) {
-            if ((list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT))
-                scale = (int)eigs_list_num(arg, 1, __func__);
-            else
+            if ((list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)) {
+                int64_t rounded;
+                if (!eigs_list_magnitude(arg, 1, INT_MIN, INT_MAX, &rounded,
+                                         "gfx_text_width")) return make_null();
+                scale = (int)rounded;
+            } else
                 bad_scale = 1;
         }
     }
     /* #1007: converted out of its #971 deferral marker. The 0 stays the non-strict
      * stand-in — tests/test_gfx_text.eigs pins `gfx_text_width of 5` at 0. */
     ARG_GUARD(!text, "gfx_text_width",
-              "string text or [string text, number scale]", make_num(0));
+              "string text or [string text, number scale]", make_int(0));
     /* A wrong-typed SCALE is the COERCION shape, not a stand-in one: the
      * width for scale 1 is still computed and returned. STRICT_REQUIRE
      * leaves the default path byte-identical by construction. */
@@ -1138,16 +1147,21 @@ Value* builtin_gfx_text_width(Value *arg) {
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "gfx_text_width: not replayable under EIGS_REPLAY "
                  "(font file-read boundary; see docs/TRACE.md)");
-        return make_num(0);
+        return make_int(0);
     }
     if (scale < 1) scale = 1;
     if (*text && ttf_available()) {
         void *font = ttf_font_for_scale(scale);
         int w = 0, h = 0;
         if (font && p_TTF_SizeUTF8(font, text, &w, &h) == 0)
-            return make_num((double)w);
+            return make_int(w);
     }
-    return make_num((double)strlen(text) * 6.0 * (double)scale);
+    size_t length = strlen(text);
+    if (length > (uint64_t)INT64_MAX / 6 / (uint64_t)scale) {
+        rt_error(EK_VALUE, 0, "gfx_text_width: pixel width does not fit an int64");
+        return make_null();
+    }
+    return make_int((int64_t)length * 6 * scale);
 }
 
 /* gfx_text_height of scale? (number, [scale], or null → 1) — pixel line
@@ -1167,20 +1181,26 @@ Value* builtin_gfx_text_height(Value *arg) {
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "gfx_text_height: not replayable under EIGS_REPLAY "
                  "(font file-read boundary; see docs/TRACE.md)");
-        return make_num(0);
+        return make_int(0);
     }
     if (arg && val_is_number(arg)) {
-        scale = (int)eigs_num_arg(arg, __func__);
+        int64_t rounded;
+        if (!eigs_magnitude_arg(arg, INT_MIN, INT_MAX, &rounded, "gfx_text_height"))
+            return make_null();
+        scale = (int)rounded;
     } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
                && (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT)) {
-        scale = (int)eigs_list_num(arg, 0, __func__);
+        int64_t rounded;
+        if (!eigs_list_magnitude(arg, 0, INT_MIN, INT_MAX, &rounded, "gfx_text_height"))
+            return make_null();
+        scale = (int)rounded;
     }
     if (scale < 1) scale = 1;
     if (ttf_available()) {
         void *font = ttf_font_for_scale(scale);
-        if (font) return make_num((double)p_TTF_FontHeight(font));
+        if (font) return make_int(p_TTF_FontHeight(font));
     }
-    return make_num(7.0 * (double)scale);
+    return make_int(INT64_C(7) * scale);
 }
 
 /* ---- Audio Builtins ---- */
@@ -1942,10 +1962,11 @@ static int audio_generator_sample_count(double duration, int rate,
         rt_error(EK_VALUE, 0, "%s: duration exceeds the 30 second limit", who);
         return 0;
     }
-    if (!(samples <= (double)INT_MAX)) {
-        rt_error(EK_VALUE, 0, "%s: duration produces a sample count that does not fit in int", who);
+    int64_t rounded;
+    if (!eigs_slot_magnitude(slot_from_f64(samples), INT_MIN, INT_MAX, &rounded, who))
         return 0;
-    }
+    /* RULINGS B5: Q7 validates the rounded count here; conversion itself
+     * remains truncation until R2.6's #1746 residue migration. */
     if (samples <= 0.0) {
         *count = 0;
         return 1;
@@ -1981,9 +2002,10 @@ Value* builtin_audio_sine(Value *arg) {
               (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
               (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT),
               "audio_sine", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = eigs_list_float(arg, 0, __func__);
+    double dur = eigs_list_float(arg, 1, __func__);
+    double amp = eigs_list_float(arg, 2, __func__);
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     if (!audio_generator_sample_count(dur, rate, "audio_sine", &n)) return make_null();
@@ -1993,7 +2015,7 @@ Value* builtin_audio_sine(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = sin(2.0 * M_PI * freq * t) * amp;
-        list_append_owned(list, make_num(s));
+        list_append_owned(list, make_float(s));
     }
     return list;
 }
@@ -2017,9 +2039,10 @@ Value* builtin_audio_saw(Value *arg) {
               (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
               (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT),
               "audio_saw", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = eigs_list_float(arg, 0, __func__);
+    double dur = eigs_list_float(arg, 1, __func__);
+    double amp = eigs_list_float(arg, 2, __func__);
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     if (!audio_generator_sample_count(dur, rate, "audio_saw", &n)) return make_null();
@@ -2029,7 +2052,7 @@ Value* builtin_audio_saw(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = 2.0 * (t * freq - floor(t * freq + 0.5)) * amp;
-        list_append_owned(list, make_num(s));
+        list_append_owned(list, make_float(s));
     }
     return list;
 }
@@ -2053,9 +2076,10 @@ Value* builtin_audio_square(Value *arg) {
               (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
               (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT),
               "audio_square", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = eigs_list_float(arg, 0, __func__);
+    double dur = eigs_list_float(arg, 1, __func__);
+    double amp = eigs_list_float(arg, 2, __func__);
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     if (!audio_generator_sample_count(dur, rate, "audio_square", &n)) return make_null();
@@ -2065,7 +2089,7 @@ Value* builtin_audio_square(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = (sin(2.0 * M_PI * freq * t) >= 0 ? 1.0 : -1.0) * amp;
-        list_append_owned(list, make_num(s));
+        list_append_owned(list, make_float(s));
     }
     return list;
 }
@@ -2092,11 +2116,12 @@ Value* builtin_audio_sweep(Value *arg) {
               (list_elem_type(arg, 3) != VAL_FLOAT && list_elem_type(arg, 3) != VAL_INT) ||
               (list_elem_type(arg, 4) != VAL_FLOAT && list_elem_type(arg, 4) != VAL_INT),
               "audio_sweep", "[number freq_start, number freq_end, number duration, number amplitude, number waveform]", make_list(0));
-    double f0 = eigs_list_num(arg, 0, __func__);
-    double f1 = eigs_list_num(arg, 1, __func__);
-    double dur = eigs_list_num(arg, 2, __func__);
-    double amp = eigs_list_num(arg, 3, __func__);
-    int wave = (int)eigs_list_num(arg, 4, __func__);
+    double f0 = eigs_list_float(arg, 0, __func__);
+    double f1 = eigs_list_float(arg, 1, __func__);
+    double dur = eigs_list_float(arg, 2, __func__);
+    double amp = eigs_list_float(arg, 3, __func__);
+    int64_t wave = eigs_list_int(arg, 4, "audio_sweep");
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     if (!audio_generator_sample_count(dur, rate, "audio_sweep", &n)) return make_null();
@@ -2114,7 +2139,7 @@ Value* builtin_audio_sweep(Value *arg) {
             s = sin(2.0 * M_PI * phase) * amp;
         else
             s = (2.0 * phase - 1.0) * amp;
-        list_append_owned(list, make_num(s));
+        list_append_owned(list, make_float(s));
     }
     return list;
 }
@@ -2205,8 +2230,9 @@ Value* builtin_audio_noise(Value *arg) {
     ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
               (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
               "audio_noise", "[number duration, number amplitude]", make_list(0));
-    double dur = eigs_list_num(arg, 0, __func__);
-    double amp = eigs_list_num(arg, 1, __func__);
+    double dur = eigs_list_float(arg, 0, __func__);
+    double amp = eigs_list_float(arg, 1, __func__);
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     /* #1767's refusal (a duration over 30 s, or a sample count that does not
@@ -2237,7 +2263,7 @@ Value* builtin_audio_noise(Value *arg) {
         list = make_list(n);
         for (int i = 0; i < n; i++) {
             double s = (eigs_random_double() * 2.0 - 1.0) * amp;
-            list_append_owned(list, make_num(s));
+            list_append_owned(list, make_float(s));
         }
     }
     /* Every live answer is recorded, the empty one included: replay takes a
@@ -2345,18 +2371,25 @@ Value* builtin_audio_envelope(Value *arg) {
      * nothing. */
     STRICT_REQUIRE(!gfx_list_all_num(samples), "audio_envelope",
                    "[list of numbers, number attack, number decay, number sustain, number release]");
-    double attack = eigs_list_num(arg, 1, __func__);
-    double decay = eigs_list_num(arg, 2, __func__);
-    double sustain = eigs_list_num(arg, 3, __func__);
-    double release = eigs_list_num(arg, 4, __func__);
+    double attack = eigs_list_float(arg, 1, __func__);
+    double decay = eigs_list_float(arg, 2, __func__);
+    double sustain = eigs_list_float(arg, 3, __func__);
+    double release = eigs_list_float(arg, 4, __func__);
 
     int n = samples->data.list.count;
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int a_samples = (int)(attack * rate);
-    int d_samples = (int)(decay * rate);
-    int r_samples = (int)(release * rate);
-    int s_start = a_samples + d_samples;
-    int r_start = n - r_samples;
+    if (g_has_error) return make_null();
+    int64_t a_samples, d_samples, r_samples;
+    if (!eigs_slot_magnitude(slot_from_f64(attack * rate), INT_MIN, INT_MAX,
+                             &a_samples, "audio_envelope") ||
+        !eigs_slot_magnitude(slot_from_f64(decay * rate), INT_MIN, INT_MAX,
+                             &d_samples, "audio_envelope") ||
+        !eigs_slot_magnitude(slot_from_f64(release * rate), INT_MIN, INT_MAX,
+                             &r_samples, "audio_envelope")) return make_null();
+    /* Wider intermediates keep two valid C-int durations from overflowing
+     * while locating the sustain/release boundaries. */
+    int64_t s_start = a_samples + d_samples;
+    int64_t r_start = (int64_t)n - r_samples;
     if (r_start < s_start) r_start = s_start;
 
     Value *out = make_list(n);
@@ -2377,9 +2410,10 @@ Value* builtin_audio_envelope(Value *arg) {
             double frac = (r_samples > 0) ? (double)(i - r_start) / r_samples : 1.0;
             env = sustain * (1.0 - frac);
         }
-        double s = ((list_elem_type(samples, i) == VAL_FLOAT || list_elem_type(samples, i) == VAL_INT)) ? eigs_slot_num(list_slot(samples, i), __func__) : 0;
+        double s = ((list_elem_type(samples, i) == VAL_FLOAT || list_elem_type(samples, i) == VAL_INT)) ? eigs_list_float(samples, i, __func__) : 0;
+        if (g_has_error) { val_decref(out); return make_null(); }
         s *= env;
-        list_append_owned(out, make_num(s));
+        list_append_owned(out, make_float(s));
     }
     return out;
 }
