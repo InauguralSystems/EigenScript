@@ -940,6 +940,8 @@ print of ev.loop
 
 ### Stored records
 
+Store handles carry integer `_store_id` and `_store_gen` fields. Every store operation requires exact, in-range integer handle fields; integral floats convert, while fractional, non-finite or out-of-range numeric fields raise `value` before store access (R1.6f-D1). `store_count` returns an integer.
+
 `store_get`, `store_delete`, and `store_update` accept string keys or exact
 int64 numeric keys. Integral floats convert; fractional or out-of-range floats
 raise `value` before lookup or mutation. Numeric keys retain all int64 digits.
@@ -953,6 +955,7 @@ path is "store-numbers-example.db"
 if file_exists of path:
     remove_file of path
 s is store_open of path
+print of [num_type of s["_store_id"], num_type of s["_store_gen"]]
 store_put of [s, "c", {"_id": "9007199254740993", "n": 9007199254740993, "f": 2.5}]
 r is store_get of [s, "c", 9007199254740993]
 print of [r.n, num_type of r.n, num_type of r.f]
@@ -965,6 +968,7 @@ store_close of s
 remove_file of path
 ```
 ```output
+["int", "int"]
 [9007199254740993, "int", "float"]
 value
 true

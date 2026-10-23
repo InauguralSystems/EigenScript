@@ -828,11 +828,18 @@ field supplies an explicit record key; otherwise `store_put` generates one.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
+| `store_open` | `store_open of path` | Open/create a store; return a handle dict with integer id/generation fields. |
+| `store_close` | `store_close of handle` | Flush and close the exact handle; return `null`. |
+| `store_collections` | `store_collections of handle` | Return collection names for the exact handle. |
+| `store_count` | `store_count of [handle, collection]` | Return the integer live-record count (zero for an unknown collection). |
+| `store_drop` | `store_drop of [handle, collection]` | Drop a collection; return whether it existed. |
 | `store_put` | `store_put of [handle, collection, record]` | Write a record dict, add its `_id` field, and return the string key. Int64 fields are stored exactly. |
 | `store_get` | `store_get of [handle, collection, key]` | Return the record dict, or `null` for an absent key. Numeric keys convert exactly to int64 and use their full decimal digits. |
 | `store_delete` | `store_delete of [handle, collection, key]` | Delete the record and return `true`, or `false` when absent. Numeric keys follow the same rule as `store_get`. |
 | `store_update` | `store_update of [handle, collection, key, record]` | Replace the record and return `true`, or `false` when absent. Numeric keys follow the same rule as `store_get`. An oversized or non-dict replacement leaves the old record intact. |
 | `store_query` | `store_query of [handle, collection]` | Return the collection's records as a list of dicts. |
+
+Store handles carry integer `_store_id` and `_store_gen` fields. Every store operation requires exact, in-range integer handle fields; integral floats convert, while fractional, non-finite or out-of-range numeric fields raise `value` before store access (R1.6f-D1). `store_count` returns an integer.
 
 `store_get`, `store_delete`, and `store_update` accept string keys or exact
 int64 numeric keys. Integral floats convert; fractional or out-of-range floats

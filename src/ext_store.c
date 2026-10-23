@@ -774,7 +774,12 @@ static int store_load_catalog(Store *store) {
             free(visited);
             return -1;
         }
-        uint32_t root = (uint32_t)eigs_num_arg(rv, __func__);
+        int64_t root_id;
+        if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &root_id, "store_open")) {
+            free(visited);
+            return -1;
+        }
+        uint32_t root = (uint32_t)root_id;
         if (root == 0 || root >= store->page_count) {
             fprintf(stderr, "store_open: collection '%s' has invalid root %u\n", name, root);
             free(visited);
@@ -836,15 +841,21 @@ cat_fail:
  * store's slot; a forged handle (tests/test_handle_forge.eigs) carries no
  * generation and reads as gen 0, which no live slot ever has. `out_id` is set
  * even on failure so the refusal can name the slot. */
-static Store* get_store_why(Value *v, int *why, int *out_id) {
+/* R1.6f-D1: this reader owns all nine store_arg callers, including the
+ * already-b key/record operations. Refuse numeric fields before handle lookup. */
+static Store* get_store_why(Value *v, int *why, int *out_id, const char *who) {
     *why = HANDLE_CLAIM_BADVALUE;
     *out_id = 0;
     if (!v || v->type != VAL_DICT) return NULL;
     Value *sv = store_dict_get_view(v, "_store_id", &(EigsView){{0}});
     if (!sv || !val_is_number(sv)) return NULL;
-    *out_id = (int)eigs_num_arg(sv, __func__);
+    int64_t id, generation = 0;
+    if (!eigs_int_arg_range(sv, INT_MIN, INT_MAX, &id, who)) return NULL;
+    *out_id = (int)id;
     Value *gv = store_dict_get_view(v, "_store_gen", &(EigsView){{0}});
-    uint32_t gen = (gv && val_is_number(gv)) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
+    if (gv && val_is_number(gv)
+        && !eigs_int_arg_range(gv, 0, UINT32_MAX, &generation, who)) return NULL;
+    uint32_t gen = (uint32_t)generation;
     return (Store*)handle_lookup(*out_id, gen, HANDLE_STORE, why);
 }
 
@@ -858,8 +869,8 @@ static Store* get_store_why(Value *v, int *why, int *out_id) {
  * tenth cannot re-open the hole by forgetting to check. */
 static Store* store_arg(Value *v, const char *who) {
     int why = 0, id = 0;
-    Store *st = get_store_why(v, &why, &id);
-    if (!st) handle_raise_unresolved(who, "store", id, why, "closed");
+    Store *st = get_store_why(v, &why, &id, who);
+    if (!st && !g_has_error) handle_raise_unresolved(who, "store", id, why, "closed");
     return st;
 }
 
@@ -992,8 +1003,8 @@ static Value* builtin_store_open(Value *arg) {
         return make_null();
     }
     Value *handle = make_dict(8);
-    dict_set_owned(handle, "_store_id", make_num((double)hid));
-    dict_set_owned(handle, "_store_gen", make_num((double)sgen));
+    dict_set_owned(handle, "_store_id", make_int(hid));
+    dict_set_owned(handle, "_store_gen", make_int(sgen));
     dict_set_owned(handle, "_type", make_str("eigenstore"));
     return handle;
 }
@@ -1006,10 +1017,12 @@ static Value* builtin_store_close(Value *arg) {
     /* Release handle BEFORE freeing memory to prevent use-after-free
      * if another thread calls get_store() concurrently. */
     Value *id_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_id", &(EigsView){{0}}) : NULL;
-    int hid = (id_val && val_is_number(id_val)) ? (int)eigs_num_arg(id_val, __func__) : -1;
+    int64_t hid;
+    if (!eigs_int_arg_range(id_val, INT_MIN, INT_MAX, &hid, "store_close")) return make_null();
     Value *g_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_gen", &(EigsView){{0}}) : NULL;
-    uint32_t hgen = (g_val && val_is_number(g_val)) ? (uint32_t)eigs_num_arg(g_val, __func__) : 0;
-    handle_release(hid, hgen);
+    int64_t hgen;
+    if (!eigs_int_arg_range(g_val, 0, UINT32_MAX, &hgen, "store_close")) return make_null();
+    handle_release((int)hid, (uint32_t)hgen);
     store->dirty = 1; /* Force flush */
     store_flush_catalog(store);
     fclose(store->fp);
@@ -1467,7 +1480,7 @@ static Value* builtin_store_count(Value *arg) {
         /* fs:CHANNEL the arity/type failure is already signalled by the
          * unconditional rt_error above (EK_TYPE latch, catchable — asserted by
          * CV2-71); this return is the post-raise placeholder, not a count. */
-        return make_num(0);
+        return make_int(0);
     }
     Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_count");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
@@ -1475,24 +1488,26 @@ static Value* builtin_store_count(Value *arg) {
      * than unwinding, so this return is the post-raise placeholder, not a
      * count of 0. Distinct from the two documented-answer zeros below, which
      * are store_count's real result for an unknown collection. */
-    if (!store) return make_num(0);
-    if (store_replay_blocks("store_count")) return make_num(0);
+    if (!store) return make_int(0);
+    if (store_replay_blocks("store_count")) return make_int(0);
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
-              "store_count", "[store handle, string collection]", make_num(0));
+              "store_count", "[store handle, string collection]", make_int(0));
 
     const char *collection = col_val->data.str;
     Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     /* fs:ANSWER a collection that is not in the catalog holds no records, so
      * its count is 0 — the documented result for an unknown collection. */
-    if (!col_info || col_info->type != VAL_DICT) return make_num(0);
+    if (!col_info || col_info->type != VAL_DICT) return make_int(0);
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     /* fs:ANSWER a catalog entry with no root page has no record pages, so the
      * count is 0. */
-    if (!rv) return make_num(0);
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    if (!rv) return make_int(0);
+    int64_t page_id;
+    if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &page_id, "store_count")) return make_null();
+    uint32_t pg = (uint32_t)page_id;
 
-    int count = 0;
+    int64_t count = 0;
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
         Page page;
         if (store_read_page(store, pg, &page) != 0) break;
@@ -1501,13 +1516,13 @@ static Value* builtin_store_count(Value *arg) {
         int offset = 0;
         for (int i = 0; i < (int)page.count; i++) {
             StoreRecord rec;
-            if (store_record_next(&page, &offset, &rec) != 0) return make_num(count);
+            if (store_record_next(&page, &offset, &rec) != 0) return make_int(count);
             if (rec.key_len == 0) continue;  /* deleted */
             count++;
         }
         pg = page.next_page; if (pg >= store->page_count) break;
     }
-    return make_num(count);
+    return make_int(count);
 }
 
 /* store_update([handle, collection, key, record]) -> 1 or 0 */
@@ -1685,7 +1700,9 @@ static Value* builtin_store_drop(Value *arg) {
     /* Mark all pages in chain as free */
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (rv) {
-        uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+        int64_t page_id;
+        if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &page_id, "store_drop")) return make_null();
+        uint32_t pg = (uint32_t)page_id;
         for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
             Page page;
             if (store_read_page(store, pg, &page) != 0) break;
