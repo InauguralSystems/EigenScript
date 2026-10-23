@@ -665,7 +665,7 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
     # A landed gate stays live for every subsequent --through, including
     # rounds with ordinary MAP rows and no other mechanical dispatch.
     if ROUNDS.index(through) >= ROUNDS.index('R1.6e'):
-        gates.extend(('q7-readers', 'gfx-audio-boundary'))
+        gates.extend(('q7-readers', 'gfx-audio-boundary', 'gfx-byte-boundary'))
     for g in gates:
         if g == 'int-source':
             res[g] = int_source(os.path.join(ROOT, 'src'), out, through)
@@ -699,6 +699,10 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
             res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'gfx_audio_boundary'], out, r'.*')
             res[g] = res[g] and len(re.findall(
                 r'^phase2-gfx-audio: PASS variant=release$', text, re.M)) == 1
+        elif g == 'gfx-byte-boundary':
+            res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'gfx_byte_boundary'], out, r'.*')
+            res[g] = res[g] and len(re.findall(
+                r'^phase2-gfx-byte: PASS variant=release$', text, re.M)) == 1
         elif g == 'builtins-table':
             if not tag:
                 out('  builtins-table: needs the tag binary')

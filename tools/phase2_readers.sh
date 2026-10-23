@@ -9,6 +9,7 @@ case "$FIXTURE" in
     readers) ;;
     q7_readers) LABEL=phase2-q7-readers ;;
     gfx_audio_boundary) LABEL=phase2-gfx-audio ;;
+    gfx_byte_boundary) LABEL=phase2-gfx-byte ;;
     *) echo "phase2-readers: FAIL unknown fixture $FIXTURE"; exit 2 ;;
 esac
 [ -f "$ROOT/tests/phase2/$FIXTURE.c" ] || { echo "$LABEL: FAIL missing tests/phase2/$FIXTURE.c"; exit 1; }
@@ -26,7 +27,7 @@ fi
 BIN="$ROOT/build/phase2/${FIXTURE}_$VARIANT"
 [ -x "$BIN" ] || fail "missing binary $BIN"
 if [ "$VARIANT" = asan ]; then
-    ASAN_OPTIONS=detect_leaks=1 "$BIN" > "$TMP/out" 2> "$TMP/err"
+    ASAN_OPTIONS=detect_leaks=1 env -u XAUTHORITY DISPLAY=:99 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$BIN" > "$TMP/out" 2> "$TMP/err"
     rc=$?
 else
     ( case "$FIXTURE" in gfx_*_boundary) ulimit -v 1500000 ;; esac;
@@ -36,6 +37,12 @@ fi
 cat "$TMP/out"
 if [ -s "$TMP/err" ]; then cat "$TMP/err"; fail 'reader fixture wrote stderr'; fi
 [ "$rc" -eq 0 ] || fail "reader fixture rc=$rc"
+if [ "$FIXTURE" = gfx_byte_boundary ]; then
+    [ "$(grep -cE '^phase2-gfx-byte-test: PASS checks=247 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete byte-boundary PASS'
+    [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected byte-boundary fixture output'
+    echo "$LABEL: PASS variant=$VARIANT"
+    exit 0
+fi
 if [ "$FIXTURE" = gfx_audio_boundary ]; then
     [ "$(grep -cE '^phase2-gfx-audio-test: PASS checks=44 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete audio-boundary PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected audio-boundary fixture output'
