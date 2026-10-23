@@ -34,8 +34,10 @@ Value* builtin_buffer(Value *arg) {
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
         (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT) &&
         (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)) {
-        int r = (int)eigs_list_num(arg, 0, __func__);
-        int c = (int)eigs_list_num(arg, 1, __func__);
+        int64_t r64, c64;
+        if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &r64, "buffer") ||
+            !eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &c64, "buffer")) return make_null();
+        int r = (int)r64, c = (int)c64;
         if (r < 0) r = 0;
         if (c < 0) c = 0;
         long total = (long)r * (long)c;
@@ -54,7 +56,11 @@ Value* builtin_buffer(Value *arg) {
     /* #971 Phase D: a non-number size (or a malformed [rows, cols]) made an
      * EMPTY buffer — a plausible object with nothing in it. */
     STRICT_REQUIRE(!arg || !val_is_number(arg), "buffer", "a size or [rows, cols]");
-    if (arg && val_is_number(arg)) count = (int)eigs_num_arg(arg, __func__);
+    if (arg && val_is_number(arg)) {
+        int64_t n;
+        if (!eigs_int_arg_range(arg, INT_MIN, INT_MAX, &n, "buffer")) return make_null();
+        count = (int)n;
+    }
     if (count < 0) count = 0;
     if (count > 10000000) count = 10000000;
     if (!sandbox_charge((size_t)count * sizeof(double))) return make_null();  /* #292 */
@@ -77,8 +83,10 @@ Value* builtin_reshape(Value *arg) {
     BOOL_REFUSE(arg, "reshape");   /* rows/cols; the buffer is not a bool */
     if ((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
         (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT)) return make_null();
-    int r = (int)eigs_list_num(arg, 1, __func__);
-    int c = (int)eigs_list_num(arg, 2, __func__);
+    int64_t r64, c64;
+    if (!eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &r64, "reshape") ||
+        !eigs_list_int_range(arg, 2, INT_MIN, INT_MAX, &c64, "reshape")) return make_null();
+    int r = (int)r64, c = (int)c64;
     if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
     /* Same buffer chokepoint as buf_from_list — reshape copies the payload. */
     if (!sandbox_charge((b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1) * sizeof(double)))
@@ -102,24 +110,24 @@ Value* builtin_buf_get(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "buf_get requires [buffer, index]");
         /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
+        return make_float(0);
     }
     EIGS_VIEW(buf_view);
     Value *buf = list_get_view(arg, 0, &buf_view);
     if (!buf || buf->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "buf_get: first argument must be a buffer");
         /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
+        return make_float(0);
     }
-    int idx = (int)eigs_list_num(arg, 1, __func__);
-    if (g_has_error) return make_num(0);   /* fs:CHANNEL #1637: a non-number index raised */
+    int64_t idx = eigs_list_int(arg, 1, "buf_get");
+    if (g_has_error) return make_float(0);   /* fs:CHANNEL #1637: a non-number index raised */
     if (idx < 0 || idx >= buf->data.buffer.count) {
-        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 idx, buf->data.buffer.count);
+        rt_error(EK_INDEX, 0, "buffer index %lld out of range (length %d)",
+                 (long long)idx, buf->data.buffer.count);
         /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
-        return make_num(0);
+        return make_float(0);
     }
-    return make_num(buffer_read_num(buf, idx));
+    return make_float(buffer_read_f64(buf, idx));
 }
 
 /* buf_set of [buf, index, value] — O(1) indexed write */
@@ -146,12 +154,12 @@ Value* builtin_buf_set(Value *arg) {
         rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(list_elem_type(arg, 2)));
         return make_null();
     }
-    int idx = (int)eigs_list_num(arg, 1, __func__);
-    double val = eigs_list_num(arg, 2, __func__);
+    int64_t idx = eigs_list_int(arg, 1, "buf_set");
+    double val = eigs_list_float(arg, 2, "buf_set");
     if (g_has_error) return make_null();   /* #1637: a non-number index raised; nothing written */
     if (idx < 0 || idx >= buf->data.buffer.count) {
-        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 idx, buf->data.buffer.count);
+        rt_error(EK_INDEX, 0, "buffer index %lld out of range (length %d)",
+                 (long long)idx, buf->data.buffer.count);
         return make_null();
     }
     buf->data.buffer.data[idx] = val;
@@ -160,8 +168,8 @@ Value* builtin_buf_set(Value *arg) {
 
 /* buf_len of buf — return buffer length */
 Value* builtin_buf_len(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_BUFFER, "buf_len", "a buffer", make_num(0));
-    return make_num(arg->data.buffer.count);
+    ARG_GUARD(!arg || arg->type != VAL_BUFFER, "buf_len", "a buffer", make_int(0));
+    return make_int(arg->data.buffer.count);
 }
 
 /* buf_from_list of list — convert list of numbers to buffer */
@@ -182,7 +190,8 @@ Value* builtin_buf_from_list(Value *arg) {
     v->refcount = 1;
     for (int i = 0; i < n; i++) {
         if ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT)) {
-            v->data.buffer.data[i] = eigs_slot_num(list_slot(arg, i), __func__);
+            v->data.buffer.data[i] = eigs_slot_float(list_slot(arg, i), "buf_from_list");
+            if (g_has_error) { val_decref(v); return make_null(); }
         } else {
             /* #1061: a non-number element silently stayed 0.0. */
             const char *tn = val_type_name(list_elem_type(arg, i));
@@ -210,8 +219,12 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
         /* EIGS_STRICT=0 legacy: a non-number element (a bool never reaches
          * here) ends the string as a NUL would -- the documented truncation
          * the compatibility mode keeps. It is never read as a number. */
-        if (nul_ends && (!val_is_number(item)
-                         || finite_num_to_byte(eigs_num_arg(item, __func__)) == 0)) break;
+        if (nul_ends && !val_is_number(item)) break;
+        if (val_is_number(item)) {
+            uint8_t byte = eigs_byte_arg(item, who);
+            if (g_has_error) return 0;
+            if (nul_ends && byte == 0) break;
+        }
     }
     return 1;
 }
@@ -235,11 +248,13 @@ Value* builtin_str_from_bytes(Value *arg) {
     char *s = xcalloc((size_t)(n > 0 ? n : 0) + 1, 1);
     int len = 0;
     for (int i = 0; i < n; i++) {
-        double dv = arg->type == VAL_LIST
-                        ? ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT) ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
-                        : buffer_read_num(arg, i);
+        uint8_t b = 0;
+        if (arg->type == VAL_BUFFER) {
+            if (!buffer_byte_at(arg, i, &b, "str_from_bytes")) { free(s); return make_null(); }
+        } else if (list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT) {
+            b = eigs_slot_byte(list_slot(arg, i), "str_from_bytes");
+        }
         if (g_has_error) { free(s); return make_null(); }
-        int b = finite_num_to_byte(dv);
         if (b == 0) break;            /* C-string terminates at NUL */
         s[len++] = (char)b;
     }
@@ -258,13 +273,14 @@ Value* builtin_str_from_bytes(Value *arg) {
 Value* builtin_f64_to_bytes(Value *arg) {
     /* #971 Phase D: a non-number encoded as 0.0's eight bytes. */
     STRICT_REQUIRE(!arg || !val_is_number(arg), "f64_to_bytes", "a number");
-    double d = (arg && val_is_number(arg)) ? eigs_num_arg(arg, __func__) : 0.0;
+    double d = (arg && val_is_number(arg)) ? eigs_float_arg(arg, "f64_to_bytes") : 0.0;
+    if (g_has_error) return make_null();
     uint64_t bits;
     memcpy(&bits, &d, sizeof(bits));
     Value *list = make_list(8);
     for (int i = 0; i < 8; i++) {
         int shift = 8 * (7 - i);
-        list_append_owned(list, make_num((double)((bits >> shift) & 0xFFu)));
+        list_append_owned(list, make_int((int64_t)((bits >> shift) & 0xFFu)));
     }
     return list;
 }
@@ -272,48 +288,47 @@ Value* builtin_f64_to_bytes(Value *arg) {
 /* f64_from_bytes of <list|buffer of 8 big-endian bytes> → the decoded double.
  * Inverse of f64_to_bytes; reads exactly the first 8 bytes. */
 Value* builtin_f64_from_bytes(Value *arg) {
-    double bytes_in[8] = {0,0,0,0,0,0,0,0};
+    uint8_t bytes_in[8] = {0,0,0,0,0,0,0,0};
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
-        for (int i = 0; i < 8 && i < n; i++)
-            if ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT))
-                bytes_in[i] = eigs_slot_num(list_slot(arg, i), __func__);
+        for (int i = 0; i < 8 && i < n; i++) {
+            bytes_in[i] = eigs_slot_elem_byte(list_slot(arg, i), "f64_from_bytes");
+            if (g_has_error) return make_null();
+        }
     } else if (arg && arg->type == VAL_BUFFER) {
         int n = arg->data.buffer.count;
         for (int i = 0; i < 8 && i < n; i++) {
-            bytes_in[i] = buffer_read_num(arg, i);
+            if (!buffer_byte_at(arg, i, &bytes_in[i], "f64_from_bytes")) return make_null();
             if (g_has_error) return make_null();
         }
     } else {
-        ARG_GUARD(1, "f64_from_bytes", "a list or buffer of 8 byte values", make_num(0));
+        ARG_GUARD(1, "f64_from_bytes", "a list or buffer of 8 byte values", make_float(0));
     }
     uint64_t bits = 0;
     for (int i = 0; i < 8; i++)
-        bits = (bits << 8) | (uint64_t)finite_num_to_byte(bytes_in[i]);
+        bits = (bits << 8) | (uint64_t)bytes_in[i];
     double d;
     memcpy(&d, &bits, sizeof(d));
     /* #971: eight arbitrary bytes can spell a NaN; collapse (default) or
      * raise (strict) under this builtin's own name. */
-    return make_num(num_guard_named(d, "f64_from_bytes"));
+    return make_float(num_guard_named(d, "f64_from_bytes"));
 }
 
 /* ---- DEFLATE codec implementation (#684) ----
  * Thin wrappers over the system zlib (-lz), gated behind
  * EIGENSCRIPT_EXT_ZLIB — the same EIGENSCRIPT_EXT_* mechanism the http
  * variant uses. Default OFF so the minimal build stays zero-dependency;
- * compiled without zlib the four names stay registered but raise a
+ * compiled without zlib the name stays registered but raises a
  * catchable runtime error, so a script can feature-detect with
  * try/catch instead of dying on "undefined variable".
  *
  * Byte representation mirrors read_bytes/write_bytes exactly: input is
- * a list of ints 0-255 (values taken mod 256) or a VAL_BUFFER; output is
+ * a list of exact bytes 0-255 or a VAL_BUFFER with exact byte cells; output is
  * always a fresh list of ints 0-255. Strict mode rejects nonnumeric list
  * elements; compatibility mode retains their numeric-zero conversion.
  *
  * The raw codec uses windowBits -15 — the ZIP member format, so
- * .xlsx/.ods entries are readable. The wrapped implementation uses windowBits
- * 15+32, which auto-detects zlib AND gzip headers — that is what makes
- * plain .gz files readable.
+ * .xlsx/.ods entries are readable.
  */
 #if EIGENSCRIPT_EXT_ZLIB
 
@@ -324,7 +339,7 @@ Value* builtin_f64_from_bytes(Value *arg) {
  * sandbox_run default allocation budget. */
 #define EIGS_INFLATE_MAX_OUT ((unsigned long)256 * 1024 * 1024)
 
-/* Shared argument extraction for the four codecs: accept the byte
+/* Argument extraction for inflate: accept the byte
  * representations write_bytes accepts and copy them into a malloc'd
  * byte array. Returns 1 on success; on a wrong-shape argument raises
  * `type` and returns 0. */
@@ -346,11 +361,14 @@ static int zlib_bytes_arg(Value *arg, const char *who,
     if (!strict_numeric_byte_list(arg, who, 0)) return 0;
     unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
     for (int i = 0; i < n; i++) {
-        double dv = arg->type == VAL_LIST
-                        ? ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT) ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
-                        : buffer_read_num(arg, i);
+        uint8_t byte = 0;
+        if (arg->type == VAL_BUFFER) {
+            if (!buffer_byte_at(arg, i, &byte, who)) { free(b); return 0; }
+        } else if (list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT) {
+            byte = eigs_slot_byte(list_slot(arg, i), who);
+        }
         if (g_has_error) { free(b); return 0; }
-        b[i] = finite_num_to_byte(dv);
+        b[i] = byte;
     }
     *out = b;
     *out_n = (size_t)n;
@@ -371,7 +389,7 @@ static Value *zlib_bytes_result(const unsigned char *buf, unsigned long n) {
         return make_null();
     Value *result = make_list((int)n);
     for (unsigned long i = 0; i < n; i++)
-        list_append_owned(result, make_num((double)buf[i]));
+        list_append_owned(result, make_int(buf[i]));
     return result;
 }
 
@@ -462,8 +480,7 @@ static Value *zlib_inflate_impl(const char *who, int window_bits, Value *arg) {
     return result;
 }
 
-/* Shared compression core (dual of the decompression implementation). The output buffer is
- * deflateBound-sized up front, so a single Z_FINISH pass always fits. */
+/* Raw DEFLATE entry point. */
 Value* builtin_inflate(Value *arg)      { return zlib_inflate_impl("inflate", -15, arg); }
 #else /* !EIGENSCRIPT_EXT_ZLIB */
 
@@ -494,7 +511,8 @@ static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
         rt_error(EK_VALUE, 0, "%s: count must be a number", who);
         return 0;
     }
-    long long c = (long long)eigs_slot_num(cnt, __func__);
+    long long c = eigs_slot_int(cnt, who);
+    if (g_has_error) return 0;
     if (c < 0) {
         rt_error(EK_VALUE, 0, "%s: count must be non-negative (got %lld)",
                  who, c);
@@ -504,15 +522,14 @@ static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
     return 1;
 }
 
-EIGS_R16_DEPRECATED("#1758 R1.6: decide buf_num_arg as a final reader")
-static int buf_num_arg(const char *who, const char *what, EigsSlot s,
+static int buf_float_arg(const char *who, const char *what, EigsSlot s,
                        double *out) {
     if ((slot_type(s) != VAL_FLOAT && slot_type(s) != VAL_INT)) {
         rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
         return 0;
     }
-    *out = eigs_slot_num(s, __func__);
-    return 1;
+    *out = eigs_slot_float(s, who);
+    return !g_has_error;
 }
 
 /* Validate one (buffer, offset, count) window. On success writes the
@@ -528,12 +545,13 @@ static int buf_window_arg(const char *who, Value *buf, EigsSlot off,
         rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
         return 0;
     }
-    long long offset = (long long)eigs_slot_num(off, __func__);
+    long long offset = eigs_slot_int(off, who);
+    if (g_has_error) return 0;
     long long n = buf->data.buffer.count;
     if (offset < 0 || offset > n - count) {
         rt_error(EK_INDEX, 0,
-                 "%s: window [%lld, %lld) out of range (length %lld)",
-                 who, offset, offset + count, n);
+                 "%s: window offset %lld count %lld out of range (length %lld)",
+                 who, offset, count, n);
         return 0;
     }
     *out_off = offset;
@@ -588,7 +606,7 @@ Value* builtin_buf_mix(Value *arg) {
     if (!buf_count_arg("buf_mix", list_slot(arg, 4), &count) ||
         !buf_window_arg("buf_mix", dst, list_slot(arg, 2), count, &dst_off) ||
         !buf_window_arg("buf_mix", src, list_slot(arg, 3), count, &src_off) ||
-        !buf_num_arg("buf_mix", "gain", list_slot(arg, 5), &gain))
+        !buf_float_arg("buf_mix", "gain", list_slot(arg, 5), &gain))
         return make_null();
     double *dd = &dst->data.buffer.data[dst_off];
     double *sd = &src->data.buffer.data[src_off];
@@ -612,7 +630,7 @@ Value* builtin_buf_scale_range(Value *arg) {
     double gain;
     if (!buf_count_arg("buf_scale_range", list_slot(arg, 2), &count) ||
         !buf_window_arg("buf_scale_range", buf, list_slot(arg, 1), count, &off) ||
-        !buf_num_arg("buf_scale_range", "gain", list_slot(arg, 3), &gain))
+        !buf_float_arg("buf_scale_range", "gain", list_slot(arg, 3), &gain))
         return make_null();
     double *d = &buf->data.buffer.data[off];
     for (long long i = 0; i < count; i++)
@@ -635,7 +653,7 @@ Value* builtin_buf_fill(Value *arg) {
     double val;
     if (!buf_count_arg("buf_fill", list_slot(arg, 2), &count) ||
         !buf_window_arg("buf_fill", buf, list_slot(arg, 1), count, &off) ||
-        !buf_num_arg("buf_fill", "value", list_slot(arg, 3), &val))
+        !buf_float_arg("buf_fill", "value", list_slot(arg, 3), &val))
         return make_null();
     double *d = &buf->data.buffer.data[off];
     for (long long i = 0; i < count; i++)
@@ -650,7 +668,7 @@ Value* builtin_buf_peak(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "buf_peak requires [buffer, off, count]");
         /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
+        return make_float(0);
     }
     EIGS_VIEW(buf_view);
     Value *buf = list_get_view(arg, 0, &buf_view);
@@ -658,15 +676,15 @@ Value* builtin_buf_peak(Value *arg) {
     if (!buf_count_arg("buf_peak", list_slot(arg, 2), &count) ||
         !buf_window_arg("buf_peak", buf, list_slot(arg, 1), count, &off))
         /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
-        return make_num(0);
+        return make_float(0);
     double m = 0.0;
     for (long long i = 0; i < count; i++) {
-        double x = buffer_read_num(buf, off + i);
+        double x = buffer_read_f64(buf, off + i);
         if (g_has_error) return make_null();
         double a = x < 0 ? -x : x;
         if (a > m) m = a;
     }
-    return make_num(m);
+    return make_float(m);
 }
 
 /* buf_dot of [a, b, a_off, b_off, count] — windowed dot product:
@@ -680,7 +698,7 @@ Value* builtin_buf_dot(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
         rt_error(EK_TYPE, 0, "buf_dot requires [a, b, a_off, b_off, count]");
         /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
+        return make_float(0);
     }
     EIGS_VIEW(a_view);
     Value *a = list_get_view(arg, 0, &a_view);
@@ -691,16 +709,16 @@ Value* builtin_buf_dot(Value *arg) {
         !buf_window_arg("buf_dot", a, list_slot(arg, 2), count, &a_off) ||
         !buf_window_arg("buf_dot", b, list_slot(arg, 3), count, &b_off))
         /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
-        return make_num(0);
+        return make_float(0);
     double s = 0.0;
     for (long long i = 0; i < count; i++) {
-        double av = buffer_read_num(a, a_off + i);
+        double av = buffer_read_f64(a, a_off + i);
         if (g_has_error) return make_null();
-        double bv = buffer_read_num(b, b_off + i);
+        double bv = buffer_read_f64(b, b_off + i);
         if (g_has_error) return make_null();
         s = num_guard(s + num_guard(av * bv));
     }
-    return make_num(s);
+    return make_float(s);
 }
 
 /* ---- Bulk PCM16LE codec kernels (#602) ----
@@ -752,10 +770,11 @@ Value* builtin_buf_from_pcm16le(Value *arg) {
     if (!out) return make_null();
     double *od = out->data.buffer.data;
     for (long long i = 0; i < count; i++) {
-        double lo = buffer_read_num(src, off + 2*i);
-        if (g_has_error) { val_decref(out); return make_null(); }
-        double hi = buffer_read_num(src, off + 2*i + 1);
-        if (g_has_error) { val_decref(out); return make_null(); }
+        uint8_t lo, hi;
+        if (!buffer_byte_at(src, off + 2*i, &lo, "buf_from_pcm16le") ||
+            !buffer_byte_at(src, off + 2*i + 1, &hi, "buf_from_pcm16le")) {
+            val_decref(out); return make_null();
+        }
         double v = num_guard(lo + num_guard(256.0 * hi));
         if (g_has_error) { val_decref(out); return make_null(); }
         if (v >= 32768.0) v = num_guard(v - 65536.0);
@@ -792,7 +811,7 @@ Value* builtin_buf_to_pcm16le(Value *arg) {
     if (!out) return make_null();
     double *od = out->data.buffer.data;
     for (long long i = 0; i < count; i++) {
-        double x = buffer_read_num(src, off + i);
+        double x = buffer_read_f64(src, off + i);
         if (g_has_error) { val_decref(out); return make_null(); }
         if (x < -1.0) x = -1.0;
         if (x > 1.0) x = 1.0;
@@ -829,8 +848,9 @@ Value* builtin_buf_deinterleave(Value *arg) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: channel and nch must be numbers");
         return make_null();
     }
-    long long nch = (long long)eigs_num_arg(nch_v, __func__);
-    long long channel = (long long)eigs_num_arg(ch_v, __func__);
+    long long nch = eigs_int_arg(nch_v, "buf_deinterleave");
+    long long channel = eigs_int_arg(ch_v, "buf_deinterleave");
+    if (g_has_error) return make_null();
     if (nch < 1) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: nch must be >= 1 (got %lld)", nch);
         return make_null();
@@ -841,7 +861,7 @@ Value* builtin_buf_deinterleave(Value *arg) {
         return make_null();
     }
     long long n = src->data.buffer.count;
-    long long avail = channel < n ? (n - channel + nch - 1) / nch : 0;
+    long long avail = channel < n ? 1 + (n - 1 - channel) / nch : 0;
     long long count = avail;
     if (arg->data.list.count >= 4 && list_elem_type(arg, 3) != VAL_NULL) {
         if (!buf_count_arg("buf_deinterleave", list_slot(arg, 3), &count))

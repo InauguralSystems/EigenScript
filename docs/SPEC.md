@@ -2840,3 +2840,10 @@ catch e:
 [[2, 3], "int", "int"]
 value
 ```
+
+Buffer sizes, indices, offsets and counts follow N5. Byte inputs to
+`str_from_bytes`, `f64_from_bytes`, `inflate` and `buf_from_pcm16le` must be
+exact integers in 0..255; fractions and out-of-range bytes raise `value`.
+`buf_len`, `f64_to_bytes` and `inflate` return integer counts or bytes;
+buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
+`buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.

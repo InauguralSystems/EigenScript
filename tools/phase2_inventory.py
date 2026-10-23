@@ -87,7 +87,7 @@ VOCAB = {
     'num_to_i64_exact': 'READ',
     'finite_num_to_byte': 'READ',
     'buffer_read_byte': 'READ',    # a buffer element as a byte (Q1: N5, no wrap)
-    'buf_num_arg': 'READ',         # builtins_buf.c wrapper of eigs_list_num
+    'buf_float_arg': 'READ',       # R1.6d: decided float-only gain/value wrapper
     'eigs_value_as_num': 'READ',   # embed API accessor
     'number': 'RAW',               # lexer/AST EigsNum payload (#1758 R1.3)
     # (c) producers

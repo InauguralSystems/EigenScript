@@ -51,7 +51,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 |---|---|---|
 | `math_flags` | `math_flags of null` | Return sticky `overflow`, `invalid`, and `underflow` numeric-status booleans. |
 | `must_not_yield` | `must_not_yield of fn` | Run a callback while rejecting cooperative suspension. |
-| `inflate` | `inflate of bytes` | Decode raw DEFLATE bytes when zlib support is enabled. |
+| `inflate` | `inflate of bytes` | Input bytes follow N5, then 0..255; output byte values are ints. Decode raw DEFLATE bytes when zlib support is enabled. |
 
 ## Core Language
 
@@ -174,21 +174,21 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `buffer` | `buffer of count` | Create zero-filled buffer of given size (or `buffer of [rows, cols]` for a shaped one). A non-numeric size raises by default; under `EIGS_STRICT=0` it makes an empty buffer (#971). |
-| `buf_get` | `buf_get of [buf, index]` | Read element; out-of-range raises `index_range` (#502 — folding to 0 was indistinguishable from a real stored 0), matching the `buf[i]` operator |
-| `buf_set` | `buf_set of [buf, index, value]` | Write element |
-| `buf_len` | `buf_len of buf` | Return buffer element count |
-| `buf_from_list` | `buf_from_list of list` | Convert numeric list to buffer |
-| `buf_copy` | `buf_copy of [src, src_off, dst, dst_off, count]` | Bulk copy between buffers (`memmove`, overlap-safe). Out-of-range windows / negative count raise (`index_range`/`value`); count 0 is a no-op |
-| `buf_mix` | `buf_mix of [dst, src, dst_off, src_off, count, gain]` | In-place mix: `dst[dst_off+i] += src[src_off+i] * gain` over the window — the audio mix-down kernel (#597). VM-identical arithmetic (byte-equal to the interpreted loop); same-buffer overlap runs forward in index order. Bad windows raise |
-| `buf_scale_range` | `buf_scale_range of [b, off, count, gain]` | In-place multiply over a window: `b[off+i] *= gain` (fades, normalize). Bad windows raise |
-| `buf_fill` | `buf_fill of [b, off, count, value]` | Bulk store over a window: `b[off+i] = value`. Bad windows raise |
-| `buf_peak` | `buf_peak of [b, off, count]` | Max absolute value over a window (normalize/meter scans); 0 for an empty window. Bad windows raise |
-| `buf_dot` | `buf_dot of [a, b, a_off, b_off, count]` | Windowed dot product: sum of `a[a_off+i] * b[b_off+i]` (YIN autocorrelation). Like `dot`, summation order/association is **unspecified** (backends may reassociate); no-NaN/Inf preserved. Bad windows raise |
-| `buf_from_pcm16le` | `buf_from_pcm16le of [bytes, byte_off, count]` | Decode `count` little-endian signed 16-bit PCM samples starting at `byte_off` into a NEW float buffer: `v = b0 + 256*b1`, two's-complement fold at 32768, `v / 32767` — bit-identical to the interpreted per-sample loop it replaces (#602, the WAV-import kernel). Bad windows raise |
-| `buf_to_pcm16le` | `buf_to_pcm16le of [floats, off, count]` | Encode `count` samples into a NEW byte buffer (2 bytes/sample, LE): clamp to [-1, 1], `round(x*32767)`, two's complement via +65536 — bit-identical to the interpreted write loop (#602). Bad windows raise |
-| `buf_deinterleave` | `buf_deinterleave of [src, channel, nch, count?]` | Every `nch`-th sample starting at index `channel` into a NEW buffer (interleaved channel split). `count` defaults to the full available tail; bad `channel`/`nch` raise `value`, count overrun raises `index_range` (#602) |
-| `buf_resample_linear` | `buf_resample_linear of [src, dst_len]` | Endpoint-inclusive **linear** resample into a NEW buffer: `pos = i*(n-1)/(dst_len-1)`, lerp between the floor/ceil neighbors — bit-identical to DeslanStudio's interpreted `ab_resample_linear` (#603). The kernel is linear interpolation, **not** Fourier/sinc resampling (the consumer-documented divergence from `scipy.signal.resample`; no anti-aliasing). `dst_len` 0 → empty buffer; empty `src` with `dst_len > 0` raises `value` |
+| `buffer` | `buffer of count` | Dimensions and size follow N5, then the C int range. Create zero-filled buffer of given size (or `buffer of [rows, cols]` for a shaped one). A non-numeric size raises by default; under `EIGS_STRICT=0` it makes an empty buffer (#971). |
+| `buf_get` | `buf_get of [buf, index]` | The index follows N5; the returned element is float. Read element; out-of-range raises `index_range` (#502 — folding to 0 was indistinguishable from a real stored 0), matching the `buf[i]` operator |
+| `buf_set` | `buf_set of [buf, index, value]` | The index follows N5; stored values convert to float (Q2). Write element |
+| `buf_len` | `buf_len of buf` | Returns an integer count. Return buffer element count |
+| `buf_from_list` | `buf_from_list of list` | Integer cells convert to float storage (Q2). Convert numeric list to buffer |
+| `buf_copy` | `buf_copy of [src, src_off, dst, dst_off, count]` | Offsets/counts follow N5; fractions raise `value`. Bulk copy between buffers (`memmove`, overlap-safe). Out-of-range windows / negative count raise (`index_range`/`value`); count 0 is a no-op |
+| `buf_mix` | `buf_mix of [dst, src, dst_off, src_off, count, gain]` | Offsets/counts follow N5; fractions raise `value`. In-place mix: `dst[dst_off+i] += src[src_off+i] * gain` over the window — the audio mix-down kernel (#597). VM-identical arithmetic (byte-equal to the interpreted loop); same-buffer overlap runs forward in index order. Bad windows raise |
+| `buf_scale_range` | `buf_scale_range of [b, off, count, gain]` | Offsets/counts follow N5; fractions raise `value`. In-place multiply over a window: `b[off+i] *= gain` (fades, normalize). Bad windows raise |
+| `buf_fill` | `buf_fill of [b, off, count, value]` | Offsets/counts follow N5; fractions raise `value`. Bulk store over a window: `b[off+i] = value`. Bad windows raise |
+| `buf_peak` | `buf_peak of [b, off, count]` | Offsets/counts follow N5; fractions raise `value`. Max absolute value over a window (normalize/meter scans); 0 for an empty window. Bad windows raise |
+| `buf_dot` | `buf_dot of [a, b, a_off, b_off, count]` | Offsets/counts follow N5; fractions raise `value`. Windowed dot product: sum of `a[a_off+i] * b[b_off+i]` (YIN autocorrelation). Like `dot`, summation order/association is **unspecified** (backends may reassociate); no-NaN/Inf preserved. Bad windows raise |
+| `buf_from_pcm16le` | `buf_from_pcm16le of [bytes, byte_off, count]` | Input bytes follow N5, then 0..255. Offsets/counts follow N5. Decode `count` little-endian signed 16-bit PCM samples starting at `byte_off` into a NEW float buffer: `v = b0 + 256*b1`, two's-complement fold at 32768, `v / 32767` — bit-identical to the interpreted per-sample loop it replaces (#602, the WAV-import kernel). Bad windows raise |
+| `buf_to_pcm16le` | `buf_to_pcm16le of [floats, off, count]` | Offsets/counts follow N5. Encode `count` samples into a NEW byte buffer (2 bytes/sample, LE): clamp to [-1, 1], `round(x*32767)`, two's complement via +65536 — bit-identical to the interpreted write loop (#602). Bad windows raise |
+| `buf_deinterleave` | `buf_deinterleave of [src, channel, nch, count?]` | Channel/count arguments follow N5. Every `nch`-th sample starting at index `channel` into a NEW buffer (interleaved channel split). `count` defaults to the full available tail; bad `channel`/`nch` raise `value`, count overrun raises `index_range` (#602) |
+| `buf_resample_linear` | `buf_resample_linear of [src, dst_len]` | Destination length follows N5. Endpoint-inclusive **linear** resample into a NEW buffer: `pos = i*(n-1)/(dst_len-1)`, lerp between the floor/ceil neighbors — bit-identical to DeslanStudio's interpreted `ab_resample_linear` (#603). The kernel is linear interpolation, **not** Fourier/sinc resampling (the consumer-documented divergence from `scipy.signal.resample`; no anti-aliasing). `dst_len` 0 → empty buffer; empty `src` with `dst_len > 0` raises `value` |
 | `read_bytes_buf` | `read_bytes_buf of path` / `read_bytes_buf of [path, max_bytes]` | Read binary file as buffer. 1-arg form caps at 10MB; a file over the cap **raises** a catchable `io` error naming size + cap (#601). `max_bytes` is the bounded opt-in, hard ceiling 512MB (a buffer stores one double per byte — 8x expansion — so the ceiling bounds worst-case memory at the amplification point). Missing, unreadable, and directory paths raise `io` with the path and OS reason; an empty file returns an empty buffer. The cap follows N5: integral floats convert; fractions raise `value`. Byte data remains float buffer storage (Q2). |
 | `write_bytes` | `write_bytes of [path, <list\|buffer> {, append}]` | Write raw bytes to a file. Binary-clean (NUL written verbatim, unlike `write_text`). `append` (default 0): 0 truncates, nonzero appends. Returns bytes written; I/O failure raises `io` with the path and OS reason. Trace-recorded result. Every byte follows N5 then 0..255; fractions and out-of-range bytes raise `value` before I/O or replay. The written count is an int. |
 | `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns `true`; I/O failure raises `io` with both paths and the OS reason. Trace-recorded result. |
@@ -210,9 +210,9 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` by default and convert to numeric zero under `EIGS_STRICT=0`. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
-| `f64_to_bytes` | `f64_to_bytes of x` | List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number raises by default; under `EIGS_STRICT=0` it encodes as `0.0` (#971). |
-| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Decode a double from the first 8 big-endian IEEE-754 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern raises a `value` error by default; under `EIGS_STRICT=0` it collapses to `0` and sets `math_flags.invalid` (#971). |
+| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` by default and convert to numeric zero under `EIGS_STRICT=0`. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
+| `f64_to_bytes` | `f64_to_bytes of x` | An integer input first converts to nearest f64 (Q2). List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number raises by default; under `EIGS_STRICT=0` it encodes as `0.0` (#971). |
+| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Decode a double from the first 8 big-endian IEEE-754 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern raises a `value` error by default; under `EIGS_STRICT=0` it collapses to `0` and sets `math_flags.invalid` (#971). |
 
 Buffers also support direct indexing (`buf[i]`, `buf[i] is val`) and
 compound assignment (`buf[i] += val`).
@@ -538,7 +538,7 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 | `zeros_like` | `zeros_like of t` | Zero tensor matching `t`'s shape **and container**: a buffer gives a buffer (shape preserved), a list gives a list, a number gives `0.0` |
 | `random_normal` | `random_normal of [rows, cols, scale]` | Gaussian random float tensor; dimensions follow N5 (integral floats accepted; fractions raise `value`). Dimension refusal precedes the trace-tape boundary |
 | `shape` | `shape of t` | Return dimensions as a list of exact integers |
-| `reshape` | `reshape of [buffer, rows, cols]` | New numeric buffer with the same data reinterpreted as `rows`×`cols` (requires `rows*cols == count`; `null` otherwise) |
+| `reshape` | `reshape of [buffer, rows, cols]` | Rows/columns follow N5, then the C int range. New numeric buffer with the same data reinterpreted as `rows`×`cols` (requires `rows*cols == count`; `null` otherwise) |
 
 ### Persistence
 
@@ -997,3 +997,18 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
+
+Buffer sizes, indices, offsets and counts follow N5. Byte inputs to
+`str_from_bytes`, `f64_from_bytes`, `inflate` and `buf_from_pcm16le` must be
+exact integers in 0..255; fractions and out-of-range bytes raise `value`.
+`buf_len`, `f64_to_bytes` and `inflate` return integer counts or bytes;
+buffer storage and scalar buffer reads are floats.
+
+Buffer construction and `reshape` check dimensions before narrowing to C integers.
+`buf_copy`, `buf_fill`, `buf_mix`, `buf_scale_range`, `buf_peak`, `buf_dot`,
+`buf_deinterleave` and `buf_resample_linear` use exact N5 windows/counts.
+`buf_set`, `buf_fill` and `buf_from_list` convert stored integers to float (Q2).
+`buf_to_pcm16le` retains its clamp and half-away-from-zero rounding.
+
+`buf_get`, `buf_peak`, `buf_dot` and byte/PCM codec input readers refuse
+non-finite buffer cells with `value` in both strict modes (N13).

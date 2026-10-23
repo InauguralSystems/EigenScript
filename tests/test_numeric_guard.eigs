@@ -117,7 +117,7 @@ assert of [not (raw_inf_product[0] * 0.5 > CAP), "NG31 multiplication reads a cl
 assert of [not (raw_inf_product[0] + 0 > CAP), "NG31 addition reads a clamped buffer infinity"]
 raw_inf_scalar is raw_inf_product[0]
 assert of [raw_inf_scalar == CAP, "NG31 index read into a scalar is clamped"]
-assert of [(buf_get of [raw_inf_product, 0]) == CAP, "NG31 buf_get is clamped"]
+ng_final_refuses of [buf_get, [raw_inf_product, 0], "NG31 N13 buf_get refuses infinity"]
 
 # A NaN uses the same read boundary as infinity. In non-strict mode every
 # accessor returns numeric 0 and sets invalid; none may leak the NaN-box null
@@ -130,7 +130,7 @@ nan_right[0] is 1e200
 nan_right[1] is 0 - 1e200
 raw_nan_product is matmul of [nan_left, nan_right]
 assert of [raw_nan_product[0] == 0, "NG32 indexed NaN read collapses to zero"]
-assert of [(buf_get of [raw_nan_product, 0]) == 0, "NG33 buf_get NaN read collapses to zero"]
+ng_final_refuses of [buf_get, [raw_nan_product, 0], "NG33 N13 buf_get refuses NaN"]
 # N13 / R1.6c: get_at now uses the final finite-only buffer reader.
 ng_get_at_refused is false
 try:
@@ -177,8 +177,8 @@ try:
 catch e:
     ng_dot_refused is e.kind == "value"
 assert of [ng_dot_refused, "NG40 N13 dot refuses non-finite payload"]
-assert of [(buf_dot of [raw_pair, zero_pair, 0, 0, 2]) == 0, "NG41 buf_dot normalizes each operand"]
-assert of [(buf_peak of [raw_nan_product, 0, 1]) == 0, "NG42 buf_peak reads NaN as zero"]
+ng_final_refuses of [buf_dot, [raw_pair, zero_pair, 0, 0, 2], "NG41 N13 buf_dot refuses infinity"]
+ng_final_refuses of [buf_peak, [raw_nan_product, 0, 1], "NG42 N13 buf_peak refuses NaN"]
 
 # Ordinary finite/empty controls preserve the pre-existing reduction policies.
 finite is buffer of 2
@@ -236,15 +236,13 @@ ng_final_refuses of [gather, [index_matrix, raw_nan_product], "NG53 N5 nonfinite
 
 # Numeric byte decoders normalize before converting, preserving finite byte
 # truncation/modulo behavior and the buffer's raw work-area representation.
-assert of [(str_from_bytes of (buf_from_list of [65.75, 321, -191])) == "AAA", "NG54 finite byte truncation and wrapping"]
+ng_final_refuses of [str_from_bytes, buf_from_list of [65.75, 321, -191], "NG54 N5/Q1 refuses fractional byte"]
 assert of [(f64_from_bytes of (buf_from_list of (f64_to_bytes of 12.5))) == 12.5, "NG54 finite f64 byte round trip"]
-assert of [(str_from_bytes of raw_nan_product) == "", "NG55 non-strict NaN byte is NUL"]
-assert of [(f64_from_bytes of raw_nan_product) == 0, "NG56 non-strict NaN byte decodes zero"]
-assert of [(str_from_bytes of raw_pair) == "", "NG57 normalized infinity wraps to byte zero"]
-encoded_nan is buf_to_pcm16le of [raw_nan_product, 0, 1]
-assert of [encoded_nan == (buf_from_list of [0, 0]), "NG58 non-strict NaN PCM sample is silence"]
-encoded_infinity is buf_to_pcm16le of [raw_pair, 0, 2]
-assert of [encoded_infinity == (buf_from_list of [255, 127, 1, 128]), "NG59 normalized PCM infinities clamp to samples"]
+ng_final_refuses of [str_from_bytes, raw_nan_product, "NG55 N13 refuses nonfinite buffer input"]
+ng_final_refuses of [f64_from_bytes, raw_nan_product, "NG56 N13 refuses nonfinite buffer input"]
+ng_final_refuses of [str_from_bytes, raw_pair, "NG57 N13 refuses nonfinite buffer input"]
+ng_final_refuses of [buf_to_pcm16le, [raw_nan_product, 0, 1], "NG58 N13 refuses nonfinite buffer input"]
+ng_final_refuses of [buf_to_pcm16le, [raw_pair, 0, 2], "NG59 N13 refuses nonfinite buffer input"]
 
 # Mixed buffer/list results box each buffer element before arithmetic.
 # Shaped buffers keep their matrix rows when boxed into nested lists.

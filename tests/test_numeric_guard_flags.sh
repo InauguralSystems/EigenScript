@@ -63,14 +63,9 @@ right[1] is 0 - 1e200
 raw is matmul of [left, right]'
 for spec in \
  'NG32 index|x is raw[0]' \
- 'NG33 buf_get|x is buf_get of [raw, 0]' \
  'NG35 gather|x is (gather of [raw, [0]])[0]' \
  'NG38 equality|x is raw == raw' \
- 'NG39 distinct equality|zero is buffer of 1; x is raw == zero' \
- 'NG42 buf_peak|x is buf_peak of [raw, 0, 1]' \
- 'NG55 str_from_bytes|x is str_from_bytes of raw' \
- 'NG56 f64_from_bytes|x is f64_from_bytes of raw' \
- 'NG58 PCM encode|x is buf_to_pcm16le of [raw, 0, 1]'; do
+ 'NG39 distinct equality|zero is buffer of 1; x is raw == zero'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n/g')
  run "$name invalid" "$nan_setup
 $op
@@ -78,10 +73,15 @@ assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
 done
 # N13 / R1.6d: these raw NaN reads refuse in lenient mode.
 for spec in \
+ 'NG33 buf_get|x is buf_get of [raw, 0]' \
+ 'NG42 buf_peak|x is buf_peak of [raw, 0, 1]' \
  'NG50 nested mean|x is mean of ([raw])' \
  'NG50 nested norm|x is norm of ([raw])' \
  'NG52 scatter index|dst is buffer of 1; scatter_add of [dst, raw, 5]' \
- 'NG53 gather index|dst is buffer of [1, 1]; x is gather of [dst, raw]'; do
+ 'NG53 gather index|dst is buffer of [1, 1]; x is gather of [dst, raw]' \
+ 'NG55 str_from_bytes|x is str_from_bytes of raw' \
+ 'NG56 f64_from_bytes|x is f64_from_bytes of raw' \
+ 'NG58 PCM encode|x is buf_to_pcm16le of [raw, 0, 1]'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n    /g; s/^/    /')
  run "$name N13 refusal" "$nan_setup
 caught is false
@@ -129,15 +129,19 @@ try:
 catch e:
     caught is e.kind == \"value\"
 assert of [caught, \"N13 dot refuses non-finite payload\"]"
-run "NG41 normalized buf_dot stays valid" "$inf_setup
-zero is buffer of 2
-x is buf_dot of [raw, zero, 0, 0, 2]
-assert of [x == 0 and not (math_flags of null).invalid, \"normalized buf_dot stays valid\"]"
-run "NG57 byte decoder overflow" "$inf_setup
-x is str_from_bytes of raw
-assert of [(math_flags of null).overflow, \"infinity byte read sets overflow\"]"
-run "NG59 PCM decoder overflow" "$inf_setup
-x is buf_to_pcm16le of [raw, 0, 2]
-assert of [(math_flags of null).overflow, \"infinity PCM read sets overflow\"]"
+# N13 / R1.6d: infinity refusals do not normalize or set arithmetic flags.
+for spec in \
+ 'NG41 buf_dot|zero is buffer of 2; x is buf_dot of [raw, zero, 0, 0, 2]' \
+ 'NG57 byte decoder|x is str_from_bytes of raw' \
+ 'NG59 PCM encoder|x is buf_to_pcm16le of [raw, 0, 2]'; do
+ name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n    /g; s/^/    /')
+ run "$name N13 refusal" "$inf_setup
+caught is false
+try:
+$op
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught and not ((math_flags of null).invalid or (math_flags of null).overflow), \"N13 infinity refusal\"]"
+done
 echo "NUMERIC_FLAGS: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

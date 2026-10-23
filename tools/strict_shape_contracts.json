@@ -381,17 +381,17 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Q2 float conversion and error cleanup consume the complete input list; no tuple-width change.",
     "public_names": [
       "buf_from_list"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "c736aa2de0261df888fd40d93a44985273b784bf0951cdc97b2f6ef73e6d818d"
+      "be3e945726d39bcd01350177eb2ebd7e8dfd571c99cb050858caf934b21fe5c4"
     ],
     "source_sha256": {
       "builtin_buf_from_list": [
-        "c736aa2de0261df888fd40d93a44985273b784bf0951cdc97b2f6ef73e6d818d"
+        "be3e945726d39bcd01350177eb2ebd7e8dfd571c99cb050858caf934b21fe5c4"
       ]
     }
   },
@@ -497,20 +497,23 @@
     "category": "exact_strict_rejection",
     "minimum": 2,
     "maximum": 2,
-    "reason": "Only two numeric list elements select shaped buffer; other lists already raise via STRICT_REQUIRE, strict-off legacy empty buffer retained.",
+    "reason": "Only two numeric list elements select shaped buffer; other lists already raise via STRICT_REQUIRE, strict-off legacy empty buffer retained. R1.6d review: N5 exact dimensions retain the existing exactly-two numeric list recognition and strict-off other-shape behavior.",
     "public_names": [
       "buffer"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "5705f10a1e3e60d47d4e385849c863a6775ed004ceafb65dee990e348bd8b022"
+      "701b5e8ca60dac1691eedd365dac32340080259dca8fcc7b95b6133ee97020ac"
     ],
     "source_sha256": {
       "builtin_buffer": [
-        "5705f10a1e3e60d47d4e385849c863a6775ed004ceafb65dee990e348bd8b022"
+        "701b5e8ca60dac1691eedd365dac32340080259dca8fcc7b95b6133ee97020ac"
       ],
-      "eigs_list_num": [
-        "25755c9b1f519fb0447e2d648dc0272419914db805f9249954cd2e146b48a3bc"
+      "eigs_int_arg_range": [
+        "5af5651c7d114bc4a39d96ef9bb2502730dd4810d9c11304c8c3c2e01af1b95b"
+      ],
+      "eigs_list_int_range": [
+        "3738005e8c9f9df7666a34a68b9ad86439a792da14ec4c00d650c4928787b71c"
       ]
     }
   },
@@ -819,17 +822,20 @@
     "category": "unary_data_prefix",
     "minimum": null,
     "maximum": null,
-    "reason": "Documented first eight bytes of list OR buffer; prefix byte decoding is data semantics, not argument arity. Explicitly exempt from this tuple repair (BUILTINS.md:208).",
+    "reason": "Documented first eight bytes of list OR buffer; prefix byte decoding is data semantics, not argument arity. Explicitly exempt from this tuple repair (BUILTINS.md:208). R1.6d review: Q1 validates each consumed encoded byte; the documented first-eight prefix and ignored trailing data remain.",
     "public_names": [
       "f64_from_bytes"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "8af177621b6aae6d233a44c4a5add234ed6bae4d72b9f91eee6c67fd4d76a9e2"
+      "88cacaf26c63c0174088ed418e3ba636302cdb9f32a62771b89c4ddd02754d4e"
     ],
     "source_sha256": {
+      "buffer_byte_at": [
+        "3dcffa800af2f51ea91c9bc363e96c688792da79b4832c3efe0083f46fa6a4ec"
+      ],
       "builtin_f64_from_bytes": [
-        "8af177621b6aae6d233a44c4a5add234ed6bae4d72b9f91eee6c67fd4d76a9e2"
+        "88cacaf26c63c0174088ed418e3ba636302cdb9f32a62771b89c4ddd02754d4e"
       ]
     }
   },
@@ -1154,7 +1160,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list. R1.6d review: Q1 validates all compressed input bytes; the complete list remains byte data rather than a fixed tuple.",
     "public_names": [
       "inflate"
     ],
@@ -1164,15 +1170,18 @@
       "d89562220316e85c2ed110b250eee934769205aab21a2f3bc76a9804aa171060"
     ],
     "source_sha256": {
+      "buffer_byte_at": [
+        "3dcffa800af2f51ea91c9bc363e96c688792da79b4832c3efe0083f46fa6a4ec"
+      ],
       "builtin_inflate": [
         "7d40d2af315bd0adcb03f2528a6c3c1bcec82325e3b9c6f7cea7681b9fe1075f",
         "d89562220316e85c2ed110b250eee934769205aab21a2f3bc76a9804aa171060"
       ],
       "strict_numeric_byte_list": [
-        "049e896f6231c29f666669a17d40a2a233305146baf380e237505b2a20de0aeb"
+        "015b8c214165b39190e18b9ce6bf73ca94919ffad17bde6913e2a4d3e9f44c72"
       ],
       "zlib_bytes_arg": [
-        "6dd4334ac90d54b268baf36c04075a5cae70794196eb346f68d4408ad6f32fc4"
+        "5a54e0099938c4c3a9e22d7ecd8aaa76a5c0e4c31418b5aa6d66466345a54a37"
       ],
       "zlib_inflate_impl": [
         "a54f1d8a2b596ca7c363f20303516358bf5992479e5aadc7ea6f2536e2089914"
@@ -2164,20 +2173,23 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list. R1.6d review: Q1 validates byte cells through the existing NUL termination boundary; no tuple limit.",
     "public_names": [
       "str_from_bytes"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "266fe6f318707383a46998a2ba6d2b04c2e1c720fd0d8ec5f481680e80a39e32"
+      "f38478b4325323028529d2076c58d987e588f36b8b8e1f16d51902219dddcfa5"
     ],
     "source_sha256": {
+      "buffer_byte_at": [
+        "3dcffa800af2f51ea91c9bc363e96c688792da79b4832c3efe0083f46fa6a4ec"
+      ],
       "builtin_str_from_bytes": [
-        "266fe6f318707383a46998a2ba6d2b04c2e1c720fd0d8ec5f481680e80a39e32"
+        "f38478b4325323028529d2076c58d987e588f36b8b8e1f16d51902219dddcfa5"
       ],
       "strict_numeric_byte_list": [
-        "049e896f6231c29f666669a17d40a2a233305146baf380e237505b2a20de0aeb"
+        "015b8c214165b39190e18b9ce6bf73ca94919ffad17bde6913e2a4d3e9f44c72"
       ]
     }
   },
