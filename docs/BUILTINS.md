@@ -744,9 +744,11 @@ extension that takes an argument at all — the drawing calls, the text calls,
 the framebuffer blit, the PPU renderer, and the whole audio surface below —
 type-checks its arguments *before* reading them, and by default a
 wrong type, a short argument list, a wrong-shaped argument *container* (a
-number or a string where a list belonged) or an out-of-domain value raises a
-catchable `type` error naming the builtin and the shape it wanted. Under `EIGS_STRICT=0`, the
-answer is byte-identical to before: the drawing calls still
+number or a string where a list belonged) raises a catchable `type_mismatch`
+error naming the builtin and the shape it wanted. This paragraph describes the
+legacy type/shape guards. Numeric N5, Q1 and Q7 validation instead raises `value`
+in both strict modes, as specified above and in each row. Under `EIGS_STRICT=0`,
+the type/shape guards retain their legacy stand-ins: the drawing calls still
 answer `null`, the generators still answer an empty list, the device calls
 still answer `0` or the device id they already answered.
 
@@ -768,8 +770,9 @@ draw a **black** rectangle where red was asked for — silently, in both modes.
 That read is gone in both modes; an unchecked union pun is not behaviour
 anything can depend on.
 
-So be precise about what "byte-identical" covers: the **returned value** is
-unchanged in every case, and so is anything the call *reports*. What a
+For these legacy wrong-type probes, "byte-identical" covers the returned
+stand-in value and anything the call reports; numeric result kinds follow
+the individual contracts above. What a
 rejected call **draws** is not, and cannot be — a 48-bit pointer read as a
 double is a subnormal that truncates to 0, so the parent painted a shape at
 coordinate 0, in colour 0, or at scale 1, and this build paints nothing at

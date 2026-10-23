@@ -1178,11 +1178,6 @@ Value* builtin_gfx_text_height(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 1
                         && (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT)),
                    "gfx_text_height", "number scale, [number scale] or null");
-    if (__builtin_expect(g_replay_enabled, 0)) {
-        rt_error(EK_IO, 0, "gfx_text_height: not replayable under EIGS_REPLAY "
-                 "(font file-read boundary; see docs/TRACE.md)");
-        return make_int(0);
-    }
     if (arg && val_is_number(arg)) {
         int64_t rounded;
         if (!eigs_magnitude_arg(arg, INT_MIN, INT_MAX, &rounded, "gfx_text_height"))
@@ -1194,6 +1189,11 @@ Value* builtin_gfx_text_height(Value *arg) {
         if (!eigs_list_magnitude(arg, 0, INT_MIN, INT_MAX, &rounded, "gfx_text_height"))
             return make_null();
         scale = (int)rounded;
+    }
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        rt_error(EK_IO, 0, "gfx_text_height: not replayable under EIGS_REPLAY "
+                 "(font file-read boundary; see docs/TRACE.md)");
+        return make_int(0);
     }
     if (scale < 1) scale = 1;
     if (ttf_available()) {
