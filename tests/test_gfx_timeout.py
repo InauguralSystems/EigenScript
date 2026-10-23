@@ -8,14 +8,17 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def main():
     source = Path(__file__).with_name("test_asan_gfx.sh").read_text()
     selector = source.split("# BEGIN gfx timeout selector", 1)[1].split("\n", 1)[1]
     selector = selector.split("# END gfx timeout selector", 1)[0]
-    # Shorten only durations; the command selection and execution stay real.
-    selector = selector.replace(" -k 5", " -k 0.2").replace(" 120", " 0.5")
+    # Completion controls need enough room for process-start jitter on busy CI
+    # hosts. Timeout controls stay short so they still exercise TERM and KILL.
+    completion_selector = selector.replace(" -k 5", " -k 0.2").replace(" 120", " 10")
+    timeout_selector = selector.replace(" -k 5", " -k 0.2").replace(" 120", " 0.5")
     runner = source.split("leak_reported() {", 1)[1].split("\n}", 1)[0]
     runner = "leak_reported() {" + runner + "\n}\n"
     startup = source.split("ASAN_OPTIONS=detect_leaks=1 $TMO /tmp/eigs_asan_gfx_probe", 1)
@@ -41,10 +44,13 @@ def main():
             os.symlink(timer, directory / command)
         child = directory / "child.py"
         pidfile = directory / "child.pid"
+        startfile = directory / "child.start"
         child_source = (
             "#!" + sys.executable + "\n"
             "import os,signal,time\n"
             "mode=os.environ['EIGS_TIMEOUT_CONTROL_MODE']\n"
+            "open(" + repr(str(startfile)) + ", 'w').write(str(time.monotonic()))\n"
+            "time.sleep(float(os.environ.get('EIGS_TIMEOUT_CONTROL_START_DELAY','0')))\n"
             "if mode in ('ignore','leak-ignore'): signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
             "open(" + repr(str(pidfile)) + ", 'w').write(str(os.getpid()))\n"
             "if mode=='clean': print('sdl-present: 0'); raise SystemExit(0)\n"
@@ -62,10 +68,15 @@ def main():
             "bad() { echo \"FAIL: $*\"; FAIL=$((FAIL+1)); }\n"
             ". " + shlex.quote(str(classifier)) + "\n"
         )
-        def run(name, body, mode, expected, *, selection=selector,
-                hide="", watchdog=False):
+        completion_walls = []
+
+        def run(name, body, mode, expected, *, completion=False,
+                selection=None, hide="", watchdog=False):
             nonlocal checks
             pidfile.unlink(missing_ok=True)
+            startfile.unlink(missing_ok=True)
+            if selection is None:
+                selection = completion_selector if completion else timeout_selector
             masking = ""
             if hide:
                 # Override only the selector's availability probe.
@@ -73,13 +84,17 @@ def main():
             code = declarations + masking + selection + "\n" + body
             environment = dict(os.environ, PATH=str(directory) + os.pathsep + os.environ["PATH"],
                                EIGS_TIMEOUT_CONTROL_MODE=mode)
+            if completion:
+                environment["EIGS_TIMEOUT_CONTROL_START_DELAY"] = os.environ.get(
+                    "EIGS_GFX_TIMEOUT_COMPLETION_DELAY", "0")
+            started = time.monotonic()
             proc = subprocess.Popen(["bash", "-c", code], env=environment,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     start_new_session=True)
             expired = False
             try:
                 try:
-                    out, err = proc.communicate(timeout=2)
+                    out, err = proc.communicate(timeout=30 if completion else 2)
                 except subprocess.TimeoutExpired:
                     expired = True
                     if pidfile.exists():
@@ -95,32 +110,41 @@ def main():
             if expired != watchdog or (not expired and proc.returncode != expected):
                 raise AssertionError("%s: watchdog=%s rc=%s stdout=%r stderr=%r"
                                      % (name, expired, proc.returncode, out, err))
+            if completion:
+                # Measure from launch, not from the child's first line: the
+                # suspected macOS cost is process start (#1916), which a
+                # child-side clock would leave out. time.monotonic() is the
+                # system clock in both processes.
+                ended = time.monotonic()
+                child_started = float(startfile.read_text()) if startfile.exists() else None
+                completion_walls.append((ended - started,
+                                         None if child_started is None else child_started - started))
             checks += 1
             return out.decode()
 
         invoke = runner + "leak_reported " + shlex.quote(str(child)) + '\nexit "$LAST_RC"\n'
-        run("clean child", invoke, "clean", 0)
-        run("ordinary failure", invoke, "error", 7)
+        run("clean child", invoke, "clean", 0, completion=True)
+        run("ordinary failure", invoke, "error", 7, completion=True)
         run("TERM deadline", invoke, "hang", 124)
         run("TERM-resistant child", invoke, "ignore", 137)
         run("gtimeout branch", invoke, "ignore", 137, hide='"-v timeout"')
-        out = run("missing timeout dependency", invoke, "clean", 1,
+        out = run("missing timeout dependency", invoke, "clean", 1, completion=True,
                   hide='"-v timeout"|"-v gtimeout"')
         if "requires timeout or gtimeout" not in out or pidfile.exists():
             raise AssertionError("missing dependency executed an unbounded child")
         run("removed hard-kill mutation", invoke, "ignore", None,
-            selection=selector.replace(" -k 0.2", ""), watchdog=True)
+            selection=timeout_selector.replace(" -k 0.2", ""), watchdog=True)
         positive = positive.replace("/tmp/eigs_asan_gfx_leak", str(child))
         positive = runner + "CTRL_OK=1\n" + positive + '\n[ "$CTRL_OK" = 1 ]\n'
-        run("completed leak control", positive, "leak-clean", 0)
-        run("leak then ordinary failure", positive, "leak-error", 1)
+        run("completed leak control", positive, "leak-clean", 0, completion=True)
+        run("leak then ordinary failure", positive, "leak-error", 1, completion=True)
         run("leak then timeout", positive, "leak-hang", 1)
         run("leak then forced kill", positive, "leak-ignore", 1)
         for status in (124, 137, 7):
             verdict = "base=01.eigs; mode=plain; LEAK=0; LAST_OUT=; LAST_RC=%d\n" % status
             verdict += corpus + '\necho CONTINUED\nexit 0\n'
             out = run("corpus fail-fast status %d" % status, verdict, "clean",
-                      0 if status == 7 else 1)
+                      0 if status == 7 else 1, completion=True)
             if ("CONTINUED" in out) != (status == 7):
                 raise AssertionError("corpus timeout continued to another row")
         startup = startup.replace("/tmp/eigs_asan_gfx_probe", str(child))
@@ -133,10 +157,15 @@ def main():
         child.chmod(0o755)
         sdl = sdl.replace("/tmp/eigs_asan_gfx_sdl.eigs", str(directory / "sdl.eigs"))
         sdl = "BIN=" + shlex.quote(str(child)) + "\n" + sdl
-        run("SDL clean absence", sdl, "clean", 0)
+        run("SDL clean absence", sdl, "clean", 0, completion=True)
         out = run("SDL timeout is a failure", sdl, "ignore", 1)
         if "SDL availability probe failed (rc=137" not in out:
             raise AssertionError("SDL timeout was reported as absent library")
+    walls = sorted(w for w, _ in completion_walls)
+    starts = sorted(s for _, s in completion_walls if s is not None)
+    p50 = walls[(len(walls) - 1) // 2]
+    print("gfx-timeout controls: completion wall max=%.3fs p50=%.3fs start max=%s n=%d"
+          % (walls[-1], p50, "%.3fs" % starts[-1] if starts else "n/a", len(walls)))
     print("gfx-timeout controls: %d passed, 0 failed" % checks)
     return 0
 
