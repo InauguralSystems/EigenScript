@@ -2386,6 +2386,14 @@ Value* builtin_audio_envelope(Value *arg) {
     return out;
 }
 
+/* The complete caller census is gfx_fb and ppu_render_frame (round e).
+ * Every call tests g_has_error before publishing the byte or its effects. */
+static uint8_t gfx_byte_at(const Value *buffer, int64_t index, const char *who) {
+    uint8_t byte = 0;
+    (void)buffer_byte_at(buffer, index, &byte, who);
+    return byte;
+}
+
 /* gfx_fb of [buffer, width, height, x, y, scale]
  * Blit a framebuffer (VAL_BUFFER of width*height palette indices 0-3) to the
  * renderer as a scaled texture.  One C call replaces width*height draw calls.
@@ -2419,11 +2427,11 @@ Value* builtin_gfx_fb(Value *arg) {
         return make_null(); /* fs:VOID no renderer or optional texture API. */
     int w = (int)wi, h = (int)hi;
     /* Preserve the source layout and validate every source byte, even if
-     * clipping later hides it. Q1 migration of this wrapper is separate. */
+     * clipping later hides it. Q1 requires an exact byte at the data boundary. */
     static const Uint32 palette[4] = {0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000};
     Uint32 *pixels = xmalloc_array((size_t)total, sizeof *pixels);
     for (int64_t i = 0; i < total; ++i) {
-        int idx = buffer_read_byte(buf, i);
+        int idx = gfx_byte_at(buf, i, __func__);
         if (g_has_error) { free(pixels); return make_null(); }
         pixels[i] = palette[idx & 3];
     }
@@ -2506,7 +2514,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
     double *fb  = fb_v->data.buffer.data;
 
-    int lcdc = buffer_read_byte(mem_v, 0xFF40);
+    int lcdc = gfx_byte_at(mem_v, 0xFF40, __func__);
     if (g_has_error) return make_null();
     if (!(lcdc & 0x80)) {
         /* LCD off — blank */
@@ -2514,19 +2522,19 @@ Value* builtin_ppu_render_frame(Value *arg) {
         return make_null(); /* fs:VOID the LCD is off, so the frame was blanked; ppu_render_frame answers null on every path -- this is the return value, not a stand-in for a rejected argument */
     }
 
-    int scy = buffer_read_byte(mem_v, 0xFF42);
+    int scy = gfx_byte_at(mem_v, 0xFF42, __func__);
     if (g_has_error) return make_null();
-    int scx = buffer_read_byte(mem_v, 0xFF43);
+    int scx = gfx_byte_at(mem_v, 0xFF43, __func__);
     if (g_has_error) return make_null();
-    int bgp_raw = buffer_read_byte(mem_v, 0xFF47);
+    int bgp_raw = gfx_byte_at(mem_v, 0xFF47, __func__);
     if (g_has_error) return make_null();
-    int obp0_raw = buffer_read_byte(mem_v, 0xFF48);
+    int obp0_raw = gfx_byte_at(mem_v, 0xFF48, __func__);
     if (g_has_error) return make_null();
-    int obp1_raw = buffer_read_byte(mem_v, 0xFF49);
+    int obp1_raw = gfx_byte_at(mem_v, 0xFF49, __func__);
     if (g_has_error) return make_null();
-    int wy = buffer_read_byte(mem_v, 0xFF4A);
+    int wy = gfx_byte_at(mem_v, 0xFF4A, __func__);
     if (g_has_error) return make_null();
-    int wx = buffer_read_byte(mem_v, 0xFF4B);
+    int wx = gfx_byte_at(mem_v, 0xFF4B, __func__);
     if (g_has_error) return make_null();
 
     /* Decode palettes */
@@ -2570,7 +2578,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
                 if (tile_x != prev_tile_x) {
                     prev_tile_x = tile_x;
-                    int tile_num = buffer_read_byte(mem_v, bg_map_base + map_row + tile_x);
+                    int tile_num = gfx_byte_at(mem_v, bg_map_base + map_row + tile_x, __func__);
                     if (g_has_error) return make_null();
                     int tile_addr;
                     if (unsigned_mode)
@@ -2579,9 +2587,9 @@ Value* builtin_ppu_render_frame(Value *arg) {
                         tile_addr = (tile_num >= 128)
                             ? 0x8800 + (tile_num - 128) * 16 + tile_row * 2
                             : 0x9000 + tile_num * 16 + tile_row * 2;
-                    tile_lo = buffer_read_byte(mem_v, tile_addr);
+                    tile_lo = gfx_byte_at(mem_v, tile_addr, __func__);
                     if (g_has_error) return make_null();
-                    tile_hi = buffer_read_byte(mem_v, tile_addr + 1);
+                    tile_hi = gfx_byte_at(mem_v, tile_addr + 1, __func__);
                     if (g_has_error) return make_null();
                 }
 
@@ -2612,7 +2620,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
                 int wtx = win_x >> 3;
                 if (wtx != prev_wtx) {
                     prev_wtx = wtx;
-                    int wtn = buffer_read_byte(mem_v, win_map_base + win_map_row + wtx);
+                    int wtn = gfx_byte_at(mem_v, win_map_base + win_map_row + wtx, __func__);
                     if (g_has_error) return make_null();
                     int wta;
                     if (unsigned_mode)
@@ -2621,9 +2629,9 @@ Value* builtin_ppu_render_frame(Value *arg) {
                         wta = (wtn >= 128)
                             ? 0x8800 + (wtn - 128) * 16 + win_row * 2
                             : 0x9000 + wtn * 16 + win_row * 2;
-                    wtile_lo = buffer_read_byte(mem_v, wta);
+                    wtile_lo = gfx_byte_at(mem_v, wta, __func__);
                     if (g_has_error) return make_null();
-                    wtile_hi = buffer_read_byte(mem_v, wta + 1);
+                    wtile_hi = gfx_byte_at(mem_v, wta + 1, __func__);
                     if (g_has_error) return make_null();
                 }
                 int wbit = 7 - (win_x & 7);
@@ -2642,16 +2650,16 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
             for (int i = 0; i < 40 && spr_count < 10; i++) {
                 int oam = 0xFE00 + i * 4;
-                int sy = buffer_read_byte(mem_v, oam) - 16;
+                int sy = gfx_byte_at(mem_v, oam, __func__) - 16;
                 if (g_has_error) return make_null();
-                int sx = buffer_read_byte(mem_v, oam + 1) - 8;
+                int sx = gfx_byte_at(mem_v, oam + 1, __func__) - 8;
                 if (g_has_error) return make_null();
                 if (ly >= sy && ly < sy + sprite_h) {
                     sprites[spr_count].sx = sx;
                     sprites[spr_count].sy = sy;
-                    sprites[spr_count].tile = buffer_read_byte(mem_v, oam + 2);
+                    sprites[spr_count].tile = gfx_byte_at(mem_v, oam + 2, __func__);
                     if (g_has_error) return make_null();
-                    sprites[spr_count].flags = buffer_read_byte(mem_v, oam + 3);
+                    sprites[spr_count].flags = gfx_byte_at(mem_v, oam + 3, __func__);
                     if (g_has_error) return make_null();
                     sprites[spr_count].oam_idx = i;
                     spr_count++;
@@ -2688,9 +2696,9 @@ Value* builtin_ppu_render_frame(Value *arg) {
                 }
 
                 int taddr = 0x8000 + tile * 16 + row * 2;
-                int slo = buffer_read_byte(mem_v, taddr);
+                int slo = gfx_byte_at(mem_v, taddr, __func__);
                 if (g_has_error) return make_null();
-                int shi = buffer_read_byte(mem_v, taddr + 1);
+                int shi = gfx_byte_at(mem_v, taddr + 1, __func__);
                 if (g_has_error) return make_null();
 
                 for (int col = 0; col < 8; col++) {

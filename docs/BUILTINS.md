@@ -729,7 +729,7 @@ first use, so no SDL2 headers or link-time SDL dependency are needed.
 | `gfx_delay` | `gfx_delay of ms` | Sleep for ms (SDL-coordinated) |
 | `gfx_title` | `gfx_title of "text"` | Update window title |
 | `gfx_fb` | `gfx_fb of [buf, w, h, x, y, scale]` | Blit a palette buffer; `w` and `h` require exact integers in the C `int` range. The continuous destination is clipped before rounding and retains the original source-pixel mapping |
-| `ppu_render_frame` | `ppu_render_frame of [mem_buf, fb_buf]` | Full Game Boy PPU render (BG/window/sprites) into framebuffer |
+| `ppu_render_frame` | `ppu_render_frame of [mem_buf, fb_buf]` | Full Game Boy PPU render (BG/window/sprites) into framebuffer; each memory byte must be an exact integer in 0..255 |
 
 **Continuous geometry and colour (Q7).** Drawing coordinates, dimensions,
 scale and colour channels accept ints or floats. Shapes are clipped as a whole
@@ -1026,3 +1026,8 @@ float data; the loader status strings are unchanged.
 
 `mean`, `norm`, `buf_get`, `buf_peak`, `buf_dot` and byte/PCM codec input
 readers refuse non-finite buffer cells with `value` in both strict modes (N13).
+
+`gfx_fb` palette values and `ppu_render_frame` memory bytes use the Q1 byte
+reader: exact integers in 0..255. Fractions and out-of-range values raise
+`value`; a stored NaN or infinity raises at the data boundary in both strict
+and lenient modes, without normalising the stored payload again.

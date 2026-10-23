@@ -2001,14 +2001,6 @@ int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char
 
 #define EIGS_NO_INT_REP_FMT "'%s': number %.17g has no integer representation"
 
-__attribute__((unused))
-EIGS_R16_DEPRECATED("#1758 R1.6: replace buffer_read_byte by its decided numeric reader or producer")
-static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {
-    double x = buffer_read_num(buffer, index);
-    if (g_has_error) return 0;
-    return finite_num_to_byte(x);
-}
-
 /* #971: num_guard for a builtin whose result CAN be NaN on the current tree
  * (`pow` of a negative base with a fractional exponent, `num of "nan"`,
  * `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation,
