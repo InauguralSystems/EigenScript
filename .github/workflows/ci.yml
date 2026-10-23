@@ -1235,48 +1235,10 @@ jobs:
 
       - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Install Valgrind
-        # #987: this was a bare `apt-get update && apt-get install`. When the
-        # mirror stalled it hung until the job's 30m cap killed it — and a
-        # timed-out job's conclusion is `cancelled`, which `gh pr checks`
-        # renders as **fail**. So an instrument that never ran presented
-        # identically to a detected regression, on the one gate whose entire
-        # purpose is to answer "did this change cost instructions?". Observed
-        # twice in a row on PR #985 while all 17 other checks passed.
-        #
-        # Bounded retries plus a step-level cap mean a mirror hiccup costs
-        # seconds, and an unreachable mirror fails as SETUP — loudly, and well
-        # inside the job budget, so the measuring steps are never skipped
-        # silently. Worst case here is ~9.5 min, not 30.
+        # #987 keeps mirror operations bounded and setup failures explicit;
+        # #1923 shares that logic and restores image/version-specific archives.
         timeout-minutes: 10
-        run: |
-          set -uo pipefail
-          # Already present (some runner images ship it)? Nothing to do — and
-          # nothing to hang on.
-          if command -v valgrind >/dev/null 2>&1; then
-            valgrind --version
-            exit 0
-          fi
-          # The stall is in `apt-get update`, not in `install`: on 2026-08-19
-          # it hung the full 60s cap on six job runs across three PRs while
-          # `install` itself was fine, because the package index on the image
-          # is usually fresh enough already. So TRY THE INSTALL FIRST and only
-          # refresh the index if that actually fails — the common path no
-          # longer touches the mirror that hangs.
-          if timeout 120 sudo apt-get install -y valgrind; then
-            valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
-            exit 0
-          fi
-          for attempt in 1 2 3; do
-            echo "::warning::valgrind not in the current index; refreshing (attempt $attempt)"
-            if timeout 60 sudo apt-get update \
-               && timeout 120 sudo apt-get install -y valgrind; then
-              valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
-              exit 0
-            fi
-            sleep $((attempt * 5))
-          done
-          echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
-          exit 1
+        uses: ./.github/actions/install-valgrind
 
       - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Build (-O1 -g, minimal)
@@ -1514,48 +1476,10 @@ jobs:
 
       - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Install Valgrind
-        # #987: this was a bare `apt-get update && apt-get install`. When the
-        # mirror stalled it hung until the job's 30m cap killed it — and a
-        # timed-out job's conclusion is `cancelled`, which `gh pr checks`
-        # renders as **fail**. So an instrument that never ran presented
-        # identically to a detected regression, on the one gate whose entire
-        # purpose is to answer "did this change cost instructions?". Observed
-        # twice in a row on PR #985 while all 17 other checks passed.
-        #
-        # Bounded retries plus a step-level cap mean a mirror hiccup costs
-        # seconds, and an unreachable mirror fails as SETUP — loudly, and well
-        # inside the job budget, so the measuring steps are never skipped
-        # silently. Worst case here is ~9.5 min, not 30.
+        # #987 keeps mirror operations bounded and setup failures explicit;
+        # #1923 shares that logic and restores image/version-specific archives.
         timeout-minutes: 10
-        run: |
-          set -uo pipefail
-          # Already present (some runner images ship it)? Nothing to do — and
-          # nothing to hang on.
-          if command -v valgrind >/dev/null 2>&1; then
-            valgrind --version
-            exit 0
-          fi
-          # The stall is in `apt-get update`, not in `install`: on 2026-08-19
-          # it hung the full 60s cap on six job runs across three PRs while
-          # `install` itself was fine, because the package index on the image
-          # is usually fresh enough already. So TRY THE INSTALL FIRST and only
-          # refresh the index if that actually fails — the common path no
-          # longer touches the mirror that hangs.
-          if timeout 120 sudo apt-get install -y valgrind; then
-            valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
-            exit 0
-          fi
-          for attempt in 1 2 3; do
-            echo "::warning::valgrind not in the current index; refreshing (attempt $attempt)"
-            if timeout 60 sudo apt-get update \
-               && timeout 120 sudo apt-get install -y valgrind; then
-              valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
-              exit 0
-            fi
-            sleep $((attempt * 5))
-          done
-          echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
-          exit 1
+        uses: ./.github/actions/install-valgrind
 
       - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Build this commit
