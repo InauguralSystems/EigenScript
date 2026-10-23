@@ -371,10 +371,18 @@ EigsValue    *eigs_value_list_get(EigsValue *v, int i);    /* counted ref */
 void          eigs_value_list_append(EigsValue *v, EigsValue *item);
 EigsValue    *eigs_value_dict_get(EigsValue *v, const char *k);
 void          eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val);
-int           eigs_value_buffer_len(EigsValue *v);          /* 0 if not a buffer */
-double        eigs_value_buffer_get(EigsValue *v, int i);   /* 0.0 out of range */
-void          eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op */
+int           eigs_value_buffer_len(EigsValue *v);          /* wrong type: 0 + error */
+double        eigs_value_buffer_get(EigsValue *v, int i);   /* OOB: 0.0 + error */
+void          eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op + error */
 ```
+
+The buffer accessors leave a pending `type_mismatch` error when `v` is not a
+buffer (including `NULL`); `get` and `set` leave `index_range` for a negative
+or past-the-end index. Their return sentinel/no-op behavior is unchanged. Use
+`eigs_has_error`, `eigs_last_error_kind`, and `eigs_last_error_message` to
+inspect the error, then `eigs_clear_error` when it has been handled. On a thread
+with no attached state there is no error channel (`eigs_has_error` answers 0
+there), so the sentinel is all such a caller gets.
 
 `_list_get` / `_dict_get` return counted refs (caller releases). `_list_append`
 / `_dict_set` retain their own ref on `item`/`val`, so the caller still
