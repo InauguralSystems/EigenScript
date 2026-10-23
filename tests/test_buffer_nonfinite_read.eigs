@@ -40,13 +40,18 @@ catch e:
 print of (gather of [nans, [0]])[0]
 print of (math_flags of null).invalid
 
-# Buffer indices are scalar reads as well. A NaN index must collapse to zero
-# before it is converted to an integer; casting the raw value is undefined C.
+# N5 / R1.6d: non-finite buffer indices raise value before integer conversion.
 source is buffer of 1
 source[0] is 7
 source_matrix is reshape of [source, 1, 1]
-print of (gather of [source_matrix, nans])[0]
+try:
+    print of (gather of [source_matrix, nans])[0]
+catch e:
+    print of e.kind
 target is buffer of 1
-scatter_add of [target, nans, [5]]
+try:
+    scatter_add of [target, nans, [5]]
+catch e:
+    print of e.kind
 print of target[0]
 print of (math_flags of null).invalid

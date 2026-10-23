@@ -68,10 +68,6 @@ for spec in \
  'NG38 equality|x is raw == raw' \
  'NG39 distinct equality|zero is buffer of 1; x is raw == zero' \
  'NG42 buf_peak|x is buf_peak of [raw, 0, 1]' \
- 'NG50 nested mean|x is mean of ([raw])' \
- 'NG50 nested norm|x is norm of ([raw])' \
- 'NG52 scatter index|dst is buffer of 1; scatter_add of [dst, raw, 5]' \
- 'NG53 gather index|dst is buffer of [1, 1]; x is gather of [dst, raw]' \
  'NG55 str_from_bytes|x is str_from_bytes of raw' \
  'NG56 f64_from_bytes|x is f64_from_bytes of raw' \
  'NG58 PCM encode|x is buf_to_pcm16le of [raw, 0, 1]'; do
@@ -80,6 +76,22 @@ for spec in \
 $op
 assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
 done
+# N13 / R1.6d: these raw NaN reads refuse in lenient mode.
+for spec in \
+ 'NG50 nested mean|x is mean of ([raw])' \
+ 'NG50 nested norm|x is norm of ([raw])' \
+ 'NG52 scatter index|dst is buffer of 1; scatter_add of [dst, raw, 5]' \
+ 'NG53 gather index|dst is buffer of [1, 1]; x is gather of [dst, raw]'; do
+ name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n    /g; s/^/    /')
+ run "$name N13 refusal" "$nan_setup
+caught is false
+try:
+$op
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught and not (math_flags of null).invalid, \"N13 refuses without normalizing NaN\"]"
+done
+
 # N13 / R1.6c: get_at's final reader refuses NaN in both strict modes.
 run "NG34 N13 get_at refuses NaN" "$nan_setup
 caught is false

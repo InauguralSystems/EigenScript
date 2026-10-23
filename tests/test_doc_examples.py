@@ -324,10 +324,10 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (12, 8, 4, 0, 0), # R1.6c: +1 N5 substring paired example
-    "docs/llms.txt":             (14, 11, 2, 1, 0), # R1.6c: +1 N5 substring paired example
-    "docs/SPEC.md":              (92, 88, 1, 3, 0), # R1.6c: +1 N5 substring paired example
-    "docs/COMPARISON.md":        (24, 23, 1, 0, 0), # R1.6c: +1 N5 substring paired example
+    "README.md":                 (13, 9, 4, 0, 0), # R1.6d: +1 paired N5 tensor example
+    "docs/llms.txt":             (15, 12, 2, 1, 0), # R1.6d: +1 paired N5 tensor example
+    "docs/SPEC.md":              (93, 89, 1, 3, 0), # R1.6d: +1 paired N5 tensor example
+    "docs/COMPARISON.md":        (25, 24, 1, 0, 0), # R1.6d: +1 paired N5 tensor example
     "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),

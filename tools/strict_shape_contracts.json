@@ -2314,17 +2314,20 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum. R1.6d review: Float scalar/list/tensor conversion preserves whole-data shape recognition and flat output shape.",
     "public_names": [
       "leaky_relu"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "5e2ddb201b45a65ebb07466ff09a20b1e2457f5b402bec0f524efd2dbd3b28b6"
+      "2804950a84eeb2bff628c6d30679f9afdbf0b3b57e360ff511b1787541da5a06"
     ],
     "source_sha256": {
       "builtin_tensor_leaky_relu": [
-        "5e2ddb201b45a65ebb07466ff09a20b1e2457f5b402bec0f524efd2dbd3b28b6"
+        "2804950a84eeb2bff628c6d30679f9afdbf0b3b57e360ff511b1787541da5a06"
+      ],
+      "eigs_float_arg": [
+        "a7e89d349dba6639b4b9a2c4242dd52f48c495a3ff52c021a2a85e3d2fb8a63a"
       ],
       "flat_to_like": [
         "9829b048a1af1233bfeae6329573e79d83cd7acb01e548d3737011a625fbdc02"
@@ -2333,7 +2336,7 @@
         "40100cc6cf4d92300cf1d3fbae23cb21adf4241bd01edecc9a683a07fb30bc01"
       ],
       "tensor_to_flat": [
-        "19f5a199223011e28a91da3f7310457051e9757cd0d082c69ba850279f964e1e"
+        "d66eebb0a5e2e7cccc569fb1eb38f025ffe9ef7a2c006f6851eaefc668695c71"
       ]
     }
   },
@@ -2386,17 +2389,17 @@
     "category": "overloaded_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Exactly [list, number] is special tensor/dim form; otherwise entire list is tensor data. A global cap of two is incorrect; preserve documented recognition.",
+    "reason": "Exactly [list, number] is special tensor/dim form; otherwise entire list is tensor data. A global cap of two is incorrect; preserve documented recognition. R1.6d review: Float scalar result writer preserves exactly [list, number] overload recognition and whole-list data fallback.",
     "public_names": [
       "log_softmax"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "489ba8b13afde99102707f530aff5a17892ab9d91e5a4f04fd66e2cf814d0de4"
+      "2784d3293e3c621746c10ed7a1ef6451f20b4ba1eec0f7b7b3ebdfb36cdd848b"
     ],
     "source_sha256": {
       "builtin_tensor_log_softmax": [
-        "489ba8b13afde99102707f530aff5a17892ab9d91e5a4f04fd66e2cf814d0de4"
+        "2784d3293e3c621746c10ed7a1ef6451f20b4ba1eec0f7b7b3ebdfb36cdd848b"
       ]
     }
   },
@@ -2442,20 +2445,23 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Final float readers refuse nonfinite scalar data without imposing a list arity; the whole list is reduced.",
     "public_names": [
       "mean"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "1fcfe61f468a053dfe68fdb710c24b2ebbf4b2162365375741ba70ef576871aa"
+      "e3ddcbc5d9268a9ec41066da7375ba56694b2674a598e747518fcc0f5aeded6c"
     ],
     "source_sha256": {
+      "buffer_read_f64": [
+        "4dab8e628898b0cf0525a24945698fc6cd3942a9fa297adb80d6386031106858"
+      ],
       "builtin_tensor_mean": [
-        "1fcfe61f468a053dfe68fdb710c24b2ebbf4b2162365375741ba70ef576871aa"
+        "e3ddcbc5d9268a9ec41066da7375ba56694b2674a598e747518fcc0f5aeded6c"
       ],
       "tensor_flatten_recursive": [
-        "83ae12ef8455961c802dd4b2ad0510a0c8909ced5ce8f0764ffbbd07122f5572"
+        "a26be679b5a48fd31080bfd545c539b843e1395c15bb2618ce33979c46325345"
       ],
       "tensor_total": [
         "3d8462c70952661bb8d5eb44673f96c5108b2198142434d145c6c0443d3b43f6"
@@ -2503,20 +2509,23 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Final float readers refuse nonfinite scalar data without imposing a list arity; the whole list is reduced.",
     "public_names": [
       "norm"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "a61b299c03728007c16c2ec85c94459cec1659b6463372404565ca542f70aa68"
+      "3ec59d51ae4b3a248e52cb0f54237fe4bf7d27b6bc77ace46235232b6f3a90bf"
     ],
     "source_sha256": {
+      "buffer_read_f64": [
+        "4dab8e628898b0cf0525a24945698fc6cd3942a9fa297adb80d6386031106858"
+      ],
       "builtin_tensor_norm": [
-        "a61b299c03728007c16c2ec85c94459cec1659b6463372404565ca542f70aa68"
+        "3ec59d51ae4b3a248e52cb0f54237fe4bf7d27b6bc77ace46235232b6f3a90bf"
       ],
       "tensor_flatten_recursive": [
-        "83ae12ef8455961c802dd4b2ad0510a0c8909ced5ce8f0764ffbbd07122f5572"
+        "a26be679b5a48fd31080bfd545c539b843e1395c15bb2618ce33979c46325345"
       ],
       "tensor_total": [
         "3d8462c70952661bb8d5eb44673f96c5108b2198142434d145c6c0443d3b43f6"
@@ -2541,23 +2550,26 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum. R1.6d review: Float scalar/list/tensor conversion preserves whole-data shape recognition and flat output shape.",
     "public_names": [
       "relu"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "d951d17e028b0cb3c75269936e4cb8cfa71bc52ea129e1b29fc60c0ac5f749ec"
+      "6b7b57a2cc0628bbc3537664008d489bd7c8500e3e6fbcbcae67517fd737e056"
     ],
     "source_sha256": {
       "builtin_tensor_relu": [
-        "d951d17e028b0cb3c75269936e4cb8cfa71bc52ea129e1b29fc60c0ac5f749ec"
+        "6b7b57a2cc0628bbc3537664008d489bd7c8500e3e6fbcbcae67517fd737e056"
+      ],
+      "eigs_float_arg": [
+        "a7e89d349dba6639b4b9a2c4242dd52f48c495a3ff52c021a2a85e3d2fb8a63a"
       ],
       "flat_to_like": [
         "9829b048a1af1233bfeae6329573e79d83cd7acb01e548d3737011a625fbdc02"
       ],
       "tensor_to_flat": [
-        "19f5a199223011e28a91da3f7310457051e9757cd0d082c69ba850279f964e1e"
+        "d66eebb0a5e2e7cccc569fb1eb38f025ffe9ef7a2c006f6851eaefc668695c71"
       ]
     }
   },
@@ -2591,17 +2603,17 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Entire list is data; no argument-list maximum.",
+    "reason": "Entire list is data; no argument-list maximum. R1.6d review: N3 integer dimension results preserve whole-list input shape recognition.",
     "public_names": [
       "shape"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "d2f043c8013c90056a07eda303181476e750937882546e3f20f561a558dfa3ef"
+      "82756c6d4dc4965c0a59bc09eb6d5ffba688f522c82769cf56536619c4f0763f"
     ],
     "source_sha256": {
       "builtin_tensor_shape": [
-        "d2f043c8013c90056a07eda303181476e750937882546e3f20f561a558dfa3ef"
+        "82756c6d4dc4965c0a59bc09eb6d5ffba688f522c82769cf56536619c4f0763f"
       ]
     }
   },
@@ -2611,20 +2623,20 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum. R1.6d review: Float result writers and final data readers preserve whole-data recognition and output dimensions.",
     "public_names": [
       "softmax"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "36bd1d3ef2012f91d80a19f503693e38bba0bbe143569400c7f0088ed7d69de7"
+      "e6b269a1a267a64140d9e9ac35236e53b8a02b493cc8a43dce243d40fd74a099"
     ],
     "source_sha256": {
       "buf_dims": [
         "edfe0613daa3910ade3374de6fb9fe4486e51f0fea899fc3ec891441e259010e"
       ],
       "builtin_tensor_softmax": [
-        "36bd1d3ef2012f91d80a19f503693e38bba0bbe143569400c7f0088ed7d69de7"
+        "e6b269a1a267a64140d9e9ac35236e53b8a02b493cc8a43dce243d40fd74a099"
       ],
       "flat_to_like": [
         "9829b048a1af1233bfeae6329573e79d83cd7acb01e548d3737011a625fbdc02"
@@ -2633,7 +2645,7 @@
         "40100cc6cf4d92300cf1d3fbae23cb21adf4241bd01edecc9a683a07fb30bc01"
       ],
       "tensor_to_flat": [
-        "19f5a199223011e28a91da3f7310457051e9757cd0d082c69ba850279f964e1e"
+        "d66eebb0a5e2e7cccc569fb1eb38f025ffe9ef7a2c006f6851eaefc668695c71"
       ]
     }
   },
@@ -2716,17 +2728,17 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Float zero results preserve whole-data input recognition and output dimensions.",
     "public_names": [
       "zeros_like"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "de7cfc7d58f684b0387b034f30dce9ba17f1034de4dab955242bc5996ee244dd"
+      "0ffe84fea7fe49134800a70f9c876ee4f362706d5d9e156986e7af47a63330c7"
     ],
     "source_sha256": {
       "builtin_tensor_zeros_like": [
-        "de7cfc7d58f684b0387b034f30dce9ba17f1034de4dab955242bc5996ee244dd"
+        "0ffe84fea7fe49134800a70f9c876ee4f362706d5d9e156986e7af47a63330c7"
       ],
       "make_buffer_like": [
         "40100cc6cf4d92300cf1d3fbae23cb21adf4241bd01edecc9a683a07fb30bc01"

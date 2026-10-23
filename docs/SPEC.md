@@ -2821,3 +2821,22 @@ Routes and the static root are fixed once `http_serve` starts: `http_route`,
 `http_route_authed` and `http_static` then raise, including from a `code`
 route, and an uncaught error in a `code` route's source answers 500 with a
 generic body; the error message goes to the server's stderr only (#1140).
+
+Tensor sizes and indices follow N5: an integral float is accepted and a
+fraction raises `value`. `gather` keeps the selected list cell's int/float
+kind; buffer elements and numeric tensor calculations are floats. `shape`
+returns integer dimension counts. `mean` and `norm` refuse non-finite buffer
+cells with `value` in both strict modes.
+
+```eigenscript
+g is gather of [[[1, 2], [3, 4]], [1.0, 0]]
+print of [g, num_type of g[0], num_type of (shape of g)[0]]
+try:
+    gather of [[10, 20], 0.5]
+catch e:
+    print of e.kind
+```
+```output
+[[2, 3], "int", "int"]
+value
+```

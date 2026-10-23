@@ -3,6 +3,16 @@
 
 CAP is 1e308
 
+# N13 / R1.6d: final data/byte/index readers refuse raw nonfinite cells.
+define ng_final_refuses(operation, argument, label) as:
+    local refused is false
+    try:
+        operation of argument
+    catch e:
+        refused is e.kind == "value"
+    assert of [refused, label]
+
+
 # Sticky math_flags coverage runs in fresh processes via test_numeric_guard_flags.sh.
 
 # Values themselves are not sticky and belong in this shared program.
@@ -155,7 +165,7 @@ define ng_sum_refuses_nonfinite(tensor_input, label) as:
         refused is e.kind == "value"
     assert of [refused, label]
 ng_sum_refuses_nonfinite of [raw_pair, "NG37 N13 sum refuses non-finite elements before cancellation"]
-assert of [(mean of raw_pair) == 0, "NG37 mean normalizes before cancellation"]
+ng_final_refuses of [mean, raw_pair, "NG37 N13 mean refuses non-finite input"]
 assert of [raw_nan_product == raw_nan_product, "NG38 same-buffer equality normalizes NaN"]
 zero_one is buffer of 1
 assert of [raw_nan_product == zero_one, "NG39 distinct-buffer equality normalizes NaN"]
@@ -203,11 +213,11 @@ assert of [(buf_peak of [finite, 2, 0]) == 0, "NG48 empty peak window"]
 
 # A containing list follows its reduction's reader policy (N13 for sum).
 ng_sum_refuses_nonfinite of [([raw_pair]), "NG49 N13 nested sum refuses non-finite elements"]
-assert of [(mean of ([raw_pair])) == 0, "NG49 nested mean normalizes before cancellation"]
-assert of [(norm of ([raw_pair])) == (norm of raw_pair), "NG49 nested norm uses normalized inputs"]
+ng_final_refuses of [mean, ([raw_pair]), "NG49 N13 nested mean refuses infinity"]
+ng_final_refuses of [norm, ([raw_pair]), "NG49 N13 nested norm refuses infinity"]
 ng_sum_refuses_nonfinite of [([raw_nan_product]), "NG50 N13 nested sum refuses NaN"]
-assert of [(mean of ([raw_nan_product])) == 0, "NG50 nested NaN mean is zero"]
-assert of [(norm of ([raw_nan_product])) == 0, "NG50 nested NaN norm is zero"]
+ng_final_refuses of [mean, ([raw_nan_product]), "NG50 N13 nested mean refuses NaN"]
+ng_final_refuses of [norm, ([raw_nan_product]), "NG50 N13 nested norm refuses NaN"]
 assert of [(sum of ([finite])) == 7, "NG51 nested finite sum"]
 assert of [(mean of ([finite])) == 3.5, "NG51 nested finite mean"]
 assert of [(norm of ([finite])) == 5, "NG51 nested finite norm"]
@@ -215,15 +225,14 @@ assert of [(sum of ([empty])) == 0, "NG51 nested empty sum"]
 assert of [(mean of ([empty])) == 0, "NG51 nested empty mean"]
 assert of [(norm of ([empty])) == 0, "NG51 nested empty norm"]
 
-# Non-strict NaN indices still select zero after normalization.
+# N5 indices refuse nonfinite values in both strict modes.
 index_dst is buffer of 1
 index_dst[0] is 10
-scatter_add of [index_dst, raw_nan_product, 5]
-assert of [index_dst[0] == 15, "NG52 non-strict scatter NaN index selects zero"]
+ng_final_refuses of [scatter_add, [index_dst, raw_nan_product, 5], "NG52 N5 nonfinite scatter index refuses"]
+assert of [index_dst[0] == 10, "NG52 refusal leaves destination unchanged"]
 index_matrix is buffer of [1, 1]
 index_matrix[0] is 7
-index_selected is gather of [index_matrix, raw_nan_product]
-assert of [index_selected[0] == 7, "NG53 non-strict gather NaN index selects zero"]
+ng_final_refuses of [gather, [index_matrix, raw_nan_product], "NG53 N5 nonfinite gather index refuses"]
 
 # Numeric byte decoders normalize before converting, preserving finite byte
 # truncation/modulo behavior and the buffer's raw work-area representation.

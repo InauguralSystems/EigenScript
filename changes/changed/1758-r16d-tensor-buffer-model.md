@@ -1,0 +1,1 @@
+- Tensor sizes and indices require exact integer values (N5). `gather` preserves selected list cells' numeric kinds, and `shape` returns integer dimensions. Float tensor calculations convert integer inputs to float storage.
