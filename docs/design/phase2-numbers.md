@@ -889,7 +889,9 @@ the builtin table's `q7` column, §6, names each builtin's classes):
   outcome a finite out-of-range shape has. The implementation retains the original
   continuous coordinates beside clipped integer bounds for curved spans and
   framebuffer source mapping; intermediate edge arithmetic must not overflow
-  merely because finite coordinates extend beyond the drawable area.
+  merely because finite coordinates extend beyond the drawable area. The line
+  reader retains exact binary64 product sums through clip-edge and half-tie
+  decisions, without relying on a wider host long-double format.
 - **Bounded** (colour channels, gain, volume, PCM samples): clamp to the
   domain, then round (`eigs_bounded_arg`); a NaN raises `value` (N13).
 - **Magnitude** (durations, sleeps, timeouts, sample counts, window sizes, a

@@ -47,6 +47,10 @@ int main(void) {
     val_decref(custom);
     s=shape(EIGS_LINE,(double[]){0,0.5,0x1p100,0x1p99},4);
     check(!s.empty && s.x2==640 && s.y2==320,"sub-ulp Q4 boundary tie");
+    s=shape(EIGS_LINE,(double[]){-1e308,-1e308,1e308,1e308},4);
+    check(!s.empty && s.x==0 && s.y==0 && s.x2==480 && s.y2==480,"binary64 product exponent extremes");
+    s=shape(EIGS_LINE,(double[]){-1e308,-0x1p-1074,1e308,0x1p-1074},4);
+    check(!s.empty && s.x==0 && s.y==0 && s.x2==640 && s.y2==0,"binary64 subnormal edge products");
     s = shape(EIGS_CIRCLE,(double[]){320,240,3e9},3);
     check(!s.empty && s.x==0 && s.y==0 && s.w==640 && s.h==480,"huge circle visible loops only");
     s = shape(EIGS_RRECT,(double[]){-3e9,-3e9,6e9,6e9,10},5);

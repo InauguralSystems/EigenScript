@@ -1939,87 +1939,114 @@ uint8_t eigs_byte_arg(const Value *v, const char *who) {
     return eigs_int_arg_range(v, 0, 255, &i, who) ? (uint8_t)i : 0;
 }
 
-/* Q7: retain the original continuous shape until its visible bounds are
- * known. long double intermediates prevent finite x+w and x2-x1 overflow. */
-/* Liang-Barsky parameterized by the dominant coordinate, so the visible
- * interval cannot collapse to one ulp of a [0,1] parameter. */
-/* Error-free expansion of at most six products. All factors originate as
- * binary64 coordinates or bounded integer/half-integer edges, so products
- * and their FMA residuals fit long double even at binary64's extremes.
- * Keep the low terms through the edge numerator and the Q4 tie comparison. */
-static long double eigs_geom_products(const long double terms[][2], int count, int *sign) {
-    long double expansion[12]; int n=0;
+/* Q7 clips complete continuous shapes before Q4 conversion. */
+/* Exact sums of up to six binary64 products. A product occupies bits
+ * 0..4195 in units of 2^-2148; six terms need at most bit4198. Fixed
+ * 66-word positive/negative accumulators retain cancellation and Q4 ties
+ * without assuming long double has a wider exponent range than double. */
+#define EIGS_GEOM_WORDS 66
+static double eigs_geom_products(const double terms[][2], int count, int *sign, int *exponent) {
+    uint64_t positive[EIGS_GEOM_WORDS]={0},negative[EIGS_GEOM_WORDS]={0};
     for (int k=0;k<count;++k) {
-        long double hi=terms[k][0]*terms[k][1];
-        long double part[2]={hi,fmal(terms[k][0],terms[k][1],-hi)};
+        uint64_t bits[2],mant[2];int power[2];
         for (int j=0;j<2;++j) {
-            long double q=part[j], next[12]; int m=0;
-            for (int i=0;i<n;++i) {
-                long double sum=q+expansion[i], bv=sum-q;
-                long double err=(q-(sum-bv))+(expansion[i]-bv);
-                if (err!=0) next[m++]=err;
-                q=sum;
-            }
-            if (q!=0 || !m) next[m++]=q;
-            memcpy(expansion,next,(size_t)m*sizeof *next);n=m;
+            memcpy(&bits[j],&terms[k][j],sizeof bits[j]);
+            unsigned e=(unsigned)((bits[j]>>52)&0x7ff);
+            mant[j]=(bits[j]&UINT64_C(0xfffffffffffff)) | (e ? UINT64_C(0x10000000000000) : 0);
+            power[j]=e ? (int)e-1075 : -1074;
+        }
+        if (!mant[0] || !mant[1]) continue;
+        unsigned __int128 product=(unsigned __int128)mant[0]*mant[1];
+        int shift=power[0]+power[1]+2148,word=shift/64,b=shift%64;
+        uint64_t lo=(uint64_t)product,hi=(uint64_t)(product>>64),part[3];
+        part[0]=lo<<b;
+        part[1]=b ? (hi<<b)|(lo>>(64-b)) : hi;
+        part[2]=b ? hi>>(64-b) : 0;
+        uint64_t *dest=((bits[0]^bits[1])>>63) ? negative : positive;
+        unsigned __int128 carry=0;
+        for (int j=0;j<3 || carry;++j) {
+            if (word+j>=EIGS_GEOM_WORDS) abort(); /* internal six-product bound */
+            unsigned __int128 sum=(unsigned __int128)dest[word+j]+(j<3 ? part[j] : 0)+carry;
+            dest[word+j]=(uint64_t)sum;carry=sum>>64;
         }
     }
-    *sign=expansion[n-1]>0 ? 1 : expansion[n-1]<0 ? -1 : 0;
-    long double value=0;
-    for (int i=0;i<n;++i) value+=expansion[i];
+    int cmp=0;
+    for (int i=EIGS_GEOM_WORDS-1;i>=0;--i)
+        if (positive[i]!=negative[i]) { cmp=positive[i]>negative[i] ? 1 : -1;break; }
+    *sign=cmp;*exponent=0;if (!cmp) return 0;
+    uint64_t *large=cmp>0 ? positive : negative,*small=cmp>0 ? negative : positive;
+    unsigned borrow=0;
+    for (int i=0;i<EIGS_GEOM_WORDS;++i) {
+        unsigned __int128 a=large[i],b=(unsigned __int128)small[i]+borrow;
+        large[i]=(uint64_t)(a-b);borrow=a<b;
+    }
+    int top=EIGS_GEOM_WORDS-1;while (!large[top]) --top;
+    *exponent=top*64-2148+64;
+    return (double)large[top]*0x1p-64+(top ? (double)large[top-1]*0x1p-128 : 0);
+}
+#undef EIGS_GEOM_WORDS
+
+/* Scaling by encoded normal powers needs no extra libm entry point in the
+ * freestanding runtime. An overflowing candidate is outside the drawable;
+ * selected visible coordinates and rounding thresholds stay C-int sized. */
+static double eigs_geom_scale(double value,int power) {
+    while (power) {
+        int chunk=power>1023 ? 1023 : power < -1022 ? -1022 : power;
+        uint64_t bits=(uint64_t)(chunk+1023)<<52;double factor;
+        memcpy(&factor,&bits,sizeof factor);value*=factor;power-=chunk;
+    }
     return value;
 }
-static long double eigs_geom_intersection(const double *v, int edge_axis,
-                                          long double edge, int rounded) {
-    long double x0=v[0],y0=v[1],x1=v[2],y1=v[3],a0,a1;
-    long double terms[6][2];
+static double eigs_geom_intersection(const double *v,int edge_axis,double edge,int rounded) {
+    double x0=v[0],y0=v[1],x1=v[2],y1=v[3],a0,a1,terms[6][2];
     if (!edge_axis) {
-        terms[0][0]=y1;terms[0][1]=edge;
-        terms[1][0]=-y0;terms[1][1]=edge;
-        terms[2][0]=x1;terms[2][1]=y0;
-        terms[3][0]=-x0;terms[3][1]=y1;
+        terms[0][0]=y1;terms[0][1]=edge;terms[1][0]=-y0;terms[1][1]=edge;
+        terms[2][0]=x1;terms[2][1]=y0;terms[3][0]=-x0;terms[3][1]=y1;
         a0=x0;a1=x1;
     } else {
-        terms[0][0]=x1;terms[0][1]=edge;
-        terms[1][0]=-x0;terms[1][1]=edge;
-        terms[2][0]=-x1;terms[2][1]=y0;
-        terms[3][0]=x0;terms[3][1]=y1;
+        terms[0][0]=x1;terms[0][1]=edge;terms[1][0]=-x0;terms[1][1]=edge;
+        terms[2][0]=-x1;terms[2][1]=y0;terms[3][0]=x0;terms[3][1]=y1;
         a0=y0;a1=y1;
     }
-    int sign;
-    long double q=eigs_geom_products(terms,4,&sign)/(a1-a0);
-    if (!rounded) return q;
-    long double lower=floorl(q),tie=lower+0.5L;
-    terms[4][0]=-tie;terms[4][1]=a1;
-    terms[5][0]=tie;terms[5][1]=a0;
-    (void)eigs_geom_products(terms,6,&sign);
-    if (a1<a0) sign=-sign;
+    int sign,ne,de,ds;double nm=eigs_geom_products(terms,4,&sign,&ne);
+    double denominator[2][2]={{1,a1},{-1,a0}};
+    double dm=eigs_geom_products(denominator,2,&ds,&de);
+    double q=eigs_geom_scale((sign*ds)*nm/dm,ne-de);
+    if (!rounded || !isfinite(q)) return q;
+    double lower=floor(q),tie=lower+0.5;
+    terms[4][0]=-tie;terms[4][1]=a1;terms[5][0]=tie;terms[5][1]=a0;
+    (void)eigs_geom_products(terms,6,&sign,&ne);sign*=ds;
     return sign>0 || (sign==0 && tie>=0) ? lower+1 : lower;
 }
+static double eigs_geom_min(double a,double b) { return a<b ? a : b; }
+static double eigs_geom_max(double a,double b) { return a>b ? a : b; }
 static int eigs_geom_line(const EigsRect *d, const double *v, EigsShape *out) {
-    long double x0=v[0], y0=v[1], x1=v[2], y1=v[3];
-    long double left=d->x, top=d->y, right=left+d->w, bottom=top+d->h;
-    if (fmaxl(x0,x1)<left || fminl(x0,x1)>=right ||
-        fmaxl(y0,y1)<top || fminl(y0,y1)>=bottom) return 0;
-    long double dx=x1-x0, dy=y1-y0;
-    if (dx==0 && dy==0) {
-        out->x=out->x2=(int)roundl(x0); out->y=out->y2=(int)roundl(y0);
+    double x0=v[0], y0=v[1], x1=v[2], y1=v[3];
+    double left=d->x, top=d->y, right=left+d->w, bottom=top+d->h;
+    if (eigs_geom_max(x0,x1)<left || eigs_geom_min(x0,x1)>=right ||
+        eigs_geom_max(y0,y1)<top || eigs_geom_min(y0,y1)>=bottom) return 0;
+    int dx=(x1>x0)-(x1<x0),dy=(y1>y0)-(y1<y0);
+    if (!dx && !dy) {
+        out->x=out->x2=(int)round(x0); out->y=out->y2=(int)round(y0);
         return out->x<right && out->y<bottom;
     }
-    int axis=fabsl(dx)>=fabsl(dy) ? 0 : 1;
-    long double direction=(axis ? dy : dx)>0 ? 1 : -1;
-    long double enter=direction*(axis ? y0 : x0), leave=direction*(axis ? y1 : x1);
-    long double ex=x0, ey=y0, lx=x1, ly=y1;
+    int sx,sy,xe,ye;
+    double xt[2][2]={{1,x1},{-1,x0}},yt[2][2]={{1,y1},{-1,y0}};
+    double xm=eigs_geom_products(xt,2,&sx,&xe),ym=eigs_geom_products(yt,2,&sy,&ye);
+    int axis=!dx ? 1 : !dy ? 0 : xe>ye || (xe==ye && xm>=ym) ? 0 : 1;
+    double direction=(axis ? dy : dx)>0 ? 1 : -1;
+    double enter=direction*(axis ? y0 : x0), leave=direction*(axis ? y1 : x1);
+    double ex=x0, ey=y0, lx=x1, ly=y1;
     int enter_edge=-1,leave_edge=-1;
-    long double bound[4]={left,right,top,bottom};
-    long double p[4]={-dx,dx,-dy,dy};
-    long double q[4]={x0-left,right-x0,y0-top,bottom-y0};
+    double bound[4]={left,right,top,bottom};
+    double p[4]={-dx,dx,-dy,dy};
+    double q[4]={x0-left,right-x0,y0-top,bottom-y0};
     for (int k=0;k<4;++k) {
         if (p[k]==0) { if (q[k]<0) return 0; continue; }
-        long double cx,cy;
+        double cx,cy;
         if (k<2) { cx=bound[k]; cy=eigs_geom_intersection(v,0,cx,0); }
         else { cy=bound[k]; cx=eigs_geom_intersection(v,1,cy,0); }
-        long double u=direction*(axis ? cy : cx);
+        double u=direction*(axis ? cy : cx);
         if (p[k]<0) {
             if (u>leave) return 0;
             if (u>enter) { enter=u;ex=cx;ey=cy;enter_edge=k; }
@@ -2036,10 +2063,10 @@ static int eigs_geom_line(const EigsRect *d, const double *v, EigsShape *out) {
         if (leave_edge<2) ly=eigs_geom_intersection(v,0,bound[leave_edge],1);
         else lx=eigs_geom_intersection(v,1,bound[leave_edge],1);
     }
-    out->x=(int)roundl(fmaxl(left,fminl(right,ex)));
-    out->y=(int)roundl(fmaxl(top,fminl(bottom,ey)));
-    out->x2=(int)roundl(fmaxl(left,fminl(right,lx)));
-    out->y2=(int)roundl(fmaxl(top,fminl(bottom,ly)));
+    out->x=(int)round(eigs_geom_max(left,eigs_geom_min(right,ex)));
+    out->y=(int)round(eigs_geom_max(top,eigs_geom_min(bottom,ey)));
+    out->x2=(int)round(eigs_geom_max(left,eigs_geom_min(right,lx)));
+    out->y2=(int)round(eigs_geom_max(top,eigs_geom_min(bottom,ly)));
     return 1;
 }
 
@@ -2054,36 +2081,36 @@ int eigs_geom_shape(const Value *args, int first, EigsShapeKind kind,
         if (g_has_error) return 0;
     }
     if (!drawable || drawable->w <= 0 || drawable->h <= 0) return 1;
-    long double left = drawable->x, top = drawable->y;
-    long double right = left + drawable->w, bottom = top + drawable->h;
+    double left = drawable->x, top = drawable->y;
+    double right = left + drawable->w, bottom = top + drawable->h;
     /* Drawable bounds themselves are C ints supplied by the renderer. */
     if (left < INT_MIN || top < INT_MIN || right > INT_MAX || bottom > INT_MAX) {
         rt_error(EK_VALUE, 0, "%s: drawable bounds do not fit a C int", num_who(who));
         return 0;
     }
-    long double x = out->raw[0], y = out->raw[1], x2, y2;
+    double x = out->raw[0], y = out->raw[1], x2, y2;
     if (kind == EIGS_POINT) {
         if (x < left || x >= right || y < top || y >= bottom) return 1;
-        out->x = (int)roundl(x); out->y = (int)roundl(y);
+        out->x = (int)round(x); out->y = (int)round(y);
         if (out->x >= right || out->y >= bottom) return 1;
         out->w = out->h = 1;
     } else if (kind == EIGS_LINE) {
         if (!eigs_geom_line(drawable,out->raw,out)) return 1;
     } else {
         if (kind == EIGS_CIRCLE) {
-            long double r = out->raw[2];
+            double r = out->raw[2];
             if (r < 0) return 1;
             x2 = x+r+1; y2 = y+r+1; x -= r; y -= r;
         } else {
             if (out->raw[2] <= 0 || out->raw[3] <= 0) return 1;
-            x2 = x+(long double)out->raw[2]; y2 = y+(long double)out->raw[3];
+            x2 = x+out->raw[2]; y2 = y+out->raw[3];
         }
-        x = fmaxl(left, x); y = fmaxl(top, y);
-        x2 = fminl(right, x2); y2 = fminl(bottom, y2);
+        x = eigs_geom_max(left, x); y = eigs_geom_max(top, y);
+        x2 = eigs_geom_min(right, x2); y2 = eigs_geom_min(bottom, y2);
         if (x >= x2 || y >= y2) return 1;
-        out->x = (int)roundl(x); out->y = (int)roundl(y);
-        out->w = (int)roundl(x2) - out->x;
-        out->h = (int)roundl(y2) - out->y;
+        out->x = (int)round(x); out->y = (int)round(y);
+        out->w = (int)round(x2) - out->x;
+        out->h = (int)round(y2) - out->y;
         if (out->w <= 0 || out->h <= 0) return 1;
     }
     out->empty = 0;

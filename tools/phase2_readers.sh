@@ -50,7 +50,7 @@ if [ "$FIXTURE" = gfx_audio_boundary ]; then
     exit 0
 fi
 if [ "$FIXTURE" = q7_readers ]; then
-    [ "$(grep -cE '^phase2-q7-test: PASS checks=42 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete Q7 PASS'
+    [ "$(grep -cE '^phase2-q7-test: PASS checks=46 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete Q7 PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected Q7 fixture output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
