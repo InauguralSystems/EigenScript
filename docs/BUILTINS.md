@@ -600,6 +600,8 @@ backlog before `net_accept` runs (see `examples/net_echo.eigs`).
 Sockets left open at exit are closed by the runtime's handle-table
 drain. UDP is not yet exposed.
 
+TCP handles, ports and sent-byte counts are integers. Numeric socket handles, ports, receive counts and outgoing bytes require exact integers (integral floats convert); bytes must be in 0..255. `net_send` validates the entire payload before sending any byte. Poll timeouts are continuous milliseconds rounded to the C int range; an unrepresentable duration raises `value`.
+
 `http_early_bind` and `http_serve` require an exact integer port in 0..65535; integral floats convert and port zero requests an ephemeral port. Fractional or out-of-range ports raise `value` before binding. `shared_delete` and `shared_size` return integer counts.
 
 ## Optional: HTTP Extension
