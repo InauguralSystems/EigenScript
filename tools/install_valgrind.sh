@@ -67,17 +67,29 @@ alternative_options=(
   -o Dir::Etc::sourceparts=-
 )
 
+# actions/cache saves this directory as the runner user. apt leaves its lock
+# file and partial/ owned by root and _apt and unreadable, and the save's tar
+# then fails with exit 2, so the warm path would never be populated: the first
+# cold run on Actions measured exactly that. Keep only the .debs, owned by
+# the runner.
+publish_archives() {
+  sudo rm -rf "$archive_dir/partial" "$archive_dir/lock"
+  sudo chown -R "$(id -u):$(id -g)" "$archive_dir"
+}
+
 # #987: try the image's current index first; only refresh on failure. Keep all
 # operations bounded so a true setup failure remains loud and cannot look like
 # a passing (or even executed) regression gate.
 if apt_install "${first_apt_options[@]}"; then
   verify || exit 1
+  publish_archives
   exit 0
 fi
 for attempt in 1 2 3; do
   echo "::warning::valgrind not in the current index; refreshing (attempt $attempt)"
   if apt_update "${alternative_options[@]}" && apt_install "${alternative_options[@]}"; then
     verify || exit 1
+    publish_archives
     exit 0
   fi
   sleep $((attempt * 5))
