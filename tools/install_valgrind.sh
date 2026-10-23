@@ -12,7 +12,7 @@ setup_failure() {
 }
 
 verify() {
-  valgrind --version
+  valgrind --version || { echo "::error::valgrind installed but not runnable"; return 1; }
 }
 
 # A restored cache is deliberately installed without apt: this makes the warm
