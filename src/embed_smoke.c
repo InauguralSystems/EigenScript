@@ -310,6 +310,9 @@ typedef struct {
     EigsValue *buf;
     double got;
     int len;
+    double num;
+    int boolean;
+    int list_len;
     int had_error;
 } UnattachedBufferProbe;
 
@@ -318,6 +321,9 @@ static void *unattached_buffer_probe(void *arg) {
     p->got = eigs_value_buffer_get(p->buf, 5);
     eigs_value_buffer_set(p->buf, 5, 9.0);
     p->len = eigs_value_buffer_len(NULL);
+    p->num = eigs_value_as_num(NULL);
+    p->boolean = eigs_value_as_bool(p->buf);
+    p->list_len = eigs_value_list_len(p->buf);
     p->had_error = eigs_has_error();
     return NULL;
 }
@@ -507,10 +513,16 @@ int main(void) {
     r = eigs_eval_string("5 > 3");
     CHECK(r && eigs_value_type(r) == EIGS_TYPE_BOOL && isnan(eigs_value_as_num(r)),
           "eigs_value_as_num of a bool is NaN");
+    CHECK(eigs_has_error() && strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+          "eigs_value_as_num of a bool leaves type_mismatch");
+    eigs_clear_error();
     CHECK(r && eigs_value_as_bool(r) == 1, "eigs_value_as_bool reads the bool");
     eigs_value_release(r);
     r = eigs_eval_string("\"s\"");
     CHECK(r && eigs_value_as_num(r) == 0.0, "eigs_value_as_num of a string stays 0.0");
+    CHECK(eigs_has_error() && strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+          "eigs_value_as_num of a string leaves type_mismatch");
+    eigs_clear_error();
     eigs_value_release(r);
     r = eigs_eval_string("host_add of [true, 1]");
     CHECK(r && eigs_value_type(r) == EIGS_TYPE_NULL, "host_add refuses a bool operand");
@@ -927,6 +939,67 @@ int main(void) {
         g_math_flags = nf_saved_flags;
     }
 
+    /* --- #1932: scalar/list accessor sentinels also carry an error. --- */
+    {
+        EigsValue *wrong = eigs_value_new_string("not an accessor value");
+        EigsValue *num = eigs_value_new_num(-3.5);
+        EigsValue *boolean = eigs_value_new_bool(0);
+        EigsValue *empty = eigs_value_new_list(0);
+
+        CHECK(eigs_value_as_num(wrong) == 0.0 && eigs_has_error() &&
+                  strcmp(eigs_last_error_kind(), "type_mismatch") == 0 &&
+                  strstr(eigs_last_error_message(),
+                         "eigs_value_as_num: expected a number") != NULL,
+              "as_num wrong type returns 0 and leaves type_mismatch");
+        eigs_clear_error();
+        CHECK(eigs_value_as_num(NULL) == 0.0 && eigs_has_error() &&
+                  strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+              "as_num NULL returns 0 and leaves type_mismatch");
+        eigs_clear_error();
+        CHECK(eigs_value_as_num(num) == -3.5 && !eigs_has_error(),
+              "as_num valid number is error-free");
+
+        CHECK(eigs_value_as_bool(wrong) == 0 && eigs_has_error() &&
+                  strcmp(eigs_last_error_kind(), "type_mismatch") == 0 &&
+                  strstr(eigs_last_error_message(),
+                         "eigs_value_as_bool: expected a bool") != NULL,
+              "as_bool wrong type returns 0 and leaves type_mismatch");
+        eigs_clear_error();
+        CHECK(eigs_value_as_bool(NULL) == 0 && eigs_has_error() &&
+                  strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+              "as_bool NULL returns 0 and leaves type_mismatch");
+        eigs_clear_error();
+        CHECK(eigs_value_as_bool(boolean) == 0 && !eigs_has_error(),
+              "as_bool valid false is error-free");
+
+        CHECK(eigs_value_list_len(wrong) == 0 && eigs_has_error() &&
+                  strcmp(eigs_last_error_kind(), "type_mismatch") == 0 &&
+                  strstr(eigs_last_error_message(),
+                         "eigs_value_list_len: expected a list") != NULL,
+              "list_len wrong type returns 0 and leaves type_mismatch");
+        eigs_clear_error();
+        CHECK(eigs_value_list_len(NULL) == 0 && eigs_has_error() &&
+                  strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+              "list_len NULL returns 0 and leaves type_mismatch");
+        eigs_clear_error();
+        CHECK(eigs_value_list_len(empty) == 0 && !eigs_has_error(),
+              "list_len valid empty list is error-free");
+
+        /* Clearing an accessor failure permits the following eval. */
+        (void)eigs_value_list_len(NULL);
+        CHECK(eigs_has_error(), "value accessor error is pending before eval");
+        eigs_clear_error();
+        r = eigs_eval_string("20 + 22");
+        CHECK(r != NULL && eigs_value_as_num(r) == 42.0 && !eigs_has_error(),
+              "following eval clears a pending value accessor error and succeeds");
+        if (r) eigs_value_release(r);
+
+        eigs_value_release(empty);
+        eigs_value_release(boolean);
+        eigs_value_release(num);
+        eigs_value_release(wrong);
+    }
+
     /* Script-created buffer read from the host. */
     r = eigs_eval_string("sb is buffer of 3\nbuf_set of [sb, 2, 42]\nsb");
     CHECK(r != NULL && eigs_value_type(r) == EIGS_TYPE_BUFFER,
@@ -975,13 +1048,18 @@ int main(void) {
     {
         pthread_t tid;
         EigsValue *ub = eigs_value_new_buffer(2);
-        UnattachedBufferProbe probe = { ub, 1.0, -1, -1 };
+        UnattachedBufferProbe probe = {
+            .buf = ub, .got = 1.0, .len = -1, .num = 1.0,
+            .boolean = -1, .list_len = -1, .had_error = -1
+        };
         CHECK(pthread_create(&tid, NULL, unattached_buffer_probe, &probe) == 0 &&
                   pthread_join(tid, NULL) == 0,
               "unattached buffer probe thread ran");
-        CHECK(probe.got == 0.0 && probe.len == 0 && probe.had_error == 0 &&
+        CHECK(probe.got == 0.0 && probe.len == 0 && probe.num == 0.0 &&
+                  probe.boolean == 0 && probe.list_len == 0 &&
+                  probe.had_error == 0 &&
                   eigs_value_buffer_get(ub, 1) == 0.0 && !eigs_has_error(),
-              "unattached buffer misuse keeps sentinels and records no error");
+              "unattached accessor misuse keeps sentinels and records no error");
         eigs_value_release(ub);
     }
 
