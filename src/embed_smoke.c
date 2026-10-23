@@ -597,13 +597,37 @@ int main(void) {
     CHECK(eigs_value_buffer_len(buf) == 4, "buffer len");
     eigs_value_buffer_set(buf, 0, 7.0);
     eigs_value_buffer_set(buf, 3, 255.0);
-    eigs_value_buffer_set(buf, 4, 999.0);            /* OOB: must be a no-op */
-    eigs_value_buffer_set(buf, -1, 999.0);
     CHECK(eigs_value_buffer_get(buf, 0) == 7.0,   "buffer get [0]");
     CHECK(eigs_value_buffer_get(buf, 1) == 0.0,   "buffer zero-filled");
     CHECK(eigs_value_buffer_get(buf, 3) == 255.0, "buffer get [3]");
-    CHECK(eigs_value_buffer_get(buf, 4) == 0.0,   "buffer OOB get is 0");
-    CHECK(eigs_value_buffer_get(buf, -1) == 0.0,  "buffer negative get is 0");
+
+    eigs_value_buffer_set(buf, 4, 999.0);
+    CHECK(eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "index_range") == 0 &&
+              strstr(eigs_last_error_message(),
+                     "eigs_value_buffer_set: buffer index 4 out of range (length 4)") != NULL &&
+              eigs_value_buffer_get(buf, 3) == 255.0,
+          "buffer OOB set is a no-op and leaves index_range");
+    eigs_clear_error();
+    CHECK(eigs_value_buffer_get(buf, 0) == 7.0 && !eigs_has_error(),
+          "valid buffer get works after clearing set error");
+
+    CHECK(eigs_value_buffer_get(buf, 4) == 0.0 && eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "index_range") == 0 &&
+              strstr(eigs_last_error_message(),
+                     "eigs_value_buffer_get: buffer index 4 out of range (length 4)") != NULL,
+          "buffer OOB get returns 0 and leaves index_range");
+    eigs_clear_error();
+    CHECK(eigs_value_buffer_get(buf, -1) == 0.0 && eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "index_range") == 0 &&
+              strstr(eigs_last_error_message(),
+                     "eigs_value_buffer_get: buffer index -1 out of range (length 4)") != NULL,
+          "negative buffer get returns 0 and leaves index_range");
+    eigs_clear_error();
+    eigs_value_buffer_set(buf, -1, 999.0);
+    CHECK(eigs_has_error() && strcmp(eigs_last_error_kind(), "index_range") == 0,
+          "negative buffer set leaves index_range");
+    eigs_clear_error();
     eigs_value_buffer_set(buf, 2, INFINITY);
     CHECK(eigs_value_buffer_get(buf, 2) == EIGS_NUM_MAX,
           "buffer non-finite get is clamped");
@@ -888,15 +912,46 @@ int main(void) {
 
     /* Degenerate constructions stay safe. */
     EigsValue *zb = eigs_value_new_buffer(-5);
-    CHECK(eigs_value_buffer_len(zb) == 0, "negative count clamps to empty");
-    CHECK(eigs_value_buffer_get(zb, 0) == 0.0, "empty buffer get is 0");
+    CHECK(eigs_value_buffer_len(zb) == 0 && !eigs_has_error(),
+          "real empty buffer has length 0 without an error");
+    CHECK(eigs_value_buffer_get(zb, 0) == 0.0 && eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "index_range") == 0,
+          "empty buffer get returns 0 and leaves index_range");
+    eigs_clear_error();
     eigs_value_release(zb);
-    CHECK(eigs_value_buffer_len(NULL) == 0, "NULL buffer len is 0");
-    EigsValue *notbuf = eigs_value_new_num(1.0);
-    CHECK(eigs_value_buffer_len(notbuf) == 0, "non-buffer len is 0");
-    eigs_value_buffer_set(notbuf, 0, 5.0);           /* wrong type: no-op */
-    CHECK(eigs_value_as_num(notbuf) == 1.0, "non-buffer set is a no-op");
+    CHECK(eigs_value_buffer_len(NULL) == 0 && eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+          "NULL buffer len returns 0 and leaves type_mismatch");
+    eigs_clear_error();
+    eigs_value_buffer_set(NULL, 0, 5.0);
+    CHECK(eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+          "NULL buffer set leaves type_mismatch");
+    eigs_clear_error();
+    EigsValue *notbuf = eigs_value_new_list(0);
+    CHECK(eigs_value_buffer_len(notbuf) == 0 && eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+          "non-buffer len returns 0 and leaves type_mismatch");
+    eigs_clear_error();
+    CHECK(eigs_value_buffer_get(notbuf, 0) == 0.0 && eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+          "non-buffer get returns 0 and leaves type_mismatch");
+    eigs_clear_error();
+    eigs_value_buffer_set(notbuf, 0, 5.0);
+    CHECK(eigs_value_list_len(notbuf) == 0 && eigs_has_error() &&
+              strcmp(eigs_last_error_kind(), "type_mismatch") == 0,
+          "non-buffer set is a no-op and leaves type_mismatch");
+    eigs_clear_error();
     eigs_value_release(notbuf);
+
+    /* eval_source owns a fresh pending-error scope even when the host did not
+     * explicitly clear an accessor error. */
+    (void)eigs_value_buffer_get(NULL, 0);
+    CHECK(eigs_has_error(), "buffer accessor error is pending before eval");
+    r = eigs_eval_string("6 * 7");
+    CHECK(r != NULL && eigs_value_as_num(r) == 42.0 && !eigs_has_error(),
+          "following eval clears a pending accessor error and succeeds");
+    if (r) eigs_value_release(r);
 
     /* --- Trace tape seam: record via the sink, replay from memory. --- */
     eigs_register_function("host_sensor", host_sensor);

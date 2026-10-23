@@ -384,18 +384,38 @@ EigsValue *eigs_value_new_buffer(int count) {
 }
 
 int eigs_value_buffer_len(EigsValue *v) {
-    return (v && v->type == VAL_BUFFER) ? v->data.buffer.count : 0;
+    if (!v || v->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "eigs_value_buffer_len: expected a buffer");
+        return 0;
+    }
+    return v->data.buffer.count;
 }
 
 double eigs_value_buffer_get(EigsValue *v, int i) {
-    if (!v || v->type != VAL_BUFFER) return 0.0;
-    if (i < 0 || i >= v->data.buffer.count) return 0.0;
+    if (!v || v->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "eigs_value_buffer_get: expected a buffer");
+        return 0.0;
+    }
+    if (i < 0 || i >= v->data.buffer.count) {
+        rt_error(EK_INDEX, 0,
+                 "eigs_value_buffer_get: buffer index %d out of range (length %d)",
+                 i, v->data.buffer.count);
+        return 0.0;
+    }
     return buffer_read_num(v, i);
 }
 
 void eigs_value_buffer_set(EigsValue *v, int i, double x) {
-    if (!v || v->type != VAL_BUFFER) return;
-    if (i < 0 || i >= v->data.buffer.count) return;
+    if (!v || v->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "eigs_value_buffer_set: expected a buffer");
+        return;
+    }
+    if (i < 0 || i >= v->data.buffer.count) {
+        rt_error(EK_INDEX, 0,
+                 "eigs_value_buffer_set: buffer index %d out of range (length %d)",
+                 i, v->data.buffer.count);
+        return;
+    }
     v->data.buffer.data[i] = x;
 }
 

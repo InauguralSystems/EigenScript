@@ -191,9 +191,12 @@ void           eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val);
  * moving raw bytes stores 0..255 per element. Script sees the same
  * object through buf_get/buf_set/len — no copy at the boundary. */
 EigsValue     *eigs_value_new_buffer(int count);   /* zeroed, 1-D (unshaped) */
-int            eigs_value_buffer_len(EigsValue *v);          /* 0 if not a buffer */
-double         eigs_value_buffer_get(EigsValue *v, int i);   /* 0.0 out of range */
-void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op */
+/* Wrong-type inputs (including NULL) leave a pending type_mismatch error.
+ * Out-of-range get/set leave index_range. Sentinels and no-op behavior remain
+ * unchanged; inspect/clear the error through the error API above. */
+int            eigs_value_buffer_len(EigsValue *v);          /* wrong type: 0 + error */
+double         eigs_value_buffer_get(EigsValue *v, int i);   /* OOB: 0.0 + error */
+void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op + error */
 
 /* ---- Trace tape (record + replay) ----------------------------------
  * The runtime's replay tape (hosted: EIGS_TRACE / EIGS_REPLAY files),
