@@ -310,3 +310,13 @@ Files: docs/design/phase2-numbers.md; tests/phase2/builtins/{BAR.md,make_table.p
 rowmeta.tsv,cases.tsv,builtins.tsv,builtins/set_exit_code.eigs,
 builtins/set_exit_code.pre,builtins/set_exit_code.branch,builtins/set_exit_code.tag};
 tests/phase2/rows/N5.store-key-fraction-raises.eigs; this amendment record.
+
+## R1.6e-D1 — audio channels (pre-registration)
+
+Ruling #1922 comment 6355101247: audio_open, audio_capture_open and
+audio_stream_open require N5 channels in 1..255 before SDL/device/tape
+side effects. Zero is excluded because SDL substitutes its default. Frequency
+remains C int. Counts within the channel domain pass to SDL without a duplicated
+support table. MAP N5.audio-channel-domain pre-registers 0, 256, 257, -1, 1.5
+refusal and 255/1 reader success before migration. No frozen expectation changes.
+The three design notes are corrected with their behavior migration commit.

@@ -374,6 +374,8 @@ gates (design §9.2).
 - `N5.pcm16-byte-raises` [R1.6d] `b is buffer of 2 / b[0] is 300 / b[1] is 0 / {try buf_from_pcm16le of [b, 0, 1] catch}` printing `e.kind`, then the same with `b[0] is 1.5`
   -> `value` twice (byte values: N5, then 0..255; #1758 comment 6174964306)
   tag: no raise, samples `0.009155552842799158` and `4.577776421399579e-05` (probed main)
+- `N5.audio-channel-domain` [R1.6e] R1.6e-D1 (#1922 comment 6355101247): audio_open, audio_capture_open and audio_stream_open reject channels 0, 256, 257, -1 and 1.5 with `value` at the N5/domain reader; 255 and 1 pass that reader (unsupported counts remain SDL's to refuse). Validation precedes SDL/device/tape side effects.
+  shape: `S`; witness: `none`; ops:
 - `gate.N5.q7-readers` [R1.6e] `tests/phase2/q7_readers.c` (through the amalgamation, no SDL): `eigs_geom_shape` clips `RECT [-3e9, 0, 6e9, 10]` on a 640x480 drawable area to `[0, 0, 640, 10]` (saturating each argument would give half of that), clips a `LINE` with Liang-Barsky, bounds a `CIRCLE` of radius 3e9 to the visible rows; `eigs_bounded_arg` clamps 300 to 255; `eigs_magnitude_arg` raises `value` on 3e12 for a C `int`
   -> every case as stated
   tag: n/a (a C test of new readers), so it is a gate
