@@ -923,9 +923,9 @@ Requires full build. Transformer model inference and training.
 | `eigen_model_load` | `eigen_model_load of "path.json"` | Load model weights from JSON |
 | `eigen_model_loaded` | `eigen_model_loaded of null` | `true` if model loaded, `false` otherwise |
 | `eigen_model_info` | `eigen_model_info of null` | JSON with model config and stats |
-| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Generate text from prompt. Raises when the prompt exceeds the model's `max_seq_len`. |
-| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Return the target token's cross-entropy loss. Raises when the prompt exceeds the model's `max_seq_len`. |
-| `native_train_step_builtin` | `native_train_step_builtin of [input, output, lr]` | Single training step. Raises when the combined input and output length exceeds the model's `max_seq_len`. |
+| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Token ids and max_tokens follow N5 then C int range; output token ids are ints. Generate text from prompt. Raises when the prompt exceeds the model's `max_seq_len`. |
+| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Token ids follow N5 then C int range; loss is float. Return the target token's cross-entropy loss. Raises when the prompt exceeds the model's `max_seq_len`. |
+| `native_train_step_builtin` | `native_train_step_builtin of [input, output, lr]` | Token ids follow N5 then C int range; learning rate remains float. Single training step. Raises when the combined input and output length exceeds the model's `max_seq_len`. |
 | `model_save_weights` | `model_save_weights of "path.json"` | Save model weights to JSON |
 | `model_load_weights` | `model_load_weights of "path.json"` | Load model weights (alias) |
 
@@ -1010,5 +1010,11 @@ Buffer construction and `reshape` check dimensions before narrowing to C integer
 `buf_set`, `buf_fill` and `buf_from_list` convert stored integers to float (Q2).
 `buf_to_pcm16le` retains its clamp and half-away-from-zero rounding.
 
-`buf_get`, `buf_peak`, `buf_dot` and byte/PCM codec input readers refuse
-non-finite buffer cells with `value` in both strict modes (N13).
+Model token ids and generation limits follow N5 and the C int range;
+fractional ids or token counts raise `value`. `eigen_generate` returns int
+token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
+training learning rates remain float quantities. Model JSON weights stay
+float data; the loader status strings are unchanged.
+
+`mean`, `norm`, `buf_get`, `buf_peak`, `buf_dot` and byte/PCM codec input
+readers refuse non-finite buffer cells with `value` in both strict modes (N13).

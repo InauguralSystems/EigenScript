@@ -539,6 +539,31 @@ Value* builtin_eigen_generate(Value *arg) {
      * either outcome before consulting the model, which may be absent or
      * replaced. Refusal messages carry the recorded lengths, not live config.
      * The existing list/string value encodings are unchanged. */
+    /* N5 argument refusals consume no tape record. Validate without consulting
+     * model state: replay still serves recorded outcomes on an unloaded model. */
+    double temperature = 0.1;
+    int max_tokens = 80;
+    /* Optional 4th arg: top_p. Absent (or outside (0,1)) keeps the historical
+     * fixed top-k=40 path, so every existing caller and recorded number is
+     * unchanged -- decoding policy is opt-in, not a silent default flip. */
+    double top_p = 0.0;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 3) {
+        /* #1637: optional numbers -- null keeps the default, a bool raises. */
+        int64_t mt = max_tokens;
+        eigs_slot_opt_float(list_slot(arg, 1), &temperature, "eigen_generate");
+        eigs_slot_opt_int_range(list_slot(arg, 2), INT_MIN, INT_MAX, &mt, "eigen_generate");
+        if (arg->data.list.count >= 4) eigs_slot_opt_float(list_slot(arg, 3), &top_p, "eigen_generate");
+        if (g_has_error) return make_null();
+        max_tokens = (int)mt;
+        if (list_elem_type(arg, 0) == VAL_LIST) {
+            Value *prompt = list_get_ref(arg, 0);
+            for (int i = 0; i < prompt->data.list.count; i++) {
+                int64_t token;
+                if (!eigs_slot_int_range(list_slot(prompt, i), INT_MIN, INT_MAX,
+                                         &token, "eigen_generate")) return make_null();
+            }
+        }
+    }
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *recorded;
         if (trace_replay_refuse_off_owner("eigen_generate")) return make_null();
@@ -562,19 +587,6 @@ Value* builtin_eigen_generate(Value *arg) {
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
     }
 
-    double temperature = 0.1;
-    int max_tokens = 80;
-    /* Optional 4th arg: top_p. Absent (or outside (0,1)) keeps the historical
-     * fixed top-k=40 path, so every existing caller and recorded number is
-     * unchanged -- decoding policy is opt-in, not a silent default flip. */
-    double top_p = 0.0;
-    /* #1637: optional numbers -- null keeps the default, a bool raises. */
-    double mt = max_tokens;
-    eigs_slot_opt_num(list_slot(arg, 1), &temperature, __func__);
-    eigs_slot_opt_num(list_slot(arg, 2), &mt, __func__);
-    if (arg->data.list.count >= 4) eigs_slot_opt_num(list_slot(arg, 3), &top_p, __func__);
-    if (g_has_error) return make_null();
-    max_tokens = (int)mt;
 
     if (!g_model.loaded) TRACE_NONDET_RECORD("eigen_generate", make_list(0));
 
@@ -608,7 +620,10 @@ Value* builtin_eigen_generate(Value *arg) {
 
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
-        prompt_ids[i] = (int)eigs_slot_num(list_slot(prompt_list, i), "eigen_generate");   /* #1637: a bool raises */
+        int64_t token;
+        if (!eigs_slot_int_range(list_slot(prompt_list, i), INT_MIN, INT_MAX,
+                                 &token, "eigen_generate")) { free(prompt_ids); return make_null(); }
+        prompt_ids[i] = (int)token;   /* #1637: a bool raises */
     }
     if (g_has_error) { free(prompt_ids); return make_null(); }
 
@@ -618,7 +633,7 @@ Value* builtin_eigen_generate(Value *arg) {
 
     Value *result = make_list(out_len);
     for (int i = 0; i < out_len; i++) {
-        list_append_owned(result, make_num((double)output_ids[i]));
+        list_append_owned(result, make_int(output_ids[i]));
     }
     free(output_ids);
     TRACE_NONDET_RECORD("eigen_generate", result);
@@ -649,24 +664,27 @@ Value* builtin_eigen_eval_loss(Value *arg) {
          * provably unchanged. This is a grader: a laundered -1 loss is the
          * exact shape #975 exists to stop, since a caller cannot tell it from
          * a real score. */
-        ARG_GUARD(1, "eigen_eval_loss", "[prompt_ids, target_id]", make_num(-1.0));
+        ARG_GUARD(1, "eigen_eval_loss", "[prompt_ids, target_id]", make_float(-1.0));
     }
     EIGS_VIEW(prompt_list_view);
     Value *prompt_list = list_get_view(arg, 0, &prompt_list_view);
     if (prompt_list->type != VAL_LIST) {
         fprintf(stderr, "eigen_eval_loss: prompt_ids must be a list\n");
-        ARG_GUARD(1, "eigen_eval_loss", "a list of prompt ids", make_num(-1.0));
+        ARG_GUARD(1, "eigen_eval_loss", "a list of prompt ids", make_float(-1.0));
     }
     if ((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT)) {
         fprintf(stderr, "eigen_eval_loss: target_id must be a number\n");
-        ARG_GUARD(1, "eigen_eval_loss", "a numeric target_id", make_num(-1.0));
+        ARG_GUARD(1, "eigen_eval_loss", "a numeric target_id", make_float(-1.0));
     }
-    int target_id = (int)eigs_list_num(arg, 1, __func__);
+    int64_t target;
+    if (!eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &target, "eigen_eval_loss"))
+        return make_null();
+    int target_id = (int)target;
 
     /* fs:ANSWER no model is loaded, so there is no loss to compute. Model
      * state, not an argument mistake — the identical call scores fine once a
      * checkpoint is loaded. */
-    if (!g_model.loaded) return make_num(-1.0);
+    if (!g_model.loaded) return make_float(-1.0);
     int vocab_size = g_model.config.vocab_size;
     if (target_id < 0 || target_id >= vocab_size) {
         fprintf(stderr, "eigen_eval_loss: target_id %d out of range [0,%d)\n", target_id, vocab_size);
@@ -674,7 +692,7 @@ Value* builtin_eigen_eval_loss(Value *arg) {
          * names no row of this model's vocabulary — a value-domain answer
          * relative to the loaded checkpoint, so it changes with the model
          * rather than with the call. */
-        return make_num(-1.0);
+        return make_float(-1.0);
     }
 
     int prompt_len = prompt_list->data.list.count;
@@ -682,7 +700,7 @@ Value* builtin_eigen_eval_loss(Value *arg) {
         fprintf(stderr, "eigen_eval_loss: prompt must be non-empty\n");
         /* fs:EMPTY an empty prompt has no logits to score, so there is no
          * loss; the list's TYPE was already accepted above. */
-        return make_num(-1.0);
+        return make_float(-1.0);
     }
     if (prompt_len > g_model.config.max_seq_len) {
         rt_error(EK_VALUE, 0,
@@ -693,7 +711,10 @@ Value* builtin_eigen_eval_loss(Value *arg) {
 
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
-        int t = (int)eigs_slot_num(list_slot(prompt_list, i), "eigen_eval_loss");          /* #1637: a bool raises */
+        int64_t token;
+        if (!eigs_slot_int_range(list_slot(prompt_list, i), INT_MIN, INT_MAX,
+                                 &token, "eigen_eval_loss")) { free(prompt_ids); return make_null(); }
+        int t = (int)token;          /* #1637: a bool raises */
         if (t < 0 || t >= vocab_size) t = 0;
         prompt_ids[i] = t;
     }
@@ -715,8 +736,8 @@ Value* builtin_eigen_eval_loss(Value *arg) {
 
     /* fs:ANSWER the loss computed to NaN/Inf from a degenerate logit row —
      * a numeric outcome of this model on this input, not a bad argument. */
-    if (isnan(loss) || isinf(loss)) return make_num(-1.0);
-    return make_num(loss);
+    if (isnan(loss) || isinf(loss)) return make_float(-1.0);
+    return make_float(loss);
 }
 
 Value* builtin_eigen_model_info(Value *arg) {

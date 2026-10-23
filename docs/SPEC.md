@@ -2847,3 +2847,9 @@ exact integers in 0..255; fractions and out-of-range bytes raise `value`.
 `buf_len`, `f64_to_bytes` and `inflate` return integer counts or bytes;
 buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
 `buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.
+
+Model token ids and generation limits follow N5 and the C int range;
+fractional ids or token counts raise `value`. `eigen_generate` returns int
+token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
+training learning rates remain float quantities. Model JSON weights stay
+float data; the loader status strings are unchanged.

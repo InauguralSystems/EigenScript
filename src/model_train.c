@@ -1466,9 +1466,10 @@ Value* builtin_native_train_step(Value *arg) {
     }
 
     float lr = 0.001f;
-    if (list_elem_type(arg, 2) == VAL_BOOL) { eigs_slot_num(list_slot(arg, 2), __func__); return make_null(); }  /* #1637 */
-    if ((list_elem_type(arg, 2) == VAL_FLOAT || list_elem_type(arg, 2) == VAL_INT)) lr = eigs_list_num(arg, 2, __func__);
+    if (list_elem_type(arg, 2) == VAL_BOOL) { eigs_slot_float(list_slot(arg, 2), "native_train_step"); return make_null(); }  /* #1637 */
+    if ((list_elem_type(arg, 2) == VAL_FLOAT || list_elem_type(arg, 2) == VAL_INT)) lr = eigs_list_float(arg, 2, "native_train_step");
     else if (list_elem_type(arg, 2) == VAL_STR) lr = strtod(list_get_ref(arg, 2)->data.str, NULL);
+    if (g_has_error) return make_null();
     if (lr <= 0 || lr > 1) lr = 0.001f;
 
     int input_len = in_list->data.list.count;
@@ -1483,10 +1484,20 @@ Value* builtin_native_train_step(Value *arg) {
     int *input_ids = xcalloc(input_len > 0 ? input_len : 1, sizeof(int));
     int *output_ids = xcalloc(output_len > 0 ? output_len : 1, sizeof(int));
     for (int i = 0; i < input_len; i++) {
-        input_ids[i] = (int)eigs_slot_num(list_slot(in_list, i), "native_train_step");   /* #1637: a bool raises */
+        int64_t token;
+        if (!eigs_slot_int_range(list_slot(in_list, i), INT_MIN, INT_MAX,
+                                 &token, "native_train_step")) {
+            free(input_ids); free(output_ids); return make_null();
+        }
+        input_ids[i] = (int)token;   /* #1637: a bool raises */
     }
     for (int i = 0; i < output_len; i++) {
-        output_ids[i] = (int)eigs_slot_num(list_slot(out_list, i), "native_train_step");
+        int64_t token;
+        if (!eigs_slot_int_range(list_slot(out_list, i), INT_MIN, INT_MAX,
+                                 &token, "native_train_step")) {
+            free(input_ids); free(output_ids); return make_null();
+        }
+        output_ids[i] = (int)token;
     }
     if (g_has_error) { free(input_ids); free(output_ids); return make_null(); }
 
