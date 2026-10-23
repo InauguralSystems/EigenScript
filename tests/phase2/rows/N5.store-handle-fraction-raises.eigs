@@ -1,0 +1,43 @@
+# ROW: N5.store-handle-fraction-raises
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# R1.6f-D1, #1924 comment 6367017285: all shared-reader callers.
+define call_store(name, h) as:
+    if name == "store_close":
+        return store_close of h
+    if name == "store_collections":
+        return store_collections of h
+    if name == "store_count":
+        return store_count of [h, "c"]
+    if name == "store_drop":
+        return store_drop of [h, "c"]
+    if name == "store_get":
+        return store_get of [h, "c", "k"]
+    if name == "store_put":
+        return store_put of [h, "c", {"_id": "new", "v": 2}]
+    if name == "store_delete":
+        return store_delete of [h, "c", "k"]
+    if name == "store_query":
+        return store_query of [h, "c"]
+    if name == "store_update":
+        return store_update of [h, "c", "k", {"v": 2}]
+for name in ["store_close", "store_collections", "store_count", "store_drop", "store_get", "store_put", "store_delete", "store_query", "store_update"]:
+    for field in ["_store_id", "_store_gen"]:
+        path is name + field + ".db"
+        s is store_open of path
+        key is store_put of [s, "c", {"_id": "k", "v": 1}]
+        h is {"_store_id": s["_store_id"], "_store_gen": s["_store_gen"], "_type": "eigenstore"}
+        h[field] is h[field] + 0.5
+        try:
+            result is call_store of [name, h]
+            print of [name, field, "accepted"]
+        catch e:
+            print of [name, field, e.kind]
+        try:
+            store_close of s
+        catch e:
+            unused is null
+        remove_file of path

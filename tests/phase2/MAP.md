@@ -350,6 +350,7 @@ gates (design §9.2).
   shape: F  witness: fn-stop n NEG  ops: NEG
 
 ### N5
+- `N5.store-handle-fraction-raises` [R1.6f] R1.6f-D1 (#1924 comment 6367017285): all nine shared store handle-reader callers reject a fractional `_store_id` and a fractional `_store_gen` with `value` before store access; no frozen expectation changes.
 - `gate.N5.iterator-metadata` [R1.3] `tests/phase2/slot_layer.sh` Part E builds raw iterator states and runs the interpreter and `jit_helper_iter_next`
   -> float controls and both SMI/boxed index/snapshot metadata yield 42; range and malformed states preserve the pinned exhaustion/ignore rules.
   tag: n/a (a C fixture of the four R1.2 refusal sites); final R1.3 arms accept exact C-int indices and clamp snapshots without narrowing.

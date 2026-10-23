@@ -329,3 +329,7 @@ The ordinary `tests/test_audio.eigs` assertion for `audio_play_loop` with
 refusal before the mixer, in both strict modes. The former zero stand-in
 assertion predates the numeric readers. The in-range legacy 10000-loop
 ceiling stays unchanged. No frozen probe or expectation is amended.
+
+## R1.6f-D1 — shared store handle reader (pre-registration)
+
+#1924 comment 6367017285 assigns get_store_why → store_arg to f for all nine callers: store_close, store_collections, store_count, store_drop, store_get, store_put, store_delete, store_query, store_update. Every caller refuses non-exact, non-finite or out-of-range numeric id/generation fields with value before store access. MAP N5.store-handle-fraction-raises pre-registers both fractional fields in every caller before migration. No frozen .branch changes; already-b rows retain their expectations.
