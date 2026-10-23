@@ -36,6 +36,9 @@ for name in ["store_close", "store_collections", "store_count", "store_drop", "s
             print of [name, field, "accepted"]
         catch e:
             print of [name, field, e.kind]
+        assert of [(store_count of [s, "c"]) == 1, "refusal keeps the store open and its record count unchanged"]
+        record is store_get of [s, "c", "k"]
+        assert of [record.v == 1, "refusal leaves the original record unchanged"]
         try:
             store_close of s
         catch e:

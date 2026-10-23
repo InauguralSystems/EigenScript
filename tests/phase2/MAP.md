@@ -351,7 +351,6 @@ gates (design §9.2).
 
 ### N5
 - `N5.http-port-before-config` [R1.6f] C6: an effective PORT=65536 raises value in early_bind and serve before binding or freezing route configuration. Each caught refusal is followed by successful route registration.
-- `N5.http-port-before-config` [R1.6f] C6: an effective PORT=65536 raises value in early_bind and serve before binding or freezing route configuration. Each caught refusal is followed by successful route registration.
 - `N5.net-send-byte-raises` [R1.6f] R1.6d-D1 / C7: matched server builds reject buffer/list bytes 256 and 1.5 before any send; raw stored NaN/infinities, first-NaN INVALID/diagnostic and valid255 are checked in both strict modes through the actual client and a real socketpair; the peer receives only the subsequent valid integral-float payload `ok`. Counts are ints.
 - `N5.store-handle-fraction-raises` [R1.6f] R1.6f-D1 (#1924 comment 6367017285): all nine shared store handle-reader callers reject a fractional `_store_id` and a fractional `_store_gen` with `value` before store access; no frozen expectation changes.
 - `gate.N5.iterator-metadata` [R1.3] `tests/phase2/slot_layer.sh` Part E builds raw iterator states and runs the interpreter and `jit_helper_iter_next`

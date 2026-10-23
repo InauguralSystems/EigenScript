@@ -600,8 +600,15 @@ Value* builtin_http_early_bind(Value *arg) {
     }
 
     const char *env_port = getenv("PORT");
-    if (env_port && atoi(env_port) > 0) {
-        port = atoi(env_port);
+    char *port_end = NULL;
+    errno = 0;
+    long override = env_port ? strtol(env_port, &port_end, 10) : 0;
+    if (env_port && port_end != env_port && override > 0) {
+        if (errno == ERANGE || override > 65535) {
+            rt_error(EK_VALUE, 0, "http_early_bind: PORT outside [0, 65535]");
+            return make_null();
+        }
+        port = (int)override;
         printf("[deploy] PORT env=%s, binding port %d\n", env_port, port);
     } else {
         printf("[deploy] No PORT env, using default %d\n", port);
@@ -660,6 +667,21 @@ Value* builtin_http_serve(Value *arg) {
     if (arg && arg->type != VAL_NULL
         && !eigs_int_arg_range(arg, 0, 65535, &port_value, "http_serve")) return make_null();
     int port = (int)port_value;
+    const char *env_port = getenv("PORT");
+    char *port_end = NULL;
+    errno = 0;
+    long override = env_port ? strtol(env_port, &port_end, 10) : 0;
+    if (env_port && port_end != env_port && override > 0) {
+        if (errno == ERANGE || override > 65535) {
+            rt_error(EK_VALUE, 0, "http_serve: PORT outside [0, 65535]");
+            return make_null();
+        }
+        port = (int)override;
+    }
+    if (port < 0 || port > 65535) {
+        rt_error(EK_VALUE, 0, "http_serve: port outside [0, 65535]");
+        return make_null();
+    }
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "http_serve: not replayable under EIGS_REPLAY "
                  "(server/static-file boundary; see docs/TRACE.md)");
@@ -677,14 +699,6 @@ Value* builtin_http_serve(Value *arg) {
         return make_null();
     }
 
-    const char *env_port = getenv("PORT");
-    if (env_port && atoi(env_port) > 0) {
-        port = atoi(env_port);
-    }
-    if (port < 0 || port > 65535) {
-        rt_error(EK_VALUE, 0, "http_serve: port outside [0, 65535]");
-        return make_null();
-    }
     printf("Starting HTTP server on port %d...\n", port);
     fflush(stdout);
     http_serve_blocking(port);
