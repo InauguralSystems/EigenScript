@@ -302,11 +302,11 @@ done
 # generation, which is the `generation-ignored` mutant.
 gen_two_arg=$(grep -rn 'handle_lookup([^,)]*, *HANDLE_' "$SRC_DIR"/*.c | grep -c . || true)
 # The handle VALUES carry it: one publication per dict-handle producer.
-# R1.6b/N3 makes spawn/channel metadata ints. Store handles stay on the
-# round-f float path, so pin each producer's reviewed constructor separately.
+# R1.6b/N3 makes spawn/channel metadata ints; R1.6f does the same for
+# store metadata. Pin each producer's reviewed constructor separately.
 pub_thread=$(grep -c '"_handle_gen", make_int(hgen)' "$BI_C" || true)
 pub_chan=$(grep -c '"_channel_gen", make_int(cgen)' "$BI_C" || true)
-pub_store=$(grep -c '"_store_gen", make_num((double)sgen)' "$SRC_DIR/ext_store.c" || true)
+pub_store=$(grep -c '"_store_gen", make_int(sgen)' "$SRC_DIR/ext_store.c" || true)
 # ... and the slot bumps it on every hand-out.
 reg_bump=$(printf '%s\n' "$(fn_body "$ES_C" "handle_register")" \
            | grep -c 'st->handle_table\[idx\].gen  = g;' || true)
