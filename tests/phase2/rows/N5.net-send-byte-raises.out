@@ -4,4 +4,3 @@
 ["list", 1.5, "value"]
 [2, "int"]
 ok
-phase2-net-byte: PASS checks=72 failures=0

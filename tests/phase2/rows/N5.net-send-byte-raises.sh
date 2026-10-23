@@ -5,8 +5,10 @@
 # WITNESS: none
 # OPS:
 # R1.6d-D1 / RULINGS C7: invalid byte payloads send no prefix.
+# R1.6f-D2: the raw stored-byte socketpair fixture is the mechanical gate
+# gate.N5.net-byte-boundary (tools/phase2_readers.sh), built once outside
+# this row's per-tier 30 s timeout.
 set -eu
-input=$1
 binary=$1
 case "$binary" in */build/release/eigenscript) binary="${binary%/release/eigenscript}/server/eigenscript" ;; esac
 [ -x "$binary" ] || { echo "missing matched server binary: $binary" >&2; exit 2; }
@@ -38,10 +40,3 @@ net_close of peer
 net_close of listener
 EIGS
 "$binary" "$tmp/bytes.eigs"
-root=$(cd "$(dirname "$0")/../../.." && pwd)
-case "$input" in "$root"/*)
-    make -s -C "$root" build/phase2/net_byte_boundary_release > "$tmp/build.log" 2>&1 || { cat "$tmp/build.log" >&2; exit 2; }
-    if grep -q 'warning:' "$tmp/build.log"; then cat "$tmp/build.log" >&2; exit 2; fi
-    "$root/build/phase2/net_byte_boundary_release"
-    ;;
-esac

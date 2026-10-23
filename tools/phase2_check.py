@@ -666,6 +666,10 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
     # rounds with ordinary MAP rows and no other mechanical dispatch.
     if ROUNDS.index(through) >= ROUNDS.index('R1.6e'):
         gates.extend(('q7-readers', 'gfx-audio-boundary', 'gfx-byte-boundary'))
+    if ROUNDS.index(through) >= ROUNDS.index('R1.6f'):
+        # R1.6f-D2: net_send's raw stored-byte fixture builds once here,
+        # outside the MAP rows' per-tier 30 s timeout.
+        gates.append('net-byte-boundary')
     for g in gates:
         if g == 'int-source':
             res[g] = int_source(os.path.join(ROOT, 'src'), out, through)
@@ -703,6 +707,10 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
             res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'gfx_byte_boundary'], out, r'.*')
             res[g] = res[g] and len(re.findall(
                 r'^phase2-gfx-byte: PASS variant=release$', text, re.M)) == 1
+        elif g == 'net-byte-boundary':
+            res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'net_byte_boundary'], out, r'.*')
+            res[g] = res[g] and len(re.findall(
+                r'^phase2-net-boundary: PASS variant=release$', text, re.M)) == 1
         elif g == 'builtins-table':
             if not tag:
                 out('  builtins-table: needs the tag binary')
