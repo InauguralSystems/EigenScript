@@ -1,0 +1,1 @@
+- Make `f64_from_bytes` reject inputs containing fewer than eight bytes.

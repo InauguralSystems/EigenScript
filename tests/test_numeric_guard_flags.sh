@@ -72,7 +72,7 @@ for spec in \
  'NG52 scatter index|dst is buffer of 1; scatter_add of [dst, raw, 5]' \
  'NG53 gather index|dst is buffer of [1, 1]; x is gather of [dst, raw]' \
  'NG55 str_from_bytes|x is str_from_bytes of raw' \
- 'NG56 f64_from_bytes|x is f64_from_bytes of raw' \
+ 'NG56 f64_from_bytes|bytes is [raw[0], 0, 0, 0, 0, 0, 0, 0]; x is f64_from_bytes of bytes' \
  'NG58 PCM encode|x is buf_to_pcm16le of [raw, 0, 1]'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n/g')
  run "$name invalid" "$nan_setup
