@@ -886,7 +886,10 @@ the builtin table's `q7` column, §6, names each builtin's classes):
   - every surviving coordinate is then rounded half away from zero (Q4's
     rule) into a C `int`, which the clip guarantees holds it.
   `EigsShape.empty` tells the caller to draw nothing; that is the only
-  outcome a finite out-of-range shape has.
+  outcome a finite out-of-range shape has. The implementation retains the original
+  continuous coordinates beside clipped integer bounds for curved spans and
+  framebuffer source mapping; intermediate edge arithmetic must not overflow
+  merely because finite coordinates extend beyond the drawable area.
 - **Bounded** (colour channels, gain, volume, PCM samples): clamp to the
   domain, then round (`eigs_bounded_arg`); a NaN raises `value` (N13).
 - **Magnitude** (durations, sleeps, timeouts, sample counts, window sizes, a

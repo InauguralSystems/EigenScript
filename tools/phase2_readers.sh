@@ -35,6 +35,8 @@ cat "$TMP/out"
 if [ -s "$TMP/err" ]; then cat "$TMP/err"; fail 'reader fixture wrote stderr'; fi
 [ "$rc" -eq 0 ] || fail "reader fixture rc=$rc"
 if [ "$FIXTURE" = q7_readers ]; then
+    [ "$(grep -cE '^phase2-q7-test: PASS checks=36 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete Q7 PASS'
+    [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected Q7 fixture output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
 fi

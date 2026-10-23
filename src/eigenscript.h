@@ -1443,6 +1443,17 @@ int eigs_int_arg_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, con
 int eigs_list_int_range(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who);
 int eigs_elem_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
 int eigs_opt_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+/* Q7 geometry: clipped pixel bounds plus borrowed continuous coordinates.
+ * CIRCLE/RRECT callers iterate only y..y+h and clip each span to x..x+w. */
+typedef enum { EIGS_POINT, EIGS_RECT, EIGS_LINE, EIGS_CIRCLE, EIGS_RRECT } EigsShapeKind;
+typedef struct { int x, y, w, h; } EigsRect;
+typedef struct {
+    EigsShapeKind kind;
+    int empty, x, y, w, h, x2, y2;
+    double raw[5];
+} EigsShape;
+int eigs_geom_shape(const Value *args, int first, EigsShapeKind kind,
+                    const EigsRect *drawable, EigsShape *out, const char *who);
 int eigs_bounded_arg(const Value *v, double lo, double hi, int *out, const char *who);
 int eigs_list_bounded(const Value *list, int i, double lo, double hi, int *out, const char *who);
 int eigs_elem_bounded(const Value *v, double lo, double hi, int *out, const char *who);

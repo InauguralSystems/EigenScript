@@ -1939,6 +1939,103 @@ uint8_t eigs_byte_arg(const Value *v, const char *who) {
     return eigs_int_arg_range(v, 0, 255, &i, who) ? (uint8_t)i : 0;
 }
 
+/* Q7: retain the original continuous shape until its visible bounds are
+ * known. long double intermediates prevent finite x+w and x2-x1 overflow. */
+/* Liang-Barsky uses the dominant coordinate as its parameter, rather than
+ * t in [0,1]. A visible 640-pixel interval can be smaller than one ulp of t
+ * for huge endpoints. Intersections pin the clipped coordinate directly.
+ * The compensated determinant retains cancellation of products of doubles. */
+static long double eigs_geom_cross(long double x0, long double y0,
+                                   long double x1, long double y1) {
+    long double a = x1*y0, b = x0*y1;
+    return (a-b) + (fmal(x1,y0,-a)-fmal(x0,y1,-b));
+}
+static int eigs_geom_line(const EigsRect *d, const double *v, EigsShape *out) {
+    long double x0=v[0], y0=v[1], x1=v[2], y1=v[3];
+    long double left=d->x, top=d->y, right=left+d->w, bottom=top+d->h;
+    if (fmaxl(x0,x1)<left || fminl(x0,x1)>=right ||
+        fmaxl(y0,y1)<top || fminl(y0,y1)>=bottom) return 0;
+    long double dx=x1-x0, dy=y1-y0;
+    if (dx==0 && dy==0) {
+        out->x=out->x2=(int)roundl(x0); out->y=out->y2=(int)roundl(y0);
+        return out->x<right && out->y<bottom;
+    }
+    int axis=fabsl(dx)>=fabsl(dy) ? 0 : 1;
+    long double direction=(axis ? dy : dx)>0 ? 1 : -1;
+    long double enter=direction*(axis ? y0 : x0), leave=direction*(axis ? y1 : x1);
+    long double ex=x0, ey=y0, lx=x1, ly=y1;
+    long double cross=eigs_geom_cross(x0,y0,x1,y1);
+    long double bound[4]={left,right,top,bottom};
+    long double p[4]={-dx,dx,-dy,dy};
+    long double q[4]={x0-left,right-x0,y0-top,bottom-y0};
+    for (int k=0;k<4;++k) {
+        if (p[k]==0) { if (q[k]<0) return 0; continue; }
+        long double cx,cy;
+        if (k<2) { cx=bound[k]; cy=(dy*cx+cross)/dx; }
+        else { cy=bound[k]; cx=(dx*cy-cross)/dy; }
+        long double u=direction*(axis ? cy : cx);
+        if (p[k]<0) {
+            if (u>leave) return 0;
+            if (u>enter) { enter=u;ex=cx;ey=cy; }
+        } else {
+            if (u<enter) return 0;
+            if (u<leave) { leave=u;lx=cx;ly=cy; }
+        }
+    }
+    out->x=(int)roundl(fmaxl(left,fminl(right,ex)));
+    out->y=(int)roundl(fmaxl(top,fminl(bottom,ey)));
+    out->x2=(int)roundl(fmaxl(left,fminl(right,lx)));
+    out->y2=(int)roundl(fmaxl(top,fminl(bottom,ly)));
+    return 1;
+}
+
+int eigs_geom_shape(const Value *args, int first, EigsShapeKind kind,
+                    const EigsRect *drawable, EigsShape *out, const char *who) {
+    memset(out, 0, sizeof *out);
+    out->empty = 1;
+    out->kind = kind;
+    int count = kind == EIGS_POINT ? 2 : kind == EIGS_CIRCLE ? 3 : kind == EIGS_RRECT ? 5 : 4;
+    for (int i = 0; i < count; ++i) {
+        out->raw[i] = eigs_list_float(args, first + i, who);
+        if (g_has_error) return 0;
+    }
+    if (!drawable || drawable->w <= 0 || drawable->h <= 0) return 1;
+    long double left = drawable->x, top = drawable->y;
+    long double right = left + drawable->w, bottom = top + drawable->h;
+    /* Drawable bounds themselves are C ints supplied by the renderer. */
+    if (left < INT_MIN || top < INT_MIN || right > INT_MAX || bottom > INT_MAX) {
+        rt_error(EK_VALUE, 0, "%s: drawable bounds do not fit a C int", num_who(who));
+        return 0;
+    }
+    long double x = out->raw[0], y = out->raw[1], x2, y2;
+    if (kind == EIGS_POINT) {
+        if (x < left || x >= right || y < top || y >= bottom) return 1;
+        out->x = (int)roundl(x); out->y = (int)roundl(y);
+        if (out->x >= right || out->y >= bottom) return 1;
+        out->w = out->h = 1;
+    } else if (kind == EIGS_LINE) {
+        if (!eigs_geom_line(drawable,out->raw,out)) return 1;
+    } else {
+        if (kind == EIGS_CIRCLE) {
+            long double r = out->raw[2];
+            if (r < 0) return 1;
+            x2 = x+r+1; y2 = y+r+1; x -= r; y -= r;
+        } else {
+            if (out->raw[2] <= 0 || out->raw[3] <= 0) return 1;
+            x2 = x+(long double)out->raw[2]; y2 = y+(long double)out->raw[3];
+        }
+        x = fmaxl(left, x); y = fmaxl(top, y);
+        x2 = fminl(right, x2); y2 = fminl(bottom, y2);
+        if (x >= x2 || y >= y2) return 1;
+        out->x = (int)roundl(x); out->y = (int)roundl(y);
+        out->w = (int)roundl(x2) - out->x;
+        out->h = (int)roundl(y2) - out->y;
+        if (out->w <= 0 || out->h <= 0) return 1;
+    }
+    out->empty = 0;
+    return 1;
+}
+
 int eigs_bounded_arg(const Value *v, double lo, double hi, int *out, const char *who) {
     double x = eigs_float_arg(v, who);
     if (g_has_error) return 0;
