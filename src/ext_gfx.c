@@ -1240,55 +1240,33 @@ static void audio_mix_callback(void *ud, uint8_t *stream, int len) {
  * over-64MB clip. */
 static int16_t* audio_convert_samples(Value *samples, int *out_n) {
     if (!samples) return NULL;
-    if (samples->type == VAL_BUFFER) {
-        int n = samples->data.buffer.count;
-        if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
-        int16_t *buf = xmalloc_array(n, sizeof(int16_t));
-        for (int i = 0; i < n; i++) {
-            double s = buffer_read_num(samples, i);
-            if (g_has_error) { free(buf); return NULL; }
-            if (s > 1.0) s = 1.0;
-            if (s < -1.0) s = -1.0;
-            buf[i] = (int16_t)(s * 32767);
-        }
-        *out_n = n;
-        return buf;
-    }
-    if (samples->type != VAL_LIST) return NULL;
-    int n = samples->data.list.count;
-    if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
-    int16_t *buf = xmalloc_array(n, sizeof(int16_t));
-    for (int i = 0; i < n; i++) {
-        EigsSlot sample = list_slot(samples, i);
-        /* #1007: a non-number used to be COERCED to 0 here, so a wrong-typed
-         * sample list produced a valid buffer of silence and the caller's
-         * `if (!buf)` guard never saw it — audio_play answered with a real
-         * channel id and played nothing. Coercion is the one shape that
-         * cannot be caught downstream, so it is rejected at the element. */
-        if ((slot_type(sample) != VAL_FLOAT && slot_type(sample) != VAL_INT)) {
-            /* Raise only under strict, exactly as ARG_GUARD does — this macro
-             * cannot be used here because the function answers int16_t*, not
-             * Value*. An unconditional raise turned a call that used to answer
-             * a channel id into a hard error in the DEFAULT build, which is
-             * the one thing the #971 reform promises not to do.
-             * Rejecting (rather than coercing) is unconditional, because the
-             * coerced result was the defect: the caller then answers 0, which
-             * is what BUILTINS.md already documents for audio_play ("0 on bad
-             * args") and what the old code could not produce. */
-            if (g_strict) {
-                rt_error(EK_TYPE, 0, "audio samples: element %d is %s, expected a number\n",
-                         i, val_type_name(slot_type(sample)));
+    int n=samples->type==VAL_BUFFER ? samples->data.buffer.count :
+          samples->type==VAL_LIST ? samples->data.list.count : 0;
+    if (n<=0 || (size_t)n>64u*1024u*1024u/sizeof(int16_t)) return NULL;
+    int16_t *buf=xmalloc_array(n,sizeof *buf);
+    for (int i=0;i<n;++i) {
+        double s;
+        if (samples->type==VAL_BUFFER) {
+            /* R1.6d-D1: stored data crosses the final finite boundary once. */
+            s=buffer_read_f64(samples,i);
+        } else {
+            EigsSlot sample=list_slot(samples,i);
+            if ((slot_type(sample)!=VAL_FLOAT && slot_type(sample)!=VAL_INT)) {
+                if (g_strict) rt_error(EK_TYPE,0,"audio samples: element %d is %s, expected a number\n",i,val_type_name(slot_type(sample)));
+                free(buf);return NULL;
             }
-            free(buf);
-            return NULL;
+            s=eigs_slot_float(sample,__func__);
         }
-        double s = eigs_slot_num(sample, __func__);
-        if (s > 1.0) s = 1.0;
-        if (s < -1.0) s = -1.0;
-        buf[i] = (int16_t)(s * 32767);
+        if (g_has_error) { free(buf);return NULL; }
+        /* Clamp before multiplying so even a finite 1e308 sample cannot
+         * overflow its conversion. Q7/Q4 then round the PCM integer. */
+        if (s>1) s=1;
+        if (s< -1) s= -1;
+        int pcm;
+        if (!eigs_slot_bounded(slot_from_f64(s*32767),-32767,32767,&pcm,__func__)) { free(buf);return NULL; }
+        buf[i]=(int16_t)pcm;
     }
-    *out_n = n;
-    return buf;
+    *out_n=n;return buf;
 }
 
 /* Install a clip on a free (else oldest-finite, else oldest) channel.
@@ -1807,14 +1785,14 @@ Value* builtin_audio_music_volume(Value *arg) {
                    && !(arg && arg->type == VAL_LIST && arg->data.list.count >= 1
                         && (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT)),
                    "audio_music_volume", "number volume 0..128 or [number volume]");
-    if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();  /* fs:VOID no mixer open: audio_music_volume answers null on every path -- the return value, not a rejected-argument stand-in */
-    int v = 0;
-    if (arg && val_is_number(arg)) v = (int)eigs_num_arg(arg, __func__);
-    else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
-             && (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT))
-        v = (int)eigs_list_num(arg, 0, __func__);
-    if (v < 0) v = 0;
-    if (v > MY_MIX_MAX_VOLUME) v = MY_MIX_MAX_VOLUME;
+    int v=0;
+    if (arg && val_is_number(arg)) {
+        if (!eigs_bounded_arg(arg,0,MY_MIX_MAX_VOLUME,&v,"audio_music_volume")) return make_null();
+    } else if (arg && arg->type==VAL_LIST && arg->data.list.count>=1 &&
+               (list_elem_type(arg,0)==VAL_FLOAT || list_elem_type(arg,0)==VAL_INT)) {
+        if (!eigs_list_bounded(arg,0,0,MY_MIX_MAX_VOLUME,&v,"audio_music_volume")) return make_null();
+    }
+    if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null(); /* fs:VOID no music mixer */
     p_Mix_VolumeMusic(v);
     return make_null(); /* fs:VOID audio_music_volume answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -1835,16 +1813,16 @@ Value* builtin_audio_play(Value *arg) {
      * -- so the guard would exist only where nothing runs it. */
     STRICT_REQUIRE(gfx_bad_samples(arg), "audio_play",
                    "a list or buffer of samples, or null");
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play: "0 on ... closed device"; channel ids are slot+1 >= 1 (line 1057), so 0 is not a channel */
+    if (!g_audio_device) return make_int(0);  /* fs:ANSWER BUILTINS.md audio_play: "0 on ... closed device"; channel ids are slot+1 >= 1 (line 1057), so 0 is not a channel */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
     if (!buf) {
         /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
-        if (g_has_error) return make_num(0);
+        if (g_has_error) return make_int(0);
         /* fs:ANSWER an empty or over-64MB clip queues nothing. */
-        return make_num(0);
+        return make_int(0);
     }
-    return make_num(audio_install_channel(buf, n, 1));
+    return make_int(audio_install_channel(buf, n, 1));
 }
 
 /* audio_play_loop of [samples, loops] — play `samples` `loops` times on
@@ -1859,18 +1837,12 @@ Value* builtin_audio_play_loop(Value *arg) {
      * machine with no audio device (the [135] rule). */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
               || (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
-              "audio_play_loop", "[samples, number loops]", make_num(0));
-    /* #152: NaN/huge casts are UB; -1 is the one negative with meaning. */
-    double loops_d = eigs_list_num(arg, 1, __func__);
-    int loops;
-    if (loops_d == -1.0) loops = -1;
-    else {
-        ARG_GUARD(isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0,
-                  "audio_play_loop",
-                  "[samples, number loops] with loops == -1 or 1..10000",
-                  make_num(0));
-        loops = (int)loops_d;
-    }
+              "audio_play_loop", "[samples, number loops]", make_int(0));
+    int64_t exact_loops;
+    if (!eigs_list_int_range(arg,1,INT_MIN,INT_MAX,&exact_loops,"audio_play_loop")) return make_int(0);
+    int loops=(int)exact_loops;
+    ARG_GUARD(loops != -1 && (loops<1 || loops>10000),"audio_play_loop",
+              "[samples, number loops] with loops == -1 or 1..10000",make_int(0));
     /* #1007 round 3: the samples slot, beside the loops slot and above the
      * device check for the same reachability reason. */
     /* #1637: a non-number sample element is refused here too, above the
@@ -1881,16 +1853,16 @@ Value* builtin_audio_play_loop(Value *arg) {
                    || (list_elem_type(arg, 0) == VAL_LIST
                        && !gfx_list_all_num(samples)),
                    "audio_play_loop", "[list or buffer of samples, number loops]");
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play_loop: "0 on ... closed device"; channel ids are slot+1 >= 1, so 0 is not a channel */
+    if (!g_audio_device) return make_int(0);  /* fs:ANSWER BUILTINS.md audio_play_loop: "0 on ... closed device"; channel ids are slot+1 >= 1, so 0 is not a channel */
     int n = 0;
     int16_t *buf = audio_convert_samples(samples, &n);
     if (!buf) {
         /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
-        if (g_has_error) return make_num(0);
+        if (g_has_error) return make_int(0);
         /* fs:ANSWER an empty or over-64MB clip queues nothing. */
-        return make_num(0);
+        return make_int(0);
     }
-    return make_num(audio_install_channel(buf, n, loops));
+    return make_int(audio_install_channel(buf, n, loops));
 }
 
 /* audio_volume of [channel, vol] — live per-channel volume, 0.0..4.0
@@ -1901,18 +1873,20 @@ Value* builtin_audio_volume(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
               || (list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT)
               || (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
-              "audio_volume", "[number channel, number volume]", make_num(0));
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing", and with no device open no channel is */
-    int c = (int)eigs_slot_num(list_slot(arg, 0), "audio_volume") - 1;
-    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing" -- the same value line 1452 returns for an inactive in-range channel; an out-of-range id is definitionally inactive */
-    double vol = eigs_slot_num(list_slot(arg, 1), "audio_volume");
-    if (isnan(vol) || vol < 0.0) vol = 0.0;
-    if (vol > 4.0) vol = 4.0;
+              "audio_volume", "[number channel, number volume]", make_int(0));
+    int64_t channel;
+    if (!eigs_list_int_range(arg,0,INT_MIN,INT_MAX,&channel,"audio_volume")) return make_int(0);
+    double vol=eigs_list_float(arg,1,"audio_volume");
+    if (g_has_error) return make_int(0);
+    if (vol<0) vol=0;
+    if (vol>4) vol=4; /* continuous gain stays fractional; the callback stores a double */
+    if (!g_audio_device || channel<1 || channel>AUDIO_MAX_CHANNELS) return make_int(0); /* fs:ANSWER inactive channel */
+    int c=(int)channel-1;
     p_SDL_LockAudioDevice(g_audio_device);
     int ok = g_audio_ch[c].active;
     if (ok) g_audio_ch[c].volume = vol;
     p_SDL_UnlockAudioDevice(g_audio_device);
-    return make_num(ok);
+    return make_int(ok);
 }
 
 /* audio_stop of channel — stop one mixer channel. Returns 1, or 0 on a

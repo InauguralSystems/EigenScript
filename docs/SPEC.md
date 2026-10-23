@@ -2853,3 +2853,10 @@ fractional ids or token counts raise `value`. `eigen_generate` returns int
 token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
 training learning rates remain float quantities. Model JSON weights stay
 float data; the loader status strings are unchanged.
+
+Audio playback (`audio_play`, `audio_play_loop`, `audio_stream_push`) refuses
+stored non-finite buffer samples at the scalar boundary in both strict modes
+(N13). Strict NaN preserves the first diagnostic and INVALID flag. Finite
+samples clamp to [-1,1], then round PCM16 half away from zero (Q7/Q4).
+Channel indices and loop counts follow N5; continuous mixer gain stays
+fractional after clamping to [0,4].
