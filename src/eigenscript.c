@@ -1941,14 +1941,60 @@ uint8_t eigs_byte_arg(const Value *v, const char *who) {
 
 /* Q7: retain the original continuous shape until its visible bounds are
  * known. long double intermediates prevent finite x+w and x2-x1 overflow. */
-/* Liang-Barsky uses the dominant coordinate as its parameter, rather than
- * t in [0,1]. A visible 640-pixel interval can be smaller than one ulp of t
- * for huge endpoints. Intersections pin the clipped coordinate directly.
- * The compensated determinant retains cancellation of products of doubles. */
-static long double eigs_geom_cross(long double x0, long double y0,
-                                   long double x1, long double y1) {
-    long double a = x1*y0, b = x0*y1;
-    return (a-b) + (fmal(x1,y0,-a)-fmal(x0,y1,-b));
+/* Liang-Barsky parameterized by the dominant coordinate, so the visible
+ * interval cannot collapse to one ulp of a [0,1] parameter. */
+/* Error-free expansion of at most six products. All factors originate as
+ * binary64 coordinates or bounded integer/half-integer edges, so products
+ * and their FMA residuals fit long double even at binary64's extremes.
+ * Keep the low terms through the edge numerator and the Q4 tie comparison. */
+static long double eigs_geom_products(const long double terms[][2], int count, int *sign) {
+    long double expansion[12]; int n=0;
+    for (int k=0;k<count;++k) {
+        long double hi=terms[k][0]*terms[k][1];
+        long double part[2]={hi,fmal(terms[k][0],terms[k][1],-hi)};
+        for (int j=0;j<2;++j) {
+            long double q=part[j], next[12]; int m=0;
+            for (int i=0;i<n;++i) {
+                long double sum=q+expansion[i], bv=sum-q;
+                long double err=(q-(sum-bv))+(expansion[i]-bv);
+                if (err!=0) next[m++]=err;
+                q=sum;
+            }
+            if (q!=0 || !m) next[m++]=q;
+            memcpy(expansion,next,(size_t)m*sizeof *next);n=m;
+        }
+    }
+    *sign=expansion[n-1]>0 ? 1 : expansion[n-1]<0 ? -1 : 0;
+    long double value=0;
+    for (int i=0;i<n;++i) value+=expansion[i];
+    return value;
+}
+static long double eigs_geom_intersection(const double *v, int edge_axis,
+                                          long double edge, int rounded) {
+    long double x0=v[0],y0=v[1],x1=v[2],y1=v[3],a0,a1;
+    long double terms[6][2];
+    if (!edge_axis) {
+        terms[0][0]=y1;terms[0][1]=edge;
+        terms[1][0]=-y0;terms[1][1]=edge;
+        terms[2][0]=x1;terms[2][1]=y0;
+        terms[3][0]=-x0;terms[3][1]=y1;
+        a0=x0;a1=x1;
+    } else {
+        terms[0][0]=x1;terms[0][1]=edge;
+        terms[1][0]=-x0;terms[1][1]=edge;
+        terms[2][0]=-x1;terms[2][1]=y0;
+        terms[3][0]=x0;terms[3][1]=y1;
+        a0=y0;a1=y1;
+    }
+    int sign;
+    long double q=eigs_geom_products(terms,4,&sign)/(a1-a0);
+    if (!rounded) return q;
+    long double lower=floorl(q),tie=lower+0.5L;
+    terms[4][0]=-tie;terms[4][1]=a1;
+    terms[5][0]=tie;terms[5][1]=a0;
+    (void)eigs_geom_products(terms,6,&sign);
+    if (a1<a0) sign=-sign;
+    return sign>0 || (sign==0 && tie>=0) ? lower+1 : lower;
 }
 static int eigs_geom_line(const EigsRect *d, const double *v, EigsShape *out) {
     long double x0=v[0], y0=v[1], x1=v[2], y1=v[3];
@@ -1964,23 +2010,31 @@ static int eigs_geom_line(const EigsRect *d, const double *v, EigsShape *out) {
     long double direction=(axis ? dy : dx)>0 ? 1 : -1;
     long double enter=direction*(axis ? y0 : x0), leave=direction*(axis ? y1 : x1);
     long double ex=x0, ey=y0, lx=x1, ly=y1;
-    long double cross=eigs_geom_cross(x0,y0,x1,y1);
+    int enter_edge=-1,leave_edge=-1;
     long double bound[4]={left,right,top,bottom};
     long double p[4]={-dx,dx,-dy,dy};
     long double q[4]={x0-left,right-x0,y0-top,bottom-y0};
     for (int k=0;k<4;++k) {
         if (p[k]==0) { if (q[k]<0) return 0; continue; }
         long double cx,cy;
-        if (k<2) { cx=bound[k]; cy=(dy*cx+cross)/dx; }
-        else { cy=bound[k]; cx=(dx*cy-cross)/dy; }
+        if (k<2) { cx=bound[k]; cy=eigs_geom_intersection(v,0,cx,0); }
+        else { cy=bound[k]; cx=eigs_geom_intersection(v,1,cy,0); }
         long double u=direction*(axis ? cy : cx);
         if (p[k]<0) {
             if (u>leave) return 0;
-            if (u>enter) { enter=u;ex=cx;ey=cy; }
+            if (u>enter) { enter=u;ex=cx;ey=cy;enter_edge=k; }
         } else {
             if (u<enter) return 0;
-            if (u<leave) { leave=u;lx=cx;ly=cy; }
+            if (u<leave) { leave=u;lx=cx;ly=cy;leave_edge=k; }
         }
+    }
+    if (enter_edge>=0) {
+        if (enter_edge<2) ey=eigs_geom_intersection(v,0,bound[enter_edge],1);
+        else ex=eigs_geom_intersection(v,1,bound[enter_edge],1);
+    }
+    if (leave_edge>=0) {
+        if (leave_edge<2) ly=eigs_geom_intersection(v,0,bound[leave_edge],1);
+        else lx=eigs_geom_intersection(v,1,bound[leave_edge],1);
     }
     out->x=(int)roundl(fmaxl(left,fminl(right,ex)));
     out->y=(int)roundl(fmaxl(top,fminl(bottom,ey)));

@@ -36,6 +36,17 @@ int main(void) {
     check(!s.empty && s.x==12 && s.y==13 && s.x2==12 && s.y2==13,"degenerate visible line");
     s = shape(EIGS_RECT,(double[]){0,0,0,10},4); check(s.empty,"empty rectangle");
     s = shape(EIGS_CIRCLE,(double[]){0,0,-1},3); check(s.empty,"negative radius");
+    double hard_line[4]={-0x1p80,0x1.bfffb00000002p7,0x1.0000000000001p80,0x1.700014p9};
+    s=shape(EIGS_LINE,hard_line,4);
+    check(!s.empty && s.x==0 && s.y==480 && s.x2==320 && s.y2==480,"boundary determinant cancellation");
+    Value *custom=make_list_heap(4);
+    for (int k=0;k<4;++k) list_values_storage(custom)[k]=slot_from_f64(hard_line[k]);
+    custom->data.list.count=4;EigsRect translated={0,480,640,480};
+    check(eigs_geom_shape(custom,0,EIGS_LINE,&translated,&s,"q7-test"),"translated drawable line read");
+    check(!s.empty && s.x==320 && s.y==480 && s.x2==640 && s.y2==480,"translated drawable determinant cancellation");
+    val_decref(custom);
+    s=shape(EIGS_LINE,(double[]){0,0.5,0x1p100,0x1p99},4);
+    check(!s.empty && s.x2==640 && s.y2==320,"sub-ulp Q4 boundary tie");
     s = shape(EIGS_CIRCLE,(double[]){320,240,3e9},3);
     check(!s.empty && s.x==0 && s.y==0 && s.w==640 && s.h==480,"huge circle visible loops only");
     s = shape(EIGS_RRECT,(double[]){-3e9,-3e9,6e9,6e9,10},5);
