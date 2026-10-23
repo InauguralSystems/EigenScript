@@ -712,14 +712,14 @@ first use, so no SDL2 headers or link-time SDL dependency are needed.
 |------|-----------|-------------|
 | `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Returns `true` on success or `false` when libSDL2 is unavailable. A non-numeric size raises by default; under `EIGS_STRICT=0` it returns `false` (#1007 — it used to be read without a type check, so a string opened a `0x0` window and still answered `1`). |
 | `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
-| `gfx_clear` | `gfx_clear of [r, g, b]` / `gfx_clear of null` | Clear backbuffer to color; `null` clears to black |
-| `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle |
-| `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` | Line segment |
-| `gfx_point` | `gfx_point of [x, y, r, g, b]` | Single pixel |
-| `gfx_circle` | `gfx_circle of [cx, cy, radius, r, g, b]` | Filled circle (midpoint) |
-| `gfx_rrect` | `gfx_rrect of [x, y, w, h, radius, r, g, b]` or `[..., a]` | Filled rounded rectangle (scanline corner fill); radius clamps to half the smaller dimension, `radius 0` = plain rect |
-| `gfx_clip` | `gfx_clip of [x, y, w, h]` / `gfx_clip of null` | Set / clear the render clip rectangle |
-| `gfx_read` | `gfx_read of [x, y]` | Read back one rendered pixel as `[r, g, b]` — the render-decode oracle primitive (#823). Reads the current back buffer: call after drawing, **before** `gfx_present`. Null with no window or a failed read. Nondeterministic input (font raster, driver), so it records/replays on the trace tape |
+| `gfx_clear` | `gfx_clear of [r, g, b]` / `gfx_clear of null` | Clear backbuffer to color; channels clamp to 0..255, then round half away from zero. `null` clears to black |
+| `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle; intersect the whole rectangle with the drawable area in float space, then round |
+| `gfx_line` | `gfx_line of [x1, y1, x2, y2, r, g, b]` | Line segment; clip with Liang-Barsky in float space, then round |
+| `gfx_point` | `gfx_point of [x, y, r, g, b]` | Single pixel; an outside point draws nothing, and a surviving coordinate rounds half away from zero |
+| `gfx_circle` | `gfx_circle of [cx, cy, radius, r, g, b]` | Filled circle; clip continuous spans to visible rows and columns before rounding, so a huge radius does work bounded by the drawable area |
+| `gfx_rrect` | `gfx_rrect of [x, y, w, h, radius, r, g, b]` or `[..., a]` | Filled rounded rectangle; clip continuous spans to the drawable area, then round. Radius clamps to half the smaller dimension; `radius 0` = plain rect |
+| `gfx_clip` | `gfx_clip of [x, y, w, h]` / `gfx_clip of null` | Intersect the continuous clip rectangle with the drawable area, then round; `null` clears it |
+| `gfx_read` | `gfx_read of [x, y]` | Read back one rendered pixel as integer channels `[r, g, b]`; coordinates round half away from zero and an outside point returns null — the render-decode oracle primitive (#823). Reads the current back buffer: call after drawing, **before** `gfx_present`. Null with no window or a failed read. Nondeterministic input (font raster, driver), so it records/replays on the trace tape |
 | `gfx_text` | `gfx_text of [x, y, text, r, g, b]` or `[..., scale]` | Text. Proportional antialiased TTF when libSDL2_ttf + a font are available (#593); the 5x7 bitmap font otherwise — see the font note below the table |
 | `gfx_text_width` | `gfx_text_width of [text, scale?]` or `of "text"` | Pixel width of `text` under the active text renderer: TTF metrics when active, `len * 6 * scale` in bitmap mode. Works before `gfx_open` |
 | `gfx_text_height` | `gfx_text_height of scale?` | Pixel line height under the active text renderer: TTF font height when active, `7 * scale` in bitmap mode |
@@ -728,8 +728,16 @@ first use, so no SDL2 headers or link-time SDL dependency are needed.
 | `gfx_ticks` | `gfx_ticks of null` | Milliseconds since `SDL_Init` |
 | `gfx_delay` | `gfx_delay of ms` | Sleep for ms (SDL-coordinated) |
 | `gfx_title` | `gfx_title of "text"` | Update window title |
-| `gfx_fb` | `gfx_fb of [buf, w, h, x, y, scale]` | Blit buffer (palette indices 0-3) as scaled texture |
+| `gfx_fb` | `gfx_fb of [buf, w, h, x, y, scale]` | Blit a palette buffer; `w` and `h` require exact integers in the C `int` range. The continuous destination is clipped before rounding and retains the original source-pixel mapping |
 | `ppu_render_frame` | `ppu_render_frame of [mem_buf, fb_buf]` | Full Game Boy PPU render (BG/window/sprites) into framebuffer |
+
+**Continuous geometry and colour (Q7).** Drawing coordinates, dimensions,
+scale and colour channels accept ints or floats. Shapes are clipped as a whole
+against the drawable area in float space before half-away-from-zero rounding;
+an empty intersection draws nothing. Colour channels clamp to 0..255 before
+rounding. Nonfinite numeric inputs raise `value` in both strict modes. Bitmap
+text clips each glyph cell, including scales too large for the TTF integer size
+API. Fractional drawing scales also use this continuous bitmap-cell path.
 
 **Wrong-typed and wrong-arity arguments (#1007).** Every builtin in this
 extension that takes an argument at all — the drawing calls, the text calls,
@@ -798,7 +806,7 @@ raises under `EIGS_STRICT`, and a pinned documented answer does not.
 **Text rendering and fonts (#593).** `gfx_text` lazily loads
 `libSDL2_ttf-2.0.so.0` on first use and renders proportional antialiased
 text (`TTF_RenderUTF8_Blended`) when both the library and a font file are
-present. Font selection: the `EIGS_GFX_FONT` environment variable
+present and the drawing scale is an integer supported by its size API. Font selection: the `EIGS_GFX_FONT` environment variable
 (absolute path to a `.ttf`) wins; when it is set but unreadable the
 runtime warns once and stays on the bitmap font (a nonexistent path is
 the deterministic off-switch). Otherwise a short list of common system

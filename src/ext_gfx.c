@@ -79,6 +79,7 @@ typedef struct {
 static void *g_sdl_lib = NULL;
 static SDL_Window *g_window = NULL;
 static SDL_Renderer *g_renderer = NULL;
+static int (*p_SDL_GetRendererOutputSize)(SDL_Renderer*, int*, int*);
 
 static int (*p_SDL_Init)(Uint32);
 static void (*p_SDL_Quit)(void);
@@ -160,6 +161,7 @@ static int load_sdl2(void) {
     LOAD(SDL_GetTicks); LOAD(SDL_Delay);
     #undef LOAD
     /* Optional symbols — NULL is fine */
+    p_SDL_GetRendererOutputSize = dlsym(g_sdl_lib, "SDL_GetRendererOutputSize");
     p_SDL_GetModState = dlsym(g_sdl_lib, "SDL_GetModState");
     p_SDL_GetMouseState = dlsym(g_sdl_lib, "SDL_GetMouseState");
     p_SDL_RenderSetClipRect = dlsym(g_sdl_lib, "SDL_RenderSetClipRect");
@@ -273,6 +275,7 @@ static int g_ttf_font_count = 0;
  * existing fixed-width layouts don't overflow (scale 2 → 14 px). */
 static int ttf_scale_to_px(int scale) {
     if (scale < 1) scale = 1;
+    if (scale > (INT_MAX - 2) / 6) return 0;
     return 6 * scale + 2;
 }
 
@@ -328,6 +331,7 @@ static int ttf_available(void) {
  * (callers fall back to the bitmap path). */
 static void* ttf_font_for_scale(int scale) {
     int px = ttf_scale_to_px(scale);
+    if (!px) return NULL; /* Q7: use bitmap geometry when the font API cannot hold the size. */
     for (int i = 0; i < g_ttf_font_count; i++)
         if (g_ttf_fonts[i].px == px) return g_ttf_fonts[i].font;
     if (g_ttf_font_count >= TTF_FONT_CACHE_MAX)
@@ -503,6 +507,62 @@ Value* builtin_gfx_close(Value *arg) {
     return make_null(); /* fs:VOID gfx_close answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
+
+/* Q7 helpers shared by the geometry builtins below. Output dimensions are
+ * renderer pixels (not window coordinates, which can differ on HiDPI). */
+static EigsRect gfx_drawable(void) {
+    EigsRect area = {0, 0, 0, 0};
+    if (g_renderer && p_SDL_GetRendererOutputSize &&
+        p_SDL_GetRendererOutputSize(g_renderer, &area.w, &area.h) != 0)
+        area.w = area.h = 0;
+    return area;
+}
+
+static int gfx_colour(const Value *arg, int first, int alpha, int colour[4],
+                      const char *who) {
+    colour[3] = 255;
+    for (int i = 0; i < 3; ++i)
+        if (!eigs_list_bounded(arg, first+i, 0, 255, &colour[i], who)) return 0;
+    return !alpha || arg->data.list.count <= first+3 ||
+           eigs_list_bounded(arg, first+3, 0, 255, &colour[3], who);
+}
+
+/* Derived edges may overflow outward when long double is binary64.
+ * Intersect edges separately, before subtracting to form a width: a huge
+ * circle can have left=-inf/right=+inf without ever forming -inf+inf.
+ * The stack list borrows only immediate float slots, and never escapes. */
+static int gfx_edges_ld(long double x, long double y, long double right, long double bottom,
+                        const EigsRect *area, EigsShape *shape, const char *who) {
+    memset(shape, 0, sizeof *shape);
+    shape->empty = 1;
+    if (area->w <= 0 || area->h <= 0) return 1;
+    right = fminl((long double)area->x + area->w, right);
+    bottom = fminl((long double)area->y + area->h, bottom);
+    x = fmaxl(area->x, x); y = fmaxl(area->y, y);
+    if (x >= right || y >= bottom) return 1;
+    EigsSlot slots[4] = { slot_from_f64((double)x), slot_from_f64((double)y),
+                         slot_from_f64((double)(right-x)), slot_from_f64((double)(bottom-y)) };
+    Value args = { .type = VAL_LIST, .data.list = { .items = slots, .count = 4, .capacity = 4 } };
+    return eigs_geom_shape(&args, 0, EIGS_RECT, area, shape, who);
+}
+
+/* Callers have finite offsets or offsets that overflow toward +inf, and
+ * positive extents. In particular, framebuffer w*scale may be +inf while
+ * its finite origin still clips safely through the complete rectangle. */
+static int gfx_rect_ld(long double x, long double y, long double w, long double h,
+                       const EigsRect *area, EigsShape *shape, const char *who) {
+    if (w <= 0 || h <= 0) {
+        memset(shape, 0, sizeof *shape); shape->empty = 1; return 1;
+    }
+    return gfx_edges_ld(x, y, x+w, y+h, area, shape, who);
+}
+
+static void gfx_fill_shape(const EigsShape *shape) {
+    if (shape->empty) return;
+    SDL_Rect rect = {shape->x, shape->y, shape->w, shape->h};
+    p_SDL_RenderFillRect(g_renderer, &rect);
+}
+
 /* gfx_clear of [r, g, b] */
 Value* builtin_gfx_clear(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "gfx_clear");
@@ -523,16 +583,12 @@ Value* builtin_gfx_clear(Value *arg) {
      * path of this builtin answers. */
     ARG_GUARD(shaped && !gfx_nums(arg, 0, 3),
               "gfx_clear", "[number r, number g, number b]", make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
-    int r = 0, g = 0, b = 0;
-    if (shaped) {
-        r = (int)eigs_list_num(arg, 0, __func__);
-        g = (int)eigs_list_num(arg, 1, __func__);
-        b = (int)eigs_list_num(arg, 2, __func__);
-    }
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
+    int colour[4] = {0, 0, 0, 255};
+    if (shaped && !gfx_colour(arg, 0, 0, colour, __func__)) return make_null();
+    if (!g_renderer) return make_null(); /* fs:VOID no renderer; null is the result on every path. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], 255);
     p_SDL_RenderClear(g_renderer);
-    return make_null(); /* fs:VOID gfx_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_rect of [x, y, w, h, r, g, b] or [x, y, w, h, r, g, b, a] */
@@ -543,19 +599,14 @@ Value* builtin_gfx_rect(Value *arg) {
               "gfx_rect",
               "[number x, number y, number w, number h, number r, number g, number b] and an optional number alpha",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rect answers null on every path -- the return value, not a rejected-argument stand-in */
-    SDL_Rect rect;
-    rect.x = (int)eigs_list_num(arg, 0, __func__);
-    rect.y = (int)eigs_list_num(arg, 1, __func__);
-    rect.w = (int)eigs_list_num(arg, 2, __func__);
-    rect.h = (int)eigs_list_num(arg, 3, __func__);
-    int r = (int)eigs_list_num(arg, 4, __func__);
-    int g = (int)eigs_list_num(arg, 5, __func__);
-    int b = (int)eigs_list_num(arg, 6, __func__);
-    int a = (arg->data.list.count >= 8) ? (int)eigs_list_num(arg, 7, __func__) : 255;
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
-    p_SDL_RenderFillRect(g_renderer, &rect);
-    return make_null(); /* fs:VOID gfx_rect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    int colour[4];
+    if (!gfx_colour(arg, 4, 1, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_RECT, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY empty visible intersection draws nothing. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], colour[3]);
+    gfx_fill_shape(&shape);
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_line of [x1, y1, x2, y2, r, g, b] */
@@ -566,17 +617,14 @@ Value* builtin_gfx_line(Value *arg) {
               "gfx_line",
               "[number x1, number y1, number x2, number y2, number r, number g, number b]",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_line answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x1 = (int)eigs_list_num(arg, 0, __func__);
-    int y1 = (int)eigs_list_num(arg, 1, __func__);
-    int x2 = (int)eigs_list_num(arg, 2, __func__);
-    int y2 = (int)eigs_list_num(arg, 3, __func__);
-    int r = (int)eigs_list_num(arg, 4, __func__);
-    int g = (int)eigs_list_num(arg, 5, __func__);
-    int b = (int)eigs_list_num(arg, 6, __func__);
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
-    p_SDL_RenderDrawLine(g_renderer, x1, y1, x2, y2);
-    return make_null(); /* fs:VOID gfx_line answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    int colour[4];
+    if (!gfx_colour(arg, 4, 0, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_LINE, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY no visible segment. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], 255);
+    p_SDL_RenderDrawLine(g_renderer, shape.x, shape.y, shape.x2, shape.y2);
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_point of [x, y, r, g, b] */
@@ -586,15 +634,14 @@ Value* builtin_gfx_point(Value *arg) {
               || !gfx_nums(arg, 0, 5),
               "gfx_point", "[number x, number y, number r, number g, number b]",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_point answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
-    int r = (int)eigs_list_num(arg, 2, __func__);
-    int g = (int)eigs_list_num(arg, 3, __func__);
-    int b = (int)eigs_list_num(arg, 4, __func__);
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
-    p_SDL_RenderDrawPoint(g_renderer, x, y);
-    return make_null(); /* fs:VOID gfx_point answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    int colour[4];
+    if (!gfx_colour(arg, 2, 0, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_POINT, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY an outside point draws nothing. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], 255);
+    p_SDL_RenderDrawPoint(g_renderer, shape.x, shape.y);
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_circle of [cx, cy, radius, r, g, b] — filled circle via midpoint */
@@ -605,22 +652,28 @@ Value* builtin_gfx_circle(Value *arg) {
               "gfx_circle",
               "[number cx, number cy, number radius, number r, number g, number b] and an optional number alpha",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_circle answers null on every path -- the return value, not a rejected-argument stand-in */
-    int cx = (int)eigs_list_num(arg, 0, __func__);
-    int cy = (int)eigs_list_num(arg, 1, __func__);
-    int radius = (int)eigs_list_num(arg, 2, __func__);
-    int r = (int)eigs_list_num(arg, 3, __func__);
-    int g = (int)eigs_list_num(arg, 4, __func__);
-    int b = (int)eigs_list_num(arg, 5, __func__);
-    int a = (arg->data.list.count >= 7) ? (int)eigs_list_num(arg, 6, __func__) : 255;
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
-    /* Filled circle via horizontal lines */
-    for (int dy = -radius; dy <= radius; dy++) {
-        int dx = (int)sqrt((double)(radius * radius - dy * dy));
-        SDL_Rect row = { cx - dx, cy + dy, dx * 2 + 1, 1 };
-        p_SDL_RenderFillRect(g_renderer, &row);
+    int colour[4];
+    if (!gfx_colour(arg, 3, 1, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_CIRCLE, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY no visible bounding box. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], colour[3]);
+    long double cx = shape.raw[0], cy = shape.raw[1], radius = shape.raw[2];
+    for (int row = shape.y; row < shape.y + shape.h; ++row) {
+        /* Keep the visible row term after subtracting a far-away centre:
+         * cy==r==1e308 still has a wide chord at y=1, not a zero chord. */
+        long double near = cy >= row ? (radius-cy)+row : (radius+cy)-row;
+        if (near < 0) continue;
+        long double dy = fabsl((long double)row-cy);
+        /* The chord is <=radius, even when r+dy or r*r overflows.
+         * Keep near's cancellation-safe value and factor the square root. */
+        long double dx = radius == 0 ? 0 :
+            fminl(radius, sqrtl(near)*sqrtl(radius)*sqrtl(1+fminl(1,dy/radius)));
+        EigsShape span;
+        if (!gfx_edges_ld(cx-dx, row, cx+dx+1, row+1, &area, &span, __func__)) return make_null();
+        gfx_fill_shape(&span);
     }
-    return make_null(); /* fs:VOID gfx_circle answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_rrect of [x, y, w, h, radius, r, g, b] or [..., a]
@@ -632,41 +685,25 @@ Value* builtin_gfx_rrect(Value *arg) {
               "gfx_rrect",
               "[number x, number y, number w, number h, number radius, number r, number g, number b] and an optional number alpha",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rrect answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
-    int w = (int)eigs_list_num(arg, 2, __func__);
-    int h = (int)eigs_list_num(arg, 3, __func__);
-    int rad = (int)eigs_list_num(arg, 4, __func__);
-    int r = (int)eigs_list_num(arg, 5, __func__);
-    int g = (int)eigs_list_num(arg, 6, __func__);
-    int b = (int)eigs_list_num(arg, 7, __func__);
-    int a = (arg->data.list.count >= 9) ? (int)eigs_list_num(arg, 8, __func__) : 255;
-    if (w <= 0 || h <= 0) return make_null(); /* fs:EMPTY a rectangle with no width or height covers no pixels, so drawing nothing IS the answer -- the degenerate-geometry identity, not a laundered argument (lib/ui layout produces zero-size rects routinely) */
-    /* Clamp radius to half the smaller dimension */
-    if (rad > w / 2) rad = w / 2;
-    if (rad > h / 2) rad = h / 2;
-    if (rad < 0) rad = 0;
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
-    if (rad == 0) {
-        SDL_Rect rect = { x, y, w, h };
-        p_SDL_RenderFillRect(g_renderer, &rect);
-        return make_null(); /* fs:VOID radius 0 took the plain-rect path and drew it; gfx_rrect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    int colour[4];
+    if (!gfx_colour(arg, 5, 1, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_RRECT, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY no visible rounded rectangle. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], colour[3]);
+    long double x = shape.raw[0], y = shape.raw[1];
+    long double right = x+shape.raw[2], bottom = y+shape.raw[3];
+    long double rad = fminl(fmaxl(0, shape.raw[4]), fminl(shape.raw[2]/2.0L, shape.raw[3]/2.0L));
+    for (int row = shape.y; row < shape.y + shape.h; ++row) {
+        long double depth = row < y+rad ? row-y : row >= bottom-rad ? (bottom-1)-row : rad;
+        depth = fmaxl(0, fminl(rad, depth));
+        long double chord = fminl(rad, sqrtl(depth)*sqrtl(2*rad-depth));
+        long double inset = rad-chord;
+        EigsShape span;
+        if (!gfx_edges_ld(x+inset, row, right-inset, row+1, &area, &span, __func__)) return make_null();
+        gfx_fill_shape(&span);
     }
-    /* Center body (between top and bottom rounded bands) */
-    SDL_Rect center = { x, y + rad, w, h - 2 * rad };
-    p_SDL_RenderFillRect(g_renderer, &center);
-    /* Top and bottom bands with rounded corners via scanlines */
-    for (int dy = 0; dy < rad; dy++) {
-        int dx = (int)sqrt((double)(rad * rad - (rad - dy) * (rad - dy)));
-        /* Top band */
-        SDL_Rect top_row = { x + rad - dx, y + dy, w - 2 * (rad - dx), 1 };
-        p_SDL_RenderFillRect(g_renderer, &top_row);
-        /* Bottom band */
-        SDL_Rect bot_row = { x + rad - dx, y + h - 1 - dy, w - 2 * (rad - dx), 1 };
-        p_SDL_RenderFillRect(g_renderer, &bot_row);
-    }
-    return make_null(); /* fs:VOID gfx_rrect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_clip of [x, y, w, h] — set render clip rectangle.
@@ -681,18 +718,15 @@ Value* builtin_gfx_clip(Value *arg) {
                             || !gfx_nums(arg, 0, 4)),
               "gfx_clip", "[number x, number y, number w, number h] or null",
               make_null());
-    if (!g_renderer || !p_SDL_RenderSetClipRect) return make_null();  /* fs:VOID no window / no SDL symbol: gfx_clip answers null on every path -- the return value, not a rejected-argument stand-in */
-    if (clearing) {
-        p_SDL_RenderSetClipRect(g_renderer, NULL);
-        return make_null();  /* fs:VOID the clip was cleared -- gfx_clip's normal successful answer */
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!clearing && !eigs_geom_shape(arg, 0, EIGS_RECT, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || !p_SDL_RenderSetClipRect) return make_null(); /* fs:VOID no renderer or optional clip API. */
+    if (clearing) p_SDL_RenderSetClipRect(g_renderer, NULL);
+    else {
+        SDL_Rect clip = {shape.x, shape.y, shape.empty ? 0 : shape.w, shape.empty ? 0 : shape.h};
+        p_SDL_RenderSetClipRect(g_renderer, &clip);
     }
-    SDL_Rect clip;
-    clip.x = (int)eigs_list_num(arg, 0, __func__);
-    clip.y = (int)eigs_list_num(arg, 1, __func__);
-    clip.w = (int)eigs_list_num(arg, 2, __func__);
-    clip.h = (int)eigs_list_num(arg, 3, __func__);
-    p_SDL_RenderSetClipRect(g_renderer, &clip);
-    return make_null(); /* fs:VOID gfx_clip answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_read of [x, y] — read back one rendered pixel as [r, g, b].
@@ -715,22 +749,25 @@ Value* builtin_gfx_read(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
               || !gfx_nums(arg, 0, 2),
               "gfx_read", "[number x, number y]", make_null());
+    /* Deterministic refusals stay above TAKE, including nonfinite numbers. */
+    (void)eigs_list_float(arg, 0, __func__);
+    if (g_has_error) return make_null();
+    (void)eigs_list_float(arg, 1, __func__);
+    if (g_has_error) return make_null();
     TRACE_NONDET_TAKE("gfx_read");
     if (!g_renderer || !p_SDL_RenderReadPixels)
         TRACE_NONDET_RECORD("gfx_read", make_null());
-    SDL_Rect r;
-    r.x = (int)eigs_list_num(arg, 0, __func__);
-    r.y = (int)eigs_list_num(arg, 1, __func__);
-    r.w = 1;
-    r.h = 1;
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_POINT, &area, &shape, __func__)) return make_null();
+    if (shape.empty) TRACE_NONDET_RECORD("gfx_read", make_null());
+    SDL_Rect rect = {shape.x, shape.y, 1, 1};
     Uint32 px = 0;
-    if (p_SDL_RenderReadPixels(g_renderer, &r, MY_SDL_PIXELFORMAT_ARGB8888,
-                               &px, (int)sizeof(Uint32)) != 0)
+    if (p_SDL_RenderReadPixels(g_renderer, &rect, MY_SDL_PIXELFORMAT_ARGB8888, &px, sizeof px) != 0)
         TRACE_NONDET_RECORD("gfx_read", make_null());
     Value *out = make_list(3);
-    list_append_owned(out, make_num((double)((px >> 16) & 0xFF)));
-    list_append_owned(out, make_num((double)((px >> 8) & 0xFF)));
-    list_append_owned(out, make_num((double)(px & 0xFF)));
+    list_append_owned(out, make_int((px >> 16) & 0xFF));
+    list_append_owned(out, make_int((px >> 8) & 0xFF));
+    list_append_owned(out, make_int(px & 0xFF));
     TRACE_NONDET_RECORD("gfx_read", out);
 }
 
@@ -999,66 +1036,73 @@ Value* builtin_gfx_text(Value *arg) {
               "gfx_text",
               "[number x, number y, string text, number r, number g, number b] and an optional number scale",
               make_null());
+    double x = eigs_list_float(arg, 0, __func__);
+    if (g_has_error) return make_null();
+    double y = eigs_list_float(arg, 1, __func__);
+    if (g_has_error) return make_null();
+    double scale = arg->data.list.count >= 7 ? eigs_list_float(arg, 6, __func__) : 1;
+    if (g_has_error) return make_null();
+    if (scale < 1) scale = 1;
+    int colour[4];
+    if (!gfx_colour(arg, 3, 0, colour, __func__)) return make_null();
+    const char *text = list_get_ref(arg, 2)->data.str;
     if (__builtin_expect(g_replay_enabled, 0)) {
-        rt_error(EK_IO, 0, "gfx_text: not replayable under "
-                 "EIGS_REPLAY (file-read boundary; see docs/TRACE.md)");
+        rt_error(EK_IO, 0, "gfx_text: not replayable under EIGS_REPLAY (file-read boundary; see docs/TRACE.md)");
         return make_null();
     }
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_text answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
-    const char *text = list_get_ref(arg, 2)->data.str;
-    int r = (int)eigs_list_num(arg, 3, __func__);
-    int g = (int)eigs_list_num(arg, 4, __func__);
-    int b = (int)eigs_list_num(arg, 5, __func__);
-    int scale = (arg->data.list.count >= 7) ? (int)eigs_list_num(arg, 6, __func__) : 1;
-    if (scale < 1) scale = 1;
-
-    if (*text && ttf_available() && p_SDL_CreateTextureFromSurface
-        && p_SDL_FreeSurface && p_SDL_QueryTexture && p_SDL_DestroyTexture
-        && p_SDL_RenderCopy) {
-        void *font = ttf_font_for_scale(scale);
+    if (!g_renderer) return make_null(); /* fs:VOID no renderer. */
+    EigsRect area = gfx_drawable();
+    /* The integer TTF size API cannot express a fractional or enormous
+     * bitmap cell. Retain continuous geometry in the bitmap fallback. */
+    if (*text && scale <= (INT_MAX-2)/6 && scale == floor(scale) &&
+        ttf_available() && p_SDL_CreateTextureFromSurface && p_SDL_FreeSurface &&
+        p_SDL_QueryTexture && p_SDL_DestroyTexture && p_SDL_RenderCopy) {
+        void *font = ttf_font_for_scale((int)scale);
         if (font) {
-            SDL_Color col = { (Uint8)r, (Uint8)g, (Uint8)b, 255 };
+            SDL_Color col = {(Uint8)colour[0], (Uint8)colour[1], (Uint8)colour[2], 255};
             void *surf = p_TTF_RenderUTF8_Blended(font, text, col);
             if (surf) {
                 SDL_Texture *tex = p_SDL_CreateTextureFromSurface(g_renderer, surf);
                 p_SDL_FreeSurface(surf);
                 if (tex) {
                     int tw = 0, th = 0;
-                    p_SDL_QueryTexture(tex, NULL, NULL, &tw, &th);
-                    SDL_Rect dst = { x, y, tw, th };
-                    p_SDL_RenderCopy(g_renderer, tex, NULL, &dst);
+                    if (p_SDL_QueryTexture(tex, NULL, NULL, &tw, &th) == 0 && tw > 0 && th > 0) {
+                        EigsShape shape;
+                        if (!gfx_rect_ld(x, y, tw, th, &area, &shape, __func__)) {
+                            p_SDL_DestroyTexture(tex); return make_null();
+                        }
+                        if (!shape.empty) {
+                            SDL_Rect dst = {shape.x, shape.y, shape.w, shape.h};
+                            SDL_Rect src = {(int)((long double)shape.x-roundl(x)),
+                                            (int)((long double)shape.y-roundl(y)), shape.w, shape.h};
+                            p_SDL_RenderCopy(g_renderer, tex, &src, &dst);
+                        }
+                        p_SDL_DestroyTexture(tex);
+                        return make_null(); /* fs:VOID TTF rendering completed, including an empty intersection. */
+                    }
                     p_SDL_DestroyTexture(tex);
-                    return make_null(); /* fs:VOID the TTF path rendered the string; gfx_text answers null on every path -- this is the return value, not a stand-in for a rejected argument */
                 }
             }
         }
-        /* fall through to the bitmap path on any failure */
     }
-
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
-    int cx = x;
-    for (const char *p = text; *p; p++) {
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], 255);
+    long double cx = x;
+    for (const char *p = text; *p; ++p) {
         int ch = (unsigned char)*p;
         if (ch < 32 || ch > 126) ch = '?';
-        const unsigned char *glyph = font5x7[ch - 32];
-        for (int row = 0; row < 7; row++) {
-            unsigned char bits = glyph[row];
-            for (int col = 0; col < 5; col++) {
-                if (bits & (0x10 >> col)) {
-                    if (scale == 1) {
-                        p_SDL_RenderDrawPoint(g_renderer, cx + col, y + row);
-                    } else {
-                        SDL_Rect pr = { cx + col * scale, y + row * scale, scale, scale };
-                        p_SDL_RenderFillRect(g_renderer, &pr);
-                    }
+        const unsigned char *glyph = font5x7[ch-32];
+        for (int row = 0; row < 7; ++row)
+            for (int col = 0; col < 5; ++col)
+                if (glyph[row] & (0x10 >> col)) {
+                    EigsShape cell;
+                    if (!gfx_rect_ld(cx+(long double)col*scale, (long double)y+(long double)row*scale,
+                                     scale, scale, &area, &cell, __func__)) return make_null();
+                    gfx_fill_shape(&cell);
                 }
-            }
-        }
-        cx += (5 + 1) * scale; /* 5 pixel width + 1 pixel gap */
+        cx += 6*(long double)scale;
+        if (cx >= (long double)area.x + area.w) break;
     }
-    return make_null(); /* fs:VOID gfx_text answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_text_width of [text, scale?] (or of "text") — pixel width of `text`
@@ -2384,58 +2428,81 @@ Value* builtin_gfx_fb(Value *arg) {
               "gfx_fb",
               "[buffer fb, number w, number h, number x, number y, number scale]",
               make_null());
-    Value *buf  = list_get_ref(arg, 0);
-    int    w    = (int)eigs_list_num(arg, 1, __func__);
-    int    h    = (int)eigs_list_num(arg, 2, __func__);
-    int    dx   = (int)eigs_list_num(arg, 3, __func__);
-    int    dy   = (int)eigs_list_num(arg, 4, __func__);
-    int    sc   = (int)eigs_list_num(arg, 5, __func__);
-    /* A non-positive dimension is DEGENERATE geometry (nothing to blit),
-     * the same verdict gfx_rrect gives a zero-size rectangle. A buffer
-     * SHORTER than w * h is an argument mismatch and is loud -- still above
-     * the SDL check so it is reachable without libSDL2 (the [135] rule);
-     * the reads it needs are type-checked by the guard above. */
-    if (w <= 0 || h <= 0 || sc <= 0) return make_null();  /* fs:EMPTY a zero or negative width/height/scale covers no pixels, so drawing nothing IS the answer -- the same degenerate-geometry identity gfx_rrect gives */
-    ARG_GUARD(buf->data.buffer.count < w * h,
-              "gfx_fb",
-              "[buffer fb, number w, number h, number x, number y, number scale] with len of fb >= w * h",
-              make_null());
+    Value *buf = list_get_ref(arg, 0);
+    int64_t wi, hi;
+    if (!eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &wi, __func__) ||
+        !eigs_list_int_range(arg, 2, INT_MIN, INT_MAX, &hi, __func__)) return make_null();
+    double dx = eigs_list_float(arg, 3, __func__);
+    if (g_has_error) return make_null();
+    double dy = eigs_list_float(arg, 4, __func__);
+    if (g_has_error) return make_null();
+    double scale = eigs_list_float(arg, 5, __func__);
+    if (g_has_error) return make_null();
+    if (wi <= 0 || hi <= 0 || scale <= 0) return make_null(); /* fs:EMPTY degenerate framebuffer geometry. */
+    int64_t total = wi*hi;
+    ARG_GUARD(total > buf->data.buffer.count, "gfx_fb", "len of fb >= w * h", make_null());
     if (!g_renderer || !p_SDL_CreateTexture || !p_SDL_UpdateTexture || !p_SDL_RenderCopy)
-        return make_null();  /* fs:VOID no window / no SDL texture symbols: gfx_fb answers null on every path -- the return value, not a rejected-argument stand-in */
-
-    /* Recreate texture if size changed */
-    if (!g_fb_texture || g_fb_w != w || g_fb_h != h) {
-        if (g_fb_texture) p_SDL_DestroyTexture(g_fb_texture);
-        g_fb_texture = p_SDL_CreateTexture(g_renderer,
-            MY_SDL_PIXELFORMAT_ARGB8888, MY_SDL_TEXTUREACCESS_STREAMING, w, h);
-        if (!g_fb_texture) return make_null(); /* fs:ANSWER SDL_CreateTexture failed -- environment/driver state, not an argument; nothing can be blitted so null is the result */
-        g_fb_w = w;
-        g_fb_h = h;
-    }
-
-    /* GB shade palette: index → ARGB */
-    static const Uint32 palette[4] = {
-        0xFFFFFFFF, /* 0 = white  */
-        0xFFAAAAAA, /* 1 = light  */
-        0xFF555555, /* 2 = dark   */
-        0xFF000000  /* 3 = black  */
-    };
-
-    /* Convert buffer → ARGB pixel array */
-    int total = w * h;
-    Uint32 *pixels = xmalloc_array(total, sizeof(Uint32));
-    for (int i = 0; i < total; i++) {
+        return make_null(); /* fs:VOID no renderer or optional texture API. */
+    int w = (int)wi, h = (int)hi;
+    /* Preserve the source layout and validate every source byte, even if
+     * clipping later hides it. Q1 migration of this wrapper is separate. */
+    static const Uint32 palette[4] = {0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000};
+    Uint32 *pixels = xmalloc_array((size_t)total, sizeof *pixels);
+    for (int64_t i = 0; i < total; ++i) {
         int idx = buffer_read_byte(buf, i);
         if (g_has_error) { free(pixels); return make_null(); }
         pixels[i] = palette[idx & 3];
     }
-
-    p_SDL_UpdateTexture(g_fb_texture, NULL, pixels, w * (int)sizeof(Uint32));
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!gfx_rect_ld(dx, dy, wi*(long double)scale, hi*(long double)scale, &area, &shape, __func__)) {
+        free(pixels); return make_null();
+    }
+    if (shape.empty) { free(pixels); return make_null(); } /* fs:EMPTY source is valid but destination has no visible pixels. */
+    long double rx = roundl(dx), ry = roundl(dy);
+    long double rw = roundl((long double)dx+wi*(long double)scale)-rx;
+    long double rh = roundl((long double)dy+hi*(long double)scale)-ry;
+    if (scale == floor(scale) && rx >= area.x && ry >= area.y &&
+        rx+rw <= (long double)area.x+area.w && ry+rh <= (long double)area.y+area.h &&
+        rw > 0 && rh > 0 && rw <= INT_MAX && rh <= INT_MAX && wi <= INT_MAX/(int)sizeof *pixels) {
+        if (!g_fb_texture || g_fb_w != w || g_fb_h != h) {
+            if (g_fb_texture) p_SDL_DestroyTexture(g_fb_texture);
+            g_fb_texture = p_SDL_CreateTexture(g_renderer, MY_SDL_PIXELFORMAT_ARGB8888,
+                                              MY_SDL_TEXTUREACCESS_STREAMING, w, h);
+            if (!g_fb_texture) { free(pixels); return make_null(); } /* fs:ANSWER SDL texture allocation failed. */
+            g_fb_w = w; g_fb_h = h;
+        }
+        p_SDL_UpdateTexture(g_fb_texture, NULL, pixels, w*(int)sizeof *pixels);
+        SDL_Rect dst = {(int)rx, (int)ry, (int)rw, (int)rh};
+        p_SDL_RenderCopy(g_renderer, g_fb_texture, NULL, &dst);
+    } else {
+        /* A destination outside SDL's integer rectangle domain is sampled
+         * only over visible pixels. Inverse source mapping avoids clipping
+         * and stretching the complete source into the visible destination.
+         * ceil(pixel+0.5)-1 selects the source cell whose independently
+         * rounded right edge contains this pixel, including exact Q4 ties. */
+        for (int y = shape.y; y < shape.y+shape.h; ++y) {
+            long double sy = ceill(((long double)y+0.5L-dy)/scale)-1;
+            if (sy < 0 || sy >= hi) continue;
+            int x = shape.x;
+            while (x < shape.x+shape.w) {
+                long double sx = ceill(((long double)x+0.5L-dx)/scale)-1;
+                if (sx < 0 || sx >= wi) { ++x; continue; }
+                Uint32 pixel = pixels[(int64_t)sy*wi+(int64_t)sx];
+                int end = x+1;
+                while (end < shape.x+shape.w) {
+                    long double next = ceill(((long double)end+0.5L-dx)/scale)-1;
+                    if (next < 0 || next >= wi || pixels[(int64_t)sy*wi+(int64_t)next] != pixel) break;
+                    ++end;
+                }
+                p_SDL_SetRenderDrawColor(g_renderer, (pixel>>16)&255, (pixel>>8)&255, pixel&255, 255);
+                SDL_Rect run = {x, y, end-x, 1};
+                p_SDL_RenderFillRect(g_renderer, &run);
+                x = end;
+            }
+        }
+    }
     free(pixels);
-
-    SDL_Rect dst = { dx, dy, w * sc, h * sc };
-    p_SDL_RenderCopy(g_renderer, g_fb_texture, NULL, &dst);
-    return make_null(); /* fs:VOID gfx_fb answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* ================================================================
