@@ -117,7 +117,7 @@ for family in ('number', 'float', 'int', 'byte', 'int_range', 'bounded', 'magnit
                      'eigs_opt_' + family, 'eigs_slot_' + family,
                      'eigs_slot_elem_' + family, 'eigs_slot_opt_' + family):
         VOCAB[accessor] = 'READ'
-for accessor in ('buffer_read_f64', 'buffer_byte_at', 'buffer_index_at'):
+for accessor in ('buffer_read_f64', 'buffer_byte_at', 'buffer_index_at', 'eigs_geom_shape'):
     VOCAB[accessor] = 'READ'
 for family in ('f64', 'int'):
     for container in ('list', 'dict_value'):
@@ -127,6 +127,13 @@ for family in ('f64', 'int'):
     VOCAB['list_append_' + family] = 'PRODUCE'
 for producer in ('make_float', 'make_float_permanent'):
     VOCAB[producer] = 'PRODUCE'
+
+# R1.6e retires the last wrapper only after its complete caller census.
+# Keep the spelling in the population: absence is required and reintroduction
+# is an error, rather than silently ceasing to recognize an old byte reader.
+RETIRED_VOCAB = {
+    'buffer_read_byte': 'R1.6e: gfx_fb and ppu_render_frame use buffer_byte_at',
+}
 
 # JIT-only vocabulary (jit.c, jit.h, jit_smoke.c): the emitted guards test
 # raw tag bits and never name a VOCAB token, so a token scan alone sees almost
@@ -847,7 +854,7 @@ def main():
         unclassified.append(((acc[fn], 0, fn, fn, 'ACCESSOR'),
                              'reads a payload and returns/writes a double; not in VOCAB or WRAPPERS'))
     stale_wrappers = sorted(w for w in WRAPPERS if w not in acc)
-    dead_tokens = sorted(t for t, c in token_hits.items() if c == 0)
+    dead_tokens = sorted(t for t, c in token_hits.items() if c == 0 and t not in RETIRED_VOCAB)
     dead_rules = [i for i, c in enumerate(rule_hits) if c == 0]
 
     # builtins
@@ -922,6 +929,8 @@ def main():
     out.append('files=%d tokens=%d role_rules=%d derived_accessors=%d wrappers=%d' % (
         len(files), len(VOCAB), len(ROLE_RULES), len(acc), len(WRAPPERS)))
     out.append('')
+    for token, reason in sorted(RETIRED_VOCAB.items()):
+        out.append('# Retired (required absent): %s -- %s' % (token, reason))
     out.append('## Per category')
     for c in cats:
         kinds = ' '.join('%s=%d' % (k, v) for k, v in sorted(per_kind.get(c, {}).items()))
@@ -1008,6 +1017,11 @@ def main():
         fail.append('stale WRAPPERS row: %s is no longer a payload-reading double accessor' % w)
     for t in dead_tokens:
         fail.append('VOCAB token never occurs: %s' % t)
+    for token, reason in RETIRED_VOCAB.items():
+        if token not in VOCAB:
+            fail.append('retired token is absent from VOCAB: %s' % token)
+        elif token_hits[token]:
+            fail.append('retired VOCAB token occurs: %s (%s)' % (token, reason))
     for i in dead_rules:
         fail.append('role rule %d (%s %s) matched no site' % (i, ROLE_RULES[i][0], ROLE_RULES[i][2][:40]))
     for b in table_bad:

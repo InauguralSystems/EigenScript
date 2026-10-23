@@ -375,8 +375,6 @@ gates (design §9.2).
   -> `value` twice (byte values: N5, then 0..255; #1758 comment 6174964306)
   tag: no raise, samples `0.009155552842799158` and `4.577776421399579e-05` (probed main)
 - `N5.audio-channel-domain` [R1.6e] R1.6e-D1 (#1922 comment 6355101247): audio_open, audio_capture_open and audio_stream_open reject channels 0, 256, 257, -1 and 1.5 with `value` at the N5/domain reader; 255 and 1 pass that reader (unsupported counts remain SDL's to refuse). Validation precedes SDL/device/tape side effects.
-  shape: `S`; witness: `none`; ops:
-- `gate.N13.audio-buffer-boundary` [R1.6e] `tests/phase2/gfx_audio_boundary.c` through `tools/phase2_readers.sh`: R1.6d-D1 pre-registration for audio_convert_samples (audio_play, audio_play_loop, audio_stream_push). Stored lenient NaN and every infinity raise `value`; strict NaN retains INVALID and the first diagnostic before a later infinity. Continuous finite samples clamp to [-1,1], then round PCM half away from zero. The fixture drives the actual helper with raw payloads because strict scalar constructors refuse first; no SDL dependency is exercised.
 - `gate.N5.gfx-byte-boundary` [R1.6e] `tests/phase2/gfx_byte_boundary.c` through `tools/phase2_readers.sh`: R1.6d-D1 pre-registration for buffer_read_byte's gfx_fb and ppu_render_frame callers. Both reject stored lenient NaN and every infinity with `value`; strict first NaN preserves INVALID/diagnostic before a later infinity. Q1 rejects 1.5 and 256, while integral float 255 succeeds. Actual client calls and rendered/framebuffer sentinels prove that rejection at the first palette byte or first LCDC register stops before the sink changes; the PPU retains its existing progressive writes after valid reads.
 - `gate.N5.q7-readers` [R1.6e] `tests/phase2/q7_readers.c` (through the amalgamation, no SDL): `eigs_geom_shape` clips `RECT [-3e9, 0, 6e9, 10]` on a 640x480 drawable area to `[0, 0, 640, 10]` (saturating each argument would give half of that), clips a `LINE` with Liang-Barsky, bounds a `CIRCLE` of radius 3e9 to the visible rows; `eigs_bounded_arg` clamps 300 to 255; `eigs_magnitude_arg` raises `value` on 3e12 for a C `int`
   -> every case as stated
@@ -545,6 +543,7 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   shape: L  witness: leaf dif  ops: SUB
 
 ### N13
+- `gate.N13.audio-buffer-boundary` [R1.6e] `tests/phase2/gfx_audio_boundary.c` through `tools/phase2_readers.sh`: R1.6d-D1 pre-registration for audio_convert_samples (audio_play, audio_play_loop, audio_stream_push). Stored lenient NaN and every infinity raise `value`; strict NaN retains INVALID and the first diagnostic before a later infinity. Continuous finite samples clamp to [-1,1], then round PCM half away from zero. The fixture drives the actual helper with raw payloads because strict scalar constructors refuse first; no SDL dependency is exercised.
 - `N13.json-refuses-inf` [R2.3] `x is 1e308 * 10 / {try print of (json_encode of [x]) catch}`, printing `e.kind`
   -> `value`
   tag: `1e+308`, the clamp (read; a one-element literal list passes its element, #405). **Plant 3's named check.**

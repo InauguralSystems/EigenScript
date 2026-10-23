@@ -673,3 +673,15 @@ stored non-finite buffer samples at the scalar boundary in both strict modes
 samples clamp to [-1,1], then round PCM16 half away from zero (Q7/Q4).
 Channel indices and loop counts follow N5; continuous mixer gain stays
 fractional after clamping to [0,4].
+
+Q7 magnitude validation also applies before SDL is loaded:
+
+```eigenscript
+try:
+    gfx_delay of 1e300
+catch e:
+    print of e.kind
+```
+```output
+value
+```
