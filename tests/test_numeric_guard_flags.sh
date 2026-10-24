@@ -80,7 +80,6 @@ for spec in \
  'NG52 scatter index|dst is buffer of 1; scatter_add of [dst, raw, 5]' \
  'NG53 gather index|dst is buffer of [1, 1]; x is gather of [dst, raw]' \
  'NG55 str_from_bytes|x is str_from_bytes of raw' \
- 'NG56 f64_from_bytes|x is f64_from_bytes of raw' \
  'NG58 PCM encode|x is buf_to_pcm16le of [raw, 0, 1]'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n    /g; s/^/    /')
  run "$name N13 refusal" "$nan_setup
@@ -109,6 +108,25 @@ try:
 catch e:
     caught is e.kind == \"value\"
 assert of [caught, \"N13 sum refuses non-finite payload instead of substituting zero\"]"
+# NG56 needs 8 stored bytes since #1926 refuses a short input. Keep the NaN
+# in buffer storage so the decoder's own read performs the refusal: an index read
+# first (raw[0]) would set it before f64_from_bytes ever ran.
+run "NG56 f64_from_bytes N13 refusal" 'left is buffer of [8, 2]
+for i in range of 16:
+    left[i] is 1e200
+right is buffer of [2, 1]
+right[0] is 1e200
+right[1] is 0 - 1e200
+raw is matmul of [left, right]
+assert of [not (math_flags of null).invalid, "NaN setup leaves invalid clear"]
+caught is false
+length_error is false
+try:
+    f64_from_bytes of raw
+catch e:
+    caught is e.kind == "value"
+    length_error is (index_of of [e.message, "needs 8 bytes"]) >= 0
+assert of [caught and not length_error and not (math_flags of null).invalid, "N13 refuses without normalizing NaN, not length"]'
 run "NG61 mixed materialization invalid" "$nan_setup
 x is add of [raw, [2]]
 assert of [x == [[2]] and (math_flags of null).invalid, \"mixed materialization observes invalid\"]"

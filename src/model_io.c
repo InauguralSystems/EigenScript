@@ -35,6 +35,25 @@ static Value* model_load_status_json(const char *path) {
     return result;
 }
 
+/* Reproduce the loader's stdout contract without probing the replay host.
+ * Successful taped statuses carry the path selected by the recording. */
+static void replay_model_load_banner(Value *status) {
+    if (!status || status->type != VAL_STR) return;
+    int pos = 0;
+    Value *root = eigs_json_parse_root(status->data.str, &pos);
+    if (!root || root->type != VAL_DICT) {
+        if (root) val_decref(root);
+        return;
+    }
+    EIGS_VIEW(path_view);
+    Value *path = dict_get_view(root, "path", &path_view);
+    if (path && path->type == VAL_STR) {
+        printf("Loading model from: %s\n", path->data.str);
+        fflush(stdout);
+    }
+    val_decref(root);
+}
+
 static Value* model_save_status_json(const char *path) {
     strbuf sb;
     strbuf_init(&sb);
@@ -572,7 +591,15 @@ Value* builtin_eigen_model_load(Value *arg) {
      * so replay can take the status before path probing or payload I/O; a
      * replayed eigen_generate likewise takes its recorded result before it
      * consults g_model. */
-    TRACE_NONDET_TAKE("eigen_model_load");
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *status = NULL;
+        if (trace_replay_refuse_off_owner("eigen_model_load"))
+            return make_null();
+        if (trace_replay_take("eigen_model_load", &status)) {
+            replay_model_load_banner(status);
+            return status;
+        }
+    }
     const char *base_path = "";
     if (arg && arg->type == VAL_STR) base_path = arg->data.str;
 

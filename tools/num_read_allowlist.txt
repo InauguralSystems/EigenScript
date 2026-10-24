@@ -92,3 +92,4 @@ vm.c|vm_value_index_is_int|2|Guarded exact VAL_INT-to-C-index conversion; the ot
 eigenscript.c|make_int|1|int constructor initializes the exact signed payload
 eigenscript.c|eigs_number_read|2|final checked reader: exact int and float payloads are read only behind their corresponding Value type tests (#1758 R1.6a)
 eigenscript.c|buffer_index_at|1|writes the raw buffer float into a borrowed stack facade; eigs_int_arg performs the finite/exact int conversion (#1758 R1.6a)
+builtins_host.c|replay_reader_size|2|v8 taped reader-size metadata: both exact int64 payload reads are dominated by v->type == VAL_INT; the first rejects negative sizes and the second returns the validated size without a float bridge (sync6 #1758 / main #1918)

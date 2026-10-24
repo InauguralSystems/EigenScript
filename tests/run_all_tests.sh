@@ -2362,6 +2362,22 @@ else
 fi
 echo ""
 
+# #1845: unseekable path readers use a bounded EOF read, including tape replay.
+echo "stream path readers (#1845)"
+SR_OUTPUT=$(bash "$TESTS_DIR/test_stream_readers.sh" 2>&1)
+SR_PASS=$(echo "$SR_OUTPUT" | grep -c "PASS:" || true)
+SR_FAIL=$(echo "$SR_OUTPUT" | grep -c "FAIL:" || true)
+TOTAL=$((TOTAL + SR_PASS + SR_FAIL))
+PASS=$((PASS + SR_PASS))
+FAIL=$((FAIL + SR_FAIL))
+if [ "$SR_FAIL" -gt 0 ]; then
+    echo "  FAIL: $SR_FAIL stream reader check(s) failed"
+    echo "$SR_OUTPUT" | grep "FAIL:" | head -5
+else
+    echo "  PASS: all $SR_PASS stream reader checks"
+fi
+echo ""
+
 # #601: read_bytes_buf cap policy — over-cap raises a catchable io error
 # (was a silent null masquerading as "file missing"), [path, max_bytes]
 # opt-in up to the 512 MB hard ceiling, missing-file null contract, and
@@ -3891,6 +3907,10 @@ if [ "$AG_RC" = "0" ] && [ "${AG_FAILED:-1}" = "0" ]; then
         echo "  PASS: ext_gfx.c is leak- and UB-clean over the gfx corpus" \
              "(${AG_PASSED:-?} checks, controls included)"
         echo "$AG_OUTPUT" | grep -m1 "NOTE:" || true
+        # #1916: the controls' process-start timing, printed on every pass so
+        # each CI host (macOS included) records the distribution its budget
+        # is sized from.
+        echo "$AG_OUTPUT" | grep -m1 "gfx-timeout controls: completion wall" | sed 's/^/  /' || true
     fi
 else
     FAIL=$((FAIL + 1))

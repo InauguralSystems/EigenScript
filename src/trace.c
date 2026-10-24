@@ -1945,6 +1945,7 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"file_exists",          TK_BOOL_},
     {"getcwd",               TK_STR_},
     {"gfx_read",             TK_LIST_ | TK_NULL_},
+    {"gfx_ticks",            TK_NUM_},
     {"http_post",            TK_STR_},
     {"http_request_body",    TK_STR_},
     {"http_request_headers", TK_STR_},
@@ -1973,10 +1974,10 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"random_hex",           TK_STR_},
     {"random_int",           TK_NUM_},
     {"random_normal",        TK_LIST_ | TK_NULL_},
-    {"read_bytes",           TK_LIST_ | TK_NULL_ | TK(VAL_INT)},
-    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK(VAL_INT) | TK_LIST_}, /* list: I/O error */
+    {"read_bytes",           TK_LIST_ | TK_NULL_ | TK_NUM_},
+    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_}, /* list: I/O error */
     {"read_line",            TK_STR_ | TK_NULL_},
-    {"read_text",            TK_STR_ | TK_LIST_ | TK(VAL_INT)}, /* num: over-cap */
+    {"read_text",            TK_STR_ | TK_LIST_ | TK_NUM_}, /* num: over-cap */
     {"remove_file",          TK_BOOL_ | TK_LIST_}, /* list: I/O error */
     {"rename",               TK_BOOL_ | TK_LIST_}, /* list: I/O error */
     {"tensor_load",          TK_LIST_ | TK_NULL_},  /* structurally validated boundary verdict */
@@ -2342,7 +2343,10 @@ static Value *parse_value_p(const char **p) {
                 skip_ws(p);
                 char *end = NULL;
                 double d = strtod(*p, &end);
-                if (end == *p) { free(data); return NULL; }
+                /* Numbers on a tape are untrusted.  The language's numeric
+                 * constructor never permits a non-finite value, so accepting
+                 * one here would bypass num_guard for buffer elements too. */
+                if (end == *p || !isfinite(d)) { free(data); return NULL; }
                 if (count >= cap) {
                     int nc = cap ? cap * 2 : 8;
                     double *nd = realloc(data, (size_t)nc * sizeof(double));
@@ -2448,7 +2452,14 @@ static Value *parse_value_p(const char **p) {
     }
     char *end = NULL;
     double d = strtod(*p, &end);
-    if (end == *p || !at_token_boundary(*end)) return NULL;
+    /* A genuine recording cannot contain NaN or infinity: num_guard rejects
+     * or clamps them before a Value reaches the recorder.  Treat either as a
+     * corrupt token at the common tape parser boundary, rather than exposing
+     * it to consumers (some of which legitimately convert numbers to C
+     * integer types).  Returning NULL selects replay_malformed_value(), whose
+     * diagnostic names the offending serialized value. Phase 2's non-finite
+     * tape tokens are scheduled in docs/design/phase2-numbers.md §8, R2.5. */
+    if (end == *p || !at_token_boundary(*end) || !isfinite(d)) return NULL;
     *p = end;
     return make_num(d);
 }
@@ -2733,9 +2744,9 @@ int trace_replay_take(const char *fn, Value **out) {
  * record ceiling.  The metadata is [ok, identity-or-error, byte_count]. */
 #define TRACE_SOURCE_CHUNK 12000
 #define TRACE_SOURCE_MAX (10u * 1024u * 1024u)
-void trace_source_record(const char *kind, const char *source, size_t size,
-                         const char *identity, const char *error) {
-    if (!__builtin_expect(g_trace_enabled, 0)) return;
+int trace_source_record(const char *kind, const char *source, size_t size,
+                        const char *identity, const char *error) {
+    if (!__builtin_expect(g_trace_enabled, 0)) return 1;
     if (!error && size > TRACE_SOURCE_MAX) {
         char message[160];
         snprintf(message, sizeof message,
@@ -2748,7 +2759,7 @@ void trace_source_record(const char *kind, const char *source, size_t size,
         trace_nondet_value(kind, meta);
         val_decref(meta);
         rt_error(EK_IO, 0, "%s", message);
-        return;
+        return 0;
     }
     Value *meta = make_list(3);
     list_append_owned(meta, make_bool(error == NULL));
@@ -2756,7 +2767,7 @@ void trace_source_record(const char *kind, const char *source, size_t size,
     list_append_owned(meta, make_int(error ? 0 : (int64_t)size));
     trace_nondet_value(kind, meta);
     val_decref(meta);
-    if (error) return;
+    if (error) return 1;
     char chunk_kind[96];
     snprintf(chunk_kind, sizeof chunk_kind, "%s_chunk", kind);
     for (size_t off = 0; off < size; off += TRACE_SOURCE_CHUNK) {
@@ -2766,6 +2777,7 @@ void trace_source_record(const char *kind, const char *source, size_t size,
         trace_nondet_value(chunk_kind, chunk);
         val_decref(chunk);
     }
+    return 1;
 }
 
 int trace_source_replay(const char *kind, char **source, long *size,

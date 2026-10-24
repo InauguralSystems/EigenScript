@@ -24,7 +24,9 @@
 # called as "$(dirname "$0")/x"), or be listed in the same exemptions file as
 # local-only with its reason. Not seen: a tool run only through make, a Python
 # subprocess or an import; a package counts as reached when CI runs any of its
-# scripts.
+# scripts. Static local uses: ./... steps also reach composite action manifests
+# (action.yml or action.yaml), including nested local actions. Action manifests
+# are graph sources, never roots: an unused action cannot enrol a tool.
 #
 # Usage: tools/enrolment_check.sh [--selftest]    exit 0 pass, 1 fail, 2 no instrument
 # ENROL_ROOT overrides the repository root (the selftest points it at a copy).
@@ -38,7 +40,7 @@ if [ "${1:-}" = "--selftest" ]; then
     trap 'rm -rf "$ST"' EXIT
     mkdir -p "$ST/tests/sections" "$ST/tools" "$ST/.github"
     cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tests/sections/*.sh "$ST/tests/sections/" \
-        && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github/workflows "$ST/.github/" \
+        && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github "$ST/" \
         && for d in tools/*/; do cp -R "${d%/}" "$ST/tools/"; done
     n=0; bad=0
     case_() {   # case_ <name> <want-rc> <want-substring>
@@ -47,7 +49,21 @@ if [ "${1:-}" = "--selftest" ]; then
         if [ "$rc" -eq "$2" ] && grep -qF -- "$3" <<< "$out"; then echo "  selftest ok: $1"
         else echo "  SELFTEST FAIL: $1 (rc=$rc, want $2 + '$3')"; printf '%s\n' "$out" | sed 's/^/      /'; bad=1; fi
     }
-    case_ "control: the unmodified tree passes" 0 "PASS: test-enrolment"
+    mkdir -p "$ST/.github/actions/zz_enrol_leaf" "$ST/.github/actions/zz_enrol_parent"
+    printf 'raise SystemExit(0)\n' > "$ST/tools/zz_plant_gate.py"
+    # Keep fixture commands in printf arguments: literal run: lines in this
+    # shell source would themselves be scanned as invocations.
+    printf '%s\n' 'name: planted leaf' 'runs:' '  using: composite' '  steps:' \
+        '    - shell: bash' '      run: python3 "$GITHUB_WORKSPACE/tools/zz_plant_gate.py"' \
+        > "$ST/.github/actions/zz_enrol_leaf/action.yaml"
+    printf '%s\n' 'name: planted parent' 'runs:' '  using: composite' '  steps:' \
+        '  - uses: ./.github/actions/zz_enrol_leaf' \
+        > "$ST/.github/actions/zz_enrol_parent/action.yml"
+    printf '%s\n' 'name: planted workflow' 'on: push' 'jobs:' '  plant:' \
+        '    runs-on: ubuntu-latest' '    steps:' \
+        '      - uses: "./.github/actions/zz_enrol_parent"' \
+        > "$ST/.github/workflows/zz_enrol.yaml"
+    case_ "control: workflow and nested local actions reach their helpers" 0 "PASS: test-enrolment"
     printf '#!/bin/bash\necho "PASS: x"\n' > "$ST/tests/test_zz_plant.sh"
     case_ "an uninvoked tests/test_zz_plant.sh is red and named" 1 "tests/test_zz_plant.sh is invoked by nothing"
     rm "$ST/tests/test_zz_plant.sh"
@@ -60,9 +76,26 @@ if [ "${1:-}" = "--selftest" ]; then
     case_ "an exemption for an invoked script is stale: red" 1 "exempts tests/test_cli.sh, which IS invoked"
     sed -i.bak '$d' "$ST/$EXEMPT" && rm -f "$ST/$EXEMPT.bak"
     printf '#!/bin/bash\nexit 1\n' > "$ST/tools/zz_plant_gate.sh"
-    case_ "an uninvoked tools/zz_plant_gate.sh is red and named" 1 "tools/zz_plant_gate.sh is invoked by no workflow"
-    mv "$ST/tools/zz_plant_gate.sh" "$ST/tools/zz_plant_gate.py"
-    case_ "an uninvoked tools/zz_plant_gate.py is red and named" 1 "tools/zz_plant_gate.py is invoked by no workflow"
+    mkdir -p "$ST/.github/actions/zz_enrol_orphan"
+    printf '%s\n' 'name: planted orphan' 'runs:' '  using: composite' '  steps:' \
+        '    - shell: bash' '      run: bash tools/zz_plant_gate.sh' \
+        > "$ST/.github/actions/zz_enrol_orphan/action.yml"
+    printf '%s\n' '      - run: true' '        env:' \
+        '          uses: ./.github/actions/zz_enrol_orphan' \
+        '      - run: |' '          cat <<TEXT' '          steps:' \
+        '            - uses: ./.github/actions/zz_enrol_orphan' '          TEXT' \
+        >> "$ST/.github/workflows/zz_enrol.yaml"
+    # A scalar before any real steps makes scalar suppression independent of
+    # the active-steps filter: dropping either guard must expose this orphan.
+    printf '%s\n' 'name: |' '  steps:' \
+        '    - uses: ./.github/actions/zz_enrol_orphan' 'on: push' 'jobs:' \
+        '  noop:' '    runs-on: ubuntu-latest' '    steps:' '      - run: true' \
+        > "$ST/.github/workflows/zz_enrol_scalar.yml"
+    case_ "env and scalar text do not invoke an orphan action" 1 "tools/zz_plant_gate.sh is invoked by no workflow"
+    rm "$ST/tools/zz_plant_gate.sh"
+    sed -i.bak 's#uses: "./.github/actions/zz_enrol_parent"#run: true#' "$ST/.github/workflows/zz_enrol.yaml"
+    rm -f "$ST/.github/workflows/zz_enrol.yaml.bak"
+    case_ "removing workflow uses leaves tools/zz_plant_gate.py unenrolled" 1 "tools/zz_plant_gate.py is invoked by no workflow"
     rm "$ST/tools/zz_plant_gate.py"; mkdir "$ST/tools/zz_pkg"; printf 'raise SystemExit(1)\n' > "$ST/tools/zz_pkg/gate.py"
     case_ "an uninvoked package tools/zz_pkg/ is red and named" 1 "tools/zz_pkg/ is invoked by no workflow"
     echo "  checks=$n"
@@ -73,9 +106,26 @@ fi
 KNOWN=" $(cd tests && ls | tr '\n' ' ') "
 EDGES=$(mktemp "${TMPDIR:-/tmp}/eigs_enrol.XXXXXX") || exit 2
 trap 'rm -f "$EDGES"' EXIT
-# Every edge "src<TAB>tests/target" out of the roots and all tests/tools shell
-# scripts, in one awk pass; the closure below keeps only reachable sources.
+# Every edge "src<TAB>target" out of the roots and all tests/tools shell
+# scripts. Local uses steps add action manifests to awk input once; the
+# closure below keeps only sources reached from workflows or the suite.
+set -- tests/run_all_tests.sh tests/sections/*.sh tests/*.sh tools/*.sh
+for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+    [ ! -f "$f" ] || set -- "$@" "$f"
+done
 awk -v known="$KNOWN" '
+function local_action(dir,   ext, path, probe, rc) {
+    sub(/^\.\//, "", dir); sub(/\/+$/, "", dir)
+    if (dir == "") dir = "."
+    for (ext = 1; ext <= 2; ext++) {
+        path = dir (ext == 1 ? "/action.yml" : "/action.yaml")
+        rc = (getline probe < path); close(path)
+        if (rc < 0) continue
+        print FILENAME "\t" path
+        if (!(path in actions)) { actions[path] = 1; ARGV[ARGC++] = path }
+        return
+    }
+}
 function strip(s,   c) {
     for (c = 1; c; ) {
         c = sub(/^[[:space:]]+/, "", s) + sub(/^(-[[:space:]]+)?run:[[:space:]]*/, "", s) \
@@ -88,9 +138,47 @@ function strip(s,   c) {
     }
     return s
 }
+FNR == 1 { scalar_indent = steps_indent = step_indent = -1 }
 {
     line = $0
     sub(/(^|[[:space:]])#.*$/, "", line)                  # a comment starts a word
+    yaml = (FILENAME ~ /^\.github\/workflows\/[^\/]+\.ya?ml$|(^|\/)action\.ya?ml$/)
+    in_scalar = step_use = 0
+    if (yaml) {
+        text = line; sub(/^[[:space:]]*/, "", text)
+        indent = length(line) - length(text)
+        if (text != "" && scalar_indent >= 0 && indent <= scalar_indent) scalar_indent = -1
+        in_scalar = (scalar_indent >= 0)
+        # Scalar contents are shell input, never YAML uses edges. A sequence
+        # dash precedes the key, so measure the key column after that dash.
+        if (!in_scalar && line ~ /:[[:space:]]*[|>]([+-][1-9]?|[1-9][+-]?)?[[:space:]]*$/) {
+            keytext = text; sub(/^-[[:space:]]+/, "", keytext)
+            scalar_indent = length(line) - length(keytext)
+        }
+        if (!in_scalar && text != "") {
+            dash = (text ~ /^-([[:space:]]|$)/)
+            # A steps sequence may start at its header column. Other keys at
+            # that column end it; nested env/with keys are not step properties.
+            if (steps_indent >= 0 && ((step_indent >= 0 && indent < step_indent) ||
+                (indent <= steps_indent && !(dash && indent == steps_indent))))
+                steps_indent = step_indent = -1
+            if (steps_indent < 0 && text ~ /^steps:[[:space:]]*$/) {
+                steps_indent = indent; step_indent = -1
+            } else if (steps_indent >= 0) {
+                if (step_indent < 0 && dash) step_indent = indent
+                step_use = (step_indent >= 0 &&
+                    ((indent == step_indent && text ~ /^-[[:space:]]+uses:[[:space:]]*/) ||
+                     (indent == step_indent + 2 && text ~ /^uses:[[:space:]]*/)))
+            }
+        }
+    }
+    if (step_use) {
+        dir = line; sub(/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*/, "", dir)
+        gsub(/["\047]/, "", dir); sub(/[[:space:]]+$/, "", dir)
+        # Static paths stay inside the checkout; expressions are not edges.
+        if (dir ~ /^\.\/[A-Za-z0-9_.\/-]*$/ && dir !~ /(^|\/)\.\.(\/|$)/) local_action(dir)
+        next
+    }
     gsub(/\$\((dirname|cd) [^)]*\)/, "$DIR", line)        # a directory, not a command
     gsub(/\$\(/, "\n", line); gsub(/\)/, "\001\n", line)  # \001 marks a segment cut by ")"
     gsub(/[(;`]|&&|\|\||\|/, "\n", line)
@@ -114,7 +202,7 @@ function strip(s,   c) {
         else if (w ~ /tools\/([^\/]+\/)?[^\/]+\.(sh|py)$/) { t = w; sub(/^.*tools\//, "tools/", t); print FILENAME "\t" t }
         else if (d == "$DIR" && FILENAME ~ /^tools\// && w ~ /\.(sh|py)$/) { t = FILENAME; sub(/[^\/]*$/, b, t); print FILENAME "\t" t }
     }
-}' tests/run_all_tests.sh tests/sections/*.sh .github/workflows/*.yml tests/*.sh tools/*.sh | sort -u > "$EDGES"
+}' "$@" | sort -u > "$EDGES"
 # Commands in the self-test table are reachable through its driver.
 awk -F '[|]' '$0 !~ /^#/ {
     n = split($2, a, /[[:space:]]+/)
@@ -123,7 +211,7 @@ awk -F '[|]' '$0 !~ /^#/ {
 REACHED=$(awk -F'\t' '{ adj[$1] = adj[$1] " " $2 }
     END { q[1] = "tests/run_all_tests.sh"; n = 1
           for (f in adj) if (f ~ /^tests\/sections\/[^\/]+\.sh$/) q[++n] = f
-          for (f in adj) if (f ~ /^\.github\//) q[++n] = f
+          for (f in adj) if (f ~ /^\.github\/workflows\/[^\/]+\.ya?ml$/) q[++n] = f
           for (h = 1; h <= n; h++) { m = split(adj[q[h]], t, " ")
               for (j = 1; j <= m; j++) if (!(t[j] in seen)) { seen[t[j]] = 1; q[++n] = t[j]; print t[j] } } }' \
     "$EDGES") || { echo "test-enrolment: ABORTED: reachability scan failed"; exit 2; }

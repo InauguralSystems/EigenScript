@@ -1,0 +1,1 @@
+- The ext_gfx sanitizer section prints the timeout controls' completion-wall and process-start line on every pass, so each CI host records the timing its budget is sized from (#1916).

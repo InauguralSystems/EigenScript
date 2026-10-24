@@ -48,4 +48,26 @@ for v in [0.0, 1.5, 3.141592653589793, 0 - 2.5, 1.0e300, 1.0e-300, 100000.125, 0
 fb is buf_from_list of (f64_to_bytes of 42.5)
 assert_eq of [f64_from_bytes of fb, 42.5, "f64_from_bytes from buffer"]
 
+# Short inputs are malformed rather than implicitly zero-padded (#1926).
+define assert_f64_short(input, count, shape) as:
+    local caught is null
+    try:
+        f64_from_bytes of input
+    catch e:
+        caught is e
+    assert_eq of [caught.kind, "value", shape + " short input raises value"]
+    assert_eq of [caught.message, "f64_from_bytes: needs 8 bytes, got " + (str of count), shape + " short input reports count"]
+
+for short in [[], [63, 240], [63, 240, 0, 0, 0, 0, 0]]:
+    assert_f64_short of [short, len of short, "list"]
+    assert_f64_short of [buf_from_list of short, len of short, "buffer"]
+
+# Eight bytes decode, and documented prefix semantics ignore surplus bytes.
+one_bytes is [63, 240, 0, 0, 0, 0, 0, 0]
+one_bytes_surplus is [63, 240, 0, 0, 0, 0, 0, 0, 255, 255]
+assert_eq of [f64_from_bytes of one_bytes, 1, "exactly 8 list bytes decode"]
+assert_eq of [f64_from_bytes of (buf_from_list of one_bytes), 1, "exactly 8 buffer bytes decode"]
+assert_eq of [f64_from_bytes of one_bytes_surplus, 1, "10 list bytes decode the first 8"]
+assert_eq of [f64_from_bytes of (buf_from_list of one_bytes_surplus), 1, "10 buffer bytes decode the first 8"]
+
 test_summary of null

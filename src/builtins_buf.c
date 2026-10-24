@@ -291,13 +291,21 @@ Value* builtin_f64_from_bytes(Value *arg) {
     uint8_t bytes_in[8] = {0,0,0,0,0,0,0,0};
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
-        for (int i = 0; i < 8 && i < n; i++) {
+        if (n < 8) {
+            rt_error(EK_VALUE, 0, "f64_from_bytes: needs 8 bytes, got %d", n);
+            return make_null();
+        }
+        for (int i = 0; i < 8; i++) {
             bytes_in[i] = eigs_slot_elem_byte(list_slot(arg, i), "f64_from_bytes");
             if (g_has_error) return make_null();
         }
     } else if (arg && arg->type == VAL_BUFFER) {
         int n = arg->data.buffer.count;
-        for (int i = 0; i < 8 && i < n; i++) {
+        if (n < 8) {
+            rt_error(EK_VALUE, 0, "f64_from_bytes: needs 8 bytes, got %d", n);
+            return make_null();
+        }
+        for (int i = 0; i < 8; i++) {
             if (!buffer_byte_at(arg, i, &bytes_in[i], "f64_from_bytes")) return make_null();
             if (g_has_error) return make_null();
         }

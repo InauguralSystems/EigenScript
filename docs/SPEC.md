@@ -2725,6 +2725,10 @@ observable.
 model: a missing or unreadable path, or a directory in place of a file, raises
 a catchable `io` error whose message contains the path and the operating-system
 reason. An empty file is successful and returns the reader's empty value.
+When a named path is an unseekable stream (such as `/dev/stdin`, a pipe, or a
+FIFO), these readers consume it in chunks through EOF. Their file-size caps
+also bound streams; the read stops at cap+1 bytes and raises `io` rather than
+buffering an unbounded producer.
 
 ```eigenscript
 l is [1.0, 4.0, 9.0]

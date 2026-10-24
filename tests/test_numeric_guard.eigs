@@ -234,12 +234,27 @@ index_matrix is buffer of [1, 1]
 index_matrix[0] is 7
 ng_final_refuses of [gather, [index_matrix, raw_nan_product], "NG53 N5 nonfinite gather index refuses"]
 
-# Numeric byte decoders normalize before converting, preserving finite byte
-# truncation/modulo behavior and the buffer's raw work-area representation.
+# Numeric byte decoders enforce N5/Q1 before converting; buffers retain
+# their raw work-area representation until the decoder reads a cell.
 ng_final_refuses of [str_from_bytes, buf_from_list of [65.75, 321, -191], "NG54 N5/Q1 refuses fractional byte"]
 assert of [(f64_from_bytes of (buf_from_list of (f64_to_bytes of 12.5))) == 12.5, "NG54 finite f64 byte round trip"]
 ng_final_refuses of [str_from_bytes, raw_nan_product, "NG55 N13 refuses nonfinite buffer input"]
-ng_final_refuses of [f64_from_bytes, raw_nan_product, "NG56 N13 refuses nonfinite buffer input"]
+# #1926: keep eight NaNs in buffer storage; indexing would normalize first.
+ng56_left is buffer of [8, 2]
+for i in range of 16:
+    ng56_left[i] is 1e200
+ng56_right is buffer of [2, 1]
+ng56_right[0] is 1e200
+ng56_right[1] is 0 - 1e200
+ng56_raw is matmul of [ng56_left, ng56_right]
+ng56_refused is false
+ng56_length_error is false
+try:
+    f64_from_bytes of ng56_raw
+catch e:
+    ng56_refused is e.kind == "value"
+    ng56_length_error is (index_of of [e.message, "needs 8 bytes"]) >= 0
+assert of [ng56_refused and not ng56_length_error, "NG56 N13 refuses nonfinite buffer input, not length"]
 ng_final_refuses of [str_from_bytes, raw_pair, "NG57 N13 refuses nonfinite buffer input"]
 ng_final_refuses of [buf_to_pcm16le, [raw_nan_product, 0, 1], "NG58 N13 refuses nonfinite buffer input"]
 ng_final_refuses of [buf_to_pcm16le, [raw_pair, 0, 2], "NG59 N13 refuses nonfinite buffer input"]

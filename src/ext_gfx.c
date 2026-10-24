@@ -885,7 +885,9 @@ Value* builtin_gfx_poll(Value *arg) {
 /* gfx_ticks of null — milliseconds since SDL_Init */
 Value* builtin_gfx_ticks(Value *arg) {
     (void)arg;
-    return make_int(g_sdl_lib ? (int64_t)p_SDL_GetTicks() : 0);
+    TRACE_NONDET_TAKE("gfx_ticks");
+    TRACE_NONDET_RECORD("gfx_ticks",
+        make_int(g_sdl_lib ? (int64_t)p_SDL_GetTicks() : 0));
 }
 
 /* gfx_delay of ms */
