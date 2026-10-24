@@ -120,8 +120,8 @@ int main(void) {
     if (!ekey) return 1;
     Value *good = make_list(6001), *bad = make_list(6001);
     for (int i = 0; i < 6001; i++) {
-        list_append_owned(good, make_num(6001 - i));
-        list_append_owned(bad, make_num(i < 6000 ? 6001 - i : -1));
+        list_append_owned(good, make_float(6001 - i));
+        list_append_owned(bad, make_float(i < 6000 ? 6001 - i : -1));
     }
     Value *args_good = make_list(2), *args_bad = make_list(2);
     list_append(args_good, good); list_append(args_good, ekey);
@@ -180,12 +180,12 @@ int main(void) {
      * NUM_ZERO 2, DIV 7, RETURN 40 (src/vm.h enum order). */
     static const int HALT77[] = {68, 77, 0, 0, 0, 3, 2, 7, 40};
     Value *code = make_list(9), *desc = make_list(3), *sb_args = make_list(2);
-    for (int i = 0; i < 9; i++) list_append_owned(code, make_num(HALT77[i]));
-    list_append_owned(desc, make_num(1));
+    for (int i = 0; i < 9; i++) list_append_owned(code, make_float(HALT77[i]));
+    list_append_owned(desc, make_float(1));
     list_append_owned(desc, code);
     list_append_owned(desc, make_list(0));
     list_append_owned(sb_args, desc);
-    list_append_owned(sb_args, make_num(100));
+    list_append_owned(sb_args, make_float(100));
     g_has_error = 0;
     g_trace_current_line = 100;
     r = builtin_sandbox_run(sb_args);

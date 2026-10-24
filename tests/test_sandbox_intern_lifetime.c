@@ -14,7 +14,7 @@ extern Value *builtin_sandbox_run(Value *arg);
 extern size_t env_intern_debug_count(const char *prefix);
 
 static void append_num(Value *list, double n) {
-    list_append_owned(list, make_num(n));
+    list_append_owned(list, make_float(n));
 }
 
 static size_t intern_count(void) {

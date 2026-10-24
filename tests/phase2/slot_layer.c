@@ -111,12 +111,6 @@ static int aborts_naming(void (*fn)(EigsSlot), EigsSlot s, const char *who, cons
 
 /* ---- Part A: RETURN checks (0 = ok) ------------------------------------ */
 
-static int r_eigs_slot_elem_num(int64_t v) { return eigs_slot_elem_num(smi(v), "slot_layer") != (double)v; }
-static int r_eigs_slot_num(int64_t v) { return eigs_slot_num(smi(v), "slot_layer") != (double)v; }
-static int r_eigs_slot_opt_num(int64_t v) {
-    double d = -7.25;
-    return eigs_slot_opt_num(smi(v), &d, "slot_layer") != 1 || d != (double)v;
-}
 static int r_eigs_slot_store_borrow(int64_t v) { return eigs_slot_store_borrow(smi(v)).u != smi(v).u; }
 static int r_eigs_slot_store_owned(int64_t v) { return eigs_slot_store_owned(smi(v)).u != smi(v).u; }
 static int r_ent_child_slot(int64_t v) {
@@ -234,9 +228,6 @@ static const Entry ENTRIES[] = {
     {"vm.c:vm_number_compare", r_vm_number_compare, 0, 0, "exact numeric comparison"},
     {"vm.c:vm_iter_index", r_vm_iter_index, 0, 0, "checked C int metadata"},
     {"vm.c:vm_iter_limit", r_vm_iter_limit, 0, 0, "bounded snapshot"},
-    {"container.h:eigs_slot_elem_num", r_eigs_slot_elem_num, 0, 0, "bridge: the int's double"},
-    {"container.h:eigs_slot_num", r_eigs_slot_num, 0, 0, "bridge: the int's double"},
-    {"container.h:eigs_slot_opt_num", r_eigs_slot_opt_num, 0, 0, "bridge: present, the int's double"},
     {"container.h:eigs_slot_store_borrow", r_eigs_slot_store_borrow, 0, 0, "canonical storage: unchanged"},
     {"container.h:eigs_slot_store_owned", r_eigs_slot_store_owned, 0, 0, "canonical storage: unchanged"},
     {"eigenscript.c:ent_child_slot", r_ent_child_slot, 0, 0, "the entropy of its double"},
@@ -335,10 +326,6 @@ static int is_heap_kind(EigsSlot s) { return s.u == KB[K_HEAP]; }
 
 /* Cells: call one entry and render its result. Each runs in a forked child. */
 #define CELL(name) static void c_##name(EigsSlot s, char *b, size_t n)
-CELL(elem_num) { r_d(b, n, eigs_slot_elem_num(s, "matrix")); }
-CELL(num) { r_d(b, n, eigs_slot_num(s, "matrix")); }
-CELL(opt_num) { double d = -7.25; int r = eigs_slot_opt_num(s, &d, "matrix");
-                snprintf(b, n, "o:%d d:%016llx", r, (unsigned long long)u64_of(d)); }
 CELL(store_borrow) { EigsSlot r = eigs_slot_store_borrow(s); snprintf(b, n, "b:%016llx", (unsigned long long)r.u);
                      if (is_heap_kind(r)) slot_decref(r); }
 CELL(store_owned) { if (is_heap_kind(s)) slot_incref(s);
@@ -388,32 +375,6 @@ CELL(obs_value) { r_v(b, n, obs_slot_value(s)); }
 #define ABORT(who) snprintf(b, n, "A:%s", who)
 static void e_d(char *b, size_t n, double d, int raise) { r_d(b, n, d); if (raise) strncat(b, " raise", n - strlen(b) - 1); }
 static void e_bool(char *b, size_t n, int k) { snprintf(b, n, "v:%s", k == K_TRUE ? "true" : "false"); }
-EXP(elem_num) {
-    switch (kclass(k)) {
-        case C_F64: e_d(b, n, KD(k), 0); break;
-        case C_NULL: case C_HEAP: e_d(b, n, 0.0, 0); break;       /* non-strict element read */
-        case C_BOOL: e_d(b, n, 0.0, 1); break;                    /* a bool raises (#1637) */
-        case C_SMI: e_d(b, n, 5.0, 0); break;
-        default: ABORT("eigs_slot_ref");
-    }
-}
-EXP(num) {
-    switch (kclass(k)) {
-        case C_F64: e_d(b, n, KD(k), 0); break;
-        case C_SMI: e_d(b, n, 5.0, 0); break;
-        case C_NULL: case C_BOOL: case C_HEAP: e_d(b, n, 0.0, 1); break;   /* required: raises */
-        default: ABORT("eigs_slot_ref");
-    }
-}
-EXP(opt_num) {
-    switch (kclass(k)) {
-        case C_F64: snprintf(b, n, "o:1 d:%016llx", (unsigned long long)KB[k]); break;
-        case C_SMI: snprintf(b, n, "o:1 d:%016llx", (unsigned long long)u64_of(5.0)); break;
-        case C_NULL: snprintf(b, n, "o:0 d:%016llx", (unsigned long long)u64_of(-7.25)); break;
-        case C_BOOL: case C_HEAP: snprintf(b, n, "o:0 d:%016llx raise", (unsigned long long)u64_of(-7.25)); break;
-        default: ABORT("eigs_slot_ref");
-    }
-}
 EXP(store_slot) {   /* both normalisers: a double is guarded (NaN -> 0), the rest kept */
     snprintf(b, n, "b:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k]));
 }
@@ -600,9 +561,6 @@ static const MatrixEntry MATRIX[] = {
     {"vm.c:vm_number_compare", c_vm_number_compare, e_vm_number_compare},
     {"vm.c:vm_iter_index", c_vm_iter_index, e_vm_iter_index},
     {"vm.c:vm_iter_limit", c_vm_iter_limit, e_vm_iter_limit},
-    {"container.h:eigs_slot_elem_num", c_elem_num, e_elem_num},
-    {"container.h:eigs_slot_num", c_num, e_num},
-    {"container.h:eigs_slot_opt_num", c_opt_num, e_opt_num},
     {"container.h:eigs_slot_store_borrow", c_store_borrow, e_store_slot},
     {"container.h:eigs_slot_store_owned", c_store_owned, e_store_slot},
     {"eigenscript.c:ent_child_slot", c_ent_child, e_ent_child},
@@ -920,7 +878,7 @@ static int part_e(void) {
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("slot-layer-test: FAIL eigs_open\n"); return 1; }
-    /* Part B reads the canonical NaN back through make_num, whose guard
+    /* Part B reads the canonical NaN back through make_float, whose guard
      * raises under strict mode; the test pins the soft read instead. */
     eigs_state_set_strict(st, 0);
     g_str = make_str("x");

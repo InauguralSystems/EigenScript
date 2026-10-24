@@ -103,7 +103,7 @@ static Value *continuing_worker(Value *arg) {
         pthread_mutex_unlock(&mu);
         Value *v = NULL;
         if (!trace_replay_take("sample", &v)) {
-            v = make_num(7 + i + live_bias);
+            v = make_float(7 + i + live_bias);
             trace_nondet_value("sample", v);
             live_calls++;
         }
@@ -115,7 +115,7 @@ static Value *continuing_worker(Value *arg) {
         pthread_cond_broadcast(&cv);
         pthread_mutex_unlock(&mu);
     }
-    return make_num(observed[0]*10 + observed[1]);
+    return make_float(observed[0]*10 + observed[1]);
 }
 static Value *start_worker(void) {
     phase = completed = worker_error = 0;
@@ -245,7 +245,7 @@ int main(void) {
     eigs_set_trace_sink(sink, NULL);
     Value *numbers[] = {make_int(3), make_int(INT64_C(9007199254740993)),
                         make_int(INT64_MIN), make_int(INT64_MAX),
-                        make_num(3.0), make_num(-0.0)};
+                        make_float(3.0), make_float(-0.0)};
     for (size_t i = 0; i < sizeof numbers / sizeof numbers[0]; i++) {
         trace_nondet_value("sample", numbers[i]);
         val_decref(numbers[i]);

@@ -25,10 +25,10 @@ static Value *ordinary_descriptor(void) {
         Value *code = make_list(chunk->code_len);
         Value *constants = make_list(1);
         for (int i = 0; i < chunk->code_len; i++)
-            list_append_owned(code, make_num(chunk->code[i]));
+            list_append_owned(code, make_float(chunk->code[i]));
         list_append(constants, chunk->constants[0]);
         descriptor = make_list(3);
-        list_append_owned(descriptor, make_num(EIGS_BYTECODE_ABI));
+        list_append_owned(descriptor, make_float(EIGS_BYTECODE_ABI));
         list_append_owned(descriptor, code);
         list_append_owned(descriptor, constants);
     }
@@ -55,9 +55,9 @@ int main(void) {
     for (int run = 0; run < 2; run++) {
         Value *args = make_list(4);
         list_append(args, descriptor);
-        list_append_owned(args, make_num(100));
-        list_append_owned(args, make_num(1048576));
-        list_append_owned(args, make_num(10000));
+        list_append_owned(args, make_float(100));
+        list_append_owned(args, make_float(1048576));
+        list_append_owned(args, make_float(10000));
         Value *out = builtin_sandbox_run(args);
         EigsView ok_view, result_view;
         Value *ok = out ? dict_get_view(out, "ok", &ok_view) : NULL;
