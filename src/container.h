@@ -192,8 +192,9 @@ static inline Value *slot_view(EigsSlot s, EigsView *view) {
         if (slot_type(s) != VAL_FLOAT) return eigs_slot_ref(s);
     }
     view->v.type = VAL_FLOAT;
-    VAL_F64_RAW(&view->v) = slot_is_f64(s) ? SLOT_F64_RAW(s)
-                                           : eigs_num_arg(slot_as_ptr(s), "slot_view");
+    /* The branch above proves float storage; retain raw facade semantics
+     * even for a direct-C nonfinite box, without a flag write or raise. */
+    (void)slot_f64_value(s, &VAL_F64_RAW(&view->v));
     view->v.refcount = EIGS_VIEW_RC;
     return &view->v;
 }
@@ -320,7 +321,7 @@ static inline Value *list_get_owned(const Value *list, int i) {
 static inline Value *list_get_return(const Value *list, int i) {
     EigsSlot s = list_slot(list, i);
     if (slot_is_smi(s)) return slot_to_value(s);
-    return slot_is_f64(s) ? make_num(SLOT_F64_RAW(s)) : eigs_slot_ref(s);
+    return slot_is_f64(s) ? make_float(SLOT_F64_RAW(s)) : eigs_slot_ref(s);
 }
 static inline Value *dict_value_get_owned(const Value *dict, int i) {
     return slot_to_value(dict_value_slot(dict, i));
@@ -329,7 +330,7 @@ __attribute__((unused))
 static inline Value *dict_value_get_return(const Value *dict, int i) {
     EigsSlot s = dict_value_slot(dict, i);
     if (slot_is_smi(s)) return slot_to_value(s);
-    return slot_is_f64(s) ? make_num(SLOT_F64_RAW(s)) : eigs_slot_ref(s);
+    return slot_is_f64(s) ? make_float(SLOT_F64_RAW(s)) : eigs_slot_ref(s);
 }
 
 /* Keyed reads (eigenscript.c).  The slot is borrowed from the dict (for a
@@ -359,7 +360,7 @@ static inline void dict_value_set_owned(Value *dict, int i, Value *v) {
  * append borrows it and therefore increfs.  Every double path applies
  * num_guard. */
 static inline Value *eigs_slot_box(EigsSlot s) {
-    if (slot_is_f64(s)) return make_num(num_guard(SLOT_F64_RAW(s)));
+    if (slot_is_f64(s)) return make_float(num_guard(SLOT_F64_RAW(s)));
     if (slot_is_smi(s)) return slot_to_value(s);   /* #1758: kind-preserving */
     Value *v = eigs_slot_ref(s); val_incref(v); return v;
 }
