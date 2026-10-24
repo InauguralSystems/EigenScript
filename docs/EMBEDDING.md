@@ -363,10 +363,10 @@ Inspection:
 
 ```c
 EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _BUFFER, _OTHER, _BOOL */
-double        eigs_value_as_num(EigsValue *v);     /* NaN for a bool (#1637); 0.0 for any other non-num */
-int           eigs_value_as_bool(EigsValue *v);    /* 1 for true; 0 for false or wrong type */
+double        eigs_value_as_num(EigsValue *v);     /* wrong type: sentinel + error; bool sentinel is NaN */
+int           eigs_value_as_bool(EigsValue *v);    /* wrong type: 0 + error */
 const char   *eigs_value_as_string(EigsValue *v);  /* NULL if wrong type; borrowed pointer */
-int           eigs_value_list_len(EigsValue *v);
+int           eigs_value_list_len(EigsValue *v);   /* wrong type: 0 + error */
 EigsValue    *eigs_value_list_get(EigsValue *v, int i);    /* counted ref */
 void          eigs_value_list_append(EigsValue *v, EigsValue *item);
 EigsValue    *eigs_value_dict_get(EigsValue *v, const char *k);
@@ -376,9 +376,11 @@ double        eigs_value_buffer_get(EigsValue *v, int i);   /* OOB: 0.0 + error 
 void          eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op + error */
 ```
 
-The buffer accessors leave a pending `type_mismatch` error when `v` is not a
-buffer (including `NULL`); `get` and `set` leave `index_range` for a negative
-or past-the-end index. Their return sentinel/no-op behavior is unchanged. Use
+The numeric, boolean, list-length, and buffer accessors leave a pending
+`type_mismatch` error when `v` has the wrong type (including `NULL`); buffer
+`get` and `set` leave `index_range` for a negative or past-the-end index. Their
+return sentinel/no-op behavior is unchanged, including NaN when a bool is read
+as a number. Use
 `eigs_has_error`, `eigs_last_error_kind`, and `eigs_last_error_message` to
 inspect the error, then `eigs_clear_error` when it has been handled. On a thread
 with no attached state there is no error channel (`eigs_has_error` answers 0

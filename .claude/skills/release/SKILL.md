@@ -16,6 +16,8 @@ tagging, run `bash tools/changelog_fragments.sh cut <version> <YYYY-MM-DD>`, whi
 section, bumps `VERSION` and deletes the fragments, and commit that as the cut PR (`changes/README.md`).
 Check `git tag` for published versions. The front-door docs do not carry a copied latest-version line.
 
+**Before the cut: the legibility review.** Every release first reviews documentation and configuration over `git log <last-tag>..<candidate>`, so the new version inherits no silent inconsistency. It covers docs drift (claims against behaviour), stale references, config drift, duplicated logic and dead code. Fix the obvious in the cut PR. File the rest as labelled issues. Commit the record as `docs/release-reviews/vX.Y.Z.md` in the format of `docs/release-reviews/README.md`. The Release workflow refuses to tag a version whose record is missing.
+
 The Homebrew tap at github.com/InauguralSystems/homebrew-eigenscript must
 track the latest release automatically.  Its `bump-formula.yml` workflow runs
 on a schedule and can also be started with `workflow_dispatch`.  It reads the latest

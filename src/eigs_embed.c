@@ -329,8 +329,28 @@ EigsValueType eigs_value_type(EigsValue *v) {
     return EIGS_TYPE_OTHER;   /* unreachable for valid ValType values */
 }
 
+/* #1925/#1932: a bad value access is reported through the pending error, as
+ * #1322's embed_refuse_reserved does. A thread with no attached state has no
+ * error channel (eigs_has_error answers 0 there), so it gets the sentinel
+ * alone rather than a write through a NULL eigs_current. */
+static void embed_value_error(ErrKind kind, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
+static void embed_value_error(ErrKind kind, const char *fmt, ...) {
+    if (!eigs_current) return;
+    char msg[160];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof msg, fmt, ap);
+    va_end(ap);
+    rt_error(kind, 0, "%s", msg);
+}
+
 int eigs_value_as_bool(EigsValue *v) {
-    return (v && v->type == VAL_BOOL) ? v->data.boolean : 0;
+    if (!v || v->type != VAL_BOOL) {
+        embed_value_error(EK_TYPE, "eigs_value_as_bool: expected a bool");
+        return 0;
+    }
+    return v->data.boolean;
 }
 
 /* #1637: a bool answers NaN, not 0.0, so a host that reads a bool as a
@@ -338,9 +358,14 @@ int eigs_value_as_bool(EigsValue *v) {
  * plausible false-as-zero. Other non-numbers keep the documented 0.0. Hosts
  * test eigs_value_type first, or read a bool with eigs_value_as_bool. */
 double eigs_value_as_num(EigsValue *v) {
-    if (v && v->type == VAL_BOOL) return NAN;
-    if (v && v->type == VAL_INT) return (double)VAL_I64_RAW(v);   /* Q3: converting accessor */
-    return (v && v->type == VAL_FLOAT) ? VAL_F64_RAW(v) : 0.0;
+    /* Phase 2 (Q3): an int is a number, converted like lua_tonumber; a float
+     * is read raw. Anything else reports through #1932's pending error
+     * (attached threads only), keeping #1637's NaN for a bool and 0.0
+     * otherwise. */
+    if (v && v->type == VAL_INT) return (double)VAL_I64_RAW(v);
+    if (v && v->type == VAL_FLOAT) return VAL_F64_RAW(v);
+    embed_value_error(EK_TYPE, "eigs_value_as_num: expected a number");
+    return (v && v->type == VAL_BOOL) ? NAN : 0.0;
 }
 
 const char *eigs_value_as_string(EigsValue *v) {
@@ -348,7 +373,11 @@ const char *eigs_value_as_string(EigsValue *v) {
 }
 
 int eigs_value_list_len(EigsValue *v) {
-    return (v && v->type == VAL_LIST) ? v->data.list.count : 0;
+    if (!v || v->type != VAL_LIST) {
+        embed_value_error(EK_TYPE, "eigs_value_list_len: expected a list");
+        return 0;
+    }
+    return v->data.list.count;
 }
 
 EigsValue *eigs_value_list_get(EigsValue *v, int i) {
@@ -386,25 +415,9 @@ EigsValue *eigs_value_new_buffer(int count) {
     return v;
 }
 
-/* #1925: a bad buffer access is reported through the pending error, as
- * #1322's embed_refuse_reserved does. A thread with no attached state has no
- * error channel (eigs_has_error answers 0 there), so it gets the sentinel
- * alone rather than a write through a NULL eigs_current. */
-static void embed_buffer_error(ErrKind kind, const char *fmt, ...)
-    __attribute__((format(printf, 2, 3)));
-static void embed_buffer_error(ErrKind kind, const char *fmt, ...) {
-    if (!eigs_current) return;
-    char msg[160];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(msg, sizeof msg, fmt, ap);
-    va_end(ap);
-    rt_error(kind, 0, "%s", msg);
-}
-
 int eigs_value_buffer_len(EigsValue *v) {
     if (!v || v->type != VAL_BUFFER) {
-        embed_buffer_error(EK_TYPE, "eigs_value_buffer_len: expected a buffer");
+        embed_value_error(EK_TYPE, "eigs_value_buffer_len: expected a buffer");
         return 0;
     }
     return v->data.buffer.count;
@@ -412,11 +425,11 @@ int eigs_value_buffer_len(EigsValue *v) {
 
 double eigs_value_buffer_get(EigsValue *v, int i) {
     if (!v || v->type != VAL_BUFFER) {
-        embed_buffer_error(EK_TYPE, "eigs_value_buffer_get: expected a buffer");
+        embed_value_error(EK_TYPE, "eigs_value_buffer_get: expected a buffer");
         return 0.0;
     }
     if (i < 0 || i >= v->data.buffer.count) {
-        embed_buffer_error(EK_INDEX,
+        embed_value_error(EK_INDEX,
                            "eigs_value_buffer_get: buffer index %d out of range (length %d)",
                            i, v->data.buffer.count);
         return 0.0;
@@ -426,11 +439,11 @@ double eigs_value_buffer_get(EigsValue *v, int i) {
 
 void eigs_value_buffer_set(EigsValue *v, int i, double x) {
     if (!v || v->type != VAL_BUFFER) {
-        embed_buffer_error(EK_TYPE, "eigs_value_buffer_set: expected a buffer");
+        embed_value_error(EK_TYPE, "eigs_value_buffer_set: expected a buffer");
         return;
     }
     if (i < 0 || i >= v->data.buffer.count) {
-        embed_buffer_error(EK_INDEX,
+        embed_value_error(EK_INDEX,
                            "eigs_value_buffer_set: buffer index %d out of range (length %d)",
                            i, v->data.buffer.count);
         return;

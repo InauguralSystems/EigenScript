@@ -41,6 +41,20 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Every release first reviews docs and config since the previous release
+      # (docs/release-reviews/README.md). No record, no tag. Read the tag from
+      # env, never by inline interpolation into the script.
+      - name: Require the release legibility review record
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -eu
+          rec="docs/release-reviews/$TAG.md"
+          [ -f "$rec" ] || { echo "::error::$rec is missing: every release commits its documentation and configuration review first (docs/release-reviews/README.md)."; exit 1; }
+          grep -q '^Range: ' "$rec" || { echo "::error::$rec has no 'Range: <previous-tag>..<candidate>' line"; exit 1; }
+          grep -q '^Verdict: ' "$rec" || { echo "::error::$rec has no 'Verdict:' line"; exit 1; }
+          echo "release review: $rec ($(grep '^Verdict: ' "$rec" | head -1))"
+
       - name: Create tag (dispatch only, idempotent)
         if: github.event_name == 'workflow_dispatch'
         run: |
