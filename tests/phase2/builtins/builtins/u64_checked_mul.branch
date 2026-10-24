@@ -1,0 +1,13 @@
+[1, "int"]
+["upper-or-lower", "value", true]
+[0, "int"]
+["fraction", "value"]
+["float-outside-int64", "value"]
+["fraction-right", "value"]
+["non-number", "type_mismatch"]
+["non-number-right", "type_mismatch"]
+["few", "type_mismatch"]
+["empty", "type_mismatch"]
+["many", "type_mismatch"]
+["scalar", "type_mismatch"]
+rc=0
