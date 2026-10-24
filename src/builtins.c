@@ -2460,11 +2460,11 @@ Value* builtin_env_get(Value *arg) {
  * Wrapping these with TRACE_NONDET_TAKE is not enough — the value the
  * tape carries does not pin down the host state — so the contract is
  * "fail loudly" at the boundary. Documented in docs/TRACE.md. */
-int replay_blocks(const char *fn) {
+int replay_blocks(const char *fn, const char *boundary) {
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0,
-            "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
-            "boundary; see docs/TRACE.md)", fn);
+            "%s: not replayable under EIGS_REPLAY (%s boundary; "
+            "see docs/TRACE.md)", fn, boundary);
         return 1;
     }
     return 0;
@@ -4763,7 +4763,7 @@ Value* builtin_recv(Value *arg) {
      * replay (test_builtin_errors BE07 under EIGS_REPLAY). */
     Channel *ch = channel_arg(arg, "recv");
     if (!ch) return make_null();
-    if (replay_blocks("recv")) return make_null();
+    if (replay_blocks("recv", "subprocess/concurrency")) return make_null();
     pthread_mutex_lock(&ch->mutex);
     while (ch->count == 0 && !ch->closed &&
            !eigs_state_exit_requested(eigs_current_state(), NULL))
@@ -4783,7 +4783,7 @@ Value* builtin_recv(Value *arg) {
 Value* builtin_try_recv(Value *arg) {
     Channel *ch = channel_arg(arg, "try_recv");   /* #1072: validate before the replay block */
     if (!ch) return make_null();
-    if (replay_blocks("try_recv")) return make_null();
+    if (replay_blocks("try_recv", "subprocess/concurrency")) return make_null();
     pthread_mutex_lock(&ch->mutex);
     Value *val = NULL;
     if (ch->count > 0) {
@@ -4808,7 +4808,7 @@ Value* builtin_recv_timeout(Value *arg) {
     }
     Channel *ch = channel_arg(BUILTIN_LIST_VIEW(arg, 0), "recv_timeout");
     if (!ch) return make_null();
-    if (replay_blocks("recv_timeout")) return make_null();   /* #1072: after validation */
+    if (replay_blocks("recv_timeout", "subprocess/concurrency")) return make_null();   /* #1072: after validation */
     Value *ms_v = BUILTIN_LIST_VIEW(arg, 1);
     if (ms_v->type != VAL_NUM) {
         rt_error(EK_TYPE, 0, "recv_timeout: ms must be a number");

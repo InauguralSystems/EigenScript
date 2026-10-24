@@ -448,6 +448,8 @@ int trace_replay_refuse_off_owner(const char *fn);
 /* #1637: declare the return kinds (a ValType bit set, 1u << VAL_X) of a
  * host-recorded nondet name; replay refuses a record of another kind, and a
  * name declared nowhere. 0 = refused (empty name, no kinds, a core name). */
+/* True when a runtime builtin has a return-kind row in k_tape_kinds. */
+int trace_core_kind_declared(const char *name);
 int trace_declare_kind(const char *name, unsigned kinds);
 
 #define TRACE_NONDET_RET(name, expr) do {                            \

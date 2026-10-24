@@ -1996,6 +1996,10 @@ static unsigned core_tape_kinds(const char *fn) {
     return 0;
 }
 
+int trace_core_kind_declared(const char *name) {
+    return name && core_tape_kinds(name) != 0;
+}
+
 int trace_declare_kind(const char *name, unsigned kinds) {
     if (!name || !*name || !kinds || core_tape_kinds(name)) return 0;
     pthread_mutex_lock(&g_host_kinds_mu);
