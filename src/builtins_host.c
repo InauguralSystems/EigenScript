@@ -1123,11 +1123,7 @@ Value* builtin_remove_file(Value *arg) {
  * one-string list for readers/mkdir, and [message, null] for ls (whose normal
  * result may itself be a one-string list). */
 static Value *file_io_error_message(const char *fn, const char *message) {
-    int taped = strcmp(fn, "mkdir") == 0 || strcmp(fn, "ls") == 0 ||
-                strcmp(fn, "write_text") == 0 ||
-                strcmp(fn, "write_bytes") == 0 ||
-                strcmp(fn, "remove_file") == 0 ||
-                strcmp(fn, "rename") == 0 || strncmp(fn, "read_", 5) == 0;
+    int taped = trace_core_kind_declared(fn);
     if (taped && __builtin_expect(g_trace_enabled, 0)) {
         Value *record = make_list(strcmp(fn, "ls") == 0 ? 2 : 1);
         list_append_owned(record, make_str(message));
@@ -1615,7 +1611,7 @@ Value* builtin_exec_capture(Value *arg) {
      * layer and [-1, ""] is exec_capture's documented "did not run". #1072:
      * after the argument guard, so a wrong-typed call errs the same way in
      * both modes. */
-    if (replay_blocks("exec_capture")) return exec_capture_result(-1, "");
+    if (replay_blocks("exec_capture", "subprocess/concurrency")) return exec_capture_result(-1, "");
 
     /* Detect timeout form: [["cmd", ...], timeout_num] */
     double timeout_sec = -1;
@@ -1766,7 +1762,7 @@ Value* builtin_exec_capture(Value *arg) {
  * NUL-truncation), null on EOF. Same 10 MB cap as proc_read. */
 Value* builtin_proc_read_buf(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "proc_read_buf");
-    if (replay_blocks("proc_read_buf")) return make_null();
+    if (replay_blocks("proc_read_buf", "subprocess/concurrency")) return make_null();
     if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
         return make_null();
     EIGS_VIEW(fd_v_view);

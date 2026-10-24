@@ -7,7 +7,8 @@
 # replay, on a user's tape. This gate fails first, at build review:
 #   taped    = every name src/*.c records or takes: TRACE_NONDET_TAKE/RET/
 #              RECORD("x"), ARG_GUARD_TAPED/PRETAKE(..., "x", ...),
-#              trace_replay_take("x"), trace_nondet_value("x"), and
+#              trace_replay_take("x"), trace_nondet_value("x"),
+#              file_io_error("x", ...) (all filesystem errors are taped), and
 #              trace_source_record/replay("x") (which also emits `x_chunk`)
 #   declared = every {"x", ...} row of k_tape_kinds
 # and requires taped == declared, both non-empty. The smoke/embedding test
@@ -26,6 +27,11 @@ for f in "$SRC_DIR"/*.c; do
     # A macro invocation may span lines; join it up to its closing ");".
     function emit(s,    m) {
         while (match(s, /(TRACE_NONDET_(TAKE|RET|RECORD)|trace_replay_take|trace_nondet_value)[(]"[a-z_0-9]+"/)) {
+            m = substr(s, RSTART, RLENGTH); sub(/^[^"]*"/, "", m); sub(/"$/, "", m)
+            print m
+            s = substr(s, RSTART + RLENGTH)
+        }
+        while (match(s, /file_io_error[(]"[a-z_0-9]+"/)) {
             m = substr(s, RSTART, RLENGTH); sub(/^[^"]*"/, "", m); sub(/"$/, "", m)
             print m
             s = substr(s, RSTART + RLENGTH)

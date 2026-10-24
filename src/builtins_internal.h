@@ -74,7 +74,7 @@ void register_host_builtins(Env *env);
 
 /* builtins.c — shared with builtins_host.c's subprocess builtins: the #148
  * "fail loudly under EIGS_REPLAY" boundary check (channels use it too). */
-int replay_blocks(const char *fn);
+int replay_blocks(const char *fn, const char *boundary);
 
 /* builtins.c — the "is this name the language's?" predicate shared with
  * builtins_host.c (build_corpus skips registered builtins). */
