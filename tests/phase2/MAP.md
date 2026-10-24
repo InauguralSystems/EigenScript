@@ -647,3 +647,14 @@ The `O cfg` record's v8 shape is pinned by `O3.ocfg-no-hlow` (its file lists
 - `O4.how-is-settledness` [R3] a binding held constant for one window; `print of (how is x)`
   -> the R3 settledness value at full rest (to be fixed by the R3 design)
   tag: an entropy-derived value
+
+### N11
+- `N11.buffer-equal-ieee` [R1.6z] SGD stores -inf, then self-SGD stores NaN; IEEE element comparison: distinct/same NaN false, same infinity true, infinity versus finite false, signed zeros equal; strict modes 0/1 never raise or change math flags. Also exercises list_contains and list_index_of. R1.6z-D1.
+- `gate.N11.embed-buffer-get-raw` [R1.6z] `tools/phase2_readers.sh release embed_buffer_get_raw`: set/get canonical NaN, payload NaN, both infinities and negative zero by memcmp; reads SGD-program-stored NaN, with no error or flag change in strict modes 0/1. Mechanical gate, compiled outside timed rows.
+
+### N13
+- `N13.vm-buffer-index-data` [R1.6z] SGD-stored NaN and both infinities through index; get_at oracle R1.6d-D1: value error, finite-number message (strict NaN first diagnostic/INVALID), line 2 in every execution tier. Sixty finite calls warm the function.
+- `N13.vm-buffer-local-index-data` [R1.6z] SGD-stored NaN and both infinities through local-index; get_at oracle R1.6d-D1: value error, finite-number message (strict NaN first diagnostic/INVALID), line 2 in every execution tier. Sixty finite calls warm the function.
+- `N13.vm-buffer-leaf-index-data` [R1.6z] SGD-stored NaN and both infinities through leaf-index; get_at oracle R1.6d-D1: value error, finite-number message (strict NaN first diagnostic/INVALID), line 2 in every execution tier. Sixty finite calls warm the function.
+- `N13.vm-buffer-iter-data` [R1.6z] SGD-stored NaN and both infinities through iter (128 cells with a backedge; nonfinite copied to final cell); get_at oracle R1.6d-D1: value error, finite-number message (strict NaN first diagnostic/INVALID), line 3 in every execution tier. Sixty finite calls warm the function.
+- `N13.vm-buffer-int-index-data` [R1.6z] Dynamic integer index exercises the boxed slow INDEX_GET arm on SGD-stored NaN and both infinities; same get_at error contract at line 2, strict modes 0/1 and all execution tiers.
