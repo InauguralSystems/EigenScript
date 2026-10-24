@@ -101,8 +101,8 @@ assert of [unobserved_inf == CAP, "NG19 unobserved reassignment literal caps"]
 
 
 # #1417: tensor kernels may hold an intermediate IEEE infinity in their
-# unboxed result buffer.  Every language-level read must expose the numeric
-# ceiling, independent of which opcode consumes the scalar.
+# unboxed result buffer. Every language-level read must use the finite
+# data boundary, independent of which opcode consumes the scalar.
 raw_inf_input is buffer of 4
 raw_inf_input[0] is 1e300
 raw_inf_input[1] is 1e300
@@ -110,17 +110,28 @@ raw_inf_input[2] is 1e300
 raw_inf_input[3] is 1e300
 raw_inf_matrix is reshape of [raw_inf_input, 2, 2]
 raw_inf_product is matmul of [raw_inf_matrix, raw_inf_matrix]
-assert of [not (raw_inf_product[0] > CAP), "NG31 comparison reads a clamped buffer infinity"]
-assert of [(raw_inf_product[0] / raw_inf_product[1]) == 1, "NG31 division reads clamped buffer infinities"]
-assert of [(raw_inf_product[0] % 3) == 2, "NG31 modulo reads a clamped buffer infinity"]
-assert of [not (raw_inf_product[0] * 0.5 > CAP), "NG31 multiplication reads a clamped buffer infinity"]
-assert of [not (raw_inf_product[0] + 0 > CAP), "NG31 addition reads a clamped buffer infinity"]
-raw_inf_scalar is raw_inf_product[0]
-assert of [raw_inf_scalar == CAP, "NG31 index read into a scalar is clamped"]
+define ng_read_cmp(b) as:
+    return b[0] > CAP
+define ng_read_div(b) as:
+    return b[0] / b[1]
+define ng_read_mod(b) as:
+    return b[0] % 3
+define ng_read_mul(b) as:
+    return b[0] * 0.5 > CAP
+define ng_read_add(b) as:
+    return b[0] + 0 > CAP
+define ng_read_zero(b) as:
+    return b[0]
+ng_final_refuses of [ng_read_cmp, raw_inf_product, "NG31 N13 indexed comparison refuses infinity"]
+ng_final_refuses of [ng_read_div, raw_inf_product, "NG31 N13 indexed division refuses infinity"]
+ng_final_refuses of [ng_read_mod, raw_inf_product, "NG31 N13 indexed modulo refuses infinity"]
+ng_final_refuses of [ng_read_mul, raw_inf_product, "NG31 N13 indexed multiply refuses infinity"]
+ng_final_refuses of [ng_read_add, raw_inf_product, "NG31 N13 indexed addition refuses infinity"]
+ng_final_refuses of [ng_read_zero, raw_inf_product, "NG31 N13 index refuses infinity"]
 ng_final_refuses of [buf_get, [raw_inf_product, 0], "NG31 N13 buf_get refuses infinity"]
 
-# A NaN uses the same read boundary as infinity. In non-strict mode every
-# accessor returns numeric 0 and sets invalid; none may leak the NaN-box null
+# A NaN uses the same refusing data boundary as infinity. Every
+# accessor refuses nonfinite data; none may leak the NaN-box null
 # tag merely because it bypasses make_num.
 nan_left is buffer of [1, 2]
 nan_left[0] is 1e200
@@ -129,7 +140,7 @@ nan_right is buffer of [2, 1]
 nan_right[0] is 1e200
 nan_right[1] is 0 - 1e200
 raw_nan_product is matmul of [nan_left, nan_right]
-assert of [raw_nan_product[0] == 0, "NG32 indexed NaN read collapses to zero"]
+ng_final_refuses of [ng_read_zero, raw_nan_product, "NG32 N13 indexed NaN refuses"]
 ng_final_refuses of [buf_get, [raw_nan_product, 0], "NG33 N13 buf_get refuses NaN"]
 # N13 / R1.6c: get_at now uses the final finite-only buffer reader.
 ng_get_at_refused is false
@@ -139,7 +150,7 @@ catch e:
     ng_get_at_refused is e.kind == "value"
 assert of [ng_get_at_refused, "NG34 N13 get_at refuses non-finite payload"]
 nan_gathered is gather of [raw_nan_product, [0]]
-assert of [nan_gathered[0] == 0, "NG35 gather NaN read collapses to zero"]
+ng_final_refuses of [ng_read_zero, nan_gathered, "NG35 N13 gathered NaN refuses on read"]
 
 # #1417: structural comparisons and scalar reductions read normalized inputs.
 pair_left is buffer of [1, 1]

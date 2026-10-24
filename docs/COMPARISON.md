@@ -429,10 +429,10 @@ the rest accept either, and hand back a buffer when every operand was one.
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.
 Raw non-finite results may remain in a buffer's internal work area, but every
-ordinary indexed read applies EigenScript's numeric guard: infinity saturates at
-±`1e308`, and a NaN raises in strict mode (or becomes `0` and sets the invalid
-math flag under `EIGS_STRICT=0`). `sum`, `get_at`, `dot` and `write_bytes`
-instead refuse non-finite buffer elements in every strict mode (N13).
+ordinary indexed read and iteration step refuse stored NaN or infinity with
+`value` in every strict mode, matching `get_at` (N13). Strict NaN retains
+its first-NaN diagnostic and invalid flag. All execution tiers report the
+same error kind, message and source line.
 Structural buffer equality and the remaining scalar reductions normalize each
 input before comparison or arithmetic; the reduction
 association contracts remain unchanged. Mixed buffer/list tensor operations and
@@ -990,6 +990,24 @@ SDL is loaded:
 ```eigenscript
 try:
     gfx_delay of 1e300
+catch e:
+    print of e.kind
+```
+```output
+value
+```
+
+### Stored buffer data boundary
+
+Buffer kernels can retain non-finite data. Scalar indexing and iteration
+raise `value` when that data is read, in every strict mode (N13).
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+try:
+    print of p[0]
 catch e:
     print of e.kind
 ```

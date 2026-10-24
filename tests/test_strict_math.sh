@@ -242,9 +242,9 @@ run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0
 'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
 print of f"{r} {(math_flags of null).invalid}"'
 # #1417 applies the same scalar-read rule to buffer and list results. The
-# kernel may retain a raw NaN internally, but exposing it collapses it to 0 and
-# sets invalid just as make_num does on the boxed path.
-run "SM49b opt-out matmul(inf-inf) BUFFER read collapses to 0 + invalid" 0 0 "0 true" \
+# kernel may retain a raw NaN internally; indexed data reads refuse it in
+# every strict mode (R1.6d-D1/N13), without a lenient INVALID flag write.
+run "SM49b opt-out matmul(inf-inf) BUFFER read refuses" 0 1 "buffer_read_f64: expected a finite number" \
 'local m1 is buffer of [1, 2]
 m1[0] is 1e200
 m1[1] is 1e200
@@ -255,7 +255,7 @@ local r is matmul of [m1, m2]
 print of f"{r[0]} {(math_flags of null).invalid}"'
 # #1131: canonicalization must visit every NaN and preserve intervening
 # finite results. On ARM the kernel's invalid-operation NaNs are positive.
-run "SM49c opt-out matmul buffer guards each NaN and preserves finite neighbor" 0 0 "0 2e+200 0 true" \
+run "SM49c opt-out matmul buffer refuses each NaN and preserves finite neighbor" 0 0 "value 2e+200 value false" \
 'local a is buffer of [1, 2]
 a[0] is 1e200
 a[1] is 1e200
@@ -267,7 +267,17 @@ b[3] is 0 - 1e200
 b[4] is 1
 b[5] is 0 - 1e200
 local r is matmul of [a, b]
-print of f"{r[0]} {r[1]} {r[2]} {(math_flags of null).invalid}"'
+local first is "accepted"
+local last is "accepted"
+try:
+    first is r[0]
+catch e:
+    first is e.kind
+try:
+    last is r[2]
+catch e:
+    last is e.kind
+print of f"{first} {r[1]} {last} {(math_flags of null).invalid}"'
 run "SM50 strict pow(-8, 0.5) raises, named"       1 1 "pow: result is not a number"     'print of (pow of [0 - 8, 0.5])'
 run "SM51 strict elementwise pow raises"           1 1 "pow: result is not a number"     'print of (pow of [[0 - 8, 4], 0.5])'
 run "SM52 strict num(\"nan\") raises, named"       1 1 "num: expected complete numeric-literal text"     'print of (num of "nan")'

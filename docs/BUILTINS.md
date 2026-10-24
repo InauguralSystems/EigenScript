@@ -611,7 +611,7 @@ in a buffer first converts it to float and can round it.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; by default that raises a catchable `value` error naming `matmul` (#971). Kernels may retain raw non-finite values in buffer storage. Ordinary indexed reads apply the numeric guard (#1417): infinity saturates at ±`1e308`, and with strict mode off a `NaN` becomes `0` and sets `math_flags.invalid`. `sum`, `get_at`, `dot` and `write_bytes` instead refuse non-finite buffer elements in every strict mode (N13). |
+| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; by default that raises a catchable `value` error naming `matmul` (#971). Kernels may retain raw non-finite values in buffer storage. Indexing and iteration, like `get_at`, refuse stored NaN and infinity with `value` in every strict mode (N13). Strict NaN keeps the first-NaN diagnostic and INVALID flag; the interpreter, JIT and leaf fallback agree on the error source line. |
 | `matmul_at` | `matmul_at of [a, b]` | `aᵀ·b` without materialising the transpose: `a` is `(m × k)`, `b` is `(m × n)`, result `(k × n)` — the weight gradient `dW = Xᵀ·dY` of a linear layer. Buffers and nested lists; byte-identical to `matmul` of the explicitly transposed operand (same tiled kernel order). Two 1-D operands give their `(k × n)` outer product. Shape/type/size errors raise like `matmul` (#973) |
 | `matmul_bt` | `matmul_bt of [a, b]` | `a·bᵀ`: `a` is `(m × k)`, `b` is `(n × k)`, result `(m × n)` — the input gradient `dX = dY·Wᵀ`. A 1-D left operand is a row vector and yields a 1-D result, as for `matmul` (#973) |
 | `gather` | `gather of [matrix, indices, dim]` | N5 exact indices (integral floats accepted; fractions raise `value`). Selected list cells retain their numeric kind; buffer elements are floats. Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
@@ -1152,3 +1152,21 @@ readers refuse non-finite buffer cells with `value` in both strict modes (N13).
 reader: exact integers in 0..255. Fractions and out-of-range values raise
 `value`; a stored NaN or infinity raises at the data boundary in both strict
 and lenient modes, without normalising the stored payload again.
+
+### Stored buffer data boundary
+
+Buffer kernels can retain non-finite data. Scalar indexing and iteration
+raise `value` when that data is read, in every strict mode (N13).
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+try:
+    print of p[0]
+catch e:
+    print of e.kind
+```
+```output
+value
+```

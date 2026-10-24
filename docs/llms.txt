@@ -244,9 +244,10 @@ sqrt(2) = 1.414213562373095
   `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run
   opt-out that brings the finite stand-ins back (`NaN` collapses to `0`,
   `sqrt of -1` is `0`, `abs of "x"` is `0`).
-  Non-finite tensor results receive the scalar guard when read from a buffer;
-  `sum`, `get_at`, `dot` and `write_bytes` instead refuse non-finite buffer
-  elements in every strict mode (N13). Structural buffer
+  Indexing and iteration refuse stored NaN and infinity with `value` in
+  every strict mode, matching `get_at` (N13). Strict NaN keeps its first
+  diagnostic and sets `math_flags.invalid`; every execution tier agrees on
+  the error kind, message and source line. Structural buffer
   equality, the other scalar reductions, mixed buffer/list materialization
   and numeric byte/sample/device conversions normalize their inputs and stop at
   the first raised read. `write_bytes` requires exact bytes in 0..255
@@ -701,6 +702,24 @@ Q7 magnitude validation also applies before SDL is loaded:
 ```eigenscript
 try:
     gfx_delay of 1e300
+catch e:
+    print of e.kind
+```
+```output
+value
+```
+
+### Stored buffer data boundary
+
+Buffer kernels can retain non-finite data. Scalar indexing and iteration
+raise `value` when that data is read, in every strict mode (N13).
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+try:
+    print of p[0]
 catch e:
     print of e.kind
 ```
