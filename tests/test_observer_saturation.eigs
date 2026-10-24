@@ -118,10 +118,11 @@ if not (c[1] == true):
 # H(x) = H_b(1/(1+|x|)) puts every |x| > ~76 under the entropy floor, so
 # `converged` fires across [77, 1e307] — a geometric runaway certifies at
 # x ~= 2.9e5 — and the entropy channel cannot distinguish this constant from
-# a runaway that flattened here. That region is #861, still open; the
-# saturation gate closed one point at the top of it. Pinning the verdict here
-# would pin the defect. See tests/test_convergence_oracle.eigs for the scored
-# measurement of what the predicate actually gets right.
+# a runaway that flattened here. #861 fixed that region by routing numeric
+# trajectories through the value classifier; the saturation gate still closes
+# the distinct point at the top. This case pins only that gate, not the
+# constant's verdict. See tests/test_convergence_oracle.eigs for the scored
+# measurement.
 b is run_below_ceiling of null
 print of ("below-ceiling: report=" + b[0] + " (verdict not asserted — #861)")
 if not (b[2] == false):
