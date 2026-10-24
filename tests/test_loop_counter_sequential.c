@@ -65,7 +65,7 @@ static void grow_env(Env *env, const char *label) {
     for (int i = 0; i <= before; ++i) {
         char name[64];
         snprintf(name, sizeof(name), "sequential_growth_%d", i);
-        Value *value = make_num(i);
+        Value *value = make_float(i);
         env_set_local(env, name, value);
         val_decref(value);
     }

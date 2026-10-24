@@ -15,10 +15,10 @@ static void check(int ok, const char *what) {
     if (!ok) fail = 1;
 }
 static Value *probe_add1(Value *a) {
-    double d = (a && val_is_number(a)) ? eigs_num_arg(a, __func__) : 0.0;
-    return make_num(d + 1);
+    double d = (a && val_is_number(a)) ? eigs_float_arg(a, __func__) : 0.0;
+    return make_float(d + 1);
 }
-static Value *probe_plain(Value *a) { (void)a; return make_num(0); }
+static Value *probe_plain(Value *a) { (void)a; return make_float(0); }
 
 static char *eval_str(const char *src) {
     Value *v = eigs_eval_string(src);

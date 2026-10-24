@@ -31,10 +31,10 @@ int main(void) {
     Value *code = make_list(chunk->code_len);
     Value *constants = make_list(chunk->const_count);
     for (int i = 0; i < chunk->code_len; i++)
-        list_append_owned(code, make_num(chunk->code[i]));
+        list_append_owned(code, make_float(chunk->code[i]));
     /* list_append takes its own reference before chunk_free releases its copy. */
     list_append(constants, chunk->constants[0]);
-    list_append_owned(descriptor, make_num(EIGS_BYTECODE_ABI));
+    list_append_owned(descriptor, make_float(EIGS_BYTECODE_ABI));
     list_append_owned(descriptor, code);
     list_append_owned(descriptor, constants);
     json = eigs_json_encode(descriptor);

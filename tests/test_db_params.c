@@ -20,7 +20,7 @@ int main(void) {
     Value *arg = make_list(5);
     list_append_owned(arg, make_str("update t set a = $1, b = $2, c = $3, d = $4"));
     list_append(arg, make_bool(1));
-    list_append_owned(arg, make_num(3));
+    list_append_owned(arg, make_float(3));
     list_append_owned(arg, make_str("s"));
     list_append(arg, make_bool(0));
     const char *sql = NULL; const char *params[DB_MAX_PARAMS];

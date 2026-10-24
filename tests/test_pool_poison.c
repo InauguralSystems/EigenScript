@@ -50,7 +50,7 @@ static int run_program(void) {
 }
 
 static int plant_num(void) {
-    Value *v = make_num(42.5);
+    Value *v = make_float(42.5);
     val_decref(v);                       /* refcount 0 -> parked on the freelist */
     if (g_num_freelist != v) { puts("NOT-ARMED num: value not parked"); return 3; }
     printf("ARMED num: parked NUM %p, reading %p\n", (void *)v,
@@ -107,10 +107,10 @@ static int plant_envfield(void) {
 
 static int control(void) {
     int bad = 0;
-    /* NUM pop: make_num hands the parked Value back, readable again. */
-    Value *v = make_num(1.5);
+    /* NUM pop: make_float hands the parked Value back, readable again. */
+    Value *v = make_float(1.5);
     val_decref(v);
-    Value *again = make_num(2.5);
+    Value *again = make_float(2.5);
     if (again != v) { puts("NOT-ARMED control: freelist did not reuse"); return 3; }
     if (VAL_F64_RAW(again) != 2.5 || again->refcount != 1) bad = 1;
     printf("control num reuse: %s\n", bad ? "WRONG" : "ok");

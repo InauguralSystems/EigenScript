@@ -34,11 +34,11 @@ static void raw_host(void) {
         return;
     }
     Env *env = env_new(NULL);
-    env_set_local_owned(env, "raw_x", make_num(100));
+    env_set_local_owned(env, "raw_x", make_float(100));
     double x = 100;
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
-        env_set_local_owned(env, "raw_x", make_num(x));
+        env_set_local_owned(env, "raw_x", make_float(x));
         observer_slot_update_num(env, 0, x);
     }
     int answer = observer_predicate_at(env, 0, 2 /* improving */, 1);
@@ -53,12 +53,12 @@ static void direct(void) {
     EigsState *st = eigs_open();
     if (!st) { check(0, "open direct state"); return; }
     Env *env = g_global_env;
-    env_set_local_owned(env, "native_x", make_num(100));
+    env_set_local_owned(env, "native_x", make_float(100));
     int idx = env->count - 1;
     double x = 100;
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
-        env_set_local_owned(env, "native_x", make_num(x));
+        env_set_local_owned(env, "native_x", make_float(x));
         observer_slot_update_num(env, idx, x);
     }
     int answer = observer_predicate_at(env, idx, 2 /* improving opcode operand */, 1);
@@ -70,7 +70,7 @@ static void direct(void) {
     x = 100;
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
-        emit(c, OP_CONST, (uint16_t)constant(c, make_num(x)));
+        emit(c, OP_CONST, (uint16_t)constant(c, make_float(x)));
         emit(c, OP_SET_NAME, (uint16_t)name);
         emit(c, OP_OBSERVE_NAME_POST, (uint16_t)name);
         chunk_emit(c, OP_POP, 1);
@@ -203,16 +203,16 @@ static void gap(const char *source, const char *name) {
 static EigsValue *host_reader(EigsValue *arg) {
     (void)arg;
     Env *env = env_new(NULL);
-    env_set_local_owned(env, "x", make_num(100));
+    env_set_local_owned(env, "x", make_float(100));
     double x = 100;
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
-        env_set_local_owned(env, "x", make_num(x));
+        env_set_local_owned(env, "x", make_float(x));
         observer_slot_update_num(env, 0, x);
     }
     int answer = observer_predicate_at(env, 0, 2 /* improving */, 1);
     env_decref(env);
-    return make_num(answer);
+    return make_float(answer);
 }
 /* Execute the documented explicit-host-arm recipe. No compiled predicate
  * may rescue the read-free unit: interrogate its slot directly from C. */
