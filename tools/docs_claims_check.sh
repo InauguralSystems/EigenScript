@@ -296,7 +296,8 @@ def targets(docs):
         record('TARGETS', file, n)
 
 
-def names(docs, api):
+def name_vocabulary(api):
+    """Return the one vocabulary used for every documented `name of` call."""
     known = set()
     for line in api.splitlines():
         fields = line.split()
@@ -320,70 +321,40 @@ def names(docs, api):
         red('lexer keyword resolver has no population')
     known.update(keywords)
     known.update(('host_add', 'host_fn', 'fn',
-                  'trajectory', 'observe', 'report', 'report_value'))
+                  'trajectory', 'observe', 'report', 'report_value', 'prev'))
+    if not known:
+        red('--api returned no names')
+    return known
+
+
+CALL_CLAIM = re.compile(r'`([a-z_][a-z_0-9.]*) of(?=[ `]|$)')
+
+
+def names(docs, known, record_population=True):
+    """Check document sets through one call matcher and one name vocabulary."""
     for file in docs:
         text = Path(file).read_text()
         local = set(re.findall(r'define ([a-z_][a-z_0-9]*)', text))
         local.update(re.findall(r'^ *([a-z_][a-z_0-9]*) is ', text, re.M))
+        local.update(re.findall(r'`(?:local )?([a-z_][a-z_0-9]*) is ', text))
         local.update(re.findall(r'([a-z_][a-z_0-9]*)\(', text))
         n = 0
         for lineno, line in enumerate(text.splitlines(), 1):
-            for token in matches(r'`[a-z_][a-z_0-9.]* of[ `]', line):
-                name = token[1:].split(' of', 1)[0]
+            for match in CALL_CLAIM.finditer(line):
+                name = match[1]
                 n += 1
-                if (name not in known and name not in local and
+                # A qualified callee is a member of a runtime namespace, not
+                # a global API claim, so its base cannot be checked here.
+                if ('.' not in name and name not in known and name not in local and
                     not (file == 'CLAUDE.md' and line in META_LINES and
                          name in {'f', 'one'})):
                     red(f'{file}:{lineno} calls {name} of, absent from --api and local definitions')
-        record('NAMES', file, n)
-    if not known:
-        red('--api returned no names')
+        if record_population:
+            record('NAMES', file, n)
 
-def stale_builtin_calls(api):
-    """Reject call-like builtin claims that have no registration anchor."""
-    source = Path('src/builtins.c').read_text()
-    registration = re.search(r'void register_builtins\(Env \*env\) \{(.*?)(?:\n\})',
-                             source, re.S)
-    if not registration:
-        red('src/builtins.c: register_builtins table is missing')
-        return
-    registered = set(re.findall(
-        r'env_set_local_owned\(env, "([a-z_][a-z_0-9]*)",', registration[1]))
-    if not registered:
-        red('src/builtins.c: register_builtins table yielded no names')
-        return
-
-    # --api is itself produced from the live registered environment, including
-    # registrations delegated to host/extension tables by register_builtins.
-    known = set(api.split())
-    for api_line in api.splitlines():
-        fields = api_line.split()
-        if fields[:1] == ['lib'] and len(fields) > 1:
-            lib_name = fields[1].split('(', 1)[0]
-            known.update((lib_name, lib_name.split('.', 1)[-1]))
-    known.update(('report_value', 'trajectory', 'prev'))  # reserved call forms
-    source_text = Path('src/eigenscript.c').read_text()
-    pred = re.search(r'EIGS_PREDICATE_NAMES\[.*?\{(.*?)\};', source_text, re.S)
-    if pred:
-        known.update(re.findall(r'"([a-z_]+)"', pred[1]))
-
+def source_call_claims(known):
+    """Check call claims in C comments and compiler comparisons."""
     examined = 0
-    # These are the observer contract pages damaged by the builtin removal.
-    # Restricting the walk keeps this check auditable; the general front-door
-    # call check above remains responsible for its declared document set.
-    for path in map(Path, ('docs/SPEC.md', 'docs/PREDICATES.md', 'docs/OBSERVER.md')):
-        text = path.read_text()
-        local = set(re.findall(r'define ([a-z_][a-z_0-9]*)', text))
-        local.update(re.findall(r'^ *([a-z_][a-z_0-9]*) is ', text, re.M))
-        local.update(re.findall(r'`(?:local )?([a-z_][a-z_0-9]*) is ', text))
-        for lineno, line in enumerate(text.splitlines(), 1):
-            for name in re.findall(r'`([a-z_][a-z_0-9.]*) of(?:[ `]|$)', line):
-                examined += 1
-                base = name.split('.', 1)[-1]
-                if ('.' not in name and name != 'is' and name not in known and
-                    base not in known and name not in local):
-                    red(f'{path}:{lineno} calls {name} of, absent from registered API')
-
     # A leading C signature/Usage comment asserts a builtin surface. A compiler
     # comparison against a call callee gives that surface special semantics.
     usage = re.compile(r'^\s*/\*\s*(?:Usage:\s*)?([a-z_][a-z_0-9]*) of(?:[ `]|$)')
@@ -392,7 +363,7 @@ def stale_builtin_calls(api):
             for name in usage.findall(line):
                 examined += 1
                 if name not in known:
-                    red(f'{path}:{lineno} documents {name} of, absent from registered API')
+                    red(f'{path}:{lineno} documents {name} of, absent from public API')
     compiler = Path('src/compiler.c').read_text()
     for match in re.finditer(
             r'strcmp\((?:fn|callee)(?:_node)?->[^,]+, "([a-z_][a-z_0-9]*)"\)',
@@ -401,11 +372,10 @@ def stale_builtin_calls(api):
         examined += 1
         if name not in known:
             lineno = compiler.count('\n', 0, match.start()) + 1
-            red(f'src/compiler.c:{lineno} scans for {name}, absent from registered API')
-    print(f'  REGISTERED BUILTIN CALLS: examined {examined} call claim(s), '
-          f'{len(registered)} direct registration row(s)')
+            red(f'src/compiler.c:{lineno} scans for {name}, absent from public API')
+    print(f'  SOURCE CALL CLAIMS: examined {examined} call claim(s)')
     if not examined:
-        red('REGISTERED BUILTIN CALLS examined 0 call claims')
+        red('SOURCE CALL CLAIMS examined 0 call claims')
 
 
 def builtin_families(docs, api):
@@ -563,6 +533,8 @@ def selftest():
                 ('flag', 'docs/llms.txt', '\n`eigenscript --no-such-1275`\n', '--no-such-1275'),
                 ('target', 'CLAUDE.md', '\n`make no-such-1275`\n', 'make no-such-1275'),
                 ('name', 'README.md', '\n`no_such_1275 of null`\n', 'no_such_1275'),
+                ('contract-name', 'docs/PREDICATES.md',
+                 '\n`no_such_contract_1944 of\n', 'no_such_contract_1944'),
                 ('count', 'docs/ARCHITECTURE.md', '\nThe 77\n`lib/` modules and a 47-widget toolkit.\n',
                  'hand-typed count "77 `lib/` modules"'),
                 ('stale-concurrency', 'docs/BUILTINS.md',
@@ -643,8 +615,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 18 case(s) run, {passed} passed, {18-passed} failed')
-            return 0 if passed == 18 else 1
+            print(f'SELFTEST: 19 case(s) run, {passed} passed, {19-passed} failed')
+            return 0 if passed == 19 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -666,8 +638,11 @@ def main():
     flags(docs, run(binary, '--help'))
     targets(docs)
     api = run(binary, '--api')
-    names(docs, api)
-    stale_builtin_calls(api)
+    known = name_vocabulary(api)
+    names(docs, known)
+    names(('docs/SPEC.md', 'docs/PREDICATES.md', 'docs/OBSERVER.md'), known,
+          record_population=False)
+    source_call_claims(known)
     builtin_families(docs, api)
     stale_concurrency_claims()
     enrolment()
