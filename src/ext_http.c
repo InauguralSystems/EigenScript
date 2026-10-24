@@ -900,10 +900,11 @@ static int shared_find(Server *s, const char *key) {
 
 Value* builtin_shared_set(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "shared_set");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "shared_set", "[key, value]", make_null());
     Value *key_v = list_get_view(arg, 0, &(EigsView){{0}});
     Value *val = list_get_view(arg, 1, &(EigsView){{0}});
-    if (key_v->type != VAL_STR) return make_null();
+    ARG_GUARD(key_v->type != VAL_STR, "shared_set", "a string key", make_null());
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
@@ -952,10 +953,12 @@ Value* builtin_shared_set(Value *arg) {
  * value on success, null on bad args / over-cap / type mismatch. */
 Value* builtin_shared_incr(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "shared_incr");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "shared_incr", "[key, delta]", make_null());
     Value *key_v = list_get_view(arg, 0, &(EigsView){{0}});
     Value *delta_v = list_get_view(arg, 1, &(EigsView){{0}});
-    if (key_v->type != VAL_STR || delta_v->type != VAL_NUM) return make_null();
+    ARG_GUARD(key_v->type != VAL_STR, "shared_incr", "a string key", make_null());
+    ARG_GUARD(delta_v->type != VAL_NUM, "shared_incr", "a number delta", make_null());
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
@@ -1017,7 +1020,7 @@ Value* builtin_shared_incr(Value *arg) {
 }
 
 Value* builtin_shared_get(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_STR, "shared_get", "a string key", make_null());
     Server *s = eigs_http_active;
     if (!s) return make_null();
     pthread_mutex_lock(&s->shared_mu);
@@ -1032,7 +1035,7 @@ Value* builtin_shared_get(Value *arg) {
 }
 
 Value* builtin_shared_has(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_bool(0);  /* fs:TODO #971 guards a non-string key; deferred: ext_http is a variant-only build (make http) */
+    ARG_GUARD(!arg || arg->type != VAL_STR, "shared_has", "a string key", make_bool(0));
     Server *s = eigs_http_active;
     if (!s) return make_bool(0);  /* fs:ANSWER 0 means "key not present" -- the same value line 739 returns when shared_find misses; with no active server there is no shared store, so nothing is present */
     pthread_mutex_lock(&s->shared_mu);
@@ -1042,7 +1045,7 @@ Value* builtin_shared_has(Value *arg) {
 }
 
 Value* builtin_shared_delete(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_num(0);  /* fs:TODO #971 guards a non-string key; deferred: variant-only build */
+    ARG_GUARD(!arg || arg->type != VAL_STR, "shared_delete", "a string key", make_num(0));
     Server *s = eigs_http_active;
     if (!s) return make_num(0);  /* fs:ANSWER 0 means "nothing removed" -- the same value line 761 returns via `removed` when the key is absent */
     pthread_mutex_lock(&s->shared_mu);
