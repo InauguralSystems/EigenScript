@@ -195,8 +195,8 @@ static void test_worker_exit_lifecycle(void) {
             CHECK(handle && handle->type == VAL_DICT, "exit fixture owns join handle");
             if (handle && handle->type == VAL_DICT) {
                 int found_id = 0, found_gen = 0;
-                f.handle_id = (int)eigs_slot_num(dict_get_slot(handle, "_handle_id", &found_id), "embed_smoke");
-                f.handle_gen = (uint32_t)eigs_slot_num(dict_get_slot(handle, "_handle_gen", &found_gen), "embed_smoke");
+                f.handle_id = (int)eigs_slot_float(dict_get_slot(handle, "_handle_id", &found_id), "embed_smoke");
+                f.handle_gen = (uint32_t)eigs_slot_float(dict_get_slot(handle, "_handle_gen", &found_gen), "embed_smoke");
                 CHECK(found_id && found_gen, "join handle carries its id and generation");
                 pthread_t requester;
                 int made = pthread_create(&requester, NULL, exit_after_join_claim, &f) == 0;
@@ -669,9 +669,21 @@ int main(void) {
     CHECK(eigs_has_error() && strcmp(eigs_last_error_kind(), "index_range") == 0,
           "negative buffer set leaves index_range");
     eigs_clear_error();
-    eigs_value_buffer_set(buf, 2, INFINITY);
-    CHECK(eigs_value_buffer_get(buf, 2) == EIGS_NUM_MAX,
-          "buffer non-finite get is clamped");
+    /* R1.6z-D1 point 2 / N11: the C getter preserves stored bits and
+     * leaves both the pending-error channel and math flags alone. */
+    {
+        double stored = INFINITY;
+        unsigned saved_flags = g_math_flags;
+        eigs_value_buffer_set(buf, 2, stored);
+        g_math_flags = EIGS_MATH_UNDERFLOW;
+        double read_back = eigs_value_buffer_get(buf, 2);
+        CHECK(memcmp(&read_back, &stored, sizeof stored) == 0,
+              "R1.6z-D1 buffer non-finite get preserves stored bits");
+        CHECK(!eigs_has_error(), "R1.6z-D1 buffer non-finite get never raises");
+        CHECK(g_math_flags == EIGS_MATH_UNDERFLOW,
+              "R1.6z-D1 buffer non-finite get preserves math flags");
+        g_math_flags = saved_flags;
+    }
 
     /* Host buffer visible to script — SAME object, no copy at the
      * boundary: the script's buf_set is visible back in C. */
@@ -735,10 +747,23 @@ int main(void) {
                   strcmp(eigs_value_as_string(r), "int") == 0,
               "#1417 recursive failure prefix has a boxed int result");
         eigs_value_release(r);
+        /* R1.6z-D1: equality never crosses the scalar data boundary. */
+        for (int mode = 0; mode <= 1; ++mode) {
+            eigs_state_set_strict(st, mode);
+            g_math_flags = 0;
+            r = eigs_eval_string("[nf_raw == nf_raw, nf_raw == nf_finite, "
+                "list_contains of [[nf_raw, nf_later], nf_finite], "
+                "list_index_of of [[nf_raw, nf_later], nf_finite]]");
+            CHECK(r && !eigs_has_error() && r->type == VAL_LIST &&
+                  r->data.list.count == 4 &&
+                  slot_is_bool(list_slot(r, 0)) && !slot_as_bool(list_slot(r, 0)),
+                  "R1.6z-D1 NaN buffer equality is false without a raise");
+            CHECK(g_math_flags == 0, "R1.6z-D1 equality leaves math flags alone");
+            eigs_value_release(r);
+            eigs_clear_error();
+        }
+        eigs_state_set_strict(st, 1);
         const char *nf_reads[] = {
-            "nf_raw == nf_raw", "nf_raw == nf_finite",
-            "list_contains of [[nf_raw, nf_later], nf_finite]",
-            "list_index_of of [[nf_raw, nf_later], nf_finite]",
             "sum of nf_raw", "mean of nf_raw", "norm of nf_raw",
             "sum of ([nf_raw, nf_later])",
             "sum of nf_shaped",

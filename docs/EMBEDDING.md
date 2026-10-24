@@ -697,3 +697,15 @@ CHANGELOG entry. The opaque types (`EigsState`, `EigsThread`,
 `EigsValue`) intentionally hide their layout: those structs change
 between releases and the only safe way to touch them is through the
 documented accessors.
+
+### Stored non-finite buffer data
+
+`eigs_value_buffer_get` returns a valid element's stored double exactly,
+including NaN payloads, infinities and negative zero. A set/get round trip
+preserves bits; the getter neither normalizes nor writes math flags and never
+raises for non-finite data. The setter already stores doubles unchanged. C
+callers can use `isfinite()` when their application needs finite values.
+Wrong-type and out-of-range reports and their sentinels keep the API contract
+above. Script indexing and iteration instead enforce the finite data boundary.
+This follows Lua's `lua_tonumberx` and CPython's `PyFloat_AsDouble` C boundary
+(R1.6z-D1; design §2.6a).

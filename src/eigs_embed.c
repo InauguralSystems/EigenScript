@@ -299,7 +299,7 @@ EigsValue *eigs_get_global(const char *name) {
 
 /* ---- Values ------------------------------------------------------- */
 
-EigsValue *eigs_value_new_num(double n)         { return make_num(n); }
+EigsValue *eigs_value_new_num(double n)         { return make_float(n); }
 EigsValue *eigs_value_new_string(const char *s) { return make_str(s ? s : ""); }
 EigsValue *eigs_value_new_null(void)            { return make_null(); }
 EigsValue *eigs_value_new_bool(int b)           { return make_bool(b != 0); }
@@ -434,7 +434,8 @@ double eigs_value_buffer_get(EigsValue *v, int i) {
                            i, v->data.buffer.count);
         return 0.0;
     }
-    return buffer_read_num(v, i);
+    /* R1.6z-D1: the public C API exposes stored data, bit for bit. */
+    return v->data.buffer.data[i];
 }
 
 void eigs_value_buffer_set(EigsValue *v, int i, double x) {
