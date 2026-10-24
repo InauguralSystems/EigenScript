@@ -650,6 +650,7 @@ The `O cfg` record's v8 shape is pinned by `O3.ocfg-no-hlow` (its file lists
 
 ### N11
 - `N11.buffer-equal-ieee` [R1.6z] SGD stores -inf, then self-SGD stores NaN; IEEE element comparison: distinct/same NaN false, same infinity true, infinity versus finite false, signed zeros equal; strict modes 0/1 never raise or change math flags. Also exercises list_contains and list_index_of. R1.6z-D1.
+- `N11.container-self-equal-ieee` [R1.6z] Raw SGD stores -inf, then self-SGD stores NaN (`fixtures/r16z-container-self-equal.eigs`). Self-comparison of a list, dict, nested list and cyclic list reaching that buffer is false; a finite-buffer list and finite cycle are true. Membership/index search for the NaN-buffer list fail. Strict modes 0/1 never raise or change math flags. A finite shared DAG built as `[x, x]` 40 times compares true within the 30-second row timeout. R1.6z-D2; pre-registered red on d8a9d2c2 before the fix.
 - `gate.N11.embed-buffer-get-raw` [R1.6z] `tools/phase2_readers.sh release embed_buffer_get_raw`: set/get canonical NaN, payload NaN, both infinities and negative zero by memcmp; reads SGD-program-stored NaN, with no error or flag change in strict modes 0/1. Mechanical gate, compiled outside timed rows.
 
 ### N13
