@@ -275,6 +275,11 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: Section skip accounting
         run: bash tools/section_plan.sh --skip-audit
+      # extensions-http owns this smoke on merge_group; run it here only on
+      # code-changing PRs so regressions fail before entering the queue (#1935).
+      - if: github.event_name == 'pull_request' && needs.scope.outputs.code == 'true'
+        name: embed smoke (release, PR-time; #1935)
+        run: make embed-smoke
       - if: steps.select.outputs.n != '0'
         name: Self-test prerequisites (PyYAML and Cachegrind)
         run: |
