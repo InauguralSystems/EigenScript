@@ -38,7 +38,7 @@
 #
 #   RSS1  shared_incr: the counter path the builtin exists for. Leaked two
 #         Values per call (a parsed JSON Value on both the success and the
-#         type-mismatch path, plus the make_num handed to eigs_json_encode).
+#         type-mismatch path, plus the make_float handed to eigs_json_encode).
 #   RSS2  http_route_authed with a shared-store auth source: leaked the parsed
 #         `require_auth` Value on every authenticated request. Same class, found
 #         while auditing the other eigs_json_parse_value call sites for #731.

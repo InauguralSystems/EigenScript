@@ -3,8 +3,8 @@
 # SLOT_F64_RAW / VAL_F64_OFFSET tokens per function and fails when a count
 # differs (a new raw read, however it is spelled across lines, changes the
 # count), when a function with raw tokens is missing here, or a row is stale.
-# Ordinary builtin argument reads use eigs_num_arg / eigs_list_num /
-# eigs_opt_num / eigs_elem_num, which raise on a bool. The explicitly reviewed
+# Ordinary builtin argument reads use eigs_float_arg / eigs_list_float /
+# eigs_opt_float / eigs_elem_float, which raise on a bool. The explicitly reviewed
 # exceptions below preserve a numeric kind or exact int text (JSON and sorting),
 # box a typed dispatch argument, or write a typed sentinel (matmul).
 # A double bridge would lose int digits in the exact readers; each raw payload
@@ -12,16 +12,11 @@
 # token counts and reasons; they do not exempt ordinary argument coercion.
 builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel into a result buffer cell (EIGS_STRICT=0 path); a write, no Value is read
 builtins.c|eigs_json_encode_value|1|JSON encoder: case VAL_INT writes the int's exact digits (#1758 R1.2a)
-container.h|dict_value_get_num|1|accessor numeric fast path: reads the slot only behind its own slot_is_f64 test (#1665 arm D)
 container.h|dict_value_get_return|1|builtin-return read boxes an immediate only after slot_is_f64
 container.h|eigs_container_slot|2|Value-to-slot encoder reads a box only after type == VAL_FLOAT (then num_guards it) or type == VAL_INT (an SMI in range, design 2.1)
 container.h|eigs_slot_store_borrow|1|storage normaliser re-guards an immediate only after slot_is_f64 (#1665 arm D B10)
 container.h|eigs_slot_store_owned|1|storage normaliser re-guards an immediate only after slot_is_f64 (#1665 arm D B10)
 container.h|eigs_slot_box|1|borrowed slot write boxes a double only after slot_is_f64
-container.h|eigs_slot_elem_num|1|element numeric accessor reads only after slot_is_f64
-container.h|eigs_slot_num|1|required numeric accessor reads only after slot_is_f64
-container.h|eigs_slot_opt_num|1|optional numeric accessor reads only after slot_is_f64
-container.h|list_get_num|1|accessor numeric fast path: reads the slot only behind its own slot_is_f64 test (#1665 arm D)
 container.h|list_get_return|1|builtin-return read boxes an immediate only after slot_is_f64
 chunk.c|chunk_disassemble|2|debug disassembly prints a constant behind its own type == VAL_FLOAT test
 chunk.c|const_equal|4|constant-pool dedup compares two constants after testing both are VAL_FLOAT
@@ -29,7 +24,6 @@ chunk.c|const_hash_value|2|constant-pool hash of a constant inside its type == V
 eigenscript.c|chan_clone_rec|2|channel deep-copy, switch cases VAL_FLOAT and VAL_INT preserve the payload and numeric kind
 eigenscript.c|compute_entropy_impl|2|observer entropy, switch case VAL_FLOAT, and case VAL_INT (an int's entropy is its double's, design 7)
 eigenscript.c|ent_child_slot|1|observer entropy reads an immediate only after slot_is_f64
-eigenscript.c|eigs_num_arg_slow|2|checked reader slow path: reads only after type == VAL_FLOAT, or VAL_INT (the bridge converts an int, design 2.7)
 eigenscript.c|is_truthy|2|truthiness, switch case VAL_FLOAT and case VAL_INT (a bool has its own case)
 eigenscript.c|make_float_pooled|1|shared float constructors: writes the number of a Value it just typed VAL_FLOAT
 eigenscript.c|make_float_permanent|1|unpooled float constructor: writes the number of a Value it just typed VAL_FLOAT
@@ -44,7 +38,6 @@ eigenscript.c|value_to_string|2|printing, switch case VAL_FLOAT and case VAL_INT
 eigenscript.h|#define VAL_F64_OFFSET|1|the raw double member offset definition (JIT; #1758 R1.2a: was VAL_NUM_OFFSET)
 eigenscript.h|#define VAL_F64_RAW|1|the raw double read definition (#1758 R1.2a: was VAL_NUM_RAW)
 eigenscript.h|#define VAL_I64_RAW|1|the raw int64 read definition (#1758 R1.2a)
-eigenscript.h|eigs_num_arg|1|inline fast path of the checking accessor: reads only after type == VAL_FLOAT
 eigs_embed.c|eigs_value_as_num|2|embedding API: reads only after type == VAL_FLOAT; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
 embed_smoke.c|main|7|C test program: builds and inspects slots it constructed as numbers
 ext_store.c|store_json_encode|2|store record encoder: case VAL_INT writes exact digits; case VAL_FLOAT preserves the historical payload including non-finite data until N13 (R2.3)
@@ -86,7 +79,7 @@ builtins.c|builtin_json_path|1|VAL_INT scalar text is exact digits before releas
 builtins.c|builtin_sort_by|1|numeric key kind retained for exact mixed sorting (#1758 N2)
 builtins.c|sort_cmp_num|6|validated numeric slots viewed through slot_view; int comparisons are exact (#1758 N2)
 value_slot.h|slot_int_value|1|boxed VAL_INT payload after its type test (#1758 R1.2i)
-container.h|slot_view|3|typed float or int facade, preserving exact payload and kind (#1758 R1.2i)
+container.h|slot_view|2|typed float or int facade, preserving exact payload and kind (#1758 R1.2i)
 ext_db.c|db_build_query|1|VAL_INT parameters encode as exact digits after the kind test (#1758 R1.2)
 vm.c|vm_value_index_is_int|2|Guarded exact VAL_INT-to-C-index conversion; the other numeric kind keeps the float integrality test (#1758 R1.2)
 eigenscript.c|make_int|1|int constructor initializes the exact signed payload

@@ -14,7 +14,7 @@
  * defines both; the default build (none defined) is the pooled baseline. The
  * call sites below test the per-layer macros only — never EIGS_POOL_OFF
  * directly — so this is the single point of truth for the union.
- *   EIGS_POOL_OFF_NUM     — Value NUM freelist (free_value/make_num/recycle_intermediate)
+ *   EIGS_POOL_OFF_NUM     — Value NUM freelist (free_value/make_float/recycle_intermediate)
  *   EIGS_POOL_OFF_CALLENV — call-env recycling (vm_park_call_env/vm_take_call_env) */
 #ifdef EIGS_POOL_OFF
 #  ifndef EIGS_POOL_OFF_NUM
@@ -275,15 +275,6 @@ struct ASTNode {
 
 /* ---- Value types ---- */
 
-/* #1758 R1.6: the bridge survives until R1.6z. Only an explicit meter
- * build deprecates it; ordinary builds keep their zero-warning contract. */
-#if defined(EIGS_PHASE2_METER) && (defined(__GNUC__) || defined(__clang__))
-#define EIGS_R16_DEPRECATED(msg) __attribute__((deprecated(msg)))
-#else
-#define EIGS_R16_DEPRECATED(msg)
-#endif
-
-
 typedef enum {
     /* #1758 R1.2a: a double. A number Value is a VAL_FLOAT or a
      * VAL_INT; `type of` says "num" for both (decision (B)). */
@@ -322,8 +313,8 @@ static inline int eigs_cmp_int_float(int64_t i, double f) {
 /* #1637 round 4: the ONE raw way into a Value's number (an lvalue: also the
  * write). Only for a Value whose type is proven (VAL_FLOAT for the double,
  * VAL_INT for the int64), in a function listed in tools/num_read_allowlist.txt
- * with its use count. Everything else uses eigs_num_arg / eigs_list_num /
- * eigs_opt_num. VAL_F64_OFFSET is the double member for JIT-emitted loads and
+ * with its use count. Everything else uses eigs_float_arg / eigs_list_float /
+ * eigs_opt_float. VAL_F64_OFFSET is the double member for JIT-emitted loads and
  * stores (#1758 R1.2). */
 #define VAL_F64_RAW(v)  ((v)->data.f64_)
 #define VAL_I64_RAW(v)  ((v)->data.i64_)
@@ -461,7 +452,7 @@ struct Value {
     union {
         /* #1637 round 4: renamed so no unchecked read compiles. A Value's
          * number is read through the checking accessors (eigs_float_arg,
-         * eigs_list_num, eigs_opt_num), which raise on a bool or any other
+         * eigs_list_float, eigs_opt_float), which raise on a bool or any other
          * non-number, or through VAL_F64_RAW where the type is already
          * proven -- and every VAL_F64_RAW use sits in a function on the
          * reviewed list tools/num_read_allowlist.txt, pinned by count
@@ -541,10 +532,10 @@ _Static_assert(sizeof(((Value *)0)->data.strv) <= sizeof(((Value *)0)->data.fn),
  * compiler instruments for ASan; every other build expands these to nothing,
  * so release objects are byte-identical.
  *
- * Parked NUM (free_value / recycle_intermediate -> make_num): the whole Value
+ * Parked NUM (free_value / recycle_intermediate -> make_float): the whole Value
  * is poisoned EXCEPT the link word, the sizeof(Value *) bytes the freelist
  * threads its next pointer through (EIGS_NUM_LINK). Only the pool's own push,
- * pop (make_num) and drain (eigs_thread_drain_caches) touch those bytes. In
+ * pop (make_float) and drain (eigs_thread_drain_caches) touch those bytes. In
  * every other build the link overlays the number itself (offset
  * offsetof(Value, data)), which would leave a stale NUMBER read -- the
  * commonest stale read of a recycled NUM -- undetectable; so under ASan the
@@ -1392,31 +1383,9 @@ extern __thread EigsThread *eigs_current;
  * and false in every argument slot of every builtin must raise unless the
  * slot is on its reviewed any-value list. */
 int eigs_arg_has_bool(const Value *arg);
-/* #1637: THE checked number reads. C code turning a Value into a double goes
- * through one of these (tools/num_read_check.sh enforces it: a raw
- * `->data.f64_` read needs a VAL_FLOAT test in the same function, or a reviewed
- * allowlist entry). A bool -- or any other non-number -- raises a type error
- * naming `who` (a `builtin_` prefix is dropped) and reads as 0.0; the caller
- * checks g_has_error before acting on the value.
- *   eigs_num_arg(v, who)       v must be a number
- *   eigs_list_num(l, i, who)   element i of the argument list must exist and
- *                              be a number
- *   eigs_opt_num(v, &d, who)   optional: absent/null -> 0 (use the default);
- *                              a number -> 1 with *d set; anything else raises
- *                              and returns 0 */
-double eigs_num_arg_slow(const Value *v, const char *who) EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_num_arg_slow by its decided numeric reader or producer");
-EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_num_arg by its decided numeric reader or producer")
-static inline double eigs_num_arg(const Value *v, const char *who) {
-    if (__builtin_expect(v && v->type == VAL_FLOAT, 1)) return VAL_F64_RAW(v);
-    return eigs_num_arg_slow(v, who);   /* #1758: an int converts there */
-}
-double eigs_list_num(const Value *list, int i, const char *who) EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_list_num by its decided numeric reader or producer");
-/* #1637 round 4: an ELEMENT a builtin reads as a number (a tensor cell, a
- * byte). A bool raises in every strict mode; any other non-number raises
- * under EIGS_STRICT and reads as the documented 0.0 under EIGS_STRICT=0.
- * The caller checks g_has_error. */
-double eigs_elem_num(const Value *v, const char *who) EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_elem_num by its decided numeric reader or producer");
-int eigs_opt_num(const Value *v, double *out, const char *who) EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_opt_num by its decided numeric reader or producer");
+/* #1637/#1758: required, element and optional checked readers are split
+ * by numeric contract below. Raw payload macros require a reviewed kind
+ * proof in tools/num_read_allowlist.txt. Callers stop on g_has_error. */
 /* #1758 R1.6a: final numeric readers. All inputs are BORROWED, including
  * on a raise: no reader allocates, retains, or releases its argument. Every
  * floating input must be finite. Required/list reads reject non-numbers;
@@ -1549,7 +1518,7 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
  * simple early return. The raise still returns, so the caller stops before
  * consuming the coerced value.
  *
- * These sites have no `return make_num(0)` to enumerate. A probe that
+ * These sites have no `return make_float(0)` to enumerate. A probe that
  * stays silent under strict is what tools/strict_differential.sh catches. */
 /* PLACEMENT IS LOAD-BEARING: this RETURNS, so it must sit BEFORE anything the
  * function has allocated and still owns, or the raise abandons it. Put the
@@ -1833,7 +1802,6 @@ void   strbuf_free(strbuf *b);
 
 /* ---- Value constructors ---- */
 
-Value* make_num(double n) EIGS_R16_DEPRECATED("#1758 R1.6: replace make_num by its decided numeric reader or producer");
 Value* make_float(double n);
 Value* make_float_permanent(double n);
 Value* make_int(int64_t n);   /* owned, unpooled int box; slots canonicalize small ints */
@@ -1846,7 +1814,6 @@ Value* make_null(void);
 /* #1637: the immortal true/false singletons (refcount no-ops, like null). */
 Value* make_bool(int b);
 Value* make_list(int capacity);
-Value* make_num_permanent(double n) EIGS_R16_DEPRECATED("#1758 R1.6: replace make_num_permanent by its decided numeric reader or producer");   /* unpooled make_num; needs no VM thread */
 Value* make_list_heap(int capacity);
 Value* make_text_builder(void);
 Value* make_fn(const char *name, char **params, int param_count, Env *closure);
@@ -1951,26 +1918,6 @@ static inline double num_guard(double x) {
     if (x > EIGS_NUM_MAX)  { g_math_flags |= EIGS_MATH_OVERFLOW; return EIGS_NUM_MAX; }
     if (x < -EIGS_NUM_MAX) { g_math_flags |= EIGS_MATH_OVERFLOW; return -EIGS_NUM_MAX; }
     return x;
-}
-
-/* #1417: VAL_BUFFER storage is an unboxed numerical work area, so kernels
- * can transiently leave an IEEE NaN or infinity in it.  The language's
- * finite-number invariant applies when an element crosses the buffer/scalar
- * boundary: every scalar read goes through this helper.  Keeping the guard at
- * that boundary also lets bulk kernels retain their unboxed representation. */
-EIGS_R16_DEPRECATED("#1758 R1.6: replace buffer_read_num by its decided numeric reader or producer")
-static inline double buffer_read_num(const Value *buffer, int64_t index) {
-    return num_guard(buffer->data.buffer.data[index]);
-}
-
-/* Numeric byte consumers truncate and wrap modulo 256. Reduce in double
- * first: even a normalized finite number can be outside the C int range.
- * The caller must normalize the input and stop on a raised read first. */
-EIGS_R16_DEPRECATED("#1758 R1.6: replace finite_num_to_byte by its decided numeric reader or producer")
-/* ext_net.c remains a caller until R1.6f/z; minimal amalgamations omit it. */
-__attribute__((unused))
-static inline unsigned char finite_num_to_byte(double x) {
-    return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
 }
 
 /* #1740: a bitwise operand converts to int64 only if it is an EXACT integer
@@ -2171,7 +2118,7 @@ Value* env_get_hashed(Env *env, const char *name, uint32_t h);
 Value* env_get_local_hashed(Env *env, const char *name, uint32_t h);
 void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
 /* Slot-flavored fast paths: take/produce EigsSlot directly so immediates
- * never round-trip through make_num + val_decref. Reference-count
+ * never round-trip through make_float + val_decref. Reference-count
  * semantics match the Value* variants: env *borrows* the input slot and
  * incref's internally, *_get returns a slot the caller must slot_decref. */
 /* #868/#908: how many assignments this binding has seen, for the `when <n>`

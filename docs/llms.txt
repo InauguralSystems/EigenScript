@@ -247,7 +247,7 @@ sqrt(2) = 1.414213562373095
   Indexing and iteration refuse stored NaN and infinity with `value` in
   every strict mode, matching `get_at` (N13). Strict NaN keeps its first
   diagnostic and sets `math_flags.invalid`; every execution tier agrees on
-  the error kind, message and source line. Structural buffer
+  the error kind, message and source line.
   The other scalar reductions, mixed buffer/list materialization
   and numeric byte/sample/device conversions normalize their inputs and stop at
   the first raised read. `write_bytes` requires exact bytes in 0..255

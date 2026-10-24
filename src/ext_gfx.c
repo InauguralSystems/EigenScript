@@ -393,7 +393,7 @@ static const char* scancode_name(int sc) {
 
 /* ---- Builtins ---- */
 
-/* #1007: the drawing surface reads RUNS of list elements as `eigs_num_arg(&(), __func__)`
+/* #1007: the drawing surface reads RUNS of list elements as `eigs_float_arg(&(), __func__)`
  * with no type check. `Value`'s union overlaps `double num` with
  * `char *str`, so an unchecked read reinterprets a pointer as a double
  * and then `(int)`-casts it — the read itself is the defect, which is why
@@ -451,7 +451,7 @@ Value* builtin_gfx_open(Value *arg) {
      * same value. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
               "gfx_open", "[number width, number height, title]", make_bool(0));
-    /* #1007: width and height were read as `eigs_num_arg(&(), __func__)` with no type check
+    /* #1007: width and height were read as `eigs_float_arg(&(), __func__)` with no type check
      * while the title on the very next line WAS checked. Value's union
      * overlaps `double num` with `char *str`, so gfx_open of ["800","600",t]
      * reinterpreted a pointer as a double and int-cast it — in practice a
@@ -1028,7 +1028,7 @@ Value* builtin_gfx_text(Value *arg) {
      * before #1007, so its wrong-typed scale is a COERCION and keeps
      * measuring at scale 1 (STRICT_REQUIRE there, byte-identical off the
      * flag). This one did not:
-     *     int scale = (count >= 7) ? (int)eigs_num_arg(items[6], __func__) : 1;
+     *     int scale = (count >= 7) ? (int)eigs_float_arg(items[6], __func__) : 1;
      * reads the union unchecked, so a string scale drew the glyph from a
      * reinterpreted `char *` — a subnormal that truncates to 0 and is then
      * clamped to 1, which is why it LOOKED like scale 1 while being a pun.
@@ -1366,7 +1366,7 @@ Value* builtin_audio_open(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
                    "audio_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        /* The same unchecked `eigs_num_arg(&(), __func__)` type-pun as gfx_open. That it is an
+        /* The same unchecked `eigs_float_arg(&(), __func__)` type-pun as gfx_open. That it is an
          * oversight rather than a convention is settled 180 lines down:
          * audio_stream_open guards this identical pair with `(type == VAL_FLOAT || type == VAL_INT)`
          * before reading it. */

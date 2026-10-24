@@ -365,7 +365,7 @@ consequences are contracts you can rely on:
   and `num` still *coerces* (`num of ([1, 2])` is `0` — that is its documented
   contract, not a guard).
   The distinction is not derivable from the code: `task_alive` has two
-  `return make_num(0)` lines four apart, one a type guard and one the
+  `return make_float(0)` lines four apart, one a type guard and one the
   documented answer. `tools/strict_differential.sh` checks the distinction
   that can be executed: a guard probe must raise in strict mode, the default
   (with the variable unset or set to `1`), and a pinned documented answer must not.

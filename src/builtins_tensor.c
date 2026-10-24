@@ -886,7 +886,7 @@ Value* builtin_tensor_matmul(Value *arg) {
     double *out = xcalloc((size_t)ar * bc, sizeof(double));
     ne_matmul_buf(af, ar, ac, bf, bc, out);
     /* #971: same NaN collapse as the buffer path, so the strict raise names
-     * matmul instead of the bare num_guard backstop inside make_num. */
+     * matmul instead of the bare num_guard backstop inside make_float. */
     for (int64_t i = 0; i < (int64_t)ar * bc; i++) {
         if (out[i] != out[i]) out[i] = num_guard_named(out[i], "matmul");
         if (g_has_error) { free(af); free(bf); free(out); return make_null(); }
@@ -2566,7 +2566,7 @@ Value* builtin_tensor_load(Value *arg) {
         free(data); fclose(f); tensor_load_record_verdict(0, 0); return make_null();
     }
     /* #971: the file is untrusted bytes, so a NaN pattern is reachable
-     * here. flat_to_tensor_* would collapse it through make_num anyway
+     * here. flat_to_tensor_* would collapse it through make_float anyway
      * (same 0 + EIGS_MATH_INVALID); guarding first lets the strict raise
      * name tensor_load. */
     for (int i = 0; i < total; i++) {

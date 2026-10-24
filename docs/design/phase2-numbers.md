@@ -695,21 +695,16 @@ result).**
 | `builtins_host.c:ls_entry_cmp` | guarded | sorts the string entries `ls` built itself (D2) |
 | `container.h:dict_value_get_f64` | guarded | final float-storage reader: an SMI returns 0 without writing the output; no allocation or ownership transfer (D1) |
 | `container.h:dict_value_get_int` | smi-arm | final int-storage reader: exact SMI or boxed int payload; no allocation or ownership transfer (D1) |
-| `container.h:dict_value_get_num` | smi-arm | bridge reader (2.7): an int element converts to its double, exactly (|SMI| < 2^47), until R1.6 deletes the bridge (D1) |
 | `container.h:dict_value_get_ref` | smi-arm | NULL for an SMI or a double (container.h:137); since R1.3 a boxed int (\|i\| >= 2^47) is a heap slot and comes back as its non-NULL `VAL_INT` Value, so the caller types the element before reading it (D1) |
 | `container.h:dict_value_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value`, the one SMI boxer (unwired until R1.3) (D1) |
 | `container.h:eigs_container_slot` | not-a-classifier | the canonicalizing Value-to-slot writer (R1.2): it reads a Value, not a slot, and writes the bits; a `VAL_INT` box becomes an SMI inside [-2^47, 2^47) and stays a heap slot outside it (2.1) (D3) |
 | `container.h:eigs_slot_adopt` | guarded | decides ownership from what `eigs_container_slot` returned (compile-forced); a small int comes back as an SMI and its box is released (D3) |
 | `container.h:eigs_slot_box` | smi-arm | an SMI is boxed as an owned int through `slot_to_value`; floats retain `make_num` (R1.3) (D1) |
-| `container.h:eigs_slot_elem_num` | smi-arm | bridge reader: an int converts to its double (D1) |
-| `container.h:eigs_slot_num` | smi-arm | bridge reader: an int converts to its double (D1) |
-| `container.h:eigs_slot_opt_num` | smi-arm | bridge reader: an int converts to its double and answers present (D1) |
 | `container.h:eigs_slot_ref` | refuse | an immediate double or an SMI was dereferenced as a pointer; every caller tests for a number first. R1.1 aborts on any slot that is not a pointer, null or bool, so a caller missed later fails loudly (D2) |
 | `container.h:eigs_slot_store_borrow` | guarded | an SMI is canonical storage and comes back as it is, with no reference to take (D1) |
 | `container.h:eigs_slot_store_owned` | guarded | an SMI is canonical storage and comes back as it is, with no reference to release (D1) |
 | `container.h:list_get_f64` | guarded | final float-storage reader: an SMI returns 0 without writing the output; no allocation or ownership transfer (D1) |
 | `container.h:list_get_int` | smi-arm | final int-storage reader: exact SMI or boxed int payload; no allocation or ownership transfer (D1) |
-| `container.h:list_get_num` | smi-arm | bridge reader: an int element converts to its double (D1) |
 | `container.h:list_get_ref` | smi-arm | NULL for an SMI or a double (container.h:133); since R1.3 a boxed int (\|i\| >= 2^47) is a heap slot and comes back as its non-NULL `VAL_INT` Value (D1) |
 | `container.h:list_get_return` | smi-arm | an int element returns a fresh int Value through `slot_to_value` (unwired until R1.3) (D1) |
 | `container.h:slot_type` | smi-arm | an SMI's type is `VAL_INT` (R1.2); any other unknown tag refuses instead of being read as a pointer (D1) |
@@ -727,6 +722,7 @@ result).**
 | `jit.c:jit_compile_to_thunk/OP_EQ` | not-a-classifier | writes the bool result bits (D3) |
 | `jit.c:jit_compile_to_thunk/OP_NEG` | not-a-classifier | the NOT arm writes bool result bits (D3) |
 | `jit.c:jit_compile_to_thunk/OP_NULL` | not-a-classifier | the constant arm writes null and bool bits (D3) |
+| `embed_smoke.c:main` | guarded | C smoke fixture checks a known result-list slot with slot_is_bool before reading its bool payload (R1.6z-D1) |
 | `jit_smoke.c:run_bool_cases` | not-a-classifier | test harness: expected bool bits (D3) |
 | `jit_smoke.c:run_index_bail_cases` | guarded | test harness: an exact null test of a result (D3) |
 | `trace.c:trace_source_replay` | guarded | source-size metadata requires `VAL_INT` before the exact int reader; a rejected float is read only for main's unchanged diagnostic (sync #5, #1885) (D1) |

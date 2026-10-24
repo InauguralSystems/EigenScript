@@ -12,12 +12,6 @@ endif
 # build error instead of an ignorable warning.
 CFLAGS  := -Wall -Wextra -Werror=implicit-function-declaration $(WERROR_FLAGS) -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
 
-# #1758 R1.6: an opt-in progress meter, never part of ordinary CI warnings.
-# Flags do not invalidate existing objects; use make -B for a meter census.
-ifeq ($(EIGS_PHASE2_METER),1)
-override CFLAGS += -DEIGS_PHASE2_METER
-endif
-
 # RELRO/BIND_NOW are ELF concepts; macOS's ld64 rejects -z, and PIE is
 # already the default there. Without this split every Makefile link target
 # (notably `make lsp`) fails on macOS even though build.sh works.

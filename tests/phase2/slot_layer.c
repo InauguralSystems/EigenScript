@@ -373,7 +373,6 @@ CELL(obs_value) { r_v(b, n, obs_slot_value(s)); }
  * `A:<reader>` an abort naming the reader; ` raise` a type error raised. */
 #define EXP(name) static void e_##name(int k, char *b, size_t n)
 #define ABORT(who) snprintf(b, n, "A:%s", who)
-static void e_d(char *b, size_t n, double d, int raise) { r_d(b, n, d); if (raise) strncat(b, " raise", n - strlen(b) - 1); }
 static void e_bool(char *b, size_t n, int k) { snprintf(b, n, "v:%s", k == K_TRUE ? "true" : "false"); }
 EXP(store_slot) {   /* both normalisers: a double is guarded (NaN -> 0), the rest kept */
     snprintf(b, n, "b:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k]));

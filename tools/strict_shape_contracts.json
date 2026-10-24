@@ -787,17 +787,17 @@
     "category": "variadic",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole string list is argv; exactly [argv-list, timeout] is alternate form. Rejecting all >2 breaks valid commands. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged.",
+    "reason": "Whole string list is argv; exactly [argv-list, timeout] is alternate form. Rejecting all >2 breaks valid commands. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged. R1.6z reviewed repin: only the retired constructor spelling in a comment changes (make_num to make_float); executable C and the whole-argument helper closure are unchanged.",
     "public_names": [
       "exec_capture"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "5e9886f655fbb21594fe3fe2413307e8256cb9e7259196dbf2dbb128e14c51c8"
+      "24b7703f8cc21699dea02c0d35addda751e9ec9280d12626b1d0531169740a99"
     ],
     "source_sha256": {
       "builtin_exec_capture": [
-        "5e9886f655fbb21594fe3fe2413307e8256cb9e7259196dbf2dbb128e14c51c8"
+        "24b7703f8cc21699dea02c0d35addda751e9ec9280d12626b1d0531169740a99"
       ],
       "eigs_list_float": [
         "7742c72ce566aaacdfbf62a4a65569897bbbae97493aff0c5d3017606422503a"
@@ -2364,17 +2364,17 @@
     "category": "output_only",
     "minimum": null,
     "maximum": null,
-    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple.",
+    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple. R1.6z reviewed repin: only the retired constructor spelling in a comment changes (make_num to make_float); executable C and the whole-argument helper closure are unchanged.",
     "public_names": [
       "tensor_load"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "5d8bb4327209a39a7771eb85a7f2073f20ce2fff22d6114cd1b42ef6797ccea8"
+      "aaba6fe5cd7938dc4a7129b2ee176e64aec6d8e6e3edd0314bd8b1ebffeca1b8"
     ],
     "source_sha256": {
       "builtin_tensor_load": [
-        "5d8bb4327209a39a7771eb85a7f2073f20ce2fff22d6114cd1b42ef6797ccea8"
+        "aaba6fe5cd7938dc4a7129b2ee176e64aec6d8e6e3edd0314bd8b1ebffeca1b8"
       ]
     }
   },
