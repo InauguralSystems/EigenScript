@@ -14,7 +14,9 @@ check_file() {
         'computes the formula' \
         'sha256' \
         'brew test-bot' \
-        'dispatch `bump-formula.yml`'
+        'dispatch `bump-formula.yml`' \
+        'docs/release-reviews/vX.Y.Z.md' \
+        'legibility review'
     do
         if ! grep -Fq "$phrase" "$file"; then
             echo "release_skill_check: RED: missing required guidance: $phrase"
