@@ -1,23 +1,16 @@
 # Serialize every make that can write this tree (#1940). Two makes in one tree
 # race on build/ and the src/eigenscript alias: R1.6e's suite saw its binary
 # relinked mid-run, and sync #7's stop-gate build collided with a background
-# build. Recursive makes inherit EIGS_TREE_LOCK_HELD and pass straight through.
-# The lock lives at the tree root, not in build/: `make clean` removes build/,
-# and a deleted lock file would let a waiter and a newcomer each hold a lock.
-# --no-print-directory keeps output identical to an unwrapped make. Without
-# util-linux flock (macOS), make runs unlocked, as before.
-ifeq ($(strip $(EIGS_TREE_LOCK_HELD))$(shell command -v flock >/dev/null 2>&1 && printf yes),yes)
-EIGS_TREE_LOCK_GOALS := $(strip $(MAKECMDGOALS))
-.PHONY: __eigs_tree_lock $(EIGS_TREE_LOCK_GOALS)
-.DEFAULT_GOAL := __eigs_tree_lock
-$(EIGS_TREE_LOCK_GOALS): __eigs_tree_lock ; @:
-__eigs_tree_lock:
-	@if ! flock -n .make.lock true; then \
-		echo "make: waiting for the build lock (another make in this tree)"; \
-	fi; \
-	EIGS_TREE_LOCK_HELD=1 flock .make.lock \
-		$(MAKE) --no-print-directory $(EIGS_TREE_LOCK_GOALS)
-else  # lock already inherited, or flock is unavailable
+# build. tools/tree_lock.sh holds a tree-root lock (not in build/, which `make
+# clean` removes) until this make exits. Recursive makes inherit the flag and
+# skip it; so does a make that restarted itself after remaking an included
+# makefile (same PID, lock already held). Without flock(1), nothing changes.
+ifeq ($(strip $(EIGS_TREE_LOCK_HELD))$(MAKE_RESTARTS),)
+EIGS_TREE_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+EIGS_TREE_LOCK := $(shell sh '$(EIGS_TREE_ROOT)/tools/tree_lock.sh' '$(EIGS_TREE_ROOT)' $$PPID)
+endif
+export EIGS_TREE_LOCK_HELD := 1
+
 VERSION := $(shell cat VERSION)
 CC      := gcc
 override WERROR_FLAGS := $(shell cat tools/werror_flags.txt)
@@ -863,4 +856,3 @@ tree-lock-smoke:
 	[ -z "$(EIGS_LOCK_SMOKE_MARKER)" ] || : > "$(EIGS_LOCK_SMOKE_MARKER)"; \
 	sleep "$(or $(EIGS_LOCK_SMOKE_SLEEP),0)"; \
 	[ -z "$(EIGS_LOCK_SMOKE_DONE)" ] || : > "$(EIGS_LOCK_SMOKE_DONE)"
-endif  # top-level build-lock wrapper

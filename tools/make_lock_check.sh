@@ -41,7 +41,7 @@ NOTICE='make: waiting for the build lock (another make in this tree)'
 TREE="$WORK/tree"
 mkdir -p "$TREE/tools"
 cp "$ROOT/Makefile" "$ROOT/VERSION" "$TREE/"
-cp "$ROOT/tools/werror_flags.txt" "$TREE/tools/"
+cp "$ROOT/tools/werror_flags.txt" "$ROOT/tools/tree_lock.sh" "$TREE/tools/"
 smoke() { (cd "$TREE" && make --no-print-directory tree-lock-smoke "$@"); }
 
 # 1. Two makes in one tree serialize, and both succeed.
@@ -102,4 +102,19 @@ second=$!
 wait "$first" || fail "the clean-case first make failed"
 wait "$second" || fail "a make started after build/ was removed did not wait: $(cat "$WORK/clean-second.log")"
 echo "  PASS: the lock survives removal of build/"
-echo "make-lock selftest: 4/4 passed"
+# 5. Question mode answers as an unlocked make: an existing file with no rule is
+# up to date. (A make that re-ran itself under a phony lock target answered
+# "out of date" for everything, which broke the LSP and DAP freshness checks.)
+(cd "$TREE" && timeout 10 make -q VERSION) >"$WORK/question.log" 2>&1
+q_rc=$?
+[ "$q_rc" -eq 0 ] || fail "make -q on an up-to-date file exited $q_rc: $(cat "$WORK/question.log")"
+echo "  PASS: make -q answers as an unlocked make"
+
+# 6. An extra makefile that includes the Makefile still works. (A re-run make
+# loses -f, which MAKEFLAGS does not carry: tests/test_missing_capability.sh.)
+printf 'include Makefile\n.PHONY: extra-goal\nextra-goal:\n\t@echo extra-goal-ran\n' >"$TREE/extra.mk"
+(cd "$TREE" && timeout 10 make --no-print-directory -f extra.mk extra-goal) >"$WORK/extra.log" 2>&1 \
+    || fail "make -f extra.mk failed: $(cat "$WORK/extra.log")"
+grep -Fxq extra-goal-ran "$WORK/extra.log" || fail "make -f extra.mk did not run its own goal"
+echo "  PASS: an extra -f makefile that includes the Makefile works"
+echo "make-lock selftest: 6/6 passed"
