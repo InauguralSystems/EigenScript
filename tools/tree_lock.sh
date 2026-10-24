@@ -12,7 +12,9 @@ if [ "${1:-}" = hold ]; then
     # hold LOCK READY PID [try]: take the lock, signal READY, release when PID exits.
     exec 9>"$2" || { : >"$3.fail"; exit 1; }
     if [ "${5:-}" = try ]; then
-        flock -n 9 || { : >"$3.busy"; exit 75; }
+        # A try still allows one holder poll (0.05 s) with margin, so a holder
+        # whose make has just exited does not read as a running build.
+        flock -w 0.3 9 || { : >"$3.busy"; exit 75; }
     else
         flock 9 || { : >"$3.fail"; exit 1; }
     fi
@@ -34,7 +36,7 @@ lock="$root/.make.lock"
 ready=$(mktemp "${TMPDIR:-/tmp}/eigs-tree-lock.XXXXXX") || exit 0
 rm -f "$ready"
 # Stay quiet for a moment: the previous make's holder can still be on its
-# last poll. A try-lock must not spend even this grace period waiting.
+# last poll. A try waits only that grace (in the holder), never for a build.
 if [ -z "$try" ] && ! flock -w 0.5 "$lock" true 2>/dev/null; then
     echo "make: waiting for the build lock (another make in this tree)" >&2
 fi

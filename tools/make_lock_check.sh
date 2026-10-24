@@ -151,4 +151,20 @@ record = run_owned(['make', '--no-print-directory', '-s', 'tree-lock-smoke'],
 sys.exit(0 if record.get('returncode') == 0 else 1)
 PY
 echo "  PASS: make leaves nothing in its session (bounded_process accepts it)"
-echo "make-lock selftest: 7/7 passed"
+# 8. A try right after a make exits is not a running build. A holder keeps the
+# lock up to one poll (0.05 s) after its make's PID exits, so a try with no
+# grace read that trailing poll as a build and skipped: the stop gate's own
+# back-to-back selftest runs hit it. Five rounds: take the lock for a
+# short-lived owner, let the owner exit, try at once; every try must succeed.
+mkdir -p "$WORK/trailing"
+for round in 1 2 3 4 5; do
+    sleep 0.2 & owner=$!
+    sh "$ROOT/tools/tree_lock.sh" "$WORK/trailing" "$owner" || fail "round $round: the first holder did not start"
+    wait "$owner" 2>/dev/null
+    sleep 5 & owner2=$!
+    sh "$ROOT/tools/tree_lock.sh" --try "$WORK/trailing" "$owner2"; try_rc=$?
+    kill "$owner2" 2>/dev/null; wait "$owner2" 2>/dev/null
+    [ "$try_rc" -eq 0 ] || fail "round $round: a try right after the owner exited answered $try_rc (want 0): the trailing poll read as a build"
+done
+echo "  PASS: a try just after a make exits takes the lock"
+echo "make-lock selftest: 8/8 passed"
