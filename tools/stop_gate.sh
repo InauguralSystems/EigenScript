@@ -23,6 +23,7 @@ with tempfile.TemporaryDirectory(prefix="eigs-stop-gate-") as td:
     (root / "src").mkdir()
     (root / "changes" / "internal").mkdir(parents=True)
     shutil.copy2(script, root / "tools" / "stop_gate.sh")
+    shutil.copy2(script.with_name("tree_lock.sh"), root / "tools" / "tree_lock.sh")
     (root / "Makefile").write_text("all:\n\t@:\n")
     (root / "src" / "eigenscript").write_text("#!/bin/sh\nexit 0\n")
     (root / "src" / "eigenscript").chmod(0o755)
@@ -68,14 +69,17 @@ LOG=/tmp/eigs_stop_gate.log
 # A hook never queues behind a build in this tree, and never races one (#1940).
 # Hold the Makefile's tree lock through the build and the smoke run; the
 # exported flag stops make from taking the same lock again.
-if command -v flock >/dev/null 2>&1; then
-    exec 9>.make.lock
-    if ! flock -n 9; then
-        echo "stop-gate: SKIP: a build holds this tree's lock (.make.lock); not racing it"
-        exit 0
-    fi
-    export EIGS_TREE_LOCK_HELD=1
+sh tools/tree_lock.sh --try "$PWD" $$
+lock_rc=$?
+if [ "$lock_rc" -eq 75 ]; then
+    echo "stop-gate: SKIP: a build holds this tree's lock; not racing it"
+    exit 0
 fi
+if [ "$lock_rc" -ne 0 ]; then
+    echo "stop-gate: tree-lock helper failed (rc=$lock_rc); not building unlocked" >&2
+    exit 2
+fi
+export EIGS_TREE_LOCK_HELD=1
 if ! make -s >"$LOG" 2>&1; then
     { echo "STOP GATE: build FAILED with uncommitted src changes:"; tail -15 "$LOG"; } >&2
     exit 2
