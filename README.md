@@ -442,10 +442,11 @@ out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
 `asin`/`acos` clamp their inputs. Buffer consumers apply the same normalization,
-except `sum`, `get_at`, `dot` and `write_bytes`, which refuse non-finite
+except `sum`, `get_at`, indexing, iteration, `dot` and `write_bytes`, which refuse non-finite
 buffer elements in every strict mode (N13).
-Structural buffer equality and the other scalar reductions normalize each
-input by this rule too, as do mixed buffer/list materialization
+Structural buffer equality compares stored doubles directly with IEEE equality;
+list/dict self-equality follows that rule through nested and cyclic containers.
+The other scalar reductions normalize each input, as do mixed buffer/list materialization
 and the remaining numeric byte or sample conversions. `write_bytes` instead
 requires exact bytes in 0..255 (N5/Q1). A raised read stops subsequent work.
 `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero

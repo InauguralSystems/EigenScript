@@ -3300,6 +3300,84 @@ int is_truthy(Value *v) {
     return 0;
 }
 
+/* R1.6z-D2: identity is sound only if every reachable element is reflexive.
+ * Before R2.2 only a NaN-holding buffer is non-reflexive; R2.2 must extend
+ * this predicate to NaN floats (including immediate container slots).
+ * The work stack avoids C recursion and the pointer set visits shared
+ * containers/buffers once, so DAGs stay linear and cycles terminate.
+ * All pointers are borrowed for this call. No scalar boundary, raise or
+ * g_math_flags write belongs in this scan. */
+typedef struct {
+    Value **todo, **seen;
+    size_t count, capacity, seen_count, seen_capacity;
+} EqualScan;
+
+static size_t equal_scan_hash(Value *v) {
+    uintptr_t x = (uintptr_t)v;
+    x ^= x >> 16; x *= 0x45d9f3bU; x ^= x >> 13;
+    return (size_t)x;
+}
+
+/* Return true if already visited; otherwise insert before following edges. */
+static int equal_scan_seen(EqualScan *scan, Value *v) {
+    if (!scan->seen_capacity || scan->seen_count * 2 >= scan->seen_capacity) {
+        size_t old_capacity = scan->seen_capacity;
+        Value **old = scan->seen;
+        scan->seen_capacity = old_capacity ? old_capacity * 2 : 64;
+        scan->seen = xcalloc_array(scan->seen_capacity, sizeof(*scan->seen));
+        for (size_t i = 0; i < old_capacity; i++) {
+            if (!old[i]) continue;
+            size_t slot = equal_scan_hash(old[i]) & (scan->seen_capacity - 1);
+            while (scan->seen[slot]) slot = (slot + 1) & (scan->seen_capacity - 1);
+            scan->seen[slot] = old[i];
+        }
+        free(old);
+    }
+    size_t slot = equal_scan_hash(v) & (scan->seen_capacity - 1);
+    while (scan->seen[slot]) {
+        if (scan->seen[slot] == v) return 1;
+        slot = (slot + 1) & (scan->seen_capacity - 1);
+    }
+    scan->seen[slot] = v;
+    scan->seen_count++;
+    return 0;
+}
+
+static void equal_scan_push(EqualScan *scan, Value *v) {
+    if (!v || (v->type != VAL_LIST && v->type != VAL_DICT && v->type != VAL_BUFFER))
+        return;
+    if (scan->count == scan->capacity) {
+        scan->capacity = scan->capacity ? scan->capacity * 2 : 32;
+        scan->todo = xrealloc_array(scan->todo, scan->capacity, sizeof(*scan->todo));
+    }
+    scan->todo[scan->count++] = v;
+}
+
+static int equal_structure_reflexive(Value *root) {
+    EqualScan scan = {0};
+    int reflexive = 1;
+    equal_scan_push(&scan, root);
+    while (scan.count && reflexive) {
+        Value *v = scan.todo[--scan.count];
+        if (equal_scan_seen(&scan, v)) continue;
+        if (v->type == VAL_BUFFER) {
+            for (int i = 0; i < v->data.buffer.count; i++) {
+                if (isnan(v->data.buffer.data[i])) { reflexive = 0; break; }
+            }
+        } else if (v->type == VAL_LIST) {
+            for (int i = 0; i < v->data.list.count; i++)
+                equal_scan_push(&scan, list_get_ref(v, i));
+        } else {
+            eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
+            for (int i = 0; i < v->data.dict.count; i++)
+                equal_scan_push(&scan, dict_value_get_ref(v, i));
+        }
+    }
+    free(scan.todo);
+    free(scan.seen);
+    return reflexive;
+}
+
 /* Structural equality for `==` / `!=`.
  * Scalars compare by value (numbers, strings, null); collections compare
  * recursively by structure (lists element-wise, dicts by key/value
@@ -3318,9 +3396,12 @@ int is_truthy(Value *v) {
  * the operator (`==`, `!=`) or the builtin, for the message. Every other
  * mixed-type pair stays unequal. */
 static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
-    /* #1417: a buffer compared with itself still exposes its elements. Do
-     * not make a NaN-holding buffer equal to itself through identity. */
-    if (a == b && (!a || a->type != VAL_BUFFER)) return 1;
+    /* #1417 / R1.6z-D2: identity cannot hide a reachable NaN buffer. */
+    if (a == b && (!a || a->type != VAL_BUFFER)) {
+        if (a && (a->type == VAL_LIST || a->type == VAL_DICT))
+            return equal_structure_reflexive(a);
+        return 1;
+    }
     if (!a || !b) return 0;
     if (a->type != b->type) {
         /* #1758 N2 (design 7): an int and a float are both numbers and are

@@ -2653,12 +2653,13 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 [buf, rows, cols]` shapes an existing flat buffer (the element count must
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
-At the buffer/scalar boundary, `sum`, `get_at`, `dot` and `write_bytes` refuse
+At the buffer/scalar boundary, `sum`, `get_at`, indexing, iteration, `dot` and `write_bytes` refuse
 non-finite elements in every strict mode (N13). Other consumers use the numeric guard: infinity saturates
 at ±`1e308`, while a `NaN` raises in strict mode or becomes `0` and sets
-`math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer equality and
-the other scalar reductions normalize each input before comparison or
-arithmetic. A strict read that raises inside a function retains that
+`math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer equality compares
+stored doubles directly with IEEE equality; list/dict self-equality follows
+that rule through nested and cyclic containers. The other scalar reductions
+normalize each input before arithmetic. A strict read that raises inside a function retains that
 function's source location and call frame. Buffer-to-list tensor materialization
 and numeric byte/sample/device conversions apply the same read rule, stopping
 at the first raised read. `write_bytes` requires exact bytes in 0..255 (N5/Q1);

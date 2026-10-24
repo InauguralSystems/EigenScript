@@ -909,6 +909,27 @@ compare a NaN-containing buffer unequal to itself, matching NumPy
 shortcuts are deliberately rejected. Refusal would make equality partial;
 bit comparison would incorrectly distinguish signed zeros.
 
+**R1.6z-D2 (ruling #1758 comment 6385903088): structural all the way down.**
+A list or dict compared with itself is equal exactly when every element pair
+it reaches is equal. A container reaching a NaN-holding buffer is unequal to
+itself, including through nested or cyclic containers. This also governs
+`!=`, `list_contains` and `list_index_of`. Measured prior art in D2:
+
+| language | `l == l`, `l = [nan-buffer]` | `d == d` | `a == a` (buffer) |
+|---|---|---|---|
+| Python 3 (`array('d')` in a list/dict) | `True` | `True` | `False` |
+| Rust std (`Vec<Vec<f64>>`, `HashMap`) | `false` | `false` | `false` |
+
+Python's element identity shortcut produces the inconsistency rejected here
+(Principles §2); Rust's `PartialEq` is consistent. Identity remains a fast
+path only after a visited-set scan proves no reachable non-reflexive element.
+Before R2.2 that element is a NaN-holding buffer; R2.2 extends the predicate to
+NaN floats. The scan is linear in distinct containers and their stored edges
+and elements, terminates on cycles, never raises and never writes
+`g_math_flags`. Distinct containers retain today's pairwise traversal and
+the #1665 depth cap unchanged. `N11.container-self-equal-ieee` pre-registers
+the structural cases and a 40-level `[x, x]` finite-buffer DAG cost witness.
+
 The public C getter `eigs_value_buffer_get` returns the stored double exactly,
 including NaN payloads, infinities and negative zero. It never normalizes,
 raises for a valid element, or writes math flags. It mirrors the setter's
@@ -999,7 +1020,8 @@ catches a miss:
     with one float box on both sides today (EQ compares two floats in its
     fast path, and container comparisons pass fresh element views; read,
     not probed, since no NaN exists yet), so R2.2 excludes floats from the
-    shortcut as #1417 excluded buffers (see §2.6a, R1.6z-D1), and the C slot test calls it with
+    shortcut as #1417 excluded buffers, and extends the container reflexivity
+    scan to NaN floats (see §2.6a, R1.6z-D1/D2). The C slot test calls it with
     one NaN box on both sides;
   - C casts of a double to an integer type (undefined on NaN or inf): every
     builtin argument goes through a §2.6 reader, which refuses a non-finite
@@ -2269,7 +2291,8 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    `log of 0` is -inf, `x/0` is ±inf, `0/0` and float `x%0` are NaN. Q8:
    `sort`/`sort_by` order floats by IEEE `totalOrder` (NaN after +inf), and
    `min`/`max` propagate NaN. `values_equal_impl`'s identity shortcut
-   excludes floats, extending the stored-buffer rule in §2.6a (R1.6z-D1).
+   excludes floats and extends the container reflexivity predicate to NaN
+   floats, following §2.6a (R1.6z-D1/D2).
 3. **R2.3, N13 refusal inside the writers:** the JSON encoder, the store
    encoder (delete the pre-walk `store_nonfinite_scalar`), the byte
    encoders and the int conversion. This removes the class #1746 chased for

@@ -1192,8 +1192,8 @@ BUILD_PLANTS = {
                    'make_int(lo_i + 1 + (eigs_random_long() % (int64_t)span))', 'build'),
     # R1.6z-D1: identity would make a NaN-holding buffer equal to itself.
     'value-eq-identity': ('src/eigenscript.c',
-                          '    if (a == b && (!a || a->type != VAL_BUFFER)) return 1;',
-                          '    if (a == b) return 1; /* PLANT: bypass IEEE buffer elements */', 'build'),
+                          '    if (a == b && (!a || a->type != VAL_BUFFER)) {',
+                          '    if (a == b) return 1; /* PLANT: bypass IEEE buffer elements */\n    if (a == b && (!a || a->type != VAL_BUFFER)) {', 'build'),
 
 }
 _PLANT_DIR = []

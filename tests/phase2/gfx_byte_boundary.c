@@ -1,4 +1,4 @@
-/* #1758 R1.6e: pre-registered deferred buffer_read_byte boundary.
+/* #1758 R1.6e: pre-registered deferred buffer byte boundary.
  * Stock buffers receive raw stored payloads after construction, so this
  * reaches the actual gfx_fb/ppu_render_frame consumers before a scalar
  * producer can normalize or reject the fixture. SDL's real dummy renderer
