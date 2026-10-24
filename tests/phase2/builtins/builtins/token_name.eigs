@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: token_name (int-requiring; token id); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (token_name of 1)
+try:
+    print of ["fraction-answer", token_name of 1.5]
+catch e:
+    print of ["id-fraction", e.kind]
+print of (token_name of 1.0)

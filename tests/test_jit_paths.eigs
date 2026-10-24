@@ -12,16 +12,16 @@
 # The suite runs this file with EIGS_JIT_STATS=1 and (on x86-64) asserts
 # compiled > 0, so it cannot silently pass interpreted.
 
-pass_count is 0
-fail_count is 0
+pass_count is 0.0
+fail_count is 0.0
 
 define check(args) as:
-    label is args[0]
-    cond is args[1]
+    label is args[0.0]
+    cond is args[1.0]
     if cond:
-        pass_count is pass_count + 1
+        pass_count is pass_count + 1.0
     else:
-        fail_count is fail_count + 1
+        fail_count is fail_count + 1.0
         print of ("FAIL: " + label)
 
 # ----------------------------------------------------------------
@@ -31,109 +31,109 @@ define check(args) as:
 #    the entry and cumulative-iteration thresholds.
 # ----------------------------------------------------------------
 define fused_regs(seed) as:
-    regs is [{"a": seed, "b": 0}, {"a": 0, "b": 0}]
-    k is 0
-    loop while k < 80:
-        regs[0].a is regs[0].a + 1
-        regs[1].b is regs[1].b + regs[0].a
-        regs[1].a is regs[0].a & 255
-        k is k + 1
-    return regs[1].b + regs[1].a
+    regs is [{"a": seed, "b": 0.0}, {"a": 0.0, "b": 0.0}]
+    k is 0.0
+    loop while k < 80.0:
+        regs[0.0].a is regs[0.0].a + 1.0
+        regs[1.0].b is regs[1.0].b + regs[0.0].a
+        regs[1.0].a is regs[0.0].a & 255.0
+        k is k + 1.0
+    return regs[1.0].b + regs[1.0].a
 
 # 80 calls x 80 iterations: the chunk's from-zero thunk stops at the
 # dict/list literals, so the fused ops only run natively via the loop's
 # OSR thunk — 6400 cumulative back-edges crosses the 5000 OSR threshold.
-fr_total is 0
-n is 0
-loop while n < 80:
-    fr_total is fr_total + (fused_regs of (n % 4))
-    n is n + 1
+fr_total is 0.0
+n is 0.0
+loop while n < 80.0:
+    fr_total is fr_total + (fused_regs of (n % 4.0))
+    n is n + 1.0
 # per call with seed s: regs[1].b = 80s + 3240, regs[1].a = s + 80,
 # so 81s + 3320; seeds cycle 0..3, 20 calls each: 20*(81*6 + 4*3320)
-check of ["fused local[idx].field checksum", fr_total == 275320]
+check of ["fused local[idx].field checksum", fr_total == 275320.0]
 
 # ----------------------------------------------------------------
 # 2) Dict-dot get/set through the 2-way inline cache (bench_dmg_shape
 #    op-handler shape: mutate fields of a dict parameter).
 # ----------------------------------------------------------------
 define op_inc(c) as:
-    c.a is c.a + 1
-    c.cycles is c.cycles + 4
-    return 4
+    c.a is c.a + 1.0
+    c.cycles is c.cycles + 4.0
+    return 4.0
 
 define op_mix(c) as:
-    c.b is (c.b ^ c.a) & 255
-    c.cycles is c.cycles + 8
-    return 8
+    c.b is (c.b ^ c.a) & 255.0
+    c.cycles is c.cycles + 8.0
+    return 8.0
 
-ctx is {"a": 0, "b": 0, "cycles": 0}
-n is 0
+ctx is {"a": 0.0, "b": 0.0, "cycles": 0.0}
+n is 0.0
 unobserved:
-    loop while n < 600:
+    loop while n < 600.0:
         r1 is op_inc of ctx
         r2 is op_mix of ctx
-        n is n + 1
-check of ["dict-dot IC a", ctx.a == 600]
-check of ["dict-dot IC cycles", ctx.cycles == 7200]
-check of ["dict-dot IC b", ctx.b == 88]
+        n is n + 1.0
+check of ["dict-dot IC a", ctx.a == 600.0]
+check of ["dict-dot IC cycles", ctx.cycles == 7200.0]
+check of ["dict-dot IC b", ctx.b == 88.0]
 
 # Polymorphic dict shapes through the same hot accessor: the 2-way
 # inline cache must miss, exercising the jit_helper_dot_get/dot_set
 # out-of-line fallbacks with identical semantics.
 define poly_bump(c) as:
-    c.v is c.v + 1
+    c.v is c.v + 1.0
     return c.v
 
-pa is {"v": 0}
-pb is {"pad1": 0, "v": 100}
-pc_d is {"pad1": 0, "pad2": 0, "v": 200}
-pd is {"pad1": 0, "pad2": 0, "pad3": 0, "v": 300}
-n is 0
+pa is {"v": 0.0}
+pb is {"pad1": 0.0, "v": 100.0}
+pc_d is {"pad1": 0.0, "pad2": 0.0, "v": 200.0}
+pd is {"pad1": 0.0, "pad2": 0.0, "pad3": 0.0, "v": 300.0}
+n is 0.0
 unobserved:
-    loop while n < 200:
+    loop while n < 200.0:
         r1 is poly_bump of pa
         r2 is poly_bump of pb
         r3 is poly_bump of pc_d
         r4 is poly_bump of pd
-        n is n + 1
-check of ["poly dot IC a", pa.v == 200]
-check of ["poly dot IC b", pb.v == 300]
-check of ["poly dot IC c", pc_d.v == 400]
-check of ["poly dot IC d", pd.v == 500]
+        n is n + 1.0
+check of ["poly dot IC a", pa.v == 200.0]
+check of ["poly dot IC b", pb.v == 300.0]
+check of ["poly dot IC c", pc_d.v == 400.0]
+check of ["poly dot IC d", pd.v == 500.0]
 
 # Dot access on a *global* dict inside a hot fn: the target isn't a
 # resolvable local slot, so this compiles to plain OP_DOT_GET/DOT_SET —
 # in a thunk those are the jit_helper_dot_get/dot_set out-of-line calls.
-gdict is {"v": 0, "tag": ""}
+gdict is {"v": 0.0, "tag": ""}
 define bump_global(amount) as:
-    k is 0
-    loop while k < 50:
+    k is 0.0
+    loop while k < 50.0:
         gdict.v is gdict.v + amount
-        k is k + 1
+        k is k + 1.0
     return gdict.v
 
-n is 0
-loop while n < 60:
-    r is bump_global of 1
-    n is n + 1
-check of ["global dict dot in thunk", gdict.v == 3000]
+n is 0.0
+loop while n < 60.0:
+    r is bump_global of 1.0
+    n is n + 1.0
+check of ["global dict dot in thunk", gdict.v == 3000.0]
 
 # Non-num stores through local dot: the inline LOCAL_DOT_SET fast path
 # only handles in-place num writes, so a string store takes the
 # jit_helper_local_dot_set slow path every iteration.
 define tag_local(t) as:
     d is {"name": ""}
-    k is 0
-    loop while k < 80:
+    k is 0.0
+    loop while k < 80.0:
         d.name is t + "!"
-        k is k + 1
+        k is k + 1.0
     return d.name
 
-n is 0
+n is 0.0
 last_tag is ""
-loop while n < 80:
+loop while n < 80.0:
     last_tag is tag_local of "z"
-    n is n + 1
+    n is n + 1.0
 check of ["local dot string store slow path", last_tag == "z!"]
 
 # Num store into a dict slot currently holding a string: the inline
@@ -141,20 +141,20 @@ check of ["local dot string store slow path", last_tag == "z!"]
 # exclusive num, so the first store of each call is a guard miss into
 # jit_helper_local_dot_set; subsequent iterations re-take the fast path.
 define renum(d2) as:
-    k is 0
-    loop while k < 60:
+    k is 0.0
+    loop while k < 60.0:
         d2.x is k
-        k is k + 1
+        k is k + 1.0
     return d2.x
 
 rd is {"x": "start"}
-n is 0
-rlast is 0
-loop while n < 80:
+n is 0.0
+rlast is 0.0
+loop while n < 80.0:
     rd.x is "again"
     rlast is renum of rd
-    n is n + 1
-check of ["local dot guard-miss store", rlast == 59]
+    n is n + 1.0
+check of ["local dot guard-miss store", rlast == 59.0]
 
 # #1665 arm D B10: dict values are EigsSlot storage, so the inline
 # LOCAL_DOT_GET probe pushes the field's slot bits. A 0 field is all-zero
@@ -162,156 +162,156 @@ check of ["local dot guard-miss store", rlast == 59]
 # numbers and must take the helper, and a number store over a number field
 # is the inline bit store.
 define dot_mix(z) as:
-    d is {"zero": 0, "s": "str", "n": null, "t": true, "neg": -0.5}
-    k is 0
-    acc is 0
+    d is {"zero": 0.0, "s": "str", "n": null, "t": true, "neg": -0.5}
+    k is 0.0
+    acc is 0.0
     seen is ""
-    loop while k < 80:
+    loop while k < 80.0:
         acc is acc + d.zero + d.neg
         if d.t:
             seen is d.s
         if d.n == null:
-            acc is acc + 1
+            acc is acc + 1.0
         d.zero is d.zero + z
-        k is k + 1
+        k is k + 1.0
     return [acc, seen, d.zero]
 
-n is 0
+n is 0.0
 dm is null
-loop while n < 80:
-    dm is dot_mix of 1
-    n is n + 1
+loop while n < 80.0:
+    dm is dot_mix of 1.0
+    n is n + 1.0
 # acc = sum_{k<80} (k - 0.5 + 1) = 3160 + 40
-check of ["local dot slot reads (0 field, ref fields)", dm[0] == 3200 and dm[1] == "str" and dm[2] == 80]
+check of ["local dot slot reads (0 field, ref fields)", dm[0.0] == 3200.0 and dm[1.0] == "str" and dm[2.0] == 80.0]
 
 # ----------------------------------------------------------------
 # 3) Buffer + list index writes in a fn-local loop (bench_idxset
 #    shape: INDEX_SET inline fast path), plus the helper slow path
 #    via non-num stores into list slots.
 # ----------------------------------------------------------------
-buf is buffer of 256
-lst is [0, 0, 0, 0]
+buf is buffer of 256.0
+lst is [0.0, 0.0, 0.0, 0.0]
 define idx_fill(base) as:
-    k is 0
-    loop while k < 100:
-        buf[(base + k) % 256] is k
-        lst[k % 4] is k
-        k is k + 1
-    return lst[3]
+    k is 0.0
+    loop while k < 100.0:
+        buf[(base + k) % 256.0] is k
+        lst[k % 4.0] is k
+        k is k + 1.0
+    return lst[3.0]
 
-n is 0
-acc is 0
-loop while n < 60:
+n is 0.0
+acc is 0.0
+loop while n < 60.0:
     acc is acc + (idx_fill of n)
-    n is n + 1
-check of ["idx fill list tail", acc == 60 * 99]
+    n is n + 1.0
+check of ["idx fill list tail", acc == 60.0 * 99.0]
 
 # Fractional stores through the hot inline INDEX_SET path must keep
 # the full double (the JIT used to round-trip through cvttsd2si,
 # truncating to int — divergent from buf_set and the double[] storage).
-fb is buffer of 8
+fb is buffer of 8.0
 define frac_fill(base) as:
-    k is 0
-    loop while k < 80:
-        fb[k % 8] is base + (k % 8) + 0.5
-        k is k + 1
-    return fb[3]
+    k is 0.0
+    loop while k < 80.0:
+        fb[k % 8.0] is base + (k % 8.0) + 0.5
+        k is k + 1.0
+    return fb[3.0]
 
-n is 0
-fsum is 0
-loop while n < 60:
-    fsum is fsum + (frac_fill of 0)
-    n is n + 1
-check of ["fractional store in thunk", fsum == 60 * 3.5]
+n is 0.0
+fsum is 0.0
+loop while n < 60.0:
+    fsum is fsum + (frac_fill of 0.0)
+    n is n + 1.0
+check of ["fractional store in thunk", fsum == 60.0 * 3.5]
 # Last call ran with base=59, so its final write was buf[(59+99)%256]=99.
-check of ["idx fill buffer", buf[158] == 99]
+check of ["idx fill buffer", buf[158.0] == 99.0]
 
 # Slow path: storing strings (non-num) into list slots in a hot fn.
 strs is ["", "", "", ""]
 define str_fill(tag) as:
-    k is 0
-    loop while k < 60:
-        strs[k % 4] is tag + "!"
-        k is k + 1
-    return strs[1]
+    k is 0.0
+    loop while k < 60.0:
+        strs[k % 4.0] is tag + "!"
+        k is k + 1.0
+    return strs[1.0]
 
-n is 0
+n is 0.0
 last is ""
-loop while n < 60:
+loop while n < 60.0:
     last is str_fill of "t"
-    n is n + 1
+    n is n + 1.0
 check of ["index_set non-num slow path", last == "t!"]
 
 # ----------------------------------------------------------------
 # 4) for-in iteration in a hot function (jit_helper_iter_next),
 #    over both a list and a buffer.
 # ----------------------------------------------------------------
-xs is [1, 2, 3, 4, 5, 6, 7, 8]
-bxs is buffer of 8
-k is 0
-loop while k < 8:
-    bxs[k] is k * 2
-    k is k + 1
+xs is [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+bxs is buffer of 8.0
+k is 0.0
+loop while k < 8.0:
+    bxs[k] is k * 2.0
+    k is k + 1.0
 
 define sum_list(dummy) as:
-    s is 0
+    s is 0.0
     for v in xs:
         s is s + v
     return s
 
 define sum_buf(dummy) as:
-    s is 0
+    s is 0.0
     for v in bxs:
         s is s + v
     return s
 
-n is 0
-sl is 0
-sb is 0
-loop while n < 80:
+n is 0.0
+sl is 0.0
+sb is 0.0
+loop while n < 80.0:
     sl is sl + (sum_list of null)
     sb is sb + (sum_buf of null)
-    n is n + 1
-check of ["for-in list in thunk", sl == 80 * 36]
-check of ["for-in buffer in thunk", sb == 80 * 56]
+    n is n + 1.0
+check of ["for-in list in thunk", sl == 80.0 * 36.0]
+check of ["for-in buffer in thunk", sb == 80.0 * 56.0]
 
 # ----------------------------------------------------------------
 # 5) Native VAL_FN call inside a thunk (hot fn calling another fn).
 # ----------------------------------------------------------------
 define leaf(x) as:
-    return x * 2 + 1
+    return x * 2.0 + 1.0
 
 define trunk(x) as:
-    s is 0
-    k is 0
-    loop while k < 40:
+    s is 0.0
+    k is 0.0
+    loop while k < 40.0:
         s is s + (leaf of k)
-        k is k + 1
+        k is k + 1.0
     return s + x
 
-n is 0
-nc is 0
-loop while n < 60:
+n is 0.0
+nc is 0.0
+loop while n < 60.0:
     nc is nc + (trunk of n)
-    n is n + 1
+    n is n + 1.0
 # sum_{k=0..39}(2k+1) = 1600; plus n each call: 60*1600 + 1770
-check of ["native call in thunk", nc == 97770]
+check of ["native call in thunk", nc == 97770.0]
 
 # ----------------------------------------------------------------
 # 6) OSR: a single long-running loop (>5000 back-edges) inside one
 #    call gets a per-loop OSR thunk mid-flight.
 # ----------------------------------------------------------------
 define osr_loop(dummy) as:
-    s is 0
-    k is 0
-    loop while k < 7000:
-        s is s + (k & 7)
-        k is k + 1
+    s is 0.0
+    k is 0.0
+    loop while k < 7000.0:
+        s is s + (k & 7.0)
+        k is k + 1.0
     return s
 
 osr_r is osr_loop of null
 # 7000/8 = 875 full cycles of 0..7 (sum 28)
-check of ["OSR long loop checksum", osr_r == 875 * 28]
+check of ["OSR long loop checksum", osr_r == 875.0 * 28.0]
 
 # ----------------------------------------------------------------
 # 7) Error semantics from hot code: an out-of-range index raised
@@ -319,20 +319,20 @@ check of ["OSR long loop checksum", osr_r == 875 * 28]
 #    with the interpreter's message/behavior.
 # ----------------------------------------------------------------
 define maybe_oob(i) as:
-    small is [10, 20]
+    small is [10.0, 20.0]
     return small[i]
 
-n is 0
-loop while n < 60:
-    r is maybe_oob of (n % 2)
-    n is n + 1
+n is 0.0
+loop while n < 60.0:
+    r is maybe_oob of (n % 2.0)
+    n is n + 1.0
 
-caught is 0
+caught is 0.0
 try:
-    r is maybe_oob of 5
+    r is maybe_oob of 5.0
 catch e:
-    caught is 1
-check of ["hot fn OOB still raises catchably", caught == 1]
+    caught is 1.0
+check of ["hot fn OOB still raises catchably", caught == 1.0]
 
 # ----------------------------------------------------------------
 # 8) SET_FN_NAME_LOCAL in hot code (jit_helper_set_fn_name_local):
@@ -342,66 +342,61 @@ check of ["hot fn OOB still raises catchably", caught == 1]
 #    and falls back to the helper.
 # ----------------------------------------------------------------
 define obs_sum(n) as:
-    total is 0
-    k is 0
-    loop while k < 100:
-        total is total + (k & 3)
-        k is k + 1
+    total is 0.0
+    k is 0.0
+    loop while k < 100.0:
+        total is total + (k & 3.0)
+        k is k + 1.0
     return what is total
 
 define cap_sum(n) as:
-    total is 0
+    total is 0.0
     define get as:
         return total
-    k is 0
-    loop while k < 100:
-        total is total + (k & 3)
-        k is k + 1
+    k is 0.0
+    loop while k < 100.0:
+        total is total + (k & 3.0)
+        k is k + 1.0
     return get of null
 
-fns1 is 0
-fns2 is 0
-m is 0
-loop while m < 70:
+fns1 is 0.0
+fns2 is 0.0
+m is 0.0
+loop while m < 70.0:
     fns1 is fns1 + (obs_sum of m)
     fns2 is fns2 + (cap_sum of m)
-    m is m + 1
+    m is m + 1.0
 # per call: 25 cycles of 0+1+2+3 = 150; 70 calls = 10500
-check of ["interrogated-name hot assign", fns1 == 10500]
-check of ["captured-name hot assign", fns2 == 10500]
+check of ["interrogated-name hot assign", fns1 == 10500.0]
+check of ["captured-name hot assign", fns2 == 10500.0]
 
 # ----------------------------------------------------------------
-# Bitwise operators in a hot fn-local loop. The interpreter bitwise
-# paths are covered by test_bitwise.eigs, but the JIT *emitters* for
-# OR/XOR/shift-left/shift-right/NOT (emit_or_rax_rdx, emit_xor_rdx_rax,
-# emit_shl_cl_rdx, emit_sar_cl_rdx, emit_not_rax) only fire on hot code
-# and were unhit by the suite — only AND (`& mask`) appeared above. This
-# loop is hot enough to JIT-compile and exercises all six operators with
-# zero bailouts; the checksum is identical interpreted vs JIT-compiled
-# (verified with EIGS_JIT_OFF=1), so a miscompiled bitwise emitter fails
-# here loudly.
+# Bitwise operators in a hot fn-local loop. R1.3 deliberately refuses
+# bitwise opcodes in the JIT scanner until the int fast-path round.
+# These checks retain interpreter/fallback coverage while the other
+# float-shaped sections continue to exercise the admitted JIT paths.
 # ----------------------------------------------------------------
 define bitwise_mix(seed) as:
     a is seed
-    acc is 0
-    k is 0
-    loop while k < 200:
-        a is (a | 1)
-        a is (a ^ 3)
-        a is (a << 2)
-        a is (a >> 1)
+    acc is 0.0
+    k is 0.0
+    loop while k < 200.0:
+        a is (a | 1.0)
+        a is (a ^ 3.0)
+        a is (a << 2.0)
+        a is (a >> 1.0)
         a is (~a)
-        a is (a & 1023)
+        a is (a & 1023.0)
         acc is acc + a
-        k is k + 1
+        k is k + 1.0
     return acc
 
-bw_total is 0
-b is 0
-loop while b < 80:
+bw_total is 0.0
+b is 0.0
+loop while b < 80.0:
     bw_total is bw_total + (bitwise_mix of b)
-    b is b + 1
-check of ["bitwise emitters hot loop", bw_total == 5621472]
+    b is b + 1.0
+check of ["bitwise hot loop fallback", bw_total == 5621472.0]
 
 # ----------------------------------------------------------------
 # 9) #908: the emitted assign_counts bump, inside `unobserved:`.
@@ -413,66 +408,66 @@ check of ["bitwise emitters hot loop", bw_total == 5621472]
 #    takes over, silently stops counting. Restoring the old emitted
 #    sequence makes this check report 5001 instead of 20001.
 # ----------------------------------------------------------------
-hot908 is 0
+hot908 is 0.0
 unobserved:
-    q908 is 0
-    loop while q908 < 20000:
+    q908 is 0.0
+    loop while q908 < 20000.0:
         hot908 is q908
-        q908 is q908 + 1
-check of ["unobserved assigns counted in JIT thunk", (when is hot908) == 20001]
+        q908 is q908 + 1.0
+check of ["unobserved assigns counted in JIT thunk", (when is hot908) == 20001.0]
 
 # ----------------------------------------------------------------
 # 10) A raising fused local-read helper must leave its native thunk
 #     immediately. Continuing in the thunk would run the counter increment
 #     before the interpreter gets a chance to dispatch to the catch handler.
 # ----------------------------------------------------------------
-null_read_side_effects is {"count": 0}
+null_read_side_effects is {"count": 0.0}
 
 define null_field_bail(x) as:
     value is x.foo
-    null_read_side_effects.count is null_read_side_effects.count + 1
+    null_read_side_effects.count is null_read_side_effects.count + 1.0
     return value
 
 define null_index_bail(x) as:
-    value is x[0]
-    null_read_side_effects.count is null_read_side_effects.count + 1
+    value is x[0.0]
+    null_read_side_effects.count is null_read_side_effects.count + 1.0
     return value
 
 define null_index_field_bail(x) as:
-    value is x[0].foo
-    null_read_side_effects.count is null_read_side_effects.count + 1
+    value is x[0.0].foo
+    null_read_side_effects.count is null_read_side_effects.count + 1.0
     return value
 
 # Keep this short warmup's back-edge count separate from the module's
 # earlier OSR loops; the cache diagnostic displays one OSR slot per chunk.
 define warm_null_reads(dummy) as:
-    local warm_i is 0
-    loop while warm_i < 60:
-        null_field_bail of {"foo": 1}
-        null_index_bail of [[1]]
-        null_index_field_bail of [[{"foo": 1}]]
-        warm_i is warm_i + 1
+    local warm_i is 0.0
+    loop while warm_i < 60.0:
+        null_field_bail of {"foo": 1.0}
+        null_index_bail of [[1.0]]
+        null_index_field_bail of [[{"foo": 1.0}]]
+        warm_i is warm_i + 1.0
 warm_null_reads of null
 
 before_null_errors is null_read_side_effects.count
-null_errors_caught is 0
+null_errors_caught is 0.0
 try:
     null_field_bail of null
 catch e:
-    null_errors_caught is null_errors_caught + 1
+    null_errors_caught is null_errors_caught + 1.0
 try:
     null_index_bail of null
 catch e:
-    null_errors_caught is null_errors_caught + 1
+    null_errors_caught is null_errors_caught + 1.0
 try:
     null_index_field_bail of null
 catch e:
-    null_errors_caught is null_errors_caught + 1
-check of ["hot null local reads remain catchable", null_errors_caught == 3]
+    null_errors_caught is null_errors_caught + 1.0
+check of ["hot null local reads remain catchable", null_errors_caught == 3.0]
 check of ["hot null local reads bail before side effects",
           null_read_side_effects.count == before_null_errors]
 
 # ----------------------------------------------------------------
 print of f"jit paths: {pass_count} passed, {fail_count} failed"
-if fail_count == 0:
+if fail_count == 0.0:
     print of "All tests passed"

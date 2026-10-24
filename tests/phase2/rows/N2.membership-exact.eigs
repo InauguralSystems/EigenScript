@@ -1,0 +1,7 @@
+# ROW: N2.membership-exact
+# ITEMS: N2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [list_contains of [[9007199254740993], 9007199254740992.0], list_index_of of [[1, 9007199254740993], 9007199254740992.0]]

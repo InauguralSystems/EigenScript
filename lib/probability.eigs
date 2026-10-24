@@ -71,22 +71,38 @@ define binomial_cdf(n, k, p) as:
         s is s + binomial_pmf of [n, i, p]
     return s
 
+# _factorial_real: n! as a FLOAT, for real-valued formulas (#1848). Same domain
+# sentinel as factorial (0 for a negative n); its product is a float, so an int
+# n past 20 does not raise as `factorial of 21` does (decision (A), #1758).
+define _factorial_real(n) as:
+    if n < 0:
+        return 0.0
+    result is 1.0
+    i is 2
+    loop while i <= n:
+        result is result * i
+        i is i + 1
+    return result
+
 # poisson_pmf: P(X=k) = lambda^k * e^(-lambda) / k!
+# A probability is real-valued: k! is a float denominator (#1848).
 define poisson_pmf(k, lam) as:
     # Preserve the direct calculation (and its exact rounding) whenever all
     # three intermediates (lambda^k, e^-lambda, k!) are normal doubles.
     # Otherwise compute log(k!) alongside the exponent, so an intermediate
     # that overflows or underflows cannot destroy the result.
     if lam <= 0:
-        return (pow of [lam, k]) * (exp of (0 - lam)) / (factorial of k)
+        return (pow of [lam, k]) * (exp of (0 - lam)) / (_factorial_real of k)
     power_log is k * (log of lam)
     if k < 171 and lam <= 708.3964185322641 and power_log >= -708.3964185322641 and power_log <= 709.782712893384:
-        return (pow of [lam, k]) * (exp of (0 - lam)) / (factorial of k)
+        return (pow of [lam, k]) * (exp of (0 - lam)) / (_factorial_real of k)
     if k > 170:
         # Stirling's series avoids accumulating hundreds of rounded logs.
-        k2 is k * k
+        # Float factors keep an int k's products in floats, as on main: in
+        # ints, 1260 * k * k2 * k2 would raise on overflow from k = 1490 (#1758).
+        k2 is 1.0 * k * k
         log_factorial is (k + 0.5) * (log of k) - k + 0.9189385332046727
-        log_factorial is log_factorial + 1 / (12 * k) - 1 / (360 * k * k2) + 1 / (1260 * k * k2 * k2)
+        log_factorial is log_factorial + 1 / (12.0 * k) - 1 / (360.0 * k * k2) + 1 / (1260.0 * k * k2 * k2)
     else:
         log_factorial is 0
         i is 2

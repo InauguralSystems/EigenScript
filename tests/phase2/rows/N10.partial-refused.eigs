@@ -1,0 +1,10 @@
+# ROW: N10.partial-refused
+# ITEMS: N10
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+try:
+    print of (num of "12abc")
+catch e:
+    print of e.kind

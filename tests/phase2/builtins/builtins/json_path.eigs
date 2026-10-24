@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: json_path (other, LOSS; exact int text reader (R1.2); decoder int production R1.6)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is json_path of ["{\"n\":9223372036854775807}", "n"]
+print of a
+doc is "{\"n\": 9007199254740993, \"f\": 2.5, \"l\": [9007199254740993, 2]}"
+b is json_path of [doc, "n"]
+print of b
+c is json_path of [doc, "f"]
+print of [c, type of c]
+d is json_path of [doc, "l"]
+print of d

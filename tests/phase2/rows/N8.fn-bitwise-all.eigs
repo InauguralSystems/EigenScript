@@ -1,0 +1,17 @@
+# ROW: N8.fn-bitwise-all
+# ITEMS: N8
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop bits BOR
+# OPS: BOR
+define bits(a, c) as:
+    o is a | c
+    x is a ^ c
+    l is a << 1
+    r is a >> 1
+    n is ~a
+    return [o, x, l, r, n]
+r is 0
+for i in range of 60:
+    r is bits of [9007199254740993, 2]
+print of r

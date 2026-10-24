@@ -275,6 +275,18 @@ static void tape_sink(const char *bytes, size_t len, void *ud) {
     g_tape_len += len;
 }
 
+/* A tape assertion matches WHOLE lines. `want` is one or more complete lines,
+ * each ending in '\n', and it must begin at the start of a tape line. A bare
+ * strstr cannot tell `=100` from `=1000` or from v7's `=100.0`, so it passes
+ * on a v6 tape and on a v7 one alike. */
+static int tape_has_lines(const char *tape, const char *want) {
+    size_t wl = strlen(want);
+    if (wl == 0 || want[wl - 1] != '\n') return 0;   /* not whole lines: refuse */
+    for (const char *p = tape; (p = strstr(p, want)) != NULL; p++)
+        if (p == tape || p[-1] == '\n') return 1;
+    return 0;
+}
+
 /* Host function: adds two numbers. Multi-arg calls receive a VAL_LIST. */
 static EigsValue *host_add(EigsValue *arg) {
     if (eigs_value_type(arg) != EIGS_TYPE_LIST) return eigs_value_new_null();
@@ -354,18 +366,18 @@ int main(void) {
         int line_save = g_trace_current_line;
 
         g_trace_current_line = 10;
-        SLOT_NUM_RAW(s) = 11.0; trace_assign(NM, s);
+        SLOT_F64_RAW(s) = 11.0; trace_assign(NM, s);
         g_trace_current_line = 20;
-        SLOT_NUM_RAW(s) = 22.0; trace_assign(NM, s);
+        SLOT_F64_RAW(s) = 22.0; trace_assign(NM, s);
 
-        CHECK(trace_query_prev(NM, &out) && SLOT_NUM_RAW(out) == 11.0,
+        CHECK(trace_query_prev(NM, &out) && SLOT_F64_RAW(out) == 11.0,
               "#830: prev of a name recorded by a non-compiler producer");
         /* TEMPORAL-BACKWARD: at 15 the answer is the line-10 assignment. */
-        CHECK(trace_query_at(0, NM, 15, &out) && SLOT_NUM_RAW(out) == 11.0,
+        CHECK(trace_query_at(0, NM, 15, &out) && SLOT_F64_RAW(out) == 11.0,
               "#830: what-at from a non-compiler producer (line-10 value)");
-        CHECK(trace_query_at(0, NM, 99, &out) && SLOT_NUM_RAW(out) == 22.0,
+        CHECK(trace_query_at(0, NM, 99, &out) && SLOT_F64_RAW(out) == 22.0,
               "#830: what-at past the last non-compiler assignment");
-        CHECK(trace_query_at(2, NM, 99, &out) && SLOT_NUM_RAW(out) == 2.0,
+        CHECK(trace_query_at(2, NM, 99, &out) && SLOT_F64_RAW(out) == 2.0,
               "#830: when-at counts non-compiler assignments");
 
         g_trace_current_line = line_save;
@@ -681,15 +693,25 @@ int main(void) {
         EigsValue *nf_raw = eigs_value_new_buffer(2);
         EigsValue *nf_finite = eigs_value_new_buffer(2);
         EigsValue *nf_later = eigs_value_new_buffer(2);
+        EigsValue *nf_finite3 = eigs_value_new_buffer(3);
+        EigsValue *nf_prefix = eigs_value_new_buffer(3);
         eigs_value_buffer_set(nf_raw, 0, NAN);
         eigs_value_buffer_set(nf_raw, 1, INFINITY);
         eigs_value_buffer_set(nf_finite, 0, 3.0);
         eigs_value_buffer_set(nf_finite, 1, 4.0);
         eigs_value_buffer_set(nf_later, 0, INFINITY);
         eigs_value_buffer_set(nf_later, 1, 4.0);
+        eigs_value_buffer_set(nf_finite3, 0, 3.0);
+        eigs_value_buffer_set(nf_finite3, 1, 4.0);
+        eigs_value_buffer_set(nf_finite3, 2, 5.0);
+        eigs_value_buffer_set(nf_prefix, 0, 3.0);
+        eigs_value_buffer_set(nf_prefix, 1, NAN);
+        eigs_value_buffer_set(nf_prefix, 2, INFINITY);
         eigs_set_global("nf_raw", nf_raw);
         eigs_set_global("nf_finite", nf_finite);
         eigs_set_global("nf_later", nf_later);
+        eigs_set_global("nf_finite3", nf_finite3);
+        eigs_set_global("nf_prefix", nf_prefix);
         /* #1926: f64_from_bytes refuses fewer than 8 bytes before reading
          * any, so its row keeps the NaN-then-infinity prefix in a full
          * 8-byte input. */
@@ -701,10 +723,17 @@ int main(void) {
         eigs_value_release(nf_raw);
         eigs_value_release(nf_finite);
         eigs_value_release(nf_later);
+        eigs_value_release(nf_finite3);
+        eigs_value_release(nf_prefix);
         eigs_state_set_strict(st, 1);
         r = eigs_eval_string("nf_shaped is reshape of [nf_raw, 1, 2]");
         CHECK(r != NULL && !eigs_has_error(),
               "#1417 prepare shaped materialization control");
+        eigs_value_release(r);
+        r = eigs_eval_string("num_type of (add of [9007199254740993, 1])");
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_STR &&
+                  strcmp(eigs_value_as_string(r), "int") == 0,
+              "#1417 recursive failure prefix has a boxed int result");
         eigs_value_release(r);
         const char *nf_reads[] = {
             "nf_raw == nf_raw", "nf_raw == nf_finite",
@@ -712,6 +741,10 @@ int main(void) {
             "list_index_of of [[nf_raw, nf_later], nf_finite]",
             "sum of nf_raw", "mean of nf_raw", "norm of nf_raw",
             "sum of ([nf_raw, nf_later])",
+            "sum of nf_shaped",
+            "sum of ([9223372036854775807, 1, nf_raw, nf_later])",
+            "sum of (negative of nf_raw)",
+            "sum of (negative of ([9007199254740993, nf_raw, nf_later]))",
             "mean of ([nf_raw, nf_later])",
             "norm of ([nf_raw, nf_later])",
             "dot of [nf_raw, nf_finite]",
@@ -723,6 +756,21 @@ int main(void) {
             "add of [nf_raw, [0, 0]]", "add of [[0, 0], nf_raw]",
             "subtract of [nf_raw, [0, 0]]", "subtract of [[0, 0], nf_raw]",
             "multiply of [nf_raw, [0, 0]]", "multiply of [[0, 0], nf_raw]",
+            /* #1417: stop after a buffer kernel raises too, including both
+             * operand orders, shaped broadcasts, truncation and recursion.
+             * The nested int prefix owns a boxed result before the failure. */
+            "add of [nf_raw, nf_finite]", "add of [nf_finite, nf_raw]",
+            "subtract of [nf_raw, nf_finite]", "subtract of [nf_finite, nf_raw]",
+            "multiply of [nf_raw, nf_finite]", "multiply of [nf_finite, nf_raw]",
+            "add of [nf_raw, 1]", "add of [1, nf_raw]",
+            "subtract of [nf_raw, 1]", "subtract of [1, nf_raw]",
+            "multiply of [nf_raw, 1]", "multiply of [1, nf_raw]",
+            "add of [nf_shaped, nf_finite]", "add of [nf_finite, nf_shaped]",
+            "add of [nf_raw, nf_finite3]", "add of [nf_finite3, nf_raw]",
+            "add of [nf_prefix, nf_finite3]",
+            "add of [[9007199254740993, nf_raw, nf_later], [1, nf_finite, nf_finite]]",
+            "exp of nf_prefix",
+            "divide of [nf_raw, nf_finite]", "pow of [nf_raw, nf_finite]",
             "divide of [nf_raw, [1, 1]]", "divide of [[1, 1], nf_raw]",
             "pow of [nf_raw, [1, 1]]", "pow of [[1, 1], nf_raw]",
             "add of [nf_shaped, [[0, 0]]]", "add of [[[0, 0]], nf_shaped]",
@@ -1089,18 +1137,19 @@ int main(void) {
     {
         static const char *const NM = "native_after_callback";
         EigsSlot s;
-        SLOT_NUM_RAW(s) = 1441.0;
+        SLOT_F64_RAW(s) = 1441.0;
         trace_assign(NM, s);
         g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
-        CHECK(strstr(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441\n") != NULL,
+        /* Tape v7 marks an integral float as a float: `1441.0`, never `1441`. */
+        CHECK(tape_has_lines(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441.0\n"),
               "native assignment after callback carries native scope");
     }
     eigs_set_trace_sink(NULL, NULL);
     CHECK(g_tape_len > 0, "sink captured tape bytes");
     g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
-    CHECK(strstr(g_tape, "N 0 host_sensor=100") != NULL, "tape has N record 100");
-    CHECK(strstr(g_tape, "N 0 host_sensor=101") != NULL, "tape has N record 101");
-    CHECK(strstr(g_tape, "A 0 s1=100") != NULL, "tape has assignment record");
+    CHECK(tape_has_lines(g_tape, "N 0 host_sensor=100.0\n"), "tape has N record 100.0");
+    CHECK(tape_has_lines(g_tape, "N 0 host_sensor=101.0\n"), "tape has N record 101.0");
+    CHECK(tape_has_lines(g_tape, "A 0 s1=100.0\n"), "tape has assignment record");
 
     /* recording stopped: another live read advances but adds no bytes */
     size_t tape_frozen = g_tape_len;

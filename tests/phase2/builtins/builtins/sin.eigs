@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: sin (float-producing; Lua math.sin)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is sin of 0
+print of [a, nt of a]
+b is sin of 1
+print of [b, nt of b]

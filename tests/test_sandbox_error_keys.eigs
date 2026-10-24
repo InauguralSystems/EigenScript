@@ -56,4 +56,11 @@ for i in range of 100:
     assert_eq of [budget_keys[i], expected_error_keys,
                   "#1402: byte-budget abort inside try keeps exact host error keys"]
 
+# N5 (#1758 R1.6c): descriptor fields are guest data. They are refused
+# structurally, while fractional caller-supplied limits raise to the host.
+for desc in [[1.5, [0, 0, 0, 40], [7]], [1, [0.5, 0, 0, 40], [7]], [1, [0, 0, 0, 40], [7], [], 0.5]]:
+    local bad_numeric is sandbox_run of [desc, 1000]
+    assert_eq of [bad_numeric["ok"], false, "N5 malformed numeric descriptor rejected"]
+    assert_eq of [bad_numeric["error"]["kind"], "value", "N5 descriptor remains a structured error"]
+    assert_eq of [num_type of bad_numeric["error"]["line"], "int", "N5 descriptor line is an int"]
 test_summary of null

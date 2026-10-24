@@ -36,7 +36,7 @@ else
 fi
 unset BOOL_JIT_OUT BOOL_JIT_RC
 # The class gate (#1637 round 4): the number members are renamed, so a raw
-# read is a VAL_NUM_RAW / SLOT_NUM_RAW token; every token sits in a reviewed
+# read is a VAL_NUM_RAW / SLOT_F64_RAW token; every token sits in a reviewed
 # function with its exact count, and every builtin call passes the bool gate
 # (tools/num_read_check.sh).
 TOTAL=$((TOTAL + 1))
@@ -48,7 +48,7 @@ else
     printf '%s\n' "$BOOL_NR_OUT"
 fi
 unset BOOL_NR_OUT BOOL_NR_RC
-# Tape (#1637, format v7): a recorded bool replays as a bool, from the tape —
+# Tape (#1637, format v8): a recorded bool replays as a bool, from the tape —
 # the probed file is deleted between record and replay, so a live re-probe
 # would answer false. A prior-format header is refused (exit 3).
 check_binary_fingerprint
@@ -66,16 +66,19 @@ if [ "$BOOL_TP_RC" = 0 ] && [ "$BOOL_TP_REC" = '[true, "bool", false]' ] &&
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: a recorded bool replays as a bool (rc=$BOOL_TP_RC rec='$BOOL_TP_REC' rep='$BOOL_TP_REP')"
 fi
-sed '1s/^V 7 /V 6 /' "$BOOL_TP_DIR/p.tape" > "$BOOL_TP_DIR/p6.tape"
-BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/p6.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/p.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
-TOTAL=$((TOTAL + 1))
-if [ "$BOOL_TP_RC" = 3 ] && grep -q "tape format v6, this binary reads v7" <<< "$BOOL_TP_OUT"; then
-    PASS=$((PASS + 1)); echo "  PASS: a v6 tape is refused with exit 3"
-else
-    FAIL=$((FAIL + 1)); echo "  FAIL: a v6 tape is refused with exit 3 (rc=$BOOL_TP_RC)"
-    printf '%s\n' "$BOOL_TP_OUT" | eigs_failure_output
-fi
-# Tamper: a v7 tape whose bool record was hand-edited to a number (and a
+# v8 combines both incompatible v7 meanings; all prior formats are refused.
+for BOOL_TP_OLD in 5 6 7; do
+    sed "1s/^V 8 /V $BOOL_TP_OLD /" "$BOOL_TP_DIR/p.tape" > "$BOOL_TP_DIR/old.tape"
+    BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/old.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/p.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
+    TOTAL=$((TOTAL + 1))
+    if [ "$BOOL_TP_RC" = 3 ] && grep -q "tape format v$BOOL_TP_OLD, this binary reads v8" <<< "$BOOL_TP_OUT"; then
+        PASS=$((PASS + 1)); echo "  PASS: a v$BOOL_TP_OLD tape is refused with exit 3"
+    else
+        FAIL=$((FAIL + 1)); echo "  FAIL: a v$BOOL_TP_OLD tape is refused with exit 3 (rc=$BOOL_TP_RC)"
+        printf '%s\n' "$BOOL_TP_OUT" | eigs_failure_output
+    fi
+done
+# Tamper: a v8 tape whose bool record was hand-edited to a number (and a
 # number record edited to a bool) is refused with exit 3, naming the builtin,
 # the record and the tape version -- never replayed as the other kind.
 printf 'x is file_exists of "%s"\nr is random of null\nn is random_normal of [2, 1.0]\nprint of [x, type of x, type of r, type of n]\n' \
@@ -90,7 +93,7 @@ for BOOL_TP_CASE in "t1:file_exists returns a bool, the tape holds a num" "t2:ra
     BOOL_TP_T=${BOOL_TP_CASE%%:*}; BOOL_TP_WANT=${BOOL_TP_CASE#*:}
     BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/$BOOL_TP_T.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/t.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
     if ! cmp -s "$BOOL_TP_DIR/t.tape" "$BOOL_TP_DIR/$BOOL_TP_T.tape" && [ "$BOOL_TP_RC" = 3 ] &&
-       grep -q "tape format v7 record 'N [0-9]* .*': $BOOL_TP_WANT; refusing to replay" <<< "$BOOL_TP_OUT"; then
+       grep -q "tape format v8 record 'N [0-9]* .*': $BOOL_TP_WANT; refusing to replay" <<< "$BOOL_TP_OUT"; then
         PASS=$((PASS + 1)); echo "  PASS: a tampered tape is refused: $BOOL_TP_WANT"
     else
         FAIL=$((FAIL + 1)); echo "  FAIL: a tampered tape is refused: $BOOL_TP_WANT (rc=$BOOL_TP_RC)"

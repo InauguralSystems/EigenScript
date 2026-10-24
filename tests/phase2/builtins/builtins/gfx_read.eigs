@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: gfx_read (other, Q7 geometry; the origin rounds, a point outside the drawable area reads nothing; channel values are ints); phase2-exercises: {"q7":["geometry"]}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+ok is gfx_open of [64, 48, "r16"]
+print of ["open", ok]
+gfx_clear of [0, 0, 0]
+gfx_rect of [10, 10, 1, 1, 255, 0, 0]
+r is gfx_read of [10, 10]
+print of [r, nt of r[0]]
+print of (gfx_read of [9.6, 10.4])
+print of (gfx_read of [3e9, 0])
+print of (gfx_read of [-0.6, 0])
+gfx_close of null

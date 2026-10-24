@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: audio_pause (int-requiring; the pause flag is discrete: N5 (Q1)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+d is audio_open of [44100, 1]
+try:
+    audio_pause of 0.5
+    print of "fraction accepted"
+catch e:
+    print of ["flag-fraction", e.kind]
+print of [audio_pause of 1.0, audio_pause of 0]
+audio_close of null

@@ -1,0 +1,11 @@
+# R1.6 behaviour-table probe: f64_to_bytes (other; float to 8 byte ints)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is f64_to_bytes of 1
+print of [a, nt of a[0], nt of a[1]]
+b is f64_to_bytes of 2.5
+print of b
+print of (f64_to_bytes of 9007199254740993)

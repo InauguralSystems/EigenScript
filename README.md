@@ -2,6 +2,22 @@
   <img src="logo.png" alt="EigenScript" width="300">
 </p>
 
+
+Width arithmetic uses explicit wrapping, checked and saturating builtins.
+N5 converts integral floats, then checks the named type range without masking.
+Width results are ints; checked overflow raises `value`. `u64` uses int64 bit
+patterns. `fround` returns a float after double-to-float32-to-double conversion
+(ints convert to double first). See [the width builtins](docs/BUILTINS.md#width-arithmetic-n9).
+
+```eigenscript
+print of [i64_wrapping_add of [9223372036854775807, 1], u8_wrapping_add of [255, 1]]
+print of (fround of 0.1)
+```
+```output
+[-9223372036854775808, 0]
+0.10000000149011612
+```
+
 <p align="center">
   <a href="https://github.com/InauguralSystems/EigenScript/actions/workflows/ci.yml"><img src="https://github.com/InauguralSystems/EigenScript/actions/workflows/ci.yml/badge.svg?branch=main&event=push" alt="CI"></a>
   <a href="https://github.com/InauguralSystems/EigenScript/releases/latest"><img src="https://img.shields.io/github/v/release/InauguralSystems/EigenScript" alt="Release"></a>
@@ -32,6 +48,52 @@ worker teardown. Native I/O must return before teardown completes. Embedded
 evaluations have separate stop scopes (see `docs/EMBEDDING.md`).
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
+
+The positions and counts of `char_at`, `substr`, `get_at`, `set_at`,
+`copy_into`, `fill` and the `list_*` mutation/slice builtins use exact conversion
+(N5). So do handle fields, bytecode ABI/counts/bytes, sandbox limits and numeric
+exit codes. Integral floats are accepted; fractions and values outside the
+receiving C type raise `value` before indexing or effects.
+`recv_timeout` rounds milliseconds half away from zero and raises beyond the
+C long range, with no one-year cap. `usleep` rounds microseconds and raises
+beyond the C int range. `record_history` returns its previous flag as an int;
+nonzero numeric flags still enable history. `task_detach` and sandbox error lines return ints.
+`read_bytes` produces int bytes; `write_bytes` requires exact bytes in 0..255
+and returns an int count. File caps and corpus/stream counts follow N5; an
+integral stream count outside its cap still raises `limit`. Subprocess exit
+statuses are ints, and timeout seconds round to representable poll milliseconds.
+
+```eigenscript
+print of (substr of ["hello", 1.0, 2.0])
+try:
+    print of (substr of ["hello", 1.5, 2])
+catch e:
+    print of e.kind
+print of (num_type of (record_history of 0.5))
+print of (usleep of 1.5)
+try:
+    usleep of 1e300
+catch e:
+    print of e.kind
+path is mktemp of null
+written is write_bytes of [path, [65.0, 66.0]]
+bytes is read_bytes of path
+print of [num_type of written, num_type of bytes[0], str_from_bytes of bytes]
+try:
+    write_bytes of [path, [65.5]]
+catch e:
+    print of e.kind
+remove_file of path
+```
+```output
+el
+value
+int
+null
+value
+["int", "int", "AB"]
+value
+```
 
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
@@ -159,6 +221,44 @@ Error: {"kind": "undefined_name", "message": "undefined variable 'risky_operatio
 Comparisons, `not` and predicates return `true`/`false`, a `bool`. A bool is
 not a number: `true + 1` and `(x > 0) == 1` raise, so test a bool directly
 (`if x > 0:`). See [docs/SPEC.md](docs/SPEC.md#booleans-comparison-and-logic).
+
+
+Bitwise operators and `bit_*` builtins return ints, including when an
+operand is an integral float. They use Lua 5.4's 64-bit shift rules: `>>`
+zero-fills; a negative count shifts in the opposite direction; a count of
+64 or more, or -64 or less, gives zero. Each operand must be an exact int64;
+a fractional or out-of-range float raises `value`.
+
+```eigenscript
+print of [1 << 64, 1 << -1, -1 >> 1, 8 >> -1, 1 << 63]
+print of [bit_shr of [-1, 1], bit_shl of [8, -1], num_type of (3.0 & 1)]
+```
+```output
+[0, 0, 9223372036854775807, 16, -9223372036854775808]
+[9223372036854775807, 4, "int"]
+```
+
+`//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
+operation to its assignment target, like `/=`. Zero divisors raise `value`
+for all numeric operand kinds in this round. Two ints produce an int for
+`//` and `%`; a float operand produces a float. `/` always produces a float.
+Float and mixed `//` use Python’s `divmod` quotient correction: `1.0 // 0.1`
+is `9.0`, and `1e-300 // -1e300` is `-1.0`. `//=` uses the same rule.
+
+```eigenscript
+x is -7
+x //= 2
+print of [x, 7 // -2, -7 % 3, 7 % -3, -7.5 % 2]
+print of [num_type of (7 // 2), num_type of (7.0 // 2)]
+y is 1.0
+y //= 0.1
+print of [1.0 // 0.1, 1 // 0.1, 1e-300 // -1e300, y, num_type of y]
+```
+```output
+[-4, -4, 2, -2, 0.5]
+["int", "float"]
+[9, 9, -1, 9, "float"]
+```
 
 ### Ask Your Code
 
@@ -332,16 +432,22 @@ and returns a buffer when every tensor operand was one. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
 wants the flat container, and that is the name it reaches for.
 
-EigenScript numbers are finite by construction. Operations that would overflow
+EigenScript has exact signed int64 literals and finite float64 numbers.
+`type of` returns `"num"` for both, and `num_type of` distinguishes `"int"`
+from `"float"` (null for a non-number). Int `+ - *` raise `value` on
+overflow; unary minus and `abs` raise on INT64_MIN. Comparisons between
+ints and floats are exact, including beyond 2^53. Float operations that would overflow
 to infinity saturate at `+/-1e308`. Strict mode is the default: an
 out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
 argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
 get the finite stand-ins instead: `NaN` becomes `0`, `sqrt of -1` is `0`, and
-`asin`/`acos` clamp their inputs. The same rule applies when a raw tensor-kernel
-result is read from a `buffer`; one stored element never changes meaning with
-the operator that consumes it. Structural buffer equality and scalar reductions
-normalize each input by this rule too, as do mixed buffer/list materialization
-and numeric byte or sample conversion. A raised read stops subsequent work.
+`asin`/`acos` clamp their inputs. Buffer consumers apply the same normalization,
+except `sum`, `get_at`, `dot` and `write_bytes`, which refuse non-finite
+buffer elements in every strict mode (N13).
+Structural buffer equality and the other scalar reductions normalize each
+input by this rule too, as do mixed buffer/list materialization
+and the remaining numeric byte or sample conversions. `write_bytes` instead
+requires exact bytes in 0..255 (N5/Q1). A raised read stops subsequent work.
 `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL, without inspecting later
 elements; byte codecs consume the complete list.
@@ -352,6 +458,108 @@ The optional model extension raises a catchable `value` error when
 `eigen_generate` or `eigen_eval_loss` receives a prompt longer than the loaded
 model's `max_seq_len`. Training applies the same limit to the combined input
 and output lengths; callers must choose their context window explicitly.
+
+Empty `min`/`max` raises `value` in both call forms (R1.6b-D2); empty
+`sum` remains int zero (C2). `sign_extend` reads exact int64 arguments and
+raises `value` if its existing subtraction underflows (R1.6b-D1).
+
+Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
+return an int when the result fits int64. `min`/`max` return the winning
+argument with its kind; the first argument wins a tie. `num` requires a
+complete numeric-literal string (N10). JSON integer text fitting int64
+decodes exactly (N14).
+
+```eigenscript
+print of [num_type of (len of "abc"), num_type of (floor of -2.5)]
+print of [num of "9007199254740993", num_type of (num of "3.0")]
+print of [num_type of (min of [3, 3.0]), num_type of (min of [3.0, 3])]
+print of (json_path of ["{\"n\":9223372036854775807}", "n"])
+try:
+    min of []
+catch e:
+    print of [e.kind, (index_of of [e.message, "min"]) >= 0]
+try:
+    print of (num of "12abc")
+catch e:
+    print of e.kind
+```
+```output
+["int", "int"]
+[9007199254740993, "float"]
+["int", "float"]
+9223372036854775807
+["value", true]
+value
+```
+
+
+`add`, `subtract` and `multiply` preserve exact ints for scalar operands and
+for each pair of list elements, with `value` on int64 overflow. `negative`
+preserves int scalar and list elements and raises at INT64_MIN. Buffer
+arithmetic remains float. A buffer kernel stops at its first raised result,
+releases its partial output and does not read later elements (#1417).
+An all-int `sum` returns an exact int, while a
+float anywhere in a nested input selects float addition for the entire
+reduction. A buffer selects float addition too. An empty list's sum is int
+zero, in both call forms. `sum` refuses non-finite buffer elements with a
+`value` error in every strict mode (N13). In strict mode, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
+
+```eigenscript
+exact is sum of [9007199254740993, 1]
+print of [exact, num_type of exact]
+mixed is sum of [9223372036854775807, 1, 0.5]
+print of [num_type of mixed, mixed == 9223372036854775808.0]
+print of [num_type of (sum of []), num_type of (sum of ([]))]
+print of (add of [[9007199254740993, 2], [1, 3]])
+try:
+    negative of (-9223372036854775807 - 1)
+catch e:
+    print of e.kind
+```
+```output
+[9007199254740994, "int"]
+["float", true]
+["int", "int"]
+[9007199254740994, 5]
+value
+```
+
+Store handles carry integer `_store_id` and `_store_gen` fields. Every store operation requires exact, in-range integer handle fields; integral floats convert, while fractional, non-finite or out-of-range numeric fields raise `value` before store access (R1.6f-D1). `store_count` returns an integer.
+
+`store_get`, `store_delete`, and `store_update` accept string keys or exact
+int64 numeric keys. Integral floats convert; fractional or out-of-range floats
+raise `value` before lookup or mutation. Numeric keys retain all int64 digits.
+Stored decimal integer text within int64 decodes as an int; a decimal point or
+exponent selects a float. Buffer payloads remain floats. Float persistence keeps
+its existing text format until R1.7, so a whole float such as `3.0` may read back
+as an int during this transition.
+
+See the [stored-record example](docs/SPEC.md#stored-records).
+
+PostgreSQL integer columns (`smallint`, `integer`, `bigint`, `oid`) return
+exact int64 values through `db_query_value`; `db_query_json` retains their
+exact decimal digits (N14, Q-DB253). A `bigint` beyond 2^53 is an int,
+including both int64 boundaries. `numeric` remains text, and finite real
+columns returned directly remain floats. Float parameter text stays in its
+existing format until R1.7. The executable DB examples and boundary assertions
+in `tests/test_db.eigs` run on the server-db profile with PostgreSQL.
+
+TCP handles, ports and sent-byte counts are integers. Numeric socket handles, ports, receive counts and outgoing bytes require exact integers (integral floats convert); bytes must be in 0..255. `net_send` validates the entire payload before sending any byte. Poll timeouts are continuous milliseconds rounded to the C int range; an unrepresentable duration raises `value`.
+
+`http_early_bind` and `http_serve` require an exact integer port in 0..65535; integral floats convert and port zero requests an ephemeral port. Fractional or out-of-range ports raise `value` before binding. `shared_delete` and `shared_size` return integer counts.
+
+The HTTP shared counter `shared_incr` follows numeric `+`: two int operands
+return an exact int and int64 overflow raises `value` without changing the
+stored counter (A). A missing counter starts at int zero. A float operand
+produces a float. The stored operand is its JSON-decoded value; existing
+float text stays until R1.7, so an integer-valued float may read back as an
+int during this transition. Executable shared-counter examples in
+`tests/test_http.eigs` cover exact values, both overflow directions and the
+next operation after a raise.
+
+`http_post` also preserves every digit of JSON integer header values within
+int64 before sending them as text (N14, B6). The executed loopback example
+is `tests/phase2/builtins/builtins/http_post.eigs`.
 
 ## Standard Library
 
@@ -607,6 +815,8 @@ spawn occurrences to match workers. Tape associations carry state grouping;
 event order does not choose replay identity. Hosts explicitly advance replay
 sessions between evaluations; unread sibling outcomes prevent advance. See [docs/TRACE.md](docs/TRACE.md)
 and [docs/EMBEDDING.md](docs/EMBEDDING.md) for the binding and version contract.
+Tape format v8 preserves integer/float kinds and chunked module sources;
+older formats are refused.
 Replay also refuses side-effecting boundaries the tape cannot reconstruct:
 in particular, `mktemp` raises before creating a temporary file.
 
@@ -694,3 +904,49 @@ Codespace and a green CI run can't drift.
 
 > Launching a Codespace bills to *your* account's free monthly hours — you can
 > open this org repo from a personal account without org Codespaces billing.
+
+Tensor sizes and indices follow N5: an integral float is accepted and a
+fraction raises `value`. `gather` keeps the selected list cell's int/float
+kind; buffer elements and numeric tensor calculations are floats. `shape`
+returns integer dimension counts. `mean` and `norm` refuse non-finite buffer
+cells with `value` in both strict modes.
+
+```eigenscript
+g is gather of [[[1, 2], [3, 4]], [1.0, 0]]
+print of [g, num_type of g[0], num_type of (shape of g)[0]]
+try:
+    gather of [[10, 20], 0.5]
+catch e:
+    print of e.kind
+```
+```output
+[[2, 3], "int", "int"]
+value
+```
+
+Buffer sizes, indices, offsets and counts follow N5. Byte inputs to
+`str_from_bytes`, `f64_from_bytes`, `inflate` and `buf_from_pcm16le` must be
+exact integers in 0..255; fractions and out-of-range bytes raise `value`.
+`buf_len`, `f64_to_bytes` and `inflate` return integer counts or bytes;
+buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
+`buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.
+
+Model token ids and generation limits follow N5 and the C int range;
+fractional ids or token counts raise `value`. `eigen_generate` returns int
+token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
+training learning rates remain float quantities. Model JSON weights stay
+float data; the loader status strings are unchanged.
+
+Graphics and audio magnitudes round half away from zero and raise `value`
+when the result exceeds the C call's range. This refusal happens even before
+SDL is loaded:
+
+```eigenscript
+try:
+    gfx_delay of 1e300
+catch e:
+    print of e.kind
+```
+```output
+value
+```

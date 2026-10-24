@@ -202,9 +202,10 @@ EigenScript uses reference counting plus numeric and environment freelists.
 (`__ATOMIC_RELAXED` increment, `__ATOMIC_ACQ_REL` decrement). When the
 refcount reaches zero, `free_value` tears down the value and its children.
 
-**Numeric freelist.** Freed `VAL_NUM` values are placed in a per-thread
+**Numeric freelist.** Freed `VAL_FLOAT` values are placed in a per-thread
 freelist (up to 4096 entries) and reused by `make_num`, avoiding
-malloc/free churn in arithmetic-heavy loops.
+malloc/free churn in arithmetic-heavy loops. `VAL_INT` boxes are freed
+directly; immediate floats and SMIs need no heap reference count.
 
 **Environment freelist.** Freed `Env` structs are cached per-thread (up to
 1024 entries) and reused by `env_new`, avoiding allocation in tight

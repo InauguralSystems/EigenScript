@@ -1,0 +1,11 @@
+# R1.6 behaviour-table probe: read_bytes (int-preserving; byte values 0..255)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+f is p + "/b.bin"
+write_bytes of [f, [0, 65, 255]]
+r is read_bytes of f
+print of [r, nt of r[0], nt of r[2]]

@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: num_copy (int-preserving, LOSS; copies a number and keeps its subtype)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is num_copy of 9007199254740993
+print of [a, nt of a]
+b is num_copy of 2.5
+print of [b, nt of b]

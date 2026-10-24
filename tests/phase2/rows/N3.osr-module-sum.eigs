@@ -1,0 +1,15 @@
+# ROW: N3.osr-module-sum
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: O
+# WITNESS: osr-stop <module> ADD
+# OPS: ADD
+acc is 9007199254740000
+step is 1
+i is 0.0
+loop while true:
+    acc is acc + step
+    i is i + 1.0
+    if i >= 1000.0:
+        print of acc
+        return acc

@@ -1,0 +1,1 @@
+- Float and mixed `//` and `//=` now use Python’s `divmod` quotient correction. Decimal boundaries such as `1.0 // 0.1` return `9.0`, and an underflowed negative ratio such as `1e-300 // -1e300` returns `-1.0`. Integer arithmetic and the current zero-divisor errors are unchanged. (#1882)

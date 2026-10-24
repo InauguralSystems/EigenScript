@@ -1,0 +1,9 @@
+# ROW: ctl.N5.leaf-float-index
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf nth
+# OPS: INDEX_GET
+define nth(xs, i) as:
+    return xs[i]
+print of (nth of [[10, 20, 30], 1.0])

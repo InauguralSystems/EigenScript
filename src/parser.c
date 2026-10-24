@@ -533,7 +533,7 @@ void free_ast(ASTNode *node) {
 }
 
 static int is_compound_assign(TokType t) {
-    return t >= TOK_PLUS_EQ && t <= TOK_SHR_EQ;
+    return (t >= TOK_PLUS_EQ && t <= TOK_SHR_EQ) || t == TOK_SLASH_SLASH_EQ;
 }
 
 static void compound_to_op(TokType t, char op[4]) {
@@ -543,6 +543,7 @@ static void compound_to_op(TokType t, char op[4]) {
         case TOK_MINUS_EQ:   op[0] = '-'; break;
         case TOK_STAR_EQ:    op[0] = '*'; break;
         case TOK_SLASH_EQ:   op[0] = '/'; break;
+        case TOK_SLASH_SLASH_EQ: op[0] = '/'; op[1] = '/'; break;
         case TOK_PERCENT_EQ: op[0] = '%'; break;
         case TOK_AMP_EQ:     op[0] = '&'; break;
         case TOK_BITOR_EQ:   op[0] = '|'; break;
@@ -804,7 +805,7 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type == TOK_NUM) {
         p_advance(p);
         ASTNode *n = make_node(AST_NUM, t->line);
-        n->data.num = t->num_val;
+        n->data.number = t->number;
         while (p_cur(p)->type == TOK_LBRACKET) {
             if (chain_too_deep(p)) break;
             n = parse_subscript_suffix(p, n);
@@ -831,7 +832,7 @@ static ASTNode* parse_primary(Parser *p) {
     if (t->type == TOK_TRUE || t->type == TOK_FALSE) {   /* #1637 */
         p_advance(p);
         ASTNode *b = make_node(AST_BOOL, t->line);
-        b->data.num = (t->type == TOK_TRUE) ? 1.0 : 0.0;
+        b->data.boolean = (t->type == TOK_TRUE);
         return b;
     }
 
@@ -1177,11 +1178,13 @@ static ASTNode* parse_unary_body(Parser *p) {
 
 static ASTNode* parse_multiply(Parser *p) {
     ASTNode *left = parse_unary(p);
-    while (p_cur(p)->type == TOK_STAR || p_cur(p)->type == TOK_SLASH || p_cur(p)->type == TOK_PERCENT) {
+    while (p_cur(p)->type == TOK_STAR || p_cur(p)->type == TOK_SLASH ||
+           p_cur(p)->type == TOK_SLASH_SLASH || p_cur(p)->type == TOK_PERCENT) {
         if (chain_too_deep(p)) break;
         char op[4] = {0};
         if (p_cur(p)->type == TOK_STAR) op[0] = '*';
         else if (p_cur(p)->type == TOK_SLASH) op[0] = '/';
+        else if (p_cur(p)->type == TOK_SLASH_SLASH) { op[0] = '/'; op[1] = '/'; }
         else op[0] = '%';
         Token *op_tok = p_advance(p);
         ASTNode *right = parse_unary(p);

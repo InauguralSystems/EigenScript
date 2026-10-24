@@ -699,7 +699,12 @@ audio_envelope|print of (len of (audio_envelope of [([0.1, 0.2]), "0.01", 0.01, 
 audio_gain|print of (len of (audio_gain of [([1.0]), "2.0"]))
 json_path|print of (json_path of ["{\"a\": 1e", "a"])|json_path: invalid JSON at position
 pow|print of (pow of [0 - 8, 0.5])|pow: result is not a number
-num|print of (num of "nan")|num: result is not a number
+min|print of (min of [])|min: expected at least one number
+min|print of (min of ([]))|min: expected at least one number
+max|print of (max of [])|max: expected at least one number
+max|print of (max of ([]))|max: expected at least one number
+num|print of (num of "nan")|num: expected complete numeric-literal text
+num|print of (num of "inf")|num: expected complete numeric-literal text
 f64_from_bytes|print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))|f64_from_bytes: result is not a number
 matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 0 - 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0])|matmul: result is not a number
 matmul|print of (matmul of [[[1, "x"]], [[1], [1]]])|matmul: expected a tensor containing only numbers
@@ -761,6 +766,7 @@ EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
 
+# N10 removed inf from the successful coercion pins; it is a grammar refusal above.
 # label|program — must exit 0 under EIGS_STRICT=1
 PINS=$(cat <<'EOF'
 task_alive of an unknown id is 0, not an error|print of (task_alive of 999)
@@ -771,7 +777,6 @@ substr starting past the end is ""|print of (substr of ["ab", 9, 1])
 join of an empty list is ""|print of (join of [[], ","])
 num coerces a list to 0 (documented)|print of (num of ([1, 2]))
 try_parse of invalid syntax is 0|print of (try_parse of "!!!")
-max of an empty list is 0|print of (max of ([]))
 sum of an empty list is 0 (the identity, not a type mistake)|print of (sum of ([]))
 mean of an empty list is 0|print of (mean of ([]))
 gather of a 1-D tensor in the per-row form is 0 per row (shape, not index)|print of (gather of [[1, 2], [0, 0]])
@@ -787,7 +792,6 @@ json_path of a JSON null renders as ""|print of f"[{json_path of ["{\"a\": null}
 file_exists of a real absent path is 0 (#1008 Phase D)|print of (file_exists of "/nonexistent/eigs_971_probe")
 is_dir of a real absent path is 0|print of (is_dir of "/nonexistent/eigs_971_probe")
 index_of miss is -1 even with the flag on|print of (index_of of ["abc", "z"])
-num of "inf" saturates (overflow, not NaN)|print of (num of "inf")
 pow of a negative base with an INTEGER exponent is defined|print of (pow of [0 - 2, 3])
 token_name of an unknown id is "?"|print of (token_name of 9999)
 channel_closed of a reclaimed/unknown channel is 1|print of (channel_closed of ({"_channel_id": 99999}))
@@ -1588,7 +1592,7 @@ fi
 # ------------------------------------------------ pixel differential
 printf 'print of (gfx_open of [8, 8, "pixdiff-probe"])\n' > "$TMP/open.eigs"
 NO_RENDERER=0
-if [ "$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)" != "1" ]; then
+if [ "$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)" != "true" ]; then
     NO_RENDERER=1
     echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
 fi

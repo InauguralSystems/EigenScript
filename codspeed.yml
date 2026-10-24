@@ -24,13 +24,13 @@
 #   make && codspeed run -m simulation --cycle-estimation=false   # every target
 #   (CLI 5.3.1 has no per-target selector; the ids exist for the report only)
 #
-# Workloads: bench/*.eigs are the five Ir-gate workloads; the three tests/
-# benches are the JIT's own shapes (CLAUDE.md "Benchmarks"), dmg_shape being
-# the consumer stand-in for the DMG emulator's hot loop.
+# In-repo workloads: every bench/*.eigs and tests/bench_*.eigs file.
+# tools/phase2_cost.sh reads this same set and measures each in both tiers.
+# dmg_shape is the consumer stand-in for the DMG emulator's hot loop.
 $schema: https://raw.githubusercontent.com/CodSpeedHQ/codspeed/refs/heads/main/schemas/codspeed.schema.json
 
 benchmarks:
-  # --- the five Ir-gate workloads (bench/) ---
+  # --- the Ir-gate workloads (bench/) ---
   - name: "scalar_loop"
     id: scalar-loop
     exec: ./src/eigenscript bench/scalar_loop.eigs
@@ -50,7 +50,17 @@ benchmarks:
     id: unobserved-armed-loop
     exec: ./src/eigenscript bench/unobserved_armed_loop.eigs
 
-  # --- the JIT's own shapes (tests/) ---
+  - name: "alloc_heavy"
+    id: alloc-heavy
+    exec: ./src/eigenscript bench/alloc_heavy.eigs
+  - name: "conservative_observed_loop"
+    id: conservative-observed-loop
+    exec: ./src/eigenscript bench/conservative_observed_loop.eigs
+  - name: "conservative_unobserved_loop"
+    id: conservative-unobserved-loop
+    exec: ./src/eigenscript bench/conservative_unobserved_loop.eigs
+
+  # --- runtime and JIT workloads (tests/) ---
   - name: "bench_perf"
     id: bench-perf
     exec: ./src/eigenscript tests/bench_perf.eigs
@@ -60,6 +70,16 @@ benchmarks:
   - name: "bench_idxset"
     id: idxset
     exec: ./src/eigenscript tests/bench_idxset.eigs
+
+  - name: "bench_buf_mix"
+    id: buf-mix
+    exec: ./src/eigenscript tests/bench_buf_mix.eigs
+  - name: "bench_buf_resample"
+    id: buf-resample
+    exec: ./src/eigenscript tests/bench_buf_resample.eigs
+  - name: "bench_pcm_codec"
+    id: pcm-codec
+    exec: ./src/eigenscript tests/bench_pcm_codec.eigs
 
   # --- a REAL consumer: the DMG Game Boy emulator running Blargg's cpu_instrs ---
   # The in-repo dmg_shape bench flatters the JIT ~10x against the emulator it

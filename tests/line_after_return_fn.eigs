@@ -4,13 +4,13 @@
 # Pre-fix: "Error line 8" and "at outer (line 8)".
 # LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
 define dec(x) as:
-    y is x - 1
+    y is x - 1.0
     return y
 define outer(x) as:
-    q is x + 1
-    r is 1 / (dec of x)
+    q is x + 1.0
+    r is 1.0 / (dec of x)
     return r
-k is 6001
-loop while k > 0:
+k is 6001.0
+loop while k > 0.0:
     w is outer of k
-    k is k - 1
+    k is k - 1.0

@@ -1,3 +1,22 @@
-# Test scripts nothing in CI runs, on purpose (tools/enrolment_check.sh, #1264).
-# `path | reason`. A row for a missing or invoked file fails; prefer a section.
+# Test scripts and tools/ entry points that no workflow invokes, as tools/enrolment_check.sh
+# reads "invoked" (#1264; tools/ since #1758 R1.3). `path | reason`: the reason says how the
+# script does run. A row for a missing or invoked file fails; prefer a section or a workflow step.
 tests/test_gc_runner_controls.py | manual deferred control for the GC traversal runner (tests/GC_TRAVERSAL.md); forks child sessions and must run with the heavy slot released, so it is run by hand
+tools/asan_receipts_check.sh | self-test only (--selftest is its one mode) of ci.yml's ASan receipt step; its tools/selftests.txt row runs when ci.yml changes, and nightly
+tools/builtin_usage.sh | a report over local consumer checkouts (counts builtin references), not a gate; run by hand
+tools/core_ext_boundary_selftest.sh | self-test only (--selftest is its one mode) of tools/core_ext_boundary_check.sh, which CI runs; its tools/selftests.txt row runs when either changes, and nightly
+tools/doc_coupling_hook.sh | a Claude Code hook (.claude/settings.json) for agent sessions, not a CI gate
+tools/freestanding_check.sh | runs in CI through make: ci.yml's `make freestanding-check` recipe calls it; this scan does not follow make
+tools/gen_lsp_builtin_index.sh | a generator, not a gate: make regenerates src/lsp_builtin_index.h when its sources change
+tools/gen_lsp_stdlib_index.sh | a generator, not a gate: make writes src/lsp_stdlib_index.h for `make lsp`, which CI runs
+tools/mutants.sh | the manual mutation trains (its header); its --selftest is a tools/selftests.txt row
+tools/phase2_corpus_diff.sh | the corpus differential of Phase 2's mechanical rounds (R1.1, R1.2, R2.1): tools/phase2_check.py runs it under such a --through and in its --selftest, and no landed round selects one
+tools/phase2_cost.sh | each Phase 2 round's builder runs its BASE CAND gate (design section 8); CI's bench job reads its declarations through bench/check_regression.sh (--declared jit), which this scan does not read
+tools/phase2_plants.sh | self-test only, Phase 2's planted faults: its tools/selftests.txt row runs when the checks it names change, and nightly
+tools/release_skill_check.sh | checks the release runbook (.claude/skills/release/SKILL.md) by hand; only its --selftest runs, as a tools/selftests.txt row
+tools/section_fragments_check.sh | self-test only (--selftest is its one mode); its tools/selftests.txt row runs when the runner-text gates change, and nightly
+tools/selftests_selection_selftest.sh | self-test only (--selftest is its one mode) of tools/selftests.sh's row selection; its tools/selftests.txt row runs when the driver changes, and nightly
+tools/stop_gate.sh | a Claude Code Stop hook (.claude/settings.json), not a CI gate; its --selftest is a tools/selftests.txt row
+tools/ai_benchmark.py | a module tests/test_ai_benchmark.py imports (suite [99acb]); this scan sees no imports
+tools/bounded_process.py | a module tests/test_gc_runner_controls.py imports (the manual GC runner control, exempt above)
+tools/phase2_inventory.py | runs through tools/phase2_check.py (its inventory gate, every mode, now in CI) and tests/phase2/slot_layer.sh (suite [0fk]): a Python call and a nested tests/ script this scan does not read

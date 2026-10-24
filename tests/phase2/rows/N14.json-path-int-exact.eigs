@@ -1,0 +1,7 @@
+# ROW: N14.json-path-int-exact
+# ITEMS: N14
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of (json_path of ["{\"n\":9223372036854775807}", "n"])

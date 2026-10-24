@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: db_execute (other, LOSS; PROFILE server-db (make server-db) plus DATABASE_URL naming a live PostgreSQL)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    c is db_connect of null
+    db_execute of "CREATE TEMP TABLE r16 (n bigint)"
+    r is db_execute of ["INSERT INTO r16 (n) VALUES ($1)", 9007199254740993]
+    print of r
+    v is db_query_value of "SELECT n FROM r16"
+    print of [v, nt of v]
+catch e:
+    print of [e.kind, e.message]

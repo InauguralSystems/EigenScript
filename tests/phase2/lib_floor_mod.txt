@@ -1,0 +1,14 @@
+# N4 successful stdlib value changes (#1758). TSV: module.function, N4: reason.
+# phase2_lib_diff.sh derives modulo users and named callers from source; each
+# declaration must be exercised by a changed successful result or is stale.
+datetime.days_from_civil	N4: _fdiv and month normalization now floor negative years/months in the civil-date formula.
+datetime.civil_from_days	N4: _fdiv now floors negative era offsets for dates before the civil epoch.
+datetime.weekday_from_days	N4: days before -4 now map to the non-negative weekday index (days + 4) % 7.
+datetime.epoch_from_civil	N4: inherits days_from_civil's floor corrections for negative years/months.
+datetime.civil_from_epoch	N4: _fdiv floors negative epoch seconds to the previous day with a non-negative remainder.
+eigen.eigen_eval	N4: the meta-interpreter's % binop inherits host floor modulo for opposite-sign operands.
+eigen.eigen_run	N4: running source through eigen_eval inherits host floor modulo for opposite-sign operands.
+checksum.adler32	N4: accepted numeric buffers can contain negative non-byte samples; their modulo residues now floor (documented byte inputs are unchanged).
+checksum.sum8	N4: accepted numeric buffers can contain negative non-byte samples; their modulo residues now floor (documented byte inputs are unchanged).
+supervise.supervise_step	N4: a negative heartbeat's bounded observer signature now uses the non-negative progress % 8 residue.
+supervise.supervise_run	N4: inherits supervise_step's changed observer feed for negative heartbeat progress.

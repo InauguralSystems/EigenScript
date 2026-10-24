@@ -11,13 +11,41 @@ infs is matmul of [matrix, matrix]
 # These operands exercise the shared runtime scalar-read accessor contract.
 # They do not establish direct indexed-operator or strict diagnostic/flag
 # parity with ouroboros's separate unboxed-number optimizer.
-print of ((buf_get of [infs, 0]) > 1e308)
-print of ((buf_get of [infs, 0]) / (buf_get of [infs, 1]))
-print of ((buf_get of [infs, 0]) % 3)
-print of ((buf_get of [infs, 0]) * 0.5 > 1e308)
-print of ((buf_get of [infs, 0]) + 0 > 1e308)
-print of (buf_get of [infs, 0])
-print of (get_at of [infs, 0])
+# N13 / R1.6d: final data reader refuses the raw nonfinite payload.
+try:
+    print of ((buf_get of [infs, 0]) > 1e308)
+catch e:
+    print of e.kind
+# N13 / R1.6d: final data reader refuses the raw nonfinite payload.
+try:
+    print of ((buf_get of [infs, 0]) / (buf_get of [infs, 1]))
+catch e:
+    print of e.kind
+# N13 / R1.6d: final data reader refuses the raw nonfinite payload.
+try:
+    print of ((buf_get of [infs, 0]) % 3)
+catch e:
+    print of e.kind
+# N13 / R1.6d: final data reader refuses the raw nonfinite payload.
+try:
+    print of ((buf_get of [infs, 0]) * 0.5 > 1e308)
+catch e:
+    print of e.kind
+# N13 / R1.6d: final data reader refuses the raw nonfinite payload.
+try:
+    print of ((buf_get of [infs, 0]) + 0 > 1e308)
+catch e:
+    print of e.kind
+# N13 / R1.6d: final data reader refuses the raw nonfinite payload.
+try:
+    print of (buf_get of [infs, 0])
+catch e:
+    print of e.kind
+# N13 / R1.6c: the final get_at reader refuses non-finite buffer cells.
+try:
+    print of (get_at of [infs, 0])
+catch e:
+    print of e.kind
 print of (gather of [infs, [0, 0]])[0]
 
 left is buffer of [1, 2]
@@ -28,8 +56,15 @@ right[0] is 1e200
 right[1] is 0 - 1e200
 nans is matmul of [left, right]
 print of nans[0]
-print of (buf_get of [nans, 0])
-print of (get_at of [nans, 0])
+# N13 / R1.6d: final data reader refuses the raw nonfinite payload.
+try:
+    print of (buf_get of [nans, 0])
+catch e:
+    print of e.kind
+try:
+    print of (get_at of [nans, 0])
+catch e:
+    print of e.kind
 print of (gather of [nans, [0]])[0]
 print of (math_flags of null).invalid
 
@@ -38,8 +73,15 @@ print of (math_flags of null).invalid
 source is buffer of 1
 source[0] is 7
 source_matrix is reshape of [source, 1, 1]
-print of (gather of [source_matrix, nans])[0]
+# N5 / R1.6d: index-buffer elements must be finite exact integers.
+try:
+    print of (gather of [source_matrix, nans])[0]
+catch e:
+    print of e.kind
 target is buffer of 1
-scatter_add of [target, nans, [5]]
+try:
+    scatter_add of [target, nans, [5]]
+catch e:
+    print of e.kind
 print of target[0]
 print of (math_flags of null).invalid

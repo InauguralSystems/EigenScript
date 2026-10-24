@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: sgd_update_rows (float-producing; row indices int)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+m is [[1.0, 2.0], [3.0, 4.0]]
+g is [[2, 2], [2, 2]]
+sgd_update_rows of [m, g, [1, 1], 0.5]
+print of [m, nt of m[1][0]]
+try:
+    sgd_update_rows of [m, g, [0.5, 1], 0.5]
+    print of ["fraction accepted", m]
+catch e:
+    print of ["row-fraction", e.kind]
+sgd_update_rows of [m, g, [0.0, 0.0], 0.5]
+print of m

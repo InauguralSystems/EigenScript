@@ -111,8 +111,8 @@ int main(void) {
      * 6001 calls make it hot for the JIT. The last element returns a string,
      * so sort_by raises after its final callback. */
     EigsValue *defs = eigs_eval_string(
-        "define ekey(x) as:\n    y is 0\n    i is 0\n    loop while i < 3:\n"
-        "        y is y + x\n        i is i + 1\n    if x < 0:\n"
+        "define ekey(x) as:\n    y is 0.0\n    i is 0.0\n    loop while i < 3.0:\n"
+        "        y is y + x\n        i is i + 1.0\n    if x < 0.0:\n"
         "        return \"s\"\n    return y\n");
     if (defs) eigs_value_release(defs);
     Value *ekey = eigs_get_global("ekey");
@@ -150,22 +150,22 @@ int main(void) {
     static const char *const NM = "errline_1434";
     EigsSlot sl, out;
     g_has_error = 0;   /* a pending error halts the callback before it runs */
-    g_trace_current_line = 70; SLOT_NUM_RAW(sl) = 1.0; trace_assign(NM, sl);
+    g_trace_current_line = 70; SLOT_F64_RAW(sl) = 1.0; trace_assign(NM, sl);
     g_trace_current_line = 80;
     r = builtin_sort_by(args_good);
     check(!g_has_error && r && r->type == VAL_LIST && r->data.list.count == 6001,
           "#1434 the history row's sort_by ran its callbacks");
     if (r) val_decref(r);
-    SLOT_NUM_RAW(sl) = 2.0; trace_assign(NM, sl);
+    SLOT_F64_RAW(sl) = 2.0; trace_assign(NM, sl);
     trace_line(95);   /* a stop right after the store, for [0b]'s `--step` query */
-    check(trace_query_at(0, NM, 75, &out) && SLOT_NUM_RAW(out) == 1.0 &&
-          trace_query_at(0, NM, 85, &out) && SLOT_NUM_RAW(out) == 2.0,
+    check(trace_query_at(0, NM, 75, &out) && SLOT_F64_RAW(out) == 1.0 &&
+          trace_query_at(0, NM, 85, &out) && SLOT_F64_RAW(out) == 2.0,
           "#1434 a store after the callbacks is filed under the call's stamp");
     /* The line live history filed the second store under, for [0b] to compare
      * with the tape stepper's `t` row over the same run's EIGS_TRACE tape. */
     int filed = 0;
     for (int ln = 1; ln <= 100 && !filed; ln++)
-        if (trace_query_at(0, NM, ln, &out) && SLOT_NUM_RAW(out) == 2.0) filed = ln;
+        if (trace_query_at(0, NM, ln, &out) && SLOT_F64_RAW(out) == 2.0) filed = ln;
     printf("LIVE: %s=2 line %d\n", NM, filed);
 
     g_has_error = 0;

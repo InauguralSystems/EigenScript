@@ -1,0 +1,24 @@
+# profile witness: server = HTTP + NET + MODEL compiled in (Makefile FLAGS_server).
+# Prints profile-ok only when no capability call answers "capability unavailable".
+define unavailable(e) as:
+    return contains of [e.message, "capability unavailable"]
+m is 0
+try:
+    shared_size of null
+catch e:
+    if unavailable of e:
+        m is m + 1
+try:
+    net_close of (net_listen of 0)
+catch e:
+    if unavailable of e:
+        m is m + 1
+try:
+    eigen_model_load of "/nonexistent/r16-profile-witness"
+catch e:
+    if unavailable of e:
+        m is m + 1
+if m == 0:
+    print of "profile-ok"
+else:
+    print of ["capabilities-unavailable", m]

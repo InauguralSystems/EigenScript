@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: buf_resample_linear (float-producing; float storage; dst_len is a count (N5, Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+s is buf_from_list of [0, 10]
+r is buf_resample_linear of [s, 3]
+print of [r[0], r[1], r[2], nt of r[1]]
+try:
+    print of ["fraction-answer", buf_len of (buf_resample_linear of [s, 2.5])]
+catch e:
+    print of ["count-fraction", e.kind]
+print of (buf_len of (buf_resample_linear of [s, 3.0]))

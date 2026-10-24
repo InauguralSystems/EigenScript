@@ -53,7 +53,7 @@ def main():
             "time.sleep(float(os.environ.get('EIGS_TIMEOUT_CONTROL_START_DELAY','0')))\n"
             "if mode in ('ignore','leak-ignore'): signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
             "open(" + repr(str(pidfile)) + ", 'w').write(str(os.getpid()))\n"
-            "if mode=='clean': print('sdl-present: 0'); raise SystemExit(0)\n"
+            "if mode=='clean': print('sdl-present: false'); raise SystemExit(0)\n"
             "if mode=='error': raise SystemExit(7)\n"
             "if mode.startswith('leak-'): print('==123==ERROR: LeakSanitizer: detected memory leaks',flush=True)\n"
             "if mode=='leak-clean': raise SystemExit(1)\n"

@@ -1,0 +1,1 @@
+- Add explicit wrapping, checked and saturating add/sub/mul for signed and unsigned 8/16/32/64-bit widths, unsigned u64 comparison/division/remainder/decimal formatting, and float32 rounding with `fround` (#1758 N9). Operands use N5 exact conversion and type range checks; width results are ints.

@@ -312,7 +312,8 @@ void eigs_value_release(EigsValue *v) { if (v) val_decref(v); }
 EigsValueType eigs_value_type(EigsValue *v) {
     if (!v) return EIGS_TYPE_NULL;
     switch (v->type) {
-        case VAL_NUM:     return EIGS_TYPE_NUM;
+        case VAL_FLOAT:     return EIGS_TYPE_NUM;
+        case VAL_INT:     return EIGS_TYPE_NUM;   /* #1758 (Q3): one embed number type */
         case VAL_STR:     return EIGS_TYPE_STR;
         case VAL_LIST:    return EIGS_TYPE_LIST;
         case VAL_DICT:    return EIGS_TYPE_DICT;
@@ -357,11 +358,14 @@ int eigs_value_as_bool(EigsValue *v) {
  * plausible false-as-zero. Other non-numbers keep the documented 0.0. Hosts
  * test eigs_value_type first, or read a bool with eigs_value_as_bool. */
 double eigs_value_as_num(EigsValue *v) {
-    if (!v || v->type != VAL_NUM) {
-        embed_value_error(EK_TYPE, "eigs_value_as_num: expected a number");
-        return (v && v->type == VAL_BOOL) ? NAN : 0.0;
-    }
-    return VAL_NUM_RAW(v);
+    /* Phase 2 (Q3): an int is a number, converted like lua_tonumber; a float
+     * is read raw. Anything else reports through #1932's pending error
+     * (attached threads only), keeping #1637's NaN for a bool and 0.0
+     * otherwise. */
+    if (v && v->type == VAL_INT) return (double)VAL_I64_RAW(v);
+    if (v && v->type == VAL_FLOAT) return VAL_F64_RAW(v);
+    embed_value_error(EK_TYPE, "eigs_value_as_num: expected a number");
+    return (v && v->type == VAL_BOOL) ? NAN : 0.0;
 }
 
 const char *eigs_value_as_string(EigsValue *v) {
@@ -477,7 +481,7 @@ void eigs_trace_record_nondet(const char *name, EigsValue *v) {
 /* #1637: EIGS_KIND(EIGS_TYPE_X) bits -> the runtime's ValType bits. */
 int eigs_trace_declare_kind(const char *name, unsigned kinds) {
     static const struct { EigsValueType e; ValType v; } map[] = {
-        {EIGS_TYPE_NULL, VAL_NULL}, {EIGS_TYPE_NUM, VAL_NUM}, {EIGS_TYPE_STR, VAL_STR},
+        {EIGS_TYPE_NULL, VAL_NULL}, {EIGS_TYPE_NUM, VAL_FLOAT}, {EIGS_TYPE_NUM, VAL_INT}, {EIGS_TYPE_STR, VAL_STR},
         {EIGS_TYPE_LIST, VAL_LIST}, {EIGS_TYPE_DICT, VAL_DICT},
         {EIGS_TYPE_BUFFER, VAL_BUFFER}, {EIGS_TYPE_BOOL, VAL_BOOL},
     };

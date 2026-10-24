@@ -1,0 +1,247 @@
+# Boxed ints (|i| >= 2^47, heap values with a refcount since R1.3) through VM
+# arithmetic: the SMI boundary, the raise paths (overflow, division by zero,
+# type errors) inside try/catch, mixed int/float operands, bitwise operators
+# and comparisons. Trimmed from the R1.3 memory review's probe p01_arith.eigs
+# (#1758). Section [0fr] runs it strictly leak-clean under ASan, so a raise path
+# that forgets to release a boxed operand leaks and fails the suite. Every
+# check asserts (a failed one exits nonzero); the last line pins the count.
+CK is 0
+define ck(cond, msg) as:
+    assert of [cond, msg]
+    CK is CK + 1
+
+P47 is 140737488355328
+SMAX is 140737488355327
+IMAX is 9223372036854775807
+IMIN is -9223372036854775807 - 1
+F47 is 140737488355328.0
+N is 200
+
+ck of [(num_type of P47) == "int", "P47 int"]
+ck of [(num_type of IMIN) == "int", "IMIN int"]
+ck of [(num_type of F47) == "float", "F47 float"]
+
+# the SMI/boxed boundary, both directions
+a1 is SMAX + 1
+ck of [a1 == P47, "smi+1 boxes"]
+a2 is P47 - 1
+ck of [a2 == SMAX, "boxed-1 unboxes"]
+a3 is P47 * 2
+ck of [a3 == 281474976710656, "boxed*2"]
+a4 is 0 - P47
+ck of [a4 == -140737488355328, "0-P47 is SMI min"]
+a5 is a4 - 1
+ck of [a5 == -140737488355329, "below SMI min boxes"]
+a6 is IMAX - IMAX
+ck of [a6 == 0, "boxed-boxed to 0"]
+ck of [(IMIN + IMAX) == -1, "IMIN+IMAX"]
+ck of [(str of IMIN) == "-9223372036854775808", "IMIN text"]
+ck of [(str of IMAX) == "9223372036854775807", "IMAX text"]
+
+# overflow raises with boxed operands, N times per shape
+define ov_plain(n) as:
+    local caught is 0
+    local k is 0
+    loop while k < n:
+        try:
+            local t is (IMAX - k) + (P47 + k)
+            print of "NOT REACHED plain"
+        catch err:
+            if err.kind == "value":
+                caught is caught + 1
+        k is k + 1
+    return caught
+
+define ov_listlit(n) as:
+    local caught is 0
+    local k is 0
+    loop while k < n:
+        try:
+            local xs is [P47 + k, IMAX - k, "s", IMAX + k + 1]
+            print of "NOT REACHED listlit"
+        catch err:
+            caught is caught + 1
+        k is k + 1
+    return caught
+
+define id3(a, b, c) as:
+    return [a, b, c]
+
+define ov_callarg(n) as:
+    local caught is 0
+    local k is 0
+    loop while k < n:
+        try:
+            local r is id3 of [P47 + k, (IMAX - k) * 2, k]
+            print of "NOT REACHED callarg"
+        catch err:
+            caught is caught + 1
+        k is k + 1
+    return caught
+
+define inner_ov(x) as:
+    local y is x + P47
+    local z is [y, x, y]
+    local w is {"y": y, "x": x}
+    return y * IMAX
+
+define mid_ov(x) as:
+    local m is x - 1
+    return inner_ov of (m + IMAX - P47 - P47)
+
+define ov_frames(n) as:
+    local caught is 0
+    local k is 0
+    loop while k < n:
+        try:
+            local r is mid_ov of (P47 + k)
+            print of "NOT REACHED frames"
+        catch err:
+            caught is caught + 1
+        k is k + 1
+    return caught
+
+define ov_sub_mul(n) as:
+    local caught is 0
+    local k is 0
+    loop while k < n:
+        try:
+            local t is (IMIN + k) - (P47 + 1)
+        catch err:
+            caught is caught + 1
+        try:
+            local u is (P47 + k) * (P47 - k)
+        catch err:
+            caught is caught + 1
+        try:
+            local v is SMAX * SMAX
+        catch err:
+            caught is caught + 1
+        k is k + 1
+    return caught
+
+define ov_compound(n) as:
+    local caught is 0
+    local k is 0
+    local acc is P47
+    loop while k < n:
+        try:
+            acc += IMAX
+        catch err:
+            caught is caught + 1
+        acc is P47 + k
+        k is k + 1
+    return caught
+
+define ov_neg_abs(n) as:
+    local caught is 0
+    local k is 0
+    local mn is IMIN
+    loop while k < n:
+        try:
+            local q is -mn
+        catch err:
+            caught is caught + 1
+        try:
+            local q2 is abs of mn
+        catch err:
+            caught is caught + 1
+        local ok1 is -(P47 + k)
+        local ok2 is abs of (0 - P47 - k)
+        if ok1 != 0 - P47 - k:
+            print of "BAD neg"
+        if ok2 != P47 + k:
+            print of "BAD abs"
+        k is k + 1
+    return caught
+
+define ov_divmod(n) as:
+    local caught is 0
+    local k is 0
+    loop while k < n:
+        try:
+            local q is (P47 + k) / 0
+        catch err:
+            caught is caught + 1
+        try:
+            local q2 is (IMAX - k) % 0
+        catch err:
+            caught is caught + 1
+        try:
+            local q3 is 1.5 | (P47 + k)
+        catch err:
+            caught is caught + 1
+        try:
+            local q4 is (P47 + k) + "s"
+        catch err:
+            caught is caught + 1
+        try:
+            local q5 is (P47 + k) < "s"
+        catch err:
+            caught is caught + 1
+        k is k + 1
+    return caught
+
+c1 is ov_plain of N
+ck of [c1 == N, f"ov_plain caught {c1}"]
+c2 is ov_listlit of N
+ck of [c2 == N, f"ov_listlit caught {c2}"]
+c3 is ov_callarg of N
+ck of [c3 == N, f"ov_callarg caught {c3}"]
+c4 is ov_frames of N
+ck of [c4 == N, f"ov_frames caught {c4}"]
+c5 is ov_sub_mul of N
+ck of [c5 == 3 * N, f"ov_sub_mul caught {c5}"]
+c6 is ov_compound of N
+ck of [c6 == N, f"ov_compound caught {c6}"]
+c7 is ov_neg_abs of N
+ck of [c7 == 2 * N, f"ov_neg_abs caught {c7}"]
+c8 is ov_divmod of N
+ck of [c8 == 5 * N, f"ov_divmod caught {c8}"]
+
+# module scope (the global env, not a frame)
+mk is 0
+mcaught is 0
+loop while mk < N:
+    try:
+        mt is (P47 + mk) * IMAX
+    catch err:
+        mcaught is mcaught + 1
+    mk is mk + 1
+ck of [mcaught == N, "module-scope overflow caught"]
+
+# mixed int/float, the transitional / and %, bitwise operators, comparisons
+ck of [(IMAX + 0.5) > 9.2e18, "IMAX+0.5 float"]
+ck of [(num_type of (P47 + 0.5)) == "float", "mixed is float"]
+ck of [(P47 * 1.5) == 211106232532992.0, "P47*1.5"]
+ck of [(F47 + P47) == 281474976710656.0, "F47+P47"]
+ck of [(num_type of (IMAX / 2)) == "float", "div float"]
+ck of [((P47 + 7) % 10) == 5, "mod"]
+ck of [(P47 & 0xFF) == 0, "band"]
+ck of [(IMAX & 1) == 1, "band IMAX"]
+ck of [((P47 + 3) | 0) == 140737488355331, "bor"]
+ck of [(P47 << 1) == 281474976710656, "shl"]
+ck of [(P47 >> 47) == 1, "shr"]
+ck of [(~P47) == -140737488355329, "bnot"]
+ck of [P47 < IMAX, "lt"]
+ck of [IMIN < SMAX, "lt2"]
+ck of [P47 == F47, "eq cross kind"]
+ck of [(P47 + 1) > F47, "gt cross kind"]
+ck of [9007199254740993 > 9007199254740992.0, "exact N2 past 2^53"]
+ck of [9007199254740993 != 9007199254740992.0, "exact ne past 2^53"]
+ck of [not (IMAX == 9223372036854775808), "IMAX vs 2^63 float"]
+
+define cmp_churn(n) as:
+    local k is 0
+    local hits is 0
+    loop while k < n:
+        local x is P47 + k
+        local y is IMAX - k
+        local f is F47 + k
+        if x < y and x >= f and x <= f and y > x and x == f and not (x != f):
+            hits is hits + 1
+        k is k + 1
+    return hits
+ck of [(cmp_churn of N) == N, "cmp churn"]
+
+print of f"boxed int arith: PASS checks={CK}"

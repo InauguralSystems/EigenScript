@@ -99,10 +99,10 @@ converged  stable  improving  oscillating  diverging  equilibrium
 ### Operators and Punctuation
 
 ```
-+  -  *  /  %
++  -  *  /  //  %
 &  |  ^  <<  >>  ~
 <  >  <=  >=  ==  !=
-+=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=
++=  -=  *=  /=  //=  %=  &=  |=  ^=  <<=  >>=
 (  )  [  ]  {  }
 ,  :  .
 |>          pipe (left-associative, desugars a |> b to b of a)
@@ -194,7 +194,7 @@ destructure_stmt  = '[' IDENT { ',' IDENT } ']' 'is' expression
 local_assign_stmt = 'local' IDENT 'is' expression
 
 assign_stmt = IDENT assign_op expression
-assign_op   = 'is' | '+=' | '-=' | '*=' | '/=' | '%='
+assign_op   = 'is' | '+=' | '-=' | '*=' | '/=' | '//=' | '%='
             | '&=' | '|=' | '^=' | '<<=' | '>>='
             ; compound forms desugar: x += e  ==  x is x + e
 
@@ -228,7 +228,7 @@ shift_expr  = addition { ( '<<' | '>>' ) addition }
 
 addition    = multiply { ( '+' | '-' ) multiply }
 
-multiply    = unary { ( '*' | '/' | '%' ) unary }
+multiply    = unary { ( '*' | '/' | '//' | '%' ) unary }
 
 unary       = '-' unary
             | 'not' unary
@@ -322,7 +322,7 @@ From lowest to highest precedence:
 | 7 | `&` | Left | Bitwise AND |
 | 8 | `<<` `>>` | Left | Shifts |
 | 9 | `+` `-` | Left | Addition, subtraction |
-| 10 | `*` `/` `%` | Left | Multiplication, division, modulo |
+| 10 | `*` `/` `//` `%` | Left | Multiplication, true/floor division, floor modulo |
 | 11 | `-` (unary) `not` `~` | Right | Negation, logical NOT, bitwise NOT |
 | 12 | `of` | Right | Function call / observation (`f of g of x` = `f of (g of x)`) |
 | 13 | `[i]` `[a:b]` `.key` | Left | Index, slice, dot access |

@@ -1,0 +1,29 @@
+# ROW: N5.audio-channel-domain
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# R1.6e-D1, #1922 comment 6355101247: pre-registered before migration.
+define probe_channel(fn, close_fn, label) as:
+    for count in [0, 256, 257, -1, 1.5]:
+        try:
+            local result is fn of [44100, count]
+            print of [label, count, "accepted"]
+        catch e:
+            local domain is contains of [e.message, "outside [1, 255]"]
+            local fractional is contains of [e.message, "no integer representation"]
+            print of [label, count, e.kind, domain or fractional]
+        close_fn of null
+    for count in [255, 1]:
+        try:
+            local result is fn of [44100, count]
+            print of [label, count, "reader-pass", true]
+        catch e:
+            local domain is contains of [e.message, "outside [1, 255]"]
+            local fractional is contains of [e.message, "no integer representation"]
+            print of [label, count, "reader-pass", not (domain or fractional)]
+        close_fn of null
+probe_channel of [audio_open, audio_close, "audio_open"]
+probe_channel of [audio_capture_open, audio_capture_close, "audio_capture_open"]
+probe_channel of [audio_stream_open, audio_stream_close, "audio_stream_open"]

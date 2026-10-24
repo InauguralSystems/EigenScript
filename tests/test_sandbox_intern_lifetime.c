@@ -135,8 +135,8 @@ int main(void) {
         fprintf(stderr, "escaped result=%s expected-key=%s\n", diagnostic, key);
         free(diagnostic);
     }
-    assert(escaped_value && escaped_value->type == VAL_NUM &&
-           VAL_NUM_RAW(escaped_value) == 1.0);
+    assert(escaped_value && escaped_value->type == VAL_FLOAT &&
+           VAL_F64_RAW(escaped_value) == 1.0);
     fprintf(stderr,
             "sandbox intern growth: baseline=%zu retained=%zu sandbox_only=%zu\n",
             baseline, sandbox_retained, sandbox_prefix_retained);

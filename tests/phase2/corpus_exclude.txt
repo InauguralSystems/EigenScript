@@ -1,0 +1,5 @@
+# directory owner reason; sole harness-ownership list for corpus walkers.
+# phase2_corpus_exclude.py filters each broad population before a walker narrows
+# it (JIT/OBS, replay, phase2 corpus diff, valgrind --full, road fixtures).
+# Every declaration must remove files; unused/empty directories fail.
+tests/phase2/builtins/ tools/phase2_builtins.sh Owned by tools/phase2_builtins.sh: its probes require the bar fixtures, observation hooks, matched profiles and stdin; that gate checks every row.

@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: bit_and (int-requiring; Lua & (3.4.2): exact int64 operands (N8, R1.5)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is bit_and of [9007199254740993, 9007199254740993]
+print of [a, nt of a]
+try:
+    print of ["fraction-answer", bit_and of [1.5, 1]]
+catch e:
+    print of ["fraction", e.kind]
+f is bit_and of [6.0, 3.0]
+print of [f, nt of f]

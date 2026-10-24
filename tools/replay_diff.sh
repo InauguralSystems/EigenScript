@@ -45,12 +45,21 @@ TMO=""
 if command -v timeout >/dev/null 2>&1; then TMO="timeout 300"
 elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 300"; fi
 
+# Each program runs under its run conditions from the one shared loader
+# (tests/suite_program_env.sh: the suite's, jit_diff's and the Phase 2
+# differential's), so a fail-soft test is replayed past its first strict raise.
+export EIGS_TEST_DIR="$ROOT/tests"
+. "$ROOT/tests/suite_program_env.sh" || exit 1
 corpus_dir() { printf '%s' "${REPLAY_DIFF_CORPUS:-$ROOT/tests}"; }
 eig_bin()    { printf '%s' "${REPLAY_DIFF_EIG:-./eigenscript}"; }
 norm() { sed -E 's/0x[0-9a-f]+/0xADDR/g' "$1"; }
+# The ledger's DATA rows. A '#' line or a blank line is a reason, never a
+# row (jit_diff's ledger rule): both are stripped before the comparison and
+# the count, so a row can carry the issue that explains it.
+ledger_data() { awk 'NF && substr($0, 1, 1) != "#" { print }' "$1" | sort; }
 ledger_count() {
     local count
-    count=$(wc -l < "$1") || return 1
+    count=$(ledger_data "$1" | wc -l) || return 1
     count=${count//[[:space:]]/}
     case "$count" in ''|*[!0-9]*) return 1;; esac
     printf '%s' "$count"
@@ -60,7 +69,10 @@ ledger_count() {
 # exited 3 -- a phantom row from the environment, not the tape.
 run() {
     local out="$1" rc; shift
-    env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b" > "$out" 2>&1 </dev/null
+    suite_program_check "$b" > /dev/null || { echo "replay_diff: FAIL: run-condition lookup failed for $b" >&2; exit 1; }
+    ( if grep -Eq '(gfx|ui|audio)_[a-z_]+' "$(corpus_dir)/$b"; then ulimit -v 1500000; fi
+      suite_program_run "$b" env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b"
+    ) > "$out" 2>&1 </dev/null
     rc=$?; echo "rc=$rc" >> "$out"
     # Runs include self-check and second adjudication arms. Never compare,
     # excuse as NONDET/boundary, or ledger a possibly incomplete exit-124 run.
@@ -193,17 +205,25 @@ fi
 # ---------------------------------------------------------------- the gate
 EIG="$(eig_bin)"; CORPUS="$(corpus_dir)"; BASE="${REPLAY_DIFF_BASE:-$ROOT/tests/replay_diff_expected.txt}"
 FLOOR="${REPLAY_DIFF_FLOOR:-100}"
+(cd "$ROOT" && find tests -type f -name '*.eigs' | LC_ALL=C sort) > "$T/corpus"
+python3 "$ROOT/tools/phase2_corpus_exclude.py" "$ROOT" "$T/corpus" || exit 1
+: > "$T/files"
+for f in "$CORPUS"/test_*.eigs; do
+    [ -f "$f" ] || continue
+    case "$f" in "$ROOT"/*) grep -qxF "${f#"$ROOT"/}" "$T/corpus" || continue ;; esac
+    printf '%s\n' "$f" >> "$T/files"
+done
 got="$T/got"; : > "$got"; n=0; boundary=0; nondet=0
 # self-check on a known-deterministic program
 b=test_math_underflow.eigs
-[ -f "$CORPUS/$b" ] || b=$(ls "$CORPUS"/test_*.eigs | head -1 | xargs basename)
+[ -f "$CORPUS/$b" ] || b=$(head -n 1 "$T/files"); b=${b##*/}
 rm -f "$T/tape0"; run "$T/r0" EIGS_TRACE="$T/tape0"
 [ -s "$T/tape0" ] || { echo "replay_diff: FAIL: the record arm wrote no tape for $b -- check EIGS_TRACE"; exit 1; }
 run "$T/p0" EIGS_REPLAY="$T/tape0"
 crash_check rec "$T/r0"; crash_check rep "$T/p0"
 [ "$crash" -eq 0 ] || { echo "replay_diff: FAIL: the self-check program $b died by signal"; exit 1; }
 diff -q <(norm "$T/r0") <(norm "$T/p0") >/dev/null || { echo "replay_diff: FAIL: the self-check program $b does not replay its own tape"; diff <(norm "$T/r0") <(norm "$T/p0") | head -5; exit 1; }
-for f in "$CORPUS"/test_*.eigs; do
+while IFS= read -r f; do
   b=$(basename "$f"); n=$((n + 1))
   rm -f "$T/tape"
   run "$T/rec" EIGS_TRACE="$T/tape"
@@ -225,16 +245,16 @@ for f in "$CORPUS"/test_*.eigs; do
   if ! diff -q <(norm "$T/rec") <(norm "$T/rec2") >/dev/null; then nondet=$((nondet + 1)); echo "  NONDET $b (record arm differs from itself)"; continue; fi
   if diff -q <(norm "$T/rec2") <(norm "$T/rep2") >/dev/null; then nondet=$((nondet + 1)); echo "  NONDET $b (replay diverged once, then matched)"; continue; fi
   echo "$b" >> "$got"
-done
+done < "$T/files"
 sort -o "$got" "$got"
 [ "$n" -ge "$FLOOR" ] || { echo "replay_diff: only $n programs found -- the scan is vacuous (floor $FLOOR)"; exit 1; }
 if [ "$crash" -gt 0 ]; then
   echo "replay_diff: FAIL: $crash signal exit(s) -- a crash is never a boundary, whatever the arm printed (#1112); $n programs, $boundary at the documented boundary, $nondet nondeterministic"
   exit 1
 fi
-if [ "${1:-}" = "--record" ]; then cp "$got" "$BASE"; count=$(ledger_count "$BASE") || { echo "replay_diff: FAIL: invalid ledger count"; exit 1; }; echo "replay_diff: baseline recorded ($count rows, $n programs, $boundary at the documented boundary, $nondet nondeterministic)"; exit 0; fi
+if [ "${1:-}" = "--record" ]; then { [ -f "$BASE" ] && awk '/^#/ { print }' "$BASE"; cat "$got"; } > "$T/ledger.new"; cp "$T/ledger.new" "$BASE"; count=$(ledger_count "$BASE") || { echo "replay_diff: FAIL: invalid ledger count"; exit 1; }; echo "replay_diff: baseline recorded ($count rows, $n programs, $boundary at the documented boundary, $nondet nondeterministic)"; exit 0; fi
 [ -f "$BASE" ] || { echo "replay_diff: no baseline at $BASE (run with --record)"; cat "$got"; exit 1; }
-if diff <(sort "$BASE") "$got" > "$T/d"; then
+if diff <(ledger_data "$BASE") "$got" > "$T/d"; then
   count=$(ledger_count "$BASE") || { echo "replay_diff: FAIL: invalid ledger count"; exit 1; }
   echo "replay_diff: OK ($n programs record+replay; $boundary at the documented boundary; $nondet nondeterministic; $count ledgered)"; exit 0
 fi

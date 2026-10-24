@@ -1,0 +1,20 @@
+# R1.6 behaviour-table probe: shared_incr (int-preserving, LOSS; PROFILE server (make server): the HTTP capability)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    shared_set of ["k", 9007199254740992]
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0
+r is shared_incr of ["k", 1]
+print of [r, nt of r]
+g is shared_get of "k"
+print of [g, nt of g]
+shared_set of ["m", 9223372036854775807]
+try:
+    print of (shared_incr of ["m", 1])
+catch e:
+    print of ["overflow", e.kind]

@@ -74,16 +74,15 @@ static Value* net_bytes_to_buffer(const unsigned char *bytes, int n) {
  * opens named a different connection's fd and read/wrote it silently. The
  * packing is `slot + gen * HANDLE_TABLE_SIZE`: slot is 1..255, gen starts at
  * 1, so every live handle is >= 257 and a bare small integer (a forged or
- * hand-computed id) decodes to gen 0, which no live slot has. Doubles carry
- * 53 bits exactly, so the packed form is exact until a single slot has been
- * reused 2^45 times. */
-static double net_pack(int idx, uint32_t gen) {
-    return (double)idx + (double)gen * (double)HANDLE_TABLE_SIZE;
+ * hand-computed id) decodes to gen 0, which no live slot has. The packed
+ * integer fits int64 for every uint32 generation. */
+static int64_t net_pack(int idx, uint32_t gen) {
+    return (int64_t)idx + (int64_t)gen * HANDLE_TABLE_SIZE;
 }
 
-static EigsNetSock* net_unpack(double packed, int *out_idx, uint32_t *out_gen) {
-    if (!(packed > 0) || packed > 9007199254740992.0) return NULL;
-    long long p = (long long)packed;
+static EigsNetSock* net_unpack(int64_t packed, int *out_idx, uint32_t *out_gen) {
+    if (packed <= 0 || packed / HANDLE_TABLE_SIZE > UINT32_MAX) return NULL;
+    int64_t p = packed;
     int idx = (int)(p % HANDLE_TABLE_SIZE);
     uint32_t gen = (uint32_t)(p / HANDLE_TABLE_SIZE);
     if (out_idx) *out_idx = idx;
@@ -91,7 +90,7 @@ static EigsNetSock* net_unpack(double packed, int *out_idx, uint32_t *out_gen) {
     return (EigsNetSock*)handle_lookup(idx, gen, HANDLE_NET, NULL);
 }
 
-static double net_register_sock(int fd, EigsNetSockKind kind) {
+static int64_t net_register_sock(int fd, EigsNetSockKind kind) {
     EigsNetSock *s = xmalloc(sizeof(EigsNetSock));
     s->fd = fd;
     s->kind = kind;
@@ -103,14 +102,13 @@ static double net_register_sock(int fd, EigsNetSockKind kind) {
         rt_error(EK_LIMIT, 0,
                  "net: handle table full (max %d live threads/channels/"
                  "tasks/sockets)", HANDLE_TABLE_SIZE - 1);
-        return -1.0;
+        return -1;
     }
     return net_pack(id, gen);
 }
 
-static EigsNetSock* net_lookup(Value *v, EigsNetSockKind kind) {
-    if (!v || v->type != VAL_NUM) return NULL;
-    EigsNetSock *s = net_unpack(eigs_num_arg(v, __func__), NULL, NULL);
+static EigsNetSock* net_lookup(int64_t handle, EigsNetSockKind kind) {
+    EigsNetSock *s = net_unpack(handle, NULL, NULL);
     if (!s || s->kind != kind) return NULL;
     return s;
 }
@@ -139,13 +137,22 @@ static int net_require_list(Value *arg, int min, int max, const char *fn) {
     return 1;
 }
 
-static int net_num_at(Value *arg, int idx, int fallback) {
-    if (!arg || arg->type != VAL_LIST || idx >= arg->data.list.count)
-        return fallback;
-    /* #1637: null keeps the fallback, a number is read, anything else (a
-     * bool) raises; callers check g_has_error after their reads. */
-    double d = 0;
-    return eigs_slot_opt_num(list_slot(arg, idx), &d, "net") ? (int)d : fallback;
+/* Optional integer counts and continuous poll durations have different
+ * contracts. Both validate before a tape take or any socket operation. */
+static int net_count_at(Value *arg, int idx, int fallback, const char *who) {
+    if (idx >= arg->data.list.count) return fallback;
+    int64_t value = fallback;
+    eigs_opt_int_range(list_get_view(arg, idx, &(EigsView){{0}}),
+                       INT_MIN, INT_MAX, &value, who);
+    return (int)value;
+}
+
+static int net_timeout_at(Value *arg, int idx, const char *who) {
+    if (idx >= arg->data.list.count) return -1;
+    int64_t value = -1;
+    eigs_opt_magnitude(list_get_view(arg, idx, &(EigsView){{0}}),
+                       INT_MIN, INT_MAX, &value, who);
+    return (int)value;
 }
 
 /* ---- builtins ----------------------------------------------------- */
@@ -155,14 +162,13 @@ static int net_num_at(Value *arg, int idx, int fallback) {
  * ephemeral port — read it back with net_port. Binds 0.0.0.0, matching
  * ext_http's server posture (SECURITY.md: the script is trusted). */
 Value* builtin_net_listen(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) {
+    if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "net_listen: expected a port number");
         return make_null();
     }
+    int64_t port;
+    if (!eigs_int_arg_range(arg, 0, 65535, &port, "net_listen")) return make_null();
     TRACE_NONDET_TAKE("net_listen");
-    int port = (int)eigs_num_arg(arg, __func__);
-    if (port < 0 || port > 65535)
-        TRACE_NONDET_RECORD("net_listen", make_null());
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) TRACE_NONDET_RECORD("net_listen", make_null());
     int one = 1;
@@ -176,27 +182,29 @@ Value* builtin_net_listen(Value *arg) {
         close(fd);
         TRACE_NONDET_RECORD("net_listen", make_null());
     }
-    double id = net_register_sock(fd, NET_SOCK_LISTENER);
+    int64_t id = net_register_sock(fd, NET_SOCK_LISTENER);
     if (id < 0) TRACE_NONDET_RECORD("net_listen", make_null());
-    TRACE_NONDET_RECORD("net_listen", make_num(id));
+    TRACE_NONDET_RECORD("net_listen", make_int(id));
 }
 
 /* net_port of listener_id → the locally bound port (the kernel's pick
  * for a port-0 listen), or null on a bad/closed handle. Kernel-chosen,
  * so it rides the tape like every other environment outcome. */
 Value* builtin_net_port(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) {
+    if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "net_port: expected a listener handle");
         return make_null();
     }
+    int64_t handle = eigs_int_arg(arg, "net_port");
+    if (g_has_error) return make_null();
     TRACE_NONDET_TAKE("net_port");
-    EigsNetSock *s = net_lookup(arg, NET_SOCK_LISTENER);
+    EigsNetSock *s = net_lookup(handle, NET_SOCK_LISTENER);
     if (!s) TRACE_NONDET_RECORD("net_port", make_null());
     struct sockaddr_in addr;
     socklen_t len = sizeof(addr);
     if (getsockname(s->fd, (struct sockaddr*)&addr, &len) < 0)
         TRACE_NONDET_RECORD("net_port", make_null());
-    TRACE_NONDET_RECORD("net_port", make_num(ntohs(addr.sin_port)));
+    TRACE_NONDET_RECORD("net_port", make_int(ntohs(addr.sin_port)));
 }
 
 /* net_accept of listener_id
@@ -208,25 +216,27 @@ Value* builtin_net_accept(Value *arg) {
     int timeout_ms = -1;
     if (arg && arg->type == VAL_LIST) {
         if (!net_require_list(arg, 2, 2, "net_accept")) return make_null();
-        timeout_ms = net_num_at(arg, 1, -1);
+        timeout_ms = net_timeout_at(arg, 1, "net_accept");
         if (g_has_error) return make_null();   /* #1637: a bool timeout raised */
         arg = list_get_view(arg, 0, &listener_view);
     }
-    if (!arg || arg->type != VAL_NUM) {
+    if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "net_accept: expected a listener handle");
         return make_null();
     }
+    int64_t handle = eigs_int_arg(arg, "net_accept");
+    if (g_has_error) return make_null();
     TRACE_NONDET_TAKE("net_accept");
-    EigsNetSock *s = net_lookup(arg, NET_SOCK_LISTENER);
+    EigsNetSock *s = net_lookup(handle, NET_SOCK_LISTENER);
     if (!s) TRACE_NONDET_RECORD("net_accept", make_null());
     if (!net_wait_readable(s->fd, timeout_ms))
         TRACE_NONDET_RECORD("net_accept", make_null());
     int cfd;
     do { cfd = accept(s->fd, NULL, NULL); } while (cfd < 0 && errno == EINTR);
     if (cfd < 0) TRACE_NONDET_RECORD("net_accept", make_null());
-    double id = net_register_sock(cfd, NET_SOCK_CONN);
+    int64_t id = net_register_sock(cfd, NET_SOCK_CONN);
     if (id < 0) TRACE_NONDET_RECORD("net_accept", make_null());
-    TRACE_NONDET_RECORD("net_accept", make_num(id));
+    TRACE_NONDET_RECORD("net_accept", make_int(id));
 }
 
 /* net_dial of [host, port]
@@ -241,14 +251,14 @@ Value* builtin_net_dial(Value *arg) {
         rt_error(EK_TYPE, 0, "net_dial: expected [host, port] with a string host");
         return make_null();
     }
-    int port = net_num_at(arg, 1, -1);
-    int timeout_ms = net_num_at(arg, 2, -1);
+    int64_t port;
+    if (!eigs_list_int_range(arg, 1, 0, 65535, &port, "net_dial")) return make_null();
+    int timeout_ms = net_timeout_at(arg, 2, "net_dial");
     if (g_has_error) return make_null();   /* #1637: before the tape boundary */
     TRACE_NONDET_TAKE("net_dial");
-    if (port < 0 || port > 65535) TRACE_NONDET_RECORD("net_dial", make_null());
 
     char portstr[8];
-    snprintf(portstr, sizeof(portstr), "%d", port);
+    snprintf(portstr, sizeof(portstr), "%d", (int)port);
     struct addrinfo hints = {0}, *res = NULL;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
@@ -277,9 +287,9 @@ Value* builtin_net_dial(Value *arg) {
         TRACE_NONDET_RECORD("net_dial", make_null());
     }
     fcntl(fd, F_SETFL, flags);
-    double id = net_register_sock(fd, NET_SOCK_CONN);
+    int64_t id = net_register_sock(fd, NET_SOCK_CONN);
     if (id < 0) TRACE_NONDET_RECORD("net_dial", make_null());
-    TRACE_NONDET_RECORD("net_dial", make_num(id));
+    TRACE_NONDET_RECORD("net_dial", make_int(id));
 }
 
 /* net_recv of [conn_id, max_bytes]
@@ -291,8 +301,10 @@ Value* builtin_net_dial(Value *arg) {
 Value* builtin_net_recv(Value *arg) {
     if (!net_require_list(arg, 2, 3, "net_recv")) return make_null();
     Value *conn = list_get_view(arg, 0, &(EigsView){{0}});
-    int max = net_num_at(arg, 1, 0);
-    int timeout_ms = net_num_at(arg, 2, -1);
+    int64_t handle = eigs_int_arg(conn, "net_recv");
+    if (g_has_error) return make_null();
+    int max = net_count_at(arg, 1, 0, "net_recv");
+    int timeout_ms = net_timeout_at(arg, 2, "net_recv");
     if (g_has_error) return make_null();   /* #1637 */
     /* A zero-byte recv() returns 0 — indistinguishable from EOF — so a
      * senseless max is a shape error, decided before the tape boundary. */
@@ -301,7 +313,7 @@ Value* builtin_net_recv(Value *arg) {
         return make_null();
     }
     TRACE_NONDET_TAKE("net_recv");
-    EigsNetSock *s = net_lookup(conn, NET_SOCK_CONN);
+    EigsNetSock *s = net_lookup(handle, NET_SOCK_CONN);
     if (!s) TRACE_NONDET_RECORD("net_recv", make_null());
     if (max > NET_RECV_MAX) max = NET_RECV_MAX;
     if (!net_wait_readable(s->fd, timeout_ms))
@@ -321,18 +333,18 @@ Value* builtin_net_recv(Value *arg) {
  * for proc_write). */
 /* Borrow the already converted bytes. The caller owns any workspace across
  * the early replay return as well as every live send outcome. */
-static Value* net_send_bytes(Value *conn, const unsigned char *bytes, size_t len) {
+static Value* net_send_bytes(int64_t handle, const unsigned char *bytes, size_t len) {
     TRACE_NONDET_TAKE("net_send");
-    EigsNetSock *s = net_lookup(conn, NET_SOCK_CONN);
-    if (!s) TRACE_NONDET_RECORD("net_send", make_num(-1));
+    EigsNetSock *s = net_lookup(handle, NET_SOCK_CONN);
+    if (!s) TRACE_NONDET_RECORD("net_send", make_int(-1));
     size_t sent = 0;
     while (sent < len) {
         ssize_t n = send(s->fd, bytes + sent, len - sent, MSG_NOSIGNAL);
         if (n < 0 && errno == EINTR) continue;
-        if (n <= 0) TRACE_NONDET_RECORD("net_send", make_num(-1));
+        if (n <= 0) TRACE_NONDET_RECORD("net_send", make_int(-1));
         sent += (size_t)n;
     }
-    TRACE_NONDET_RECORD("net_send", make_num((double)sent));
+    TRACE_NONDET_RECORD("net_send", make_int((int64_t)sent));
 }
 
 Value* builtin_net_send(Value *arg) {
@@ -344,6 +356,8 @@ Value* builtin_net_send(Value *arg) {
         rt_error(EK_TYPE, 0, "net_send: data must be a string, buffer, or byte list");
         return make_null();
     }
+    int64_t handle = eigs_int_arg(conn, "net_send");
+    if (g_has_error) return make_null();
     /* Read errors are deterministic argument errors: stop before the tape
      * boundary in both capture and replay, before any socket work. */
     const unsigned char *bytes;
@@ -357,17 +371,21 @@ Value* builtin_net_send(Value *arg) {
                                          : data->data.list.count;
         owned = xmalloc(n > 0 ? (size_t)n : 1);
         for (int i = 0; i < n; i++) {
-            double dv = data->type == VAL_BUFFER
-                ? buffer_read_num(data, i)
-                : eigs_slot_elem_num(list_slot(data, i), "net_send");   /* #1637 round 4 */
-            if (g_has_error) { free(owned); return make_null(); }
-            owned[i] = finite_num_to_byte(dv);
+            if (data->type == VAL_BUFFER) {
+                if (!buffer_byte_at(data, i, &owned[i], "net_send")) {
+                    free(owned);
+                    return make_null();
+                }
+            } else {
+                owned[i] = eigs_elem_byte(list_get_view(data, i, &(EigsView){{0}}), "net_send");
+                if (g_has_error) { free(owned); return make_null(); }
+            }
         }
         bytes = owned;
         len = (size_t)n;
     }
 
-    Value *result = net_send_bytes(conn, bytes, len);
+    Value *result = net_send_bytes(handle, bytes, len);
     free(owned);
     return result;
 }
@@ -376,13 +394,15 @@ Value* builtin_net_send(Value *arg) {
  * idempotent bookkeeping, and under EIGS_REPLAY no handle exists so it
  * is a natural no-op (the audio_capture_close shape). */
 Value* builtin_net_close(Value *arg) {
-    if (!arg || arg->type != VAL_NUM) {
+    if (!arg || !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "net_close: expected a socket handle");
         return make_null();
     }
     int nidx = 0;
     uint32_t ngen = 0;
-    EigsNetSock *s = net_unpack(eigs_num_arg(arg, __func__), &nidx, &ngen);
+    int64_t handle = eigs_int_arg(arg, "net_close");
+    if (g_has_error) return make_null();
+    EigsNetSock *s = net_unpack(handle, &nidx, &ngen);
     if (s) {
         close(s->fd);
         free(s);

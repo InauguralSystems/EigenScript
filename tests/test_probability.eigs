@@ -63,6 +63,13 @@ assert_near of [probability.poisson_cdf of [200, 190.0], 0.7784236536636114, 7.7
 # A large lambda underflows e^-lambda to 0 even when the probability is a
 # normal double, so the direct formula would return exactly 0.
 assert_near of [probability.poisson_pmf of [100, 800.0], 8.005888215986707e-216, 8.005888215986707e-228, "poisson_pmf(100, 800) e^-lambda underflow"]
+# An INT k past 170 takes Stirling's series, whose products must be floats:
+# with int literals, 1260 * k * k2 * k2 leaves int64 from k = 1490 and raises
+# (#1758). The expected values are main 94657581's at the same arguments.
+assert_eq of [num_type of (probability.poisson_pmf of [1490, 1000.0]), "float", "poisson_pmf(int 1490, 1000) is a float"]
+assert_near of [probability.poisson_pmf of [1490, 1000.0], 5.902674575941492e-48, 5.902674575941492e-60, "poisson_pmf(int 1490, 1000) Stirling"]
+assert_eq of [num_type of (probability.poisson_pmf of [3000, 3000.0]), "float", "poisson_pmf(int 3000, 3000) is a float"]
+assert_near of [probability.poisson_pmf of [3000, 3000.0], 0.007283453882998077, 7.283453882998077e-15, "poisson_pmf(int 3000, 3000) Stirling"]
 
 # ---- Normal Distribution ----
 print of "--- Normal ---"

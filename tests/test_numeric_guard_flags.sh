@@ -24,12 +24,15 @@ run "NG24 other association clean" 'x is 1e200 * (1e200 / 1e200)
 assert of [not (math_flags of null).overflow, "other order clean"]'
 run "NG26 capped literal stays valid" 'x is 0.0 * 1e400
 assert of [x == 0 and not (math_flags of null).invalid, "capped literal is valid"]'
-run "NG30 num nan" 'x is num of "nan"
-assert of [x == 0 and (math_flags of null).invalid, "num nan invalid"]'
-run "NG30 num inf" 'x is num of "inf"
-assert of [(math_flags of null).overflow, "num inf overflow"]'
-run "NG30 num abc" 'x is num of "abc"
-assert of [x == 0 and not (math_flags of null).invalid, "junk clean"]'
+# N10: grammar refusal is unconditional and does not touch arithmetic flags.
+for invalid in nan inf abc; do
+run "NG30 N10 num $invalid refused" "caught is false
+try:
+    num of \"$invalid\"
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught and not ((math_flags of null).invalid or (math_flags of null).overflow), \"N10 refusal leaves flags clean\"]"
+done
 run "NG30 num 42" 'x is num of "42"
 assert of [x == 42 and not ((math_flags of null).invalid or (math_flags of null).overflow), "42 clean"]'
 run "NG27 log controls/zero" 'a is log of 1e-15
@@ -60,28 +63,55 @@ right[1] is 0 - 1e200
 raw is matmul of [left, right]'
 for spec in \
  'NG32 index|x is raw[0]' \
- 'NG33 buf_get|x is buf_get of [raw, 0]' \
- 'NG34 get_at|x is get_at of [raw, 0]' \
  'NG35 gather|x is (gather of [raw, [0]])[0]' \
  'NG38 equality|x is raw == raw' \
- 'NG39 distinct equality|zero is buffer of 1; x is raw == zero' \
+ 'NG39 distinct equality|zero is buffer of 1; x is raw == zero'; do
+ name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n/g')
+ run "$name invalid" "$nan_setup
+$op
+assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
+done
+# N13 / R1.6d: these raw NaN reads refuse in lenient mode.
+for spec in \
+ 'NG33 buf_get|x is buf_get of [raw, 0]' \
  'NG42 buf_peak|x is buf_peak of [raw, 0, 1]' \
- 'NG50 nested sum|x is sum of ([raw])' \
  'NG50 nested mean|x is mean of ([raw])' \
  'NG50 nested norm|x is norm of ([raw])' \
  'NG52 scatter index|dst is buffer of 1; scatter_add of [dst, raw, 5]' \
  'NG53 gather index|dst is buffer of [1, 1]; x is gather of [dst, raw]' \
  'NG55 str_from_bytes|x is str_from_bytes of raw' \
  'NG58 PCM encode|x is buf_to_pcm16le of [raw, 0, 1]'; do
- name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n/g')
- run "$name invalid" "$nan_setup
+ name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n    /g; s/^/    /')
+ run "$name N13 refusal" "$nan_setup
+caught is false
+try:
 $op
-assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught and not (math_flags of null).invalid, \"N13 refuses without normalizing NaN\"]"
 done
+
+# N13 / R1.6c: get_at's final reader refuses NaN in both strict modes.
+run "NG34 N13 get_at refuses NaN" "$nan_setup
+caught is false
+try:
+    get_at of [raw, 0]
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught, \"N13 get_at refuses non-finite payload\"]"
+# N13 / R1.6b: sum's final buffer reader refuses NaN in every strict mode.
+# Keep this in its own program, as for the neighboring flag witnesses.
+run "NG50 N13 nested sum refuses NaN" "$nan_setup
+caught is false
+try:
+    sum of ([raw])
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught, \"N13 sum refuses non-finite payload instead of substituting zero\"]"
 # NG56 needs 8 stored bytes since #1926 refuses a short input. Keep the NaN
-# in buffer storage so the decoder's own read sets the flag: an index read
+# in buffer storage so the decoder's own read performs the refusal: an index read
 # first (raw[0]) would set it before f64_from_bytes ever ran.
-run "NG56 f64_from_bytes invalid" 'left is buffer of [8, 2]
+run "NG56 f64_from_bytes N13 refusal" 'left is buffer of [8, 2]
 for i in range of 16:
     left[i] is 1e200
 right is buffer of [2, 1]
@@ -89,8 +119,14 @@ right[0] is 1e200
 right[1] is 0 - 1e200
 raw is matmul of [left, right]
 assert of [not (math_flags of null).invalid, "NaN setup leaves invalid clear"]
-x is f64_from_bytes of raw
-assert of [x == 0 and (math_flags of null).invalid, "decoder NaN read sets invalid"]'
+caught is false
+length_error is false
+try:
+    f64_from_bytes of raw
+catch e:
+    caught is e.kind == "value"
+    length_error is (index_of of [e.message, "needs 8 bytes"]) >= 0
+assert of [caught and not length_error and not (math_flags of null).invalid, "N13 refuses without normalizing NaN, not length"]'
 run "NG61 mixed materialization invalid" "$nan_setup
 x is add of [raw, [2]]
 assert of [x == [[2]] and (math_flags of null).invalid, \"mixed materialization observes invalid\"]"
@@ -103,19 +139,27 @@ b[1] is 0 - 1e200
 b[2] is 1e200
 b[3] is 0 - 1e200
 raw is matmul of [a, b]'
-run "NG40 normalized dot stays valid" "$inf_setup
+run "NG40 N13 dot refuses infinity" "$inf_setup
 zero is buffer of 2
-x is dot of [raw, zero]
-assert of [x == 0 and not (math_flags of null).invalid, \"normalized dot stays valid\"]"
-run "NG41 normalized buf_dot stays valid" "$inf_setup
-zero is buffer of 2
-x is buf_dot of [raw, zero, 0, 0, 2]
-assert of [x == 0 and not (math_flags of null).invalid, \"normalized buf_dot stays valid\"]"
-run "NG57 byte decoder overflow" "$inf_setup
-x is str_from_bytes of raw
-assert of [(math_flags of null).overflow, \"infinity byte read sets overflow\"]"
-run "NG59 PCM decoder overflow" "$inf_setup
-x is buf_to_pcm16le of [raw, 0, 2]
-assert of [(math_flags of null).overflow, \"infinity PCM read sets overflow\"]"
+caught is false
+try:
+    dot of [raw, zero]
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught, \"N13 dot refuses non-finite payload\"]"
+# N13 / R1.6d: infinity refusals do not normalize or set arithmetic flags.
+for spec in \
+ 'NG41 buf_dot|zero is buffer of 2; x is buf_dot of [raw, zero, 0, 0, 2]' \
+ 'NG57 byte decoder|x is str_from_bytes of raw' \
+ 'NG59 PCM encoder|x is buf_to_pcm16le of [raw, 0, 2]'; do
+ name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n    /g; s/^/    /')
+ run "$name N13 refusal" "$inf_setup
+caught is false
+try:
+$op
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught and not ((math_flags of null).invalid or (math_flags of null).overflow), \"N13 infinity refusal\"]"
+done
 echo "NUMERIC_FLAGS: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

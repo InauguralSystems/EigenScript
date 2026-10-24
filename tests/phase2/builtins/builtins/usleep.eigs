@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: usleep (other, Q7 magnitude; rounded, a sleep the C int cannot hold raises); phase2-exercises: {"q7":["magnitude"]}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (usleep of 1000)
+try:
+    print of ["huge-sleep-answer", usleep of 1e300]
+catch e:
+    print of ["sleep-magnitude", e.kind]
+print of (usleep of 1.5)

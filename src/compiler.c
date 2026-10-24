@@ -305,6 +305,7 @@ static int op_stack_effect(uint8_t op8) {
     switch ((OpCode)op8) {
     /* Push 1 */
     case OP_CONST: case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE:
+    case OP_INT_ZERO: case OP_INT_ONE: case OP_INT_CONST:
     case OP_TRUE: case OP_FALSE:
     case OP_GET_LOCAL: case OP_GET_NAME: case OP_DUP:
     case OP_PREDICATE: case OP_LISTCOMP_BEGIN:
@@ -321,7 +322,7 @@ static int op_stack_effect(uint8_t op8) {
     case OP_POP:
         return -1;
     /* Pop 2, push 1 = net -1 */
-    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
+    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD: case OP_IDIV:
     case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
     case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
     case OP_INDEX_GET:
@@ -585,6 +586,28 @@ static int add_num_constant(Compiler *c, double num) {
     return check_const_index(idx);
 }
 
+static int add_int_constant(Compiler *c, int64_t integer) {
+    Value *v = make_int(integer);
+    int idx = chunk_add_constant(c->chunk, v);
+    val_decref(v);
+    return check_const_index(idx);
+}
+
+/* A fused literal index is an exact u16 for either numeric kind. Check
+ * before casting: large int/float literals must take the generic path. */
+static int literal_index_u16(const ASTNode *node, int *out) {
+    EigsNum n = node->data.number;
+    if (n.is_int) {
+        if (n.value.i64 < 0 || n.value.i64 > 0xFFFF) return 0;
+        *out = (int)n.value.i64;
+        return 1;
+    }
+    double d = n.value.f64;
+    if (!(d >= 0.0 && d <= 65535.0) || floor(d) != d) return 0;
+    *out = (int)d;
+    return 1;
+}
+
 /* ---- Local variable tracking ---- */
 
 static int resolve_local(Compiler *c, const char *name, uint32_t hash) {
@@ -640,6 +663,7 @@ static uint8_t binop_to_opcode(const char *op) {
     if (op[0] == '-' && op[1] == 0) return OP_SUB;
     if (op[0] == '*' && op[1] == 0) return OP_MUL;
     if (op[0] == '/' && op[1] == 0) return OP_DIV;
+    if (op[0] == '/' && op[1] == '/') return OP_IDIV;
     if (op[0] == '%' && op[1] == 0) return OP_MOD;
     if (op[0] == '&' && op[1] == 0) return OP_BAND;
     if (op[0] == '|' && op[1] == 0) return OP_BOR;
@@ -2192,10 +2216,20 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
     switch (node->type) {
 
     case AST_NUM: {
-        double v = node->data.num;
-        if (v == 0.0) { emit(c, OP_NUM_ZERO, node->line); }
-        else if (v == 1.0) { emit(c, OP_NUM_ONE, node->line); }
-        else { emit_op_u16(c, OP_CONST, (uint16_t)add_num_constant(c, v), node->line); }
+        EigsNum number = node->data.number;
+        if (number.is_int) {
+            int64_t i = number.value.i64;
+            if (i == 0) emit(c, OP_INT_ZERO, node->line);
+            else if (i == 1) emit(c, OP_INT_ONE, node->line);
+            else emit_op_u16(c, OP_INT_CONST,
+                             (uint16_t)add_int_constant(c, i), node->line);
+        } else {
+            double f = number.value.f64;
+            if (f == 0.0) emit(c, OP_NUM_ZERO, node->line);
+            else if (f == 1.0) emit(c, OP_NUM_ONE, node->line);
+            else emit_op_u16(c, OP_CONST,
+                             (uint16_t)add_num_constant(c, f), node->line);
+        }
         break;
     }
 
@@ -2210,7 +2244,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         break;
 
     case AST_BOOL:   /* #1637 */
-        emit(c, node->data.num != 0.0 ? OP_TRUE : OP_FALSE, node->line);
+        emit(c, node->data.boolean ? OP_TRUE : OP_FALSE, node->line);
         break;
 
     case AST_IDENT: {
@@ -3050,9 +3084,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         if (c->enclosing &&
             node->data.index.target->type == AST_IDENT &&
             node->data.index.index->type == AST_NUM) {
-            double dv = node->data.index.index->data.num;
-            int iv = (int)dv;
-            if (iv == dv && iv >= 0 && iv <= 0xFFFF) {
+            int iv;
+            if (literal_index_u16(node->data.index.index, &iv)) {
                 const char *tname = node->data.index.target->data.ident.name;
                 uint32_t th = node->data.index.target->name_hash;
                 if (th == 0) th = env_hash_name(tname);
@@ -3106,9 +3139,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             ASTNode *idx_node = node->data.dot.target;
             if (idx_node->data.index.target->type == AST_IDENT &&
                 idx_node->data.index.index->type == AST_NUM) {
-                double dv = idx_node->data.index.index->data.num;
-                int iv = (int)dv;
-                if (iv == dv && iv >= 0 && iv <= 0xFFFF) {
+                int iv;
+                if (literal_index_u16(idx_node->data.index.index, &iv)) {
                     const char *tname = idx_node->data.index.target->data.ident.name;
                     uint32_t th = idx_node->data.index.target->name_hash;
                     if (th == 0) th = env_hash_name(tname);
@@ -3151,9 +3183,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             ASTNode *idx_node = node->data.dot_assign.target;
             if (idx_node->data.index.target->type == AST_IDENT &&
                 idx_node->data.index.index->type == AST_NUM) {
-                double dv = idx_node->data.index.index->data.num;
-                int iv = (int)dv;
-                if (iv == dv && iv >= 0 && iv <= 0xFFFF) {
+                int iv;
+                if (literal_index_u16(idx_node->data.index.index, &iv)) {
                     const char *tname = idx_node->data.index.target->data.ident.name;
                     uint32_t th = idx_node->data.index.target->name_hash;
                     if (th == 0) th = env_hash_name(tname);

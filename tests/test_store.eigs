@@ -379,4 +379,106 @@ if file_exists of "/tmp/eigs1006_update.db":
 if file_exists of "/tmp/test_eigenstore.db":
     remove_file of "/tmp/test_eigenstore.db"
 
+# --- #1758 R1.6b: N5 keys, N14 boxed decode, and owned rejection paths ---
+define r16b_store_expect_error(action, kind, label) as:
+    local caught is false
+    try:
+        action of null
+    catch e:
+        assert_true of [e.kind == kind, label + ": error kind"]
+        caught is true
+    assert_true of [caught, label + ": must raise"]
+
+
+define r16b_store_boxed_checks(path) as:
+    if file_exists of path:
+        remove_file of path
+    local big is 9007199254740993
+    local low is -9223372036854775807 - 1
+    local high is 9223372036854775807
+    local changed is big + 2
+    assert_true of [(num_type of big) == "int", "boxed big operand kind"]
+    assert_true of [(num_type of low) == "int", "boxed minimum operand kind"]
+    assert_true of [(num_type of high) == "int", "boxed maximum operand kind"]
+    assert_true of [(num_type of changed) == "int", "boxed replacement operand kind"]
+
+    local s is store_open of path
+    for key in [big, low, high, 0]:
+        local record is {"_id": str of key, "key": key, "n": big, "values": [low, big, high], "heap": {"message": "owned payload", "n": big}, "f": 2.5}
+        local written is store_put of [s, "c", record]
+        assert_true of [written == (str of key), "exact explicit key written"]
+        local loaded is store_get of [s, "c", key]
+        assert_true of [loaded != null, "exact int64 numeric key found"]
+        assert_true of [(num_type of loaded.key) == "int", "decoded key field kind"]
+        assert_true of [loaded.key == key, "decoded key field exact"]
+        assert_true of [(num_type of loaded.n) == "int", "decoded boxed field kind"]
+        assert_true of [loaded.n == big, "decoded boxed field exact"]
+        assert_true of [(num_type of loaded.values[0]) == "int", "nested minimum kind"]
+        assert_true of [(num_type of loaded.values[1]) == "int", "nested big kind"]
+        assert_true of [(num_type of loaded.values[2]) == "int", "nested maximum kind"]
+        assert_true of [loaded.values == [low, big, high], "nested boxed list exact"]
+        assert_true of [loaded.heap.message == "owned payload", "heap sibling preserved"]
+        assert_true of [(num_type of loaded.heap.n) == "int", "nested dict boxed kind"]
+        assert_true of [loaded.heap.n == big, "nested dict boxed value"]
+        assert_true of [(num_type of loaded.f) == "float", "fractional text stays float"]
+
+    local replacement is {"n": changed, "values": [big, low, high], "heap": "replacement payload"}
+    assert_true of [store_update of [s, "c", big, replacement], "boxed-key update succeeds"]
+    local after_update is store_get of [s, "c", big]
+    assert_true of [(num_type of after_update.n) == "int", "updated boxed result kind"]
+    assert_true of [after_update.n == changed, "updated boxed result exact"]
+    assert_true of [after_update.heap == "replacement payload", "updated heap field"]
+
+    # N5's post-raise payload is zero. Check that reader refusals leave a real
+    # zero-key record intact and do not modify the update argument.
+    local rejected is {"n": big, "values": [low, high], "heap": "must stay owned"}
+    r16b_store_expect_error of [() => store_get of [s, "c", 0.5], "value", "fractional get"]
+    r16b_store_expect_error of [() => store_delete of [s, "c", 0.5], "value", "fractional delete"]
+    r16b_store_expect_error of [() => store_update of [s, "c", 0.5, rejected], "value", "fractional update"]
+    assert_true of [(len of rejected) == 3, "fractional update does not add _id"]
+    assert_true of [(store_get of [s, "c", 0]).heap.message == "owned payload", "zero-key sentinel survives reader raises"]
+    assert_true of [(store_get of [s, "c", big]).n == changed, "boxed record survives reader raises"]
+    assert_true of [(store_count of [s, "c"]) == 4, "reader raises leave collection intact"]
+
+    local outside is 9223372036854775808.0
+    assert_true of [(num_type of outside) == "float", "out-of-int64 operand is a float"]
+    r16b_store_expect_error of [() => store_get of [s, "c", outside], "value", "out-of-range get"]
+    r16b_store_expect_error of [() => store_delete of [s, "c", outside], "value", "out-of-range delete"]
+    r16b_store_expect_error of [() => store_update of [s, "c", outside, rejected], "value", "out-of-range update"]
+    assert_true of [(len of rejected) == 3, "out-of-range update does not add _id"]
+    assert_true of [(store_get of [s, "c", 0]).n == big, "zero-key sentinel survives range raises"]
+
+    # Rejection after store_update has entered the replacement path must release
+    # all heap arguments and restore the record containing boxed integer values.
+    r16b_store_expect_error of [() => store_update of [s, "c", big, ["wrong record type", big]], "type_mismatch", "boxed-key wrong record"]
+    local oversized is ""
+    for i in range of 420:
+        oversized is oversized + "xxxxxxxxxx"
+    r16b_store_expect_error of [() => store_update of [s, "c", big, {"n": big, "body": oversized}], "limit", "boxed-key oversized replacement"]
+    assert_true of [(store_get of [s, "c", big]).n == changed, "failed replacement restores boxed record"]
+    assert_true of [(store_count of [s, "c"]) == 4, "failed replacement loses no row"]
+
+    # b-written catalog ints must survive f's unchanged open/close loader and
+    # feed b's exact root/next_id readers on later generated-id writes.
+    assert_true of [(store_put of [s, "auto", {"n": big}]) == "1", "first auto id"]
+    assert_true of [(store_put of [s, "auto", {"n": high}]) == "2", "second auto id"]
+    store_close of s
+    s is store_open of path
+    assert_true of [(store_put of [s, "auto", {"n": low}]) == "3", "auto id after catalog decode"]
+    assert_true of [(store_get of [s, "auto", 3.0]).n == low, "integral float key succeeds after reopen"]
+    local rows is store_query of [s, "c"]
+    assert_true of [(len of rows) == 4, "query returns all owned records"]
+    for row in rows:
+        assert_true of [(num_type of row.n) == "int", "query boxed result kind"]
+        assert_true of [(num_type of row.values[0]) == "int", "query nested boxed result kind"]
+    assert_true of [store_delete of [s, "c", big], "boxed-key delete succeeds"]
+    assert_true of [(store_get of [s, "c", big]) == null, "boxed-key record was deleted"]
+    assert_true of [not (store_delete of [s, "c", big]), "boxed-key delete miss"]
+    assert_true of [(store_get of [s, "c", low]).key == low, "minimum key survives neighbour deletion"]
+    assert_true of [(store_get of [s, "c", high]).key == high, "maximum key survives neighbour deletion"]
+    store_close of s
+    remove_file of path
+
+r16b_store_boxed_checks of "/tmp/eigs1758_r16b_boxed_store.db"
+
 test_summary of null

@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: gfx_text_width (int-preserving, Q7 magnitude; pixel width; the scale rounds, a scale the C int cannot hold raises (bitmap font)); phase2-exercises: {"q7":["magnitude"]}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is gfx_text_width of ["abc", 2]
+print of [a, nt of a]
+print of (gfx_text_width of ["abc", 1.6])
+try:
+    print of ["huge-scale-answer", gfx_text_width of ["abc", 3e9]]
+catch e:
+    print of ["scale-magnitude", e.kind]
+print of (gfx_text_width of "abcd")

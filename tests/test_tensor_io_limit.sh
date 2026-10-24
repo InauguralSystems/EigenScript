@@ -60,7 +60,7 @@ else
     exit "$rc"
 fi
 
-# Format v7 records only a tensor header verdict, not payload bytes.  Replay
+# Format v8 records only a tensor header verdict, not payload bytes.  Replay
 # consumes that verdict for tape alignment and then refuses before fopen; the
 # following env_get proves the next observation remains aligned.
 cat >"$tmp/replay.eigs" <<EOF

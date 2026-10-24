@@ -11,7 +11,7 @@ Replay is an **rr-style, side-effect-free execution**. Every filesystem read
 reachable from a running program is either served by the tape or refused
 before the read. Source read by `import` and `load_file`, ordinary file
 readers, hashes, directory queries, and process/network input are taped.
-Reads whose payload is not represented in format v7—tensor checkpoints,
+Reads whose payload is not represented in format v8—tensor checkpoints,
 font and music assets, HTTP static serving, stores, and databases—are refused;
 replay never falls back to a live file. Model checkpoints are the exception:
 the verdict of `eigen_model_load` or `eigen_checkpoint_info` is taped, their
@@ -89,7 +89,7 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 7 0.46.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 8 0.46.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
@@ -242,8 +242,12 @@ identity: `what is x at N`, `e.line` and error headers.
 `N` records are written with full fidelity so they can be parsed back
 into real values on replay:
 
-- Numbers and `null` are written verbatim; a bool is written `true` or
-  `false` and read back as a bool (format v6, #1637).
+- Ints are exact signed decimal digits; floats retain a decimal point or
+  exponent (`3.0`, `-0.0`, `1e+300`) so replay preserves the numeric kind
+  (format v8, #1758). An out-of-range int digit token is malformed rather
+  than rounded through a double. Version 6 tapes are refused by the format
+  check; re-record them with this binary. `null` is written verbatim; a bool
+  is written `true` or `false` and read back as a bool (#1637).
 - Strings are double-quoted; `\"`, `\\`, `\n`, `\r` are escaped, other
   control/non-printable bytes become `\xNN`.
 - Lists and dicts are emitted recursively: `[1, 2, 3]`,
@@ -287,7 +291,7 @@ perspective lands on the tape as an `N` record:
   otherwise-impossible result shapes and re-raises the
   identical error without live filesystem access. The fixed-cap readers
   `read_text`, `read_bytes`, and `read_bytes_buf` instead record an over-cap
-  file's observed size as a `VAL_NUM` `N` record and reconstruct the error
+  file's observed size as a `VAL_INT` `N` record and reconstruct the error
   containing both size and active cap. Empty files remain ordinary successful
   empty string/list/buffer records.
   Mutating file builtins return their taped success value or re-raise their
@@ -804,9 +808,11 @@ everywhere else in the runtime (version-and-reject, never migrate).
   answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
   on a v6 binary would hand a number where the program now gets a bool; it is
   refused instead (covered by the existing replay kind-validation cases in
-  `tests/test_replay.sh`). **v7** (#1885) adds metadata plus bounded chunk records for `import` and
-  `load_file` source, making module acquisition replayable without live reads.
-  Within a v7 tape, replay also refuses a recorded value of a kind its builtin cannot
+  `tests/test_replay.sh`). **v8** combines Phase2's int digit tokens and integral-float `.0`
+  markers (#1758) with main's chunked module-source records (#1885).
+  The two branches previously assigned different meanings to v7; neither
+  v7 format can establish both contracts. Every older format, including
+  either v7, is refused by replay, stepping and DAP. Within a current-format tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return
   kinds in one table (`k_tape_kinds` in `src/trace.c`; for example

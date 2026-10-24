@@ -1,0 +1,22 @@
+# R1.6 behaviour-table probe: inflate (int-requiring; byte values: N5, then 0..255 (Q1); PROFILE zlib (make zlib)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":5}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    r is inflate of [203, 200, 4, 0]
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0
+print of (str_from_bytes of r)
+print of [r, nt of r[0]]
+try:
+    print of ["fraction-answer", inflate of [203.5, 200, 4, 0]]
+catch e:
+    print of ["byte-fraction", e.kind]
+try:
+    print of ["459-answer", inflate of [459, 200, 4, 0]]
+catch e:
+    print of ["byte-459", e.kind]
+print of (str_from_bytes of (inflate of [203.0, 200.0, 4.0, 0.0]))

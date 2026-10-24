@@ -1,0 +1,14 @@
+# ROW: N4.compound-floordiv
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+x is -7
+x //= 2
+d is {"x": 7.5}
+d.x //= -2
+xs is [7, -7.5]
+xs[0] //= -2
+xs[1] //= 2
+print of [x, d.x, xs, num_type of x, num_type of d.x]

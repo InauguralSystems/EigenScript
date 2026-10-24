@@ -32,22 +32,20 @@ assert_eq of [bit_and of [unlocked, 1], 1, "bitmask bit 0 set"]
 assert_eq of [bit_and of [unlocked, 2], 0, "bitmask bit 1 clear"]
 assert_eq of [bit_and of [unlocked, 4], 4, "bitmask bit 2 set"]
 
-# Shift amount masking — out-of-range shifts are defined, not UB
-# int64 semantics (aligned with the infix operators): counts are real
-# up to 63 — the old int32-era &31 masking (1<<32 == 1) is gone.
-assert_eq of [bit_shl of [1, 32], 4294967296, "SHL 1 << 32 is 2^32 (int64, no 31-masking)"]
-assert_eq of [bit_shl of [1, 33], 8589934592, "SHL 1 << 33 is 2^33"]
-assert_eq of [bit_shr of [8, 35], 0, "SHR 8 >> 35 shifts out to 0"]
-
-# Out-of-range shift COUNTS are defined (masked & 63), not C UB — for BOTH the
-# infix operators and the bit_* builtins. Count 64 == count 0 (64 & 63 == 0),
-# count 65 == count 1, count 100 == count 36. Without the mask the infix path
-# was undefined behavior (only untested counts kept UBSan quiet).
-assert_eq of [1 << 64, 1, "infix << 64 masks to << 0 (defined, not UB)"]
-assert_eq of [1 << 65, 2, "infix << 65 masks to << 1"]
-assert_eq of [1 << 100, 68719476736, "infix << 100 masks to << 36 == 2^36"]
-assert_eq of [bit_shl of [1, 64], 1, "bit_shl count 64 masks to 0 (matches infix)"]
-assert_eq of [256 >> 64, 256, "infix >> 64 masks to >> 0"]
+# N8: Lua 5.4 counts outside (-64,64) yield zero; negatives reverse.
+assert_eq of [bit_shl of [1, 32], 4294967296, "N8 count 32"]
+assert_eq of [bit_shl of [1, 33], 8589934592, "N8 count 33"]
+assert_eq of [bit_shr of [8, 35], 0, "N8 shifts out to zero"]
+assert_eq of [1 << 64, 0, "N8 << 64 is zero"]
+assert_eq of [1 << 65, 0, "N8 << 65 is zero"]
+assert_eq of [1 << 100, 0, "N8 << 100 is zero"]
+assert_eq of [bit_shl of [1, 64], 0, "N8 builtin << 64 is zero"]
+assert_eq of [256 >> 64, 0, "N8 >> 64 is zero"]
+assert_eq of [-1 >> 1, 9223372036854775807, "N8 logical right shift"]
+assert_eq of [8 >> -1, 16, "N8 negative right count shifts left"]
+assert_eq of [-1 << -1, 9223372036854775807, "N8 negative left count shifts logically right"]
+assert_eq of [1 >> -64, 0, "N8 negative wide count is zero"]
+assert_eq of [1 << (-9223372036854775807 - 1), 0, "N8 minimum count cannot overflow"]
 
 # Type safety — non-numeric args raise (strict error model, not UB, not 0).
 # Builtins:
@@ -181,22 +179,22 @@ assert_eq of [bw_raise of ["bit_shr", 1, big], "value", "bit_shr of [1, 1e30] ra
 assert_eq of [bw_raise of ["bit_not", 1.5, 0], "value", "bit_not of 1.5 raises value"]
 assert_eq of [bw_raise of ["bit_not", 9223372036854775808, 0], "value", "bit_not of 2^63 raises value"]
 # Exact integers at the edges stay valid, unchanged from #1739.
-int64_min is -9223372036854775808
+int64_min is -9223372036854775808.0
 assert_eq of [bw_raise of ["|", int64_min, 0], "no raise", "-2^63 | 0 is valid"]
 assert_eq of [int64_min | 0, int64_min, "-2^63 | 0 returns itself"]
 assert_eq of [bit_or of [int64_min, 0], int64_min, "bit_or of [-2^63, 0] returns itself"]
 assert_eq of [9223372036854774784 | 0, 9223372036854774784, "largest double below 2^63 is valid"]
-assert_eq of [~int64_min, 9223372036854775807, "~(-2^63) is INT64_MAX"]
+# N8 retires the float result bridge; all 64 result bits survive.
+assert_eq of [~int64_min, 9223372036854775807, "N8 complement is exact int64"]
 assert_eq of [(0 - 0) | 0, 0, "zero is valid"]
 assert_eq of [(0 - 1) << 1, 0 - 2, "SHL of a negative is defined (unsigned shift)"]
 assert_eq of [bit_shl of [0 - 1, 1], (0 - 1) << 1, "bit_shl matches infix on a negative"]
-assert_eq of [1 << (0 - 1), int64_min, "a negative exact count is masked & 63"]
+assert_eq of [1 << (0 - 1), 0, "N8 negative exact count reverses direction"]
 
-# --- JIT tier: the native path must raise exactly where the VM does ---
-# Each callee is called > EIGS_JIT_ENTRY_THRESHOLD (50) times with integers
-# first, so its thunk exists before a non-integer operand arrives; the OSR
-# loop runs past EIGS_JIT_OSR_THRESHOLD (5000) back-edges before its bad
-# iteration. tools/jit_diff.sh runs this file JIT-off, default and forced OSR.
+# --- All execution settings must raise exactly where the VM does ---
+# R1.3 intentionally scanner-refuses these operators until R5. The hot
+# entry/OSR scaffolds below verify interpreted fallback in each setting;
+# Phase 2's ctl.scan.* rows independently witness the scanner refusals.
 define hot_or(a, b) as:
     return a | b
 define hot_shl(a, b) as:
@@ -291,5 +289,24 @@ assert_eq of [osr[1], osr_oracle of 8000, "OSR loop state at the raise equals th
 osr_ok is osr_loop of [9000, 0 - 1]
 assert_eq of [osr_ok[0], 9000, "OSR loop with exact integers completes"]
 assert_eq of [osr_ok[1], osr_oracle of 9000, "OSR loop with exact integers equals the builtin oracle"]
+
+# N8: boxed operands, boxed results, and both operand positions on raises.
+define n8_keep(x) as:
+    define n8_inner(dummy) as:
+        return x
+    return n8_inner
+for n8_big in [9007199254740993, 9223372036854775807, (-9223372036854775807 - 1)]:
+    for n8_op in ["&", "|", "^", "<<", ">>", "~", "bit_and", "bit_or", "bit_xor", "bit_shl", "bit_shr", "bit_not"]:
+        if n8_op != "~" and n8_op != "bit_not":
+            assert_eq of [bw_raise of [n8_op, n8_big, 0.5], "value", "N8 boxed lhs released on count/value raise"]
+        assert_eq of [bw_raise of [n8_op, 0.5, n8_big], "value", "N8 boxed rhs released on lhs raise"]
+    n8_box is n8_big | 0
+    n8_holder is {"values": [n8_box, ~n8_big, bit_or of [n8_big, 0]]}
+    n8_closure is n8_keep of n8_holder.values[0]
+    assert_eq of [n8_closure of null, n8_big, "N8 boxed bitwise result survives containers and closure"]
+    for n8_value in n8_holder.values:
+        assert_eq of [num_type of n8_value, "int", "N8 boxed result kind"]
+for n8_value in [6 & 3, 6 | 3, 6 ^ 3, ~0, 1 << 63, -1 >> 1, bit_and of [6, 3], bit_or of [6, 3], bit_xor of [6, 3], bit_not of 0, bit_shl of [1, 63], bit_shr of [-1, 1], 3.0 & 1.0]:
+    assert_eq of [num_type of n8_value, "int", "N8 every operator and builtin returns int"]
 
 test_summary of null

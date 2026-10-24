@@ -1,0 +1,5 @@
+{"ok": true, "result": 7}
+["iterations-fraction", "value"]
+{"ok": true, "result": 7}
+[false, "type_mismatch", "int"]
+rc=0

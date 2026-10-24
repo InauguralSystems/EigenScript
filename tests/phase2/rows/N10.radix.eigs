@@ -1,0 +1,12 @@
+# ROW: N10.radix
+# ITEMS: N10
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of [num of "0x1F", num of "0X1f"]
+for text in ["0b101", "0o17"]:
+    try:
+        print of (num of text)
+    catch e:
+        print of e.kind

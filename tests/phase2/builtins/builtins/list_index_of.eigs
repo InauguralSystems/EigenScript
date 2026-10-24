@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: list_index_of (int-preserving; returns an index; equality via values_equal (N2))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is list_index_of of [[9007199254740992, 9007199254740993], 9007199254740993]
+print of [a, nt of a]
+b is list_index_of of [[1, 2.0, 3], 2]
+print of [b, nt of b]
+c is list_index_of of [[1, 2], 5]
+print of [c, nt of c]

@@ -59,6 +59,21 @@ so the corpus watches their convergence *counts* but not their *results*. When
 `dynamics` next refreshes `solve.eigs` it should print the elements (or
 `buf_to_list`) so the numeric signal comes back.
 
+## Local edit note (#1758 R1.3, 2026-10-19)
+
+`iLambdaAi__test_halting_descent` differs from its source (iLambdaAi `246bd9a`,
+`eigenscript_native/tests/test_halting_descent.eigs`) in two lines: `x is 10`
+became `x is 10.0`. Since #1758 R1.3, `10` is an int literal and int `*` raises
+`value` on int64 overflow (decision (A)), so the source's runaway doubling stops
+with `integer overflow in '*'` after about 60 doublings instead of saturating at
+`1e308`. The source relied on its int silently becoming a float; `10.0` is the
+literal its author must write under (A). This row pins the observer's reading of
+a doubling sequence; overflow belongs to the N3/(A) rows of
+`tests/phase2/MAP.md`. **The golden is unchanged**: byte-identical with the edit
+in the interpreter, the default JIT and forced OSR, which is the proof that the
+observer's reading did not move. Re-vendoring from `246bd9a` would undo the edit;
+take the source's own fix when it lands, or keep this one.
+
 ## Sources (same-owner repos; vendored with provenance)
 - **dynamics** — `solve`/`physics`/`life`: real solvers and trajectory demos
   using `report`, the six predicates, `unobserved`, and `prev`.

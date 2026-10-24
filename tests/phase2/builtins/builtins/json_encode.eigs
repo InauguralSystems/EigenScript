@@ -1,0 +1,7 @@
+# R1.6 behaviour-table probe: json_encode (other, LOSS; N13/N14 encoder; int arm exact since R1.2a; float text R1.7)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (json_encode of [3, 9007199254740993, 9223372036854775807, -9223372036854775807 - 1, 2.5, 3.0, {"k": 9007199254740993}])

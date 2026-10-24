@@ -1,0 +1,35 @@
+# R1.6 behaviour-table probe: gfx_fb (int-requiring, Q7 geometry; w and h by N5, palette bytes by the Q1 byte reader, the destination rect clipped in float space); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"q7":["geometry"],"integral-float-success":{"stdout-line":4}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+ok is gfx_open of [64, 48, "r16"]
+print of ["open", ok]
+gfx_clear of [0, 0, 0]
+gfx_clear of [255, 0, 0]
+fb is buf_from_list of [0, 1, 2, 3]
+gfx_fb of [fb, 2, 2, 0, 0, 1]
+print of [gfx_read of [0, 0], gfx_read of [1, 0], gfx_read of [0, 1], gfx_read of [1, 1], gfx_read of [2, 0]]
+try:
+    gfx_fb of [fb, 2.5, 2, 0, 0, 1]
+    print of "w fraction accepted"
+catch e:
+    print of ["w-fraction", e.kind]
+gfx_clear of [255, 0, 0]
+gfx_fb of [fb, 2.0, 2.0, 0, 0, 1]
+print of [gfx_read of [1, 1], gfx_read of [2, 0]]
+try:
+    gfx_fb of [buf_from_list of [300, 0, 0, 0], 2, 2, 0, 0, 1]
+    print of "byte 300 accepted"
+catch e:
+    print of ["byte-300", e.kind]
+try:
+    gfx_fb of [buf_from_list of [1.5, 0, 0, 0], 2, 2, 0, 0, 1]
+    print of "byte fraction accepted"
+catch e:
+    print of ["byte-fraction", e.kind]
+gfx_clear of [255, 0, 0]
+gfx_fb of [buf_from_list of ([3]), 1, 1, -3e9, -3e9, 6e9]
+print of [gfx_read of [0, 0], gfx_read of [32, 24], gfx_read of [63, 47]]
+gfx_close of null

@@ -1,0 +1,8 @@
+# ROW: N14.decode-kinds
+# ITEMS: N14
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+v is json_decode of "[3, 3.0, 9223372036854775807, 18446744073709551615]"
+print of [num_type of v[0], num_type of v[1], v[2], num_type of v[3]]

@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: buf_mix (float-producing; float storage; offsets and counts by N5 (Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+d is buf_from_list of [1, 1]
+s is buf_from_list of [2, 4]
+buf_mix of [d, s, 0, 0, 2, 0.5]
+print of [d[0], d[1], nt of d[0]]
+try:
+    buf_mix of [d, s, 0.5, 0, 1, 1]
+    print of ["fraction accepted", d[0]]
+catch e:
+    print of ["offset-fraction", e.kind]
+buf_mix of [d, s, 1.0, 0.0, 1.0, 1]
+print of [d[0], d[1]]

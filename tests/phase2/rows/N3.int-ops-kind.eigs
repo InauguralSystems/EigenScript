@@ -1,0 +1,7 @@
+# ROW: N3.int-ops-kind
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [num_type of (2 + 3), num_type of (7 - 9), num_type of (6 * 7), num_type of (2 + 0.5)]

@@ -254,9 +254,9 @@ static uint64_t sched_rng_next(TaskScheduler *s) {
  * the scheduler exists so the seed sticks even when set before the first
  * task_spawn. The interleaving stays deterministic — a DST varies the seed to
  * explore different interleavings, each fully reproducible. */
-void task_sched_set_seed(double seed) {
+void task_sched_set_seed(int64_t seed) {
     TaskScheduler *s = sched_ensure();
-    s->rng_state = (uint64_t)(int64_t)seed;   /* integer seeds; fractions truncate */
+    s->rng_state = (uint64_t)seed;   /* N5 validated by task_sched_seed */
     s->seeded = 1;
 }
 
@@ -686,7 +686,7 @@ static void task_error_summary(Value *ev, char *out, size_t cap) {
     if (msg && msg->type == VAL_STR) {
         Value *line = dict_get_view(ev, "line", &lv);
         /* The checking accessor (#1637): the type is proven, so it cannot raise. */
-        double ln = (line && line->type == VAL_NUM) ? eigs_num_arg(line, __func__) : 0;
+        double ln = (line && val_is_number(line)) ? eigs_num_arg(line, __func__) : 0;
         if (ln > 0)
             snprintf(out, cap, "line %.0f: %s", ln, msg->data.str);
         else

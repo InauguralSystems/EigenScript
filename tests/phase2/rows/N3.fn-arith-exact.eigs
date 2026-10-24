@@ -1,0 +1,16 @@
+# ROW: N3.fn-arith-exact
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop f MUL
+# OPS: MUL
+define f(a, b) as:
+    t is a * b
+    u is t + a
+    return u - b
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is f of [94906267, 94906267]
+    i is i + 1.0
+print of r

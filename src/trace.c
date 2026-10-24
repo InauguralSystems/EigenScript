@@ -13,7 +13,7 @@
  *   O <stream> win <name> <n>   per-binding observer window override (v3)
  *
  * Value encoding:
- *   <num>          numeric (immediate, tracked, or heap VAL_NUM)
+ *   <num>          numeric (immediate, tracked, or heap VAL_FLOAT)
  *   null           VAL_NULL / immediate null slot
  *   true|false
  *   "<str…>"       heap string, content truncated at TRACE_STR_MAX
@@ -739,7 +739,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         long long count = 0;
         for (int i = 0; i < e->lc_count && e->lc[i].line <= line; i++)
             count += e->lc[i].count;
-        *out = slot_from_num((double)count);
+        *out = slot_from_f64((double)count);
         return 1;
     }
 
@@ -754,7 +754,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         double r = (kind == 3) ? h->entropy
                  : (kind == 4) ? h->dH
                  : observer_settledness(h->dH);   /* #412: how = f(dH) */
-        *out = slot_from_num(r);
+        *out = slot_from_f64(r);
         return 1;
     }
 
@@ -803,7 +803,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
      * answerable without the entry, so it too only needs the range check. */
     if (kind == 2) {
         if (ordinal < 1 || ordinal > e->occ_total) return TRACE_WHEN_MISS;
-        *out = slot_from_num((double)ordinal);
+        *out = slot_from_f64((double)ordinal);
         return TRACE_WHEN_HIT;
     }
 
@@ -824,7 +824,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
         double r = (kind == 3) ? o->entropy
                  : (kind == 4) ? o->dH
                  : observer_settledness(o->dH);   /* #412: how = f(dH) */
-        *out = slot_from_num(r);
+        *out = slot_from_f64(r);
         return TRACE_WHEN_HIT;
     }
 
@@ -1924,7 +1924,7 @@ static void replay_malformed_value(const char *value) {
  * API declare their kinds with eigs_trace_declare_kind; a name in neither
  * table is refused at replay. Bits are ValType (TK below). */
 #define TK(t) (1u << (t))
-#define TK_NUM_  TK(VAL_NUM)
+#define TK_NUM_  (TK(VAL_FLOAT) | TK(VAL_INT))
 #define TK_STR_  TK(VAL_STR)
 #define TK_BOOL_ TK(VAL_BOOL)
 #define TK_NULL_ TK(VAL_NULL)
@@ -2031,7 +2031,9 @@ static unsigned replay_expected_kinds(const char *fn) {
 
 /* "a bool", "a list or null" */
 static void kinds_text(unsigned kinds, char *buf, size_t n) {
-    static const ValType order[] = {VAL_NUM, VAL_STR, VAL_BOOL, VAL_LIST, VAL_DICT,
+    /* Both numeric kinds have the one surface name, num. */
+    if (kinds & TK(VAL_INT)) kinds |= TK(VAL_FLOAT);
+    static const ValType order[] = {VAL_FLOAT, VAL_STR, VAL_BOOL, VAL_LIST, VAL_DICT,
                                     VAL_BUFFER, VAL_NULL};
     size_t used = 0; int first = 1;
     buf[0] = '\0';
@@ -2282,7 +2284,8 @@ static int unescape_string(const char **p, char *out, int out_cap) {
  *
  * Recognized shapes:
  *   null | true | false              immediates
- *   <num>                            strtod-parseable
+ *   <int digits>                     exact signed int64, no decimal point
+ *   <float>                          decimal point or exponent marks its kind
  *   "<str>"                          escapes per unescape_string
  *   [v, v, …]                        list
  *   b[num, num, …]                   buffer (the leading 'b' disambiguates
@@ -2424,6 +2427,29 @@ static Value *parse_value_p(const char **p) {
      * not replayable. Caller falls back to live source. */
     if (c == '<' || (unsigned char)c == 0xE2) return NULL;
 
+    /* v8: a decimal digit token without a point/exponent is an int. Parse
+     * its magnitude exactly, including INT64_MIN, without routing through a
+     * double (9007199254740993 must retain its low bit on replay). */
+    const char *digits = *p;
+    int negative = *digits == '-';
+    if (negative) digits++;
+    const char *end_digits = digits;
+    while (*end_digits >= '0' && *end_digits <= '9') end_digits++;
+    if (end_digits != digits && at_token_boundary(*end_digits)) {
+        uint64_t limit = negative ? UINT64_C(9223372036854775808)
+                                  : UINT64_C(9223372036854775807);
+        uint64_t magnitude = 0;
+        for (const char *q = digits; q != end_digits; q++) {
+            unsigned digit = (unsigned)(*q - '0');
+            if (magnitude > (limit - digit) / 10) return NULL;
+            magnitude = magnitude * 10 + digit;
+        }
+        int64_t i = negative
+                  ? -(int64_t)(magnitude - (magnitude != 0)) - (magnitude != 0)
+                  : (int64_t)magnitude;
+        *p = end_digits;
+        return make_int(i);
+    }
     char *end = NULL;
     double d = strtod(*p, &end);
     /* A genuine recording cannot contain NaN or infinity: num_guard rejects
@@ -2431,8 +2457,9 @@ static Value *parse_value_p(const char **p) {
      * corrupt token at the common tape parser boundary, rather than exposing
      * it to consumers (some of which legitimately convert numbers to C
      * integer types).  Returning NULL selects replay_malformed_value(), whose
-     * diagnostic names the offending serialized value. */
-    if (end == *p || !isfinite(d)) return NULL;
+     * diagnostic names the offending serialized value. Phase 2's non-finite
+     * tape tokens are scheduled in docs/design/phase2-numbers.md §8, R2.5. */
+    if (end == *p || !at_token_boundary(*end) || !isfinite(d)) return NULL;
     *p = end;
     return make_num(d);
 }
@@ -2728,7 +2755,7 @@ int trace_source_record(const char *kind, const char *source, size_t size,
         Value *meta = make_list(3);
         list_append_owned(meta, make_bool(0));
         list_append_owned(meta, make_str(message));
-        list_append_owned(meta, make_num(0));
+        list_append_owned(meta, make_int(0));
         trace_nondet_value(kind, meta);
         val_decref(meta);
         rt_error(EK_IO, 0, "%s", message);
@@ -2737,7 +2764,7 @@ int trace_source_record(const char *kind, const char *source, size_t size,
     Value *meta = make_list(3);
     list_append_owned(meta, make_bool(error == NULL));
     list_append_owned(meta, make_str(error ? error : (identity ? identity : "")));
-    list_append_owned(meta, make_num(error ? 0.0 : (double)size));
+    list_append_owned(meta, make_int(error ? 0 : (int64_t)size));
     trace_nondet_value(kind, meta);
     val_decref(meta);
     if (error) return 1;
@@ -2761,24 +2788,34 @@ int trace_source_replay(const char *kind, char **source, long *size,
     if (!trace_replay_take(kind, &meta)) return -1;
     if (!meta || meta->type != VAL_LIST || meta->data.list.count != 3 ||
         list_elem_type(meta, 0) != VAL_BOOL || list_elem_type(meta, 1) != VAL_STR ||
-        list_elem_type(meta, 2) != VAL_NUM) {
+        (list_elem_type(meta, 2) != VAL_INT && list_elem_type(meta, 2) != VAL_FLOAT)) {
         val_decref(meta);
         rt_error(EK_IO, 0, "%s: malformed source record", kind);
         return -1;
     }
     int ok = list_get_ref(meta, 0)->data.boolean;
     const char *detail = list_get_ref(meta, 1)->data.str;
-    double taped_size = eigs_slot_elem_num(list_slot(meta, 2), __func__);
+    /* v8 metadata counts are exact ints. A float is refused with the
+     * existing numeric-size diagnostic, including an integral float. */
+    if (list_elem_type(meta, 2) != VAL_INT) {
+        double bad_size = 0.0;
+        slot_f64_value(list_slot(meta, 2), &bad_size);
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s: invalid source size %.17g (maximum %u)",
+                 kind, bad_size, TRACE_SOURCE_MAX);
+        return -1;
+    }
+    int64_t taped_size = 0;
+    slot_int_value(list_slot(meta, 2), &taped_size);
     if (!ok) {
         *error = xstrdup(detail);
         val_decref(meta);
         return 1;
     }
-    if (!isfinite(taped_size) || taped_size < 0 ||
-        taped_size > (double)TRACE_SOURCE_MAX || taped_size != floor(taped_size)) {
+    if (taped_size < 0 || taped_size > TRACE_SOURCE_MAX) {
         val_decref(meta);
         rt_error(EK_IO, 0, "%s: invalid source size %.17g (maximum %u)",
-                 kind, taped_size, TRACE_SOURCE_MAX);
+                 kind, (double)taped_size, TRACE_SOURCE_MAX);
         return -1;
     }
     long n = (long)taped_size;
@@ -2935,12 +2972,36 @@ static void write_string(const char *s) {
     tp_putc('"');
 }
 
+/* Tape float spelling is independent of ordinary display (N6, R1.7). The
+ * point/exponent is the v8 kind marker: integral floats, including negative
+ * zero, must never replay as ints. %.17g preserves the exact double bits. */
+static void tape_float_text(char *buf, size_t nbuf, double n) {
+    snprintf(buf, nbuf, "%.17g", n);
+    if (isfinite(n) && !strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E')) {
+        size_t used = strlen(buf);
+        if (used + 2 < nbuf) memcpy(buf + used, ".0", 3);
+    }
+}
+
+static void write_float(double n) {
+    char buf[32];
+    tape_float_text(buf, sizeof buf, n);
+    tp_puts(buf);
+}
+
+static void write_int(int64_t n) {
+    char buf[32];
+    eigs_int_text(buf, sizeof buf, n);
+    tp_puts(buf);
+}
+
 /* Format a heap or tracked Value*. Numeric heap values unwrap to their
  * number; collections show their size for at-a-glance scanning. */
 static void write_value_ptr(Value *v) {
     if (!v) { tp_puts("null"); return; }
     switch (v->type) {
-        case VAL_NUM:          tp_printf("%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_FLOAT:       write_float(VAL_F64_RAW(v)); break;
+        case VAL_INT:         write_int(VAL_I64_RAW(v)); break;
         case VAL_NULL:         tp_puts("null"); break;
         case VAL_STR:          write_string(v->data.str); break;
         case VAL_LIST:         tp_printf("<list:%d>", v->data.list.count); break;
@@ -2956,11 +3017,12 @@ static void write_value_ptr(Value *v) {
 }
 
 static void write_slot(EigsSlot s) {
-    if (slot_is_num(s))  { tp_printf("%.17g", SLOT_NUM_RAW(s)); return; }
+    if (slot_is_f64(s))  { write_float(SLOT_F64_RAW(s)); return; }
     if (slot_is_null(s)) { tp_puts("null"); return; }
     if (slot_is_bool(s)) { tp_puts(slot_as_bool(s) ? "true" : "false"); return; }
     if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
-    tp_puts("<unknown>");
+    if (slot_is_smi(s))  { write_int(slot_smi_val(s)); return; }
+    eigs_slot_refuse("write_slot", s);
 }
 
 static void trace_assign_ex(const char *name, EigsSlot value, int filtered,
@@ -3077,7 +3139,18 @@ static void write_value_ptr_full(Value *v, int *budget) {
     if (*budget <= 0) return;
     if (!v) { wf_puts("null", budget); return; }
     switch (v->type) {
-        case VAL_NUM:  wf_printf(budget, "%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_FLOAT: {
+            char buf[32];
+            tape_float_text(buf, sizeof buf, VAL_F64_RAW(v));
+            wf_puts(buf, budget);
+            break;
+        }
+        case VAL_INT: {
+            char buf[32];
+            eigs_int_text(buf, sizeof buf, VAL_I64_RAW(v));
+            wf_puts(buf, budget);
+            break;
+        }
         case VAL_NULL: wf_puts("null", budget); break;
         case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
         case VAL_STR:  write_string_full_len(v->data.str, val_str_len(v), budget); break;

@@ -1,0 +1,8 @@
+# R1.6 behaviour-table probe: matmul_bt (float-producing; float tensors)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is matmul_bt of [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
+print of [r, nt of r[0][0]]

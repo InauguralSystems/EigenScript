@@ -1,0 +1,151 @@
+# #1758 N4/N4b/Q6: exact floor arithmetic and owned boxed operands.
+load_file of "lib/test.eigs"
+
+assert_eq of [7 // 2, 3, "int floor division"]
+assert_eq of [-7 // 2, -4, "negative dividend floors"]
+assert_eq of [7 // -2, -4, "negative divisor floors"]
+assert_eq of [-7 // -2, 3, "two negatives"]
+assert_eq of [7 + 9 // 2 * 3, 19, "multiplicative precedence"]
+assert_eq of [24 / 3 // 2, 4, "multiplicative left associativity"]
+assert_eq of [num_type of (7 // 2), "int", "int quotient kind"]
+assert_eq of [num_type of (7.0 // 2), "float", "mixed quotient kind"]
+assert_eq of [num_type of (7 // 2.0), "float", "reverse mixed quotient kind"]
+assert_eq of [-7.5 // 2, -4, "float quotient floors"]
+assert_eq of [-7 % 3, 2, "N4 positive divisor remainder"]
+assert_eq of [7 % -3, -2, "N4 negative divisor remainder"]
+assert_eq of [-7.5 % 2, 0.5, "N4 float remainder"]
+assert_eq of [7.5 % -2, -0.5, "N4 negative float divisor"]
+assert_eq of [num_type of (7 % 3), "int", "int remainder kind"]
+assert_eq of [num_type of (7.0 % 3), "float", "mixed remainder kind"]
+assert_eq of [1e300 % 3.0, 0, "remainder without overflowing the quotient product"]
+
+# #1882: Python float_divmod rounds from fmod, including mixed operands.
+assert_eq of [1.0 // 0.1, 9.0, "decimal quotient boundary"]
+assert_eq of [1 // 0.1, 9.0, "mixed decimal quotient boundary"]
+assert_eq of [-1.0 // -0.1, 9.0, "negative decimal pair"]
+assert_eq of [7.5 // 0.1, 74.0, "fractional decimal quotient boundary"]
+assert_eq of [3.0 // -0.1, -30.0, "quotient snaps after floor correction"]
+assert_eq of [f64_to_bytes of (-0.0 // 2.0), [128, 0, 0, 0, 0, 0, 0, 0], "zero quotient takes negative ratio sign"]
+assert_eq of [f64_to_bytes of (-0.0 // -2.0), [0, 0, 0, 0, 0, 0, 0, 0], "zero quotient takes positive ratio sign"]
+assert_eq of [1e-300 // -1e300, -1.0, "negative quotient underflow floors"]
+assert_eq of [-1e-300 // 1e300, -1.0, "negative dividend underflow floors"]
+assert_eq of [num_type of (1 // 0.1), "float", "mixed boundary result kind"]
+rounding_target is 1.0
+rounding_target //= 0.1
+assert_eq of [rounding_target, 9.0, "compound decimal quotient boundary"]
+underflow_target is 1e-300
+underflow_target //= -1e300
+assert_eq of [underflow_target, -1.0, "compound quotient underflow"]
+
+# Independent small-number quotient oracle; identity and sign cover every
+# sign combination and exact multiples without permitting C truncation.
+a is -30
+loop while a <= 30:
+    b is -7
+    loop while b <= 7:
+        if b != 0:
+            q is a // b
+            rem is a % b
+            assert_eq of [q, floor of (a / b), "small quotient oracle"]
+            assert_eq of [q * b + rem, a, "division/modulo identity"]
+            assert of [rem == 0 or ((rem > 0) == (b > 0)), "divisor sign"]
+        b is b + 1
+    a is a + 1
+
+# Exact boxed int cases: generated from Python integer // and %, so no
+# float round-trip can agree accidentally above 2^53.
+assert_eq of [9007199254740993 // 3, 3002399751580331, "boxed quotient"]
+assert_eq of [9007199254740993 % 3, 0, "boxed remainder"]
+assert_eq of [-9007199254740993 // 3, -3002399751580331, "boxed quotient"]
+assert_eq of [-9007199254740993 % 3, 0, "boxed remainder"]
+assert_eq of [9223372036854775807 // -3, -3074457345618258603, "boxed quotient"]
+assert_eq of [9223372036854775807 % -3, -2, "boxed remainder"]
+assert_eq of [(-9223372036854775807 - 1) // 3, -3074457345618258603, "boxed quotient"]
+assert_eq of [(-9223372036854775807 - 1) % 3, 1, "boxed remainder"]
+assert_eq of [(-9223372036854775807 - 1) % -1, 0, "boxed remainder"]
+assert_eq of [1 // (-9223372036854775807 - 1), -1, "boxed quotient"]
+assert_eq of [1 % (-9223372036854775807 - 1), -9223372036854775807, "boxed remainder"]
+assert_eq of [-1 // 9223372036854775807, -1, "boxed quotient"]
+assert_eq of [-1 % 9223372036854775807, 9223372036854775806, "boxed remainder"]
+assert_eq of [(-9223372036854775807 - 1) // 9223372036854775807, -2, "boxed quotient"]
+assert_eq of [(-9223372036854775807 - 1) % 9223372036854775807, 9223372036854775806, "boxed remainder"]
+
+# Q6: the existing compound-assignment target machinery must carry //.
+x is -7
+x //= 2
+assert_eq of [x, -4, "name //="]
+d is {"x": 7.5}
+d.x //= -2
+assert_eq of [d.x, -4, "field //="]
+xs is [7, -7.5]
+xs[0] //= -2
+xs[1] //= 2
+assert_eq of [xs, [-4, -4], "index //="]
+assert_eq of [num_type of xs[1], "float", "compound float kind"]
+
+# Fresh boxed operands in success and catch paths. Repeated calls make a
+# missing decref measurable under LSan rather than hidden by live globals.
+define boxed(n) as:
+    return 9223372036854775807 - n
+# range still yields floats through R1.5. Use a VM int counter and pin
+# the fresh operand kind so an immediate float cannot hide a missing decref.
+k is 0
+loop while k < 80:
+    large is boxed of k
+    assert_eq of [num_type of large, "int", "ownership fixture is boxed int"]
+    assert of [large > 140737488355327, "ownership fixture exceeds the SMI range"]
+    assert_eq of [large % -1, 0, "boxed modulo special divisor"]
+    assert_eq of [large // 1, large, "boxed quotient retained"]
+    for op in ["//", "%"]:
+        caught is false
+        try:
+            if op == "//":
+                unused is (boxed of k) // 0
+            else:
+                unused is (boxed of k) % 0
+        catch e:
+            caught is e.kind == "value"
+        assert_eq of [caught, true, "boxed zero divisor raises"]
+    caught is false
+    try:
+        unused is (-9223372036854775807 - 1) // -1
+    catch e:
+        caught is e.kind == "value" and (index_of of [e.message, "//"]) >= 0
+    assert_eq of [caught, true, "N4b quotient overflow names operator"]
+    for operands in [[boxed of k, "bad"], ["bad", boxed of k]]:
+        caught is false
+        try:
+            unused is operands[0] // operands[1]
+        catch e:
+            caught is e.kind == "type_mismatch"
+        assert_eq of [caught, true, "boxed // type error owns both operands"]
+        caught is false
+        try:
+            unused is operands[0] % operands[1]
+        catch e:
+            caught is e.kind == "type_mismatch"
+        assert_eq of [caught, true, "boxed % type error owns both operands"]
+    k is k + 1
+
+# #1758 comment 6294926822: all zero divisors raise in R1.4, including
+# float/mixed // and //=; / and % retain their existing errors until N11.
+for pair in [[1.0, 0], [0.0, 0.0], [7, 0.0], [1.0, -0.0]]:
+    for op in ["//", "/", "%", "//="]:
+        caught is false
+        try:
+            if op == "//":
+                unused is pair[0] // pair[1]
+            elif op == "/":
+                unused is pair[0] / pair[1]
+            elif op == "%":
+                unused is pair[0] % pair[1]
+            else:
+                local zz is pair[0]
+                zz //= pair[1]
+        catch e:
+            caught is e.kind == "value" and e.message == "division by zero"
+            if op == "%":
+                caught is e.kind == "value" and e.message == "modulo by zero"
+        assert_eq of [caught, true, "zero-divisor error compatibility"]
+
+test_summary of null

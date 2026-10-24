@@ -6,17 +6,17 @@
 # Run well past the OSR threshold so the JIT thunk is exercised; the ASan leak
 # gate (run_all_tests.sh under detect_leaks=1) catches a regression.
 h is "a-heap-string"
-i is 0
-acc is 0
-loop while i < 12000:
+i is 0.0
+acc is 0.0
+loop while i < 12000.0:
     r is h and i
     acc is acc + r
-    i is i + 1
+    i is i + 1.0
 
 # also exercise `or` with a heap left operand that short-circuits (truthy -> returns h)
-j is 0
-loop while j < 12000:
+j is 0.0
+loop while j < 12000.0:
     s is h or j
-    j is j + 1
+    j is j + 1.0
 
 print of "jit-and-or-ok"
