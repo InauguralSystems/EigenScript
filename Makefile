@@ -274,6 +274,9 @@ build/phase2/gfx_audio_boundary_%: tests/phase2/gfx_audio_boundary.c src/ext_gfx
 	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread -ldl
 build/phase2/gfx_byte_boundary_%: tests/phase2/gfx_byte_boundary.c src/ext_gfx.c build/phase2/eigenscript_all.c tools/werror_flags.txt
 	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread -ldl
+# R1.6z-D1 public getter bit-round-trip gate; compile outside timed MAP rows.
+build/phase2/embed_buffer_get_raw_%: tests/phase2/embed_buffer_get_raw.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
 # Q7 lands in R1.6e; an absent source is a build failure once selected.
 build/phase2/q7_readers_%: tests/phase2/q7_readers.c build/phase2/eigenscript_all.c tools/werror_flags.txt
 	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread

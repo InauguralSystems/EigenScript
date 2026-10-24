@@ -11,6 +11,7 @@ case "$FIXTURE" in
     gfx_audio_boundary) LABEL=phase2-gfx-audio ;;
     gfx_byte_boundary) LABEL=phase2-gfx-byte ;;
     net_byte_boundary) LABEL=phase2-net-boundary ;;
+    embed_buffer_get_raw) LABEL=phase2-embed-buffer-get ;;
     *) echo "phase2-readers: FAIL unknown fixture $FIXTURE"; exit 2 ;;
 esac
 [ -f "$ROOT/tests/phase2/$FIXTURE.c" ] || { echo "$LABEL: FAIL missing tests/phase2/$FIXTURE.c"; exit 1; }
@@ -38,6 +39,12 @@ fi
 cat "$TMP/out"
 if [ -s "$TMP/err" ]; then cat "$TMP/err"; fail 'reader fixture wrote stderr'; fi
 [ "$rc" -eq 0 ] || fail "reader fixture rc=$rc"
+if [ "$FIXTURE" = embed_buffer_get_raw ]; then
+    [ "$(grep -cE '^phase2-embed-buffer: PASS checks=36 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete getter PASS'
+    [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected getter output'
+    echo "$LABEL: PASS variant=$VARIANT"
+    exit 0
+fi
 if [ "$FIXTURE" = net_byte_boundary ]; then
     [ "$(grep -cE '^phase2-net-byte: PASS checks=72 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete net-byte-boundary PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected net-byte-boundary fixture output'

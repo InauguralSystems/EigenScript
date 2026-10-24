@@ -709,6 +709,8 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
         # R1.6f-D2: net_send's raw stored-byte fixture builds once here,
         # outside the MAP rows' per-tier 30 s timeout.
         gates.append('net-byte-boundary')
+    if ROUNDS.index(through) >= ROUNDS.index('R1.6z'):
+        gates.append('embed-buffer-get-raw')
     for g in gates:
         if g == 'int-source':
             res[g] = int_source(os.path.join(ROOT, 'src'), out, through)
@@ -750,6 +752,10 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
             res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'net_byte_boundary'], out, r'.*')
             res[g] = res[g] and len(re.findall(
                 r'^phase2-net-boundary: PASS variant=release$', text, re.M)) == 1
+        elif g == 'embed-buffer-get-raw':
+            res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'embed_buffer_get_raw'], out, r'.*')
+            res[g] = res[g] and len(re.findall(
+                r'^phase2-embed-buffer-get: PASS variant=release$', text, re.M)) == 1
         elif g == 'builtins-table':
             if not tag:
                 out('  builtins-table: needs the tag binary')
