@@ -845,9 +845,10 @@ build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary: tests/test_trace_
 trace-history-boundary-test: build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary
 	@echo "Trace history boundary test built: $<"
 
-# Ordering witness for tools/make_lock_check.sh (#1940): with AFTER set, the
-# recipe refuses to run unless that file exists, so a second make proves it
-# started only after the first make's recipe wrote its DONE file.
+# Witnesses for tools/make_lock_check.sh (#1940). With AFTER set, the recipe
+# refuses to run unless that file exists, so a second make proves it started
+# only after the first make's recipe wrote its DONE file. SESSION records the
+# processes in this make's session, which must not include the lock holder.
 .PHONY: tree-lock-smoke
 tree-lock-smoke:
 	@if [ -n "$(EIGS_LOCK_SMOKE_AFTER)" ] && [ ! -e "$(EIGS_LOCK_SMOKE_AFTER)" ]; then \
@@ -855,4 +856,5 @@ tree-lock-smoke:
 	fi; \
 	[ -z "$(EIGS_LOCK_SMOKE_MARKER)" ] || : > "$(EIGS_LOCK_SMOKE_MARKER)"; \
 	sleep "$(or $(EIGS_LOCK_SMOKE_SLEEP),0)"; \
+	[ -z "$(EIGS_LOCK_SMOKE_SESSION)" ] || ps -o args= -s "$$(ps -o sid= -p $$$$ | tr -d ' ')" > "$(EIGS_LOCK_SMOKE_SESSION)"; \
 	[ -z "$(EIGS_LOCK_SMOKE_DONE)" ] || : > "$(EIGS_LOCK_SMOKE_DONE)"

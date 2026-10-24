@@ -117,4 +117,21 @@ printf 'include Makefile\n.PHONY: extra-goal\nextra-goal:\n\t@echo extra-goal-ra
     || fail "make -f extra.mk failed: $(cat "$WORK/extra.log")"
 grep -Fxq extra-goal-ran "$WORK/extra.log" || fail "make -f extra.mk did not run its own goal"
 echo "  PASS: an extra -f makefile that includes the Makefile works"
-echo "make-lock selftest: 6/6 passed"
+# 7. make leaves nothing in its session: the lock holder runs in its own. The
+# ownership check that gc_traversal_check runs make under
+# (tools/bounded_process.py) refused a holder that outlived make by one poll.
+# Two parts: the real harness, and a structural check that does not depend on
+# timing (while make runs, its session holds no holder).
+(cd "$TREE" && make --no-print-directory tree-lock-smoke EIGS_LOCK_SMOKE_SESSION="$WORK/session") \
+    >"$WORK/session.log" 2>&1 || fail "the session-witness make failed: $(cat "$WORK/session.log")"
+grep -q 'tree_lock.sh hold' "$WORK/session" && fail "the lock holder runs inside make's session: $(cat "$WORK/session")"
+python3 - "$ROOT/tools" "$TREE" "$WORK/owned" <<'PY' || fail "make under tools/bounded_process.py left a live session member"
+import os, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+from bounded_process import run_owned
+record = run_owned(['make', '--no-print-directory', '-s', 'tree-lock-smoke'],
+                   pathlib.Path(sys.argv[3]), 20, dict(os.environ), sys.argv[2])
+sys.exit(0 if record.get('returncode') == 0 else 1)
+PY
+echo "  PASS: make leaves nothing in its session (bounded_process accepts it)"
+echo "make-lock selftest: 7/7 passed"
