@@ -34,9 +34,7 @@ char *eigs_file_directory(const char *path);
 /* Absolute executable path, captured before user chdir. Caller frees; NULL
  * if neither the platform lookup nor the startup argv/PATH fallback resolves. */
 char *eigs_executable_path(const char *argv0);
-/* Raise EK_IO naming every root the chain tried. Hosted. */
-void eigs_file_resolve_error(const char *operation, const char *base,
-                            const char *path, int line);
+/* The EK_IO message naming every root the chain tried. Hosted; caller frees. */
 char *eigs_file_resolve_message(const char *operation, const char *base,
                                 const char *path);
 /* Owned subprocess pipe: configure its write end before it is published.

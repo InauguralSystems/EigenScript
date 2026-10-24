@@ -1,0 +1,1 @@
+- No user-visible change: `eigs_file_resolve_error` is removed. It had no caller once #1901 moved `load_file` and `import` to `eigs_file_resolve_message`, so that the message can be taped (#1938).

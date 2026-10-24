@@ -250,13 +250,6 @@ char *eigs_file_resolve_message(const char *operation, const char *base,
     return message;
 }
 
-void eigs_file_resolve_error(const char *operation, const char *base,
-                            const char *path, int line) {
-    char *message = eigs_file_resolve_message(operation, base, path);
-    rt_error(EK_IO, line, "%s", message);
-    free(message);
-}
-
 /* Phase 0c: walk from `base` upward looking for
  *   <dir>/eigs_modules/<name>/<name>.eigs
  * at each level. Stop at the project root (a directory containing
