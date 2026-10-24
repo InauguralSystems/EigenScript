@@ -433,8 +433,10 @@ ordinary indexed read and iteration step refuse stored NaN or infinity with
 `value` in every strict mode, matching `get_at` (N13). Strict NaN retains
 its first-NaN diagnostic and invalid flag. All execution tiers report the
 same error kind, message and source line.
-Structural buffer equality and the remaining scalar reductions normalize each
-input before comparison or arithmetic; the reduction
+Structural buffer equality compares stored doubles with IEEE equality, without
+raises or math flags; NaN differs from everything, including itself, infinities
+compare by sign, and signed zeros are equal. The remaining scalar reductions
+retain their declared data boundaries; the reduction
 association contracts remain unchanged. Mixed buffer/list tensor operations and
 numeric byte/sample/device conversions also normalize reads and stop on the
 first error. `write_bytes` requires exact bytes in 0..255 (N5/Q1); other byte
@@ -1013,4 +1015,25 @@ catch e:
 ```
 ```output
 value
+```
+
+### Buffer equality
+
+Buffers compare their stored doubles with IEEE equality: NaN differs from
+everything, even itself; infinities compare by sign; signed zeros are equal.
+Equality never raises or changes math flags, including under strict mode.
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+print of (p == p)
+print of (p == g)
+sgd_update of [p, p, 1.0]
+print of (p == p)
+```
+```output
+true
+false
+false
 ```

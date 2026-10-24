@@ -152,7 +152,7 @@ assert of [ng_get_at_refused, "NG34 N13 get_at refuses non-finite payload"]
 nan_gathered is gather of [raw_nan_product, [0]]
 ng_final_refuses of [ng_read_zero, nan_gathered, "NG35 N13 gathered NaN refuses on read"]
 
-# #1417: structural comparisons and scalar reductions read normalized inputs.
+# R1.6z-D1: structural comparisons use stored IEEE doubles; reductions use their declared data readers.
 pair_left is buffer of [1, 1]
 pair_left[0] is 1e200
 pair_right is buffer of [1, 2]
@@ -162,9 +162,9 @@ raw_pair is matmul of [pair_left, pair_right]
 finite_pair is buffer of 2
 finite_pair[0] is CAP
 finite_pair[1] is 0 - CAP
-assert of [raw_pair == finite_pair, "NG36 structural equality normalizes infinities"]
-assert of [(list_contains of [[raw_pair], finite_pair]), "NG36 list_contains shares normalized equality"]
-assert of [(list_index_of of [[raw_pair], finite_pair]) == 0, "NG36 list_index_of shares normalized equality"]
+assert of [raw_pair != finite_pair, "NG36 IEEE equality distinguishes infinity from finite"]
+assert of [not (list_contains of [[raw_pair], finite_pair]), "NG36 list_contains shares IEEE equality"]
+assert of [(list_index_of of [[raw_pair], finite_pair]) == -1, "NG36 list_index_of shares IEEE equality"]
 # N13 / R1.6b: sum now crosses the final float-reader boundary, which
 # refuses non-finite buffer payloads in both strict modes. Other reductions
 # keep their earlier normalization policy until their own reader migration.
@@ -177,9 +177,9 @@ define ng_sum_refuses_nonfinite(tensor_input, label) as:
     assert of [refused, label]
 ng_sum_refuses_nonfinite of [raw_pair, "NG37 N13 sum refuses non-finite elements before cancellation"]
 ng_final_refuses of [mean, raw_pair, "NG37 N13 mean refuses non-finite input"]
-assert of [raw_nan_product == raw_nan_product, "NG38 same-buffer equality normalizes NaN"]
+assert of [raw_nan_product != raw_nan_product, "NG38 IEEE NaN buffer differs from itself"]
 zero_one is buffer of 1
-assert of [raw_nan_product == zero_one, "NG39 distinct-buffer equality normalizes NaN"]
+assert of [raw_nan_product != zero_one, "NG39 IEEE NaN differs from zero"]
 zero_pair is buffer of 2
 # N13 / R1.6c: dot also refuses instead of substituting finite operands.
 ng_dot_refused is false

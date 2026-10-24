@@ -898,6 +898,35 @@ the builtin table's `q7` column, §6, names each builtin's classes):
   measurement's scale): round, and raise `value` naming the builtin when the
   result does not fit what the C call can honour (`eigs_magnitude_arg`).
 
+### 2.6a Stored non-finite buffers (R1.6z-D1)
+
+Buffer equality compares the stored doubles element by element with C `==`
+and requires equal counts. NaN equals nothing, including itself; +inf equals
+only +inf, -inf only -inf, and -0.0 equals +0.0. Equality is total: it never
+raises and never writes math flags, in either strict mode. Buffers stay out
+of the identity shortcut (#1417). This applies N2/N11 scalar equality to
+unboxed elements and avoids fabricated finite answers (Principles §2).
+
+Measured prior art in the ruling: Python `array.array('d')` and `memoryview`
+compare a NaN-containing buffer unequal to itself, matching NumPy
+`array_equal` with its default `equal_nan=False`. Python list identity
+shortcuts are deliberately rejected. Refusal would make equality partial;
+bit comparison would incorrectly distinguish signed zeros.
+
+The public C getter `eigs_value_buffer_get` returns the stored double exactly,
+including NaN payloads, infinities and negative zero. It never normalizes,
+raises for a valid element, or writes math flags. It mirrors the setter's
+bit-preserving store and Lua `lua_tonumberx`/CPython `PyFloat_AsDouble`,
+which also hand C the raw double. Clamping fabricates a value; a new status
+channel would change the ABI for a property C can test with `isfinite`.
+Wrong-type and out-of-range reports remain the separately decided API contract.
+The getter migration and public API docs land in the embed file group.
+
+VM indexing and iteration use the finite data boundary, matching `get_at`
+(R1.6d-D1): lenient NaN and every infinity raise `value`; strict NaN keeps
+its first diagnostic and INVALID flag. Speculative leaf evaluation bails
+before raising, preserving the callee's error kind, message and source line.
+
 ### 2.7 Every meaning change coincides with a token change
 
 Round 0's order changed meanings with no token change: R1.1 widened
@@ -974,7 +1003,7 @@ catches a miss:
     with one float box on both sides today (EQ compares two floats in its
     fast path, and container comparisons pass fresh element views; read,
     not probed, since no NaN exists yet), so R2.2 excludes floats from the
-    shortcut as #1417 excluded buffers, and the C slot test calls it with
+    shortcut as #1417 excluded buffers (see §2.6a, R1.6z-D1), and the C slot test calls it with
     one NaN box on both sides;
   - C casts of a double to an integer type (undefined on NaN or inf): every
     builtin argument goes through a §2.6 reader, which refuses a non-finite
@@ -2244,7 +2273,7 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    `log of 0` is -inf, `x/0` is ±inf, `0/0` and float `x%0` are NaN. Q8:
    `sort`/`sort_by` order floats by IEEE `totalOrder` (NaN after +inf), and
    `min`/`max` propagate NaN. `values_equal_impl`'s identity shortcut
-   excludes floats.
+   excludes floats, extending the stored-buffer rule in §2.6a (R1.6z-D1).
 3. **R2.3, N13 refusal inside the writers:** the JSON encoder, the store
    encoder (delete the pre-walk `store_nonfinite_scalar`), the byte
    encoders and the int conversion. This removes the class #1746 chased for

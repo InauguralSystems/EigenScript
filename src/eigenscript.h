@@ -460,7 +460,7 @@ struct Value {
     ValType type;
     union {
         /* #1637 round 4: renamed so no unchecked read compiles. A Value's
-         * number is read through the checking accessors (eigs_num_arg,
+         * number is read through the checking accessors (eigs_float_arg,
          * eigs_list_num, eigs_opt_num), which raise on a bool or any other
          * non-number, or through VAL_F64_RAW where the type is already
          * proven -- and every VAL_F64_RAW use sits in a function on the

@@ -324,17 +324,17 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (16, 12, 4, 0, 0), # R1.6g: +1 paired Rust-derived N9 example
-    "docs/llms.txt":             (18, 15, 2, 1, 0), # R1.6g: +1 paired Rust-derived N9 example
-    "docs/SPEC.md":              (96, 92, 1, 3, 0), # R1.6g: +1 paired Rust-derived N9 example
-    "docs/COMPARISON.md":        (28, 27, 1, 0, 0), # R1.6g: +1 paired Rust-derived N9 example
+    "README.md":                 (17, 13, 4, 0, 0), # R1.6g: +1 paired Rust-derived N9 example
+    "docs/llms.txt":             (19, 16, 2, 1, 0), # R1.6g: +1 paired Rust-derived N9 example
+    "docs/SPEC.md":              (97, 93, 1, 3, 0), # R1.6g: +1 paired Rust-derived N9 example
+    "docs/COMPARISON.md":        (29, 28, 1, 0, 0), # R1.6g: +1 paired Rust-derived N9 example
     "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
     "docs/PREDICATES.md":        ( 13,    2,    10,      1,      4),
     "docs/DIAGNOSTICS.md":       (  4,    1,     3,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
-    "docs/BUILTINS.md":          (2, 2,     0,      0,      0),
+    "docs/BUILTINS.md":          (3, 3,     0,      0,      0),
     "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),
 }
 

@@ -2461,7 +2461,7 @@ static Value *parse_value_p(const char **p) {
      * tape tokens are scheduled in docs/design/phase2-numbers.md §8, R2.5. */
     if (end == *p || !at_token_boundary(*end) || !isfinite(d)) return NULL;
     *p = end;
-    return make_num(d);
+    return make_float(d);
 }
 
 static Value *parse_value(const char *s) {

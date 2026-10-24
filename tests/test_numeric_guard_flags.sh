@@ -76,13 +76,15 @@ catch e:
     caught is e.kind == \"value\"
 assert of [caught and ((math_flags of null) == before), \"R1.6d-D1 indexed NaN refuses without flag writes\"]"
 done
+# R1.6z-D1 point 1 / N11: IEEE equality never writes arithmetic flags.
 for spec in \
  'NG38 equality|x is raw == raw' \
  'NG39 distinct equality|zero is buffer of 1; x is raw == zero'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n/g')
- run "$name invalid" "$nan_setup
+ run "$name N11 IEEE flags unchanged" "$nan_setup
+before is math_flags of null
 $op
-assert of [(math_flags of null).invalid, \"NaN read sets invalid\"]"
+assert of [not x and ((math_flags of null) == before), \"R1.6z-D1 IEEE NaN equality is false without flag writes\"]"
 done
 # N13 / R1.6d: these raw NaN reads refuse in lenient mode.
 for spec in \
