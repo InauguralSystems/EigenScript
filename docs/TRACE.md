@@ -89,13 +89,13 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 7 0.46.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 7 0.47.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
 | `A <stream_id> <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
 | `N <stream_id> <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
-| `O <stream_id> cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-1044-1045). |
+| `O <stream_id> cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-10441045). |
 
 ### Stream identity and correspondence (v5, #1286)
 
@@ -747,8 +747,9 @@ The contract now:
   the FILE tape's staging buffer and nothing else; `trace_init` has one
   caller in the tree, `src/main.c`, so no embedder ever reaches it.
 
-Coverage: `tests/test_trace_mt.sh` (worker-tape parse, replay-workers
-fail-loud, single-worker control, parser `--selftest`), `make
+Coverage: `tests/test_trace_mt.sh` (worker-tape parse, replay-workers:
+two worker streams replay from one tape and a malformed stream tag refuses
+with exit 3, single-worker control, parser `--selftest`), `make
 embed-concurrent` (sink byte accounting, per-state `O cfg`, close-while-
 other-runs, concurrent close, owner-only take, shutdown-while-sibling,
 serialized take, take-under-lock, set-sink header, sink-only memory bound,

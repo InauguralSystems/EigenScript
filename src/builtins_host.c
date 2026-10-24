@@ -302,7 +302,7 @@ Value* builtin_stream_close(Value *arg) {
 static Value *file_io_error(const char *fn, const char *path, int err);
 static int file_io_replay(const char *fn, Value **out);
 
-/* mkdir of "path" → 1 on success; I/O failure raises EK_IO. Creates parents. */
+/* mkdir of "path" → true on success; I/O failure raises EK_IO. Creates parents. */
 /* #585/#1885: replay is side-effect-free: TAKE precedes mkdir(2), as it does
  * for every replayable filesystem mutation. */
 Value* builtin_mkdir(Value *arg) {
@@ -1082,8 +1082,8 @@ Value* builtin_is_file(Value *arg) {
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
- * a temp file, then atomically swap it in). Returns 1 on success; I/O failure
- * raises EK_IO. */
+ * a temp file, then atomically swap it in). Returns true on success; I/O
+ * failure raises EK_IO. */
 Value* builtin_rename(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "rename");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -1107,7 +1107,7 @@ Value* builtin_rename(Value *arg) {
     TRACE_NONDET_RECORD("rename", make_bool(1));
 }
 
-/* remove_file of path — delete a file. Returns 1 on success; I/O failure raises. */
+/* remove_file of path — delete a file. Returns true on success; I/O failure raises. */
 Value* builtin_remove_file(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_bool(0));
     Value *replayed = NULL;
@@ -1547,7 +1547,7 @@ Value* builtin_read_line(Value *arg) {
 }
 
 /* ==== BUILTIN: write_text ==== */
-/* write_text of ["path", text] → 1 on success; I/O failure raises EK_IO. */
+/* write_text of ["path", text] → true on success; I/O failure raises EK_IO. */
 Value* builtin_write_text(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "write_text");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -1562,9 +1562,9 @@ Value* builtin_write_text(Value *arg) {
     Value *replayed = NULL;
     if (file_io_replay("write_text", &replayed)) return replayed;
     FILE *f = xfopen_write(path_val->data.str, "w");
-    /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
-     * is xfopen_write failing (missing directory, permissions, sandbox), and
-     * the header comment documents write_text as "1 on success, 0 on failure". */
+    /* Both arguments were accepted by the guards above; a NULL FILE* is
+     * xfopen_write failing (missing directory, permissions, sandbox), which
+     * raises EK_IO with the path and the OS reason, as the header says (#1668). */
     if (!f) {
         int err = errno;
         return file_io_error("write_text", path_val->data.str, err);
@@ -1887,9 +1887,9 @@ Value* builtin_write_bytes(Value *arg) {
     Value *replayed = NULL;
     if (file_io_replay("write_bytes", &replayed)) { free(out); return replayed; }
     FILE *f = xfopen_write(path_val->data.str, append ? "ab" : "wb");
-    /* fs:ANSWER the path was accepted by the guard above; a NULL FILE* is
-     * xfopen_write failing, and the header documents write_bytes as yielding
-     * "the number of bytes written, or 0 on failure" — 0 is that failure. */
+    /* The path was accepted by the guard above; a NULL FILE* is xfopen_write
+     * failing, which raises EK_IO with the path and the OS reason, as the
+     * header says (#1668). */
     if (!f) {
         int err = errno;
         free(out);
