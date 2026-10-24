@@ -1,3 +1,16 @@
+# Serialize every make that can write this tree (#1940). Two makes in one tree
+# race on build/ and the src/eigenscript alias: R1.6e's suite saw its binary
+# relinked mid-run, and sync #7's stop-gate build collided with a background
+# build. tools/tree_lock.sh holds a tree-root lock (not in build/, which `make
+# clean` removes) until this make exits. Recursive makes inherit the flag and
+# skip it; so does a make that restarted itself after remaking an included
+# makefile (same PID, lock already held). Without flock(1), nothing changes.
+ifeq ($(strip $(EIGS_TREE_LOCK_HELD))$(MAKE_RESTARTS),)
+EIGS_TREE_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+EIGS_TREE_LOCK := $(shell sh '$(EIGS_TREE_ROOT)/tools/tree_lock.sh' '$(EIGS_TREE_ROOT)' $$PPID)
+endif
+export EIGS_TREE_LOCK_HELD := 1
+
 VERSION := $(shell cat VERSION)
 CC      := gcc
 override WERROR_FLAGS := $(shell cat tools/werror_flags.txt)
@@ -831,3 +844,17 @@ build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary: tests/test_trace_
 .PHONY: trace-history-boundary-test
 trace-history-boundary-test: build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary
 	@echo "Trace history boundary test built: $<"
+
+# Witnesses for tools/make_lock_check.sh (#1940). With AFTER set, the recipe
+# refuses to run unless that file exists, so a second make proves it started
+# only after the first make's recipe wrote its DONE file. SESSION records the
+# processes in this make's session, which must not include the lock holder.
+.PHONY: tree-lock-smoke
+tree-lock-smoke:
+	@if [ -n "$(EIGS_LOCK_SMOKE_AFTER)" ] && [ ! -e "$(EIGS_LOCK_SMOKE_AFTER)" ]; then \
+		echo "tree-lock-smoke: started before $(EIGS_LOCK_SMOKE_AFTER) existed" >&2; exit 1; \
+	fi; \
+	[ -z "$(EIGS_LOCK_SMOKE_MARKER)" ] || : > "$(EIGS_LOCK_SMOKE_MARKER)"; \
+	sleep "$(or $(EIGS_LOCK_SMOKE_SLEEP),0)"; \
+	[ -z "$(EIGS_LOCK_SMOKE_SESSION)" ] || ps -o args= -s "$$(ps -o sid= -p $$$$ | tr -d ' ')" > "$(EIGS_LOCK_SMOKE_SESSION)"; \
+	[ -z "$(EIGS_LOCK_SMOKE_DONE)" ] || : > "$(EIGS_LOCK_SMOKE_DONE)"

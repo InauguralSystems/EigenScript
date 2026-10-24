@@ -1,0 +1,1 @@
+- Serialize per-tree builds and make the stop gate skip locked trees instead of racing shared outputs.
