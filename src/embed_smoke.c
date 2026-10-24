@@ -195,8 +195,8 @@ static void test_worker_exit_lifecycle(void) {
             CHECK(handle && handle->type == VAL_DICT, "exit fixture owns join handle");
             if (handle && handle->type == VAL_DICT) {
                 int found_id = 0, found_gen = 0;
-                f.handle_id = (int)eigs_slot_num(dict_get_slot(handle, "_handle_id", &found_id), "embed_smoke");
-                f.handle_gen = (uint32_t)eigs_slot_num(dict_get_slot(handle, "_handle_gen", &found_gen), "embed_smoke");
+                f.handle_id = (int)eigs_slot_float(dict_get_slot(handle, "_handle_id", &found_id), "embed_smoke");
+                f.handle_gen = (uint32_t)eigs_slot_float(dict_get_slot(handle, "_handle_gen", &found_gen), "embed_smoke");
                 CHECK(found_id && found_gen, "join handle carries its id and generation");
                 pthread_t requester;
                 int made = pthread_create(&requester, NULL, exit_after_join_claim, &f) == 0;
@@ -735,10 +735,23 @@ int main(void) {
                   strcmp(eigs_value_as_string(r), "int") == 0,
               "#1417 recursive failure prefix has a boxed int result");
         eigs_value_release(r);
+        /* R1.6z-D1: equality never crosses the scalar data boundary. */
+        for (int mode = 0; mode <= 1; ++mode) {
+            eigs_state_set_strict(st, mode);
+            g_math_flags = 0;
+            r = eigs_eval_string("[nf_raw == nf_raw, nf_raw == nf_finite, "
+                "list_contains of [[nf_raw, nf_later], nf_finite], "
+                "list_index_of of [[nf_raw, nf_later], nf_finite]]");
+            CHECK(r && !eigs_has_error() && r->type == VAL_LIST &&
+                  r->data.list.count == 4 &&
+                  slot_is_bool(list_slot(r, 0)) && !slot_as_bool(list_slot(r, 0)),
+                  "R1.6z-D1 NaN buffer equality is false without a raise");
+            CHECK(g_math_flags == 0, "R1.6z-D1 equality leaves math flags alone");
+            eigs_value_release(r);
+            eigs_clear_error();
+        }
+        eigs_state_set_strict(st, 1);
         const char *nf_reads[] = {
-            "nf_raw == nf_raw", "nf_raw == nf_finite",
-            "list_contains of [[nf_raw, nf_later], nf_finite]",
-            "list_index_of of [[nf_raw, nf_later], nf_finite]",
             "sum of nf_raw", "mean of nf_raw", "norm of nf_raw",
             "sum of ([nf_raw, nf_later])",
             "sum of nf_shaped",
