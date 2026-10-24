@@ -1,5 +1,21 @@
 # EigenScript Language Specification
 
+
+Width arithmetic uses explicit wrapping, checked and saturating builtins.
+N5 converts integral floats, then checks the named type range without masking.
+Width results are ints; checked overflow raises `value`. `u64` uses int64 bit
+patterns. `fround` returns a float after double-to-float32-to-double conversion
+(ints convert to double first). See [the width builtins](BUILTINS.md#width-arithmetic-n9).
+
+```eigenscript
+print of [i64_wrapping_add of [9223372036854775807, 1], u8_wrapping_add of [255, 1]]
+print of (fround of 0.1)
+```
+```output
+[-9223372036854775808, 0]
+0.10000000149011612
+```
+
 This is the canonical, executable specification of EigenScript. **Every**
 `eigenscript` code block here is EXECUTED by the test suite
 (`tests/test_doc_examples.py`, suite section [89]) — the gate is opt-OUT.

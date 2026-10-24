@@ -167,6 +167,7 @@ def main():
         if loss == "LOSS" or (file == "builtins.c" and cls == "int-preserving"): return "b"
         if file in ("builtins.c", "builtins_host.c", "vm.c"): return "c"
         if file in ("builtins_tensor.c", "builtins_buf.c") or file.startswith("model_"): return "d"
+        if file == "builtins_int.c": return "g"
         if file == "ext_gfx.c": return "e"
         if file in ("ext_store.c", "ext_db.c", "ext_http.c", "ext_net.c"): return "f"
         fail.append("no round for file " + file); return "?"

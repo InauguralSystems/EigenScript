@@ -3303,6 +3303,84 @@ static const char *SANDBOX_ALLOW[] = {
     "zeros_like", "fill", "leaky_relu", "relu", "softmax", "log_softmax",
     "sgd_update", "sgd_update_cols", "sgd_update_rows", "numerical_grad",
     "numerical_grad_cols", "numerical_grad_rows",
+    /* N9 pure width arithmetic */
+    "i8_wrapping_add",
+    "i8_wrapping_sub",
+    "i8_wrapping_mul",
+    "i8_checked_add",
+    "i8_checked_sub",
+    "i8_checked_mul",
+    "i8_saturating_add",
+    "i8_saturating_sub",
+    "i8_saturating_mul",
+    "i16_wrapping_add",
+    "i16_wrapping_sub",
+    "i16_wrapping_mul",
+    "i16_checked_add",
+    "i16_checked_sub",
+    "i16_checked_mul",
+    "i16_saturating_add",
+    "i16_saturating_sub",
+    "i16_saturating_mul",
+    "i32_wrapping_add",
+    "i32_wrapping_sub",
+    "i32_wrapping_mul",
+    "i32_checked_add",
+    "i32_checked_sub",
+    "i32_checked_mul",
+    "i32_saturating_add",
+    "i32_saturating_sub",
+    "i32_saturating_mul",
+    "i64_wrapping_add",
+    "i64_wrapping_sub",
+    "i64_wrapping_mul",
+    "i64_checked_add",
+    "i64_checked_sub",
+    "i64_checked_mul",
+    "i64_saturating_add",
+    "i64_saturating_sub",
+    "i64_saturating_mul",
+    "u8_wrapping_add",
+    "u8_wrapping_sub",
+    "u8_wrapping_mul",
+    "u8_checked_add",
+    "u8_checked_sub",
+    "u8_checked_mul",
+    "u8_saturating_add",
+    "u8_saturating_sub",
+    "u8_saturating_mul",
+    "u16_wrapping_add",
+    "u16_wrapping_sub",
+    "u16_wrapping_mul",
+    "u16_checked_add",
+    "u16_checked_sub",
+    "u16_checked_mul",
+    "u16_saturating_add",
+    "u16_saturating_sub",
+    "u16_saturating_mul",
+    "u32_wrapping_add",
+    "u32_wrapping_sub",
+    "u32_wrapping_mul",
+    "u32_checked_add",
+    "u32_checked_sub",
+    "u32_checked_mul",
+    "u32_saturating_add",
+    "u32_saturating_sub",
+    "u32_saturating_mul",
+    "u64_wrapping_add",
+    "u64_wrapping_sub",
+    "u64_wrapping_mul",
+    "u64_checked_add",
+    "u64_checked_sub",
+    "u64_checked_mul",
+    "u64_saturating_add",
+    "u64_saturating_sub",
+    "u64_saturating_mul",
+    "u64_compare",
+    "u64_div",
+    "u64_rem",
+    "u64_to_string",
+    "fround",
     /* bit ops */
     "bit_and", "bit_not", "bit_or", "bit_shl", "bit_shr", "bit_xor",
     /* list / sequence (operate on the value handed in) */
@@ -6351,6 +6429,85 @@ int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg) {
 
 void register_builtins(Env *env) {
     /* ---- Core language builtins (always available) ---- */
+    /* #1758 N9: width operations and unsigned bit-pattern utilities. */
+    env_set_local_owned(env, "i8_wrapping_add", make_builtin(builtin_i8_wrapping_add));
+    env_set_local_owned(env, "i8_wrapping_sub", make_builtin(builtin_i8_wrapping_sub));
+    env_set_local_owned(env, "i8_wrapping_mul", make_builtin(builtin_i8_wrapping_mul));
+    env_set_local_owned(env, "i8_checked_add", make_builtin(builtin_i8_checked_add));
+    env_set_local_owned(env, "i8_checked_sub", make_builtin(builtin_i8_checked_sub));
+    env_set_local_owned(env, "i8_checked_mul", make_builtin(builtin_i8_checked_mul));
+    env_set_local_owned(env, "i8_saturating_add", make_builtin(builtin_i8_saturating_add));
+    env_set_local_owned(env, "i8_saturating_sub", make_builtin(builtin_i8_saturating_sub));
+    env_set_local_owned(env, "i8_saturating_mul", make_builtin(builtin_i8_saturating_mul));
+    env_set_local_owned(env, "i16_wrapping_add", make_builtin(builtin_i16_wrapping_add));
+    env_set_local_owned(env, "i16_wrapping_sub", make_builtin(builtin_i16_wrapping_sub));
+    env_set_local_owned(env, "i16_wrapping_mul", make_builtin(builtin_i16_wrapping_mul));
+    env_set_local_owned(env, "i16_checked_add", make_builtin(builtin_i16_checked_add));
+    env_set_local_owned(env, "i16_checked_sub", make_builtin(builtin_i16_checked_sub));
+    env_set_local_owned(env, "i16_checked_mul", make_builtin(builtin_i16_checked_mul));
+    env_set_local_owned(env, "i16_saturating_add", make_builtin(builtin_i16_saturating_add));
+    env_set_local_owned(env, "i16_saturating_sub", make_builtin(builtin_i16_saturating_sub));
+    env_set_local_owned(env, "i16_saturating_mul", make_builtin(builtin_i16_saturating_mul));
+    env_set_local_owned(env, "i32_wrapping_add", make_builtin(builtin_i32_wrapping_add));
+    env_set_local_owned(env, "i32_wrapping_sub", make_builtin(builtin_i32_wrapping_sub));
+    env_set_local_owned(env, "i32_wrapping_mul", make_builtin(builtin_i32_wrapping_mul));
+    env_set_local_owned(env, "i32_checked_add", make_builtin(builtin_i32_checked_add));
+    env_set_local_owned(env, "i32_checked_sub", make_builtin(builtin_i32_checked_sub));
+    env_set_local_owned(env, "i32_checked_mul", make_builtin(builtin_i32_checked_mul));
+    env_set_local_owned(env, "i32_saturating_add", make_builtin(builtin_i32_saturating_add));
+    env_set_local_owned(env, "i32_saturating_sub", make_builtin(builtin_i32_saturating_sub));
+    env_set_local_owned(env, "i32_saturating_mul", make_builtin(builtin_i32_saturating_mul));
+    env_set_local_owned(env, "i64_wrapping_add", make_builtin(builtin_i64_wrapping_add));
+    env_set_local_owned(env, "i64_wrapping_sub", make_builtin(builtin_i64_wrapping_sub));
+    env_set_local_owned(env, "i64_wrapping_mul", make_builtin(builtin_i64_wrapping_mul));
+    env_set_local_owned(env, "i64_checked_add", make_builtin(builtin_i64_checked_add));
+    env_set_local_owned(env, "i64_checked_sub", make_builtin(builtin_i64_checked_sub));
+    env_set_local_owned(env, "i64_checked_mul", make_builtin(builtin_i64_checked_mul));
+    env_set_local_owned(env, "i64_saturating_add", make_builtin(builtin_i64_saturating_add));
+    env_set_local_owned(env, "i64_saturating_sub", make_builtin(builtin_i64_saturating_sub));
+    env_set_local_owned(env, "i64_saturating_mul", make_builtin(builtin_i64_saturating_mul));
+    env_set_local_owned(env, "u8_wrapping_add", make_builtin(builtin_u8_wrapping_add));
+    env_set_local_owned(env, "u8_wrapping_sub", make_builtin(builtin_u8_wrapping_sub));
+    env_set_local_owned(env, "u8_wrapping_mul", make_builtin(builtin_u8_wrapping_mul));
+    env_set_local_owned(env, "u8_checked_add", make_builtin(builtin_u8_checked_add));
+    env_set_local_owned(env, "u8_checked_sub", make_builtin(builtin_u8_checked_sub));
+    env_set_local_owned(env, "u8_checked_mul", make_builtin(builtin_u8_checked_mul));
+    env_set_local_owned(env, "u8_saturating_add", make_builtin(builtin_u8_saturating_add));
+    env_set_local_owned(env, "u8_saturating_sub", make_builtin(builtin_u8_saturating_sub));
+    env_set_local_owned(env, "u8_saturating_mul", make_builtin(builtin_u8_saturating_mul));
+    env_set_local_owned(env, "u16_wrapping_add", make_builtin(builtin_u16_wrapping_add));
+    env_set_local_owned(env, "u16_wrapping_sub", make_builtin(builtin_u16_wrapping_sub));
+    env_set_local_owned(env, "u16_wrapping_mul", make_builtin(builtin_u16_wrapping_mul));
+    env_set_local_owned(env, "u16_checked_add", make_builtin(builtin_u16_checked_add));
+    env_set_local_owned(env, "u16_checked_sub", make_builtin(builtin_u16_checked_sub));
+    env_set_local_owned(env, "u16_checked_mul", make_builtin(builtin_u16_checked_mul));
+    env_set_local_owned(env, "u16_saturating_add", make_builtin(builtin_u16_saturating_add));
+    env_set_local_owned(env, "u16_saturating_sub", make_builtin(builtin_u16_saturating_sub));
+    env_set_local_owned(env, "u16_saturating_mul", make_builtin(builtin_u16_saturating_mul));
+    env_set_local_owned(env, "u32_wrapping_add", make_builtin(builtin_u32_wrapping_add));
+    env_set_local_owned(env, "u32_wrapping_sub", make_builtin(builtin_u32_wrapping_sub));
+    env_set_local_owned(env, "u32_wrapping_mul", make_builtin(builtin_u32_wrapping_mul));
+    env_set_local_owned(env, "u32_checked_add", make_builtin(builtin_u32_checked_add));
+    env_set_local_owned(env, "u32_checked_sub", make_builtin(builtin_u32_checked_sub));
+    env_set_local_owned(env, "u32_checked_mul", make_builtin(builtin_u32_checked_mul));
+    env_set_local_owned(env, "u32_saturating_add", make_builtin(builtin_u32_saturating_add));
+    env_set_local_owned(env, "u32_saturating_sub", make_builtin(builtin_u32_saturating_sub));
+    env_set_local_owned(env, "u32_saturating_mul", make_builtin(builtin_u32_saturating_mul));
+    env_set_local_owned(env, "u64_wrapping_add", make_builtin(builtin_u64_wrapping_add));
+    env_set_local_owned(env, "u64_wrapping_sub", make_builtin(builtin_u64_wrapping_sub));
+    env_set_local_owned(env, "u64_wrapping_mul", make_builtin(builtin_u64_wrapping_mul));
+    env_set_local_owned(env, "u64_checked_add", make_builtin(builtin_u64_checked_add));
+    env_set_local_owned(env, "u64_checked_sub", make_builtin(builtin_u64_checked_sub));
+    env_set_local_owned(env, "u64_checked_mul", make_builtin(builtin_u64_checked_mul));
+    env_set_local_owned(env, "u64_saturating_add", make_builtin(builtin_u64_saturating_add));
+    env_set_local_owned(env, "u64_saturating_sub", make_builtin(builtin_u64_saturating_sub));
+    env_set_local_owned(env, "u64_saturating_mul", make_builtin(builtin_u64_saturating_mul));
+    env_set_local_owned(env, "u64_compare", make_builtin(builtin_u64_compare));
+    env_set_local_owned(env, "u64_div", make_builtin(builtin_u64_div));
+    env_set_local_owned(env, "u64_rem", make_builtin(builtin_u64_rem));
+    env_set_local_owned(env, "u64_to_string", make_builtin(builtin_u64_to_string));
+    env_set_local_owned(env, "fround", make_builtin(builtin_fround));
+
     env_set_local_owned(env, "print", make_builtin(builtin_print));
     env_set_local_owned(env, "write", make_builtin(builtin_write));
     env_set_local_owned(env, "flush", make_builtin(builtin_flush));

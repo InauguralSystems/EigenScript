@@ -324,10 +324,10 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (14, 10, 4, 0, 0), # R1.6e: +1 paired Q7 magnitude refusal example
-    "docs/llms.txt":             (16, 13, 2, 1, 0), # R1.6e: +1 paired Q7 magnitude refusal example
-    "docs/SPEC.md":              (94, 90, 1, 3, 0), # R1.6e: +1 paired Q7 magnitude refusal example
-    "docs/COMPARISON.md":        (26, 25, 1, 0, 0), # R1.6e: +1 paired Q7 magnitude refusal example
+    "README.md":                 (15, 11, 4, 0, 0), # R1.6g: +1 paired Rust-derived N9 example
+    "docs/llms.txt":             (17, 14, 2, 1, 0), # R1.6g: +1 paired Rust-derived N9 example
+    "docs/SPEC.md":              (95, 91, 1, 3, 0), # R1.6g: +1 paired Rust-derived N9 example
+    "docs/COMPARISON.md":        (27, 26, 1, 0, 0), # R1.6g: +1 paired Rust-derived N9 example
     "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),

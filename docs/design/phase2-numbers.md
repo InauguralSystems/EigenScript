@@ -1619,12 +1619,92 @@ current state behind several rows:
 | `write_bytes` | int-requiring | - | - | byte values: N5, then 0..255 (Q1; the modulo-256 wrap is gone); returns bytes written |
 | `zeros` | int-requiring | - | - | size or [rows, cols]; elements are float 0.0 |
 | `zeros_like` | float-producing | - | - | float zeros |
+| `i8_wrapping_add` | int-requiring | - | - | N9: i8 wrapping add; N5 then type range without masking; exact int result (Rust std) |
+| `i8_wrapping_sub` | int-requiring | - | - | N9: i8 wrapping sub; N5 then type range without masking; exact int result (Rust std) |
+| `i8_wrapping_mul` | int-requiring | - | - | N9: i8 wrapping mul; N5 then type range without masking; exact int result (Rust std) |
+| `i8_checked_add` | int-requiring | - | - | N9: i8 checked add; N5 then type range without masking; exact int result (Rust std) |
+| `i8_checked_sub` | int-requiring | - | - | N9: i8 checked sub; N5 then type range without masking; exact int result (Rust std) |
+| `i8_checked_mul` | int-requiring | - | - | N9: i8 checked mul; N5 then type range without masking; exact int result (Rust std) |
+| `i8_saturating_add` | int-requiring | - | - | N9: i8 saturating add; N5 then type range without masking; exact int result (Rust std) |
+| `i8_saturating_sub` | int-requiring | - | - | N9: i8 saturating sub; N5 then type range without masking; exact int result (Rust std) |
+| `i8_saturating_mul` | int-requiring | - | - | N9: i8 saturating mul; N5 then type range without masking; exact int result (Rust std) |
+| `i16_wrapping_add` | int-requiring | - | - | N9: i16 wrapping add; N5 then type range without masking; exact int result (Rust std) |
+| `i16_wrapping_sub` | int-requiring | - | - | N9: i16 wrapping sub; N5 then type range without masking; exact int result (Rust std) |
+| `i16_wrapping_mul` | int-requiring | - | - | N9: i16 wrapping mul; N5 then type range without masking; exact int result (Rust std) |
+| `i16_checked_add` | int-requiring | - | - | N9: i16 checked add; N5 then type range without masking; exact int result (Rust std) |
+| `i16_checked_sub` | int-requiring | - | - | N9: i16 checked sub; N5 then type range without masking; exact int result (Rust std) |
+| `i16_checked_mul` | int-requiring | - | - | N9: i16 checked mul; N5 then type range without masking; exact int result (Rust std) |
+| `i16_saturating_add` | int-requiring | - | - | N9: i16 saturating add; N5 then type range without masking; exact int result (Rust std) |
+| `i16_saturating_sub` | int-requiring | - | - | N9: i16 saturating sub; N5 then type range without masking; exact int result (Rust std) |
+| `i16_saturating_mul` | int-requiring | - | - | N9: i16 saturating mul; N5 then type range without masking; exact int result (Rust std) |
+| `i32_wrapping_add` | int-requiring | - | - | N9: i32 wrapping add; N5 then type range without masking; exact int result (Rust std) |
+| `i32_wrapping_sub` | int-requiring | - | - | N9: i32 wrapping sub; N5 then type range without masking; exact int result (Rust std) |
+| `i32_wrapping_mul` | int-requiring | - | - | N9: i32 wrapping mul; N5 then type range without masking; exact int result (Rust std) |
+| `i32_checked_add` | int-requiring | - | - | N9: i32 checked add; N5 then type range without masking; exact int result (Rust std) |
+| `i32_checked_sub` | int-requiring | - | - | N9: i32 checked sub; N5 then type range without masking; exact int result (Rust std) |
+| `i32_checked_mul` | int-requiring | - | - | N9: i32 checked mul; N5 then type range without masking; exact int result (Rust std) |
+| `i32_saturating_add` | int-requiring | - | - | N9: i32 saturating add; N5 then type range without masking; exact int result (Rust std) |
+| `i32_saturating_sub` | int-requiring | - | - | N9: i32 saturating sub; N5 then type range without masking; exact int result (Rust std) |
+| `i32_saturating_mul` | int-requiring | - | - | N9: i32 saturating mul; N5 then type range without masking; exact int result (Rust std) |
+| `i64_wrapping_add` | int-requiring | - | - | N9: i64 wrapping add; N5 then type range without masking; exact int result (Rust std) |
+| `i64_wrapping_sub` | int-requiring | - | - | N9: i64 wrapping sub; N5 then type range without masking; exact int result (Rust std) |
+| `i64_wrapping_mul` | int-requiring | - | - | N9: i64 wrapping mul; N5 then type range without masking; exact int result (Rust std) |
+| `i64_checked_add` | int-requiring | - | - | N9: i64 checked add; N5 then type range without masking; exact int result (Rust std) |
+| `i64_checked_sub` | int-requiring | - | - | N9: i64 checked sub; N5 then type range without masking; exact int result (Rust std) |
+| `i64_checked_mul` | int-requiring | - | - | N9: i64 checked mul; N5 then type range without masking; exact int result (Rust std) |
+| `i64_saturating_add` | int-requiring | - | - | N9: i64 saturating add; N5 then type range without masking; exact int result (Rust std) |
+| `i64_saturating_sub` | int-requiring | - | - | N9: i64 saturating sub; N5 then type range without masking; exact int result (Rust std) |
+| `i64_saturating_mul` | int-requiring | - | - | N9: i64 saturating mul; N5 then type range without masking; exact int result (Rust std) |
+| `u8_wrapping_add` | int-requiring | - | - | N9: u8 wrapping add; N5 then type range without masking; exact int result (Rust std) |
+| `u8_wrapping_sub` | int-requiring | - | - | N9: u8 wrapping sub; N5 then type range without masking; exact int result (Rust std) |
+| `u8_wrapping_mul` | int-requiring | - | - | N9: u8 wrapping mul; N5 then type range without masking; exact int result (Rust std) |
+| `u8_checked_add` | int-requiring | - | - | N9: u8 checked add; N5 then type range without masking; exact int result (Rust std) |
+| `u8_checked_sub` | int-requiring | - | - | N9: u8 checked sub; N5 then type range without masking; exact int result (Rust std) |
+| `u8_checked_mul` | int-requiring | - | - | N9: u8 checked mul; N5 then type range without masking; exact int result (Rust std) |
+| `u8_saturating_add` | int-requiring | - | - | N9: u8 saturating add; N5 then type range without masking; exact int result (Rust std) |
+| `u8_saturating_sub` | int-requiring | - | - | N9: u8 saturating sub; N5 then type range without masking; exact int result (Rust std) |
+| `u8_saturating_mul` | int-requiring | - | - | N9: u8 saturating mul; N5 then type range without masking; exact int result (Rust std) |
+| `u16_wrapping_add` | int-requiring | - | - | N9: u16 wrapping add; N5 then type range without masking; exact int result (Rust std) |
+| `u16_wrapping_sub` | int-requiring | - | - | N9: u16 wrapping sub; N5 then type range without masking; exact int result (Rust std) |
+| `u16_wrapping_mul` | int-requiring | - | - | N9: u16 wrapping mul; N5 then type range without masking; exact int result (Rust std) |
+| `u16_checked_add` | int-requiring | - | - | N9: u16 checked add; N5 then type range without masking; exact int result (Rust std) |
+| `u16_checked_sub` | int-requiring | - | - | N9: u16 checked sub; N5 then type range without masking; exact int result (Rust std) |
+| `u16_checked_mul` | int-requiring | - | - | N9: u16 checked mul; N5 then type range without masking; exact int result (Rust std) |
+| `u16_saturating_add` | int-requiring | - | - | N9: u16 saturating add; N5 then type range without masking; exact int result (Rust std) |
+| `u16_saturating_sub` | int-requiring | - | - | N9: u16 saturating sub; N5 then type range without masking; exact int result (Rust std) |
+| `u16_saturating_mul` | int-requiring | - | - | N9: u16 saturating mul; N5 then type range without masking; exact int result (Rust std) |
+| `u32_wrapping_add` | int-requiring | - | - | N9: u32 wrapping add; N5 then type range without masking; exact int result (Rust std) |
+| `u32_wrapping_sub` | int-requiring | - | - | N9: u32 wrapping sub; N5 then type range without masking; exact int result (Rust std) |
+| `u32_wrapping_mul` | int-requiring | - | - | N9: u32 wrapping mul; N5 then type range without masking; exact int result (Rust std) |
+| `u32_checked_add` | int-requiring | - | - | N9: u32 checked add; N5 then type range without masking; exact int result (Rust std) |
+| `u32_checked_sub` | int-requiring | - | - | N9: u32 checked sub; N5 then type range without masking; exact int result (Rust std) |
+| `u32_checked_mul` | int-requiring | - | - | N9: u32 checked mul; N5 then type range without masking; exact int result (Rust std) |
+| `u32_saturating_add` | int-requiring | - | - | N9: u32 saturating add; N5 then type range without masking; exact int result (Rust std) |
+| `u32_saturating_sub` | int-requiring | - | - | N9: u32 saturating sub; N5 then type range without masking; exact int result (Rust std) |
+| `u32_saturating_mul` | int-requiring | - | - | N9: u32 saturating mul; N5 then type range without masking; exact int result (Rust std) |
+| `u64_wrapping_add` | int-requiring | - | - | N9: u64 wrapping add; N5 then type range without masking; exact int result (Rust std) |
+| `u64_wrapping_sub` | int-requiring | - | - | N9: u64 wrapping sub; N5 then type range without masking; exact int result (Rust std) |
+| `u64_wrapping_mul` | int-requiring | - | - | N9: u64 wrapping mul; N5 then type range without masking; exact int result (Rust std) |
+| `u64_checked_add` | int-requiring | - | - | N9: u64 checked add; N5 then type range without masking; exact int result (Rust std) |
+| `u64_checked_sub` | int-requiring | - | - | N9: u64 checked sub; N5 then type range without masking; exact int result (Rust std) |
+| `u64_checked_mul` | int-requiring | - | - | N9: u64 checked mul; N5 then type range without masking; exact int result (Rust std) |
+| `u64_saturating_add` | int-requiring | - | - | N9: u64 saturating add; N5 then type range without masking; exact int result (Rust std) |
+| `u64_saturating_sub` | int-requiring | - | - | N9: u64 saturating sub; N5 then type range without masking; exact int result (Rust std) |
+| `u64_saturating_mul` | int-requiring | - | - | N9: u64 saturating mul; N5 then type range without masking; exact int result (Rust std) |
+| `u64_compare` | int-requiring | - | - | N9: N5 int64 bit patterns; unsigned order gives int -1, 0 or 1 (Rust std) |
+| `u64_div` | int-requiring | - | - | N9: N5 int64 bit patterns; unsigned quotient as int64 bits; zero raises value (Rust std) |
+| `u64_rem` | int-requiring | - | - | N9: N5 int64 bit patterns; unsigned remainder as int64 bits; zero raises value (Rust std) |
+| `u64_to_string` | int-requiring | - | - | N9: N5 int64 bit pattern to unsigned decimal string (Rust std) |
+| `fround` | float-producing | - | - | N9: int converts to f64 first; f64 to f32 to f64, float result; current result guard until R2.2 |
 <!-- builtin-table:end -->
 
 **Builtins to add**, outside the checked table until they exist:
 - `num_type` (N7);
 - `f64_bits` and `f64_from_bits`, plus buffer bits get/set (N12);
-- N9's decided width family ([#1758 comment 6304880619](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6304880619)):
+
+**N9 width family (R1.6g, in the checked table above):**
+
+The decided width family ([#1758 comment 6304880619](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6304880619)):
   `<type>_<mode>_<op>`, with types `i8 i16 i32 i64 u8 u16 u32 u64`, modes
   `wrapping checked saturating`, and ops `add sub mul` (72 builtins, one
   table-driven implementation in `builtins_int.c`). Examples:
