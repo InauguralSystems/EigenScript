@@ -331,7 +331,7 @@ def main():
         for kind, v in (("pre", vs_pre), ("tag", vs_tag)):
             tally[(r, kind, v)] = tally.get((r, kind, v), 0) + 1
 
-    want = {"b": 46, "c": 77, "d": 53, "e": 38, "f": 19}  # R1.6a-D1 read_text; R1.6b-D3 http_post LOSS; R1.6-S2 set_exit_code
+    want = {"b": 46, "c": 77, "d": 53, "e": 38, "f": 19, "g": 77}  # R1.6a-D1 read_text; R1.6b-D3 http_post LOSS; R1.6-S2 set_exit_code
     if counts != want: fail.append("round counts %s, the plan says %s" % (counts, want))
     if not rows or len(rows) != len(sec6): fail.append("examined=%d table=%d" % (len(rows), len(sec6)))
     if guard["guarded"] != guard["yes"] + guard["closed_in"] + guard["pending-profile"] + guard["vacuous"]:

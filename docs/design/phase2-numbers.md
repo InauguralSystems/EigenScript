@@ -203,12 +203,12 @@ tree has:
 
 **Builtins.** The registration table is derived from the
 `env_set_local_owned(env, "name", make_builtin(fn))` lines plus the
-`ext_names.h` X-lists. It holds 312 names after sync #5. The initial 311-name population was
+`ext_names.h` X-lists. It holds 389 names after R1.6g (312 after sync #5). The initial 311-name population was
 calibrated against the runtime's own `eigenscript --api --json`
 (223 core + 88 extension = 311; equal in both directions). A builtin is numeric when a site is contained in
 its function, in a same-file function it calls or names as a value (a
 comparator, an op-table entry; closure depth 4), or in the shared formatter
-or equality it calls. The current population is 233 numeric builtins (R1.6-S2), and §6
+or equality it calls. The current population is 310 numeric builtins (R1.6g N9), and §6
 classifies every one. (The closure does not follow a call into another
 file, so a header helper that reads a number must itself be in the
 vocabulary for its callers to count: `buffer_read_byte` entered the
@@ -1347,8 +1347,8 @@ column against the note both ways: a row's note says "continuous" exactly
 when its `q7` column is not `-`. Counts: geometry 9, bounded 13, magnitude 13.
 
 **Counts** (from the table below, checked by `tools/phase2_inventory.py`,
-which prints them): 233 numeric builtins (including `set_exit_code`, R1.6-S2). By class: 37
-int-preserving, 57 float-producing, 86 int-requiring, 53 other. The decided Q1 moved 16 rows
+which prints them): 310 numeric builtins (including N9, R1.6g). By class: 37
+int-preserving, 58 float-producing, 162 int-requiring, 53 other. The decided Q1 moved 16 rows
 from other to int-requiring (counts, byte values, handles, flags and
 selectors); `ppu_render_frame` is a new int-requiring row; design round 3
 moved `buf_from_pcm16le` from float-producing to int-requiring (its inputs are
@@ -1719,7 +1719,7 @@ The decided width family ([#1758 comment 6304880619](https://github.com/Inaugura
   `as u64` / `as i64` mapping the bit pattern. No width-family negation,
   shifts, division, remainder or power are added.
 - `fround`: `(double)(float)x`, converting an int first and returning a
-  float (JavaScript's `Math.fround`). Together these are 77 new builtins.
+  float (JavaScript's `Math.fround`). Together these are the 77 builtins added by R1.6g.
 
 ---
 
@@ -2167,11 +2167,11 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    | R1.6g | N9's 77 new width-family builtins in `builtins_int.c`, Rust std oracle | +77 | `N9.wrapping`, `N9.checked-raises`, `N9.saturating`, `N9.unsigned-ops`, `N9.fround` |
    | R1.6z | Remaining bridge sites in runtime, containers, embed, trace, compiler and task; delete all 21 tokens and all helpers left without callers | none | mechanical: deletion compile and final full table |
 
-   The existing rows sum to 233. Ruling R1.6a-D1 added `read_text`, already
+   The pre-N9 rows sum to 233; R1.6g adds 77 for a total of 310. Ruling R1.6a-D1 added `read_text`, already
    present in the R1.6a start (`1fd4422c`) through main's #1841/#1668, to
    round c: the original plan's c=75 and total=231 became c=76 and total=232
    at that import. Sync #5's R1.6-S2 adds main's `set_exit_code` to round c,
-   so the current counts are c=77 and total=233; `rm` had no table row and
+   so the pre-N9 counts became c=77 and total=233; `rm` had no table row and
    its deletion under R1.6-S1 does not change the counts.
    `tools/phase2_builtins.sh` derives and checks the sub-round by this rule. Every sub-round uses the table gate
    (§9.4); later builders add their completed round to
