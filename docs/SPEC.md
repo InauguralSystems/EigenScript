@@ -384,11 +384,11 @@ consequences are contracts you can rely on:
     operand can hold an infinity), so any other source hits a backstop that
     raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
     result, so both tiers raise from the same guard. Buffer storage may retain
-    a raw non-finite kernel result internally. Ordinary indexed reads apply
-    that guard: infinity saturates at ±`1e308`, while under `EIGS_STRICT=0` a
-    `NaN` becomes `0` and sets `math_flags.invalid` (strict mode raises).
-    `sum`, `get_at`, `dot` and `write_bytes` instead refuse non-finite buffer
-    elements in every strict mode (N13).
+    a raw non-finite kernel result internally. Indexing and iteration, like
+    `get_at`, refuse a stored NaN or infinity with `value` in every strict
+    mode (N13). Strict NaN preserves the first-NaN diagnostic and sets
+    `math_flags.invalid`; other non-finite data refusals leave flags alone.
+    The interpreter, JIT and leaf fallback agree on kind, message and line.
   - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
     document is walked leniently and a parse failure answers the same `""`
     an absent key does. Under strict `json_path` applies `json_decode`'s
@@ -2894,6 +2894,24 @@ Q7 magnitude validation also applies before SDL is loaded:
 ```eigenscript
 try:
     gfx_delay of 1e300
+catch e:
+    print of e.kind
+```
+```output
+value
+```
+
+### Stored buffer data boundary
+
+Buffer kernels can retain non-finite data. Scalar indexing and iteration
+raise `value` when that data is read, in every strict mode (N13).
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+try:
+    print of p[0]
 catch e:
     print of e.kind
 ```

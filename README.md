@@ -950,3 +950,21 @@ catch e:
 ```output
 value
 ```
+
+### Stored buffer data boundary
+
+Buffer kernels can retain non-finite data. Scalar indexing and iteration
+raise `value` when that data is read, in every strict mode (N13).
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+try:
+    print of p[0]
+catch e:
+    print of e.kind
+```
+```output
+value
+```

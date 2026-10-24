@@ -61,9 +61,22 @@ right is buffer of [2, 1]
 right[0] is 1e200
 right[1] is 0 - 1e200
 raw is matmul of [left, right]'
+# R1.6d-D1 point 3 / N13: indexed data reads refuse lenient NaN.
+# NG35's gather copies the raw cell; the following [0] is the scalar read.
 for spec in \
  'NG32 index|x is raw[0]' \
- 'NG35 gather|x is (gather of [raw, [0]])[0]' \
+ 'NG35 gathered index|x is (gather of [raw, [0]])[0]'; do
+ name=${spec%%|*}; op=${spec#*|}
+ run "$name N13 refusal" "$nan_setup
+before is math_flags of null
+caught is false
+try:
+    $op
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught and ((math_flags of null) == before), \"R1.6d-D1 indexed NaN refuses without flag writes\"]"
+done
+for spec in \
  'NG38 equality|x is raw == raw' \
  'NG39 distinct equality|zero is buffer of 1; x is raw == zero'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n/g')
@@ -110,7 +123,7 @@ catch e:
 assert of [caught, \"N13 sum refuses non-finite payload instead of substituting zero\"]"
 # NG56 needs 8 stored bytes since #1926 refuses a short input. Keep the NaN
 # in buffer storage so the decoder's own read performs the refusal: an index read
-# first (raw[0]) would set it before f64_from_bytes ever ran.
+# first (raw[0]) would refuse before f64_from_bytes ever ran (N13).
 run "NG56 f64_from_bytes N13 refusal" 'left is buffer of [8, 2]
 for i in range of 16:
     left[i] is 1e200

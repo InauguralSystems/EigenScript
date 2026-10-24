@@ -1,0 +1,1 @@
+- Buffer indexing and iteration refuse stored non-finite elements in every strict mode. Buffer equality compares stored doubles with IEEE equality, without raises or math flags; embedding buffer reads return the exact stored double, including NaN payloads, infinities and signed zero. The transitional numeric bridge and caller-less helpers are removed (#1758, R1.6z).
