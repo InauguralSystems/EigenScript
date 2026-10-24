@@ -94,8 +94,9 @@ extern int g_trace_enabled_storage;
  * as the obs-flag race; the INSTANCE pre-exists on main (verified there, same
  * 2 warnings), but the flags became verdict-carrying here. The macros are
  * LOADS; writes must use trace_flag_store, so the write sites stay
- * enumerable by the compiler. The arm NAME SETS (g_arm_*, g_occ_*) are a
- * separate, wider surface — tracked on #1035, not fixed by flag atomics. */
+ * enumerable by the compiler. The separate arm NAME SETS (g_arm_*, g_occ_*)
+ * are race-free since #1145: g_arm_mu covers every reader, writer, and
+ * shutdown free, exercised by spawn and two-state TSan witnesses. */
 extern int g_trace_hist_storage;
 #define g_trace_hist __atomic_load_n(&g_trace_hist_storage, __ATOMIC_RELAXED)
 

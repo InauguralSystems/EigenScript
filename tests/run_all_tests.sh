@@ -69,7 +69,7 @@ section_skip() {
 # tools/suite_label_check.sh already polices — closes the timer on the previous
 # section and prints
 #     SECTION_TIME: [nn] <seconds>
-# tools/section_weights.txt is regenerated from those lines (see docs/CI.md).
+# tests/section_weights.txt is regenerated from those lines (see docs/CI.md).
 #
 # Cost: one bash function call per echo. Measured over a full run: under 0.2 s.
 # `EPOCHREALTIME` is bash 5; macOS ships bash 3.2, so $SECONDS is the fallback

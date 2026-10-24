@@ -8,7 +8,8 @@
 # selftests.sh enforces it (#1352): a trigger matching a tracked product file (src/ lib/ docs/ examples/,
 # the runner, top-level tests/test_* other than the row's own scripts, README, CHANGELOG) is refused unless the
 # row's timeout bound is <= 60s.
-# The runner-guard calibrations [99c]/[99d] stay in the suite until the runner is split (#1275 plan, step 3).
+# The runner-guard calibrations [99c]/[99d] stay in the suite: they exercise
+# the suite runner's own timeout and binary-fingerprint guards in their real calling context.
 bench/check_regression.sh bench/scalar_loop.eigs | timeout 30 bash bench/check_regression.sh --selftest
 tests/http_readiness.py tests/test_http_readiness.sh | timeout 60 python3 tests/http_readiness.py --selftest | [{"pattern":"PASS:","count":510},{"pattern":"^HTTP_READINESS_SELFTEST: 510 passed, 0 failed$","count":1},{"pattern":"FAIL:","count":0}]
 tests/test_arming_mt.sh tests/arming_mt_fixtures/* | timeout 30 bash tests/test_arming_mt.sh --selftest | [{"pattern":"  PASS:","count":5},{"pattern":"  FAIL:","count":0}]
