@@ -194,9 +194,9 @@ Value* builtin_regex_replace(Value *arg) {
 /* ================================================================
  * STREAMING BINARY WRITER — write tensor-format data incrementally
  * ================================================================
- * stream_open of ["path", count] — integral count 1..10000000; outside that range raises limit even with EIGS_STRICT=0; returns 1 on success, 0 on I/O failure
- * stream_write of value           → writes one float64, returns 1
- * stream_close of null            → closes the stream file, returns 1
+ * stream_open of ["path", count] — integral count 1..10000000; outside that range raises limit even with EIGS_STRICT=0; returns true on success, false on I/O failure
+ * stream_write of value           → writes one float64, returns true on success, false on failure
+ * stream_close of null            → closes the stream file, returns true on success, false on failure
  *
  * Format: [uint32 ndim=1][uint32 rows=1][uint32 cols=count][uint32 flags=0]
  *         then count × float64 values (written one at a time via stream_write)
@@ -1053,7 +1053,7 @@ Value* builtin_file_exists(Value *arg) {
     TRACE_NONDET_RECORD("file_exists", make_bool(ex));
 }
 
-/* is_dir of path — 1 if path names a directory, 0 for a plain file, a
+/* is_dir of path — true if path names a directory, false for a plain file, a
  * missing path, or a non-string arg. Replaces the consumer-side
  * `file_exists of f"{path}/."` probe (#576). Nondeterministic fs read →
  * trace-recorded per the tape-first rule (NB: the older fs predicates —
