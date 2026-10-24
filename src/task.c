@@ -311,9 +311,9 @@ Value *task_sched_trace_read(void) {
     for (int i = 0; i < s->trace_count; i++) {
         const SchedTraceEntry *e = &s->trace[i];
         Value *d = make_dict(4);
-        dict_set_owned(d, "seq",   make_num((double)i));
-        dict_set_owned(d, "tick",  make_num(e->tick));
-        dict_set_owned(d, "task",  make_num(e->task));
+        dict_set_owned(d, "seq",   make_float((double)i));
+        dict_set_owned(d, "tick",  make_float(e->tick));
+        dict_set_owned(d, "task",  make_float(e->task));
         dict_set_owned(d, "cause", make_str(e->cause < SCAUSE__COUNT
                                             ? sched_cause_name[e->cause] : "?"));
         list_append_owned(out, d);
@@ -581,7 +581,7 @@ int task_do_kill(int tid) {
         Value *ev = make_dict(3);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_INTERRUPT)));
         dict_set_owned(ev, "message", make_str("task was killed"));
-        dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "line", make_float(0));
         t->error_value = ev;
     }
     for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
@@ -686,7 +686,7 @@ static void task_error_summary(Value *ev, char *out, size_t cap) {
     if (msg && msg->type == VAL_STR) {
         Value *line = dict_get_view(ev, "line", &lv);
         /* The checking accessor (#1637): the type is proven, so it cannot raise. */
-        double ln = (line && val_is_number(line)) ? eigs_num_arg(line, __func__) : 0;
+        double ln = (line && val_is_number(line)) ? eigs_float_arg(line, __func__) : 0;
         if (ln > 0)
             snprintf(out, cap, "line %.0f: %s", ln, msg->data.str);
         else

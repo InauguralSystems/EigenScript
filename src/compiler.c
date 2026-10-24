@@ -580,7 +580,7 @@ static int add_string_constant(Compiler *c, const char *str) {
 }
 
 static int add_num_constant(Compiler *c, double num) {
-    Value *v = make_num(num);
+    Value *v = make_float(num);
     int idx = chunk_add_constant(c->chunk, v);
     val_decref(v);
     return check_const_index(idx);

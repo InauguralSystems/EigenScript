@@ -248,7 +248,7 @@ sqrt(2) = 1.414213562373095
   every strict mode, matching `get_at` (N13). Strict NaN keeps its first
   diagnostic and sets `math_flags.invalid`; every execution tier agrees on
   the error kind, message and source line. Structural buffer
-  equality, the other scalar reductions, mixed buffer/list materialization
+  The other scalar reductions, mixed buffer/list materialization
   and numeric byte/sample/device conversions normalize their inputs and stop at
   the first raised read. `write_bytes` requires exact bytes in 0..255
   (N5/Q1); other byte converters retain truncation and wrapping at this stage;
@@ -725,4 +725,25 @@ catch e:
 ```
 ```output
 value
+```
+
+### Buffer equality
+
+Buffers compare their stored doubles with IEEE equality: NaN differs from
+everything, even itself; infinities compare by sign; signed zeros are equal.
+Equality never raises or changes math flags, including under strict mode.
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+print of (p == p)
+print of (p == g)
+sgd_update of [p, p, 1.0]
+print of (p == p)
+```
+```output
+true
+false
+false
 ```

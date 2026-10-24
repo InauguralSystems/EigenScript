@@ -1450,24 +1450,24 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     /* windows read newest-first (offset 0 = most recent); emit oldest-first
      * so the lists read chronologically, like a history. */
     for (int i = vcnt - 1; i >= 0; i--) {
-        list_append_owned(rel, make_num(observer_slot_v_get(s, (size_t)i)));
-        list_append_owned(raw, make_num(observer_slot_vr_get(s, (size_t)i)));
+        list_append_owned(rel, make_float(observer_slot_v_get(s, (size_t)i)));
+        list_append_owned(raw, make_float(observer_slot_vr_get(s, (size_t)i)));
     }
     for (int i = dcnt - 1; i >= 0; i--)
-        list_append_owned(dh, make_num(observer_slot_window_get(s, (size_t)i)));
+        list_append_owned(dh, make_float(observer_slot_window_get(s, (size_t)i)));
     dict_set_owned(out, "rel", rel);
     dict_set_owned(out, "raw", raw);
     dict_set_owned(out, "dh",  dh);
-    dict_set_owned(out, "entropy",      make_num(s ? s->entropy : 0.0));
-    dict_set_owned(out, "dH",           make_num(s ? s->dH : 0.0));
-    dict_set_owned(out, "last_entropy", make_num(s ? s->last_entropy : 0.0));
-    dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? s->last_value : 0.0));
+    dict_set_owned(out, "entropy",      make_float(s ? s->entropy : 0.0));
+    dict_set_owned(out, "dH",           make_float(s ? s->dH : 0.0));
+    dict_set_owned(out, "last_entropy", make_float(s ? s->last_entropy : 0.0));
+    dict_set_owned(out, "last_value",   make_float((s && s->v_used) ? s->last_value : 0.0));
     dict_set_owned(out, "observed",     make_bool(s && s->used != 0));     /* #1637 */
     dict_set_owned(out, "numeric",      make_bool(s && s->v_used != 0));
     /* #1044: the depth this slot classifies over travels with the snapshot,
      * so `classify of (trajectory of x)` agrees with `report of x` for a
      * binding carrying a per-binding override. */
-    dict_set_owned(out, "window",       make_num((double)observer_slot_window(s)));
+    dict_set_owned(out, "window",       make_float((double)observer_slot_window(s)));
     return out;
 }
 
@@ -1500,7 +1500,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         Value *w = dict_get_view_local(dict, "window", &w_view);
         if (w) {
             /* #1758: a number of either kind, read through the bridge */
-            double wd = val_is_number(w) ? eigs_num_arg(w, __func__) : 0.0;
+            double wd = val_is_number(w) ? eigs_float_arg(w, __func__) : 0.0;
             if (!val_is_number(w) || wd < OBSERVER_WINDOW_MIN ||
                 wd > OBSERVER_WINDOW_MAX || wd != (int)wd)
                 return 0;
@@ -1524,8 +1524,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->v_window[out->v_window_count]  = eigs_slot_num(a, __func__);
-        out->vr_window[out->v_window_count] = eigs_slot_num(b, __func__);
+        out->v_window[out->v_window_count]  = eigs_slot_float(a, __func__);
+        out->vr_window[out->v_window_count] = eigs_slot_float(b, __func__);
         out->v_window_count++;
     }
     out->v_window_head = (uint8_t)(out->v_window_count % N);
@@ -1540,7 +1540,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->dh_window[out->dh_window_count++] = eigs_slot_num(a, __func__);
+        out->dh_window[out->dh_window_count++] = eigs_slot_float(a, __func__);
     }
     out->dh_window_head = (uint8_t)(out->dh_window_count % N);
     /* #1637: the scalar fields are numbers and the two flags are bools, as
@@ -1558,7 +1558,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             memset(out, 0, sizeof *out);
             return 0;
         }
-        *dsts[k] = eigs_num_arg(v, __func__);   /* #1758: an int converts (the bridge) */
+        *dsts[k] = eigs_float_arg(v, __func__);   /* #1758: an int converts (the bridge) */
     }
     EIGS_VIEW(fo_view); EIGS_VIEW(fn_view);
     Value *fo = dict_get_view_local(dict, "observed", &fo_view);
@@ -1663,7 +1663,7 @@ void free_value(Value *v) {
     env_intern_release_value(v);
     if (v->type == VAL_FLOAT) {   /* the freelist recycles float boxes; an int box is freed */
 #ifndef EIGS_POOL_OFF_NUM
-        /* Route freed NUMs to freelist for reuse by make_num */
+        /* Route freed NUMs to freelist for reuse by make_float */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {
             memcpy(EIGS_NUM_LINK(v), &g_num_freelist, sizeof(Value *));
             g_num_freelist = v;
@@ -1765,7 +1765,7 @@ static inline Value *make_float_pooled(double n) {
         eigs_num_park_unpoison(v);
         memset(v, 0, sizeof(Value));
     } else
-#endif  /* EIGS_POOL_OFF_NUM (#1665): never satisfy a make_num from the freelist —
+#endif  /* EIGS_POOL_OFF_NUM (#1665): never satisfy a make_float from the freelist —
          * every heap NUM is a fresh xcalloc. */
     {
         v = xcalloc(1, sizeof(Value));
@@ -1812,7 +1812,7 @@ void recycle_intermediate(Value *v) {
 #endif
 }
 
-/* Unpooled make_num: never touches the per-thread NUM freelist, so it is
+/* Unpooled make_float: never touches the per-thread NUM freelist, so it is
  * safe without a current VM thread (C-level fixtures, tests/test_intern_owners.c). */
 Value* make_float_permanent(double n) {
     n = num_guard(n);
@@ -2366,7 +2366,7 @@ EigsSlot slot_from_value(Value *v) {
 }
 
 /* slot_to_value: produces a Value* the caller owns a ref to.
- *   - immediate double -> make_num
+ *   - immediate double -> make_float
  *   - immediate null -> g_null_singleton
  *   - immediate bool -> the true/false singleton (#1637)
  *   - heap/tracked pointer -> incref and return
@@ -2377,7 +2377,7 @@ EigsSlot slot_from_value(Value *v) {
  *     as null, silently).
  */
 Value* slot_to_value(EigsSlot s) {
-    if (slot_is_f64(s)) return make_num(SLOT_F64_RAW(s));
+    if (slot_is_f64(s)) return make_float(SLOT_F64_RAW(s));
     if (slot_is_null(s)) return &g_null_singleton;
     if (slot_is_bool(s)) return make_bool(slot_as_bool(s));
     if (slot_is_heap(s)) {
@@ -2883,7 +2883,7 @@ static EigsSlot module_ns_project(Value *d, Env *e, const char *key, uint32_t h,
              * release, so no destructor runs under the hold. (#1758: an
              * int takes the general path below; slot_to_value boxes it and
              * the dict store re-canonicalizes it.) */
-            dict_value_rewrite_num(d, di, SLOT_F64_RAW(s));
+            dict_value_rewrite_f64(d, di, SLOT_F64_RAW(s));
             env_shared_unlock(e);
             *found = 1;
             return dict_value_slot(d, di);
@@ -3131,7 +3131,7 @@ static Value *chan_clone_rec(Value *v, int depth) {
     if (depth > CHAN_CLONE_MAX_DEPTH && v->type != VAL_FLOAT && v->type != VAL_INT && v->type != VAL_NULL &&
         v->type != VAL_BOOL && v->type != VAL_STR) { val_incref(v); return v; }
     switch (v->type) {
-        case VAL_FLOAT: return make_num(VAL_F64_RAW(v));
+        case VAL_FLOAT: return make_float(VAL_F64_RAW(v));
         case VAL_INT: return make_int(VAL_I64_RAW(v));
         case VAL_NULL: return make_null();
         case VAL_BOOL: return make_bool(v->data.boolean);
@@ -3409,11 +3409,9 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
         case VAL_BUFFER: {
             if (a->data.buffer.count != b->data.buffer.count) return 0;
             for (int i = 0; i < a->data.buffer.count; i++) {
-                double av = buffer_read_num(a, i);
-                if (g_has_error) return 0;
-                double bv = buffer_read_num(b, i);
-                if (g_has_error) return 0;
-                if (av != bv) return 0;
+                /* R1.6z-D1: total IEEE equality on stored doubles. No
+                 * scalar boundary, normalization, error or math-flag write. */
+                if (!(a->data.buffer.data[i] == b->data.buffer.data[i])) return 0;
             }
             return 1;
         }
