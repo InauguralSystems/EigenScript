@@ -46,6 +46,8 @@ tests/tmp_mod_373*.eigs
 
 # Generated embeddable artifacts (make lib / make amalgamation, #397)
 build/
+# #1940: the per-tree make lock (Makefile, tools/stop_gate.sh)
+/.make.lock
 # Generated LSP stdlib index (make lsp / build.sh lsp, #590)
 src/lsp_stdlib_index.h
 src/eigsdap
