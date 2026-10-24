@@ -620,9 +620,10 @@ taped `random_int`; the section is `tests/sections/104b-task-death-fail-fast-173
 runs, a worker's failure surfaced anywhere from line 9 to line 42 of main's
 output while main's own tape stream stayed byte-identical. A fail-fast stop
 there would land at one point in a recording and at another in its replay.
-Closing that waits on per-thread tape streams (#1142). Until then, a
-long-running main that must stop when a worker fails should catch the error in
-the worker and call `exit of 1`, which does stop the whole state.
+Per-thread tape streams (#1566) do not close that: each stream records its own
+thread's values, not the order in which the threads ran. A long-running main
+that must stop when a worker fails should catch the error in the worker and
+call `exit of 1`, which does stop the whole state.
 
 **Why a join can raise.** A join is a point in main's own program order, not a
 moment in the worker's schedule. `thread_join` waits for the worker to finish
