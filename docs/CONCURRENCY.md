@@ -697,15 +697,16 @@ Thread scheduling is nondeterministic, so it cannot be recorded onto the trace
 tape. Under `EIGS_REPLAY` the receive family (`recv`, `try_recv`,
 `recv_timeout`) **raises a catchable error** rather than diverge silently,
 the same fail-loud contract the other non-replayable builtins use (see
-docs/TRACE.md, "Non-Replayable Builtins"). Until per-thread N streams exist
-(#1142), **any nondeterministic builtin on a non-main thread** raises the
-same error — a worker calling `random` used to tear the replay reader
-(heap-use-after-free) or silently mix taped and live values. `spawn` and
-`thread_join` themselves are not blocked: a worker that returns a **pure**
-value (no nondet builtin, no `recv`) still replays deterministically (the
-joined result is copied). Keep replayable programs off `recv`, off nondet
-builtins inside workers, and off any worker whose result depends on thread
-ordering.
+docs/TRACE.md, "Non-Replayable Builtins"). A nondeterministic builtin on a
+`spawn`ed worker does replay: each thread's `N` records carry its own stream
+id, and replay serves every caller from its own stream (#1566; docs/TRACE.md,
+"Threads and states"), where a caller bound to no stream raises rather than
+mix taped and live values. Before #1142 a worker calling `random` tore the
+replay reader (heap-use-after-free) or silently mixed taped and live values.
+`spawn` and `thread_join` themselves are not blocked, and the joined result is
+copied. What no stream records is the order in which the threads ran, so keep
+replayable programs off `recv` and off any worker whose result depends on
+thread ordering.
 
 The refusal is a clean exit, never a signal, on the main thread and on a
 worker alike: `spawn of [recv, ch]` under `EIGS_REPLAY` prints the diagnostic

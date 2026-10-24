@@ -747,8 +747,9 @@ The contract now:
   the FILE tape's staging buffer and nothing else; `trace_init` has one
   caller in the tree, `src/main.c`, so no embedder ever reaches it.
 
-Coverage: `tests/test_trace_mt.sh` (worker-tape parse, replay-workers
-fail-loud, single-worker control, parser `--selftest`), `make
+Coverage: `tests/test_trace_mt.sh` (worker-tape parse, replay-workers:
+two worker streams replay from one tape and a malformed stream tag refuses
+with exit 3, single-worker control, parser `--selftest`), `make
 embed-concurrent` (sink byte accounting, per-state `O cfg`, close-while-
 other-runs, concurrent close, owner-only take, shutdown-while-sibling,
 serialized take, take-under-lock, set-sink header, sink-only memory bound,
