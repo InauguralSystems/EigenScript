@@ -1,0 +1,1 @@
+- Share one matcher and API vocabulary across all documentation call-claim checks, and remove the unused direct-registration count (#1944).
