@@ -124,6 +124,56 @@ def strict_default_wording():
     print(f'  STRICT DEFAULT: examined {examined} section(s), declared {len(headings)}')
 
 
+def bool_result_wording():
+    """Reject numeric result prose for builtins whose C constructors are bool.
+
+    The implementation, rather than a second hand-maintained type list, owns
+    the classification: a builtin is in the population when its function body
+    constructs bool values and constructs no numeric values.  This deliberately
+    narrow rule does not guess about helpers with mixed/dynamic return kinds.
+    """
+    sources = sorted(Path('src').glob('*.c'))
+    bools = set()
+    function_re = re.compile(r'Value\*\s+builtin_([A-Za-z0-9_]+)\s*\([^)]*\)\s*\{')
+    for path in sources:
+        source = path.read_text(encoding='utf-8')
+        for match in function_re.finditer(source):
+            depth = 1
+            end = match.end()
+            while end < len(source) and depth:
+                depth += (source[end] == '{') - (source[end] == '}')
+                end += 1
+            body = source[match.end():end]
+            # make_float too: phase 2 (#1758) replaces make_num with make_int/make_float.
+            if 'make_bool(' in body and not re.search(r'make_(?:num|int|float)\s*\(', body):
+                bools.add(match[1])
+
+    # Result verbs keep numeric examples/ranges out of the claim population.
+    numeric_result = re.compile(
+        r'\b(?:returns?|answers?)\s+`?[01]`?\b|'
+        r'(?:→|->)\s*`?[01]`?\b|'
+        r'`?[01]`?\s+(?:if|while|on\s+(?:success|failure))\b', re.I)
+    examined = hits = 0
+    for file in ('docs/BUILTINS.md', 'src/lsp_builtin_index.h'):
+        for lineno, line in enumerate(Path(file).read_text(encoding='utf-8').splitlines(), 1):
+            if file.endswith('.md'):
+                match = re.match(r'^\|\s*`([A-Za-z0-9_]+)`\s*\|', line)
+            else:
+                match = re.match(r'^\s*\{"([A-Za-z0-9_]+)",', line)
+            if not match or match[1] not in bools:
+                continue
+            examined += 1
+            claim = numeric_result.search(line)
+            if claim:
+                hits += 1
+                red(f'{file}:{lineno}: bool builtin {match[1]} has numeric result claim '
+                    f'{claim.group()!r}; say true/false (#1945)')
+    print(f'  BOOL RESULT WORDING: {len(bools)} constructor-derived bool builtin(s), '
+          f'{examined} documented row/hover entrie(s), {hits} hit(s)')
+    if not bools or not examined:
+        red('BOOL RESULT WORDING population is empty')
+
+
 def check_floors():
     declared = {}
     for row in POP.read_text().splitlines():
@@ -463,6 +513,11 @@ def selftest():
                 'tools/werror_flags.txt', 'tests/test_doc_examples.py',
                 'src/builtins.c', 'src/compiler.c', 'src/eigenscript.c',
                 'src/lexer.c'}
+    # bool_result_wording derives its population from implementation sources
+    # and checks the generated hover index, so its isolated selftest needs the
+    # same inputs as a real checkout rather than a hand-maintained subset.
+    content |= {p for p in tracked if Path(p).match('src/*.c')}
+    content.add('src/lsp_builtin_index.h')
     # PATHS reads existence, not contents, of referenced tracked paths.
     refs = set()
     pat = r'`(?:' + '|'.join(map(re.escape, SEGMENTS)) + r')/[A-Za-z0-9_.*/-]*`'
@@ -528,6 +583,15 @@ def selftest():
                 p.write_text(original)
             p = tree / 'docs/BUILTINS.md'
             original = p.read_text()
+            p.write_text(original.replace('Returns `true` on success or `false` when libSDL2 is unavailable.',
+                                          'Returns 1 on success or `false` when libSDL2 is unavailable.', 1))
+            result = gate()
+            ok = result.returncode != 0 and 'bool builtin gfx_open has numeric result claim' in result.stdout
+            passed += ok
+            print(f'SELFTEST: bool-result: {"PASS" if ok else "FAIL"}')
+            p.write_text(original)
+            p = tree / 'docs/BUILTINS.md'
+            original = p.read_text()
             for label, anchor, replacement, witness in [
                 ('strict-intro', '**Wrong-typed and wrong-arity arguments (#1007).**',
                  '**Wrong-typed and wrong-arity arguments (#1007).** Under `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
@@ -579,8 +643,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 17 case(s) run, {passed} passed, {17-passed} failed')
-            return 0 if passed == 17 else 1
+            print(f'SELFTEST: 18 case(s) run, {passed} passed, {18-passed} failed')
+            return 0 if passed == 18 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -611,6 +675,7 @@ def main():
     changelog_version()
     derived_counts()
     strict_default_wording()
+    bool_result_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
         if counts[kind] == 0:

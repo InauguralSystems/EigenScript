@@ -2168,7 +2168,7 @@ Value* builtin_random_int(Value *arg) {
     TRACE_NONDET_RET("random_int", make_num(lo_i + (eigs_random_long() % (int64_t)span)));
 }
 
-/* seed_random of n → seeds the RNG, returns 1 */
+/* seed_random of n → seeds the RNG, returns true */
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_bool(0));
     pthread_mutex_lock(&g_random_lock);
@@ -2549,7 +2549,7 @@ Value* builtin_state_at(Value *arg) {
 }
 
 /* ==== BUILTIN: secure_equals ==== */
-/* secure_equals of [a, b] → 1 if the two strings are equal, else 0.
+/* secure_equals of [a, b] → true if the two strings are equal, else false.
  * Constant-time in the *contents*: it always scans the full length and folds
  * every byte into the result, so it does not short-circuit on the first
  * differing byte the way `==`/strcmp do. Use it for comparing secrets
@@ -2659,7 +2659,7 @@ Value* builtin_ord(Value *arg) {
 }
 
 /* ==== BUILTIN: try_parse ==== */
-/* try_parse of string → 1 if valid EigenScript syntax, 0 if not.
+/* try_parse of string → true if valid EigenScript syntax, false if not.
  * Tokenizes and parses without executing. Suppresses stderr. */
 Value* builtin_try_parse(Value *arg) {
     /* The wrong-TYPE half is a mistake; the parse-FAILED half below is the
@@ -5143,7 +5143,7 @@ Value* builtin_task_kill(Value *arg) {
     return make_bool(task_do_kill(target));
 }
 
-/* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
+/* task_alive of id → true while the task is READY/RUNNING/SUSPENDED, else false
  * (DONE, DEAD, or an unknown id). */
 Value* builtin_task_alive(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "task_alive", "a task id (number)", make_bool(0));

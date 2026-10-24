@@ -1,0 +1,1 @@
+- Fixed builtin documentation and LSP hovers that described boolean results as numeric `0`/`1`, and added a documentation check against regressions.
