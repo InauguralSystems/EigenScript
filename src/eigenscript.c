@@ -1776,10 +1776,8 @@ static inline Value *make_float_pooled(double n) {
     return v;
 }
 
-/* Both names share the exact pooling and normalisation path while the
- * bridge exists. R1.6a migrates no caller. */
+/* Float construction retains the existing pooling and normalization path. */
 Value *make_float(double n) { return make_float_pooled(n); }
-Value *make_num(double n) { return make_float_pooled(n); }
 
 /* #1758 R1.3: large int slots and Value API boundaries own ordinary heap
  * Values. Int boxes never enter the float freelist and own no GC edges. */
@@ -1823,7 +1821,6 @@ Value* make_float_permanent(double n) {
     return v;
 }
 
-Value *make_num_permanent(double n) { return make_float_permanent(n); }
 
 /* Forward decl of the VAL_NULL singleton — defined below near make_null. */
 static Value g_null_singleton;
@@ -1847,36 +1844,6 @@ Value* make_bool(int b) { return b ? &g_true_singleton : &g_false_singleton; }
 static const char *num_who(const char *who) {
     if (!who) return "builtin";
     return strncmp(who, "builtin_", 8) == 0 ? who + 8 : who;
-}
-
-double eigs_num_arg_slow(const Value *v, const char *who) {
-    if (v && v->type == VAL_FLOAT) return VAL_F64_RAW(v);
-    /* #1758 R1.2, the bridge (design 2.7): until R1.6 a number a builtin
-     * reads is a double, so an int converts (rounding beyond 2^53), as every
-     * number already is one on the tag. */
-    if (v && v->type == VAL_INT) return (double)VAL_I64_RAW(v);
-    if (!g_has_error)
-        rt_error(EK_TYPE, 0, "%s: expected a number, got %s", num_who(who),
-                 v ? val_type_name(v->type) : "nothing");
-    return 0.0;
-}
-
-double eigs_list_num(const Value *list, int i, const char *who) {
-    if (!list || list->type != VAL_LIST || i < 0 || i >= list->data.list.count) {
-        if (!g_has_error)
-            rt_error(EK_TYPE, 0, "%s: expected a number as argument %d, got nothing",
-                     num_who(who), i);
-        return 0.0;
-    }
-    return eigs_slot_num(list_slot(list, i), who);
-}
-
-double eigs_elem_num(const Value *v, const char *who) {
-    return eigs_slot_elem_num(eigs_container_slot((Value *)v), who);
-}
-
-int eigs_opt_num(const Value *v, double *out, const char *who) {
-    return eigs_slot_opt_num(eigs_container_slot((Value *)v), out, who);
 }
 
 /* The final readers never own their argument. Keep the payload/type
@@ -3352,7 +3319,7 @@ int is_truthy(Value *v) {
  * mixed-type pair stays unequal. */
 static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
     /* #1417: a buffer compared with itself still exposes its elements. Do
-     * not bypass normalization (or a strict NaN raise) through identity. */
+     * not make a NaN-holding buffer equal to itself through identity. */
     if (a == b && (!a || a->type != VAL_BUFFER)) return 1;
     if (!a || !b) return 0;
     if (a->type != b->type) {

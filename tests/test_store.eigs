@@ -1,8 +1,9 @@
 load_file of "lib/test.eigs"
 
 # Clean up any leftover test database
-if file_exists of "/tmp/test_eigenstore.db":
-    remove_file of "/tmp/test_eigenstore.db"
+for stale_path in ["/tmp/eigs1006_fp_a", "/tmp/eigs1006_fp_b", "/tmp/eigs1006_fp_c", "/tmp/eigs1006_update.db", "/tmp/eigs1758_r16b_boxed_store.db", "/tmp/eigs816_bounds.db", "/tmp/eigs_store_badmagic.db", "/tmp/eigs_store_badver.db", "/tmp/eigs_store_short.db", "/tmp/test_eigenstore.db"]:
+    if file_exists of stale_path:
+        remove_file of stale_path
 
 # Open creates file
 db is store_open of "/tmp/test_eigenstore.db"
@@ -136,11 +137,18 @@ nb[2] is 1e300
 nb[3] is 1e300
 nm is reshape of [nb, 2, 2]
 np is matmul of [nm, nm]
-assert_eq of [np[0], 1e308, "matmul overflow is clamped at the scalar read boundary"]
+# R1.6d-D1/R1.6z: scalar indexing refuses raw infinity; the stored
+# payload still round-trips, which IEEE buffer equality can observe directly.
+nonfinite_index_refused is false
+try:
+    np[0]
+catch e:
+    nonfinite_index_refused is e.kind == "value" and e.message == "buffer_read_f64: expected a finite number"
+assert_eq of [nonfinite_index_refused, true, "matmul overflow is refused at the scalar read boundary"]
 nk is store_put of [db2, "blobs", {"n": np}]
 ni is store_get of [db2, "blobs", nk]
 assert_eq of [type of ni.n, "buffer", "non-finite buffer still decodes as a buffer"]
-assert_eq of [ni.n[0], np[0], "non-finite buffer element round-trips"]
+assert_eq of [ni.n, np, "non-finite buffer elements round-trip by IEEE comparison"]
 
 # An empty buffer stays an empty buffer, not a null and not an empty list.
 eb is buffer of 0

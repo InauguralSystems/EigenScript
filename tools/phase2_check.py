@@ -1131,9 +1131,9 @@ def calibrate(args, out):
         args.planted_leaf_scan = build_plant('leaf-scan', out)
         args.planted_leaf_mul = build_plant('leaf-mul', out)
         args.planted_random_int = build_plant('random-int', out)
-        args.planted_value_eq = build_plant('value-eq-raw', out)
+        args.planted_value_eq = build_plant('value-eq-identity', out)
     for label, b, files, want in (
-            ('plant C (buffer equality reads raw elements), release build', args.planted_value_eq,
+            ('plant C (buffer NaN identity shortcut), release build', args.planted_value_eq,
              ['tests/test_numeric_guard.eigs', 'tests/test_bool.eigs'], ('DIFF', 'same')),):
         if not b:
             out('CAL %-58s NOT RUN (no binary; --build-plants builds it)' % label)
@@ -1190,10 +1190,10 @@ BUILD_PLANTS = {
     # R1.6b/N3 preserves the int result; the fault remains the shifted range.
     'random-int': ('src/builtins.c', 'make_int(lo_i + (eigs_random_long() % (int64_t)span))',
                    'make_int(lo_i + 1 + (eigs_random_long() % (int64_t)span))', 'build'),
-    # the second R1.1 critic's plant C: equality of two buffers reads raw
-    # elements (no read normalisation); the suite's [42c] goes red on it
-    'value-eq-raw': ('src/eigenscript.c', '        case VAL_BUFFER: {\n            if (a->data.buffer.count != b->data.buffer.count) return 0;\n            for (int i = 0; i < a->data.buffer.count; i++) {\n                double av = buffer_read_num(a, i);\n                if (g_has_error) return 0;\n                double bv = buffer_read_num(b, i);\n',
-                     '        case VAL_BUFFER: {\n            if (a->data.buffer.count != b->data.buffer.count) return 0;\n            for (int i = 0; i < a->data.buffer.count; i++) {\n                double av = a->data.buffer.data[i];   /* CRITIC PLANT C: raw element, no read normalisation */\n                if (g_has_error) return 0;\n                double bv = b->data.buffer.data[i];\n', 'build'),
+    # R1.6z-D1: identity would make a NaN-holding buffer equal to itself.
+    'value-eq-identity': ('src/eigenscript.c',
+                          '    if (a == b && (!a || a->type != VAL_BUFFER)) return 1;',
+                          '    if (a == b) return 1; /* PLANT: bypass IEEE buffer elements */', 'build'),
 
 }
 _PLANT_DIR = []
@@ -1354,7 +1354,7 @@ def main():
     ap.add_argument('--planted-leaf-scan', help='calibration: a build whose leaf scanner returns early')
     ap.add_argument('--planted-leaf-mul', help='calibration: a build whose leaf MUL computes a*b+1')
     ap.add_argument('--planted-random-int', help='calibration: a build whose random_int answers lo+1..hi+1')
-    ap.add_argument('--planted-value-eq', help='calibration: a build whose buffer equality reads raw elements (C)')
+    ap.add_argument('--planted-value-eq', help='calibration: a build whose buffer equality bypasses NaN elements (C)')
     ap.add_argument('--build-plants', action='store_true',
                     help='calibration: build the four active planted binaries from HEAD')
     args = ap.parse_args()

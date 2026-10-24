@@ -79,25 +79,6 @@ static inline EigsSlot dict_value_slot(const Value *dict, int i) {
     return dict->data.dict.vals[i];
 }
 
-/* Store an immediate number the caller has already normalised (a VM stack
- * slot is guarded at its producer), skipping the redundant num_guard on the
- * assignment hot path.  A plain slot store: the previous occupant is
- * released after the store, so a destructor it runs sees the new value. */
-EIGS_R16_DEPRECATED("#1758 R1.6: replace dict_value_rewrite_num by its decided numeric reader or producer")
-static inline int dict_value_rewrite_num(const Value *dict, int i, double d) {
-    EigsSlot old = dict->data.dict.vals[i];
-    dict->data.dict.vals[i] = slot_from_f64(d);
-    slot_decref(old);
-    return 1;
-}
-EIGS_R16_DEPRECATED("#1758 R1.6: replace list_rewrite_num by its decided numeric reader or producer")
-static inline int list_rewrite_num(const Value *list, int i, double d) {
-    EigsSlot old = list->data.list.items[i];
-    list->data.list.items[i] = slot_from_f64(d);
-    slot_decref(old);
-    return 1;
-}
-
 /* Return the logical type of a borrowed slot without allocating.  #1758: an
  * SMI's type is VAL_INT; any reserved tag refuses instead of being read
  * as a pointer. */
@@ -137,42 +118,6 @@ static inline Value *list_get_ref(const Value *list, int i) {
 static inline Value *dict_value_get_ref(const Value *dict, int i) {
     EigsSlot s = dict_value_slot(dict, i);
     return (slot_is_f64(s) || slot_is_smi(s)) ? NULL : eigs_slot_ref(s);
-}
-
-/* Numeric readers have the same strict/bool behavior as the Value readers:
- * required raises for every non-number, element raises for bool or in strict
- * mode, and optional treats null as absent.  The heap-VAL_FLOAT arms serve a
- * slot that did not come from container storage (a VM-internal box).
- * #1758: these are the bridge (design 2.7) -- until R1.6 deletes them a
- * number read is a double, so an int (an SMI) converts, exactly: |SMI| <
- * 2^47. */
-EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_slot_num by its decided numeric reader or producer")
-static inline double eigs_slot_num(EigsSlot s, const char *who) {
-    if (slot_is_f64(s)) return SLOT_F64_RAW(s);
-    if (slot_is_smi(s)) return (double)slot_smi_val(s);
-    if (slot_is_heap(s) && val_is_number(slot_as_ptr(s)))
-        return eigs_num_arg(slot_as_ptr(s), who);   /* #1758: an int box converts (the bridge) */
-    return eigs_num_arg_slow(eigs_slot_ref(s), who);
-}
-EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_slot_elem_num by its decided numeric reader or producer")
-static inline double eigs_slot_elem_num(EigsSlot s, const char *who) {
-    if (slot_is_f64(s)) return SLOT_F64_RAW(s);
-    if (slot_is_smi(s)) return (double)slot_smi_val(s);
-    Value *v = eigs_slot_ref(s);
-    if (v && val_is_number(v)) return eigs_num_arg(v, who);
-    if (g_strict || (v && v->type == VAL_BOOL)) return eigs_num_arg_slow(v, who);
-    return 0.0;
-}
-EIGS_R16_DEPRECATED("#1758 R1.6: replace eigs_slot_opt_num by its decided numeric reader or producer")
-static inline int eigs_slot_opt_num(EigsSlot s, double *out, const char *who) {
-    if (slot_is_null(s) || (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_NULL)) return 0;
-    if (slot_is_f64(s)) { *out = SLOT_F64_RAW(s); return 1; }
-    if (slot_is_smi(s)) { *out = (double)slot_smi_val(s); return 1; }
-    if (slot_is_heap(s) && val_is_number(slot_as_ptr(s))) {
-        *out = eigs_num_arg(slot_as_ptr(s), who); return 1;
-    }
-    (void)eigs_num_arg_slow(eigs_slot_ref(s), who);
-    return 0;
 }
 
 /* A numeric view is a caller-owned, allocation-free Value facade.  Reference
@@ -382,23 +327,6 @@ static inline void list_append_slot(Value *list, EigsSlot s) {
     if (!list_reserve_one(list)) return;
     list->data.list.items[list->data.list.count++] = eigs_slot_store_borrow(s);
 }
-EIGS_R16_DEPRECATED("#1758 R1.6: replace list_set_num by its decided numeric reader or producer")
-static inline __attribute__((always_inline)) void
-list_set_num(Value *list, int i, double d) {
-    list_rewrite_num(list, i, num_guard(d));
-}
-__attribute__((unused))
-EIGS_R16_DEPRECATED("#1758 R1.6: replace list_append_num by its decided numeric reader or producer")
-static inline void list_append_num(Value *list, double d) {
-    d = num_guard(d);
-    if (!list_reserve_one(list)) return;
-    list->data.list.items[list->data.list.count++] = slot_from_f64(d);
-}
-__attribute__((unused))
-EIGS_R16_DEPRECATED("#1758 R1.6: replace dict_value_set_num by its decided numeric reader or producer")
-static inline void dict_value_set_num(Value *dict, int i, double d) {
-    dict_value_rewrite_num(dict, i, num_guard(d));
-}
 /* Typed container writers own exactly one stored reference. _rewrite_f64
  * receives an already-normalised double, matching the existing fast store.
  * An int outside the SMI range owns the box slot_from_int creates. */
@@ -495,31 +423,6 @@ static inline void dict_value_move(Value *dict, int dst, int src, int n) {
 static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)) {
     qsort(list->data.list.items, (size_t)list->data.list.count, sizeof(EigsSlot), cmp);
 }
-
-/* #1758: bridge readers (design 2.7): an int element converts to its double
- * until R1.6 deletes them. */
-__attribute__((unused))
-EIGS_R16_DEPRECATED("#1758 R1.6: replace list_get_num by its decided numeric reader or producer")
-static inline int list_get_num(const Value *list, int i, double *out) {
-    EigsSlot s = list_slot(list, i);
-    if (slot_is_smi(s)) { *out = (double)slot_smi_val(s); return 1; }
-    if (!slot_is_f64(s)) return 0;
-    *out = SLOT_F64_RAW(s);
-    return 1;
-}
-__attribute__((unused))
-EIGS_R16_DEPRECATED("#1758 R1.6: replace dict_value_get_num by its decided numeric reader or producer")
-static inline int dict_value_get_num(const Value *dict, int i, double *out) {
-    EigsSlot s = dict_value_slot(dict, i);
-    if (slot_is_smi(s)) { *out = (double)slot_smi_val(s); return 1; }
-    if (!slot_is_f64(s)) return 0;
-    *out = SLOT_F64_RAW(s);
-    return 1;
-}
-__attribute__((unused))
-static inline int list_iter_count(const Value *list) { return list->data.list.count; }
-__attribute__((unused))
-static inline int dict_value_iter_count(const Value *dict) { return dict->data.dict.count; }
 
 /* Raw storage is confined to bulk allocation/movement/destruction code. */
 __attribute__((unused))

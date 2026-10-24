@@ -132,7 +132,7 @@ ng_final_refuses of [buf_get, [raw_inf_product, 0], "NG31 N13 buf_get refuses in
 
 # A NaN uses the same refusing data boundary as infinity. Every
 # accessor refuses nonfinite data; none may leak the NaN-box null
-# tag merely because it bypasses make_num.
+# tag merely because it bypasses make_float.
 nan_left is buffer of [1, 2]
 nan_left[0] is 1e200
 nan_left[1] is 1e200

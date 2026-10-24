@@ -1702,18 +1702,6 @@ static uint8_t *emit_cvttsd2si_xmm0_r8d(uint8_t *w) {
 static uint8_t *emit_cvtsi2sd_r8d_xmm1(uint8_t *w) {
     *w++ = 0xF2; *w++ = 0x41; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC8; return w;
 }
-/* cvttsd2si %xmm0, %edx  (4 bytes) — 32-bit, mirrors `(int)val_s.d`.
- * No longer used by OP_INDEX_SET (buffer stores keep the raw double now)
- * but kept for future int-conversion fast paths. */
-__attribute__((unused))
-static uint8_t *emit_cvttsd2si_xmm0_edx(uint8_t *w) {
-    *w++ = 0xF2; *w++ = 0x0F; *w++ = 0x2C; *w++ = 0xD0; return w;
-}
-/* cvtsi2sd %edx, %xmm0  (4 bytes) — 32-bit source. */
-__attribute__((unused))
-static uint8_t *emit_cvtsi2sd_edx_xmm0(uint8_t *w) {
-    *w++ = 0xF2; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC2; return w;
-}
 /* jp rel32  (6 bytes): 0F 8A — jump if PF=1 (unordered ucomisd). */
 static uint8_t *emit_jp_rel32(uint8_t *w, uint8_t **patch) {
     *w++ = 0x0F; *w++ = 0x8A; *patch = w;

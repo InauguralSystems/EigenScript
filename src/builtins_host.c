@@ -1626,7 +1626,7 @@ static Value* exec_capture_result(int code, const char *text) {
 Value* builtin_exec_capture(Value *arg) {
     /* fs:CHANNEL replay refuses the exec; the refusal belongs to the replay
      * layer and [-1, ""] is exec_capture's documented "did not run". */
-    /* #1008: these launder through a HELPER, so no `return make_num(-1)`
+    /* #1008: these launder through a HELPER, so no `return make_float(-1)`
      * appears and the classifier's matcher — which enumerates literal soft
      * returns — cannot see them at all. ARG_GUARD's soft argument is
      * evaluated only on the non-strict path, so the helper call is fine

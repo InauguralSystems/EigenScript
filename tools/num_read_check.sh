@@ -7,7 +7,7 @@
 # compiles. #1758 R1.2z removed the deprecated numeric aliases; the scanner
 # also catches their reintroduction before compilation. Code reaches a number in
 # exactly two ways:
-#   - the checking accessors eigs_num_arg / eigs_list_num / eigs_opt_num,
+#   - the checking accessors eigs_float_arg / eigs_list_float / eigs_opt_float,
 #     which raise a type error on a bool or any other non-number;
 #   - the raw macros VAL_F64_RAW(v) / VAL_I64_RAW(v) / SLOT_F64_RAW(s) (and
 #     VAL_F64_OFFSET for JIT-emitted loads), for a value whose type is

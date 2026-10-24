@@ -92,7 +92,7 @@ iteration, or a collector that quietly stops working).
   record, `store_put` refused to re-insert it, and the caller was told 1).
 
 - **`eigs_json_encode` borrows its argument and `eigs_json_parse_value` returns
-  an owned ref.** `eigs_json_encode(make_num(x))` leaks the `make_num`; a parsed
+  an owned ref.** `eigs_json_encode(make_float(x))` leaks the `make_float`; a parsed
   Value must be decref'd on *every* path including early returns, and the value
   read out of it before the decref. Three of the five call sites in
   `ext_http.c` had this wrong (#731) — if you touch one, re-audit the rest.

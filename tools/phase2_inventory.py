@@ -87,6 +87,7 @@ VOCAB = {
     'num_to_i64_exact': 'READ',
     'finite_num_to_byte': 'READ',
     'buffer_read_byte': 'READ',    # a buffer element as a byte (Q1: N5, no wrap)
+    'buf_num_arg': 'READ',       # R1.6z: required absent (bridge deleted)
     'buf_float_arg': 'READ',       # R1.6d: decided float-only gain/value wrapper
     'eigs_value_as_num': 'READ',   # embed API accessor
     'number': 'RAW',               # lexer/AST EigsNum payload (#1758 R1.3)
@@ -135,6 +136,16 @@ RETIRED_VOCAB = {
     'buffer_read_byte': 'R1.6e: gfx_fb and ppu_render_frame use buffer_byte_at',
 }
 
+# R1.6z deletes the bridge. Retaining its vocabulary as REQUIRED ABSENT
+# keeps a reintroduction visible while permitting the measured zero count.
+for retired in ('eigs_num_arg', 'eigs_num_arg_slow', 'eigs_list_num', 'eigs_elem_num',
+                'eigs_opt_num', 'eigs_slot_num', 'eigs_slot_elem_num', 'eigs_slot_opt_num',
+                'buf_num_arg', 'make_num', 'make_num_permanent', 'list_set_num',
+                'list_append_num', 'list_rewrite_num', 'dict_value_set_num',
+                'dict_value_rewrite_num', 'list_get_num', 'dict_value_get_num',
+                'finite_num_to_byte', 'buffer_read_byte', 'buffer_read_num'):
+    RETIRED_VOCAB.setdefault(retired, 'R1.6z: bridge deleted; every caller migrated')
+
 # JIT-only vocabulary (jit.c, jit.h, jit_smoke.c): the emitted guards test
 # raw tag bits and never name a VOCAB token, so a token scan alone sees almost
 # none of them. These are the tag-range immediates and the emitters that
@@ -176,7 +187,6 @@ CATEGORY_NAMES = {
 # changes with them. (Derived check: a new such function must be added to
 # VOCAB or here, with a reason.)
 WRAPPERS = {
-    'eigs_value_buffer_get': 'embed buffer data reader: the buffer_read_num boundary inside it is already a site',
     'compute_entropy_impl': 'observer: returns an entropy, not the number; its payload read is the site',
     'ent_child_slot': 'observer: returns a child entropy, not the number; its payload read is the site',
     'observer_entropy_now': 'observer: writes an entropy, not the number; its payload read is the site',

@@ -147,7 +147,7 @@ run "SM17 strict leaves valid args alone" 1 0 "1"                          'prin
 
 # The exclusions matter as much as the conversions: these 0s are DOCUMENTED
 # RETURN VALUES, not fail-soft guards, so strict must NOT make them raise.
-# A sed over `return make_num(0)` would have broken both.
+# A sed over `return make_float(0)` would have broken both.
 run "SM18 strict: try_parse(bad) still answers false" 1 0 "false"  'print of (try_parse of "!!!")'
 run "SM19 strict: unknown task id still not alive" 1 0 "false" 'print of (task_alive of 99999)'
 
@@ -174,7 +174,7 @@ run "SM27 strict write_bytes type raises"     1 1 "write_bytes: expected" 'print
 
 # str_replace COERCES rather than returning a stand-in — a non-string element
 # silently became "" and the search ran over an empty string. It has no
-# `return make_num(0)` to convert, so it is invisible to the classifier and
+# `return make_float(0)` to convert, so it is invisible to the classifier and
 # needed STRICT_REQUIRE (raise under strict, no-op otherwise). Found by the
 # differential, not by the classifier: SM29 is why both harnesses exist.
 run "SM28 opt-out str_replace(num,..) unchanged" 0 0 "[]" \
