@@ -106,24 +106,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Valgrind
-        timeout-minutes: 10
-        run: |
-          set -uo pipefail
-          if command -v valgrind >/dev/null 2>&1; then valgrind --version; exit 0; fi
-          if timeout 120 sudo apt-get install -y valgrind; then
-            valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
-            exit 0
-          fi
-          for attempt in 1 2 3; do
-            echo "::warning::valgrind not in the current index; refreshing (attempt $attempt)"
-            if timeout 60 sudo apt-get update && timeout 120 sudo apt-get install -y valgrind; then
-              valgrind --version || { echo "::error::valgrind installed but not runnable"; exit 1; }
-              exit 0
-            fi
-            sleep $((attempt * 5))
-          done
-          echo "::error::SETUP FAILURE — could not install valgrind after 3 bounded attempts. This is NOT a regression detected by the gate; the gate never ran."
-          exit 1
+        uses: ./.github/actions/install-valgrind
 
       - name: Build (-O1 -g, minimal)
         run: make valgrind
