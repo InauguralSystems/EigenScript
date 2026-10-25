@@ -202,9 +202,9 @@ Value* builtin_regex_replace(Value *arg) {
 /* ================================================================
  * STREAMING BINARY WRITER — write tensor-format data incrementally
  * ================================================================
- * stream_open of ["path", count] — integral count 1..10000000; outside that range raises limit even with EIGS_STRICT=0; returns 1 on success, 0 on I/O failure
- * stream_write of value           → writes one float64, returns 1
- * stream_close of null            → closes the stream file, returns 1
+ * stream_open of ["path", count] — integral count 1..10000000; outside that range raises limit even with EIGS_STRICT=0; returns true on success, false on I/O failure
+ * stream_write of value           → writes one float64, returns true on success, false on failure
+ * stream_close of null            → closes the stream file, returns true on success, false on failure
  *
  * Format: [uint32 ndim=1][uint32 rows=1][uint32 cols=count][uint32 flags=0]
  *         then count × float64 values (written one at a time via stream_write)
@@ -311,7 +311,7 @@ Value* builtin_stream_close(Value *arg) {
 static Value *file_io_error(const char *fn, const char *path, int err);
 static int file_io_replay(const char *fn, Value **out);
 
-/* mkdir of "path" → 1 on success; I/O failure raises EK_IO. Creates parents. */
+/* mkdir of "path" → true on success; I/O failure raises EK_IO. Creates parents. */
 /* #585/#1885: replay is side-effect-free: TAKE precedes mkdir(2), as it does
  * for every replayable filesystem mutation. */
 Value* builtin_mkdir(Value *arg) {
@@ -1080,7 +1080,7 @@ Value* builtin_file_exists(Value *arg) {
     TRACE_NONDET_RECORD("file_exists", make_bool(ex));
 }
 
-/* is_dir of path — 1 if path names a directory, 0 for a plain file, a
+/* is_dir of path — true if path names a directory, false for a plain file, a
  * missing path, or a non-string arg. Replaces the consumer-side
  * `file_exists of f"{path}/."` probe (#576). Nondeterministic fs read →
  * trace-recorded per the tape-first rule (NB: the older fs predicates —
@@ -1109,8 +1109,8 @@ Value* builtin_is_file(Value *arg) {
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
- * a temp file, then atomically swap it in). Returns 1 on success; I/O failure
- * raises EK_IO. */
+ * a temp file, then atomically swap it in). Returns true on success; I/O
+ * failure raises EK_IO. */
 Value* builtin_rename(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "rename");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -1134,7 +1134,7 @@ Value* builtin_rename(Value *arg) {
     TRACE_NONDET_RECORD("rename", make_bool(1));
 }
 
-/* remove_file of path — delete a file. Returns 1 on success; I/O failure raises. */
+/* remove_file of path — delete a file. Returns true on success; I/O failure raises. */
 Value* builtin_remove_file(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_STR, "remove_file", "a string path", make_bool(0));
     Value *replayed = NULL;
@@ -1150,11 +1150,7 @@ Value* builtin_remove_file(Value *arg) {
  * one-string list for readers/mkdir, and [message, null] for ls (whose normal
  * result may itself be a one-string list). */
 static Value *file_io_error_message(const char *fn, const char *message) {
-    int taped = strcmp(fn, "mkdir") == 0 || strcmp(fn, "ls") == 0 ||
-                strcmp(fn, "write_text") == 0 ||
-                strcmp(fn, "write_bytes") == 0 ||
-                strcmp(fn, "remove_file") == 0 ||
-                strcmp(fn, "rename") == 0 || strncmp(fn, "read_", 5) == 0;
+    int taped = trace_core_kind_declared(fn);
     if (taped && __builtin_expect(g_trace_enabled, 0)) {
         Value *record = make_list(strcmp(fn, "ls") == 0 ? 2 : 1);
         list_append_owned(record, make_str(message));
@@ -1570,7 +1566,7 @@ Value* builtin_read_line(Value *arg) {
 }
 
 /* ==== BUILTIN: write_text ==== */
-/* write_text of ["path", text] → 1 on success; I/O failure raises EK_IO. */
+/* write_text of ["path", text] → true on success; I/O failure raises EK_IO. */
 Value* builtin_write_text(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "write_text");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -1585,9 +1581,9 @@ Value* builtin_write_text(Value *arg) {
     Value *replayed = NULL;
     if (file_io_replay("write_text", &replayed)) return replayed;
     FILE *f = xfopen_write(path_val->data.str, "w");
-    /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
-     * is xfopen_write failing (missing directory, permissions, sandbox), and
-     * the header comment documents write_text as "1 on success, 0 on failure". */
+    /* Both arguments were accepted by the guards above; a NULL FILE* is
+     * xfopen_write failing (missing directory, permissions, sandbox), which
+     * raises EK_IO with the path and the OS reason, as the header says (#1668). */
     if (!f) {
         int err = errno;
         return file_io_error("write_text", path_val->data.str, err);
@@ -1657,7 +1653,7 @@ Value* builtin_exec_capture(Value *arg) {
         val_decref(milliseconds);
         if (!ok || g_has_error) return make_null();
     }
-    if (replay_blocks("exec_capture")) return exec_capture_result(-1, "");
+    if (replay_blocks("exec_capture", "subprocess/concurrency")) return exec_capture_result(-1, "");
     ARG_GUARD(cmd_list->data.list.count < 1,
               "exec_capture", "a non-empty command list", exec_capture_result(-1, ""));
 
@@ -1799,7 +1795,7 @@ Value* builtin_exec_capture(Value *arg) {
 Value* builtin_proc_read_buf(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "proc_read_buf");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2) {
-        (void)replay_blocks("proc_read_buf");
+        (void)replay_blocks("proc_read_buf", "subprocess/concurrency");
         return make_null();
     }
     EIGS_VIEW(fd_v_view);
@@ -1807,13 +1803,13 @@ Value* builtin_proc_read_buf(Value *arg) {
     EIGS_VIEW(max_v_view);
     Value *max_v = list_get_view(arg, 1, &max_v_view);
     if (!fd_v || !val_is_number(fd_v) || !max_v || !val_is_number(max_v)) {
-        (void)replay_blocks("proc_read_buf");
+        (void)replay_blocks("proc_read_buf", "subprocess/concurrency");
         return make_null();
     }
     int fd = builtin_host_c_int(fd_v, "proc_read_buf");
     int max = builtin_host_c_int(max_v, "proc_read_buf");
     if (g_has_error) return make_null();
-    if (replay_blocks("proc_read_buf")) return make_null();
+    if (replay_blocks("proc_read_buf", "subprocess/concurrency")) return make_null();
     if (fd < 0 || max <= 0) return make_null();
     if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
     unsigned char *buf = xmalloc((size_t)max);
@@ -1925,9 +1921,9 @@ Value* builtin_write_bytes(Value *arg) {
     Value *replayed = NULL;
     if (file_io_replay("write_bytes", &replayed)) { free(out); return replayed; }
     FILE *f = xfopen_write(path_val->data.str, append ? "ab" : "wb");
-    /* fs:ANSWER the path was accepted by the guard above; a NULL FILE* is
-     * xfopen_write failing, and the header documents write_bytes as yielding
-     * "the number of bytes written, or 0 on failure" — 0 is that failure. */
+    /* The path was accepted by the guard above; a NULL FILE* is xfopen_write
+     * failing, which raises EK_IO with the path and the OS reason, as the
+     * header says (#1668). */
     if (!f) {
         int err = errno;
         free(out);

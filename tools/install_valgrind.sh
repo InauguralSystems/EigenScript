@@ -35,15 +35,9 @@ if command -v valgrind >/dev/null 2>&1; then
   exit 0
 fi
 
-# Test-only apt options let the local evidence exercise a genuinely unavailable
-# network. Production leaves this unset. Shell splitting is intentional: each
-# whitespace-delimited option becomes one apt-get argument.
-read -r -a apt_options <<< "${VALGRIND_APT_OPTIONS:-}"
-read -r -a first_apt_options <<< "${VALGRIND_APT_FIRST_OPTIONS:-${VALGRIND_APT_OPTIONS:-}}"
 apt_install() {
-  local -a options=("$@")
   # Noble's stripped loader makes libc6-dbg mandatory for Memcheck startup.
-  timeout 90 sudo apt-get "${options[@]}" \
+  timeout 90 sudo apt-get "$@" \
     -o "Dir::Cache::archives=$archive_dir" \
     install -y --no-install-recommends valgrind libc6-dbg
 }
@@ -62,7 +56,6 @@ deb http://archive.ubuntu.com/ubuntu $codename-backports main universe
 deb http://security.ubuntu.com/ubuntu $codename-security main universe
 EOF
 alternative_options=(
-  "${apt_options[@]}"
   -o "Dir::Etc::sourcelist=$alternative_sources"
   -o Dir::Etc::sourceparts=-
 )
@@ -80,7 +73,7 @@ publish_archives() {
 # #987: try the image's current index first; only refresh on failure. Keep all
 # operations bounded so a true setup failure remains loud and cannot look like
 # a passing (or even executed) regression gate.
-if apt_install "${first_apt_options[@]}"; then
+if apt_install; then
   verify || exit 1
   publish_archives
   exit 0

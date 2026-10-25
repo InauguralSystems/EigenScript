@@ -4,6 +4,7 @@
  */
 
 #include "ext_store_internal.h"
+#include "builtins_internal.h"
 #include "trace.h"
 #include <errno.h>
 
@@ -903,16 +904,6 @@ static int page_data_used(Page *page) {
 /* A store handle names live file state, and writes affect a world that the
  * trace tape does not reconstruct.  Refuse the whole family rather than
  * recording a handle id or allowing any operation to consult live storage. */
-static int store_replay_blocks(const char *fn) {
-    if (__builtin_expect(g_replay_enabled, 0)) {
-        rt_error(EK_IO, 0,
-                 "%s: not replayable under EIGS_REPLAY (store boundary; "
-                 "see docs/TRACE.md)", fn);
-        return 1;
-    }
-    return 0;
-}
-
 /* Free a Store and its one owned Value (the parsed catalog dict). Every
  * free(store) must go through here — the catalog is a make_dict / decoded-JSON
  * Value that leaks otherwise (test_store/lab/handle_forge). */
@@ -941,7 +932,7 @@ static Value* builtin_store_open(Value *arg) {
         rt_error(EK_TYPE, 0, "store_open requires a string path\n");
         return make_null();
     }
-    if (store_replay_blocks("store_open")) return make_null();
+    if (replay_blocks("store_open", "store")) return make_null();
     const char *path = arg->data.str;
 
     Store *store = xcalloc(1, sizeof(Store));
@@ -1013,7 +1004,7 @@ static Value* builtin_store_open(Value *arg) {
 static Value* builtin_store_close(Value *arg) {
     Store *store = store_arg(arg, "store_close");
     if (!store) return make_null();
-    if (store_replay_blocks("store_close")) return make_null();
+    if (replay_blocks("store_close", "store")) return make_null();
     /* Release handle BEFORE freeing memory to prevent use-after-free
      * if another thread calls get_store() concurrently. */
     Value *id_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_id", &(EigsView){{0}}) : NULL;
@@ -1044,7 +1035,7 @@ static Value* builtin_store_put(Value *arg) {
     }
     Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_put");
     if (!store) return make_null();
-    if (store_replay_blocks("store_put")) return make_null();
+    if (replay_blocks("store_put", "store")) return make_null();
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     Value *record = list_get_view(arg, 2, &(EigsView){{0}});
     if (!col_val || col_val->type != VAL_STR) {
@@ -1214,7 +1205,7 @@ static Value* builtin_store_get(Value *arg) {
     }
     Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_get");
     if (!store) return make_null();
-    if (store_replay_blocks("store_get")) return make_null();
+    if (replay_blocks("store_get", "store")) return make_null();
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     Value *key_val = list_get_view(arg, 2, &(EigsView){{0}});
     if (!col_val || col_val->type != VAL_STR) return make_null();
@@ -1383,7 +1374,7 @@ static Value* builtin_store_delete(Value *arg) {
      * than unwinding, so this return is the post-raise placeholder, not
      * "deleted nothing". Same shape as the arity guard above. */
     if (!store) return make_bool(0);
-    if (store_replay_blocks("store_delete")) return make_bool(0);
+    if (replay_blocks("store_delete", "store")) return make_bool(0);
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     Value *key_val = list_get_view(arg, 2, &(EigsView){{0}});
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
@@ -1434,7 +1425,7 @@ static Value* builtin_store_query(Value *arg) {
     }
     Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_query");
     if (!store) return make_list(0);
-    if (store_replay_blocks("store_query")) return make_list(0);
+    if (replay_blocks("store_query", "store")) return make_list(0);
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     if (!col_val || col_val->type != VAL_STR) return make_list(0);
 
@@ -1489,7 +1480,7 @@ static Value* builtin_store_count(Value *arg) {
      * count of 0. Distinct from the two documented-answer zeros below, which
      * are store_count's real result for an unknown collection. */
     if (!store) return make_int(0);
-    if (store_replay_blocks("store_count")) return make_int(0);
+    if (replay_blocks("store_count", "store")) return make_int(0);
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_count", "[store handle, string collection]", make_int(0));
@@ -1546,7 +1537,7 @@ static Value* builtin_store_update(Value *arg) {
      * than unwinding, so this return is the post-raise placeholder, not
      * "no record updated". */
     if (!store) return make_bool(0);
-    if (store_replay_blocks("store_update")) return make_bool(0);
+    if (replay_blocks("store_update", "store")) return make_bool(0);
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_update", "[store handle, string collection, key, record]",
               make_bool(0));
@@ -1661,7 +1652,7 @@ static Value* builtin_store_update(Value *arg) {
 static Value* builtin_store_collections(Value *arg) {
     Store *store = store_arg(arg, "store_collections");
     if (!store) return make_list(0);
-    if (store_replay_blocks("store_collections")) return make_list(0);
+    if (replay_blocks("store_collections", "store")) return make_list(0);
     Value *list = make_list(store->catalog->data.dict.count);
     for (int i = 0; i < store->catalog->data.dict.count; i++) {
         list_append_owned(list, make_str(store->catalog->data.dict.keys[i]));
@@ -1686,7 +1677,7 @@ static Value* builtin_store_drop(Value *arg) {
      * store_drop's documented "no" (that is the documented-answer zero
      * below). */
     if (!store) return make_bool(0);
-    if (store_replay_blocks("store_drop")) return make_bool(0);
+    if (replay_blocks("store_drop", "store")) return make_bool(0);
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
               "store_drop", "[store handle, string collection]", make_bool(0));

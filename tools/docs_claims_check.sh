@@ -124,6 +124,56 @@ def strict_default_wording():
     print(f'  STRICT DEFAULT: examined {examined} section(s), declared {len(headings)}')
 
 
+def bool_result_wording():
+    """Reject numeric result prose for builtins whose C constructors are bool.
+
+    The implementation, rather than a second hand-maintained type list, owns
+    the classification: a builtin is in the population when its function body
+    constructs bool values and constructs no numeric values.  This deliberately
+    narrow rule does not guess about helpers with mixed/dynamic return kinds.
+    """
+    sources = sorted(Path('src').glob('*.c'))
+    bools = set()
+    function_re = re.compile(r'Value\*\s+builtin_([A-Za-z0-9_]+)\s*\([^)]*\)\s*\{')
+    for path in sources:
+        source = path.read_text(encoding='utf-8')
+        for match in function_re.finditer(source):
+            depth = 1
+            end = match.end()
+            while end < len(source) and depth:
+                depth += (source[end] == '{') - (source[end] == '}')
+                end += 1
+            body = source[match.end():end]
+            # make_float too: phase 2 (#1758) replaces make_num with make_int/make_float.
+            if 'make_bool(' in body and not re.search(r'make_(?:num|int|float)\s*\(', body):
+                bools.add(match[1])
+
+    # Result verbs keep numeric examples/ranges out of the claim population.
+    numeric_result = re.compile(
+        r'\b(?:returns?|answers?)\s+`?[01]`?\b|'
+        r'(?:→|->)\s*`?[01]`?\b|'
+        r'`?[01]`?\s+(?:if|while|on\s+(?:success|failure))\b', re.I)
+    examined = hits = 0
+    for file in ('docs/BUILTINS.md', 'src/lsp_builtin_index.h'):
+        for lineno, line in enumerate(Path(file).read_text(encoding='utf-8').splitlines(), 1):
+            if file.endswith('.md'):
+                match = re.match(r'^\|\s*`([A-Za-z0-9_]+)`\s*\|', line)
+            else:
+                match = re.match(r'^\s*\{"([A-Za-z0-9_]+)",', line)
+            if not match or match[1] not in bools:
+                continue
+            examined += 1
+            claim = numeric_result.search(line)
+            if claim:
+                hits += 1
+                red(f'{file}:{lineno}: bool builtin {match[1]} has numeric result claim '
+                    f'{claim.group()!r}; say true/false (#1945)')
+    print(f'  BOOL RESULT WORDING: {len(bools)} constructor-derived bool builtin(s), '
+          f'{examined} documented row/hover entrie(s), {hits} hit(s)')
+    if not bools or not examined:
+        red('BOOL RESULT WORDING population is empty')
+
+
 def check_floors():
     declared = {}
     for row in POP.read_text().splitlines():
@@ -246,7 +296,8 @@ def targets(docs):
         record('TARGETS', file, n)
 
 
-def names(docs, api):
+def name_vocabulary(api):
+    """Return the one vocabulary used for every documented `name of` call."""
     known = set()
     for line in api.splitlines():
         fields = line.split()
@@ -270,70 +321,40 @@ def names(docs, api):
         red('lexer keyword resolver has no population')
     known.update(keywords)
     known.update(('host_add', 'host_fn', 'fn',
-                  'trajectory', 'observe', 'report', 'report_value'))
+                  'trajectory', 'observe', 'report', 'report_value', 'prev'))
+    if not known:
+        red('--api returned no names')
+    return known
+
+
+CALL_CLAIM = re.compile(r'`([a-z_][a-z_0-9.]*) of(?=[ `]|$)')
+
+
+def names(docs, known, record_population=True):
+    """Check document sets through one call matcher and one name vocabulary."""
     for file in docs:
         text = Path(file).read_text()
         local = set(re.findall(r'define ([a-z_][a-z_0-9]*)', text))
         local.update(re.findall(r'^ *([a-z_][a-z_0-9]*) is ', text, re.M))
+        local.update(re.findall(r'`(?:local )?([a-z_][a-z_0-9]*) is ', text))
         local.update(re.findall(r'([a-z_][a-z_0-9]*)\(', text))
         n = 0
         for lineno, line in enumerate(text.splitlines(), 1):
-            for token in matches(r'`[a-z_][a-z_0-9.]* of[ `]', line):
-                name = token[1:].split(' of', 1)[0]
+            for match in CALL_CLAIM.finditer(line):
+                name = match[1]
                 n += 1
-                if (name not in known and name not in local and
+                # A qualified callee is a member of a runtime namespace, not
+                # a global API claim, so its base cannot be checked here.
+                if ('.' not in name and name not in known and name not in local and
                     not (file == 'CLAUDE.md' and line in META_LINES and
                          name in {'f', 'one'})):
                     red(f'{file}:{lineno} calls {name} of, absent from --api and local definitions')
-        record('NAMES', file, n)
-    if not known:
-        red('--api returned no names')
+        if record_population:
+            record('NAMES', file, n)
 
-def stale_builtin_calls(api):
-    """Reject call-like builtin claims that have no registration anchor."""
-    source = Path('src/builtins.c').read_text()
-    registration = re.search(r'void register_builtins\(Env \*env\) \{(.*?)(?:\n\})',
-                             source, re.S)
-    if not registration:
-        red('src/builtins.c: register_builtins table is missing')
-        return
-    registered = set(re.findall(
-        r'env_set_local_owned\(env, "([a-z_][a-z_0-9]*)",', registration[1]))
-    if not registered:
-        red('src/builtins.c: register_builtins table yielded no names')
-        return
-
-    # --api is itself produced from the live registered environment, including
-    # registrations delegated to host/extension tables by register_builtins.
-    known = set(api.split())
-    for api_line in api.splitlines():
-        fields = api_line.split()
-        if fields[:1] == ['lib'] and len(fields) > 1:
-            lib_name = fields[1].split('(', 1)[0]
-            known.update((lib_name, lib_name.split('.', 1)[-1]))
-    known.update(('report_value', 'trajectory', 'prev'))  # reserved call forms
-    source_text = Path('src/eigenscript.c').read_text()
-    pred = re.search(r'EIGS_PREDICATE_NAMES\[.*?\{(.*?)\};', source_text, re.S)
-    if pred:
-        known.update(re.findall(r'"([a-z_]+)"', pred[1]))
-
+def source_call_claims(known):
+    """Check call claims in C comments and compiler comparisons."""
     examined = 0
-    # These are the observer contract pages damaged by the builtin removal.
-    # Restricting the walk keeps this check auditable; the general front-door
-    # call check above remains responsible for its declared document set.
-    for path in map(Path, ('docs/SPEC.md', 'docs/PREDICATES.md', 'docs/OBSERVER.md')):
-        text = path.read_text()
-        local = set(re.findall(r'define ([a-z_][a-z_0-9]*)', text))
-        local.update(re.findall(r'^ *([a-z_][a-z_0-9]*) is ', text, re.M))
-        local.update(re.findall(r'`(?:local )?([a-z_][a-z_0-9]*) is ', text))
-        for lineno, line in enumerate(text.splitlines(), 1):
-            for name in re.findall(r'`([a-z_][a-z_0-9.]*) of(?:[ `]|$)', line):
-                examined += 1
-                base = name.split('.', 1)[-1]
-                if ('.' not in name and name != 'is' and name not in known and
-                    base not in known and name not in local):
-                    red(f'{path}:{lineno} calls {name} of, absent from registered API')
-
     # A leading C signature/Usage comment asserts a builtin surface. A compiler
     # comparison against a call callee gives that surface special semantics.
     usage = re.compile(r'^\s*/\*\s*(?:Usage:\s*)?([a-z_][a-z_0-9]*) of(?:[ `]|$)')
@@ -342,7 +363,7 @@ def stale_builtin_calls(api):
             for name in usage.findall(line):
                 examined += 1
                 if name not in known:
-                    red(f'{path}:{lineno} documents {name} of, absent from registered API')
+                    red(f'{path}:{lineno} documents {name} of, absent from public API')
     compiler = Path('src/compiler.c').read_text()
     for match in re.finditer(
             r'strcmp\((?:fn|callee)(?:_node)?->[^,]+, "([a-z_][a-z_0-9]*)"\)',
@@ -351,11 +372,10 @@ def stale_builtin_calls(api):
         examined += 1
         if name not in known:
             lineno = compiler.count('\n', 0, match.start()) + 1
-            red(f'src/compiler.c:{lineno} scans for {name}, absent from registered API')
-    print(f'  REGISTERED BUILTIN CALLS: examined {examined} call claim(s), '
-          f'{len(registered)} direct registration row(s)')
+            red(f'src/compiler.c:{lineno} scans for {name}, absent from public API')
+    print(f'  SOURCE CALL CLAIMS: examined {examined} call claim(s)')
     if not examined:
-        red('REGISTERED BUILTIN CALLS examined 0 call claims')
+        red('SOURCE CALL CLAIMS examined 0 call claims')
 
 
 def builtin_families(docs, api):
@@ -463,6 +483,11 @@ def selftest():
                 'tools/werror_flags.txt', 'tests/test_doc_examples.py',
                 'src/builtins.c', 'src/compiler.c', 'src/eigenscript.c',
                 'src/lexer.c'}
+    # bool_result_wording derives its population from implementation sources
+    # and checks the generated hover index, so its isolated selftest needs the
+    # same inputs as a real checkout rather than a hand-maintained subset.
+    content |= {p for p in tracked if Path(p).match('src/*.c')}
+    content.add('src/lsp_builtin_index.h')
     # PATHS reads existence, not contents, of referenced tracked paths.
     refs = set()
     pat = r'`(?:' + '|'.join(map(re.escape, SEGMENTS)) + r')/[A-Za-z0-9_.*/-]*`'
@@ -508,6 +533,8 @@ def selftest():
                 ('flag', 'docs/llms.txt', '\n`eigenscript --no-such-1275`\n', '--no-such-1275'),
                 ('target', 'CLAUDE.md', '\n`make no-such-1275`\n', 'make no-such-1275'),
                 ('name', 'README.md', '\n`no_such_1275 of null`\n', 'no_such_1275'),
+                ('contract-name', 'docs/PREDICATES.md',
+                 '\n`no_such_contract_1944 of\n', 'no_such_contract_1944'),
                 ('count', 'docs/ARCHITECTURE.md', '\nThe 77\n`lib/` modules and a 47-widget toolkit.\n',
                  'hand-typed count "77 `lib/` modules"'),
                 ('stale-concurrency', 'docs/BUILTINS.md',
@@ -526,6 +553,15 @@ def selftest():
                 passed += ok
                 print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
                 p.write_text(original)
+            p = tree / 'docs/BUILTINS.md'
+            original = p.read_text()
+            p.write_text(original.replace('Returns `true` on success or `false` when libSDL2 is unavailable.',
+                                          'Returns 1 on success or `false` when libSDL2 is unavailable.', 1))
+            result = gate()
+            ok = result.returncode != 0 and 'bool builtin gfx_open has numeric result claim' in result.stdout
+            passed += ok
+            print(f'SELFTEST: bool-result: {"PASS" if ok else "FAIL"}')
+            p.write_text(original)
             p = tree / 'docs/BUILTINS.md'
             original = p.read_text()
             for label, anchor, replacement, witness in [
@@ -579,8 +615,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 17 case(s) run, {passed} passed, {17-passed} failed')
-            return 0 if passed == 17 else 1
+            print(f'SELFTEST: 19 case(s) run, {passed} passed, {19-passed} failed')
+            return 0 if passed == 19 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -602,8 +638,11 @@ def main():
     flags(docs, run(binary, '--help'))
     targets(docs)
     api = run(binary, '--api')
-    names(docs, api)
-    stale_builtin_calls(api)
+    known = name_vocabulary(api)
+    names(docs, known)
+    names(('docs/SPEC.md', 'docs/PREDICATES.md', 'docs/OBSERVER.md'), known,
+          record_population=False)
+    source_call_claims(known)
     builtin_families(docs, api)
     stale_concurrency_claims()
     enrolment()
@@ -611,6 +650,7 @@ def main():
     changelog_version()
     derived_counts()
     strict_default_wording()
+    bool_result_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
         if counts[kind] == 0:

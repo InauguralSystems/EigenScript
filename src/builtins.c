@@ -2225,7 +2225,7 @@ Value* builtin_random_int(Value *arg) {
     TRACE_NONDET_RET("random_int", make_int(lo_i + (eigs_random_long() % (int64_t)span)));
 }
 
-/* seed_random of n → seeds the RNG, returns 1 */
+/* seed_random of n → seeds the RNG, returns true */
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "seed_random", "a number", make_bool(0));
     int64_t seed = eigs_int_arg(arg, "seed_random");
@@ -2520,11 +2520,11 @@ Value* builtin_env_get(Value *arg) {
  * Wrapping these with TRACE_NONDET_TAKE is not enough — the value the
  * tape carries does not pin down the host state — so the contract is
  * "fail loudly" at the boundary. Documented in docs/TRACE.md. */
-int replay_blocks(const char *fn) {
+int replay_blocks(const char *fn, const char *boundary) {
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0,
-            "%s: not replayable under EIGS_REPLAY (subprocess/concurrency "
-            "boundary; see docs/TRACE.md)", fn);
+            "%s: not replayable under EIGS_REPLAY (%s boundary; "
+            "see docs/TRACE.md)", fn, boundary);
         return 1;
     }
     return 0;
@@ -2612,7 +2612,7 @@ Value* builtin_state_at(Value *arg) {
 }
 
 /* ==== BUILTIN: secure_equals ==== */
-/* secure_equals of [a, b] → 1 if the two strings are equal, else 0.
+/* secure_equals of [a, b] → true if the two strings are equal, else false.
  * Constant-time in the *contents*: it always scans the full length and folds
  * every byte into the result, so it does not short-circuit on the first
  * differing byte the way `==`/strcmp do. Use it for comparing secrets
@@ -2720,7 +2720,7 @@ Value* builtin_ord(Value *arg) {
 }
 
 /* ==== BUILTIN: try_parse ==== */
-/* try_parse of string → 1 if valid EigenScript syntax, 0 if not.
+/* try_parse of string → true if valid EigenScript syntax, false if not.
  * Tokenizes and parses without executing. Suppresses stderr. */
 Value* builtin_try_parse(Value *arg) {
     /* The wrong-TYPE half is a mistake; the parse-FAILED half below is the
@@ -4951,7 +4951,7 @@ Value* builtin_recv(Value *arg) {
      * replay (test_builtin_errors BE07 under EIGS_REPLAY). */
     Channel *ch = channel_arg(arg, "recv");
     if (!ch) return make_null();
-    if (replay_blocks("recv")) return make_null();
+    if (replay_blocks("recv", "subprocess/concurrency")) return make_null();
     pthread_mutex_lock(&ch->mutex);
     while (ch->count == 0 && !ch->closed &&
            !eigs_state_exit_requested(eigs_current_state(), NULL))
@@ -4971,7 +4971,7 @@ Value* builtin_recv(Value *arg) {
 Value* builtin_try_recv(Value *arg) {
     Channel *ch = channel_arg(arg, "try_recv");   /* #1072: validate before the replay block */
     if (!ch) return make_null();
-    if (replay_blocks("try_recv")) return make_null();
+    if (replay_blocks("try_recv", "subprocess/concurrency")) return make_null();
     pthread_mutex_lock(&ch->mutex);
     Value *val = NULL;
     if (ch->count > 0) {
@@ -5002,7 +5002,7 @@ Value* builtin_recv_timeout(Value *arg) {
     int64_t ms;
     if (!eigs_magnitude_arg(ms_v, LONG_MIN, LONG_MAX, &ms, "recv_timeout")) return make_null();
     if (ms < 0) ms = 0;
-    if (replay_blocks("recv_timeout")) return make_null();   /* all refusals precede replay */
+    if (replay_blocks("recv_timeout", "subprocess/concurrency")) return make_null();   /* all refusals precede replay */
 
     struct timespec deadline;
     clock_gettime(EIGS_CHANNEL_CLOCK, &deadline);
@@ -5328,7 +5328,7 @@ Value* builtin_task_kill(Value *arg) {
     return make_bool(task_do_kill(target));
 }
 
-/* task_alive of id → 1 while the task is READY/RUNNING/SUSPENDED, else 0
+/* task_alive of id → true while the task is READY/RUNNING/SUSPENDED, else false
  * (DONE, DEAD, or an unknown id). */
 Value* builtin_task_alive(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "task_alive", "a task id (number)", make_bool(0));

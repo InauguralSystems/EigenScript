@@ -17,6 +17,6 @@ Over the range `<previous-tag>..<candidate>`:
 The workflow checks two lines; the rest is for readers.
 
 - `Range: <previous-tag>..<candidate-sha>`
-- one row per finding: `| category | location | FIXED <commit> |` or `| category | location | FLAGGED #<issue> |`
+- one row per finding: `| category | location | FIXED #<PR> |` or `| category | location | FLAGGED #<issue> |`. A FIXED row names the pull request that carries the fix, usually the review PR itself. It does not name a branch commit: the merge queue squashes a PR's commits into one, so a branch SHA is not on main after the merge (#1950)
 - the instruments run, each with its result
 - `Verdict: <one line>`, for example `Verdict: clean, 4 fixed, 2 flagged`

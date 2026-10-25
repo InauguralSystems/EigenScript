@@ -130,9 +130,11 @@ iteration, or a collector that quietly stops working).
   safepoint-read field closed the class. If you add a flag that safepoints
   read and any worker-reachable path writes, use this idiom from the start,
   and extend the round-18 induction table rather than discovering it one
-  TSan report at a time. Known still-unfixed members of the class are
-  ledgered on #1035/#1036 (threshold doubles — TORN reads possible; tape
-  dedup statics; g_no_yield_depth).
+  TSan report at a time. The members that sweep left open were ledgered on
+  #1035/#1036, both closed since: `g_no_yield_depth` is thread-local (#1036),
+  the tape's line-dedup state is per stream and updated under the tape mutex
+  (#1142), and `set_observer_thresholds`, whose plain stores raced the
+  threshold readers, was removed (#1677).
 
 - **A sealed ROOT env (parent NULL) takes `g_module_env_lock` on every
   `env_set_local` once the process is multithreaded, and the lock is not

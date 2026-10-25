@@ -88,7 +88,7 @@ same `ObserverSlot` machinery the language uses at runtime, so the
 stepper's `[converged]` is *by construction* what `report_value of x`
 would have said at that moment — under the observer configuration the tape
 recorded as being in force there, not the compiled-in defaults (the `O`
-records, [TRACE.md](TRACE.md#observer-configuration-1044-1045)). A knob moved
+records, [TRACE.md](TRACE.md#observer-configuration-10441045)). A knob moved
 after a binding's last assignment still counts: `p` answers "what would
 `report of x` say *here*", and `t`'s per-assignment rows name the settled
 label on a line of their own when it differs. Non-numeric bindings show their

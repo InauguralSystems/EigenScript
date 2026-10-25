@@ -8,7 +8,8 @@
 # selftests.sh enforces it (#1352): a trigger matching a tracked product file (src/ lib/ docs/ examples/,
 # the runner, top-level tests/test_* other than the row's own scripts, README, CHANGELOG) is refused unless the
 # row's timeout bound is <= 60s.
-# The runner-guard calibrations [99c]/[99d] stay in the suite until the runner is split (#1275 plan, step 3).
+# The runner-guard calibrations [99c]/[99d] stay in the suite: they exercise
+# the suite runner's own timeout and binary-fingerprint guards in their real calling context.
 bench/check_regression.sh bench/scalar_loop.eigs | timeout 30 bash bench/check_regression.sh --selftest
 tests/http_readiness.py tests/test_http_readiness.sh | timeout 60 python3 tests/http_readiness.py --selftest | [{"pattern":"PASS:","count":510},{"pattern":"^HTTP_READINESS_SELFTEST: 510 passed, 0 failed$","count":1},{"pattern":"FAIL:","count":0}]
 tests/test_arming_mt.sh tests/arming_mt_fixtures/* | timeout 30 bash tests/test_arming_mt.sh --selftest | [{"pattern":"  PASS:","count":5},{"pattern":"  FAIL:","count":0}]
@@ -29,8 +30,9 @@ tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftes
 tools/codspeed_targets_check.sh codspeed.yml | timeout 30 bash tools/codspeed_targets_check.sh --selftest
 tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 25 bash tools/consumer_acceptance.sh --self-test
 tools/core_ext_boundary_check.sh tools/core_ext_boundary_selftest.sh | timeout 120 bash tools/core_ext_boundary_selftest.sh --selftest | [{"pattern":"^PASS: core-ext boundary:","count":1}]
-tools/docs_claims_check.sh | timeout 30 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 17 case\\(s\\) run, 17 passed, 0 failed$","count":1}]
+tools/docs_claims_check.sh | timeout 30 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 19 case\\(s\\) run, 19 passed, 0 failed$","count":1}]
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=7$","count":1}]
+Makefile tools/make_lock_check.sh tools/stop_gate.sh tools/tree_lock.sh tools/bounded_process.py | timeout 60 bash tools/make_lock_check.sh --selftest | [{"pattern":"^  PASS:","count":8},{"pattern":"^make-lock selftest: 8/8 passed$","count":1},{"pattern":"FAIL:","count":0}]
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
 tools/performance_observer_docs.py docs/PERFORMANCE.md bench/observer_callgrind.txt bench/baseline.txt bench/observed_loop.eigs bench/unobserved_loop.eigs bench/conservative_observed_loop.eigs bench/conservative_unobserved_loop.eigs | timeout 30 python3 tools/performance_observer_docs.py --selftest

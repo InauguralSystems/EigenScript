@@ -94,8 +94,9 @@ extern int g_trace_enabled_storage;
  * as the obs-flag race; the INSTANCE pre-exists on main (verified there, same
  * 2 warnings), but the flags became verdict-carrying here. The macros are
  * LOADS; writes must use trace_flag_store, so the write sites stay
- * enumerable by the compiler. The arm NAME SETS (g_arm_*, g_occ_*) are a
- * separate, wider surface — tracked on #1035, not fixed by flag atomics. */
+ * enumerable by the compiler. The separate arm NAME SETS (g_arm_*, g_occ_*)
+ * are race-free since #1145: g_arm_mu covers every reader, writer, and
+ * shutdown free, exercised by spawn and two-state TSan witnesses. */
 extern int g_trace_hist_storage;
 #define g_trace_hist __atomic_load_n(&g_trace_hist_storage, __ATOMIC_RELAXED)
 
@@ -447,6 +448,8 @@ int trace_replay_refuse_off_owner(const char *fn);
 /* #1637: declare the return kinds (a ValType bit set, 1u << VAL_X) of a
  * host-recorded nondet name; replay refuses a record of another kind, and a
  * name declared nowhere. 0 = refused (empty name, no kinds, a core name). */
+/* True when a runtime builtin has a return-kind row in k_tape_kinds. */
+int trace_core_kind_declared(const char *name);
 int trace_declare_kind(const char *name, unsigned kinds);
 
 #define TRACE_NONDET_RET(name, expr) do {                            \

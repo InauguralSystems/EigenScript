@@ -748,7 +748,8 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
  * the five sites that arm it (builtins.c, chunk.c, compiler.c x2, repl.c).
  * Mirroring would be five hand-maintained copies of one fact, and a sixth arming
  * site added later would silently record a tape full of dead observer snapshots
- * — the same drift shape #921/#925 are open on. One read, no copies. */
+ * — the same drift shape whose compile-invocation checks #921/#925 fixed.
+ * One read, no copies. */
 #define g_trace_obs_hist __atomic_load_n(&g_trace_obs_hist_storage, __ATOMIC_RELAXED)
 
 /* #972: the observe-call tally (eigenscript.h) — a debug instrument, so its

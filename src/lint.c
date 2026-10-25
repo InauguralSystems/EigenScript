@@ -1165,9 +1165,10 @@ static void check_unused_params(ASTNode *node, LintContext *ctx) {
  * examples — so flagging it is noise, not a fence. `_`-prefixed names are the
  * convention for intentional module-private state (as W001 already honors) and
  * are skipped. The general local-discipline lint belongs to the scope-aware
- * name-resolution pass (#404) landed as E003; #870 tracks the still-open
- * general local-discipline fence. Params and `local`-declared names are
- * excluded; nested functions are not analysed (enclosing scope isn't module). */
+ * name-resolution pass (#404) landed as E003; #870's general local-discipline
+ * fence landed as the fail-safe, inverted W023 check below. Params and
+ * `local`-declared names are excluded; nested functions are not analysed
+ * (enclosing scope isn't module). */
 
 #define W015_MAX_NAMES 512
 

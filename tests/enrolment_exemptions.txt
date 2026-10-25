@@ -20,3 +20,5 @@ tools/stop_gate.sh | a Claude Code Stop hook (.claude/settings.json), not a CI g
 tools/ai_benchmark.py | a module tests/test_ai_benchmark.py imports (suite [99acb]); this scan sees no imports
 tools/bounded_process.py | a module tests/test_gc_runner_controls.py imports (the manual GC runner control, exempt above)
 tools/phase2_inventory.py | runs through tools/phase2_check.py (its inventory gate, every mode, now in CI) and tests/phase2/slot_layer.sh (suite [0fk]): a Python call and a nested tests/ script this scan does not read
+tools/make_lock_check.sh | self-test only (--selftest); its tools/selftests.txt row runs when Makefile or the lock tools change, and nightly; this scan follows table commands only for tests/ scripts
+tools/tree_lock.sh | runs on every make through Makefile's parse-time $(shell), and from the local Stop hook tools/stop_gate.sh; this scan follows neither make nor local hook roots

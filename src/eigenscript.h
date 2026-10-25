@@ -1625,14 +1625,14 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
  * commit made — and round 17 found the SAME shape a third field over, in
  * g_trace_obs_hist/g_trace_hist (trace.h), the second operand of the same
  * deciding expression; those now use the same idiom. This block covers the
- * per-STATE obs flags only. The arm NAME SETS (g_arm_*, g_occ_*) remain
- * plain process globals mutated by chunk_arm_temporal — a wider pre-existing
- * surface, tracked on #1035, NOT closed by flag atomics. Do not read this
- * comment as "the class is closed"; it was written that way once and a critic
- * falsified it within one round. Relaxed suffices: no data is published THROUGH these flags —
- * each consumer's correctness rests on its own thread's sequenced reads plus
- * the sticky obs_history_gap semantics, and a reader seeing a stale 0 for a
- * bounded window is the same "conservative-late" behaviour the memo already
+ * per-STATE obs flags only. The process-global arm NAME SETS (g_arm_*,
+ * g_occ_*) are now race-free: #1145 put every reader, writer, and shutdown
+ * free under g_arm_mu, with spawn and two-state TSan witnesses in
+ * tests/test_arming_mt.sh. Relaxed suffices: no data is published THROUGH
+ * these flags — each consumer's correctness rests on its own thread's
+ * sequenced reads plus the sticky obs_history_gap semantics, and a reader
+ * seeing a stale 0 for a bounded window is the same "conservative-late"
+ * behaviour the memo already
  * documents. A relaxed load is a plain MOV on x86.
  * The macros are LOADS (not lvalues), so any new assignment through them
  * fails to compile and must go through obs_flag_store — the write sites stay
