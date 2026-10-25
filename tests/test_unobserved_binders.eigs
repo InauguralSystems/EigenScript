@@ -226,4 +226,35 @@ for nested_local_iter in [1, 2]:
         local nested_local_name is "inner"
 assert_eq of [nested_local_seen, ["undefined_name"], "1883 a local in a block inside a for loop is per iteration"]
 
+# #1902: dynamic access by eval sees the same module binding as static code.
+unobserved:  # lint: allow W020 -- storage transparency is the subject
+    eval_target_1902 is 5
+    eval_seen_1902 is eval of "eval_target_1902"
+print of eval_seen_1902
+assert_eq of [eval_seen_1902, 5, "1902 eval reads an unobserved-block assignment by name"]
+
+# The other caller-scope builtin writes that same binding by name.
+unobserved:  # lint: allow W020 -- storage transparency is the subject
+    lf_target_1902 is 1
+    load_file of "issue_1902_writer.eigs"
+    lf_seen_1902 is lf_target_1902
+print of lf_seen_1902
+assert_eq of [lf_seen_1902, 9, "1902 load_file updates an unobserved-block assignment by name"]
+
+# Reachability boundary: even a statically named user function may reach eval.
+define dynamic_reader_1902() as:
+    return eval of "boundary_target_1902"
+unobserved:  # lint: allow W020 -- storage transparency is the subject
+    boundary_target_1902 is 11
+    boundary_seen_1902 is dynamic_reader_1902 of []
+assert_eq of [boundary_seen_1902, 11, "1902 user-call reachability stays on the name path"]
+
+# No call means promotion remains available. The first name has no outside
+# reference and is therefore still a slot candidate; its value is copied to
+# the escaping witness using only static operations.
+unobserved:
+    promotion_fast_target_1902 is 12
+    promotion_fast_seen_1902 is promotion_fast_target_1902 + 1
+assert_eq of [promotion_fast_seen_1902, 13, "1902 call-free blocks retain slot promotion"]
+
 test_summary of null

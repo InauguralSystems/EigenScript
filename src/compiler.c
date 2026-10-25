@@ -1193,6 +1193,78 @@ static int ast_has_closure(ASTNode *node) {
     return 0;
 }
 
+/* #1902: Slot promotion is valid only while every access to a promoted module
+ * binding is visible to the compiler. A call is an escape hatch: the callee
+ * may be eval/load_file, an alias of either, or a user function which reaches
+ * one. Do not guess at a call graph: if a block can make any call, keep the
+ * whole block on the name path. `unobserved:` is only a performance hint.
+ * Function/lambda bodies are not executed merely by defining them; an actual
+ * invocation in the block is itself an AST_RELATION and trips this guard. */
+static int ast_can_call(ASTNode *node) {
+    if (!node) return 0;
+#define CALLS(n) do { if (ast_can_call(n)) return 1; } while (0)
+    switch (node->type) {
+    case AST_RELATION: return 1;
+    case AST_IF:
+        CALLS(node->data.cond.cond);
+        for (int i = 0; i < node->data.cond.if_count; i++) CALLS(node->data.cond.if_body[i]);
+        for (int i = 0; i < node->data.cond.else_count; i++) CALLS(node->data.cond.else_body[i]);
+        break;
+    case AST_LOOP:
+        CALLS(node->data.loop.cond);
+        for (int i = 0; i < node->data.loop.body_count; i++) CALLS(node->data.loop.body[i]);
+        break;
+    case AST_BLOCK: case AST_UNOBSERVED:
+        for (int i = 0; i < node->data.block.count; i++) CALLS(node->data.block.stmts[i]);
+        break;
+    case AST_FOR:
+        CALLS(node->data.forloop.iter);
+        for (int i = 0; i < node->data.forloop.body_count; i++) CALLS(node->data.forloop.body[i]);
+        break;
+    case AST_TRY:
+        for (int i = 0; i < node->data.trycatch.try_count; i++) CALLS(node->data.trycatch.try_body[i]);
+        for (int i = 0; i < node->data.trycatch.catch_count; i++) CALLS(node->data.trycatch.catch_body[i]);
+        break;
+    case AST_MATCH:
+        CALLS(node->data.match.expr);
+        for (int i = 0; i < node->data.match.case_count; i++) {
+            CALLS(node->data.match.patterns[i]);
+            for (int j = 0; j < node->data.match.body_counts[i]; j++) CALLS(node->data.match.bodies[i][j]);
+        }
+        break;
+    case AST_BINOP: CALLS(node->data.binop.left); CALLS(node->data.binop.right); break;
+    case AST_UNARY: CALLS(node->data.unary.operand); break;
+    case AST_ASSIGN: CALLS(node->data.assign.expr); break;
+    case AST_RETURN: CALLS(node->data.ret.expr); break;
+    case AST_LIST:
+        for (int i = 0; i < node->data.list.count; i++) CALLS(node->data.list.elems[i]);
+        break;
+    case AST_INDEX: CALLS(node->data.index.target); CALLS(node->data.index.index); break;
+    case AST_LISTCOMP:
+        CALLS(node->data.listcomp.expr); CALLS(node->data.listcomp.iter); CALLS(node->data.listcomp.filter); break;
+    case AST_DICT:
+        for (int i = 0; i < node->data.dict.count; i++) { CALLS(node->data.dict.keys[i]); CALLS(node->data.dict.vals[i]); }
+        break;
+    case AST_DOT: CALLS(node->data.dot.target); break;
+    case AST_DOT_ASSIGN: CALLS(node->data.dot_assign.target); CALLS(node->data.dot_assign.expr); break;
+    case AST_INDEX_ASSIGN:
+        CALLS(node->data.index_assign.target); CALLS(node->data.index_assign.index); CALLS(node->data.index_assign.expr); break;
+    case AST_LIST_PATTERN_ASSIGN: CALLS(node->data.list_pattern_assign.expr); break;
+    case AST_SLICE: CALLS(node->data.slice.target); CALLS(node->data.slice.start); CALLS(node->data.slice.end); break;
+    case AST_INTERROGATE:
+        CALLS(node->data.interrogate.expr); CALLS(node->data.interrogate.at_expr); CALLS(node->data.interrogate.when_expr); break;
+    case AST_PROGRAM:
+        for (int i = 0; i < node->data.program.count; i++) CALLS(node->data.program.stmts[i]);
+        break;
+    case AST_FUNC: case AST_LAMBDA:
+    case AST_NUM: case AST_STR: case AST_IDENT: case AST_NULL: case AST_BOOL:
+    case AST_PREDICATE: case AST_BREAK: case AST_CONTINUE: case AST_IMPORT:
+        break;
+    }
+#undef CALLS
+    return 0;
+}
+
 /* Overwrite-safety analysis for the persisted loop env. The persist+overwrite
  * tier skips the per-iteration CLEAR (keeping binding_version stable so the
  * outer-variable inline cache stays hot) — but that is only correct if the loop
@@ -3388,14 +3460,17 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * the optimization is enabled, find names assigned inside this block
          * that never escape it, and promote them to frame slots. */
         if (g_compile_module_slots && !c->enclosing && c->root_ast) {
+            int can_call = 0;
             NameSet assigned = {0};
             NameSet outside  = {0};
             NameSet captured_here = {0};
             NameSet interrogated_here = {0};
             NameSet by_name = {0};   /* #1883 */
 
-            for (int i = 0; i < node->data.block.count; i++)
+            for (int i = 0; i < node->data.block.count; i++) {
                 collect_module_names_walk(node->data.block.stmts[i], &assigned);
+                if (ast_can_call(node->data.block.stmts[i])) can_call = 1;
+            }
             collect_referenced_names_skip(c->root_ast, node, &outside);
             for (int i = 0; i < node->data.block.count; i++) {
                 scan_for_captures(node->data.block.stmts[i], &captured_here);
@@ -3409,6 +3484,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
             for (int i = 0; i < assigned.count; i++) {
                 const char *nm = assigned.names[i];
+                if (can_call) continue; /* #1902: a callee can access any name dynamically */
                 if (name_set_has(&outside, nm)) continue;
                 if (name_set_has(&captured_here, nm)) continue;
                 if (name_set_has(&interrogated_here, nm)) continue;
