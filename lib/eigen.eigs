@@ -653,6 +653,15 @@ define _p_report_error(tok, operand) as:
         _eigen_throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; requires a variable name operand [E005]"
     _eigen_throw of f"parse error line {tok[2]}: '{tok[1]}' is a reserved observer form; use it with 'of variable', never as a binding [E005]"
 
+# #1908 parity: the C parser reserves the whole dunder form at binders while
+# leaving reads legal. Keep the spelling rule in this one predicate.
+define _is_reserved_dunder(name) as:
+    return ((_eigen_len of name) >= 5) and (starts_with of [name, "__"]) and (ends_with of [name, "__"])
+
+define _p_dunder_error(tok) as:
+    if _is_reserved_dunder of tok[1]:
+        _eigen_throw of f"parse error line {tok[2]}: '{tok[1]}' is reserved for the runtime (names of the form __name__ are hidden from state_at and --step); choose another name [E006]"
+
 # A dot key may be any word, including a reserved observer form (#1102:
 # `d.report` is a data key, never a binding).
 define _p_expect_key(p) as:
@@ -737,12 +746,14 @@ define _p_parse_statement(p) as:
         if (_p_peek_val of p) == "define":
             _p_advance of p
             name_tok is _p_expect of [p, "ident"]
+            _p_dunder_error of name_tok
             name is name_tok[1]
             # Optional params
             params is []
             if (_p_peek_type of p) == "lparen":
                 _p_advance of p
                 loop while (_p_peek_type of p) == "ident":
+                    _p_dunder_error of (_p_cur of p)
                     _eigen_append of [params, (_p_cur of p)[1]]
                     _p_advance of p
                     _p_param_sep of [p, (_p_cur of p), params[(_eigen_len of params) - 1]]
@@ -791,6 +802,7 @@ define _p_parse_statement(p) as:
         if (_p_peek_val of p) == "for":
             _p_advance of p
             var_tok is _p_expect of [p, "ident"]
+            _p_dunder_error of var_tok
             _p_expect of [p, "kw"]
             iter is _p_parse_expr of p
             _p_expect of [p, "colon"]
@@ -821,6 +833,7 @@ define _p_parse_statement(p) as:
             _p_expect of [p, "kw"]
             err_name is "err"
             if (_p_peek_type of p) == "ident":
+                _p_dunder_error of (_p_cur of p)
                 err_name is (_p_cur of p)[1]
                 _p_advance of p
             _p_expect of [p, "colon"]
@@ -844,6 +857,7 @@ define _p_parse_statement(p) as:
         if (_p_peek_val of p) == "import":
             _p_advance of p
             name_tok is _p_expect of [p, "ident"]
+            _p_dunder_error of name_tok
             _p_end_statement of p
             return ["_line", _stmt_line, ["import", name_tok[1]]]
 
@@ -911,9 +925,11 @@ define _p_parse_statement(p) as:
         # Assignment: ident is expr
         saved_pos is p[1]
         name is (_p_cur of p)[1]
+        name_tok is _p_cur of p
         _p_advance of p
         if (_p_peek_type of p) == "kw":
             if (_p_peek_val of p) == "is":
+                _p_dunder_error of name_tok
                 _p_advance of p
                 expr is _p_parse_expr of p
                 _p_end_statement of p
@@ -1176,6 +1192,7 @@ define _p_parse_primary(p) as:
         if is_lambda == 1:
             params is []
             loop while (_p_peek_type of p) == "ident":
+                _p_dunder_error of (_p_cur of p)
                 _eigen_append of [params, (_p_cur of p)[1]]
                 _p_advance of p
                 _p_param_sep of [p, (_p_cur of p), params[(_eigen_len of params) - 1]]
@@ -1209,6 +1226,7 @@ define _p_parse_primary(p) as:
             if (_p_peek_val of p) == "for":
                 _p_advance of p
                 var_tok is _p_expect of [p, "ident"]
+                _p_dunder_error of var_tok
                 _p_expect of [p, "kw"]
                 iter_expr is _p_parse_expr of p
                 filter_expr is null
