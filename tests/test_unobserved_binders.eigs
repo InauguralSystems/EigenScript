@@ -167,14 +167,19 @@ unobserved:
     math is 0
 assert_eq of [import_binder_seen, "dict", "1883 an imported module name that the block reassigns reads the module"]
 
-# `loop while` publishes __loop_exit__ (compiler) and __loop_iterations__ (VM):
+# `loop while` publishes __loop_exit__ (compiler); a source binding is E006.
+loop_exit_refused is false
+try:
+    eval of "__loop_exit__ is \"unset\""
+catch loop_exit_err:
+    loop_exit_refused is true
 unobserved:
-    __loop_exit__ is "unset"
     loop_exit_counter is 0
     loop while loop_exit_counter < 3:
         loop_exit_counter is loop_exit_counter + 1
     loop_exit_seen is __loop_exit__
-assert_eq of [loop_exit_seen, "normal", "1883 __loop_exit__ that the block assigns reads the loop's exit"]
+assert_true of [loop_exit_refused, "1908 __loop_exit__ binding is refused"]
+assert_eq of [loop_exit_seen, "normal", "1883 unobserved still preserves the runtime loop-exit binding"]
 
 # A binder OUTSIDE the block writes the same module binding.  Here a `loop
 # while` before the block publishes __loop_iterations__.  The VM's count carries
@@ -187,9 +192,14 @@ loop while loop_iterations_counter < 3:
 loop_iterations_want is eval of "__loop_iterations__"
 unobserved:
     loop_iterations_seen is __loop_iterations__
-    __loop_iterations__ is -1
+loop_iterations_refused is false
+try:
+    eval of "__loop_iterations__ is -1"
+catch loop_iterations_err:
+    loop_iterations_refused is true
 assert_true of [loop_iterations_want >= 3, "1883 the loop published its count"]
 assert_eq of [loop_iterations_seen, loop_iterations_want, "1883 __loop_iterations__ from a loop before the block reads the loop's count"]
+assert_true of [loop_iterations_refused, "1908 __loop_iterations__ binding is refused"]
 
 # A module imported before the block:
 import json

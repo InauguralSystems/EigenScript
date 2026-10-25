@@ -598,10 +598,11 @@ assignment to the name return `null`.
 mapping every tracked binding to the value it held at or before `line`
 (names not yet assigned by then are omitted). See
 [BUILTINS.md](BUILTINS.md). Names of the form `__name__` are reserved for
-the runtime — the observed-loop machinery binds `__loop_exit__` and
-`__loop_iterations__` there — and are filtered out of `state_at` and of
-`--step`'s bindings listing (#736). Don't use that form for your own
-variables; they would be hidden from both.
+the runtime and are refused in every binding position with parse error
+`E006`. The observed-loop machinery itself binds `__loop_exit__` and
+`__loop_iterations__`; reads of those runtime names remain legal. The whole
+form is filtered out of `state_at` and of `--step`'s bindings listing (#736,
+#1908).
 
 `prev`, and `at` inside an interrogative, are soft keywords — outside
 these positions they parse as ordinary identifiers, so existing code
