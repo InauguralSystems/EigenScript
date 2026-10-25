@@ -370,6 +370,7 @@ const char *op_name(uint8_t op) {
     N(OP_PREDICATE_SLOT) N(OP_PREDICATE_NAME)
     N(OP_REPORT_VALUE_SLOT) N(OP_REPORT_VALUE_NAME)
     N(OP_TRAJECTORY_SLOT) N(OP_TRAJECTORY_NAME)
+    N(OP_LOOP_ENTER)
 #undef N
     case OP_COUNT: break;   /* unreachable: bounds-checked above */
     }
@@ -524,6 +525,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     case OP_WIDE:      /* placeholder — the VM decodes no operand either */
     case OP_DISPATCH:
     case OP_SLICE_GET:
+    case OP_LOOP_ENTER:
         return 0;
     /* OP_LINE's operand is 32-bit (#630); chunk_verify and the
      * disassembler both special-case it BEFORE consulting this u16-strided
@@ -721,6 +723,7 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
     case OP_TRY_END: case OP_BREAK: case OP_CONTINUE:
     case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+    case OP_LOOP_ENTER:
         return EFF(0, 0, 0);
 
     case OP_COUNT:   /* sentinel — callers bounds-check first */

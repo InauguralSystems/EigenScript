@@ -177,19 +177,15 @@ unobserved:
 assert_eq of [loop_exit_seen, "normal", "1883 __loop_exit__ that the block assigns reads the loop's exit"]
 
 # A binder OUTSIDE the block writes the same module binding.  Here a `loop
-# while` before the block publishes __loop_iterations__.  The VM's count carries
-# over earlier loops (only a stall resets it), so the row compares with the
-# binding read by name through eval, which the escape analysis does not see as
-# a reference.
+# while` before the block publishes an absolute, per-loop count.  Reading the
+# binding directly still protects escape analysis for the runtime-owned name.
 loop_iterations_counter is 0
 loop while loop_iterations_counter < 3:
     loop_iterations_counter is loop_iterations_counter + 1
-loop_iterations_want is eval of "__loop_iterations__"
 unobserved:
     loop_iterations_seen is __loop_iterations__
     __loop_iterations__ is -1
-assert_true of [loop_iterations_want >= 3, "1883 the loop published its count"]
-assert_eq of [loop_iterations_seen, loop_iterations_want, "1883 __loop_iterations__ from a loop before the block reads the loop's count"]
+assert_eq of [loop_iterations_seen, 3, "1883 __loop_iterations__ from a loop before the block reads the loop's count"]
 
 # A module imported before the block:
 import json

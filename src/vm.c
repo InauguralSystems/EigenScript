@@ -2101,7 +2101,7 @@ int eigs_loop_stall_step(Env *e) {
      * budget (sandbox_run's max_iter). The old unconditional 100M default
      * silently broke the running loop every 1e8 cumulative in-frame
      * iterations of ANY long program — wrong results with exit 0. */
-    if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {
+    if (g_sandbox_loop_max && ++g_sandbox_loop_iterations >= g_sandbox_loop_max) {
         g_loop_exit_reason = "limit";
         g_sandbox_cap_hit = 1;   /* a capped run must not report ok (#960-adjacent) */
         should_exit = 1;
@@ -2112,7 +2112,6 @@ int eigs_loop_stall_step(Env *e) {
         env_set_local(e, "__loop_exit__", exit_val);
         val_decref(exit_val);
         g_loop_stall_count = 0;
-        g_loop_iterations = 0;
         g_loop_exit_reason = "normal";
         return 1;
     }
@@ -2123,7 +2122,7 @@ int eigs_loop_cap_step(Env *e) {
     eigs_observe_safepoint(e);   /* #660 */
     g_loop_iterations++;
     int should_exit = 0;
-    if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {
+    if (g_sandbox_loop_max && ++g_sandbox_loop_iterations >= g_sandbox_loop_max) {
         g_loop_exit_reason = "limit";
         g_sandbox_cap_hit = 1;
         should_exit = 1;
@@ -2134,7 +2133,6 @@ int eigs_loop_cap_step(Env *e) {
         env_set_local(e, "__loop_exit__", exit_val);
         val_decref(exit_val);
         g_loop_stall_count = 0;
-        g_loop_iterations = 0;
         g_loop_exit_reason = "normal";
         return 1;
     }
@@ -3140,6 +3138,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_UNOBSERVED_END] = &&lbl_UNOBSERVED_END,
         [OP_LOOP_STALL_CHECK] = &&lbl_LOOP_STALL_CHECK,
         [OP_LOOP_CAP_CHECK] = &&lbl_LOOP_CAP_CHECK,
+        [OP_LOOP_ENTER] = &&lbl_LOOP_ENTER,
         [OP_IMPORT] = &&lbl_IMPORT, [OP_MATCH] = &&lbl_MATCH,
         [OP_LISTCOMP_BEGIN] = &&lbl_LISTCOMP_BEGIN,
         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
@@ -5947,7 +5946,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 g_loop_stall_count = 0;
             }
         }
-        if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
+        if (g_sandbox_loop_max && ++g_sandbox_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
             g_loop_exit_reason = "limit";
             g_sandbox_cap_hit = 1;
             should_exit = 1;
@@ -5959,7 +5958,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             env_set_local(frame->env, "__loop_exit__", exit_val);
             val_decref(exit_val);
             g_loop_stall_count = 0;
-            g_loop_iterations = 0;
             g_loop_exit_reason = "normal";
             ip += exit_offset;
         }
@@ -5978,7 +5976,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         eigs_observe_safepoint(frame->env);   /* #660: SIGUSR1 dump at the per-iteration safepoint */
         g_loop_iterations++;
         int should_exit = 0;
-        if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
+        if (g_sandbox_loop_max && ++g_sandbox_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
             g_loop_exit_reason = "limit";
             g_sandbox_cap_hit = 1;
             should_exit = 1;
@@ -5989,10 +5987,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             env_set_local(frame->env, "__loop_exit__", exit_val);
             val_decref(exit_val);
             g_loop_stall_count = 0;
-            g_loop_iterations = 0;
             g_loop_exit_reason = "normal";
             ip += exit_offset;
         }
+        DISPATCH();
+    }
+
+    CASE(LOOP_ENTER): {
+        g_loop_iterations = 0;
+        loop_iter_store(frame->env, 0.0);
         DISPATCH();
     }
 

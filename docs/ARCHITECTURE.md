@@ -193,6 +193,10 @@ assignment inside one still records its value-window sample (#1049).
 Loop stall detection (`OP_LOOP_STALL_CHECK`) exits while-loops after 100
 consecutive iterations with `|dH| < threshold`, setting `__loop_exit__`
 and `__loop_iterations__` env variables.
+`OP_LOOP_ENTER` resets `__loop_iterations__`, making it the per-loop published
+count for normal, stalled, and limited exits; after a nested loop it describes
+the innermost completed loop.  A separate sandbox counter remains cumulative
+across compiler-emitted loops (and calls) for the duration of `sandbox_run`.
 
 ## Memory
 

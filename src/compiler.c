@@ -388,7 +388,7 @@ static int op_stack_effect(uint8_t op8) {
         return 0;
     /* Loop guards: exit-jump only, no stack change. (#737: these two fell
      * through the old default arm — right answer, by accident.) */
-    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
+    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK: case OP_LOOP_ENTER:
         return 0;
     /* Observer blocks: no stack change */
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
@@ -2365,6 +2365,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         LoopCtx *lp = loop_push(c);
         lp->scope_depth = c->scope_depth;
         lp->has_fresh_env = 0; /* while-loops don't allocate per-iter envs */
+
+        /* Entry, rather than exit, also covers zero-iteration loops.  If an
+         * inner loop completes, its count remains the most recently completed
+         * loop visible inside the outer body (#1906). */
+        emit(c, OP_LOOP_ENTER, node->line);
 
         int loop_start = capture_loop_start(c);
         lp->continue_target = loop_start;

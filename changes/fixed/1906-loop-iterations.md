@@ -1,0 +1,1 @@
+- Reset `__loop_iterations__` for every loop while preserving the cumulative sandbox loop budget (#1906).

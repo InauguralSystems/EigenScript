@@ -528,6 +528,13 @@ under multithreading uses the existing locked environment setter, including
 the assignment-count update, instead of the cached slot-write path. The
 calculation counter remains thread-local and call-frame scoped; the shared
 binding still holds the last published value, not a sum across threads.
+The count resets to zero at every `loop while` entry.  After normal, stalled,
+or sandbox-limit exit it is that loop's count.  If an inner loop completes
+inside an outer loop, the inner loop is the most recently completed loop, so
+its count remains visible until another loop starts or completes.  This
+published value is separate from the sandbox's cumulative compiler-loop
+budget: `sandbox_run` charges iterations across all loops in the run and does
+not replenish the budget at a loop or function boundary.
 This narrow runtime-bookkeeping change came first; concurrent reads and
 rebinds of module-level bindings were made safe by #1171 (above).
 
