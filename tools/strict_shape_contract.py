@@ -8,11 +8,14 @@ surfaces must be classified; changed exempt bodies need renewed review. Use
 them without reformatting the contracts file.
 """
 import argparse
+import contextlib
 import copy
 import hashlib
+import io
 import json
 import re
 import shutil
+import tempfile
 import wave
 from pathlib import Path
 
@@ -29,34 +32,70 @@ def masked(source):
     return MASK.sub(lambda m: re.sub(r'[^\n]', ' ', m.group()), source)
 
 
-def normalized(source):
-    """Remove comments and normalize only whitespace outside C literals."""
-    pieces, pending_space = [], False
+PUNCTUATORS = {
+    '++', '--', '->', '<<', '>>', '<=', '>=', '==', '!=', '&&', '||',
+    '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '##', '.*', '...',
+    '<<=', '>>=', '->*', '//', '/*', '*/', '..', '<:', ':>', '<%', '%>',
+    '%:', '::', '??',
+}
 
-    def outside(text):
-        nonlocal pending_space
-        for character in text:
-            if character.isspace():
-                pending_space = bool(pieces)
-            else:
-                if pending_space:
-                    pieces.append(' ')
-                pieces.append(character)
-                pending_space = False
+
+def needs_separator(left, right):
+    """Whether removing whitespace between two characters changes C tokens."""
+    return ((left.isascii() and (left.isalnum() or left == '_') and
+             right.isascii() and (right.isalnum() or right == '_')) or
+            left + right in PUNCTUATORS or
+            (left == '.' and right.isdigit()) or
+            (left.isdigit() and right == '.'))
+
+
+def normalized(source):
+    """Remove comments and insignificant whitespace, preserving C token boundaries."""
+    # C11 translation phase 2 happens before comments and tokens are recognized.
+    source = re.sub(r'\\\r?\n', '', source)
+    pieces = []
+    pending_space = False
+    pending_directive_newline = False
+    line_has_code = False
+    directive = False
+
+    def whitespace(text):
+        nonlocal pending_space, pending_directive_newline, line_has_code, directive
+        if not text:
+            return
+        pending_space = True
+        if '\n' in text:
+            if directive:
+                pending_directive_newline = True
+            line_has_code = False
+            directive = False
+
+    def emit(token):
+        nonlocal pending_space, pending_directive_newline, line_has_code, directive
+        if pending_directive_newline:
+            pieces.append('\n')
+        elif pending_space and pieces and pieces[-1] != '\n' and needs_separator(pieces[-1][-1], token[0]):
+            pieces.append(' ')
+        if not line_has_code and token[0] == '#':
+            directive = True
+        pieces.append(token)
+        line_has_code = True
+        pending_space = pending_directive_newline = False
 
     end = 0
     for match in MASK.finditer(source):
-        outside(source[end:match.start()])
+        for part in re.split(r'(\s+)', source[end:match.start()]):
+            whitespace(part) if part.isspace() else (emit(part) if part else None)
         token = match.group()
         if token.startswith(('"', "'")):
-            if pending_space:
-                pieces.append(' ')
-            pieces.append(token)
-            pending_space = False
+            emit(token)
         else:
-            pending_space = bool(pieces)
+            whitespace(token)
         end = match.end()
-    outside(source[end:])
+    for part in re.split(r'(\s+)', source[end:]):
+        whitespace(part) if part.isspace() else (emit(part) if part else None)
+    if pending_directive_newline:
+        pieces.append('\n')
     return ''.join(pieces)
 
 
@@ -140,40 +179,39 @@ def exemption_sources(name, funcs):
             for key in sorted(seen)}
 
 
-def hash_values(row):
-    """Return row hashes in their on-disk order."""
-    return list(row.get('body_sha256', [])) + [value for values in row.get('source_sha256', {}).values()
-                                                for value in values]
-
-
 def replace_row_hashes(text, row, replacement):
-    """Surgically replace hash strings in one JSON row, preserving every other byte."""
+    """Replace one row's pins by key, preserving bytes outside the pin values."""
     marker = '"function": ' + json.dumps(row['function'])
     middle = text.index(marker)
     start = text.rfind('  {', 0, middle)
     end = text.find('\n  }', middle) + len('\n  }')
-    old_values, new_values = hash_values(row), hash_values(replacement)
-    if len(old_values) != len(new_values):
-        raise ValueError('helper closure shape changed; review the row structure before re-pinning')
-    found = iter(old_values)
-    replacements = iter(new_values)
+    row_text = text[start:end]
+    body_start = row_text.index('"body_sha256"')
+    body_left = row_text.index('[', body_start)
+    body_right = closing(row_text, body_left, '[', ']') + 1
+    old_body = row.get('body_sha256', [])
+    new_body = replacement.get('body_sha256', [])
+    if len(old_body) != len(new_body):
+        raise ValueError('function definition count changed')
+    body_text = row_text[body_left:body_right]
+    for old, new in zip(old_body, new_body):
+        body_text, count = re.subn('"' + re.escape(old) + '"', '"' + new + '"', body_text, count=1)
+        if count != 1:
+            raise ValueError('on-disk body hashes do not match the parsed row')
+    changed = row_text[:body_left] + body_text + row_text[body_right:]
 
-    def swap(match):
-        expected = next(found, None)
-        if expected != match.group(1):
-            raise ValueError('on-disk hashes do not match the parsed row')
-        return '"' + next(replacements) + '"'
-
-    changed = re.sub(r'"([0-9a-f]{64})"', swap, text[start:end])
-    try:
-        next(found)
-        raise ValueError('not all parsed hashes occur in the row')
-    except StopIteration:
-        pass
+    source_start = changed.index('"source_sha256"')
+    source_left = changed.index('{', source_start)
+    source_right = closing(changed, source_left, '{', '}') + 1
+    line_start = changed.rfind('\n', 0, source_start) + 1
+    key_indent = changed[line_start:source_start]
+    rendered = json.dumps(replacement['source_sha256'], indent=2, sort_keys=True)
+    rendered = rendered.replace('\n', '\n' + key_indent)
+    changed = changed[:source_left] + rendered + changed[source_right:]
     return text[:start] + changed + text[end:]
 
 
-def repin(name, write, sources, contracts):
+def repin(name, write, sources, contracts, data_path=DATA):
     row = next((item for item in contracts if item['function'] == name), None)
     if row is None:
         print(f'REFUSED: {name}: no contract row')
@@ -196,23 +234,20 @@ def repin(name, write, sources, contracts):
         current = replacement['body_sha256'] if member == name else current_sources.get(member, [])
         print(f"{member}: pinned={','.join(pinned) or '<missing>'} current={','.join(current) or '<missing>'} "
               + ('CHANGED' if pinned != current else 'same'))
-    if hash_values(row) == hash_values(replacement) and pinned_sources.keys() == current_sources.keys():
+    if (row.get('body_sha256', []) == replacement['body_sha256'] and
+            pinned_sources == current_sources):
         print(f'REPIN: {name}: no changes')
         return 0
     if not write:
         print(f'REPIN: {name}: dry run; use --write after review')
         return 0
-    if (pinned_sources.keys() != current_sources.keys() or
-            any(len(pinned_sources[key]) != len(current_sources[key]) for key in pinned_sources)):
-        print(f'REFUSED: {name}: helper closure shape changed; hash-only re-pin is not possible')
-        return 2
     try:
-        updated = replace_row_hashes(DATA.read_text(), row, replacement)
+        updated = replace_row_hashes(data_path.read_text(), row, replacement)
     except ValueError as error:
         print(f'REFUSED: {name}: {error}')
         return 2
-    DATA.write_text(updated)
-    print(f'REPIN: {name}: wrote changed hash strings only')
+    data_path.write_text(updated)
+    print(f'REPIN: {name}: wrote reviewed source pins')
     return 0
 
 
@@ -283,8 +318,14 @@ def audit(sources, header, contracts, cases):
             if guards:
                 errors.append(name + ': exempt function has a max guard')
             hashes = sorted(body_hash(d['body']) for d in defs)
-            if hashes != row.get('body_sha256') or exemption_sources(name, funcs) != row.get('source_sha256'):
-                errors.append(name + ': exempt source/helper changed; review the contract')
+            actual_sources = exemption_sources(name, funcs)
+            pinned_sources = row.get('source_sha256', {})
+            changed_members = {member for member in set(actual_sources) | set(pinned_sources)
+                               if actual_sources.get(member) != pinned_sources.get(member)}
+            if hashes != row.get('body_sha256'):
+                changed_members.add(name)
+            for member in sorted(changed_members):
+                errors.append(name + ': exempt source/helper changed (' + member + '); review the contract')
         else:
             errors.append(name + ': unknown disposition')
     if set(controls) != expected_controls:
@@ -375,6 +416,91 @@ void register_all(Env *env) {
         ok = (not errors) == expected and (named is None or any(named in e for e in errors))
         print(('PASS: ' if ok else 'FAIL: ') + label)
         passed += ok
+
+    normalization_cases = [
+        ('char literal protects following code',
+         "int slash = '//'; int after = 1;", "int slash = '//'; int after = 2;", False),
+        ('string protects code before later comment close',
+         'char *s = "/*"; int between = 1; /* later */',
+         'char *s = "/*"; int between = 2; /* later */', False),
+        ('literal whitespace is verbatim', 'char *s = "a  b";', 'char *s = "a b";', False),
+        ('comment separates words', 'int/**/x;', 'intx;', False),
+        ('comment beside punctuation is ignored', 'f(1 /* max */);', 'f(1);', True),
+        ('punctuation whitespace is ignored', 'a+b;', 'a + b;', True),
+        ('punctuation token boundary is retained', 'a - -b;', 'a--b;', False),
+        ('preprocessor line cannot merge', '#define X 1\nfoo', '#define X 1 foo', False),
+        ('line splices precede tokenization', 'int x = a\\\n+b;', 'int x=a+b;', True),
+    ]
+    for label, left, right, expected in normalization_cases:
+        ok = (normalized(left) == normalized(right)) == expected
+        print(('PASS: ' if ok else 'FAIL: ') + label)
+        passed += ok
+
+    # Re-pin tests use only a temporary contracts file; never touch the real pins.
+    repin_source = source
+    repin_sources = {'src/example.c': repin_source}
+    repin_contract = copy.deepcopy(contract)
+    with tempfile.TemporaryDirectory() as directory:
+        scratch = Path(directory) / 'contracts.json'
+
+        def run_repin(label, name, write, active_sources, active_contract, predicate):
+            scratch.write_text(json.dumps(active_contract, indent=2) + '\n')
+            before = scratch.read_text()
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                rc = repin(name, write, active_sources, active_contract, scratch)
+            after = scratch.read_text()
+            ok = predicate(rc, output.getvalue(), before, after)
+            nonlocal_pass[0] += ok
+            print(('PASS: ' if ok else 'FAIL: ') + label)
+
+        nonlocal_pass = [0]
+        run_repin('repin no-op', 'builtin_data', True, repin_sources, repin_contract,
+                  lambda rc, out, before, after: rc == 0 and 'no changes' in out and before == after)
+        run_repin('repin refuses guarded row', 'builtin_pair', True, repin_sources, repin_contract,
+                  lambda rc, out, before, after: rc == 2 and 'disposition is guarded' in out and before == after)
+
+        prefix_contract = copy.deepcopy(repin_contract)
+        prefix_contract.insert(0, dict(prefix_contract[1], function='builtin_data_more'))
+        run_repin('repin exact prefix name', 'builtin_data', True, repin_sources, prefix_contract,
+                  lambda rc, out, before, after: rc == 0 and 'no changes' in out and before == after)
+
+        changed_sources = {'src/example.c': repin_source.replace('int token = 1;', 'int token = 2;')}
+        unsorted = copy.deepcopy(repin_contract)
+        source_pins = unsorted[1]['source_sha256']
+        unsorted[1]['source_sha256'] = {key: source_pins[key] for key in reversed(source_pins)}
+        run_repin('repin maps unsorted keys correctly', 'builtin_data', True, changed_sources, unsorted,
+                  lambda rc, out, before, after: rc == 0 and
+                  json.loads(after)[1]['source_sha256'] == exemption_sources('builtin_data', functions(changed_sources)))
+
+        expanded_source = repin_source.replace(
+            'static double *helper(Value *arg) {\n    /* helper explanation */\n    return arg->data.list.items[0];',
+            'static Value *extra(Value *arg) { return arg->data.list.items[0]; }\n'
+            'static double *helper(Value *arg) {\n    /* helper explanation */\n    return extra(arg);')
+        expanded_sources = {'src/example.c': expanded_source}
+
+        def shape_written(rc, out, before, after):
+            parsed = json.loads(after)
+            return (rc == 0 and 'extra' in parsed[1]['source_sha256'] and
+                    parsed[1]['source_sha256'] == exemption_sources('builtin_data', functions(expanded_sources)))
+
+        run_repin('repin writes closure-shape changes', 'builtin_data', True,
+                  expanded_sources, repin_contract, shape_written)
+
+        def outside_source_object(text):
+            marker = '"source_sha256"'
+            left = text.index('{', text.index(marker))
+            right = closing(text, left, '{', '}') + 1
+            return text[:left] + '<SOURCE_PINS>' + text[right:]
+
+        run_repin('repin preserves bytes outside changed pin objects', 'builtin_data', True,
+                  expanded_sources, repin_contract,
+                  lambda rc, out, before, after: rc == 0 and
+                  outside_source_object(before) == outside_source_object(after))
+        passed += nonlocal_pass[0]
+    scenarios.extend([(label, expected, None, None, None, None, None)
+                      for label, _, _, expected in normalization_cases])
+    scenarios.extend([('repin', True, None, None, None, None, None)] * 6)
     print(f'SHAPE_CONTRACT_SELFTEST: {passed} passed, {len(scenarios)-passed} failed, {len(scenarios)} declared')
     return 0 if passed == len(scenarios) else 1
 
@@ -476,7 +602,7 @@ def main():
     parser.add_argument('--selftest', action='store_true')
     parser.add_argument('--render', type=Path, help='render inert fixtures after checking source contracts')
     parser.add_argument('--repin', metavar='NAME', help='preview current hashes for one exempt row')
-    parser.add_argument('--write', action='store_true', help='with --repin, replace only that row\'s hash strings')
+    parser.add_argument('--write', action='store_true', help='with --repin, update only that row\'s source pins')
     args = parser.parse_args()
     if args.write and not args.repin:
         parser.error('--write requires --repin NAME')
