@@ -14,33 +14,85 @@
 #include "trace.h"
 #include "eigs_embed.h"
 #include <stdarg.h>
+#include <fenv.h>
+#if defined(__x86_64__)
+#include <xmmintrin.h>
+#endif
+
+/* The public embedding boundary owns the floating-point environment.  A
+ * callback is deliberately not a boundary: it executes as part of the
+ * EigenScript run, and a reentrant API call merely increments this depth. */
+static _Thread_local unsigned embed_fenv_depth;
+static _Thread_local int embed_fenv_swapped;
+static _Thread_local fenv_t embed_host_fenv;
+
+static int embed_fenv_is_default(void) {
+#if defined(__x86_64__)
+    unsigned short cw, sw;
+    __asm__ volatile ("fnstcw %0" : "=m" (cw));
+    __asm__ volatile ("fnstsw %0" : "=am" (sw));
+    return _mm_getcsr() == 0x1f80u && cw == 0x037fu && (sw & 0x3fu) == 0;
+#elif defined(__aarch64__)
+    unsigned long fpcr, fpsr;
+    __asm__ volatile ("mrs %0, fpcr" : "=r" (fpcr));
+    __asm__ volatile ("mrs %0, fpsr" : "=r" (fpsr));
+    return fpcr == 0 && fpsr == 0;
+#else
+    return 0;
+#endif
+}
+
+static void embed_fenv_enter(void) {
+    if (embed_fenv_depth++ == 0) {
+        embed_fenv_swapped = !embed_fenv_is_default();
+        if (embed_fenv_swapped) {
+            fegetenv(&embed_host_fenv);
+            fesetenv(FE_DFL_ENV);
+        }
+    }
+}
+
+static void embed_fenv_leave(void) {
+    if (--embed_fenv_depth == 0 && embed_fenv_swapped)
+        fesetenv(&embed_host_fenv);
+}
 
 /* ---- Lifecycle ---------------------------------------------------- */
 
 int eigs_state_init_runtime(EigsState *st) {
-    if (!st) return -1;
-    if (!eigs_current || eigs_current->state != st) return -1;
-    if (g_global_env) return 0;
-    if (!eigs_global_env_create()) return -1;   /* + builtin layer (#1388) */
+    int result = -1;
+    embed_fenv_enter();
+    if (!st) goto out;
+    if (!eigs_current || eigs_current->state != st) goto out;
+    if (g_global_env) { result = 0; goto out; }
+    if (!eigs_global_env_create()) goto out;   /* + builtin layer (#1388) */
     /* #1038: a module compiled later cannot classify the surrounding native
      * host. Pin default embedding open; only the explicit eval opt-in may
      * renew permission for a compile verdict. CLI state setup is separate. */
     eigs_obs_enable_runtime();
-    return 0;
+    result = 0;
+out:
+    embed_fenv_leave();
+    return result;
 }
 
 EigsState *eigs_open(void) {
+    embed_fenv_enter();
     EigsState *st = eigs_state_new();
-    if (!st) return NULL;
+    if (!st) goto out;
     if (!eigs_thread_attach(st)) {
         eigs_state_destroy(st);
-        return NULL;
+        st = NULL;
+        goto out;
     }
     if (eigs_state_init_runtime(st) != 0) {
         eigs_thread_detach();
         eigs_state_destroy(st);
-        return NULL;
+        st = NULL;
+        goto out;
     }
+out:
+    embed_fenv_leave();
     return st;
 }
 
@@ -49,7 +101,8 @@ void eigs_state_set_strict(EigsState *st, int enabled) {
 }
 
 void eigs_close(EigsState *st) {
-    if (!st) return;
+    embed_fenv_enter();
+    if (!st) goto out;
     /* Mirror main.c's teardown order. #301: drain the handle table FIRST — reap
      * any spawned workers (join after closing channels, #303) and free channels.
      * This is also the only place st->multithreaded is cleared back to 0; skip
@@ -88,6 +141,8 @@ void eigs_close(EigsState *st) {
     }
     eigs_thread_detach();
     eigs_state_destroy_released(st);
+out:
+    embed_fenv_leave();
 }
 
 void eigs_trace_shutdown(void) {
@@ -217,24 +272,31 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
 }
 
 EigsValue *eigs_eval_string(const char *src) {
-    return eval_source(src, NULL);
+    embed_fenv_enter();
+    EigsValue *result = eval_source(src, NULL);
+    embed_fenv_leave();
+    return result;
 }
 
 EigsValue *eigs_eval_file(const char *path) {
+    embed_fenv_enter();
+    EigsValue *result = NULL;
 #if EIGENSCRIPT_FREESTANDING
     (void)path;
-    return NULL;   /* no filesystem — embed callers pass source strings */
+    /* no filesystem — embed callers pass source strings */
 #else
-    if (!path || !eigs_current) return NULL;
+    if (!path || !eigs_current) goto out;
     long size = 0;
     char *src = read_file_util(path, &size);
-    if (!src) return NULL;
+    if (!src) goto out;
     char *dir = eigs_file_directory(path);
-    EigsValue *r = eval_source(src, dir);
+    result = eval_source(src, dir);
     free(dir);
     free(src);
-    return r;
 #endif /* !EIGENSCRIPT_FREESTANDING */
+out:
+    embed_fenv_leave();
+    return result;
 }
 
 /* ---- Errors ------------------------------------------------------- */
@@ -458,7 +520,10 @@ int eigs_trace_bind_stream(const char *key) {
 }
 
 int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
-    return trace_set_replay_mem(bytes, len, strict);
+    embed_fenv_enter();
+    int result = trace_set_replay_mem(bytes, len, strict);
+    embed_fenv_leave();
+    return result;
 }
 
 int eigs_replay_advance_session(void) {
@@ -471,7 +536,9 @@ int eigs_replay_take(const char *name, EigsValue **out) {
 }
 
 void eigs_trace_record_nondet(const char *name, EigsValue *v) {
+    embed_fenv_enter();
     if (g_trace_enabled) trace_nondet_value(name, (Value *)v);
+    embed_fenv_leave();
 }
 
 /* #1637: EIGS_KIND(EIGS_TYPE_X) bits -> the runtime's ValType bits. */
