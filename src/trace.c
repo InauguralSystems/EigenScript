@@ -1577,11 +1577,16 @@ static void obs_cfg_sync(void) {
      * %.17g fields in one call could silently truncate the record. */
     emit_tag("O");
     tp_puts("cfg ");
-    tp_printf("%.17g ", binding->obs_dh_zero);
-    tp_printf("%.17g ", binding->obs_dh_small);
-    tp_printf("%.17g ", binding->obs_h_low);
+    char number[32];
+    eigs_num_text(number, sizeof number, binding->obs_dh_zero);
+    tp_printf("%s ", number);
+    eigs_num_text(number, sizeof number, binding->obs_dh_small);
+    tp_printf("%s ", number);
+    eigs_num_text(number, sizeof number, binding->obs_h_low);
+    tp_printf("%s ", number);
     tp_printf("%d ",    binding->obs_window);
-    tp_printf("%.17g\n", binding->obs_scale);
+    eigs_num_text(number, sizeof number, binding->obs_scale);
+    tp_printf("%s\n", number);
 }
 
 /* `set_observer_window of ["x", n]` — the per-binding override, recorded at
@@ -2976,15 +2981,10 @@ static void write_string(const char *s) {
     tp_putc('"');
 }
 
-/* Tape float spelling is independent of ordinary display (N6, R1.7). The
- * point/exponent is the v8 kind marker: integral floats, including negative
- * zero, must never replay as ints. %.17g preserves the exact double bits. */
+/* N6/T1: the point/exponent is the v8 float-kind marker. The shared
+ * shortest writer retains it for every integral float, including -0.0. */
 static void tape_float_text(char *buf, size_t nbuf, double n) {
-    snprintf(buf, nbuf, "%.17g", n);
-    if (isfinite(n) && !strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E')) {
-        size_t used = strlen(buf);
-        if (used + 2 < nbuf) memcpy(buf + used, ".0", 3);
-    }
+    eigs_num_text(buf, nbuf, n);
 }
 
 static void write_float(double n) {
@@ -3191,7 +3191,9 @@ static void write_value_ptr_full(Value *v, int *budget) {
             int n = v->data.buffer.count;
             for (int i = 0; i < n && *budget > 0; i++) {
                 if (i) wf_puts(", ", budget);
-                wf_printf(budget, "%.17g", v->data.buffer.data[i]);
+                char number[32];
+                eigs_num_text(number, sizeof number, v->data.buffer.data[i]);
+                wf_printf(budget, "%s", number);
             }
             wf_putc(']', budget);
             break;
