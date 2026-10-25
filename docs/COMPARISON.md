@@ -256,8 +256,9 @@ PostgreSQL integer columns (`smallint`, `integer`, `bigint`, `oid`) return
 exact int64 values through `db_query_value`; `db_query_json` retains their
 exact decimal digits (N14, Q-DB253). A `bigint` beyond 2^53 is an int,
 including both int64 boundaries. `numeric` remains text, and finite real
-columns returned directly remain floats. Float parameter text stays in its
-existing format until R1.7. The executable DB examples and boundary assertions
+columns returned directly remain floats. Float parameters use N6 shortest round-trip text, preserving `.0` and
+signed zero. Store records use the same float writer and exact int64 digits
+(N14, #1762). The executable DB examples and boundary assertions
 in `tests/test_db.eigs` run on the server-db profile with PostgreSQL.
 
 TCP handles, ports and sent-byte counts are integers. Numeric socket handles, ports, receive counts and outgoing bytes require exact integers (integral floats convert); bytes must be in 0..255. `net_send` validates the entire payload before sending any byte. Poll timeouts are continuous milliseconds rounded to the C int range; an unrepresentable duration raises `value`.

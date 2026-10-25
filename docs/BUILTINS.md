@@ -1199,3 +1199,7 @@ true
 false
 false
 ```
+
+N14 record and SQL writers use the same N6 float text and exact int64 digits.
+The executed cases are `tests/phase2/rows/N14.store-exact-digits.sh` and
+`tests/test_db_params.c` (#1762).

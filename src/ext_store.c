@@ -155,14 +155,14 @@ static int store_nonfinite_sentinel(const char *s, double *out) {
     return 0;
 }
 
-/* Buffer elements use the 17-significant-digit form, as trace.c's buffer tape
- * encoding does: %.17g is the shortest width that round-trips a double
- * bit-exactly, and a buffer holding samples or weights would otherwise come
- * back subtly altered. (VAL_FLOAT's own %d/%.15g encoding is untouched.) */
+/* N6/N14: all finite record numbers share the one shortest writer.
+ * The existing non-finite buffer sentinels stay strings until N13. */
 static void store_json_encode_buf_elem(strbuf *out, double d) {
     if (isnan(d)) { strbuf_append(out, "\"nan\""); return; }
     if (isinf(d)) { strbuf_append(out, d < 0 ? "\"-inf\"" : "\"inf\""); return; }
-    strbuf_append_fmt(out, "%.17g", d);
+    char nb[32];
+    eigs_num_text(nb, sizeof nb, d);
+    strbuf_append(out, nb);
 }
 
 static void store_json_encode(Value *v, strbuf *out);
@@ -176,15 +176,16 @@ static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
         /* This is persisted float data, not a finite builtin argument.
          * Keep the existing NaN/inf spelling until N13 (R2.3). */
         double n = SLOT_F64_RAW(slot);
-        if (fabs(n) < 2147483648.0 && n == (int)n)
-            strbuf_append_fmt(out, "%d", (int)n);
-        else
-            strbuf_append_fmt(out, "%.15g", n);
+        char nb[32];
+        eigs_num_text(nb, sizeof nb, n);
+        strbuf_append(out, nb);
         return;
     }
     if (slot_is_smi(slot)) {
         /* #1758: an int is written as its exact digits (design 7). */
-        strbuf_append_fmt(out, "%lld", (long long)slot_smi_val(slot));
+        char nb[24];
+        eigs_int_text(nb, sizeof nb, slot_smi_val(slot));
+        strbuf_append(out, nb);
         return;
     }
     store_json_encode(eigs_slot_ref(slot), out);
@@ -200,16 +201,9 @@ static void store_json_encode(Value *v, strbuf *out) {
             /* The switch proves VAL_FLOAT; serialization also accepts the
              * historical non-finite payloads until N13 (R2.3). */
             double n = VAL_F64_RAW(v);
-            /* #816: magnitude BEFORE the narrowing cast (same class as
-             * #695) — converting a double beyond int's range is UB, and
-             * the old `n == (int)n && fabs(n) < 1e15` order ran the cast
-             * first. The bound is int's own range: integral values beyond
-             * it never took the %d path anyway (the equality failed), so
-             * output is unchanged and the cast is now always defined. */
-            if (fabs(n) < 2147483648.0 && n == (int)n)
-                strbuf_append_fmt(out, "%d", (int)n);
-            else
-                strbuf_append_fmt(out, "%.15g", n);
+            char nb[32];
+            eigs_num_text(nb, sizeof nb, n);
+            strbuf_append(out, nb);
             break;
         }
         case VAL_INT: {     /* #1758 R1.2a: an int encodes as its exact digits */

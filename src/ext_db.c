@@ -60,10 +60,10 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
             eigs_int_text(numbuf[i], 64, VAL_I64_RAW(v));
             params[i] = numbuf[i];
         } else if (v && v->type == VAL_FLOAT) {
-            /* N6's float text writer changes in R1.7, not this reader round. */
+            /* N6/N14: exact round-trip parameter text, shared with display/JSON. */
             double f = eigs_float_arg(v, __func__);
             if (g_has_error) return 0;
-            snprintf(numbuf[i], 64, "%g", f);
+            eigs_num_text(numbuf[i], 64, f);
             params[i] = numbuf[i];
         } else {
             rt_error(EK_TYPE, 0, "db: parameter %d is not a string, number or bool (got %s)",

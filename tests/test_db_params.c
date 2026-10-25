@@ -29,7 +29,7 @@ int main(void) {
     int ok = db_build_query(arg, &sql, &n, params, numbuf, types);
     check(ok && n == 4, "four parameters built");
     check(ok && strcmp(params[0], "true") == 0 && types[0] == 16, "true binds as SQL boolean 'true' (OID 16)");
-    check(ok && strcmp(params[1], "3") == 0 && types[1] == 0, "a number keeps the inferred type");
+    check(ok && strcmp(params[1], "3.0") == 0 && types[1] == 0, "a number keeps the inferred type");
     check(ok && strcmp(params[2], "s") == 0 && types[2] == 0, "a string keeps the inferred type");
     check(ok && strcmp(params[3], "false") == 0 && types[3] == 16, "false binds as SQL boolean 'false' (OID 16)");
     check(DB_PARAM_OID_BOOL == DB_OID_BOOL, "the parameter OID is the column classifier's boolean OID");
@@ -37,8 +37,10 @@ int main(void) {
     Value *bad = make_list(2);
     list_append_owned(bad, make_str("select $1"));
     list_append_owned(bad, make_dict(1));
+    ++g_try_depth; /* catch the expected type error without a diagnostic */
     check(!db_build_query(bad, &sql, &n, params, numbuf, types) && eigs_has_error(),
           "a dict parameter still raises");
+    --g_try_depth;
     eigs_clear_error();
     val_decref(bad);
     /* R1.7 N6/N14: exact int digits and Python-repr float text. */

@@ -388,7 +388,7 @@ EXP(ent_child) {
     }
 }
 EXP(store_json) {
-    static const char *f64[3] = {"s:1.5", "s:nan", "s:0"};   /* -0.0 takes the %d branch */
+    static const char *f64[3] = {"s:1.5", "s:nan", "s:-0.0"}; /* R1.7-D7: N6/N14 preserve signed-zero text. */
     switch (kclass(k)) {
         case C_F64: snprintf(b, n, "%s", f64[k]); break;
         case C_NULL: snprintf(b, n, "s:null"); break;
