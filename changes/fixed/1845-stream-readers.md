@@ -1,1 +1,0 @@
-- Make `read_text`, `read_bytes`, and `read_bytes_buf` read pipes, `/dev/stdin`, and FIFOs to EOF while preserving their size caps and deterministic trace replay.

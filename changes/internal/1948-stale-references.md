@@ -1,1 +1,0 @@
-- Refresh stale issue states and paths in comments, and record why the suite's runner-guard calibrations remain inline.

@@ -1,1 +1,0 @@
-- Remove the unconstructible VAL_JSON_RAW value kind and its dead handling branches and comments after json_raw was removed in #1677. Preserve all surviving ValType tag numbers and exhaustive switch checking; no guest-language behavior changes.

@@ -1,1 +1,0 @@
-- Every release now records a documentation and configuration review (`docs/release-reviews/vX.Y.Z.md`), and the Release workflow refuses to tag a version without it.

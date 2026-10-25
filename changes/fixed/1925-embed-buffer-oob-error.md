@@ -1,1 +1,0 @@
-- Report embedding buffer type and bounds failures through the pending-error channel.

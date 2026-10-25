@@ -1,1 +1,0 @@
-- Give completion-based gfx timeout controls a jitter-safe budget while keeping deliberate timeout controls fast.
