@@ -49,6 +49,7 @@ gates (design §9.2).
     built 2026-10-13). Main differs from the tag only by #1740/#1741
     (bitwise and range conversion) and #1735.
   - `(read)` is derived from the tag's source.
+- **Invariants** (`[Rn, invariant]`, R1.7-D3) already pass on the pre-round base. They run on every declared branch tier and are counted separately from change rows; the v0.46 anchor predates their landed contract. Pre-registration records base-green evidence.
 - **Controls** (`ctl.*`) must PASS on both binaries. They guard behaviour
   the branch must preserve, and are counted separately: never in
   `tag_fail`.
@@ -97,6 +98,9 @@ gates (design §9.2).
 ---
 
 ### N1
+- `N1.negative-past-int64-is-float` [R1.7, invariant] R1.7-D1: `-9223372036854775809` is a float equal to INT64_MIN; N6 prints Python repr
+  -> `[true, "float"]`, then `-9.223372036854776e+18`
+  tag: num_type undefined; R1.7-D3 prints the literal separately; observed base already prints the N6 text (15..17 round-trip writer), so the entire row is an invariant under D3.
 - `N1.leaf-float-kind` [R1.3] leaf helpers return 1.0, 0.0 and 0.5; `num_type` checks their kinds before N6 changes their display
   -> `["float", "float", "float"]`
   tag: `num_type` undefined.
@@ -396,10 +400,11 @@ gates (design §9.2).
   shape: O  witness: osr fill (the float counter keeps the loop native; the boxed int takes `INDEX_SET`'s C helper; witness probed main: `oadv 123` = `len 123`, 3 native `jit_helper_index_set` calls under gdb)  ops: INDEX_SET NUM_ONE ADD GE JUMP_IF_FALSE SET_LOCAL POP
 
 ### N6
+- `gate.N6.const-dedup-bits` [R1.7] `tools/phase2_readers.sh` release/asan `const_dedup_bits`: direct `chunk_add_constant` of +0.0 and -0.0 has distinct indices and memcmp-exact stored doubles (R1.7-D4); repeated identical bits deduplicate.
 - `N6.float-repr` [R1.7] `print of [3.0, 1e3, -0.0, 0.1 + 0.2, 1e15, 1e16, 1e-05, 0.0001]`
   -> `[3.0, 1000.0, -0.0, 0.30000000000000004, 1000000000000000.0, 1e+16, 1e-05, 0.0001]`
   tag: `[3, 1000, 0, 0.30000000000000004, 1000000000000000, 1e+16, 1e-05, 0.0001]` (probed main for the first seven)
-- `N6.int-exact-digits` [R1.7] `print of [9007199254740993, -9223372036854775807 - 1]`
+- `N6.int-exact-digits` [R1.7, invariant] `print of [9007199254740993, -9223372036854775807 - 1]`
   -> `[9007199254740993, -9223372036854775808]`
   tag: rounded doubles
 - `N6.str-fstring` [R1.7] `x is 2.0 / print of [str of x, f"{x}", str of 2]`
@@ -447,8 +452,10 @@ gates (design §9.2).
 - `ctl.N8.refuse-bnot` (control) a hot function applies `~a` to float operands 6.0 and 3.0
   -> `-7` on both; the JIT scanner refuses this opcode at R1.3.
   shape: F  witness: fn-stop f BNOT  ops: BNOT
-- `ctl.N8.refuse-mod` (control) a hot function applies `a % b` to float operands 6.0 and 3.0
-  -> `0` on both; the JIT scanner refuses this opcode at R1.3.
+- `ctl.N8.refuse-mod` (control) a hot function applies `a % b` to float operands 6.0 and 3.0;
+  print `(r == 0)` -> `true` on both. R1.7-D7 (#1758, N6) makes the
+  observable text-stable while retaining the hot float-MOD witness program.
+  The JIT scanner refuses this opcode at R1.3.
   shape: F  witness: fn-stop f MOD  ops: MOD
 - `N8.bitwise-results-int` [R1.5] `print of [6 & 3, 6 | 3, 6 ^ 3, ~0, num_type of (6 & 3)]`
   -> `[2, 7, 5, -1, "int"]`
@@ -597,8 +604,8 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
 - `T1.twice-int` [R1.3] (sh row) the Done-when's "record twice": record `define sq(x) as: return x * x / x is 9007199254740993 / y is sq of 94906267 / print of [x, y]` twice (`EIGS_TRACE=t1.tape`, then `t2.tape`); print whether `cmp t1.tape t2.tape` finds them identical; replay `t1.tape` with `EIGS_REPLAY_STRICT=1` and print whether its stdout byte-equals the live run's (the live run computes `sq` in the leaf, the recording on the generic path); print the A records for `x` and `y`
   -> `tapes identical`, `replay identical`, `A 0 x=9007199254740993`, `A 0 y=9007199515875289`
   tag: `A 0 x=9007199254740992`, `A 0 y=9007199515875288` (the tape machinery is deterministic today: two recordings of a program without randomness differ only in recorded nondeterminism, probed main)
-- `T1.twice-float` [R1.7] (sh row) the same procedure for `x is 3.0 / y is 0.1 + 0.2 / z is -0.0 / print of [x, y, z]`
-  -> `tapes identical`, `replay identical`, `A 0 x=3.0`, `A 0 y=0.30000000000000004`, `A 0 z=-0.0` (the kind on the tape; the exact text is N6's, R1.7)
+- `T1.twice-float` [R1.7] (sh row) the same procedure for `x is 3.0 / y is 0.1 + 0.2 / z is -0.0 / w is 0.1 / print of [x, y, z, w]`
+  -> `tapes identical`, `replay identical`, `A 0 x=3.0`, `A 0 y=0.30000000000000004`, `A 0 z=-0.0`, `A 0 w=0.1` (R1.7-D3; the kind on the tape; the exact text is N6's, R1.7)
   tag: `A 0 x=3` and `A 0 z=-0` (read: `%.17g`)
 - `T1.int-replay-kind` [R1.3] (sh row) record a replayed `random_int` draw selecting an int literal; print its exact value and `num_type`, then replay and compare bytes
   -> `int replay identical`, `int assignment exact` (the int is carried by the v8 assignment record; `random_int` retains the float bridge until R1.6)

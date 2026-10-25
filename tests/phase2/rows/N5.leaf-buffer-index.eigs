@@ -1,0 +1,10 @@
+# ROW: N5.leaf-buffer-index
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf-gen bat
+# OPS: INDEX_GET
+define bat(b, i) as:
+    return b[i]
+b is buffer of 3
+print of (bat of [b, 1])

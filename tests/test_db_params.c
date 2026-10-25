@@ -41,7 +41,26 @@ int main(void) {
           "a dict parameter still raises");
     eigs_clear_error();
     val_decref(bad);
+    /* R1.7 N6/N14: exact int digits and Python-repr float text. */
+    Value *numbers = make_list(8);
+    list_append_owned(numbers, make_str("select $1, $2, $3, $4, $5, $6, $7"));
+    list_append_owned(numbers, make_int(1234567));
+    list_append_owned(numbers, make_int(INT64_C(9007199254740993)));
+    list_append_owned(numbers, make_float(0.1 + 0.2));
+    list_append_owned(numbers, make_float(3.0));
+    list_append_owned(numbers, make_float(-0.0));
+    list_append_owned(numbers, make_float(0.1));
+    list_append_owned(numbers, make_int(INT64_MIN));
+    const char *expected[] = {"1234567", "9007199254740993",
+        "0.30000000000000004", "3.0", "-0.0", "0.1", "-9223372036854775808"};
+    ok = db_build_query(numbers, &sql, &n, params, numbuf, types);
+    for (int i = 0; i < 7; i++) {
+        char label[96];
+        snprintf(label, sizeof(label), "N6/N14 parameter %d: %s", i + 1, expected[i]);
+        check(ok && n == 7 && strcmp(params[i], expected[i]) == 0 && types[i] == 0, label);
+    }
+    val_decref(numbers);
     eigs_close(st);
-    printf("db params: %d passed, %d failed (7 declared)\n", passed, failed);
-    return failed || passed != 7;
+    printf("db params: %d passed, %d failed (14 declared)\n", passed, failed);
+    return failed || passed != 14;
 }

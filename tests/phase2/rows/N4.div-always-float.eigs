@@ -1,0 +1,7 @@
+# ROW: N4.div-always-float
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [7 / 2, 6 / 2, num_type of (6 / 2)]

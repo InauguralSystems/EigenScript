@@ -13,4 +13,4 @@ i is 0.0
 loop while i < 60.0:
     r is f of [6.0, 3.0]
     i is i + 1.0
-print of r
+print of (r == 0)

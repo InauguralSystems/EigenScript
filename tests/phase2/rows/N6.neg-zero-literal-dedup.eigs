@@ -1,0 +1,9 @@
+# ROW: N6.neg-zero-literal-dedup
+# ITEMS: N6
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+a is 0.0
+b is -0.0
+print of [a, b]

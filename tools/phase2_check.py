@@ -177,7 +177,12 @@ def parse_map(path):
             bad.append('MAP:%d: `%s`: a control must be marked (control), and only a control' % (n, rid))
         row['kind'] = 'control' if ctl else 'gate' if rid.startswith('gate.') else 'row'
         if rnd:
-            parts = rnd.split('/')
+            round_text, *qualifiers = [part.strip() for part in rnd.split(',')]
+            if qualifiers not in ([], ['invariant']) or (qualifiers and row['kind'] != 'row'):
+                bad.append('MAP:%d: `%s` has invalid round qualifiers [%s]' % (n, rid, rnd))
+                continue
+            row['invariant'] = qualifiers == ['invariant']
+            parts = round_text.split('/')
             if any(p not in ROUNDS for p in parts):
                 bad.append('MAP:%d: `%s` names an unknown round [%s]' % (n, rid, rnd))
                 continue
@@ -504,19 +509,27 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
     cnt = {t: dict(examined=0, tag_fail=0, branch_pass=0, vacuous=0, tag_timeout=0, tag_signal=0)
            for t in TIERS}
     ctl_n = ctl_both = witnessed = ctl_witnessed = ctl_vacuous = 0
+    invariant_n = invariant_pass = 0
     for r, p, h, (row_tag, row_branch) in todo:
         want = read_text(p.rsplit('.', 1)[0] + '.out')
         want_rc = int(h.get('EXPECT-RC', '0'))
         tiers = h.get('TIERS', ' '.join(TIERS)).split()
+        if not tiers or len(tiers) != len(set(tiers)) or any(t not in TIERS for t in tiers):
+            bad.append('%s: invalid or empty TIERS' % p)
+            continue
         is_ctl = r['kind'] == 'control'
+        is_invariant = r.get('invariant', False)
         passes = {}
         for t in tiers:
             res = {}
-            for who, b in (('tag', row_tag), ('branch', row_branch)):
+            # R1.7-D3: invariants preserve the landed branch contract. The
+            # v0.46 anchor predates ints; base-green is separately preregistered.
+            arms = [('branch', row_branch)] if is_invariant else [('tag', row_tag), ('branch', row_branch)]
+            for who, b in arms:
                 rc, so, se = run(b, p, TIER_ENV[t], scratch)
                 res[who] = (rc == want_rc and so == want, rc)
             passes[t] = res
-            if is_ctl:
+            if is_ctl or is_invariant:
                 continue
             c = cnt[t]
             c['examined'] += 1
@@ -533,6 +546,20 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
                     ' TIMEOUT' if rc_br == 124 else ' SIGNAL' if rc_br >= 128 else ''))
             if ok_tag:
                 out('  TAG-PASS %s tier=%s: the row does not fail on the tag' % (r['id'], t))
+        if is_invariant:
+            invariant_n += 1
+            if all(res['branch'][0] for res in passes.values()):
+                invariant_pass += 1
+            else:
+                out('  INVARIANT-FAIL %s: %s' % (r['id'], passes))
+            if r['witness']['kind'] != 'none' and all(res['branch'][0] for res in passes.values()):
+                holds, ev = witness(row_branch, p, r['witness'], scratch)
+                if not holds:
+                    invariant_pass -= 1
+                    out('  INVARIANT-VACUOUS %s [%s]' % (r['id'], ev))
+                else:
+                    out('  INVARIANT-WITNESS %s [%s]' % (r['id'], ev))
+            continue
         if is_ctl:
             ctl_n += 1
             if all(v[0] for res in passes.values() for v in res.values()):
@@ -569,9 +596,10 @@ def check(map_rows, rows_dir, ctl_dir, tag, branch, through, scratch, out):
     out('controls=%d both_pass=%d witnessed=%d mapped=%d gates=%d through=%s' % (
         ctl_n, ctl_both, witnessed, len(landed), len(gates), through))
     out('controls_witnessed=%d controls_vacuous=%d' % (ctl_witnessed, ctl_vacuous))
+    out('invariants=%d branch_pass=%d' % (invariant_n, invariant_pass))
     rows_ok = all(c['examined'] == c['tag_fail'] == c['branch_pass'] > 0 and c['vacuous'] == 0
                   for c in cnt.values())
-    return (not bad, rows_ok, ctl_n == ctl_both and ctl_vacuous == 0, len(landed), cnt, witnessed)
+    return (not bad, rows_ok, ctl_n == ctl_both and ctl_vacuous == 0 and invariant_n == invariant_pass, len(landed), cnt, witnessed)
 
 
 # ---- mechanical gates ----------------------------------------------------------
@@ -711,6 +739,8 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
         gates.append('net-byte-boundary')
     if ROUNDS.index(through) >= ROUNDS.index('R1.6z'):
         gates.append('embed-buffer-get-raw')
+    if ROUNDS.index(through) >= ROUNDS.index('R1.7'):
+        gates.extend(('const-dedup-bits', 'db-param-exact'))
     for g in gates:
         if g == 'int-source':
             res[g] = int_source(os.path.join(ROOT, 'src'), out, through)
@@ -756,6 +786,12 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
             res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'embed_buffer_get_raw'], out, r'.*')
             res[g] = res[g] and len(re.findall(
                 r'^phase2-embed-buffer-get: PASS variant=release$', text, re.M)) == 1
+        elif g == 'const-dedup-bits':
+            res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'const_dedup_bits'], out, r'.*')
+            res[g] = res[g] and len(re.findall(r'^phase2-const-dedup: PASS variant=release$', text, re.M)) == 1
+        elif g == 'db-param-exact':
+            res[g], text = tool(['bash', '-c', 'make db-params-test && build/server-db/test_db_params'], out, r'.*')
+            res[g] = res[g] and len(re.findall(r'^db params: 14 passed, 0 failed \(14 declared\)$', text, re.M)) == 1
         elif g == 'builtins-table':
             if not tag:
                 out('  builtins-table: needs the tag binary')
