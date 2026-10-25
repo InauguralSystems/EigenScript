@@ -186,14 +186,12 @@ void chunk_patch_jump(EigsChunk *chunk, int offset) {
 /* ---- Constant pool ---- */
 
 /* ---- Constant-pool dedup index (#341) ----
- * Equality is EXACTLY the old linear scan's tests, so pools stay
- * byte-identical (the AOT oracle depends on that): NaN never equals
- * itself (each NaN appends), and -0.0 merges with +0.0 (they hash the
- * same and compare ==). Only numeric and string constants are deduped; numeric kinds stay distinct. */
+ * N6 compares float identities by binary64 bits, retaining signed zero
+ * and NaN payloads. Integers and strings keep their existing value keys;
+ * numeric kinds stay distinct. */
 static uint32_t const_hash_value(const Value *v) {
     if (v->type == VAL_FLOAT) {
         double d = VAL_F64_RAW(v);
-        if (d == 0.0) d = 0.0;   /* fold -0.0 into +0.0, matching == */
         uint64_t bits;
         memcpy(&bits, &d, sizeof bits);
         bits ^= bits >> 33;
@@ -217,8 +215,11 @@ static uint32_t const_hash_value(const Value *v) {
 }
 
 static int const_equal(const Value *a, const Value *b) {
-    if (a->type == VAL_FLOAT && b->type == VAL_FLOAT)
-        return VAL_F64_RAW(a) == VAL_F64_RAW(b);
+    if (a->type == VAL_FLOAT && b->type == VAL_FLOAT) {
+        /* N6: constant identity preserves signed zero and every double bit. */
+        double av = VAL_F64_RAW(a), bv = VAL_F64_RAW(b);
+        return memcmp(&av, &bv, sizeof av) == 0;
+    }
     if (a->type == VAL_INT && b->type == VAL_INT)
         return VAL_I64_RAW(a) == VAL_I64_RAW(b);
     if (a->type == VAL_STR && b->type == VAL_STR)
