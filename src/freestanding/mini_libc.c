@@ -398,6 +398,67 @@ char *eigs_getenv(const char *name) { (void)name; return NULL; }
 
 int eigs_atexit(void (*fn)(void)) { (void)fn; return 0; }
 
+/* ---- floating-point environment ----
+ *
+ * EigenScript's embedding boundary promises the IEEE default environment,
+ * including on EigenOS (#1969). The system x86-64 <fenv.h> fenv_t is the
+ * 28-byte image used by FNSTENV followed by the four-byte MXCSR image. */
+#if !defined(__x86_64__)
+#error "#1969: the freestanding floating-point environment needs an architecture implementation"
+#else
+typedef union {
+    fenv_t public_env;
+    struct {
+        unsigned char x87[28];
+        unsigned int mxcsr;
+    } machine;
+} EigsFenvImage;
+
+_Static_assert(sizeof(fenv_t) == 32, "#1969: unexpected x86-64 fenv_t layout");
+
+int eigs_fegetenv(fenv_t *envp) {
+    EigsFenvImage image;
+    __asm__ volatile ("fnstenv %0" : "=m" (image.machine.x87));
+    /* FNSTENV masks x87 traps as a side effect; FLDENV makes fegetenv a
+     * pure observation, as required by C and as glibc behaves. */
+    __asm__ volatile ("fldenv %0" : : "m" (image.machine.x87));
+    __asm__ volatile ("stmxcsr %0" : "=m" (image.machine.mxcsr));
+    eigs_memcpy(envp, &image.public_env, sizeof(*envp));
+    return 0;
+}
+
+int eigs_fesetenv(const fenv_t *envp) {
+    EigsFenvImage image;
+    if (envp == FE_DFL_ENV) {
+        eigs_memset(&image, 0, sizeof(image));
+        image.machine.x87[0] = 0x7f;
+        image.machine.x87[1] = 0x03;
+        image.machine.mxcsr = 0x1f80u;
+    } else {
+        eigs_memcpy(&image.public_env, envp, sizeof(*envp));
+    }
+    __asm__ volatile ("fldenv %0" : : "m" (image.machine.x87));
+    __asm__ volatile ("ldmxcsr %0" : : "m" (image.machine.mxcsr));
+    return 0;
+}
+
+int eigs_feclearexcept(int excepts) {
+    unsigned int mxcsr;
+    if ((excepts & FE_ALL_EXCEPT) == FE_ALL_EXCEPT) {
+        __asm__ volatile ("fnclex");
+    } else {
+        EigsFenvImage image;
+        __asm__ volatile ("fnstenv %0" : "=m" (image.machine.x87));
+        image.machine.x87[2] &= (unsigned char)~excepts;
+        __asm__ volatile ("fldenv %0" : : "m" (image.machine.x87));
+    }
+    __asm__ volatile ("stmxcsr %0" : "=m" (mxcsr));
+    mxcsr &= ~(unsigned int)(excepts & FE_ALL_EXCEPT);
+    __asm__ volatile ("ldmxcsr %0" : : "m" (mxcsr));
+    return 0;
+}
+#endif
+
 #if EIGS_MINI_STANDARD_NAMES
 void  *memcpy(void *, const void *, size_t) __attribute__((alias("eigs_memcpy")));
 void  *memmove(void *, const void *, size_t) __attribute__((alias("eigs_memmove")));
@@ -429,4 +490,7 @@ long   random(void) __attribute__((alias("eigs_random")));
 int   *__errno_location(void) __attribute__((alias("eigs_errno_location")));
 char  *getenv(const char *) __attribute__((alias("eigs_getenv")));
 int    atexit(void (*)(void)) __attribute__((alias("eigs_atexit")));
+int fegetenv(fenv_t *) __attribute__((alias("eigs_fegetenv")));
+int fesetenv(const fenv_t *) __attribute__((alias("eigs_fesetenv")));
+int feclearexcept(int) __attribute__((alias("eigs_feclearexcept")));
 #endif /* EIGS_MINI_STANDARD_NAMES */

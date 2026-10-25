@@ -190,8 +190,10 @@ rough order:
    — the observer needs them.
 4. **The ordinary mini-libc/libm** over the roots — DONE 2026-07-02
    (`src/freestanding/`, see below): string ops, `strtod`, `qsort`, ctype,
-   PRNG, the vsnprintf formatter, derived math — differential-tested against
-   glibc. Still kernel-side: the printf-family wrappers over `console_write`
+   PRNG, the x86-64 floating-point environment trio (`fegetenv`, `fesetenv`,
+   `feclearexcept`), the vsnprintf formatter, derived math —
+   differential-tested against glibc. Still kernel-side: the printf-family
+   wrappers over `console_write`
    and pthread sync over the scheduler roots (they ARE the HAL seam).
 5. **Harden threading** (the scheduler roots) before it's load-bearing.
 6. Defer: `map_exec`/the JIT (interpreter-only first), a filesystem, networking.
@@ -285,6 +287,12 @@ POSIX-exact rand48, errno/getenv/atexit glue), `mini_strtod.c`
 slow path), `mini_fmt.c` (vsnprintf/snprintf whose float conversions ride an
 exact big-decimal digit engine — correct rounding at any precision), and
 `mini_libm.c` (4 kernels + derived forms, no borrowed coefficient tables).
+
+The x86-64 glue also supplies `fegetenv`/`fesetenv` with complete x87 and
+MXCSR round trips, plus `feclearexcept`. This keeps #1969's IEEE-default
+environment at every embedding boundary rather than compiling that contract
+out of the freestanding profile. Other architectures deliberately fail to
+compile until they provide the same contract.
 
 Every function is `eigs_`-prefixed with standard-name aliases under
 `-DEIGS_MINI_STANDARD_NAMES=1`, so the same objects diff hosted against

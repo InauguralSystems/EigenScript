@@ -1,1 +1,1 @@
-- Embedding now runs EigenScript in the IEEE 754 default floating-point environment and restores every host mode and exception flag on return, including fast-path and re-entrant callback calls (#1969).
+- Embedding now runs EigenScript in the IEEE 754 default floating-point environment and restores every host mode and exception flag on return, including fast-path, re-entrant callback, and freestanding EigenOS calls (#1969).
