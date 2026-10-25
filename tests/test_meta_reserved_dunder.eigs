@@ -8,6 +8,27 @@ catch err:
     if (contains of [err, "[E006]"]) == false:
         failed is 1
 
+# After-load host rebinding (#1386): the refusal must neither break a valid
+# program nor be bypassed when the host rebinds starts_with/ends_with.
+load_file of "lib/eigen.eigs"
+_host_starts is starts_with
+_host_ends is ends_with
+starts_with is 0
+ends_with is (s, p) => false
+_valid is eigen_run of "answer is 42\nanswer"
+_refused is 0
+try:
+    eigen_run of "__meta__ is 1"
+catch rebound_err:
+    if contains of [rebound_err, "[E006]"]:
+        _refused is 1
+starts_with is _host_starts
+ends_with is _host_ends
+if _valid != 42:
+    failed is 1
+if _refused != 1:
+    failed is 1
+
 if failed == 0:
     print of "All tests passed"
 else:

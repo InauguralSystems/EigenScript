@@ -655,8 +655,14 @@ define _p_report_error(tok, operand) as:
 
 # #1908 parity: the C parser reserves the whole dunder form at binders while
 # leaving reads legal. Keep the spelling rule in this one predicate.
+# It reads only the interpreter's own captured helpers, so a host that rebinds
+# starts_with/ends_with after load can neither break a valid program nor
+# bypass the reservation (#1386).
 define _is_reserved_dunder(name) as:
-    return ((_eigen_len of name) >= 5) and (starts_with of [name, "__"]) and (ends_with of [name, "__"])
+    local n is _eigen_len of name
+    if n < 5:
+        return false
+    return ((_eigen_char_at of [name, 0]) == "_") and ((_eigen_char_at of [name, 1]) == "_") and ((_eigen_char_at of [name, n - 2]) == "_") and ((_eigen_char_at of [name, n - 1]) == "_")
 
 define _p_dunder_error(tok) as:
     if _is_reserved_dunder of tok[1]:
