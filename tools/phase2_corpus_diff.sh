@@ -96,6 +96,11 @@
 # paths, for the calibration (tools/phase2_check.sh --calibrate). A restricted
 # run prints `corpus-diff: RESTRICTED ...` instead of a verdict and exits 3:
 # it can never pass for the whole corpus.
+# PHASE2_DIFF_EVIDENCE_DIR optionally names an absent or empty task-owned
+# directory. Every DIFF keeps all relevant runs' complete comparer files
+# (.out/.err/.rc) AND unmodified process bytes (.rawout/.rawerr), plus its
+# exact diagnostic. Replay differences also keep the tape. No verdict or
+# counter depends on the contents of the evidence; retention errors are loud.
 set -u
 [ $# -eq 2 ] || { echo "usage: tools/phase2_corpus_diff.sh <baseline-binary> <branch-binary>"; exit 2; }
 abspath() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$1")"); }
@@ -114,6 +119,58 @@ export EIGS_TEST_DIR="$BR_ROOT/tests"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-corpus-diff.XXXXXX") || exit 2
 DONE=0
 trap 'rc=$?; [ "$DONE" = 1 ] || echo "corpus-diff: FAIL: exited ($rc) before a verdict, at: $BASH_COMMAND"; rm -rf "$TMP"' EXIT
+
+# ---- retained DIFF evidence (optional; never normalise these copies) ------
+EVIDENCE_DIR=${PHASE2_DIFF_EVIDENCE_DIR:-}
+evidence_fail() { echo "corpus-diff: FAIL: evidence: $*" >&2; return 1; }
+evidence_init() {
+    [ -n "$EVIDENCE_DIR" ] || return 0
+    local contents
+    [ ! -L "$EVIDENCE_DIR" ] || { evidence_fail "directory is a symlink: $EVIDENCE_DIR"; return 1; }
+    mkdir -p "$EVIDENCE_DIR" || { evidence_fail "cannot create directory: $EVIDENCE_DIR"; return 1; }
+    contents=$(find "$EVIDENCE_DIR" -mindepth 1 -maxdepth 1 -print -quit) \
+        || { evidence_fail "cannot inspect directory: $EVIDENCE_DIR"; return 1; }
+    [ -z "$contents" ] || { evidence_fail "directory is not empty: $EVIDENCE_DIR"; return 1; }
+    # Noclobber makes two callers racing to claim the same empty directory fail.
+    (set -C; : > "$EVIDENCE_DIR/.phase2-corpus-evidence") 2>/dev/null \
+        || { evidence_fail "directory claim collision: $EVIDENCE_DIR"; return 1; }
+    EVIDENCE_DIR=$(cd "$EVIDENCE_DIR" && pwd -P) \
+        || { evidence_fail 'cannot resolve directory'; return 1; }
+    printf 'path\tverdict\tarms\n' > "$EVIDENCE_DIR/index.tsv" \
+        || { evidence_fail 'cannot create index'; return 1; }
+}
+retain_diff() {
+    [ -n "$EVIDENCE_DIR" ] || return 0
+    local rel="$1" verdict="$2" diagnostic="$3" row arm suffix source
+    shift 3
+    case "$rel" in tests/*.eigs) ;; *) evidence_fail "unsafe row path: $rel"; return 1 ;; esac
+    case "/$rel/" in */../*|*/./*|*//* ) evidence_fail "unsafe row path: $rel"; return 1 ;; esac
+    [ "$#" -gt 0 ] || { evidence_fail "no run arms: $rel"; return 1; }
+    row="$EVIDENCE_DIR/$rel"
+    mkdir -p "$(dirname "$row")" || { evidence_fail "cannot create row parent: $rel"; return 1; }
+    mkdir "$row" 2>/dev/null || { evidence_fail "row collision: $rel"; return 1; }
+    printf '%s\n' "$diagnostic" > "$row/verdict.txt" \
+        || { evidence_fail "cannot write diagnostic: $rel"; return 1; }
+    for arm in "$@"; do
+        case "$arm" in b1|b2|r1|r2|t0|p1|p2|q1) ;; *) evidence_fail "unknown run arm: $arm"; return 1 ;; esac
+        for suffix in out err rc rawout rawerr; do
+            source="$TMP/$arm.$suffix"
+            [ -f "$source" ] || { evidence_fail "missing run file: $rel $arm.$suffix"; return 1; }
+            # Keep both the already-normalised comparer inputs and raw captures.
+            cp "$source" "$row/$arm.$suffix" && cmp -s "$source" "$row/$arm.$suffix" \
+                || { evidence_fail "copy failed: $rel $arm.$suffix"; return 1; }
+        done
+    done
+    if [ "$verdict" = DIFF-under-replay ]; then
+        [ -s "$TMP/tape" ] || { evidence_fail "missing replay tape: $rel"; return 1; }
+        cp "$TMP/tape" "$row/tape" && cmp -s "$TMP/tape" "$row/tape" \
+            || { evidence_fail "tape copy failed: $rel"; return 1; }
+    fi
+    printf '%s\t%s\t%s\n' "$rel" "$verdict" "$*" >> "$EVIDENCE_DIR/index.tsv" \
+        || { evidence_fail "cannot index row: $rel"; return 1; }
+    echo "corpus-diff: retained $verdict evidence: $row"
+}
+evidence_init || { DONE=1; exit 2; }
 
 # ---- the seed pin --------------------------------------------------------
 cat > "$TMP/seedpin.c" <<'CSRC'
@@ -333,6 +390,8 @@ while IFS= read -r rel; do
             ndiff=$((ndiff + 1))
             echo "$rel (changed; the baseline cannot complete it: rc $rb1/$rb2)" >> "$TMP/diffs"
             echo ".. $examined/$listed $rel DIFF $(took)s"
+            retain_diff "$rel" DIFF-BEHAVIOUR "DIFF-BEHAVIOUR $rel (changed; the baseline cannot complete it: rc $rb1/$rb2)" b1 b2 r1 r2 \
+                || { DONE=1; exit 2; }
         else
             [ "$branch_only" = MODIFIED ] && modified_failed=$((modified_failed + 1)) || new_failed=$((new_failed + 1))
             echo ".. $examined/$listed $rel $branch_only-FAIL rc=$rr $(took)s"
@@ -377,7 +436,9 @@ while IFS= read -r rel; do
         echo "$rel" >> "$TMP/diffs"
         echo ".. $examined/$listed $rel DIFF $(took)s"
         if same "$TMP/b1" "$TMP/r1"; then wrong=r2; else wrong=r1; fi
-        echo "DIFF $rel: the baseline is deterministic (two runs agree); branch run $wrong differs: rc baseline=$rb1 branch=$(cat "$TMP/$wrong.rc")"
+        diff_diagnostic="DIFF $rel: the baseline is deterministic (two runs agree); branch run $wrong differs: rc baseline=$rb1 branch=$(cat "$TMP/$wrong.rc")"
+        echo "$diff_diagnostic"
+        retain_diff "$rel" DIFF "$diff_diagnostic" b1 b2 r1 r2 || { DONE=1; exit 2; }
         show_diff "$TMP/b1" "$TMP/$wrong"
         [ "$urand" = 1 ] && echo "$rel DIFF" >> "$TMP/urandom"
         continue
@@ -390,7 +451,9 @@ while IFS= read -r rel; do
         ndiff=$((ndiff + 1)); verdict=DIFF-under-replay
         echo "$rel (under replay)" >> "$TMP/diffs"
         echo ".. $examined/$listed $rel DIFF-under-replay $(took)s"
-        echo "DIFF $rel: replaying the baseline's tape, rc baseline=$(cat "$TMP/p1.rc") branch=$(cat "$TMP/q1.rc")"
+        diff_diagnostic="DIFF $rel: replaying the baseline's tape, rc baseline=$(cat "$TMP/p1.rc") branch=$(cat "$TMP/q1.rc")"
+        echo "$diff_diagnostic"
+        retain_diff "$rel" DIFF-under-replay "$diff_diagnostic" b1 b2 r1 r2 t0 p1 p2 q1 || { DONE=1; exit 2; }
         show_diff "$TMP/p1" "$TMP/q1"
     else
         nondet=$((nondet + 1)); echo "$rel" >> "$TMP/nondet"; verdict=nondet

@@ -16,7 +16,7 @@ design doc) runs every row:
   default JIT). The leaf evaluator is off under trace, so the `trace` tier is
   the leaf differential: a row must print the same in it as in the others.
 
-Every mapped row must FAIL on the tag and PASS on the branch in every tier,
+Every change row must FAIL on the tag and PASS on the branch in every tier,
 and its witness must hold on the branch (design §9.1), or it is VACUOUS.
 `phase2_check.sh --through <commit>` checks only the rows whose `[Rn]` has
 landed by that commit (a row tagged `[Ra/Rb]` lands with the later); R1.1,

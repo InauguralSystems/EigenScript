@@ -8,6 +8,12 @@ set -u
 }
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# This test controls the tree lock itself. Run from inside a make recipe (for
+# example `make precheck`, whose selftests reach this row), it would inherit
+# EIGS_TREE_LOCK_HELD=1, which the Makefile exports so that recursive makes
+# skip the lock; every make it starts would then run unlocked and case 1 would
+# fail. Case 3 sets the flag explicitly for the one make that needs it.
+unset EIGS_TREE_LOCK_HELD
 if ! command -v flock >/dev/null 2>&1; then
     echo "make-lock selftest: SKIP: flock is unavailable"
     exit 0

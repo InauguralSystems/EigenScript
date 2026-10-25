@@ -2519,7 +2519,7 @@ failing on zero rows:
 | R1.6f | 3 | R1.6f-D1 shared store handle refusals; R1.6d-D1 net_send byte refusals; mechanical: per-builtin table and the `gate.N5.net-byte-boundary` actual-client socketpair fixture (R1.6f-D2; compiled and executed here and at every later `--through`) |
 | R1.6g | 5 | per-builtin table, including the new N9 rows |
 | R1.6z | 0 | mechanical: bridge-token deletion compile and final full table |
-| R1.7 | 12 | `gate.N14.db-param-exact` |
+| R1.7 | 13 (11 change rows, 2 invariant controls) | `gate.N14.db-param-exact`, `gate.N6.const-dedup-bits` (R1.7-D3/D4) |
 | R1.8 | 0 | `gate.N7.embed-int` (the embed smoke test), the executed doc fences (suite [89]/[90]), the LSP and lint suite sections |
 | R2.1 | 0 | mechanical: the C slot test's NaN-payload rows and plant 2 (no program can make a NaN before R2.2) |
 | R2.2 | 9 | |
@@ -3217,3 +3217,35 @@ source `make_int_defs=0 outside_writers=0`; slot matrix
 `examined=33 calls=165 matrix_cells=396 arm_rows=32 failures=0`.
 The changelog fragment check exited 0 after all fourteen malformed fragment
 bullets were repaired. No push or CI run is claimed by these local results.
+
+### R1.7 rulings and executable text oracle
+
+R1.7-D2 permits only the mechanical N6 float-text re-render of seven frozen
+probes. `tools/phase2_float_amend.py` checks numeric positions and double bits,
+source-bound live kinds, exact integer spellings and every other byte. Six
+probes change; json_path already has the N6 spelling. Accepted SHA amendments
+and earlier authorities are recorded in `tests/phase2/builtins_changes.md`.
+
+R1.7-D3 distinguishes CHANGE rows from `[R1.7, invariant]` controls. Actual
+b6f9db38 already printed the D1 boundary literal with 15..17 round-trip digits;
+printing it directly still passes. D1 and exact int text are invariants.
+T1 adds 0.1 as a discriminating shortest-text witness. Every change is base-red
+and every invariant base-green. Invariants run all declared branch tiers;
+the older v0.46 anchor predates their already-landed contract.
+
+R1.7-D4 keeps the signed-zero program and adds the actual constant-pool C
+probe through `tools/phase2_readers.sh`: distinct indices and memcmp-exact
+stored signed-zero doubles. A complete dedup-by-value plant restores both
+zero-normalizing hash keys and numeric equality, and must fail that probe.
+
+The actual shared writer is also checked by `tests/phase2/num_text.c`, Python
+repr comparisons over binary64 patterns, and the same production function
+linked to mini_fmt/mini_strtod. The runtime retains its inherited default
+round-to-nearest floating-point environment assumption.
+
+Cost comparisons opt in to `tools/phase2_cost.sh --n6-text`: finite value bits
+and exact integer digits stay equal, changed float tokens must be Python repr,
+and nonnumeric bytes/positions stay exact. The default mode stays byte strict.
+This cost-only comparison cannot establish a legacy unadorned token's source
+kind; the semantic gates and D2 live kind witnesses do. Corpus diffs remain
+exact and are attributed individually from observed evidence.
