@@ -1,1 +1,0 @@
-- `docs/TRACE.md` now states the math library as a replay boundary: hosted builds use the platform libm and the freestanding build its own, so a tape that calls transcendental functions may not replay byte-identically on a different platform. ([#1853](https://github.com/InauguralSystems/EigenScript/issues/1853))

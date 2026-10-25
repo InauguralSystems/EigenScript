@@ -1,1 +1,0 @@
-- Reuse the cached, bounded Valgrind installer in the nightly workflow and remove its unused test-only apt options.

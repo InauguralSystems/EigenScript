@@ -1,1 +1,0 @@
-- Fixed a leaked argument reference in `dispatch` calls using fresh or recycled function environments. ([#1838](https://github.com/InauguralSystems/EigenScript/issues/1838))

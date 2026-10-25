@@ -1,1 +1,0 @@
-- `shared_get`, `shared_set`, `shared_incr`, `shared_has` and `shared_delete` raise `type_mismatch` for a wrong-typed argument by default, instead of answering the same value as a missing key (`null`, `false` or `0`). Under `EIGS_STRICT=0` they keep that answer (#1947).

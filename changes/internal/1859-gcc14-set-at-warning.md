@@ -1,1 +1,0 @@
-- No user-visible change: `set_at` reads its buffer argument by reference instead of through a stack view, so gcc 14 no longer warns `-Wreturn-local-addr` when it compiles the amalgamation (#1859). The `-O0`/`-O1` warnings are #1775, fixed by contributor PR #1799.

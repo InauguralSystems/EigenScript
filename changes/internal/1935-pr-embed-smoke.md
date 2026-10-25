@@ -1,1 +1,0 @@
-- Run the release embedding smoke test on code-changing pull requests before they enter the merge queue.

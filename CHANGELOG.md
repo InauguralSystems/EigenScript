@@ -4,6 +4,127 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-10-25
+
+**Upgrading from 0.46.0:** four announced changes need code changes in some programs:
+- the `rm` builtin is removed (use `remove_file`, #1884);
+- removing a missing file raises `io` (#1668);
+- tape format v7 records loaded module source as `load_file_source`/`load_file_source_chunk` (a check that a tape holds only argv must allow them);
+- the observer predicates `improving` (#1771) and `equilibrium` (#1891) changed.
+
+The per-consumer table is in `docs/release-reviews/v0.47.0.md`.
+
+### Added
+
+- `make observer-oracle` scores the observer against a corpus graded by mathematics (Hardy, NIST 6.4.4.2) and by stated conventions (numpy `isclose`, Keras `mode=min`, settling time), decided on #1754. Each predicate is scored against one question (at a NaN checkpoint, the #1758 NaN convention); the labels are derived from per-sequence properties that `certify.py` certifies offline with sympy on the values the runtime is fed. Every row runs as module-level code (`x` a name) and as a loop (`x` a slot local) under the interpreter, the default JIT and forced OSR, and every run's bytecode listing must show the path its arm grades. A jit-tier run must witness that every iteration ran natively; an osr-tier run witnesses its last iteration only (earlier ones: #1768); a run that bails on an inf, NaN or clamped value counts as interpreted. Predicate reads always run interpreted. Rows that need IEEE inf/NaN or exact int64 values (derived from their values) run where one probe finds the capability (`EXPECT=ieee,int64` makes an absent one fail). A FINDING (any reading that differs between arms) or a wrong verdict on such a row fails the run, and so, by default (`FLOOR=` skips it), does any verdict lost against the v0.46.0 tag in `tools/observer_oracle/floor.json`, re-measured on the binary `tools/observer_oracle/build_anchor.sh` builds, or reuses, in the user cache; the floor is identified by the recipe and its verdicts, not the binary's bytes (#1746, #1758, #1764). The required CI check `observer oracle (floor)` runs it on every code change, against an anchor it builds itself under `env -i` in a digest-pinned image. A gate self-test (`plants.py --selftest`, run when the oracle changes) proves that the floor reports a reversed reading for every predicate, class and label direction as lost (#1764, #1778). On the reference model, distance beats entropy as the signal (#1667).
+
+### Changed
+
+- `read_text`, `read_bytes`, and `read_bytes_buf` now raise catchable `io`
+  errors containing the path and operating-system reason instead of returning
+  an empty failure sentinel.
+- File writes, removal, rename, directory creation, and directory listing now
+  follow the same contract; fixed-cap text/list readers also raise with the
+  observed size and cap instead of returning an empty value.
+
+- An uncaught error in a **detached** cooperative task now stops the program (#1736). No `task_join` can ever see a detached task's failure, so its trace prints and the run stops at main's next scheduling point (the `task_yield`, or the blocking `task_join`/`task_recv`/`task_sleep`, during which it died), or in the exit drain if main never yields, with exit status 1. Before, main ran on to the end and only the exit status reported the failure. `task_detach` of a task that has already died of an uncaught error nothing joined now stops the program at that call instead of discarding the error; it used to return 1 and let the program continue. Neither stop is catchable, and both land at the same point under trace replay. Joinable tasks (main continues, a later `try`/`catch` around `task_join` recovers, never joined is exit 1) and `spawn`ed OS threads (main completes, exit 1) are unchanged; why threads differ is in docs/CONCURRENCY.md. A detached task that must survive its own errors should catch them inside the task.
+
+- The bitwise operators (`& | ^ << >> ~`) and the `bit_and`/`bit_or`/`bit_xor`/`bit_shl`/`bit_shr`/`bit_not` builtins now follow Lua 5.4's rule: every operand, the shift count included, must be an exact integer in [-2^63, 2^63). A fractional operand (`1.5 | 0`, `1 << 0.5`) or an out-of-range one (`1e30 | 0`, `9223372036854775808 | 0`) raises a catchable `value` error ("number has no integer representation"). Before, a fraction was silently truncated toward zero (`1.5 | 0` was `1`) and an out-of-range operand became INT64_MIN (#1739). Exact-integer operands give the same results as before, and JIT-compiled code bails to the interpreter so every tier raises the same error.
+
+- The numeric `improving` observer predicate is now directional, following the machine-learning loss convention that lower is better. A decreasing trajectory with contracting steps can be improving; a growing trajectory never is, even when it rises toward a plateau (#1771).
+
+- `rm` is no longer a builtin; `remove_file` is the one file-deletion builtin, and it raises `io` with the path and the OS reason on failure (#1884). When the file may already be missing, guard with `if file_exists of path:` before `remove_file of path`. `file_exists` follows symlinks, so that guard skips a dangling symlink. To delete one too, call `remove_file` inside `try` and handle the `io` error. `remove_file` is also bridged into the `eigen_run` meta-interpreter, where `rm` was.
+
+### Fixed
+
+- A thread calling a module-level function while another thread rebinds the same
+  name (a `define`, an outward `is`, or two workers `load_file`-ing one module) no
+  longer uses the old function after the rebind has freed it (#1171). The reader
+  now takes its reference inside the lock the rebind holds while it releases the
+  old value, the assignment count is bumped inside that lock too, and inline
+  caches filled before the first `spawn` can no longer read such a binding
+  without it. A call also keeps its callee until the new frame holds the
+  callee's code: a function from a `load_file`'d module whose name was rebound
+  while its call was being set up (by another thread, or by the call's own
+  argument reloading the module) used to run freed code, even single-threaded.
+  Which value a racing reader gets is still the program's own race. A binding in
+  a function's scope that closures on two threads share is not covered yet
+  (#1837).
+
+- Made `json.json_has` test key presence rather than value, so missing keys return `false` while present keys containing JSON `null` return `true`, including along dotted paths.
+
+- Flat list and dictionary literals no longer exhaust the parser nesting limit
+  by accumulating operator-chain depth across sibling elements. Deeply nested
+  expressions and long operator chains remain bounded by the existing limit.
+
+- Made `read_line` preserve line-ending bytes so pipe and redirected-file input agree and callers can distinguish a terminated final line.
+
+- An uncaught error raised inside an `unobserved:` block no longer leaves the observer off for everything that runs afterwards on the same state. In the REPL, every later predicate failed with "the observer is off inside an 'unobserved:' block" for the rest of the session, and an embedder reusing one state saw the same. The VM's uncaught-error halt now restores the depth it had at entry, as a `try` handler already restores its saved depth. Found by an invariant check added to the libFuzzer harness.
+
+- `range` now raises a `value` error when a bound or step is outside the int range. Before, `range of [0, 3e9]` silently returned an empty list. The same happened to in-range bounds whose span overflowed (`range of [-2e9, 2e9]`), which now reports the 1M-element limit error. A left shift of a negative value is now defined (two's-complement); bitwise operands outside int64 now raise (see the #1740 entry). Calls into JIT-emitted code skip clang's `-fsanitize=function` probe, which crashed sanitizer builds when emitted code began at the start of a page. Found by libFuzzer.
+
+- `thread_join` now re-raises an OS worker's uncaught error with its original kind and message. Catching that join observes the worker failure and allows a successful exit, matching `task_join`; an unjoined failed worker still fails the run.
+
+- Repaired observer documentation left incomplete when the observer configuration builtins were removed, removed their dead compiler scan and stale C comments, and added a docs-claims check for unregistered builtin call spellings.
+
+- Audio generators now raise a `value` error naming the builtin when their
+  duration exceeds the documented 30-second allocation limit, rather than
+  silently returning an empty list. Sample counts are range-checked before
+  conversion to C `int`.
+
+- `audio_noise` now replays from the trace tape. It drew its samples from libc `rand()`, seeded from the clock and recorded nowhere, so a run recorded with `EIGS_TRACE` and replayed with `EIGS_REPLAY` printed different samples at exit 0, and `seed_random` could not pin them. The samples now come from the same stream as `random`, so `seed_random` pins them, and each call records them as `N audio_noise=[...]` records of at most 2048 samples, because one record holds only about 3,000 samples and replay refuses a truncated record. The samples stay uniform between `-amplitude` and `amplitude`. docs/TRACE.md also corrects its statement that a truncated record falls back to the live source: replay refuses it with exit 3.
+
+- REPL lines and repeated embed evaluations now restore cooperative task 0 after draining workers, so `task_self`, `task_yield`, and `task_join` behave like they do in a script.
+
+- Keep top-level `catch`, `elif`, and `else` clauses in the current REPL input unit instead of parsing them as standalone statements.
+
+- Preserve unobserved cooperative-task failures from spawned worker threads so they make the process exit non-zero, just as they do on the main thread.
+
+- Fixed a leaked argument reference in `dispatch` calls using fresh or recycled function environments. ([#1838](https://github.com/InauguralSystems/EigenScript/issues/1838))
+
+- Make test assertions set a graceful nonzero process status through the new `set_exit_code` builtin.
+
+- Make `read_text`, `read_bytes`, and `read_bytes_buf` read pipes, `/dev/stdin`, and FIFOs to EOF while preserving their size caps and deterministic trace replay.
+
+- Fixed `poisson_pmf` (and so `poisson_cdf`) returning wrong results at large parameters, where `lambda^k`, `e^-lambda` or `k!` leaves the double range: `poisson_pmf of [170, 170.0]` returned `2.04e-73` instead of `0.0306`. Results where the direct formula is valid are unchanged to the last digit. ([#1861](https://github.com/InauguralSystems/EigenScript/issues/1861))
+
+- A name bound by name inside a module-level `unobserved:` block reads its
+  binding again, instead of `null` or a value from another scope (#1883). Such
+  names are a `catch` binder, a `for` binder, a defined function's name, a
+  comprehension binder, an `import`ed module, `loop while`'s `__loop_exit__`
+  and `__loop_iterations__`, and a `local` in a `for` body. The block's slot
+  promotion now skips every such name, even when the block also assigns it with
+  `is`, so its reads and writes use the same storage on the interpreter, the
+  JIT and forced OSR.
+
+- Replay is side-effect-free, as in rr (#1885). Under `EIGS_REPLAY`, module source
+  for `import` and `load_file` comes from the tape, and filesystem mutations
+  (`mkdir`, `write_text`, `write_bytes`, `remove_file`, `rename`) perform nothing
+  and return their recorded results. A replay no longer depends on what the
+  record run left on disk. The tape format is now v7. Over-cap `read_text` and
+  `read_bytes` tapes replay their recorded `io` error and cap message instead of
+  failing return-kind validation (#1890).
+
+- `equilibrium` no longer answers true for a one-direction tail; the #1891 flicker is documented with measured rates, not fixed.
+
+- Make replay stop oversized imports, strictly validate taped hashes, tape SDL ticks, keep ordering sleeps live, preserve worker exit codes, and reproduce model-load output.
+
+- Report embedding buffer type and bounds failures through the pending-error channel.
+
+- Make `f64_from_bytes` reject inputs containing fewer than eight bytes.
+
+- Report type mismatches from numeric, boolean, and list-length embed accessors without changing their sentinels.
+
+- `shared_get`, `shared_set`, `shared_incr`, `shared_has` and `shared_delete` raise `type_mismatch` for a wrong-typed argument by default, instead of answering the same value as a missing key (`null`, `false` or `0`). Under `EIGS_STRICT=0` they keep that answer (#1947).
+
+### Documentation
+
+- `docs/TRACE.md` now states the math library as a replay boundary: hosted builds use the platform libm and the freestanding build its own, so a tape that calls transcendental functions may not replay byte-identically on a different platform. ([#1853](https://github.com/InauguralSystems/EigenScript/issues/1853))
+
+- The v0.47.0 release review corrected two documentation claims (#1938). `docs/CONCURRENCY.md` no longer says that a nondeterministic builtin on a `spawn`ed worker raises under `EIGS_REPLAY`, and the coverage note in `docs/TRACE.md` no longer calls the worker replay check fail-loud: each thread replays from its own tape stream (#1566). The receive family still raises under replay, and the order in which threads ran is still not on the tape. The editor hover text for `mkdir`, `remove_file` and `write_text`, and the `rename` signature comment, now say these builtins return `true` on success, not `1`.
+
+- Fixed builtin documentation and LSP hovers that described boolean results as numeric `0`/`1`, and added a documentation check against regressions.
+
 ## [0.46.0] - 2026-10-11
 
 ### Breaking changes
