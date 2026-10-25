@@ -1567,9 +1567,9 @@ static int by_name_binder(ASTNode *node, int in_loop_env, const char **name) {
     switch (node->type) {
     case AST_FOR: *name = node->data.forloop.var; return BINDER_NO_SLOT;
     case AST_TRY: *name = node->data.trycatch.err_name; return BINDER_NO_SLOT | BINDER_FUNCTION_LOCAL;
-    case AST_FUNC: *name = node->data.func.name; return BINDER_NO_SLOT | BINDER_FUNCTION_LOCAL;
+    case AST_FUNC: *name = node->data.func.name; return BINDER_NO_SLOT;
     case AST_LISTCOMP: *name = node->data.listcomp.var; return BINDER_NO_SLOT | BINDER_FUNCTION_LOCAL;
-    case AST_IMPORT: *name = node->data.import.module_name; return BINDER_NO_SLOT | BINDER_FUNCTION_LOCAL;
+    case AST_IMPORT: *name = node->data.import.module_name; return BINDER_NO_SLOT;
     case AST_LOOP:
         /* This node has two VM/compiler-private binders; the collector adds
          * them directly after using this return value as their classification. */

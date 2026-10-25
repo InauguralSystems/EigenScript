@@ -51,8 +51,8 @@ assert_eq of [binder_local_in_for of [], 7, "binder: local assignment in loop en
 
 # Function-local-write classification (question (b)).  Each row writes outside
 # the binder's temporary execution scope and pins the parent commit's answer.
-# Comprehension, catch, nested define, and import bind in the function env;
-# `for` and a `local` assignment in its body bind only in the loop env.
+# Only comprehension and catch are in the parent's static function-local set.
+# Define/import writes resolve dynamically; loop binders live in loop envs.
 write_comp is 1
 define write_comp_fn() as:
     ignored is [write_comp for write_comp in [7, 8]]
@@ -72,22 +72,49 @@ define write_catch_fn() as:
 assert_eq of [write_catch_fn of [], 2, "function-local write: catch return"]
 assert_eq of [write_catch, 1, "function-local write: catch module"]
 
-write_define is 1
-define write_define_fn() as:
-    define write_define() as:
+write_define_before is 1
+define write_define_before_fn() as:
+    write_define_before is 2
+    define write_define_before() as:
         return 7
-    write_define is 2
-    return write_define
-assert_eq of [write_define_fn of [], 2, "function-local write: nested define return"]
-assert_eq of [write_define, 1, "function-local write: nested define module"]
+    return type of write_define_before
+assert_eq of [write_define_before_fn of [], "fn", "dynamic write before nested define return"]
+assert_eq of [write_define_before, 2, "dynamic write before nested define module"]
+
+write_define_after is 1
+define write_define_after_fn() as:
+    define write_define_after() as:
+        return 7
+    write_define_after is 2
+    return write_define_after
+assert_eq of [write_define_after_fn of [], 2, "dynamic write after nested define return"]
+assert_eq of [write_define_after, 1, "dynamic write after nested define module"]
+
+write_define_unreachable is 1
+define write_define_unreachable_fn() as:
+    write_define_unreachable is 2
+    if false:
+        define write_define_unreachable() as:
+            return 7
+    return write_define_unreachable
+assert_eq of [write_define_unreachable_fn of [], 2, "unreachable nested define return"]
+assert_eq of [write_define_unreachable, 2, "unreachable nested define module"]
 
 import math
-define write_import_fn() as:
+datetime is 1
+define write_import_before_fn() as:
+    datetime is 2
+    import datetime
+    return type of datetime
+assert_eq of [write_import_before_fn of [], "dict", "dynamic write before import return"]
+assert_eq of [datetime, 2, "dynamic write before import module"]
+
+define write_import_after_fn() as:
     import math
     math is 2
     return math
-assert_eq of [write_import_fn of [], 2, "function-local write: import return"]
-assert_eq of [type of math, "dict", "function-local write: import module"]
+assert_eq of [write_import_after_fn of [], 2, "dynamic write after import return"]
+assert_eq of [type of math, "dict", "dynamic write after import module"]
 
 # Review regression: the plain write precedes the loop binder.  Both the
 # return and module update match the parent commit; the loop's values disappear
