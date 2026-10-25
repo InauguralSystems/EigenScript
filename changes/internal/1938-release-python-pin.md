@@ -1,0 +1,1 @@
+- The Release workflow builds its PyYAML venv from a pinned CPython 3.12 (`actions/setup-python`), so a runner image whose `python3` has no audited wheel no longer fails the release build (the v0.47.0 macos-arm64 build).
