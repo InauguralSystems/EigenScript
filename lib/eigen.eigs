@@ -325,6 +325,8 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                                     buf is buf + "\n"
                                 elif esc == "t":
                                     buf is buf + "\t"
+                                elif esc == "r":
+                                    buf is buf + "\r"
                                 elif esc == "\\":
                                     buf is buf + "\\"
                                 elif esc == "\"":
@@ -414,6 +416,8 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                             buf is buf + "\n"
                         elif esc == "t":
                             buf is buf + "\t"
+                        elif esc == "r":
+                            buf is buf + "\r"
                         elif esc == "\\":
                             buf is buf + "\\"
                         elif esc == "\"":
