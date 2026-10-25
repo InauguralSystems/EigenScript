@@ -3,7 +3,9 @@
 
 This is a lexical C inventory, not a C parser or proof about arbitrary pointers.
 It follows calls passing the complete argument to named helpers. New source
-surfaces must be classified; changed exempt bodies need renewed review.
+surfaces must be classified; changed exempt bodies need renewed review. Use
+``--repin NAME`` to preview renewed pins and ``--repin NAME --write`` to apply
+them without reformatting the contracts file.
 """
 import argparse
 import copy
@@ -25,6 +27,42 @@ GUARD = re.compile(r'STRICT_LIST_MAX\(arg,\s*(\d+),\s*"([^"]+)"\)\s*;')
 
 def masked(source):
     return MASK.sub(lambda m: re.sub(r'[^\n]', ' ', m.group()), source)
+
+
+def normalized(source):
+    """Remove comments and normalize only whitespace outside C literals."""
+    pieces, pending_space = [], False
+
+    def outside(text):
+        nonlocal pending_space
+        for character in text:
+            if character.isspace():
+                pending_space = bool(pieces)
+            else:
+                if pending_space:
+                    pieces.append(' ')
+                pieces.append(character)
+                pending_space = False
+
+    end = 0
+    for match in MASK.finditer(source):
+        outside(source[end:match.start()])
+        token = match.group()
+        if token.startswith(('"', "'")):
+            if pending_space:
+                pieces.append(' ')
+            pieces.append(token)
+            pending_space = False
+        else:
+            pending_space = bool(pieces)
+        end = match.end()
+    outside(source[end:])
+    return ''.join(pieces)
+
+
+def body_hash(body):
+    """The single implementation of an exempt source-body hash."""
+    return hashlib.sha256(normalized(body).encode()).hexdigest()
 
 
 def closing(source, start, left, right):
@@ -98,8 +136,84 @@ def exemption_sources(name, funcs):
         seen.add(current)
         for definition in funcs[current]:
             pending.extend(definition['helpers'])
-    return {key: sorted(hashlib.sha256(d['body'].encode()).hexdigest() for d in funcs[key])
+    return {key: sorted(body_hash(d['body']) for d in funcs[key])
             for key in sorted(seen)}
+
+
+def hash_values(row):
+    """Return row hashes in their on-disk order."""
+    return list(row.get('body_sha256', [])) + [value for values in row.get('source_sha256', {}).values()
+                                                for value in values]
+
+
+def replace_row_hashes(text, row, replacement):
+    """Surgically replace hash strings in one JSON row, preserving every other byte."""
+    marker = '"function": ' + json.dumps(row['function'])
+    middle = text.index(marker)
+    start = text.rfind('  {', 0, middle)
+    end = text.find('\n  }', middle) + len('\n  }')
+    old_values, new_values = hash_values(row), hash_values(replacement)
+    if len(old_values) != len(new_values):
+        raise ValueError('helper closure shape changed; review the row structure before re-pinning')
+    found = iter(old_values)
+    replacements = iter(new_values)
+
+    def swap(match):
+        expected = next(found, None)
+        if expected != match.group(1):
+            raise ValueError('on-disk hashes do not match the parsed row')
+        return '"' + next(replacements) + '"'
+
+    changed = re.sub(r'"([0-9a-f]{64})"', swap, text[start:end])
+    try:
+        next(found)
+        raise ValueError('not all parsed hashes occur in the row')
+    except StopIteration:
+        pass
+    return text[:start] + changed + text[end:]
+
+
+def repin(name, write, sources, contracts):
+    row = next((item for item in contracts if item['function'] == name), None)
+    if row is None:
+        print(f'REFUSED: {name}: no contract row')
+        return 2
+    if row.get('disposition') != 'exempt':
+        print(f"REFUSED: {name}: disposition is {row.get('disposition')}, not exempt: {row.get('reason', '')}")
+        return 2
+    funcs = functions(sources)
+    if name not in funcs:
+        print(f'REFUSED: {name}: function is absent from current sources')
+        return 2
+    current_sources = exemption_sources(name, funcs)
+    replacement = copy.deepcopy(row)
+    replacement['body_sha256'] = sorted(body_hash(d['body']) for d in funcs[name])
+    replacement['source_sha256'] = current_sources
+    pinned_sources = row.get('source_sha256', {})
+    members = sorted(set(pinned_sources) | set(current_sources) | {name})
+    for member in members:
+        pinned = row.get('body_sha256', []) if member == name else pinned_sources.get(member, [])
+        current = replacement['body_sha256'] if member == name else current_sources.get(member, [])
+        print(f"{member}: pinned={','.join(pinned) or '<missing>'} current={','.join(current) or '<missing>'} "
+              + ('CHANGED' if pinned != current else 'same'))
+    if hash_values(row) == hash_values(replacement) and pinned_sources.keys() == current_sources.keys():
+        print(f'REPIN: {name}: no changes')
+        return 0
+    if not write:
+        print(f'REPIN: {name}: dry run; use --write after review')
+        return 0
+    if (pinned_sources.keys() != current_sources.keys() or
+            any(len(pinned_sources[key]) != len(current_sources[key]) for key in pinned_sources)):
+        print(f'REFUSED: {name}: helper closure shape changed; hash-only re-pin is not possible')
+        return 2
+    try:
+        updated = replace_row_hashes(DATA.read_text(), row, replacement)
+    except ValueError as error:
+        print(f'REFUSED: {name}: {error}')
+        return 2
+    DATA.write_text(updated)
+    print(f'REPIN: {name}: wrote changed hash strings only')
+    return 0
 
 
 def audit(sources, header, contracts, cases):
@@ -168,7 +282,7 @@ def audit(sources, header, contracts, cases):
         elif row['disposition'] == 'exempt':
             if guards:
                 errors.append(name + ': exempt function has a max guard')
-            hashes = sorted(hashlib.sha256(d['body'].encode()).hexdigest() for d in defs)
+            hashes = sorted(body_hash(d['body']) for d in defs)
             if hashes != row.get('body_sha256') or exemption_sources(name, funcs) != row.get('source_sha256'):
                 errors.append(name + ': exempt source/helper changed; review the contract')
         else:
@@ -186,9 +300,13 @@ def selftest():
     return arg->data.list.items[0];
 }
 Value* builtin_data(Value *arg) {
+    int token = 1;
+    const char *block = "/*";
+    int slash = '//';
     return helper(arg);
 }
 static double *helper(Value *arg) {
+    /* helper explanation */
     return arg->data.list.items[0];
 }
 void register_all(Env *env) {
@@ -201,12 +319,12 @@ void register_all(Env *env) {
                      category='fixed', maximum=2, reason='two operands'),
                 dict(function='builtin_data', public_names=['data'], disposition='exempt',
                      reason='whole list data', body_sha256=[])]
-    contract[1]['body_sha256'] = [hashlib.sha256(functions(sources)['builtin_data'][0]['body'].encode()).hexdigest()]
+    contract[1]['body_sha256'] = [body_hash(functions(sources)['builtin_data'][0]['body'])]
     contract[1]['source_sha256'] = exemption_sources('builtin_data', functions(sources))
     cases = [dict(name='pair', args=['[2, 3]', '0'], observe='print of shape_result',
                   unchanged='assert of [1, "pure call"]', claim='ordinary finite pair', requirements=[])]
     scenarios = []
-    def add(label, expected, source_edit=None, contract_edit=None, case_edit=None, header=''):
+    def add(label, expected, source_edit=None, contract_edit=None, case_edit=None, header='', named=None):
         s, c, k = copy.deepcopy(sources), copy.deepcopy(contract), copy.deepcopy(cases)
         if source_edit:
             source_edit(s)
@@ -214,7 +332,7 @@ void register_all(Env *env) {
             contract_edit(c)
         if case_edit:
             case_edit(k)
-        scenarios.append((label, expected, s, header, c, k))
+        scenarios.append((label, expected, s, header, c, k, named))
     def replace(a, b):
         return lambda s: s.update({'src/example.c': s['src/example.c'].replace(a, b)})
     add('healthy', True)
@@ -227,9 +345,19 @@ void register_all(Env *env) {
     add('missing control', False, case_edit=lambda k: k.clear())
     add('duplicate control', False, case_edit=lambda k: k.append(copy.deepcopy(k[0])))
     add('wrong valid width', False, case_edit=lambda k: k[0]['args'].pop())
-    add('stale exemption', False, replace('return helper(arg);', 'return another(arg);'))
-    add('changed exemption helper', False, replace('return arg->data.list.items[0];\n}\nvoid register_all', 'return arg->data.list.items[1];\n}\nvoid register_all'))
-    add('changed exemption body', False, replace('return helper(arg);', 'return helper(arg); /* reviewed body changed */'))
+    add('one-token code change in exempt builtin names function', False,
+        replace('int token = 1;', 'int token = 2;'), named='builtin_data')
+    add('one-token code change in closure helper names function', False,
+        replace('return arg->data.list.items[0];\n}\nvoid register_all', 'return arg->data.list.items[1];\n}\nvoid register_all'),
+        named='builtin_data')
+    add('comment-only edit to exempt builtin', True,
+        replace('return helper(arg);', '/* revised explanation */ return helper(arg);'))
+    add('comment-only edit to closure helper', True,
+        replace('/* helper explanation */', '// revised helper explanation'))
+    add('block-comment opener inside string is code', False, replace('"/*"', '"/**"'))
+    add('line-comment opener inside char literal is code', False, replace("'//'", "'/**'"))
+    add('whitespace-only change between tokens', True, replace('int token', 'int   token'))
+    add('joining two tokens changes code', False, replace('int token', 'inttoken'))
     add('unclassified new helper caller', False, replace('void register_all', 'Value* builtin_extra(Value *arg) { return helper(arg); }\nvoid register_all'))
     add('registry alias change', False, replace('"pair", make_builtin', '"renamed", make_builtin'))
     add('macro registry alias change', False, header='X(renamed, builtin_pair)')
@@ -242,9 +370,9 @@ void register_all(Env *env) {
     add('pure control must not become backend absent', False,
         case_edit=lambda k: k[0].update(backend='sdl'))
     passed = 0
-    for label, expected, s, header, c, k in scenarios:
+    for label, expected, s, header, c, k, named in scenarios:
         errors, _, _ = audit(s, header, c, k)
-        ok = (not errors) == expected
+        ok = (not errors) == expected and (named is None or any(named in e for e in errors))
         print(('PASS: ' if ok else 'FAIL: ') + label)
         passed += ok
     print(f'SHAPE_CONTRACT_SELFTEST: {passed} passed, {len(scenarios)-passed} failed, {len(scenarios)} declared')
@@ -347,12 +475,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--selftest', action='store_true')
     parser.add_argument('--render', type=Path, help='render inert fixtures after checking source contracts')
+    parser.add_argument('--repin', metavar='NAME', help='preview current hashes for one exempt row')
+    parser.add_argument('--write', action='store_true', help='with --repin, replace only that row\'s hash strings')
     args = parser.parse_args()
+    if args.write and not args.repin:
+        parser.error('--write requires --repin NAME')
     if args.selftest:
         return selftest()
     sources = {p.relative_to(ROOT).as_posix(): p.read_text() for p in (ROOT / 'src').glob('*.c')}
+    contracts = json.loads(DATA.read_text())
+    if args.repin:
+        return repin(args.repin, args.write, sources, contracts)
     errors, total, guarded = audit(sources, (ROOT / 'src/ext_names.h').read_text(),
-                                  json.loads(DATA.read_text()), json.loads(CASES.read_text()))
+                                  contracts, json.loads(CASES.read_text()))
     for error in errors:
         print('FAIL: shape-contract: ' + error)
     print(f'SHAPE_CONTRACT: candidates={total} guarded={guarded} exempt={total-guarded} errors={len(errors)}')

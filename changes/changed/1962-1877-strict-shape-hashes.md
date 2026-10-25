@@ -1,0 +1,1 @@
+- Normalize strict-shape exemption hashes and add a surgical re-pin mode (#1962, #1877).
