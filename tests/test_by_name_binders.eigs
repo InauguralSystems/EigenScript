@@ -49,21 +49,11 @@ define binder_local_in_for() as:
     return seen
 assert_eq of [binder_local_in_for of [], 7, "binder: local assignment in loop env"]
 
-define binder_loop_exit() as:
-    __loop_exit__ is "stale"
-    n is 0
-    loop while n < 1:
-        n is n + 1
-    return __loop_exit__
-assert_eq of [binder_loop_exit of [], "normal", "binder: compiler loop exit"]
-
-define binder_loop_iterations() as:
-    __loop_iterations__ is -1
-    n is 0
-    loop while n < 2:
-        n is n + 1
-    return __loop_iterations__ >= 2
-assert_eq of [binder_loop_iterations of [], true, "binder: VM loop iterations"]
+# The loop machinery's own by-name binders (`__loop_exit__`, compiler.c's
+# loop-while exit store; `__loop_iterations__`, the VM's) stay in the shared
+# predicate as part of the by-name inventory. They get no row here: #1908
+# refuses a user binding of any `__name__`, so no same-named plain assignment
+# can exist to collide with them.
 
 # Issue #1905's programs plus module-scope rows for the module binders.
 import math
