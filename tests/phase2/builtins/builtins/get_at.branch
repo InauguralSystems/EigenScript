@@ -1,7 +1,7 @@
 20
 ["index-fraction", "value"]
 20
-[5, "float"]
+[5.0, "float"]
 3
 ["col-fraction", "value"]
 rc=0

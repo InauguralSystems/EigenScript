@@ -205,7 +205,7 @@ run "SM35 strict: JSON false decodes to false (#1637)" 1 0 "false" \
 # error, repaired scalar, trailing garbage) as a catchable `value` error naming
 # the position. EIGS_STRICT=0: byte-identical (SM36/SM37 pin the lenient walk). JSON
 # `false`/`null`/absent-key are ANSWERS and stay quiet in both modes.
-run "SM36 opt-out json_path(bad number) still walks partial" 0 0 "[0]" \
+run "SM36 opt-out json_path(bad number) still walks partial" 0 0 "[0.0]" \
     'print of f"[{json_path of ["{\"a\": 1e", "a"]}]"'
 run "SM37 opt-out json_path(truncated array) still partial" 0 0 "[[1,2]]" \
     'print of f"[{json_path of ["{\"a\": [1, 2", "a"]}]"'
@@ -235,10 +235,10 @@ run "SM46 strict: valid nested path still resolves"     1 0 "x"  'print of (json
 # and buffer paths), `tensor_load` of a file carrying NaN bytes, and the
 # elementwise `divide` by zero (pre-collapsed to 0 where `/` raises). EIGS_STRICT=0
 # collapses to 0 + math_flags.invalid exactly as before (SM47-SM49 pin it).
-run "SM47 opt-out pow(-8, 0.5) still 0"            0 0 "0"  'print of (pow of [0 - 8, 0.5])'
+run "SM47 opt-out pow(-8, 0.5) still 0"            0 0 "0.0"  'print of (pow of [0 - 8, 0.5])'
 # N10: invalid literal text raises even under EIGS_STRICT=0.
 run "SM48 N10 opt-out num nan refuses grammar" 0 1 "num: expected complete numeric-literal text" 'num of "nan"'
-run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0 "[0] true" \
+run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0 "[0.0] true" \
 'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
 print of f"{r} {(math_flags of null).invalid}"'
 # #1417 applies the same scalar-read rule to buffer and list results. The
@@ -314,15 +314,15 @@ catch e:
 # --- #1438: finite-difference losses must be scalar numbers -----------------
 BAD_LOSS='define bad(_) as:
     return "bad"'
-run "T1438a opt-out numerical_grad keeps zero stand-in" 0 0 "[0]" \
+run "T1438a opt-out numerical_grad keeps zero stand-in" 0 0 "[0.0]" \
 "$BAD_LOSS
 p is [1.0]
 print of (numerical_grad of [bad, p, 0.001])"
-run "T1438b opt-out numerical_grad_rows keeps zero stand-in" 0 0 "[[0]]" \
+run "T1438b opt-out numerical_grad_rows keeps zero stand-in" 0 0 "[[0.0]]" \
 "$BAD_LOSS
 m is [[1.0]]
 print of (numerical_grad_rows of [bad, m, [0], 0.001])"
-run "T1438c opt-out numerical_grad_cols keeps zero stand-in" 0 0 "[[0]]" \
+run "T1438c opt-out numerical_grad_cols keeps zero stand-in" 0 0 "[[0.0]]" \
 "$BAD_LOSS
 m is [[1.0]]
 print of (numerical_grad_cols of [bad, m, [0], 0.001])"

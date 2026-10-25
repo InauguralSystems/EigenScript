@@ -109,7 +109,8 @@ buf_set of [b, 0, 1]
 cb is channel of 1
 send of [cb, b]
 buf_set of [b, 0, 99]
-row of ["buffer         ", "1", str of (buf_get of [(recv of cb), 0])]
+# N6: compare buffer contents numerically; float text retains .0.
+row of ["buffer         ", 1.0, buf_get of [(recv of cb), 0]]
 
 t is text_builder_new of null
 text_builder_append of [t, "a"]

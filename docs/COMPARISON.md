@@ -66,7 +66,7 @@ print of [1.0 // 0.1, 1 // 0.1, 1e-300 // -1e300, y, num_type of y]
 ```output
 [-4, -4, 2, -2, 0.5]
 ["int", "float"]
-[9, 9, -1, 9, "float"]
+[9.0, 9.0, -1.0, 9.0, "float"]
 ```
 
 ## At a glance
@@ -264,12 +264,18 @@ TCP handles, ports and sent-byte counts are integers. Numeric socket handles, po
 
 `http_early_bind` and `http_serve` require an exact integer port in 0..65535; integral floats convert and port zero requests an ephemeral port. Fractional or out-of-range ports raise `value` before binding. `shared_delete` and `shared_size` return integer counts.
 
+N6 prints each float with Python's shortest round-trip spelling: integral
+floats retain `.0`, negative zero is `-0.0`, and scientific notation starts
+below `1e-4` or at `1e16`. Ints keep their exact decimal digits. `print`,
+`write`, `str`, f-strings and JSON share the number writer. The executed
+examples are `tests/phase2/rows/N6.float-repr.eigs` and
+`tests/phase2/rows/N6.str-fstring.eigs`.
+
 The HTTP shared counter `shared_incr` follows numeric `+`: two int operands
 return an exact int and int64 overflow raises `value` without changing the
 stored counter (A). A missing counter starts at int zero. A float operand
-produces a float. The stored operand is its JSON-decoded value; existing
-float text stays until R1.7, so an integer-valued float may read back as an
-int during this transition. Executable shared-counter examples in
+produces a float. The stored operand is its JSON-decoded value; N6 preserves an
+integer-valued float as a float by retaining its `.0`. Executable shared-counter examples in
 `tests/test_http.eigs` cover exact values, both overflow directions and the
 next operation after a raise.
 
@@ -549,7 +555,7 @@ catch e:
 ```
 ```output
 caught: boom
-caught: type_mismatch at line 7
+caught: type_mismatch at line 7.0
 ```
 
 The optional model extension also uses catchable `value` errors for context
@@ -721,7 +727,7 @@ print of (e < 0.001)
 ```output
 30
 x
-3
+3.0
 20
 true
 ```

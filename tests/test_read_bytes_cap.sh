@@ -74,7 +74,7 @@ print of f\"kind={caught}\"" \
 run_case "1-arg small read unchanged" \
 "b is read_bytes_buf of \"$SMALL\"
 print of f\"{buf_len of b} {b[0]} {b[2]}\"" \
-"3 7 9"
+"3 7.0 9.0"
 
 # 5. max_bytes validation: zero, over-ceiling, and non-numeric raise value.
 run_case "max_bytes 0 raises value" \

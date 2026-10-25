@@ -64,7 +64,7 @@ REC_B=$(EIGS_TRACE="$TAPE_B" "$EIGS" "$TMPDIR/p_buf.eigs" 2>&1)
 printf '\xff\xfe\xfd' > "$INPUT"
 REP_B=$(EIGS_REPLAY="$TAPE_B" "$EIGS" "$TMPDIR/p_buf.eigs" 2>&1)
 
-EXPECTED_B=$'1\n2\n3'
+EXPECTED_B=$'1.0\n2.0\n3.0'
 if [ "$REC_B" = "$EXPECTED_B" ] && [ "$REP_B" = "$EXPECTED_B" ]; then
     ok "buffer replay: read_bytes_buf restored as VAL_BUFFER (b[…] disambiguator)"
 else
@@ -120,7 +120,7 @@ N 0 ls=[{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
 EOF
 
 REP_N=$(EIGS_REPLAY="$TMPDIR/nested.tape" "$EIGS" "$TMPDIR/p_nested.eigs" 2>/dev/null)
-EXPECTED_N=$'{"k": 42}\nok\n20'
+EXPECTED_N=$'{"k": 42}\nok\n20.0'
 
 if [ "$REP_N" = "$EXPECTED_N" ]; then
     ok "nested replay: list[dict, dict, buffer] round-trip"

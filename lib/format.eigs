@@ -27,6 +27,9 @@ define fmt_num(value, decimals) as:
     int_part is floor of (rounded / factor)
     frac_part is rounded - (int_part * factor)
     frac_str is str of frac_part
+    # N6: fixed decimals need digits, without integral float text suffix.
+    if ends_with of [frac_str, ".0"]:
+        frac_str is substr of [frac_str, 0, (len of frac_str) - 2]
     loop while (len of frac_str) < decimals:
         frac_str is "0" + frac_str
     return (str of int_part) + "." + frac_str

@@ -39,7 +39,7 @@ int main(void) {
     s = eval_str("str of g");
     check(strcmp(s, "<fn g>") == 0, "str of a named native fn is <fn g>"); free(s);
     s = eval_str("g of 41");
-    check(strcmp(s, "42") == 0, "a named native fn still calls through (g of 41 = 42)"); free(s);
+    check(strcmp(s, "42.0") == 0, "a named native fn still calls through (g of 41 = 42.0)"); free(s);
     s = eval_str("type of b");
     check(strcmp(s, "builtin") == 0, "a plain builtin still reports \"builtin\""); free(s);
     s = eval_str("str of b");

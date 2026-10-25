@@ -7,6 +7,7 @@ FIXTURE=${2:-readers}
 LABEL=phase2-readers
 case "$FIXTURE" in
     readers) ;;
+    num_text) LABEL=phase2-num-text ;;
     const_dedup_bits) LABEL=phase2-const-dedup ;;
     q7_readers) LABEL=phase2-q7-readers ;;
     gfx_audio_boundary) LABEL=phase2-gfx-audio ;;
@@ -40,6 +41,12 @@ fi
 cat "$TMP/out"
 if [ -s "$TMP/err" ]; then cat "$TMP/err"; fail 'reader fixture wrote stderr'; fi
 [ "$rc" -eq 0 ] || fail "reader fixture rc=$rc"
+if [ "$FIXTURE" = num_text ]; then
+    [ "$(grep -cE '^phase2-num-text-test: PASS cases=54 checks=1038 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete number text PASS'
+    [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected number text output'
+    echo "$LABEL: PASS variant=$VARIANT"
+    exit 0
+fi
 if [ "$FIXTURE" = const_dedup_bits ]; then
     [ "$(grep -cE '^phase2-const-dedup-test: PASS checks=8 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete const dedup PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected const dedup output'

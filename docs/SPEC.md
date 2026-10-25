@@ -255,7 +255,7 @@ print of [1.0 // 0.1, 1 // 0.1, 1e-300 // -1e300, y, num_type of y]
 ```output
 [-4, -4, 2, -2, 0.5]
 ["int", "float"]
-[9, 9, -1, 9, "float"]
+[9.0, 9.0, -1.0, 9.0, "float"]
 ```
 
 Numeric literals accept the usual decimal forms plus a leading or
@@ -282,7 +282,7 @@ print of (abs of -5)
 3.5
 1
 0.3333333333333333
-1024
+1024.0
 5
 ```
 
@@ -1002,12 +1002,18 @@ TCP handles, ports and sent-byte counts are integers. Numeric socket handles, po
 
 `http_early_bind` and `http_serve` require an exact integer port in 0..65535; integral floats convert and port zero requests an ephemeral port. Fractional or out-of-range ports raise `value` before binding. `shared_delete` and `shared_size` return integer counts.
 
+N6 prints each float with Python's shortest round-trip spelling: integral
+floats retain `.0`, negative zero is `-0.0`, and scientific notation starts
+below `1e-4` or at `1e16`. Ints keep their exact decimal digits. `print`,
+`write`, `str`, f-strings and JSON share the number writer. The executed
+examples are `tests/phase2/rows/N6.float-repr.eigs` and
+`tests/phase2/rows/N6.str-fstring.eigs`.
+
 The HTTP shared counter `shared_incr` follows numeric `+`: two int operands
 return an exact int and int64 overflow raises `value` without changing the
 stored counter (A). A missing counter starts at int zero. A float operand
-produces a float. The stored operand is its JSON-decoded value; existing
-float text stays until R1.7, so an integer-valued float may read back as an
-int during this transition. Executable shared-counter examples in
+produces a float. The stored operand is its JSON-decoded value; N6 preserves an
+integer-valued float as a float by retaining its `.0`. Executable shared-counter examples in
 `tests/test_http.eigs` cover exact values, both overflow directions and the
 next operation after a raise.
 
@@ -1407,7 +1413,7 @@ catch e:
     print of e.line
 ```
 ```output
-4
+4.0
 ```
 
 This deliberately differs from temporal filing. There, the same statement's
@@ -1428,7 +1434,7 @@ catch e:
     print of e.line
 ```
 ```output
-5
+5.0
 ```
 
 ```eigenscript
@@ -1450,7 +1456,7 @@ print of "execution continues"
 caught: custom failure
 undefined_name
 undefined variable 'undefined_name'
-7
+7.0
 execution continues
 ```
 
@@ -1813,7 +1819,7 @@ print of (when is x)
 ```output
 30
 x
-3
+3.0
 ```
 
 ```eigenscript fragment x=1
@@ -1935,7 +1941,7 @@ print of why is d
 ```
 ```output
 true
-0
+0.0
 ```
 
 **Function values are `opaque`** (#708). A function has no content the
@@ -2096,7 +2102,7 @@ print of (why is x)
 ```output
 moving
 2
-0
+0.0
 ```
 
 ```eigenscript
@@ -2109,7 +2115,7 @@ print of (when is c)
 print of (what is c when 3)
 ```
 ```output
-4
+4.0
 2
 ```
 
@@ -2131,7 +2137,7 @@ print of (why is x)
 print of (report of x)
 ```
 ```output
-4
+4.0
 0.21866976011171657
 0.21866976011171657
 moving
@@ -2151,7 +2157,7 @@ print of (why is x)
 print of (report of x)
 ```
 ```output
-4
+4.0
 0.08170416594551044
 moving
 ```
@@ -2232,7 +2238,7 @@ print of (when is x)
 0
 20
 10
-4
+4.0
 ```
 
 Every interrogative takes the qualifier: `who is x when 2`, `where is x when
@@ -2557,7 +2563,7 @@ buffer
 <buffer:4>
 2.5
 list
-[[0, 0, 0], [0, 0, 0]]
+[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
 buffer
 ```
 
@@ -2613,7 +2619,7 @@ print of (sum of v)
 print of (norm of v)
 ```
 ```output
-10
+10.0
 5.477225575051661
 ```
 
@@ -2634,7 +2640,7 @@ b[3] is 3.5
 print of (dot of [a, b])
 ```
 ```output
-25
+25.0
 ```
 
 For the floating forms of these reductions (`sum`, `norm`, `dot`), the
@@ -2705,7 +2711,7 @@ catch e:
     print of e["message"]
 ```
 ```output
-[3, 4]
+[3.0, 4.0]
 index_range
 gather: column index 3 out of range for row 1 (cols 3)
 ```
@@ -2757,8 +2763,8 @@ print of (type of (add of [b, l]))
 print of (mean of b)
 ```
 ```output
-[1, 2, 3]
-3
+[1.0, 2.0, 3.0]
+3.0
 buffer
 list
 4.666666666666667
@@ -2779,8 +2785,8 @@ print of y[1]
 print of (shape of w)
 ```
 ```output
-4
-6
+4.0
+6.0
 [2, 2]
 ```
 

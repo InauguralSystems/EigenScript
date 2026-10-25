@@ -23,6 +23,8 @@ set -eu
 cd "$(dirname "$0")/.."
 exec python3 - "$@" <<'PY'
 import argparse
+import math
+import struct
 from decimal import Decimal, InvalidOperation
 import os
 from pathlib import Path
@@ -36,8 +38,115 @@ import tempfile
 THRESHOLD_PCT = Decimal('0.3')
 NOISE = Decimal('0.2')
 STALE_TOLERANCE = 2 * NOISE + Decimal('0.1')
+# N6 is an explicit cost-only comparison mode. Corpus diffs remain exact.
+# Legacy unadorned integer text can denote an integral float; allow its .0 or
+# scientific repr only when conversion retains its exact integer value.
+NUMBER = re.compile(rb'(?<![A-Za-z_0-9.])[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?![A-Za-z_0-9.])')
+INTEGER = re.compile(rb'[+-]?[0-9]+')
+
+
+def elapsed_text(out):
+    # Existing cost-gate exception: only numeric fields immediately before ms.
+    return re.sub(rb'\b[0-9]+(?:\.[0-9]+)?ms\b', b'<elapsed>ms', out)
+
+
+def output_tokens(text):
+    matches = list(NUMBER.finditer(text))
+    parts, end = [], 0
+    for match in matches:
+        parts.append(text[end:match.start()])
+        end = match.end()
+    return parts + [text[end:]], [match.group() for match in matches]
+
+
+def compare_result_text(old, new, n6_text=False):
+    if not n6_text:
+        if old != new:
+            raise ValueError('strict byte comparison differs')
+        return 0
+    before, a = output_tokens(old)
+    after, b = output_tokens(new)
+    if before != after or len(a) != len(b):
+        raise ValueError('non-numeric bytes, numeric positions or token count differ')
+    changed = 0
+    for ordinal, (left, right) in enumerate(zip(a, b), 1):
+        where = 'numeric token %d: ' % ordinal
+        x, y = float(left), float(right)
+        if not math.isfinite(x) or not math.isfinite(y):
+            raise ValueError(where + 'non-finite decimal token')
+        old_bits, new_bits = struct.pack('>d', x), struct.pack('>d', y)
+        if old_bits != new_bits:
+            raise ValueError(where + 'binary64 value/sign bits differ')
+        if left == right:
+            continue
+        if INTEGER.fullmatch(right):
+            raise ValueError(where + 'exact integer text changed or float became integer')
+        if INTEGER.fullmatch(left) and int(x) != int(left):
+            raise ValueError(where + 'integer-to-float conversion loses exact digits')
+        if right != repr(y).encode('ascii'):
+            raise ValueError(where + 'changed float text is not Python repr')
+        changed += 1
+    return changed
+
+
+def output_self_test():
+    good = [
+        (b'answer=[3, 0.10000000000000001]\n', b'answer=[3.0, 0.1]\n'),
+        (b'x=1e+15\n', b'x=1000000000000000.0\n'),
+        (b'x=-0\n', b'x=-0.0\n'),
+        (b'x=9007199254740994\n', b'x=9007199254740994.0\n'),
+        (b'x=10000000000000000\n', b'x=1e+16\n'),
+        (b'x=3 time=1.5ms\n', b'x=3.0 time=999ms\n'),
+    ]
+    bad = [
+        ('value', b'x=1.0\n', b'x=1.0000000000000002\n'),
+        ('float-to-int-kind', b'x=3.0\n', b'x=3\n'),
+        ('integer-digits', b'x=9007199254740993\n', b'x=9007199254740992\n'),
+        ('integer-precision', b'x=9007199254740993\n', b'x=9007199254740992.0\n'),
+        ('int64-precision', b'x=9223372036854775807\n', b'x=9.223372036854776e+18\n'),
+        ('integer-spelling', b'x=3\n', b'x=03\n'),
+        ('signed-zero-erased', b'x=-0.0\n', b'x=0.0\n'),
+        ('signed-zero-added', b'x=0\n', b'x=-0.0\n'),
+        ('noncanonical-float', b'x=0.10000000000000001\n', b'x=0.100000000000000010\n'),
+        ('non-finite-decimal', b'x=1e+308\n', b'x=1e+309\n'),
+        ('non-numeric', b'answer=3\n', b'wrong=3.0\n'),
+        ('missing-token', b'x=[3, 4]\n', b'x=[3.0]\n'),
+        ('extra-token', b'x=3\n', b'x=[3.0, 4.0]\n'),
+        ('position', b'x=3 y=4\n', b'x=4.0 y=3.0\n'),
+        ('non-finite-text', b'x=inf\n', b'x=nan\n'),
+    ]
+    for old, new in good:
+        if compare_result_text(elapsed_text(old), elapsed_text(new), True) <= 0:
+            raise ValueError('self-test positive did not compare a changed token')
+    for label, old, new in bad:
+        try:
+            compare_result_text(elapsed_text(old), elapsed_text(new), True)
+        except ValueError:
+            continue
+        raise ValueError('self-test plant survived: ' + label)
+    # The default remains byte strict, including the permitted N6 changes.
+    try:
+        compare_result_text(good[0][0], good[0][1])
+    except ValueError:
+        pass
+    else:
+        raise ValueError('self-test strict comparison accepted N6 text')
+    identical = b'x=3 0.10000000000000001\n'
+    for n6_text in (False, True):
+        if compare_result_text(identical, identical, n6_text) != 0:
+            raise ValueError('self-test unchanged text failed')
+        if compare_result_text(elapsed_text(b'x=3 time=1.25ms\n'),
+                               elapsed_text(b'x=3 time=999ms\n'), n6_text) != 0:
+            raise ValueError('self-test elapsed milliseconds handling failed')
+    print('phase2-cost-self-test: positive=%d rejected=%d strict=PASS elapsed=PASS PASS' % (len(good), len(bad)))
+
+
 root = Path.cwd()
 ap = argparse.ArgumentParser(prog='tools/phase2_cost.sh')
+ap.add_argument('--n6-text', action='store_true',
+                help='cost only: allow exact-value Python-repr float text changes; integer digits stay exact')
+ap.add_argument('--self-test', action='store_true',
+                help='one-time output-comparator calibration; runs no workload or build')
 ap.add_argument('--final', action='store_true',
                 help='require empty cost_expect.txt and oracle_expect.txt (the pre-merge condition)')
 ap.add_argument('--declared', choices=('jit', 'off'),
@@ -45,6 +154,16 @@ ap.add_argument('--declared', choices=('jit', 'off'),
 ap.add_argument('base', nargs='?')
 ap.add_argument('cand', nargs='?')
 args = ap.parse_args()
+if args.self_test:
+    if args.base or args.cand or args.final or args.declared or args.n6_text:
+        ap.error('--self-test runs alone')
+    try:
+        output_self_test()
+    except (AssertionError, ValueError, OverflowError) as error:
+        sys.exit('phase2-cost-self-test: FAIL: ' + str(error))
+    sys.exit(0)
+if args.n6_text and (not args.base or not args.cand or args.declared):
+    ap.error('--n6-text requires <base-bin> <cand-bin>')
 expect_path = root / 'tests/phase2/cost_expect.txt'
 if not expect_path.is_file():
     sys.exit('phase2-cost: FAIL: missing tests/phase2/cost_expect.txt')
@@ -126,6 +245,8 @@ logdir = Path(tempfile.mkdtemp(prefix='phase2-cost-'))
 print('phase2-cost: source=codspeed.yml workloads=%d tiers=2 undeclared_max=+%s%% declarations=%d '
       'stale_below_max=%s logs=%s' %
       (len(workloads), THRESHOLD_PCT, len(expectations), STALE_TOLERANCE, logdir), flush=True)
+if args.n6_text:
+    print('phase2-cost: output_compare=n6-text (exact values/bits, exact integer digits, Python repr)', flush=True)
 over = stale = 0
 for workload in sorted(workloads):
     for tier in ('jit', 'off'):
@@ -149,13 +270,20 @@ for workload in sorted(workloads):
                 sys.exit('phase2-cost: FAIL: missing/ambiguous Ir: ' + str(prefix))
             out = Path(str(prefix) + '.stdout').read_bytes()
             # The bench prints elapsed milliseconds; compare every result field.
-            out = re.sub(rb'\b[0-9]+(?:\.[0-9]+)?ms\b', b'<elapsed>ms', out)
+            out = elapsed_text(out)
             err = Path(str(prefix) + '.stderr').read_text()
             err = re.sub(r'^==\d+==.*\n?', '', err, flags=re.M)
             results.append((int(summary[0]), out, err))
         (base, out_a, err_a), (cand, out_b, err_b) = results
-        if (out_a, err_a) != (out_b, err_b):
-            sys.exit('phase2-cost: FAIL: output differs: %s %s (see %s)' % (workload, tier, logdir))
+        try:
+            changed = compare_result_text(out_a, out_b, args.n6_text)
+            changed += compare_result_text(err_a.encode(), err_b.encode(), args.n6_text)
+        except (ValueError, OverflowError) as error:
+            sys.exit('phase2-cost: FAIL: output differs: %s %s: %s (see %s)' %
+                     (workload, tier, error, logdir))
+        if args.n6_text and changed:
+            print('phase2-cost: n6-text workload=%s tier=%s changed_tokens=%d' %
+                  (workload, tier, changed), flush=True)
         delta = 100 * (cand - base) / base
         maximum, recover_round, reason = expectations.get((workload, tier),
                                                          (THRESHOLD_PCT, None, None))

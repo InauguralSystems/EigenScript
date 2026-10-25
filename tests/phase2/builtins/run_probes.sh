@@ -47,9 +47,9 @@ cleanup() { [ -z "$CAPTURE_PID" ] || { kill "$CAPTURE_PID" 2>/dev/null || :; wai
 trap cleanup EXIT
 gcc -shared -fPIC -O0 -Wall -Wextra -Werror "$HERE/../observation_hooks.c" -ldl -o "$SHIM" \
     || { echo "FAIL: the observation shim did not build"; exit 2; }
-declare -A HOOK STDIN BUILTIN PROFILE ROUND CHECKED
+declare -A HOOK STDIN BUILTIN PROFILE CLOSED ROUND CHECKED
 while IFS=$'\t' read -r c b h s; do BUILTIN[$c]=$b; HOOK[$c]=$h; STDIN[$c]=$s; done < <(tail -n +2 "$HERE/cases.tsv")
-while IFS=$'\t' read -r b ci p; do PROFILE[$b]=$p; done < <(tail -n +2 "$HERE/rowmeta.tsv")
+while IFS=$'\t' read -r b ci p; do PROFILE[$b]=$p; CLOSED[$b]=$ci; done < <(tail -n +2 "$HERE/rowmeta.tsv")
 while IFS=$'\t' read -r b file class loss q7 round rest; do ROUND[$b]=$round; done < <(tail -n +2 "$HERE/builtins.tsv")
 [ ${#BUILTIN[@]} -gt 0 ] && [ ${#PROFILE[@]} -gt 0 ] || { echo "FAIL: empty cases.tsv or rowmeta.tsv"; exit 2; }
 cd "$HERE/builtins" || exit 2
@@ -108,6 +108,11 @@ run_one() {  # run_one <binary> <case> <kind: pre|tag>
         else echo "FAIL: $c.$kind ran without its hook $hook (no hook-loaded line)"; bad=$((bad + 1)); fi
     fi
     echo "rc=$rc" >> "$out"
+    # Optional evidence export from this exact gate run; never an expectation.
+    if [ "$CHECK" -eq 1 ] && [ -n "${PROBE_OBSERVATIONS_DIR:-}" ]; then
+        mkdir -p "$PROBE_OBSERVATIONS_DIR" || exit 2
+        cp "$out" "$PROBE_OBSERVATIONS_DIR/$c.$kind" || exit 2
+    fi
     if [ -n "$CAPTURE_PID" ]; then
         # A failed request must not leave a fixture waiting for its one client.
         if [ ! -f "$tmp/capture.request" ]; then kill "$CAPTURE_PID" 2>/dev/null || :; fi
@@ -123,6 +128,11 @@ run_one() {  # run_one <binary> <case> <kind: pre|tag>
         if [ "$kind" = branch ]; then
             expected=pre
             case " ${R16_LANDED:-} " in *" R1.6${ROUND[${BUILTIN[$c]}]} "*) expected=branch ;; esac
+            # D5: an R1.7 closure is live as soon as R1.7 is declared,
+            # independently of the row's original R1.6 migration group.
+            if [ "${CLOSED[${BUILTIN[$c]}]}" = R1.7 ]; then
+                case " ${R16_LANDED:-} " in *" R1.7 "*) expected=branch ;; esac
+            fi
         fi
         if ! cmp -s "$out" "$HERE/builtins/$c.$expected"; then
             echo "FAIL: ${BUILTIN[$c]}: $c.$kind differs from .$expected"

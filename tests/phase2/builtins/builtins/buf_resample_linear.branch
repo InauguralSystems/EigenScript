@@ -1,4 +1,4 @@
-[0, 5, 10, "float"]
+[0.0, 5.0, 10.0, "float"]
 ["count-fraction", "value"]
 3
 rc=0

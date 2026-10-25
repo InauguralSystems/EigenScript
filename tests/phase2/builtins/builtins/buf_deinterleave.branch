@@ -1,5 +1,5 @@
-[3, 10, 30]
+[3, 10.0, 30.0]
 ["channel-fraction", "value"]
 ["nch-fraction", "value"]
-[1, 2, 3]
+[1.0, 2.0, 3.0]
 rc=0

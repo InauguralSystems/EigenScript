@@ -1,4 +1,4 @@
-[3, 1, "float"]
+[3, 1.0, "float"]
 ["cap-fraction", "value"]
 [3, "float"]
 rc=0

@@ -275,14 +275,14 @@
       "0.001",
       "0"
     ],
-    "valid_assert": "(len of shape_result) == 44 and (sum of shape_result) == 0",
+    "valid_assert": "(len of shape_result) == 44 and (len of ([shape_sample for shape_sample in shape_result if shape_sample != 0])) == 0",
     "setup": "",
-    "observe": "print of shape_result",
+    "observe": "print of [len of shape_result, len of ([shape_sample for shape_sample in shape_result if shape_sample != 0])]",
     "cleanup": "",
     "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
     "optional_args": [],
     "requirements": [],
-    "resource_notes": "Zero amplitude makes output deterministic; checks shape acceptance, not random distribution.",
+    "resource_notes": "N6 exposes randomly signed zeros at zero amplitude. Check every sample equals numeric zero and retain exact length; observe length/nonzero count, not random zero sign bits. This checks shape acceptance, not random distribution.",
     "source": {
       "file": "src/ext_gfx.c",
       "line": 2056,

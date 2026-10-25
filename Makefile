@@ -287,6 +287,9 @@ build/phase2/embed_buffer_get_raw_%: tests/phase2/embed_buffer_get_raw.c build/p
 # Q7 lands in R1.6e; an absent source is a build failure once selected.
 build/phase2/q7_readers_%: tests/phase2/q7_readers.c build/phase2/eigenscript_all.c tools/werror_flags.txt
 	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+# N6: actual shared writer plus Python repr/bit/truncation oracle cases.
+build/phase2/num_text_%: tests/phase2/num_text.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
 # R1.7-D4: signed-zero constant keys are compared by bits.
 build/phase2/const_dedup_bits_%: tests/phase2/const_dedup_bits.c build/phase2/eigenscript_all.c tools/werror_flags.txt
 	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread

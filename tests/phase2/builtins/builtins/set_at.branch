@@ -1,5 +1,5 @@
 [10, 99, 30]
 ["index-fraction", "value"]
 [10, 99, 5]
-[7, "float"]
+[7.0, "float"]
 rc=0

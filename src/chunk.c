@@ -428,8 +428,11 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
                 fprintf(stderr, " %d", arg);
                 if ((op == OP_CONST || op == OP_INT_CONST) && arg < (uint16_t)chunk->const_count) {
                     Value *v = chunk->constants[arg];
-                    if (v->type == VAL_FLOAT)
-                        fprintf(stderr, " (%.6g)", VAL_F64_RAW(v));
+                    if (v->type == VAL_FLOAT) {
+                        char number[32];
+                        eigs_num_text(number, sizeof number, VAL_F64_RAW(v));
+                        fprintf(stderr, " (%s)", number);
+                    }
                     else if (v->type == VAL_INT)
                         fprintf(stderr, " (%lld)", (long long)VAL_I64_RAW(v));
                     else if (v->type == VAL_STR)

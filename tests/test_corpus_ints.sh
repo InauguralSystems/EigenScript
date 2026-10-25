@@ -96,10 +96,10 @@ else
 fi
 
 # genuine zeros run stays ONE repeated token -- real repetition is not destroyed.
-if [ "$(g ZERO_COUNT)" = "5" ]; then
+if [ "$(g ZERO_COUNT)" = "5.0" ]; then
     ok "IL02 a genuine zeros run stays one repeated token (real repetition kept)"
 else
-    fail "IL02 zeros run wrong" "zero_count=$(g ZERO_COUNT), want 5"
+    fail "IL02 zeros run wrong" "zero_count=$(g ZERO_COUNT), want 5.0"
 fi
 
 # 100 (>= int_count) and 3.5 (non-integer) must NOT occupy int tokens: exactly
@@ -122,10 +122,10 @@ for i in range of nint:
 print of ("DISTINCT_TOTAL " + (str of tot))
 RNG
 ROUT=$("$EIGS" "$WORK/range.eigs" "$WORK" 2>/dev/null | sed -n 's/^DISTINCT_TOTAL //p')
-if [ "$ROUT" = "6" ]; then
+if [ "$ROUT" = "6.0" ]; then
     ok "IL03 out-of-range (100) and non-integer (3.5) literals stay lossy, not int tokens"
 else
-    fail "IL03 wrong distinct int total" "distinct=$ROUT, want 6 (values 0..5 only)"
+    fail "IL03 wrong distinct int total" "distinct=$ROUT, want 6.0 (values 0..5 only)"
 fi
 
 # Backward compat: no 7th arg -> no int region, stream byte-identical to slot-only.

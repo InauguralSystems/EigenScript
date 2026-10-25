@@ -1,5 +1,5 @@
 ["index-fraction", "value"]
-[11, 22, "float"]
+[11.0, 22.0, "float"]
 [[2, 3], "int"]
 ["list-index-fraction", "value"]
 rc=0

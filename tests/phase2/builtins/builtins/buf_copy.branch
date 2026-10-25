@@ -1,5 +1,5 @@
-[2, 3, 0]
+[2.0, 3.0, 0.0]
 ["offset-fraction", "value"]
 ["count-fraction", "value"]
-[2, 1, 2]
+[2.0, 1.0, 2.0]
 rc=0

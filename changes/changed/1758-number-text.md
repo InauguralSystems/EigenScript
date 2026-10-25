@@ -1,0 +1,1 @@
+- Float text now uses Python-style shortest round-trip spelling across display, f-strings and JSON (N6), preserving integral float `.0` and signed zero. Integer text remains exact.

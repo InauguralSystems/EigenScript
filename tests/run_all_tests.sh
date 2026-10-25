@@ -825,7 +825,7 @@ check "T02 String Assignment" "$(echo "$OUTPUT" | grep -A1 'T02' | tail -1)" "he
 check "T03 Addition" "$(echo "$OUTPUT" | grep -A1 'T03' | tail -1)" "30"
 check "T04 Subtraction" "$(echo "$OUTPUT" | grep -A1 'T04' | tail -1)" "63"
 check "T05 Multiplication" "$(echo "$OUTPUT" | grep -A1 'T05' | tail -1)" "42"
-check "T06 Division" "$(echo "$OUTPUT" | grep -A1 'T06' | tail -1)" "25"
+check "T06 Division" "$(echo "$OUTPUT" | grep -A1 'T06' | tail -1)" "25.0"
 check "T07 String Concat" "$(echo "$OUTPUT" | grep -A1 'T07' | tail -1)" "hello world"
 check "T08 Boolean And" "$(echo "$OUTPUT" | grep -A1 'T08' | tail -1)" "1"
 check "T09 Boolean Or" "$(echo "$OUTPUT" | grep -A1 'T09' | tail -1)" "1"
@@ -851,13 +851,13 @@ echo ""
 echo "[2/15] Interrogative Spec Compliance (LLVM IR parity)"
 OUTPUT=$(./eigenscript ../tests/test_interrogative_spec.eigs 2>&1)
 check "WHAT scalar (42)" "$(echo "$OUTPUT" | grep -A1 'eigen_get_value' | tail -1)" "42"
-check "WHAT list length (5)" "$(echo "$OUTPUT" | grep -A1 'list length' | tail -1)" "5"
-check "WHAT string length (5)" "$(echo "$OUTPUT" | grep -A1 'string length' | tail -1)" "5"
+check "WHAT list length (5)" "$(echo "$OUTPUT" | grep -A1 'list length' | tail -1)" "5.0"
+check "WHAT string length (5)" "$(echo "$OUTPUT" | grep -A1 'string length' | tail -1)" "5.0"
 check "WHAT computed (42)" "$(echo "$OUTPUT" | grep -A1 'computed value' | tail -1)" "42"
 check "WHO name (myvar)" "$(echo "$OUTPUT" | grep -A1 'variable name' | tail -1)" "myvar"
 check "WHO name (counter)" "$(echo "$OUTPUT" | grep -A1 'different variable' | tail -1)" "counter"
-check "WHEN step (1)" "$(echo "$OUTPUT" | grep -A1 'temporal step' | tail -1)" "1"
-check "WHEN multi-assign (3)" "$(echo "$OUTPUT" | grep -A1 'multiple assignments' | tail -1)" "3"
+check "WHEN step (1)" "$(echo "$OUTPUT" | grep -A1 'temporal step' | tail -1)" "1.0"
+check "WHEN multi-assign (3)" "$(echo "$OUTPUT" | grep -A1 'multiple assignments' | tail -1)" "3.0"
 
 WHERE_VAL=$(echo "$OUTPUT" | grep -A1 'WHERE returns entropy' | tail -1)
 check_numeric "WHERE entropy >= 0" "$WHERE_VAL" "0" "10"
@@ -889,7 +889,7 @@ echo "[4/15] Keyword Reservation"
 OUTPUT=$(./eigenscript ../tests/test_keyword_reservation.eigs 2>&1)
 check "what is keyword" "$(echo "$OUTPUT" | grep -A1 '^what:' | tail -1)" "42"
 check "who is keyword" "$(echo "$OUTPUT" | grep -A1 '^who:' | tail -1)" "x"
-check "when is keyword" "$(echo "$OUTPUT" | grep -A1 '^when:' | tail -1)" "1"
+check "when is keyword" "$(echo "$OUTPUT" | grep -A1 '^when:' | tail -1)" "1.0"
 
 CONVERGED=$(echo "$OUTPUT" | grep 'converged=' | head -1)
 echo "  INFO: Predicate values: $CONVERGED"
@@ -1025,7 +1025,7 @@ else
 fi
 
 HS_DH=$(echo "$HS_OUTPUT" | grep -A2 'HS2:' | tail -1)
-check "HS4 dH~0" "$HS_DH" "0"
+check "HS4 dH~0" "$HS_DH" "0.0"
 
 HS_REPORT=$(echo "$HS_OUTPUT" | grep -A3 'HS2:' | tail -1)
 check "HS5 report=converged (#861)" "$HS_REPORT" "converged"
@@ -1145,7 +1145,9 @@ check "LE1 runaway exit=stalled (#861: false-converged exit gone)" "$LE1_EXIT" "
 
 LE1_ITERS=$(echo "$LE_OUTPUT" | grep -A2 'LE1:' | tail -1)
 TOTAL=$((TOTAL + 1))
-if [ -n "$LE1_ITERS" ] && [ "$LE1_ITERS" -gt 0 ] 2>/dev/null; then
+# N6 prints this whole observer count with .0; retain the positive-count check.
+LE1_ITERS_WHOLE=${LE1_ITERS%.0}
+if [ -n "$LE1_ITERS" ] && [ "$LE1_ITERS_WHOLE" -gt 0 ] 2>/dev/null; then
     echo "  PASS: LE1 iterations=$LE1_ITERS"
     PASS=$((PASS + 1))
 else
@@ -5161,26 +5163,26 @@ obs_hoist_verdict() {
 OBS_HOIST_JIT_EXPECT=compiled; [ "$(uname -m)" = x86_64 ] || OBS_HOIST_JIT_EXPECT="n/a"
 # 45. Interpreter, module-level names (OBSERVE_NAME_POST): closed -> no calls.
 OBS_G44=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_mod.eigs")
-check "gate closed: OBSERVE_NAME_POST never enters the observer (interpreter)" "$OBS_G44" "1500/calls=0/jit=off"
+check "gate closed: OBSERVE_NAME_POST never enters the observer (interpreter)" "$OBS_G44" "1500.0/calls=0/jit=off"
 # 46. Interpreter, fn-local slots (OBSERVE_ASSIGN_LOCAL): closed -> no calls.
 OBS_G45=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_fn.eigs")
-check "gate closed: OBSERVE_ASSIGN_LOCAL never enters the observer (interpreter)" "$OBS_G45" "1500/calls=0/jit=off"
+check "gate closed: OBSERVE_ASSIGN_LOCAL never enters the observer (interpreter)" "$OBS_G45" "1500.0/calls=0/jit=off"
 # 47. JIT, module-level names: the emitter's inline gate test skips the helper.
 OBS_G46=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_mod.eigs")
-check "gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed)" "$OBS_G46" "1500/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+check "gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed)" "$OBS_G46" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
 # 48. JIT, fn-local slots.
 OBS_G47=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_fn.eigs")
-check "gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed)" "$OBS_G47" "1500/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+check "gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed)" "$OBS_G47" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
 # 49. Control — a reader opens the gate at compile time and the same JIT'd loop
 #     must then RECORD (populated tally, `diverging` verdict on the ramp). A
 #     do-nothing counter or a gate test that skips the call unconditionally
 #     scores 0 here and goes red.
 OBS_G48=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_reader.eigs")
-check "control: with a reader the JIT'd loop still records every assignment" "$OBS_G48" "1500/calls=populated/jit=$OBS_HOIST_JIT_EXPECT"
+check "control: with a reader the JIT'd loop still records every assignment" "$OBS_G48" "1500.0/calls=populated/jit=$OBS_HOIST_JIT_EXPECT"
 # 50. Control — EIGS_OBS_FORCE=1 opens the gate from process start on the
 #     read-free program; the interpreter's hoisted test must see it open.
 OBS_G49=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_mod.eigs" EIGS_OBS_FORCE=1)
-check "control: EIGS_OBS_FORCE=1 still records the read-free program (interpreter)" "$OBS_G49" "1500/calls=populated/jit=off"
+check "control: EIGS_OBS_FORCE=1 still records the read-free program (interpreter)" "$OBS_G49" "1500.0/calls=populated/jit=off"
 # The count pin itself (§37). Also the vacuity floor: a section that ran zero
 # checks is not a section that passed.
 TOTAL=$((TOTAL + 1))

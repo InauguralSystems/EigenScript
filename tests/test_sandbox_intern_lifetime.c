@@ -105,7 +105,7 @@ int main(void) {
     char key[64];
 
     for (int i = 0; i < 128; i++) {
-        snprintf(key, sizeof key, "sandbox-only-key-%d", i);
+        snprintf(key, sizeof key, "sandbox-only-key-%d.0", i);
         Value *out = sandbox_call(i);
         assert(out != NULL);
         EigsView ok_view, result_view;
@@ -124,7 +124,7 @@ int main(void) {
     const size_t sandbox_retained = intern_count() - baseline;
     const size_t sandbox_prefix_retained =
         sandbox_only_intern_count() - sandbox_baseline;
-    snprintf(key, sizeof key, "sandbox-only-key-%d", 0);
+    snprintf(key, sizeof key, "sandbox-only-key-%d.0", 0);
     /* Check the escaped-result control before the retention assertion: a
      * mutant that restores the leak must still demonstrate that the returned
      * key remains readable through the run boundary. */

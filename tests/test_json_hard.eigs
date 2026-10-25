@@ -410,14 +410,13 @@ assert of [jb_tiny == "{\"v\": 1e-09}", "JH94 json_build keeps tiny magnitude"]
 rt_enc is json_encode of {"k": 0.000000001}
 assert of [rt_enc == "{\"k\":1e-09}", "JH95 json_encode writes tiny magnitude"]
 assert of [json_path of [rt_enc, "k"] == "1e-09", "JH96 json_path round-trips what json_encode wrote"]
-# #875: 1.23e15 is an exact integer below 2^53, so it now renders the way
-# `str of` renders it — bare, not in exponent form. The two used to disagree,
-# which is the drift this fix removed; the compactness #725 was protecting
-# (no 22-char fixed-point blob) still holds at 16 characters.
+# #875/N6: JSON and str share the Python-repr writer. The float 1.23e15
+# uses fixed notation with .0; float magnitudes at 1e16 and above use
+# scientific notation.
 jb_huge is json_build of ["v", 1.23e15]
-assert of [jb_huge == "{\"v\": 1230000000000000}", "JH97 json_build renders huge values compactly"]
+assert of [jb_huge == "{\"v\": 1230000000000000.0}", "JH97 json_build renders huge values compactly"]
 assert of [jb_huge == ("{\"v\": " + (str of 1.23e15) + "}"), "JH97 json_build agrees with str of"]
-# A magnitude that is NOT an exact integer still uses exponent form.
+# A float above the fixed-notation range still uses exponent form.
 jb_huge2 is json_build of ["v", 1.23e300]
 assert of [jb_huge2 == "{\"v\": 1.23e+300}", "JH97 json_build keeps exponent form past 2^53"]
 

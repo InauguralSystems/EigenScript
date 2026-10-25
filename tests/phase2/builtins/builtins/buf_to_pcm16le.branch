@@ -1,4 +1,4 @@
-[0, 64, 255, 127, 1, 128, "float"]
+[0.0, 64.0, 255.0, 127.0, 1.0, 128.0, "float"]
 ["offset-fraction", "value"]
 ["count-fraction", "value"]
 rc=0

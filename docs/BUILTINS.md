@@ -45,6 +45,14 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 `audio_capture_close`, `audio_stream_open`, `audio_stream_push`,
 `audio_stream_queued`, `audio_stream_clear`, `audio_stream_close`), and
 
+N6 prints each float with Python's shortest round-trip spelling: integral
+floats retain `.0`, negative zero is `-0.0`, and scientific notation starts
+below `1e-4` or at `1e16`. Ints keep their exact decimal digits. `print`,
+`write`, `str`, f-strings and JSON share the number writer. The executed
+examples are `tests/phase2/rows/N6.float-repr.eigs` and
+`tests/phase2/rows/N6.str-fstring.eigs`.
+
+
 ## Runtime status and control
 
 | Function | Usage | Description |

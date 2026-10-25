@@ -3499,22 +3499,113 @@ void eigs_int_text(char *buf, size_t nbuf, int64_t i) {
 }
 
 void eigs_num_text(char *buf, size_t nbuf, double n) {
-    /* Exact integers up to 2^53 (the largest integer all doubles represent
-     * exactly) print without a decimal point or exponent. The magnitude test
-     * runs BEFORE the cast — casting an out-of-range double is UB (#816). */
-    if (fabs(n) < 9007199254740992.0 && n == (long long)n) {
-        snprintf(buf, nbuf, "%lld", (long long)n);
+    if (nbuf == 0) return;
+    if (isnan(n)) { snprintf(buf, nbuf, "nan"); return; }
+    int neg = signbit(n) != 0;
+    if (isinf(n)) { snprintf(buf, nbuf, "%sinf", neg ? "-" : ""); return; }
+    if (n == 0.0) { snprintf(buf, nbuf, "%s0.0", neg ? "-" : ""); return; }
+    /* In Python's fixed range every integral float has its exact integer
+     * digits followed by .0. The range check makes the cast safe. */
+    if (fabs(n) < 1e16 && n == (int64_t)n) {
+        snprintf(buf, nbuf, "%lld.0", (long long)(int64_t)n);
         return;
     }
-    /* Otherwise the shortest representation that round-trips: try 15..17
-     * significant digits and stop at the first that parses back to the same
-     * double. %.6g (the old `str of` default) silently truncated every float
-     * to 6 figures — lossy for the numerical/STEM workloads this language
-     * targets — and %.15g loses the 17th digit a double can need. */
-    for (int prec = 15; prec <= 17; prec++) {
-        snprintf(buf, nbuf, "%.*g", prec, n);
-        if (strtod(buf, NULL) == n) return;
+
+    /* The first decimal precision that round-trips is the shortest. The
+     * correctly-rounded %e candidate is closest, with decimal half-even
+     * ties. At a binary power of two the rounding interval is asymmetric:
+     * its closest decimal can fail while the adjacent decimal succeeds
+     * (2^-24 needs 5.960464477539063e-08). Check the neighbors too. */
+    double magnitude = fabs(n);
+    uint64_t significand = 0;
+    int scale = 0;
+    /* Existence of a round-tripping decimal is monotone in precision:
+     * appending a zero preserves that decimal at the next precision.
+     * Most binary64 values need 16 or 17 digits; try 15 first, then 16/17.
+     * If 15 works, test 1 and binary-search the remaining smaller range. */
+    int low = 1, high = 17, precision = 15;
+    while (low <= high) {
+        char rounded[32];
+        snprintf(rounded, sizeof rounded, "%.*e", precision - 1, magnitude);
+        uint64_t nearest = 0;
+        const char *p = rounded;
+        while (*p != 'e' && *p != 'E') {
+            /* Ignore the locale's decimal separator. Candidate text below
+             * has an integer significand, so strtod needs no separator. */
+            if (*p >= '0' && *p <= '9') nearest = nearest * 10 + (unsigned)(*p - '0');
+            p++;
+        }
+        p++;
+        int exponent_negative = *p == '-';
+        if (*p == '+' || *p == '-') p++;
+        int exponent = 0;
+        while (*p >= '0' && *p <= '9') exponent = exponent * 10 + (*p++ - '0');
+        if (exponent_negative) exponent = -exponent;
+        int rounded_scale = exponent - precision + 1;
+        uint64_t minimum = 1;
+        for (int i = 1; i < precision; i++) minimum *= 10;
+        int found = 0;
+        for (int neighbor = 0; neighbor < 3; neighbor++) {
+            uint64_t candidate = neighbor == 0 ? nearest :
+                                 neighbor == 1 ? nearest - 1 : nearest + 1;
+            int candidate_scale = rounded_scale;
+            /* The predecessor of 1.00eE is 9.99e(E-1), where the decimal
+             * grid is ten times finer. Keep the actual p-digit neighbor. */
+            if (neighbor == 1 && nearest == minimum) {
+                candidate = nearest * 10 - 1;
+                candidate_scale--;
+            }
+            if (candidate == 0) continue;
+            char decimal[32];
+            snprintf(decimal, sizeof decimal, "%llue%+d",
+                     (unsigned long long)candidate, candidate_scale);
+            if (strtod(decimal, NULL) == magnitude) {
+                significand = candidate;
+                scale = candidate_scale;
+                found = 1;
+                break;
+            }
+        }
+        if (found) {
+            high = precision - 1;
+            precision = precision == 15 ? 1 : (low + high) / 2;
+        } else {
+            low = precision + 1;
+            precision = precision >= 15 ? precision + 1 : (low + high) / 2;
+        }
     }
+
+    while (significand % 10 == 0) { significand /= 10; scale++; }
+    char digits[24], text[32];
+    snprintf(digits, sizeof digits, "%llu", (unsigned long long)significand);
+    int count = (int)strlen(digits);
+    int exponent = scale + count - 1;
+    int len = 0;
+    if (neg) text[len++] = '-';
+    if (exponent >= -4 && exponent < 16) {
+        int point = exponent + 1;
+        if (point <= 0) {
+            text[len++] = '0';
+            text[len++] = '.';
+            for (int i = 0; i < -point; i++) text[len++] = '0';
+            for (int i = 0; i < count; i++) text[len++] = digits[i];
+        } else {
+            for (int i = 0; i < point || i < count; i++) {
+                if (i == point) text[len++] = '.';
+                text[len++] = i < count ? digits[i] : '0';
+            }
+            if (point >= count) { text[len++] = '.'; text[len++] = '0'; }
+        }
+        text[len] = '\0';
+    } else {
+        text[len++] = digits[0];
+        if (count > 1) {
+            text[len++] = '.';
+            for (int i = 1; i < count; i++) text[len++] = digits[i];
+        }
+        snprintf(text + len, sizeof text - (size_t)len, "e%+03d", exponent);
+    }
+    snprintf(buf, nbuf, "%s", text);
 }
 
 char* value_to_string(Value *v) {

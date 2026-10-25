@@ -247,7 +247,7 @@ catch err:
     print of f"Caught: {err}"
 ```
 ```output
-Caught: {"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2}
+Caught: {"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2.0}
 ```
 
 Errors inside a `try` block are caught and bound to the variable after
@@ -507,8 +507,8 @@ print of (when is loss)    # 3 — three assignments
 ```output
 0.2
 -0.26827341240613545
-0
-3
+0.0
+3.0
 ```
 
 Note that `why` tracks the *entropy* trajectory, not the raw value: a
@@ -535,7 +535,7 @@ loss is 80.0
 print of (prev of loss)    # 100 — the value before the latest assign
 ```
 ```output
-100
+100.0
 ```
 
 Returns `null` when `x` has been assigned fewer than two times. Note
@@ -561,7 +561,7 @@ print of (why is x at 2)     # dH as of the line-2 assign
 ```output
 2
 2
-2
+2.0
 x
 0.9182958340544896
 -0.08170416594551044
@@ -581,7 +581,7 @@ print of (when is total at 3)   # 5 — all five assignments, seed included
 ```
 ```output
 6
-5
+5.0
 ```
 
 To pin a single iteration, record it yourself (`snapshots[i] is total`);

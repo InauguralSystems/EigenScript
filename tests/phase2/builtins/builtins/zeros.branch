@@ -1,6 +1,6 @@
 [3, "float"]
 ["size-fraction", "value"]
-[[[0, 0], [0, 0]], "float"]
+[[[0.0, 0.0], [0.0, 0.0]], "float"]
 ["cols-fraction", "value"]
 2
 rc=0

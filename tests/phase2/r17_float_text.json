@@ -1,0 +1,4280 @@
+{
+  "schema": 2,
+  "ruling": "R1.7-D6",
+  "base": "b6f9db3879be5578de787ad6cf0d235b809f0e7c",
+  "profiles": [
+    "release",
+    "server",
+    "server-db",
+    "zlib"
+  ],
+  "population": {
+    "tests/phase2/builtins/builtins/acos.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/add.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/asin.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/atan.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/audio_gain.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/audio_mix.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_copy.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_deinterleave.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_dot.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_fill.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_from_list.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_from_pcm16le.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_get.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_mix.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_peak.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_resample_linear.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_scale_range.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_set.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/buf_to_pcm16le.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/copy_into.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/cos.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/divide.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/dot.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/exp.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/f64_from_bytes.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/fround.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/gather.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/get_at.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/join.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/json_build.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/json_decode.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/json_encode.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/leaky_relu.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/log.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/matmul.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/matmul_at.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/matmul_bt.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/max.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/mean.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/min.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/norm.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/num.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/numerical_grad.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/numerical_grad_cols.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/numerical_grad_rows.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/observe.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/pow.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/ppu_render_frame.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/print.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/proc_read_buf.hi.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/read_bytes_buf.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/relu.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/scatter_add.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/set_at.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/sgd_update.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/sgd_update_cols.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/sgd_update_rows.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/sin.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/sqrt.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/str.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/stream_write.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/tan.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/tensor_load.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/tensor_save.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/text_builder_append.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/write.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/zeros.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ],
+    "tests/phase2/builtins/builtins/zeros_like.branch": [
+      "release",
+      "server",
+      "server-db",
+      "zlib"
+    ]
+  },
+  "population_sha256": "b4228b248a44d778106ee7874651c80a29df743f81cc869dd0839587e645644e",
+  "kind_domain": "Numeric payload before printing/encoding; source-bound text witnesses preserve numeric-looking input strings byte for byte. rc=0 is a fixed integer trailer. Never infer kind from old spelling.",
+  "files": {
+    "tests/phase2/builtins/builtins/acos.branch": {
+      "old_sha256": "569dbfeb45288a7fdc73dbe3968e33077ead4fb60b286edb0452706e86a46fa7",
+      "source_sha256": "d50a0a98e2fbbce230f62aac651bbe8384d0d12b50218804c314e0af1c237fbf",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/add.branch": {
+      "old_sha256": "44cb4a950acc6a46b3995372f1d7cfac1b391606d08bbb23791b59d3c0139441",
+      "source_sha256": "cc15f8196d96099e8d63563cbddeabf68e22c67cc4f27d4e04299e652a62514f",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "r",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "The exact integer scalar result remains in r."
+        },
+        {
+          "line": 15,
+          "expression": "s[0]",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Buffer result stores float cells; read the printed s[0]."
+        },
+        {
+          "line": 17,
+          "expression": "l[0]",
+          "kind": "int",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Original list scalar result remains accessible."
+        },
+        {
+          "line": 17,
+          "expression": "l[1]",
+          "kind": "int",
+          "positions": [
+            [
+              4,
+              2
+            ]
+          ],
+          "provenance": "Original list scalar result remains accessible."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/asin.branch": {
+      "old_sha256": "569dbfeb45288a7fdc73dbe3968e33077ead4fb60b286edb0452706e86a46fa7",
+      "source_sha256": "dd02a681476467ec2fc842b450f4312187de86be8d43b4e905dffe2fac93533e",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/atan.branch": {
+      "old_sha256": "3bc01a9ceb8c27725c8c651e2da1fa3c8bcc04c2540218f88960a2792deaf053",
+      "source_sha256": "1036030adfdf440f3f629445c7bc4071f558a53f6abccae57ebe2819c1913335",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/audio_gain.branch": {
+      "old_sha256": "1f1d88cd0050f69c989b3be281ea0fcf212b6ffa36cb26dde89ddeb6528dd83b",
+      "source_sha256": "c39f7bd8f30d77d96f9e74b0ba05ace39c5e83ccff8ee09a4c42081d46b51503",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "g",
+          "index_path": [
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained result leaf after the marker; each printed sample gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "g",
+          "index_path": [
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained result leaf after the marker; each printed sample gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "g",
+          "index_path": [
+            2
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained result leaf after the marker; each printed sample gets an independent kind check."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/audio_mix.branch": {
+      "old_sha256": "94f7af8ec23efc86083e896fd86961d344d63d8c4c4ee2c8f1a52e6d1d77f883",
+      "source_sha256": "ac8b550d4d6c26a040575c58929ab88be0f5383993a95c8a3b34a9f5215c54c5",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "m",
+          "index_path": [
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained result leaf after the marker; each printed sample gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "m",
+          "index_path": [
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained result leaf after the marker; each printed sample gets an independent kind check."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_copy.branch": {
+      "old_sha256": "dac04f02f3803f898bf8d1f64a1e4e489aa151a1a2a1913d397277097f379c71",
+      "source_sha256": "c5b84980049af61a9aaea744b3b3fd8de21224ef939ec168bb87161ad54bc938",
+      "witnesses": [
+        {
+          "line": 10,
+          "expression": "d[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "d is a buffer throughout; later copies change cell values, never their float numeric kind."
+        },
+        {
+          "line": 10,
+          "expression": "d[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "d is a buffer throughout; later copies change cell values, never their float numeric kind."
+        },
+        {
+          "line": 10,
+          "expression": "d[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ],
+            [
+              4,
+              2
+            ]
+          ],
+          "provenance": "d is a buffer throughout; later copies change cell values, never their float numeric kind."
+        },
+        {
+          "line": 22,
+          "expression": "d[3]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              3
+            ]
+          ],
+          "provenance": "d is a buffer throughout; later copies change cell values, never their float numeric kind."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_deinterleave.branch": {
+      "old_sha256": "dd951eaad4bbf3c157f5eec675129e0f2d26e33b71b78740c0e8a8e8dcc18f2a",
+      "source_sha256": "6585d6f7df55b57528dc84d8c0b8b5397228623116774fb7d7d052c30e4da8ce",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "buf_len of r",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "buf_len returns an integer count."
+        },
+        {
+          "line": 9,
+          "expression": "r[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 9,
+          "expression": "r[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 19,
+          "expression": "f[0]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 19,
+          "expression": "f[1]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 19,
+          "expression": "f[2]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              3
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_dot.branch": {
+      "old_sha256": "c1ecf705f32d6094a9a033c649c8b05c47d09447bc3cd04f5d3f70bdd2181ba0",
+      "source_sha256": "90e2d0479003cc49b12a3a73be84bb991fa28e063ba9370da496e3f8abe2c56d",
+      "witnesses": [
+        {
+          "line": 10,
+          "expression": "d",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 15,
+          "expression": "buf_dot of [a, b, 1.0, 1.0, 2.0]",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Reevaluate the same pure buffer dot call after the marker; a and b were not mutated."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_fill.branch": {
+      "old_sha256": "8c479bf8e435ada89ad51e52521b6e34eb59cda2cf71b4b8188747dc4628428d",
+      "source_sha256": "4b63a7b983759d7d8b85dedceff46569c04c0088c7453d811455012ad5926b47",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "b[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "b is always a buffer; later fills preserve each cell's float numeric kind."
+        },
+        {
+          "line": 9,
+          "expression": "b[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "b is always a buffer; later fills preserve each cell's float numeric kind."
+        },
+        {
+          "line": 9,
+          "expression": "b[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "b is always a buffer; later fills preserve each cell's float numeric kind."
+        },
+        {
+          "line": 9,
+          "expression": "b[3]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ],
+            [
+              4,
+              2
+            ]
+          ],
+          "provenance": "b is always a buffer; later fills preserve each cell's float numeric kind."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_from_list.branch": {
+      "old_sha256": "351878b86efd9ca2e8211a62b334ded544593dbf2162176a2f47c9589c255d9f",
+      "source_sha256": "d7fe7ccfbb42a1a7a563c0cb894d0abce9ebbb64813f2b0f1bec8e331a14b9e9",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "b[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "buf_from_list converts every input to float storage; read the original cell."
+        },
+        {
+          "line": 8,
+          "expression": "b[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "buf_from_list converts every input to float storage; read the original cell."
+        },
+        {
+          "line": 8,
+          "expression": "b[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "buf_from_list converts every input to float storage; read the original cell."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_from_pcm16le.branch": {
+      "old_sha256": "62cc915f80add810815cf56816c78ed4ce2ea6ac7226d78a0dc32c75c7c88d01",
+      "source_sha256": "7924d636a16bb793bc25382cd7b98967816439e66fae08eb02cb51c6f5aca556",
+      "witnesses": [
+        {
+          "line": 14,
+          "expression": "\"byte-300\"",
+          "kind": "text",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Immutable source string literal names the invalid input. Its numeric-looking token is text, so preserve it byte for byte; type of the source expression must be string.",
+          "reader": "type"
+        },
+        {
+          "line": 24,
+          "expression": "u[0]",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 27,
+          "expression": "s[0]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 27,
+          "expression": "s[1]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_get.branch": {
+      "old_sha256": "1d01ac9d51aceadaf2c618d631ff744e61c90338281246f409610361a1329b70",
+      "source_sha256": "74894382fd9beeed66da5bc76199242a5b0a0a17f951687d154b7896b737f00e",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "g",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 15,
+          "expression": "h",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_mix.branch": {
+      "old_sha256": "5b90b6a82b8f23b9d4fc822439292a10d8298636f6bf0e7d06cd0ce8b2da8561",
+      "source_sha256": "3fb8175de9e7d360051a7e3b2762b514303392a15fd01c4972d34843807d953f",
+      "witnesses": [
+        {
+          "line": 10,
+          "expression": "d[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "d is always a buffer; subsequent mixing preserves float numeric kinds."
+        },
+        {
+          "line": 10,
+          "expression": "d[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "d is always a buffer; subsequent mixing preserves float numeric kinds."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_peak.branch": {
+      "old_sha256": "fb99580cbc37068854d652493bb0543547dd3e4c4db541bbbfc26471ca4a1c14",
+      "source_sha256": "8b06cd047d040c08c130b32d9b3b02f8ba8dffe262dafda3ecbc4355ddb094c2",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "p",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 14,
+          "expression": "buf_peak of [b, 2.0, 1.0]",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Reevaluate the identical pure peak call; b is unchanged."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_resample_linear.branch": {
+      "old_sha256": "e4a5237c04513a69773ede55bf480984d7e62e3ee8ad53facc3fcffbed902d14",
+      "source_sha256": "018060c9ec08097ee3543963cdb88985fe62f52589bb31672786fad2a1ad210f",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "r[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 9,
+          "expression": "r[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 9,
+          "expression": "r[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 14,
+          "expression": "buf_len of (buf_resample_linear of [s, 3.0])",
+          "kind": "int",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Reevaluate the identical pure resample/count call; the result is an integer length."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_scale_range.branch": {
+      "old_sha256": "c513bc3bdb60883eba661b853a331456e9518a93ab0759d6f82bdf3235a0db1a",
+      "source_sha256": "6875495bdd87c5adfe2f703e5cc8db0b6f9c14c25347906e81fd0383e1e98d9f",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "b[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "b remains a buffer; later scaling changes values while each cell remains float."
+        },
+        {
+          "line": 9,
+          "expression": "b[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "b remains a buffer; later scaling changes values while each cell remains float."
+        },
+        {
+          "line": 9,
+          "expression": "b[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "b remains a buffer; later scaling changes values while each cell remains float."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_set.branch": {
+      "old_sha256": "82df09c6853981b39cf330a7dd33f9295d0faa0ad7bf75abe24509c9d051f86a",
+      "source_sha256": "bde8d975bfd9490a9de7475a2184323406f0557c6bd2dffdc93fbff133996793",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "b[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 16,
+          "expression": "b[2]",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/buf_to_pcm16le.branch": {
+      "old_sha256": "eecad0ac215863e0085e43178799f26fcb8c0b1780113a3bd7277ce154ad495a",
+      "source_sha256": "96e73c0eec4fccfa6c228e2ea1cd6d624c07619080c99dc2988d6728f936a5a2",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "r[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "The returned PCM byte buffer uses float storage, as the frozen probe explicitly witnesses with nt of r[0]."
+        },
+        {
+          "line": 9,
+          "expression": "r[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "The returned PCM byte buffer uses float storage, as the frozen probe explicitly witnesses with nt of r[0]."
+        },
+        {
+          "line": 9,
+          "expression": "r[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "The returned PCM byte buffer uses float storage, as the frozen probe explicitly witnesses with nt of r[0]."
+        },
+        {
+          "line": 9,
+          "expression": "r[3]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "The returned PCM byte buffer uses float storage, as the frozen probe explicitly witnesses with nt of r[0]."
+        },
+        {
+          "line": 9,
+          "expression": "r[4]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              5
+            ]
+          ],
+          "provenance": "The returned PCM byte buffer uses float storage, as the frozen probe explicitly witnesses with nt of r[0]."
+        },
+        {
+          "line": 9,
+          "expression": "r[5]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              6
+            ]
+          ],
+          "provenance": "The returned PCM byte buffer uses float storage, as the frozen probe explicitly witnesses with nt of r[0]."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/copy_into.branch": {
+      "old_sha256": "83e31940d21f04bb371335e5d1f74382c08e09f70b5a5cdb1295a9e3a669ebd3",
+      "source_sha256": "8441abf4a97bd4f8a550893d08b305734e0266814863063d9e3b9537f6020344",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "0",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "The initial list zero is an int source literal; it was later overwritten with another int."
+        },
+        {
+          "line": 8,
+          "expression": "7",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "The source list copies integer literal 7 unchanged."
+        },
+        {
+          "line": 8,
+          "expression": "8",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              3
+            ],
+            [
+              3,
+              3
+            ]
+          ],
+          "provenance": "The source list copies integer literal 8 unchanged."
+        },
+        {
+          "line": 15,
+          "expression": "5",
+          "kind": "int",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "The later list copy writes integer literal 5."
+        },
+        {
+          "line": 19,
+          "expression": "b[0]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/cos.branch": {
+      "old_sha256": "dd0c0693f01f952a0f3e40928fd06dfdb51814ae805433c1d0a828ee411fd7e6",
+      "source_sha256": "371fbcf49fcd0fc61b6f90d670f0aabe7d2c8e1dd1d7d96577211281a24123f3",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/divide.branch": {
+      "old_sha256": "c86138c24b149017797aea5e0cc1713267adffdb227658ccd12f9d7f14ea27b2",
+      "source_sha256": "ec0510af18a82cf234626f896d5b944147529a7bdbe17f92e9b1ddb3d23a65ed",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/dot.branch": {
+      "old_sha256": "2bae8e58272d6a882be4cf8cfbfe6eb01b005f76710ee6b3a7c3787b2f0e5318",
+      "source_sha256": "1ddf07b64a5e4789b99bab885c6167d50cb570d5fcbd4d743b76421d39dc4498",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "d",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/exp.branch": {
+      "old_sha256": "28fa610a97dead760b26a1bec1205054a98da65898ce7131bbc786890d78f924",
+      "source_sha256": "352095768e8589397a64f0cbf9f14d421f0c8d324288a06528de72d9133a14df",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/f64_from_bytes.branch": {
+      "old_sha256": "e5600eea405b87eb0819d55f44082cd60a7f8126c15bb1d0253991e7a00681bf",
+      "source_sha256": "c1418ff7dfa0d48b0bd7f8bbb8ab409c4cd109ebad0b2ac5702a08a45d9174c1",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "v",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 18,
+          "expression": "w",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 16,
+          "expression": "\"byte-319\"",
+          "kind": "text",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Immutable source string literal names the invalid input. Its numeric-looking token is text, so preserve it byte for byte; type of the source expression must be string.",
+          "reader": "type"
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/fround.branch": {
+      "old_sha256": "12ca1750befb2a38111ec77d9ff236e9dada8e5c7d297aa5cf4f489c2c1f22fa",
+      "source_sha256": "8195efefa3df62764addec397a097371ca255236efed4149b395116ecdfeeb1f",
+      "witnesses": [
+        {
+          "line": 3,
+          "expression": "fround of 0.1",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 8,
+          "expression": "fround of 1e39",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 13,
+          "expression": "fround of -1e39",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 18,
+          "expression": "fround of 16777217",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 23,
+          "expression": "fround of 9007199254740993",
+          "kind": "float",
+          "positions": [
+            [
+              5,
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/gather.branch": {
+      "old_sha256": "2d0ec782b3eaca9a4f0308177593be3c25d34c27ed42e54c8f4878784a503f50",
+      "source_sha256": "5c4ce04f61e1181c3a2f30f7cab7ff11fe1d0f148cf11d7e43a16c4f7ec9fdb7",
+      "witnesses": [
+        {
+          "line": 18,
+          "expression": "h[0]",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 18,
+          "expression": "h[1]",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 21,
+          "expression": "k",
+          "index_path": [
+            0
+          ],
+          "kind": "int",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained list-gather result leaf; each printed int cell gets an independent kind check."
+        },
+        {
+          "line": 21,
+          "expression": "k",
+          "index_path": [
+            1
+          ],
+          "kind": "int",
+          "positions": [
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained list-gather result leaf; each printed int cell gets an independent kind check."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/get_at.branch": {
+      "old_sha256": "0d8f23ecef670cb4b94c02e5131773d4ca520dd9aaa0528969f693bd0cb75e03",
+      "source_sha256": "cc90608c75801ed3c366eecdf48e5d449485175b6b03116769918cb49a09b869",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "get_at of [xs, 1]",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Pure read from the unchanged integer list."
+        },
+        {
+          "line": 13,
+          "expression": "get_at of [xs, 1.0]",
+          "kind": "int",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Pure read from the unchanged integer list; integral-float index does not alter value kind."
+        },
+        {
+          "line": 16,
+          "expression": "g",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 18,
+          "expression": "get_at of [m, 1, 0]",
+          "kind": "int",
+          "positions": [
+            [
+              5,
+              1
+            ]
+          ],
+          "provenance": "Pure read from the unchanged integer matrix."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/join.branch": {
+      "old_sha256": "91e4b9fc32e6f0aef9e817248f48398942b53c92d8a07dec3074740ac757c319",
+      "source_sha256": "88f2e3278f06a6310c376e78a74cf57b010c08c32673d68778ca4560176d6bfc",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "1",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "The source literal is the numeric payload formatted into join's output string; reevaluating the literal has no effects."
+        },
+        {
+          "line": 7,
+          "expression": "9007199254740993",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "The source literal is the numeric payload formatted into join's output string; reevaluating the literal has no effects."
+        },
+        {
+          "line": 7,
+          "expression": "2.5",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "The source literal is the numeric payload formatted into join's output string; reevaluating the literal has no effects."
+        },
+        {
+          "line": 7,
+          "expression": "3.0",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "The source literal is the numeric payload formatted into join's output string; reevaluating the literal has no effects."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/json_build.branch": {
+      "old_sha256": "b263c9dc708a82505e5afef5b3dabcb2601699e66deb9d8205e866bb041b4308",
+      "source_sha256": "079f944da77214d3a2b54e207ecc6f9db03870ea5818adc82d11c40f2e26f5ed",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "9007199254740993",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "2.5",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "-9223372036854775807 - 1",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "3.0",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ]
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/json_decode.branch": {
+      "old_sha256": "b0c99b544ec22490674d987f0d5de7cef9872b11a8e39e2be368ef74874d1ea1",
+      "source_sha256": "4c2d193b22e2440a66f872b375d94a5a12bb67d78c8123c963a2cf1d6534bf79",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "v[0]",
+          "kind": "int",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Read the original decoded scalar; the decoder retains integer/float kinds determined by JSON lexical form and int64 range."
+        },
+        {
+          "line": 8,
+          "expression": "v[1]",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              2
+            ]
+          ],
+          "provenance": "Read the original decoded scalar; the decoder retains integer/float kinds determined by JSON lexical form and int64 range."
+        },
+        {
+          "line": 8,
+          "expression": "v[2]",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              3
+            ]
+          ],
+          "provenance": "Read the original decoded scalar; the decoder retains integer/float kinds determined by JSON lexical form and int64 range."
+        },
+        {
+          "line": 8,
+          "expression": "v[3]",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              4
+            ]
+          ],
+          "provenance": "Read the original decoded scalar; the decoder retains integer/float kinds determined by JSON lexical form and int64 range."
+        },
+        {
+          "line": 8,
+          "expression": "v[4]",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              2
+            ],
+            [
+              2,
+              5
+            ]
+          ],
+          "provenance": "Read the original decoded scalar; the decoder retains integer/float kinds determined by JSON lexical form and int64 range."
+        },
+        {
+          "line": 8,
+          "expression": "v[5]",
+          "kind": "int",
+          "positions": [
+            [
+              2,
+              6
+            ]
+          ],
+          "provenance": "Read the original decoded scalar; the decoder retains integer/float kinds determined by JSON lexical form and int64 range."
+        },
+        {
+          "line": 8,
+          "expression": "v[6]",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              7
+            ]
+          ],
+          "provenance": "Read the original decoded scalar; the decoder retains integer/float kinds determined by JSON lexical form and int64 range."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/json_encode.branch": {
+      "old_sha256": "81bc7821029d6e28236e73ce74331fa3155c7cd5188589e29ecb7c282816c3a9",
+      "source_sha256": "57ad4bb2bb19eb81781f03e55156d514859df43d4ef15c1f6573b64cc23c90ae",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "3",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "9007199254740993",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              7
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "9223372036854775807",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "-9223372036854775807 - 1",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "2.5",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              5
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "3.0",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              6
+            ]
+          ]
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/leaky_relu.branch": {
+      "old_sha256": "0bc1fd4db8d4a538c959960a5a577e5242a7b0bbb7f9c985d30d3721b19cb281",
+      "source_sha256": "3919d59d22ef87d757cee26bc7b813650db6be68524223b550caca1e2dfe8a09",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "r[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 8,
+          "expression": "r[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/log.branch": {
+      "old_sha256": "2d22f33b55ea4de06d1a0b8b46253953e26465dd16dcda4e8f1eb5646801f375",
+      "source_sha256": "7d2cc7a3d6484ab5d99ddb8ee207468db47c2ade5bf166c8a1a5bab7e4428c17",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/matmul.branch": {
+      "old_sha256": "f1cb59029c7fad2bf37a37f4389a2076ce102a775d4f575a661b595c3345058f",
+      "source_sha256": "9391c3abf201eb80be85b1796d478e4e924a6fbb02009fb74bb8a437e76502e8",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/matmul_at.branch": {
+      "old_sha256": "d6c713a4570fedbd238455087008936022d2c56dc2620685634baa6494fb986a",
+      "source_sha256": "26b7bf0e171cb8cfa7d8780f715f8e7a3e8161ccff1542fe979b1ede70ce216c",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/matmul_bt.branch": {
+      "old_sha256": "3de3670fc9b3b36b00949e2965d35f9e581f4ea7616249aa884dc2ef414318a6",
+      "source_sha256": "c757d9ca816f613245f83c9c2bc2dcc909aca6cb08a1c2ab8c9e40f07490d717",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained matrix-product result leaf; each printed cell gets an independent kind check."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/max.branch": {
+      "old_sha256": "540ee7840bf80662918b4d4189add017778d08c503488529c6fec539d0e6bb8a",
+      "source_sha256": "8c551f0aa27fdf3c9408c88f65fa5c2dde3209f5df1fc9d12d4c09319a119002",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "max of [9007199254740993, 9007199254740992]",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 9,
+          "expression": "max of [3, 2.5]",
+          "kind": "int",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 11,
+          "expression": "max of [2, 2.5]",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 13,
+          "expression": "max of 7",
+          "kind": "int",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 15,
+          "expression": "max of [3, 3.0]",
+          "kind": "int",
+          "positions": [
+            [
+              5,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 15,
+          "expression": "max of [3.0, 3]",
+          "kind": "float",
+          "positions": [
+            [
+              5,
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/mean.branch": {
+      "old_sha256": "957ab0974154733d37d6fbc3004e82e924761e9c64cae7126984329110a0743b",
+      "source_sha256": "5cefaf4912e7cbc795a09e20d0edb0576419b6eeea0b89d10435a9cf2711dbd6",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/min.branch": {
+      "old_sha256": "f45bde7acd9b053b3379e15b35c9e06f2ba11243437f5a5926b62aad588d2118",
+      "source_sha256": "e4e3051cdc28551753d2a29e4e6667a0e8e63b4cd9b4d072e48226fd8b244b9f",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "min of [9007199254740993, 9007199254740994]",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 9,
+          "expression": "min of [3, 3.5]",
+          "kind": "int",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 11,
+          "expression": "min of [4, 3.5]",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 13,
+          "expression": "min of 7",
+          "kind": "int",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 15,
+          "expression": "min of [3, 3.0]",
+          "kind": "int",
+          "positions": [
+            [
+              5,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 15,
+          "expression": "min of [3.0, 3]",
+          "kind": "float",
+          "positions": [
+            [
+              5,
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/norm.branch": {
+      "old_sha256": "5c2f187cf2973b5b1a305d592804123f3574578e251042668adb284090d811a1",
+      "source_sha256": "2932993a0b0ec38b07f0bf641aca8ec85829e6dcc159b5a3bf9a72262ae1141c",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/num.branch": {
+      "old_sha256": "5bd7970cd996eb2a437018da3aa033c297f38aa4a877af74f8ad4221ecee0660",
+      "source_sha256": "52194b92bf0af47121356671a2d608c4adfbf32664d21028641a6fb0e196ed9c",
+      "witnesses": [
+        {
+          "line": 13,
+          "expression": "\"3\"",
+          "kind": "text",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Echoed input is the literal string s. type of this same string must be string; its numeric-looking bytes must remain byte-identical.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\"3\"",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"3.0\"",
+          "kind": "text",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Echoed input is the literal string s. type of this same string must be string; its numeric-looking bytes must remain byte-identical.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\"3.0\"",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"9007199254740993\"",
+          "kind": "text",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Echoed input is the literal string s. type of this same string must be string; its numeric-looking bytes must remain byte-identical.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\"9007199254740993\"",
+          "kind": "int",
+          "positions": [
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"9223372036854775808\"",
+          "kind": "text",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Echoed input is the literal string s. type of this same string must be string; its numeric-looking bytes must remain byte-identical.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\"9223372036854775808\"",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\" 12 \"",
+          "kind": "text",
+          "positions": [
+            [
+              5,
+              1
+            ]
+          ],
+          "provenance": "Echoed input is the literal string s. type of this same string must be string; its numeric-looking bytes must remain byte-identical.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\" 12 \"",
+          "kind": "int",
+          "positions": [
+            [
+              5,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"+5\"",
+          "kind": "text",
+          "positions": [
+            [
+              6,
+              1
+            ]
+          ],
+          "provenance": "Echoed input is the literal string s. type of this same string must be string; its numeric-looking bytes must remain byte-identical.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\"+5\"",
+          "kind": "int",
+          "positions": [
+            [
+              6,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"-0x10\"",
+          "kind": "int",
+          "positions": [
+            [
+              7,
+              1
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"0x1F\"",
+          "kind": "int",
+          "positions": [
+            [
+              8,
+              1
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"0X1f\"",
+          "kind": "int",
+          "positions": [
+            [
+              9,
+              1
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"0xFFFFFFFFFFFFFFFF\"",
+          "kind": "int",
+          "positions": [
+            [
+              10,
+              1
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\".5\"",
+          "kind": "text",
+          "positions": [
+            [
+              11,
+              1
+            ]
+          ],
+          "provenance": "Echoed input is the literal string s. type of this same string must be string; its numeric-looking bytes must remain byte-identical.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\".5\"",
+          "kind": "float",
+          "positions": [
+            [
+              11,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"1.\"",
+          "kind": "float",
+          "positions": [
+            [
+              12,
+              1
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"1e5\"",
+          "kind": "text",
+          "positions": [
+            [
+              13,
+              1
+            ]
+          ],
+          "provenance": "Echoed input is the literal string s. type of this same string must be string; its numeric-looking bytes must remain byte-identical.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\"1e5\"",
+          "kind": "float",
+          "positions": [
+            [
+              13,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; this duplicates only the pure conversion, avoiding p's scoped local v.",
+          "transform": "num"
+        },
+        {
+          "line": 13,
+          "expression": "\"-9223372036854775808\"",
+          "kind": "text",
+          "positions": [
+            [
+              25,
+              1
+            ]
+          ],
+          "provenance": "Echoed numeric-looking string is immutable text.",
+          "reader": "type"
+        },
+        {
+          "line": 13,
+          "expression": "\"-9223372036854775808\"",
+          "kind": "int",
+          "positions": [
+            [
+              25,
+              2
+            ]
+          ],
+          "provenance": "Apply num to the exact source string input; it returns the exact int64 minimum.",
+          "transform": "num"
+        },
+        {
+          "line": 16,
+          "expression": "n",
+          "kind": "int",
+          "positions": [
+            [
+              26,
+              1
+            ]
+          ],
+          "provenance": "The original conversion result remains in module binding n."
+        },
+        {
+          "line": 18,
+          "expression": "f",
+          "kind": "float",
+          "positions": [
+            [
+              27,
+              1
+            ]
+          ],
+          "provenance": "The original conversion result remains in module binding f."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/numerical_grad.branch": {
+      "old_sha256": "b6d80c99de9aebf09340531468149f1bba9b5d4283725ff6ab78610fc9e21a53",
+      "source_sha256": "b0138b8120cd306c55a49e648f1538650f59a42a191edc3f79a7a752aea814c7",
+      "witnesses": [
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/numerical_grad_cols.branch": {
+      "old_sha256": "e1a11fe248d17b6348dcaf4bfc7b4d6cb62d18255ffbadd96d57e6c53491596a",
+      "source_sha256": "5fd0e6755d72987cff2efbe8c5e5cfae3c418cd41df14c0e2ab6b6ba05b08fdc",
+      "witnesses": [
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 16,
+          "expression": "numerical_grad_cols of [loss, q, [0.0, 1.0], 0.5]",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Reevaluate the exact source finite-difference call and read this output leaf. The kernel restores perturbed q cells, prints nothing, and performs no I/O; no scoped local is required."
+        },
+        {
+          "line": 16,
+          "expression": "numerical_grad_cols of [loss, q, [0.0, 1.0], 0.5]",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "Reevaluate the exact source finite-difference call and read this output leaf. The kernel restores perturbed q cells, prints nothing, and performs no I/O; no scoped local is required."
+        },
+        {
+          "line": 16,
+          "expression": "numerical_grad_cols of [loss, q, [0.0, 1.0], 0.5]",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              3
+            ]
+          ],
+          "provenance": "Reevaluate the exact source finite-difference call and read this output leaf. The kernel restores perturbed q cells, prints nothing, and performs no I/O; no scoped local is required."
+        },
+        {
+          "line": 16,
+          "expression": "numerical_grad_cols of [loss, q, [0.0, 1.0], 0.5]",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              4
+            ]
+          ],
+          "provenance": "Reevaluate the exact source finite-difference call and read this output leaf. The kernel restores perturbed q cells, prints nothing, and performs no I/O; no scoped local is required."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/numerical_grad_rows.branch": {
+      "old_sha256": "2b81582aa2f984d195ccdae96c505598820bfd38931ecbd81c9d376a16c74691",
+      "source_sha256": "aac32d799947b0fcae207b17dec48614b622c71ad7e4b3fd2a55e5b1d161e788",
+      "witnesses": [
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "g",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained finite-difference gradient leaf after the marker."
+        },
+        {
+          "line": 16,
+          "expression": "numerical_grad_rows of [loss, q, [1.0, 0.0], 0.5]",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Reevaluate the exact source finite-difference call and read this output leaf. The kernel restores perturbed q cells, prints nothing, and performs no I/O; no scoped local is required."
+        },
+        {
+          "line": 16,
+          "expression": "numerical_grad_rows of [loss, q, [1.0, 0.0], 0.5]",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "Reevaluate the exact source finite-difference call and read this output leaf. The kernel restores perturbed q cells, prints nothing, and performs no I/O; no scoped local is required."
+        },
+        {
+          "line": 16,
+          "expression": "numerical_grad_rows of [loss, q, [1.0, 0.0], 0.5]",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              3
+            ]
+          ],
+          "provenance": "Reevaluate the exact source finite-difference call and read this output leaf. The kernel restores perturbed q cells, prints nothing, and performs no I/O; no scoped local is required."
+        },
+        {
+          "line": 16,
+          "expression": "numerical_grad_rows of [loss, q, [1.0, 0.0], 0.5]",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              4
+            ]
+          ],
+          "provenance": "Reevaluate the exact source finite-difference call and read this output leaf. The kernel restores perturbed q cells, prints nothing, and performs no I/O; no scoped local is required."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/observe.branch": {
+      "old_sha256": "5e443e730314fd12810eab1f7403adb88dc7d14a60b7c7be3b801da6d9555c59",
+      "source_sha256": "71cc7d272af662bc7694768b0a8ed16f8a30fd06bf0b9fff6ca99b8e9d388e85",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "r[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "The original observe result readout remains accessible; no observer read is rerun."
+        },
+        {
+          "line": 9,
+          "expression": "r[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "The original observe result readout remains accessible; no observer read is rerun."
+        },
+        {
+          "line": 9,
+          "expression": "r[3]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "The original observe result readout remains accessible; no observer read is rerun."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/pow.branch": {
+      "old_sha256": "9f38b23f8ce783c1d4a5342c371df39fcbe9c247676b4b395c591138e964dd2c",
+      "source_sha256": "a8b832fa09a2679eec35184a551036c4627f6236d7fad4b5537d8dc6f5eb954b",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/ppu_render_frame.branch": {
+      "old_sha256": "4c5783197fa7af691cb64ab41271f11a1fbe9ecda8e6f11ad6868f2e867a5a78",
+      "source_sha256": "7864916dbbdaee01210c1ebd894a3c33eb93354c823fb820ca3fb3d31280aac6",
+      "witnesses": [
+        {
+          "line": 11,
+          "expression": "fb[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "fb is always a float buffer; later rendering changes values, never the float kind."
+        },
+        {
+          "line": 27,
+          "expression": "fb[23039]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 24,
+          "expression": "\"lcdc-401\"",
+          "kind": "text",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Immutable source string literal names the invalid input. Its numeric-looking token is text, so preserve it byte for byte; type of the source expression must be string.",
+          "reader": "type"
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/print.branch": {
+      "old_sha256": "c1bb91c32873e25fec016b1c8a33a9dd8626601a39518971a9bcfe71cd71351c",
+      "source_sha256": "850240e1bcf99689a236882af26025615203f90067b935385a70dea81bf97d8f",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "9007199254740993",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Both printed occurrences are the same exact integer source literal."
+        },
+        {
+          "line": 8,
+          "expression": "2.5",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original printed numeric payload is this source float literal."
+        },
+        {
+          "line": 9,
+          "expression": "3.0",
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Original printed numeric payload is this source float literal."
+        },
+        {
+          "line": 10,
+          "expression": "1e300",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              2
+            ]
+          ],
+          "provenance": "Original printed numeric payload is this source float literal."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/proc_read_buf.hi.branch": {
+      "old_sha256": "6a4eac6578eaf7ddde381600841f2c7f83ed104a443ead1da21ce8824ccf1c7a",
+      "source_sha256": "7af30b36bd60d04b0ff0e6bd5d690fa15db493dd25c88cd56813304d0be6cce3",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "buf_len of b",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Integer count of original stdin fixture buffer. run_witnesses must supply cases.tsv's Hi bytes."
+        },
+        {
+          "line": 8,
+          "expression": "b[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read the original byte buffer retained from the Hi stdin fixture; never reread stdin."
+        },
+        {
+          "line": 8,
+          "expression": "b[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read the original byte buffer retained from the Hi stdin fixture; never reread stdin."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/read_bytes_buf.branch": {
+      "old_sha256": "92cd179b023bfae64f3ac77dc15312982db17e17da8415916797aaa0b48d6abf",
+      "source_sha256": "f315f8491954fadb590b6e8c523e68d9188a95bd2035991ad64af4a95d8cbe6d",
+      "witnesses": [
+        {
+          "line": 11,
+          "expression": "buf_len of b",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original byte-buffer length is an integer count; EIGS_PROBE_TMP must name the per-run temporary fixture directory."
+        },
+        {
+          "line": 11,
+          "expression": "b[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 18,
+          "expression": "buf_len of d",
+          "kind": "int",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Original byte-buffer length is an integer count."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/relu.branch": {
+      "old_sha256": "2eb77d7f928006355c24388638f58ef6731548e2786028e8addb9bdf79c7e86f",
+      "source_sha256": "89ebd3e9db35aac2b4226e5d2096bb7e5712efe11d85bd46b8d023c895928f17",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "r[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 8,
+          "expression": "r[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 10,
+          "expression": "s",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/scatter_add.branch": {
+      "old_sha256": "33667024c1bd1f4c53e0e69beeb861d1216a69d8e15f7baa564e09b02eb8b945",
+      "source_sha256": "7ac0197139235dd9278418fc3ff0391a58fb3b33d9059f23c89566795c4d4f2c",
+      "witnesses": [
+        {
+          "line": 9,
+          "expression": "d[0]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "d is always a float buffer; later accumulation preserves numeric kinds."
+        },
+        {
+          "line": 9,
+          "expression": "d[1]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "d is always a float buffer; later accumulation preserves numeric kinds."
+        },
+        {
+          "line": 9,
+          "expression": "d[2]",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "d is always a float buffer; later accumulation preserves numeric kinds."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/set_at.branch": {
+      "old_sha256": "220750d891ed80228512827027ba0cbc25c44ee8f1faefe1d0f0726b78138842",
+      "source_sha256": "7e598419b13989f17b453bfaab59db90804f6fe9bf2b92a7a0e3acd49016df5e",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "10",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Integer source literal copied or retained in the list; later writes preserve the separately witnessed source integer kind."
+        },
+        {
+          "line": 8,
+          "expression": "99",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "Integer source literal copied or retained in the list; later writes preserve the separately witnessed source integer kind."
+        },
+        {
+          "line": 7,
+          "expression": "30",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Integer source literal copied or retained in the list; later writes preserve the separately witnessed source integer kind."
+        },
+        {
+          "line": 15,
+          "expression": "5",
+          "kind": "int",
+          "positions": [
+            [
+              3,
+              3
+            ]
+          ],
+          "provenance": "Integer source literal copied or retained in the list; later writes preserve the separately witnessed source integer kind."
+        },
+        {
+          "line": 19,
+          "expression": "b[0]",
+          "kind": "float",
+          "positions": [
+            [
+              4,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/sgd_update.branch": {
+      "old_sha256": "f02d7a678590875247424cf99d02cf8c15c9402c1be559db90566aec0395c1f5",
+      "source_sha256": "3036dfed6fdb67f969596d88709c5b9dd93aaf1f7247dfd3f9e6e27b2b0efa4e",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained SGD result leaf after the marker."
+        },
+        {
+          "line": 8,
+          "expression": "r",
+          "index_path": [
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained SGD result leaf after the marker."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/sgd_update_cols.branch": {
+      "old_sha256": "b3db713df38a6acc28f8e8996caf7201528f9ea4d314c28b0849959ac7179e7f",
+      "source_sha256": "e66955425b033ec9033ad9a6abf0ba2b18a6f26ba83327439dcc5e09d97ba649",
+      "witnesses": [
+        {
+          "line": 10,
+          "expression": "m",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained SGD matrix leaf. Later in-place updates change its value but the scalar kind remains independently witnessed after the marker; original/candidate value bits are checked separately."
+        },
+        {
+          "line": 10,
+          "expression": "m",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained SGD matrix leaf. Later in-place updates change its value but the scalar kind remains independently witnessed after the marker; original/candidate value bits are checked separately."
+        },
+        {
+          "line": 10,
+          "expression": "m",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ],
+            [
+              3,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained SGD matrix leaf. Later in-place updates change its value but the scalar kind remains independently witnessed after the marker; original/candidate value bits are checked separately."
+        },
+        {
+          "line": 10,
+          "expression": "m",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ],
+            [
+              3,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained SGD matrix leaf. Later in-place updates change its value but the scalar kind remains independently witnessed after the marker; original/candidate value bits are checked separately."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/sgd_update_rows.branch": {
+      "old_sha256": "823d398fec95c5ac6dcd1c1576ebbcb6420989a6a5b61bc8fedd696cc2e48cb5",
+      "source_sha256": "e53fc455967a9657fa51f1283b409685ab23b51e5dec0d332c0fad0e209cf295",
+      "witnesses": [
+        {
+          "line": 10,
+          "expression": "m",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ],
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained SGD matrix leaf. Later in-place updates change its value but the scalar kind remains independently witnessed after the marker; original/candidate value bits are checked separately."
+        },
+        {
+          "line": 10,
+          "expression": "m",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained SGD matrix leaf. Later in-place updates change its value but the scalar kind remains independently witnessed after the marker; original/candidate value bits are checked separately."
+        },
+        {
+          "line": 10,
+          "expression": "m",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ],
+            [
+              3,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained SGD matrix leaf. Later in-place updates change its value but the scalar kind remains independently witnessed after the marker; original/candidate value bits are checked separately."
+        },
+        {
+          "line": 10,
+          "expression": "m",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ],
+            [
+              3,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained SGD matrix leaf. Later in-place updates change its value but the scalar kind remains independently witnessed after the marker; original/candidate value bits are checked separately."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/sin.branch": {
+      "old_sha256": "3e39f8107440abe2750bf55634e12e4d1e4f47b971dbf84ad77e03afa0b18ec2",
+      "source_sha256": "1b7c5e1f0ffcc48aaa6fa0696d16e25ecad4ba4614ff9752a3ead1c8b8dabae1",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/sqrt.branch": {
+      "old_sha256": "3ccf9c32fa8d3cd6bf5fb1acd09297ad27ff5085362415eec99c863bc551c810",
+      "source_sha256": "519b5eb0aeb32605b60a169df5114e18d89ebe85e156e916862dbe807a699cb1",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/str.branch": {
+      "old_sha256": "a546d0eca3bf4900e12fe97f116b9881419c5c99efcda9e22adba6d6816f1b5d",
+      "source_sha256": "43810df34d1ad8464b7b7e8c9e78412878d94074c6faa2676d226c9f61811178",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "9007199254740993",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "2.5",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "3.0",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "line": 7,
+          "expression": "-9223372036854775807 - 1",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ]
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/stream_write.branch": {
+      "old_sha256": "0ba1d1ba909707a169442d449cdd4fc5dd1f1043a38adea49dbee22cc087fc7a",
+      "source_sha256": "fe3f6d4b99020167af724c5ed8497a08b3e42290152d966dd61f359eaac168bd",
+      "witnesses": [
+        {
+          "line": 11,
+          "expression": "t[0]",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Read the original float decoded from the raw-f64 stream; the source int 3 became f64 storage before printing."
+        },
+        {
+          "line": 11,
+          "expression": "t[1]",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              2
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/tan.branch": {
+      "old_sha256": "7d8dba4273be72ed366e4f8bcdf05715c466ebec943055ea56d723e8271ae95f",
+      "source_sha256": "3e40600bf9d8c9166350f2bd2fa850186a28108373a6838bdd5ad6dbba89c3fa",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "a",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding a."
+        },
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Original scalar result remains in module binding b."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/tensor_load.branch": {
+      "old_sha256": "7f45bd23e6a6487be2111a9ab04b407205be16abe6d5654e852c9c3a23f1ba26",
+      "source_sha256": "1d2d20071e9e6c1b6eb0faf90ef5c6d486ed0f09dcdcb08f7b35bd786157ab71",
+      "witnesses": [
+        {
+          "line": 11,
+          "expression": "t",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained loaded tensor leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "t",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained loaded tensor leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "t",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained loaded tensor leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "t",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained loaded tensor leaf after the marker."
+        },
+        {
+          "line": 11,
+          "expression": "shape of t",
+          "index_path": [
+            0
+          ],
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              5
+            ]
+          ],
+          "provenance": "Reevaluate the pure shape read and inspect this exact integer dimension count."
+        },
+        {
+          "line": 11,
+          "expression": "shape of t",
+          "index_path": [
+            1
+          ],
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              6
+            ]
+          ],
+          "provenance": "Reevaluate the pure shape read and inspect this exact integer dimension count."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/tensor_save.branch": {
+      "old_sha256": "1b73968293611b206533cb27ee3b3066aa56e222b9a3fe2473880e2ec6cd5057",
+      "source_sha256": "c57ecd8feca7dc827290c5ed891ae841165a63e5d8446c23a75b6b3af63490ab",
+      "witnesses": [
+        {
+          "line": 11,
+          "expression": "t",
+          "index_path": [
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained tensor-load leaf after the marker; no filesystem operation is repeated."
+        },
+        {
+          "line": 11,
+          "expression": "t",
+          "index_path": [
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained tensor-load leaf after the marker; no filesystem operation is repeated."
+        },
+        {
+          "line": 11,
+          "expression": "t",
+          "index_path": [
+            2
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained tensor-load leaf after the marker; no filesystem operation is repeated."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/text_builder_append.branch": {
+      "old_sha256": "b312faffe01ba083116c315f35e3bc3fd990944496f95274d38f6ca84af2115d",
+      "source_sha256": "6aa3d98ab5d07f8ddcd19dc34696289a194977ffde8e9a2c01c00cdcf8e9ae6b",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "9007199254740993",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "The numeric source literal was formatted into text by this exact source call; evaluating only the literal has no effects."
+        },
+        {
+          "line": 10,
+          "expression": "2.5",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "The numeric source literal was formatted into text by this exact source call; evaluating only the literal has no effects."
+        },
+        {
+          "line": 12,
+          "expression": "3.0",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "The numeric source literal was formatted into text by this exact source call; evaluating only the literal has no effects."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/write.branch": {
+      "old_sha256": "a69d7121ddc382dd987c69d1cdff1572a48936c3d6c8494f30cd22eee34159c0",
+      "source_sha256": "a25b9b9d7ab2fa20b4a13b1c0250ca8a7f020fe290b2d94712b84b31ee0cf242",
+      "witnesses": [
+        {
+          "line": 7,
+          "expression": "9007199254740993",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "The numeric source literal was formatted into text by this exact source call; evaluating only the literal has no effects."
+        },
+        {
+          "line": 9,
+          "expression": "2.5",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "The numeric source literal was formatted into text by this exact source call; evaluating only the literal has no effects."
+        },
+        {
+          "line": 11,
+          "expression": "3.0",
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              3
+            ]
+          ],
+          "provenance": "The numeric source literal was formatted into text by this exact source call; evaluating only the literal has no effects."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/zeros.branch": {
+      "old_sha256": "b44706dfefc4bdc12c69f66975b8ff7e59cda39b00b17a252c5b00228996bcd9",
+      "source_sha256": "cc0718a4bf38f3ae20cb9734919a5d3688d6c68afeabf9341ac78648ab080df2",
+      "witnesses": [
+        {
+          "line": 8,
+          "expression": "buf_len of z",
+          "kind": "int",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Original buffer length is an integer count."
+        },
+        {
+          "line": 19,
+          "expression": "buf_len of (zeros of 2.0)",
+          "kind": "int",
+          "positions": [
+            [
+              5,
+              1
+            ]
+          ],
+          "provenance": "Reevaluate the pure source count expression; integral-float size does not change integer count kind."
+        },
+        {
+          "line": 14,
+          "expression": "m",
+          "index_path": [
+            0,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained zero-matrix leaf after the marker."
+        },
+        {
+          "line": 14,
+          "expression": "m",
+          "index_path": [
+            0,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained zero-matrix leaf after the marker."
+        },
+        {
+          "line": 14,
+          "expression": "m",
+          "index_path": [
+            1,
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              3
+            ]
+          ],
+          "provenance": "Read this exact retained zero-matrix leaf after the marker."
+        },
+        {
+          "line": 14,
+          "expression": "m",
+          "index_path": [
+            1,
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              3,
+              4
+            ]
+          ],
+          "provenance": "Read this exact retained zero-matrix leaf after the marker."
+        }
+      ]
+    },
+    "tests/phase2/builtins/builtins/zeros_like.branch": {
+      "old_sha256": "b872d9da1b235b3cd0c42c014f5be6666e3d2afea756ed338f72e66c71aa749f",
+      "source_sha256": "6c97e2bf0c18e9f4efd0eddfb9b3d0fceeb017e0fb5e791c7cd5eb7aad4dda33",
+      "witnesses": [
+        {
+          "line": 10,
+          "expression": "b",
+          "kind": "float",
+          "positions": [
+            [
+              2,
+              1
+            ]
+          ],
+          "provenance": "Stored result is a float; the expression remains accessible after the frozen source completes."
+        },
+        {
+          "line": 8,
+          "expression": "a",
+          "index_path": [
+            0
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              1
+            ]
+          ],
+          "provenance": "Read this exact retained zeros_like result leaf after the marker."
+        },
+        {
+          "line": 8,
+          "expression": "a",
+          "index_path": [
+            1
+          ],
+          "kind": "float",
+          "positions": [
+            [
+              1,
+              2
+            ]
+          ],
+          "provenance": "Read this exact retained zeros_like result leaf after the marker."
+        }
+      ]
+    }
+  }
+}

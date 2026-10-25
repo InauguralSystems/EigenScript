@@ -1,5 +1,5 @@
 [9007199254740994, "int"]
 ["overflow", "value"]
-[2, "float", "buffer"]
+[2.0, "float", "buffer"]
 [[3, 9007199254740994], "int", "int"]
 rc=0

@@ -374,9 +374,9 @@ print of g[2]
 ```
 ```output
 3
-5
-7
-9
+5.0
+7.0
+9.0
 ```
 
 `x` is `[[1, 2, 3], [4, 5, 6]]` and `s` scales each column, so the gradient
@@ -407,9 +407,9 @@ autograd.ag_sgd_step of [wn, 0.1]
 print of w[0]
 ```
 ```output
-7
-4
-6
+7.0
+4.0
+6.0
 0.6
 ```
 
@@ -1265,7 +1265,7 @@ print of (data.df_mean of [rows, "score"])
 ```output
 85.4
 88
-80
+80.0
 ```
 
 ### lib/data.eigs

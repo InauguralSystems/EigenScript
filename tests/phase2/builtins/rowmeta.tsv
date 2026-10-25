@@ -104,9 +104,9 @@ http_static	-	server
 index_of	-	release
 inflate	-	zlib
 join	-	release
-json_build	R1.2/R1.3	release
+json_build	R1.7	release
 json_decode	-	release
-json_encode	R1.2/R1.3	release
+json_encode	R1.7	release
 json_path	-	release
 leaky_relu	-	release
 len	-	release

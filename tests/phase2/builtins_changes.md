@@ -234,12 +234,12 @@ Historical import records above are already included in the pin.
 
 | Path | SHA-256 | Ruling | Reason |
 |---|---|---|---|
-| `tests/phase2/builtins/builtins/max.branch` | `540ee7840bf80662918b4d4189add017778d08c503488529c6fec539d0e6bb8a` | R1.6b-D2 | an empty `max` raises `value` in both call forms, `max of []` and `max of ([])` (#1895) |
-| `tests/phase2/builtins/builtins/min.branch` | `f45bde7acd9b053b3379e15b35c9e06f2ba11243437f5a5926b62aad588d2118` | R1.6b-D2 | an empty `min` raises `value` in both call forms, `min of []` and `min of ([])` (#1895) |
+| `tests/phase2/builtins/builtins/max.branch` | `1ca8c1c885cd796015304677d87b4782642d0a79026bd63fd28b67632b25ed9c` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/min.branch` | `eee02d9e7cd24809addb54e3c2df45f401134d5c279a7971a87fea26848781bc` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/sign_extend.branch` | `bfc48781e0e0ab7eb480899c9975ccdbb810c36cbd2b297fd62231b41ee03bdf` | R1.6b-D1 | the subtraction is checked int64 arithmetic under rule (A): `sign_extend of [-9223372036854775553, 8]` raises `value` (#1894) |
 | `tests/phase2/builtins/builtins/set_exit_code.branch` | `6e6f540c7b879ca35185d74c3840327c3f14ef37c5eb74c5d60531aef340620b` | R1.6-S2 | new int-requiring round-c builtin; main already rejects fractions and values outside 0..255; matched main and merged output agree |
 
-| `tests/phase2/builtins/builtins/fround.branch` | `12ca1750befb2a38111ec77d9ff236e9dada8e5c7d297aa5cf4f489c2c1f22fa` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
+| `tests/phase2/builtins/builtins/fround.branch` | `0eef9c22f27663cb7b9cffcc4704039adacba202777e3b4eb254c5462d851118` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/i16_checked_add.branch` | `0d1db8055bba756521c06186282a8e52dea9a69497170c24307c4963f642c52d` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
 | `tests/phase2/builtins/builtins/i16_checked_mul.branch` | `e3364392ccc01620ab16d1f686af6e6b32c23fff34c307e87953f9e3ed9752c1` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
 | `tests/phase2/builtins/builtins/i16_checked_sub.branch` | `83430b1d05a7910f3cb358019d96be745ae4ecff96738583cb1098c11c21fb2c` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
@@ -316,6 +316,71 @@ Historical import records above are already included in the pin.
 | `tests/phase2/builtins/builtins/u8_wrapping_add.branch` | `dc311d0bac5980796200806862c231f38cba5bbae9ed68addba3fdf6631ee469` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
 | `tests/phase2/builtins/builtins/u8_wrapping_mul.branch` | `60da423dcf7c733566c6dc8786eacdfca47f445b4c545a692a33b2c2fdbbfb7d` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
 | `tests/phase2/builtins/builtins/u8_wrapping_sub.branch` | `f6caf9ca2c493a27eced40c47c9a000e8d0ac95b70fd12de204823880b55e686` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
+| `tests/phase2/builtins/builtins/str.branch` | `0c399d98c18da266dc150e39e78e616faadc324cca6e7c6c62ceb270e867913f` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/json_encode.branch` | `2ae19e560a3ea73c416cce1162049d723037f5b529e06806bc605c33fcdc2133` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/json_build.branch` | `c2b8bacb39eb6eef288670e99b3ba01d46c7cab2f94f7c05f47724c1488d9cb1` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/acos.branch` | `5958e4ae7fcc01a39f99fdd66c0a9618a9fad69c6e1d470d948f9129c1f6f4cd` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/add.branch` | `fe0387ddfdd246a088888fd214fed1abb2503f3e06a3b57cc6ea610bc0b578ec` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/asin.branch` | `5958e4ae7fcc01a39f99fdd66c0a9618a9fad69c6e1d470d948f9129c1f6f4cd` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/atan.branch` | `f242d5c6ac68248384bda8aa073f2ff5d23bb74e6fced26ba5ad2ac391d98ee6` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/audio_gain.branch` | `b7839145f6b8b9f413311bb0f984dad297356c9d7407628ba2e93a2f6c317c19` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/audio_mix.branch` | `512a7308c426e7ed94676d4c96400d79920afab58c39da9ea68270d8906de059` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_copy.branch` | `9ea81eba48f5b1b9e1f9799c9d8e8f275a0c805a082190eb7a683003a5e4ebb2` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_deinterleave.branch` | `2c8c419b85c034fbd529fd396fb0854d2982be71c29358c171e162c2b9721808` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_dot.branch` | `f9b37d961e959be8c731c30a43a007defa5fa16d3e5e60260bb3c356dbc51c00` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_fill.branch` | `38e227a7b6ada697071d60d8460bab5de95d9a4cdedcae32ccbc987be5e1752c` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_from_list.branch` | `e4a3b6623dd3f422e5712cdaf9f6b32133970df10636edb40f0e2143cbb889e1` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_from_pcm16le.branch` | `036cc08edd6d3a419692c4b1a85ac42d9a891591f55bc5fb806c4d7c8628dff8` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_get.branch` | `077ba41e4a2f93aeb44f20cb2928a585d7bc05cc158087e54aec2d097592081e` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_mix.branch` | `c78a105cdb9774cbbae3417e4aacb73742cdace27313acc705733b80b109d75b` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_peak.branch` | `b69875ae508284a12270c6791980349f86ff7d6ae32f9dfb29a05abccdc8e970` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_resample_linear.branch` | `e37904ae42856ac5a70eaea9fb9e29dd6fd35c5a17a6b31a846bc1e25c23c22d` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_scale_range.branch` | `c8f7e9898eb8c72ffa1bbed04503e8b4867f112300c617db3829aa67981e1d18` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_set.branch` | `b8c58d0a2f26c3baa094a66d073b236ae89d5e12ae0330a4afe75c85728be0a9` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/buf_to_pcm16le.branch` | `63e6df418a4e5f7f819bef3ee88186fd6548d13c06a9073b803868961e01c4e4` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/copy_into.branch` | `a46c24a542bf109a46c4c71890100268ffcfe361b97d42781df51080c27cd7b4` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/cos.branch` | `cf5baf9404a28aab2b4f931c9273949f0072ba197c2bdc27fa58d3d21b54ef0f` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/divide.branch` | `a23f3e073d81fba8891829bb4b4457f39f3b7fb1017bf46a25ef07487d441352` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/dot.branch` | `02946f430ffc9d87a7939a1a2fc200d8367fbcb42feaf973ca0a784500c78966` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/exp.branch` | `a61898dfe0d5ce58736cacff6a0c5ca15e39b3f3aecd198990cb9fd611786479` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/f64_from_bytes.branch` | `731e864c5cb1cb1d39f14554a42eaa605d14019315acedcfacfc332b0fffb172` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/gather.branch` | `824cd2ba031d256ef19a25fe1eedae6cad151a9f7791cd52aa38c717ce599461` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/get_at.branch` | `447670d74eca66707e4805343956d16e27c37428081713849ca3c1c9d1f6889a` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/join.branch` | `4e2dd8e15a945d27912c461362bb70083cabdaf0b4e31a18eac4fa5c5980d557` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/json_decode.branch` | `c0057af18be5254f0f9d1131b02b0d0cbf3594f3d277a9ed153d80463ebfab12` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/leaky_relu.branch` | `ef90cedf931e7e04a61ae277ac5ac010bf33cfca9e5213ea0082221651f34896` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/log.branch` | `b02e0dada2cf9a63f5086fbf5e8501f85dba7cf73b6eda01029647865e8c2986` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/matmul.branch` | `14616b915a5fcfdb5de37ee29ba8d6c547c90e14f0139940b3e313afadab0865` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/matmul_at.branch` | `70bae5f918939bebaf25f312aade4592af6172b2eb587dea09d6f3076a38c050` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/matmul_bt.branch` | `ba1e66cb245a46a025f5d6ee5bf6dce760552982acef6a4ec2599848c6c73569` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/mean.branch` | `ce229cfb4718fca2a9b298d927c341ea796ed6f961db2c4360b25e802c1b5225` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/norm.branch` | `d044f83f1db49f9968c9db1f30f1beafb2b8d39e4c7f162cadcc1474ddaa84ba` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/num.branch` | `7fb58551b9d82163c6703111cf84f5de26bb191de8a66d7fc5102ef8b8688162` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/numerical_grad.branch` | `4500785a3c9519176df2ab02f77fcad440fbf11f26227b29cb52496fd640e005` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/numerical_grad_cols.branch` | `2743a0bc2cabf3858d33ccd68cfab234c86adedc9665a0dbfc477f96aeb7a849` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/numerical_grad_rows.branch` | `0f8312d184ac73b4eeaeec5dfc903859353e0a783dd350c32c73a2855f0e2a03` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/observe.branch` | `1e0ee913120a78b044cf7b567cda8b1672e18fdb5faaa1af94ebb6db1193813a` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/pow.branch` | `68ab07f20b3ee61e305f67fa87230fd2c8a7730bbd4954642fd45136b37b9081` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/ppu_render_frame.branch` | `79f74efe5a437cbb3097669f3da297fb55c36d5682be19c74ba615679d486a47` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/print.branch` | `d2eaac663b00862a70c3ecd6d5f29aaaf9b793021e433025fb403ac65d6d6f01` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/proc_read_buf.hi.branch` | `f786f6b5395f54fa5f9c39c32f18ebc2d0fcda2099395156af684f37783cfe3b` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/read_bytes_buf.branch` | `0b52c1d8294591447cc198a3e8eb027ff8990555c52bf12fbdf93c912428ca84` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/relu.branch` | `24ae0c94c3ef3adf70443d1c90ab71b51e6212e09a7794c2dfc6d44c1a934601` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/scatter_add.branch` | `6efe02323a3891ed6ea11712c44546913ea92f4d0a064f1c5ec8daaaedc8a92d` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/set_at.branch` | `c90f8b78b48c20fae416587af85cc8277342614fa8935a3019ac814e3ac946c1` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/sgd_update.branch` | `42c640c625a2ea086262edc98062262e808ecfc56a0e700970575d9b4c5c10fd` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/sgd_update_cols.branch` | `74b47ef7f49936afc57f2858c3ead68863dd07091681bb275499ad4698237cce` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/sgd_update_rows.branch` | `9ab519ac1c069e9ba1b13cee49b34569bd3da3a72fdf6efe541e92d6e64a3379` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/sin.branch` | `e85163cfbb1a56ed2e29fc5ae75307f2a914acde489f6053e8e16ad55401d4bd` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/sqrt.branch` | `d02ec73520e2db4aa636bed3abe146241425f4b02141efce7a13e0b38ad22639` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/stream_write.branch` | `33b3dae3eecb631329b1c727730d240df187e9c7b7e5bb4cbe737d0d561803e0` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/tan.branch` | `1390b34eb629f519c834cd599144878efae95d3d6a8e1f80a51694a1d051ebad` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/tensor_load.branch` | `ba6c76c1208e36214edb1aadaddf6bc0507f2163720ad681a11ca9d0d39c1fa3` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/tensor_save.branch` | `be16c42b1944c56fbfad22e242be1472004e60995d31735a08237d9ca4d0b975` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/text_builder_append.branch` | `264d7aac65f70767b435d80e1c3a301a2025121d6fa39503c01b0ef0cc7d6ad5` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/write.branch` | `d646570e76559c96769f89afa8d1160cde5e12bed99a3b36f2fb7d6bb7ca7b7b` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/zeros.branch` | `2530cd624a068d1882816dec67cdb9848c1011f5307c0c27fb514cc108b18160` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/zeros_like.branch` | `8d3e0cdb2aee733291b724abd3f038bd9cdf2a90288d24072b87838c538a130c` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 
 ## R1.6b bar amendments
 
@@ -415,3 +480,154 @@ ceiling stays unchanged. No frozen probe or expectation is amended.
 ## R1.6g-D1 — N9 pre-registration
 
 The R1.6g brief authorizes 77 new Rust-derived branch expectations and five MAP rows before builtins_int.c exists. No existing .branch changes. Table membership follows when the builtins exist. Oracle inputs, sources and verbatim results are in oracle/n9*.
+
+## R1.7-D2 float text amendments
+
+R1.7-D2 authorizes only the N6 Python `repr` re-render of numeric float payloads.
+Seven frozen probes were examined: str, fround, json_encode, json_build,
+json_path, min and max. Six are amended; json_path already has the N6 spelling
+`2.5` and stays byte-identical. The checker compares each line with the
+pre-N6 commit b6f9db3879be5578de787ad6cf0d235b809f0e7c: numeric positions,
+bit-identical doubles, exact integer spellings, and every non-float byte.
+Source-bound runtime kind witnesses disambiguate old integral float spellings;
+old text such as `3` cannot itself establish a kind. For json_path the numeric
+payload has the JSON input's lexical kind, before raw-text extraction.
+
+The historical R1.6b-D2 ruling still establishes min/max empty-call errors
+(#1895), and R1.6g-D1 still establishes fround's N9 semantics. The accepted
+rows above now pin their D2-rendered bytes; the prior byte hashes and probe-source
+hashes remain recorded in `r17_float_text.json`. No earlier value or kind ruling
+is superseded.
+
+Run `python3 tools/phase2_float_amend.py --baseline-binary BASE --binary TIP`
+to check the delivered amendments and their source-bound kind witnesses.
+Its one-time `--self-test` calibration rejects changed values, kinds, integers,
+non-float text, positions and missing/extra tokens or files.
+
+## R1.7-D5 — table metadata after the D2 re-render
+
+Ruling R1.7-D5 on #1758 scopes A2 to earlier closures and records the final
+float text deferred by the design to R1.7. In both rowmeta.tsv and the derived
+builtins.tsv, json_build and json_encode change closed_in from R1.2/R1.3 to
+R1.7. In builtins.tsv, changes_vs_pre changes from no to yes for json_build,
+json_encode and str. These are all five changed table cells; no other cell
+changes. The other D2 rows already derive yes; json_path was not amended.
+
+The R1.7 closure check reuses phase2_float_amend.py's source-bound kind
+metadata and check_pair on each .pre/.branch pair: same line/token positions,
+bit-identical doubles, identical integer spellings and non-float bytes, and
+the complete Python repr re-render. It refuses an R1.7 closure without D2
+kind provenance. Every other closed row retains A2's .pre == .branch check.
+No expectation or probe source changes in this amendment.
+
+builtins_landed.txt now declares R1.7, which make_table.py's shared parser
+accepts. run_probes.sh checks a row closed in R1.7 against .branch whenever
+R1.7 is declared, independently of the row's original R1.6 migration group.
+The public tools/phase2_builtins.sh entry point retains all profile, hook,
+stdin, frozen-bar, membership and accounting checks. This follows principle
+5, Checks are anchored outside the system, narrow, and few: the D2 comparator
+has one implementation, and the two fault plants are one-time calibration.
+
+Continuation 4's plants run through that public entry point in isolated
+clones. json_build.pre changes a non-float key (a to z) while leaving the
+frozen .branch hash intact; D5 must reject it. abs.pre changes an integer
+spelling to a float spelling with its derived flag synchronized to yes;
+the pre-R1.6 A2 closure must still reject it. Each plant must produce only
+its named closure diagnostic, rather than a neighboring metadata/hash error.
+Checkpoint ownership and exact run receipts are in the continuation handoff.
+
+## R1.7-D6 — derived float re-render population
+
+The expanded proof prints each amendment's SHA. Flush the parent checker's
+stdout before starting the probe runner, so these records and the child's
+`ran=` summary remain complete lines. The final profile receipts require
+exactly one complete runner summary; the earlier spliced logs are retained
+as calibration evidence, superseded by the final reruns.
+
+The population is the union of the gate's live comparisons over release, server, server-db and zlib. Every frozen row is examined on each profile. D6 adds 62 rows to the six already amended under D2; the cumulative population is 68. The unchanged json_path control is outside the amendment set. Exact per-profile observations, commands and hashes: continue5-population.json in the R1.7 handoff.
+
+The checker retains D2's per-line, bit-identical double comparison, integer spelling and all other bytes. All numeric tokens have source-bound kinds executed on the pre-N6 binary and all four candidate profiles. Numeric-looking strings echoed by num are source-bound string witnesses and remain byte-identical; only num's numeric results are re-rendered. The original frozen programs are unchanged; the R17-D2-KINDS marker and witnesses are appended only to temporary copies, using the registered stdin fixture where present.
+
+Metadata is derived after amendment. Previously closed amended rows close in R1.7 under D5; every other pre-R1.6 closure retains A2 pre == branch. The existing R1.7 closures are unchanged in this continuation. Derived changes_vs_pre cells and all prior amendment records are detailed below.
+
+| Path | SHA-256 | Profiles | Metadata |
+|---|---|---|---|
+| `tests/phase2/builtins/builtins/acos.branch` | `5958e4ae7fcc01a39f99fdd66c0a9618a9fad69c6e1d470d948f9129c1f6f4cd` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/add.branch` | `fe0387ddfdd246a088888fd214fed1abb2503f3e06a3b57cc6ea610bc0b578ec` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/asin.branch` | `5958e4ae7fcc01a39f99fdd66c0a9618a9fad69c6e1d470d948f9129c1f6f4cd` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/atan.branch` | `f242d5c6ac68248384bda8aa073f2ff5d23bb74e6fced26ba5ad2ac391d98ee6` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/audio_gain.branch` | `b7839145f6b8b9f413311bb0f984dad297356c9d7407628ba2e93a2f6c317c19` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/audio_mix.branch` | `512a7308c426e7ed94676d4c96400d79920afab58c39da9ea68270d8906de059` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/buf_copy.branch` | `9ea81eba48f5b1b9e1f9799c9d8e8f275a0c805a082190eb7a683003a5e4ebb2` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_deinterleave.branch` | `2c8c419b85c034fbd529fd396fb0854d2982be71c29358c171e162c2b9721808` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_dot.branch` | `f9b37d961e959be8c731c30a43a007defa5fa16d3e5e60260bb3c356dbc51c00` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_fill.branch` | `38e227a7b6ada697071d60d8460bab5de95d9a4cdedcae32ccbc987be5e1752c` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_from_list.branch` | `e4a3b6623dd3f422e5712cdaf9f6b32133970df10636edb40f0e2143cbb889e1` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/buf_from_pcm16le.branch` | `036cc08edd6d3a419692c4b1a85ac42d9a891591f55bc5fb806c4d7c8628dff8` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_get.branch` | `077ba41e4a2f93aeb44f20cb2928a585d7bc05cc158087e54aec2d097592081e` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_mix.branch` | `c78a105cdb9774cbbae3417e4aacb73742cdace27313acc705733b80b109d75b` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_peak.branch` | `b69875ae508284a12270c6791980349f86ff7d6ae32f9dfb29a05abccdc8e970` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_resample_linear.branch` | `e37904ae42856ac5a70eaea9fb9e29dd6fd35c5a17a6b31a846bc1e25c23c22d` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_scale_range.branch` | `c8f7e9898eb8c72ffa1bbed04503e8b4867f112300c617db3829aa67981e1d18` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_set.branch` | `b8c58d0a2f26c3baa094a66d073b236ae89d5e12ae0330a4afe75c85728be0a9` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/buf_to_pcm16le.branch` | `63e6df418a4e5f7f819bef3ee88186fd6548d13c06a9073b803868961e01c4e4` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/copy_into.branch` | `a46c24a542bf109a46c4c71890100268ffcfe361b97d42781df51080c27cd7b4` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/cos.branch` | `cf5baf9404a28aab2b4f931c9273949f0072ba197c2bdc27fa58d3d21b54ef0f` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/divide.branch` | `a23f3e073d81fba8891829bb4b4457f39f3b7fb1017bf46a25ef07487d441352` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/dot.branch` | `02946f430ffc9d87a7939a1a2fc200d8367fbcb42feaf973ca0a784500c78966` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/exp.branch` | `a61898dfe0d5ce58736cacff6a0c5ca15e39b3f3aecd198990cb9fd611786479` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/f64_from_bytes.branch` | `731e864c5cb1cb1d39f14554a42eaa605d14019315acedcfacfc332b0fffb172` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/fround.branch` | `0eef9c22f27663cb7b9cffcc4704039adacba202777e3b4eb254c5462d851118` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/gather.branch` | `824cd2ba031d256ef19a25fe1eedae6cad151a9f7791cd52aa38c717ce599461` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/get_at.branch` | `447670d74eca66707e4805343956d16e27c37428081713849ca3c1c9d1f6889a` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/join.branch` | `4e2dd8e15a945d27912c461362bb70083cabdaf0b4e31a18eac4fa5c5980d557` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/json_build.branch` | `c2b8bacb39eb6eef288670e99b3ba01d46c7cab2f94f7c05f47724c1488d9cb1` | release, server, server-db, zlib | closed_in R1.7; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/json_decode.branch` | `c0057af18be5254f0f9d1131b02b0d0cbf3594f3d277a9ed153d80463ebfab12` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/json_encode.branch` | `2ae19e560a3ea73c416cce1162049d723037f5b529e06806bc605c33fcdc2133` | release, server, server-db, zlib | closed_in R1.7; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/leaky_relu.branch` | `ef90cedf931e7e04a61ae277ac5ac010bf33cfca9e5213ea0082221651f34896` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/log.branch` | `b02e0dada2cf9a63f5086fbf5e8501f85dba7cf73b6eda01029647865e8c2986` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/matmul.branch` | `14616b915a5fcfdb5de37ee29ba8d6c547c90e14f0139940b3e313afadab0865` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/matmul_at.branch` | `70bae5f918939bebaf25f312aade4592af6172b2eb587dea09d6f3076a38c050` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/matmul_bt.branch` | `ba1e66cb245a46a025f5d6ee5bf6dce760552982acef6a4ec2599848c6c73569` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/max.branch` | `1ca8c1c885cd796015304677d87b4782642d0a79026bd63fd28b67632b25ed9c` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/mean.branch` | `ce229cfb4718fca2a9b298d927c341ea796ed6f961db2c4360b25e802c1b5225` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/min.branch` | `eee02d9e7cd24809addb54e3c2df45f401134d5c279a7971a87fea26848781bc` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/norm.branch` | `d044f83f1db49f9968c9db1f30f1beafb2b8d39e4c7f162cadcc1474ddaa84ba` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/num.branch` | `7fb58551b9d82163c6703111cf84f5de26bb191de8a66d7fc5102ef8b8688162` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/numerical_grad.branch` | `4500785a3c9519176df2ab02f77fcad440fbf11f26227b29cb52496fd640e005` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/numerical_grad_cols.branch` | `2743a0bc2cabf3858d33ccd68cfab234c86adedc9665a0dbfc477f96aeb7a849` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/numerical_grad_rows.branch` | `0f8312d184ac73b4eeaeec5dfc903859353e0a783dd350c32c73a2855f0e2a03` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/observe.branch` | `1e0ee913120a78b044cf7b567cda8b1672e18fdb5faaa1af94ebb6db1193813a` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/pow.branch` | `68ab07f20b3ee61e305f67fa87230fd2c8a7730bbd4954642fd45136b37b9081` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/ppu_render_frame.branch` | `79f74efe5a437cbb3097669f3da297fb55c36d5682be19c74ba615679d486a47` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/print.branch` | `d2eaac663b00862a70c3ecd6d5f29aaaf9b793021e433025fb403ac65d6d6f01` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/proc_read_buf.hi.branch` | `f786f6b5395f54fa5f9c39c32f18ebc2d0fcda2099395156af684f37783cfe3b` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/read_bytes_buf.branch` | `0b52c1d8294591447cc198a3e8eb027ff8990555c52bf12fbdf93c912428ca84` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/relu.branch` | `24ae0c94c3ef3adf70443d1c90ab71b51e6212e09a7794c2dfc6d44c1a934601` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/scatter_add.branch` | `6efe02323a3891ed6ea11712c44546913ea92f4d0a064f1c5ec8daaaedc8a92d` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/set_at.branch` | `c90f8b78b48c20fae416587af85cc8277342614fa8935a3019ac814e3ac946c1` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/sgd_update.branch` | `42c640c625a2ea086262edc98062262e808ecfc56a0e700970575d9b4c5c10fd` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/sgd_update_cols.branch` | `74b47ef7f49936afc57f2858c3ead68863dd07091681bb275499ad4698237cce` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/sgd_update_rows.branch` | `9ab519ac1c069e9ba1b13cee49b34569bd3da3a72fdf6efe541e92d6e64a3379` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/sin.branch` | `e85163cfbb1a56ed2e29fc5ae75307f2a914acde489f6053e8e16ad55401d4bd` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/sqrt.branch` | `d02ec73520e2db4aa636bed3abe146241425f4b02141efce7a13e0b38ad22639` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/str.branch` | `0c399d98c18da266dc150e39e78e616faadc324cca6e7c6c62ceb270e867913f` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/stream_write.branch` | `33b3dae3eecb631329b1c727730d240df187e9c7b7e5bb4cbe737d0d561803e0` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/tan.branch` | `1390b34eb629f519c834cd599144878efae95d3d6a8e1f80a51694a1d051ebad` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/tensor_load.branch` | `ba6c76c1208e36214edb1aadaddf6bc0507f2163720ad681a11ca9d0d39c1fa3` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/tensor_save.branch` | `be16c42b1944c56fbfad22e242be1472004e60995d31735a08237d9ca4d0b975` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/text_builder_append.branch` | `264d7aac65f70767b435d80e1c3a301a2025121d6fa39503c01b0ef0cc7d6ad5` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/write.branch` | `d646570e76559c96769f89afa8d1160cde5e12bed99a3b36f2fb7d6bb7ca7b7b` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+| `tests/phase2/builtins/builtins/zeros.branch` | `2530cd624a068d1882816dec67cdb9848c1011f5307c0c27fb514cc108b18160` | release, server, server-db, zlib | closed_in -; changes_vs_pre yes -> yes |
+| `tests/phase2/builtins/builtins/zeros_like.branch` | `8d3e0cdb2aee733291b724abd3f038bd9cdf2a90288d24072b87838c538a130c` | release, server, server-db, zlib | closed_in -; changes_vs_pre no -> yes |
+
+Prior accepted-amendment records (preserved provenance):
+
+- | `tests/phase2/builtins/builtins/fround.branch` | `0eef9c22f27663cb7b9cffcc4704039adacba202777e3b4eb254c5462d851118` | R1.7-D2 | N6 Python repr float text only; prior R1.6g-D1 fround numeric semantics |
+- | `tests/phase2/builtins/builtins/json_build.branch` | `c2b8bacb39eb6eef288670e99b3ba01d46c7cab2f94f7c05f47724c1488d9cb1` | R1.7-D2 | N6 Python repr float text only |
+- | `tests/phase2/builtins/builtins/json_encode.branch` | `2ae19e560a3ea73c416cce1162049d723037f5b529e06806bc605c33fcdc2133` | R1.7-D2 | N6 Python repr float text only |
+- | `tests/phase2/builtins/builtins/max.branch` | `1ca8c1c885cd796015304677d87b4782642d0a79026bd63fd28b67632b25ed9c` | R1.7-D2 | N6 Python repr float text only; prior R1.6b-D2 empty-call errors (#1895) |
+- | `tests/phase2/builtins/builtins/min.branch` | `eee02d9e7cd24809addb54e3c2df45f401134d5c279a7971a87fea26848781bc` | R1.7-D2 | N6 Python repr float text only; prior R1.6b-D2 empty-call errors (#1895) |
+- | `tests/phase2/builtins/builtins/str.branch` | `0c399d98c18da266dc150e39e78e616faadc324cca6e7c6c62ceb270e867913f` | R1.7-D2 | N6 Python repr float text only |
+
+One-time public-entry plants: json_build.pre a -> z must fail the D5 non-float comparator; abs.pre integer -> float spelling (with derived flag synchronized) must fail A2; acos' derived candidate digit 0.0 -> 1.0 must fail D2's double-bit comparator naming acos. The last plant is checked through phase2_builtins.sh's population-proof preflight, rather than a stale frozen hash. This follows principle 5, Checks are anchored outside the system, narrow, and few.

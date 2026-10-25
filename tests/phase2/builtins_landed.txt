@@ -1,4 +1,4 @@
-# Completed R1.6 sub-rounds, one full name per line.
+# Completed builtin rounds, one full name per line.
 # R1.6a migrates no builtin rows.
 R1.6b
 R1.6c
@@ -7,3 +7,4 @@ R1.6e
 R1.6f
 R1.6g
 R1.6z
+R1.7

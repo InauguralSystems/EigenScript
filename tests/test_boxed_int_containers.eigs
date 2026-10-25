@@ -99,7 +99,7 @@ xs[1] is IMIN
 ck of [xs[1] == IMIN, "set boxed over smi"]
 ck of [(str of xs[0:3]) == "[140737488355328, -9223372036854775808, 9223372036854775807]", "slice text"]
 srt is sort of [B53, 9007199254740992.0, 9007199254740992, IMAX, IMIN, F47, P47, -1]
-ck of [(str of srt) == "[-9223372036854775808, -1, 140737488355328, 140737488355328, 9007199254740992, 9007199254740992, 9007199254740993, 9223372036854775807]", "sort exact order"]
+ck of [(str of srt) == "[-9223372036854775808, -1, 140737488355328.0, 140737488355328, 9007199254740992.0, 9007199254740992, 9007199254740993, 9223372036854775807]", "sort exact order"]
 ck of [(num_type of srt[2]) != (num_type of srt[3]), "sort keeps both kinds at the tie"]
 sb is sort_by of [[P47, 3, IMIN, IMAX], (v) => 0.0 - v]
 ck of [sb[0] == IMAX and sb[3] == IMIN, "sort_by order"]

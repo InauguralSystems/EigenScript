@@ -8,8 +8,9 @@ refuses pending profile observations. --run TAG BRANCH runs the same runner
 used to record observations and emits the phase2-builtins PASS contract.
 """
 import argparse, atexit, hashlib, importlib.util, json, os, re, shutil, subprocess, sys, tempfile
+from pathlib import Path
 
-ROUNDS = ("R1.6a", "R1.6b", "R1.6c", "R1.6d", "R1.6e", "R1.6f", "R1.6g", "R1.6z")
+ROUNDS = ("R1.6a", "R1.6b", "R1.6c", "R1.6d", "R1.6e", "R1.6f", "R1.6g", "R1.6z", "R1.7")
 
 
 # Author-ruled import, independent of the candidate's expectation files.
@@ -180,6 +181,26 @@ def main():
         meta[b] = (closed_in, profile)
     both_ways(set(sec6), set(meta), "section 6", "rowmeta.tsv")
 
+    # D5 scopes A2 to earlier closures. R1.7 closures must prove the exact
+    # D2 transformation, using its anchored source-bound kinds and comparator.
+    float_amend, float_files = None, {}
+    if any(ci == "R1.7" for ci, _ in meta.values()):
+        try:
+            spec = importlib.util.spec_from_file_location("phase2_float_amend", os.path.join(ROOT, "tools/phase2_float_amend.py"))
+            float_amend = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(float_amend)
+            data, _ = float_amend.load(Path(ROOT), Path(ROOT) / "tests/phase2/r17_float_text.json")
+            float_files = data["files"]
+        except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
+            fail.append("R1.7-D5: cannot load D2 kind provenance: " + str(error))
+        if float_files:
+            try:
+                # D6 covers every amended row, including rows without closed_in.
+                # Reuse D2's comparator, independently of the amendment SHA waiver.
+                float_amend.check(Path(ROOT), Path(ROOT) / "tests/phase2/r17_float_text.json")
+            except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
+                fail.append("R1.7-D6: " + str(error))
+
     cases = {}
     for c, b, hook, stdin in tsv("cases.tsv", 4):
         if c in cases: fail.append("cases.tsv: duplicate case " + c)
@@ -239,6 +260,7 @@ def main():
         return "yes" if "differs" in s else "no"
 
     rows, counts, tally = [], {}, {}
+    r17_cases, r17_floats = 0, 0
     guard = {"guarded": 0, "yes": 0, "closed_in": 0, "pending-profile": 0, "vacuous": 0}
     for n in sorted(sec6):
         cls, loss, q7 = sec6[n]
@@ -315,7 +337,19 @@ def main():
         guarded = loss == "LOSS" or cls == "int-requiring" or q7 != "-"
         if closed_in != "-":
             if not guarded: fail.append("%s: closed_in %r on a row the vacuity guard does not cover" % (n, closed_in))
-            if vs_pre != "no": fail.append("%s: closed_in %r but changes_vs_pre is %s: the closure must hold as .pre == .branch (ruling A2)" % (n, closed_in, vs_pre))
+            if closed_in == "R1.7":
+                for c in mine:
+                    path = "tests/phase2/builtins/builtins/" + c + ".branch"
+                    try:
+                        if path not in float_files:
+                            raise ValueError(path + ": no source-bound D2 kind provenance")
+                        r17_floats += float_amend.check_pair(
+                            (Path(BDIR) / (c + ".pre")).read_bytes(),
+                            (Path(ROOT) / path).read_bytes(), float_files[path]["line_kinds"], path)
+                        r17_cases += 1
+                    except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
+                        fail.append("%s: closed_in R1.7 must be exactly the D2 float re-render (R1.7-D5): %s" % (n, error))
+            elif vs_pre != "no": fail.append("%s: closed_in %r but changes_vs_pre is %s: the closure must hold as .pre == .branch (ruling A2)" % (n, closed_in, vs_pre))
         if guarded:
             guard["guarded"] += 1
             if closed_in != "-": guard["closed_in"] += 1
@@ -370,6 +404,7 @@ def main():
                                                        tally.get((r, k, "pending-profile"), 0)) for k in ("pre", "tag")))
     print("guard: guarded=%(guarded)d yes=%(yes)d closed_in=%(closed_in)d pending_profile=%(pending-profile)d vacuous=%(vacuous)d" % guard
           + (" (final)" if FINAL else ""))
+    print("closure-r17: cases=%d floats=%d (R1.7-D5)" % (r17_cases, r17_floats))
     for f in fail: print("FAIL: " + f)
     if fail: return 1
     if args.run:
@@ -378,9 +413,10 @@ def main():
             print("FAIL: builtins_landed.txt: " + str(error)); return 1
         env = os.environ.copy()
         env["R16_LANDED"] = " ".join(landed)
+        sys.stdout.flush()
         rc = subprocess.call(["bash", os.path.join(HERE, "run_probes.sh"), "--check", *args.run], env=env)
         if rc: return rc
-        migrated = sum(1 for row in rows if "R1.6" + row[5] in landed)
+        migrated = sum(1 for row in rows if "R1.6" + row[5] in landed or row[6] == "R1.7" and "R1.7" in landed)
         print("phase2-builtins: PASS rows=%d landed=%s migrated=%d unchanged=%d" %
               (len(rows), ",".join(landed) or "-", migrated, len(rows) - migrated))
     return 0

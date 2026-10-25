@@ -2,7 +2,7 @@
 [3, "int"]
 [2.5, "float"]
 [7, "int"]
-[3, "int", 3, "float"]
+[3, "int", 3.0, "float"]
 ["empty", "value"]
 ["empty-list", "value"]
 rc=0

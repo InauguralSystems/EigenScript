@@ -1,4 +1,4 @@
-[5, "float"]
+[5.0, "float"]
 ["offset-fraction", "value"]
-3
+3.0
 rc=0
