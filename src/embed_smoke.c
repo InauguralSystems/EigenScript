@@ -44,10 +44,45 @@ static int failures = 0;
 
 static EigsValue *fenv_nested(EigsValue *arg) {
     (void)arg;
+    CHECK(fesetround(FE_UPWARD) == 0, "nested callback sets FE_UPWARD");
     EigsValue *v = eigs_eval_string("1 / 3 == 0.3333333333333333");
     int ok = v && eigs_value_as_bool(v);
     eigs_value_release(v);
+    CHECK(fegetround() == FE_UPWARD,
+          "inner evaluation restores the callback's rounding mode");
+    CHECK(fesetround(FE_TONEAREST) == 0,
+          "nested callback restores the EigenScript rounding mode");
     return eigs_value_new_bool(ok);
+}
+
+static void check_fenv_default_fast_path(void) {
+    CHECK(fesetround(FE_TONEAREST) == 0, "fast path selects FE_TONEAREST");
+    CHECK(feclearexcept(FE_ALL_EXCEPT) == 0, "fast path clears entry flags");
+#if defined(__x86_64__)
+    unsigned before = _mm_getcsr();
+#endif
+    EigsValue *v = eigs_eval_string("1 / 3 == 0.3333333333333333");
+    CHECK(v && eigs_value_as_bool(v), "default fast-path arithmetic witness");
+    eigs_value_release(v);
+    CHECK(fegetround() == FE_TONEAREST,
+          "default fast-path success preserves rounding mode");
+    CHECK(fetestexcept(FE_ALL_EXCEPT) == 0,
+          "default fast-path success clears EigenScript sticky flags");
+#if defined(__x86_64__)
+    CHECK(_mm_getcsr() == before,
+          "default fast-path success restores the x86-64 MXCSR");
+#endif
+    v = eigs_eval_string("missing_name_fast_path_1969");
+    CHECK(v == NULL, "default fast-path error witness raises");
+    CHECK(fegetround() == FE_TONEAREST,
+          "default fast-path error preserves rounding mode");
+    CHECK(fetestexcept(FE_ALL_EXCEPT) == 0,
+          "default fast-path error clears EigenScript sticky flags");
+#if defined(__x86_64__)
+    CHECK(_mm_getcsr() == before,
+          "default fast-path error restores the x86-64 MXCSR");
+#endif
+    eigs_clear_error();
 }
 
 static void check_fenv_eval(const char *mode_name, int mode, const char *witness) {
@@ -72,6 +107,7 @@ static void check_fenv_eval(const char *mode_name, int mode, const char *witness
 
 static void test_fenv_boundary(void) {
     EigsValue *v;
+    check_fenv_default_fast_path();
     check_fenv_eval("FE_UPWARD", FE_UPWARD,
         "w1969 is (1 / 3 == 0.3333333333333333)\nprint of w1969\nw1969");
     check_fenv_eval("FE_DOWNWARD", FE_DOWNWARD,
@@ -115,7 +151,8 @@ static void test_fenv_boundary(void) {
         "task1969 is spawn of worker1969\nthread_join of task1969");
     CHECK(v && eigs_value_as_bool(v), "spawned worker inherits default environment");
     eigs_value_release(v);
-    CHECK(fegetround() == FE_UPWARD, "host mode restored after nesting and spawn");
+    CHECK(fegetround() == FE_UPWARD,
+          "host mode restored after nesting and spawn");
     fesetenv(FE_DFL_ENV);
 }
 

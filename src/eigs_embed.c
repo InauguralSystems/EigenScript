@@ -19,12 +19,13 @@
 #include <xmmintrin.h>
 #endif
 
-/* The public embedding boundary owns the floating-point environment.  A
- * callback is deliberately not a boundary: it executes as part of the
- * EigenScript run, and a reentrant API call merely increments this depth. */
-static _Thread_local unsigned embed_fenv_depth;
-static _Thread_local int embed_fenv_swapped;
-static _Thread_local fenv_t embed_host_fenv;
+/* Every public boundary owns the environment it observes.  In particular, a
+ * reentrant call from a callback must not inherit a mode selected temporarily
+ * by that callback. */
+typedef struct {
+    fenv_t env;
+    int swapped;
+} EmbedFenv;
 
 static int embed_fenv_is_default(void) {
 #if defined(__x86_64__)
@@ -42,26 +43,28 @@ static int embed_fenv_is_default(void) {
 #endif
 }
 
-static void embed_fenv_enter(void) {
-    if (embed_fenv_depth++ == 0) {
-        embed_fenv_swapped = !embed_fenv_is_default();
-        if (embed_fenv_swapped) {
-            fegetenv(&embed_host_fenv);
-            fesetenv(FE_DFL_ENV);
-        }
+static void embed_fenv_enter(EmbedFenv *state) {
+    state->swapped = !embed_fenv_is_default();
+    if (state->swapped) {
+        fegetenv(&state->env);
+        fesetenv(FE_DFL_ENV);
     }
 }
 
-static void embed_fenv_leave(void) {
-    if (--embed_fenv_depth == 0 && embed_fenv_swapped)
-        fesetenv(&embed_host_fenv);
+static void embed_fenv_leave(EmbedFenv *state) {
+    if (state->swapped)
+        fesetenv(&state->env);
+    else
+        /* The fast-path entry proved that every exception flag was clear. */
+        feclearexcept(FE_ALL_EXCEPT);
 }
 
 /* ---- Lifecycle ---------------------------------------------------- */
 
 int eigs_state_init_runtime(EigsState *st) {
     int result = -1;
-    embed_fenv_enter();
+    EmbedFenv fenv;
+    embed_fenv_enter(&fenv);
     if (!st) goto out;
     if (!eigs_current || eigs_current->state != st) goto out;
     if (g_global_env) { result = 0; goto out; }
@@ -72,12 +75,13 @@ int eigs_state_init_runtime(EigsState *st) {
     eigs_obs_enable_runtime();
     result = 0;
 out:
-    embed_fenv_leave();
+    embed_fenv_leave(&fenv);
     return result;
 }
 
 EigsState *eigs_open(void) {
-    embed_fenv_enter();
+    EmbedFenv fenv;
+    embed_fenv_enter(&fenv);
     EigsState *st = eigs_state_new();
     if (!st) goto out;
     if (!eigs_thread_attach(st)) {
@@ -92,7 +96,7 @@ EigsState *eigs_open(void) {
         goto out;
     }
 out:
-    embed_fenv_leave();
+    embed_fenv_leave(&fenv);
     return st;
 }
 
@@ -101,7 +105,8 @@ void eigs_state_set_strict(EigsState *st, int enabled) {
 }
 
 void eigs_close(EigsState *st) {
-    embed_fenv_enter();
+    EmbedFenv fenv;
+    embed_fenv_enter(&fenv);
     if (!st) goto out;
     /* Mirror main.c's teardown order. #301: drain the handle table FIRST — reap
      * any spawned workers (join after closing channels, #303) and free channels.
@@ -142,7 +147,7 @@ void eigs_close(EigsState *st) {
     eigs_thread_detach();
     eigs_state_destroy_released(st);
 out:
-    embed_fenv_leave();
+    embed_fenv_leave(&fenv);
 }
 
 void eigs_trace_shutdown(void) {
@@ -272,14 +277,16 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
 }
 
 EigsValue *eigs_eval_string(const char *src) {
-    embed_fenv_enter();
+    EmbedFenv fenv;
+    embed_fenv_enter(&fenv);
     EigsValue *result = eval_source(src, NULL);
-    embed_fenv_leave();
+    embed_fenv_leave(&fenv);
     return result;
 }
 
 EigsValue *eigs_eval_file(const char *path) {
-    embed_fenv_enter();
+    EmbedFenv fenv;
+    embed_fenv_enter(&fenv);
     EigsValue *result = NULL;
 #if EIGENSCRIPT_FREESTANDING
     (void)path;
@@ -295,7 +302,7 @@ EigsValue *eigs_eval_file(const char *path) {
     free(src);
 #endif /* !EIGENSCRIPT_FREESTANDING */
 out:
-    embed_fenv_leave();
+    embed_fenv_leave(&fenv);
     return result;
 }
 
@@ -520,9 +527,10 @@ int eigs_trace_bind_stream(const char *key) {
 }
 
 int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
-    embed_fenv_enter();
+    EmbedFenv fenv;
+    embed_fenv_enter(&fenv);
     int result = trace_set_replay_mem(bytes, len, strict);
-    embed_fenv_leave();
+    embed_fenv_leave(&fenv);
     return result;
 }
 
@@ -536,9 +544,10 @@ int eigs_replay_take(const char *name, EigsValue **out) {
 }
 
 void eigs_trace_record_nondet(const char *name, EigsValue *v) {
-    embed_fenv_enter();
+    EmbedFenv fenv;
+    embed_fenv_enter(&fenv);
     if (g_trace_enabled) trace_nondet_value(name, (Value *)v);
-    embed_fenv_leave();
+    embed_fenv_leave(&fenv);
 }
 
 /* #1637: EIGS_KIND(EIGS_TYPE_X) bits -> the runtime's ValType bits. */

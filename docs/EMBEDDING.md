@@ -83,14 +83,17 @@ EigenScript code always runs in the IEEE 754 default environment: round to
 nearest (ties to even), gradual underflow (no FTZ/DAZ), and masked exceptions.
 Embedding calls that execute code or convert number text save the host
 environment, install the default, and restore every control and sticky
-exception flag on return, including error returns. Nested entries are counted
-per thread, so an API call made re-entrantly by a host callback cannot restore
-the host mode in the middle of the outer evaluation.
+exception flag on return, including error returns. Each call saves its own
+caller environment. Thus, an API call made re-entrantly by a host callback
+runs in the default environment even if that callback temporarily changed its
+rounding mode, and the callback's mode is back when the inner call returns.
 
 Host callbacks execute in EigenScript's default environment; the runtime does
 not swap around them. A callback that needs a different mode must save, set,
-and restore it itself. Runtime-created worker threads are created while the
-default environment is installed and therefore inherit that environment.
+and restore it itself before returning to EigenScript. Re-entrant API calls do
+not inherit that temporary mode. Runtime-created worker threads are created
+while the default environment is installed and therefore inherit that
+environment.
 
 ## Lifecycle
 
