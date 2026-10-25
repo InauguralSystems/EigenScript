@@ -1,1 +1,0 @@
-- Keep top-level `catch`, `elif`, and `else` clauses in the current REPL input unit instead of parsing them as standalone statements.

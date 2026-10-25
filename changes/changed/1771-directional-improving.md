@@ -1,1 +1,0 @@
-- The numeric `improving` observer predicate is now directional, following the machine-learning loss convention that lower is better. A decreasing trajectory with contracting steps can be improving; a growing trajectory never is, even when it rises toward a plateau (#1771).

@@ -1,1 +1,0 @@
-- Remove unimplemented observer declarations and stale references; no changelog entry is needed because no callable API or runtime behavior changes.

@@ -1,1 +1,0 @@
-- Make amalgamation return paths and local initialization explicit for warning-free debug and lightly optimized builds; runtime behavior is unchanged.
