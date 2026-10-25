@@ -98,6 +98,15 @@ jobs:
         with:
           ref: ${{ needs.tag.outputs.tag }}
 
+      # Pin the interpreter the venv is built from. `macos-latest` moved to an
+      # image whose `python3` has no audited PyYAML wheel (the v0.47.0 arm64
+      # build: "No matching distribution found for PyYAML==6.0.3"). The hash
+      # file lists cp310-cp314 wheels, so a fixed CPython keeps them matching
+      # whatever the runner image ships.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.12'
+
       # Install the test-only YAML loader before release artifacts exist. Use
       # a dedicated environment and accept only the audited wheel hashes for
       # the runner platforms, rather than executing a mutable PyPI release.
