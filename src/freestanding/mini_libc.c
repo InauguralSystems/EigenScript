@@ -449,7 +449,9 @@ int eigs_feclearexcept(int excepts) {
     } else {
         EigsFenvImage image;
         __asm__ volatile ("fnstenv %0" : "=m" (image.machine.x87));
-        image.machine.x87[2] &= (unsigned char)~excepts;
+        /* The 28-byte fnstenv image holds the control word at byte 0 and the
+         * status word at byte 4; its low six bits are the FE_* flags. */
+        image.machine.x87[4] &= (unsigned char)~excepts;
         __asm__ volatile ("fldenv %0" : : "m" (image.machine.x87));
     }
     __asm__ volatile ("stmxcsr %0" : "=m" (mxcsr));

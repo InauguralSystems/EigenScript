@@ -135,6 +135,27 @@ static void t_fenv(void) {
     check_machine_fenv("clear-all", want, machine_fenv());
     printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", "clear-all",
            want.control, want.status, want.mxcsr);
+
+    /* A subset clear (Codex P2 on #1974): glibc raises FE_INVALID in MXCSR and
+     * FE_OVERFLOW/FE_INEXACT in the x87 status word, so clearing FE_INEXACT
+     * alone must clear only x87 PE and leave the other two flags set. */
+    const int subset_raise = FE_INVALID | FE_OVERFLOW | FE_INEXACT;
+    fesetenv(FE_DFL_ENV);
+    feraiseexcept(subset_raise);
+    MachineFenv subset_before = machine_fenv();
+    CHECK(feclearexcept(FE_INEXACT) == 0, "clear-subset: glibc feclearexcept");
+    MachineFenv subset_want = machine_fenv();
+    CHECK((subset_want.status & FE_OVERFLOW) && !(subset_want.status & FE_INEXACT) &&
+          (subset_want.mxcsr & FE_INVALID),
+          "clear-subset: glibc oracle keeps the other flags (sw %04x mxcsr %08x)",
+          subset_want.status, subset_want.mxcsr);
+    fesetenv(FE_DFL_ENV);
+    feraiseexcept(subset_raise);
+    check_machine_fenv("clear-subset start", subset_before, machine_fenv());
+    CHECK(eigs_feclearexcept(FE_INEXACT) == 0, "clear-subset: mini return");
+    check_machine_fenv("clear-subset", subset_want, machine_fenv());
+    printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", "clear-subset",
+           subset_want.control, subset_want.status, subset_want.mxcsr);
     fesetenv(FE_DFL_ENV);
 }
 
