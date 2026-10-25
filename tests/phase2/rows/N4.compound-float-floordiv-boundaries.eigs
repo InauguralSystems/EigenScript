@@ -1,0 +1,14 @@
+# ROW: N4.compound-float-floordiv-boundaries
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+x is 1.0
+x //= 0.1
+d is {"x": 1}
+d.x //= 0.1
+xs is [1e-300, -1e-300]
+xs[0] //= -1e300
+xs[1] //= 1e300
+print of [x, d.x, xs, num_type of x, num_type of d.x]

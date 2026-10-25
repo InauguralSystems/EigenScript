@@ -244,6 +244,10 @@ def main():
     r = converse([INIT, did_open("x is 5\nprint of x\n"), SHUTDOWN, EXIT])
     check("clean document → empty diagnostics", diagnostics(r) == [])
 
+    # #1758 N4/Q6: shared tokenizer/parser/compiler accept both new spellings.
+    r = converse([INIT, did_open("x is -7 // 2\nx //= 2\nprint of x\n"), SHUTDOWN, EXIT])
+    check("floor division and compound assignment have clean diagnostics", diagnostics(r) == [])
+
     # #1366: these are capacity/stack invariants rather than observable LSP
     # semantics at today's 16-parameter parser cap. Pin the shared bound and
     # heap allocation so neither can silently regress while behavior stays green.

@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: audio_stop (int-requiring; channel number); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+d is audio_open of [44100, 1]
+c is audio_play_loop of [[0.1, 0.2], -1]
+try:
+    print of ["fraction-answer", audio_stop of (c + 0.5)]
+catch e:
+    print of ["channel-fraction", e.kind]
+a is audio_stop of (c + 0.0)
+b is audio_stop of c
+print of [a, nt of a, b, nt of b]
+audio_close of null

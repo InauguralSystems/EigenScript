@@ -222,6 +222,12 @@ typedef enum {
                            * Appended to preserve the public bytecode ABI. */
     OP_TRUE,            /*obs:NONE*/ /* #1637: push the bool true immediate. Appended. */
     OP_FALSE,           /*obs:NONE*/ /* #1637: push the bool false immediate. Appended. */
+    /* #1758 R1.3: int literal opcodes append to preserve the bytecode ABI.
+     * The float literal opcodes above retain their original meanings. */
+    OP_INT_ZERO,        /*obs:NONE*/ /* push int 0 */
+    OP_INT_ONE,         /*obs:NONE*/ /* push int 1 */
+    OP_INT_CONST,       /*obs:NONE*/ /* [idx:16] push int constant pool entry */
+    OP_IDIV,            /*obs:NONE*/ /* #1758 N4: floor division, appended */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
@@ -676,7 +682,7 @@ int    task_handle_unpack(double packed, int *id, uint32_t *gen);
 Value *task_sched_trace_read(void);   /* list of {seq, tick, task, cause} dicts; [] when off / no scheduler */
 void   task_sched_trace_clear(void);  /* discard the recorded history (no-op without a scheduler) */
 /* Inc 4 seeded scheduling strategy (builtins.c task_sched_seed). */
-void   task_sched_set_seed(double seed); /* install a seed → seeded pick; ensures the scheduler */
+void   task_sched_set_seed(int64_t seed); /* install a seed → seeded pick; ensures the scheduler */
 
 /* ---- Public API ---- */
 

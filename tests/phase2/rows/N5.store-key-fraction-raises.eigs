@@ -1,0 +1,14 @@
+# ROW: N5.store-key-fraction-raises
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+s is store_open of "store-key-fraction.db"
+k is store_put of [s, "c", {"v": 1}]
+try:
+    print of (store_get of [s, "c", 1.9])
+catch e:
+    print of e.kind
+store_close of s
+remove_file of "store-key-fraction.db"

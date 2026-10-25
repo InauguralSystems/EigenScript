@@ -1,0 +1,10 @@
+# ROW: N4.int-floordiv-zero-raises
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+try:
+    print of (7 // 0)
+catch e:
+    print of e.kind

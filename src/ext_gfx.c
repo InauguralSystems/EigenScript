@@ -79,6 +79,7 @@ typedef struct {
 static void *g_sdl_lib = NULL;
 static SDL_Window *g_window = NULL;
 static SDL_Renderer *g_renderer = NULL;
+static int (*p_SDL_GetRendererOutputSize)(SDL_Renderer*, int*, int*);
 
 static int (*p_SDL_Init)(Uint32);
 static void (*p_SDL_Quit)(void);
@@ -160,6 +161,7 @@ static int load_sdl2(void) {
     LOAD(SDL_GetTicks); LOAD(SDL_Delay);
     #undef LOAD
     /* Optional symbols — NULL is fine */
+    p_SDL_GetRendererOutputSize = dlsym(g_sdl_lib, "SDL_GetRendererOutputSize");
     p_SDL_GetModState = dlsym(g_sdl_lib, "SDL_GetModState");
     p_SDL_GetMouseState = dlsym(g_sdl_lib, "SDL_GetMouseState");
     p_SDL_RenderSetClipRect = dlsym(g_sdl_lib, "SDL_RenderSetClipRect");
@@ -273,6 +275,7 @@ static int g_ttf_font_count = 0;
  * existing fixed-width layouts don't overflow (scale 2 → 14 px). */
 static int ttf_scale_to_px(int scale) {
     if (scale < 1) scale = 1;
+    if (scale > (INT_MAX - 2) / 6) return 0;
     return 6 * scale + 2;
 }
 
@@ -328,6 +331,7 @@ static int ttf_available(void) {
  * (callers fall back to the bitmap path). */
 static void* ttf_font_for_scale(int scale) {
     int px = ttf_scale_to_px(scale);
+    if (!px) return NULL; /* Q7: use bitmap geometry when the font API cannot hold the size. */
     for (int i = 0; i < g_ttf_font_count; i++)
         if (g_ttf_fonts[i].px == px) return g_ttf_fonts[i].font;
     if (g_ttf_font_count >= TTF_FONT_CACHE_MAX)
@@ -389,7 +393,7 @@ static const char* scancode_name(int sc) {
 
 /* ---- Builtins ---- */
 
-/* #1007: the drawing surface reads RUNS of list elements as `eigs_num_arg(&(), __func__)`
+/* #1007: the drawing surface reads RUNS of list elements as `eigs_float_arg(&(), __func__)`
  * with no type check. `Value`'s union overlaps `double num` with
  * `char *str`, so an unchecked read reinterprets a pointer as a double
  * and then `(int)`-casts it — the read itself is the defect, which is why
@@ -404,7 +408,7 @@ static int gfx_nums(Value *arg, int from, int to) {
     int cnt = arg->data.list.count;
     if (to > cnt) to = cnt;
     for (int i = from; i < to; i++) {
-        if (list_elem_type(arg, i) != VAL_NUM) return 0;
+        if ((list_elem_type(arg, i) != VAL_FLOAT && list_elem_type(arg, i) != VAL_INT)) return 0;
     }
     return 1;
 }
@@ -417,7 +421,7 @@ static int gfx_nums(Value *arg, int from, int to) {
 static int gfx_list_all_num(Value *l) {
     if (!l || l->type != VAL_LIST) return 0;
     for (int i = 0; i < l->data.list.count; i++) {
-        if (list_elem_type(l, i) != VAL_NUM) return 0;
+        if ((list_elem_type(l, i) != VAL_FLOAT && list_elem_type(l, i) != VAL_INT)) return 0;
     }
     return 1;
 }
@@ -447,16 +451,19 @@ Value* builtin_gfx_open(Value *arg) {
      * same value. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
               "gfx_open", "[number width, number height, title]", make_bool(0));
-    /* #1007: width and height were read as `eigs_num_arg(&(), __func__)` with no type check
+    /* #1007: width and height were read as `eigs_float_arg(&(), __func__)` with no type check
      * while the title on the very next line WAS checked. Value's union
      * overlaps `double num` with `char *str`, so gfx_open of ["800","600",t]
      * reinterpreted a pointer as a double and int-cast it — in practice a
      * tiny denormal, so the window opened 0x0 and gfx_open answered 1. */
-    ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-              list_elem_type(arg, 1) != VAL_NUM,
+    ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+              (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
               "gfx_open", "[number width, number height, title]", make_bool(0));
-    int w = (int)eigs_list_num(arg, 0, __func__);
-    int h = (int)eigs_list_num(arg, 1, __func__);
+    int64_t width, height;
+    if (!eigs_list_magnitude(arg, 0, INT_MIN, INT_MAX, &width, "gfx_open") ||
+        !eigs_list_magnitude(arg, 1, INT_MIN, INT_MAX, &height, "gfx_open"))
+        return make_null();
+    int w = (int)width, h = (int)height;
     const char *title = list_elem_type(arg, 2) == VAL_STR ? list_get_ref(arg, 2)->data.str : "EigenScript";
 
     if (!load_sdl2()) {
@@ -503,6 +510,62 @@ Value* builtin_gfx_close(Value *arg) {
     return make_null(); /* fs:VOID gfx_close answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
+
+/* Q7 helpers shared by the geometry builtins below. Output dimensions are
+ * renderer pixels (not window coordinates, which can differ on HiDPI). */
+static EigsRect gfx_drawable(void) {
+    EigsRect area = {0, 0, 0, 0};
+    if (g_renderer && p_SDL_GetRendererOutputSize &&
+        p_SDL_GetRendererOutputSize(g_renderer, &area.w, &area.h) != 0)
+        area.w = area.h = 0;
+    return area;
+}
+
+static int gfx_colour(const Value *arg, int first, int alpha, int colour[4],
+                      const char *who) {
+    colour[3] = 255;
+    for (int i = 0; i < 3; ++i)
+        if (!eigs_list_bounded(arg, first+i, 0, 255, &colour[i], who)) return 0;
+    return !alpha || arg->data.list.count <= first+3 ||
+           eigs_list_bounded(arg, first+3, 0, 255, &colour[3], who);
+}
+
+/* Derived edges may overflow outward when long double is binary64.
+ * Intersect edges separately, before subtracting to form a width: a huge
+ * circle can have left=-inf/right=+inf without ever forming -inf+inf.
+ * The stack list borrows only immediate float slots, and never escapes. */
+static int gfx_edges_ld(long double x, long double y, long double right, long double bottom,
+                        const EigsRect *area, EigsShape *shape, const char *who) {
+    memset(shape, 0, sizeof *shape);
+    shape->empty = 1;
+    if (area->w <= 0 || area->h <= 0) return 1;
+    right = fminl((long double)area->x + area->w, right);
+    bottom = fminl((long double)area->y + area->h, bottom);
+    x = fmaxl(area->x, x); y = fmaxl(area->y, y);
+    if (x >= right || y >= bottom) return 1;
+    EigsSlot slots[4] = { slot_from_f64((double)x), slot_from_f64((double)y),
+                         slot_from_f64((double)(right-x)), slot_from_f64((double)(bottom-y)) };
+    Value args = { .type = VAL_LIST, .data.list = { .items = slots, .count = 4, .capacity = 4 } };
+    return eigs_geom_shape(&args, 0, EIGS_RECT, area, shape, who);
+}
+
+/* Callers have finite offsets or offsets that overflow toward +inf, and
+ * positive extents. In particular, framebuffer w*scale may be +inf while
+ * its finite origin still clips safely through the complete rectangle. */
+static int gfx_rect_ld(long double x, long double y, long double w, long double h,
+                       const EigsRect *area, EigsShape *shape, const char *who) {
+    if (w <= 0 || h <= 0) {
+        memset(shape, 0, sizeof *shape); shape->empty = 1; return 1;
+    }
+    return gfx_edges_ld(x, y, x+w, y+h, area, shape, who);
+}
+
+static void gfx_fill_shape(const EigsShape *shape) {
+    if (shape->empty) return;
+    SDL_Rect rect = {shape->x, shape->y, shape->w, shape->h};
+    p_SDL_RenderFillRect(g_renderer, &rect);
+}
+
 /* gfx_clear of [r, g, b] */
 Value* builtin_gfx_clear(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "gfx_clear");
@@ -523,16 +586,12 @@ Value* builtin_gfx_clear(Value *arg) {
      * path of this builtin answers. */
     ARG_GUARD(shaped && !gfx_nums(arg, 0, 3),
               "gfx_clear", "[number r, number g, number b]", make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
-    int r = 0, g = 0, b = 0;
-    if (shaped) {
-        r = (int)eigs_list_num(arg, 0, __func__);
-        g = (int)eigs_list_num(arg, 1, __func__);
-        b = (int)eigs_list_num(arg, 2, __func__);
-    }
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
+    int colour[4] = {0, 0, 0, 255};
+    if (shaped && !gfx_colour(arg, 0, 0, colour, __func__)) return make_null();
+    if (!g_renderer) return make_null(); /* fs:VOID no renderer; null is the result on every path. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], 255);
     p_SDL_RenderClear(g_renderer);
-    return make_null(); /* fs:VOID gfx_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_rect of [x, y, w, h, r, g, b] or [x, y, w, h, r, g, b, a] */
@@ -543,19 +602,14 @@ Value* builtin_gfx_rect(Value *arg) {
               "gfx_rect",
               "[number x, number y, number w, number h, number r, number g, number b] and an optional number alpha",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rect answers null on every path -- the return value, not a rejected-argument stand-in */
-    SDL_Rect rect;
-    rect.x = (int)eigs_list_num(arg, 0, __func__);
-    rect.y = (int)eigs_list_num(arg, 1, __func__);
-    rect.w = (int)eigs_list_num(arg, 2, __func__);
-    rect.h = (int)eigs_list_num(arg, 3, __func__);
-    int r = (int)eigs_list_num(arg, 4, __func__);
-    int g = (int)eigs_list_num(arg, 5, __func__);
-    int b = (int)eigs_list_num(arg, 6, __func__);
-    int a = (arg->data.list.count >= 8) ? (int)eigs_list_num(arg, 7, __func__) : 255;
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
-    p_SDL_RenderFillRect(g_renderer, &rect);
-    return make_null(); /* fs:VOID gfx_rect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    int colour[4];
+    if (!gfx_colour(arg, 4, 1, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_RECT, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY empty visible intersection draws nothing. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], colour[3]);
+    gfx_fill_shape(&shape);
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_line of [x1, y1, x2, y2, r, g, b] */
@@ -566,17 +620,14 @@ Value* builtin_gfx_line(Value *arg) {
               "gfx_line",
               "[number x1, number y1, number x2, number y2, number r, number g, number b]",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_line answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x1 = (int)eigs_list_num(arg, 0, __func__);
-    int y1 = (int)eigs_list_num(arg, 1, __func__);
-    int x2 = (int)eigs_list_num(arg, 2, __func__);
-    int y2 = (int)eigs_list_num(arg, 3, __func__);
-    int r = (int)eigs_list_num(arg, 4, __func__);
-    int g = (int)eigs_list_num(arg, 5, __func__);
-    int b = (int)eigs_list_num(arg, 6, __func__);
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
-    p_SDL_RenderDrawLine(g_renderer, x1, y1, x2, y2);
-    return make_null(); /* fs:VOID gfx_line answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    int colour[4];
+    if (!gfx_colour(arg, 4, 0, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_LINE, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY no visible segment. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], 255);
+    p_SDL_RenderDrawLine(g_renderer, shape.x, shape.y, shape.x2, shape.y2);
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_point of [x, y, r, g, b] */
@@ -586,15 +637,14 @@ Value* builtin_gfx_point(Value *arg) {
               || !gfx_nums(arg, 0, 5),
               "gfx_point", "[number x, number y, number r, number g, number b]",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_point answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
-    int r = (int)eigs_list_num(arg, 2, __func__);
-    int g = (int)eigs_list_num(arg, 3, __func__);
-    int b = (int)eigs_list_num(arg, 4, __func__);
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
-    p_SDL_RenderDrawPoint(g_renderer, x, y);
-    return make_null(); /* fs:VOID gfx_point answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    int colour[4];
+    if (!gfx_colour(arg, 2, 0, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_POINT, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY an outside point draws nothing. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], 255);
+    p_SDL_RenderDrawPoint(g_renderer, shape.x, shape.y);
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_circle of [cx, cy, radius, r, g, b] — filled circle via midpoint */
@@ -605,22 +655,28 @@ Value* builtin_gfx_circle(Value *arg) {
               "gfx_circle",
               "[number cx, number cy, number radius, number r, number g, number b] and an optional number alpha",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_circle answers null on every path -- the return value, not a rejected-argument stand-in */
-    int cx = (int)eigs_list_num(arg, 0, __func__);
-    int cy = (int)eigs_list_num(arg, 1, __func__);
-    int radius = (int)eigs_list_num(arg, 2, __func__);
-    int r = (int)eigs_list_num(arg, 3, __func__);
-    int g = (int)eigs_list_num(arg, 4, __func__);
-    int b = (int)eigs_list_num(arg, 5, __func__);
-    int a = (arg->data.list.count >= 7) ? (int)eigs_list_num(arg, 6, __func__) : 255;
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
-    /* Filled circle via horizontal lines */
-    for (int dy = -radius; dy <= radius; dy++) {
-        int dx = (int)sqrt((double)(radius * radius - dy * dy));
-        SDL_Rect row = { cx - dx, cy + dy, dx * 2 + 1, 1 };
-        p_SDL_RenderFillRect(g_renderer, &row);
+    int colour[4];
+    if (!gfx_colour(arg, 3, 1, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_CIRCLE, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY no visible bounding box. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], colour[3]);
+    long double cx = shape.raw[0], cy = shape.raw[1], radius = shape.raw[2];
+    for (int row = shape.y; row < shape.y + shape.h; ++row) {
+        /* Keep the visible row term after subtracting a far-away centre:
+         * cy==r==1e308 still has a wide chord at y=1, not a zero chord. */
+        long double near = cy >= row ? (radius-cy)+row : (radius+cy)-row;
+        if (near < 0) continue;
+        long double dy = fabsl((long double)row-cy);
+        /* The chord is <=radius, even when r+dy or r*r overflows.
+         * Keep near's cancellation-safe value and factor the square root. */
+        long double dx = radius == 0 ? 0 :
+            fminl(radius, sqrtl(near)*sqrtl(radius)*sqrtl(1+fminl(1,dy/radius)));
+        EigsShape span;
+        if (!gfx_edges_ld(cx-dx, row, cx+dx+1, row+1, &area, &span, __func__)) return make_null();
+        gfx_fill_shape(&span);
     }
-    return make_null(); /* fs:VOID gfx_circle answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_rrect of [x, y, w, h, radius, r, g, b] or [..., a]
@@ -632,41 +688,25 @@ Value* builtin_gfx_rrect(Value *arg) {
               "gfx_rrect",
               "[number x, number y, number w, number h, number radius, number r, number g, number b] and an optional number alpha",
               make_null());
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_rrect answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
-    int w = (int)eigs_list_num(arg, 2, __func__);
-    int h = (int)eigs_list_num(arg, 3, __func__);
-    int rad = (int)eigs_list_num(arg, 4, __func__);
-    int r = (int)eigs_list_num(arg, 5, __func__);
-    int g = (int)eigs_list_num(arg, 6, __func__);
-    int b = (int)eigs_list_num(arg, 7, __func__);
-    int a = (arg->data.list.count >= 9) ? (int)eigs_list_num(arg, 8, __func__) : 255;
-    if (w <= 0 || h <= 0) return make_null(); /* fs:EMPTY a rectangle with no width or height covers no pixels, so drawing nothing IS the answer -- the degenerate-geometry identity, not a laundered argument (lib/ui layout produces zero-size rects routinely) */
-    /* Clamp radius to half the smaller dimension */
-    if (rad > w / 2) rad = w / 2;
-    if (rad > h / 2) rad = h / 2;
-    if (rad < 0) rad = 0;
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, a);
-    if (rad == 0) {
-        SDL_Rect rect = { x, y, w, h };
-        p_SDL_RenderFillRect(g_renderer, &rect);
-        return make_null(); /* fs:VOID radius 0 took the plain-rect path and drew it; gfx_rrect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    int colour[4];
+    if (!gfx_colour(arg, 5, 1, colour, __func__)) return make_null();
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_RRECT, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || shape.empty) return make_null(); /* fs:EMPTY no visible rounded rectangle. */
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], colour[3]);
+    long double x = shape.raw[0], y = shape.raw[1];
+    long double right = x+shape.raw[2], bottom = y+shape.raw[3];
+    long double rad = fminl(fmaxl(0, shape.raw[4]), fminl(shape.raw[2]/2.0L, shape.raw[3]/2.0L));
+    for (int row = shape.y; row < shape.y + shape.h; ++row) {
+        long double depth = row < y+rad ? row-y : row >= bottom-rad ? (bottom-1)-row : rad;
+        depth = fmaxl(0, fminl(rad, depth));
+        long double chord = fminl(rad, sqrtl(depth)*sqrtl(2*rad-depth));
+        long double inset = rad-chord;
+        EigsShape span;
+        if (!gfx_edges_ld(x+inset, row, right-inset, row+1, &area, &span, __func__)) return make_null();
+        gfx_fill_shape(&span);
     }
-    /* Center body (between top and bottom rounded bands) */
-    SDL_Rect center = { x, y + rad, w, h - 2 * rad };
-    p_SDL_RenderFillRect(g_renderer, &center);
-    /* Top and bottom bands with rounded corners via scanlines */
-    for (int dy = 0; dy < rad; dy++) {
-        int dx = (int)sqrt((double)(rad * rad - (rad - dy) * (rad - dy)));
-        /* Top band */
-        SDL_Rect top_row = { x + rad - dx, y + dy, w - 2 * (rad - dx), 1 };
-        p_SDL_RenderFillRect(g_renderer, &top_row);
-        /* Bottom band */
-        SDL_Rect bot_row = { x + rad - dx, y + h - 1 - dy, w - 2 * (rad - dx), 1 };
-        p_SDL_RenderFillRect(g_renderer, &bot_row);
-    }
-    return make_null(); /* fs:VOID gfx_rrect answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_clip of [x, y, w, h] — set render clip rectangle.
@@ -681,18 +721,15 @@ Value* builtin_gfx_clip(Value *arg) {
                             || !gfx_nums(arg, 0, 4)),
               "gfx_clip", "[number x, number y, number w, number h] or null",
               make_null());
-    if (!g_renderer || !p_SDL_RenderSetClipRect) return make_null();  /* fs:VOID no window / no SDL symbol: gfx_clip answers null on every path -- the return value, not a rejected-argument stand-in */
-    if (clearing) {
-        p_SDL_RenderSetClipRect(g_renderer, NULL);
-        return make_null();  /* fs:VOID the clip was cleared -- gfx_clip's normal successful answer */
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!clearing && !eigs_geom_shape(arg, 0, EIGS_RECT, &area, &shape, __func__)) return make_null();
+    if (!g_renderer || !p_SDL_RenderSetClipRect) return make_null(); /* fs:VOID no renderer or optional clip API. */
+    if (clearing) p_SDL_RenderSetClipRect(g_renderer, NULL);
+    else {
+        SDL_Rect clip = {shape.x, shape.y, shape.empty ? 0 : shape.w, shape.empty ? 0 : shape.h};
+        p_SDL_RenderSetClipRect(g_renderer, &clip);
     }
-    SDL_Rect clip;
-    clip.x = (int)eigs_list_num(arg, 0, __func__);
-    clip.y = (int)eigs_list_num(arg, 1, __func__);
-    clip.w = (int)eigs_list_num(arg, 2, __func__);
-    clip.h = (int)eigs_list_num(arg, 3, __func__);
-    p_SDL_RenderSetClipRect(g_renderer, &clip);
-    return make_null(); /* fs:VOID gfx_clip answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_read of [x, y] — read back one rendered pixel as [r, g, b].
@@ -715,22 +752,25 @@ Value* builtin_gfx_read(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
               || !gfx_nums(arg, 0, 2),
               "gfx_read", "[number x, number y]", make_null());
+    /* Deterministic refusals stay above TAKE, including nonfinite numbers. */
+    (void)eigs_list_float(arg, 0, __func__);
+    if (g_has_error) return make_null();
+    (void)eigs_list_float(arg, 1, __func__);
+    if (g_has_error) return make_null();
     TRACE_NONDET_TAKE("gfx_read");
     if (!g_renderer || !p_SDL_RenderReadPixels)
         TRACE_NONDET_RECORD("gfx_read", make_null());
-    SDL_Rect r;
-    r.x = (int)eigs_list_num(arg, 0, __func__);
-    r.y = (int)eigs_list_num(arg, 1, __func__);
-    r.w = 1;
-    r.h = 1;
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!eigs_geom_shape(arg, 0, EIGS_POINT, &area, &shape, __func__)) return make_null();
+    if (shape.empty) TRACE_NONDET_RECORD("gfx_read", make_null());
+    SDL_Rect rect = {shape.x, shape.y, 1, 1};
     Uint32 px = 0;
-    if (p_SDL_RenderReadPixels(g_renderer, &r, MY_SDL_PIXELFORMAT_ARGB8888,
-                               &px, (int)sizeof(Uint32)) != 0)
+    if (p_SDL_RenderReadPixels(g_renderer, &rect, MY_SDL_PIXELFORMAT_ARGB8888, &px, sizeof px) != 0)
         TRACE_NONDET_RECORD("gfx_read", make_null());
     Value *out = make_list(3);
-    list_append_owned(out, make_num((double)((px >> 16) & 0xFF)));
-    list_append_owned(out, make_num((double)((px >> 8) & 0xFF)));
-    list_append_owned(out, make_num((double)(px & 0xFF)));
+    list_append_owned(out, make_int((px >> 16) & 0xFF));
+    list_append_owned(out, make_int((px >> 8) & 0xFF));
+    list_append_owned(out, make_int(px & 0xFF));
     TRACE_NONDET_RECORD("gfx_read", out);
 }
 
@@ -773,39 +813,39 @@ Value* builtin_gfx_poll(Value *arg) {
         case MY_SDL_KEYDOWN:
             dict_set_owned(d, "type", make_str("keydown"));
             dict_set_owned(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
-            dict_set_owned(d, "scancode", make_num(ev.key.keysym.scancode));
+            dict_set_owned(d, "scancode", make_int(ev.key.keysym.scancode));
             poll_set_mods(d, ev.key.keysym.mod);
             break;
         case MY_SDL_KEYUP:
             dict_set_owned(d, "type", make_str("keyup"));
             dict_set_owned(d, "key", make_str(scancode_name(ev.key.keysym.scancode)));
-            dict_set_owned(d, "scancode", make_num(ev.key.keysym.scancode));
+            dict_set_owned(d, "scancode", make_int(ev.key.keysym.scancode));
             poll_set_mods(d, ev.key.keysym.mod);
             break;
         case MY_SDL_MOUSEMOTION:
             dict_set_owned(d, "type", make_str("mousemove"));
-            dict_set_owned(d, "x", make_num(ev.motion.x));
-            dict_set_owned(d, "y", make_num(ev.motion.y));
+            dict_set_owned(d, "x", make_int(ev.motion.x));
+            dict_set_owned(d, "y", make_int(ev.motion.y));
             poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEBUTTONDOWN:
             dict_set_owned(d, "type", make_str("mousedown"));
-            dict_set_owned(d, "button", make_num(ev.button.button));
-            dict_set_owned(d, "x", make_num(ev.button.x));
-            dict_set_owned(d, "y", make_num(ev.button.y));
+            dict_set_owned(d, "button", make_int(ev.button.button));
+            dict_set_owned(d, "x", make_int(ev.button.x));
+            dict_set_owned(d, "y", make_int(ev.button.y));
             poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEBUTTONUP:
             dict_set_owned(d, "type", make_str("mouseup"));
-            dict_set_owned(d, "button", make_num(ev.button.button));
-            dict_set_owned(d, "x", make_num(ev.button.x));
-            dict_set_owned(d, "y", make_num(ev.button.y));
+            dict_set_owned(d, "button", make_int(ev.button.button));
+            dict_set_owned(d, "x", make_int(ev.button.x));
+            dict_set_owned(d, "y", make_int(ev.button.y));
             poll_set_mods(d, poll_mod_state());
             break;
         case MY_SDL_MOUSEWHEEL:
             dict_set_owned(d, "type", make_str("wheel"));
-            dict_set_owned(d, "x", make_num(ev.wheel.x));
-            dict_set_owned(d, "y", make_num(ev.wheel.y));
+            dict_set_owned(d, "x", make_int(ev.wheel.x));
+            dict_set_owned(d, "y", make_int(ev.wheel.y));
             /* #822: x/y are scroll DELTAS. Carry the pointer as mx/my so
              * a consumer can zoom about the cursor without shadowing
              * mousemove (stale before the first motion event). Queried
@@ -815,8 +855,8 @@ Value* builtin_gfx_poll(Value *arg) {
             if (p_SDL_GetMouseState) {
                 int wmx = 0, wmy = 0;
                 p_SDL_GetMouseState(&wmx, &wmy);
-                dict_set_owned(d, "mx", make_num(wmx));
-                dict_set_owned(d, "my", make_num(wmy));
+                dict_set_owned(d, "mx", make_int(wmx));
+                dict_set_owned(d, "my", make_int(wmy));
             }
             poll_set_mods(d, poll_mod_state());
             break;
@@ -824,8 +864,8 @@ Value* builtin_gfx_poll(Value *arg) {
             /* SDL_WINDOWEVENT_SIZE_CHANGED = 6 (RESIZED is 5). */
             if (ev.window.event == 6) {
                 dict_set_owned(d, "type", make_str("resize"));
-                dict_set_owned(d, "w", make_num(ev.window.data1));
-                dict_set_owned(d, "h", make_num(ev.window.data2));
+                dict_set_owned(d, "w", make_int(ev.window.data1));
+                dict_set_owned(d, "h", make_int(ev.window.data2));
             } else {
                 /* #1007: `d` is already allocated. Returning without
                  * releasing it leaked 584 bytes / 6 allocations per
@@ -847,15 +887,17 @@ Value* builtin_gfx_ticks(Value *arg) {
     (void)arg;
     TRACE_NONDET_TAKE("gfx_ticks");
     TRACE_NONDET_RECORD("gfx_ticks",
-        make_num(g_sdl_lib ? (double)p_SDL_GetTicks() : 0.0));
+        make_int(g_sdl_lib ? (int64_t)p_SDL_GetTicks() : 0));
 }
 
 /* gfx_delay of ms */
 Value* builtin_gfx_delay(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "gfx_delay", "number milliseconds",
+    ARG_GUARD(!arg || !val_is_number(arg), "gfx_delay", "number milliseconds",
               make_null());
-    Uint32 ms = (Uint32)eigs_num_arg(arg, __func__);
-    if (g_sdl_lib) p_SDL_Delay(ms);
+    int64_t milliseconds;
+    if (!eigs_magnitude_arg(arg, 0, UINT32_MAX, &milliseconds, "gfx_delay"))
+        return make_null();
+    if (g_sdl_lib) p_SDL_Delay((Uint32)milliseconds);
     return make_null(); /* fs:VOID gfx_delay answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
@@ -982,11 +1024,11 @@ Value* builtin_gfx_text(Value *arg) {
      *
      * THE OPTIONAL SCALE (slot 6) IS IN THIS GUARD ON PURPOSE, and that is
      * why gfx_text and gfx_text_width answer a wrong-typed scale
-     * DIFFERENTLY. gfx_text_width's slot carried `items[1]->type == VAL_NUM`
+     * DIFFERENTLY. gfx_text_width's slot carried `val_is_number(items[1])`
      * before #1007, so its wrong-typed scale is a COERCION and keeps
      * measuring at scale 1 (STRICT_REQUIRE there, byte-identical off the
      * flag). This one did not:
-     *     int scale = (count >= 7) ? (int)eigs_num_arg(items[6], __func__) : 1;
+     *     int scale = (count >= 7) ? (int)eigs_float_arg(items[6], __func__) : 1;
      * reads the union unchecked, so a string scale drew the glyph from a
      * reinterpreted `char *` — a subnormal that truncates to 0 and is then
      * clamped to 1, which is why it LOOKED like scale 1 while being a pun.
@@ -1002,66 +1044,73 @@ Value* builtin_gfx_text(Value *arg) {
               "gfx_text",
               "[number x, number y, string text, number r, number g, number b] and an optional number scale",
               make_null());
+    double x = eigs_list_float(arg, 0, __func__);
+    if (g_has_error) return make_null();
+    double y = eigs_list_float(arg, 1, __func__);
+    if (g_has_error) return make_null();
+    double scale = arg->data.list.count >= 7 ? eigs_list_float(arg, 6, __func__) : 1;
+    if (g_has_error) return make_null();
+    if (scale < 1) scale = 1;
+    int colour[4];
+    if (!gfx_colour(arg, 3, 0, colour, __func__)) return make_null();
+    const char *text = list_get_ref(arg, 2)->data.str;
     if (__builtin_expect(g_replay_enabled, 0)) {
-        rt_error(EK_IO, 0, "gfx_text: not replayable under "
-                 "EIGS_REPLAY (file-read boundary; see docs/TRACE.md)");
+        rt_error(EK_IO, 0, "gfx_text: not replayable under EIGS_REPLAY (file-read boundary; see docs/TRACE.md)");
         return make_null();
     }
-    if (!g_renderer) return make_null();  /* fs:VOID no window open: gfx_text answers null on every path -- the return value, not a rejected-argument stand-in */
-    int x = (int)eigs_list_num(arg, 0, __func__);
-    int y = (int)eigs_list_num(arg, 1, __func__);
-    const char *text = list_get_ref(arg, 2)->data.str;
-    int r = (int)eigs_list_num(arg, 3, __func__);
-    int g = (int)eigs_list_num(arg, 4, __func__);
-    int b = (int)eigs_list_num(arg, 5, __func__);
-    int scale = (arg->data.list.count >= 7) ? (int)eigs_list_num(arg, 6, __func__) : 1;
-    if (scale < 1) scale = 1;
-
-    if (*text && ttf_available() && p_SDL_CreateTextureFromSurface
-        && p_SDL_FreeSurface && p_SDL_QueryTexture && p_SDL_DestroyTexture
-        && p_SDL_RenderCopy) {
-        void *font = ttf_font_for_scale(scale);
+    if (!g_renderer) return make_null(); /* fs:VOID no renderer. */
+    EigsRect area = gfx_drawable();
+    /* The integer TTF size API cannot express a fractional or enormous
+     * bitmap cell. Retain continuous geometry in the bitmap fallback. */
+    if (*text && scale <= (INT_MAX-2)/6 && scale == floor(scale) &&
+        ttf_available() && p_SDL_CreateTextureFromSurface && p_SDL_FreeSurface &&
+        p_SDL_QueryTexture && p_SDL_DestroyTexture && p_SDL_RenderCopy) {
+        void *font = ttf_font_for_scale((int)scale);
         if (font) {
-            SDL_Color col = { (Uint8)r, (Uint8)g, (Uint8)b, 255 };
+            SDL_Color col = {(Uint8)colour[0], (Uint8)colour[1], (Uint8)colour[2], 255};
             void *surf = p_TTF_RenderUTF8_Blended(font, text, col);
             if (surf) {
                 SDL_Texture *tex = p_SDL_CreateTextureFromSurface(g_renderer, surf);
                 p_SDL_FreeSurface(surf);
                 if (tex) {
                     int tw = 0, th = 0;
-                    p_SDL_QueryTexture(tex, NULL, NULL, &tw, &th);
-                    SDL_Rect dst = { x, y, tw, th };
-                    p_SDL_RenderCopy(g_renderer, tex, NULL, &dst);
+                    if (p_SDL_QueryTexture(tex, NULL, NULL, &tw, &th) == 0 && tw > 0 && th > 0) {
+                        EigsShape shape;
+                        if (!gfx_rect_ld(x, y, tw, th, &area, &shape, __func__)) {
+                            p_SDL_DestroyTexture(tex); return make_null();
+                        }
+                        if (!shape.empty) {
+                            SDL_Rect dst = {shape.x, shape.y, shape.w, shape.h};
+                            SDL_Rect src = {(int)((long double)shape.x-roundl(x)),
+                                            (int)((long double)shape.y-roundl(y)), shape.w, shape.h};
+                            p_SDL_RenderCopy(g_renderer, tex, &src, &dst);
+                        }
+                        p_SDL_DestroyTexture(tex);
+                        return make_null(); /* fs:VOID TTF rendering completed, including an empty intersection. */
+                    }
                     p_SDL_DestroyTexture(tex);
-                    return make_null(); /* fs:VOID the TTF path rendered the string; gfx_text answers null on every path -- this is the return value, not a stand-in for a rejected argument */
                 }
             }
         }
-        /* fall through to the bitmap path on any failure */
     }
-
-    p_SDL_SetRenderDrawColor(g_renderer, r, g, b, 255);
-    int cx = x;
-    for (const char *p = text; *p; p++) {
+    p_SDL_SetRenderDrawColor(g_renderer, colour[0], colour[1], colour[2], 255);
+    long double cx = x;
+    for (const char *p = text; *p; ++p) {
         int ch = (unsigned char)*p;
         if (ch < 32 || ch > 126) ch = '?';
-        const unsigned char *glyph = font5x7[ch - 32];
-        for (int row = 0; row < 7; row++) {
-            unsigned char bits = glyph[row];
-            for (int col = 0; col < 5; col++) {
-                if (bits & (0x10 >> col)) {
-                    if (scale == 1) {
-                        p_SDL_RenderDrawPoint(g_renderer, cx + col, y + row);
-                    } else {
-                        SDL_Rect pr = { cx + col * scale, y + row * scale, scale, scale };
-                        p_SDL_RenderFillRect(g_renderer, &pr);
-                    }
+        const unsigned char *glyph = font5x7[ch-32];
+        for (int row = 0; row < 7; ++row)
+            for (int col = 0; col < 5; ++col)
+                if (glyph[row] & (0x10 >> col)) {
+                    EigsShape cell;
+                    if (!gfx_rect_ld(cx+(long double)col*scale, (long double)y+(long double)row*scale,
+                                     scale, scale, &area, &cell, __func__)) return make_null();
+                    gfx_fill_shape(&cell);
                 }
-            }
-        }
-        cx += (5 + 1) * scale; /* 5 pixel width + 1 pixel gap */
+        cx += 6*(long double)scale;
+        if (cx >= (long double)area.x + area.w) break;
     }
-    return make_null(); /* fs:VOID gfx_text answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* gfx_text_width of [text, scale?] (or of "text") — pixel width of `text`
@@ -1080,16 +1129,19 @@ Value* builtin_gfx_text_width(Value *arg) {
                && list_elem_type(arg, 0) == VAL_STR) {
         text = list_get_ref(arg, 0)->data.str;
         if (arg->data.list.count >= 2) {
-            if (list_elem_type(arg, 1) == VAL_NUM)
-                scale = (int)eigs_list_num(arg, 1, __func__);
-            else
+            if ((list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)) {
+                int64_t rounded;
+                if (!eigs_list_magnitude(arg, 1, INT_MIN, INT_MAX, &rounded,
+                                         "gfx_text_width")) return make_null();
+                scale = (int)rounded;
+            } else
                 bad_scale = 1;
         }
     }
     /* #1007: converted out of its #971 deferral marker. The 0 stays the non-strict
      * stand-in — tests/test_gfx_text.eigs pins `gfx_text_width of 5` at 0. */
     ARG_GUARD(!text, "gfx_text_width",
-              "string text or [string text, number scale]", make_num(0));
+              "string text or [string text, number scale]", make_int(0));
     /* A wrong-typed SCALE is the COERCION shape, not a stand-in one: the
      * width for scale 1 is still computed and returned. STRICT_REQUIRE
      * leaves the default path byte-identical by construction. */
@@ -1097,16 +1149,21 @@ Value* builtin_gfx_text_width(Value *arg) {
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "gfx_text_width: not replayable under EIGS_REPLAY "
                  "(font file-read boundary; see docs/TRACE.md)");
-        return make_num(0);
+        return make_int(0);
     }
     if (scale < 1) scale = 1;
     if (*text && ttf_available()) {
         void *font = ttf_font_for_scale(scale);
         int w = 0, h = 0;
         if (font && p_TTF_SizeUTF8(font, text, &w, &h) == 0)
-            return make_num((double)w);
+            return make_int(w);
     }
-    return make_num((double)strlen(text) * 6.0 * (double)scale);
+    size_t length = strlen(text);
+    if (length > (uint64_t)INT64_MAX / 6 / (uint64_t)scale) {
+        rt_error(EK_VALUE, 0, "gfx_text_width: pixel width does not fit an int64");
+        return make_null();
+    }
+    return make_int((int64_t)length * 6 * scale);
 }
 
 /* gfx_text_height of scale? (number, [scale], or null → 1) — pixel line
@@ -1119,27 +1176,33 @@ Value* builtin_gfx_text_height(Value *arg) {
      * 1 and the caller was told the height it did not ask for. There is no
      * stand-in to name (the height for scale 1 is still returned), so this
      * raises under strict and does nothing otherwise. */
-    STRICT_REQUIRE(arg && arg->type != VAL_NULL && arg->type != VAL_NUM
+    STRICT_REQUIRE(arg && arg->type != VAL_NULL && !val_is_number(arg)
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 1
-                        && list_elem_type(arg, 0) == VAL_NUM),
+                        && (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT)),
                    "gfx_text_height", "number scale, [number scale] or null");
+    if (arg && val_is_number(arg)) {
+        int64_t rounded;
+        if (!eigs_magnitude_arg(arg, INT_MIN, INT_MAX, &rounded, "gfx_text_height"))
+            return make_null();
+        scale = (int)rounded;
+    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
+               && (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT)) {
+        int64_t rounded;
+        if (!eigs_list_magnitude(arg, 0, INT_MIN, INT_MAX, &rounded, "gfx_text_height"))
+            return make_null();
+        scale = (int)rounded;
+    }
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "gfx_text_height: not replayable under EIGS_REPLAY "
                  "(font file-read boundary; see docs/TRACE.md)");
-        return make_num(0);
-    }
-    if (arg && arg->type == VAL_NUM) {
-        scale = (int)eigs_num_arg(arg, __func__);
-    } else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
-               && list_elem_type(arg, 0) == VAL_NUM) {
-        scale = (int)eigs_list_num(arg, 0, __func__);
+        return make_int(0);
     }
     if (scale < 1) scale = 1;
     if (ttf_available()) {
         void *font = ttf_font_for_scale(scale);
-        if (font) return make_num((double)p_TTF_FontHeight(font));
+        if (font) return make_int(p_TTF_FontHeight(font));
     }
-    return make_num(7.0 * (double)scale);
+    return make_int(INT64_C(7) * scale);
 }
 
 /* ---- Audio Builtins ---- */
@@ -1194,60 +1257,38 @@ static void audio_mix_callback(void *ud, uint8_t *stream, int len) {
 /* Convert samples (floats -1..1) to an owned int16 buffer. Accepts a
  * VAL_LIST or a VAL_BUFFER (#578 — the buffer is the type the language
  * recommends for bulk samples and what a DAW render produces; forcing a
- * buffer→list conversion per play meant millions of appends + VAL_NUM
+ * buffer→list conversion per play meant millions of appends + VAL_FLOAT
  * allocations just to feed the mixer). Returns NULL on bad shape or an
  * over-64MB clip. */
 static int16_t* audio_convert_samples(Value *samples, int *out_n) {
     if (!samples) return NULL;
-    if (samples->type == VAL_BUFFER) {
-        int n = samples->data.buffer.count;
-        if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
-        int16_t *buf = xmalloc_array(n, sizeof(int16_t));
-        for (int i = 0; i < n; i++) {
-            double s = buffer_read_num(samples, i);
-            if (g_has_error) { free(buf); return NULL; }
-            if (s > 1.0) s = 1.0;
-            if (s < -1.0) s = -1.0;
-            buf[i] = (int16_t)(s * 32767);
-        }
-        *out_n = n;
-        return buf;
-    }
-    if (samples->type != VAL_LIST) return NULL;
-    int n = samples->data.list.count;
-    if (n <= 0 || (double)n * sizeof(int16_t) > 64.0 * 1024.0 * 1024.0) return NULL;
-    int16_t *buf = xmalloc_array(n, sizeof(int16_t));
-    for (int i = 0; i < n; i++) {
-        EigsSlot sample = list_slot(samples, i);
-        /* #1007: a non-number used to be COERCED to 0 here, so a wrong-typed
-         * sample list produced a valid buffer of silence and the caller's
-         * `if (!buf)` guard never saw it — audio_play answered with a real
-         * channel id and played nothing. Coercion is the one shape that
-         * cannot be caught downstream, so it is rejected at the element. */
-        if (slot_type(sample) != VAL_NUM) {
-            /* Raise only under strict, exactly as ARG_GUARD does — this macro
-             * cannot be used here because the function answers int16_t*, not
-             * Value*. An unconditional raise turned a call that used to answer
-             * a channel id into a hard error in the DEFAULT build, which is
-             * the one thing the #971 reform promises not to do.
-             * Rejecting (rather than coercing) is unconditional, because the
-             * coerced result was the defect: the caller then answers 0, which
-             * is what BUILTINS.md already documents for audio_play ("0 on bad
-             * args") and what the old code could not produce. */
-            if (g_strict) {
-                rt_error(EK_TYPE, 0, "audio samples: element %d is %s, expected a number\n",
-                         i, val_type_name(slot_type(sample)));
+    int n=samples->type==VAL_BUFFER ? samples->data.buffer.count :
+          samples->type==VAL_LIST ? samples->data.list.count : 0;
+    if (n<=0 || (size_t)n>64u*1024u*1024u/sizeof(int16_t)) return NULL;
+    int16_t *buf=xmalloc_array(n,sizeof *buf);
+    for (int i=0;i<n;++i) {
+        double s;
+        if (samples->type==VAL_BUFFER) {
+            /* R1.6d-D1: stored data crosses the final finite boundary once. */
+            s=buffer_read_f64(samples,i);
+        } else {
+            EigsSlot sample=list_slot(samples,i);
+            if ((slot_type(sample)!=VAL_FLOAT && slot_type(sample)!=VAL_INT)) {
+                if (g_strict) rt_error(EK_TYPE,0,"audio samples: element %d is %s, expected a number\n",i,val_type_name(slot_type(sample)));
+                free(buf);return NULL;
             }
-            free(buf);
-            return NULL;
+            s=eigs_slot_float(sample,__func__);
         }
-        double s = eigs_slot_num(sample, __func__);
-        if (s > 1.0) s = 1.0;
-        if (s < -1.0) s = -1.0;
-        buf[i] = (int16_t)(s * 32767);
+        if (g_has_error) { free(buf);return NULL; }
+        /* Clamp before multiplying so even a finite 1e308 sample cannot
+         * overflow its conversion. Q7/Q4 then round the PCM integer. */
+        if (s>1) s=1;
+        if (s< -1) s= -1;
+        int pcm;
+        if (!eigs_slot_bounded(slot_from_f64(s*32767),-32767,32767,&pcm,__func__)) { free(buf);return NULL; }
+        buf[i]=(int16_t)pcm;
     }
-    *out_n = n;
-    return buf;
+    *out_n=n;return buf;
 }
 
 /* Install a clip on a free (else oldest-finite, else oldest) channel.
@@ -1325,18 +1366,26 @@ Value* builtin_audio_open(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
                    "audio_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        /* The same unchecked `eigs_num_arg(&(), __func__)` type-pun as gfx_open. That it is an
+        /* The same unchecked `eigs_float_arg(&(), __func__)` type-pun as gfx_open. That it is an
          * oversight rather than a convention is settled 180 lines down:
-         * audio_stream_open guards this identical pair with `type == VAL_NUM`
+         * audio_stream_open guards this identical pair with `(type == VAL_FLOAT || type == VAL_INT)`
          * before reading it. */
-        ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-                  list_elem_type(arg, 1) != VAL_NUM,
-                  "audio_open", "[number freq, number channels]", make_num(0));
+        ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+                  (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
+                  "audio_open", "[number freq, number channels]", make_int(0));
     }
-    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
+    /* R1.6e-D1: channels are exact counts in 1..255. Validate all
+     * deterministic arguments before SDL, device changes or a tape record. */
+    int64_t freq = 44100, channels = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &freq, "audio_open")
+            || !eigs_list_int_range(arg, 1, 1, 255, &channels, "audio_open"))
+            return make_int(0);
+    }
+    if (!g_sdl_lib) { if (!load_sdl2()) return make_int(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
     if (!p_SDL_OpenAudioDevice) {
         fprintf(stderr, "audio_open: SDL2 audio symbols not available\n");
-        return make_num(0);  /* fs:ANSWER SDL2 audio symbols missing -- same no-device-id 0, detail on stderr above */
+        return make_int(0);  /* fs:ANSWER SDL2 audio symbols missing -- same no-device-id 0, detail on stderr above */
     }
     p_SDL_Init(MY_SDL_INIT_AUDIO);
 
@@ -1347,18 +1396,15 @@ Value* builtin_audio_open(Value *arg) {
     want.samples = 1024;
     want.callback = audio_mix_callback;
 
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        /* Type-checked at the top of the function, before the SDL load. */
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
-    }
+    want.freq = (int)freq;
+    want.channels = (Uint8)channels;
 
     g_audio_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (g_audio_device < 2) { g_audio_device = 0; return make_num(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the no-device result and g_audio_device is reset to match */
+    if (g_audio_device < 2) { g_audio_device = 0; return make_int(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the no-device result and g_audio_device is reset to match */
     g_audio_freq = have.freq;
     g_audio_channels = have.channels;
     p_SDL_PauseAudioDevice(g_audio_device, 0); /* start playing */
-    return make_num(g_audio_device);
+    return make_int(g_audio_device);
 }
 
 /* audio_close of null */
@@ -1377,11 +1423,14 @@ Value* builtin_audio_pause(Value *arg) {
     /* #1007, COERCION shape: a wrong-typed flag fell back to 1 (pause), so
      * `audio_pause of "off"` PAUSED the device and said nothing. Above the
      * device check, the [135] rule. */
-    STRICT_REQUIRE(arg && arg->type != VAL_NULL && arg->type != VAL_NUM,
+    STRICT_REQUIRE(arg && arg->type != VAL_NULL && !val_is_number(arg),
                    "audio_pause", "number flag (1 = pause, 0 = unpause) or null");
+    int64_t pause = 1;
+    if (arg && val_is_number(arg)
+        && !eigs_int_arg_range(arg, INT_MIN, INT_MAX, &pause, "audio_pause"))
+        return make_null();
     if (!g_audio_device) return make_null();  /* fs:VOID no device open: audio_pause answers null on every path -- the return value, not a rejected-argument stand-in */
-    int pause = (arg && arg->type == VAL_NUM) ? (int)eigs_num_arg(arg, __func__) : 1;
-    p_SDL_PauseAudioDevice(g_audio_device, pause);
+    p_SDL_PauseAudioDevice(g_audio_device, (int)pause);
     return make_null(); /* fs:VOID audio_pause answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
@@ -1472,17 +1521,25 @@ Value* builtin_audio_capture_open(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
                    "audio_capture_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-                  list_elem_type(arg, 1) != VAL_NUM,
-                  "audio_capture_open", "[number freq, number channels]", make_num(0));
+        ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+                  (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
+                  "audio_capture_open", "[number freq, number channels]", make_int(0));
+    }
+    /* R1.6e-D1: channels are exact counts in 1..255. Validate all
+     * deterministic arguments before SDL, device changes or a tape record. */
+    int64_t freq = 44100, channels = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &freq, "audio_capture_open")
+            || !eigs_list_int_range(arg, 1, 1, 255, &channels, "audio_capture_open"))
+            return make_int(0);
     }
     TRACE_NONDET_TAKE("audio_capture_open");
     if (!g_sdl_lib) {
-        if (!load_sdl2()) TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+        if (!load_sdl2()) TRACE_NONDET_RECORD("audio_capture_open", make_int(0));
     }
     if (!p_SDL_OpenAudioDevice || !p_SDL_DequeueAudio) {
         fprintf(stderr, "audio_capture_open: SDL2 capture symbols not available\n");
-        TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+        TRACE_NONDET_RECORD("audio_capture_open", make_int(0));
     }
     p_SDL_Init(MY_SDL_INIT_AUDIO);
 
@@ -1493,11 +1550,8 @@ Value* builtin_audio_capture_open(Value *arg) {
     want.samples = 1024;
     want.callback = NULL;   /* queue mode: drain via SDL_DequeueAudio */
 
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        /* Type-checked at the top of the function, before the SDL load. */
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
-    }
+    want.freq = (int)freq;
+    want.channels = (Uint8)channels;
 
     if (g_capture_device) {
         p_SDL_CloseAudioDevice(g_capture_device);
@@ -1506,10 +1560,10 @@ Value* builtin_audio_capture_open(Value *arg) {
     g_capture_device = p_SDL_OpenAudioDevice(NULL, 1, &want, &have, 0);
     if (g_capture_device < 2) {
         g_capture_device = 0;
-        TRACE_NONDET_RECORD("audio_capture_open", make_num(0));
+        TRACE_NONDET_RECORD("audio_capture_open", make_int(0));
     }
     p_SDL_PauseAudioDevice(g_capture_device, 0); /* start recording */
-    TRACE_NONDET_RECORD("audio_capture_open", make_num(g_capture_device));
+    TRACE_NONDET_RECORD("audio_capture_open", make_int(g_capture_device));
 }
 
 /* audio_capture_read of null — drain accumulated samples since the
@@ -1601,14 +1655,22 @@ Value* builtin_audio_stream_open(Value *arg) {
                    && !(arg->type == VAL_LIST && arg->data.list.count >= 2),
                    "audio_stream_open", "[number freq, number channels] or null");
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-                  list_elem_type(arg, 1) != VAL_NUM,
-                  "audio_stream_open", "[number freq, number channels]", make_num(0));
+        ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+                  (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
+                  "audio_stream_open", "[number freq, number channels]", make_int(0));
     }
-    if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER BUILTINS.md audio_stream_open: "0 when SDL/audio is unavailable"; libSDL2 absent is environment state */
+    /* R1.6e-D1: channels are exact counts in 1..255. Validate all
+     * deterministic arguments before SDL, device changes or a tape record. */
+    int64_t freq = 44100, channels = 1;
+    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2) {
+        if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &freq, "audio_stream_open")
+            || !eigs_list_int_range(arg, 1, 1, 255, &channels, "audio_stream_open"))
+            return make_int(0);
+    }
+    if (!g_sdl_lib) { if (!load_sdl2()) return make_int(0); }  /* fs:ANSWER BUILTINS.md audio_stream_open: "0 when SDL/audio is unavailable"; libSDL2 absent is environment state */
     if (!p_SDL_OpenAudioDevice || !p_SDL_QueueAudio) {
         fprintf(stderr, "audio_stream_open: SDL2 audio symbols not available\n");
-        return make_num(0);  /* fs:ANSWER SDL2 queue-audio symbols missing -- the same documented 0-when-unavailable result */
+        return make_int(0);  /* fs:ANSWER SDL2 queue-audio symbols missing -- the same documented 0-when-unavailable result */
     }
     p_SDL_Init(MY_SDL_INIT_AUDIO);
 
@@ -1619,23 +1681,19 @@ Value* builtin_audio_stream_open(Value *arg) {
     want.samples = 1024;
     want.callback = NULL;   /* queue mode: feed via SDL_QueueAudio */
 
-    if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2
-        && list_elem_type(arg, 0) == VAL_NUM
-        && list_elem_type(arg, 1) == VAL_NUM) {
-        want.freq = (int)eigs_list_num(arg, 0, __func__);
-        want.channels = (int)eigs_list_num(arg, 1, __func__);
-    }
+    want.freq = (int)freq;
+    want.channels = (Uint8)channels;
 
     if (g_stream_device) {
         p_SDL_CloseAudioDevice(g_stream_device);
         g_stream_device = 0;
     }
     g_stream_device = p_SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (g_stream_device < 2) { g_stream_device = 0; return make_num(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the documented unavailable result and g_stream_device is reset */
+    if (g_stream_device < 2) { g_stream_device = 0; return make_int(0); }  /* fs:ANSWER SDL_OpenAudioDevice failed; valid ids are >= 2, so 0 is the documented unavailable result and g_stream_device is reset */
     g_stream_freq = have.freq;
     g_stream_channels = have.channels;
     p_SDL_PauseAudioDevice(g_stream_device, 0);  /* start playing */
-    return make_num(g_stream_device);
+    return make_int(g_stream_device);
 }
 
 /* audio_stream_push of samples — queue a block of float samples [-1, 1]
@@ -1679,10 +1737,10 @@ Value* builtin_audio_stream_queued(Value *arg) {
     (void)arg;
     TRACE_NONDET_TAKE("audio_stream_queued");
     if (!g_stream_device || !p_SDL_GetQueuedAudioSize)
-        TRACE_NONDET_RECORD("audio_stream_queued", make_num(0));
+        TRACE_NONDET_RECORD("audio_stream_queued", make_int(0));
     Uint32 bytes = p_SDL_GetQueuedAudioSize(g_stream_device);
     TRACE_NONDET_RECORD("audio_stream_queued",
-                        make_num((double)(bytes / sizeof(int16_t))));
+                        make_int((int64_t)(bytes / sizeof(int16_t))));
 }
 
 /* audio_stream_clear of null — drop any buffered audio on the live
@@ -1718,16 +1776,19 @@ Value* builtin_audio_music_play(Value *arg) {
     /* A wrong-typed `loops` is the COERCION shape: it fell back to -1
      * (forever), so a typo made the track loop rather than play once. */
     STRICT_REQUIRE(arg->data.list.count >= 2
-                   && list_elem_type(arg, 1) != VAL_NUM,
+                   && (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
                    "audio_music_play", "[string path, number loops]");
+    int64_t loops = -1;
+    if (arg->data.list.count >= 2
+        && (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)
+        && !eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &loops, "audio_music_play"))
+        return make_bool(0);
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "audio_music_play: not replayable under EIGS_REPLAY "
                  "(audio file-read boundary; see docs/TRACE.md)");
         return make_bool(0);
     }
     const char *path = list_get_ref(arg, 0)->data.str;
-    int loops = (arg->data.list.count >= 2 && list_elem_type(arg, 1) == VAL_NUM)
-                ? (int)eigs_list_num(arg, 1, __func__) : -1;
     if (!load_sdl2()) return make_bool(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
     if (!load_sdl_mixer()) return make_bool(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
@@ -1749,7 +1810,7 @@ Value* builtin_audio_music_play(Value *arg) {
                 p_SDL_GetError ? p_SDL_GetError() : "?");
         return make_bool(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
     }
-    if (p_Mix_PlayMusic(g_music, loops) < 0) {
+    if (p_Mix_PlayMusic(g_music, (int)loops) < 0) {
         fprintf(stderr, "audio_music: play failed: %s\n",
                 p_SDL_GetError ? p_SDL_GetError() : "?");
         return make_bool(0);  /* fs:ANSWER Mix_PlayMusic failed -- documented 0; line 1378 returns 1 only when the track is actually playing */
@@ -1762,18 +1823,18 @@ Value* builtin_audio_music_volume(Value *arg) {
     STRICT_LIST_MAX(arg, 1, "audio_music_volume");
     /* #1007, COERCION shape: a wrong-typed volume fell through to v = 0 and
      * MUTED the music. Above the mixer-state check, the [135] rule. */
-    STRICT_REQUIRE(!(arg && arg->type == VAL_NUM)
+    STRICT_REQUIRE(!(arg && val_is_number(arg))
                    && !(arg && arg->type == VAL_LIST && arg->data.list.count >= 1
-                        && list_elem_type(arg, 0) == VAL_NUM),
+                        && (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT)),
                    "audio_music_volume", "number volume 0..128 or [number volume]");
-    if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null();  /* fs:VOID no mixer open: audio_music_volume answers null on every path -- the return value, not a rejected-argument stand-in */
-    int v = 0;
-    if (arg && arg->type == VAL_NUM) v = (int)eigs_num_arg(arg, __func__);
-    else if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1
-             && list_elem_type(arg, 0) == VAL_NUM)
-        v = (int)eigs_list_num(arg, 0, __func__);
-    if (v < 0) v = 0;
-    if (v > MY_MIX_MAX_VOLUME) v = MY_MIX_MAX_VOLUME;
+    int v=0;
+    if (arg && val_is_number(arg)) {
+        if (!eigs_bounded_arg(arg,0,MY_MIX_MAX_VOLUME,&v,"audio_music_volume")) return make_null();
+    } else if (arg && arg->type==VAL_LIST && arg->data.list.count>=1 &&
+               (list_elem_type(arg,0)==VAL_FLOAT || list_elem_type(arg,0)==VAL_INT)) {
+        if (!eigs_list_bounded(arg,0,0,MY_MIX_MAX_VOLUME,&v,"audio_music_volume")) return make_null();
+    }
+    if (!g_mixer_open || !p_Mix_VolumeMusic) return make_null(); /* fs:VOID no music mixer */
     p_Mix_VolumeMusic(v);
     return make_null(); /* fs:VOID audio_music_volume answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
@@ -1794,16 +1855,16 @@ Value* builtin_audio_play(Value *arg) {
      * -- so the guard would exist only where nothing runs it. */
     STRICT_REQUIRE(gfx_bad_samples(arg), "audio_play",
                    "a list or buffer of samples, or null");
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play: "0 on ... closed device"; channel ids are slot+1 >= 1 (line 1057), so 0 is not a channel */
+    if (!g_audio_device) return make_int(0);  /* fs:ANSWER BUILTINS.md audio_play: "0 on ... closed device"; channel ids are slot+1 >= 1 (line 1057), so 0 is not a channel */
     int n = 0;
     int16_t *buf = audio_convert_samples(arg, &n);
     if (!buf) {
         /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
-        if (g_has_error) return make_num(0);
+        if (g_has_error) return make_int(0);
         /* fs:ANSWER an empty or over-64MB clip queues nothing. */
-        return make_num(0);
+        return make_int(0);
     }
-    return make_num(audio_install_channel(buf, n, 1));
+    return make_int(audio_install_channel(buf, n, 1));
 }
 
 /* audio_play_loop of [samples, loops] — play `samples` `loops` times on
@@ -1817,19 +1878,13 @@ Value* builtin_audio_play_loop(Value *arg) {
      * soft, and it moves BELOW the guard so the guard is reachable on a
      * machine with no audio device (the [135] rule). */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
-              || list_elem_type(arg, 1) != VAL_NUM,
-              "audio_play_loop", "[samples, number loops]", make_num(0));
-    /* #152: NaN/huge casts are UB; -1 is the one negative with meaning. */
-    double loops_d = eigs_list_num(arg, 1, __func__);
-    int loops;
-    if (loops_d == -1.0) loops = -1;
-    else {
-        ARG_GUARD(isnan(loops_d) || loops_d < 1.0 || loops_d > 10000.0,
-                  "audio_play_loop",
-                  "[samples, number loops] with loops == -1 or 1..10000",
-                  make_num(0));
-        loops = (int)loops_d;
-    }
+              || (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
+              "audio_play_loop", "[samples, number loops]", make_int(0));
+    int64_t exact_loops;
+    if (!eigs_list_int_range(arg,1,INT_MIN,INT_MAX,&exact_loops,"audio_play_loop")) return make_int(0);
+    int loops=(int)exact_loops;
+    ARG_GUARD(loops != -1 && (loops<1 || loops>10000),"audio_play_loop",
+              "[samples, number loops] with loops == -1 or 1..10000",make_int(0));
     /* #1007 round 3: the samples slot, beside the loops slot and above the
      * device check for the same reachability reason. */
     /* #1637: a non-number sample element is refused here too, above the
@@ -1840,16 +1895,16 @@ Value* builtin_audio_play_loop(Value *arg) {
                    || (list_elem_type(arg, 0) == VAL_LIST
                        && !gfx_list_all_num(samples)),
                    "audio_play_loop", "[list or buffer of samples, number loops]");
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER BUILTINS.md audio_play_loop: "0 on ... closed device"; channel ids are slot+1 >= 1, so 0 is not a channel */
+    if (!g_audio_device) return make_int(0);  /* fs:ANSWER BUILTINS.md audio_play_loop: "0 on ... closed device"; channel ids are slot+1 >= 1, so 0 is not a channel */
     int n = 0;
     int16_t *buf = audio_convert_samples(samples, &n);
     if (!buf) {
         /* fs:CHANNEL post-raise placeholder for a wrong-typed sample list. */
-        if (g_has_error) return make_num(0);
+        if (g_has_error) return make_int(0);
         /* fs:ANSWER an empty or over-64MB clip queues nothing. */
-        return make_num(0);
+        return make_int(0);
     }
-    return make_num(audio_install_channel(buf, n, loops));
+    return make_int(audio_install_channel(buf, n, loops));
 }
 
 /* audio_volume of [channel, vol] — live per-channel volume, 0.0..4.0
@@ -1858,56 +1913,59 @@ Value* builtin_audio_volume(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_volume");
     /* #1007: the mixed condition split, as its #971 deferral marker asked. */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2
-              || list_elem_type(arg, 0) != VAL_NUM
-              || list_elem_type(arg, 1) != VAL_NUM,
-              "audio_volume", "[number channel, number volume]", make_num(0));
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing", and with no device open no channel is */
-    int c = (int)eigs_slot_num(list_slot(arg, 0), "audio_volume") - 1;
-    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "that channel is not playing" -- the same value line 1452 returns for an inactive in-range channel; an out-of-range id is definitionally inactive */
-    double vol = eigs_slot_num(list_slot(arg, 1), "audio_volume");
-    if (isnan(vol) || vol < 0.0) vol = 0.0;
-    if (vol > 4.0) vol = 4.0;
+              || (list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT)
+              || (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
+              "audio_volume", "[number channel, number volume]", make_int(0));
+    int64_t channel;
+    if (!eigs_list_int_range(arg,0,INT_MIN,INT_MAX,&channel,"audio_volume")) return make_int(0);
+    int vol;
+    if (!eigs_list_bounded(arg,1,0,4,&vol,"audio_volume")) return make_int(0);
+    if (!g_audio_device || channel<1 || channel>AUDIO_MAX_CHANNELS) return make_int(0); /* fs:ANSWER inactive channel */
+    int c=(int)channel-1;
     p_SDL_LockAudioDevice(g_audio_device);
     int ok = g_audio_ch[c].active;
     if (ok) g_audio_ch[c].volume = vol;
     p_SDL_UnlockAudioDevice(g_audio_device);
-    return make_num(ok);
+    return make_int(ok);
 }
 
 /* audio_stop of channel — stop one mixer channel. Returns 1, or 0 on a
  * bad/inactive channel. */
 Value* builtin_audio_stop(Value *arg) {
     /* #1007: the mixed condition split, as its #971 deferral marker asked. */
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "audio_stop", "number channel",
-              make_num(0));
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active", and with no device open none is */
-    int c = (int)eigs_num_arg(arg, __func__) - 1;
-    if (c < 0 || c >= AUDIO_MAX_CHANNELS) return make_num(0);  /* fs:ANSWER 0 means "the channel was not active" -- the same value line 1465 returns for an inactive in-range channel */
+    ARG_GUARD(!arg || !val_is_number(arg), "audio_stop", "number channel",
+              make_int(0));
+    int64_t channel = 0;
+    if (!eigs_int_arg_range(arg, INT_MIN, INT_MAX, &channel, "audio_stop"))
+        return make_int(0);
+    if (!g_audio_device) return make_int(0);  /* fs:ANSWER 0 means "the channel was not active", and with no device open none is */
+    if (channel < 1 || channel > AUDIO_MAX_CHANNELS) return make_int(0);  /* fs:ANSWER 0 means "the channel was not active" -- an out-of-range id is inactive */
+    int c = (int)channel - 1;
     p_SDL_LockAudioDevice(g_audio_device);
     int ok = g_audio_ch[c].active;
     g_audio_ch[c].active = 0;
     p_SDL_UnlockAudioDevice(g_audio_device);
-    return make_num(ok);
+    return make_int(ok);
 }
 
 /* audio_queue_size of null — bytes queued */
 Value* builtin_audio_queue_size(Value *arg) {
     (void)arg;
-    if (!g_audio_device) return make_num(0);  /* fs:ANSWER 0 bytes queued: with no device no channel holds unplayed samples, which is exactly the total lines 1477-1485 sum for an idle device */
+    if (!g_audio_device) return make_int(0);  /* fs:ANSWER 0 bytes queued: with no device no channel holds unplayed samples, which is exactly the total lines 1477-1485 sum for an idle device */
     /* Mixer equivalent of the old queued-bytes count: unplayed bytes
      * summed over active FINITE channels (infinite loops would be
      * infinity; they are excluded so refill-style polls terminate). */
-    double bytes = 0;
+    int64_t bytes = 0;
     p_SDL_LockAudioDevice(g_audio_device);
     for (int c = 0; c < AUDIO_MAX_CHANNELS; c++) {
         AudioChannel *ch = &g_audio_ch[c];
         if (!ch->active || ch->loops < 0) continue;
-        double rem = (double)(ch->count - ch->pos)
-                   + (double)(ch->loops - 1) * (double)ch->count;
-        bytes += rem * (double)sizeof(int16_t);
+        int64_t rem = (int64_t)(ch->count - ch->pos)
+                    + ((int64_t)ch->loops - 1) * (int64_t)ch->count;
+        bytes += rem * (int64_t)sizeof(int16_t);
     }
     p_SDL_UnlockAudioDevice(g_audio_device);
-    return make_num(bytes);
+    return make_int(bytes);
 }
 
 /* audio_clear of null — stop all mixer channels and free their clips */
@@ -1929,10 +1987,11 @@ static int audio_generator_sample_count(double duration, int rate,
         rt_error(EK_VALUE, 0, "%s: duration exceeds the 30 second limit", who);
         return 0;
     }
-    if (!(samples <= (double)INT_MAX)) {
-        rt_error(EK_VALUE, 0, "%s: duration produces a sample count that does not fit in int", who);
+    int64_t rounded;
+    if (!eigs_slot_magnitude(slot_from_f64(samples), INT_MIN, INT_MAX, &rounded, who))
         return 0;
-    }
+    /* RULINGS B5: Q7 validates the rounded count here; conversion itself
+     * remains truncation until R2.6's #1746 residue migration. */
     if (samples <= 0.0) {
         *count = 0;
         return 1;
@@ -1964,13 +2023,14 @@ Value* builtin_audio_sine(Value *arg) {
      * Seven builtins share the shape; the list was derived by running each
      * candidate twice and diffing (a per-run difference IS the disclosure),
      * not by reading names — audio_gain was missed by the reading. */
-    ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-              list_elem_type(arg, 1) != VAL_NUM ||
-              list_elem_type(arg, 2) != VAL_NUM,
+    ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+              (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
+              (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT),
               "audio_sine", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = eigs_list_float(arg, 0, __func__);
+    double dur = eigs_list_float(arg, 1, __func__);
+    double amp = eigs_list_float(arg, 2, __func__);
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     if (!audio_generator_sample_count(dur, rate, "audio_sine", &n)) return make_null();
@@ -1980,7 +2040,7 @@ Value* builtin_audio_sine(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = sin(2.0 * M_PI * freq * t) * amp;
-        list_append_owned(list, make_num(s));
+        list_append_owned(list, make_float(s));
     }
     return list;
 }
@@ -2000,13 +2060,14 @@ Value* builtin_audio_saw(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-              list_elem_type(arg, 1) != VAL_NUM ||
-              list_elem_type(arg, 2) != VAL_NUM,
+    ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+              (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
+              (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT),
               "audio_saw", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = eigs_list_float(arg, 0, __func__);
+    double dur = eigs_list_float(arg, 1, __func__);
+    double amp = eigs_list_float(arg, 2, __func__);
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     if (!audio_generator_sample_count(dur, rate, "audio_saw", &n)) return make_null();
@@ -2016,7 +2077,7 @@ Value* builtin_audio_saw(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = 2.0 * (t * freq - floor(t * freq + 0.5)) * amp;
-        list_append_owned(list, make_num(s));
+        list_append_owned(list, make_float(s));
     }
     return list;
 }
@@ -2036,13 +2097,14 @@ Value* builtin_audio_square(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-              list_elem_type(arg, 1) != VAL_NUM ||
-              list_elem_type(arg, 2) != VAL_NUM,
+    ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+              (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
+              (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT),
               "audio_square", "[number freq, number duration, number amplitude]", make_list(0));
-    double freq = eigs_list_num(arg, 0, __func__);
-    double dur = eigs_list_num(arg, 1, __func__);
-    double amp = eigs_list_num(arg, 2, __func__);
+    double freq = eigs_list_float(arg, 0, __func__);
+    double dur = eigs_list_float(arg, 1, __func__);
+    double amp = eigs_list_float(arg, 2, __func__);
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     if (!audio_generator_sample_count(dur, rate, "audio_square", &n)) return make_null();
@@ -2052,7 +2114,7 @@ Value* builtin_audio_square(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = (sin(2.0 * M_PI * freq * t) >= 0 ? 1.0 : -1.0) * amp;
-        list_append_owned(list, make_num(s));
+        list_append_owned(list, make_float(s));
     }
     return list;
 }
@@ -2073,17 +2135,18 @@ Value* builtin_audio_sweep(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-              list_elem_type(arg, 1) != VAL_NUM ||
-              list_elem_type(arg, 2) != VAL_NUM ||
-              list_elem_type(arg, 3) != VAL_NUM ||
-              list_elem_type(arg, 4) != VAL_NUM,
+    ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+              (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
+              (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT) ||
+              (list_elem_type(arg, 3) != VAL_FLOAT && list_elem_type(arg, 3) != VAL_INT) ||
+              (list_elem_type(arg, 4) != VAL_FLOAT && list_elem_type(arg, 4) != VAL_INT),
               "audio_sweep", "[number freq_start, number freq_end, number duration, number amplitude, number waveform]", make_list(0));
-    double f0 = eigs_list_num(arg, 0, __func__);
-    double f1 = eigs_list_num(arg, 1, __func__);
-    double dur = eigs_list_num(arg, 2, __func__);
-    double amp = eigs_list_num(arg, 3, __func__);
-    int wave = (int)eigs_list_num(arg, 4, __func__);
+    double f0 = eigs_list_float(arg, 0, __func__);
+    double f1 = eigs_list_float(arg, 1, __func__);
+    double dur = eigs_list_float(arg, 2, __func__);
+    double amp = eigs_list_float(arg, 3, __func__);
+    int64_t wave = eigs_list_int(arg, 4, "audio_sweep");
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     if (!audio_generator_sample_count(dur, rate, "audio_sweep", &n)) return make_null();
@@ -2101,7 +2164,7 @@ Value* builtin_audio_sweep(Value *arg) {
             s = sin(2.0 * M_PI * phase) * amp;
         else
             s = (2.0 * phase - 1.0) * amp;
-        list_append_owned(list, make_num(s));
+        list_append_owned(list, make_float(s));
     }
     return list;
 }
@@ -2189,11 +2252,12 @@ Value* builtin_audio_noise(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
-              list_elem_type(arg, 1) != VAL_NUM,
+    ARG_GUARD((list_elem_type(arg, 0) != VAL_FLOAT && list_elem_type(arg, 0) != VAL_INT) ||
+              (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
               "audio_noise", "[number duration, number amplitude]", make_list(0));
-    double dur = eigs_list_num(arg, 0, __func__);
-    double amp = eigs_list_num(arg, 1, __func__);
+    double dur = eigs_list_float(arg, 0, __func__);
+    double amp = eigs_list_float(arg, 1, __func__);
+    if (g_has_error) return make_null();
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
     int n;
     /* #1767's refusal (a duration over 30 s, or a sample count that does not
@@ -2224,7 +2288,7 @@ Value* builtin_audio_noise(Value *arg) {
         list = make_list(n);
         for (int i = 0; i < n; i++) {
             double s = (eigs_random_double() * 2.0 - 1.0) * amp;
-            list_append_owned(list, make_num(s));
+            list_append_owned(list, make_float(s));
         }
     }
     /* Every live answer is recorded, the empty one included: replay takes a
@@ -2256,12 +2320,13 @@ Value* builtin_audio_mix(Value *arg) {
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double sa = (i < a->data.list.count && list_elem_type(a, i) == VAL_NUM) ? eigs_slot_num(list_slot(a, i), __func__) : 0;
-        double sb = (i < b->data.list.count && list_elem_type(b, i) == VAL_NUM) ? eigs_slot_num(list_slot(b, i), __func__) : 0;
+        double sa = (i < a->data.list.count && (list_elem_type(a, i) == VAL_FLOAT || list_elem_type(a, i) == VAL_INT)) ? eigs_list_float(a, i, "audio_mix") : 0;
+        double sb = (i < b->data.list.count && (list_elem_type(b, i) == VAL_FLOAT || list_elem_type(b, i) == VAL_INT)) ? eigs_list_float(b, i, "audio_mix") : 0;
+        if (g_has_error) { val_decref(out); return make_list(0); }
         double mixed = sa + sb;
         if (mixed > 1.0) mixed = 1.0;
         if (mixed < -1.0) mixed = -1.0;
-        list_append_owned(out, make_num(mixed));
+        list_append_owned(out, make_float(mixed));
     }
     return out;
 }
@@ -2287,18 +2352,20 @@ Value* builtin_audio_gain(Value *arg) {
      * `char *` into script-visible data exactly as audio_sweep did. Note the
      * element read on the next line was ALREADY type-checked — the argument
      * beside it was not, which is the same next-line asymmetry as gfx_open. */
-    ARG_GUARD(list_elem_type(arg, 1) != VAL_NUM,
+    ARG_GUARD((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT),
               "audio_gain", "[samples, number volume]", make_list(0));
-    double vol = eigs_list_num(arg, 1, __func__);
+    double vol = eigs_list_float(arg, 1, "audio_gain");
+    if (g_has_error) return make_list(0);
     int n = samples->data.list.count;
 
     Value *out = make_list(n);
     for (int i = 0; i < n; i++) {
-        double s = (list_elem_type(samples, i) == VAL_NUM) ? eigs_slot_num(list_slot(samples, i), __func__) : 0;
+        double s = ((list_elem_type(samples, i) == VAL_FLOAT || list_elem_type(samples, i) == VAL_INT)) ? eigs_list_float(samples, i, "audio_gain") : 0;
+        if (g_has_error) { val_decref(out); return make_list(0); }
         s *= vol;
         if (s > 1.0) s = 1.0;
         if (s < -1.0) s = -1.0;
-        list_append_owned(out, make_num(s));
+        list_append_owned(out, make_float(s));
     }
     return out;
 }
@@ -2318,10 +2385,10 @@ Value* builtin_audio_envelope(Value *arg) {
      * pointer value, disclosed into script-visible data and varying per run.
      * All six generators share the shape; guarding one would have left the
      * class open. */
-    ARG_GUARD(list_elem_type(arg, 1) != VAL_NUM ||
-              list_elem_type(arg, 2) != VAL_NUM ||
-              list_elem_type(arg, 3) != VAL_NUM ||
-              list_elem_type(arg, 4) != VAL_NUM,
+    ARG_GUARD((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
+              (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT) ||
+              (list_elem_type(arg, 3) != VAL_FLOAT && list_elem_type(arg, 3) != VAL_INT) ||
+              (list_elem_type(arg, 4) != VAL_FLOAT && list_elem_type(arg, 4) != VAL_INT),
               "audio_envelope", "[samples, number attack, number decay, number sustain, number release]", make_list(0));
     ARG_GUARD(list_elem_type(arg, 0) != VAL_LIST, "audio_envelope",
               "[list samples, number attack, number decay, number sustain, number release]",
@@ -2332,18 +2399,25 @@ Value* builtin_audio_envelope(Value *arg) {
      * nothing. */
     STRICT_REQUIRE(!gfx_list_all_num(samples), "audio_envelope",
                    "[list of numbers, number attack, number decay, number sustain, number release]");
-    double attack = eigs_list_num(arg, 1, __func__);
-    double decay = eigs_list_num(arg, 2, __func__);
-    double sustain = eigs_list_num(arg, 3, __func__);
-    double release = eigs_list_num(arg, 4, __func__);
+    double attack = eigs_list_float(arg, 1, __func__);
+    double decay = eigs_list_float(arg, 2, __func__);
+    double sustain = eigs_list_float(arg, 3, __func__);
+    double release = eigs_list_float(arg, 4, __func__);
 
     int n = samples->data.list.count;
     int rate = g_audio_freq > 0 ? g_audio_freq : 44100;
-    int a_samples = (int)(attack * rate);
-    int d_samples = (int)(decay * rate);
-    int r_samples = (int)(release * rate);
-    int s_start = a_samples + d_samples;
-    int r_start = n - r_samples;
+    if (g_has_error) return make_null();
+    int64_t a_samples, d_samples, r_samples;
+    if (!eigs_slot_magnitude(slot_from_f64(attack * rate), INT_MIN, INT_MAX,
+                             &a_samples, "audio_envelope") ||
+        !eigs_slot_magnitude(slot_from_f64(decay * rate), INT_MIN, INT_MAX,
+                             &d_samples, "audio_envelope") ||
+        !eigs_slot_magnitude(slot_from_f64(release * rate), INT_MIN, INT_MAX,
+                             &r_samples, "audio_envelope")) return make_null();
+    /* Wider intermediates keep two valid C-int durations from overflowing
+     * while locating the sustain/release boundaries. */
+    int64_t s_start = a_samples + d_samples;
+    int64_t r_start = (int64_t)n - r_samples;
     if (r_start < s_start) r_start = s_start;
 
     Value *out = make_list(n);
@@ -2364,11 +2438,20 @@ Value* builtin_audio_envelope(Value *arg) {
             double frac = (r_samples > 0) ? (double)(i - r_start) / r_samples : 1.0;
             env = sustain * (1.0 - frac);
         }
-        double s = (list_elem_type(samples, i) == VAL_NUM) ? eigs_slot_num(list_slot(samples, i), __func__) : 0;
+        double s = ((list_elem_type(samples, i) == VAL_FLOAT || list_elem_type(samples, i) == VAL_INT)) ? eigs_list_float(samples, i, __func__) : 0;
+        if (g_has_error) { val_decref(out); return make_null(); }
         s *= env;
-        list_append_owned(out, make_num(s));
+        list_append_owned(out, make_float(s));
     }
     return out;
+}
+
+/* The complete caller census is gfx_fb and ppu_render_frame (round e).
+ * Every call tests g_has_error before publishing the byte or its effects. */
+static uint8_t gfx_byte_at(const Value *buffer, int64_t index, const char *who) {
+    uint8_t byte = 0;
+    (void)buffer_byte_at(buffer, index, &byte, who);
+    return byte;
 }
 
 /* gfx_fb of [buffer, width, height, x, y, scale]
@@ -2387,58 +2470,81 @@ Value* builtin_gfx_fb(Value *arg) {
               "gfx_fb",
               "[buffer fb, number w, number h, number x, number y, number scale]",
               make_null());
-    Value *buf  = list_get_ref(arg, 0);
-    int    w    = (int)eigs_list_num(arg, 1, __func__);
-    int    h    = (int)eigs_list_num(arg, 2, __func__);
-    int    dx   = (int)eigs_list_num(arg, 3, __func__);
-    int    dy   = (int)eigs_list_num(arg, 4, __func__);
-    int    sc   = (int)eigs_list_num(arg, 5, __func__);
-    /* A non-positive dimension is DEGENERATE geometry (nothing to blit),
-     * the same verdict gfx_rrect gives a zero-size rectangle. A buffer
-     * SHORTER than w * h is an argument mismatch and is loud -- still above
-     * the SDL check so it is reachable without libSDL2 (the [135] rule);
-     * the reads it needs are type-checked by the guard above. */
-    if (w <= 0 || h <= 0 || sc <= 0) return make_null();  /* fs:EMPTY a zero or negative width/height/scale covers no pixels, so drawing nothing IS the answer -- the same degenerate-geometry identity gfx_rrect gives */
-    ARG_GUARD(buf->data.buffer.count < w * h,
-              "gfx_fb",
-              "[buffer fb, number w, number h, number x, number y, number scale] with len of fb >= w * h",
-              make_null());
+    Value *buf = list_get_ref(arg, 0);
+    int64_t wi, hi;
+    if (!eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &wi, __func__) ||
+        !eigs_list_int_range(arg, 2, INT_MIN, INT_MAX, &hi, __func__)) return make_null();
+    double dx = eigs_list_float(arg, 3, __func__);
+    if (g_has_error) return make_null();
+    double dy = eigs_list_float(arg, 4, __func__);
+    if (g_has_error) return make_null();
+    double scale = eigs_list_float(arg, 5, __func__);
+    if (g_has_error) return make_null();
+    if (wi <= 0 || hi <= 0 || scale <= 0) return make_null(); /* fs:EMPTY degenerate framebuffer geometry. */
+    int64_t total = wi*hi;
+    ARG_GUARD(total > buf->data.buffer.count, "gfx_fb", "len of fb >= w * h", make_null());
     if (!g_renderer || !p_SDL_CreateTexture || !p_SDL_UpdateTexture || !p_SDL_RenderCopy)
-        return make_null();  /* fs:VOID no window / no SDL texture symbols: gfx_fb answers null on every path -- the return value, not a rejected-argument stand-in */
-
-    /* Recreate texture if size changed */
-    if (!g_fb_texture || g_fb_w != w || g_fb_h != h) {
-        if (g_fb_texture) p_SDL_DestroyTexture(g_fb_texture);
-        g_fb_texture = p_SDL_CreateTexture(g_renderer,
-            MY_SDL_PIXELFORMAT_ARGB8888, MY_SDL_TEXTUREACCESS_STREAMING, w, h);
-        if (!g_fb_texture) return make_null(); /* fs:ANSWER SDL_CreateTexture failed -- environment/driver state, not an argument; nothing can be blitted so null is the result */
-        g_fb_w = w;
-        g_fb_h = h;
-    }
-
-    /* GB shade palette: index → ARGB */
-    static const Uint32 palette[4] = {
-        0xFFFFFFFF, /* 0 = white  */
-        0xFFAAAAAA, /* 1 = light  */
-        0xFF555555, /* 2 = dark   */
-        0xFF000000  /* 3 = black  */
-    };
-
-    /* Convert buffer → ARGB pixel array */
-    int total = w * h;
-    Uint32 *pixels = xmalloc_array(total, sizeof(Uint32));
-    for (int i = 0; i < total; i++) {
-        int idx = buffer_read_byte(buf, i);
+        return make_null(); /* fs:VOID no renderer or optional texture API. */
+    int w = (int)wi, h = (int)hi;
+    /* Preserve the source layout and validate every source byte, even if
+     * clipping later hides it. Q1 requires an exact byte at the data boundary. */
+    static const Uint32 palette[4] = {0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000};
+    Uint32 *pixels = xmalloc_array((size_t)total, sizeof *pixels);
+    for (int64_t i = 0; i < total; ++i) {
+        int idx = gfx_byte_at(buf, i, __func__);
         if (g_has_error) { free(pixels); return make_null(); }
         pixels[i] = palette[idx & 3];
     }
-
-    p_SDL_UpdateTexture(g_fb_texture, NULL, pixels, w * (int)sizeof(Uint32));
+    EigsRect area = gfx_drawable(); EigsShape shape;
+    if (!gfx_rect_ld(dx, dy, wi*(long double)scale, hi*(long double)scale, &area, &shape, __func__)) {
+        free(pixels); return make_null();
+    }
+    if (shape.empty) { free(pixels); return make_null(); } /* fs:EMPTY source is valid but destination has no visible pixels. */
+    long double rx = roundl(dx), ry = roundl(dy);
+    long double rw = roundl((long double)dx+wi*(long double)scale)-rx;
+    long double rh = roundl((long double)dy+hi*(long double)scale)-ry;
+    if (scale == floor(scale) && rx >= area.x && ry >= area.y &&
+        rx+rw <= (long double)area.x+area.w && ry+rh <= (long double)area.y+area.h &&
+        rw > 0 && rh > 0 && rw <= INT_MAX && rh <= INT_MAX && wi <= INT_MAX/(int)sizeof *pixels) {
+        if (!g_fb_texture || g_fb_w != w || g_fb_h != h) {
+            if (g_fb_texture) p_SDL_DestroyTexture(g_fb_texture);
+            g_fb_texture = p_SDL_CreateTexture(g_renderer, MY_SDL_PIXELFORMAT_ARGB8888,
+                                              MY_SDL_TEXTUREACCESS_STREAMING, w, h);
+            if (!g_fb_texture) { free(pixels); return make_null(); } /* fs:ANSWER SDL texture allocation failed. */
+            g_fb_w = w; g_fb_h = h;
+        }
+        p_SDL_UpdateTexture(g_fb_texture, NULL, pixels, w*(int)sizeof *pixels);
+        SDL_Rect dst = {(int)rx, (int)ry, (int)rw, (int)rh};
+        p_SDL_RenderCopy(g_renderer, g_fb_texture, NULL, &dst);
+    } else {
+        /* A destination outside SDL's integer rectangle domain is sampled
+         * only over visible pixels. Inverse source mapping avoids clipping
+         * and stretching the complete source into the visible destination.
+         * ceil(pixel+0.5)-1 selects the source cell whose independently
+         * rounded right edge contains this pixel, including exact Q4 ties. */
+        for (int y = shape.y; y < shape.y+shape.h; ++y) {
+            long double sy = ceill(((long double)y+0.5L-dy)/scale)-1;
+            if (sy < 0 || sy >= hi) continue;
+            int x = shape.x;
+            while (x < shape.x+shape.w) {
+                long double sx = ceill(((long double)x+0.5L-dx)/scale)-1;
+                if (sx < 0 || sx >= wi) { ++x; continue; }
+                Uint32 pixel = pixels[(int64_t)sy*wi+(int64_t)sx];
+                int end = x+1;
+                while (end < shape.x+shape.w) {
+                    long double next = ceill(((long double)end+0.5L-dx)/scale)-1;
+                    if (next < 0 || next >= wi || pixels[(int64_t)sy*wi+(int64_t)next] != pixel) break;
+                    ++end;
+                }
+                p_SDL_SetRenderDrawColor(g_renderer, (pixel>>16)&255, (pixel>>8)&255, pixel&255, 255);
+                SDL_Rect run = {x, y, end-x, 1};
+                p_SDL_RenderFillRect(g_renderer, &run);
+                x = end;
+            }
+        }
+    }
     free(pixels);
-
-    SDL_Rect dst = { dx, dy, w * sc, h * sc };
-    p_SDL_RenderCopy(g_renderer, g_fb_texture, NULL, &dst);
-    return make_null(); /* fs:VOID gfx_fb answers null on every path -- this is the return value, not a stand-in for a rejected argument */
+    return make_null(); /* fs:VOID graphics commands return null. */
 }
 
 /* ================================================================
@@ -2468,7 +2574,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
     double *fb  = fb_v->data.buffer.data;
 
-    int lcdc = buffer_read_byte(mem_v, 0xFF40);
+    int lcdc = gfx_byte_at(mem_v, 0xFF40, __func__);
     if (g_has_error) return make_null();
     if (!(lcdc & 0x80)) {
         /* LCD off — blank */
@@ -2476,19 +2582,19 @@ Value* builtin_ppu_render_frame(Value *arg) {
         return make_null(); /* fs:VOID the LCD is off, so the frame was blanked; ppu_render_frame answers null on every path -- this is the return value, not a stand-in for a rejected argument */
     }
 
-    int scy = buffer_read_byte(mem_v, 0xFF42);
+    int scy = gfx_byte_at(mem_v, 0xFF42, __func__);
     if (g_has_error) return make_null();
-    int scx = buffer_read_byte(mem_v, 0xFF43);
+    int scx = gfx_byte_at(mem_v, 0xFF43, __func__);
     if (g_has_error) return make_null();
-    int bgp_raw = buffer_read_byte(mem_v, 0xFF47);
+    int bgp_raw = gfx_byte_at(mem_v, 0xFF47, __func__);
     if (g_has_error) return make_null();
-    int obp0_raw = buffer_read_byte(mem_v, 0xFF48);
+    int obp0_raw = gfx_byte_at(mem_v, 0xFF48, __func__);
     if (g_has_error) return make_null();
-    int obp1_raw = buffer_read_byte(mem_v, 0xFF49);
+    int obp1_raw = gfx_byte_at(mem_v, 0xFF49, __func__);
     if (g_has_error) return make_null();
-    int wy = buffer_read_byte(mem_v, 0xFF4A);
+    int wy = gfx_byte_at(mem_v, 0xFF4A, __func__);
     if (g_has_error) return make_null();
-    int wx = buffer_read_byte(mem_v, 0xFF4B);
+    int wx = gfx_byte_at(mem_v, 0xFF4B, __func__);
     if (g_has_error) return make_null();
 
     /* Decode palettes */
@@ -2532,7 +2638,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
                 if (tile_x != prev_tile_x) {
                     prev_tile_x = tile_x;
-                    int tile_num = buffer_read_byte(mem_v, bg_map_base + map_row + tile_x);
+                    int tile_num = gfx_byte_at(mem_v, bg_map_base + map_row + tile_x, __func__);
                     if (g_has_error) return make_null();
                     int tile_addr;
                     if (unsigned_mode)
@@ -2541,9 +2647,9 @@ Value* builtin_ppu_render_frame(Value *arg) {
                         tile_addr = (tile_num >= 128)
                             ? 0x8800 + (tile_num - 128) * 16 + tile_row * 2
                             : 0x9000 + tile_num * 16 + tile_row * 2;
-                    tile_lo = buffer_read_byte(mem_v, tile_addr);
+                    tile_lo = gfx_byte_at(mem_v, tile_addr, __func__);
                     if (g_has_error) return make_null();
-                    tile_hi = buffer_read_byte(mem_v, tile_addr + 1);
+                    tile_hi = gfx_byte_at(mem_v, tile_addr + 1, __func__);
                     if (g_has_error) return make_null();
                 }
 
@@ -2574,7 +2680,7 @@ Value* builtin_ppu_render_frame(Value *arg) {
                 int wtx = win_x >> 3;
                 if (wtx != prev_wtx) {
                     prev_wtx = wtx;
-                    int wtn = buffer_read_byte(mem_v, win_map_base + win_map_row + wtx);
+                    int wtn = gfx_byte_at(mem_v, win_map_base + win_map_row + wtx, __func__);
                     if (g_has_error) return make_null();
                     int wta;
                     if (unsigned_mode)
@@ -2583,9 +2689,9 @@ Value* builtin_ppu_render_frame(Value *arg) {
                         wta = (wtn >= 128)
                             ? 0x8800 + (wtn - 128) * 16 + win_row * 2
                             : 0x9000 + wtn * 16 + win_row * 2;
-                    wtile_lo = buffer_read_byte(mem_v, wta);
+                    wtile_lo = gfx_byte_at(mem_v, wta, __func__);
                     if (g_has_error) return make_null();
-                    wtile_hi = buffer_read_byte(mem_v, wta + 1);
+                    wtile_hi = gfx_byte_at(mem_v, wta + 1, __func__);
                     if (g_has_error) return make_null();
                 }
                 int wbit = 7 - (win_x & 7);
@@ -2604,16 +2710,16 @@ Value* builtin_ppu_render_frame(Value *arg) {
 
             for (int i = 0; i < 40 && spr_count < 10; i++) {
                 int oam = 0xFE00 + i * 4;
-                int sy = buffer_read_byte(mem_v, oam) - 16;
+                int sy = gfx_byte_at(mem_v, oam, __func__) - 16;
                 if (g_has_error) return make_null();
-                int sx = buffer_read_byte(mem_v, oam + 1) - 8;
+                int sx = gfx_byte_at(mem_v, oam + 1, __func__) - 8;
                 if (g_has_error) return make_null();
                 if (ly >= sy && ly < sy + sprite_h) {
                     sprites[spr_count].sx = sx;
                     sprites[spr_count].sy = sy;
-                    sprites[spr_count].tile = buffer_read_byte(mem_v, oam + 2);
+                    sprites[spr_count].tile = gfx_byte_at(mem_v, oam + 2, __func__);
                     if (g_has_error) return make_null();
-                    sprites[spr_count].flags = buffer_read_byte(mem_v, oam + 3);
+                    sprites[spr_count].flags = gfx_byte_at(mem_v, oam + 3, __func__);
                     if (g_has_error) return make_null();
                     sprites[spr_count].oam_idx = i;
                     spr_count++;
@@ -2650,9 +2756,9 @@ Value* builtin_ppu_render_frame(Value *arg) {
                 }
 
                 int taddr = 0x8000 + tile * 16 + row * 2;
-                int slo = buffer_read_byte(mem_v, taddr);
+                int slo = gfx_byte_at(mem_v, taddr, __func__);
                 if (g_has_error) return make_null();
-                int shi = buffer_read_byte(mem_v, taddr + 1);
+                int shi = gfx_byte_at(mem_v, taddr + 1, __func__);
                 if (g_has_error) return make_null();
 
                 for (int col = 0; col < 8; col++) {

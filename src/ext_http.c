@@ -586,24 +586,36 @@ Value* builtin_http_early_bind(Value *arg) {
         }
         arg = list_get_view(arg, 0, &port_view);
     }
-    if (arg && arg->type != VAL_NULL && arg->type != VAL_NUM) {
+    if (arg && arg->type != VAL_NULL && !val_is_number(arg)) {
         rt_error(EK_TYPE, 0, "http_early_bind: port must be a number or null");
         return make_null();
     }
+    int64_t port_value = 5000;
+    if (arg && arg->type != VAL_NULL
+        && !eigs_int_arg_range(arg, 0, 65535, &port_value, "http_early_bind")) return make_null();
+    int port = (int)port_value;
     if (g_server.early_bind_fd >= 0 || g_server.serving || g_server.response_header_rejected) {
         rt_error(EK_VALUE, 0, "http_early_bind: server already bound/serving or http_response_header rejected");
         return make_null();
     }
-    int port = 5000;
-    double port_d = 0;
-    if (eigs_opt_num(arg, &port_d, "http_serve")) port = (int)port_d;   /* #1637: a bool raises */
-    if (g_has_error) return make_null();
+
     const char *env_port = getenv("PORT");
-    if (env_port && atoi(env_port) > 0) {
-        port = atoi(env_port);
+    char *port_end = NULL;
+    errno = 0;
+    long override = env_port ? strtol(env_port, &port_end, 10) : 0;
+    if (env_port && port_end != env_port && override > 0) {
+        if (errno == ERANGE || override > 65535) {
+            rt_error(EK_VALUE, 0, "http_early_bind: PORT outside [0, 65535]");
+            return make_null();
+        }
+        port = (int)override;
         printf("[deploy] PORT env=%s, binding port %d\n", env_port, port);
     } else {
         printf("[deploy] No PORT env, using default %d\n", port);
+    }
+    if (port < 0 || port > 65535) {
+        rt_error(EK_VALUE, 0, "http_early_bind: port outside [0, 65535]");
+        return make_null();
     }
     char cwd[512];
     if (getcwd(cwd, sizeof(cwd))) {
@@ -651,6 +663,25 @@ Value* builtin_http_early_bind(Value *arg) {
 }
 
 Value* builtin_http_serve(Value *arg) {
+    int64_t port_value = 5000;
+    if (arg && arg->type != VAL_NULL
+        && !eigs_int_arg_range(arg, 0, 65535, &port_value, "http_serve")) return make_null();
+    int port = (int)port_value;
+    const char *env_port = getenv("PORT");
+    char *port_end = NULL;
+    errno = 0;
+    long override = env_port ? strtol(env_port, &port_end, 10) : 0;
+    if (env_port && port_end != env_port && override > 0) {
+        if (errno == ERANGE || override > 65535) {
+            rt_error(EK_VALUE, 0, "http_serve: PORT outside [0, 65535]");
+            return make_null();
+        }
+        port = (int)override;
+    }
+    if (port < 0 || port > 65535) {
+        rt_error(EK_VALUE, 0, "http_serve: port outside [0, 65535]");
+        return make_null();
+    }
     if (__builtin_expect(g_replay_enabled, 0)) {
         rt_error(EK_IO, 0, "http_serve: not replayable under EIGS_REPLAY "
                  "(server/static-file boundary; see docs/TRACE.md)");
@@ -667,14 +698,7 @@ Value* builtin_http_serve(Value *arg) {
         rt_error(EK_VALUE, 0, "http_response_header: rejected configuration; http_serve cannot start");
         return make_null();
     }
-    int port = 5000;
-    double port_d = 0;
-    if (eigs_opt_num(arg, &port_d, "http_serve")) port = (int)port_d;   /* #1637: a bool raises */
-    if (g_has_error) return make_null();
-    const char *env_port = getenv("PORT");
-    if (env_port && atoi(env_port) > 0) {
-        port = atoi(env_port);
-    }
+
     printf("Starting HTTP server on port %d...\n", port);
     fflush(stdout);
     http_serve_blocking(port);
@@ -950,7 +974,8 @@ Value* builtin_shared_set(Value *arg) {
  * as 0 (so the first incr inserts the key with `delta` as its value);
  * an existing non-numeric value is a usage error, returns null without
  * mutating. Subject to the same byte cap as shared_set. Returns the new
- * value on success, null on bad args / over-cap / type mismatch. */
+ * value on success, null on bad args / over-cap / type mismatch. Ints add
+ * exactly and int64 overflow raises without mutating the counter (A). */
 Value* builtin_shared_incr(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "shared_incr");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -958,39 +983,60 @@ Value* builtin_shared_incr(Value *arg) {
     Value *key_v = list_get_view(arg, 0, &(EigsView){{0}});
     Value *delta_v = list_get_view(arg, 1, &(EigsView){{0}});
     ARG_GUARD(key_v->type != VAL_STR, "shared_incr", "a string key", make_null());
-    ARG_GUARD(delta_v->type != VAL_NUM, "shared_incr", "a number delta", make_null());
+    ARG_GUARD(!val_is_number(delta_v), "shared_incr", "a number delta", make_null());
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
-    double delta = eigs_num_arg(delta_v, __func__);
+    EigsNum delta = eigs_number_arg(delta_v, __func__);
+    if (g_has_error) return make_null();
     long cap = shared_max_bytes();
 
     pthread_mutex_lock(&s->shared_mu);
     int idx = shared_find(s, key_v->data.str);
-    double cur = 0;
+    EigsNum cur = { .is_int = 1, .value = { .i64 = 0 } };
     if (idx >= 0) {
         int pos = 0;
         Value *parsed = eigs_json_parse_root(s->shared[idx].json, &pos);   /* #777 */
         /* Read the number out BEFORE dropping the ref — decref may free it —
          * and drop it on the mismatch path too, which is the one an early
          * return makes easy to miss. */
-        int bad = (!parsed || parsed->type != VAL_NUM);
-        if (!bad) cur = eigs_num_arg(parsed, __func__);
+        int bad = (!parsed || !val_is_number(parsed));
+        if (!bad) cur = eigs_number_arg(parsed, __func__);
         val_decref(parsed);
-        if (bad) {
+        if (bad || g_has_error) {
             pthread_mutex_unlock(&s->shared_mu);
             return make_null();
         }
     }
-    double new_val = cur + delta;
-    /* eigs_json_encode borrows its argument, so the Value handed to it is
-     * ours to release. */
-    Value *new_v = make_num(new_val);
+    Value *new_v;
+    if (cur.is_int && delta.is_int) {
+        int64_t new_val;
+        if (__builtin_add_overflow(cur.value.i64, delta.value.i64, &new_val)) {
+            pthread_mutex_unlock(&s->shared_mu);
+            rt_error(EK_VALUE, 0, "shared_incr: integer overflow in '+'");
+            return make_null();
+        }
+        new_v = make_int(new_val);
+    } else {
+        double cur_f = cur.is_int ? (double)cur.value.i64 : cur.value.f64;
+        double delta_f = delta.is_int ? (double)delta.value.i64 : delta.value.f64;
+        new_v = make_float(cur_f + delta_f);
+    }
+    if (g_has_error) {
+        val_decref(new_v);
+        pthread_mutex_unlock(&s->shared_mu);
+        return make_null();
+    }
+    /* eigs_json_encode borrows new_v. Keep its owned ref for the return value
+     * on success and release it on every refusal before leaving the lock. */
     char *new_json = eigs_json_encode(new_v);
-    val_decref(new_v);
     /* A number can't exceed the depth bound, but don't leave a bare strlen on
      * a documented-nullable return. */
-    if (!new_json) { pthread_mutex_unlock(&s->shared_mu); return make_null(); }
+    if (!new_json) {
+        val_decref(new_v);
+        pthread_mutex_unlock(&s->shared_mu);
+        return make_null();
+    }
     long new_json_len = (long)strlen(new_json);
     long key_len = (long)val_str_len(key_v);
     long old_bytes = (idx >= 0) ? (long)strlen(s->shared[idx].json) : 0;
@@ -999,6 +1045,7 @@ Value* builtin_shared_incr(Value *arg) {
     if (s->shared_bytes + delta_bytes > cap) {
         pthread_mutex_unlock(&s->shared_mu);
         free(new_json);
+        val_decref(new_v);
         return make_null();
     }
     if (idx >= 0) {
@@ -1016,7 +1063,7 @@ Value* builtin_shared_incr(Value *arg) {
     }
     s->shared_bytes += delta_bytes;
     pthread_mutex_unlock(&s->shared_mu);
-    return make_num(new_val);
+    return new_v;
 }
 
 Value* builtin_shared_get(Value *arg) {
@@ -1045,9 +1092,9 @@ Value* builtin_shared_has(Value *arg) {
 }
 
 Value* builtin_shared_delete(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, "shared_delete", "a string key", make_num(0));
+    ARG_GUARD(!arg || arg->type != VAL_STR, "shared_delete", "a string key", make_int(0));
     Server *s = eigs_http_active;
-    if (!s) return make_num(0);  /* fs:ANSWER 0 means "nothing removed" -- the same value line 761 returns via `removed` when the key is absent */
+    if (!s) return make_int(0);  /* fs:ANSWER 0 means "nothing removed" -- the same value line 761 returns via `removed` when the key is absent */
     pthread_mutex_lock(&s->shared_mu);
     int idx = shared_find(s, arg->data.str);
     int removed = 0;
@@ -1063,7 +1110,7 @@ Value* builtin_shared_delete(Value *arg) {
         removed = 1;
     }
     pthread_mutex_unlock(&s->shared_mu);
-    return make_num(removed);
+    return make_int(removed);
 }
 
 Value* builtin_shared_keys(Value *arg) {
@@ -1082,11 +1129,11 @@ Value* builtin_shared_keys(Value *arg) {
 Value* builtin_shared_size(Value *arg) {
     (void)arg;
     Server *s = eigs_http_active;
-    if (!s) return make_num(0);  /* fs:ANSWER 0 is the store's key count, the same quantity line 784 returns; with no active server the store is empty */
+    if (!s) return make_int(0);  /* fs:ANSWER 0 is the store's key count, the same quantity line 784 returns; with no active server the store is empty */
     pthread_mutex_lock(&s->shared_mu);
     int n = s->shared_count;
     pthread_mutex_unlock(&s->shared_mu);
-    return make_num(n);
+    return make_int(n);
 }
 
 Value* builtin_shared_clear(Value *arg) {

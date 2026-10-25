@@ -22,6 +22,7 @@
 #include "builtins_internal.h"
 #include "fsutil.h"
 #include "trace.h"
+#include <limits.h>
 
 #if EIGENSCRIPT_FREESTANDING
 
@@ -33,6 +34,13 @@ void register_host_builtins(Env *env) { (void)env; }
 #else /* host profile */
 
 #include <termios.h>
+
+/* N5 followed by the range of the receiving hosted C API. */
+static int builtin_host_c_int(const Value *v, const char *who) {
+    int64_t n = 0;
+    eigs_int_arg_range(v, INT_MIN, INT_MAX, &n, who);
+    return (int)n;
+}
 
 /* ==== BUILTIN: match — regex match, return list of groups ==== */
 /* match of [string, pattern] -> [full_match, group1, ...] or [] */
@@ -215,14 +223,14 @@ Value* builtin_stream_open(Value *arg) {
     Value *path_val = list_get_view(arg, 0, &path_val_view);
     EIGS_VIEW(count_val_view);
     Value *count_val = list_get_view(arg, 1, &count_val_view);
-    ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || count_val->type != VAL_NUM,
+    ARG_GUARD(!path_val || path_val->type != VAL_STR || !count_val || !val_is_number(count_val),
               "stream_open", "[a string path, a number count]", make_bool(0));
-    if (eigs_num_arg(count_val, __func__) < 1 ||
-        eigs_num_arg(count_val, __func__) > EIGS_TENSOR_MAX_ELEMENTS ||
-        eigs_num_arg(count_val, __func__) != floor(eigs_num_arg(count_val, __func__))) {
+    int64_t requested_count = eigs_int_arg(count_val, "stream_open");
+    if (g_has_error) return make_bool(0);
+    if (requested_count < 1 || requested_count > EIGS_TENSOR_MAX_ELEMENTS) {
         rt_error(EK_LIMIT, 0,
-                 "stream_open: '%s' count %.17g is outside the 1..%d element cap",
-                 path_val->data.str, eigs_num_arg(count_val, __func__),
+                 "stream_open: '%s' count %lld is outside the 1..%d element cap",
+                 path_val->data.str, (long long)requested_count,
                  EIGS_TENSOR_MAX_ELEMENTS);
         return make_bool(0);
     }
@@ -238,7 +246,7 @@ Value* builtin_stream_open(Value *arg) {
      * comment over this section documents stream_open as answering 1 — so 0
      * is the "could not open" answer, not a type mistake. */
     if (!g_stream_file) return make_bool(0);
-    uint32_t count = (uint32_t)eigs_num_arg(count_val, __func__);
+    uint32_t count = (uint32_t)requested_count;
     uint32_t header[4] = { 1, 1, count, 0 }; /* ndim=1, rows=1, cols=count, flags=0 */
     if (fwrite(header, sizeof(uint32_t), 4, g_stream_file) != 4) {
         fclose(g_stream_file);
@@ -262,12 +270,13 @@ Value* builtin_stream_write(Value *arg) {
      * state, and strict must not report it as a type error. Both halves still
      * answer make_bool(0) with strict off, in either order, so the non-strict
      * result is unchanged. */
-    ARG_GUARD(!arg || arg->type != VAL_NUM, "stream_write", "a number", make_bool(0));
+    ARG_GUARD(!arg || !val_is_number(arg), "stream_write", "a number", make_bool(0));
     /* fs:ANSWER no stream is open — the state, not the argument (which the
      * guard above already accepted); 0 is the failure bit paired with the
      * make_bool(1) success value below. */
     if (!g_stream_file) return make_bool(0);
-    double val = eigs_num_arg(arg, __func__);
+    double val = eigs_float_arg(arg, "stream_write");
+    if (g_has_error) return make_bool(0);
     if (fwrite(&val, sizeof(double), 1, g_stream_file) != 1) {
         fclose(g_stream_file);
         g_stream_file = NULL;
@@ -416,11 +425,27 @@ typedef struct {
     int count;
 } IdentEntry;
 
+/* Both refusal sites belong only to build_corpus. Numeric preflight may
+ * precede replay, while malformed nonnumeric shapes retain replay's refusal. */
+static int build_corpus_replay_blocks(void) {
+    if (!__builtin_expect(g_replay_enabled, 0)) return 0;
+    rt_error(EK_IO, 0, "build_corpus: not replayable under EIGS_REPLAY "
+             "(filesystem boundary; see docs/TRACE.md)");
+    return 1;
+}
+
 Value* builtin_build_corpus(Value *arg) {
     STRICT_LIST_MAX(arg, 7, "build_corpus");
-    if (__builtin_expect(g_replay_enabled, 0)) {
-        rt_error(EK_IO, 0, "build_corpus: not replayable under EIGS_REPLAY "
-                 "(filesystem boundary; see docs/TRACE.md)");
+    if (__builtin_expect(g_replay_enabled, 0) &&
+        (!arg || arg->type != VAL_LIST || arg->data.list.count < 4 ||
+         list_elem_type(arg, 0) != VAL_LIST ||
+         (list_elem_type(arg, 1) != VAL_INT && list_elem_type(arg, 1) != VAL_FLOAT) ||
+         list_elem_type(arg, 2) != VAL_STR || list_elem_type(arg, 3) != VAL_STR ||
+         (arg->data.list.count >= 6 && list_elem_type(arg, 5) != VAL_NULL &&
+          list_elem_type(arg, 5) != VAL_INT && list_elem_type(arg, 5) != VAL_FLOAT) ||
+         (arg->data.list.count >= 7 && list_elem_type(arg, 6) != VAL_NULL &&
+          list_elem_type(arg, 6) != VAL_INT && list_elem_type(arg, 6) != VAL_FLOAT))) {
+        (void)build_corpus_replay_blocks();
         return make_null();
     }
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4)
@@ -438,11 +463,12 @@ Value* builtin_build_corpus(Value *arg) {
 
     if (!file_list || file_list->type != VAL_LIST) return make_null();
     BOOL_REFUSE(topn_val, "build_corpus");
-    if (!topn_val || topn_val->type != VAL_NUM) return make_null();
+    if (!topn_val || !val_is_number(topn_val)) return make_null();
     if (!stream_path_val || stream_path_val->type != VAL_STR) return make_null();
     if (!vocab_path_val || vocab_path_val->type != VAL_STR) return make_null();
 
-    int top_n = (int)eigs_num_arg(topn_val, __func__);
+    int top_n = builtin_host_c_int(topn_val, "build_corpus");
+    if (g_has_error) return make_null();
     int n_files = file_list->data.list.count;
 
     /* ---- SLOT MODE (optional 6th arg: slot_count > 0) --------------------
@@ -473,8 +499,8 @@ Value* builtin_build_corpus(Value *arg) {
     if (arg->data.list.count >= 6) {
         EIGS_VIEW(sv_view);
         Value *sv = list_get_view(arg, 5, &sv_view);
-        double d = 0;
-        if (eigs_opt_num(sv, &d, "build_corpus")) slot_count = (int)d;   /* #1637: a bool raises */
+        int64_t d = 0;
+        if (eigs_opt_int_range(sv, INT_MIN, INT_MAX, &d, "build_corpus")) slot_count = (int)d;
         if (g_has_error) return make_null();
     }
     if (slot_count < 0) slot_count = 0;
@@ -502,11 +528,12 @@ Value* builtin_build_corpus(Value *arg) {
     if (arg->data.list.count >= 7) {
         EIGS_VIEW(iv_view);
         Value *iv = list_get_view(arg, 6, &iv_view);
-        double d = 0;
-        if (eigs_opt_num(iv, &d, "build_corpus")) int_count = (int)d;    /* #1637: a bool raises */
+        int64_t d = 0;
+        if (eigs_opt_int_range(iv, INT_MIN, INT_MAX, &d, "build_corpus")) int_count = (int)d;
         if (g_has_error) return make_null();
     }
     if (int_count < 0) int_count = 0;
+    if (build_corpus_replay_blocks()) return make_null();
     /* Source of truth: the size of the TokType enum. Hardcoding 54 (which is
      * what this was before) silently aliases TOK_LBRACKET (=54) onto the most
      * common extended ident slot whenever the enum grows. */
@@ -728,13 +755,13 @@ Value* builtin_build_corpus(Value *arg) {
                     tid = FIRST_IDENT + actual_top + hit;
                 }
             } else if (int_count > 0 && tid == TOK_NUM) {
-                /* Give small non-negative integer literals exact tokens; the
-                 * region sits directly after the slots. floor==value rejects
-                 * 3.5 etc.; the lexer emits '-' as its own token so num_val is
-                 * never negative for a literal, but guard anyway. */
-                double nv = tl.tokens[i].num_val;
-                if (nv >= 0.0 && nv < (double)int_count && nv == (double)(long)nv)
-                    tid = FIRST_IDENT + actual_top + slot_count + (int)nv;
+                /* Only int literals receive the compact integer token.
+                 * Preserve literal kinds: `3.0` remains TOK_NUM. Hex literals
+                 * can wrap negative, so check the range before the cast. */
+                EigsNum number = tl.tokens[i].number;
+                if (number.is_int && number.value.i64 >= 0 &&
+                    number.value.i64 < int_count)
+                    tid = FIRST_IDENT + actual_top + slot_count + (int)number.value.i64;
             }
             double d = (double)tid;
             fwrite(&d, sizeof(double), 1, stream_file);
@@ -833,9 +860,9 @@ Value* builtin_build_corpus(Value *arg) {
 
     /* Return [stream_length, distinct_identifiers, files_found] */
     Value *result = make_list(3);
-    list_append_owned(result, make_num(stream_pos));
-    list_append_owned(result, make_num(n_idents));
-    list_append_owned(result, make_num(files_found));
+    list_append_owned(result, make_int(stream_pos));
+    list_append_owned(result, make_int(n_idents));
+    list_append_owned(result, make_int(files_found));
     return result;
 }
 
@@ -1226,15 +1253,15 @@ static int read_stream_bounded(FILE *f, size_t cap, unsigned char **out,
 }
 
 static int replay_reader_size(const char *fn, Value *v, long long *out) {
-    double n = eigs_num_arg(v, __func__);
-    int64_t exact;
-    if (!isfinite(n) || n < 0.0 || !num_to_i64_exact(n, &exact)) {
+    /* v8 records sizes as exact ints. A float-kind token, even an integral
+     * one, is corrupt metadata; never round it through the numeric bridge. */
+    if (!v || v->type != VAL_INT || VAL_I64_RAW(v) < 0) {
         rt_error(EK_IO, 0,
                  "%s: replay record size is not an exact integer in range; "
                  "refusing to replay", fn);
         return 0;
     }
-    *out = (long long)exact;
+    *out = (long long)VAL_I64_RAW(v);
     return 1;
 }
 
@@ -1245,7 +1272,7 @@ Value* builtin_read_bytes(Value *arg) {
     ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_bytes", "a string path", make_null());
     Value *replayed = NULL;
     if (file_io_replay("read_bytes", &replayed)) {
-        if (replayed->type == VAL_NUM) {
+        if (replayed->type == VAL_INT || replayed->type == VAL_FLOAT) {
             long long len;
             if (!replay_reader_size("read_bytes", replayed, &len)) {
                 val_decref(replayed);
@@ -1284,14 +1311,14 @@ Value* builtin_read_bytes(Value *arg) {
         }
         Value *result = make_list((int)nread);
         for (size_t i = 0; i < nread; i++)
-            list_append_owned(result, make_num((double)buf[i]));
+            list_append_owned(result, make_int(buf[i]));
         free(buf);
         TRACE_NONDET_RECORD("read_bytes", result);
     }
     if (len > 10 * 1024 * 1024) {
         fclose(f);
         if (__builtin_expect(g_trace_enabled, 0)) {
-            Value *sz = make_num((double)len);
+            Value *sz = make_int((int64_t)len);
             trace_nondet_value("read_bytes", sz);
             val_decref(sz);
         }
@@ -1305,7 +1332,7 @@ Value* builtin_read_bytes(Value *arg) {
     fclose(f);
     Value *result = make_list((int)nread);
     for (size_t i = 0; i < nread; i++)
-        list_append_owned(result, make_num((double)buf[i]));
+        list_append_owned(result, make_int(buf[i]));
     free(buf);
     TRACE_NONDET_RECORD("read_bytes", result);
 }
@@ -1356,30 +1383,26 @@ Value* builtin_read_bytes_buf(Value *arg) {
         if (arg->data.list.count >= 2) {
             EIGS_VIEW(mv_view);
             Value *mv = list_get_view(arg, 1, &mv_view);
-            if (!mv || mv->type != VAL_NUM) {
+            if (!mv || !val_is_number(mv)) {
                 rt_error(EK_VALUE, 0, "read_bytes_buf: max_bytes must be a number");
                 return make_null();
             }
-            if (!(eigs_num_arg(mv, __func__) >= 1 &&
-                  eigs_num_arg(mv, __func__) <= (double)READ_BYTES_BUF_HARD_CAP)) {
-                rt_error(EK_VALUE, 0,
-                         "read_bytes_buf: max_bytes must be in 1..%lld (got %g)",
-                         READ_BYTES_BUF_HARD_CAP, mv ? eigs_num_arg(mv, __func__) : 0.0);
-                return make_null();
-            }
-            cap = (long long)eigs_num_arg(mv, __func__);
+            int64_t requested;
+            if (!eigs_int_arg_range(mv, 1, READ_BYTES_BUF_HARD_CAP, &requested,
+                                    "read_bytes_buf")) return make_null();
+            cap = (long long)requested;
         }
     }
     if (!path || path->type != VAL_STR) return make_null();
 
     /* Tape boundary. Success records the VAL_BUFFER; unopenable file
      * records an impossible-success error list. A regular-file over-cap
-     * raise records its known size as a VAL_NUM; an unseekable stream records
+     * raise records its known size as a VAL_INT; an unseekable stream records
      * its non-exact error message. Both replay without live filesystem I/O. */
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *tv = NULL;
         if (file_io_replay("read_bytes_buf", &tv)) {
-            if (tv && tv->type == VAL_NUM) {
+            if (tv && (tv->type == VAL_INT || tv->type == VAL_FLOAT)) {
                 long long len;
                 if (!replay_reader_size("read_bytes_buf", tv, &len)) {
                     val_decref(tv);
@@ -1427,7 +1450,7 @@ Value* builtin_read_bytes_buf(Value *arg) {
     if ((long long)len > cap) {
         fclose(f);
         if (__builtin_expect(g_trace_enabled, 0)) {
-            Value *sz = make_num((double)len);
+            Value *sz = make_int((int64_t)len);
             trace_nondet_value("read_bytes_buf", sz);
             val_decref(sz);
         }
@@ -1454,7 +1477,7 @@ Value* builtin_read_text(Value *arg) {
     ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_text", "a string path", make_str(""));
     Value *replayed = NULL;
     if (file_io_replay("read_text", &replayed)) {
-        if (replayed->type == VAL_NUM) {
+        if (replayed->type == VAL_INT || replayed->type == VAL_FLOAT) {
             long long len;
             if (!replay_reader_size("read_text", replayed, &len)) {
                 val_decref(replayed);
@@ -1499,7 +1522,7 @@ Value* builtin_read_text(Value *arg) {
     if (len > 10 * 1024 * 1024) {
         fclose(f);
         if (__builtin_expect(g_trace_enabled, 0)) {
-            Value *sz = make_num((double)len);
+            Value *sz = make_int((int64_t)len);
             trace_nondet_value("read_text", sz);
             val_decref(sz);
         }
@@ -1591,7 +1614,7 @@ Value* builtin_write_text(Value *arg) {
 
 static Value* exec_capture_result(int code, const char *text) {
     Value *result = make_list(2);
-    list_append_num(result, code);
+    list_append_owned(result, make_int(code));
     list_append_owned(result, make_str(text));
     return result;
 }
@@ -1599,7 +1622,7 @@ static Value* exec_capture_result(int code, const char *text) {
 Value* builtin_exec_capture(Value *arg) {
     /* fs:CHANNEL replay refuses the exec; the refusal belongs to the replay
      * layer and [-1, ""] is exec_capture's documented "did not run". */
-    /* #1008: these launder through a HELPER, so no `return make_num(-1)`
+    /* #1008: these launder through a HELPER, so no `return make_float(-1)`
      * appears and the classifier's matcher — which enumerates literal soft
      * returns — cannot see them at all. ARG_GUARD's soft argument is
      * evaluated only on the non-strict path, so the helper call is fine
@@ -1611,19 +1634,28 @@ Value* builtin_exec_capture(Value *arg) {
      * layer and [-1, ""] is exec_capture's documented "did not run". #1072:
      * after the argument guard, so a wrong-typed call errs the same way in
      * both modes. */
-    if (replay_blocks("exec_capture", "subprocess/concurrency")) return exec_capture_result(-1, "");
 
     /* Detect timeout form: [["cmd", ...], timeout_num] */
-    double timeout_sec = -1;
+    int64_t timeout_ms = -1;
     Value *cmd_list = arg;
     if (arg->data.list.count == 2
         && list_elem_type(arg, 0) == VAL_LIST
-        && list_elem_type(arg, 1) == VAL_NUM) {
+        && (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)) {
         cmd_list = list_get_ref(arg, 0);
-        timeout_sec = eigs_list_num(arg, 1, __func__);
-        ARG_GUARD(cmd_list->data.list.count < 1,
-                  "exec_capture", "a non-empty command list", exec_capture_result(-1, ""));
+        double seconds = eigs_list_float(arg, 1, "exec_capture");
+        if (g_has_error) return make_null();
+        /* The receiving API is poll(2), whose timeout is C int milliseconds.
+         * Own the scaled temporary until the borrowing magnitude reader has
+         * finished, including on its raise path. */
+        Value *milliseconds = make_float(seconds * 1000.0);
+        int ok = eigs_magnitude_arg(milliseconds, INT_MIN, INT_MAX, &timeout_ms,
+                                    "exec_capture");
+        val_decref(milliseconds);
+        if (!ok || g_has_error) return make_null();
     }
+    if (replay_blocks("exec_capture", "subprocess/concurrency")) return exec_capture_result(-1, "");
+    ARG_GUARD(cmd_list->data.list.count < 1,
+              "exec_capture", "a non-empty command list", exec_capture_result(-1, ""));
 
     int total = cmd_list->data.list.count;
 
@@ -1685,11 +1717,11 @@ Value* builtin_exec_capture(Value *arg) {
 
     /* Compute deadline */
     struct timespec deadline;
-    int has_timeout = (timeout_sec >= 0);
+    int has_timeout = (timeout_ms >= 0);
     if (has_timeout) {
         clock_gettime(CLOCK_MONOTONIC, &deadline);
-        deadline.tv_sec += (time_t)timeout_sec;
-        deadline.tv_nsec += (long)((timeout_sec - (time_t)timeout_sec) * 1e9);
+        deadline.tv_sec += (time_t)(timeout_ms / 1000);
+        deadline.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
         if (deadline.tv_nsec >= 1000000000L) {
             deadline.tv_sec++;
             deadline.tv_nsec -= 1000000000L;
@@ -1762,17 +1794,22 @@ Value* builtin_exec_capture(Value *arg) {
  * NUL-truncation), null on EOF. Same 10 MB cap as proc_read. */
 Value* builtin_proc_read_buf(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "proc_read_buf");
-    if (replay_blocks("proc_read_buf", "subprocess/concurrency")) return make_null();
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2) {
+        (void)replay_blocks("proc_read_buf", "subprocess/concurrency");
         return make_null();
+    }
     EIGS_VIEW(fd_v_view);
     Value *fd_v  = list_get_view(arg, 0, &fd_v_view);
     EIGS_VIEW(max_v_view);
     Value *max_v = list_get_view(arg, 1, &max_v_view);
-    if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
+    if (!fd_v || !val_is_number(fd_v) || !max_v || !val_is_number(max_v)) {
+        (void)replay_blocks("proc_read_buf", "subprocess/concurrency");
         return make_null();
-    int fd = (int)eigs_num_arg(fd_v, __func__);
-    int max = (int)eigs_num_arg(max_v, __func__);
+    }
+    int fd = builtin_host_c_int(fd_v, "proc_read_buf");
+    int max = builtin_host_c_int(max_v, "proc_read_buf");
+    if (g_has_error) return make_null();
+    if (replay_blocks("proc_read_buf", "subprocess/concurrency")) return make_null();
     if (fd < 0 || max <= 0) return make_null();
     if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
     unsigned char *buf = xmalloc((size_t)max);
@@ -1803,8 +1840,9 @@ Value* builtin_proc_read_buf(Value *arg) {
 Value* builtin_random_hex(Value *arg) {
     /* #971 Phase D: a non-number length answered "" (as does a length of 0,
      * which stays the answer). Taped: the soft half records as before. */
-    ARG_GUARD_TAPED(!arg || arg->type != VAL_NUM, "random_hex", "a number of hex digits", make_str(""));
-    int n = (arg && arg->type == VAL_NUM) ? (int)eigs_num_arg(arg, __func__) : 0;
+    ARG_GUARD_TAPED(!arg || !val_is_number(arg), "random_hex", "a number of hex digits", make_str(""));
+    int n = builtin_host_c_int(arg, "random_hex");
+    if (g_has_error) return make_null();
     if (n <= 0 || n > 256) TRACE_NONDET_RET("random_hex", make_str(""));
     int bytes_needed = (n + 1) / 2;
     unsigned char raw[128];
@@ -1821,7 +1859,7 @@ Value* builtin_random_hex(Value *arg) {
 }
 
 /* write_bytes of [path, data, append?] — write raw bytes to a file.
- * `data` is a list of byte ints or a buffer (values taken mod 256). `append`
+ * `data` is a list or buffer of exact bytes in 0..255 (N5/Q1). `append`
  * (optional, default 0): 0 truncates the file, nonzero appends. Returns the
  * number of bytes written; I/O failure raises EK_IO. Unlike write_text this is
  * binary-clean — NUL bytes are written verbatim, not treated as terminators —
@@ -1830,13 +1868,13 @@ Value* builtin_random_hex(Value *arg) {
 Value* builtin_write_bytes(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "write_bytes");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "write_bytes", "[path, data] (optionally [path, data, append])", make_num(0));
+              "write_bytes", "[path, data] (optionally [path, data, append])", make_int(0));
     EIGS_VIEW(path_val_view);
     Value *path_val = list_get_view(arg, 0, &path_val_view);
     EIGS_VIEW(data_view);
     Value *data = list_get_view(arg, 1, &data_view);
     ARG_GUARD(!path_val || path_val->type != VAL_STR,
-              "write_bytes", "a string path as its first argument", make_num(0));
+              "write_bytes", "a string path as its first argument", make_int(0));
     /* #1637: append is a flag -- a bool, or the older nonzero number. Any
      * other value raises rather than silently meaning "truncate". */
     int append = 0;
@@ -1844,8 +1882,8 @@ Value* builtin_write_bytes(Value *arg) {
         EIGS_VIEW(fl_view);
         Value *fl = list_get_view(arg, 2, &fl_view);
         if (fl->type == VAL_BOOL) append = fl->data.boolean;
-        else if (fl->type != VAL_NULL) append = (eigs_num_arg(fl, "write_bytes") != 0.0);
-        if (g_has_error) return make_num(0);
+        else if (fl->type != VAL_NULL) append = (eigs_float_arg(fl, "write_bytes") != 0.0);
+        if (g_has_error) return make_int(0);
     }
 
     int n = 0;
@@ -1858,7 +1896,7 @@ Value* builtin_write_bytes(Value *arg) {
          * byte ints nor a buffer, the only two forms the header documents. */
         ARG_GUARD(1, "write_bytes",
                   "a list of byte values or a buffer as its second argument",
-                  make_num(0));
+                  make_int(0));
     }
 
     unsigned char *out = xmalloc((size_t)(n > 0 ? n : 1));
@@ -1868,17 +1906,17 @@ Value* builtin_write_bytes(Value *arg) {
          * two zero bytes and reported success. Same class as join/str_replace
          * — no stand-in return, so invisible to the classifier. The free()
          * matters: STRICT_REQUIRE returns, and `out` is already allocated. */
-        if (data->type == VAL_LIST && list_elem_type(data, i) != VAL_NUM
+        if (data->type == VAL_LIST && (list_elem_type(data, i) != VAL_FLOAT && list_elem_type(data, i) != VAL_INT)
             && (g_strict || list_elem_type(data, i) == VAL_BOOL)) {   /* #1637: a bool in every mode */
             free(out);
             rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
             return make_null();
         }
-        double dv = data->type == VAL_LIST
-                        ? eigs_slot_elem_num(list_slot(data, i), __func__)
-                        : buffer_read_num(data, i);
+        if (data->type == VAL_LIST)
+            out[i] = eigs_slot_elem_byte(list_slot(data, i), "write_bytes");
+        else
+            buffer_byte_at(data, i, &out[i], "write_bytes");
         if (g_has_error) { free(out); return make_null(); }
-        out[i] = finite_num_to_byte(dv);
     }
     Value *replayed = NULL;
     if (file_io_replay("write_bytes", &replayed)) { free(out); return replayed; }
@@ -1899,7 +1937,7 @@ Value* builtin_write_bytes(Value *arg) {
     if (!close_ok || written != (size_t)n)
         return file_io_error("write_bytes", path_val->data.str,
                              write_err ? write_err : (close_err ? close_err : EIO));
-    TRACE_NONDET_RECORD("write_bytes", make_num((double)written));
+    TRACE_NONDET_RECORD("write_bytes", make_int((int64_t)written));
 }
 
 void register_host_builtins(Env *env) {

@@ -1,0 +1,7 @@
+# ROW: N14.json-build-int-exact
+# ITEMS: N14
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of (json_build of ["small", 3, "big", 9223372036854775807, "min", -9223372036854775807 - 1])

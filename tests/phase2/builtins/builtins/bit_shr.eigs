@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: bit_shr (int-requiring; Lua >> (N8, R1.5) is logical); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is bit_shr of [-1, 1]
+print of [a, nt of a]
+print of [bit_shr of [1, 64], bit_shr of [1, -1]]
+try:
+    print of ["fraction-answer", bit_shr of [16, 1.5]]
+catch e:
+    print of ["fraction", e.kind]
+f is bit_shr of [16.0, 2.0]
+print of [f, nt of f]

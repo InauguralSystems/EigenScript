@@ -246,6 +246,8 @@ const char* tok_type_name(TokType t) {
         case TOK_MINUS: return "'-'";
         case TOK_STAR: return "'*'";
         case TOK_SLASH: return "'/'";
+        case TOK_SLASH_SLASH: return "'//'";
+        case TOK_SLASH_SLASH_EQ: return "'//='";
         case TOK_PERCENT: return "'%'";
         case TOK_LT: return "'<'";
         case TOK_GT: return "'>'";
@@ -306,7 +308,8 @@ const char* eigs_interrogative_word(int kind) {
 
 const char* val_type_name(ValType t) {
     switch (t) {
-        case VAL_NUM: return "num";
+        case VAL_FLOAT: return "num";
+        case VAL_INT: return "num";     /* #1758 (B): one number type at the surface */
         case VAL_STR: return "str";
         case VAL_LIST: return "list";
         case VAL_FN: return "fn";
@@ -351,7 +354,7 @@ static void env_intern_scope_remove(char *name);
 /* #262 Phase-3 D: scalar entropy of a number, factored out so the slot
  * observer can update from a raw immediate double without materializing a
  * Value (the default path no longer promotes observed nums to tracked
- * pointers). Single source of truth for the VAL_NUM entropy formula. */
+ * pointers). Single source of truth for the VAL_FLOAT entropy formula. */
 static double entropy_of_num(double num) {
     /* #412: unity is the HORIZON, not a home point. The binary-entropy
      * formula is smooth and maximal at |x| = 1 (p = 0.5, H = 1.0); the old
@@ -423,7 +426,9 @@ static double ent_child(Value *c) {
 }
 
 static double ent_child_slot(EigsSlot s) {
-    if (slot_is_num(s)) return entropy_of_num(SLOT_NUM_RAW(s));
+    if (slot_is_f64(s)) return entropy_of_num(SLOT_F64_RAW(s));
+    /* #1758: an int is observed as its double until round 3 (design 7). */
+    if (slot_is_smi(s)) return entropy_of_num((double)slot_smi_val(s));
     return ent_child(eigs_slot_ref(s));
 }
 
@@ -431,7 +436,10 @@ static double compute_entropy_impl(Value *v) {
     if (!v) return 0.0;
     switch (v->type) {
         case VAL_NULL: return 0.0;
-        case VAL_NUM: return entropy_of_num(VAL_NUM_RAW(v));
+        case VAL_FLOAT: return entropy_of_num(VAL_F64_RAW(v));
+        /* #1758 R1.2a (design 7): an int's entropy is its double's; it joins
+         * the numeric channel when ints exist (R1.3). */
+        case VAL_INT: return entropy_of_num((double)VAL_I64_RAW(v));
         case VAL_STR:      return entropy_of_cstr(v->data.str);
         case VAL_LIST: {
             if (v->data.list.count == 0) return 0.0;
@@ -774,9 +782,12 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
     observer_slot_update_e(e, idx, compute_entropy(newval));
     /* #294 also fold the raw value into the value-signal channel (numbers only:
      * the relative-delta step is only defined for a scalar trajectory). */
-    if (newval && newval->type == VAL_NUM) {
+    /* #1758 (design 7): a boxed int joins the numeric channel as its double
+     * until round 3. */
+    if (newval && val_is_number(newval)) {
         ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) observer_slot_record_value(s, VAL_NUM_RAW(newval));
+        if (s) observer_slot_record_value(s, newval->type == VAL_INT ? (double)VAL_I64_RAW(newval)
+                                                                     : VAL_F64_RAW(newval));
     } else {
         /* #861: a non-numeric assignment ends the numeric trajectory's claim
          * on this binding — predicates fall back to the entropy channel until
@@ -838,8 +849,9 @@ void observer_slot_sample_num_gated(Env *e, int idx, double num) {
 }
 
 void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
-    if (newval && newval->type == VAL_NUM) {
-        observer_slot_sample_num_gated(e, idx, VAL_NUM_RAW(newval));
+    if (newval && val_is_number(newval)) {     /* #1758: an int box as its double */
+        observer_slot_sample_num_gated(e, idx, newval->type == VAL_INT ? (double)VAL_I64_RAW(newval)
+                                                                       : VAL_F64_RAW(newval));
         return;
     }
     if (!e || idx < 0) return;
@@ -1389,9 +1401,12 @@ int observer_entropy_now(Env *e, int idx, double *out) {
     env_dump_lock(e);          /* exported #607 lock wrapper (defined below) */
     if (idx < e->count) {
         EigsSlot s = e->values[idx];
-        if (slot_is_num(s)) {
+        if (slot_is_f64(s)) {
             kind = 1;
-            num = SLOT_NUM_RAW(s);
+            num = SLOT_F64_RAW(s);
+        } else if (slot_is_smi(s)) {
+            kind = 1;          /* #1758: the numeric channel, as a double */
+            num = (double)slot_smi_val(s);
         } else if (slot_is_bool(s)) {
             held = make_bool(slot_as_bool(s));   /* #1637: immortal; incref no-op */
             kind = 2;
@@ -1436,24 +1451,24 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     /* windows read newest-first (offset 0 = most recent); emit oldest-first
      * so the lists read chronologically, like a history. */
     for (int i = vcnt - 1; i >= 0; i--) {
-        list_append_owned(rel, make_num(observer_slot_v_get(s, (size_t)i)));
-        list_append_owned(raw, make_num(observer_slot_vr_get(s, (size_t)i)));
+        list_append_owned(rel, make_float(observer_slot_v_get(s, (size_t)i)));
+        list_append_owned(raw, make_float(observer_slot_vr_get(s, (size_t)i)));
     }
     for (int i = dcnt - 1; i >= 0; i--)
-        list_append_owned(dh, make_num(observer_slot_window_get(s, (size_t)i)));
+        list_append_owned(dh, make_float(observer_slot_window_get(s, (size_t)i)));
     dict_set_owned(out, "rel", rel);
     dict_set_owned(out, "raw", raw);
     dict_set_owned(out, "dh",  dh);
-    dict_set_owned(out, "entropy",      make_num(s ? s->entropy : 0.0));
-    dict_set_owned(out, "dH",           make_num(s ? s->dH : 0.0));
-    dict_set_owned(out, "last_entropy", make_num(s ? s->last_entropy : 0.0));
-    dict_set_owned(out, "last_value",   make_num((s && s->v_used) ? s->last_value : 0.0));
+    dict_set_owned(out, "entropy",      make_float(s ? s->entropy : 0.0));
+    dict_set_owned(out, "dH",           make_float(s ? s->dH : 0.0));
+    dict_set_owned(out, "last_entropy", make_float(s ? s->last_entropy : 0.0));
+    dict_set_owned(out, "last_value",   make_float((s && s->v_used) ? s->last_value : 0.0));
     dict_set_owned(out, "observed",     make_bool(s && s->used != 0));     /* #1637 */
     dict_set_owned(out, "numeric",      make_bool(s && s->v_used != 0));
     /* #1044: the depth this slot classifies over travels with the snapshot,
      * so `classify of (trajectory of x)` agrees with `report of x` for a
      * binding carrying a per-binding override. */
-    dict_set_owned(out, "window",       make_num((double)observer_slot_window(s)));
+    dict_set_owned(out, "window",       make_float((double)observer_slot_window(s)));
     return out;
 }
 
@@ -1485,10 +1500,12 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         EIGS_VIEW(w_view);
         Value *w = dict_get_view_local(dict, "window", &w_view);
         if (w) {
-            if (w->type != VAL_NUM || VAL_NUM_RAW(w) < OBSERVER_WINDOW_MIN ||
-                VAL_NUM_RAW(w) > OBSERVER_WINDOW_MAX || VAL_NUM_RAW(w) != (int)VAL_NUM_RAW(w))
+            /* #1758: a number of either kind, read through the bridge */
+            double wd = val_is_number(w) ? eigs_float_arg(w, __func__) : 0.0;
+            if (!val_is_number(w) || wd < OBSERVER_WINDOW_MIN ||
+                wd > OBSERVER_WINDOW_MAX || wd != (int)wd)
                 return 0;
-            out->win_override = (uint8_t)(int)VAL_NUM_RAW(w);
+            out->win_override = (uint8_t)(int)wd;
         }
     }
     const int N = observer_slot_window(out);
@@ -1502,13 +1519,14 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     out->v_cap = out->dh_cap = (uint8_t)N;
     for (int i = vstart; i < vcnt; i++) {
         EigsSlot a = list_slot(rel, i), b = list_slot(raw, i);
-        if (slot_type(a) != VAL_NUM || slot_type(b) != VAL_NUM) {
+        ValType ta = slot_type(a), tb = slot_type(b);   /* #1758: either number kind */
+        if ((ta != VAL_FLOAT && ta != VAL_INT) || (tb != VAL_FLOAT && tb != VAL_INT)) {
             free(out->v_window); free(out->vr_window);
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->v_window[out->v_window_count]  = eigs_slot_num(a, __func__);
-        out->vr_window[out->v_window_count] = eigs_slot_num(b, __func__);
+        out->v_window[out->v_window_count]  = eigs_slot_float(a, __func__);
+        out->vr_window[out->v_window_count] = eigs_slot_float(b, __func__);
         out->v_window_count++;
     }
     out->v_window_head = (uint8_t)(out->v_window_count % N);
@@ -1517,12 +1535,13 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     out->dh_window = xcalloc((size_t)N, sizeof(double));
     for (int i = dstart; i < dcnt; i++) {
         EigsSlot a = list_slot(dh, i);
-        if (slot_type(a) != VAL_NUM) {
+        ValType ta = slot_type(a);
+        if (ta != VAL_FLOAT && ta != VAL_INT) {
             free(out->v_window); free(out->vr_window); free(out->dh_window);
             memset(out, 0, sizeof *out);
             return 0;
         }
-        out->dh_window[out->dh_window_count++] = eigs_slot_num(a, __func__);
+        out->dh_window[out->dh_window_count++] = eigs_slot_float(a, __func__);
     }
     out->dh_window_head = (uint8_t)(out->dh_window_count % N);
     /* #1637: the scalar fields are numbers and the two flags are bools, as
@@ -1535,12 +1554,12 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         EIGS_VIEW(v_view);
         Value *v = dict_get_view_local(dict, nums[k], &v_view);
         if (!v) continue;
-        if (v->type != VAL_NUM) {
+        if (!val_is_number(v)) {
             free(out->v_window); free(out->vr_window); free(out->dh_window);
             memset(out, 0, sizeof *out);
             return 0;
         }
-        *dsts[k] = VAL_NUM_RAW(v);
+        *dsts[k] = eigs_float_arg(v, __func__);   /* #1758: an int converts (the bridge) */
     }
     EIGS_VIEW(fo_view); EIGS_VIEW(fn_view);
     Value *fo = dict_get_view_local(dict, "observed", &fo_view);
@@ -1643,9 +1662,9 @@ void env_retain_intern_table(Env *env, EnvInternTable *table) {
 void free_value(Value *v) {
     if (!v) return;
     env_intern_release_value(v);
-    if (v->type == VAL_NUM) {
+    if (v->type == VAL_FLOAT) {   /* the freelist recycles float boxes; an int box is freed */
 #ifndef EIGS_POOL_OFF_NUM
-        /* Route freed NUMs to freelist for reuse by make_num */
+        /* Route freed NUMs to freelist for reuse by make_float */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {
             memcpy(EIGS_NUM_LINK(v), &g_num_freelist, sizeof(Value *));
             g_num_freelist = v;
@@ -1724,7 +1743,8 @@ void free_value(Value *v) {
         /* No owned memory. Enumerated rather than covered by a `default:` so
          * that -Werror=switch (Makefile CFLAGS) makes a new ValType a build
          * error here instead of a silent leak. */
-        case VAL_NUM:
+        case VAL_FLOAT:
+        case VAL_INT:      /* #1758 R1.2a: an int box owns nothing */
         case VAL_BUILTIN:
         case VAL_NULL:
         case VAL_BOOL:
@@ -1733,7 +1753,8 @@ void free_value(Value *v) {
     free(v);
 }
 
-Value* make_num(double n) {
+static inline Value *make_float_pooled(double n) __attribute__((always_inline));
+static inline Value *make_float_pooled(double n) {
     n = num_guard(n);
     Value *v;
 #ifndef EIGS_POOL_OFF_NUM
@@ -1745,19 +1766,32 @@ Value* make_num(double n) {
         eigs_num_park_unpoison(v);
         memset(v, 0, sizeof(Value));
     } else
-#endif  /* EIGS_POOL_OFF_NUM (#1665): never satisfy a make_num from the freelist —
+#endif  /* EIGS_POOL_OFF_NUM (#1665): never satisfy a make_float from the freelist —
          * every heap NUM is a fresh xcalloc. */
     {
         v = xcalloc(1, sizeof(Value));
     }
-    v->type = VAL_NUM;
-    VAL_NUM_RAW(v) = n;
+    v->type = VAL_FLOAT;
+    VAL_F64_RAW(v) = n;
+    v->refcount = 1;
+    return v;
+}
+
+/* Float construction retains the existing pooling and normalization path. */
+Value *make_float(double n) { return make_float_pooled(n); }
+
+/* #1758 R1.3: large int slots and Value API boundaries own ordinary heap
+ * Values. Int boxes never enter the float freelist and own no GC edges. */
+Value* make_int(int64_t n) {
+    Value *v = xcalloc(1, sizeof(Value));
+    v->type = VAL_INT;
+    VAL_I64_RAW(v) = n;
     v->refcount = 1;
     return v;
 }
 
 void recycle_intermediate(Value *v) {
-    if (!v || v->type != VAL_NUM || v->refcount > 1) return;
+    if (!v || v->type != VAL_FLOAT || v->refcount > 1) return;
 #ifdef EIGS_POOL_OFF_NUM
     /* #1665: no freelist — a discarded intermediate NUM is freed outright
      * (the pooled path already free()s it when the cap is hit, so callers
@@ -1777,16 +1811,17 @@ void recycle_intermediate(Value *v) {
 #endif
 }
 
-/* Unpooled make_num: never touches the per-thread NUM freelist, so it is
+/* Unpooled make_float: never touches the per-thread NUM freelist, so it is
  * safe without a current VM thread (C-level fixtures, tests/test_intern_owners.c). */
-Value* make_num_permanent(double n) {
+Value* make_float_permanent(double n) {
     n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
-    v->type = VAL_NUM;
-    VAL_NUM_RAW(v) = n;
+    v->type = VAL_FLOAT;
+    VAL_F64_RAW(v) = n;
     v->refcount = 1;
     return v;
 }
+
 
 /* Forward decl of the VAL_NULL singleton — defined below near make_null. */
 static Value g_null_singleton;
@@ -1812,30 +1847,435 @@ static const char *num_who(const char *who) {
     return strncmp(who, "builtin_", 8) == 0 ? who + 8 : who;
 }
 
-double eigs_num_arg_slow(const Value *v, const char *who) {
-    if (v && v->type == VAL_NUM) return VAL_NUM_RAW(v);
+/* The final readers never own their argument. Keep the payload/type
+ * predicate here so all forms share it, including every refusal path. */
+static int eigs_number_read(const Value *v, EigsNum *out, const char *who) {
+    if (v && v->type == VAL_INT) {
+        out->is_int = 1; out->value.i64 = VAL_I64_RAW(v); return 1;
+    }
+    if (v && v->type == VAL_FLOAT) {
+        out->is_int = 0; out->value.f64 = VAL_F64_RAW(v); return 1;
+    }
     if (!g_has_error)
         rt_error(EK_TYPE, 0, "%s: expected a number, got %s", num_who(who),
                  v ? val_type_name(v->type) : "nothing");
-    return 0.0;
+    return 0;
 }
 
-double eigs_list_num(const Value *list, int i, const char *who) {
-    if (!list || list->type != VAL_LIST || i < 0 || i >= list->data.list.count) {
+EigsNum eigs_number_arg(const Value *v, const char *who) {
+    EigsNum n = { .is_int = 0, .value = { .f64 = 0.0 } };
+    if (!eigs_number_read(v, &n, who)) return n;
+    if (!n.is_int && !isfinite(n.value.f64)) {
         if (!g_has_error)
-            rt_error(EK_TYPE, 0, "%s: expected a number as argument %d, got nothing",
-                     num_who(who), i);
+            rt_error(EK_VALUE, 0, "%s: expected a finite number", num_who(who));
+        n.value.f64 = 0.0;
+    }
+    return n;
+}
+
+double eigs_float_arg(const Value *v, const char *who) {
+    EigsNum n = eigs_number_arg(v, who);
+    return n.is_int ? (double)n.value.i64 : n.value.f64;
+}
+
+int64_t eigs_int_arg(const Value *v, const char *who) {
+    EigsNum n = { .is_int = 0, .value = { .f64 = 0.0 } };
+    if (!eigs_number_read(v, &n, who)) return 0;
+    if (n.is_int) return n.value.i64;
+    int64_t i;
+    if (num_to_i64_exact(n.value.f64, &i)) return i;
+    if (!g_has_error)
+        rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, num_who(who), n.value.f64);
+    return 0;
+}
+
+int eigs_int_arg_range(const Value *v, int64_t lo, int64_t hi,
+                       int64_t *out, const char *who) {
+    int64_t i = eigs_int_arg(v, who);
+    if (g_has_error) return 0;
+    if (i < lo || i > hi || lo > hi) {
+        rt_error(EK_VALUE, 0, "%s: integer %lld is outside [%lld, %lld]", num_who(who),
+                 (long long)i, (long long)lo, (long long)hi);
+        return 0;
+    }
+    *out = i;
+    return 1;
+}
+
+uint8_t eigs_byte_arg(const Value *v, const char *who) {
+    int64_t i;
+    return eigs_int_arg_range(v, 0, 255, &i, who) ? (uint8_t)i : 0;
+}
+
+/* Q7 clips complete continuous shapes before Q4 conversion. */
+/* Exact sums of up to six binary64 products. A product occupies bits
+ * 0..4195 in units of 2^-2148; six terms need at most bit4198. Fixed
+ * 66-word positive/negative accumulators retain cancellation and Q4 ties
+ * without assuming long double has a wider exponent range than double. */
+#define EIGS_GEOM_WORDS 66
+static double eigs_geom_products(const double terms[][2], int count, int *sign, int *exponent) {
+    uint64_t positive[EIGS_GEOM_WORDS]={0},negative[EIGS_GEOM_WORDS]={0};
+    for (int k=0;k<count;++k) {
+        uint64_t bits[2],mant[2];int power[2];
+        for (int j=0;j<2;++j) {
+            memcpy(&bits[j],&terms[k][j],sizeof bits[j]);
+            unsigned e=(unsigned)((bits[j]>>52)&0x7ff);
+            mant[j]=(bits[j]&UINT64_C(0xfffffffffffff)) | (e ? UINT64_C(0x10000000000000) : 0);
+            power[j]=e ? (int)e-1075 : -1074;
+        }
+        if (!mant[0] || !mant[1]) continue;
+        unsigned __int128 product=(unsigned __int128)mant[0]*mant[1];
+        int shift=power[0]+power[1]+2148,word=shift/64,b=shift%64;
+        uint64_t lo=(uint64_t)product,hi=(uint64_t)(product>>64),part[3];
+        part[0]=lo<<b;
+        part[1]=b ? (hi<<b)|(lo>>(64-b)) : hi;
+        part[2]=b ? hi>>(64-b) : 0;
+        uint64_t *dest=((bits[0]^bits[1])>>63) ? negative : positive;
+        unsigned __int128 carry=0;
+        for (int j=0;j<3 || carry;++j) {
+            if (word+j>=EIGS_GEOM_WORDS) abort(); /* internal six-product bound */
+            unsigned __int128 sum=(unsigned __int128)dest[word+j]+(j<3 ? part[j] : 0)+carry;
+            dest[word+j]=(uint64_t)sum;carry=sum>>64;
+        }
+    }
+    int cmp=0;
+    for (int i=EIGS_GEOM_WORDS-1;i>=0;--i)
+        if (positive[i]!=negative[i]) { cmp=positive[i]>negative[i] ? 1 : -1;break; }
+    *sign=cmp;*exponent=0;if (!cmp) return 0;
+    uint64_t *large=cmp>0 ? positive : negative,*small=cmp>0 ? negative : positive;
+    unsigned borrow=0;
+    for (int i=0;i<EIGS_GEOM_WORDS;++i) {
+        unsigned __int128 a=large[i],b=(unsigned __int128)small[i]+borrow;
+        large[i]=(uint64_t)(a-b);borrow=a<b;
+    }
+    int top=EIGS_GEOM_WORDS-1;while (!large[top]) --top;
+    *exponent=top*64-2148+64;
+    return (double)large[top]*0x1p-64+(top ? (double)large[top-1]*0x1p-128 : 0);
+}
+#undef EIGS_GEOM_WORDS
+
+/* Scaling by encoded normal powers needs no extra libm entry point in the
+ * freestanding runtime. An overflowing candidate is outside the drawable;
+ * selected visible coordinates and rounding thresholds stay C-int sized. */
+static double eigs_geom_scale(double value,int power) {
+    while (power) {
+        int chunk=power>1023 ? 1023 : power < -1022 ? -1022 : power;
+        uint64_t bits=(uint64_t)(chunk+1023)<<52;double factor;
+        memcpy(&factor,&bits,sizeof factor);value*=factor;power-=chunk;
+    }
+    return value;
+}
+static double eigs_geom_intersection(const double *v,int edge_axis,double edge,int rounded) {
+    double x0=v[0],y0=v[1],x1=v[2],y1=v[3],a0,a1,terms[6][2];
+    if (!edge_axis) {
+        terms[0][0]=y1;terms[0][1]=edge;terms[1][0]=-y0;terms[1][1]=edge;
+        terms[2][0]=x1;terms[2][1]=y0;terms[3][0]=-x0;terms[3][1]=y1;
+        a0=x0;a1=x1;
+    } else {
+        terms[0][0]=x1;terms[0][1]=edge;terms[1][0]=-x0;terms[1][1]=edge;
+        terms[2][0]=-x1;terms[2][1]=y0;terms[3][0]=x0;terms[3][1]=y1;
+        a0=y0;a1=y1;
+    }
+    int sign,ne,de,ds;double nm=eigs_geom_products(terms,4,&sign,&ne);
+    double denominator[2][2]={{1,a1},{-1,a0}};
+    double dm=eigs_geom_products(denominator,2,&ds,&de);
+    double q=eigs_geom_scale((sign*ds)*nm/dm,ne-de);
+    if (!rounded || !isfinite(q)) return q;
+    double lower=floor(q),tie=lower+0.5;
+    terms[4][0]=-tie;terms[4][1]=a1;terms[5][0]=tie;terms[5][1]=a0;
+    (void)eigs_geom_products(terms,6,&sign,&ne);sign*=ds;
+    return sign>0 || (sign==0 && tie>=0) ? lower+1 : lower;
+}
+static double eigs_geom_min(double a,double b) { return a<b ? a : b; }
+static double eigs_geom_max(double a,double b) { return a>b ? a : b; }
+static int eigs_geom_line(const EigsRect *d, const double *v, EigsShape *out) {
+    double x0=v[0], y0=v[1], x1=v[2], y1=v[3];
+    double left=d->x, top=d->y, right=left+d->w, bottom=top+d->h;
+    if (eigs_geom_max(x0,x1)<left || eigs_geom_min(x0,x1)>=right ||
+        eigs_geom_max(y0,y1)<top || eigs_geom_min(y0,y1)>=bottom) return 0;
+    int dx=(x1>x0)-(x1<x0),dy=(y1>y0)-(y1<y0);
+    if (!dx && !dy) {
+        out->x=out->x2=(int)round(x0); out->y=out->y2=(int)round(y0);
+        return out->x<right && out->y<bottom;
+    }
+    int sx,sy,xe,ye;
+    double xt[2][2]={{1,x1},{-1,x0}},yt[2][2]={{1,y1},{-1,y0}};
+    double xm=eigs_geom_products(xt,2,&sx,&xe),ym=eigs_geom_products(yt,2,&sy,&ye);
+    int axis=!dx ? 1 : !dy ? 0 : xe>ye || (xe==ye && xm>=ym) ? 0 : 1;
+    double direction=(axis ? dy : dx)>0 ? 1 : -1;
+    double enter=direction*(axis ? y0 : x0), leave=direction*(axis ? y1 : x1);
+    double ex=x0, ey=y0, lx=x1, ly=y1;
+    int enter_edge=-1,leave_edge=-1;
+    double bound[4]={left,right,top,bottom};
+    double p[4]={-dx,dx,-dy,dy};
+    double q[4]={x0-left,right-x0,y0-top,bottom-y0};
+    for (int k=0;k<4;++k) {
+        if (p[k]==0) { if (q[k]<0) return 0; continue; }
+        double cx,cy;
+        if (k<2) { cx=bound[k]; cy=eigs_geom_intersection(v,0,cx,0); }
+        else { cy=bound[k]; cx=eigs_geom_intersection(v,1,cy,0); }
+        double u=direction*(axis ? cy : cx);
+        if (p[k]<0) {
+            if (u>leave) return 0;
+            if (u>enter) { enter=u;ex=cx;ey=cy;enter_edge=k; }
+        } else {
+            if (u<enter) return 0;
+            if (u<leave) { leave=u;lx=cx;ly=cy;leave_edge=k; }
+        }
+    }
+    if (enter_edge>=0) {
+        if (enter_edge<2) ey=eigs_geom_intersection(v,0,bound[enter_edge],1);
+        else ex=eigs_geom_intersection(v,1,bound[enter_edge],1);
+    }
+    if (leave_edge>=0) {
+        if (leave_edge<2) ly=eigs_geom_intersection(v,0,bound[leave_edge],1);
+        else lx=eigs_geom_intersection(v,1,bound[leave_edge],1);
+    }
+    out->x=(int)round(eigs_geom_max(left,eigs_geom_min(right,ex)));
+    out->y=(int)round(eigs_geom_max(top,eigs_geom_min(bottom,ey)));
+    out->x2=(int)round(eigs_geom_max(left,eigs_geom_min(right,lx)));
+    out->y2=(int)round(eigs_geom_max(top,eigs_geom_min(bottom,ly)));
+    return 1;
+}
+
+int eigs_geom_shape(const Value *args, int first, EigsShapeKind kind,
+                    const EigsRect *drawable, EigsShape *out, const char *who) {
+    memset(out, 0, sizeof *out);
+    out->empty = 1;
+    out->kind = kind;
+    int count = kind == EIGS_POINT ? 2 : kind == EIGS_CIRCLE ? 3 : kind == EIGS_RRECT ? 5 : 4;
+    for (int i = 0; i < count; ++i) {
+        out->raw[i] = eigs_list_float(args, first + i, who);
+        if (g_has_error) return 0;
+    }
+    if (!drawable || drawable->w <= 0 || drawable->h <= 0) return 1;
+    double left = drawable->x, top = drawable->y;
+    double right = left + drawable->w, bottom = top + drawable->h;
+    /* Drawable bounds themselves are C ints supplied by the renderer. */
+    if (left < INT_MIN || top < INT_MIN || right > INT_MAX || bottom > INT_MAX) {
+        rt_error(EK_VALUE, 0, "%s: drawable bounds do not fit a C int", num_who(who));
+        return 0;
+    }
+    double x = out->raw[0], y = out->raw[1], x2, y2;
+    if (kind == EIGS_POINT) {
+        if (x < left || x >= right || y < top || y >= bottom) return 1;
+        out->x = (int)round(x); out->y = (int)round(y);
+        if (out->x >= right || out->y >= bottom) return 1;
+        out->w = out->h = 1;
+    } else if (kind == EIGS_LINE) {
+        if (!eigs_geom_line(drawable,out->raw,out)) return 1;
+    } else {
+        if (kind == EIGS_CIRCLE) {
+            double r = out->raw[2];
+            if (r < 0) return 1;
+            x2 = x+r+1; y2 = y+r+1; x -= r; y -= r;
+        } else {
+            if (out->raw[2] <= 0 || out->raw[3] <= 0) return 1;
+            x2 = x+out->raw[2]; y2 = y+out->raw[3];
+        }
+        x = eigs_geom_max(left, x); y = eigs_geom_max(top, y);
+        x2 = eigs_geom_min(right, x2); y2 = eigs_geom_min(bottom, y2);
+        if (x >= x2 || y >= y2) return 1;
+        out->x = (int)round(x); out->y = (int)round(y);
+        out->w = (int)round(x2) - out->x;
+        out->h = (int)round(y2) - out->y;
+        if (out->w <= 0 || out->h <= 0) return 1;
+    }
+    out->empty = 0;
+    return 1;
+}
+
+int eigs_bounded_arg(const Value *v, double lo, double hi, int *out, const char *who) {
+    double x = eigs_float_arg(v, who);
+    if (g_has_error) return 0;
+    if (!isfinite(lo) || !isfinite(hi) || lo > hi) {
+        rt_error(EK_VALUE, 0, "%s: invalid bounded range", num_who(who)); return 0;
+    }
+    if (x < lo) x = lo;
+    if (x > hi) x = hi;
+    x = round(x);                 /* Q4: half away from zero, after clamping */
+    if (!(x >= (double)INT_MIN && x <= (double)INT_MAX)) {
+        rt_error(EK_VALUE, 0, "%s: bounded value does not fit a C int", num_who(who));
+        return 0;
+    }
+    *out = (int)x;
+    return 1;
+}
+
+int eigs_magnitude_arg(const Value *v, int64_t lo, int64_t hi,
+                       int64_t *out, const char *who) {
+    EigsNum n = eigs_number_arg(v, who);
+    if (g_has_error) return 0;
+    int64_t i;
+    if (n.is_int) i = n.value.i64;
+    else if (!num_to_i64_exact(round(n.value.f64), &i)) {
+        rt_error(EK_VALUE, 0, "%s: magnitude has no integer representation", num_who(who));
+        return 0;
+    }
+    if (i < lo || i > hi || lo > hi) {
+        rt_error(EK_VALUE, 0, "%s: magnitude is outside [%lld, %lld]", num_who(who),
+                 (long long)lo, (long long)hi);
+        return 0;
+    }
+    *out = i;
+    return 1;
+}
+
+/* Validate list shape once; readers below use borrowed views of its slot. */
+static const Value *eigs_reader_list_arg(const Value *list, int i,
+                                        EigsView *view, const char *who) {
+    if (list && list->type == VAL_LIST && i >= 0 && i < list->data.list.count)
+        return list_get_view(list, i, view);
+    if (!g_has_error)
+        rt_error(EK_TYPE, 0, "%s: expected a number as argument %d, got nothing",
+                 num_who(who), i);
+    return NULL;
+}
+static int eigs_reader_elem_default(const Value *v) {
+    return !g_strict && (!v || (!val_is_number(v) && v->type != VAL_BOOL));
+}
+
+EigsNum eigs_list_number(const Value *list, int i, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? (EigsNum){ .is_int = 0, .value = { .f64 = 0.0 } } : eigs_number_arg(v, who);
+}
+EigsNum eigs_elem_number(const Value *v, const char *who) {
+    return eigs_reader_elem_default(v) ? (EigsNum){ .is_int = 0, .value = { .f64 = 0.0 } } : eigs_number_arg(v, who);
+}
+int eigs_opt_number(const Value *v, EigsNum *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    EigsNum n = eigs_number_arg(v, who);
+    if (g_has_error) return 0;
+    *out = n; return 1;
+}
+
+double eigs_list_float(const Value *list, int i, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_float_arg(v, who);
+}
+double eigs_elem_float(const Value *v, const char *who) {
+    return eigs_reader_elem_default(v) ? 0 : eigs_float_arg(v, who);
+}
+int eigs_opt_float(const Value *v, double *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    double n = eigs_float_arg(v, who);
+    if (g_has_error) return 0;
+    *out = n; return 1;
+}
+
+int64_t eigs_list_int(const Value *list, int i, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_int_arg(v, who);
+}
+int64_t eigs_elem_int(const Value *v, const char *who) {
+    return eigs_reader_elem_default(v) ? 0 : eigs_int_arg(v, who);
+}
+int eigs_opt_int(const Value *v, int64_t *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    int64_t n = eigs_int_arg(v, who);
+    if (g_has_error) return 0;
+    *out = n; return 1;
+}
+
+uint8_t eigs_list_byte(const Value *list, int i, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_byte_arg(v, who);
+}
+uint8_t eigs_elem_byte(const Value *v, const char *who) {
+    return eigs_reader_elem_default(v) ? 0 : eigs_byte_arg(v, who);
+}
+int eigs_opt_byte(const Value *v, uint8_t *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    uint8_t n = eigs_byte_arg(v, who);
+    if (g_has_error) return 0;
+    *out = n; return 1;
+}
+
+int eigs_list_int_range(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_int_arg_range(v, lo, hi, out, who);
+}
+int eigs_elem_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    const Value zero = { .type = VAL_INT };
+    return eigs_int_arg_range(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+}
+int eigs_opt_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    return eigs_int_arg_range(v, lo, hi, out, who);
+}
+
+int eigs_list_bounded(const Value *list, int i, double lo, double hi, int *out, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_bounded_arg(v, lo, hi, out, who);
+}
+int eigs_elem_bounded(const Value *v, double lo, double hi, int *out, const char *who) {
+    const Value zero = { .type = VAL_INT };
+    return eigs_bounded_arg(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+}
+int eigs_opt_bounded(const Value *v, double lo, double hi, int *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    return eigs_bounded_arg(v, lo, hi, out, who);
+}
+
+int eigs_list_magnitude(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    EIGS_VIEW(view);
+    const Value *v = eigs_reader_list_arg(list, i, &view, who);
+    return g_has_error ? 0 : eigs_magnitude_arg(v, lo, hi, out, who);
+}
+int eigs_elem_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    const Value zero = { .type = VAL_INT };
+    return eigs_magnitude_arg(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+}
+int eigs_opt_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
+    if (!v || v->type == VAL_NULL) return 0;
+    return eigs_magnitude_arg(v, lo, hi, out, who);
+}
+
+/* buffer_read_f64 is the renamed data boundary; callers that need exact
+ * bytes or indices instead call the corresponding checked conversion. */
+double buffer_read_f64(const Value *buffer, int64_t index) {
+    double x = buffer->data.buffer.data[index];
+    /* #1417: a strict NaN scalar read retains the first NaN diagnostic and
+     * INVALID flag. Do this before the generic nonfinite refusal; callers
+     * must stop before reading a later infinity. The finite-only refusal in
+     * non-strict mode and the infinity refusal remain unchanged. */
+    if (g_strict && x != x && !g_has_error) return num_guard(x);
+    if (!isfinite(x)) {
+        if (!g_has_error)
+            rt_error(EK_VALUE, 0, "buffer_read_f64: expected a finite number");
         return 0.0;
     }
-    return eigs_slot_num(list_slot(list, i), who);
+    return num_guard(x);
 }
-
-double eigs_elem_num(const Value *v, const char *who) {
-    return eigs_slot_elem_num(eigs_container_slot((Value *)v), who);
+int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char *who) {
+    if (!buffer || buffer->type != VAL_BUFFER || index < 0 || index >= buffer->data.buffer.count) {
+        if (!g_has_error) rt_error(EK_INDEX, 0, "%s: buffer index is out of range", num_who(who));
+        return 0;
+    }
+    /* #1417: exact byte/index reads share the data boundary's first-NaN
+     * diagnostic and INVALID flag. Stop before converting its stand-in or
+     * reading a later cell; non-strict nonfinite inputs still refuse (N13). */
+    double cell = buffer_read_f64(buffer, index);
+    if (g_has_error) return 0;
+    Value v = { .type = VAL_FLOAT };
+    VAL_F64_RAW(&v) = cell;
+    int64_t i = eigs_int_arg(&v, who);
+    if (g_has_error) return 0;
+    *out = i; return 1;
 }
-
-int eigs_opt_num(const Value *v, double *out, const char *who) {
-    return eigs_slot_opt_num(eigs_container_slot((Value *)v), out, who);
+int buffer_byte_at(const Value *buffer, int64_t index, uint8_t *out, const char *who) {
+    int64_t i;
+    if (!buffer_index_at(buffer, index, &i, who)) return 0;
+    if (i < 0 || i > 255) {
+        rt_error(EK_VALUE, 0, "%s: byte is outside [0, 255]", num_who(who)); return 0;
+    }
+    *out = (uint8_t)i; return 1;
 }
 
 /* Two levels: the argument, an element of the argument list, or an element
@@ -1861,7 +2301,7 @@ int eigs_arg_has_bool(const Value *arg) {
  *
  * slot_from_value: takes ownership of the input ref.
  *   - NULL or VAL_NULL singleton -> immediate null (input is borrowed)
- *   - VAL_NUM -> immediate double; input released (#262 Step E: nums never
+ *   - VAL_FLOAT -> immediate double; input released (#262 Step E: nums never
  *     carry observer state, so there is no tracked-pointer case)
  *   - any other type -> TAG_HEAP; ref transferred
  *
@@ -1871,26 +2311,41 @@ EigsSlot slot_from_value(Value *v) {
         if (v && v != &g_null_singleton) val_decref(v);
         return slot_null();
     }
-    if (v->type == VAL_NUM) {
+    if (v->type == VAL_FLOAT) {
         /* #262 Step E: a number never carries observer state (it lives on the
-         * Env slot), so every VAL_NUM ships as an immediate double. TAG_TRACKED
+         * Env slot), so every VAL_FLOAT ships as an immediate double. TAG_TRACKED
          * is dead. */
-        double n = VAL_NUM_RAW(v);
+        double n = VAL_F64_RAW(v);
         val_decref(v);
-        return slot_from_num(n);
+        return slot_from_f64(n);
+    }
+    /* #1758 (design 2.1): a small int is stored as its SMI and its box is
+     * released; an int outside [-2^47, 2^47) keeps its box (a heap slot). */
+    if (v->type == VAL_INT) {
+        int64_t i = VAL_I64_RAW(v);
+        if (i >= SLOT_SMI_MIN && i <= SLOT_SMI_MAX) {
+            val_decref(v);
+            return slot_from_int(i);
+        }
+        return slot_from_heap(v);
     }
     if (v->type == VAL_BOOL) return slot_from_bool(v->data.boolean); /* singleton: borrowed */
     return slot_from_heap(v);
 }
 
 /* slot_to_value: produces a Value* the caller owns a ref to.
- *   - immediate number -> make_num
+ *   - immediate double -> make_float
  *   - immediate null -> g_null_singleton
  *   - immediate bool -> the true/false singleton (#1637)
  *   - heap/tracked pointer -> incref and return
+ *   - SMI (#1758) -> a fresh int Value. This is the ONE place that boxes an
+ *     SMI (the lifts, slot_bridge_unwrap, eigs_slot_box and the *_get_return
+ *     readers all route here).
+ *   - any other tag is a broken contract and aborts (it used to read back
+ *     as null, silently).
  */
 Value* slot_to_value(EigsSlot s) {
-    if (slot_is_num(s)) return make_num(SLOT_NUM_RAW(s));
+    if (slot_is_f64(s)) return make_float(SLOT_F64_RAW(s));
     if (slot_is_null(s)) return &g_null_singleton;
     if (slot_is_bool(s)) return make_bool(slot_as_bool(s));
     if (slot_is_heap(s)) {
@@ -1898,8 +2353,15 @@ Value* slot_to_value(EigsSlot s) {
         val_incref(v);
         return v;
     }
-    /* unknown tag: fall back to null */
-    return &g_null_singleton;
+    if (slot_is_smi(s)) return make_int(slot_smi_val(s));
+    eigs_slot_refuse("slot_to_value", s);
+}
+
+void eigs_slot_refuse(const char *who, EigsSlot s) {
+    fprintf(stderr, "EigenScript FATAL: %s: slot 0x%016llx (tag 0x%04llx) is not "
+            "a value this reader handles (#1758)\n", who,
+            (unsigned long long)s.u, (unsigned long long)(s.u >> 48));
+    abort();
 }
 
 Value* make_str(const char *s) {
@@ -2384,10 +2846,12 @@ static EigsSlot module_ns_project(Value *d, Env *e, const char *key, uint32_t h,
             *found = 1;
             return cur;
         }
-        if (slot_is_num(s) && slot_is_num(cur)) {
+        if (slot_is_f64(s) && slot_is_f64(cur)) {
             /* Number over number: a plain slot store with nothing to
-             * release, so no destructor runs under the hold. */
-            dict_value_rewrite_num(d, di, SLOT_NUM_RAW(s));
+             * release, so no destructor runs under the hold. (#1758: an
+             * int takes the general path below; slot_to_value boxes it and
+             * the dict store re-canonicalizes it.) */
+            dict_value_rewrite_f64(d, di, SLOT_F64_RAW(s));
             env_shared_unlock(e);
             *found = 1;
             return dict_value_slot(d, di);
@@ -2632,10 +3096,11 @@ static Value *chan_clone_rec(Value *v, int depth) {
      * behavior) rather than overflow the stack. */
     /* #1665: scalars are copied at any depth: a number may be a stack view,
      * which must never be shared out of its frame. */
-    if (depth > CHAN_CLONE_MAX_DEPTH && v->type != VAL_NUM && v->type != VAL_NULL &&
+    if (depth > CHAN_CLONE_MAX_DEPTH && v->type != VAL_FLOAT && v->type != VAL_INT && v->type != VAL_NULL &&
         v->type != VAL_BOOL && v->type != VAL_STR) { val_incref(v); return v; }
     switch (v->type) {
-        case VAL_NUM:  return make_num(VAL_NUM_RAW(v));
+        case VAL_FLOAT: return make_float(VAL_F64_RAW(v));
+        case VAL_INT: return make_int(VAL_I64_RAW(v));
         case VAL_NULL: return make_null();
         case VAL_BOOL: return make_bool(v->data.boolean);
         case VAL_STR:  return make_str(v->data.str);
@@ -2822,7 +3287,8 @@ int is_truthy(Value *v) {
     if (!v) return 0;
     switch (v->type) {
         case VAL_NULL: return 0;
-        case VAL_NUM: return VAL_NUM_RAW(v) != 0.0;
+        case VAL_FLOAT: return VAL_F64_RAW(v) != 0.0;
+        case VAL_INT: return VAL_I64_RAW(v) != 0;   /* #1758 R1.2a */
         case VAL_STR: return v->data.str && v->data.str[0] != '\0';
         case VAL_LIST: return v->data.list.count > 0;
         case VAL_FN: return 1;
@@ -2835,12 +3301,91 @@ int is_truthy(Value *v) {
     return 0;
 }
 
+/* R1.6z-D2: identity is sound only if every reachable element is reflexive.
+ * Before R2.2 only a NaN-holding buffer is non-reflexive; R2.2 must extend
+ * this predicate to NaN floats (including immediate container slots).
+ * The work stack avoids C recursion and the pointer set visits shared
+ * containers/buffers once, so DAGs stay linear and cycles terminate.
+ * All pointers are borrowed for this call. No scalar boundary, raise or
+ * g_math_flags write belongs in this scan. */
+typedef struct {
+    Value **todo, **seen;
+    size_t count, capacity, seen_count, seen_capacity;
+} EqualScan;
+
+static size_t equal_scan_hash(Value *v) {
+    uintptr_t x = (uintptr_t)v;
+    x ^= x >> 16; x *= 0x45d9f3bU; x ^= x >> 13;
+    return (size_t)x;
+}
+
+/* Return true if already visited; otherwise insert before following edges. */
+static int equal_scan_seen(EqualScan *scan, Value *v) {
+    if (!scan->seen_capacity || scan->seen_count * 2 >= scan->seen_capacity) {
+        size_t old_capacity = scan->seen_capacity;
+        Value **old = scan->seen;
+        scan->seen_capacity = old_capacity ? old_capacity * 2 : 64;
+        scan->seen = xcalloc_array(scan->seen_capacity, sizeof(*scan->seen));
+        for (size_t i = 0; i < old_capacity; i++) {
+            if (!old[i]) continue;
+            size_t slot = equal_scan_hash(old[i]) & (scan->seen_capacity - 1);
+            while (scan->seen[slot]) slot = (slot + 1) & (scan->seen_capacity - 1);
+            scan->seen[slot] = old[i];
+        }
+        free(old);
+    }
+    size_t slot = equal_scan_hash(v) & (scan->seen_capacity - 1);
+    while (scan->seen[slot]) {
+        if (scan->seen[slot] == v) return 1;
+        slot = (slot + 1) & (scan->seen_capacity - 1);
+    }
+    scan->seen[slot] = v;
+    scan->seen_count++;
+    return 0;
+}
+
+static void equal_scan_push(EqualScan *scan, Value *v) {
+    if (!v || (v->type != VAL_LIST && v->type != VAL_DICT && v->type != VAL_BUFFER))
+        return;
+    if (scan->count == scan->capacity) {
+        scan->capacity = scan->capacity ? scan->capacity * 2 : 32;
+        scan->todo = xrealloc_array(scan->todo, scan->capacity, sizeof(*scan->todo));
+    }
+    scan->todo[scan->count++] = v;
+}
+
+static int equal_structure_reflexive(Value *root) {
+    EqualScan scan = {0};
+    int reflexive = 1;
+    equal_scan_push(&scan, root);
+    while (scan.count && reflexive) {
+        Value *v = scan.todo[--scan.count];
+        if (equal_scan_seen(&scan, v)) continue;
+        if (v->type == VAL_BUFFER) {
+            for (int i = 0; i < v->data.buffer.count; i++) {
+                if (isnan(v->data.buffer.data[i])) { reflexive = 0; break; }
+            }
+        } else if (v->type == VAL_LIST) {
+            for (int i = 0; i < v->data.list.count; i++)
+                equal_scan_push(&scan, list_get_ref(v, i));
+        } else {
+            eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
+            for (int i = 0; i < v->data.dict.count; i++)
+                equal_scan_push(&scan, dict_value_get_ref(v, i));
+        }
+    }
+    free(scan.todo);
+    free(scan.seen);
+    return reflexive;
+}
+
 /* Structural equality for `==` / `!=`.
  * Scalars compare by value (numbers, strings, null); collections compare
  * recursively by structure (lists element-wise, dicts by key/value
  * order-independently, buffers/text-builders by contents). Functions,
  * and builtins compare by identity. Mixed types are never equal
- * (no coercion — consistent with the comparison operators). The depth
+ * (no coercion — consistent with the comparison operators), except an int
+ * and a float, which are one type, `num`, and compare by value (#1758 N2). The depth
  * guard prevents runaway recursion on self-referential containers; beyond
  * it we fall back to identity. */
 /* #1637 item 6: a bool met by a number — at any depth of the two values —
@@ -2852,13 +3397,23 @@ int is_truthy(Value *v) {
  * the operator (`==`, `!=`) or the builtin, for the message. Every other
  * mixed-type pair stays unequal. */
 static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
-    /* #1417: a buffer compared with itself still exposes its elements. Do
-     * not bypass normalization (or a strict NaN raise) through identity. */
-    if (a == b && (!a || a->type != VAL_BUFFER)) return 1;
+    /* #1417 / R1.6z-D2: identity cannot hide a reachable NaN buffer. */
+    if (a == b && (!a || a->type != VAL_BUFFER)) {
+        if (a && (a->type == VAL_LIST || a->type == VAL_DICT))
+            return equal_structure_reflexive(a);
+        return 1;
+    }
     if (!a || !b) return 0;
     if (a->type != b->type) {
-        if ((a->type == VAL_BOOL && b->type == VAL_NUM) ||
-            (a->type == VAL_NUM && b->type == VAL_BOOL)) {
+        /* #1758 N2 (design 7): an int and a float are both numbers and are
+         * equal exactly when their values are; no conversion rounds either
+         * side. */
+        if (a->type == VAL_INT && b->type == VAL_FLOAT)
+            return eigs_cmp_int_float(VAL_I64_RAW(a), VAL_F64_RAW(b)) == 0;
+        if (a->type == VAL_FLOAT && b->type == VAL_INT)
+            return eigs_cmp_int_float(VAL_I64_RAW(b), VAL_F64_RAW(a)) == 0;
+        if ((a->type == VAL_BOOL && val_is_number(b)) ||
+            (val_is_number(a) && b->type == VAL_BOOL)) {
             if (op[0] == '=' || op[0] == '!')
                 rt_error(EK_TYPE, 0, "cannot compare %s and %s with '%s'",
                          val_type_name(a->type), val_type_name(b->type), op);
@@ -2872,7 +3427,8 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
      * (a number may be a view, so pointer identity is meaningless). */
     if (depth > 64 && (a->type == VAL_LIST || a->type == VAL_DICT)) return a == b;
     switch (a->type) {
-        case VAL_NUM:  return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
+        case VAL_FLOAT: return VAL_F64_RAW(a) == VAL_F64_RAW(b);
+        case VAL_INT:  return VAL_I64_RAW(a) == VAL_I64_RAW(b);   /* #1758 R1.2a: both ints */
         case VAL_STR:  return strcmp(a->data.str, b->data.str) == 0;
         case VAL_NULL: return 1;
         case VAL_BOOL: return a->data.boolean == b->data.boolean;
@@ -2902,11 +3458,9 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
         case VAL_BUFFER: {
             if (a->data.buffer.count != b->data.buffer.count) return 0;
             for (int i = 0; i < a->data.buffer.count; i++) {
-                double av = buffer_read_num(a, i);
-                if (g_has_error) return 0;
-                double bv = buffer_read_num(b, i);
-                if (g_has_error) return 0;
-                if (av != bv) return 0;
+                /* R1.6z-D1: total IEEE equality on stored doubles. No
+                 * scalar boundary, normalization, error or math-flag write. */
+                if (!(a->data.buffer.data[i] == b->data.buffer.data[i])) return 0;
             }
             return 1;
         }
@@ -2939,6 +3493,11 @@ int values_equal_op(Value *a, Value *b, const char *op) { return values_equal_im
  *
  * Every producer of number text now calls this, so a fourth copy cannot
  * appear with a fourth rule. Writes at most 32 bytes. */
+/* #1758 R1.2a: THE int->text rule: exact decimal digits, every int64. */
+void eigs_int_text(char *buf, size_t nbuf, int64_t i) {
+    snprintf(buf, nbuf, "%lld", (long long)i);
+}
+
 void eigs_num_text(char *buf, size_t nbuf, double n) {
     /* Exact integers up to 2^53 (the largest integer all doubles represent
      * exactly) print without a decimal point or exponent. The magnitude test
@@ -2964,8 +3523,12 @@ char* value_to_string(Value *v) {
     char buf[256];
     switch (v->type) {
         case VAL_NULL: return xstrdup("null");
-        case VAL_NUM: {
-            eigs_num_text(buf, sizeof(buf), VAL_NUM_RAW(v));
+        case VAL_FLOAT: {
+            eigs_num_text(buf, sizeof(buf), VAL_F64_RAW(v));
+            return xstrdup(buf);
+        }
+        case VAL_INT: {     /* #1758 R1.2a: an int prints its exact digits */
+            eigs_int_text(buf, sizeof(buf), VAL_I64_RAW(v));
             return xstrdup(buf);
         }
         case VAL_STR: return xstrdup(v->data.str);
@@ -4266,7 +4829,8 @@ static int gc_value_is_node(Value *v) {
     case VAL_FN:
         return 1;
     /* Leaves: no owned edges out, so no rows and never a cycle member. */
-    case VAL_NUM:
+    case VAL_FLOAT:
+    case VAL_INT:
     case VAL_STR:
     case VAL_NULL:
     case VAL_BUILTIN:

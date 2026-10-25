@@ -92,7 +92,7 @@ iteration, or a collector that quietly stops working).
   record, `store_put` refused to re-insert it, and the caller was told 1).
 
 - **`eigs_json_encode` borrows its argument and `eigs_json_parse_value` returns
-  an owned ref.** `eigs_json_encode(make_num(x))` leaks the `make_num`; a parsed
+  an owned ref.** `eigs_json_encode(make_float(x))` leaks the `make_float`; a parsed
   Value must be decref'd on *every* path including early returns, and the value
   read out of it before the decref. Three of the five call sites in
   `ext_http.c` had this wrong (#731) — if you touch one, re-audit the rest.
@@ -148,11 +148,15 @@ iteration, or a collector that quietly stops working).
 - **Container elements are `EigsSlot` storage (#1665 arm D); read them only
   through `src/container.h`, and know which getter owns what.** Every rule
   below was bought by a real bug during the migration:
-  - `list_get_ref` / `dict_value_get_ref` return **NULL for a number** by
-    contract. Test `list_elem_type` / `slot_type` before dereferencing, and
-    never write `get_ref(...)->type == VAL_NUM` (always false). Ragged tensor
-    rows crashed `relu`/`gather` this way (B5), and the DMG in-place
-    register-write fast path silently never fired (B2, +38% Ir).
+  - `list_get_ref` / `dict_value_get_ref` return **NULL for an immediate
+    number**, a double or an SMI (`src/container.h`:133 and :137). A boxed
+    int (|i| >= 2^47, since #1758 R1.3) is a heap slot, so it comes back as a
+    non-NULL `VAL_INT` Value. Test `list_elem_type` / `slot_type` before
+    dereferencing. Never write `get_ref(...)->type == VAL_FLOAT` (always
+    false), and never read `get_ref(...)->type == VAL_INT` as "an int" (it is
+    true for a boxed int only, never for an SMI). Ragged tensor rows crashed
+    `relu`/`gather` this way (B5), and the DMG in-place register-write fast
+    path silently never fired (B2, +38% Ir).
   - A view (`list_get_view`, `slot_view`, `EIGS_VIEW`, `BUILTIN_*_VIEW`) is
     **stack storage**: never return it, store it, or incref-and-keep it, and
     a `BUILTIN_*_VIEW` compound literal dies at its enclosing block. A view in

@@ -40,10 +40,10 @@ static void step(Env *env, const char *label, int stall,
      * so sequential reads do not defeat the ordinary warm-cache path.
      * This getter returns a borrowed slot: do not decrement its ownership. */
     EigsSlot value = env_get_hashed_slot(env, counter, 0, &found);
-    int numeric = slot_is_num(value) ||
-        (slot_is_ptr(value) && slot_as_ptr(value)->type == VAL_NUM);
-    double actual = slot_is_num(value) ? SLOT_NUM_RAW(value) :
-        (numeric ? VAL_NUM_RAW(slot_as_ptr(value)) : -1);
+    int numeric = slot_is_f64(value) ||
+        (slot_is_ptr(value) && slot_as_ptr(value)->type == VAL_FLOAT);
+    double actual = slot_is_f64(value) ? SLOT_F64_RAW(value) :
+        (numeric ? VAL_F64_RAW(slot_as_ptr(value)) : -1);
     int assignments = env_get_assign_count(env, counter, 0);
     int ok = rc == 0 && !g_has_error && found && numeric &&
         actual == (double)expected_iterations &&
@@ -65,7 +65,7 @@ static void grow_env(Env *env, const char *label) {
     for (int i = 0; i <= before; ++i) {
         char name[64];
         snprintf(name, sizeof(name), "sequential_growth_%d", i);
-        Value *value = make_num(i);
+        Value *value = make_float(i);
         env_set_local(env, name, value);
         val_decref(value);
     }

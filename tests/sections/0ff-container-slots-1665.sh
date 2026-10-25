@@ -1,9 +1,11 @@
 echo "[0ff] Container slot API (#1665 B0, slot storage B10)"
 TOTAL=$((TOTAL + 1))
-variant=release
-if [ -e ../build/asan/eigenscript ] && [ ./eigenscript -ef ../build/asan/eigenscript ]; then
-    variant=asan
-fi
+# #1783: the variant the suite binary IS (asan or asan-server in the CI ASan
+# shards), through the one predicate [0fk] shares; anything else is release.
+. "$TESTS_DIR/suite_variant.sh"
+variant=$(suite_binary_variant)
+suite_variant_is_asan "$variant" || variant=release
+echo "  test binary variant: $variant"
 if make -s -C .. SLOT_TEST_VARIANT="$variant" container-slot-test && \
    ../build/$variant/test_container_slots; then
     # Planted fault: a builtin result that is a numeric view must abort in

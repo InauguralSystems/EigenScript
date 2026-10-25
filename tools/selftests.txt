@@ -31,7 +31,7 @@ tools/codspeed_targets_check.sh codspeed.yml | timeout 30 bash tools/codspeed_ta
 tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 25 bash tools/consumer_acceptance.sh --self-test
 tools/core_ext_boundary_check.sh tools/core_ext_boundary_selftest.sh | timeout 120 bash tools/core_ext_boundary_selftest.sh --selftest | [{"pattern":"^PASS: core-ext boundary:","count":1}]
 tools/docs_claims_check.sh | timeout 30 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 19 case\\(s\\) run, 19 passed, 0 failed$","count":1}]
-tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
+tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=7$","count":1}]
 Makefile tools/make_lock_check.sh tools/stop_gate.sh tools/tree_lock.sh tools/bounded_process.py | timeout 60 bash tools/make_lock_check.sh --selftest | [{"pattern":"^  PASS:","count":8},{"pattern":"^make-lock selftest: 8/8 passed$","count":1},{"pattern":"FAIL:","count":0}]
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
@@ -56,3 +56,8 @@ tools/strict_shape_contract.py tools/strict_shape_contracts.json tests/strict_sh
 tools/strict_differential.sh tests/lsan_classify.sh | timeout 30 bash tools/strict_differential.sh --selftest | [{"pattern":"^  PASS:","count":88},{"pattern":"^  FAIL:","count":0},{"pattern":"^SHAPE_CAPTURE_SELFTEST: 88 passed, 0 failed, 88 declared$","count":1}]
 tools/selftests.sh tools/selftests_selection_selftest.sh | timeout 30 bash tools/selftests_selection_selftest.sh --selftest | [{"pattern":"^  PASS:","count":7},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST_SELECTION: 7 passed, 0 failed, 7 declared$","count":1}]
 tools/observer_oracle/* | timeout 600 python3 tools/observer_oracle/plants.py --selftest | [{"pattern":"^RED  floor-each ","count":1},{"pattern":"^plants: 1 examined, 1 red \\(controls included: green is their red\\)$","count":1}]
+# #1758 Phase 2: the row checker's calibration (5 release builds: v0.46.0 and four planted binaries; 662 s on
+# the 4 GB dev box) and the slot test's planted faults (two -O0 slot-test builds per plant; 446 s there).
+# Keyed on the checkers, never on src/ (#1352).
+tools/phase2_check.py tools/phase2_check.sh tools/phase2_corpus_diff.sh tools/phase2_inventory.py tests/phase2/calib/* tests/phase2/corpus_nonzero.txt tests/suite_program_env.sh tests/suite_program_env.txt | timeout 3600 python3 -W error tools/phase2_check.py --selftest | [{"pattern":"^calibration: cases=54 as-expected=54 unexpected=0$","count":1}]
+tools/phase2_plants.sh tests/phase2/slot_layer.sh tests/phase2/slot_layer.c tools/phase2_inventory.py | timeout 1500 bash tools/phase2_plants.sh --selftest | [{"pattern":"^plants=5 killed=5 survived=0 broken=0 transverse=5$","count":1}]

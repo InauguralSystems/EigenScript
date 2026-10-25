@@ -111,8 +111,8 @@ int main(void) {
      * 6001 calls make it hot for the JIT. The last element returns a string,
      * so sort_by raises after its final callback. */
     EigsValue *defs = eigs_eval_string(
-        "define ekey(x) as:\n    y is 0\n    i is 0\n    loop while i < 3:\n"
-        "        y is y + x\n        i is i + 1\n    if x < 0:\n"
+        "define ekey(x) as:\n    y is 0.0\n    i is 0.0\n    loop while i < 3.0:\n"
+        "        y is y + x\n        i is i + 1.0\n    if x < 0.0:\n"
         "        return \"s\"\n    return y\n");
     if (defs) eigs_value_release(defs);
     Value *ekey = eigs_get_global("ekey");
@@ -120,8 +120,8 @@ int main(void) {
     if (!ekey) return 1;
     Value *good = make_list(6001), *bad = make_list(6001);
     for (int i = 0; i < 6001; i++) {
-        list_append_owned(good, make_num(6001 - i));
-        list_append_owned(bad, make_num(i < 6000 ? 6001 - i : -1));
+        list_append_owned(good, make_float(6001 - i));
+        list_append_owned(bad, make_float(i < 6000 ? 6001 - i : -1));
     }
     Value *args_good = make_list(2), *args_bad = make_list(2);
     list_append(args_good, good); list_append(args_good, ekey);
@@ -150,22 +150,22 @@ int main(void) {
     static const char *const NM = "errline_1434";
     EigsSlot sl, out;
     g_has_error = 0;   /* a pending error halts the callback before it runs */
-    g_trace_current_line = 70; SLOT_NUM_RAW(sl) = 1.0; trace_assign(NM, sl);
+    g_trace_current_line = 70; SLOT_F64_RAW(sl) = 1.0; trace_assign(NM, sl);
     g_trace_current_line = 80;
     r = builtin_sort_by(args_good);
     check(!g_has_error && r && r->type == VAL_LIST && r->data.list.count == 6001,
           "#1434 the history row's sort_by ran its callbacks");
     if (r) val_decref(r);
-    SLOT_NUM_RAW(sl) = 2.0; trace_assign(NM, sl);
+    SLOT_F64_RAW(sl) = 2.0; trace_assign(NM, sl);
     trace_line(95);   /* a stop right after the store, for [0b]'s `--step` query */
-    check(trace_query_at(0, NM, 75, &out) && SLOT_NUM_RAW(out) == 1.0 &&
-          trace_query_at(0, NM, 85, &out) && SLOT_NUM_RAW(out) == 2.0,
+    check(trace_query_at(0, NM, 75, &out) && SLOT_F64_RAW(out) == 1.0 &&
+          trace_query_at(0, NM, 85, &out) && SLOT_F64_RAW(out) == 2.0,
           "#1434 a store after the callbacks is filed under the call's stamp");
     /* The line live history filed the second store under, for [0b] to compare
      * with the tape stepper's `t` row over the same run's EIGS_TRACE tape. */
     int filed = 0;
     for (int ln = 1; ln <= 100 && !filed; ln++)
-        if (trace_query_at(0, NM, ln, &out) && SLOT_NUM_RAW(out) == 2.0) filed = ln;
+        if (trace_query_at(0, NM, ln, &out) && SLOT_F64_RAW(out) == 2.0) filed = ln;
     printf("LIVE: %s=2 line %d\n", NM, filed);
 
     g_has_error = 0;
@@ -180,12 +180,12 @@ int main(void) {
      * NUM_ZERO 2, DIV 7, RETURN 40 (src/vm.h enum order). */
     static const int HALT77[] = {68, 77, 0, 0, 0, 3, 2, 7, 40};
     Value *code = make_list(9), *desc = make_list(3), *sb_args = make_list(2);
-    for (int i = 0; i < 9; i++) list_append_owned(code, make_num(HALT77[i]));
-    list_append_owned(desc, make_num(1));
+    for (int i = 0; i < 9; i++) list_append_owned(code, make_float(HALT77[i]));
+    list_append_owned(desc, make_float(1));
     list_append_owned(desc, code);
     list_append_owned(desc, make_list(0));
     list_append_owned(sb_args, desc);
-    list_append_owned(sb_args, make_num(100));
+    list_append_owned(sb_args, make_float(100));
     g_has_error = 0;
     g_trace_current_line = 100;
     r = builtin_sandbox_run(sb_args);

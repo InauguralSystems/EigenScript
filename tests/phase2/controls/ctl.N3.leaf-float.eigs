@@ -1,0 +1,9 @@
+# ROW: ctl.N3.leaf-float
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf sqf
+# OPS: MUL
+define sqf(x) as:
+    return x * x
+print of (sqf of 1.5)

@@ -18,7 +18,9 @@ define fmt_num(value, decimals) as:
         return "-" + (fmt_num of [0 - value, decimals])
     if decimals == 0:
         return str of (round of value)
-    factor is 1
+    # A float scale: value * 10^decimals is real-valued, and an int factor
+    # overflows int64 at 19 decimals (#1848).
+    factor is 1.0
     for i in range of decimals:
         factor is factor * 10
     rounded is round of (value * factor)

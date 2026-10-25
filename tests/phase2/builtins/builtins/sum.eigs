@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: sum (int-preserving, LOSS; all-int input sums exactly, (A))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is sum of [9007199254740993, 1]
+print of [r, nt of r]
+try:
+    print of (sum of [9223372036854775807, 1])
+catch e:
+    print of ["overflow", e.kind, contains of [e.message, "sum"]]
+m is sum of [1, 2.5]
+print of [m, nt of m]
+e1 is sum of []
+print of [e1, nt of e1]
+e2 is sum of ([])
+print of [e2, nt of e2]

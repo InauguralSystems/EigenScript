@@ -104,7 +104,13 @@ if ok != 0:
     # #152: hard ceiling at 10000 loops rejects huge counts (and prevents
     # the (int) cast UB that hit at INT_MAX+).
     assert_eq of [audio_play_loop of [short_clip, 10001], 0, "loops>10000 rejected (#152 hard cap)"]
-    assert_eq of [audio_play_loop of [short_clip, 1e20], 0, "loops huge double rejected (#152 cast UB)"]
+    # #1758 N5: an unrepresentable loop count raises before the mixer.
+    huge_loop_kind is "none"
+    try:
+        audio_play_loop of [short_clip, 1e20]
+    catch err:
+        huge_loop_kind is err.kind
+    assert_eq of [huge_loop_kind, "value", "N5: unrepresentable loop count raises value"]
     # The mixer holds ONE copy per channel and rewinds — loop count no
     # longer multiplies memory, so 800 loops of a 5s clip now just plays
     # (the old queue mode had to reject it at the 256 MiB byte budget).

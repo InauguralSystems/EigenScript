@@ -1,0 +1,22 @@
+# R1.6 behaviour-table probe: get_at (int-requiring; index, row and col; returns the element); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+xs is [10, 20, 30]
+print of (get_at of [xs, 1])
+try:
+    print of ["fraction-answer", get_at of [xs, 1.5]]
+catch e:
+    print of ["index-fraction", e.kind]
+print of (get_at of [xs, 1.0])
+b is buf_from_list of [4, 5]
+g is get_at of [b, 1]
+print of [g, nt of g]
+m is [[1, 2], [3, 4]]
+print of (get_at of [m, 1, 0])
+try:
+    print of ["fraction-answer", get_at of [m, 1, 0.5]]
+catch e:
+    print of ["col-fraction", e.kind]

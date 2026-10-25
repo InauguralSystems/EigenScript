@@ -1,0 +1,12 @@
+# ROW: A.leaf-mul-overflow
+# ITEMS: A
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf-gen sq
+# OPS: MUL
+define sq(x) as:
+    return x * x
+try:
+    print of (sq of 3037000500)
+catch e:
+    print of e.kind

@@ -45,7 +45,7 @@ export LC_ALL
 
 CORE_SRCS="src/builtins.c src/builtins_host.c src/hash.c src/ext_store.c"
 # TUs scanned for `name of ...` signature comments (core + every extension).
-DOC_SRCS="src/builtins.c src/builtins_buf.c src/builtins_host.c src/builtins_tensor.c \
+DOC_SRCS="src/builtins.c src/builtins_int.c src/builtins_buf.c src/builtins_host.c src/builtins_tensor.c \
           src/hash.c src/ext_store.c src/ext_gfx.c src/ext_http.c \
           src/ext_db.c src/ext_net.c src/model_train.c"
 

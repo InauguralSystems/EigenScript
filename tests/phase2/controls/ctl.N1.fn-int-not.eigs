@@ -1,0 +1,15 @@
+# ROW: ctl.N1.fn-int-not
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop neg NOT
+# OPS: NOT
+define neg(a) as:
+    r is not a
+    return r
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is neg of 0
+    i is i + 1.0
+print of [neg of 0.0, neg of 5, neg of 0]

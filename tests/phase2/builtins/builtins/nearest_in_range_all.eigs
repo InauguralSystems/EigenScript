@@ -1,0 +1,9 @@
+# R1.6 behaviour-table probe: nearest_in_range_all (float-producing; geometry floats, the index field is an int)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+ents is [{"px": 1, "py": 1, "active": true}, {"px": 5, "py": 5, "active": true}]
+r is nearest_in_range_all of [ents, 10, 100, 100]
+print of [r[1]["index"], nt of r[1]["index"], nt of r[1]["dist"], nt of r[1]["dx"]]

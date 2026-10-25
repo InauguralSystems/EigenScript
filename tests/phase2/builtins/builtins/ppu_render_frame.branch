@@ -1,0 +1,5 @@
+["lcd-off", 0]
+["lcdc-fraction", "value"]
+["lcdc-401", "value"]
+["bg-on", 3, 3, "float"]
+rc=0

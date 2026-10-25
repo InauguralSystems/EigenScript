@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: throw (other; message via value_to_string)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    throw of 9007199254740993
+catch e:
+    print of [e, nt of e]
+try:
+    throw of 2.5
+catch e:
+    print of [e, nt of e]

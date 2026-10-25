@@ -47,11 +47,11 @@ int main(void) {
     if (!a) { fputs("SETUP FAIL: state A\n", stderr); return 2; }
     EnvInternTable *old = eigs_current->intern_tbl;
     env_intern_table_ref(old); /* test owner, retained through normal close */
-    env_set_local_owned(a->global_env, "owner_fixture_root", make_num_permanent(3));
+    env_set_local_owned(a->global_env, "owner_fixture_root", make_float_permanent(3));
     CHECK("state root retains originating table", owns(a->global_env->intern_refs, old) == 1);
     CHECK("builtin layer retains originating table", owns(a->builtin_env->intern_refs, old) == 1);
     int before = refs(old);
-    env_set_local_owned(a->global_env, "owner_fixture_second", make_num_permanent(4));
+    env_set_local_owned(a->global_env, "owner_fixture_second", make_float_permanent(4));
     CHECK("same Env deduplicates table owner", refs(old) == before);
 
     char *old_name = env_intern_name("owner_fixture_old_chunk");
@@ -61,15 +61,15 @@ int main(void) {
     Value *fn = make_fn("owner_fixture_fn", params, 1, a->global_env);
     CHECK("function params acquire separate owner", fn->data.fn.param_intern_tbl == old && refs(old) == before + 2);
     Value *ordinary = make_dict(1);
-    dict_set_owned(ordinary, "owner_fixture_dict", make_num_permanent(5));
+    dict_set_owned(ordinary, "owner_fixture_dict", make_float_permanent(5));
     CHECK("ordinary dict retains its exact table", owns(ordinary->data.dict.intern_refs, old) == 1 && refs(old) == before + 3);
 
     (void)env_intern_name("owner_fixture_scope_zero");
     uint32_t previous = g_sandbox_intern_scope;
     uint32_t scope = env_intern_scope_begin();
     Value *zero = make_dict(1), *private = make_dict(1);
-    dict_set_owned(zero, "owner_fixture_scope_zero", make_num_permanent(6));
-    dict_set_owned(private, "owner_fixture_private_key", make_num_permanent(7));
+    dict_set_owned(zero, "owner_fixture_scope_zero", make_float_permanent(6));
+    dict_set_owned(private, "owner_fixture_private_key", make_float_permanent(7));
     CHECK("scope-zero reuse has exact table owner", owns(zero->data.dict.intern_refs, old) == 1);
     CHECK("promoted private key has live Value owner", private_names(a, private) == 1);
     CHECK("private copy does not retain whole table", private->data.dict.intern_refs == NULL);
@@ -129,7 +129,7 @@ int main(void) {
     if (!b) { fputs("SETUP FAIL: state B\n", stderr); return 2; }
     EnvInternTable *other = eigs_current->intern_tbl;
     env_intern_table_ref(other);
-    env_set_local_owned(b->global_env, "owner_fixture_other_state", make_num_permanent(8));
+    env_set_local_owned(b->global_env, "owner_fixture_other_state", make_float_permanent(8));
     CHECK("state B owns its own table", owns(b->global_env->intern_refs, other) == 1);
     CHECK("state B does not own state A table", owns(b->global_env->intern_refs, old) == 0);
     CHECK("state A does not own state B table", owns(a->global_env->intern_refs, other) == 0);

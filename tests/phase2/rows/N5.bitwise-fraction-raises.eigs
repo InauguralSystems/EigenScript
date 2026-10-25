@@ -1,0 +1,10 @@
+# ROW: N5.bitwise-fraction-raises
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+try:
+    print of (1.5 | 0)
+catch e:
+    print of e.kind

@@ -1,0 +1,7 @@
+# ROW: N9.saturating
+# ITEMS: N9
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of [i8_saturating_sub of [-100, 100], u64_saturating_add of [-1, 1]]

@@ -1,0 +1,24 @@
+# R1.6 behaviour-table probe: sign_extend (int-requiring, LOSS; (int64_t) of a double); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":5}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is sign_extend of [0xFF, 8]
+print of [r, nt of r]
+big is sign_extend of [9007199254741121, 8]
+print of [big, nt of big]
+try:
+    print of (sign_extend of [255, 8.5])
+catch e:
+    print of ["bits-fraction", e.kind]
+try:
+    print of (sign_extend of [255.5, 8])
+catch e:
+    print of ["value-fraction", e.kind]
+f is sign_extend of [255.0, 8.0]
+print of [f, nt of f]
+try:
+    print of ["overflow-answer", sign_extend of [-9223372036854775553, 8]]
+catch e:
+    print of ["overflow", e.kind]

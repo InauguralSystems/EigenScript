@@ -1,0 +1,7 @@
+# ROW: N1.exact-past-2p53
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [9007199254740993, 9223372036854775807]

@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP"' EXIT
 fail() { echo "FAIL: $*"; exit 1; }
 ok() { echo "PASS: $*"; }
 
-# A hand-edited v7 metadata count must be rejected before allocation.
+# A hand-edited v8 metadata count must be rejected before allocation.
 printf 'print of "small"\n' > "$TMP/unit.eigs"
 printf 'load_file of "%s/unit.eigs"\n' "$TMP" > "$TMP/main.eigs"
 EIGS_TRACE="$TMP/source.tape" "$EIGS" "$TMP/main.eigs" >/dev/null
@@ -48,7 +48,7 @@ else
     fail "source suffix after NUL was silently discarded"
 fi
 
-# tensor_load recorded only a verdict in v7, never its payload.  Replay must
+# tensor_load recorded only a verdict in v8, never its payload.  Replay must
 # refuse rather than opening whatever file now occupies the path.
 cat > "$TMP/tensor-setup.eigs" <<EOF
 tensor_save of [[1, 2], "$TMP/value.tensor"]

@@ -1,0 +1,11 @@
+# ROW: cal.verdict
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+# a straight-line row: #1740 raises `value` on a fractional bitwise operand, the tag truncates
+try:
+    print of (5.5 & 1)
+catch e:
+    print of e.kind

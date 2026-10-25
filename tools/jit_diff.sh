@@ -17,6 +17,13 @@
 #   bash tools/jit_diff.sh            # compare against the ledger
 #   bash tools/jit_diff.sh --record   # rewrite data rows; keep '#' lines
 set -u
+# The arms run headless whatever the caller's display (#1758 R1.3 CI fix). With
+# a display a window-opening example (examples/ui_dock.eigs) maps a real window,
+# and one Escape key from any other client of that display ends one arm with
+# rc 0 while its twin runs to the timeout: a row. CI has no display. A program
+# that needs another driver names it in tests/suite_program_env.txt.
+unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
+export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT/src"
 export EIGS_TEST_DIR="$ROOT/tests"
 . "$ROOT/tests/suite_program_env.sh" || exit 1
@@ -33,13 +40,12 @@ OSR=(-u EIGS_JIT_OFF -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_JIT_OSR_THRES
 OBS=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_GATE_STATS EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1)
 run() { # $1 out-file, $2 seconds, rest = env args (options first)
   local out="$1" sec="$2"; shift 2
-  local setting
-  setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog" >&2; exit 1; }
-  case "$setting" in
-    "") env "$@" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
-    EIGS_STRICT=0) env "$@" EIGS_STRICT=0 timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
-    *) echo "jit_diff: FAIL: unsupported suite environment for $prog: $setting" >&2; exit 1 ;;
-  esac
+  # The program's run conditions come from the shared loader, which refuses
+  # an unsupported one by name (tests/suite_program_env.sh).
+  suite_program_check "$prog" > /dev/null || { echo "jit_diff: FAIL: suite environment lookup failed for $prog" >&2; exit 1; }
+  ( if grep -Eq '(gfx|ui|audio)_[a-z_]+' "$prog"; then ulimit -v 1500000; fi
+    suite_program_run "$prog" env "$@" timeout "$sec" "$EIG" "$prog"
+  ) </dev/null > "$out" 2>&1
   echo "rc=$?" >> "$out"
 }
 arm_env() { case "$1" in
@@ -50,7 +56,7 @@ row_of() { case "$1" in tests/*/*) printf '%s' "$1" ;; tests/*) basename "$1" ;;
 # '#' lines and blank lines are reasons. Data rows are what the diff sees.
 ledger_data() { awk 'NF && substr($0,1,1) != "#" { print }' "$1" | sort; }
 ledger_count() { ledger_data "$1" | wc -l | tr -d ' '; }
-b=bench_idxset.eigs
+b=jit_env_flags_float.eigs
 selfcheck() { # $1 arm name, $2.. env args
   local arm="$1"; shift
   local st; st=$(env "$@" EIGS_JIT_STATS=1 timeout 60 "$EIG" "../tests/$b" 2>&1 >/dev/null | grep -o 'compiled=[0-9]*')
@@ -69,12 +75,21 @@ gobs=$(env "${OBS[@]}" EIGS_OBS_GATE_STATS=1 timeout 30 "$EIG" "$T/elide.eigs" 2
 [ "$gref" = "obs-gate: unobserved" ] && [ "$gobs" = "obs-gate: observed" ] || {
   echo "jit_diff: FAIL: OBS and REF do not differ in gate state ($gref vs $gobs)"; exit 1; }
 # $1 arm, $2 timeout. $T/ref and $T/arm are already filled. $row is the ledger name.
+# A run near its budget times out on a loaded machine and not on an idle one,
+# so a timeout is re-run with 4x the budget before it counts (#1758 R1.3: the
+# tape record of examples/invariant_noperthedron.eigs takes 24-26 s against the
+# OBS loop's 25 s). A timeout that survives the long budget in the tape pair is
+# the instrument failing, and stops the run; it is never a row.
+timed_out() { [ "$(tail -n 1 "$1")" = "rc=124" ]; }
 consider() {
-  local arm="$1" sec="$2" tag rr ar
+  local arm="$1" sec="$2" tag long=$(( $2 * 4 ))
   tag=$(printf '%s' "$arm" | tr a-z A-Z)
-  rr=$(tail -n 1 "$T/ref"); ar=$(tail -n 1 "$T/arm")
-  if { [ "$rr" = "rc=124" ] && [ "$ar" != "rc=124" ]; } || { [ "$ar" = "rc=124" ] && [ "$rr" != "rc=124" ]; }; then
-    echo "$row $tag" >> "$got"; return
+  if { timed_out "$T/ref" && ! timed_out "$T/arm"; } || { timed_out "$T/arm" && ! timed_out "$T/ref"; }; then
+    run "$T/ref" "$long" "${REF[@]}"
+    run "$T/arm" "$long" "${AE[@]}"
+    if { timed_out "$T/ref" && ! timed_out "$T/arm"; } || { timed_out "$T/arm" && ! timed_out "$T/ref"; }; then
+      echo "$row $tag" >> "$got"; return
+    fi
   fi
   diff -q <(norm "$T/ref") <(norm "$T/arm") >/dev/null && return
   adjudicated=$((adjudicated + 1))
@@ -84,12 +99,25 @@ consider() {
     echo "$row $tag" >> "$got"; return
   fi
   rm -f "$T/tape"
-  run "$T/rref" "$sec" "${REF[@]}" EIGS_TRACE="$T/tape"
-  run "$T/rarm" "$sec" "${AE[@]}" EIGS_REPLAY="$T/tape"
+  run "$T/rref" "$long" "${REF[@]}" EIGS_TRACE="$T/tape"
+  run "$T/rarm" "$long" "${AE[@]}" EIGS_REPLAY="$T/tape"
+  if timed_out "$T/rref" || timed_out "$T/rarm"; then
+    echo "jit_diff: FAIL: $row $tag: the tape adjudication timed out after ${long}s (an instrument failure, not a row)"; exit 1
+  fi
   diff -q <(norm "$T/rref") <(norm "$T/rarm") >/dev/null && return
   echo "$row $tag" >> "$got"
 }
-for f in "$ROOT"/tests/test_*.eigs; do
+if ! obs_files=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
+  echo "jit_diff: FAIL: cannot enumerate the tracked OBS corpus" >&2; exit 1
+fi
+[ -n "$obs_files" ] || { echo "jit_diff: FAIL: tracked OBS corpus is empty" >&2; exit 1; }
+printf '%s\n' "$obs_files" > "$T/tracked"
+(cd "$ROOT" && find tests -type f -name '*.eigs') > "$T/test-corpus"
+LC_ALL=C sort -u "$T/tracked" "$T/test-corpus" > "$T/corpus"
+python3 "$ROOT/tools/phase2_corpus_exclude.py" "$ROOT" "$T/corpus" || exit 1
+while IFS= read -r rel; do
+  case "$rel" in tests/*/*) continue ;; tests/test_*.eigs) ;; *) continue ;; esac
+  f="$ROOT/$rel"
   n=$((n + 1)); row=$(basename "$f"); prog="$f"
   run "$T/ref" 180 "${REF[@]}"
   suite_setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog"; exit 1; }
@@ -106,16 +134,13 @@ for f in "$ROOT"/tests/test_*.eigs; do
     fi
     consider "$arm" 180
   done
-done
+done < "$T/corpus"
 # Denied up front: *gfx*|*paint*|*_game* opens a window; *seeded_race* and
 # *userrace* (a user data race: undefined, can crash either side, #1171) are
 # nondeterministic on purpose; *state_at*|*statedump* prints hash-order output.
-if ! obs_files=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
-  echo "jit_diff: FAIL: cannot enumerate the tracked OBS corpus" >&2; exit 1
-fi
-[ -n "$obs_files" ] || { echo "jit_diff: FAIL: tracked OBS corpus is empty" >&2; exit 1; }
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
+  grep -qxF "$rel" "$T/tracked" || continue
   case "$rel" in
     *gfx*|*paint*|*_game*|*seeded_race*|*userrace*|*state_at*|*statedump*) n_deny=$((n_deny + 1)); continue ;;
   esac
@@ -125,12 +150,11 @@ while IFS= read -r rel; do
   arm_env obs
   run "$T/arm" 25 "${AE[@]}"
   consider obs 25
-done <<EOF
-$obs_files
-EOF
+done < "$T/corpus"
 sort -o "$got" "$got"
 [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
-[ "$n_suite_env" -eq 10 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=10"; exit 1; }
+# 16: R1.6e enrolled tests/test_phase2_gfx_q7.eigs (SDL dummy drivers) in tests/suite_program_env.txt.
+[ "$n_suite_env" -eq 16 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=16"; exit 1; }
 [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
 echo "jit_diff: OBS examined=$n_obs denied=$n_deny"
 if [ "${1:-}" = "--record" ]; then

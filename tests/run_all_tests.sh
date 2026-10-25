@@ -599,7 +599,7 @@ else
     # follows the store).
     EL_LIVE=$(sed -n 's/^LIVE: errline_1434=2 line \([0-9]*\)$/\1/p' <<< "$ERRLINE_OUT")
     EL_STEP=$(printf 'j 95\nt errline_1434\nq\n' | $EIGS_TMO ./eigenscript --step "$EL_TAPE" 2>&1 |
-              sed -n 's/^  #[0-9]* *line \([0-9]*\) *2 .*/\1/p')
+              sed -n 's/^  #[0-9]* *line \([0-9]*\) *2[.]0 .*/\1/p')
     rm -f "$EL_TAPE"
     TOTAL=$((TOTAL + 1))
     if [ -n "$EL_LIVE" ] && [ "$EL_LIVE" = "$EL_STEP" ]; then
@@ -3508,7 +3508,7 @@ rm -f "$AUDIO_PROBE_FILE"
 echo "[62] Audio Synthesis"
 if ! echo "$AUDIO_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: pins the rejected-argument stand-ins audio_sine/audio_mix -> [], audio_play_loop -> 0, audio_stream_push -> 0.
-    AU_OUTPUT=$(EIGS_STRICT=0 ./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
+    AU_OUTPUT=$(suite_program_run test_audio.eigs ./eigenscript ../tests/test_audio.eigs 2>&1); AU_OUTPUT_RC=$?
     if rc_ok "$AU_OUTPUT_RC" "$AU_OUTPUT" && echo "$AU_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + 1))
         PASS=$((PASS + 1))
@@ -3541,8 +3541,8 @@ rm -f "$GT_PROBE_FILE"
 echo "[120b] Gfx Text Metrics"
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: pins gfx_text_width of a non-string answering 0 (line 38), in both renderer modes.
-    GT_FB=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
-    GT_DEF=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
+    GT_FB=$(EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf suite_program_run test_gfx_text.eigs ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
+    GT_DEF=$(suite_program_run test_gfx_text.eigs ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
     if rc_ok "$GT_FB_RC" "$GT_FB" && echo "$GT_FB" | grep -q "All tests passed" \
        && echo "$GT_FB" | grep -q "fallback-mode: 1" \
        && rc_ok "$GT_DEF_RC" "$GT_DEF" && echo "$GT_DEF" | grep -q "All tests passed"; then
@@ -3611,7 +3611,7 @@ rm -f "$GA_PROBE_FILE"
 echo "[133] Gfx Argument-Type Guards"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: the plain pass pins the ext_gfx wrong-type stand-ins (0/null); the strict pass below raises.
-    GA_PLAIN=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
+    GA_PLAIN=$(suite_program_run test_gfx_argtypes.eigs ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
     GA_STRICT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
 
     # THIRD PASS: the tape. audio_capture_open is trace-recorded, so a guard
@@ -3939,7 +3939,7 @@ rm -f "$UC_PROBE_FILE"
 
 echo "[132] UI Containment Render-Decode Oracle"
 if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
-    UC_OUTPUT=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
+    UC_OUTPUT=$(suite_program_run test_ui_containment_gfx.eigs ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
     UC_N=$(derive_count "$UC_OUTPUT" "[132] UI Containment Render-Decode Oracle")
     if rc_ok "$UC_RC" "$UC_OUTPUT" && echo "$UC_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + UC_N))
@@ -6585,7 +6585,7 @@ EIGS_ABS="$(pwd)/eigenscript"
 # RLIMIT_AS cannot coexist with ASan's multi-terabyte shadow mapping. Gfx is
 # now in the default sanitizer profile (#1415), so keep the runaway timeout
 # but omit only the address-space cap under ASan.
-EX_GFX_ULIMIT='ulimit -v 2000000 2>/dev/null'
+EX_GFX_ULIMIT='ulimit -v 1500000 2>/dev/null'
 if ASAN_OPTIONS=help=1 "$EIGS_ABS" --version 2>&1 | grep -q 'AddressSanitizer'; then
     EX_GFX_ULIMIT=':'
 fi

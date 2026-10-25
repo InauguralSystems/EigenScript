@@ -1,0 +1,23 @@
+# R1.6 behaviour-table probe: min (int-preserving, LOSS; Lua math.min returns the winning argument)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is min of [9007199254740993, 9007199254740994]
+print of [a, nt of a]
+b is min of [3, 3.5]
+print of [b, nt of b]
+c is min of [4, 3.5]
+print of [c, nt of c]
+d is min of 7
+print of [d, nt of d]
+print of [min of [3, 3.0], nt of (min of [3, 3.0]), min of [3.0, 3], nt of (min of [3.0, 3])]
+try:
+    print of ["empty-answer", min of []]
+catch e:
+    print of ["empty", e.kind]
+try:
+    print of ["empty-list-answer", min of ([])]
+catch e:
+    print of ["empty-list", e.kind]

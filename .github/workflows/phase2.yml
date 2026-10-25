@@ -1,0 +1,81 @@
+name: phase2
+
+# #1758: landed MAP rows, the pre-registered builtin table on matched
+# capability profiles, the C readers and the stdlib differential. The shared
+# phase2_check.py helper derives the complete declared MAP prefix.
+on:
+  push:
+    branches: [phase2-numbers]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase2:
+    name: phase2 (MAP + builtins + readers + lib)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: eigs
+          POSTGRES_PASSWORD: eigs_test
+          POSTGRES_DB: eigs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eigs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
+    steps:
+      # Every branch and tag is needed: origin/main and v0.46.0.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fetch the approved builtin bar object
+        run: |
+          git fetch --no-tags origin 0a73adb0612f8612d75393891ae2ba2e1c803663
+          git cat-file -e '0a73adb0612f8612d75393891ae2ba2e1c803663^{tree}'
+      - name: Install matched capability dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev zlib1g-dev libsdl2-2.0-0 libsdl2-mixer-2.0-0 libsdl2-ttf-2.0-0
+      - name: Build tag, main and branch profiles serially; run the phase2 lane
+        run: |
+          set -euo pipefail
+          export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
+          make --no-print-directory observer-anchor
+          anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
+          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles"
+          git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
+          git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
+          make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
+          # The table uses matching capability builds; a capability-unavailable
+          # transcript is a failure, including on the tag (ruling A3).
+          for profile in server zlib db; do
+            target="$profile"
+            [ "$profile" != db ] || target=server-db
+            make -C "$RUNNER_TEMP/tag-profiles" "$target" > "$RUNNER_TEMP/tag-$profile-build.log" 2>&1 \
+              || { tail -n 50 "$RUNNER_TEMP/tag-$profile-build.log"; echo "::error::the tag $profile build failed"; exit 1; }
+            printf -v "TAG_BIN_${profile^^}" '%s' "$RUNNER_TEMP/tag-profiles/build/$target/eigenscript"
+            export "TAG_BIN_${profile^^}"
+          done
+          export CC_GUARD_LOG="$RUNNER_TEMP/cc-guard.log"
+          : > "$CC_GUARD_LOG"
+          for profile in server zlib db; do
+            target="$profile"
+            [ "$profile" != db ] || target=server-db
+            PATH="$PWD/tools/cc-guard-bin:$PATH" make "$target"
+            printf -v "BRANCH_BIN_${profile^^}" '%s' "$PWD/build/$target/eigenscript"
+            export "BRANCH_BIN_${profile^^}"
+          done
+          # Restore the release alias before the MAP and library checks.
+          PATH="$PWD/tools/cc-guard-bin:$PATH" make build
+          bash tools/cc_guard.sh --report
+          bash tools/phase2_ci.sh "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript

@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: task_spawn (int-preserving; returns a task handle)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define w(x) as:
+    return x * 2
+t is task_spawn of [w, 21]
+print of [t > 0, nt of t]
+r is task_join of t
+print of [r, nt of r]

@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: store_collections (int-requiring; handle id); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+s is store_open of (p + "/db")
+k is store_put of [s, "c", {"v": 1}]
+print of (store_collections of s)
+try:
+    print of ["fraction-answer", store_collections of {"_store_id": s["_store_id"] + 0.5, "_store_gen": s["_store_gen"], "_type": "eigenstore"}]
+catch e:
+    print of ["id-fraction", e.kind]
+print of (store_collections of {"_store_id": s["_store_id"] + 0.0, "_store_gen": s["_store_gen"] + 0.0, "_type": "eigenstore"})
+store_close of s

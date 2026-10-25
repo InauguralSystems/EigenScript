@@ -50,6 +50,20 @@ define assert_bad_descriptor(desc, reason, label) as:
 # 2 + 3 -> 5
 assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "arith add"]
 
+# #1758 R1.3: new int opcodes append to the ABI; INT_CONST validates its
+# pool entry before execution, while the old numeric zero/one remain floats.
+INT_ZERO is 97
+INT_ONE is 98
+INT_CONST is 99
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [2, RETURN], []]), "float", "#1758: legacy NUM_ZERO remains float"]
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [3, RETURN], []]), "float", "#1758: legacy NUM_ONE remains float"]
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [CONST,0,0, RETURN], [3.0]]), "float", "#1758: legacy CONST preserves a float constant"]
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [INT_ZERO, RETURN], []]), "int", "#1758: appended INT_ZERO produces int"]
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [INT_ONE, RETURN], []]), "int", "#1758: appended INT_ONE produces int"]
+assert_eq of [vm_run_bytecode of [ABI, [INT_CONST,0,0, RETURN], [9007199254740993]], 9007199254740993, "#1758: INT_CONST preserves exact large int"]
+assert_bad_descriptor of [[ABI, [INT_CONST,0,0, RETURN], [3.0]], "not an int", "#1758: INT_CONST rejects a float pool entry"]
+assert_bad_descriptor of [[ABI, [INT_CONST,0,0, RETURN], ["3"]], "not an int", "#1758: INT_CONST rejects a string pool entry"]
+
 # string concat "a" + "b" -> "ab"
 assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], ["a", "b"]], "ab", "string concat via ADD"]
 

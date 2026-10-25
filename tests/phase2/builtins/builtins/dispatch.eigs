@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: dispatch (int-requiring; integer table key, already exactness-checked); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define f0(x) as:
+    return x + 1
+define f1(x) as:
+    return x * 2
+t is [f0, f1]
+print of (dispatch of [t, 1, 21])
+try:
+    print of ["fraction-answer", dispatch of [t, 0.5, 1]]
+catch e:
+    print of ["key-fraction", e.kind]
+print of (dispatch of [t, 1.0, 21])

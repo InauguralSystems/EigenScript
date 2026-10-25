@@ -14,8 +14,12 @@ EIGS="${EIGENSCRIPT:-$DIR/../src/eigenscript}"
 BASELINE="${BASELINE_OVERRIDE:-$DIR/baseline.txt}"
 THRESHOLD_PCT=5
 
+# The run line fixes the VM tier: every EIGS_* variable is dropped (as
+# tools/phase2_cost.sh does), so EIGS_JIT_OFF is unset and every workload runs
+# in the DEFAULT tier, the JIT. Its declared costs are therefore the `jit` rows.
 ir_of() {  # ir_of <binary> <file> -> instruction count
-    valgrind --tool=cachegrind --cachegrind-out-file=/dev/null "$1" "$2" 2>&1 \
+    env $(compgen -e | grep '^EIGS_' | sed 's/^/-u /') \
+        valgrind --tool=cachegrind --cachegrind-out-file=/dev/null "$1" "$2" 2>&1 \
         | grep -oE "I *refs:[ ]*[0-9,]+" | grep -oE "[0-9,]+" | tr -d ','
 }
 
@@ -49,19 +53,40 @@ case "${1:-}" in
     # same workloads. Both built in the same environment => the Ir difference is
     # a pure code-change signal (this is what CI runs: PR binary vs origin/main
     # binary, so no cross-machine baseline drift). Fails on > THRESHOLD_PCT.
-    ref="$2"; fail=0
+    # A workload with a DECLARED temporary cost (#1758: the `jit` rows of
+    # tests/phase2/cost_expect.txt, read through their one parser) is bounded
+    # by its declared max instead, and prints the round that recovers it.
+    ref="$2"; fail=0; used=0
+    decl=$(bash "$DIR/../tools/phase2_cost.sh" --declared jit) \
+        || { echo "  FAIL: cannot read the declared costs (tools/phase2_cost.sh --declared jit)"; exit 2; }
+    ndecl=$(awk -F'\t' 'index($1, "bench/") == 1' <<< "$decl" | wc -l)
+    echo "  tier: jit (EIGS_* unset on every run line); declared bench rows: $ndecl"
     for f in "$DIR"/*.eigs; do
         name=$(basename "$f" .eigs)
         a=$(ir_of "$EIGS" "$f")
         b=$(ir_of "$ref" "$f")
+        [[ "$a" =~ ^[1-9][0-9]*$ && "$b" =~ ^[1-9][0-9]*$ ]] \
+            || { echo "  FAIL: $name: no instruction count (cand='$a' ref='$b')"; exit 2; }
         inc=$(( (a - b) * 100 / b ))
-        if [ $(( (a - b) * 100 )) -gt $(( THRESHOLD_PCT * b )) ]; then
+        row=$(awk -F'\t' -v w="bench/$name.eigs" '$1 == w' <<< "$decl")
+        if [ -n "$row" ]; then
+            IFS=$'\t' read -r _ max round <<< "$row"; used=$((used + 1))
+            # Exact decimal compare, the predicate tools/phase2_cost.sh uses.
+            if python3 -c 'import sys; from decimal import Decimal as D; a, b, m = map(D, sys.argv[1:]); sys.exit((a - b) * 100 > m * b)' "$a" "$b" "$max"; then
+                echo "  DECLARED: $name  Ir ${b} -> ${a}  (+${inc}% <= declared +${max}%, recover_round=${round})"
+            else
+                echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > declared +${max}%, recover_round=${round})"; fail=1
+            fi
+        elif [ $(( (a - b) * 100 )) -gt $(( THRESHOLD_PCT * b )) ]; then
             echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
         else
             echo "  ok: $name  Ir ${a}  (${inc}% vs ref)"
         fi
     done
-    [ "$fail" -eq 0 ] && echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%)"
+    # Every declared bench row was applied (a declaration no workload used is
+    # a bound that guards nothing).
+    [ "$used" -eq "$ndecl" ] || { echo "  FAIL: declared bench rows=$ndecl applied=$used"; exit 2; }
+    [ "$fail" -eq 0 ] && echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=$used)"
     exit $fail ;;
 esac
 

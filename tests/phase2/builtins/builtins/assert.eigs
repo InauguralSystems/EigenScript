@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: assert (other; message via value_to_string (N6))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+assert of [true, "unused"]
+try:
+    assert of [false, 9007199254740993]
+catch e:
+    print of [e.kind, e.message]
+try:
+    assert of [false, 2.5]
+catch e:
+    print of [e.kind, e.message]

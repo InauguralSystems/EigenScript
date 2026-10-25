@@ -41,7 +41,7 @@ if [ "$rc" -eq 0 ] && [ "$(grep -c BODY_ONCE "$d/out")" -eq 1 ] && grep -q '^42$
     ok "module cache precedes source read after path becomes a directory"
 else bad "module cache precedes source read (rc=$rc)"; fi
 
-# tensor_save has no payload representation in v7, so replay refuses it before
+# tensor_save has no payload representation in v8, so replay refuses it before
 # xfopen_write rather than fabricating the recorded boolean.
 d="$T/tensor"; mkdir -p "$d"
 printf 'print of (tensor_save of [[1, 2], "%s/out.tensor"])\n' "$d" > "$d/program.eigs"

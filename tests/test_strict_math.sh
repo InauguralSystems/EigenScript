@@ -147,7 +147,7 @@ run "SM17 strict leaves valid args alone" 1 0 "1"                          'prin
 
 # The exclusions matter as much as the conversions: these 0s are DOCUMENTED
 # RETURN VALUES, not fail-soft guards, so strict must NOT make them raise.
-# A sed over `return make_num(0)` would have broken both.
+# A sed over `return make_float(0)` would have broken both.
 run "SM18 strict: try_parse(bad) still answers false" 1 0 "false"  'print of (try_parse of "!!!")'
 run "SM19 strict: unknown task id still not alive" 1 0 "false" 'print of (task_alive of 99999)'
 
@@ -174,7 +174,7 @@ run "SM27 strict write_bytes type raises"     1 1 "write_bytes: expected" 'print
 
 # str_replace COERCES rather than returning a stand-in — a non-string element
 # silently became "" and the search ran over an empty string. It has no
-# `return make_num(0)` to convert, so it is invisible to the classifier and
+# `return make_float(0)` to convert, so it is invisible to the classifier and
 # needed STRICT_REQUIRE (raise under strict, no-op otherwise). Found by the
 # differential, not by the classifier: SM29 is why both harnesses exist.
 run "SM28 opt-out str_replace(num,..) unchanged" 0 0 "[]" \
@@ -230,22 +230,21 @@ run "SM46 strict: valid nested path still resolves"     1 0 "x"  'print of (json
 # --- #971 NaN-collapse: the reachable NaN sources raise under strict ------------
 # Enumerated on the tree (the VM's own + - * / % cannot reach NaN from finite
 # operands — 0/0 and x%0 raise first, and no operand can hold an inf): `pow`
-# of a negative base with a fractional exponent, `num of "nan"` (strtod),
+# of a negative base with a fractional exponent,
 # `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation (list
 # and buffer paths), `tensor_load` of a file carrying NaN bytes, and the
 # elementwise `divide` by zero (pre-collapsed to 0 where `/` raises). EIGS_STRICT=0
 # collapses to 0 + math_flags.invalid exactly as before (SM47-SM49 pin it).
 run "SM47 opt-out pow(-8, 0.5) still 0"            0 0 "0"  'print of (pow of [0 - 8, 0.5])'
-run "SM48 opt-out num(\"nan\") still 0 + invalid"  0 0 "0 true" \
-'local v is num of "nan"
-print of f"{v} {(math_flags of null).invalid}"'
+# N10: invalid literal text raises even under EIGS_STRICT=0.
+run "SM48 N10 opt-out num nan refuses grammar" 0 1 "num: expected complete numeric-literal text" 'num of "nan"'
 run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0 "[0] true" \
 'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
 print of f"{r} {(math_flags of null).invalid}"'
 # #1417 applies the same scalar-read rule to buffer and list results. The
-# kernel may retain a raw NaN internally, but exposing it collapses it to 0 and
-# sets invalid just as make_num does on the boxed path.
-run "SM49b opt-out matmul(inf-inf) BUFFER read collapses to 0 + invalid" 0 0 "0 true" \
+# kernel may retain a raw NaN internally; indexed data reads refuse it in
+# every strict mode (R1.6d-D1/N13), without a lenient INVALID flag write.
+run "SM49b opt-out matmul(inf-inf) BUFFER read refuses" 0 1 "buffer_read_f64: expected a finite number" \
 'local m1 is buffer of [1, 2]
 m1[0] is 1e200
 m1[1] is 1e200
@@ -256,7 +255,7 @@ local r is matmul of [m1, m2]
 print of f"{r[0]} {(math_flags of null).invalid}"'
 # #1131: canonicalization must visit every NaN and preserve intervening
 # finite results. On ARM the kernel's invalid-operation NaNs are positive.
-run "SM49c opt-out matmul buffer guards each NaN and preserves finite neighbor" 0 0 "0 2e+200 0 true" \
+run "SM49c opt-out matmul buffer refuses each NaN and preserves finite neighbor" 0 0 "value 2e+200 value false" \
 'local a is buffer of [1, 2]
 a[0] is 1e200
 a[1] is 1e200
@@ -268,10 +267,20 @@ b[3] is 0 - 1e200
 b[4] is 1
 b[5] is 0 - 1e200
 local r is matmul of [a, b]
-print of f"{r[0]} {r[1]} {r[2]} {(math_flags of null).invalid}"'
+local first is "accepted"
+local last is "accepted"
+try:
+    first is r[0]
+catch e:
+    first is e.kind
+try:
+    last is r[2]
+catch e:
+    last is e.kind
+print of f"{first} {r[1]} {last} {(math_flags of null).invalid}"'
 run "SM50 strict pow(-8, 0.5) raises, named"       1 1 "pow: result is not a number"     'print of (pow of [0 - 8, 0.5])'
 run "SM51 strict elementwise pow raises"           1 1 "pow: result is not a number"     'print of (pow of [[0 - 8, 4], 0.5])'
-run "SM52 strict num(\"nan\") raises, named"       1 1 "num: result is not a number"     'print of (num of "nan")'
+run "SM52 strict num(\"nan\") raises, named"       1 1 "num: expected complete numeric-literal text"     'print of (num of "nan")'
 run "SM53 strict f64_from_bytes(NaN bits) raises"  1 1 "f64_from_bytes: result is not a number" \
     'print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))'
 run "SM54 strict matmul list inf-inf raises"       1 1 "matmul: result is not a number" \
@@ -332,7 +341,7 @@ run "T1438f strict numerical_grad_cols names non-number loss" 1 1 \
 "$BAD_LOSS
 m is [[1.0]]
 print of (numerical_grad_cols of [bad, m, [0], 0.001])"
-run "SM58 strict: num(\"inf\") still saturates (overflow, not NaN)" 1 0 "1e+308" 'print of (num of "inf")'
+run "SM58 N10 strict num inf refuses grammar" 1 1 "num: expected complete numeric-literal text" 'print of (num of "inf")'
 run "SM59 strict: pow with an integer exponent is defined"      1 0 "-8"     'print of (pow of [0 - 2, 3])'
 run "SM60 strict: tensor_load of NaN bytes raises, named" 1 1 "tensor_load: result is not a number" \
 'write_bytes of ["/tmp/eigs_strict_nan_$$.tensor", [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 127, 0, 0, 0, 0, 0, 0, 4, 64]]
@@ -428,6 +437,18 @@ b[0] is 1
 b[1] is 0.9999999925494194
 local r is matmul_bt of [a, b]
 print of f"zero:{r[0] == 0}:end"'
+done
+
+# R1.6b N5: final readers preserve existing nonnumeric soft guards.
+run "sign_extend soft invalid value" 0 0 'float' 'print of (num_type of (sign_extend of ["x", 8]))'
+run "sign_extend soft invalid width" 0 0 'float' 'print of (num_type of (sign_extend of [255, "x"]))'
+run "sign_extend bool remains a type error" 0 1 'bool' 'print of (sign_extend of [true, 8])'
+# R1.6b-D2 / #1895 is unconditional in both call forms, unlike type guards.
+for mode in 0 1; do
+    run "R16b-D2 min empty args mode=$mode" "$mode" 1 "min: expected at least one number" 'min of []'
+    run "R16b-D2 min empty list mode=$mode" "$mode" 1 "min: expected at least one number" 'min of ([])'
+    run "R16b-D2 max empty args mode=$mode" "$mode" 1 "max: expected at least one number" 'max of []'
+    run "R16b-D2 max empty list mode=$mode" "$mode" 1 "max: expected at least one number" 'max of ([])'
 done
 
 echo "STRICT: $PASS passed, $FAIL failed"

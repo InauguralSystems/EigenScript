@@ -2648,6 +2648,17 @@ check_contains "#1251 W019 names the interrogative's own line" "$OUTPUT" ":6: wa
 check_contains "#1251 W019 names 'prev of's own line" "$OUTPUT" ":8: warning\[W019\]: interrogative 'prev of"
 rm -f "$TMPFILE"
 
+# #1758 N4/Q6: lint uses the same parser; retain diagnostics for the new tokens.
+TMPFILE=$(mktemp /tmp/eigs_floor_lint_XXXXXX.eigs)
+printf 'x is -7 // 2\nx //= 2\nprint of x\n' > "$TMPFILE"
+FLOOR_LINT_RC=0
+OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || FLOOR_LINT_RC=$?
+check_status "// and //= lint clean" "$FLOOR_LINT_RC" 0
+printf 'x is // 2\n' > "$TMPFILE"
+OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || true
+check_contains "unexpected // diagnostic names the token" "$OUTPUT" "unexpected '//'"
+rm -f "$TMPFILE"
+
 # --- #1121 ledger: no child of this file may have tripped a sanitizer ---
 # One check, covering every linter invocation above rather than a sample. In a
 # release build no file is ever written and this passes trivially, which is

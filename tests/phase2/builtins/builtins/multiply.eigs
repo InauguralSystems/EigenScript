@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: multiply (int-preserving, LOSS; scalar arm mirrors *, (A))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is multiply of [3037000499, 3037000499]
+print of [r, nt of r]
+try:
+    print of (multiply of [4611686018427387904, 2])
+catch e:
+    print of ["overflow", e.kind]
+l is multiply of [[3, 3037000499], [2, 3037000499]]
+print of [l, nt of l[0], nt of l[1]]

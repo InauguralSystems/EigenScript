@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: build_corpus (int-requiring; counts; returns counts); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+src is p + "/a.eigs"
+write_text of [src, "x is 1\ny is x + 2\n"]
+r is build_corpus of [[src], 10, p + "/s.bin", p + "/v.json"]
+print of [r[2], nt of r[0], nt of r[1], nt of r[2]]
+try:
+    q is build_corpus of [[src], 2.5, p + "/s2.bin", p + "/v2.json"]
+    print of ["fraction accepted", q[2]]
+catch e:
+    print of ["top_n-fraction", e.kind]
+f is build_corpus of [[src], 10.0, p + "/s3.bin", p + "/v3.json"]
+print of f[2]

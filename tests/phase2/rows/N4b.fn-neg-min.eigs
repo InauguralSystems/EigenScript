@@ -1,0 +1,19 @@
+# ROW: N4b.fn-neg-min
+# ITEMS: N4b
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop n NEG
+# OPS: NEG
+define n(a) as:
+    t is -a
+    return t
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is n of 2
+    i is i + 1.0
+m is -9223372036854775807 - 1
+try:
+    print of (n of m)
+catch e:
+    print of e.kind

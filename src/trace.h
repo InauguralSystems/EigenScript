@@ -20,7 +20,7 @@
  * with the same sentinel value_slot.h uses to avoid a re-typedef. */
 #ifndef EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
 #define EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
-typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_NUM_RAW (#1637) */
+typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_F64_RAW (#1637) */
 #endif
 
 /* Tape format version (#411). Every tape's first line is a header record:
@@ -29,7 +29,7 @@ typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_NUM_RA
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 7   /* v7: chunked module-source records (#1885) */
+#define TRACE_FORMAT_VERSION 8   /* v8: int digits/float kinds (#1758) + chunked module-source records (#1885) */
 #define TRACE_STREAM_KEY_MAX 1024
 
 /* B payload parser shared with the non-executing tape reader. key_hex points

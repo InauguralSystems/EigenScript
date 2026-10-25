@@ -1,0 +1,7 @@
+# ROW: N2.int-eq-float-kinds
+# ITEMS: N2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [1 == 1.0, 1 != 1.0, num_type of 1, num_type of 1.0]

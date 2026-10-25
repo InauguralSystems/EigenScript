@@ -14,7 +14,7 @@ extern Value *builtin_sandbox_run(Value *arg);
 extern size_t env_intern_debug_count(const char *prefix);
 
 static void append_num(Value *list, double n) {
-    list_append_owned(list, make_num(n));
+    list_append_owned(list, make_float(n));
 }
 
 static size_t intern_count(void) {
@@ -135,8 +135,8 @@ int main(void) {
         fprintf(stderr, "escaped result=%s expected-key=%s\n", diagnostic, key);
         free(diagnostic);
     }
-    assert(escaped_value && escaped_value->type == VAL_NUM &&
-           VAL_NUM_RAW(escaped_value) == 1.0);
+    assert(escaped_value && escaped_value->type == VAL_FLOAT &&
+           VAL_F64_RAW(escaped_value) == 1.0);
     fprintf(stderr,
             "sandbox intern growth: baseline=%zu retained=%zu sandbox_only=%zu\n",
             baseline, sandbox_retained, sandbox_prefix_retained);

@@ -1,0 +1,36 @@
+# phase2-exercises: {"int-requiring": ["fractional", "integral-float-success"], "integral-float-success": {"stdout-line": 1}, "q7": []}
+try:
+    x is u64_to_string of 1.0
+    print of [x, type of x]
+catch e:
+    print of ["unary", e.kind, (index_of of [e.message, "u64_to_string"]) >= 0]
+try:
+    x is u64_to_string of -1
+    print of [x, type of x]
+catch e:
+    print of ["unary", e.kind, (index_of of [e.message, "u64_to_string"]) >= 0]
+try:
+    x is u64_to_string of -9223372036854775808
+    print of [x, type of x]
+catch e:
+    print of ["unary", e.kind, (index_of of [e.message, "u64_to_string"]) >= 0]
+try:
+    x is u64_to_string of 9223372036854775807
+    print of [x, type of x]
+catch e:
+    print of ["unary", e.kind, (index_of of [e.message, "u64_to_string"]) >= 0]
+try:
+    x is u64_to_string of 1.5
+    print of ["fraction-ANSWER", x]
+catch e:
+    print of ["fraction", e.kind]
+try:
+    x is u64_to_string of 1e30
+    print of ["float-outside-int64-ANSWER", x]
+catch e:
+    print of ["float-outside-int64", e.kind]
+try:
+    x is u64_to_string of "bad"
+    print of ["non-number-ANSWER", x]
+catch e:
+    print of ["non-number", e.kind]

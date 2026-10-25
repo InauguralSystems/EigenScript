@@ -723,6 +723,7 @@ file:
 | `Scorecard analysis` (`scorecard.yml`) | advisory | runs on push, schedule and `branch_protection_rule`, never on a PR; a posture score |
 | `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |
 | `issue-triage / …` (`issue-triage.yml`), `release.yml` jobs | advisory | not triggered by PRs or pushes to `main` |
+| `phase2 (MAP rows + lib differential)` (`phase2.yml`) | advisory | #1758's integration branch only: a push to `phase2-numbers` or `workflow_dispatch`, never a PR or the queue; `tools/phase2_ci.sh` checks the MAP rows of every landed round and the stdlib int differential |
 
 ## Coverage on pull requests
 
@@ -750,7 +751,9 @@ need no suite run — plus changed-gate self-tests, exit 1 on any failure; the d
 joins when a binary exists. Its gate list is the only copy: the
 `gate-selftests` CI job runs the same script. Among them,
 `tools/enrolment_check.sh` (also suite `[99ab]`) fails when a `tests/*.sh` or
-`tests/*.py` is invoked by no suite section, workflow step or enrolled script;
-exceptions live in `tests/enrolment_exemptions.txt` with a reason each.
+`tests/*.py` is invoked by no suite section, workflow step or enrolled script,
+and when a `tools/` entry point (a top-level `tools/*.sh` or `tools/*.py`, or a
+`tools/<dir>/` package) is reached from no workflow step that way; exceptions
+live in `tests/enrolment_exemptions.txt` with a reason each.
 Counts that grow with the suite (child-script sites, doc-claim populations)
 are floors: adding a test needs no count edit, a drop is red.

@@ -1,0 +1,27 @@
+# SGD's raw buffer kernel stores -inf, then -inf - -inf stores NaN.
+define payload(kind) as:
+    local p is buf_from_list of ([1e308])
+    local g is buf_from_list of ([1e308])
+    if kind == "inf":
+        g[0] is -1e308
+    sgd_update of [p, g, 1e308]
+    if kind == "nan":
+        sgd_update of [p, p, 1.0]
+    return p
+nan_a is payload of "nan"
+nan_b is payload of "nan"
+inf_a is payload of "inf"
+inf_b is payload of "inf"
+neg_inf is payload of "-inf"
+finite is buf_from_list of ([1e308])
+negzero is buf_from_list of ([-1.0])
+buf_scale_range of [negzero, 0, 1, 0.0]
+zero is buffer of 1
+before is math_flags of null
+try:
+    print of [nan_a == nan_b, nan_a == nan_a, inf_a == inf_b, inf_a == finite, negzero == zero]
+    print of [neg_inf == neg_inf, inf_a == neg_inf, nan_a != nan_a]
+    print of [list_contains of [[nan_a], nan_a], list_index_of of [[nan_a], nan_a]]
+    print of ((math_flags of null) == before)
+catch e:
+    print of ["unexpected-equality-raise", e.kind, e.message]

@@ -31,8 +31,10 @@ run_gate() {
 }
 
 run_gate green || { cat "$T/green.log"; echo "core-ext selftest: clean gate did not pass"; exit 1; }
-grep -q 'leg A: 28 core TUs scanned' "$T/green.log" &&
-grep -q 'leg B: 28 core TUs compile' "$T/green.log" &&
+# The clean population is pinned: a new core TU moves it in the same change
+# (29 since R1.6g added src/builtins_int.c).
+grep -q 'leg A: 29 core TUs scanned' "$T/green.log" &&
+grep -q 'leg B: 29 core TUs compile' "$T/green.log" &&
 grep -q 'OK: no core -> extension-private include edge' "$T/green.log" || {
     cat "$T/green.log"; echo "core-ext selftest: clean populations/verdict changed"; exit 1;
 }
@@ -51,4 +53,4 @@ grep -q 'FAIL\[A\]: core TU src/alloc.c includes extension private header "ext_h
 cp "$T/alloc.c.saved" "$T/src/alloc.c"
 run_gate restored || { cat "$T/restored.log"; echo "core-ext selftest: restored gate did not pass"; exit 1; }
 
-echo "PASS: core-ext boundary: 28 TUs and poisoned-header verdict preserved; parallel overlap observed; planted edge rejected; restore green"
+echo "PASS: core-ext boundary: 29 TUs and poisoned-header verdict preserved; parallel overlap observed; planted edge rejected; restore green"

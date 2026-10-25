@@ -744,8 +744,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
         } else if (op == OP_DUP2) {
             i += 1; ops++; non_line_ops++;
         } else if (op == OP_ADD || op == OP_SUB ||
-                   op == OP_MUL || op == OP_DIV ||
-                   op == OP_MOD) {
+                   op == OP_MUL || op == OP_DIV) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
             /* Stage 5e: the tracked-operand loaders + commit decrefs
@@ -760,13 +759,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *extra_size += 320;   /* Stage 5e loaders + decrefs */
             /* #1637: the result is the false/true TAG_BOOL immediate, so
              * OP_POP after a comparison remains a no-op peephole. */
-        } else if (op == OP_BAND || op == OP_BOR || op == OP_BXOR ||
-                   op == OP_SHL || op == OP_SHR) {
-            i += 1; ops++; non_line_ops++;
-            *has_bail_op = 1;
-            /* Result is a double (whole-number-valued), so a subsequent
-             * OP_POP stays a no-op peephole. */
-        } else if (op == OP_NEG || op == OP_NOT || op == OP_BNOT) {
+        } else if (op == OP_NEG || op == OP_NOT) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
         } else if (op == OP_JUMP || op == OP_JUMP_BACK) {
@@ -1709,18 +1702,6 @@ static uint8_t *emit_cvttsd2si_xmm0_r8d(uint8_t *w) {
 static uint8_t *emit_cvtsi2sd_r8d_xmm1(uint8_t *w) {
     *w++ = 0xF2; *w++ = 0x41; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC8; return w;
 }
-/* cvttsd2si %xmm0, %edx  (4 bytes) — 32-bit, mirrors `(int)val_s.d`.
- * No longer used by OP_INDEX_SET (buffer stores keep the raw double now)
- * but kept for future int-conversion fast paths. */
-__attribute__((unused))
-static uint8_t *emit_cvttsd2si_xmm0_edx(uint8_t *w) {
-    *w++ = 0xF2; *w++ = 0x0F; *w++ = 0x2C; *w++ = 0xD0; return w;
-}
-/* cvtsi2sd %edx, %xmm0  (4 bytes) — 32-bit source. */
-__attribute__((unused))
-static uint8_t *emit_cvtsi2sd_edx_xmm0(uint8_t *w) {
-    *w++ = 0xF2; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC2; return w;
-}
 /* jp rel32  (6 bytes): 0F 8A — jump if PF=1 (unordered ucomisd). */
 static uint8_t *emit_jp_rel32(uint8_t *w, uint8_t **patch) {
     *w++ = 0x0F; *w++ = 0x8A; *patch = w;
@@ -2329,9 +2310,9 @@ static uint8_t *emit_mov_disp32_rdi_to_rdx(uint8_t *w, int32_t disp) {
 
 /* Stage 5e: numeric-operand loader for the arith/compare templates.
  *
- * Accepts what the interpreter's slot_as_double accepts MINUS the
+ * Accepts what the interpreter's slot_f64_value accepts MINUS the
  * NUM_REUSE candidates: an immediate double, or a heap/tracked pointer
- * to a VAL_NUM with refcount >= 2 (refcount 1 would make the
+ * to a VAL_FLOAT with refcount >= 2 (refcount 1 would make the
  * interpreter's NUM_REUSE in-place branch fire, so it routes to the
  * interpreter to keep observer-value identity semantics exact).
  *
@@ -2355,17 +2336,17 @@ static uint8_t *emit_load_numeric_operand(uint8_t *w, int is_b,
     /* Tag 0xFFFD+ (reserved/sentinel): not a pointer we may chase. */
     w = emit_cmp_imm32_esi(w, 0xFFFD);
     w = emit_jae_rel32(w, &lp[*lp_n]); (*lp_n)++;
-    /* Heap or tracked pointer: must be a non-REUSE VAL_NUM. */
+    /* Heap or tracked pointer: must be a non-REUSE VAL_FLOAT. */
     w = is_b ? emit_mov_rax_rdi(w) : emit_mov_rdx_rdi(w);
     w = emit_shl_16_rdi(w);
     w = emit_shr_16_rdi(w);
     w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
-                                   (uint32_t)VAL_NUM);
+                                   (uint32_t)VAL_FLOAT);
     w = emit_jne_rel32(w, &lp[*lp_n]); (*lp_n)++;
     w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, refcount), 2);
     w = emit_jl_rel32(w, &lp[*lp_n]); (*lp_n)++;
-    w = is_b ? emit_mov_disp32_rdi_to_rax(w, (int32_t)VAL_NUM_OFFSET)
-             : emit_mov_disp32_rdi_to_rdx(w, (int32_t)VAL_NUM_OFFSET);
+    w = is_b ? emit_mov_disp32_rdi_to_rax(w, (int32_t)VAL_F64_OFFSET)
+             : emit_mov_disp32_rdi_to_rdx(w, (int32_t)VAL_F64_OFFSET);
     /* .imm: bits (immediate or loaded data.num) → xmm. */
     {
         int rel = (int)(w - imm_after);
@@ -2819,10 +2800,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             Value *v = chunk->constants[idx];
             uint64_t bits;
             int needs_incref = 0;
-            if (v->type == VAL_NUM) {
+            if (v->type == VAL_FLOAT) {
                 /* Immediate-num: same shape as NUM_ZERO. (#262 Step E: a
                  * constant num never carries observer state.) */
-                memcpy(&bits, &VAL_NUM_RAW(v), 8);
+                memcpy(&bits, &VAL_F64_RAW(v), 8);
             } else {
                 /* Heap slot: TAG_HEAP | payload. */
                 bits = 0xFFFB000000000000ULL |
@@ -3410,7 +3391,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         } else if (op == OP_SET_LOCAL) {
             /* Stage 5e: mirror CASE(SET_LOCAL) exactly, including its
              * in-place branch — writing an immediate into a slot whose
-             * existing Value is an exclusive non-observed VAL_NUM
+             * existing Value is an exclusive non-observed VAL_FLOAT
              * rewrites data.num instead of swapping pointers. This is
              * load-bearing beyond speed: the observer's g_last_observer
              * can point at that Value, and the swap path would free it
@@ -3419,9 +3400,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *   tos imm?         no  → .swap
              *   old slot ptr?    no  → .plain   (imm/sentinel old:
              *                                    incref+decref both no-op)
-             *   old is VAL_NUM && rc==1 && obs_age==0?
+             *   old is VAL_FLOAT && rc==1 && obs_age==0?
              *                    no  → .swap
-             *   in-place: VAL_NUM_RAW(old) = tos bits; → .done
+             *   in-place: VAL_F64_RAW(old) = tos bits; → .done
              *   .plain: values[slot] = tos; → .done
              *   .swap:  values[slot] = tos; incref tos; decref old
              *   .done:                                            */
@@ -3462,13 +3443,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_shl_16_rdi(w);
             w = emit_shr_16_rdi(w);
             w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
-                                           (uint32_t)VAL_NUM);
+                                           (uint32_t)VAL_FLOAT);
             w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
             w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, refcount), 1);
             w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
             /* #262 Step E: obs_age guard removed — nums are never tracked. */
-            /* in-place: VAL_NUM_RAW(existing) = tos bits. */
-            w = emit_mov_rax_to_disp32_rdi(w, (int32_t)VAL_NUM_OFFSET);
+            /* in-place: VAL_F64_RAW(existing) = tos bits. */
+            w = emit_mov_rax_to_disp32_rdi(w, (int32_t)VAL_F64_OFFSET);
             w = emit_jmp_rel32(w, &done_p[done_n]); done_n++;
             /* .plain: store only (both refcount sides are no-ops). */
             for (int k = 0; k < plain_n; k++) patch_rel32(plain_p[k], w);
@@ -3535,7 +3516,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             if (ab) {
                 JIT_BAIL_AND_RETURN();
             }
-            /* Divisor zero check. The VM compares `VAL_NUM_RAW(b) != 0.0`,
+            /* Divisor zero check. The VM compares `VAL_F64_RAW(b) != 0.0`,
              * which under IEEE-754 treats +0.0 and -0.0 as equal — so
              * we must also bail when b == -0.0 (bits = 0x8000…0).
              * Strategy: copy b's bits to %rsi (dead scratch after the
@@ -3586,7 +3567,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         } else if (op == OP_ADD || op == OP_SUB ||
                    op == OP_MUL || op == OP_DIV) {
             /* Stage 5e: operands may be immediates OR heap/tracked
-             * VAL_NUM pointers with refcount >= 2 (the loader bails
+             * VAL_FLOAT pointers with refcount >= 2 (the loader bails
              * the rc==1 case so the interpreter's NUM_REUSE branch
              * keeps its in-place semantics). All guard failures route
              * through one per-op trampoline so the epilogue patch
@@ -3651,7 +3632,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             i += 1;
         } else if (op == OP_EQ || op == OP_NE || op == OP_LT ||
                    op == OP_GT || op == OP_LE || op == OP_GE) {
-            /* Stage 5e: tracked/heap VAL_NUM operands accepted via the
+            /* Stage 5e: tracked/heap VAL_FLOAT operands accepted via the
              * shared loader (rc==1 bails — NUM_CMP/EQ/NE all have the
              * same NUM_REUSE branch as ARITH_FAST). One trampoline
              * slot. NaN inputs would give incorrect comparison results
@@ -4372,7 +4353,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint16_t idx = (uint16_t)(chunk->code[op_start + 1] |
                                       ((uint16_t)chunk->code[op_start + 2] << 8));
             Value *v = chunk->constants[idx];
-            last_imm = (v && v->type == VAL_NUM);
+            last_imm = (v && v->type == VAL_FLOAT);
             break;
         }
         case OP_LINE:

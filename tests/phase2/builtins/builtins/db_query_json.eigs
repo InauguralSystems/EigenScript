@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: db_query_json (other, LOSS; PROFILE server-db (make server-db) plus DATABASE_URL naming a live PostgreSQL)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    c is db_connect of null
+    j is db_query_json of "SELECT 9007199254740993::bigint AS n, 2.5::float8 AS f"
+    print of j
+    rows is json_decode of j
+    print of [rows[0]["n"], nt of rows[0]["n"], nt of rows[0]["f"]]
+catch e:
+    print of [e.kind, e.message]

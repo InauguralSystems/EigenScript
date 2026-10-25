@@ -54,10 +54,11 @@ make build || fail "make build failed"
 
 phase "score the candidate against the committed floor (score.py --floor)"
 rc=0
-python3 tools/observer_oracle/score.py src/eigenscript --floor tools/observer_oracle/floor.json | tee "$tmp/oracle.out" || rc=$?
+python3 tools/observer_oracle/score.py src/eigenscript --floor tools/observer_oracle/floor.json \
+    --declared tests/phase2/oracle_expect.txt | tee "$tmp/oracle.out" || rc=$?
 case "$rc" in
     0) ;;
-    1) fail "score.py exit 1: a verdict was lost or split between arms (the FLOOR VIOLATION, FINDING or CAPABILITY WRONG lines above). The gate is working: fix the change, or fix a wrong label through derive.py/certify.py and re-measure the floor" ;;
+    1) fail "score.py exit 1: a verdict was lost or split between arms (the FLOOR VIOLATION, FINDING, CAPABILITY WRONG or STALE DECLARATION lines above). The gate is working: fix the change, or fix a wrong label through derive.py/certify.py and re-measure the floor" ;;
     *) fail "score.py exit $rc: a harness error (the OBSERVER_ORACLE_ERROR line above), not a verdict" ;;
 esac
 n=$(python3 -c 'import json; print(len(json.load(open("tools/observer_oracle/floor.json"))["verdicts"]))') \

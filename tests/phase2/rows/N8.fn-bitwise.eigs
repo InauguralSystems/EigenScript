@@ -1,0 +1,13 @@
+# ROW: N8.fn-bitwise
+# ITEMS: N8
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop b BAND
+# OPS: BAND
+define b(a, c) as:
+    t is a & c
+    return t
+r is 0
+for i in range of 60:
+    r is b of [9007199254740993, 9007199254740993]
+print of r

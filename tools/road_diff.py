@@ -73,7 +73,21 @@ def jit_stats(stderr):
     return compiled, rest, raw
 def run_gate(binary, fixtures, only=None):
     architecture = platform.machine().lower()
-    paths = sorted(fixtures.glob("*.eigs"))
+    from phase2_corpus_exclude import filter_paths
+    try:
+        allowed, _ = filter_paths(ROOT, sorted(p.relative_to(ROOT).as_posix()
+                                 for p in (ROOT / 'tests').rglob('*.eigs') if p.is_file()))
+    except (OSError, ValueError) as error:
+        print('road_diff: FAIL: ' + str(error), flush=True)
+        return 1
+    allowed = set(allowed)
+    def eligible(path):
+        try:
+            rel = path.resolve().relative_to(ROOT).as_posix()
+        except ValueError:  # explicitly supplied external fixture directory
+            return True
+        return not rel.startswith('tests/') or rel in allowed
+    paths = sorted(p for p in fixtures.glob("*.eigs") if eligible(p))
     if only:
         paths = [p for p in paths if p.stem == only]
     if not paths:
