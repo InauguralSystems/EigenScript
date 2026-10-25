@@ -1459,6 +1459,123 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
     }
 }
 
+/* A scope-local AST walk shared by every analysis of names which are bound by
+ * name.  Keeping the child-position table here (rather than in each analysis)
+ * means a new expression position cannot silently be visible to only one of
+ * the function, module, and unobserved-block prepasses. */
+typedef void (*ScopeNodeVisitor)(ASTNode *, NameSet *, int);
+
+static void walk_scope_ast(ASTNode *node, NameSet *out, int in_loop_env,
+                           ScopeNodeVisitor visit);
+static void walk_scope_block(ASTNode **nodes, int count, NameSet *out,
+                             int in_loop_env, ScopeNodeVisitor visit) {
+    for (int i = 0; i < count; i++)
+        walk_scope_ast(nodes[i], out, in_loop_env, visit);
+}
+
+static void walk_scope_ast(ASTNode *node, NameSet *out, int in_loop_env,
+                           ScopeNodeVisitor visit) {
+    if (!node) return;
+    visit(node, out, in_loop_env);
+    switch (node->type) {
+    case AST_ASSIGN:
+        walk_scope_ast(node->data.assign.expr, out, in_loop_env, visit); break;
+    case AST_BINOP:
+        walk_scope_ast(node->data.binop.left, out, in_loop_env, visit);
+        walk_scope_ast(node->data.binop.right, out, in_loop_env, visit); break;
+    case AST_UNARY:
+        walk_scope_ast(node->data.unary.operand, out, in_loop_env, visit); break;
+    case AST_RELATION:
+        walk_scope_ast(node->data.relation.left, out, in_loop_env, visit);
+        walk_scope_ast(node->data.relation.right, out, in_loop_env, visit); break;
+    case AST_IF:
+        walk_scope_ast(node->data.cond.cond, out, in_loop_env, visit);
+        walk_scope_block(node->data.cond.if_body, node->data.cond.if_count, out, in_loop_env, visit);
+        walk_scope_block(node->data.cond.else_body, node->data.cond.else_count, out, in_loop_env, visit); break;
+    case AST_LOOP:
+        walk_scope_ast(node->data.loop.cond, out, in_loop_env, visit);
+        walk_scope_block(node->data.loop.body, node->data.loop.body_count, out, in_loop_env, visit); break;
+    case AST_RETURN:
+        walk_scope_ast(node->data.ret.expr, out, in_loop_env, visit); break;
+    case AST_BLOCK: case AST_UNOBSERVED:
+        walk_scope_block(node->data.block.stmts, node->data.block.count, out, in_loop_env, visit); break;
+    case AST_LIST:
+        walk_scope_block(node->data.list.elems, node->data.list.count, out, in_loop_env, visit); break;
+    case AST_INDEX:
+        walk_scope_ast(node->data.index.target, out, in_loop_env, visit);
+        walk_scope_ast(node->data.index.index, out, in_loop_env, visit); break;
+    case AST_LISTCOMP:
+        walk_scope_ast(node->data.listcomp.expr, out, in_loop_env, visit);
+        walk_scope_ast(node->data.listcomp.iter, out, in_loop_env, visit);
+        walk_scope_ast(node->data.listcomp.filter, out, in_loop_env, visit); break;
+    case AST_FOR:
+        walk_scope_ast(node->data.forloop.iter, out, in_loop_env, visit);
+        walk_scope_block(node->data.forloop.body, node->data.forloop.body_count, out, 1, visit); break;
+    case AST_INTERROGATE:
+        walk_scope_ast(node->data.interrogate.expr, out, in_loop_env, visit);
+        walk_scope_ast(node->data.interrogate.at_expr, out, in_loop_env, visit);
+        walk_scope_ast(node->data.interrogate.when_expr, out, in_loop_env, visit); break;
+    case AST_TRY:
+        walk_scope_block(node->data.trycatch.try_body, node->data.trycatch.try_count, out, in_loop_env, visit);
+        walk_scope_block(node->data.trycatch.catch_body, node->data.trycatch.catch_count, out, in_loop_env, visit); break;
+    case AST_DICT:
+        walk_scope_block(node->data.dict.keys, node->data.dict.count, out, in_loop_env, visit);
+        walk_scope_block(node->data.dict.vals, node->data.dict.count, out, in_loop_env, visit); break;
+    case AST_DOT:
+        walk_scope_ast(node->data.dot.target, out, in_loop_env, visit); break;
+    case AST_DOT_ASSIGN:
+        walk_scope_ast(node->data.dot_assign.target, out, in_loop_env, visit);
+        walk_scope_ast(node->data.dot_assign.expr, out, in_loop_env, visit); break;
+    case AST_INDEX_ASSIGN:
+        walk_scope_ast(node->data.index_assign.target, out, in_loop_env, visit);
+        walk_scope_ast(node->data.index_assign.index, out, in_loop_env, visit);
+        walk_scope_ast(node->data.index_assign.expr, out, in_loop_env, visit); break;
+    case AST_MATCH:
+        walk_scope_ast(node->data.match.expr, out, in_loop_env, visit);
+        for (int i = 0; i < node->data.match.case_count; i++) {
+            walk_scope_ast(node->data.match.patterns[i], out, in_loop_env, visit);
+            walk_scope_block(node->data.match.bodies[i], node->data.match.body_counts[i], out, in_loop_env, visit);
+        }
+        break;
+    case AST_LIST_PATTERN_ASSIGN:
+        walk_scope_ast(node->data.list_pattern_assign.expr, out, in_loop_env, visit); break;
+    case AST_SLICE:
+        walk_scope_ast(node->data.slice.target, out, in_loop_env, visit);
+        walk_scope_ast(node->data.slice.start, out, in_loop_env, visit);
+        walk_scope_ast(node->data.slice.end, out, in_loop_env, visit); break;
+    case AST_PROGRAM:
+        walk_scope_block(node->data.program.stmts, node->data.program.count, out, in_loop_env, visit); break;
+    /* Function/lambda bodies are new scopes.  The remaining nodes have no AST
+     * expression children (predicate carries only parser metadata). */
+    case AST_FUNC: case AST_LAMBDA: case AST_NUM: case AST_STR: case AST_IDENT:
+    case AST_NULL: case AST_BOOL: case AST_PREDICATE: case AST_BREAK:
+    case AST_CONTINUE: case AST_IMPORT:
+        break;
+    }
+}
+
+/* The single predicate for binders whose emitters write an environment by
+ * name rather than through emit_assign_for_tos's ordinary slot/name choice. */
+static void collect_by_name_binder_node(ASTNode *node, NameSet *out,
+                                        int in_loop_env) {
+    switch (node->type) {
+    case AST_FOR: name_set_add(out, node->data.forloop.var); break;
+    case AST_TRY: name_set_add(out, node->data.trycatch.err_name); break;
+    case AST_FUNC: name_set_add(out, node->data.func.name); break;
+    case AST_LISTCOMP: name_set_add(out, node->data.listcomp.var); break;
+    case AST_IMPORT: name_set_add(out, node->data.import.module_name); break;
+    case AST_LOOP:
+        name_set_add(out, "__loop_exit__");
+        name_set_add(out, "__loop_iterations__");
+        break;
+    case AST_ASSIGN:
+        if (node->data.assign.local_only && in_loop_env)
+            name_set_add(out, node->data.assign.name);
+        break;
+    default: break;
+    }
+}
+
 /* #633: collect names that a listcomp variable or a `catch` error-name binds
  * into the env *by name* (OP_SET_NAME_LOCAL — see AST_LISTCOMP / AST_TRY) in
  * THIS scope. A plain `x is ...` of the same name must not slot-promote in
@@ -1469,117 +1586,7 @@ static void scan_for_interrogated(ASTNode *node, NameSet *out) {
  * path. Stops at nested function/lambda boundaries — those introduce their own
  * scope — by not recursing into AST_FUNC / AST_LAMBDA. */
 static void scan_for_env_bound(ASTNode *node, NameSet *out) {
-    if (!node) return;
-    switch (node->type) {
-    case AST_LISTCOMP:
-        name_set_add(out, node->data.listcomp.var);
-        scan_for_env_bound(node->data.listcomp.expr, out);
-        scan_for_env_bound(node->data.listcomp.iter, out);
-        scan_for_env_bound(node->data.listcomp.filter, out);
-        break;
-    case AST_TRY:
-        for (int i = 0; i < node->data.trycatch.try_count; i++)
-            scan_for_env_bound(node->data.trycatch.try_body[i], out);
-        if (node->data.trycatch.err_name) name_set_add(out, node->data.trycatch.err_name);
-        for (int i = 0; i < node->data.trycatch.catch_count; i++)
-            scan_for_env_bound(node->data.trycatch.catch_body[i], out);
-        break;
-    /* Descend through control flow / blocks to reach nested listcomps/catches */
-    case AST_IF:
-        for (int i = 0; i < node->data.cond.if_count; i++)
-            scan_for_env_bound(node->data.cond.if_body[i], out);
-        for (int i = 0; i < node->data.cond.else_count; i++)
-            scan_for_env_bound(node->data.cond.else_body[i], out);
-        break;
-    case AST_LOOP:
-        for (int i = 0; i < node->data.loop.body_count; i++)
-            scan_for_env_bound(node->data.loop.body[i], out);
-        break;
-    case AST_BLOCK:
-    case AST_UNOBSERVED:
-        for (int i = 0; i < node->data.block.count; i++)
-            scan_for_env_bound(node->data.block.stmts[i], out);
-        break;
-    case AST_FOR:
-        scan_for_env_bound(node->data.forloop.iter, out);
-        for (int i = 0; i < node->data.forloop.body_count; i++)
-            scan_for_env_bound(node->data.forloop.body[i], out);
-        break;
-    case AST_MATCH:
-        scan_for_env_bound(node->data.match.expr, out);
-        for (int i = 0; i < node->data.match.case_count; i++)
-            for (int j = 0; j < node->data.match.body_counts[i]; j++)
-                scan_for_env_bound(node->data.match.bodies[i][j], out);
-        break;
-    /* Expressions that may contain a listcomp */
-    case AST_BINOP:
-        scan_for_env_bound(node->data.binop.left, out);
-        scan_for_env_bound(node->data.binop.right, out);
-        break;
-    case AST_UNARY:
-        scan_for_env_bound(node->data.unary.operand, out);
-        break;
-    case AST_RELATION:
-        scan_for_env_bound(node->data.relation.left, out);
-        scan_for_env_bound(node->data.relation.right, out);
-        break;
-    case AST_ASSIGN:
-        scan_for_env_bound(node->data.assign.expr, out);
-        break;
-    case AST_RETURN:
-        scan_for_env_bound(node->data.ret.expr, out);
-        break;
-    case AST_LIST:
-        for (int i = 0; i < node->data.list.count; i++)
-            scan_for_env_bound(node->data.list.elems[i], out);
-        break;
-    case AST_INDEX:
-        scan_for_env_bound(node->data.index.target, out);
-        scan_for_env_bound(node->data.index.index, out);
-        break;
-    case AST_DICT:
-        for (int i = 0; i < node->data.dict.count; i++) {
-            scan_for_env_bound(node->data.dict.keys[i], out);
-            scan_for_env_bound(node->data.dict.vals[i], out);
-        }
-        break;
-    case AST_DOT:
-        scan_for_env_bound(node->data.dot.target, out);
-        break;
-    case AST_DOT_ASSIGN:
-        scan_for_env_bound(node->data.dot_assign.target, out);
-        scan_for_env_bound(node->data.dot_assign.expr, out);
-        break;
-    case AST_INDEX_ASSIGN:
-        scan_for_env_bound(node->data.index_assign.target, out);
-        scan_for_env_bound(node->data.index_assign.index, out);
-        scan_for_env_bound(node->data.index_assign.expr, out);
-        break;
-    case AST_LIST_PATTERN_ASSIGN:
-        scan_for_env_bound(node->data.list_pattern_assign.expr, out);
-        break;
-    case AST_SLICE:
-        scan_for_env_bound(node->data.slice.target, out);
-        scan_for_env_bound(node->data.slice.start, out);
-        scan_for_env_bound(node->data.slice.end, out);
-        break;
-    /* Nothing to do for these. Enumerated rather than covered by a `default:`
-     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
-     * error here instead of a silent no-op. */
-    case AST_NUM:
-    case AST_STR:
-    case AST_IDENT:
-    case AST_NULL: case AST_BOOL:
-    case AST_FUNC:
-    case AST_PROGRAM:
-    case AST_INTERROGATE:
-    case AST_PREDICATE:
-    case AST_BREAK:
-    case AST_CONTINUE:
-    case AST_IMPORT:
-    case AST_LAMBDA:
-        break;
-    }
+    walk_scope_ast(node, out, 0, collect_by_name_binder_node);
 }
 
 /* Collect module-level names (functions defined, top-level assignments).
@@ -1588,80 +1595,21 @@ static void scan_for_env_bound(ASTNode *node, NameSet *out) {
  * (slow name path) vs creating a fresh local (fast slot path). An
  * `unobserved:` block also takes its slot candidates from it, minus
  * collect_by_name_binders (#1883); this set keeps every name. */
-static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out);
-static void collect_module_names_walk(ASTNode *node, NameSet *out) {
-    if (!node) return;
-    switch (node->type) {
-    case AST_ASSIGN:
+static void collect_module_name_node(ASTNode *node, NameSet *out,
+                                     int in_loop_env) {
+    /* A for variable and `local` in its body live only in the loop env, which
+     * OP_LOOP_ENV_END removes; they are by-name binders, but not module names. */
+    if (node->type != AST_FOR &&
+        !(node->type == AST_ASSIGN && node->data.assign.local_only && in_loop_env))
+        collect_by_name_binder_node(node, out, in_loop_env);
+    if (node->type == AST_ASSIGN)
         name_set_add(out, node->data.assign.name);
-        break;
-    case AST_FUNC:
-        name_set_add(out, node->data.func.name);
-        /* Don't descend into function body */
-        break;
-    case AST_IF:
-        collect_module_names_block(node->data.cond.if_body, node->data.cond.if_count, out);
-        collect_module_names_block(node->data.cond.else_body, node->data.cond.else_count, out);
-        break;
-    case AST_LOOP:
-        collect_module_names_block(node->data.loop.body, node->data.loop.body_count, out);
-        break;
-    case AST_FOR:
-        /* Don't add forloop.var: AST_FOR binds it via OP_SET_NAME_LOCAL
-         * (env-based), so promoting it to a frame slot leaves the slot null
-         * while writes go to env — every read returns null. */
-        collect_module_names_block(node->data.forloop.body, node->data.forloop.body_count, out);
-        break;
-    case AST_BLOCK:
-    case AST_UNOBSERVED:
-        collect_module_names_block(node->data.block.stmts, node->data.block.count, out);
-        break;
-    case AST_TRY:
-        collect_module_names_block(node->data.trycatch.try_body, node->data.trycatch.try_count, out);
-        if (node->data.trycatch.err_name) name_set_add(out, node->data.trycatch.err_name);
-        collect_module_names_block(node->data.trycatch.catch_body, node->data.trycatch.catch_count, out);
-        break;
-    case AST_MATCH:
-        for (int i = 0; i < node->data.match.case_count; i++)
-            collect_module_names_block(node->data.match.bodies[i], node->data.match.body_counts[i], out);
-        break;
-    case AST_LIST_PATTERN_ASSIGN:
+    else if (node->type == AST_LIST_PATTERN_ASSIGN)
         for (int i = 0; i < node->data.list_pattern_assign.name_count; i++)
             name_set_add(out, node->data.list_pattern_assign.names[i]);
-        break;
-    case AST_PROGRAM:
-        collect_module_names_block(node->data.program.stmts, node->data.program.count, out);
-        break;
-    /* Nothing to do for these. Enumerated rather than covered by a `default:`
-     * so that -Werror=switch (Makefile CFLAGS) makes a new ASTType a build
-     * error here instead of a silent no-op. */
-    case AST_NUM:
-    case AST_STR:
-    case AST_IDENT:
-    case AST_NULL: case AST_BOOL:
-    case AST_BINOP:
-    case AST_UNARY:
-    case AST_RELATION:
-    case AST_RETURN:
-    case AST_LIST:
-    case AST_INDEX:
-    case AST_LISTCOMP:
-    case AST_INTERROGATE:
-    case AST_PREDICATE:
-    case AST_DICT:
-    case AST_DOT:
-    case AST_BREAK:
-    case AST_CONTINUE:
-    case AST_DOT_ASSIGN:
-    case AST_IMPORT:
-    case AST_LAMBDA:
-    case AST_INDEX_ASSIGN:
-    case AST_SLICE:
-        break;
-    }
 }
-static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out) {
-    for (int i = 0; i < count; i++) collect_module_names_walk(stmts[i], out);
+static void collect_module_names_walk(ASTNode *node, NameSet *out) {
+    walk_scope_ast(node, out, 0, collect_module_name_node);
 }
 
 /* #1883: the names this scope binds BY NAME. An `unobserved:` block reserves
@@ -1681,130 +1629,8 @@ static void collect_module_names_block(ASTNode **stmts, int count, NameSet *out)
  * keeps the names they read off the slot path. (Function bodies use
  * scan_for_env_bound, #633: a function picks slot or name per assignment in
  * compile order.) */
-static void collect_by_name_binders(ASTNode *node, NameSet *out, int in_loop_env);
-static void collect_by_name_binders_block(ASTNode **stmts, int count, NameSet *out,
-                                          int in_loop_env) {
-    for (int i = 0; i < count; i++) collect_by_name_binders(stmts[i], out, in_loop_env);
-}
 static void collect_by_name_binders(ASTNode *node, NameSet *out, int in_loop_env) {
-    if (!node) return;
-    switch (node->type) {
-    case AST_FOR:
-        name_set_add(out, node->data.forloop.var);
-        collect_by_name_binders(node->data.forloop.iter, out, in_loop_env);
-        collect_by_name_binders_block(node->data.forloop.body, node->data.forloop.body_count, out, 1);
-        break;
-    case AST_TRY:
-        collect_by_name_binders_block(node->data.trycatch.try_body, node->data.trycatch.try_count, out, in_loop_env);
-        name_set_add(out, node->data.trycatch.err_name);   /* NULL (no binder) is ignored */
-        collect_by_name_binders_block(node->data.trycatch.catch_body, node->data.trycatch.catch_count, out, in_loop_env);
-        break;
-    case AST_FUNC:
-        name_set_add(out, node->data.func.name);   /* the body is its own scope */
-        break;
-    case AST_LISTCOMP:
-        name_set_add(out, node->data.listcomp.var);
-        collect_by_name_binders(node->data.listcomp.iter, out, in_loop_env);
-        collect_by_name_binders(node->data.listcomp.filter, out, in_loop_env);
-        collect_by_name_binders(node->data.listcomp.expr, out, in_loop_env);
-        break;
-    case AST_IMPORT:
-        name_set_add(out, node->data.import.module_name);
-        break;
-    case AST_LOOP:
-        name_set_add(out, "__loop_exit__");
-        name_set_add(out, "__loop_iterations__");
-        collect_by_name_binders(node->data.loop.cond, out, in_loop_env);
-        collect_by_name_binders_block(node->data.loop.body, node->data.loop.body_count, out, in_loop_env);
-        break;
-    case AST_ASSIGN:
-        if (node->data.assign.local_only && in_loop_env)
-            name_set_add(out, node->data.assign.name);
-        collect_by_name_binders(node->data.assign.expr, out, in_loop_env);
-        break;
-    /* The rest only nest: a comprehension can sit in any expression. */
-    case AST_IF:
-        collect_by_name_binders(node->data.cond.cond, out, in_loop_env);
-        collect_by_name_binders_block(node->data.cond.if_body, node->data.cond.if_count, out, in_loop_env);
-        collect_by_name_binders_block(node->data.cond.else_body, node->data.cond.else_count, out, in_loop_env);
-        break;
-    case AST_BLOCK:
-    case AST_UNOBSERVED:
-        collect_by_name_binders_block(node->data.block.stmts, node->data.block.count, out, in_loop_env);
-        break;
-    case AST_PROGRAM:
-        collect_by_name_binders_block(node->data.program.stmts, node->data.program.count, out, in_loop_env);
-        break;
-    case AST_MATCH:
-        collect_by_name_binders(node->data.match.expr, out, in_loop_env);
-        for (int i = 0; i < node->data.match.case_count; i++) {
-            collect_by_name_binders(node->data.match.patterns[i], out, in_loop_env);
-            collect_by_name_binders_block(node->data.match.bodies[i], node->data.match.body_counts[i], out, in_loop_env);
-        }
-        break;
-    case AST_BINOP:
-        collect_by_name_binders(node->data.binop.left, out, in_loop_env);
-        collect_by_name_binders(node->data.binop.right, out, in_loop_env);
-        break;
-    case AST_UNARY:
-        collect_by_name_binders(node->data.unary.operand, out, in_loop_env);
-        break;
-    case AST_RELATION:
-        collect_by_name_binders(node->data.relation.left, out, in_loop_env);
-        collect_by_name_binders(node->data.relation.right, out, in_loop_env);
-        break;
-    case AST_RETURN:
-        collect_by_name_binders(node->data.ret.expr, out, in_loop_env);
-        break;
-    case AST_LIST:
-        collect_by_name_binders_block(node->data.list.elems, node->data.list.count, out, in_loop_env);
-        break;
-    case AST_INDEX:
-        collect_by_name_binders(node->data.index.target, out, in_loop_env);
-        collect_by_name_binders(node->data.index.index, out, in_loop_env);
-        break;
-    case AST_DICT:
-        collect_by_name_binders_block(node->data.dict.keys, node->data.dict.count, out, in_loop_env);
-        collect_by_name_binders_block(node->data.dict.vals, node->data.dict.count, out, in_loop_env);
-        break;
-    case AST_DOT:
-        collect_by_name_binders(node->data.dot.target, out, in_loop_env);
-        break;
-    case AST_DOT_ASSIGN:
-        collect_by_name_binders(node->data.dot_assign.target, out, in_loop_env);
-        collect_by_name_binders(node->data.dot_assign.expr, out, in_loop_env);
-        break;
-    case AST_INDEX_ASSIGN:
-        collect_by_name_binders(node->data.index_assign.target, out, in_loop_env);
-        collect_by_name_binders(node->data.index_assign.index, out, in_loop_env);
-        collect_by_name_binders(node->data.index_assign.expr, out, in_loop_env);
-        break;
-    case AST_LIST_PATTERN_ASSIGN:   /* its names store through emit_assign_for_tos */
-        collect_by_name_binders(node->data.list_pattern_assign.expr, out, in_loop_env);
-        break;
-    case AST_SLICE:
-        collect_by_name_binders(node->data.slice.target, out, in_loop_env);
-        collect_by_name_binders(node->data.slice.start, out, in_loop_env);
-        collect_by_name_binders(node->data.slice.end, out, in_loop_env);
-        break;
-    case AST_INTERROGATE:
-        collect_by_name_binders(node->data.interrogate.expr, out, in_loop_env);
-        collect_by_name_binders(node->data.interrogate.at_expr, out, in_loop_env);
-        collect_by_name_binders(node->data.interrogate.when_expr, out, in_loop_env);
-        break;
-    /* Leaves, and a lambda (its body is its own scope). Enumerated rather
-     * than covered by a `default:` so that -Werror=switch (Makefile CFLAGS)
-     * makes a new ASTType a build error here instead of a silent no-op. */
-    case AST_NUM:
-    case AST_STR:
-    case AST_IDENT:
-    case AST_NULL: case AST_BOOL:
-    case AST_PREDICATE:
-    case AST_BREAK:
-    case AST_CONTINUE:
-    case AST_LAMBDA:
-        break;
-    }
+    walk_scope_ast(node, out, in_loop_env, collect_by_name_binder_node);
 }
 
 /* #459: does this compilation unit bind `dispatch` anywhere — module scope,

@@ -1,0 +1,1 @@
+- Fix #1903, #1904 and #1905 by giving function and module scope one complete traversal and one shared enumeration of names bound through environments.
