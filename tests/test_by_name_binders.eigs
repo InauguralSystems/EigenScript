@@ -49,6 +49,67 @@ define binder_local_in_for() as:
     return seen
 assert_eq of [binder_local_in_for of [], 7, "binder: local assignment in loop env"]
 
+# Function-local-write classification (question (b)).  Each row writes outside
+# the binder's temporary execution scope and pins the parent commit's answer.
+# Comprehension, catch, nested define, and import bind in the function env;
+# `for` and a `local` assignment in its body bind only in the loop env.
+write_comp is 1
+define write_comp_fn() as:
+    ignored is [write_comp for write_comp in [7, 8]]
+    write_comp is 2
+    return write_comp
+assert_eq of [write_comp_fn of [], 2, "function-local write: comprehension return"]
+assert_eq of [write_comp, 1, "function-local write: comprehension module"]
+
+write_catch is 1
+define write_catch_fn() as:
+    try:
+        ignored is 1 / 0
+    catch write_catch:
+        ignored is write_catch.kind
+    write_catch is 2
+    return write_catch
+assert_eq of [write_catch_fn of [], 2, "function-local write: catch return"]
+assert_eq of [write_catch, 1, "function-local write: catch module"]
+
+write_define is 1
+define write_define_fn() as:
+    define write_define() as:
+        return 7
+    write_define is 2
+    return write_define
+assert_eq of [write_define_fn of [], 2, "function-local write: nested define return"]
+assert_eq of [write_define, 1, "function-local write: nested define module"]
+
+import math
+define write_import_fn() as:
+    import math
+    math is 2
+    return math
+assert_eq of [write_import_fn of [], 2, "function-local write: import return"]
+assert_eq of [type of math, "dict", "function-local write: import module"]
+
+# Review regression: the plain write precedes the loop binder.  Both the
+# return and module update match the parent commit; the loop's values disappear
+# with OP_LOOP_ENV_END.
+write_for is 1
+define write_for_fn() as:
+    write_for is 2
+    for write_for in [7, 8]:
+        ignored is write_for
+    return write_for
+assert_eq of [write_for_fn of [], 2, "function-local write: for return"]
+assert_eq of [write_for, 2, "function-local write: for module"]
+
+write_loop_local is 1
+define write_loop_local_fn() as:
+    write_loop_local is 2
+    for write_iteration in [7]:
+        local write_loop_local is 8
+    return write_loop_local
+assert_eq of [write_loop_local_fn of [], 8, "function-local write: loop-local return"]
+assert_eq of [write_loop_local, 2, "function-local write: loop-local module"]
+
 # The loop machinery's own by-name binders (`__loop_exit__`, compiler.c's
 # loop-while exit store; `__loop_iterations__`, the VM's) stay in the shared
 # predicate as part of the by-name inventory. They get no row here: #1908

@@ -98,6 +98,8 @@ typedef struct Compiler {
                                      * env by name (OP_SET_NAME_LOCAL) in this scope. A same-named
                                      * plain `x is ...` must NOT slot-promote, or the slot and the
                                      * env binding diverge and a slot read returns a stale value. */
+    NameSet           fn_env_bound; /* by-name binders which live in this function's env and
+                                     * therefore make ordinary writes function-local */
     /* #1074: names bound by an ACTIVE loop env in this function (a `for`
      * binder on the LOOP_ENV_FRESH/persist path, i.e. interrogated or
      * shadowing an outer/module name). A body write of such a name must
@@ -1554,26 +1556,50 @@ static void walk_scope_ast(ASTNode *node, NameSet *out, int in_loop_env,
     }
 }
 
-/* The single predicate for binders whose emitters write an environment by
- * name rather than through emit_assign_for_tos's ordinary slot/name choice. */
-static void collect_by_name_binder_node(ASTNode *node, NameSet *out,
-                                        int in_loop_env) {
+enum { BINDER_NO_SLOT = 1, BINDER_FUNCTION_LOCAL = 2 };
+
+/* The single predicate/enumeration for binders whose emitters write an
+ * environment by name.  The property bits keep the two questions separate:
+ * every binder forbids a same-named slot, but only binders which survive in
+ * the function env make an ordinary write function-local. */
+static int by_name_binder(ASTNode *node, int in_loop_env, const char **name) {
+    *name = NULL;
     switch (node->type) {
-    case AST_FOR: name_set_add(out, node->data.forloop.var); break;
-    case AST_TRY: name_set_add(out, node->data.trycatch.err_name); break;
-    case AST_FUNC: name_set_add(out, node->data.func.name); break;
-    case AST_LISTCOMP: name_set_add(out, node->data.listcomp.var); break;
-    case AST_IMPORT: name_set_add(out, node->data.import.module_name); break;
+    case AST_FOR: *name = node->data.forloop.var; return BINDER_NO_SLOT;
+    case AST_TRY: *name = node->data.trycatch.err_name; return BINDER_NO_SLOT | BINDER_FUNCTION_LOCAL;
+    case AST_FUNC: *name = node->data.func.name; return BINDER_NO_SLOT | BINDER_FUNCTION_LOCAL;
+    case AST_LISTCOMP: *name = node->data.listcomp.var; return BINDER_NO_SLOT | BINDER_FUNCTION_LOCAL;
+    case AST_IMPORT: *name = node->data.import.module_name; return BINDER_NO_SLOT | BINDER_FUNCTION_LOCAL;
     case AST_LOOP:
-        name_set_add(out, "__loop_exit__");
-        name_set_add(out, "__loop_iterations__");
-        break;
+        /* This node has two VM/compiler-private binders; the collector adds
+         * them directly after using this return value as their classification. */
+        return BINDER_NO_SLOT;
     case AST_ASSIGN:
-        if (node->data.assign.local_only && in_loop_env)
-            name_set_add(out, node->data.assign.name);
-        break;
-    default: break;
+        if (node->data.assign.local_only && in_loop_env) {
+            *name = node->data.assign.name;
+            return BINDER_NO_SLOT;
+        }
+        return 0;
+    default: return 0;
     }
+}
+
+typedef struct { NameSet *no_slot; NameSet *function_local; } ByNameSets;
+static void collect_by_name_binder_node(ASTNode *node, NameSet *opaque,
+                                        int in_loop_env) {
+    ByNameSets *sets = (ByNameSets *)opaque;
+    const char *name;
+    int properties = by_name_binder(node, in_loop_env, &name);
+    if (properties & BINDER_NO_SLOT) {
+        if (node->type == AST_LOOP) {
+            name_set_add(sets->no_slot, "__loop_exit__");
+            name_set_add(sets->no_slot, "__loop_iterations__");
+        } else {
+            name_set_add(sets->no_slot, name);
+        }
+    }
+    if ((properties & BINDER_FUNCTION_LOCAL) && sets->function_local)
+        name_set_add(sets->function_local, name);
 }
 
 /* #633: collect names that a listcomp variable or a `catch` error-name binds
@@ -1585,8 +1611,10 @@ static void collect_by_name_binder_node(ASTNode *node, NameSet *out,
  * the mirror of collect_module_names_walk keeping forloop.var off the slot
  * path. Stops at nested function/lambda boundaries — those introduce their own
  * scope — by not recursing into AST_FUNC / AST_LAMBDA. */
-static void scan_for_env_bound(ASTNode *node, NameSet *out) {
-    walk_scope_ast(node, out, 0, collect_by_name_binder_node);
+static void scan_for_env_bound(ASTNode *node, NameSet *no_slot,
+                               NameSet *function_local) {
+    ByNameSets sets = { no_slot, function_local };
+    walk_scope_ast(node, (NameSet *)&sets, 0, collect_by_name_binder_node);
 }
 
 /* Collect module-level names (functions defined, top-level assignments).
@@ -1601,7 +1629,12 @@ static void collect_module_name_node(ASTNode *node, NameSet *out,
      * OP_LOOP_ENV_END removes; they are by-name binders, but not module names. */
     if (node->type != AST_FOR &&
         !(node->type == AST_ASSIGN && node->data.assign.local_only && in_loop_env))
-        collect_by_name_binder_node(node, out, in_loop_env);
+    {
+        const char *name;
+        int properties = by_name_binder(node, in_loop_env, &name);
+        if ((properties & BINDER_NO_SLOT) && node->type != AST_LOOP)
+            name_set_add(out, name);
+    }
     if (node->type == AST_ASSIGN)
         name_set_add(out, node->data.assign.name);
     else if (node->type == AST_LIST_PATTERN_ASSIGN)
@@ -1630,7 +1663,8 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
  * scan_for_env_bound, #633: a function picks slot or name per assignment in
  * compile order.) */
 static void collect_by_name_binders(ASTNode *node, NameSet *out, int in_loop_env) {
-    walk_scope_ast(node, out, in_loop_env, collect_by_name_binder_node);
+    ByNameSets sets = { out, NULL };
+    walk_scope_ast(node, (NameSet *)&sets, in_loop_env, collect_by_name_binder_node);
 }
 
 /* #459: does this compilation unit bind `dispatch` anywhere — module scope,
@@ -1806,6 +1840,7 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
             int captured     = name_set_has(&c->captured, name);
             int interrogated = name_set_has(&c->interrogated, name);
             int env_bound    = name_set_has(&c->env_bound, name);
+            int fn_env_bound = name_set_has(&c->fn_env_bound, name);
             int in_outer     = name_in_enclosing(c, name);
             int in_module    = c->module_names && name_set_has(c->module_names, name);
             /* #373: whether a pre-existing env binding is a write-through
@@ -1826,7 +1861,7 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
                     set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
                     obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
                 }
-            } else if (local_only || captured || interrogated || env_bound) {
+            } else if (local_only || captured || interrogated || fn_env_bound) {
                 int idx = add_string_constant(c, name);
                 set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
                 obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
@@ -2585,7 +2620,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         for (int i = 0; i < node->data.func.body_count; i++) {
             scan_for_captures(node->data.func.body[i], &fn_compiler.captured);
             scan_for_interrogated(node->data.func.body[i], &fn_compiler.interrogated);
-            scan_for_env_bound(node->data.func.body[i], &fn_compiler.env_bound);
+            scan_for_env_bound(node->data.func.body[i], &fn_compiler.env_bound,
+                               &fn_compiler.fn_env_bound);
         }
         /* Function's own params are never "captured by themselves" */
         for (int i = 0; i < node->data.func.param_count; i++)
@@ -2647,6 +2683,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);
+        name_set_free(&fn_compiler.fn_env_bound);
         free(fn_compiler.locals);
 
         chunk_scan_leaf_accessor(fn_chunk);  /* #366 */
@@ -2681,7 +2718,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         scan_for_captures(node->data.lambda.body, &fn_compiler.captured);
         scan_for_interrogated(node->data.lambda.body, &fn_compiler.interrogated);
-        scan_for_env_bound(node->data.lambda.body, &fn_compiler.env_bound);
+        scan_for_env_bound(node->data.lambda.body, &fn_compiler.env_bound,
+                           &fn_compiler.fn_env_bound);
         for (int i = 0; i < node->data.lambda.param_count; i++) {
             name_set_remove(&fn_compiler.captured, node->data.lambda.params[i]);
         }
@@ -2711,6 +2749,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);
+        name_set_free(&fn_compiler.fn_env_bound);
         free(fn_compiler.locals);
 
         chunk_scan_leaf_accessor(fn_chunk);  /* #366 */
