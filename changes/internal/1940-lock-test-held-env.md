@@ -1,0 +1,1 @@
+- `tools/make_lock_check.sh` clears an inherited `EIGS_TREE_LOCK_HELD`, so its lock cases still test the lock when it runs from inside a make recipe (for example `make precheck`).
