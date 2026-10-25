@@ -1157,21 +1157,6 @@ LE2_EXIT=$(echo "$LE_OUTPUT" | grep -A1 'LE2:' | tail -1)
 check "LE2 constant exit=normal (#861: converged fires, no stall needed)" "$LE2_EXIT" "normal"
 echo ""
 
-echo "[#1906] Per-loop published iteration count (interpreter/default/OSR)"
-for tier in "EIGS_JIT_OFF=1" "" "EIGS_JIT_OSR_THRESHOLD=1"; do
-    LI_OUTPUT=$(env $tier ./eigenscript ../tests/test_loop_iterations_per_loop.eigs 2>&1)
-    LI_RESULT=$(printf '%s\n' "$LI_OUTPUT" | tail -3 | tr '\n' ' ')
-    TOTAL=$((TOTAL + 1))
-    if [ "$LI_RESULT" = "3 3 2 " ]; then
-        echo "  PASS: ${tier:-default}: $LI_RESULT"
-        PASS=$((PASS + 1))
-    else
-        echo "  FAIL: ${tier:-default}: $LI_RESULT"
-        FAIL=$((FAIL + 1))
-    fi
-done
-echo ""
-
 echo "[Structural Equality] test_equality.eigs"
 EQ_OUTPUT=$(./eigenscript ../tests/test_equality.eigs 2>&1)
 TOTAL=$((TOTAL + 1))

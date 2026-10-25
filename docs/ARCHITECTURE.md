@@ -196,7 +196,9 @@ and `__loop_iterations__` env variables.
 `OP_LOOP_ENTER` resets `__loop_iterations__`, making it the per-loop published
 count for normal, stalled, and limited exits; after a nested loop it describes
 the innermost completed loop.  A separate sandbox counter remains cumulative
-across compiler-emitted loops (and calls) for the duration of `sandbox_run`.
+across compiler-emitted loops in one call frame.  As before #1906, calls scope
+that compiler-loop counter per frame, while the back-edge counter is cumulative
+across the entire `sandbox_run`; either counter can exhaust the same budget.
 
 ## Memory
 

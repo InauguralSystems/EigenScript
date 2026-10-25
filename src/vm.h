@@ -508,6 +508,7 @@ typedef struct {
      * accumulated stall count / iteration count). Scoped per call frame. */
     int        saved_stall_count;
     long long  saved_loop_iter;   /* #772: matches EigsState.loop_iterations */
+    long long  saved_sandbox_loop_iter; /* #1906: old compiler-loop budget scope */
     int        call_argc;        /* args actually passed to this call; <= chunk->param_count.
                                   * Used by OP_DEFAULT_PARAM to decide if a slot was bound
                                   * by the caller or needs its default expression run. */

@@ -1129,6 +1129,11 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
             if (depth != 1) return;
             c->leaf_accessor = 1;
             return;
+        case OP_LOOP_ENTER:
+            /* A loop can never be a straight-line frameless accessor.  Name
+             * the appended opcode explicitly so its one-byte width is not
+             * mistaken for an unreviewed scanner omission. */
+            return;
         default:
             return;
         }

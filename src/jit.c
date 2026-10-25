@@ -861,6 +861,11 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
             *has_bail_op = 1;
+        } else if (op == OP_LOOP_ENTER) {
+            /* One-byte loop-entry diagnostic reset.  The helper publishes
+             * zero through the same env/cache path as the interpreter. */
+            i += 1; ops++; non_line_ops++;
+            *has_bail_op = 1;
         } else if (op == OP_CALL) {
             /* Stage 4r: 3-byte op [op][argc:16]. Helper handles the
              * VAL_BUILTIN case inline; for VAL_FN / VAL_CLOSURE / non-
@@ -4183,6 +4188,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             pending_count++;
             patch_rel32(skip_patch, w);
             i += 3;
+        } else if (op == OP_LOOP_ENTER) {
+            /* Sync the VM stack around the ABI call, like the loop-check
+             * helpers.  The helper itself leaves the operand stack alone. */
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_loop_enter);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 1;
         } else if (op == OP_CALL) {
             /* Stage 4r/5f: OP_CALL via helper. The helper now also runs
              * compiled VAL_FN callees natively (frame push + callee

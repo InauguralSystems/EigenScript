@@ -1,12 +1,20 @@
-# #1906: the public binding is per loop, including nested-loop precedence.
-a is 0
-loop while a < 3:
-    a is a + 1
-print of __loop_iterations__
-b is 0
-loop while b < 3:
-    b is b + 1
-print of __loop_iterations__
+# #1906: the public binding is per loop for every exit kind.  The sandbox's
+# separate compiler-loop budget remains cumulative across loop entries.
+normal_i is 0
+loop while normal_i < 3:
+    normal_i is normal_i + 1
+print of ["normal", __loop_exit__, __loop_iterations__]
+
+stall_x is 100
+loop while not converged:
+    stall_x is stall_x * 2
+print of ["stall", __loop_exit__, __loop_iterations__]
+
+# LOOP_ENTER, LOOP_CAP_CHECK(+3), JUMP_BACK(6), GET_NAME(iterations), RETURN.
+# The capped partial result is the loop's published count at its limit exit.
+limit_code is [97, 63,3,0, 30,6,0, 25,0,0, 40]
+limit_r is sandbox_run of [[1, limit_code, ["__loop_iterations__"]], 5]
+print of ["limit", limit_r.ok, limit_r.result]
 
 outer is 0
 loop while outer < 1:
@@ -15,4 +23,12 @@ loop while outer < 1:
     loop while inner < 2:
         inner is inner + 1
     nested_seen is __loop_iterations__
-print of nested_seen
+print of ["nested", nested_seen]
+
+# Two three-iteration loops under a five-iteration sandbox budget.  Neither
+# loop exceeds five alone; together they trip it on inner count 2 (total 5).
+budget_code is [2,27,0,0,35,97,25,0,0,0,3,0,19,31,15,0,25,0,0,3,4,26,0,0,35,63,3,0,30,25,0,2,27,1,0,35,97,25,1,0,0,3,0,19,31,15,0,25,1,0,3,4,26,1,0,35,63,3,0,30,25,0,25,2,0,40]
+budget_r is sandbox_run of [[1, budget_code,
+                            ["budget_a", "budget_b", "__loop_iterations__", 3]], 5]
+print of ["budget", budget_r.ok, budget_r.result,
+          index_of of [budget_r.error.message, "partial run"] >= 0]

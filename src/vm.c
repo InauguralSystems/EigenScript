@@ -579,6 +579,7 @@ static void callframe_init(CallFrame *f, EigsChunk *chunk, Env *env,
      * returns; the base frame and OP_DISPATCH keep the incoming values. */
     f->saved_stall_count = g_loop_stall_count;
     f->saved_loop_iter   = g_loop_iterations;
+    f->saved_sandbox_loop_iter = g_sandbox_loop_iterations;
     f->call_argc = call_argc;
     f->ret_line = g_vm.current_line;   /* #1424: restored on return */
 }
@@ -2053,6 +2054,14 @@ static void loop_iter_store(Env *env, double n) {
     }
 }
 
+/* OP_LOOP_ENTER's shared interpreter/JIT implementation.  Keeping the
+ * publication here prevents the native emitter from growing a second copy of
+ * the environment-slot/cache rules above. */
+void eigs_loop_enter(Env *env) {
+    g_loop_iterations = 0;
+    loop_iter_store(env, 0.0);
+}
+
 /* Stage 4w: out-of-line helper for OP_LOOP_STALL_CHECK. Mirrors the
  * interpreter case minus the jump: returns 1 when the loop should exit
  * (observer stalled 100 iterations, or the absolute iteration cap) so
@@ -2147,6 +2156,9 @@ int jit_helper_loop_stall_check(void) {
 }
 int jit_helper_loop_cap_check(void) {
     return eigs_loop_cap_step(g_vm.frames[g_vm.frame_count - 1].env);
+}
+void jit_helper_loop_enter(void) {
+    eigs_loop_enter(g_vm.frames[g_vm.frame_count - 1].env);
 }
 
 /* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
@@ -2737,6 +2749,7 @@ void jit_helper_return(void) {
     }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
     g_vm.current_line  = frame->ret_line;   /* #1424: as CASE(RETURN) */
     /* The frame's chunk ref is NOT dropped here: the thunk epilogue still
      * writes chunk->jit_advance after we return. vm_run's -1 sentinel
@@ -2767,6 +2780,7 @@ void jit_helper_return_null(void) {
     }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
     g_vm.current_line  = frame->ret_line;   /* #1424: as CASE(RETURN_NULL) */
     /* Chunk ref deferred to vm_run's -1 handler (see jit_helper_return). */
     g_vm.frame_count--;
@@ -3191,6 +3205,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
                 if (frame->owns_env) env_decref(frame->env); \
                 g_loop_stall_count = frame->saved_stall_count; \
                 g_loop_iterations  = frame->saved_loop_iter; \
+                g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter; \
                 chunk_decref(frame->chunk); \
                 g_vm.frame_count--; \
                 frame = &g_vm.frames[g_vm.frame_count - 1]; \
@@ -4467,6 +4482,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* Restore loop-stall globals saved on entry (scoped per call frame). */
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
         /* #1424: the caller resumes on ITS line. The callee's OP_LINE stream
          * moved current_line, and the compiler emits no OP_LINE between a
          * CALL and the caller's next op in the same expression (the `/` in
@@ -4505,6 +4521,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
         current_line = g_vm.current_line = frame->ret_line;   /* #1424: as CASE(RETURN) */
         chunk_decref(frame->chunk);   /* frame's ref */
         g_vm.frame_count--;
@@ -5994,8 +6011,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     }
 
     CASE(LOOP_ENTER): {
-        g_loop_iterations = 0;
-        loop_iter_store(frame->env, 0.0);
+        eigs_loop_enter(frame->env);
         DISPATCH();
     }
 
@@ -6682,6 +6698,7 @@ vm_error_halt:
         if (f->owns_env) env_decref(f->env);
         g_loop_stall_count = f->saved_stall_count;
         g_loop_iterations  = f->saved_loop_iter;
+        g_sandbox_loop_iterations = f->saved_sandbox_loop_iter;
         chunk_decref(f->chunk);   /* frame's ref */
         g_vm.frame_count--;
     }

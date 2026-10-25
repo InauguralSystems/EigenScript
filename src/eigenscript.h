@@ -655,6 +655,7 @@ void observer_slot_reset_bounded(struct Env *e, int max_retain_cap);
  * run the same halting as the interpreter/JIT. (vm.c) */
 int eigs_loop_stall_step(struct Env *e);
 int eigs_loop_cap_step(struct Env *e);
+void eigs_loop_enter(struct Env *e);
 /* #660 SIGUSR1 live observer dump: `kill -USR1 <pid>` prints one row per
  * live binding (module scope + the dumping thread's live frame) to stderr at
  * the next loop safepoint. The handler (installed by the CLI, SA_RESTART)
