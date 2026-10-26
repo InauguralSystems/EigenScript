@@ -1,0 +1,325 @@
+# #1903/#1904/#1905: every binder that writes an environment by name is
+# discovered through the same complete scope walk before slot allocation.
+load_file of "lib/test.eigs"
+
+# Issue #1903's two reported programs.
+define binder_nested_define() as:
+    nested_name is 0
+    define nested_name() as:
+        return 7
+    return type of nested_name
+assert_eq of [binder_nested_define of [], "fn", "1903 nested define shares storage with assignment"]
+
+define binder_import() as:
+    math is 0
+    import math
+    return type of math
+assert_eq of [binder_import of [], "dict", "1903 import shares storage with assignment"]
+
+# One function-scope row for every other by-name binder kind.
+define binder_comprehension() as:
+    comp_name is 5
+    values is [comp_name for comp_name in [1, 2, 3]]
+    return values
+assert_eq of [binder_comprehension of [], [1, 2, 3], "binder: comprehension"]
+
+define binder_catch() as:
+    error_name is 5
+    try:
+        value is 1 / 0
+    catch error_name:
+        return error_name.kind
+    return "missed"
+assert_eq of [binder_catch of [], "value", "binder: catch"]
+
+define binder_for() as:
+    for_name is 5
+    seen is []
+    for for_name in [1, 2, 3]:
+        append of [seen, for_name]
+    return seen
+assert_eq of [binder_for of [], [1, 2, 3], "binder: for loop"]
+
+define binder_local_in_for() as:
+    local_name is 5
+    seen is 0
+    for binder_iteration in [1]:
+        local local_name is 7
+        seen is local_name
+    return seen
+assert_eq of [binder_local_in_for of [], 7, "binder: local assignment in loop env"]
+
+# Function-local-write classification (question (b)).  Each row writes outside
+# the binder's temporary execution scope and pins the parent commit's answer.
+# Only comprehension and catch are in the parent's static function-local set.
+# Define/import writes resolve dynamically; loop binders live in loop envs.
+write_comp is 1
+define write_comp_fn() as:
+    ignored is [write_comp for write_comp in [7, 8]]
+    write_comp is 2
+    return write_comp
+assert_eq of [write_comp_fn of [], 2, "function-local write: comprehension return"]
+assert_eq of [write_comp, 1, "function-local write: comprehension module"]
+
+write_catch is 1
+define write_catch_fn() as:
+    try:
+        ignored is 1 / 0
+    catch write_catch:
+        ignored is write_catch.kind
+    write_catch is 2
+    return write_catch
+assert_eq of [write_catch_fn of [], 2, "function-local write: catch return"]
+assert_eq of [write_catch, 1, "function-local write: catch module"]
+
+write_define_before is 1
+define write_define_before_fn() as:
+    write_define_before is 2
+    define write_define_before() as:
+        return 7
+    return type of write_define_before
+assert_eq of [write_define_before_fn of [], "fn", "dynamic write before nested define return"]
+assert_eq of [write_define_before, 2, "dynamic write before nested define module"]
+
+write_define_after is 1
+define write_define_after_fn() as:
+    define write_define_after() as:
+        return 7
+    write_define_after is 2
+    return write_define_after
+assert_eq of [write_define_after_fn of [], 2, "dynamic write after nested define return"]
+assert_eq of [write_define_after, 1, "dynamic write after nested define module"]
+
+write_define_unreachable is 1
+define write_define_unreachable_fn() as:
+    write_define_unreachable is 2
+    if false:
+        define write_define_unreachable() as:
+            return 7
+    return write_define_unreachable
+assert_eq of [write_define_unreachable_fn of [], 2, "unreachable nested define return"]
+assert_eq of [write_define_unreachable, 2, "unreachable nested define module"]
+
+import math
+datetime is 1
+define write_import_before_fn() as:
+    datetime is 2
+    import datetime
+    return type of datetime
+assert_eq of [write_import_before_fn of [], "dict", "dynamic write before import return"]
+assert_eq of [datetime, 2, "dynamic write before import module"]
+
+define write_import_after_fn() as:
+    import math
+    math is 2
+    return math
+assert_eq of [write_import_after_fn of [], 2, "dynamic write after import return"]
+assert_eq of [type of math, "dict", "dynamic write after import module"]
+
+# Review regression: the plain write precedes the loop binder.  Both the
+# return and module update match the parent commit; the loop's values disappear
+# with OP_LOOP_ENV_END.
+write_for is 1
+define write_for_fn() as:
+    write_for is 2
+    for write_for in [7, 8]:
+        ignored is write_for
+    return write_for
+assert_eq of [write_for_fn of [], 2, "function-local write: for return"]
+assert_eq of [write_for, 2, "function-local write: for module"]
+
+write_loop_local is 1
+define write_loop_local_fn() as:
+    write_loop_local is 2
+    for write_iteration in [7]:
+        local write_loop_local is 8
+    return write_loop_local
+assert_eq of [write_loop_local_fn of [], 8, "function-local write: loop-local return"]
+assert_eq of [write_loop_local, 2, "function-local write: loop-local module"]
+
+# The loop machinery's own by-name binders (`__loop_exit__`, compiler.c's
+# loop-while exit store; `__loop_iterations__`, the VM's) stay in the shared
+# predicate as part of the by-name inventory. They get no row here: #1908
+# refuses a user binding of any `__name__`, so no same-named plain assignment
+# can exist to collide with them.
+
+# Issue #1905's programs plus module-scope rows for the module binders.
+import math
+define module_import_rebind() as:
+    math is 42
+    return 0
+module_import_status is module_import_rebind of []
+assert_eq of [type of math, "dict", "1905 module import keeps parent write target"]
+
+module_values is [module_comp_name for module_comp_name in [1, 2, 3]]
+define module_comp_rebind() as:
+    module_comp_name is 42
+    return 0
+module_comp_status is module_comp_rebind of []
+assert_eq of [module_comp_name, 3, "1905 module comprehension keeps parent write target"]
+
+define module_defined_name() as:
+    return 1
+define module_defined_rebind() as:
+    module_defined_name is 42
+    return 0
+module_defined_status is module_defined_rebind of []
+assert_eq of [module_defined_name, 42, "module function binder is a module name"]
+
+try:
+    module_error_value is 1 / 0
+catch module_error_name:
+    module_error_kind is module_error_name.kind
+define module_error_rebind() as:
+    module_error_name is 42
+    return 0
+module_error_status is module_error_rebind of []
+assert_eq of [module_error_name, 42, "module catch binder is a module name"]
+
+# Issue #1904's four skipped positions.
+define position_if_condition() as:
+    position_name is 5
+    if (sum of [position_name for position_name in [1, 2, 3]]) == 6:
+        return "right"
+    return "wrong"
+assert_eq of [position_if_condition of [], "right", "position: if condition"]
+
+define position_loop_condition() as:
+    position_name is 5
+    n is 0
+    loop while (sum of [position_name for position_name in [1, 2, 3]]) == 6 and n < 1:
+        n is n + 1
+    return n
+assert_eq of [position_loop_condition of [], 1, "position: loop condition"]
+
+define position_match_pattern() as:
+    position_name is 5
+    match 1:
+        case (sum of [position_name for position_name in [1]]):
+            return "right"
+        case _:
+            return "wrong"
+assert_eq of [position_match_pattern of [], "right", "position: match pattern"]
+
+define position_interrogate_operand() as:
+    position_name is 5
+    return what is (sum of [position_name for position_name in [1, 2, 3]])
+assert_eq of [position_interrogate_operand of [], 6, "position: interrogated operand"]
+
+# Every remaining expression-child family in the shared walker. These were
+# already reached by #633's partial walk; they pin completeness against drift.
+define position_assignment() as:
+    position_name is 5
+    result is sum of [position_name for position_name in [1, 2, 3]]
+    return result
+assert_eq of [position_assignment of [], 6, "position: assignment RHS"]
+
+define position_binary_relation_unary() as:
+    position_name is 5
+    return -((sum of [position_name for position_name in [1, 2, 3]]) + 1) < -6
+assert_eq of [position_binary_relation_unary of [], true, "positions: binary, relation, unary"]
+
+define position_return() as:
+    position_name is 5
+    return sum of [position_name for position_name in [1, 2, 3]]
+assert_eq of [position_return of [], 6, "position: return expression"]
+
+define position_list_index() as:
+    position_name is 5
+    return [(sum of [position_name for position_name in [1, 2, 3]])][0]
+assert_eq of [position_list_index of [], 6, "positions: list element, index target and index"]
+
+define position_nested_comprehension() as:
+    position_name is 5
+    return [sum of [position_name for position_name in [1, 2, 3]] for outer_name in [0] if (sum of [filter_name for filter_name in [1]]) == 1]
+assert_eq of [position_nested_comprehension of [], [6], "positions: comprehension expression, iterable and filter"]
+
+define position_for_iter_body() as:
+    position_name is 5
+    result is 0
+    for item in [sum of [position_name for position_name in [1, 2, 3]]]:
+        result is item + (sum of [body_name for body_name in [1]])
+    return result
+assert_eq of [position_for_iter_body of [], 7, "positions: for iterable and body"]
+
+define position_try_bodies() as:
+    position_name is 5
+    try:
+        return sum of [position_name for position_name in [1, 2, 3]]
+    catch unused_error:
+        return sum of [catch_body_name for catch_body_name in [1]]
+assert_eq of [position_try_bodies of [], 6, "positions: try and catch bodies"]
+
+define position_dict_dot() as:
+    position_name is 5
+    d is {"value": sum of [position_name for position_name in [1, 2, 3]]}
+    return d.value
+assert_eq of [position_dict_dot of [], 6, "positions: dictionary key/value and dot target"]
+
+define position_slice() as:
+    position_name is 5
+    return [1, 2, 3][(sum of [start_name for start_name in [0]]):(sum of [position_name for position_name in [2]])]
+assert_eq of [position_slice of [], [1, 2], "positions: slice target/start/end"]
+
+define position_mutation_children() as:
+    position_name is 5
+    d is {"value": 0}
+    d.value is sum of [position_name for position_name in [1, 2, 3]]
+    values is [0]
+    values[0] is sum of [index_value_name for index_value_name in [1, 2, 3]]
+    [pattern_value, pattern_other] is [sum of [pattern_rhs_name for pattern_rhs_name in [1]], 2]
+    return d.value + values[0] + pattern_value
+assert_eq of [position_mutation_children of [], 13, "positions: dot/index assignment and list-pattern RHS"]
+
+define position_match_subject_body() as:
+    position_name is 5
+    match (sum of [position_name for position_name in [1]]):
+        case 1:
+            return sum of [match_body_name for match_body_name in [7]]
+        case _:
+            return 0
+assert_eq of [position_match_subject_body of [], 7, "positions: match subject and body"]
+
+define position_if_loop_blocks() as:
+    position_name is 5
+    result is 0
+    if true:
+        result is sum of [if_body_name for if_body_name in [1]]
+    else:
+        result is sum of [else_body_name for else_body_name in [99]]
+    loop while result < 2:
+        result is result + (sum of [loop_body_name for loop_body_name in [1]])
+    unobserved:
+        result is result + (sum of [block_name for block_name in [1]])
+    return result
+assert_eq of [position_if_loop_blocks of [], 3, "positions: if/else, loop, block and unobserved bodies"]
+
+define position_interrogate_qualifiers() as:
+    at_name is 5
+    when_name is 5
+    ignored_at is what is at_name at (sum of [at_name for at_name in [1]])
+    ignored_when is what is when_name when (sum of [when_name for when_name in [1]])
+    return [at_name, when_name]
+assert_eq of [position_interrogate_qualifiers of [], [1, 1], "positions: interrogate at/when qualifiers"]
+
+# Plain names, list-pattern stores, parameters, and nested lambda scope do not
+# use the by-name predicate and retain their established answers.
+plain_module_name is 1
+define plain_module_rebind() as:
+    plain_module_name is 42
+    return 0
+plain_status is plain_module_rebind of []
+assert_eq of [plain_module_name, 42, "control: plain module name"]
+
+define control_list_pattern() as:
+    pattern_name is 0
+    [pattern_name, other_name] is [7, 8]
+    return pattern_name
+assert_eq of [control_list_pattern of [], 7, "control: list-pattern store follows ordinary assignment path"]
+
+define control_parameter(parameter_name) as:
+    return parameter_name
+assert_eq of [control_parameter of 9, 9, "control: parameter"]
+assert_eq of [((lambda_name) => lambda_name + 1) of 9, 10, "control: lambda scope boundary"]
+
+test_summary of null
