@@ -97,6 +97,7 @@ __eigs_now_us() {
 }
 __EIGS_SEC_LABEL=""
 __EIGS_SEC_T0=""
+__EIGS_LOCK_TEST_SEAM=0
 __eigs_section_close() {
     [ -n "$__EIGS_SEC_LABEL" ] || return 0
     local now d
@@ -105,6 +106,14 @@ __eigs_section_close() {
     [ "$d" -ge 0 ] || d=0
     [ "$EIGS_SECTION_TIME" = "1" ] &&         builtin printf 'SECTION_TIME: %s %d.%02d\n' "$__EIGS_SEC_LABEL" "$(( d / 1000000 ))" "$(( (d % 1000000) / 10000 ))"
     __EIGS_SEC_LABEL=""
+    # Test-only seam rendezvous for the tree-lock lifetime selftest.  The
+    # directory is private to that test; ordinary runs execute only this
+    # empty-variable check.
+    if [ -n "${EIGS_LOCK_TEST_SEAMS:-}" ]; then
+        __EIGS_LOCK_TEST_SEAM=$((__EIGS_LOCK_TEST_SEAM + 1))
+        : >"$EIGS_LOCK_TEST_SEAMS/seam-$__EIGS_LOCK_TEST_SEAM"
+        while [ -e "$EIGS_LOCK_TEST_SEAMS/hold-$__EIGS_LOCK_TEST_SEAM" ]; do sleep 0.02; done
+    fi
     return 0
 }
 echo() {
@@ -239,8 +248,6 @@ record_binary_fingerprint() {
     fi
     ensure_binary_current
     EIGS_BIN_FINGERPRINT=$(eigs_binary_fingerprint)
-    [ -z "${EIGS_FINGERPRINT_LOG:-}" ] || printf '%s\n' "$EIGS_BIN_FINGERPRINT" >>"$EIGS_FINGERPRINT_LOG"
-    [ -z "${EIGS_LOCK_TEST_PAUSE:-}" ] || sleep "$EIGS_LOCK_TEST_PAUSE"
 }
 
 check_binary_fingerprint() {
@@ -250,7 +257,6 @@ check_binary_fingerprint() {
         exit 1
     fi
     current=$(eigs_binary_fingerprint)
-    [ -z "${EIGS_FINGERPRINT_LOG:-}" ] || printf '%s\n' "$current" >>"$EIGS_FINGERPRINT_LOG"
     if [ "$current" != "$EIGS_BIN_FINGERPRINT" ]; then
         echo "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."
         exit 1
