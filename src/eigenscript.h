@@ -1769,6 +1769,8 @@ const char* eigs_native_fn_name(BuiltinFn fn);   /* NULL for a plain builtin */
 Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
 void dict_set_owned(Value *dict, const char *key, Value *val);
+/* Shared by indexed assignment and builtins which accept dictionary keys. */
+const char *dict_assignment_key(Value *dict, Value *key, int line);
 /* Deep-copy a value for cross-thread channel transfer (#293): re-homes dict
  * keys into a process-global intern table so they survive the sender thread's
  * detach. Returns a heap value (refcount 1). */

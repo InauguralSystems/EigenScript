@@ -738,9 +738,11 @@ Value* builtin_dict_set(Value *arg) {
               "dict_set", "[dict, key, value]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (!d || d->type != VAL_DICT || key->type != VAL_STR) return make_null();
+    if (!d || d->type != VAL_DICT) return make_null();
+    const char *dict_key = dict_assignment_key(d, key, 0);
+    if (!dict_key) return make_null();
     Value *val = list_get_owned(arg, 2);
-    dict_set(d, key->data.str, val);
+    dict_set(d, dict_key, val);
     val_decref(val);
     return d;
 }
@@ -751,8 +753,10 @@ Value* builtin_dict_remove(Value *arg) {
               "dict_remove", "[dict, key]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (!d || d->type != VAL_DICT || key->type != VAL_STR) return make_null();
-    dict_remove(d, key->data.str);
+    if (!d || d->type != VAL_DICT) return make_null();
+    const char *dict_key = dict_assignment_key(d, key, 0);
+    if (!dict_key) return make_null();
+    dict_remove(d, dict_key);
     return d;
 }
 
