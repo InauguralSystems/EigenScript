@@ -1121,7 +1121,7 @@ selftest() {
     local stub="$dir/stub" i
     mkdir -p "$stub/tests" "$stub/tools" "$stub/src" "$stub/.github/workflows"
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/runner_text.sh" \
-       "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
+       "$SP_ROOT/tools/tree_lock.sh" "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
     cp "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
     copy_runner_support_files "$RUNNER" "$stub/tests"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
