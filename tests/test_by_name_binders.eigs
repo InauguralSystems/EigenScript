@@ -149,14 +149,14 @@ define module_import_rebind() as:
     math is 42
     return 0
 module_import_status is module_import_rebind of []
-assert_eq of [math, 42, "1905 module import is a module name"]
+assert_eq of [type of math, "dict", "1905 module import keeps parent write target"]
 
 module_values is [module_comp_name for module_comp_name in [1, 2, 3]]
 define module_comp_rebind() as:
     module_comp_name is 42
     return 0
 module_comp_status is module_comp_rebind of []
-assert_eq of [module_comp_name, 42, "1905 module comprehension binder is a module name"]
+assert_eq of [module_comp_name, 3, "1905 module comprehension keeps parent write target"]
 
 define module_defined_name() as:
     return 1

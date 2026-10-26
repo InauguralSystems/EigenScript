@@ -1625,16 +1625,15 @@ static void scan_for_env_bound(ASTNode *node, NameSet *no_slot,
  * collect_by_name_binders (#1883); this set keeps every name. */
 static void collect_module_name_node(ASTNode *node, NameSet *out,
                                      int in_loop_env) {
-    /* A for variable and `local` in its body live only in the loop env, which
-     * OP_LOOP_ENV_END removes; they are by-name binders, but not module names. */
-    if (node->type != AST_FOR &&
-        !(node->type == AST_ASSIGN && node->data.assign.local_only && in_loop_env))
-    {
-        const char *name;
-        int properties = by_name_binder(node, in_loop_env, &name);
-        if ((properties & BINDER_NO_SLOT) && node->type != AST_LOOP)
-            name_set_add(out, name);
-    }
+    (void)in_loop_env;
+    /* Preserve the established module-name inventory.  A function definition
+     * and catch binder are module-visible names; import/comprehension binders
+     * are merely no-slot storage constraints and must not change the target of
+     * a write in a nested function. */
+    if (node->type == AST_FUNC)
+        name_set_add(out, node->data.func.name);
+    else if (node->type == AST_TRY && node->data.trycatch.err_name)
+        name_set_add(out, node->data.trycatch.err_name);
     if (node->type == AST_ASSIGN)
         name_set_add(out, node->data.assign.name);
     else if (node->type == AST_LIST_PATTERN_ASSIGN)
@@ -1849,11 +1848,15 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
              * write-through — the function gets a fresh local instead. */
             int in_globals   = !g_compile_module_boundary &&
                                c->env && env_get_hashed(c->env, name, h) != NULL;
-            int local_eligible = !captured && !interrogated && !env_bound && !in_outer && !in_module && !in_globals;
+            /* Decide WHERE the write goes exactly as if there were no by-name
+             * binder.  A binder collision may only change the representation
+             * of a function-local slot below; it must never turn a slot into
+             * an outward OP_SET_NAME, nor turn an outward write local. */
+            int local_eligible = !captured && !interrogated && !in_outer && !in_module && !in_globals;
 
             if (local_eligible) {
-                int new_slot = add_local(c, name, h);
-                if (new_slot >= 0) {
+                int new_slot = env_bound ? -1 : add_local(c, name, h);
+                if (!env_bound && new_slot >= 0) {
                     set_op = OP_SET_LOCAL; set_arg = (uint16_t)new_slot;
                     obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)new_slot;
                 } else {
