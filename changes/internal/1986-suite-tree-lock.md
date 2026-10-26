@@ -1,0 +1,1 @@
+- The test suite now holds the per-tree build lock end to end, so concurrent makes wait instead of invalidating a run (#1986).

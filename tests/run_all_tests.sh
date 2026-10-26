@@ -8,6 +8,16 @@
 # told where tests/ is. Unset — every ordinary invocation — this resolves from
 # $0 exactly as before.
 TESTS_DIR="${EIGS_PLAN_TESTS_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+# The suite, not just the makes it happens to invoke, owns the tree while it
+# runs (#1986).  Pass this shell's PID to the normal holder: its polling loop
+# releases the lock on every exit path, including signals and early failures.
+# `make test` exports the flag because its parse-time holder already owns the
+# same lock; a direct suite takes it here.  In both cases inner makes inherit
+# the flag and cannot wait on their own suite.
+if [ -z "${EIGS_TREE_LOCK_HELD:-}" ]; then
+    "$BASH" "$TESTS_DIR/../tools/tree_lock.sh" "$TESTS_DIR/.." $$ || exit 1
+fi
+export EIGS_TREE_LOCK_HELD=1
 export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 . "$TESTS_DIR/../tools/read_werror_flags.sh" || exit 1
 export EIGS_TEST_DIR="$TESTS_DIR"
@@ -229,6 +239,8 @@ record_binary_fingerprint() {
     fi
     ensure_binary_current
     EIGS_BIN_FINGERPRINT=$(eigs_binary_fingerprint)
+    [ -z "${EIGS_FINGERPRINT_LOG:-}" ] || printf '%s\n' "$EIGS_BIN_FINGERPRINT" >>"$EIGS_FINGERPRINT_LOG"
+    [ -z "${EIGS_LOCK_TEST_PAUSE:-}" ] || sleep "$EIGS_LOCK_TEST_PAUSE"
 }
 
 check_binary_fingerprint() {
@@ -238,6 +250,7 @@ check_binary_fingerprint() {
         exit 1
     fi
     current=$(eigs_binary_fingerprint)
+    [ -z "${EIGS_FINGERPRINT_LOG:-}" ] || printf '%s\n' "$current" >>"$EIGS_FINGERPRINT_LOG"
     if [ "$current" != "$EIGS_BIN_FINGERPRINT" ]; then
         echo "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."
         exit 1

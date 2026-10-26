@@ -2,10 +2,10 @@
 # Bounded regression test for the per-tree make lock and the stop gate's
 # non-blocking use of it (#1940). Each case fails if its mechanism is removed.
 set -u
-[ "${1:-}" = "--selftest" ] || {
-    echo "usage: tools/make_lock_check.sh --selftest" >&2
-    exit 2
-}
+case "$#:${1:-}" in
+    0:|1:--selftest) ;;
+    *) echo "usage: tools/make_lock_check.sh [--selftest]" >&2; exit 2 ;;
+esac
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # This test controls the tree lock itself. Run from inside a make recipe (for
@@ -13,6 +13,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # EIGS_TREE_LOCK_HELD=1, which the Makefile exports so that recursive makes
 # skip the lock; every make it starts would then run unlocked and case 1 would
 # fail. Case 3 sets the flag explicitly for the one make that needs it.
+INHERITED_TREE_LOCK=${EIGS_TREE_LOCK_HELD:-}
 unset EIGS_TREE_LOCK_HELD
 if ! command -v flock >/dev/null 2>&1; then
     echo "make-lock selftest: SKIP: flock is unavailable"
@@ -173,4 +174,68 @@ for round in 1 2 3 4 5; do
     [ "$try_rc" -eq 0 ] || fail "round $round: a try right after the owner exited answered $try_rc (want 0): the trailing poll read as a build"
 done
 echo "  PASS: a try just after a make exits takes the lock"
-echo "make-lock selftest: 8/8 passed"
+
+# 9. A suite is itself a lock owner, including the gaps between its inner
+# makes. Prebuild two variants so the competing make's only significant act
+# is re-pointing src/eigenscript; without the suite acquisition it wins the
+# race and the #681 seam guard aborts. The fingerprint witness records the
+# initial identity and every selected section seam.
+#
+# When this selftest is reached from a make recipe, that outer make already
+# owns ROOT's lock and cannot finish until this script does. The inherited
+# case is already pinned by case 3; run this end-to-end process case only when
+# this script is the top-level owner (the documented/direct invocation).
+if [ -n "$INHERITED_TREE_LOCK" ]; then
+    echo "  PASS: suite lifetime case is covered by the enclosing make's exported lock flag"
+else
+    (cd "$ROOT" && make --no-print-directory server >/dev/null && make --no-print-directory build >/dev/null) \
+        || fail "could not prepare release and server variants for suite lifetime case"
+    : >"$WORK/fingerprints"
+    (
+        cd "$ROOT/tests" || exit 1
+        EIGS_SUITE_SECTIONS='0 0a' EIGS_FINGERPRINT_LOG="$WORK/fingerprints" EIGS_LOCK_TEST_PAUSE=2 \
+            bash run_all_tests.sh
+        rc=$?
+        python3 -c 'import time; print(time.time_ns())' >"$WORK/suite-ended"
+        exit "$rc"
+    ) >"$WORK/suite.log" 2>&1 &
+    suite=$!
+    HOLDERS+=("$suite")
+    wait_for "$WORK/fingerprints" || fail "suite did not record its initial binary identity"
+    [ -s "$WORK/fingerprints" ] || {
+        for _ in $(seq 600); do [ -s "$WORK/fingerprints" ] && break; sleep 0.05; done
+    }
+    [ -s "$WORK/fingerprints" ] || fail "suite fingerprint witness stayed empty: $(tail -20 "$WORK/suite.log")"
+    # The helper returns only after the suite holder owns the lock. Poll the
+    # public non-blocking interface so this synchronization also proves busy.
+    sleep 1 & probe_owner=$!
+    sh "$ROOT/tools/tree_lock.sh" --try "$ROOT" "$probe_owner" >/dev/null 2>&1
+    try_rc=$?
+    kill "$probe_owner" 2>/dev/null; wait "$probe_owner" 2>/dev/null
+    (
+        cd "$ROOT" || exit 1
+        make --no-print-directory server
+        rc=$?
+        python3 -c 'import time; print(time.time_ns())' >"$WORK/make-ended"
+        exit "$rc"
+    ) >"$WORK/suite-make.log" 2>&1 &
+    contender=$!
+    HOLDERS+=("$contender")
+    wait "$suite" || fail "locked suite failed: $(tail -20 "$WORK/suite.log")"
+    wait "$contender" || fail "concurrent server make failed: $(cat "$WORK/suite-make.log")"
+    [ "$try_rc" -eq 75 ] || fail "--try did not report the running suite busy"
+    suite_ns=$(cat "$WORK/suite-ended")
+    make_ns=$(cat "$WORK/make-ended")
+    [ "$make_ns" -ge "$suite_ns" ] || fail "concurrent make finished before suite ($make_ns < $suite_ns)"
+    [ "$(sort -u "$WORK/fingerprints" | wc -l)" -eq 1 ] \
+        || fail "suite observed more than one binary identity: $(cat "$WORK/fingerprints")"
+    [ "$(wc -l <"$WORK/fingerprints")" -ge 3 ] \
+        || fail "suite did not record its start and every selected seam"
+    ! grep -Fq 'changed during the run' "$WORK/suite.log" \
+        || fail "the #681 guard fired despite the suite lock"
+    grep -Fq "$NOTICE" "$WORK/suite-make.log" \
+        || fail "concurrent make did not report waiting for the suite"
+    echo "    suite exited: $suite_ns ns; concurrent make exited: $make_ns ns"
+    echo "  PASS: suite held one binary identity; make waited; --try reported busy"
+fi
+echo "make-lock selftest: 9/9 passed"
