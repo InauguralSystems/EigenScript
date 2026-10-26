@@ -1556,6 +1556,28 @@ static void walk_scope_ast(ASTNode *node, NameSet *out, int in_loop_env,
     }
 }
 
+/* #1902: Slot promotion is valid only while every access to a promoted module
+ * binding is visible to the compiler. A call is an escape hatch: the callee
+ * may be eval/load_file, an alias of either, or a user function which reaches
+ * one. Do not guess at a call graph: if a block can make any call, keep the
+ * whole block on the name path. Function/lambda bodies are new scopes and the
+ * shared walk deliberately stops before their bodies. */
+static void note_call_node(ASTNode *node, NameSet *calls, int in_loop_env) {
+    (void)in_loop_env;
+    /* The walker's out-parameter is a NameSet, so record into a real one
+     * rather than punning an int through it; one entry answers the question. */
+    if (node->type == AST_RELATION && calls->count == 0)
+        name_set_add(calls, "<call>");
+}
+
+static int ast_can_call(ASTNode *node) {
+    NameSet calls = {0};
+    walk_scope_ast(node, &calls, 0, note_call_node);
+    int can_call = calls.count > 0;
+    name_set_free(&calls);
+    return can_call;
+}
+
 enum { BINDER_NO_SLOT = 1, BINDER_FUNCTION_LOCAL = 2 };
 
 /* The single predicate/enumeration for binders whose emitters write an
@@ -3256,14 +3278,17 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * the optimization is enabled, find names assigned inside this block
          * that never escape it, and promote them to frame slots. */
         if (g_compile_module_slots && !c->enclosing && c->root_ast) {
+            int can_call = 0;
             NameSet assigned = {0};
             NameSet outside  = {0};
             NameSet captured_here = {0};
             NameSet interrogated_here = {0};
             NameSet by_name = {0};   /* #1883 */
 
-            for (int i = 0; i < node->data.block.count; i++)
+            for (int i = 0; i < node->data.block.count; i++) {
                 collect_module_names_walk(node->data.block.stmts[i], &assigned);
+                if (ast_can_call(node->data.block.stmts[i])) can_call = 1;
+            }
             collect_referenced_names_skip(c->root_ast, node, &outside);
             for (int i = 0; i < node->data.block.count; i++) {
                 scan_for_captures(node->data.block.stmts[i], &captured_here);
@@ -3277,6 +3302,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
             for (int i = 0; i < assigned.count; i++) {
                 const char *nm = assigned.names[i];
+                if (can_call) continue; /* #1902: a callee can access any name dynamically */
                 if (name_set_has(&outside, nm)) continue;
                 if (name_set_has(&captured_here, nm)) continue;
                 if (name_set_has(&interrogated_here, nm)) continue;
