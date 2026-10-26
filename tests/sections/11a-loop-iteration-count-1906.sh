@@ -1,8 +1,10 @@
 echo "[11a] Per-loop published iteration count (#1906; interpreter/default/OSR)"
-LI_EXPECTED='["normal", "normal", 3]
-["stall", "stalled", 107]
-["limit", false, 5]
-["nested", 2]
+LI_EXPECTED='["nested-two", 5]
+["nested-three", 4]
+["break", 4]
+["catch", 3]
+["return", 3]
+["stall-limit", 1, "stalled", false, 5]
 ["budget", false, 2, true]
 ["frame", true]
 ["recursive", true]'

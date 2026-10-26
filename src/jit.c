@@ -852,20 +852,23 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
             *extra_size += 192;
-        } else if (op == OP_LOOP_STALL_CHECK || op == OP_LOOP_CAP_CHECK) {
-            /* Stage 4w: 3-byte op [op][exit_offset:16]. Helper returns
+        } else if (op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED) {
+            /* Stage 4w: 5-byte op [op][exit_offset:16][counter_name:16]. Helper returns
              * 1 when the loop must exit (stall / iteration cap); the
              * emitter conditional-jumps to the exit target — exactly
              * the ITER_NEXT shape. Stack untouched. Both opcodes have the
              * same shape; only the helper differs (cap vs stall+cap). */
+            if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 5; ops++; non_line_ops++;
+            *has_bail_op = 1;
+            *extra_size += 5; /* immediate counter-slot helper argument */
+        } else if (op == OP_LOOP_ENTER_NAMED) {
+            /* Three-byte loop-entry diagnostic reset.  The helper publishes
+             * zero through the same env/cache path as the interpreter. */
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
             *has_bail_op = 1;
-        } else if (op == OP_LOOP_ENTER) {
-            /* One-byte loop-entry diagnostic reset.  The helper publishes
-             * zero through the same env/cache path as the interpreter. */
-            i += 1; ops++; non_line_ops++;
-            *has_bail_op = 1;
+            *extra_size += 5; /* immediate counter-slot helper argument */
         } else if (op == OP_CALL) {
             /* Stage 4r: 3-byte op [op][argc:16]. Helper handles the
              * VAL_BUILTIN case inline; for VAL_FN / VAL_CLOSURE / non-
@@ -4152,7 +4155,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             patch_rel32(done_p, w);
             i += 1;
-        } else if (op == OP_LOOP_STALL_CHECK || op == OP_LOOP_CAP_CHECK) {
+        } else if (op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED) {
             /* Stage 4w: LOOP_STALL_CHECK / LOOP_CAP_CHECK via helper —
              * ITER_NEXT call shape: sync sp, aligned call, reload sp, test
              * eax, conditional jump to the exit target via pending patch.
@@ -4164,13 +4167,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             }
             uint16_t off = (uint16_t)(chunk->code[i + 1] |
                                       ((uint16_t)chunk->code[i + 2] << 8));
-            int target = i + 3 + (int)off;
-            void *loop_helper = (op == OP_LOOP_STALL_CHECK)
+            uint16_t counter_idx = (uint16_t)(chunk->code[i + 3] |
+                                              ((uint16_t)chunk->code[i + 4] << 8));
+            int target = i + 5 + (int)off;
+            void *loop_helper = (op == OP_LOOP_STALL_NAMED)
                                     ? (void *)&jit_helper_loop_stall_check
                                     : (void *)&jit_helper_loop_cap_check;
 
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
+            w = emit_mov_imm32_edi(w, counter_idx);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)loop_helper);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
@@ -4187,17 +4193,20 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             pending[pending_count].patch = jump_patch;
             pending_count++;
             patch_rel32(skip_patch, w);
-            i += 3;
-        } else if (op == OP_LOOP_ENTER) {
+            i += 5;
+        } else if (op == OP_LOOP_ENTER_NAMED) {
             /* Sync the VM stack around the ABI call, like the loop-check
              * helpers.  The helper itself leaves the operand stack alone. */
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
+            uint16_t counter_idx = (uint16_t)(chunk->code[i + 1] |
+                                              ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_imm32_edi(w, counter_idx);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_loop_enter);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
-            i += 1;
+            i += 3;
         } else if (op == OP_CALL) {
             /* Stage 4r/5f: OP_CALL via helper. The helper now also runs
              * compiled VAL_FN callees natively (frame push + callee

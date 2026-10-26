@@ -155,8 +155,9 @@ int jit_helper_index_get(void) {
 }
 /* Remaining Stage 4q/4v helpers are linker-immediate stubs. */
 void jit_helper_index_set(void) {}
-int jit_helper_loop_stall_check(void) { return 1; }
-int jit_helper_loop_cap_check(void) { return 1; }
+int jit_helper_loop_stall_check(uint16_t counter_idx) { (void)counter_idx; return 1; }
+int jit_helper_loop_cap_check(uint16_t counter_idx) { (void)counter_idx; return 1; }
+void jit_helper_loop_enter(uint16_t counter_idx) { (void)counter_idx; }
 /* Receipt only: never resolves a name or writes a binding. A helper visit
  * must occur with every synthetic binding still untouched. */
 static struct {

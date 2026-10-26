@@ -18,11 +18,11 @@ trap 'rm -rf "$TMP"' EXIT
 classify() {  # $1 = condition, $2 = expected opcode tag (STALL|CAP)
     printf 'i is 0\nloop while %s:\n    i is i + 1\n    break\n' "$1" > "$TMP/c.eigs"
     local got
-    got=$(EIGS_DUMP_BC=1 "$EIGS" "$TMP/c.eigs" 2>&1 | grep -oE 'LOOP_(STALL|CAP)_CHECK' | head -1)
-    if [ "$got" = "LOOP_${2}_CHECK" ]; then
+    got=$(EIGS_DUMP_BC=1 "$EIGS" "$TMP/c.eigs" 2>&1 | grep -oE 'LOOP_(STALL|CAP)_(CHECK|NAMED)' | head -1)
+    if [ "$got" = "LOOP_${2}_NAMED" ]; then
         echo "PASS: classify [$1] -> $got"
     else
-        echo "FAIL: classify [$1] -> got '$got', expected LOOP_${2}_CHECK"
+        echo "FAIL: classify [$1] -> got '$got', expected LOOP_${2}_NAMED"
     fi
 }
 # observer-based (predicate anywhere in the boolean/comparison/unary structure)

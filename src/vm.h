@@ -142,8 +142,8 @@ typedef enum {
     OP_PREDICATE,       /*obs:READS*/ /* [kind:16] push predicate result */
     OP_UNOBSERVED_BEGIN,/*obs:WRITES*/ /* increment g_unobserved_depth */
     OP_UNOBSERVED_END,  /*obs:WRITES*/ /* decrement g_unobserved_depth */
-    OP_LOOP_STALL_CHECK,/*obs:READS*/ /* [exit_offset:16] observer-stall + iteration cap (observer-based loops) */
-    OP_LOOP_CAP_CHECK,  /*obs:DIAG*/ /* [exit_offset:16] iteration cap ONLY (plain loops; no observer-stall) */
+    OP_LOOP_STALL_CHECK,/*obs:READS*/ /* [exit_offset:16] legacy shared counter guard */
+    OP_LOOP_CAP_CHECK,  /*obs:DIAG*/ /* [exit_offset:16] legacy shared counter guard */
 
     /* Miscellaneous */
     OP_IMPORT,          /*obs:NONE*/ /* [name_idx:16] import module, push dict */
@@ -222,7 +222,10 @@ typedef enum {
                            * Appended to preserve the public bytecode ABI. */
     OP_TRUE,            /*obs:NONE*/ /* #1637: push the bool true immediate. Appended. */
     OP_FALSE,           /*obs:NONE*/ /* #1637: push the bool false immediate. Appended. */
-    OP_LOOP_ENTER,      /*obs:DIAG*/ /* reset published per-loop count */
+    OP_LOOP_ENTER,      /*obs:DIAG*/ /* legacy shared counter reset */
+    OP_LOOP_STALL_NAMED,/*obs:READS*/ /* [exit:16][counter_name:16] per-loop stall/cap guard */
+    OP_LOOP_CAP_NAMED,  /*obs:DIAG*/ /* [exit:16][counter_name:16] per-loop cap guard */
+    OP_LOOP_ENTER_NAMED,/*obs:DIAG*/ /* [counter_name:16] private/published counter reset */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
