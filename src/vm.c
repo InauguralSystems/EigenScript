@@ -2624,6 +2624,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         if (--fn_val->refcount <= 0) free_value(fn_val);
         g_loop_stall_count = 0;
         g_loop_iterations  = 0;
+        g_sandbox_loop_iterations = 0;
         fn_chunk->exec_count++;
 
         g_native_call_depth++;
@@ -4369,6 +4370,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             slot_decref(callee_s);
             g_loop_stall_count = 0;
             g_loop_iterations  = 0;
+            g_sandbox_loop_iterations = 0;
             if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
 
             /* JIT hook: compile lazily, run native prefix if available.

@@ -32,3 +32,22 @@ budget_r is sandbox_run of [[1, budget_code,
                             ["budget_a", "budget_b", "__loop_iterations__", 3]], 5]
 print of ["budget", budget_r.ok, budget_r.result,
           index_of of [budget_r.error.message, "partial run"] >= 0]
+
+# A frame owns the compiler-loop cap count just as it owns the published loop
+# count.  Two checks in the caller must not charge the callee's first check.
+frame_fn is [[63,0,0, 41], [], [], 0, "frame_once", []]
+frame_code is [63,0,0, 63,0,0, 38,0,0, 27,0,0,
+              25,0,0, 39,0,0, 35, 41]
+frame_r is sandbox_run of [[1, frame_code, ["frame_once"], [frame_fn],
+                            0, "frame_review", []], 3]
+print of ["frame", frame_r.ok]
+
+# Recursive calls receive the same fresh per-frame budget.  At max=3 the
+# third frame would trip if it inherited the first two frames' single checks.
+recursive_fn is [[63,0,0, 23,0,0, 2, 20, 31,12,0,
+                  25,0,0, 23,0,0, 3, 5, 39,1,0, 40, 41],
+                 ["recursive"], [], 1, "recursive", ["n"]]
+recursive_code is [38,0,0, 27,0,0, 25,0,0, 0,1,0, 39,1,0, 41]
+recursive_r is sandbox_run of [[1, recursive_code, ["recursive", 3],
+                                [recursive_fn], 0, "recursive_review", []], 3]
+print of ["recursive", recursive_r.ok]
