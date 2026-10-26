@@ -235,10 +235,20 @@ char* format_source_string(const char *source) {
         size_t end = off;
         while (end < source_len && source[end] != '\n') end++;
         size_t content_end = end;
-        if (content_end > off && source[content_end - 1] == '\r') content_end--;
         while (span_i < tl.literal_count && tl.literal_spans[span_i].end <= off) span_i++;
         int starts_literal = span_i < tl.literal_count &&
             tl.literal_spans[span_i].start <= off && off < tl.literal_spans[span_i].end;
+        /* Normalize CRLF only in source syntax.  A CR immediately before a
+         * physical LF can also be literal data, and every byte in a
+         * lexer-owned literal span is sacrosanct. */
+        if (content_end > off && source[content_end - 1] == '\r') {
+            size_t cr = content_end - 1;
+            int cr_is_literal = 0;
+            for (int i = span_i; i < tl.literal_count && tl.literal_spans[i].start <= cr; i++) {
+                if (cr < tl.literal_spans[i].end) { cr_is_literal = 1; break; }
+            }
+            if (!cr_is_literal) content_end--;
+        }
 
         size_t first = off;
         if (!starts_literal) while (first < content_end && (source[first] == ' ' || source[first] == '\t')) first++;

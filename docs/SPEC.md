@@ -98,7 +98,9 @@ still running
   original leading whitespace on continuation lines inside `()`, `[]`, or
   `{}`, while still normalizing operator spacing outside literals. String and
   f-string literal bytes are emitted verbatim, including physical newlines,
-  indentation, trailing spaces, escapes, and interpolation text.
+  indentation, trailing spaces, escapes, and interpolation text. Following
+  Black and Ruff, a standalone comment takes the indentation of the next
+  statement; a standalone comment at end of file takes depth zero.
 - Identifiers are `[a-zA-Z_][a-zA-Z0-9_]*`.
 - Keywords include: `is of define as if elif else loop while for in
   return and or not null try catch break continue import match case

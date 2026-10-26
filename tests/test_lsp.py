@@ -692,6 +692,13 @@ def main():
     check("formatting uses lexer literal and block boundaries (#1245/#1246/#1581)",
           isinstance(literal_res, list) and len(literal_res) == 1
           and literal_res[0].get("newText") == literal_want)
+    cr_doc = 'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\r\nprint of value\r\n'
+    r = converse([INIT, did_open(cr_doc), fmt, SHUTDOWN, EXIT])
+    cr_res = (by_id(r, 8) or {}).get("result")
+    check("formatting preserves CR bytes inside multiline literals",
+          isinstance(cr_res, list) and len(cr_res) == 1
+          and cr_res[0].get("newText") ==
+              'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\nprint of value\n')
 
     # --- rename: validate the APPLIED result, not just newText. This is the
     #     regression guard for the column-0 corruption (renaming 'count' must

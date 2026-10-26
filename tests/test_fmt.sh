@@ -264,6 +264,64 @@ check_roundtrip "ordinary four-space indentation" 'if 1:
         print of 4
 '
 
+# A CR belonging to the source line ending is normalized, but a CR inside a
+# multiline literal is program data. Compare stdout as bytes, not shell text.
+python3 - "$REG_DIR/crlf.eigs" <<'PY'
+import sys
+open(sys.argv[1], "wb").write(
+    b'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\r\nprint of value\r\n')
+PY
+"$EIGS" "$REG_DIR/crlf.eigs" >"$REG_DIR/cr.before"
+"$EIGS" --fmt "$REG_DIR/crlf.eigs" >"$REG_DIR/cr.formatted"
+"$EIGS" "$REG_DIR/cr.formatted" >"$REG_DIR/cr.after"
+check "multiline literal preserves CR bytes" \
+      "$(cmp -s "$REG_DIR/cr.before" "$REG_DIR/cr.after" && echo same)" "same"
+
+COMMENT_INPUT='if 1:
+  #depth one
+  if 1:
+      # depth two
+      print of 7
+  # sibling one
+  print of 9
+#top
+'
+COMMENT_WANT='if 1:
+    # depth one
+    if 1:
+        # depth two
+        print of 7
+    # sibling one
+    print of 9
+# top
+'
+check "standalone comments use the next statement depth (Black/Ruff rule)" \
+      "$(fmt_str "$COMMENT_INPUT")" "$(printf '%s' "$COMMENT_WANT")"
+
+# The doc executor owns fence parsing, while this formatter suite owns the
+# formatting contract. Consume fences only through the executor's documented
+# extraction interface, then require acceptance and a fixed point.
+DOC_DIR="$REG_DIR/doc-fences"
+DOC_LIST="$REG_DIR/doc-fences.list"
+python3 "$TESTS_DIR/test_doc_examples.py" --extract "$DOC_DIR" \
+    "$TESTS_DIR/../README.md" "$TESTS_DIR/../docs/"*.md "$TESTS_DIR/../docs/llms.txt" \
+    >"$DOC_LIST"
+DOC_EXTRACT_RC=$?
+DOC_FMT_BAD=0 DOC_FMT_N=0
+while IFS= read -r fence; do
+    DOC_FMT_N=$((DOC_FMT_N + 1))
+    "$EIGS" --fmt "$fence" >"$REG_DIR/doc.once" 2>/dev/null || { DOC_FMT_BAD=$((DOC_FMT_BAD + 1)); continue; }
+    "$EIGS" --fmt "$REG_DIR/doc.once" >"$REG_DIR/doc.twice" 2>/dev/null || { DOC_FMT_BAD=$((DOC_FMT_BAD + 1)); continue; }
+    cmp -s "$REG_DIR/doc.once" "$REG_DIR/doc.twice" || DOC_FMT_BAD=$((DOC_FMT_BAD + 1))
+done <"$DOC_LIST"
+check "doc fences format through the executor extraction interface" \
+      "extract=$DOC_EXTRACT_RC fences=$DOC_FMT_N bad=$DOC_FMT_BAD" \
+      "extract=0 fences=$DOC_FMT_N bad=0"
+
+check "single changelog fragment names all fixed issues" \
+      "$(find "$TESTS_DIR/../changes/fixed" -maxdepth 1 -type f \( -name '*1245*' -o -name '*1246*' -o -name '*1581*' \) | wc -l | tr -d ' ')|$(cat "$TESTS_DIR/../changes/fixed/1581-cloud-fix.md")" \
+      "1|- Fixed formatter literal preservation and lexer-owned indentation handling (#1245, #1246, #1581)."
+
 # The unit cases above cover the operators we know about; this covers the ones
 # we don't. A character-level formatter regenerates this bug class easily, so
 # the standing assertion is behavioural, not case-by-case: every .eigs in the

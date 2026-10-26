@@ -26,24 +26,32 @@ def check(path):
             f = subprocess.run([eigs, "--fmt", path], stdout=out,
                                stderr=subprocess.DEVNULL, timeout=25)
         if f.returncode: return os.path.basename(path) + ":formatter-refused"
+        with open(path, "rb") as original, open(formatted, "rb") as result:
+            if original.read() == result.read():
+                return (None, False)
         a, b = run(path, formatted), run(formatted, formatted)
         if a[0] == 124 or b[0] == 124: return os.path.basename(path) + ":timeout"
-        if a == b: return None
+        if a == b: return (None, True)
         env = os.environ.copy(); env["EIGS_TRACE"] = tape
         a = run(path, formatted, env)
         env = os.environ.copy(); env["EIGS_REPLAY"] = tape
         b = run(formatted, formatted, env)
         if a[0] == 124 or b[0] == 124: return os.path.basename(path) + ":timeout"
-        return None if a == b else os.path.basename(path) + ":behaviour"
+        return (None, True) if a == b else (os.path.basename(path) + ":behaviour", True)
     except subprocess.TimeoutExpired:
         return os.path.basename(path) + ":timeout"
     finally:
         for name in (formatted, tape):
             try: os.unlink(name)
-            except FileNotFoundError: pass
+            except FileNotFoundError:
+                pass  # A failed formatter may not have created every artifact.
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-    failures = [x for x in pool.map(check, files) if x]
-print("Formatter deterministic semantics: examined=%d failures=%d%s" %
-      (len(files), len(failures), " (" + " ".join(failures) + ")" if failures else ""))
+    results = list(pool.map(check, files))
+failures = [x if isinstance(x, str) else x[0] for x in results
+            if (x if isinstance(x, str) else x[0])]
+compared = sum(not isinstance(x, str) and x[1] for x in results)
+print("Formatter deterministic semantics: examined=%d compared=%d failures=%d%s" %
+      (len(files), compared, len(failures),
+       " (" + " ".join(failures) + ")" if failures else ""))
 sys.exit(bool(failures))

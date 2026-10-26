@@ -70,6 +70,19 @@ static void line_depth_set(TokenList *tl, int line, int depth) {
     tl->line_depths[line - 1] = depth;
 }
 
+/* Standalone comments do not participate in indentation parsing, but the
+ * formatter still needs a stable depth for them.  -2 distinguishes them from
+ * blank/literal/continuation rows (-1); once tokenization has seen all lines,
+ * each comment inherits the next statement's depth (or zero at EOF), matching
+ * Black and Ruff. */
+static void resolve_comment_depths(TokenList *tl) {
+    int next_depth = 0;
+    for (int i = tl->line_depth_count - 1; i >= 0; i--) {
+        if (tl->line_depths[i] >= 0) next_depth = tl->line_depths[i];
+        else if (tl->line_depths[i] == -2) tl->line_depths[i] = next_depth;
+    }
+}
+
 /* Nested f-string boundary scanning (#1253). An interpolation's extent is
  * found before its text is re-tokenized, so the scanner must know every
  * lexical state that can hide a brace: a string literal, a comment, and a
@@ -484,6 +497,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             p += indent_bytes;
             col += indent_bytes;
             if (*p == '#') {
+                line_depth_set(&tl, line, -2); /* resolved after the full scan */
                 while (*p && *p != '\n') { p++; col++; }
                 if (*p == '\n') { p++; line++; col = 0; }
                 continue;
@@ -879,6 +893,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
     tok_add(&tl, TOK_EOF, 0, NULL, line, col);
 
     g_tokenize_depth--;
+    if (layout) resolve_comment_depths(&tl);
     return tl;
 }
 

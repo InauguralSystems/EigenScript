@@ -47,6 +47,11 @@
 #
 # Usage: test_doc_examples.py [--list] file.md [file2.md ...]
 #        test_doc_examples.py --selftest
+#        test_doc_examples.py --extract DIRECTORY file.md [file2.md ...]
+#
+# --extract is the documented interface for consumers that need the exact
+# executable fence population without duplicating this file's fence grammar.
+# It writes one .eigs file per non-nocheck fence and prints each path.
 
 import re
 import subprocess
@@ -564,46 +569,6 @@ def run_program(code, timeout=20):
         os.unlink(tmp)
 
 
-def format_contract(code):
-    """Every executable doc fence must format, parse, and reach a fixed point."""
-    with tempfile.NamedTemporaryFile("w", suffix=".eigs", delete=False) as tf:
-        tf.write(code)
-        original = tf.name
-    once = original + ".fmt"
-    twice = original + ".fmt2"
-    try:
-        with open(once, "w") as out:
-            first = subprocess.run([os.path.abspath(EIGS), "--fmt", original],
-                                   stdout=out, stderr=subprocess.PIPE, text=True,
-                                   timeout=20, stdin=subprocess.DEVNULL)
-        if first.returncode:
-            return "formatter refused: " + first.stderr.strip()
-        parsed = subprocess.run([os.path.abspath(EIGS), "--lint", "--lint-level", "error", once],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                text=True, timeout=20, stdin=subprocess.DEVNULL)
-        # Lint's nonzero status also covers semantic E003 rows deliberately
-        # present in examples. For this contract only lexer/parser rejection
-        # matters; undefined names are still parseable programs.
-        parse_diagnostics = (parsed.stderr + "\n").lower()
-        if ("parse error" in parse_diagnostics or
-                "syntax error" in parse_diagnostics or
-                "lexer error" in parse_diagnostics):
-            return "formatted fence does not parse: " + parsed.stderr.strip()
-        with open(twice, "w") as out:
-            second = subprocess.run([os.path.abspath(EIGS), "--fmt", once],
-                                    stdout=out, stderr=subprocess.PIPE, text=True,
-                                    timeout=20, stdin=subprocess.DEVNULL)
-        if second.returncode or open(once, "rb").read() != open(twice, "rb").read():
-            return "formatted fence is not a fixed point"
-        return None
-    except subprocess.TimeoutExpired:
-        return "formatting timed out after 20s"
-    finally:
-        for name in (original, once, twice):
-            try: os.unlink(name)
-            except FileNotFoundError: pass
-
-
 def clean_run(rc, stderr, asan_build):
     """A fragment must run CLEAN — and clean means stderr too.
 
@@ -682,6 +647,36 @@ def count_mode(paths):
     return rc
 
 
+def extract_mode(directory, paths):
+    """Write executable doc-fence programs to DIRECTORY; print their paths."""
+    if not paths:
+        sys.stderr.write("extract: no files given\n")
+        return 2
+    os.makedirs(directory, exist_ok=True)
+    serial = 0
+    for path in paths:
+        if not os.path.isfile(path):
+            sys.stderr.write("extract: not a file: %s\n" % path)
+            return 2
+        for lineno, info, arg, code in blocks(path):
+            if info != "eigenscript":
+                continue
+            kind, payload, err = parse_tag(arg)
+            if err:
+                sys.stderr.write("extract: %s:%d: %s\n" % (path, lineno, err))
+                return 2
+            if kind == "nocheck":
+                continue
+            if kind == "fragment":
+                code = "".join("%s is %s\n" % pair for pair in payload) + code
+            serial += 1
+            name = os.path.join(directory, "%04d.eigs" % serial)
+            with open(name, "w") as out:
+                out.write(code)
+            print(name)
+    return 0
+
+
 def main():
     global PASS, FAIL, SKIP
     args = [a for a in sys.argv[1:] if a != "--list"]
@@ -748,11 +743,6 @@ def main():
                             # reader can grep E003 for the rule that fired.
                             print("    lint: %s" % l)
                         continue
-                    format_error = format_contract(program)
-                    if format_error:
-                        FAIL += 1
-                        print("  FAIL: %s:%d (%s)" % (path, lineno, format_error))
-                        continue
                     rc, out, err_txt = run_program(program)
                     if clean_run(rc, err_txt, asan_build):
                         PASS += 1
@@ -779,11 +769,6 @@ def main():
                 n_paired += 1
                 if listing:
                     print("would run: %s:%d" % (path, code_line))
-                    continue
-                format_error = format_contract(code)
-                if format_error:
-                    FAIL += 1
-                    print("  FAIL: %s:%d (%s)" % (path, code_line, format_error))
                     continue
                 rc, out, err_txt = run_program(code)
                 got = norm(out)
@@ -1181,4 +1166,9 @@ if __name__ == "__main__":
         sys.exit(selftest())
     if "--count" in sys.argv:
         sys.exit(count_mode([a for a in sys.argv[1:] if a != "--count"]))
+    if "--extract" in sys.argv:
+        i = sys.argv.index("--extract")
+        if i + 1 >= len(sys.argv):
+            sys.exit(2)
+        sys.exit(extract_mode(sys.argv[i + 1], sys.argv[i + 2:]))
     sys.exit(main())

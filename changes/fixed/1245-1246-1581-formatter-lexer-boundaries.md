@@ -1,1 +1,0 @@
-- Fixed #1245, #1246, and #1581 by making formatting use lexer-owned literal boundaries and indentation structure.
