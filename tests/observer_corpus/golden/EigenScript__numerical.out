@@ -1,7 +1,7 @@
 --- Newton's Method: Square Roots ---
 sqrt(2) = 1.414213562373095
-sqrt(9) = 3
-sqrt(144) = 12
+sqrt(9) = 3.0
+sqrt(144) = 12.0
 sqrt(2.5) = 1.5811388300841895
 
 --- Bisection Method: x^3 - x - 2 = 0 ---

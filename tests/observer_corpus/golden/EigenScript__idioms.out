@@ -8,7 +8,7 @@ Sum of positives: 26 (5 values)
   10 / 3 = 3.3333333333333335
 Warning: division by zero, returning 0
   15 / 0 = 0
-  20 / 4 = 5
+  20 / 4 = 5.0
 Warning: division by zero, returning 0
   0 / 0 = 0
   100 / 7 = 14.285714285714286
@@ -34,7 +34,7 @@ GOOD (prefixed 'cs_total' is safe):
 
 --- calling conventions ---
 double of 7: 14
-lerp of [0, 100, 0.75]: 75
+lerp of [0, 100, 0.75]: 75.0
 timestamp of null: 1712419200
 
 --- early exit pattern ---

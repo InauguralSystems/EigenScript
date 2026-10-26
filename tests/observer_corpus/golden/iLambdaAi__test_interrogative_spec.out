@@ -6,11 +6,11 @@ Verifies each interrogative matches LLVM IR semantics
 EXPECT: 42
 
 --- WHAT: list length ---
-5
+5.0
 EXPECT: 5
 
 --- WHAT: string length ---
-5
+5.0
 EXPECT: 5
 
 --- WHAT: computed value ---
@@ -26,11 +26,11 @@ counter
 EXPECT: counter
 
 --- WHEN: temporal step ---
-1
+1.0
 EXPECT: 1
 
 --- WHEN: after multiple assignments ---
-3
+3.0
 EXPECT: 3
 
 --- WHERE: entropy (spatial) ---
@@ -39,15 +39,15 @@ WHERE returns entropy (number >= 0):
 
 --- WHY: gradient (dH/dt) ---
 WHY returns gradient (number):
-0
+0.0
 
 --- HOW: stability (0-1) ---
 HOW returns stability (0-1 range):
-1
+1.0
 
 --- ARITHMETIC COMPOSITION ---
 Arithmetic on interrogatives works:
-102
+102.0
 
 --- ASSIGNMENT THEN INTERROGATIVE ---
 256

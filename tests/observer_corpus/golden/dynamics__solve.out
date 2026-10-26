@@ -7,7 +7,7 @@ Jacobi        Ax=b -> <buffer:3>
 Gauss-Seidel  Ax=b -> <buffer:3>
               21 iters  (fresh values -> fewer than Jacobi)
 
-Power iteration dominant eigenvalue -> 2  (14 iters, expect ~2)
+Power iteration dominant eigenvalue -> 2.0  (14 iters, expect ~2)
 
 PageRank stationary distribution -> <buffer:3>  (48 iters)
 
