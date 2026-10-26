@@ -2,7 +2,46 @@
 # Calibration for the contract that every runner-parsing gate expands fragments.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT" || exit 2
-if [ "${1:-}" != "--selftest" ]; then echo "usage: $0 --selftest" >&2; exit 2; fi
+if [ "${1:-}" = "--no-new-inline" ]; then
+    [ "$#" -eq 2 ] || { echo "usage: $0 --no-new-inline <base>" >&2; exit 2; }
+    base=$2
+    work=$(mktemp -d "${TMPDIR:-/tmp}/eigs_inline_sections.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
+    if ! git show "$base:tests/run_all_tests.sh" > "$work/base-runner.sh"; then
+        echo "section_fragments_check: cannot read tests/run_all_tests.sh at base $base" >&2
+        exit 2
+    fi
+    # Reuse section_plan.sh's SP_HEADER_TEXT_RE: it is the one predicate for
+    # printed section headers in source validation, shard bearing and witnesses.
+    header_re=$(bash tools/section_plan.sh --header-regex) || exit 2
+    labels() {
+        awk -v header_re="$header_re" '
+            /^[[:space:]]*echo "/ {
+                title = $0
+                sub(/^[[:space:]]*echo "/, "", title)
+                sub(/"$/, "", title)
+                if (title ~ header_re) {
+                    label = title
+                    sub(/^\[/, "", label); sub(/\].*$/, "", label)
+                    print label
+                }
+            }
+        ' "$1" | LC_ALL=C sort -u
+    }
+    labels "$work/base-runner.sh" > "$work/base-labels"
+    labels tests/run_all_tests.sh > "$work/tree-labels"
+    new=$(comm -13 "$work/base-labels" "$work/tree-labels")
+    [ -z "$new" ] && { echo "PASS: no new inline suite section labels relative to $base"; exit 0; }
+    while IFS= read -r label; do
+        slug=$(printf '%s' "$label-new-section" | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9][^a-z0-9]*/-/g; s/^-//; s/-$//')
+        echo "FAIL: new inline section label [$label]; use tests/sections/$slug.sh instead"
+    done <<< "$new"
+    exit 1
+fi
+if [ "${1:-}" != "--selftest" ]; then
+    echo "usage: $0 --selftest | --no-new-inline <base>" >&2; exit 2
+fi
 fragment=tests/sections/zz-1487-selftest.sh
 plant=tests/test_zz_1487_plant.sh
 work=$(mktemp -d "${TMPDIR:-/tmp}/eigs_fragments.XXXXXX") || exit 2

@@ -1712,6 +1712,7 @@ fi
 echo "[107] Meta-Interpreter Parity (#306, #1111, #1057)"
 check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0, report/report_value reservation #1111, module namespaces + import resolution #1057)" test_meta_parity.eigs "All tests passed"
 check_eigs_suite "eigen_run f-strings ignore a host rebinding of str (#1322)" test_meta_fstr_host_str.eigs "All tests passed"
+check_eigs_suite "eigen_run string escapes match the C VM (#1878)" test_meta_string_escapes.eigs "All tests passed"
 
 # [108] sandbox_run allocation budget (#292). The size-controlled allocators
 # (zeros/fill/buffer/range) charge a per-run byte budget so untrusted generated
@@ -3288,13 +3289,6 @@ echo ""
 echo "[51a] Unobserved Verdict Neutrality (#1049)"
 check_eigs_suite "unobserved: elided samples still enter the value window; entropy channel still elided (#1049)" \
     test_unobserved_neutral.eigs "All tests passed"
-echo ""
-
-# [51b] #1883: module-slot promotion must not split a name-bound binder's
-# writes from its reads inside an unobserved block.
-echo "[51b] Unobserved Binder Storage (#1883)"
-check_eigs_suite "unobserved binders share read/write storage (#1883)" \
-    test_unobserved_binders.eigs "All tests passed"
 echo ""
 
 # [52] Stream I/O
