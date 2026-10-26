@@ -731,7 +731,10 @@ Builtins that take **no** argument (`gfx_poll`, `gfx_present`, `gfx_ticks`,
 argument. Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 `tools/strict_shape_contract.py` discovers input-list surfaces and helper
 callers independently of the guards, then checks reviewed fixed-shape and
-exempt contracts, entry guards and typed control enrollment. The ordinary
+exempt contracts, entry guards and typed control enrollment. Its pins hash
+each exempt body with comments removed and whitespace normalized, so a
+comment-only edit needs no review; docs/CI.md describes the re-pin step after
+a reviewed code change. The ordinary
 shape controls used by `tools/strict_differential.sh` report unavailable
 capabilities and any pending resource controls separately from executed
 successes. Its existing graphics container and pixel checks remain separate.

@@ -13,7 +13,7 @@ if _module_test_dir == "":
     _module_test_dir is (getcwd of null) + "/../tests"
 
 fixture is (_module_test_dir + "/tmp_mod_373.eigs")
-write_text of [fixture, "define mod_touch() as:\n    y373 is 777\n    pos373 is 777\ndefine mod_read() as:\n    return cfg373\ndefine mod_call() as:\n    return helper373 of null\nmod_count is 0\ndefine mod_bump() as:\n    mod_count is mod_count + 1\n    return mod_count\ndefine mod_poke(xs) as:\n    xs[0] is 99\n"]
+write_text of [fixture, "define mod_touch() as:\n    y373 is 777\n    pos373 is 777\ndefine mod_read() as:\n    return cfg373\ndefine mod_call() as:\n    return helper373 of null\nmod_count is 0\ndefine mod_bump() as:\n    mod_count is mod_count + 1\n    return mod_count\ndefine mod_poke(xs) as:\n    xs[0] is 99\ndefine mod_for_collision() as:\n    victim373 is 777\n    for victim373 in [7, 8]:\n        ignored373 is victim373\n    return victim373\ndefine mod_define_collision() as:\n    nested373 is 777\n    if false:\n        define nested373() as:\n            return 1\n    return nested373\ndefine mod_import_collision() as:\n    imported373 is 777\n    if false:\n        import imported373\n    return imported373\n"]
 
 # Case 1: caller globals declared BEFORE the load — the order that used to
 # clobber (and could corrupt the loaded engine's own state, EigenRegex#5).
@@ -43,6 +43,19 @@ assert of [(mod_bump of null) == 2, "M6 module self-state accumulates"]
 shared is [1, 2]
 mod_poke of shared
 assert of [shared[0] == 99, "M7 module fn mutates caller list contents"]
+
+# By-name binders only change storage for writes which would otherwise use a
+# function slot.  In particular, they cannot punch through a load_file module
+# boundary and redirect those writes into the loader's globals.
+victim373 is 5
+nested373 is 5
+imported373 is 5
+assert of [(mod_for_collision of null) == 777, "M10 for collision remains function-local"]
+assert of [victim373 == 5, "M11 for collision cannot clobber loader"]
+assert of [(mod_define_collision of null) == 777, "M12 define collision remains function-local"]
+assert of [nested373 == 5, "M13 define collision cannot clobber loader"]
+assert of [(mod_import_collision of null) == 777, "M14 import collision remains function-local"]
+assert of [imported373 == 5, "M15 import collision cannot clobber loader"]
 
 # Same-file outward mutation unchanged (the documented scope model)
 x373 is 5

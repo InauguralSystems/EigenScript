@@ -87,6 +87,11 @@ getenv
 # --- C runtime glue that survives freestanding flags ---
 __errno_location
 
+# --- mini-libc: x86-64 floating-point environment (#1969) ---
+feclearexcept
+fegetenv
+fesetenv
+
 # --- mini-libc: mem/str (write once, portable) ---
 memcpy
 memmove

@@ -229,6 +229,29 @@ static int p_report_error(Token *t, int operand) {
     return 1;
 }
 
+/* #1908: dunder names are runtime-owned. Keep this spelling test in one
+ * place; every source-token binder below calls it before constructing its
+ * AST node. Reads and dot keys deliberately do not pass through here. */
+static int is_reserved_dunder(const char *name) {
+    size_t n = name ? strlen(name) : 0;
+    return n >= 5 && name[0] == '_' && name[1] == '_' &&
+           name[n - 2] == '_' && name[n - 1] == '_';
+}
+
+static int p_dunder_error(Token *t) {
+    if (!t || !is_reserved_dunder(t->str_val)) return 0;
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+        "'%s' is reserved for the runtime (names of the form __name__ are "
+        "hidden from state_at and --step); choose another name", t->str_val);
+    fprintf(stderr, "Parse error line %d:%d: %s [E006]\n",
+            t->line, t->col + 1, msg);
+    p_record_tok_error(t, "E006", msg);
+    p_print_caret(t->line, t->col);
+    g_parse_errors++;
+    return 1;
+}
+
 static void p_expect(Parser *p, TokType type) {
     if (p_cur(p)->type != type) {
         if (p_report_error(p_cur(p), 0)) {
@@ -877,6 +900,7 @@ static ASTNode* parse_primary(Parser *p) {
             int sig_err_base = g_parse_errors;
             while (tok_is_ident_like(p_cur(p)->type) || tok_is_report(p_cur(p)->type)) {
                 p_report_error(p_cur(p), 0);
+                p_dunder_error(p_cur(p));
                 if (param_count >= MAX_PARAMS) {
                     /* #354: one loud diagnostic, then drain (see match). */
                     if (!lambda_cap_reported) {
@@ -951,6 +975,7 @@ static ASTNode* parse_primary(Parser *p) {
         if (p_cur(p)->type == TOK_FOR) {
             p_advance(p);
             Token *var_tok = p_cur(p);
+            p_dunder_error(var_tok);
             p_expect_ident_like(p);
             p_expect(p, TOK_IN);
             ASTNode *iter = parse_sibling_expression(p, &max_depth);
@@ -1388,6 +1413,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
     if (t->type == TOK_DEFINE) {
         p_advance(p);
         Token *name_tok = p_cur(p);
+        p_dunder_error(name_tok);
         p_expect(p, TOK_IDENT);
 
         /* Parse optional named parameters: define add(a, b) as:
@@ -1404,6 +1430,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
             int sig_err_base = g_parse_errors;
             while (tok_is_ident_like(p_cur(p)->type) || tok_is_report(p_cur(p)->type)) {
                 p_report_error(p_cur(p), 0);
+                p_dunder_error(p_cur(p));
                 if (param_count >= MAX_PARAMS) {
                     /* #354: one loud diagnostic, then drain (see match). */
                     if (!param_cap_reported) {
@@ -1485,6 +1512,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
         Token *err_tok = p_cur(p);
         char *err_name = "err";
         if (tok_is_ident_like(err_tok->type)) {
+            p_dunder_error(err_tok);
             err_name = err_tok->str_val;
             p_advance(p);
         }
@@ -1659,6 +1687,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
     if (t->type == TOK_FOR) {
         p_advance(p);
         Token *var_tok = p_cur(p);
+        p_dunder_error(var_tok);
         p_expect_ident_like(p);
         p_expect(p, TOK_IN);
         ASTNode *iter = parse_expression(p);
@@ -1701,6 +1730,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
     if (t->type == TOK_IMPORT) {
         p_advance(p);
         Token *name_tok = p_cur(p);
+        p_dunder_error(name_tok);
         p_expect(p, TOK_IDENT);
         ASTNode *n = make_node(AST_IMPORT, t->line);
         n->data.import.module_name = xstrdup(name_tok->str_val);
@@ -1779,6 +1809,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
                            p_cur(p)->type != TOK_EOF) p_advance(p);
                     return make_node(AST_NULL, line);
                 }
+                p_dunder_error(p_cur(p));
                 names_tmp[n++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
                 if (p_cur(p)->type == TOK_RBRACKET) break;
@@ -1885,6 +1916,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
     if ((tok_is_assign_name(t->type) && p_peek(p, 1)->type == TOK_IS) ||
         (tok_is_ident_like(t->type) && is_compound_assign(p_peek(p, 1)->type))) {
         Token *name_tok = p_advance(p);
+        p_dunder_error(name_tok);
         int compound = is_compound_assign(p_cur(p)->type);
         char cop[4];
         if (compound) compound_to_op(p_cur(p)->type, cop);
@@ -1916,6 +1948,7 @@ static ASTNode* parse_statement_inner(Parser *p) {
     if (t->type == TOK_LOCAL) {
         Token *local_tok = p_advance(p);
         Token *name_tok = p_cur(p);
+        p_dunder_error(name_tok);
         p_expect_ident_like(p);
         p_expect(p, TOK_IS);
         ASTNode *expr = parse_expression(p);

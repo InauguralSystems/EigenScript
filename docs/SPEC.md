@@ -253,6 +253,8 @@ There is one number kind — the IEEE-754 f64 — and by design there is no
 bigint or decimal type. This is a chosen position, not an oversight; the
 consequences are contracts you can rely on:
 
+The IEEE 754 default floating-point environment is part of number semantics.
+
 - **Integer exactness ends at 2^53.** Whole numbers up to `9007199254740992`
   are exact; past that the gaps between representable values exceed 1, so
   `+ 1` can be invisible. Keep integer identifiers, counters, and money-in-cents

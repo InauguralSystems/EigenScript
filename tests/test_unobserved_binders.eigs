@@ -167,14 +167,19 @@ unobserved:
     math is 0
 assert_eq of [import_binder_seen, "dict", "1883 an imported module name that the block reassigns reads the module"]
 
-# `loop while` publishes __loop_exit__ (compiler) and __loop_iterations__ (VM):
+# `loop while` publishes __loop_exit__ (compiler); a source binding is E006.
+loop_exit_refused is false
+try:
+    eval of "__loop_exit__ is \"unset\""
+catch loop_exit_err:
+    loop_exit_refused is true
 unobserved:
-    __loop_exit__ is "unset"
     loop_exit_counter is 0
     loop while loop_exit_counter < 3:
         loop_exit_counter is loop_exit_counter + 1
     loop_exit_seen is __loop_exit__
-assert_eq of [loop_exit_seen, "normal", "1883 __loop_exit__ that the block assigns reads the loop's exit"]
+assert_true of [loop_exit_refused, "1908 __loop_exit__ binding is refused"]
+assert_eq of [loop_exit_seen, "normal", "1883 unobserved still preserves the runtime loop-exit binding"]
 
 # A binder OUTSIDE the block writes the same module binding.  Here a `loop
 # while` before the block publishes __loop_iterations__.  The VM's count carries
@@ -187,9 +192,14 @@ loop while loop_iterations_counter < 3:
 loop_iterations_want is eval of "__loop_iterations__"
 unobserved:
     loop_iterations_seen is __loop_iterations__
-    __loop_iterations__ is -1
+loop_iterations_refused is false
+try:
+    eval of "__loop_iterations__ is -1"
+catch loop_iterations_err:
+    loop_iterations_refused is true
 assert_true of [loop_iterations_want >= 3, "1883 the loop published its count"]
 assert_eq of [loop_iterations_seen, loop_iterations_want, "1883 __loop_iterations__ from a loop before the block reads the loop's count"]
+assert_true of [loop_iterations_refused, "1908 __loop_iterations__ binding is refused"]
 
 # A module imported before the block:
 import json
@@ -248,6 +258,35 @@ unobserved:  # lint: allow W020 -- storage transparency is the subject
     boundary_target_1902 is 11
     boundary_seen_1902 is dynamic_reader_1902 of []
 assert_eq of [boundary_seen_1902, 11, "1902 user-call reachability stays on the name path"]
+
+# Child-position plants for the shared scope walk. Each call dynamically reads
+# a name assigned by its block, so skipping that child would wrongly promote
+# the name and make the row fail.
+unobserved:  # lint: allow W020 -- visitor coverage is the subject
+    if_condition_target_1902 is true
+    if eval of "if_condition_target_1902":
+        if_condition_seen_1902 is if_condition_target_1902
+assert_eq of [if_condition_seen_1902, true, "1902 calls in if conditions disable promotion"]
+
+unobserved:  # lint: allow W020 -- visitor coverage is the subject
+    loop_condition_target_1902 is 0
+    loop while eval of "loop_condition_target_1902 < 1":
+        loop_condition_target_1902 is loop_condition_target_1902 + 1
+    loop_condition_seen_1902 is loop_condition_target_1902
+assert_eq of [loop_condition_seen_1902, 1, "1902 calls in loop conditions disable promotion"]
+
+unobserved:  # lint: allow W020 -- visitor coverage is the subject
+    match_pattern_target_1902 is 7
+    match 7:
+        case eval of "match_pattern_target_1902":
+            match_pattern_seen_1902 is match_pattern_target_1902
+assert_eq of [match_pattern_seen_1902, 7, "1902 calls in match patterns disable promotion"]
+
+unobserved:  # lint: allow W020 -- visitor coverage is the subject
+    interrogate_operand_target_1902 is 8
+    interrogate_operand_ignored_1902 is what is (eval of "interrogate_operand_target_1902")
+    interrogate_operand_seen_1902 is interrogate_operand_target_1902
+assert_eq of [interrogate_operand_seen_1902, 8, "1902 calls in interrogated operands disable promotion"]
 
 # No call means promotion remains available. The first name has no outside
 # reference and is therefore still a slot candidate; its value is copied to
