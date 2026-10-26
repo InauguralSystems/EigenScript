@@ -1,0 +1,1 @@
+- Size N6 float-renderer scratch text for the complete unsigned significand and signed exponent format, keeping the two-file amalgamation warning-free at every tested optimization level.

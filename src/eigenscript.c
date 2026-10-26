@@ -3556,7 +3556,8 @@ void eigs_num_text(char *buf, size_t nbuf, double n) {
                 candidate_scale--;
             }
             if (candidate == 0) continue;
-            char decimal[32];
+            /* uint64 digits + e + signed int32 exponent + NUL: at most 33. */
+            char decimal[40];
             snprintf(decimal, sizeof decimal, "%llue%+d",
                      (unsigned long long)candidate, candidate_scale);
             if (strtod(decimal, NULL) == magnitude) {

@@ -45,8 +45,8 @@ else
 fi
 
 # Embedders also use debug and lightly optimized builds (#1775). A successful
-# compiler exit alone does not reject warnings at either optimization level.
-for opt in 0 1; do
+# compiler exit alone does not reject warnings at all three optimization levels.
+for opt in 0 1 2; do
     if ( cd "$WORK" && LC_ALL=C "$CC" -Wall -Wextra $WERROR_FLAGS -O"$opt" \
         -c eigenscript_all.c -o "amalgamation-O$opt.o" ) >"$WORK/O$opt.err" 2>&1; then
         if grep -q 'warning:' "$WORK/O$opt.err"; then
