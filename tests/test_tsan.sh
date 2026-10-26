@@ -312,7 +312,8 @@ if [ -f "$RP_EIGS" ]; then
         elif [ "$LAST_RC" -eq 124 ]; then
             echo "  FAIL: replay-workers HUNG"
             FAIL=$((FAIL + 1))
-        elif [ "$LAST_RC" -eq 0 ] && grep -qx 'a=1500 b=1500' \
+        # N6: random draws and their sums are floats, including integral sums.
+        elif [ "$LAST_RC" -eq 0 ] && grep -Fxq 'a=1500.0 b=1500.0' \
                 "$TESTS_DIR/../build/tsan_replay_mt.out"; then
             echo "  PASS: replay-workers causal values, TSan-clean"; PASS=$((PASS + 1))
         else
