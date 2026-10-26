@@ -365,6 +365,9 @@ print of (c of null)
 2
 ```
 
+Builtin `sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
+Both are stable on every platform: equal elements or keys keep their input order.
+
 ## Lists: map / filter / comprehension
 
 Python:

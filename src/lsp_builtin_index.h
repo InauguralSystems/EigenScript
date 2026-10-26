@@ -291,7 +291,7 @@ static const char *builtin_docs[][2] = {
     {"sign_extend", "sign_extend of [val, bits] — sign-extend val from given bit width."},
     {"sin", "sin — builtin; see docs/BUILTINS.md"},
     {"softmax", "softmax — builtin; see docs/BUILTINS.md"},
-    {"sort", "sort of list — in-place qsort of an all-number or all-string list."},
+    {"sort", "sort of list — stable in-place sort of an all-number or all-string list."},
     {"sort_by", "sort_by of [list, key_fn] — sort list by numeric keys from key_fn."},
     {"spawn", "spawn — builtin; see docs/BUILTINS.md"},
     {"split", "split — builtin; see docs/BUILTINS.md"},

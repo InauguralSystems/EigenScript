@@ -24,6 +24,9 @@ print of (fround of 0.1)
 > are where that fails. When unsure, generate, then run the validation ladder at
 > the end.
 
+Builtin `sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
+Both are stable on every platform: equal elements or keys keep their input order.
+
 ## Calls use `of`, never `f(x)`
 
 Hosted release includes lazy graphics. The server profile adds HTTP, raw TCP,

@@ -569,6 +569,9 @@ next operation after a raise.
 int64 before sending them as text (N14, B6). The executed loopback example
 is `tests/phase2/builtins/builtins/http_post.eigs`.
 
+Builtin `sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
+Both are stable on every platform: equal elements or keys keep their input order.
+
 ## Standard Library
 
 Pure EigenScript libraries under `lib/`:

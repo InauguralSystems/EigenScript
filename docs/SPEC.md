@@ -1283,6 +1283,9 @@ print of (apply of [add5, 10])
 15
 ```
 
+`sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
+Both are stable on every platform: equal elements or keys keep their input order.
+
 `sort_by` is a builtin; `map` and `filter` come from the standard
 library (`lib/list.eigs`):
 

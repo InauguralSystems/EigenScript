@@ -1,0 +1,46 @@
+# #1758 sort ruling: tie order is observable in numeric kinds and signed zero.
+load_file of "lib/test.eigs"
+xs is []
+want is []
+for i in range of 257:
+    local group is (i * 7) % 5
+    local value is 140737488355328 + group
+    if i % 3 == 0:
+        value is value + 0.0
+    append of [xs, value]
+for group in range of 5:
+    for value in xs:
+        if value == 140737488355328 + group:
+            append of [want, value]
+result is sort of xs
+assert_eq of [str of result, str of want, "sort keeps mixed int/float ties in input order"]
+assert_eq of [str of xs, str of want, "sort mutates its input"]
+
+zs is [0.0, -0.0, 0, -0.0, 0.0, 0]
+assert_eq of [str of (sort of zs), "[0.0, -0.0, 0, -0.0, 0.0, 0]", "sort preserves signed-zero ties"]
+assert_eq of [str of (sort of ["b", "a", "a", "b"]), "[\"a\", \"a\", \"b\", \"b\"]", "sort strings"]
+assert_eq of [str of (sort of ([])), "[]", "sort empty"]
+assert_eq of [str of (sort of ([3])), "[3]", "sort singleton"]
+
+records is []
+expected is []
+for i in range of 257:
+    local key is (i * 7) % 5
+    if i % 3 == 0:
+        key is key + 0.0
+    append of [records, [key, i]]
+for key in range of 5:
+    for record in records:
+        if record[0] == key:
+            append of [expected, record]
+calls is 0
+define key_of(record) as:
+    calls is calls + 1
+    return record[0]
+unchanged is str of records
+sorted is sort_by of [records, key_of]
+assert_eq of [str of sorted, str of expected, "sort_by keeps many mixed-key ties in input order"]
+assert_eq of [str of records, unchanged, "sort_by leaves its input intact"]
+assert_eq of [calls, 257, "sort_by evaluates each key exactly once"]
+assert_eq of [str of (sort_by of [records, (v) => 1]), unchanged, "sort_by all equal keys"]
+test_summary of null

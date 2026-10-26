@@ -1,0 +1,1 @@
+- `sort` now preserves the input order of equal elements on every platform, including mixed int/float ties. Both `sort` and `sort_by` guarantee stable ordering (the #1758 R1.7 fix-forward sort ruling).
