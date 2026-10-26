@@ -1,0 +1,1 @@
+- `dict_set` now raises `type_mismatch` for a non-string key instead of silently doing nothing (#1642).

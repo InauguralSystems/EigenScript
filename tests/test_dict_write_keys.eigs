@@ -1,0 +1,40 @@
+# #1642: a builtin dictionary write has the same key contract as d[key] is v.
+load_file of "lib/test.eigs"
+
+define index_error(key) as:
+    d is {}
+    caught is null
+    try:
+        d[key] is "value"
+    catch e:
+        caught is e
+    return caught
+
+define builtin_error(key) as:
+    d is {}
+    caught is null
+    try:
+        dict_set of [d, key, "value"]
+    catch e:
+        caught is e
+    return [caught, len of (keys of d)]
+
+define check_refusal(key, label) as:
+    expected is index_error of key
+    actual is builtin_error of key
+    assert_true of [actual[0] != null, f"dict_set {label}: raises"]
+    if actual[0] != null:
+        assert_eq of [actual[0]["kind"], expected["kind"], f"dict_set {label}: index-assignment category"]
+        assert_eq of [actual[0]["message"], expected["message"], f"dict_set {label}: index-assignment message"]
+    assert_eq of [actual[1], 0, f"dict_set {label}: refusal does not store"]
+
+check_refusal of [1.5, "number key"]
+check_refusal of [null, "null key"]
+check_refusal of [[1, 2], "list key"]
+
+d is {}
+result is dict_set of [d, "accepted", 42]
+assert_eq of [result["accepted"], 42, "dict_set string key stores"]
+assert_eq of [d["accepted"], 42, "dict_set string key mutates its dictionary"]
+
+test_summary of null
