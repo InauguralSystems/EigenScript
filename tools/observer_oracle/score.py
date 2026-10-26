@@ -72,6 +72,7 @@ does not show its arm's path, a VACUOUS run, stale certificates or labels, a
 refused floor, an internal exception).
 """
 import contextlib
+from decimal import Decimal, InvalidOperation
 import fcntl
 import hashlib
 import json
@@ -297,6 +298,21 @@ def run(binary, prog, env):
     return p.returncode, p.stdout.splitlines(), errors, p.stderr, hot.group(0) if hot else ""
 
 
+def printed_count(token):
+    """Parse a printed count by exact value, including N6's integral floats.
+
+    Decimal avoids both truncating a fractional count and rounding large ints
+    through binary64. Runtime values still use check_value's bitwise oracle.
+    """
+    try:
+        value = Decimal(token)
+        if value.is_finite() and value == value.to_integral_value():
+            return int(value)
+    except (InvalidOperation, ValueError, OverflowError):
+        pass
+    raise HarnessError(f"non-integral printed count {token!r}")
+
+
 def parse_run(row, cks, form, rc, lines, errors, xs, ys):
     rid = row["id"]
     if rc != 0 or errors or not lines or lines[-1] != f"ROW_DONE {rid}":
@@ -306,23 +322,23 @@ def parse_run(row, cks, form, rc, lines, errors, xs, ys):
     for ln in lines[:-1]:
         f = ln.split()
         if len(f) == 3 and f[0] in vals:
-            i = int(f[1])
+            i = printed_count(f[1])
             if i != last[f[0]] + 1:
                 raise HarnessError(f"{rid}: {f[0]} line {i} out of order after {last[f[0]]}")
             last[f[0]], vals[f[0]][i] = i, f[2]
             continue
         if len(f) == 4 and f[0] == "S" and f[1] in vals and f[3] in ("true", "false"):
-            signs[(f[1], int(f[2]))] = f[3] == "true"
+            signs[(f[1], printed_count(f[2]))] = f[3] == "true"
             continue
         if len(f) != 9 + (ys is not None) or f[0] != "CK":
             raise HarnessError(f"{rid}: unexpected output line {ln!r}")
-        at = int(f[1])
+        at = printed_count(f[1])
         if at in got:
             raise HarnessError(f"{rid}: duplicate checkpoint {at}")
         if form == "straight" and (last["V"] != at or (ys is not None and last["Y"] != at)):
             raise HarnessError(f"{rid}: checkpoint {at} read after value {last['V']}:"
                                " a read must follow the assignment of x_at")
-        if any(w != str(at + 1) for w in f[8:]):
+        if any(printed_count(w) != at + 1 for w in f[8:]):
             raise HarnessError(f"{rid}: checkpoint {at} read after {f[8:]} assignments,"
                                f" not {at + 1}: a read must fall between x_at and x_{at + 1}")
         if any(b not in ("true", "false") for b in f[2:8]):
