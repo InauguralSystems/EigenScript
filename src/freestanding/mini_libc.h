@@ -29,6 +29,7 @@
 
 #include <stddef.h>
 #include <stdarg.h>
+#include <fenv.h>
 
 /* ---- mem/str ---- */
 void  *eigs_memcpy(void *dst, const void *src, size_t n);
@@ -72,6 +73,11 @@ long   eigs_random(void);
 int   *eigs_errno_location(void);
 char  *eigs_getenv(const char *name);
 int    eigs_atexit(void (*fn)(void));
+
+/* ---- floating-point environment (x86-64, #1969) ---- */
+int eigs_fegetenv(fenv_t *envp);
+int eigs_fesetenv(const fenv_t *envp);
+int eigs_feclearexcept(int excepts);
 
 /* ---- formatter (exact big-decimal digit engine underneath) ---- */
 int eigs_vsnprintf(char *buf, size_t size, const char *fmt, va_list ap);

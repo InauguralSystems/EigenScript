@@ -15,6 +15,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <fenv.h>
 #include "../src/freestanding/mini_libc.h"
 
 static int g_fail = 0;
@@ -53,6 +54,110 @@ static uint64_t ulp_dist(double a, double b) {
 } while (0)
 
 /* ---------------- sections ---------------- */
+
+typedef struct {
+    unsigned short control;
+    unsigned short status;
+    unsigned int mxcsr;
+} MachineFenv;
+
+static MachineFenv machine_fenv(void) {
+    MachineFenv state;
+    __asm__ volatile ("fnstcw %0" : "=m" (state.control));
+    __asm__ volatile ("fnstsw %0" : "=am" (state.status));
+    __asm__ volatile ("stmxcsr %0" : "=m" (state.mxcsr));
+    return state;
+}
+
+static void set_mxcsr_bits(unsigned int bits) {
+    unsigned int mxcsr;
+    __asm__ volatile ("stmxcsr %0" : "=m" (mxcsr));
+    mxcsr |= bits;
+    __asm__ volatile ("ldmxcsr %0" : : "m" (mxcsr));
+}
+
+static void check_machine_fenv(const char *row, MachineFenv want,
+                               MachineFenv got) {
+    CHECK(want.control == got.control && want.status == got.status &&
+          want.mxcsr == got.mxcsr,
+          "%s: cw %04x/%04x sw %04x/%04x mxcsr %08x/%08x", row,
+          want.control, got.control, want.status, got.status,
+          want.mxcsr, got.mxcsr);
+}
+
+static void fenv_round_trip_row(const char *name, int rounding,
+                                unsigned int mxcsr_bits, int exceptions) {
+    fenv_t saved;
+    fesetenv(FE_DFL_ENV);
+    CHECK(fesetround(rounding) == 0, "%s: glibc fesetround", name);
+    set_mxcsr_bits(mxcsr_bits);
+    if (exceptions) CHECK(feraiseexcept(exceptions) == 0,
+                          "%s: glibc feraiseexcept", name);
+    MachineFenv want = machine_fenv();
+    CHECK(eigs_fegetenv(&saved) == 0, "%s: mini fegetenv", name);
+    check_machine_fenv(name, want, machine_fenv());
+    fesetenv(FE_DFL_ENV);
+    CHECK(eigs_fesetenv(&saved) == 0, "%s: mini fesetenv", name);
+    check_machine_fenv(name, want, machine_fenv());
+    printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", name,
+           want.control, want.status, want.mxcsr);
+}
+
+static void t_fenv(void) {
+    printf("[fenv — exact x87/MXCSR round trips]\n");
+    fenv_round_trip_row("nearest", FE_TONEAREST, 0, 0);
+    fenv_round_trip_row("downward", FE_DOWNWARD, 0, 0);
+    fenv_round_trip_row("upward", FE_UPWARD, 0, 0);
+    fenv_round_trip_row("toward-zero", FE_TOWARDZERO, 0, 0);
+    fenv_round_trip_row("FTZ", FE_TONEAREST, 1u << 15, 0);
+    fenv_round_trip_row("DAZ", FE_TONEAREST, 1u << 6, 0);
+    fenv_round_trip_row("sticky-flags", FE_TONEAREST, 0, FE_ALL_EXCEPT);
+
+    fesetenv(FE_DFL_ENV);
+    MachineFenv default_want = machine_fenv();
+    fesetround(FE_DOWNWARD);
+    set_mxcsr_bits((1u << 15) | (1u << 6));
+    feraiseexcept(FE_ALL_EXCEPT);
+    CHECK(eigs_fesetenv(FE_DFL_ENV) == 0, "FE_DFL_ENV return");
+    check_machine_fenv("FE_DFL_ENV", default_want, machine_fenv());
+    printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", "FE_DFL_ENV",
+           default_want.control, default_want.status, default_want.mxcsr);
+
+    fesetround(FE_UPWARD);
+    set_mxcsr_bits((1u << 15) | (1u << 6));
+    feraiseexcept(FE_ALL_EXCEPT);
+    MachineFenv before = machine_fenv();
+    CHECK(eigs_feclearexcept(FE_ALL_EXCEPT) == 0,
+          "feclearexcept return");
+    MachineFenv want = before;
+    want.status &= (unsigned short)~FE_ALL_EXCEPT;
+    want.mxcsr &= ~(unsigned int)FE_ALL_EXCEPT;
+    check_machine_fenv("clear-all", want, machine_fenv());
+    printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", "clear-all",
+           want.control, want.status, want.mxcsr);
+
+    /* A subset clear (Codex P2 on #1974): glibc raises FE_INVALID in MXCSR and
+     * FE_OVERFLOW/FE_INEXACT in the x87 status word, so clearing FE_INEXACT
+     * alone must clear only x87 PE and leave the other two flags set. */
+    const int subset_raise = FE_INVALID | FE_OVERFLOW | FE_INEXACT;
+    fesetenv(FE_DFL_ENV);
+    feraiseexcept(subset_raise);
+    MachineFenv subset_before = machine_fenv();
+    CHECK(feclearexcept(FE_INEXACT) == 0, "clear-subset: glibc feclearexcept");
+    MachineFenv subset_want = machine_fenv();
+    CHECK((subset_want.status & FE_OVERFLOW) && !(subset_want.status & FE_INEXACT) &&
+          (subset_want.mxcsr & FE_INVALID),
+          "clear-subset: glibc oracle keeps the other flags (sw %04x mxcsr %08x)",
+          subset_want.status, subset_want.mxcsr);
+    fesetenv(FE_DFL_ENV);
+    feraiseexcept(subset_raise);
+    check_machine_fenv("clear-subset start", subset_before, machine_fenv());
+    CHECK(eigs_feclearexcept(FE_INEXACT) == 0, "clear-subset: mini return");
+    check_machine_fenv("clear-subset", subset_want, machine_fenv());
+    printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", "clear-subset",
+           subset_want.control, subset_want.status, subset_want.mxcsr);
+    fesetenv(FE_DFL_ENV);
+}
 
 static void t_mem_str(void) {
     printf("[mem/str]\n");
@@ -417,6 +522,7 @@ static void t_libm_ulp(void) {
 }
 
 int main(void) {
+    t_fenv();
     t_mem_str();
     t_ctype();
     t_strtol();

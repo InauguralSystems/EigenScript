@@ -16,6 +16,10 @@
 #include <unistd.h>
 #include <poll.h>
 #include <errno.h>
+#include <fenv.h>
+#if defined(__x86_64__)
+#include <xmmintrin.h>
+#endif
 
 #include "eigs_embed.h"
 /* #830: the trace seam an ALTERNATIVE PRODUCER uses. The AOT (sibling
@@ -31,6 +35,127 @@
 
 static int failures = 0;
 
+#define CHECK(cond, msg) do {                                              \
+    if (!(cond)) {                                                         \
+        fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, (msg));    \
+        failures++;                                                        \
+    }                                                                      \
+} while (0)
+
+static EigsValue *fenv_nested(EigsValue *arg) {
+    (void)arg;
+    CHECK(fesetround(FE_UPWARD) == 0, "nested callback sets FE_UPWARD");
+    EigsValue *v = eigs_eval_string("1 / 3 == 0.3333333333333333");
+    int ok = v && eigs_value_as_bool(v);
+    eigs_value_release(v);
+    CHECK(fegetround() == FE_UPWARD,
+          "inner evaluation restores the callback's rounding mode");
+    CHECK(fesetround(FE_TONEAREST) == 0,
+          "nested callback restores the EigenScript rounding mode");
+    return eigs_value_new_bool(ok);
+}
+
+static void check_fenv_default_fast_path(void) {
+    CHECK(fesetround(FE_TONEAREST) == 0, "fast path selects FE_TONEAREST");
+    CHECK(feclearexcept(FE_ALL_EXCEPT) == 0, "fast path clears entry flags");
+#if defined(__x86_64__)
+    unsigned before = _mm_getcsr();
+#endif
+    EigsValue *v = eigs_eval_string("1 / 3 == 0.3333333333333333");
+    CHECK(v && eigs_value_as_bool(v), "default fast-path arithmetic witness");
+    eigs_value_release(v);
+    CHECK(fegetround() == FE_TONEAREST,
+          "default fast-path success preserves rounding mode");
+    CHECK(fetestexcept(FE_ALL_EXCEPT) == 0,
+          "default fast-path success clears EigenScript sticky flags");
+#if defined(__x86_64__)
+    CHECK(_mm_getcsr() == before,
+          "default fast-path success restores the x86-64 MXCSR");
+#endif
+    v = eigs_eval_string("missing_name_fast_path_1969");
+    CHECK(v == NULL, "default fast-path error witness raises");
+    CHECK(fegetround() == FE_TONEAREST,
+          "default fast-path error preserves rounding mode");
+    CHECK(fetestexcept(FE_ALL_EXCEPT) == 0,
+          "default fast-path error clears EigenScript sticky flags");
+#if defined(__x86_64__)
+    CHECK(_mm_getcsr() == before,
+          "default fast-path error restores the x86-64 MXCSR");
+#endif
+    eigs_clear_error();
+}
+
+static void check_fenv_eval(const char *mode_name, int mode, const char *witness) {
+    if (fesetround(mode) != 0 || fegetround() != mode) {
+        printf("SKIP %s: floating-point mode cannot be set\n", mode_name);
+        return;
+    }
+    feclearexcept(FE_ALL_EXCEPT);
+    feraiseexcept(FE_INVALID | FE_INEXACT);
+    int flags = fetestexcept(FE_ALL_EXCEPT);
+    EigsValue *v = eigs_eval_string(witness);
+    CHECK(v && eigs_value_as_bool(v), mode_name);
+    eigs_value_release(v);
+    CHECK(fegetround() == mode && fetestexcept(FE_ALL_EXCEPT) == flags,
+          "host rounding mode and sticky flags restored after success");
+    v = eigs_eval_string("missing_name_1969");
+    CHECK(v == NULL, "fenv error witness raises");
+    CHECK(fegetround() == mode && fetestexcept(FE_ALL_EXCEPT) == flags,
+          "host rounding mode and sticky flags restored after error");
+    eigs_clear_error();
+}
+
+static void test_fenv_boundary(void) {
+    EigsValue *v;
+    check_fenv_default_fast_path();
+    check_fenv_eval("FE_UPWARD", FE_UPWARD,
+        "w1969 is (1 / 3 == 0.3333333333333333)\nprint of w1969\nw1969");
+    check_fenv_eval("FE_DOWNWARD", FE_DOWNWARD,
+        "w1969 is (0.1 + 0.2 == 0.30000000000000004)\nprint of w1969\nw1969");
+    check_fenv_eval("FE_TOWARDZERO", FE_TOWARDZERO,
+        "w1969 is (0.1 + 0.2 == 0.30000000000000004)\nprint of w1969\nw1969");
+#if defined(__x86_64__)
+    unsigned saved = _mm_getcsr();
+    _mm_setcsr(saved | (1u << 15) | (1u << 6));
+    unsigned before = _mm_getcsr();
+    v = eigs_eval_string(
+        "w1969 is (5e-324 > 0)\nprint of w1969\nw1969");
+    CHECK(v && eigs_value_as_bool(v), "x86-64 FTZ/DAZ witness uses defaults");
+    eigs_value_release(v);
+    CHECK(_mm_getcsr() == before, "x86-64 FTZ/DAZ and flags restored");
+    _mm_setcsr(saved);
+#elif defined(__aarch64__)
+    unsigned long saved, before;
+    __asm__ volatile ("mrs %0, fpcr" : "=r" (saved));
+    before = saved | (1ul << 24);
+    __asm__ volatile ("msr fpcr, %0" :: "r" (before));
+    v = eigs_eval_string("w1969 is (5e-324 > 0)\nprint of w1969\nw1969");
+    CHECK(v && eigs_value_as_bool(v), "AArch64 FPCR.FZ witness uses defaults");
+    eigs_value_release(v);
+    unsigned long after;
+    __asm__ volatile ("mrs %0, fpcr" : "=r" (after));
+    CHECK(after == before, "AArch64 FPCR.FZ restored");
+    __asm__ volatile ("msr fpcr, %0" :: "r" (saved));
+#else
+    printf("SKIP FTZ/DAZ or FPCR.FZ: unsupported target\n");
+#endif
+    fesetround(FE_UPWARD);
+    eigs_register_function("fenv_nested", fenv_nested);
+    v = eigs_eval_string(
+        "inner1969 is fenv_nested of null\n"
+        "inner1969 and (1 / 3 == 0.3333333333333333)");
+    CHECK(v && eigs_value_as_bool(v), "nested callback keeps default environment");
+    eigs_value_release(v);
+    v = eigs_eval_string(
+        "define worker1969() as:\n    return 1 / 3 == 0.3333333333333333\n"
+        "task1969 is spawn of worker1969\nthread_join of task1969");
+    CHECK(v && eigs_value_as_bool(v), "spawned worker inherits default environment");
+    eigs_value_release(v);
+    CHECK(fegetround() == FE_UPWARD,
+          "host mode restored after nesting and spawn");
+    fesetenv(FE_DFL_ENV);
+}
+
 /* Async abort seam: the flag a signal handler (standing in for an OS
  * keyboard IRQ / ctrl-c) sets while an eval is running. */
 static volatile int g_abort = 0;
@@ -40,13 +165,6 @@ static void arm_abort_timer_ms(long ms) {
     signal(SIGALRM, abort_alarm);
     setitimer(ITIMER_REAL, &it, NULL);
 }
-
-#define CHECK(cond, msg) do {                                              \
-    if (!(cond)) {                                                         \
-        fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, (msg));    \
-        failures++;                                                        \
-    }                                                                      \
-} while (0)
 
 /* #1149: host I/O deliberately outlives an exited eval. One byte releases
  * it; the five-second poll is a failure bound, never the success oracle.
@@ -370,6 +488,10 @@ int main(void) {
 
         g_trace_current_line = line_save;
     }
+
+    /* #1969: every code-running boundary installs IEEE defaults and restores
+     * all host controls and sticky flags, including on errors/re-entry. */
+    test_fenv_boundary();
 
     /* #1394: strictness is state-local embedder configuration. Reuse the
      * one-shot state already keeping the process alive, then create a staged
