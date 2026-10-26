@@ -246,9 +246,10 @@ int jit_helper_iter_next(void);
  * post-op advance so CHECK_ERROR runs before another opcode. */
 int jit_helper_index_get(void);
 void jit_helper_index_set(void);
-int  jit_helper_loop_stall_check(uint16_t counter_idx);
-int  jit_helper_loop_cap_check(uint16_t counter_idx);
-void jit_helper_loop_enter(uint16_t counter_idx);
+int  jit_helper_loop_stall_check(uint16_t counter_depth);
+int  jit_helper_loop_cap_check(uint16_t counter_depth);
+void jit_helper_loop_enter(uint16_t counter_depth);
+void jit_helper_loop_exit(uint16_t counter_depth);
 void jit_helper_set_name(struct EigsChunk *chunk, int idx);
 void jit_helper_set_name_local(struct EigsChunk *chunk, int idx);
 void jit_helper_set_fn_name_local(struct EigsChunk *chunk, int idx);

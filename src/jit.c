@@ -869,6 +869,11 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 3; ops++; non_line_ops++;
             *has_bail_op = 1;
             *extra_size += 5; /* immediate counter-slot helper argument */
+        } else if (op == OP_LOOP_EXIT_NAMED) {
+            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 3; ops++; non_line_ops++;
+            *has_bail_op = 1;
+            *extra_size += 5;
         } else if (op == OP_CALL) {
             /* Stage 4r: 3-byte op [op][argc:16]. Helper handles the
              * VAL_BUILTIN case inline; for VAL_FN / VAL_CLOSURE / non-
@@ -4203,6 +4208,17 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                               ((uint16_t)chunk->code[i + 2] << 8));
             w = emit_mov_imm32_edi(w, counter_idx);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_loop_enter);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 3;
+        } else if (op == OP_LOOP_EXIT_NAMED) {
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_push_rcx(w);
+            uint16_t counter_depth = (uint16_t)(chunk->code[i + 1] |
+                                                ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_imm32_edi(w, counter_depth);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_loop_exit);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);

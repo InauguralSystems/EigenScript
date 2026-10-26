@@ -223,9 +223,10 @@ typedef enum {
     OP_TRUE,            /*obs:NONE*/ /* #1637: push the bool true immediate. Appended. */
     OP_FALSE,           /*obs:NONE*/ /* #1637: push the bool false immediate. Appended. */
     OP_LOOP_ENTER,      /*obs:DIAG*/ /* legacy shared counter reset */
-    OP_LOOP_STALL_NAMED,/*obs:READS*/ /* [exit:16][counter_name:16] per-loop stall/cap guard */
-    OP_LOOP_CAP_NAMED,  /*obs:DIAG*/ /* [exit:16][counter_name:16] per-loop cap guard */
-    OP_LOOP_ENTER_NAMED,/*obs:DIAG*/ /* [counter_name:16] private/published counter reset */
+    OP_LOOP_STALL_NAMED,/*obs:READS*/ /* [exit:16][stack_depth:16] per-loop stall/cap guard */
+    OP_LOOP_CAP_NAMED,  /*obs:DIAG*/ /* [exit:16][stack_depth:16] per-loop cap guard */
+    OP_LOOP_ENTER_NAMED,/*obs:DIAG*/ /* [stack_depth:16] push private counter, publish zero */
+    OP_LOOP_EXIT_NAMED, /*obs:DIAG*/ /* [stack_depth:16] publish and pop private counter */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 

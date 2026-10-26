@@ -2057,26 +2057,32 @@ static void loop_iter_store(Env *env, double n) {
 /* OP_LOOP_ENTER's shared interpreter/JIT implementation.  Keeping the
  * publication here prevents the native emitter from growing a second copy of
  * the environment-slot/cache rules above. */
-static long long loop_counter_load(Env *env, uint16_t slot) {
-    return slot_is_num(env->values[slot]) ? (long long)eigs_slot_num(env->values[slot], __func__) : 0;
-}
-
-static int loop_counter_slot_valid(Env *env, uint16_t slot) {
-    if (env && (int)slot < env->count) return 1;
+static EigsSlot *loop_counter_slot(CallFrame *frame, uint16_t depth) {
+    int slot = frame->bp + (int)depth;
+    if (slot >= frame->bp && slot < g_vm.sp) return &g_vm.stack[slot];
     rt_error(EK_INTERNAL, g_vm.current_line,
-             "loop counter slot %u out of range (env has %d slots)",
-             (unsigned)slot, env ? env->count : 0);
-    return 0;
+             "loop counter depth %u out of range (frame depth %d)",
+             (unsigned)depth, g_vm.sp - frame->bp);
+    return NULL;
 }
 
-static void loop_counter_store(Env *env, uint16_t slot, long long n) {
-    slot_decref(env->values[slot]);
-    env->values[slot] = slot_from_num((double)n);
+static long long loop_counter_load(EigsSlot *slot) {
+    return slot && slot_is_num(*slot) ? (long long)eigs_slot_num(*slot, __func__) : 0;
 }
 
-static void eigs_loop_enter_named(Env *env, Env *counter_env, uint16_t counter_slot) {
-    if (!loop_counter_slot_valid(counter_env, counter_slot)) return;
-    loop_counter_store(counter_env, counter_slot, 0);
+static void loop_counter_store(EigsSlot *slot, long long n) {
+    slot_decref(*slot);
+    *slot = slot_from_num((double)n);
+}
+
+static void eigs_loop_enter_named(Env *env, CallFrame *frame, uint16_t counter_depth) {
+    if (g_vm.sp != frame->bp + (int)counter_depth) {
+        rt_error(EK_INTERNAL, g_vm.current_line,
+                 "loop counter enter depth %u disagrees with frame depth %d",
+                 (unsigned)counter_depth, g_vm.sp - frame->bp);
+        return;
+    }
+    vm_push_slot(slot_from_num(0.0));
     g_loop_iterations = 0;
     loop_iter_store(env, 0.0);
 }
@@ -2097,12 +2103,13 @@ void eigs_loop_enter(Env *env) {
  * the exact same observer-loop halting as the interpreter and JIT. Exported via
  * eigenscript.h. The jit_helper_* wrappers below feed them the current frame's
  * env, so interpreter, JIT, and AOT share one implementation (no drift). */
-static int eigs_loop_stall_step_named(Env *e, Env *counter_env, uint16_t counter_slot) {
-    if (counter_env && !loop_counter_slot_valid(counter_env, counter_slot)) return 1;
+static int eigs_loop_stall_step_named(Env *e, CallFrame *frame, uint16_t counter_depth) {
+    EigsSlot *counter = frame ? loop_counter_slot(frame, counter_depth) : NULL;
+    if (frame && !counter) return 1;
     eigs_observe_safepoint(e);   /* #660 */
-    if (counter_env) {
-        g_loop_iterations = loop_counter_load(counter_env, counter_slot) + 1;
-        loop_counter_store(counter_env, counter_slot, g_loop_iterations);
+    if (frame) {
+        g_loop_iterations = loop_counter_load(counter) + 1;
+        loop_counter_store(counter, g_loop_iterations);
     } else {
         g_loop_iterations++;
     }
@@ -2157,12 +2164,13 @@ static int eigs_loop_stall_step_named(Env *e, Env *counter_env, uint16_t counter
     return 0;
 }
 
-static int eigs_loop_cap_step_named(Env *e, Env *counter_env, uint16_t counter_slot) {
-    if (counter_env && !loop_counter_slot_valid(counter_env, counter_slot)) return 1;
+static int eigs_loop_cap_step_named(Env *e, CallFrame *frame, uint16_t counter_depth) {
+    EigsSlot *counter = frame ? loop_counter_slot(frame, counter_depth) : NULL;
+    if (frame && !counter) return 1;
     eigs_observe_safepoint(e);   /* #660 */
-    if (counter_env) {
-        g_loop_iterations = loop_counter_load(counter_env, counter_slot) + 1;
-        loop_counter_store(counter_env, counter_slot, g_loop_iterations);
+    if (frame) {
+        g_loop_iterations = loop_counter_load(counter) + 1;
+        loop_counter_store(counter, g_loop_iterations);
     } else {
         g_loop_iterations++;
     }
@@ -2195,17 +2203,25 @@ int eigs_loop_cap_step(Env *e) {
 /* Stage 4w out-of-line helpers for OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK:
  * the current frame's env fed to the shared cores above (the JIT emits a call
  * to one of these per observed-loop iteration). */
-int jit_helper_loop_stall_check(uint16_t counter_idx) {
+int jit_helper_loop_stall_check(uint16_t counter_depth) {
     CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
-    return eigs_loop_stall_step_named(f->env, f->fn_env, counter_idx);
+    return eigs_loop_stall_step_named(f->env, f, counter_depth);
 }
-int jit_helper_loop_cap_check(uint16_t counter_idx) {
+int jit_helper_loop_cap_check(uint16_t counter_depth) {
     CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
-    return eigs_loop_cap_step_named(f->env, f->fn_env, counter_idx);
+    return eigs_loop_cap_step_named(f->env, f, counter_depth);
 }
-void jit_helper_loop_enter(uint16_t counter_idx) {
+void jit_helper_loop_enter(uint16_t counter_depth) {
     CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
-    eigs_loop_enter_named(f->env, f->fn_env, counter_idx);
+    eigs_loop_enter_named(f->env, f, counter_depth);
+}
+void jit_helper_loop_exit(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    EigsSlot *counter = loop_counter_slot(f, counter_depth);
+    if (!counter) return;
+    loop_iter_store(f->env, (double)loop_counter_load(counter));
+    while (g_vm.sp > f->bp + (int)counter_depth)
+        slot_decref(g_vm.stack[--g_vm.sp]);
 }
 
 /* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
@@ -3204,6 +3220,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_LOOP_STALL_NAMED] = &&lbl_LOOP_STALL_NAMED,
         [OP_LOOP_CAP_NAMED] = &&lbl_LOOP_CAP_NAMED,
         [OP_LOOP_ENTER_NAMED] = &&lbl_LOOP_ENTER_NAMED,
+        [OP_LOOP_EXIT_NAMED] = &&lbl_LOOP_EXIT_NAMED,
         [OP_IMPORT] = &&lbl_IMPORT, [OP_MATCH] = &&lbl_MATCH,
         [OP_LISTCOMP_BEGIN] = &&lbl_LISTCOMP_BEGIN,
         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
@@ -6011,7 +6028,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(LOOP_STALL_NAMED): {
         uint16_t exit_offset = read_u16(ip); ip += 2;
         uint16_t counter_idx = read_u16(ip); ip += 2;
-        if (eigs_loop_stall_step_named(frame->env, frame->fn_env, counter_idx))
+        if (eigs_loop_stall_step_named(frame->env, frame, counter_idx))
             ip += exit_offset;
         DISPATCH();
     }
@@ -6019,14 +6036,25 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(LOOP_CAP_NAMED): {
         uint16_t exit_offset = read_u16(ip); ip += 2;
         uint16_t counter_idx = read_u16(ip); ip += 2;
-        if (eigs_loop_cap_step_named(frame->env, frame->fn_env, counter_idx))
+        if (eigs_loop_cap_step_named(frame->env, frame, counter_idx))
             ip += exit_offset;
         DISPATCH();
     }
 
     CASE(LOOP_ENTER_NAMED): {
         uint16_t counter_idx = read_u16(ip); ip += 2;
-        eigs_loop_enter_named(frame->env, frame->fn_env, counter_idx);
+        eigs_loop_enter_named(frame->env, frame, counter_idx);
+        DISPATCH();
+    }
+
+    CASE(LOOP_EXIT_NAMED): {
+        uint16_t counter_depth = read_u16(ip); ip += 2;
+        EigsSlot *counter = loop_counter_slot(frame, counter_depth);
+        if (counter) {
+            loop_iter_store(frame->env, (double)loop_counter_load(counter));
+            while (g_vm.sp > frame->bp + (int)counter_depth)
+                slot_decref(g_vm.stack[--g_vm.sp]);
+        }
         DISPATCH();
     }
 

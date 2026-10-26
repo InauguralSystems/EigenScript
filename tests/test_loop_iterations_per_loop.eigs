@@ -92,3 +92,17 @@ recursive_code is [38,0,0, 27,0,0, 25,0,0, 0,1,0, 39,1,0, 41]
 recursive_r is sandbox_run of [[1, recursive_code, ["recursive", 3],
                                 [recursive_fn], 0, "recursive_review", []], 3]
 print of ["recursive", recursive_r.ok]
+
+# A separately compiled unit shares this module environment. Its first loop
+# must not reset the enclosing loop's private counter.
+eval_o is 0
+loop while eval_o < 5:
+    eval_o is eval_o + 1
+    eval of "eval_j is 0\nloop while eval_j < 2:\n    eval_j is eval_j + 1"
+print of ["eval", eval_o, __loop_iterations__]
+
+load_o is 0
+loop while load_o < 5:
+    load_o is load_o + 1
+    load_file of "loop_counter_loaded.eigs"
+print of ["load-file", load_o, __loop_iterations__]

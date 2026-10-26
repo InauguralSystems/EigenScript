@@ -1,0 +1,3 @@
+load_j is 0
+loop while load_j < 2:
+    load_j is load_j + 1

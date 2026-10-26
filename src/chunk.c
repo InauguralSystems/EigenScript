@@ -371,6 +371,7 @@ const char *op_name(uint8_t op) {
     N(OP_REPORT_VALUE_SLOT) N(OP_REPORT_VALUE_NAME)
     N(OP_TRAJECTORY_SLOT) N(OP_TRAJECTORY_NAME)
     N(OP_LOOP_ENTER) N(OP_LOOP_STALL_NAMED) N(OP_LOOP_CAP_NAMED) N(OP_LOOP_ENTER_NAMED)
+    N(OP_LOOP_EXIT_NAMED)
 #undef N
     case OP_COUNT: break;   /* unreachable: bounds-checked above */
     }
@@ -493,6 +494,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     case OP_TRAJECTORY_SLOT:   /* #737: was missing — the drift this fixes */
     case OP_INTERROGATE: case OP_PREDICATE:
     case OP_MATCH: case OP_DESTRUCTURE_UNPACK: case OP_LOOP_ENTER_NAMED:
+    case OP_LOOP_EXIT_NAMED:
         roles[0] = VR_RAW; return 1;
     case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
         roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* slot, name */
@@ -726,8 +728,12 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
     case OP_TRY_END: case OP_BREAK: case OP_CONTINUE:
     case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
-    case OP_LOOP_ENTER: case OP_LOOP_ENTER_NAMED:
+    case OP_LOOP_ENTER:
         return EFF(0, 0, 0);
+    case OP_LOOP_ENTER_NAMED:
+        return EFF(0, 0, 1);
+    case OP_LOOP_EXIT_NAMED:
+        return EFF(1, 1, 0);
 
     case OP_COUNT:   /* sentinel — callers bounds-check first */
         return EFF(0, 0, 0);
@@ -1136,6 +1142,7 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
         case OP_LOOP_STALL_NAMED:
         case OP_LOOP_CAP_NAMED:
         case OP_LOOP_ENTER_NAMED:
+        case OP_LOOP_EXIT_NAMED:
             /* A loop can never be a straight-line frameless accessor.  Name
              * the appended opcode explicitly so its one-byte width is not
              * mistaken for an unreviewed scanner omission. */
