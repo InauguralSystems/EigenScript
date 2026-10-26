@@ -1,0 +1,1 @@
+- Formatter: f-string handling uses naive string scanning; needs a lexer-based scan (#1581).

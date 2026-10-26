@@ -2,12 +2,14 @@
  * EigenScript formatter — line-based source formatter.
  * Applies consistent indentation, operator spacing, and whitespace rules.
  *
- * Strategy: use the ORIGINAL indentation to determine nesting level,
- * normalize to 4-space indentation, and apply spacing fixups.
+ * Strategy: consume the lexer's literal spans and layout depths, normalize
+ * each real block level to four spaces, and apply spacing only outside
+ * literal bytes.
  */
 
 #include "eigenscript.h"
 #include "fsutil.h"
+#include "state.h"
 
 /* ---- helpers ---- */
 
@@ -35,8 +37,8 @@ static int is_exponent_sign(const char *s, int len, int i) {
     return 1;
 }
 
-/* Fix operator spacing on a single line.
- * Processes character by character, tracking string literals. */
+/* Fix operator spacing on a literal-free source fragment.  Literal ranges are
+ * supplied by the lexer and never enter this function. */
 static void fix_spacing(const char *line, strbuf *out) {
     int len = (int)strlen(line);
     if (len == 0) return;
@@ -49,22 +51,11 @@ static void fix_spacing(const char *line, strbuf *out) {
      * and ensure space after # in comments. */
     strbuf tmp;
     strbuf_init(&tmp);
-    int in_str = 0;
-    char str_char = 0;
     int in_comment = 0;
 
     for (int i = 0; i < len; i++) {
         if (in_comment) {
             strbuf_append_char(&tmp, buf[i]);
-            continue;
-        }
-        if (in_str) {
-            strbuf_append_char(&tmp, buf[i]);
-            if (buf[i] == '\\' && i + 1 < len) {
-                strbuf_append_char(&tmp, buf[++i]);
-                continue;
-            }
-            if (buf[i] == str_char) in_str = 0;
             continue;
         }
         if (buf[i] == '#') {
@@ -73,12 +64,6 @@ static void fix_spacing(const char *line, strbuf *out) {
             if (i + 1 < len && buf[i + 1] != ' ' && buf[i + 1] != '\0') {
                 strbuf_append_char(&tmp, ' ');
             }
-            continue;
-        }
-        if (buf[i] == '"') {
-            in_str = 1;
-            str_char = '"';
-            strbuf_append_char(&tmp, buf[i]);
             continue;
         }
         /* Collapse multiple spaces */
@@ -92,8 +77,6 @@ static void fix_spacing(const char *line, strbuf *out) {
     /* Second pass: fix comma and bracket spacing */
     strbuf tmp2;
     strbuf_init(&tmp2);
-    in_str = 0;
-    str_char = 0;
     in_comment = 0;
     const char *s = tmp.data;
     len = (int)tmp.len;
@@ -103,21 +86,7 @@ static void fix_spacing(const char *line, strbuf *out) {
             strbuf_append_char(&tmp2, s[i]);
             continue;
         }
-        if (in_str) {
-            strbuf_append_char(&tmp2, s[i]);
-            if (s[i] == '\\' && i + 1 < len) {
-                strbuf_append_char(&tmp2, s[++i]);
-                continue;
-            }
-            if (s[i] == str_char) in_str = 0;
-            continue;
-        }
         if (s[i] == '#') { in_comment = 1; strbuf_append_char(&tmp2, s[i]); continue; }
-        if (s[i] == '"') {
-            in_str = 1; str_char = '"';
-            strbuf_append_char(&tmp2, s[i]);
-            continue;
-        }
 
         /* No space before comma */
         if (s[i] == ',') {
@@ -156,8 +125,6 @@ static void fix_spacing(const char *line, strbuf *out) {
     /* Third pass: fix symbolic operator spacing (==, !=, <=, >=, <, >, +, *, /, %) */
     strbuf tmp3;
     strbuf_init(&tmp3);
-    in_str = 0;
-    str_char = 0;
     in_comment = 0;
     s = tmp2.data;
     len = (int)tmp2.len;
@@ -167,21 +134,7 @@ static void fix_spacing(const char *line, strbuf *out) {
             strbuf_append_char(&tmp3, s[i]);
             continue;
         }
-        if (in_str) {
-            strbuf_append_char(&tmp3, s[i]);
-            if (s[i] == '\\' && i + 1 < len) {
-                strbuf_append_char(&tmp3, s[++i]);
-                continue;
-            }
-            if (s[i] == str_char) in_str = 0;
-            continue;
-        }
         if (s[i] == '#') { in_comment = 1; strbuf_append_char(&tmp3, s[i]); continue; }
-        if (s[i] == '"') {
-            in_str = 1; str_char = '"';
-            strbuf_append_char(&tmp3, s[i]);
-            continue;
-        }
 
         /* Multi-char operators, copied whole from the source. The length is
          * the lexer's; a spelling only the single-char branches know gets a
@@ -246,151 +199,101 @@ static void strip_trailing_ws(strbuf *b) {
  * (caller frees). Pure string→string with no I/O, so it is shared by the
  * CLI (--fmt) and the LSP formatting provider. */
 char* format_source_string(const char *source) {
+    EigsState *temporary_state = NULL;
+    if (!eigs_current) {
+        temporary_state = eigs_state_new();
+        eigs_thread_attach(temporary_state);
+    }
+    int errors_before = g_parse_errors;
+    TokenList tl = tokenize(source);
+    if (g_parse_errors != errors_before) {
+        free_tokenlist(&tl);
+        if (temporary_state) { eigs_thread_detach(); eigs_state_destroy(temporary_state); }
+        return NULL;              /* lexer already printed its precise error */
+    }
+
+    int line_count = 1;
+    for (const char *p = source; *p; p++) if (*p == '\n') line_count++;
+    int *depth = xcalloc_array(line_count, sizeof(*depth));
+    unsigned char *continuation = xcalloc_array(line_count, 1);
+
+    /* The lexer records the block stack depth when it accepts each physical
+     * code line. A -1 row is a blank/literal line or a bracket continuation;
+     * continuations deliberately retain their original leading whitespace. */
+    for (int line = 0; line < line_count; line++) {
+        int lexer_depth = line < tl.line_depth_count ? tl.line_depths[line] : -1;
+        if (lexer_depth >= 0) depth[line] = lexer_depth;
+        else continuation[line] = 1;
+    }
+
     strbuf output;
     strbuf_init(&output);
+    size_t off = 0;
+    int line_no = 0, span_i = 0, prev_blank = 0;
+    size_t source_len = strlen(source);
+    while (off < source_len) {
+        size_t end = off;
+        while (end < source_len && source[end] != '\n') end++;
+        size_t content_end = end;
+        if (content_end > off && source[content_end - 1] == '\r') content_end--;
+        while (span_i < tl.literal_count && tl.literal_spans[span_i].end <= off) span_i++;
+        int starts_literal = span_i < tl.literal_count &&
+            tl.literal_spans[span_i].start <= off && off < tl.literal_spans[span_i].end;
 
-    /*
-     * Phase 1: collect all lines with their original indent levels.
-     * Then determine the indent "unit" used in the source (minimum non-zero indent).
-     * Normalize all indentation to 4-space units.
-     */
-
-    /* First pass: count lines */
-    int line_count = 0;
-    {
-        const char *p = source;
-        while (*p) {
-            if (*p == '\n') line_count++;
-            p++;
-        }
-        line_count++; /* last line may not end with \n */
-    }
-
-    /* Collect lines */
-    char **lines = xcalloc_array(line_count + 1, sizeof(char *));
-    int *indents = xcalloc_array(line_count + 1, sizeof(int));
-    int actual_lines = 0;
-    {
-        const char *p = source;
-        while (*p) {
-            const char *start = p;
-            while (*p && *p != '\n') p++;
-            int llen = (int)(p - start);
-            if (*p == '\n') p++;
-
-            char *line = xmalloc(llen + 1);
-            memcpy(line, start, llen);
-            line[llen] = '\0';
-
-            /* Strip \r */
-            if (llen > 0 && line[llen - 1] == '\r') {
-                line[llen - 1] = '\0';
-                llen--;
-            }
-
-            indents[actual_lines] = eigs_measure_indent(line, NULL);
-
-            /* Store the stripped (no leading whitespace) version */
-            const char *stripped = line;
-            while (*stripped == ' ' || *stripped == '\t') stripped++;
-
-            /* Strip trailing whitespace */
-            int slen = (int)strlen(stripped);
-            char *trimmed = xmalloc(slen + 1);
-            memcpy(trimmed, stripped, slen + 1);
-            while (slen > 0 && (trimmed[slen - 1] == ' ' || trimmed[slen - 1] == '\t')) {
-                slen--;
-            }
-            trimmed[slen] = '\0';
-
-            lines[actual_lines] = trimmed;
-            free(line);
-            actual_lines++;
-        }
-    }
-
-    /* Find the minimum non-zero indent level to determine the "unit" */
-    int min_indent = 0;
-    for (int i = 0; i < actual_lines; i++) {
-        if (indents[i] > 0 && lines[i][0] != '\0') {
-            if (min_indent == 0 || indents[i] < min_indent) {
-                min_indent = indents[i];
-            }
-        }
-    }
-    if (min_indent == 0) min_indent = 4; /* default */
-
-    /* Now emit formatted output */
-    int prev_blank = 0;
-    int prev_was_toplevel_define = 0;
-
-    for (int i = 0; i < actual_lines; i++) {
-        const char *trimmed = lines[i];
-        int slen = (int)strlen(trimmed);
-
-        /* Blank line handling */
-        if (slen == 0) {
-            if (!prev_blank) {
-                strbuf_append_char(&output, '\n');
-            }
+        size_t first = off;
+        if (!starts_literal) while (first < content_end && (source[first] == ' ' || source[first] == '\t')) first++;
+        int blank = first == content_end;
+        if (blank && !starts_literal) {
+            if (!prev_blank) strbuf_append_char(&output, '\n');
             prev_blank = 1;
+            off = end < source_len ? end + 1 : end;
+            line_no++;
             continue;
         }
         prev_blank = 0;
 
-        /* Calculate normalized indent level */
-        int level = indents[i] / min_indent;
+        int level = depth[line_no];
 
-        /* Insert blank line between top-level define blocks */
-        if (level == 0 && strncmp(trimmed, "define ", 7) == 0 && prev_was_toplevel_define) {
-            /* Ensure blank line separator */
-            if (output.len > 0 && output.data[output.len - 1] != '\n') {
-                strbuf_append_char(&output, '\n');
+
+        /* Bracket continuations deliberately retain their original leading
+         * whitespace.  Other code lines are normalized to four per lexer
+         * block.  A physical line beginning inside a literal is all data. */
+        if (!starts_literal) {
+            if (continuation[line_no]) strbuf_append_n(&output, source + off, first - off);
+            else for (int j = 0; j < level * 4; j++) strbuf_append_char(&output, ' ');
+        }
+
+        size_t pos = starts_literal ? off : first;
+        int si = span_i;
+        while (pos < content_end) {
+            while (si < tl.literal_count && tl.literal_spans[si].end <= pos) si++;
+            if (si < tl.literal_count && tl.literal_spans[si].start <= pos && pos < tl.literal_spans[si].end) {
+                size_t stop = tl.literal_spans[si].end < content_end ? tl.literal_spans[si].end : content_end;
+                strbuf_append_n(&output, source + pos, stop - pos);
+                pos = stop;
+            } else {
+                size_t stop = content_end;
+                if (si < tl.literal_count && tl.literal_spans[si].start < stop) stop = tl.literal_spans[si].start;
+                char *part = xmalloc(stop - pos + 1);
+                memcpy(part, source + pos, stop - pos); part[stop - pos] = '\0';
+                strbuf fixed; strbuf_init(&fixed); fix_spacing(part, &fixed);
+                if (stop == content_end) strip_trailing_ws(&fixed);
+                strbuf_append_n(&output, fixed.data, fixed.len);
+                strbuf_free(&fixed); free(part); pos = stop;
             }
-            /* Check if there's already a blank line */
-            if (output.len >= 2 && output.data[output.len - 1] == '\n' &&
-                output.data[output.len - 2] != '\n') {
-                strbuf_append_char(&output, '\n');
-            }
         }
-
-        /* Emit indentation: level * 4 spaces */
-        for (int j = 0; j < level * 4; j++) {
-            strbuf_append_char(&output, ' ');
-        }
-
-        /* Apply spacing fixes */
-        strbuf fixed_line;
-        strbuf_init(&fixed_line);
-        fix_spacing(trimmed, &fixed_line);
-        strip_trailing_ws(&fixed_line);
-
-        strbuf_append_n(&output, fixed_line.data, fixed_line.len);
         strbuf_append_char(&output, '\n');
-        strbuf_free(&fixed_line);
 
-        /* Track top-level define for blank line insertion */
-        if (level == 0 && strncmp(trimmed, "define ", 7) == 0) {
-            prev_was_toplevel_define = 1;
-        } else if (level == 0 && trimmed[0] != '#') {
-            prev_was_toplevel_define = 0;
-        }
+        off = end < source_len ? end + 1 : end;
+        line_no++;
     }
-
-    /* Ensure file ends with exactly one newline */
-    while (output.len > 1 && output.data[output.len - 1] == '\n' &&
-           output.data[output.len - 2] == '\n') {
-        output.len--;
-        output.data[output.len] = '\0';
+    while (output.len > 1 && output.data[output.len - 1] == '\n' && output.data[output.len - 2] == '\n') {
+        output.data[--output.len] = '\0';
     }
-    if (output.len == 0 || output.data[output.len - 1] != '\n') {
-        strbuf_append_char(&output, '\n');
-    }
-
-    for (int i = 0; i < actual_lines; i++) free(lines[i]);
-    free(lines);
-    free(indents);
-    return strbuf_finish(&output);  /* transfer ownership to caller */
+    if (!output.len || output.data[output.len - 1] != '\n') strbuf_append_char(&output, '\n');
+    free(depth); free(continuation); free_tokenlist(&tl);
+    if (temporary_state) { eigs_thread_detach(); eigs_state_destroy(temporary_state); }
+    return strbuf_finish(&output);
 }
 
 int eigenscript_fmt(const char *path, int write_mode) {

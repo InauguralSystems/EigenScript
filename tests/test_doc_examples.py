@@ -564,6 +564,46 @@ def run_program(code, timeout=20):
         os.unlink(tmp)
 
 
+def format_contract(code):
+    """Every executable doc fence must format, parse, and reach a fixed point."""
+    with tempfile.NamedTemporaryFile("w", suffix=".eigs", delete=False) as tf:
+        tf.write(code)
+        original = tf.name
+    once = original + ".fmt"
+    twice = original + ".fmt2"
+    try:
+        with open(once, "w") as out:
+            first = subprocess.run([os.path.abspath(EIGS), "--fmt", original],
+                                   stdout=out, stderr=subprocess.PIPE, text=True,
+                                   timeout=20, stdin=subprocess.DEVNULL)
+        if first.returncode:
+            return "formatter refused: " + first.stderr.strip()
+        parsed = subprocess.run([os.path.abspath(EIGS), "--lint", "--lint-level", "error", once],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                text=True, timeout=20, stdin=subprocess.DEVNULL)
+        # Lint's nonzero status also covers semantic E003 rows deliberately
+        # present in examples. For this contract only lexer/parser rejection
+        # matters; undefined names are still parseable programs.
+        parse_diagnostics = (parsed.stderr + "\n").lower()
+        if ("parse error" in parse_diagnostics or
+                "syntax error" in parse_diagnostics or
+                "lexer error" in parse_diagnostics):
+            return "formatted fence does not parse: " + parsed.stderr.strip()
+        with open(twice, "w") as out:
+            second = subprocess.run([os.path.abspath(EIGS), "--fmt", once],
+                                    stdout=out, stderr=subprocess.PIPE, text=True,
+                                    timeout=20, stdin=subprocess.DEVNULL)
+        if second.returncode or open(once, "rb").read() != open(twice, "rb").read():
+            return "formatted fence is not a fixed point"
+        return None
+    except subprocess.TimeoutExpired:
+        return "formatting timed out after 20s"
+    finally:
+        for name in (original, once, twice):
+            try: os.unlink(name)
+            except FileNotFoundError: pass
+
+
 def clean_run(rc, stderr, asan_build):
     """A fragment must run CLEAN — and clean means stderr too.
 
@@ -708,6 +748,11 @@ def main():
                             # reader can grep E003 for the rule that fired.
                             print("    lint: %s" % l)
                         continue
+                    format_error = format_contract(program)
+                    if format_error:
+                        FAIL += 1
+                        print("  FAIL: %s:%d (%s)" % (path, lineno, format_error))
+                        continue
                     rc, out, err_txt = run_program(program)
                     if clean_run(rc, err_txt, asan_build):
                         PASS += 1
@@ -734,6 +779,11 @@ def main():
                 n_paired += 1
                 if listing:
                     print("would run: %s:%d" % (path, code_line))
+                    continue
+                format_error = format_contract(code)
+                if format_error:
+                    FAIL += 1
+                    print("  FAIL: %s:%d (%s)" % (path, code_line, format_error))
                     continue
                 rc, out, err_txt = run_program(code)
                 got = norm(out)

@@ -50,6 +50,26 @@ static void tok_add(TokenList *tl, TokType type, double num, const char *str, in
     t->synth = 0;
 }
 
+static void literal_span_add(TokenList *tl, size_t start, size_t end) {
+    if (tl->literal_count >= tl->literal_capacity) {
+        tl->literal_capacity = tl->literal_capacity ? tl->literal_capacity * 2 : 8;
+        tl->literal_spans = xrealloc_array(tl->literal_spans,
+                                           tl->literal_capacity,
+                                           sizeof(*tl->literal_spans));
+    }
+    tl->literal_spans[tl->literal_count++] = (LexLiteralSpan){start, end};
+}
+
+static void line_depth_set(TokenList *tl, int line, int depth) {
+    if (line > tl->line_depth_count) {
+        int old = tl->line_depth_count;
+        tl->line_depths = xrealloc_array(tl->line_depths, line, sizeof(*tl->line_depths));
+        for (int i = old; i < line; i++) tl->line_depths[i] = -1;
+        tl->line_depth_count = line;
+    }
+    tl->line_depths[line - 1] = depth;
+}
+
 /* Nested f-string boundary scanning (#1253). An interpolation's extent is
  * found before its text is re-tokenized, so the scanner must know every
  * lexical state that can hide a brace: a string literal, a comment, and a
@@ -414,6 +434,11 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
     tl.capacity = MAX_TOKENS;
     tl.tokens = xmalloc_array(tl.capacity, sizeof(Token));
     tl.count = 0;
+    tl.literal_spans = NULL;
+    tl.literal_count = 0;
+    tl.literal_capacity = 0;
+    tl.line_depths = NULL;
+    tl.line_depth_count = 0;
 
     /* Start of a fresh tokenize+parse pass (tokenize always runs first):
      * clear the captured first error so a consumer like the LSP sees only
@@ -497,6 +522,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 }
             }
             at_line_start = 0;
+            line_depth_set(&tl, line, indent_top);
         }
 
         /* #880: EigenScript could not read a CRLF source file at all —
@@ -535,6 +561,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
 
         /* f-string: f"hello {expr}" expands to ("hello " + (str of (expr))) */
         if (*p == 'f' && *(p+1) == '"') {
+            const char *literal_start = p;
             p += 2; col += 2; /* skip f" */
             strbuf buf;
             strbuf_init(&buf);
@@ -673,6 +700,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 lexer_error_at(caret_source, tok_line, tok_col, "unterminated f-string");
             }
             strbuf_free(&buf);
+            if (layout) literal_span_add(&tl, (size_t)(literal_start - source),
+                                         (size_t)(p - source));
             continue;
         }
 
@@ -710,6 +739,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             }
             tok_add(&tl, TOK_STR, 0, buf.data, tok_line, tok_col);
             tl.tokens[tl.count - 1].len = (int)(p - str_start);  /* true source span */
+            if (layout) literal_span_add(&tl, (size_t)(str_start - source),
+                                         (size_t)(p - source));
             strbuf_free(&buf);
             continue;
         }

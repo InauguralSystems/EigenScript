@@ -2473,16 +2473,21 @@ int replay_blocks(const char *fn, const char *boundary) {
 
 /* Free a TokenList's malloc'd storage (token array and str_vals) */
 void free_tokenlist(TokenList *tl) {
-    if (!tl->tokens) return;
-    for (int i = 0; i < tl->count; i++) {
+    for (int i = 0; tl->tokens && i < tl->count; i++) {
         if (tl->tokens[i].str_val) {
             free(tl->tokens[i].str_val);
             tl->tokens[i].str_val = NULL;
         }
     }
     free(tl->tokens);
+    free(tl->literal_spans);
+    free(tl->line_depths);
     tl->tokens = NULL;
+    tl->literal_spans = NULL;
+    tl->line_depths = NULL;
     tl->count = 0;
+    tl->literal_count = tl->literal_capacity = 0;
+    tl->line_depth_count = 0;
 }
 
 /* #1322: user code that receives the lexer's tokens (tokenize_with_names,

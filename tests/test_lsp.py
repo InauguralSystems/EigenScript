@@ -683,6 +683,15 @@ def main():
     check("formatting normalizes spacing",
           isinstance(res, list) and res and "x + y" in res[0]["newText"]
           and "f(x, y)" in res[0]["newText"])
+    literal_doc = ('if 1:\n    if 1:\n      s is f"{ "\\\"" }"\n'
+                   '      value is "start\n  a+b  \nend"\n')
+    r = converse([INIT, did_open(literal_doc), fmt, SHUTDOWN, EXIT])
+    literal_res = (by_id(r, 8) or {}).get("result")
+    literal_want = ('if 1:\n    if 1:\n        s is f"{ "\\\"" }"\n'
+                    '        value is "start\n  a+b  \nend"\n')
+    check("formatting uses lexer literal and block boundaries (#1245/#1246/#1581)",
+          isinstance(literal_res, list) and len(literal_res) == 1
+          and literal_res[0].get("newText") == literal_want)
 
     # --- rename: validate the APPLIED result, not just newText. This is the
     #     regression guard for the column-0 corruption (renaming 'count' must

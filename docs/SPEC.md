@@ -92,7 +92,13 @@ still running
 - Comments run from `#` to end of line.
 - Blocks open with a `:` at the end of the introducing line and contain
   the following indented lines. Indentation must be consistent within a
-  block.
+  block; any increase opens one nesting level, so different nested blocks do
+  not need to use equal-width increases. The formatter normalizes block
+  indentation to four spaces per lexer nesting level. It preserves the
+  original leading whitespace on continuation lines inside `()`, `[]`, or
+  `{}`, while still normalizing operator spacing outside literals. String and
+  f-string literal bytes are emitted verbatim, including physical newlines,
+  indentation, trailing spaces, escapes, and interpolation text.
 - Identifiers are `[a-zA-Z_][a-zA-Z0-9_]*`.
 - Keywords include: `is of define as if elif else loop while for in
   return and or not null try catch break continue import match case
