@@ -1562,15 +1562,19 @@ static void walk_scope_ast(ASTNode *node, NameSet *out, int in_loop_env,
  * one. Do not guess at a call graph: if a block can make any call, keep the
  * whole block on the name path. Function/lambda bodies are new scopes and the
  * shared walk deliberately stops before their bodies. */
-static void note_call_node(ASTNode *node, NameSet *opaque, int in_loop_env) {
+static void note_call_node(ASTNode *node, NameSet *calls, int in_loop_env) {
     (void)in_loop_env;
-    if (node->type == AST_RELATION)
-        *(int *)opaque = 1;
+    /* The walker's out-parameter is a NameSet, so record into a real one
+     * rather than punning an int through it; one entry answers the question. */
+    if (node->type == AST_RELATION && calls->count == 0)
+        name_set_add(calls, "<call>");
 }
 
 static int ast_can_call(ASTNode *node) {
-    int can_call = 0;
-    walk_scope_ast(node, (NameSet *)&can_call, 0, note_call_node);
+    NameSet calls = {0};
+    walk_scope_ast(node, &calls, 0, note_call_node);
+    int can_call = calls.count > 0;
+    name_set_free(&calls);
     return can_call;
 }
 
