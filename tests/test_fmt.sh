@@ -295,8 +295,38 @@ COMMENT_WANT='if 1:
     print of 9
 # top
 '
-check "standalone comments use the next statement depth (Black/Ruff rule)" \
+check "standalone comments preserve nested sibling placement" \
       "$(fmt_str "$COMMENT_INPUT")" "$(printf '%s' "$COMMENT_WANT")"
+
+check "trailing block comment stays in block across dedent" \
+      "$(fmt_str 'if 1:
+    print of 1
+    # trailing in block
+print of 2
+')" "$(printf 'if 1:\n    print of 1\n    # trailing in block\nprint of 2\n')"
+
+check "comment deeper than every open block uses deepest open block" \
+      "$(fmt_str 'if 1:
+    print of 1
+            # over-indented comment
+print of 2
+')" "$(printf 'if 1:\n    print of 1\n    # over-indented comment\nprint of 2\n')"
+
+check "comment after opener follows first body statement" \
+      "$(fmt_str 'if 1:
+# body introduction
+    print of 1
+')" "$(printf 'if 1:\n    # body introduction\n    print of 1\n')"
+
+check "comments at every open column survive a two-level dedent" \
+      "$(fmt_str 'if 1:
+    if 1:
+        print of 1
+        # depth two
+    # depth one
+# top
+print of 2
+')" "$(printf 'if 1:\n    if 1:\n        print of 1\n        # depth two\n    # depth one\n# top\nprint of 2\n')"
 
 # The doc executor owns fence parsing, while this formatter suite owns the
 # formatting contract. Consume fences only through the executor's documented

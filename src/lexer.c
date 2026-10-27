@@ -71,15 +71,21 @@ static void line_depth_set(TokenList *tl, int line, int depth) {
 }
 
 /* Standalone comments do not participate in indentation parsing, but the
- * formatter still needs a stable depth for them.  -2 distinguishes them from
- * blank/literal/continuation rows (-1); once tokenization has seen all lines,
- * each comment inherits the next statement's depth (or zero at EOF), matching
- * Black and Ruff. */
+ * formatter still needs a stable depth for them.  A value below -1 encodes
+ * the deepest block that was still open at the preceding statement and whose
+ * body indentation is no wider than the comment's original indentation:
+ * -(depth + 2).  Once tokenization has seen the following statement, retain
+ * the deeper of that open block and the following statement.  This is Black's
+ * rule: a comment before the first statement in a new block follows that
+ * statement, while a trailing in-block comment survives a following dedent. */
 static void resolve_comment_depths(TokenList *tl) {
     int next_depth = 0;
     for (int i = tl->line_depth_count - 1; i >= 0; i--) {
         if (tl->line_depths[i] >= 0) next_depth = tl->line_depths[i];
-        else if (tl->line_depths[i] == -2) tl->line_depths[i] = next_depth;
+        else if (tl->line_depths[i] < -1) {
+            int open_depth = -tl->line_depths[i] - 2;
+            tl->line_depths[i] = next_depth > open_depth ? next_depth : open_depth;
+        }
     }
 }
 
@@ -497,7 +503,10 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             p += indent_bytes;
             col += indent_bytes;
             if (*p == '#') {
-                line_depth_set(&tl, line, -2); /* resolved after the full scan */
+                int open_depth = indent_top;
+                while (open_depth > 0 && indent_stack[open_depth] > spaces)
+                    open_depth--;
+                line_depth_set(&tl, line, -(open_depth + 2));
                 while (*p && *p != '\n') { p++; col++; }
                 if (*p == '\n') { p++; line++; col = 0; }
                 continue;

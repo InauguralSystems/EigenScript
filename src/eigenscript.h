@@ -203,7 +203,7 @@ typedef struct {
     struct LexLiteralSpan *literal_spans;
     int literal_count;
     int literal_capacity;
-    int *line_depths;            /* -1: blank, literal, or bracket continuation */
+    int *line_depths;            /* -1: blank/literal/continuation; <-1: comment */
     int line_depth_count;
 } TokenList;
 
