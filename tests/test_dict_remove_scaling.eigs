@@ -1,0 +1,16 @@
+# #1697: deleting a dense dictionary must not shift and rebuild all survivors.
+load_file of "lib/test.eigs"
+
+d is {}
+i is 0
+loop while i < 40000:
+    d["n" + (str of (1003 + 2 * i))] is i
+    i is i + 1
+
+i is 0
+loop while i < 40000:
+    dict_remove of [d, "n" + (str of (1003 + 2 * i))]
+    i is i + 1
+
+assert_eq of [len of d, 0, "#1697 removes every key in linear total work"]
+test_summary of null

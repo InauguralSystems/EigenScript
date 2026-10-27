@@ -330,6 +330,7 @@ static void env_hash_init(EnvHash *ht, int cap);
 void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
 static void env_hash_rebuild(EnvHash *ht, char **names, int count);
 static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char **names);
+static int env_hash_remove(EnvHash *ht, const char *name, uint32_t h, char **names);
 static void env_intern_scope_remove(char *name);
 
 /* ================================================================
@@ -2775,17 +2776,32 @@ void dict_remove(Value *dict, const char *key) {
     if (!dict || dict->type != VAL_DICT) return;
     if (dict->data.dict.count == 0) return;
     uint32_t h = env_hash_name(key);
-    int idx = env_hash_find(&dict->data.dict.hash, key, h, dict->data.dict.keys);
+    int idx = env_hash_remove(&dict->data.dict.hash, key, h, dict->data.dict.keys);
     if (idx < 0) return;
     /* keys are interned — do not free */
     env_intern_scope_remove(dict->data.dict.keys[idx]);
-    slot_decref(dict_value_slot(dict, idx));
-    /* Shift remaining */
-    for (int j = idx; j < dict->data.dict.count - 1; j++)
-        dict->data.dict.keys[j] = dict->data.dict.keys[j+1];
-    dict_value_move(dict, idx, idx + 1, dict->data.dict.count - 1 - idx);
-    dict->data.dict.count--;
-    env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
+    /* Keep the entry arrays dense with the standard unordered-map
+     * swap-remove technique.  Only the moved entry's hash index needs
+     * repairing; removing an entry must not shift/re-index every survivor. */
+    int last = --dict->data.dict.count;
+    if (idx != last) {
+        dict->data.dict.keys[idx] = dict->data.dict.keys[last];
+        EigsSlot moved = dict_value_take_slot(dict, last);
+        dict_value_set_slot_owned(dict, idx, moved);
+        uint32_t moved_hash = env_hash_name(dict->data.dict.keys[idx]);
+        int slot = moved_hash & dict->data.dict.hash.mask;
+        while (dict->data.dict.hash.generations[slot] == dict->data.dict.hash.generation) {
+            if (dict->data.dict.hash.hashes[slot] == moved_hash &&
+                dict->data.dict.hash.indices[slot] == last) {
+                dict->data.dict.hash.indices[slot] = idx;
+                break;
+            }
+            slot = (slot + 1) & dict->data.dict.hash.mask;
+        }
+    } else {
+        slot_decref(dict_value_take_slot(dict, last));
+    }
+    dict->data.dict.keys[last] = NULL;
 }
 
 int list_reserve_one(Value *list) {
@@ -3112,6 +3128,39 @@ static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char *
             const char *stored = names[ht->indices[slot]];
             if (stored == name || strcmp(stored, name) == 0)
                 return ht->indices[slot];
+        }
+        slot = (slot + 1) & ht->mask;
+    }
+    return -1;
+}
+
+/* Knuth backward-shift deletion for a linear-probing table.  Closing the
+ * probe-chain hole avoids tombstones (and their eventual full-table rebuild)
+ * while moving only the entries whose probe sequence crosses that hole. */
+static int env_hash_remove(EnvHash *ht, const char *name, uint32_t h, char **names) {
+    if (!ht->generations) return -1;
+    int slot = h & ht->mask;
+    uint32_t gen = ht->generation;
+    while (ht->generations[slot] == gen) {
+        int idx = ht->indices[slot];
+        if (ht->hashes[slot] == h &&
+            (names[idx] == name || strcmp(names[idx], name) == 0)) {
+            int removed = idx;
+            int hole = slot;
+            int next = (hole + 1) & ht->mask;
+            while (ht->generations[next] == gen) {
+                int home = ht->hashes[next] & ht->mask;
+                if (((next - home) & ht->mask) > ((hole - home) & ht->mask)) {
+                    ht->hashes[hole] = ht->hashes[next];
+                    ht->indices[hole] = ht->indices[next];
+                    ht->generations[hole] = gen;
+                    hole = next;
+                }
+                next = (next + 1) & ht->mask;
+            }
+            ht->generations[hole] = 0;
+            ht->indices[hole] = -1;
+            return removed;
         }
         slot = (slot + 1) & ht->mask;
     }
