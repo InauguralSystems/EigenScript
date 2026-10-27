@@ -5845,6 +5845,10 @@ Value* builtin_list_insert_at(Value *arg) {
      * copy, then move the tail and install an independently owned value (an
      * immediate number is never retained as a Value view). */
     list_append_slot(list, list_slot(list, count - 1));
+    /* list_append_slot can refuse a capacity growth after raising the
+     * sandbox budget error.  A raise does not unwind this direct C call, so
+     * do not shift into the slot that was never reserved. */
+    if (list->data.list.count != count + 1) return list;
     slot_decref(list_slot(list, count - 1));
     list_move(list, idx + 1, idx, count - idx);
     Value *val = list_get_owned(arg, 2);
