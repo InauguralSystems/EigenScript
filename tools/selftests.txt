@@ -17,6 +17,8 @@ tests/test_child_exit.sh tests/run_all_tests.sh | timeout 30 bash tests/test_chi
 tests/test_changelog_fragments.sh tools/changelog_fragments.sh | timeout 30 bash tests/test_changelog_fragments.sh --selftest | [{"pattern":"^  PASS:","count":4},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST: 4 case\\(s\\) run, 4 passed, 0 failed$","count":1}]
 tests/test_dict_keys_mt.sh tests/dict_keys_mt_fixtures/* | timeout 30 bash tests/test_dict_keys_mt.sh --selftest | [{"pattern":"  PASS:","count":8},{"pattern":"  FAIL:","count":0}]
 tests/test_doc_examples.py | timeout 30 python3 tests/test_doc_examples.py --selftest | [{"pattern":"  selftest ok:","count":29}]
+src/fmt.c src/lexer.c tests/fmt_parent_differential.py tests/run_fmt_parent_differential.sh | timeout 60 bash tests/run_fmt_parent_differential.sh --selftest | [{"pattern":"^formatter differential selftest: live comparison passed; normalization plant caught$","count":1},{"pattern":"REGRESSION","count":0}]
+tests/fmt_parent_differential.py | timeout 30 python3 tests/fmt_parent_differential.py --selftest | [{"pattern":"^classifier selftest: list-item fence is semantic-line preservation$","count":1}]
 tests/test_doc_examples_markers.py tests/test_doc_examples.py tests/lsan_classify.sh | timeout 30 python3 tests/test_doc_examples_markers.py --selftest
 tests/test_handles_mt.sh tests/handles_mt_fixtures/* | timeout 30 bash tests/test_handles_mt.sh --selftest | [{"pattern":"  PASS:","count":11},{"pattern":"  FAIL:","count":0}]
 tests/test_http_rss_growth.sh | timeout 30 bash tests/test_http_rss_growth.sh --selftest

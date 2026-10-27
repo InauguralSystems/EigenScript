@@ -743,6 +743,20 @@ and reports failures through its tracking issue.
 `tools/selftests.txt` owns the trigger globs, bounded commands and existing
 result pins; changing it or the driver selects every row.
 
+The formatter suite uses `eigenscript --dump-tokens FILE` as its safe-mode
+oracle.  The command performs no execution and writes one tab-separated row
+per lexer token: numeric token type, value (strings/identifiers as hexadecimal
+bytes and numbers as hexadecimal floating point), and one-based source line.
+Columns are deliberately absent, while `INDENT` and `DEDENT` remain tokens;
+this makes horizontal whitespace and comment-column changes immaterial but
+detects changes to literal bytes, physical lines, or block structure.  Lexer
+errors produce a nonzero status and no token dump.
+
+The slower incumbent formatter comparison is a changed-gate self-test rather
+than part of timed suite section `[80]`.  Its incumbent is always
+`git merge-base HEAD origin/main`; consequently it requires repository history
+and fails with a fetch-history instruction when that commit is unavailable.
+
 ## Re-pinning a reviewed exempt builtin (#1877)
 
 `tools/strict_shape_contract.py` pins each exempt builtin, and every helper in

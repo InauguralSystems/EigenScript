@@ -74,6 +74,7 @@ int main(int argc, char **argv) {
             "  eigenscript -e <source> [args...]   run a source string\n"
             "  eigenscript                         start the REPL\n"
             "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
+            "  eigenscript --dump-tokens <file>    dump lexer type, value and source line (no execution)\n"
             "  eigenscript --lint [--json] [--lint-level error|warning] <file>\n"
             "                                      lint a source file (--json machine-readable; --lint-level error = warnings advisory;\n"
             "                                      '# lint: allow W001' suppresses a code inline)\n"
@@ -146,6 +147,41 @@ int main(int argc, char **argv) {
             path = argv[2];
         }
         return eigenscript_fmt(path, write_mode);
+    }
+
+    /* Machine-readable lexer fingerprint used by the formatter safety gate.
+     * Values are hex bytes, so quotes, newlines and CR are unambiguous. */
+    if (argc >= 2 && strcmp(argv[1], "--dump-tokens") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "Usage: eigenscript --dump-tokens file.eigs\n");
+            return 1;
+        }
+        long size = 0;
+        char *source = read_file_util(argv[2], &size);
+        if (!source) {
+            fprintf(stderr, "Error: cannot read file '%s'\n", argv[2]);
+            return 1;
+        }
+        EigsState *dump_st = eigs_state_new();
+        eigs_thread_attach(dump_st);
+        g_parse_errors = 0;
+        TokenList tl = tokenize(source);
+        int rc = g_parse_errors ? 1 : 0;
+        if (!rc) for (int i = 0; i < tl.count; i++) {
+            Token *t = &tl.tokens[i];
+            printf("%d\t", (int)t->type);
+            if (t->type == TOK_NUM) printf("%a", t->num_val);
+            else if (t->str_val) {
+                const unsigned char *p = (const unsigned char *)t->str_val;
+                while (*p) printf("%02x", *p++);
+            }
+            printf("\t%d\n", t->line);
+        }
+        free_tokenlist(&tl);
+        free(source);
+        eigs_thread_detach();
+        eigs_state_destroy(dump_st);
+        return rc;
     }
 
     /* #972: EIGS_OBS_GATE_STATS=1 also tallies observe-helper entries (the

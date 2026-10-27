@@ -211,6 +211,8 @@ jobs:
 
   # Calibrate changed gates here; calibrate every gate nightly (#1275).
   gate-selftests:
+    # Full history below is required by the formatter incumbent self-test,
+    # which resolves `git merge-base HEAD origin/main`.
     name: gate self-tests (changed rows)
     needs: [dev-image, scope]
     runs-on: ubuntu-latest

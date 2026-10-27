@@ -683,6 +683,33 @@ def main():
     check("formatting normalizes spacing",
           isinstance(res, list) and res and "x + y" in res[0]["newText"]
           and "f(x, y)" in res[0]["newText"])
+    literal_doc = ('if 1:\n    if 1:\n      s is f"{ "\\\"" }"\n'
+                   '      value is "start\n  a+b  \nend"\n')
+    r = converse([INIT, did_open(literal_doc), fmt, SHUTDOWN, EXIT])
+    literal_res = (by_id(r, 8) or {}).get("result")
+    literal_want = ('if 1:\n    if 1:\n        s is f"{ "\\\"" }"\n'
+                    '        value is "start\n  a+b  \nend"\n')
+    check("formatting uses lexer literal and block boundaries (#1245/#1246/#1581)",
+          isinstance(literal_res, list) and len(literal_res) == 1
+          and literal_res[0].get("newText") == literal_want)
+    cr_doc = 'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\r\nprint of value\r\n'
+    r = converse([INIT, did_open(cr_doc), fmt, SHUTDOWN, EXIT])
+    cr_res = (by_id(r, 8) or {}).get("result")
+    check("formatting preserves CR bytes inside multiline literals",
+          isinstance(cr_res, list) and len(cr_res) == 1
+          and cr_res[0].get("newText") ==
+              'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\nprint of value\n')
+    boundary_doc = ('print of "a"+"b"\n["a","b"]\n'
+                    'x is f"{y}"+"z"\nvalue is "a\nb"+x\n'
+                    'values is ["a\nb",2]\n')
+    boundary_want = ('print of "a" + "b"\n["a", "b"]\n'
+                     'x is f"{y}" + "z"\nvalue is "a\nb" + x\n'
+                     'values is ["a\nb", 2]\n')
+    r = converse([INIT, did_open(boundary_doc), fmt, SHUTDOWN, EXIT])
+    boundary_res = (by_id(r, 8) or {}).get("result")
+    check("formatting normalizes spacing across opaque literal boundaries",
+          isinstance(boundary_res, list) and len(boundary_res) == 1
+          and boundary_res[0].get("newText") == boundary_want)
 
     # --- rename: validate the APPLIED result, not just newText. This is the
     #     regression guard for the column-0 corruption (renaming 'count' must

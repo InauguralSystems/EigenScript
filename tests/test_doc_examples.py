@@ -47,7 +47,13 @@
 #
 # Usage: test_doc_examples.py [--list] [file.md ...]
 #        test_doc_examples.py --selftest
+#        test_doc_examples.py --extract DIRECTORY file.md [file2.md ...]
+#
 # With no files, every pinned POPULATION document is checked.
+#
+# --extract is the documented interface for consumers that need the exact
+# executable fence population without duplicating this file's fence grammar.
+# It writes one .eigs file per non-nocheck fence and prints each path.
 
 import re
 import subprocess
@@ -644,6 +650,36 @@ def count_mode(paths):
     return rc
 
 
+def extract_mode(directory, paths):
+    """Write executable doc-fence programs to DIRECTORY; print their paths."""
+    if not paths:
+        sys.stderr.write("extract: no files given\n")
+        return 2
+    os.makedirs(directory, exist_ok=True)
+    serial = 0
+    for path in paths:
+        if not os.path.isfile(path):
+            sys.stderr.write("extract: not a file: %s\n" % path)
+            return 2
+        for lineno, info, arg, code in blocks(path):
+            if info != "eigenscript":
+                continue
+            kind, payload, err = parse_tag(arg)
+            if err:
+                sys.stderr.write("extract: %s:%d: %s\n" % (path, lineno, err))
+                return 2
+            if kind == "nocheck":
+                continue
+            if kind == "fragment":
+                code = "".join("%s is %s\n" % pair for pair in payload) + code
+            serial += 1
+            name = os.path.join(directory, "%04d.eigs" % serial)
+            with open(name, "w") as out:
+                out.write(code)
+            print(name)
+    return 0
+
+
 def main():
     global PASS, FAIL, SKIP
     args = [a for a in sys.argv[1:] if a != "--list"]
@@ -1135,4 +1171,9 @@ if __name__ == "__main__":
         sys.exit(selftest())
     if "--count" in sys.argv:
         sys.exit(count_mode([a for a in sys.argv[1:] if a != "--count"]))
+    if "--extract" in sys.argv:
+        i = sys.argv.index("--extract")
+        if i + 1 >= len(sys.argv):
+            sys.exit(2)
+        sys.exit(extract_mode(sys.argv[i + 1], sys.argv[i + 2:]))
     sys.exit(main())

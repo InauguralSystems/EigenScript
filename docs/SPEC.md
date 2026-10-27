@@ -92,7 +92,22 @@ still running
 - Comments run from `#` to end of line.
 - Blocks open with a `:` at the end of the introducing line and contain
   the following indented lines. Indentation must be consistent within a
-  block.
+  block; any increase opens one nesting level, so different nested blocks do
+  not need to use equal-width increases. The formatter normalizes block
+  indentation to four spaces per lexer nesting level. It preserves the
+  original leading whitespace on continuation lines inside `()`, `[]`, or
+  `{}`, while still normalizing operator spacing outside literals. String and
+  f-string literal bytes are emitted verbatim, including physical newlines,
+  indentation, trailing spaces, escapes, and interpolation text. Standalone
+  comments are placed as Black and Ruff place them. A comment directly after
+  a block opener takes the indentation of that block's first statement.
+  Otherwise it keeps the deepest still-open block whose indentation does not
+  exceed the comment's own column, unless the next statement is deeper, in
+  which case it takes the next statement's depth. A comment at end of file
+  takes depth zero. The formatter never adds or removes lines, because line
+  numbers are part of a program's meaning: temporal queries such as
+  `at <line>` address source lines, so every statement keeps its original
+  line.
 - Identifiers are `[a-zA-Z_][a-zA-Z0-9_]*`.
 - Keywords include: `is of define as if elif else loop while for in
   return and or not null try catch break continue import match case

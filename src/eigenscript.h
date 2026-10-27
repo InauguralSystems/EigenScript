@@ -198,7 +198,19 @@ typedef struct {
     Token *tokens;
     int count;
     int capacity;
+    /* Exact source byte ranges occupied by literals.  The formatter consumes
+     * these instead of maintaining a second string/f-string scanner. */
+    struct LexLiteralSpan *literal_spans;
+    int literal_count;
+    int literal_capacity;
+    int *line_depths;            /* -1: blank/literal/continuation; <-1: comment */
+    int line_depth_count;
 } TokenList;
+
+typedef struct LexLiteralSpan {
+    size_t start;
+    size_t end;                 /* exclusive */
+} LexLiteralSpan;
 
 /* ---- AST ---- */
 
