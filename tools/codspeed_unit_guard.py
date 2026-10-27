@@ -57,7 +57,7 @@ GUARD_TARGET = "observed_loop"        # plain command (no env wrapper), one row 
 HZ = 3.6e9                            # CodSpeed's reference frequency: seconds * HZ is a whole cycle count
 EXPECTED_EVENTS = ["Ir", "Dr", "Dw", "I1mr", "D1mr", "D1mw", "ILmr", "DLmr", "DLmw", "sysCount", "sysTime", "sysCpuTime"]
 CHARGES = (                           # (server column, cycles per event, the events charged)
-    ("ir", 1, ("Ir",)),            # PLANT (#2002): the wrong claim "instructions only"
+    ("ir", 1, ("Ir", "Dr", "Dw")),
     ("l1m", 5, ("I1mr", "D1mr", "D1mw")),
     ("llm", 100, ("ILmr", "DLmr", "DLmw")),
 )
