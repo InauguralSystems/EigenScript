@@ -390,8 +390,13 @@ static int op_stack_effect(uint8_t op8) {
         return 0;
     /* Loop guards: exit-jump only, no stack change. (#737: these two fell
      * through the old default arm — right answer, by accident.) */
-    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
+    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK: case OP_LOOP_ENTER:
+    case OP_LOOP_STALL_NAMED: case OP_LOOP_CAP_NAMED:
         return 0;
+    case OP_LOOP_ENTER_NAMED:
+        return 1;
+    case OP_LOOP_EXIT_NAMED:
+        return -1;
     /* Observer blocks: no stack change */
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
         return 0;
@@ -2252,6 +2257,15 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         lp->scope_depth = c->scope_depth;
         lp->has_fresh_env = 0; /* while-loops don't allocate per-iter envs */
 
+        /* Entry, rather than exit, also covers zero-iteration loops.  If an
+         * inner loop completes, its count remains the most recently completed
+         * loop visible inside the outer body (#1906). */
+        /* Keep the counter in this activation's operand-stack window.  Unlike
+         * an environment hidden local this cannot collide with an eval'd
+         * chunk, consume MAX_LOCALS, or accumulate bindings in a shared env. */
+        int counter_depth = c->stack_depth;
+        emit_op_u16(c, OP_LOOP_ENTER_NAMED, (uint16_t)counter_depth, node->line);
+
         int loop_start = capture_loop_start(c);
         lp->continue_target = loop_start;
 
@@ -2266,8 +2280,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         /* Loop check — observer stall+cap for observer-based conditions,
          * cap-only for plain loops (opt-in halting; see cond_is_observer_based). */
         int stall_op = cond_is_observer_based(node->data.loop.cond)
-                           ? OP_LOOP_STALL_CHECK : OP_LOOP_CAP_CHECK;
+                           ? OP_LOOP_STALL_NAMED : OP_LOOP_CAP_NAMED;
         int stall_jump = emit_jump(c, stall_op, node->line);
+        chunk_emit_u16(c->chunk, (uint16_t)counter_depth, node->line);
 
         /* Reset depth to loop start for back-edge */
         c->stack_depth = depth_at_loop;
@@ -2287,7 +2302,18 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)exit_idx, node->line);
             emit(c, OP_POP, node->line);
         }
-        patch_jump(c, stall_jump);
+        /* The counter operand extends the guard two bytes past emit_jump's
+         * ordinary shape, so its forward offset is based on five bytes. */
+        {
+            int jump = c->chunk->code_len - stall_jump - 4;
+            if (jump > 0xFFFF) {
+                fprintf(stderr, "Bytecode jump too large at offset %d\n", stall_jump);
+                g_parse_errors++;
+                jump = 0;
+            }
+            c->chunk->code[stall_jump] = (uint8_t)(jump & 0xff);
+            c->chunk->code[stall_jump + 1] = (uint8_t)((jump >> 8) & 0xff);
+        }
         c->stack_depth = depth_at_loop;
 
         /* Patch break jumps to land BEFORE OP_NULL so the break path also
@@ -2296,6 +2322,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         for (int i = 0; i < lp->break_count; i++)
             patch_jump(c, lp->break_jumps[i]);
         loop_pop(c);
+
+        emit_op_u16(c, OP_LOOP_EXIT_NAMED, (uint16_t)counter_depth, node->line);
 
         emit(c, OP_NULL, node->line); /* loop result */
         break;
@@ -4182,7 +4210,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     /* For module-level slot promotion: seed local_count past existing env entries
      * so SET_LOCAL slot indices don't collide with builtins/globals already there. */
     int slot_base = 0;
-    if (g_compile_module_slots && env) {
+    if (env) {
         slot_base = env->count;
         compiler.local_count = slot_base;
     }

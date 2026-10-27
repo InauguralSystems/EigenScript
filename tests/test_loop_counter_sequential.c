@@ -134,6 +134,39 @@ int main(void) {
     g_unobserved_depth = 1;
     step(g_global_env, "reattached-root", 0, 1, root_assignments + 1);
     g_unobserved_depth = saved_unobserved;
+
+    /* Dynamic chunks share the root environment but must not reserve a hidden
+     * binding for each loop. Exercise compilation above MAX_LOCALS and verify
+     * repeated eval does not grow the binding list after its user names and
+     * public loop diagnostics have been established. */
+    size_t source_cap = 600 * 40 + 1;
+    char *source = malloc(source_cap);
+    size_t used = 0;
+    for (int i = 0; i < 600; i++)
+        used += (size_t)snprintf(source + used, source_cap - used,
+                                "eval_binding_%d is %d\n", i, i);
+    EigsValue *many = eigs_eval_string(source);
+    check(many && !eigs_has_error(), "600 user bindings compile and run");
+    eigs_value_release(many);
+    free(source);
+    const char *one_loop =
+        "eval_inner is 0\n"
+        "loop while eval_inner < 1:\n"
+        "    eval_inner is eval_inner + 1\n";
+    EigsValue *warm = eigs_eval_string(one_loop);
+    check(warm && !eigs_has_error(), "eval loop above MAX_LOCALS runs");
+    eigs_value_release(warm);
+    int count_before = g_global_env->count;
+    int eval_ok = 1;
+    for (int i = 0; i < 1000; i++) {
+        EigsValue *value = eigs_eval_string(one_loop);
+        if (!value || eigs_has_error()) eval_ok = 0;
+        eigs_value_release(value);
+    }
+    printf("EVAL_BINDINGS before=%d after=%d repetitions=1000\n",
+           count_before, g_global_env->count);
+    check(eval_ok && g_global_env->count == count_before,
+          "1,000 eval loops leave environment binding count unchanged");
     eigs_close(state);
     printf("SEQUENTIAL_LOOP_COUNTER checks=%d failures=%d writers=1\n", checks, failures);
     return failures ? 1 : 0;

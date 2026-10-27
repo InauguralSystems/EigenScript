@@ -370,6 +370,8 @@ const char *op_name(uint8_t op) {
     N(OP_PREDICATE_SLOT) N(OP_PREDICATE_NAME)
     N(OP_REPORT_VALUE_SLOT) N(OP_REPORT_VALUE_NAME)
     N(OP_TRAJECTORY_SLOT) N(OP_TRAJECTORY_NAME)
+    N(OP_LOOP_ENTER) N(OP_LOOP_STALL_NAMED) N(OP_LOOP_CAP_NAMED) N(OP_LOOP_ENTER_NAMED)
+    N(OP_LOOP_EXIT_NAMED)
 #undef N
     case OP_COUNT: break;   /* unreachable: bounds-checked above */
     }
@@ -477,6 +479,9 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     case OP_JUMP: case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
     case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
     case OP_ITER_NEXT: case OP_TRY_BEGIN:
+        roles[0] = VR_JFWD; return 1;
+    case OP_LOOP_STALL_NAMED: case OP_LOOP_CAP_NAMED:
+        roles[0] = VR_JFWD; roles[1] = VR_RAW; return 2;
     case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
         roles[0] = VR_JFWD; return 1;
     case OP_JUMP_BACK:
@@ -488,7 +493,8 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     case OP_REPORT_VALUE_SLOT:
     case OP_TRAJECTORY_SLOT:   /* #737: was missing — the drift this fixes */
     case OP_INTERROGATE: case OP_PREDICATE:
-    case OP_MATCH: case OP_DESTRUCTURE_UNPACK:
+    case OP_MATCH: case OP_DESTRUCTURE_UNPACK: case OP_LOOP_ENTER_NAMED:
+    case OP_LOOP_EXIT_NAMED:
         roles[0] = VR_RAW; return 1;
     case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
         roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* slot, name */
@@ -523,7 +529,7 @@ static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     case OP_LISTCOMP_BEGIN: case OP_LISTCOMP_APPEND:
     case OP_WIDE:      /* placeholder — the VM decodes no operand either */
     case OP_DISPATCH:
-    case OP_SLICE_GET:
+    case OP_SLICE_GET: case OP_LOOP_ENTER:
         return 0;
     /* OP_LINE's operand is 32-bit (#630); chunk_verify and the
      * disassembler both special-case it BEFORE consulting this u16-strided
@@ -703,7 +709,8 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
      * stack. TRY_BEGIN's "branch" is its catch handler: an unwind drains back to
      * the height recorded here (catch_bp) and pushes the error value, so the
      * handler is entered exactly one deeper — see CHECK_ERROR in vm.c. */
-    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK: case OP_DEFAULT_PARAM:
+    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
+    case OP_LOOP_STALL_NAMED: case OP_LOOP_CAP_NAMED: case OP_DEFAULT_PARAM:
         return EFF_BR(0, 0, 0, 0);
     case OP_TRY_BEGIN:
         return EFF_BR(0, 0, 0, 1);
@@ -721,7 +728,12 @@ static StackEffect op_verify_stack_effect(uint8_t op8, int operand0) {
     case OP_TRY_END: case OP_BREAK: case OP_CONTINUE:
     case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
+    case OP_LOOP_ENTER:
         return EFF(0, 0, 0);
+    case OP_LOOP_ENTER_NAMED:
+        return EFF(0, 0, 1);
+    case OP_LOOP_EXIT_NAMED:
+        return EFF(1, 1, 0);
 
     case OP_COUNT:   /* sentinel — callers bounds-check first */
         return EFF(0, 0, 0);
@@ -757,6 +769,26 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
         }
         is_start[i] = 1;
         last_op = op;
+        /* #1977: the private-loop-counter opcodes (OP_LOOP_{ENTER,EXIT,STALL,
+         * CAP}_NAMED) carry a frame-relative operand-stack SLOT depth, and
+         * OP_LOOP_EXIT_NAMED's handler drains every slot above that depth —
+         * a pop count this pass's height-only abstract model cannot bound (a
+         * depth-0 EXIT_NAMED verifies as a one-pop but drains the whole frame,
+         * reaching the caller's operands: a depth-0 descriptor double-freed).
+         * They are a compiler-only lowering; the trusted compiler emits them
+         * into chunks it marks compiler_scanned, and descriptors must use the
+         * legacy shared-counter opcodes (OP_LOOP_{ENTER,STALL_CHECK,CAP_CHECK},
+         * which take no frame-relative slot). Refuse them in any chunk the
+         * compiler did not produce — the only chunks that reach this verifier
+         * are sandbox/vm_run_bytecode descriptors (compiler_scanned == 0) and
+         * the compiler's own output under EIGS_VERIFY_SELF (== 1, exempt). */
+        if (!chunk->compiler_scanned &&
+            (op == OP_LOOP_ENTER_NAMED || op == OP_LOOP_EXIT_NAMED ||
+             op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED)) {
+            WHY("private-loop-counter opcode %u is compiler-only and not valid "
+                "in assembled bytecode at offset %d", (unsigned)op, i);
+            ok = 0; break;
+        }
         /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
          * role machinery below. No index to validate; just skip 4 bytes. */
         if (op == OP_LINE) {
@@ -1126,6 +1158,15 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
             if (depth != 1) return;
             c->leaf_accessor = 1;
             return;
+        case OP_LOOP_ENTER:
+        case OP_LOOP_STALL_NAMED:
+        case OP_LOOP_CAP_NAMED:
+        case OP_LOOP_ENTER_NAMED:
+        case OP_LOOP_EXIT_NAMED:
+            /* A loop can never be a straight-line frameless accessor.  Name
+             * the appended opcode explicitly so its one-byte width is not
+             * mistaken for an unreviewed scanner omission. */
+            return;
         default:
             return;
         }
@@ -1316,6 +1357,7 @@ int opcode_is_observer_reader(uint8_t op) {
         case OP_OBSERVE_VALUE_SLOT:
         case OP_OBSERVE_VALUE_NAME:
         case OP_LOOP_STALL_CHECK:
+        case OP_LOOP_STALL_NAMED:
             return 1;
         default: return 0;
     }

@@ -142,8 +142,8 @@ typedef enum {
     OP_PREDICATE,       /*obs:READS*/ /* [kind:16] push predicate result */
     OP_UNOBSERVED_BEGIN,/*obs:WRITES*/ /* increment g_unobserved_depth */
     OP_UNOBSERVED_END,  /*obs:WRITES*/ /* decrement g_unobserved_depth */
-    OP_LOOP_STALL_CHECK,/*obs:READS*/ /* [exit_offset:16] observer-stall + iteration cap (observer-based loops) */
-    OP_LOOP_CAP_CHECK,  /*obs:DIAG*/ /* [exit_offset:16] iteration cap ONLY (plain loops; no observer-stall) */
+    OP_LOOP_STALL_CHECK,/*obs:READS*/ /* [exit_offset:16] legacy shared counter guard */
+    OP_LOOP_CAP_CHECK,  /*obs:DIAG*/ /* [exit_offset:16] legacy shared counter guard */
 
     /* Miscellaneous */
     OP_IMPORT,          /*obs:NONE*/ /* [name_idx:16] import module, push dict */
@@ -222,6 +222,11 @@ typedef enum {
                            * Appended to preserve the public bytecode ABI. */
     OP_TRUE,            /*obs:NONE*/ /* #1637: push the bool true immediate. Appended. */
     OP_FALSE,           /*obs:NONE*/ /* #1637: push the bool false immediate. Appended. */
+    OP_LOOP_ENTER,      /*obs:DIAG*/ /* legacy shared counter reset */
+    OP_LOOP_STALL_NAMED,/*obs:READS*/ /* [exit:16][stack_depth:16] per-loop stall/cap guard */
+    OP_LOOP_CAP_NAMED,  /*obs:DIAG*/ /* [exit:16][stack_depth:16] per-loop cap guard */
+    OP_LOOP_ENTER_NAMED,/*obs:DIAG*/ /* [stack_depth:16] push private counter, publish zero */
+    OP_LOOP_EXIT_NAMED, /*obs:DIAG*/ /* [stack_depth:16] publish and pop private counter */
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
@@ -507,6 +512,7 @@ typedef struct {
      * accumulated stall count / iteration count). Scoped per call frame. */
     int        saved_stall_count;
     long long  saved_loop_iter;   /* #772: matches EigsState.loop_iterations */
+    long long  saved_sandbox_loop_iter; /* #1906: old compiler-loop budget scope */
     int        call_argc;        /* args actually passed to this call; <= chunk->param_count.
                                   * Used by OP_DEFAULT_PARAM to decide if a slot was bound
                                   * by the caller or needs its default expression run. */

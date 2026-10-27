@@ -667,6 +667,7 @@ void observer_slot_reset_bounded(struct Env *e, int max_retain_cap);
  * run the same halting as the interpreter/JIT. (vm.c) */
 int eigs_loop_stall_step(struct Env *e);
 int eigs_loop_cap_step(struct Env *e);
+void eigs_loop_enter(struct Env *e);
 /* #660 SIGUSR1 live observer dump: `kill -USR1 <pid>` prints one row per
  * live binding (module scope + the dumping thread's live frame) to stderr at
  * the next loop safepoint. The handler (installed by the CLI, SA_RESTART)
@@ -1090,6 +1091,8 @@ struct EigsThread {
     /* Loop-stall accounting (scoped per call frame via CallFrame.saved_*). */
     int                  loop_stall_count;
     long long            loop_iterations;   /* #772: uncapped frames exceed int range */
+    /* #1906: cumulative compiler-loop charge for the armed sandbox. */
+    long long            sandbox_loop_iterations;
     const char          *loop_exit_reason;
     /* #940: the sandbox loop budget's SECOND counter, crossed at every
      * OP_JUMP_BACK while a sandbox budget is armed (g_sandbox_loop_max != 0).
@@ -1511,6 +1514,7 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
 #define g_vm                  (*eigs_current->vm)
 #define g_loop_stall_count    (eigs_current->loop_stall_count)
 #define g_loop_iterations     (eigs_current->loop_iterations)
+#define g_sandbox_loop_iterations (eigs_current->sandbox_loop_iterations)
 #define g_loop_backedge_count (eigs_current->loop_backedge_count)
 #define g_loop_exit_reason    (eigs_current->loop_exit_reason)
 #define g_call_serial_next    (eigs_current->call_serial_next)

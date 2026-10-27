@@ -579,6 +579,7 @@ static void callframe_init(CallFrame *f, EigsChunk *chunk, Env *env,
      * returns; the base frame and OP_DISPATCH keep the incoming values. */
     f->saved_stall_count = g_loop_stall_count;
     f->saved_loop_iter   = g_loop_iterations;
+    f->saved_sandbox_loop_iter = g_sandbox_loop_iterations;
     f->call_argc = call_argc;
     f->ret_line = g_vm.current_line;   /* #1424: restored on return */
 }
@@ -2053,6 +2054,44 @@ static void loop_iter_store(Env *env, double n) {
     }
 }
 
+/* OP_LOOP_ENTER's shared interpreter/JIT implementation.  Keeping the
+ * publication here prevents the native emitter from growing a second copy of
+ * the environment-slot/cache rules above. */
+static EigsSlot *loop_counter_slot(CallFrame *frame, uint16_t depth) {
+    int slot = frame->bp + (int)depth;
+    if (slot >= frame->bp && slot < g_vm.sp) return &g_vm.stack[slot];
+    rt_error(EK_INTERNAL, g_vm.current_line,
+             "loop counter depth %u out of range (frame depth %d)",
+             (unsigned)depth, g_vm.sp - frame->bp);
+    return NULL;
+}
+
+static long long loop_counter_load(EigsSlot *slot) {
+    return slot && slot_is_num(*slot) ? (long long)eigs_slot_num(*slot, __func__) : 0;
+}
+
+static void loop_counter_store(EigsSlot *slot, long long n) {
+    slot_decref(*slot);
+    *slot = slot_from_num((double)n);
+}
+
+static void eigs_loop_enter_named(Env *env, CallFrame *frame, uint16_t counter_depth) {
+    if (g_vm.sp != frame->bp + (int)counter_depth) {
+        rt_error(EK_INTERNAL, g_vm.current_line,
+                 "loop counter enter depth %u disagrees with frame depth %d",
+                 (unsigned)counter_depth, g_vm.sp - frame->bp);
+        return;
+    }
+    vm_push_slot(slot_from_num(0.0));
+    g_loop_iterations = 0;
+    loop_iter_store(env, 0.0);
+}
+
+void eigs_loop_enter(Env *env) {
+    g_loop_iterations = 0;
+    loop_iter_store(env, 0.0);
+}
+
 /* Stage 4w: out-of-line helper for OP_LOOP_STALL_CHECK. Mirrors the
  * interpreter case minus the jump: returns 1 when the loop should exit
  * (observer stalled 100 iterations, or the absolute iteration cap) so
@@ -2064,9 +2103,16 @@ static void loop_iter_store(Env *env, double n) {
  * the exact same observer-loop halting as the interpreter and JIT. Exported via
  * eigenscript.h. The jit_helper_* wrappers below feed them the current frame's
  * env, so interpreter, JIT, and AOT share one implementation (no drift). */
-int eigs_loop_stall_step(Env *e) {
+static int eigs_loop_stall_step_named(Env *e, CallFrame *frame, uint16_t counter_depth) {
+    EigsSlot *counter = frame ? loop_counter_slot(frame, counter_depth) : NULL;
+    if (frame && !counter) return 1;
     eigs_observe_safepoint(e);   /* #660 */
-    g_loop_iterations++;
+    if (frame) {
+        g_loop_iterations = loop_counter_load(counter) + 1;
+        loop_counter_store(counter, g_loop_iterations);
+    } else {
+        g_loop_iterations++;
+    }
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
         double dH, ent;
@@ -2101,7 +2147,7 @@ int eigs_loop_stall_step(Env *e) {
      * budget (sandbox_run's max_iter). The old unconditional 100M default
      * silently broke the running loop every 1e8 cumulative in-frame
      * iterations of ANY long program — wrong results with exit 0. */
-    if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {
+    if (g_sandbox_loop_max && ++g_sandbox_loop_iterations >= g_sandbox_loop_max) {
         g_loop_exit_reason = "limit";
         g_sandbox_cap_hit = 1;   /* a capped run must not report ok (#960-adjacent) */
         should_exit = 1;
@@ -2112,18 +2158,24 @@ int eigs_loop_stall_step(Env *e) {
         env_set_local(e, "__loop_exit__", exit_val);
         val_decref(exit_val);
         g_loop_stall_count = 0;
-        g_loop_iterations = 0;
         g_loop_exit_reason = "normal";
         return 1;
     }
     return 0;
 }
 
-int eigs_loop_cap_step(Env *e) {
+static int eigs_loop_cap_step_named(Env *e, CallFrame *frame, uint16_t counter_depth) {
+    EigsSlot *counter = frame ? loop_counter_slot(frame, counter_depth) : NULL;
+    if (frame && !counter) return 1;
     eigs_observe_safepoint(e);   /* #660 */
-    g_loop_iterations++;
+    if (frame) {
+        g_loop_iterations = loop_counter_load(counter) + 1;
+        loop_counter_store(counter, g_loop_iterations);
+    } else {
+        g_loop_iterations++;
+    }
     int should_exit = 0;
-    if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {
+    if (g_sandbox_loop_max && ++g_sandbox_loop_iterations >= g_sandbox_loop_max) {
         g_loop_exit_reason = "limit";
         g_sandbox_cap_hit = 1;
         should_exit = 1;
@@ -2134,21 +2186,42 @@ int eigs_loop_cap_step(Env *e) {
         env_set_local(e, "__loop_exit__", exit_val);
         val_decref(exit_val);
         g_loop_stall_count = 0;
-        g_loop_iterations = 0;
         g_loop_exit_reason = "normal";
         return 1;
     }
     return 0;
 }
 
+int eigs_loop_stall_step(Env *e) {
+    return eigs_loop_stall_step_named(e, NULL, 0);
+}
+
+int eigs_loop_cap_step(Env *e) {
+    return eigs_loop_cap_step_named(e, NULL, 0);
+}
+
 /* Stage 4w out-of-line helpers for OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK:
  * the current frame's env fed to the shared cores above (the JIT emits a call
  * to one of these per observed-loop iteration). */
-int jit_helper_loop_stall_check(void) {
-    return eigs_loop_stall_step(g_vm.frames[g_vm.frame_count - 1].env);
+int jit_helper_loop_stall_check(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    return eigs_loop_stall_step_named(f->env, f, counter_depth);
 }
-int jit_helper_loop_cap_check(void) {
-    return eigs_loop_cap_step(g_vm.frames[g_vm.frame_count - 1].env);
+int jit_helper_loop_cap_check(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    return eigs_loop_cap_step_named(f->env, f, counter_depth);
+}
+void jit_helper_loop_enter(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    eigs_loop_enter_named(f->env, f, counter_depth);
+}
+void jit_helper_loop_exit(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    EigsSlot *counter = loop_counter_slot(f, counter_depth);
+    if (!counter) return;
+    loop_iter_store(f->env, (double)loop_counter_load(counter));
+    while (g_vm.sp > f->bp + (int)counter_depth)
+        slot_decref(g_vm.stack[--g_vm.sp]);
 }
 
 /* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
@@ -2615,6 +2688,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         if (--fn_val->refcount <= 0) free_value(fn_val);
         g_loop_stall_count = 0;
         g_loop_iterations  = 0;
+        g_sandbox_loop_iterations = 0;
         fn_chunk->exec_count++;
 
         g_native_call_depth++;
@@ -2740,6 +2814,7 @@ void jit_helper_return(void) {
     }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
     g_vm.current_line  = frame->ret_line;   /* #1424: as CASE(RETURN) */
     /* The frame's chunk ref is NOT dropped here: the thunk epilogue still
      * writes chunk->jit_advance after we return. vm_run's -1 sentinel
@@ -2770,6 +2845,7 @@ void jit_helper_return_null(void) {
     }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
     g_vm.current_line  = frame->ret_line;   /* #1424: as CASE(RETURN_NULL) */
     /* Chunk ref deferred to vm_run's -1 handler (see jit_helper_return). */
     g_vm.frame_count--;
@@ -3141,6 +3217,11 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_UNOBSERVED_END] = &&lbl_UNOBSERVED_END,
         [OP_LOOP_STALL_CHECK] = &&lbl_LOOP_STALL_CHECK,
         [OP_LOOP_CAP_CHECK] = &&lbl_LOOP_CAP_CHECK,
+        [OP_LOOP_ENTER] = &&lbl_LOOP_ENTER,
+        [OP_LOOP_STALL_NAMED] = &&lbl_LOOP_STALL_NAMED,
+        [OP_LOOP_CAP_NAMED] = &&lbl_LOOP_CAP_NAMED,
+        [OP_LOOP_ENTER_NAMED] = &&lbl_LOOP_ENTER_NAMED,
+        [OP_LOOP_EXIT_NAMED] = &&lbl_LOOP_EXIT_NAMED,
         [OP_IMPORT] = &&lbl_IMPORT, [OP_MATCH] = &&lbl_MATCH,
         [OP_LISTCOMP_BEGIN] = &&lbl_LISTCOMP_BEGIN,
         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
@@ -3193,6 +3274,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
                 if (frame->owns_env) env_decref(frame->env); \
                 g_loop_stall_count = frame->saved_stall_count; \
                 g_loop_iterations  = frame->saved_loop_iter; \
+                g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter; \
                 chunk_decref(frame->chunk); \
                 g_vm.frame_count--; \
                 frame = &g_vm.frames[g_vm.frame_count - 1]; \
@@ -4356,6 +4438,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             slot_decref(callee_s);
             g_loop_stall_count = 0;
             g_loop_iterations  = 0;
+            g_sandbox_loop_iterations = 0;
             if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
 
             /* JIT hook: compile lazily, run native prefix if available.
@@ -4469,6 +4552,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* Restore loop-stall globals saved on entry (scoped per call frame). */
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
         /* #1424: the caller resumes on ITS line. The callee's OP_LINE stream
          * moved current_line, and the compiler emits no OP_LINE between a
          * CALL and the caller's next op in the same expression (the `/` in
@@ -4507,6 +4591,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
         current_line = g_vm.current_line = frame->ret_line;   /* #1424: as CASE(RETURN) */
         chunk_decref(frame->chunk);   /* frame's ref */
         g_vm.frame_count--;
@@ -5927,73 +6012,50 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(LOOP_STALL_CHECK): {
         uint16_t exit_offset = read_u16(ip); ip += 2;
-        eigs_observe_safepoint(frame->env);   /* #660: SIGUSR1 dump at the per-iteration safepoint */
-        g_loop_iterations++;
-        int should_exit = 0;
-        if (g_unobserved_depth == 0) {
-            double dH, ent;
-            /* #861: quiet at ANY entropy — mirrors eigs_loop_stall_step
-             * (see the rationale there). The routed `converged` now owns
-             * every genuine settle; the stall is the catch-all for quiet
-             * trajectories the predicate refuses (saturated runaways,
-             * sub-deadband drift), which live at LOW entropy. */
-            if (obs_stall_trajectory(&dH, &ent)
-                && fabs(dH) < g_obs_dh_zero) {
-                (void)ent;
-                g_loop_stall_count++;
-                if (g_loop_stall_count >= 100) {
-                    g_loop_exit_reason = "stalled";
-                    should_exit = 1;
-                }
-            } else {
-                g_loop_stall_count = 0;
-            }
-        }
-        if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
-            g_loop_exit_reason = "limit";
-            g_sandbox_cap_hit = 1;
-            should_exit = 1;
-        }
-        /* Always expose iteration count */
-        loop_iter_store(frame->env, (double)g_loop_iterations);
-        if (should_exit) {
-            Value *exit_val = make_str(g_loop_exit_reason);
-            env_set_local(frame->env, "__loop_exit__", exit_val);
-            val_decref(exit_val);
-            g_loop_stall_count = 0;
-            g_loop_iterations = 0;
-            g_loop_exit_reason = "normal";
-            ip += exit_offset;
-        }
+        if (eigs_loop_stall_step(frame->env)) ip += exit_offset;
         DISPATCH();
     }
 
     CASE(LOOP_CAP_CHECK): {
-        /* Plain-loop variant: the absolute iteration cap ONLY — NO observer
-         * stall. The compiler emits this for loops whose condition is not
-         * observer-based (no predicate), so a plain `loop while c:` terminates
-         * on its own condition and is never auto-halted by the global observer.
-         * Must stay byte-identical to LOOP_STALL_CHECK except the convergence
-         * block; both engines key off the opcode, set at compile time, so the
-         * interpreter and JIT can never disagree on the classification. */
         uint16_t exit_offset = read_u16(ip); ip += 2;
-        eigs_observe_safepoint(frame->env);   /* #660: SIGUSR1 dump at the per-iteration safepoint */
-        g_loop_iterations++;
-        int should_exit = 0;
-        if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
-            g_loop_exit_reason = "limit";
-            g_sandbox_cap_hit = 1;
-            should_exit = 1;
-        }
-        loop_iter_store(frame->env, (double)g_loop_iterations);
-        if (should_exit) {
-            Value *exit_val = make_str(g_loop_exit_reason);
-            env_set_local(frame->env, "__loop_exit__", exit_val);
-            val_decref(exit_val);
-            g_loop_stall_count = 0;
-            g_loop_iterations = 0;
-            g_loop_exit_reason = "normal";
+        if (eigs_loop_cap_step(frame->env)) ip += exit_offset;
+        DISPATCH();
+    }
+
+    CASE(LOOP_ENTER): {
+        eigs_loop_enter(frame->env);
+        DISPATCH();
+    }
+
+    CASE(LOOP_STALL_NAMED): {
+        uint16_t exit_offset = read_u16(ip); ip += 2;
+        uint16_t counter_idx = read_u16(ip); ip += 2;
+        if (eigs_loop_stall_step_named(frame->env, frame, counter_idx))
             ip += exit_offset;
+        DISPATCH();
+    }
+
+    CASE(LOOP_CAP_NAMED): {
+        uint16_t exit_offset = read_u16(ip); ip += 2;
+        uint16_t counter_idx = read_u16(ip); ip += 2;
+        if (eigs_loop_cap_step_named(frame->env, frame, counter_idx))
+            ip += exit_offset;
+        DISPATCH();
+    }
+
+    CASE(LOOP_ENTER_NAMED): {
+        uint16_t counter_idx = read_u16(ip); ip += 2;
+        eigs_loop_enter_named(frame->env, frame, counter_idx);
+        DISPATCH();
+    }
+
+    CASE(LOOP_EXIT_NAMED): {
+        uint16_t counter_depth = read_u16(ip); ip += 2;
+        EigsSlot *counter = loop_counter_slot(frame, counter_depth);
+        if (counter) {
+            loop_iter_store(frame->env, (double)loop_counter_load(counter));
+            while (g_vm.sp > frame->bp + (int)counter_depth)
+                slot_decref(g_vm.stack[--g_vm.sp]);
         }
         DISPATCH();
     }
@@ -6681,6 +6743,7 @@ vm_error_halt:
         if (f->owns_env) env_decref(f->env);
         g_loop_stall_count = f->saved_stall_count;
         g_loop_iterations  = f->saved_loop_iter;
+        g_sandbox_loop_iterations = f->saved_sandbox_loop_iter;
         chunk_decref(f->chunk);   /* frame's ref */
         g_vm.frame_count--;
     }

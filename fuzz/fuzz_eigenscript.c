@@ -112,6 +112,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     g_sandbox_loop_max = 200000;
     g_sandbox_cap_hit = 0;
     g_loop_iterations = 0;
+    g_sandbox_loop_iterations = 0;   /* #1906: the budget's own counter */
     g_loop_backedge_count = 0;
 
     TokenList tl = tokenize(source);
