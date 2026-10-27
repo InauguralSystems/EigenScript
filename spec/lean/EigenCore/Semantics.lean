@@ -1,0 +1,79 @@
+import EigenCore.RuntimeParser
+import EigenCore.Value
+namespace EigenCore
+
+inductive Err where | runtime (message : String) | fuel deriving Repr, BEq
+structure Binding where
+  envId : Nat
+  slot : Nat
+  deriving Repr, BEq
+structure Cell where
+  name : String
+  value : Value
+  history : Array Value
+  deriving Inhabited
+inductive OracleValue where | int (v : Int) | string (v : String) | null deriving Repr, BEq
+inductive Mode where | live (oracle : List OracleValue) | record (oracle : List OracleValue) | replayStrict (tape : List String) deriving Repr, BEq
+structure World where
+  cells : Array Cell := #[]
+  stdout : String := ""
+  tape : List String := []
+  mode : Mode := .live []
+abbrev EvalM := StateT World (Except Err)
+
+private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
+private def valueAt (name : String) : EvalM Value := do
+  let w ← get
+  match findCell name w.cells with
+  | some i => pure w.cells[i]!.value
+  | none => throw (Err.runtime s!"undefined variable: {name}")
+private def tapeValue : Value → String
+  | .int n => toString n | .string s => "\"" ++ (s.replace "\\" "\\\\").replace "\"" "\\\"" ++ "\""
+  | .bool true => "true" | .bool false => "false" | .null => "null" | .closure n => s!"<fn {n}>"
+private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
+  let w ← get
+  let found := if isLocal then none else findCell name w.cells
+  let cells := match found with
+    | some i => w.cells.modify i fun c => {c with value:=v, history:=(c.history.push v).extract ((c.history.size+1).sub 256) (c.history.size+1)}
+    | none => w.cells.push {name:=name,value:=v,history:=#[v]}
+  set {w with cells:=cells,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}
+private def truthy : Value → Bool | .bool false | .null | .int 0 | .string "" => false | _ => true
+private def asInt : Value → Except Err Int | .int n => pure n | _ => throw (Err.runtime "expected integer")
+private def evalBin (op : BinOp) (a b : Value) : Except Err Value := match op with
+  | .add => match a,b with | .int x,.int y => pure (.int (x+y)) | .string x,.string y => pure (.string (x++y)) | _,_ => throw (Err.runtime "invalid +")
+  | .sub => do pure (.int ((← asInt a) - (← asInt b)))
+  | .mul => do pure (.int ((← asInt a) * (← asInt b)))
+  | .eq => pure (.bool (a == b)) | .ne => pure (.bool (a != b))
+  | .lt | .le | .gt | .ge => do let x ← asInt a; let y ← asInt b; pure (.bool (match op with | .lt => x<y | .le => x<=y | .gt => x>y | _ => x>=y))
+  | .and => pure (if truthy a then b else a) | .or => pure (if truthy a then a else b)
+
+def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
+  | 0 => throw .fuel
+  | f+1 => match e with
+    | .literal (.int n) => pure (.int n) | .literal (.string s) => pure (.string s) | .literal (.bool b) => pure (.bool b) | .literal .null => pure .null
+    | .variable n => valueAt n | .not x => do pure (.bool (!truthy (← evalExpr f x)))
+    | .binary .and a b => do let x ← evalExpr f a; if truthy x then evalExpr f b else pure x
+    | .binary .or a b => do let x ← evalExpr f a; if truthy x then pure x else evalExpr f b
+    | .binary op a b => do match evalBin op (← evalExpr f a) (← evalExpr f b) with | .ok v => pure v | .error x => throw x
+    | .when n => do let w ← get; match findCell n w.cells with | some i => pure (.int w.cells[i]!.history.size) | none => throw (Err.runtime s!"undefined variable: {n}")
+    | .prev _ | .whatWhen _ _ | .call _ _ => throw (Err.runtime "not yet modeled")
+
+def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with
+  | 0 => throw .fuel
+  | f+1 => match ss with
+    | [] => pure none
+    | s::rest => match s with
+      | .assign n e isLocal => do store n (← evalExpr f e) isLocal; exec f rest
+      | .print e => do let v ← evalExpr f e; modify fun w => {w with stdout:=w.stdout ++ v.print ++ "\n"}; exec f rest
+      | .expression e => do let _ ← evalExpr f e; exec f rest
+      | .return_ e => do pure (some (← evalExpr f e))
+      | .branch _ _ _ _ | .loop _ _ | .define _ _ _ => throw (Err.runtime "not yet modeled")
+
+structure RunResult where
+  stdout : String
+  tape : List String
+
+def run (fuel : Nat) (p : Program) (mode : Mode) : Except Err RunResult := do
+  let (_, w) ← (exec fuel p).run {mode:=mode}
+  pure {stdout:=w.stdout,tape:=w.tape}
+end EigenCore
