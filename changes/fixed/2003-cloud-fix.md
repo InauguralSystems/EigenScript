@@ -1,1 +1,0 @@
-- Count all iteration-ending paths in loops (#2003).
