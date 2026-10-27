@@ -25,8 +25,8 @@ editing any of them makes every certificate stale. Kinds:
   fixed-point  x <- f(x) with a stated limit L: f(L) = L and |f'| < 1 on an
                interval around L (bounded with sympy) that the iterates enter.
                |f'(L)| > 1 (repelling) is REFUSED, manual block or not
-  ieee         an in-program row whose value becomes NaN (IEEE 754: inf * 0):
-               NaN is absorbing under x * a + b, so the tail is undefined
+  ieee         an in-program row whose value becomes NaN (IEEE 754: inf * 0)
+               and never restarts: NaN is absorbing, so the tail is undefined
   manual       none of the above decides it: the row's `manual` block carries
                an argument, a citation and the `claims` it certifies
 `bounded` means EVENTUALLY bounded (lim sup |x_n| < inf; #1758 comment
@@ -214,15 +214,18 @@ def in_program(row):
     last = ps[-1]
     if nan_at is not None:
         if any(st[0] == "set" for st in gen.program(g, s)[nan_at:]):
-            raise Undecided(f"x_{nan_at} is NaN and a later piece restarts: the tail decides it"
-                            " (#1758), but this oracle does not label NaN recovery yet (#1765)")
-        st = gen.program(g, nan_at)[nan_at]
-        if st[0] == "set":
-            raise Refused(f"x_{nan_at} is a NaN literal, not a value the program computes")
-        return "ieee", {"limit": None, "tends_to": None, "bounded": False}, (
-            f"x_{nan_at} = {xs[nan_at - 1]!r} * {st[1]!r} + {st[2]!r} is NaN (IEEE 754 invalid"
-            " operation); NaN is absorbing under x * a + b, so every later value is NaN: no"
-            " limit, not +-inf, not bounded")
+            # A later explicit x0 starts a defined tail.  Continue into the
+            # ordinary last-piece proof below: finite prefixes do not affect
+            # limit notions (#1758), even when the prefix contains NaN.
+            pass
+        else:
+            st = gen.program(g, nan_at)[nan_at]
+            if st[0] == "set":
+                raise Refused(f"x_{nan_at} is a NaN literal, not a value the program computes")
+            return "ieee", {"limit": None, "tends_to": None, "bounded": False}, (
+                f"x_{nan_at} = {xs[nan_at - 1]!r} * {st[1]!r} + {st[2]!r} is NaN (IEEE 754 invalid"
+                " operation); NaN is absorbing under x * a + b, so every later value is NaN: no"
+                " limit, not +-inf, not bounded")
     if "x0" not in last:                              # it starts from the value the earlier pieces leave
         s -= 1
     x_s = gen.generate(g, s)[s]                       # the value the runtime holds there
@@ -294,8 +297,6 @@ def refute(row, v, kind):
     n = row["n"]
     xs = gen.generate(row["gen"], n)
     q = max(1, (n + 1) // 4)
-    if any(x != x for x in xs):
-        raise Refused(f"float-degenerate: a value fed to the runtime is NaN, but the verdict is {v}")
     if v["tends_to"]:
         s = 1 if v["tends_to"] == "+inf" else -1
         head, tail = max(s * x for x in xs[:q]), max(s * x for x in xs[-q:])
@@ -305,8 +306,11 @@ def refute(row, v, kind):
     elif v["limit"] is not None:           # the error must keep shrinking toward 0
         H = max(10 ** 6, 10 * n)
         far, lim = gen.generate(row["gen"], H), float(v["limit"])
-        if any(x != x for x in far):
-            raise Refused("float-degenerate: a value the generator computes is NaN, but the verdict is a limit")
+        # A finite NaN prefix is irrelevant to a limit; only an undefined tail
+        # refutes it.  `in_program` proved that the last piece restarts finite.
+        last_nan = max((i for i, x in enumerate(far) if x != x), default=-1)
+        if last_nan >= H // 10:
+            raise Refused("float-degenerate: a value the generator computes late is NaN, but the verdict is a limit")
         if not all(math.isfinite(x) for x in far[H // 10:]):
             raise Refused(f"a value the runtime would be fed past x_{H // 10} is infinite: no finite limit {lim!r}")
         dec, end = (max(abs(x - lim) for x in far[k:]) for k in (H // 10, H - H // 10))
