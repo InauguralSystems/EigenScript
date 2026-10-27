@@ -206,8 +206,13 @@ eigs_binary_fingerprint() {
 ensure_binary_current() {
     local variant target rc resolved_after
     EIGS_ACTIVE_VARIANT=""
+    EIGS_ACTIVE_VARIANT_RC=0
     variant=$("$TESTS_DIR/../tools/active_variant.sh" "$TESTS_DIR/..")
     rc=$?
+    # Preserve the resolver's classification for sections which depend on a
+    # make-created alias.  In particular, 1 means a valid build.sh binary,
+    # while 2 means an ambiguous alias and must not be mistaken for that case.
+    EIGS_ACTIVE_VARIANT_RC=$rc
     if [ "$rc" -ne 0 ]; then
         echo "  NOTE: src/eigenscript is not hard-linked to any build/<variant>/eigenscript -- freshness not checked (#1089)"
         return 0
