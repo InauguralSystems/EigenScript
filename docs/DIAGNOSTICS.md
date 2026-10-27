@@ -80,7 +80,7 @@ Caught errors print nothing; the handler decides.
   `file` equal to the compiled source identity, and `line` 1-based. File inputs
   retain the loader path; eval, stdin, and unnamed embedding inputs use
   `<eval>`, `<stdin>`, and `<embed>`; sandbox-synthesized errors use
-  `<sandbox>`. The message remains byte-compatible with
+  `<sandbox>`, and the browser playground uses `<playground>`. The message remains byte-compatible with
   earlier releases. Discriminate on `kind`, never on message text —
   messages are wording, kinds are contract.
 - A **thrown value** binds unchanged: `throw of {"kind": "validation"}`

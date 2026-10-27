@@ -121,7 +121,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             /* Execute in a fresh child env so global bindings from one
              * input don't shadow builtins on the next. */
             Env *eval_env = env_new(g_global_env);
-            EigsChunk *chunk = compile_ast(ast, eval_env, source);
+            EigsChunk *chunk = compile_ast(ast, eval_env, source, "<fuzz>");
             if (chunk) {
                 Value *result = vm_execute(chunk, eval_env);
                 if (result) val_decref(result);
