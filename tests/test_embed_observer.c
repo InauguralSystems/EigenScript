@@ -143,7 +143,7 @@ static void raw_compile_then_arm(void) {
     const char *source = "42\n";
     TokenList tl = tokenize(source);
     ASTNode *ast = parse(&tl);
-    EigsChunk *chunk = compile_ast(ast, env, source);
+    EigsChunk *chunk = compile_ast(ast, env, source, "<embed>");
     check(chunk && !g_parse_errors && !g_has_error && !g_obs_needed,
           "raw compile: first read-free verdict closes before workers");
     pthread_t worker;
@@ -269,7 +269,7 @@ static void eval_contract(void) {
     const char *source = "noise is 42\nnoise\n";
     TokenList tl = tokenize(source);
     ASTNode *ast = parse(&tl);
-    EigsChunk *chunk = compile_ast(ast, g_global_env, source);
+    EigsChunk *chunk = compile_ast(ast, g_global_env, source, "<embed>");
     EigsValue *value = vm_execute(chunk, g_global_env);
     check(value && !eigs_has_error() && eigs_value_as_num(value) == 42,
           "native host: low-level compiled module executes");

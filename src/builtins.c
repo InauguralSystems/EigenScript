@@ -678,6 +678,7 @@ Value* builtin_throw(Value *arg) {
     snprintf(g_error_raw, sizeof(g_error_raw), "%s", msg);
     g_error_kind = (int)EK_USER;
     g_error_line = vm_current_line();
+    snprintf(g_error_file, sizeof(g_error_file), "%s", vm_current_file());
     if (g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();
@@ -2742,7 +2743,7 @@ Value* builtin_eval(Value *arg) {
      * diagnostics ('break' outside a loop #337, un-encodable jumps) must
      * fail the eval instead of executing a placeholder chunk. */
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
-    EigsChunk *ev_chunk = compile_ast(ast, target, src);
+    EigsChunk *ev_chunk = compile_ast(ast, target, src, "<eval>");
     if (g_parse_errors > 0) {
         g_parse_errors = saved_errors;
         chunk_free(ev_chunk);
@@ -3532,6 +3533,9 @@ Value* builtin_sandbox_run(Value *arg) {
     int    saved_sb_refusal = g_sandbox_refusal;
     int    saved_sb_refusal_kind = g_sandbox_refusal_kind;
     int    saved_sb_refusal_line = g_sandbox_refusal_line;
+    char   saved_sb_refusal_file[sizeof g_sandbox_refusal_file];
+    memcpy(saved_sb_refusal_file, g_sandbox_refusal_file,
+           sizeof saved_sb_refusal_file);
     char   saved_sb_refusal_msg[sizeof g_sandbox_refusal_msg];
     memcpy(saved_sb_refusal_msg, g_sandbox_refusal_msg,
            sizeof saved_sb_refusal_msg);
@@ -3618,7 +3622,7 @@ Value* builtin_sandbox_run(Value *arg) {
      * 2026-08-17). Surface it as a structured sandbox error instead. */
     if (ok && cap_hit) {
         ok = 0;
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str("sandbox"));
         char capmsg[96];
         snprintf(capmsg, sizeof(capmsg),
@@ -3638,6 +3642,7 @@ Value* builtin_sandbox_run(Value *arg) {
                        make_str(err_kind_name((ErrKind)g_sandbox_refusal_kind)));
         dict_set_owned(ev, "message", make_str(g_sandbox_refusal_msg));
         dict_set_owned(ev, "line", make_num((double)g_sandbox_refusal_line));
+        dict_set_owned(ev, "file", make_str(g_sandbox_refusal_file));
         dict_set_owned(out, "error", ev);
         if (g_has_error) {
             g_has_error = 0;
@@ -3648,10 +3653,11 @@ Value* builtin_sandbox_run(Value *arg) {
          * graded ladder can discriminate (sandbox denial vs type error vs
          * parse) without re-running outside the sandbox. Same shape as a
          * catch binding: {kind, message, line}. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
         dict_set_owned(ev, "message", make_str(g_error_raw));
         dict_set_owned(ev, "line", make_num((double)g_error_line));
+        dict_set_owned(ev, "file", make_str(g_error_file));
         dict_set_owned(out, "error", ev);
         g_has_error = 0;
         eigs_clear_error_value();
@@ -3698,6 +3704,8 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_refusal      = saved_sb_refusal;
     g_sandbox_refusal_kind = saved_sb_refusal_kind;
     g_sandbox_refusal_line = saved_sb_refusal_line;
+    memcpy(g_sandbox_refusal_file, saved_sb_refusal_file,
+           sizeof saved_sb_refusal_file);
     memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
            sizeof saved_sb_refusal_msg);
     return sandbox_finish_run(out);

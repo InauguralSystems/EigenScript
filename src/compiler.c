@@ -4129,7 +4129,8 @@ done:
     free(L.kinds);
 }
 
-EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
+EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src,
+                       const char *file) {
     EigsChunk *chunk = chunk_new("<module>");
     chunk->module_scope_writes = g_compile_import_toplevel != 0;
     /* #830: the arming below is compile-time evidence about THIS chunk, so
@@ -4139,7 +4140,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     /* #407: retain the unit's source for runtime-error caret excerpts.
      * Owned copy — callers free their buffers while closures can keep
      * chunks alive indefinitely. Nested fn chunks share the blob. */
-    chunk->src = srcbuf_new(src);
+    chunk->src = srcbuf_new(src, file);
     if (chunk->src) {
         /* Compile context wins over the still-running loader's frame.
          * Nested functions share this owned blob after the loader returns. */

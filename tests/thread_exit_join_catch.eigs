@@ -7,6 +7,6 @@ try:
     thread_join of h
 catch e:
     assert of [e.kind == "undefined_name", "thread join preserves error kind"]
-    assert of [e.message == "undefined variable 'missing_thread_join_catch'", "thread join preserves error message"]
+    assert of [contains of [e.message, ": undefined variable 'missing_thread_join_catch'"], "thread join preserves error message"]
     print of "JOIN_CAUGHT"
 print of "MARK_END"

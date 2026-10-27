@@ -2886,19 +2886,20 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
 /* Catch-binding: if `throw` stashed a structured error value (dict,
  * list, string, ...), the catch variable binds that value — ownership
  * of the stash's ref transfers to the stack. Built-in runtime errors
- * bind a {kind, message, line} dict (#406): kind from the closed
- * ErrKind vocabulary, message without the "Error line N:" frame, line
- * 1-based. Built lazily here so the uncaught path never allocates. */
+ * bind a {kind, message, file, line} dict (#406): kind from the closed
+ * ErrKind vocabulary, message in `file:line: text` form, and line 1-based.
+ * Built lazily here so the uncaught path never allocates. */
 static Value *vm_take_error_value(void) {
     if (g_error_value) {
         Value *v = g_error_value;
         g_error_value = NULL;
         return v;
     }
-    Value *d = make_dict(3);
+    Value *d = make_dict(4);
     dict_set_owned(d, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
     dict_set_owned(d, "message", make_str(g_error_raw));
     dict_set_owned(d, "line", make_num((double)g_error_line));
+    dict_set_owned(d, "file", make_str(g_error_file));
     return d;
 }
 
@@ -2914,6 +2915,14 @@ int vm_current_line(void) {
     if (!eigs_current || !eigs_current->vm || g_vm.frame_count <= 0)
         return trace_current_line_load();
     return g_vm.current_line;
+}
+
+const char *vm_current_file(void) {
+    if (!eigs_current || !eigs_current->vm || g_vm.frame_count <= 0)
+        return "<native>";
+    EigsChunk *chunk = g_vm.frames[g_vm.frame_count - 1].chunk;
+    return (chunk && chunk->src && chunk->src->file) ? chunk->src->file
+                                                     : "<native>";
 }
 
 /* Print the live call stack, innermost frame first. Called by
@@ -2963,7 +2972,10 @@ void vm_print_stack_trace(FILE *out) {
             if (off >= 0 && off < f->chunk->lines_len)
                 line = f->chunk->lines[off];
         }
-        fprintf(out, "  at %s (line %d)\n", fname, line);
+        const char *file = (f->chunk && f->chunk->src && f->chunk->src->file)
+                         ? f->chunk->src->file : "<native>";
+        if (line > 0) fprintf(out, "  at %s (%s:%d)\n", fname, file, line);
+        else fprintf(out, "  at %s (%s)\n", fname, file);
     }
 }
 
@@ -6291,7 +6303,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * than a one-shot bit transition. ACQUIRE pairs with
          * eigs_obs_enable's store order. */
         int obs_before_module = obs_flag_load_acquire(obs_needed);
-        EigsChunk *mod_chunk = compile_ast(ast, mod_env, source);
+        EigsChunk *mod_chunk = compile_ast(ast, mod_env, source, abs_path);
         g_compile_module_boundary = saved_boundary;
         g_compile_import_toplevel = saved_import_toplevel;
         /* The override belongs to compilation, not module execution. Runtime

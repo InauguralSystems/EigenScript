@@ -279,11 +279,12 @@ typedef struct {
 typedef struct EigsSrcBuf {
     int   refcount;
     char *text;
+    char *file;                /* compiler-supplied source identity (#1651) */
     char *resolve_dir;         /* owned canonical containing-file directory;
                                * shared with nested functions, not a GC edge */
 } EigsSrcBuf;
 
-EigsSrcBuf *srcbuf_new(const char *text);
+EigsSrcBuf *srcbuf_new(const char *text, const char *file);
 void        srcbuf_incref(EigsSrcBuf *sb);
 void        srcbuf_decref(EigsSrcBuf *sb);
 
@@ -745,7 +746,8 @@ void       chunk_arm_temporal(const EigsChunk *chunk);
 int        chunk_reads_shared_temporal(const EigsChunk *chunk);
 
 /* Compiler */
-EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src);
+EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src,
+                       const char *file);
 
 /* Sandbox loop-iteration cap (0 = default 100M). Set by builtin_sandbox_run.
  * Per-thread bridge macro in eigenscript.h (#739). */
