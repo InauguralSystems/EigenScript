@@ -4,7 +4,7 @@ echo "[97a] headless gfx launch contract (#1650)"
 TOTAL=$((TOTAL + 1))
 GH_OUTPUT=$(bash "$TESTS_DIR/test_gfx_headless.sh" 2>&1); GH_RC=$?
 if [ "$GH_RC" -eq 0 ] &&
-   grep -q '^GFX HEADLESS: 4 passed, 0 failed$' <<<"$GH_OUTPUT"; then
+   grep -q '^GFX HEADLESS: 6 passed, 0 failed$' <<<"$GH_OUTPUT"; then
     PASS=$((PASS + 1))
     printf '%s\n' "$GH_OUTPUT" | sed 's/^/  /'
 else
