@@ -74,7 +74,7 @@ jobs:
       # instruction fetch and per data load/store (hit or miss), plus 5 per L1
       # miss and 100 per last-level miss. A row therefore reads roughly 1.4 to
       # 1.6 times its cachegrind `Ir`, the bench job's unit (1.39 to 1.56 on the
-      # rows measured; the table is in docs/INSTRUMENTS.md). With
+      # rows measured, registered in docs/INSTRUMENTS.md). With
       # cycle-estimation ON the first runs read 3.0 to 3.5 times Ir, ~60% of the
       # DMG shape attributed to simulated cache misses that perf stat refuted
       # (IPC 1.61, 1.6% last-level references); #1221 turned it off for that

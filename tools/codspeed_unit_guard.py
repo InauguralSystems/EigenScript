@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """codspeed_unit_guard.py -- the CodSpeed lane's UNIT is a claim; this pins it (#2002).
 
-The claim (docs/INSTRUMENTS.md, row "CodSpeed simulation lane"): a row's Value is MODELED
+The claim (docs/INSTRUMENTS.md, the row for the CodSpeed lane): a row's Value is MODELED
 CYCLES at 3.6 GHz, not instructions. CodSpeed's runner always runs callgrind with a fixed cache
 simulation; `cycle-estimation: false` only drops the per-instruction cycle table. The server
 then reports value = ir + l1m + llm (seconds) with, EXACTLY (measured on CI, run
@@ -31,9 +31,10 @@ runner skips: those stay with the runner-version pin.
 Same run, same host, same region: a first version recomputed the events with cachegrind over
 the whole process and read 1.4% low on CI, because the runner measures from the LD_PRELOAD
 constructor to the destructor and so excludes the dynamic loader's work. This checks the
-simulator's arithmetic, not a Value/Ir ratio (that ratio moved 9% in five weeks from
-interpreter changes alone). A guard that cannot verify (API down, row missing, no profile
-folder) fails too: one that goes quiet when blind is the "measured less, still green" fault.
+simulator's arithmetic, not a Value/Ir ratio (that ratio moved 7% in five weeks from
+interpreter changes alone: scalar_loop 1.536 on 2026-09-21, 1.42 on 2026-10-27). A guard
+that cannot verify (API down, row missing, no profile folder) fails too: one that goes
+quiet when blind is the "measured less, still green" fault.
 
   tools/codspeed_unit_guard.py             # gate: needs CODSPEED_RUN_ID and the runner's profile folder
   tools/codspeed_unit_guard.py --selftest  # every plant must go red (offline)
