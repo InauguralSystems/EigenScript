@@ -184,7 +184,11 @@ bound observer overhead, the snapshot walk stops after **4,096 content units**
 An assignment above that bound is a refusal to judge: it clears the equality
 run, and `converged` and `stable` remain false until a complete window of
 bounded assignments has subsequently been observed.  Entropy diagnostics are
-still recorded normally.
+still recorded normally.  Observer equality is non-raising: unlike the `==`
+operator, a number and boolean at corresponding positions are simply unequal.
+Functions compare by identity through a non-owning token; a function nested in
+a container is refused, because retaining a closure would add an invisible
+owning edge to the cycle collector.
 
 `report`/the bare predicates historically classified the trajectory of
 **`entropy(value)`** — the information content, not the number. That is the right signal for "how

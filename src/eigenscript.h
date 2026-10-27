@@ -367,6 +367,7 @@ typedef struct ObserverSlot {
      * whether each successive pair compared equal with the language's `==`.
      * Entropy remains recorded above for report/trajectory diagnostics. */
     Value   *eq_last;
+    const Value *eq_identity_last; /* non-owning identity token for fn/builtin */
     uint8_t *eq_window;
     uint8_t  eq_window_head, eq_window_count, eq_cap;
     uint8_t  eq_seen;             /* non-numeric route active, even if refused */

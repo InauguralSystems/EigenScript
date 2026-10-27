@@ -81,6 +81,12 @@ def rows():
     out.append({"id": "list-in-place-set-at", "kind": "list",
                 "behaviour": "in_place_set_at", "variant": 0,
                 "seed": SEED + len(out), "values": None})
+    out.append({"id": "buffer-in-place-write", "kind": "buffer",
+                "behaviour": "in_place_buffer_write", "variant": 0,
+                "seed": SEED + len(out), "values": None})
+    out.append({"id": "text-builder-in-place-append", "kind": "text_builder",
+                "behaviour": "in_place_builder_append", "variant": 0,
+                "seed": SEED + len(out), "values": None})
     return out
 
 
@@ -103,12 +109,18 @@ def program(corpus):
     for number, row in enumerate(corpus):
         name = f"row_{number}"
         if row["behaviour"].startswith("in_place_"):
-            out += [f"define {name} as:", "    xs is [0]", "    k is 0"]
+            initial = ("buffer of 1" if row["kind"] == "buffer" else
+                       "text_builder_new of null" if row["kind"] == "text_builder" else
+                       "[0]")
+            out += [f"define {name} as:", f"    xs is {initial}", "    k is 0"]
             for i in range(51):
                 if row["behaviour"] == "in_place_append":
                     out.append("    append of [xs, k]")
+                elif row["behaviour"] == "in_place_builder_append":
+                    out.append('    text_builder_append of [xs, "x"]')
                 else:
-                    out.append("    set_at of [xs, 0, k]")
+                    # Direct index assignment is shared by lists and buffers.
+                    out.append("    xs[0] is k")
                 out += ["    xs is xs", "    k is k + 1"]
                 if i in CHECKPOINTS:
                     out.append(

@@ -35,6 +35,7 @@ eigenscript.c|observer_slot_sample_gated|1|observer sample after newval->type ==
 eigenscript.c|observer_slot_update|1|observer update after newval->type == VAL_NUM
 eigenscript.c|slot_from_value|1|NaN-boxing boundary, inside its VAL_NUM branch
 eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_num
+eigenscript.c|values_equal_for_observation|2|observer-only non-raising equality, switch case VAL_NUM after equal type tags
 eigenscript.c|values_equal_impl|2|equality, switch case VAL_NUM after the bool/num pair raised
 eigenscript.c|value_to_string|1|printing, switch case VAL_NUM
 eigenscript.h|#define VAL_NUM_OFFSET|1|the raw member offset definition (JIT)

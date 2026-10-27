@@ -555,7 +555,12 @@ static int observer_eq_charge(size_t *units, size_t add) {
 static int observer_eq_within_budget(Value *v, size_t *units, int depth) {
     if (!v) return 1;
     if (!observer_eq_charge(units, 1)) return 0;
-    if (depth > 64) return 1; /* the existing clone/equality depth bound */
+    /* The general-purpose clone shares containers beyond its depth bound.
+     * Sharing here would turn a snapshot back into an alias, so refuse it. */
+    if (depth > 64) return 0;
+    /* A closure is an owning edge into its environment.  ObserverSlot is not
+     * a GC edge, so it must never retain one (including inside a container). */
+    if (v->type == VAL_FN || v->type == VAL_BUILTIN) return 0;
     if (v->type == VAL_LIST) {
         for (int i = 0; i < v->data.list.count; i++) {
             EIGS_VIEW(child);
@@ -579,9 +584,78 @@ static int observer_eq_within_budget(Value *v, size_t *units, int depth) {
     return 1;
 }
 
+/* Equality used only by observer bookkeeping.  Unlike language equality it
+ * cannot raise (notably num-vs-bool), set g_has_error, normalize buffers, or
+ * synchronize module namespaces.  Observer snapshots are ordinary detached
+ * values, and unsupported/deep values are refused before reaching here. */
+static int values_equal_for_observation(Value *a, Value *b, int depth) {
+    if (a == b) return 1;
+    if (!a || !b || a->type != b->type || depth > 64) return 0;
+    switch (a->type) {
+        case VAL_NUM: return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
+        case VAL_STR: return strcmp(a->data.str, b->data.str) == 0;
+        case VAL_NULL: return 1;
+        case VAL_BOOL: return a->data.boolean == b->data.boolean;
+        case VAL_LIST:
+            if (a->data.list.count != b->data.list.count) return 0;
+            for (int i = 0; i < a->data.list.count; i++) {
+                EIGS_VIEW(av); EIGS_VIEW(bv);
+                if (!values_equal_for_observation(list_get_view(a, i, &av),
+                        list_get_view(b, i, &bv), depth + 1)) return 0;
+            }
+            return 1;
+        case VAL_DICT:
+            if (a->data.dict.count != b->data.dict.count) return 0;
+            DICT_FOR_EACH(a, i) {
+                EIGS_VIEW(av); EIGS_VIEW(bv);
+                int j = -1;
+                /* Do not call a lookup path which may synchronize or rebuild
+                 * a namespace/hash: observation is deliberately side-effect
+                 * free, and snapshots are capped so this bounded scan is OK. */
+                DICT_FOR_EACH(b, k)
+                    if (strcmp(a->data.dict.keys[i], b->data.dict.keys[k]) == 0) {
+                        j = k;
+                        break;
+                    }
+                if (j < 0 || !values_equal_for_observation(
+                        dict_value_get_view(a, i, &av),
+                        dict_value_get_view(b, j, &bv), depth + 1)) return 0;
+            }
+            return 1;
+        case VAL_BUFFER:
+            if (a->data.buffer.count != b->data.buffer.count) return 0;
+            for (int i = 0; i < a->data.buffer.count; i++)
+                if (a->data.buffer.data[i] != b->data.buffer.data[i]) return 0;
+            return 1;
+        case VAL_TEXT_BUILDER:
+            return a->data.text_builder.len == b->data.text_builder.len &&
+                   memcmp(a->data.text_builder.data, b->data.text_builder.data,
+                          a->data.text_builder.len) == 0;
+        case VAL_FN:
+        case VAL_BUILTIN:
+            return 0; /* identity was handled above */
+    }
+    return 0;
+}
+
+static void observer_slot_record_eq_bit(ObserverSlot *s, int n, int equal) {
+    if (!s->eq_window || s->eq_cap < n) observer_slot_eq_ensure(s, n);
+    s->eq_window[s->eq_window_head] = (uint8_t)equal;
+    if (++s->eq_window_head >= s->eq_cap) s->eq_window_head = 0;
+    if (s->eq_window_count < s->eq_cap) s->eq_window_count++;
+}
+
 static void observer_slot_record_equality(ObserverSlot *s, Value *v) {
     int n = obs_win(s);
     s->eq_seen = 1;
+    if (v && (v->type == VAL_FN || v->type == VAL_BUILTIN)) {
+        if (s->eq_last || s->eq_identity_last)
+            observer_slot_record_eq_bit(s, n, !s->eq_last && s->eq_identity_last == v);
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = v; /* compare the address, but do not own it */
+        return;
+    }
     size_t units = 0;
     if (!observer_eq_within_budget(v, &units, 0)) {
         /* Refusal to judge: keep the predicate false until a later run of a
@@ -589,15 +663,13 @@ static void observer_slot_record_equality(ObserverSlot *s, Value *v) {
          * entropy or doing value-size-proportional observer work. */
         val_decref(s->eq_last);
         s->eq_last = NULL;
+        s->eq_identity_last = NULL;
         s->eq_window_count = s->eq_window_head = 0;
         return;
     }
-    if (s->eq_last) {
-        if (!s->eq_window || s->eq_cap < n) observer_slot_eq_ensure(s, n);
-        s->eq_window[s->eq_window_head] = (uint8_t)values_equal(s->eq_last, v);
-        if (++s->eq_window_head >= s->eq_cap) s->eq_window_head = 0;
-        if (s->eq_window_count < s->eq_cap) s->eq_window_count++;
-    }
+    if (s->eq_last || s->eq_identity_last)
+        observer_slot_record_eq_bit(s, n, s->eq_last &&
+                                    values_equal_for_observation(s->eq_last, v, 0));
     /* Keep a private content snapshot, not a reference to the binding's
      * mutable container.  In particular, `append of [xs, k]; xs is xs` must
      * compare the post-append value with the pre-append contents.  Reuse the
@@ -605,6 +677,7 @@ static void observer_slot_record_equality(ObserverSlot *s, Value *v) {
     Value *snapshot = val_clone_for_send(v);
     val_decref(s->eq_last);
     s->eq_last = snapshot;
+    s->eq_identity_last = NULL;
 }
 
 static int observer_slot_eq_settled(const ObserverSlot *s) {
@@ -911,6 +984,7 @@ void observer_slot_update_num(Env *e, int idx, double num) {
         observer_slot_record_value(vs, num);
         val_decref(vs->eq_last);
         vs->eq_last = NULL;
+        vs->eq_identity_last = NULL;
         vs->eq_window_count = vs->eq_window_head = 0;
         vs->eq_seen = 0;
     }
