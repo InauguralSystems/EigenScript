@@ -21,6 +21,7 @@ mkdir "$TMP"
 } >"$TMP/list.eigs"
 [ "$("$EIGS" "$TMP/list.eigs")" = "false
 false" ]
+echo "  PASS: observer fix2 list"
 
 # Exercise every mutable representation in one recursively mixed snapshot.
 {
@@ -37,6 +38,7 @@ false" ]
 } >"$TMP/nested.eigs"
 [ "$("$EIGS" "$TMP/nested.eigs")" = "false
 false" ]
+echo "  PASS: observer fix2 nested"
 
 # Values beyond the cap are reported rather than compared by reference.
 {
@@ -53,6 +55,7 @@ false" ]
 } >"$TMP/oversize.eigs"
 [ "$("$EIGS" "$TMP/oversize.eigs")" = "false
 false" ]
+echo "  PASS: observer fix2 oversize"
 
 cat >"$TMP/mixed-on.eigs" <<'EOF'
 x is [1]
@@ -66,8 +69,10 @@ EOF
 false
 false
 mixed-ok" ]
+echo "  PASS: observer fix2 mixed-on"
 printf '%s\n' 'x is [1]' 'x is [true]' 'print of "mixed-ok"' >"$TMP/mixed-off.eigs"
 [ "$("$EIGS" "$TMP/mixed-off.eigs")" = "mixed-ok" ]
+echo "  PASS: observer fix2 mixed-off"
 
 # A dead predicate read opens the observer gate without retaining the closure.
 cat >"$TMP/closure.eigs" <<'EOF'
@@ -84,6 +89,8 @@ print of "closure-ok"
 EOF
 STATS=$(EIGS_ALLOC_STATS=1 "$EIGS" "$TMP/closure.eigs" 2>&1)
 printf '%s\n' "$STATS" | grep -q '^closure-ok$'
+echo "  PASS: observer fix2 closure output"
 printf '%s\n' "$STATS" | grep -Eq '^eigs-alloc-stats: cumulative=[0-9]+ live=0 peak=[0-9]+ tracked=0$'
+echo "  PASS: observer fix2 closure ownership: no tracked bytes left"
 
 echo observer-snapshot-fix2-ok
