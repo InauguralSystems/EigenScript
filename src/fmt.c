@@ -292,7 +292,7 @@ char* format_source_string(const char *source) {
     strbuf output;
     strbuf_init(&output);
     size_t off = 0;
-    int line_no = 0, span_i = 0, prev_blank = 0;
+    int line_no = 0, span_i = 0;
     size_t source_len = strlen(source);
     char placeholder_prefix[32];
     unsigned placeholder_nonce = 0;
@@ -323,13 +323,14 @@ char* format_source_string(const char *source) {
         if (!starts_literal) while (first < content_end && (source[first] == ' ' || source[first] == '\t')) first++;
         int blank = first == content_end;
         if (blank && !starts_literal) {
-            if (!prev_blank) strbuf_append_char(&output, '\n');
-            prev_blank = 1;
+            /* Physical lines are observable through `at <line>` and token
+             * diagnostics.  Safe formatting therefore preserves every blank
+             * line rather than treating repeated blanks as cosmetic. */
+            strbuf_append_char(&output, '\n');
             off = end < source_len ? end + 1 : end;
             line_no++;
             continue;
         }
-        prev_blank = 0;
 
         int level = depth[line_no];
 

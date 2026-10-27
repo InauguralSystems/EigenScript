@@ -5591,7 +5591,16 @@ PASS=$((PASS + FMT_PASS))
 FAIL=$((FAIL + FMT_FAIL))
 if [ "$FMT_FAIL" -gt 0 ]; then
     echo "  FAIL: $FMT_FAIL formatter check(s) failed"
-    echo "$FMT_OUTPUT" | grep "FAIL:" | head -5
+    # A summary without the child's context hid archive/build failures in CI.
+    # Print both ends and count exactly how much was elided.
+    FMT_LINES=$(printf '%s\n' "$FMT_OUTPUT" | wc -l | tr -d ' ')
+    if [ "$FMT_LINES" -le 80 ]; then
+        printf '%s\n' "$FMT_OUTPUT"
+    else
+        printf '%s\n' "$FMT_OUTPUT" | head -40
+        echo "  ... $((FMT_LINES - 80)) formatter output line(s) elided ..."
+        printf '%s\n' "$FMT_OUTPUT" | tail -40
+    fi
 else
     echo "  PASS: all $FMT_PASS formatter checks"
 fi

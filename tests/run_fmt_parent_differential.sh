@@ -1,18 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-PARENT=${1:-}
+cd "$ROOT"
+SELFTEST=0
+if [ "${1:-}" = "--selftest" ]; then SELFTEST=1; PARENT=; else PARENT=${1:-}; fi
 TEMP=
 cleanup() { [ -z "$TEMP" ] || rm -rf "$TEMP"; }
 trap cleanup EXIT
 if [ -z "$PARENT" ]; then
-    # PR #1989 branched from this main commit. Pinning the incumbent makes the
-    # accepted delta stable even after main advances.
-    PARENT_REF=${FMT_PARENT_REF:-dffac84}
-    TEMP=$(mktemp -d /tmp/eigs-fmt-parent-XXXXXX)
-    git -C "$ROOT" archive "$PARENT_REF" | tar -x -C "$TEMP"
-    make -C "$TEMP" -j2 >/dev/null
+    PARENT_REF=$(git -C "$ROOT" merge-base HEAD origin/main 2>/dev/null) || {
+        echo "formatter differential: the parent commit is not in this clone; fetch history (cannot merge-base HEAD origin/main)" >&2
+        exit 1
+    }
+    git -C "$ROOT" cat-file -e "$PARENT_REF^{commit}" 2>/dev/null || {
+        echo "formatter differential: the parent commit is not in this clone; fetch history ($PARENT_REF)" >&2
+        exit 1
+    }
+    TEMP=$(mktemp -d "$(dirname "$ROOT")/.eigs-fmt-parent-XXXXXX")
+    git -C "$ROOT" archive "$PARENT_REF" | tar -x -C "$TEMP" || {
+        echo "formatter differential: could not obtain incumbent $PARENT_REF" >&2
+        exit 1
+    }
+    # This binary is a formatter oracle, not a performance result.  Avoid the
+    # release build's expensive optimisation so the <=60s source-gate row
+    # spends its budget comparing output rather than optimizing the VM/JIT.
+    make -C "$TEMP" -j8 CFLAGS='-Wall -Wextra -O0 -fPIE' >/dev/null || {
+        echo "formatter differential: could not build incumbent $PARENT_REF" >&2
+        exit 1
+    }
     PARENT="$TEMP/src/eigenscript"
 fi
-python3 "$ROOT/tests/fmt_parent_differential.py" \
-    "$PARENT" "$ROOT/src/eigenscript" "$ROOT"
+python3 tests/fmt_parent_differential.py "$PARENT" "$ROOT/src/eigenscript" "$ROOT"
+
+if [ "$SELFTEST" -eq 1 ]; then
+    if FMT_DIFFERENTIAL_PLANT_NORMALIZATION=1 FMT_DIFFERENTIAL_PROBE_ONLY=1 \
+        python3 tests/fmt_parent_differential.py "$PARENT" "$ROOT/src/eigenscript" "$ROOT" >/dev/null 2>&1; then
+        echo "FAIL: formatter differential missed normalization regression" >&2
+        exit 1
+    fi
+    echo "formatter differential selftest: live comparison passed; normalization plant caught"
+fi

@@ -2,6 +2,7 @@
 """Compare the incumbent and candidate formatters over the formatter corpus."""
 
 import glob
+import concurrent.futures
 import difflib
 import os
 import subprocess
@@ -79,7 +80,10 @@ def run(binary, path):
             f"{path}: formatter exited {result.returncode}: "
             + result.stderr.decode(errors="replace")
         )
-    return result.stdout
+    output = result.stdout
+    if os.environ.get("FMT_DIFFERENTIAL_PLANT_NORMALIZATION") and binary == candidate:
+        output = output.replace(b'"a" + "b"', b'"a"+"b"')
+    return output
 
 
 files = []
@@ -108,6 +112,12 @@ with tempfile.TemporaryDirectory(prefix="fmt-parent-diff-") as temp:
         sys.exit(extracted.returncode)
     for number, path in enumerate(extracted.stdout.splitlines(), 1):
         files.append((f"doc-fence:{number:04d}", path))
+    probe = os.path.join(temp, "normalization.eigs")
+    with open(probe, "wb") as stream:
+        stream.write(b'print of "a"+"b"\n')
+    files.append(("normalization-probe", probe))
+    if os.environ.get("FMT_DIFFERENTIAL_PROBE_ONLY"):
+        files = [("normalization-probe", probe)]
 
     counts = {
         "identical": 0,
@@ -115,32 +125,51 @@ with tempfile.TemporaryDirectory(prefix="fmt-parent-diff-") as temp:
         "unequal indentation": 0,
         "standalone-comment depth": 0,
         "semantic-line preservation": 0,
+        "normalization improvement": 0,
     }
     failures = []
-    for label, path in files:
-        old, new = run(parent, path), run(candidate, path)
-        if old == new:
-            counts["identical"] += 1
-            continue
 
-        categories = classify(label, old, new)
+    def compare_file(item):
+        label, path = item
+        return label, path, run(parent, path), run(candidate, path)
 
-        category = " + ".join(categories) if categories else "REGRESSION"
-        print(f"Formatter differential: {label}: {category}")
-        if category == "REGRESSION":
-            failures.append(label)
-            sys.stdout.buffer.writelines(
-                difflib.diff_bytes(
-                    difflib.unified_diff,
-                    old.splitlines(keepends=True),
-                    new.splitlines(keepends=True),
-                    fromfile=b"parent",
-                    tofile=b"branch",
+    # Formatter processes are independent and the row has a strict 60-second
+    # self-test budget (product-source triggers may not claim more).  Build the
+    # incumbent once, then fan out only these read-only comparisons.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        compared = pool.map(compare_file, files)
+        for label, path, old, new in compared:
+            if label == "normalization-probe":
+                if new != b'print of "a" + "b"\n':
+                    print(f"Formatter differential: {label}: REGRESSION")
+                    failures.append(label)
+                    continue
+                if old != new:
+                    counts["normalization improvement"] += 1
+                    print(f"Formatter differential: {label}: normalization improvement")
+                    continue
+            if old == new:
+                counts["identical"] += 1
+                continue
+
+            categories = classify(label, old, new)
+
+            category = " + ".join(categories) if categories else "REGRESSION"
+            print(f"Formatter differential: {label}: {category}")
+            if category == "REGRESSION":
+                failures.append(label)
+                sys.stdout.buffer.writelines(
+                    difflib.diff_bytes(
+                        difflib.unified_diff,
+                        old.splitlines(keepends=True),
+                        new.splitlines(keepends=True),
+                        fromfile=b"parent",
+                        tofile=b"branch",
+                    )
                 )
-            )
-        else:
-            for item in categories:
-                counts[item] += 1
+            else:
+                for item in categories:
+                    counts[item] += 1
 
 print(
     "Formatter differential counts: "

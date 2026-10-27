@@ -64,10 +64,10 @@ ACTUAL=$(fmt_str "$(printf 'x is 42   \ny is 10  \n')")
 EXPECTED=$(printf 'x is 42\ny is 10\n')
 check "trailing whitespace removal" "$ACTUAL" "$EXPECTED"
 
-# --- Collapse multiple blank lines ---
+# --- Preserve physical blank lines (`at <line>` is observable) ---
 ACTUAL=$(fmt_str "$(printf 'x is 1\n\n\n\ny is 2\n')")
-EXPECTED=$(printf 'x is 1\n\ny is 2\n')
-check "collapse multiple blank lines" "$ACTUAL" "$EXPECTED"
+EXPECTED=$(printf 'x is 1\n\n\n\ny is 2\n')
+check "preserve multiple blank lines" "$ACTUAL" "$EXPECTED"
 
 # --- Space after comma ---
 ACTUAL=$(fmt_str "$(printf '[1,2,3]\n')")
@@ -365,12 +365,6 @@ check "doc fences format through the executor extraction interface" \
       "extract=$DOC_EXTRACT_RC fences=$DOC_FMT_N bad=$DOC_FMT_BAD" \
       "extract=0 fences=$DOC_FMT_N bad=0"
 
-CLASSIFIER_SELFTEST=$(python3 "$TESTS_DIR/fmt_parent_differential.py" --selftest 2>&1)
-CLASSIFIER_SELFTEST_RC=$?
-check "parent differential classifies a list-item doc fence" \
-      "rc=$CLASSIFIER_SELFTEST_RC output=$CLASSIFIER_SELFTEST" \
-      "rc=0 output=classifier selftest: list-item fence is semantic-line preservation"
-
 check "single changelog fragment names all fixed issues" \
       "$(find "$TESTS_DIR/../changes/fixed" -maxdepth 1 -type f \( -name '*1245*' -o -name '*1246*' -o -name '*1581*' \) | wc -l | tr -d ' ')|$(cat "$TESTS_DIR/../changes/fixed/1581-cloud-fix.md")" \
       "1|- Fixed formatter literal preservation and lexer-owned indentation handling (#1245, #1246, #1581)."
@@ -412,14 +406,16 @@ echo "Formatter corpus: examined=$CORPUS_N unchanged=$CORPUS_UNCHANGED changed=$
 check "--fmt preserves parseability across $CORPUS_N repo files" \
       "broken:$CORPUS_BROKEN" "broken:"
 
-# The incumbent is the compatibility bar: every changed file must be one of
-# the three deliberately fixed formatter defect classes.
-DIFF_OUTPUT=$(bash "$TESTS_DIR/run_fmt_parent_differential.sh" 2>&1)
-DIFF_RC=$?
-printf '%s\n' "$DIFF_OUTPUT"
-check "parent formatter differential has no unexplained files" \
-      "rc=$DIFF_RC regressions=$(printf '%s\n' "$DIFF_OUTPUT" | grep -c ': REGRESSION' || true)" \
-      "rc=0 regressions=0"
+# Black-style safe mode: formatting may change horizontal whitespace and
+# comment columns, but never token type/value, physical line, or layout
+# structure.  The doc population is exactly the executor's extracted fences.
+TOKEN_OUTPUT=$(python3 "$TESTS_DIR/fmt_token_equivalence.py" \
+    "$EIGS" "$TESTS_DIR/.." "$DOC_LIST" 2>&1)
+TOKEN_RC=$?
+printf '%s\n' "$TOKEN_OUTPUT"
+check "--fmt preserves token streams across corpus and docs" \
+      "rc=$TOKEN_RC failures=$(printf '%s\n' "$TOKEN_OUTPUT" | grep -c '^TOKEN FAIL:' || true)" \
+      "rc=0 failures=0"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
