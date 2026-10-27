@@ -710,7 +710,7 @@ void eigs_lint_check_stdlib_shadow(ASTNode *ast, const char *path,
  *     body's plain `is` binds in the enclosing function/module scope,
  *     not the loop (#1056), so a post-loop read of a body-assigned
  *     name stays silent;
- *   - listcomp vars and catch vars bind in the containing scope.
+ *   - listcomp vars and catch vars bind in lexical child scopes.
  * Within a scope the binder set is still an over-approximation across
  * paths ("bound on some path" suppresses — the sibling-branch
  * first-assignment case). Over-collecting can only silence a true
@@ -748,8 +748,8 @@ typedef struct {
     Env *module_scope;              /* the linted file's top-level scope */
     Env *scope;                     /* current LOOKUP scope (chains to bind via parents) */
     Env *bind_scope;                /* nearest function/module scope: where a
-                                     * plain `is`, a listcomp/catch var and a
-                                     * nested define's name bind. Differs from
+                                     * plain `is` and a nested define's name
+                                     * bind. Differs from
                                      * `scope` inside a `for`, whose pushed
                                      * scope holds only the binder (#1105). */
     /* Scope registry: COLLECT creates one Env per scope-introducing node
@@ -992,19 +992,26 @@ static void e003_walk(ASTNode *n, E003 *e, LintContext *ctx, int mode) {
             e->scope = prev;
             break;
         }
-        case AST_LISTCOMP:
-            if (mode == E003_COLLECT) e003_bind_name(e, n->data.listcomp.var);
-            e003_walk(n->data.listcomp.expr, e, ctx, mode);
+        case AST_LISTCOMP: {
+            /* The iterable is outside; binder/filter/result share a child. */
             e003_walk(n->data.listcomp.iter, e, ctx, mode);
+            Env *prev = e003_scope_push(e, mode);
+            if (mode == E003_COLLECT) e003_bind_loop_var(e, n->data.listcomp.var);
             e003_walk(n->data.listcomp.filter, e, ctx, mode);
+            e003_walk(n->data.listcomp.expr, e, ctx, mode);
+            e->scope = prev;
             break;
-        case AST_TRY:
-            if (mode == E003_COLLECT) e003_bind_name(e, n->data.trycatch.err_name);
+        }
+        case AST_TRY: {
             for (int i = 0; i < n->data.trycatch.try_count; i++)
                 e003_walk(n->data.trycatch.try_body[i], e, ctx, mode);
+            Env *prev = e003_scope_push(e, mode);
+            if (mode == E003_COLLECT) e003_bind_loop_var(e, n->data.trycatch.err_name);
             for (int i = 0; i < n->data.trycatch.catch_count; i++)
                 e003_walk(n->data.trycatch.catch_body[i], e, ctx, mode);
+            e->scope = prev;
             break;
+        }
         case AST_IMPORT:
             if (mode == E003_COLLECT)
                 e003_bind_name(e, n->data.import.module_name);

@@ -3216,10 +3216,21 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
                 frame->try_count--; \
                 uint8_t *_catch_ip = frame->try_handlers[frame->try_count].catch_ip; \
                 int _catch_bp = frame->try_handlers[frame->try_count].catch_bp; \
+                Env *_catch_env = frame->try_handlers[frame->try_count].env; \
                 g_unobserved_depth = \
                     frame->try_handlers[frame->try_count].unobs_depth;  /* #871 */ \
                 frame->is_try = (frame->try_count > 0); \
                 while (g_vm.sp > _catch_bp) val_decref(vm_pop()); \
+                /* An exception can cross a comprehension, catch, or loop \
+                 * lexical environment. Restore the handler's environment \
+                 * before its body runs; captured children remain alive. */ \
+                while (frame->env != _catch_env) { \
+                    Env *_inner = frame->env; \
+                    Env *_parent = _inner->parent; \
+                    env_incref(_parent); \
+                    frame->env = _parent; \
+                    env_decref(_inner); \
+                } \
                 vm_push(vm_take_error_value()); \
                 ip = _catch_ip; \
             } else if (g_exit_requested || !vm_handler_in_range(base_frame)) { \
@@ -5194,6 +5205,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         frame->try_handlers[frame->try_count].catch_ip = ip + catch_offset;
         frame->try_handlers[frame->try_count].catch_bp = g_vm.sp;
         frame->try_handlers[frame->try_count].unobs_depth = g_unobserved_depth;  /* #871 */
+        frame->try_handlers[frame->try_count].env = frame->env;
         frame->try_count++;
         frame->is_try = 1;
         DISPATCH();

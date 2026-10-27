@@ -303,7 +303,7 @@ print of (buf_get of [(recv of c), 0])    # the BUFFER copied
 ```eigenscript fragment x=1
 xs is [1, 2, 3]
 append of [xs, 4]                       # in-place
-doubled is [v * 2 for v in xs]          # comprehension (its var leaks!)
+doubled is [v * 2 for v in xs]          # comprehension (`v` is local to it)
 evens is [v for v in xs if v % 2 == 0]  # comprehension filter clause
 inc is (x) => x + 1                     # lambda: params NEED the parens
 add is (a, b) => a + b                  # params are comma-separated: (a b) is a parse error

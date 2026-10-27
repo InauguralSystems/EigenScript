@@ -54,6 +54,7 @@ typedef struct {
     int  try_depth_at_entry; /* c->try_depth when the loop opened — break/continue
                               * must emit one OP_TRY_END per try block they jump
                               * out of, or the handler stays registered (#726) */
+    int  lexical_depth_at_entry;
 } LoopCtx;
 
 /* Dynamic set of name pointers used for escape analysis & module-name tracking.
@@ -112,6 +113,11 @@ typedef struct Compiler {
     const char      **lev_names;
     int               lev_count;
     int               lev_cap;
+    const char      **lex_names;   /* active comprehension/catch binders */
+    int              *lex_depths;  /* child-environment depth each opened */
+    int               lex_count;
+    int               lex_cap;
+    int               lexical_depth;
     NameSet          *module_names; /* root-compiler-owned: names defined at module scope */
     NameSet           module_slot_names; /* root-compiler-owned: names promoted to module slots */
     ASTNode          *root_ast;     /* root-compiler-owned: full AST for escape analysis */
@@ -230,6 +236,25 @@ static void lev_push(Compiler *c, const char *name) {
     c->lev_names[c->lev_count++] = name;
 }
 
+static int lexical_has(const Compiler *c, const char *name) {
+    for (int i = c->lex_count - 1; i >= 0; i--)
+        if (strcmp(c->lex_names[i], name) == 0) return 1;
+    return 0;
+}
+
+static void lexical_push(Compiler *c, const char *name) {
+    if (c->lex_count == c->lex_cap) {
+        c->lex_cap = c->lex_cap ? c->lex_cap * 2 : 4;
+        c->lex_names = xrealloc(c->lex_names,
+                                (size_t)c->lex_cap * sizeof(const char *));
+        c->lex_depths = xrealloc(c->lex_depths,
+                                 (size_t)c->lex_cap * sizeof(int));
+    }
+    c->lex_names[c->lex_count] = name;
+    c->lex_depths[c->lex_count] = c->lexical_depth;
+    c->lex_count++;
+}
+
 /* ---- Forward declarations ---- */
 static int for_loop_reads_observer(ASTNode *node);   /* #1062, defined after obs_ast_scan */
 static void compile_node(Compiler *c, ASTNode *node);
@@ -249,6 +274,7 @@ static LoopCtx *loop_push(Compiler *c) {
     LoopCtx *lp = xcalloc(1, sizeof(LoopCtx));
     lp->try_depth_at_entry = c->try_depth;
     lp->unobs_depth_at_entry = c->unobs_depth;
+    lp->lexical_depth_at_entry = c->lexical_depth;
     c->loops[c->loop_depth++] = lp;
     return lp;
 }
@@ -595,6 +621,7 @@ static int add_num_constant(Compiler *c, double num) {
 /* ---- Local variable tracking ---- */
 
 static int resolve_local(Compiler *c, const char *name, uint32_t hash) {
+    if (lexical_has(c, name)) return -1;
     for (int i = c->local_count - 1; i >= 0; i--) {
         if (c->locals[i].retired || c->locals[i].hidden) continue;
         if (c->locals[i].hash == hash && strcmp(c->locals[i].name, name) == 0)
@@ -1206,8 +1233,8 @@ static int ast_has_closure(ASTNode *node) {
  * body creates NO binding that lives in the loop env, because such a binding
  * would persist across iterations instead of being fresh each pass. A binding
  * lands in the loop env when the body assigns a name not already bound in an
- * enclosing scope (a loop-local), or via `local`, comprehension-var leakage,
- * a catch error name, a list-pattern, an import, or a closure. This routine
+ * enclosing scope (a loop-local), or via `local`, a lexical comprehension or
+ * catch binder, a list-pattern, an import, or a closure. This routine
  * returns 1 only when it can PROVE the subtree creates none of those: every
  * plain assignment targets a name in `bound` (unconditionally bound before the
  * loop) or an existing global/builtin, and no hard-to-prove binder appears.
@@ -1654,13 +1681,11 @@ static void collect_module_name_node(ASTNode *node, NameSet *out,
                                      int in_loop_env) {
     (void)in_loop_env;
     /* Preserve the established module-name inventory.  A function definition
-     * and catch binder are module-visible names; import/comprehension binders
-     * are merely no-slot storage constraints and must not change the target of
-     * a write in a nested function. */
+     * is module-visible; lexical catch/comprehension binders are merely
+     * no-slot storage constraints and must not change a nested function's
+     * write target. */
     if (node->type == AST_FUNC)
         name_set_add(out, node->data.func.name);
-    else if (node->type == AST_TRY && node->data.trycatch.err_name)
-        name_set_add(out, node->data.trycatch.err_name);
     if (node->type == AST_ASSIGN)
         name_set_add(out, node->data.assign.name);
     else if (node->type == AST_LIST_PATTERN_ASSIGN)
@@ -1886,6 +1911,12 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
             UserLocalStore route = user_local_store(c, name, slot);
             set_op = route.set_op; set_arg = route.set_arg;
             obs_op = route.obs_op; obs_arg = route.obs_arg;
+        } else if (lexical_has(c, name)) {
+            /* An active lexical binder shadows slots and function-env names.
+             * Update (and observe) the nearest child-env binding. */
+            int idx = add_string_constant(c, name);
+            set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
+            obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
         } else if (lev_has(c, name)) {
             /* #1074: the name is this function's active `for` binder in a
              * loop env -- write where the body reads. */
@@ -1952,7 +1983,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
              * doesn't set g_compile_import_toplevel, so its top-level
              * writes keep walking the chain into the caller's scope,
              * per its documented "current scope" contract. */
-            if (local_only) {
+            if (lexical_has(c, name)) {
+                set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
+            } else if (local_only) {
                 set_op = OP_SET_NAME_LOCAL; set_arg = (uint16_t)idx;
             } else if (lev_has(c, name)) {
                 /* An outer loop's binder may be written inside an inner
@@ -2618,6 +2651,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * predicate answered about a frozen trajectory. */
             for (int u = c->unobs_depth; u > lp->unobs_depth_at_entry; u--)
                 emit(c, OP_UNOBSERVED_END, node->line);
+            for (int l = c->lexical_depth; l > lp->lexical_depth_at_entry; l--)
+                emit(c, OP_LOOP_ENV_END, node->line);
             /* Clean up loop env before jumping out, but ONLY if the loop allocated
              * a per-iteration env. While-loops don't — emitting OP_LOOP_ENV_END
              * there would free the surrounding env (often the global one). */
@@ -2659,6 +2694,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * predicate answered about a frozen trajectory. */
             for (int u = c->unobs_depth; u > lp->unobs_depth_at_entry; u--)
                 emit(c, OP_UNOBSERVED_END, node->line);
+            for (int l = c->lexical_depth; l > lp->lexical_depth_at_entry; l--)
+                emit(c, OP_LOOP_ENV_END, node->line);
             /* End this iteration's env before jumping back, exactly as break
              * does below — the back-edge target sits BEFORE the per-iteration
              * OP_LOOP_ENV_FRESH, so without this the env is never torn down:
@@ -2777,6 +2814,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         stamp_local_traced(fn_chunk, &fn_compiler.interrogated);
         free(fn_compiler.lev_names);
+        free(fn_compiler.lex_names);
+        free(fn_compiler.lex_depths);
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);
@@ -2843,6 +2882,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         stamp_local_traced(fn_chunk, &fn_compiler.interrogated);
         free(fn_compiler.lev_names);
+        free(fn_compiler.lex_names);
+        free(fn_compiler.lex_depths);
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);
@@ -2870,6 +2911,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * runtime depth permanently and killed the observer process-wide. */
         for (int u = c->unobs_depth; u > 0; u--)
             emit(c, OP_UNOBSERVED_END, node->line);
+        for (int l = c->lexical_depth; l > 0; l--)
+            emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, node->data.ret.expr ? OP_RETURN : OP_RETURN_NULL, node->line);
         break;
     }
@@ -3172,6 +3215,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         emit(c, OP_LISTCOMP_BEGIN, node->line);
         compile_node(c, node->data.listcomp.iter);
         emit(c, OP_ITER_SETUP, node->line);
+        /* The iterable belongs to the enclosing scope; the binder, filter,
+         * and body belong to one comprehension-local lexical scope. */
+        emit(c, OP_LOOP_ENV_FRESH, node->line);
+        c->lexical_depth++;
+        lexical_push(c, node->data.listcomp.var);
 
         int loop_start = capture_loop_start(c);
         /* #1381: the comprehension variable is filed under the
@@ -3213,6 +3261,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         patch_jump(c, exit_jump);
         emit(c, OP_POP, node->line); /* pop iterator state */
+        emit(c, OP_LOOP_ENV_END, node->line);
+        c->lex_count--;
+        c->lexical_depth--;
         /* listcomp accumulator is now TOS */
         break;
     }
@@ -3243,6 +3294,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         patch_jump(c, catch_jump);
         /* Error message string is on stack, pushed by VM error handler */
+        /* A catch binder is local to its handler, just like a comprehension
+         * binder. TRY unwinding restores this parent on a handler error. */
+        emit(c, OP_LOOP_ENV_FRESH, node->line);
+        c->lexical_depth++;
         if (node->data.trycatch.err_name) {
             /* #1381: the catch binding is filed under the `catch` line, not
              * the faulting line inside the try body. */
@@ -3251,8 +3306,12 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             int idx = add_string_constant(c, node->data.trycatch.err_name);
             emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
             emit(c, OP_POP, node->line);
+            lexical_push(c, node->data.trycatch.err_name);
         }
         compile_block(c, node->data.trycatch.catch_body, node->data.trycatch.catch_count);
+        if (node->data.trycatch.err_name) c->lex_count--;
+        c->lexical_depth--;
+        emit(c, OP_LOOP_ENV_END, node->line);
         patch_jump(c, end_jump);
         break;
     }
@@ -4273,6 +4332,8 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src,
     name_set_free(&compiler.module_slot_names);
     free(compiler.locals);
     free(compiler.lev_names);
+    free(compiler.lex_names);
+    free(compiler.lex_depths);
 
     /* Opt-in self-check: every chunk this compiler emits must satisfy the
      * verifier that gates untrusted chunks. Off unless EIGS_VERIFY_SELF=1 (the

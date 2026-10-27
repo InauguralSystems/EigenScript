@@ -198,6 +198,12 @@ print of (map of [xs, (v) => v * 10])
 [10, 20, 30, 40, 50]
 ```
 
+As in Python 3, a comprehension binder is local: its iterable can read a
+same-named outer value, while its filter and result read the local element.
+No binder leaks after success, empty input, or an exception. EigenScript catch
+binders are also handler-local (unlike Python's post-handler name deletion),
+so a same-named outer binding remains untouched.
+
 Like Python's executable-relative prefix lookup, EigenScript's source-tree
 runtime finds its standard library from the executable: both `src/eigenscript`
 and a directly invoked `build/<variant>/eigenscript` resolve the repository's
