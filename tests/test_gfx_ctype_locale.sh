@@ -2,6 +2,10 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# Helper C is compiled with the repo's mandatory flags, as the other C-building
+# tests do; CI's compiler guard rejects a compile without them.
+WERROR_FLAGS_FILE="$ROOT/tools/werror_flags.txt"
+. "$ROOT/tools/read_werror_flags.sh" || exit 1
 DISPLAY_NUM=":$((190 + ($$ % 700)))"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-1681-ctype.XXXXXX")
 cleanup() {
@@ -24,8 +28,14 @@ if ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
     exit 1
 fi
 
-${CC:-cc} -shared -fPIC -Wall -Wextra -Werror \
-    "$ROOT/tests/gfx_locale_probe.c" -ldl -o "$TMP/locale-probe.so"
+if ! ${CC:-cc} $WERROR_FLAGS -shared -fPIC -Wall -Wextra -Werror \
+        "$ROOT/tests/gfx_locale_probe.c" -ldl -o "$TMP/locale-probe.so" \
+   || [ ! -f "$TMP/locale-probe.so" ]; then
+    # Without the probe every case would differ for a reason unrelated to
+    # the locale; say so instead of reporting a confusing mismatch.
+    echo "  FAIL: the locale preload probe did not build"
+    exit 1
+fi
 
 run_case() {
     local locale=$1 gfx=$2 output=$3
