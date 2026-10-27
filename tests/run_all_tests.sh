@@ -205,6 +205,7 @@ eigs_binary_fingerprint() {
 # the suite cannot decide, so it says so instead of pretending.
 ensure_binary_current() {
     local ino variant target rc
+    EIGS_ACTIVE_VARIANT=""
     ino=$(stat -c %i "$EIGS_BIN" 2>/dev/null) || return 0
     variant=""
     for cand in ../build/*/eigenscript; do
@@ -217,6 +218,9 @@ ensure_binary_current() {
         echo "  NOTE: src/eigenscript is not hard-linked to any build/<variant>/eigenscript -- freshness not checked (#1089)"
         return 0
     fi
+    # Keep the inode resolver's answer available to sections that must exercise
+    # the build/<variant> path itself rather than the src/ alias (#1679).
+    EIGS_ACTIVE_VARIANT=$variant
     # The FILE target, not the phony goal: `make -q build` is always
     # "needs remaking" because `build` is .PHONY.
     target="build/$variant/eigenscript"
