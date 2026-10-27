@@ -91,28 +91,34 @@ define module_fn_retarget_in_block() as:
 module_fn_status_in_block is module_fn_retarget_in_block of []
 assert_eq of [module_fn_target_in_block, 42, "1883 a function's write reaches a module function name defined in an unobserved block"]
 
-# A module-level catch binder is a module name too.
+# A module name that is also used as a catch binder.  Since #1737 the binder
+# is local to its handler, so the catch leaves the module binding untouched,
+# and a function's write still reaches that module name (#1883).
+module_catch_target is 0
 try:
     module_catch_value is 1 / 0
 catch module_catch_target:
     module_catch_kind is module_catch_target.kind
+assert_eq of [module_catch_target, 0, "1737 a handler-local catch binder leaves the module binding untouched"]
 define module_catch_retarget() as:
     module_catch_target is 42
     return 0
 module_catch_status is module_catch_retarget of []
-assert_eq of [module_catch_target, 42, "1883 a function's write reaches a module catch binder"]
+assert_eq of [module_catch_target, 42, "1883 a function's write reaches a module name also used as a catch binder"]
 
 # The same, with the catch inside an unobserved block.
+module_catch_target_in_block is 0
 unobserved:
     try:
         module_catch_value_in_block is 1 / 0
     catch module_catch_target_in_block:
         module_catch_kind_in_block is module_catch_target_in_block.kind
+assert_eq of [module_catch_target_in_block, 0, "1737 a handler-local catch binder in an unobserved block leaves the module binding untouched"]
 define module_catch_retarget_in_block() as:
     module_catch_target_in_block is 42
     return 0
 module_catch_status_in_block is module_catch_retarget_in_block of []
-assert_eq of [module_catch_target_in_block, 42, "1883 a function's write reaches a module catch binder bound in an unobserved block"]
+assert_eq of [module_catch_target_in_block, 42, "1883 a function's write reaches a module name also used as a catch binder in an unobserved block"]
 
 # Review finding 2: a catch body that assigns its own binder leaves it bound by
 # name, so the block must not promote it.  From here on each tested name is
