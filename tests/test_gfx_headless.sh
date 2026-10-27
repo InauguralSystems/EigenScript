@@ -19,6 +19,8 @@ if [ ! -f "$HERE/gfx_headless.sh" ]; then
     exit 1
 fi
 . "$HERE/gfx_headless.sh"
+. "$HERE/timeout_select.sh"
+eigs_timeout_select 180
 
 cat >"$TMP/record-env" <<'EOF'
 #!/usr/bin/env bash

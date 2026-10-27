@@ -24,6 +24,7 @@ export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
 . "$TESTS_DIR/suite_program_env.sh" || exit 1
 . "$TESTS_DIR/gfx_headless.sh" || exit 1
+. "$TESTS_DIR/timeout_select.sh" || exit 1
 . "$TESTS_DIR/diagnostic_capture.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 
@@ -152,9 +153,7 @@ echo() {
 : "${EIGS_VERIFY_SELF:=1}"
 export EIGS_VERIFY_SELF
 
-EIGS_TMO=""
-if command -v timeout >/dev/null 2>&1; then EIGS_TMO="timeout $EIGS_TEST_TIMEOUT"
-elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIMEOUT"; fi
+eigs_timeout_select "$EIGS_TEST_TIMEOUT"
 
 # Binary fingerprint guard (#681). src/eigenscript is a hard link to the
 # last `make` variant target (#740); re-pointing it mid-suite — or relinking
