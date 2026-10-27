@@ -57,6 +57,26 @@ def executable_path(word: str, source: Path) -> str | None:
     return None
 
 
+def _substitutions(words):
+    """Commands run by a `$(...)` embedded in the words of one command.
+
+    `x=$("$TESTS_DIR/../tools/t.sh" arg)` is one shlex word starting with an
+    assignment, so the caller would discard it as an env prefix; the command it
+    substitutes still executes and is an edge (#1679's resolver call)."""
+    for i, w in enumerate(words):
+        if "$(" not in w:
+            continue
+        sub = [w.split("$(")[-1]] + list(words[i + 1:])
+        for j, x in enumerate(sub):
+            if x.endswith(")"):
+                sub = sub[:j + 1]
+                sub[-1] = sub[-1].rstrip(")")
+                break
+        sub = [x for x in sub if x]
+        if sub:
+            yield sub
+
+
 def shell_commands(text: str):
     """Yield shell simple commands with wrappers removed."""
     logical = re.sub(r"\\\n\s*", " ", text)
@@ -64,6 +84,7 @@ def shell_commands(text: str):
         try:
             for part in re.split(r"(?:&&|\|\||[;|`])", raw):
                 words = shlex.split(part, comments=True)
+                yield from _substitutions(words)
                 while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "env", "command", "exec", "nohup", "sudo", "xvfb-run"}):
                     words.pop(0)
                 if words and words[0] == "timeout":
