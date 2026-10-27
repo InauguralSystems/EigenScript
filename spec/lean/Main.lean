@@ -47,9 +47,9 @@ private def execute (o : Options) : IO UInt32 := do
       match o.trace with | some path => IO.FS.writeFile path (tapeSerialize result.tape) | none => pure ()
       match result.error with
       | none => pure 0
-      | some .fuel => IO.eprintln "runtime error: fuel exhausted"; pure 1
+      | some .fuel => IO.eprintln "refused at runtime: evaluator fuel exhausted"; pure 1
       | some (.unsupported construct) =>
-          IO.eprintln s!"unsupported in EigenCore-0 step 2a: {construct}"; pure 1
+          IO.eprintln s!"unsupported in EigenCore-0 step 2b-ii: {construct}"; pure 1
       | some (.refusal reason) => IO.eprintln s!"refused at runtime: {reason}"; pure 1
       | some (.runtime e) => IO.eprintln s!"runtime error: {e}"; pure 1
 

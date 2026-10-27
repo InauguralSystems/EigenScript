@@ -5,6 +5,7 @@ inductive Value where
   | string (value : String)
   | bool (value : Bool)
   | null
+  | array (values : List Value)
   | closure (name : String)
   deriving Repr, BEq, Inhabited
 
@@ -15,6 +16,7 @@ def Value.print : Value → String
   | .bool true => "true"
   | .bool false => "false"
   | .null => "null"
+  | .array values => "[" ++ String.intercalate ", " (values.map Value.print) ++ "]"
   | .closure name => s!"<fn {name}>"
 
 end EigenCore

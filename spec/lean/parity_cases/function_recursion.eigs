@@ -1,0 +1,5 @@
+define fact(m) as:
+    if m < 2:
+        return 1
+    return m * (fact of [m - 1])
+print of (fact of 6)

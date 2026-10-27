@@ -22,12 +22,19 @@ structure Frame where
   serial : Nat
   environment : Nat
   deriving Inhabited
+structure FunctionDef where
+  name : String
+  parameters : List String
+  body : List Stmt
+  definingEnvironment : Nat
+  deriving Inhabited
 inductive OracleValue where | int (v : Int) | string (v : String) | null deriving Repr, BEq
 inductive Mode where | live (oracle : List OracleValue) | record (oracle : List OracleValue) | replayStrict (tape : List String) deriving Repr, BEq
 structure World where
   environments : Array Environment := #[{id := 0, parent := none}]
   frames : Array Frame := #[{serial := 0, environment := 0}]
   nextFrameSerial : Nat := 1
+  functions : Array FunctionDef := #[]
   stdout : String := ""
   tape : List String := []
   mode : Mode := .live []
@@ -64,7 +71,9 @@ private def tapeString (s : String) : String :=
   "\"" ++ body ++ (if s.utf8ByteSize > 60 then "…" else "") ++ "\""
 private def tapeValue : Value → String
   | .int n => toString n | .string s => tapeString s
-  | .bool true => "true" | .bool false => "false" | .null => "null" | .closure n => s!"<fn {n}>"
+  | .bool true => "true" | .bool false => "false" | .null => "null"
+  | .array values => "[" ++ String.intercalate ", " (values.map tapeValue) ++ "]"
+  | .closure _ => "<fn>"
 private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
   let w ← get
   let current := currentEnvironment w
@@ -78,6 +87,11 @@ private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := d
     | none => w.environments.modify current fun environment =>
         {environment with slots := environment.slots.push {name:=name,value:=v,history:=#[v],assignments:=1}}
   set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}
+
+/-- Parameter creation is its first observation, but is not an assignment tape event. -/
+private def bindParameter (environment : Nat) (name : String) (value : Value) : EvalM Unit := do
+  modify fun w => {w with environments := w.environments.modify environment fun e =>
+    {e with slots := e.slots.push {name:=name, value:=value, history:=#[value], assignments:=1}}}
 private def truthy : Value → Bool | .bool false | .null | .int 0 | .string "" => false | _ => true
 private def asInt : Value → Except Err Int | .int n => pure n | _ => throw (Err.runtime "expected integer")
 private def safeInt (n : Int) : Except Err Value :=
@@ -97,7 +111,8 @@ private def evalBin (op : BinOp) (a b : Value) : Except Err Value := match op wi
       | _, _ => throw (Err.runtime "cannot order operands of different types")
   | .and => pure (if truthy a then b else a) | .or => pure (if truthy a then a else b)
 
-def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
+mutual
+ def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
   | 0 => throw .fuel
   | f+1 => match e with
     | .literal (.int n) => pure (.int n) | .literal (.string s) => pure (.string s) | .literal (.bool b) => pure (.bool b) | .literal .null => pure .null
@@ -113,9 +128,61 @@ def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
       | none => throw (Err.runtime s!"undefined variable: {n}")
     | .prev _ => throw (.unsupported "prev")
     | .whatWhen _ _ => throw (.unsupported "what-when")
-    | .call _ _ => throw (.unsupported "function call")
+    | .call function arguments => do
+      let callable ← evalExpr f function
+      let values ← arguments.mapM (evalExpr f)
+      match callable with
+      | .closure name => callFunction f name values
+      | _ => throw (.runtime "value is not callable")
+ termination_by fuel
 
-def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with
+ def callFunction (fuel : Nat) (name : String) (arguments : List Value) : EvalM Value := match fuel with
+  | 0 => throw .fuel
+  | f + 1 => do
+    let before ← get
+    let definition := before.functions.find? (fun d => d.name == name)
+    let some definition := definition | throw (.runtime s!"undefined function: {name}")
+    let count := definition.parameters.length
+    if count > 1 && arguments.length > count then
+      throw (.runtime s!"call passes {arguments.length} arguments but the callee takes {count}")
+    let environment := before.environments.size
+    let frame : Frame := {serial:=before.nextFrameSerial, environment:=environment}
+    set {before with
+      environments:=before.environments.push {id:=environment, parent:=some definition.definingEnvironment}
+      frames:=before.frames.push frame, nextFrameSerial:=before.nextFrameSerial + 1}
+    let supplied := if count == 0 then [] else if count == 1 && arguments.length != 1 then
+      [.array arguments] else arguments
+    for (parameter, index) in definition.parameters.zipIdx do
+      bindParameter environment parameter (supplied[index]?.getD .null)
+    let outcome : Except Err Value ← try
+      let returned ← exec f definition.body
+      pure (Except.ok (returned.getD .null))
+    catch error => pure (Except.error error)
+    modify fun w => {w with frames:=w.frames.pop}
+    match outcome with | .ok value => pure value | .error error => throw error
+ termination_by fuel
+
+ def chooseBranch (fuel : Nat) (arms : List (Expr × List Stmt))
+     (otherwise : Option (List Stmt)) : EvalM (Option Value) := match fuel with
+  | 0 => throw .fuel
+  | f + 1 => match arms with
+    | [] => match otherwise with | some body => exec f body | none => pure none
+    | (condition, body) :: rest => do
+      if truthy (← evalExpr f condition) then exec f body else chooseBranch f rest otherwise
+ termination_by fuel
+
+ def execLoop (fuel : Nat) (condition : Expr) (body rest : List Stmt) : EvalM (Option Value) :=
+  match fuel with
+  | 0 => throw .fuel
+  | f + 1 => do
+    if truthy (← evalExpr f condition) then
+      match ← exec f body with | some value => pure (some value) | none => execLoop f condition body rest
+    else do
+      store "__loop_exit__" (.string "normal") false
+      exec f rest
+ termination_by fuel
+
+ def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with
   | 0 => throw .fuel
   | f+1 => match ss with
     | [] => pure none
@@ -125,24 +192,12 @@ def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with
       | .expression e => do let _ ← evalExpr f e; exec f rest
       | .return_ e => do pure (some (← evalExpr f e))
       | .branch condition yes elifs no => do
-        let rec choose : List (Expr × List Stmt) → EvalM (Option Value)
-          | [] => match no with | some body => exec f body | none => pure none
-          | (c, body) :: arms => do if truthy (← evalExpr f c) then exec f body else choose arms
-        let result ← if truthy (← evalExpr f condition) then exec f yes else choose elifs
+        let result ← if truthy (← evalExpr f condition) then exec f yes else chooseBranch f elifs no
         match result with | some v => pure (some v) | none => exec f rest
-      | .loop condition body =>
-        let rec again (remaining : Nat) : EvalM (Option Value) := match remaining with
-          | 0 => throw .fuel
-          | n+1 => do
-            if truthy (← evalExpr n condition) then
-              match ← exec n body with | some v => pure (some v) | none => again n
-            else do
-              -- `__loop_exit__` is a language-visible loop binding, and hence
-              -- an assignment event under SPEC/TRACE just like source stores.
-              store "__loop_exit__" (.string "normal") false
-              exec n rest
-        again f
-      | .define _ _ _ => throw (.unsupported "function definition")
+      | .loop condition body => execLoop f condition body rest
+      | .define name _ _ => do store name (.closure name) true; exec f rest
+ termination_by fuel
+end
 
 structure RunResult where
   stdout : String
@@ -153,7 +208,13 @@ def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
   if let some construct := unsupportedConstruct p then
     {stdout:="", tape:=[], error:=some (.unsupported construct)}
   else
-    let (result, w) := ((exec fuel p).run).run {mode:=mode}
+    let definitions := p.filterMap fun statement => match statement with
+      | .define name parameters body => some {name:=name, parameters:=parameters, body:=body, definingEnvironment:=0}
+      | _ => none
+    let root : Environment := {id:=0, parent:=none}
+    let initial : World := {mode:=mode, functions:=definitions.toArray, environments:=#[root]}
+    let action : EvalM (Option Value) := exec fuel p
+    let (result, w) := (action.run).run initial
     let error := match result with | .ok _ => none | .error e => some e
     {stdout:=w.stdout, tape:=w.tape, error:=error}
 end EigenCore

@@ -18,8 +18,8 @@ CASES = {
     'equality merge': ('print of (1 == 1)\n', 'in-subset'),
     'identifier containing e': ('age is when is x\n', 'in-subset'),
     'local temporal read': ('local age is when is x\n', 'in-subset'),
-    'implicit-parameter definition': ('define square as:\n    return 1\n', 'out'),
-    'explicit-parameter definition': ('define add(x, y) as:\n    return x + y\n', 'out'),
+    'implicit-parameter definition': ('define square as:\n    return 1\n', 'in-subset'),
+    'explicit-parameter definition': ('define add(x, y) as:\n    return x + y\n', 'in-subset'),
     'branch and loop': ('if true:\n    loop while false:\n        print of 1\nelse:\n    print of 2\n', 'in-subset'),
     'bare list after print': ('print of [1, 2]\n', 'out'),
     'index after print': ('print of xs[0]\n', 'out'),
@@ -43,11 +43,11 @@ if failures:
     raise SystemExit('classification table failed:\n  ' + '\n  '.join(failures))
 print(f'classification table: {len(CASES)} cases passed')
 
-# Evaluation must refuse rather than silently executing around a definition.
+# Nested definitions remain closures and must be refused explicitly.
 with tempfile.NamedTemporaryFile('w', suffix='.eigs') as source:
-    source.write('define f as:\n    return 1\nprint of 2\n'); source.flush()
+    source.write('define f as:\n    define inner as:\n        return 1\n    return inner of 1\n'); source.flush()
     result = subprocess.run([EXE, source.name], text=True, capture_output=True)
-    expected = 'unsupported in EigenCore-0 step 2a: function definition'
+    expected = 'unsupported in EigenCore-0 step 2b-ii: nested function definition (closure)'
     if result.returncode == 0 or expected not in result.stderr:
         raise SystemExit(f'evaluator did not refuse function definition: {result.stderr}')
-print('unsupported evaluator refusal: function definition passed')
+print('unsupported evaluator refusal: nested function definition passed')

@@ -1,0 +1,6 @@
+total is 10
+define bump(by) as:
+    total is total + by
+    return total
+print of (bump of 5)
+print of total

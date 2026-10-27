@@ -1,0 +1,7 @@
+define observe(p) as:
+    print of (when is p)
+    p is p + 1
+    p is p + 1
+    print of (when is p)
+    return p
+print of (observe of 10)

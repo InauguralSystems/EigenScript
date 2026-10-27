@@ -1,0 +1,4 @@
+print of "before"
+define pair(a, b) as:
+    return a + b
+pair of [1, 2, 3]

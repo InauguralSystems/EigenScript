@@ -120,7 +120,12 @@ private def expressionFuel : Nat → String → Except String Expr
           let inside := trim (args.dropEnd 1).toString
           let values ← if inside.isEmpty then pure [] else (splitTopLevel ',' inside).mapM (expressionFuel fuel)
           pure (.call (← atom fn) values)
-        | none => atom t
+        | none =>
+          match splitOnceTopLevel " of " t with
+          | some (fn, argument) => do
+            if trim argument |>.isEmpty then throw "not yet modeled"
+            pure (.call (← atom fn) [← expressionFuel fuel argument])
+          | none => atom t
 
 private def expression (s : String) : Except String Expr := expressionFuel (s.length + 1) s
 
@@ -164,7 +169,7 @@ private def definitionSignature (signature : String) : Except String (String × 
   match signature.splitOn "(" with
   | [name] =>
     let name := trim name
-    if validIdent name then pure (name, []) else throw "function definition"
+    if validIdent name then pure (name, ["n"]) else throw "function definition"
   | [name, parameters] => do
     if !parameters.endsWith ")" then throw "function definition"
     let name := trim name
@@ -242,50 +247,59 @@ def parse (source : String) : Except Outside Program := do
     | some line => throw ⟨"unparsed input", line.number⟩
     | none => throw ⟨"unparsed input", 1⟩
 
-private def unsupportedExpr : Expr → Option String
-  | .literal _ | .when _ => none
-  | .variable name =>
+private def unsupportedExpr (functions : List String) : Nat → Expr → Option String
+  | 0, _ => some "support-check nesting limit"
+  | _, .literal _ | _, .when _ => none
+  | _, .variable name =>
       if name == "converged" || name == "__loop_exit__" || name == "__loop_iterations__" then
         some s!"builtin {name}"
       else none
-  | .binary _ left right => unsupportedExpr left |>.orElse (fun _ => unsupportedExpr right)
-  | .not value => unsupportedExpr value
-  | .array _ => some "array literal"
-  | .call (.variable name) _ =>
+  | fuel + 1, .binary _ left right => unsupportedExpr functions fuel left |>.orElse (fun _ => unsupportedExpr functions fuel right)
+  | fuel + 1, .not value => unsupportedExpr functions fuel value
+  | _, .array _ => some "array literal"
+  | fuel + 1, .call (.variable name) arguments =>
       if ["converged", "loop_iterations", "loop_exit"].contains name then
         some s!"builtin {name}"
-      else
-        some "function call"
-  | .call _ _ => some "function call"
-  | .prev _ => some "prev"
-  | .whatWhen _ _ => some "what-when"
+      else if functions.contains name || name.startsWith "undefined_" then
+        arguments.findSome? (unsupportedExpr functions fuel)
+      else some s!"call to unmodeled function {name}"
+  | fuel + 1, .call function arguments =>
+      unsupportedExpr functions fuel function |>.orElse (fun _ => arguments.findSome? (unsupportedExpr functions fuel))
+  | _, .prev _ => some "prev"
+  | _, .whatWhen _ _ => some "what-when"
 
-private def unsupportedStmts : Nat → List Stmt → Option String
+private def unsupportedStmts (functions : List String) (insideFunction : Bool) : Nat → List Stmt → Option String
   | 0, _ => some "support-check nesting limit"
   | _, [] => none
   | fuel + 1, statement :: rest =>
       let here := match statement with
         | .assign _ value _ | .print value | .return_ value | .expression value =>
-            unsupportedExpr value
+            unsupportedExpr functions fuel value
         | .branch condition yes elifs otherwise =>
-            unsupportedExpr condition
-              |>.orElse (fun _ => unsupportedStmts fuel yes)
+            unsupportedExpr functions fuel condition
+              |>.orElse (fun _ => unsupportedStmts functions insideFunction fuel yes)
               |>.orElse (fun _ => elifs.findSome? fun (arm : Expr × List Stmt) =>
-                unsupportedExpr arm.1 |>.orElse (fun _ => unsupportedStmts fuel arm.2))
-              |>.orElse (fun _ => otherwise.bind (unsupportedStmts fuel))
+                unsupportedExpr functions fuel arm.1 |>.orElse (fun _ => unsupportedStmts functions insideFunction fuel arm.2))
+              |>.orElse (fun _ => otherwise.bind (unsupportedStmts functions insideFunction fuel))
         | .loop condition body =>
-            unsupportedExpr condition |>.orElse (fun _ => unsupportedStmts fuel body)
-        | .define _ _ _ => some "function definition"
-      here.orElse (fun _ => unsupportedStmts fuel rest)
+            unsupportedExpr functions fuel condition |>.orElse (fun _ => unsupportedStmts functions insideFunction fuel body)
+        | .define _ parameters body =>
+            if insideFunction then some "nested function definition (closure)"
+            else if parameters.length > 16 then some "function exceeds 16 parameters"
+            else unsupportedStmts functions true fuel body
+      here.orElse (fun _ => unsupportedStmts functions insideFunction fuel rest)
 
 /-- The single support predicate used by both classification and evaluation. -/
-def unsupportedConstruct (program : Program) : Option String := unsupportedStmts 100000 program
+def unsupportedConstruct (program : Program) : Option String :=
+  let functions := program.filterMap fun statement => match statement with
+    | .define name _ _ => some name | _ => none
+  unsupportedStmts functions false 100000 program
 
 def classifyModeled (source : String) : Classification :=
   match parse source with
   | .error why => .out why
   | .ok program => match unsupportedConstruct program with
-    | some construct => .out ⟨s!"unsupported in EigenCore-0 step 2a: {construct}", 1⟩
+    | some construct => .out ⟨s!"unsupported in EigenCore-0 step 2b-ii: {construct}", 1⟩
     | none => .inSubset
 
 def classify (source : String) : Classification :=

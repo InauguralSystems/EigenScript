@@ -1,0 +1,7 @@
+value is 4
+define shadow(n) as:
+    local value is n
+    value is value + 1
+    return value
+print of (shadow of 8)
+print of value
