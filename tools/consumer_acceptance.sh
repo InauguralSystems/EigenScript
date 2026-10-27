@@ -15,7 +15,7 @@ declared_cmd() {
   case "$1" in
     eigen-edit|eigen-sheet) printf '%s' 'bash tests/test_smoke.sh' ;;
     EigenGauntlet) printf '%s' 'bash tests/run_smoke.sh' ;;
-    EigenMiniSat) printf '%s' "python3 -m unittest discover -s benchmarks -p 'test_*.py' && bash tests/run_smoke.sh && bash tests/run_proof_check.sh && eigenscript minisat.eigs --proof-bench --size 1" ;;
+    EigenMiniSat) printf '%s' "python3 -m unittest discover -s benchmarks -p 'test_*.py' && bash tests/run_smoke.sh && bash tests/run_proof_check.sh && eigenscript minisat.eigs --proof-bench --size 1 && bash tests/run_regime_c_check.sh" ;;
     *) return 1 ;;
   esac
 }
