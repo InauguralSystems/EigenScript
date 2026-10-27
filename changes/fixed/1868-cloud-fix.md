@@ -1,1 +1,0 @@
-- Fix TSan refcount atomicity issues (#1868).
