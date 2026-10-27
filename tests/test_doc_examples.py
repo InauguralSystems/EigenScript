@@ -342,7 +342,7 @@ POPULATION = {
     "docs/PREDICATES.md":        ( 13,    2,    10,      1,      4),
     "docs/DIAGNOSTICS.md":       (  4,    1,     3,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
-    "docs/BUILTINS.md":          (  1,    1,     0,      0,      0),
+    "docs/BUILTINS.md":          (  2,    2,     0,      0,      0),   # #1888: nearest-other contract
     "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),
 }
 

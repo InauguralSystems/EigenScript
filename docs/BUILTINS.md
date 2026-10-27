@@ -930,8 +930,19 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `nearest_in_range` | `nearest_in_range of [entities, x, y, range, world_w, world_h]` | Find the nearest active entity within `range` using torus (wrapping) distance. `entities` is a list of dicts with `"px"`, `"py"`, `"active"` keys. Returns `{"index", "dist", "dx", "dy"}` or `null`. Optional extra args: custom key names `[..., px_key, py_key, active_key]`. |
-| `nearest_in_range_all` | `nearest_in_range_all of [entities, range, world_w, world_h]` | Like `nearest_in_range`, but returns ALL active entities within `range` (torus distance) as a list, not just the closest. Optional trailing custom key names `[..., px_key, py_key, active_key]`. |
+| `nearest_in_range` | `nearest_in_range of [entities, x, y, range, world_w, world_h]` | Position query: find the nearest active entity to `(x, y)` within `range` using torus (wrapping) distance. Because the query has no entity identity, no candidate is implicitly excluded. Returns `{"index", "dist", "dx", "dy"}` or `null`. Optional extra args: custom key names `[..., px_key, py_key, active_key]`. |
+| `nearest_in_range_all` | `nearest_in_range_all of [entities, range, world_w, world_h]` | For every entity `i`, return its nearest **other** active entity within `range` using torus distance, or `null`; entity `i` is never its own candidate. The result list has one entry per input entity. Optional trailing custom key names `[..., px_key, py_key, active_key]`. |
+
+The per-entity result and self-exclusion are executable here:
+
+```eigenscript
+entities is [{"px": 1, "py": 1, "active": true}, {"px": 5, "py": 5, "active": true}, {"px": 90, "py": 90, "active": true}]
+neighbors is nearest_in_range_all of [entities, 10, 100, 100]
+print of [neighbors[0].index, neighbors[1].index, neighbors[2]]
+```
+```output
+[1, 0, null]
+```
 
 ## Audio (additional)
 

@@ -1,0 +1,15 @@
+load_file of "lib/test.eigs"
+
+# The issue example: a batched query finds the nearest OTHER active entity.
+entities is [
+    {"px": 1, "py": 1, "active": true},
+    {"px": 5, "py": 5, "active": true},
+    {"px": 90, "py": 90, "active": true}
+]
+neighbors is nearest_in_range_all of [entities, 10, 100, 100]
+
+assert_eq of [neighbors[0].index, 1, "entity 0 finds entity 1, not itself"]
+assert_eq of [neighbors[1].index, 0, "entity 1 finds entity 0, not itself"]
+assert_eq of [neighbors[2], null, "an entity with no other neighbor in range gets null"]
+
+test_summary of null
