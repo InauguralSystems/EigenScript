@@ -4058,7 +4058,7 @@ Value* builtin_fill(Value *arg) {
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     EigsSlot val = list_slot(arg, 1);
     if (count < 0) count = 0;
-    if (count > 10000000) count = 10000000; /* 10M cap */
+    if (count > EIGS_TENSOR_MAX_ELEMENTS) count = EIGS_TENSOR_MAX_ELEMENTS; /* shared tensor/list cap */
     /* #292: charge the sandbox budget — fill stores `count` slots pointing at the
      * shared value (the per-iteration aggregate that defeats the loop cap). */
     if (!sandbox_charge((size_t)count * sizeof(Value *))) return make_null();
