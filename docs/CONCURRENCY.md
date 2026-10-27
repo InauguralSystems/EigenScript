@@ -177,11 +177,35 @@ The copy is recursive but not an identity-preserving graph copy: two references
 to one list or dict become two independent copies. At recursion depth 65
 (`CHAN_CLONE_MAX_DEPTH` is 64), the remaining object is shared by refcount to
 bound C-stack use. The final two executable rows pin both limits explicitly.
-Two kinds are not in the table: `null` and a builtin have no mutable state, so there is nothing to observe. And a **store
-handle** and a **thread handle** behave exactly like the channel row: they are
-`VAL_NUM` ids into the process handle table (CLAUDE.md, leak tally), so the
-NUMBER copies while the resource it names is shared — which is why the channel
-row says SHARES even though a number copies.
+Two kinds are not in the table: `null` and a builtin have no mutable state, so there is nothing to observe. A **store
+handle** and a **thread handle** are ordinary `VAL_DICT` values containing an
+id and its slot generation (`builtin_spawn` in `src/builtins.c` and
+`store_open_impl` in `src/ext_store.c` construct them). Sending one therefore
+runs through the `VAL_DICT` arm of `chan_clone_rec` in `src/eigenscript.c`: the
+receiver gets a newly rebuilt dict whose numeric id and generation fields still
+name the same resource in the process handle table. The dict copies; the
+resource identified by those fields remains shared, just as for the channel
+handle row.
+
+Here the worker is deliberately blocked so its copied `done` field is stable.
+The received handle remains usable: `thread_join` resolves its copied
+`_handle_id` and `_handle_gen` after the parent releases the worker.
+
+```eigenscript
+blocker is channel of 1
+define worker() as:
+    return recv of blocker
+h is spawn of worker
+transfer is channel of 1
+send of [transfer, h]
+received is recv of transfer
+print of [type of received, received]
+send of [blocker, 7]
+thread_join of received
+```
+```output
+["dict", {"_handle_id": 2, "_handle_gen": 1, "done": 0}]
+```
 
 Buffers and text builders now snapshot automatically at the transfer boundary;
 callers no longer need a manual `buf_copy of` workaround. A closure still captures
