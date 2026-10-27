@@ -1,0 +1,1 @@
+- Fixed #1888: `nearest_in_range_all` now returns each entity's nearest other active entity instead of the entity itself.

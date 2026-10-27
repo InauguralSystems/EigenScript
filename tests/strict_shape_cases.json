@@ -2103,7 +2103,7 @@
       "\"active\""
     ],
     "setup": "",
-    "valid_assert": "(len of shape_result) == 2 and shape_result[0].index == 0",
+    "valid_assert": "(len of shape_result) == 2 and shape_result[0].index == 1",
     "observe": "print of shape_result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",

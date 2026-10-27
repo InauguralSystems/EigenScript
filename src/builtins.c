@@ -5518,8 +5518,8 @@ Value* builtin_nearest_in_range(Value *arg) {
 }
 
 /* nearest_in_range_all of [entities, range, world_w, world_h, px_key?, py_key?, active_key?]
-   Batched form: for every entity i in entities, return the nearest active
-   entity (including i itself, mirroring single-call semantics) within range.
+   Batched form: for every entity i in entities, return the nearest other
+   active entity (never i itself) within range.
    Returns a list of len(entities) results; each is {index,dist,dx,dy} or null.
 
    Why this exists: the per-entity nearest_in_range pattern walks the list of
@@ -5647,7 +5647,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         /* Tight SoA inner loop — pure double arithmetic, no pointer chasing.
          * At n=768 the three input arrays total ~14KB, comfortably in L1. */
         for (int j = 0; j < n; j++) {
-            if (!valid_arr[j] || !active_arr[j]) continue;
+            if (j == i || !valid_arr[j] || !active_arr[j]) continue;
             double dx = px_arr[j] - pi_x;
             double dy = py_arr[j] - pi_y;
             if (dx > hw) dx -= ww; else if (dx < -hw) dx += ww;

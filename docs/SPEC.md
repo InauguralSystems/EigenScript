@@ -16,6 +16,11 @@ Companion documents: [SYNTAX.md](SYNTAX.md) (tutorial-style guide),
 [OBSERVER.md](OBSERVER.md) (observer semantics in depth),
 [COMPARISON.md](COMPARISON.md) (EigenScript next to Python/JS/Rust/Lisp).
 
+Spatial batch queries follow the usual nearest-neighbour convention:
+`nearest_in_range_all` returns one nearest **other** active entity per input
+entity (or `null`), excluding the entity at that input index. The scalar
+`nearest_in_range` is instead a position query and excludes nothing implicitly.
+
 ## Table of contents
 
 - [Program model](#program-model)

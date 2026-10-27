@@ -395,6 +395,10 @@ See docs/BUILTINS.md and docs/STDLIB.md before writing your own — or resolve
 a name mechanically: `eigenscript --api --json` dumps every builtin,
 extension (by group), and lib function with its parameter list in one call.
 
+Spatial-query trap: nearest_in_range_all returns the nearest OTHER active
+entity for every input entity (or null), excluding the same input index.
+nearest_in_range is a position query and excludes no candidate implicitly.
+
 The optional model builtins `eigen_generate` and `eigen_eval_loss` raise a
 catchable `value` error for prompts longer than the loaded model's
 `max_seq_len`, including with `EIGS_STRICT=0`. Choose any context truncation

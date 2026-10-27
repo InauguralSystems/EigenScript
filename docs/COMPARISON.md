@@ -15,6 +15,11 @@ fundamental way: **every assignment is observed**, and the language has
 first-class constructs (`converged`, `what is x`, `prev of x`) for
 asking the running program about its own state and history.
 
+Like indexed nearest-neighbour APIs in Python's scientific ecosystem,
+EigenScript's batched `nearest_in_range_all` does not count each query entity
+as its own neighbour. Its scalar `nearest_in_range` takes an explicit position,
+so it has no query-entity identity to exclude.
+
 ## At a glance
 
 | | Python | JavaScript | Rust | Lisp | EigenScript |
