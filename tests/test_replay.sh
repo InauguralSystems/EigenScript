@@ -244,11 +244,11 @@ removed is remove_file of p
 EOF
 MKT_REPLAY=$(EIGS_REPLAY_STRICT=1 EIGS_REPLAY="$TMPDIR/block.tape" \
     "$EIGS" "$TMPDIR/p_mktemp_replay.eigs" 2>&1); MKT_REPLAY_RC=$?
-MKT_EXPECT=$(cat <<'EOF'
-Error line 1: mktemp: not replayable under EIGS_REPLAY (filesystem boundary; see docs/TRACE.md)
+MKT_EXPECT=$(cat <<EOF
+Error $TMPDIR/p_mktemp_replay.eigs:1: mktemp: not replayable under EIGS_REPLAY (filesystem boundary; see docs/TRACE.md)
      1 | p is mktemp of null
        |             ^
-  at <module> (line 1)
+  at <module> ($TMPDIR/p_mktemp_replay.eigs:1)
 EOF
 )
 if [ "$MKT_REPLAY_RC" -eq 1 ] && [ "$MKT_REPLAY" = "$MKT_EXPECT" ]; then

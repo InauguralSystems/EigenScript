@@ -88,7 +88,7 @@ if [ "${1:-}" = "--selftest" ]; then
     cat > "$T/eig" <<W
 #!/usr/bin/env bash
 case "\$1" in
-  *test_boundary_crash.eigs) if [ -n "\${EIGS_REPLAY:-}" ]; then echo "Error line 1: recv: not replayable under EIGS_REPLAY (subprocess/concurrency boundary; see docs/TRACE.md)" >&2; kill -SEGV \$\$; fi ;;
+  *test_boundary_crash.eigs) if [ -n "\${EIGS_REPLAY:-}" ]; then echo "Error test_boundary_crash.eigs:1: recv: not replayable under EIGS_REPLAY (subprocess/concurrency boundary; see docs/TRACE.md)" >&2; kill -SEGV \$\$; fi ;;
   *test_both_crash.eigs) echo same; kill -SEGV \$\$ ;;
   *test_near_crash.eigs) if [ -n "\${EIGS_REPLAY:-}" ]; then echo replay; else echo record; fi; exit 120 ;;
   *test_exit124_both.eigs|*test_math_underflow.eigs) echo identical; exit 124 ;;

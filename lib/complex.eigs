@@ -50,7 +50,7 @@ define mul(a, b) as:
 # div: (a / b), by multiplying through by the conjugate of b.
 #
 # Returns null when b is zero. Division by zero RAISES in EigenScript
-# (measured: "Error line N: division by zero"), so without this guard a
+# (measured: "Error path:N: division by zero"), so without this guard a
 # zero denominator would kill the caller's program from inside library
 # code. Returning null makes it the caller's decision — and `poly_roots`
 # below DEPENDS on that: at a repeated root every other iterate collides

@@ -1,5 +1,5 @@
 # ERROR DEMO — reading a name that was never assigned.
 # Variables must be assigned before use; there is no implicit null.
-# expect-error: Error line 5: undefined variable 'total'
+# expect-error: examples/errors/undefined_variable.eigs:5: undefined variable 'total'
 # expect-caret: |          ^
 print of total

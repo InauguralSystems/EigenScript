@@ -313,7 +313,7 @@ for f in "$CORPUS"/*.eigs; do
         [ "$LAST_RC" -eq 0 ] && RC_OK=1
         if [ "$base" = 06_rejected.eigs ] && [ "$mode" = strict ] \
              && [ "$LAST_RC" -eq 1 ] \
-             && printf '%s\n' "$LAST_OUT" | grep -Eq '^Error line [0-9]+: gfx_rect: expected \[number x, number y, number w, number h, number r, number g, number b\] and an optional number alpha$'; then RC_OK=1; fi
+             && printf '%s\n' "$LAST_OUT" | grep -Eq '^Error [^:]+:[0-9]+: gfx_rect: expected \[number x, number y, number w, number h, number r, number g, number b\] and an optional number alpha$'; then RC_OK=1; fi
         if [ "$LEAK" = 0 ] && [ "$CLASS" = 2 ] && [ "$RC_OK" = 1 ]; then
             ok "$base [$mode] clean under ASan+UBSan+LSan"
         else

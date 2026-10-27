@@ -19,7 +19,7 @@ int main(void) {
     if (g_parse_errors || eigs_has_error()) goto done;
     ast = parse(&tokens);
     if (!ast || g_parse_errors || eigs_has_error()) goto done;
-    chunk = compile_ast(ast, g_global_env, source);
+    chunk = compile_ast(ast, g_global_env, source, "<embed>");
     if (!chunk || g_parse_errors || eigs_has_error()) goto done;
     if (chunk->code_len <= 0 || chunk->code_len > 64 ||
         chunk->fn_count || chunk->local_count || chunk->param_count ||

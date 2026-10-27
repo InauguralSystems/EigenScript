@@ -172,7 +172,8 @@ static void obs_record_closed_execution(void) {
         obs_flag_store(obs_history_gap, 1);
 }
 
-static EigsValue *eval_source(const char *src, const char *file_dir) {
+static EigsValue *eval_source(const char *src, const char *file_dir,
+                              const char *file) {
     if (!src || !eigs_current || !g_global_env) return NULL;
     Env *global = g_global_env;
 
@@ -240,7 +241,7 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
     char *saved_dir = file_dir ? xstrdup(g_import_resolve_dir) : NULL;
     if (file_dir)
         snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", file_dir);
-    EigsChunk *chunk = compile_ast(ast, global, src);
+    EigsChunk *chunk = compile_ast(ast, global, src, file);
     if (saved_dir) {
         snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", saved_dir);
         free(saved_dir);
@@ -279,7 +280,7 @@ static EigsValue *eval_source(const char *src, const char *file_dir) {
 EigsValue *eigs_eval_string(const char *src) {
     EmbedFenv fenv;
     embed_fenv_enter(&fenv);
-    EigsValue *result = eval_source(src, NULL);
+    EigsValue *result = eval_source(src, NULL, "<embed>");
     embed_fenv_leave(&fenv);
     return result;
 }
@@ -297,7 +298,7 @@ EigsValue *eigs_eval_file(const char *path) {
     char *src = read_file_util(path, &size);
     if (!src) goto out;
     char *dir = eigs_file_directory(path);
-    result = eval_source(src, dir);
+    result = eval_source(src, dir, path);
     free(dir);
     free(src);
 #endif /* !EIGENSCRIPT_FREESTANDING */
@@ -332,6 +333,7 @@ void eigs_clear_error(void) {
     g_has_error = 0;
     g_error_msg[0] = '\0';
     g_error_raw[0] = '\0';
+    g_error_file[0] = '\0';
     g_error_kind = 0;
     g_error_line = 0;
     g_first_error_msg[0] = '\0';
