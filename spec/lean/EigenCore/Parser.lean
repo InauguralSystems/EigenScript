@@ -27,6 +27,35 @@ private def decodeString (s : String) : String :=
     | c :: rest => c :: decode rest
   String.ofList (decode s.toList)
 
+private def splitTopLevel (source marker : String) : List String :=
+  let needle := marker.toList
+  let rec scan : Nat → List Char → List Char → List String → Nat → Nat → Bool → Bool → List String
+    | 0, _, current, parts, _, _, _, _ =>
+      (String.ofList current.reverse :: parts).reverse
+    | _ + 1, [], current, parts, _, _, _, _ =>
+      (String.ofList current.reverse :: parts).reverse
+    | fuel + 1, remaining@(c :: rest), current, parts, parenDepth, bracketDepth,
+        inString, escaped =>
+      if !needle.isEmpty && !inString && parenDepth == 0 && bracketDepth == 0 &&
+          needle.isPrefixOf remaining then
+        scan fuel (remaining.drop needle.length) [] (String.ofList current.reverse :: parts)
+          parenDepth bracketDepth inString false
+      else
+        let nextString := if c == '"' && !escaped then !inString else inString
+        let nextEscaped := inString && !escaped && c == '\\'
+        let nextParen :=
+          if inString then parenDepth
+          else if c == '(' then parenDepth + 1
+          else if c == ')' then parenDepth - 1
+          else parenDepth
+        let nextBracket :=
+          if inString then bracketDepth
+          else if c == '[' then bracketDepth + 1
+          else if c == ']' then bracketDepth - 1
+          else bracketDepth
+        scan fuel rest (c :: current) parts nextParen nextBracket nextString nextEscaped
+  scan (source.length + 1) source.toList [] [] 0 0 false false
+
 private def atom (s : String) : Except String Expr :=
   let t := trim s
   if ["break", "continue", "return", "try", "catch", "for", "import"].contains t then
@@ -53,9 +82,9 @@ private def expressionFuel : Nat → String → Except String Expr
       -- `not true and false` split as `(not true) and false`, while delaying
       -- every comparison until after the prefix makes `not 1 < 2` negate it.
       let logic : List (String × BinOp) := [(" or ", .or), (" and ", .and)]
-      match logic.find? (fun p => t.contains p.1) with
+      match logic.find? (fun p => (splitTopLevel t p.1).length > 1) with
       | some (marker, op) =>
-        match t.splitOn marker with
+        match splitTopLevel t marker with
         | [a, b] => do pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
         | _ => throw "not yet modeled"
       | none =>
