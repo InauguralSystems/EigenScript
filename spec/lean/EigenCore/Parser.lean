@@ -41,12 +41,67 @@ private def atom (s : String) : Except String Expr :=
     | some n => if n.natAbs < 9007199254740992 then pure (.literal (.int n)) else throw "integer literal outside |n| < 2^53"
     | none => if validIdent t then pure (.variable t) else throw "not yet modeled"
 
+private def splitTopLevel (separator : Char) (source : String) : List String :=
+  let finish (parts : List String) (current : List Char) :=
+    (String.ofList current.reverse) :: parts |>.reverse
+  let rec loop (chars : List Char) (square round : Nat) (quoted escaped : Bool)
+      (current : List Char) (parts : List String) : List String :=
+    match chars with
+    | [] => finish parts current
+    | c :: rest =>
+      if quoted then
+        loop rest square round (c == '"' && !escaped) (c == '\\' && !escaped) (c :: current) parts
+      else if c == '"' then loop rest square round true false (c :: current) parts
+      else if c == '[' then loop rest (square + 1) round false false (c :: current) parts
+      else if c == ']' then loop rest (square - 1) round false false (c :: current) parts
+      else if c == '(' then loop rest square (round + 1) false false (c :: current) parts
+      else if c == ')' then loop rest square (round - 1) false false (c :: current) parts
+      else if c == separator && square == 0 && round == 0 then
+        loop rest square round false false [] (String.ofList current.reverse :: parts)
+      else loop rest square round false false (c :: current) parts
+  loop source.toList 0 0 false false [] []
+
+private def matchingOuter (opener closer : Char) (source : String) : Bool :=
+  let chars := source.toList
+  let rec loop : List Char → Nat → Bool → Bool → Bool
+    | [], depth, _, _ => depth == 0
+    | c :: rest, depth, quoted, escaped =>
+      if quoted then loop rest depth (c != '"' || escaped) (c == '\\' && !escaped)
+      else if c == '"' then loop rest depth true false
+      else if c == opener then loop rest (depth + 1) false false
+      else if c == closer then
+        if depth == 1 then rest.isEmpty else depth > 1 && loop rest (depth - 1) false false
+      else loop rest depth false false
+  chars.head? == some opener && loop chars 0 false false
+
+private def splitOnceTopLevel (marker source : String) : Option (String × String) :=
+  let rec loop (remaining : List Char) (square round : Nat) (quoted escaped : Bool)
+      (before : List Char) : Option (String × String) :=
+    match remaining with
+    | [] => none
+    | c :: rest =>
+      if !quoted && square == 0 && round == 0 && (String.ofList remaining).startsWith marker then
+        some (String.ofList before.reverse, String.ofList (remaining.drop marker.length))
+      else if quoted then
+        loop rest square round (c != '"' || escaped) (c == '\\' && !escaped) (c :: before)
+      else if c == '"' then loop rest square round true false (c :: before)
+      else if c == '[' then loop rest (square + 1) round false false (c :: before)
+      else if c == ']' then loop rest (square - 1) round false false (c :: before)
+      else if c == '(' then loop rest square (round + 1) false false (c :: before)
+      else if c == ')' then loop rest square (round - 1) false false (c :: before)
+      else loop rest square round false false (c :: before)
+  loop source.toList 0 0 false false []
+
 private def expressionFuel : Nat → String → Except String Expr
   | 0, _ => throw "expression nesting limit"
   | fuel + 1, source =>
     let t := trim source
     if t.startsWith "what is " then throw "discarded interrogative"
-    else if t.startsWith "(" && t.endsWith ")" then expressionFuel fuel ((t.drop 1).dropEnd 1).toString
+    else if matchingOuter '(' ')' t then expressionFuel fuel ((t.drop 1).dropEnd 1).toString
+    else if matchingOuter '[' ']' t then do
+      let inside := trim ((t.drop 1).dropEnd 1).toString
+      let values ← if inside.isEmpty then pure [] else (splitTopLevel ',' inside).mapM (expressionFuel fuel)
+      pure (.array values)
     else if t.startsWith "not " then do pure (.not (← expressionFuel fuel (t.drop 4).toString))
     else if t.startsWith "when is " then
       let name := trim (t.drop 8).toString
@@ -55,19 +110,17 @@ private def expressionFuel : Nat → String → Except String Expr
       let operations : List (String × BinOp) :=
         [(" and ", .and), (" or ", .or), (" == ", .eq), (" != ", .ne), (" <= ", .le),
          (" >= ", .ge), (" < ", .lt), (" > ", .gt), (" + ", .add), (" - ", .sub), (" * ", .mul)]
-      match operations.find? (fun p => t.contains p.1) with
-      | some (marker, op) =>
-        match t.splitOn marker with
-        | [a, b] => do pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
-        | _ => throw "not yet modeled"
+      match operations.findSome? (fun (marker, op) =>
+          (splitOnceTopLevel marker t).map fun pieces => (op, pieces)) with
+      | some (op, a, b) => do pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
       | none =>
-        match t.splitOn " of [" with
-        | [fn, args] => do
+        match splitOnceTopLevel " of [" t with
+        | some (fn, args) => do
           if !args.endsWith "]" then throw "not yet modeled"
           let inside := trim (args.dropEnd 1).toString
-          let values ← if inside.isEmpty then pure [] else (inside.splitOn ",").mapM (expressionFuel fuel)
+          let values ← if inside.isEmpty then pure [] else (splitTopLevel ',' inside).mapM (expressionFuel fuel)
           pure (.call (← atom fn) values)
-        | _ => atom t
+        | none => atom t
 
 private def expression (s : String) : Except String Expr := expressionFuel (s.length + 1) s
 
@@ -197,6 +250,7 @@ private def unsupportedExpr : Expr → Option String
       else none
   | .binary _ left right => unsupportedExpr left |>.orElse (fun _ => unsupportedExpr right)
   | .not value => unsupportedExpr value
+  | .array _ => some "array literal"
   | .call (.variable name) _ =>
       if ["converged", "loop_iterations", "loop_exit"].contains name then
         some s!"builtin {name}"
@@ -236,7 +290,29 @@ def classifyModeled (source : String) : Classification :=
 
 def classify (source : String) : Classification :=
   match parse source with
-  | .ok _ => .inSubset
+  | .ok program =>
+    -- Array literals are recognized only so nested call argument packs can be
+    -- delimited.  They remain outside the step-1 language on their own.
+    let rec standaloneArrayExpr : Expr → Bool
+      | .array _ => true
+      | .binary _ left right => standaloneArrayExpr left || standaloneArrayExpr right
+      | .not value => standaloneArrayExpr value
+      | .call _ _ => false
+      | _ => false
+    let rec standaloneArrayStmts : Nat → List Stmt → Bool
+      | 0, _ => false
+      | _, [] => false
+      | fuel + 1, statement :: rest =>
+        let here := match statement with
+          | .assign _ value _ | .print value | .return_ value | .expression value => standaloneArrayExpr value
+          | .branch condition yes elifs otherwise =>
+            standaloneArrayExpr condition || standaloneArrayStmts fuel yes ||
+              elifs.any (fun arm => standaloneArrayExpr arm.1 || standaloneArrayStmts fuel arm.2) ||
+              otherwise.any (standaloneArrayStmts fuel)
+          | .loop condition body => standaloneArrayExpr condition || standaloneArrayStmts fuel body
+          | .define _ _ body => standaloneArrayStmts fuel body
+        here || standaloneArrayStmts fuel rest
+    if standaloneArrayStmts 100000 program then .out ⟨"not yet modeled", 1⟩ else .inSubset
   | .error why => .out why
 
 end EigenCore

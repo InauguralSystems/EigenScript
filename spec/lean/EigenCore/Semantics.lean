@@ -13,20 +13,46 @@ structure Cell where
   history : Array Value
   assignments : Nat
   deriving Inhabited
+structure Environment where
+  id : Nat
+  parent : Option Nat
+  slots : Array Cell := #[]
+  deriving Inhabited
+structure Frame where
+  serial : Nat
+  environment : Nat
+  deriving Inhabited
 inductive OracleValue where | int (v : Int) | string (v : String) | null deriving Repr, BEq
 inductive Mode where | live (oracle : List OracleValue) | record (oracle : List OracleValue) | replayStrict (tape : List String) deriving Repr, BEq
 structure World where
-  cells : Array Cell := #[]
+  environments : Array Environment := #[{id := 0, parent := none}]
+  frames : Array Frame := #[{serial := 0, environment := 0}]
+  nextFrameSerial : Nat := 1
   stdout : String := ""
   tape : List String := []
   mode : Mode := .live []
 abbrev EvalM := ExceptT Err (StateM World)
 
 private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
+private def currentEnvironment (w : World) : Nat :=
+  w.frames.back?.map (·.environment) |>.getD 0
+private def resolveFrom (name : String) (start : Nat) (environments : Array Environment) : Option Binding :=
+  let rec walk : Nat → Nat → Option Binding
+    | 0, _ => none
+    | fuel + 1, environmentId =>
+      match environments[environmentId]? with
+      | none => none
+      | some environment =>
+        match findCell name environment.slots with
+        | some slot => some {envId := environmentId, slot := slot}
+        | none => environment.parent.bind (walk fuel)
+  walk (environments.size + 1) start
+private def resolve (name : String) (w : World) : Option Binding :=
+  resolveFrom name (currentEnvironment w) w.environments
 private def valueAt (name : String) : EvalM Value := do
   let w ← get
-  match findCell name w.cells with
-  | some i => pure w.cells[i]!.value
+  match resolve name w with
+  | some binding => pure w.environments[binding.envId]!.slots[binding.slot]!.value
   | none => throw (Err.runtime s!"undefined variable: {name}")
 private def tapeString (s : String) : String :=
   let (_, body) := s.toList.foldl (fun (state : Nat × String) c =>
@@ -39,13 +65,19 @@ private def tapeString (s : String) : String :=
 private def tapeValue : Value → String
   | .int n => toString n | .string s => tapeString s
   | .bool true => "true" | .bool false => "false" | .null => "null" | .closure n => s!"<fn {n}>"
-private def store (name : String) (v : Value) (_isLocal : Bool) : EvalM Unit := do
+private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
   let w ← get
-  let found := findCell name w.cells
-  let cells := match found with
-    | some i => w.cells.modify i fun c => {c with value:=v, history:=(c.history.push v).extract ((c.history.size+1).sub 256) (c.history.size+1), assignments:=c.assignments+1}
-    | none => w.cells.push {name:=name,value:=v,history:=#[v],assignments:=1}
-  set {w with cells:=cells,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}
+  let current := currentEnvironment w
+  let found := if isLocal then
+      findCell name w.environments[current]!.slots |>.map ({envId := current, slot := ·})
+    else resolve name w
+  let environments := match found with
+    | some binding => w.environments.modify binding.envId fun environment =>
+        {environment with slots := environment.slots.modify binding.slot fun c =>
+          {c with value:=v, history:=(c.history.push v).extract ((c.history.size+1).sub 256) (c.history.size+1), assignments:=c.assignments+1}}
+    | none => w.environments.modify current fun environment =>
+        {environment with slots := environment.slots.push {name:=name,value:=v,history:=#[v],assignments:=1}}
+  set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}
 private def truthy : Value → Bool | .bool false | .null | .int 0 | .string "" => false | _ => true
 private def asInt : Value → Except Err Int | .int n => pure n | _ => throw (Err.runtime "expected integer")
 private def safeInt (n : Int) : Except Err Value :=
@@ -70,10 +102,15 @@ def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
   | f+1 => match e with
     | .literal (.int n) => pure (.int n) | .literal (.string s) => pure (.string s) | .literal (.bool b) => pure (.bool b) | .literal .null => pure .null
     | .variable n => valueAt n | .not x => do pure (.bool (!truthy (← evalExpr f x)))
+    | .array _ => throw (.unsupported "array literal")
     | .binary .and a b => do let x ← evalExpr f a; if truthy x then evalExpr f b else pure x
     | .binary .or a b => do let x ← evalExpr f a; if truthy x then pure x else evalExpr f b
     | .binary op a b => do match evalBin op (← evalExpr f a) (← evalExpr f b) with | .ok v => pure v | .error x => throw x
-    | .when n => do let w ← get; match findCell n w.cells with | some i => pure (.int w.cells[i]!.assignments) | none => throw (Err.runtime s!"undefined variable: {n}")
+    | .when n => do
+      let w ← get
+      match resolve n w with
+      | some binding => pure (.int w.environments[binding.envId]!.slots[binding.slot]!.assignments)
+      | none => throw (Err.runtime s!"undefined variable: {n}")
     | .prev _ => throw (.unsupported "prev")
     | .whatWhen _ _ => throw (.unsupported "what-when")
     | .call _ _ => throw (.unsupported "function call")
