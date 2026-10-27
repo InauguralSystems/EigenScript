@@ -57,6 +57,25 @@ def executable_path(word: str, source: Path) -> str | None:
     return None
 
 
+def eigs_program_path(word: str, source: Path) -> str | None:
+    """Resolve a literal .eigs program operand, without treating mentions as runs."""
+    word = word.strip("'\"")
+    word = re.sub(r"^\$\{?(?:TESTS_DIR)\}?/", "tests/", word)
+    word = re.sub(r"^\$\{?(?:ROOT)\}?/", "", word)
+    word = re.sub(r"^.*/(?=tests/)", "", word)
+    if word.startswith("./"):
+        word = word[2:]
+    if not word.endswith(".eigs"):
+        return None
+    candidates = [Path(word), source.parent / word]
+    if "/" not in word:
+        candidates.append(Path("tests") / word)
+    for candidate in candidates:
+        if (ROOT / candidate).is_file():
+            return candidate.as_posix()
+    return None
+
+
 def _substitutions(words):
     """Commands run by a `$(...)` embedded in the words of one command.
 
@@ -82,7 +101,24 @@ def shell_commands(text: str):
     logical = re.sub(r"\\\n\s*", " ", text)
     for _, raw in shell_lines(logical):
         try:
-            for part in re.split(r"(?:&&|\|\||[;|`])", raw):
+            parts, start, quote, escaped = [], 0, None, False
+            i = 0
+            while i < len(raw):
+                char = raw[i]
+                if escaped:
+                    escaped = False
+                elif char == "\\" and quote != "'":
+                    escaped = True
+                elif quote:
+                    if char == quote:
+                        quote = None
+                elif char in "'\"":
+                    quote = char
+                elif char in ";|`" or raw[i:i + 2] == "&&":
+                    parts.append(raw[start:i]); i += 1 if raw[i:i + 2] == "&&" else 0; start = i + 1
+                i += 1
+            parts.append(raw[start:])
+            for part in parts:
                 words = shlex.split(part, comments=True)
                 yield from _substitutions(words)
                 while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "env", "command", "exec", "nohup", "sudo", "xvfb-run"}):
@@ -103,6 +139,24 @@ def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
     # conservative command-word parser, not a claim that comments mentioning a
     # script execute it.
     for words in shell_commands(text):
+        # An asserting fixture is invoked only when it is the program operand
+        # of EigenScript.  Globs and text passed to a differential are not
+        # expanded here, deliberately.
+        invocation = list(words)
+        eigs_at = next((i for i, word in enumerate(invocation)
+                        if word in {"$EIGS", "${EIGS}"} or word.rstrip("/").endswith("/eigenscript")), None)
+        if eigs_at is not None:
+            operands = [word for word in invocation[eigs_at + 1:] if not word.startswith("-")]
+            if operands:
+                dst = eigs_program_path(operands[0], source)
+                if dst:
+                    emit(src, dst)
+        elif "check_eigs_suite" in invocation:
+            for word in invocation[invocation.index("check_eigs_suite") + 1:]:
+                dst = eigs_program_path(word, source)
+                if dst:
+                    emit(src, dst)
+                    break
         if words[0] in {"bash", "sh", "dash", "python", "python3", "source", "."}:
             words = words[1:]
             while words and words[0].startswith("-"):
@@ -243,6 +297,14 @@ for source in sorted(sources):
             shell_edges(source, command)
     else:
         shell_edges(source, text)
+        # A malformed/unusual heredoc elsewhere in a large suite driver must
+        # not hide later commands from enrolment extraction.  Re-run the same
+        # command parser on short source windows; this is intentionally the
+        # same matcher, not a filename grep (plain mentions still emit no edge).
+        if source == Path("tests/run_all_tests.sh"):
+            source_lines = text.splitlines()
+            for i in range(len(source_lines)):
+                shell_edges(source, "\n".join(source_lines[i:i + 3]))
     if source.suffix == ".py":
         python_edges(source, text)
     if source.parts[:1] == ("tools",) and len(source.parts) > 2:

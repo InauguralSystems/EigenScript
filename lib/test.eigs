@@ -75,6 +75,12 @@ define assert_false(cond, desc) as:
 
 # ---- test_summary: print results and exit with status ----
 define test_summary as:
+    # Test-only calibration seam: force every summary down its failure path so
+    # the suite can audit that child verdicts propagate.  Not a product knob.
+    if (env_get of "EIGS_TEST_FORCE_SUMMARY_FAILURE") == "1":
+        set_exit_code of 1
+        _test_fail is _test_fail + 1
+        append of [_test_errors, "FAIL: forced test_summary failure (test-only calibration)"]
     total is _test_pass + _test_fail
     print of ""
     print of ("Tests: " + (str of total) + " | Pass: " + (str of _test_pass) + " | Fail: " + (str of _test_fail))

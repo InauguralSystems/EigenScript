@@ -3,7 +3,7 @@
 #
 # PR #1260's tests/test_args_import.sh was run by nothing until a maintainer
 # noticed by hand. Every tests/*.sh, tests/*.py, top-level tools entry point,
-# and tools package must be INVOKED — by
+# tools package, and every self-asserting tests/*.eigs program must be INVOKED — by
 # tests/run_all_tests.sh, by a .github/workflows/*.yml step, or by a script
 # that is itself invoked (test_dap.py through test_dap.sh) — or be listed in
 # tests/enrolment_exemptions.txt as `path | reason`. An exemption for a file
@@ -12,9 +12,9 @@
 # "Invoked" means the script is what a shell segment RUNS (the argument of
 # bash/sh/python3/source/., or the command word, after keywords, VAR=value
 # prefixes and launchers): a failure message that names the file is not an
-# invocation. tests/*.eigs are out of scope — they are consumed through
-# imports, globbed directories, mutant harnesses and python drivers, so
-# "invoked" has no single syntactic meaning for them.
+# invocation.  For an asserting .eigs file, invocation specifically means the
+# program operand of an "$EIGS"/eigenscript run; a glob in a differential is
+# not invocation enrolment.
 #
 # Usage: tools/enrolment_check.sh [--selftest]    exit 0 pass, 1 fail, 2 no instrument
 # ENROL_ROOT overrides the repository root (the selftest points it at a copy).
@@ -30,6 +30,13 @@ if [ "${1:-}" = "--selftest" ]; then
     cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tests/sections/*.sh "$ST/tests/sections/" \
         && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github/. "$ST/.github/" \
         && cp Makefile "$ST/"
+    cp tests/*.eigs "$ST/tests/"
+    (cd "$ST" && git init -q && git add .)
+    # #2060 is not present on every base branch; keep that known integration
+    # gap out of this check's isolated control tree.
+    if [ -f "$ST/tests/test_operator_line_parent.eigs" ]; then
+        printf '\n"$EIGS" "$TESTS_DIR/test_operator_line_parent.eigs"\n' >> "$ST/tests/sections/15l-binary-operator-line-1425.sh"
+    fi
     n=0; bad=0
     case_() {   # case_ <name> <want-rc> <want-substring>
         local out rc; n=$((n + 1))
@@ -48,6 +55,23 @@ if [ "${1:-}" = "--selftest" ]; then
     rm "$ST/tests/test_clean.sh"
     echo 'tests/test_cli.sh | planted: test_cli.sh IS invoked' >> "$ST/$EXEMPT"
     case_ "an exemption for an invoked script is stale: red" 1 "exempts tests/test_cli.sh, which IS invoked"
+    sed -i.bak '/tests\/test_cli.sh | planted/d' "$ST/$EXEMPT" && rm "$ST/$EXEMPT.bak"
+    printf 'test_summary of null\n' > "$ST/tests/test_zz_asserting.eigs"
+    (cd "$ST" && git add tests/test_zz_asserting.eigs)
+    case_ "an asserting .eigs named nowhere is red" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    printf '\n"$EIGS" "$TESTS_DIR/test_zz_asserting.eigs"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    case_ "the same file named by a section is green" 0 "asserting-test invocation:"
+    sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
+    printf '#!/bin/bash\n"$EIGS" "$TESTS_DIR/test_zz_asserting.eigs"\n' > "$ST/tests/test_zz_runner.sh"
+    printf '\nbash "$TESTS_DIR/test_zz_runner.sh"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    (cd "$ST" && git add tests/test_zz_runner.sh)
+    case_ "reach through a suite-run runner script counts" 0 "asserting-test invocation:"
+    sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
+    rm "$ST/tests/test_zz_runner.sh"; (cd "$ST" && git add -u)
+    printf '\nbash tools/jit_diff.sh tests/test_zz_asserting.eigs\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    case_ "differential-only reach is red" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    echo 'tests/test_zz_asserting.eigs | fixture is special' >> "$ST/$EXEMPT"
+    case_ "an asserting exemption naming no oracle is red" 1 "must name 'alternate oracle:"
     echo "  checks=$n"
     exit "$bad"
 fi
@@ -82,7 +106,7 @@ while IFS= read -r row; do
     p=$(printf '%s' "${row%%|*}" | tr -d '[:space:]'); why=$(printf '%s' "${row#*|}" | tr -d '[:space:]')
     if [ "$row" = "${row%%|*}" ] || [ -z "$why" ]; then echo "  FAIL: $EXEMPT exempts '$p' with no reason (path | reason)"; rc=1
     elif [ ! -e "$p" ]; then echo "  FAIL: $EXEMPT exempts $p, which does not exist -- stale, delete the row"; rc=1
-    elif grep -qxF "$p" <<< "$REACHED"; then echo "  FAIL: $EXEMPT exempts $p, which IS invoked -- stale, delete the row"; rc=1; fi
+    elif grep -qxF "$p" <<< "$REACHED" && [ "${p##*.}" != eigs ]; then echo "  FAIL: $EXEMPT exempts $p, which IS invoked -- stale, delete the row"; rc=1; fi
 done <<< "$EXEMPTED"
 for f in tests/*.sh tests/*.py tools/*.sh tools/*.py \
     $(find tools -mindepth 2 -maxdepth 2 -type f \( -name '*.sh' -o -name '*.py' \) -printf '%h\n' | sort -u); do
@@ -91,6 +115,28 @@ for f in tests/*.sh tests/*.py tools/*.sh tools/*.py \
     elif grep -q "^[[:space:]]*$f[[:space:]]*|" <<< "$EXEMPTED"; then ex=$((ex + 1))
     else echo "  FAIL: $f is invoked by nothing -- add a suite section in tests/sections/ (or a workflow step), or list it in $EXEMPT with a reason"; rc=1; fi
 done
+[ -d .git ] || { echo "test-enrolment: ABORTED: git work tree required for asserting-test population"; exit 2; }
+ASSERTING=$(git ls-files 'tests/*.eigs' | while IFS= read -r f; do
+    grep -q 'test_summary of' "$f" && printf '%s\n' "$f"
+done)
+assert_total=0; assert_ok=0; assert_ex=0
+while IFS= read -r f; do
+    [ -n "$f" ] || continue; assert_total=$((assert_total + 1))
+    row=$(printf '%s\n' "$EXEMPTED" | grep "^[[:space:]]*$f[[:space:]]*|" || true)
+    if [ -n "$row" ]; then
+        case "$row" in
+            *'| alternate oracle: '?*) assert_ex=$((assert_ex + 1)) ;;
+            *) echo "  FAIL: $EXEMPT exemption for $f must name 'alternate oracle: <what judges it>'"; rc=1 ;;
+        esac
+    elif grep -qxF "$f" <<< "$REACHED"; then
+        assert_ok=$((assert_ok + 1))
+    else
+        echo "  FAIL: $f has no suite invocation -- run it as the program argument of \"\$EIGS\" in a section or suite-run script"
+        rc=1
+    fi
+done <<< "$ASSERTING"
+[ "$assert_total" -gt 0 ] || { echo "test-enrolment: ABORTED: asserting-test population is empty"; exit 2; }
+echo "asserting-test invocation: population=$assert_total invoked=$assert_ok alternate-oracle-exempt=$assert_ex"
 [ "$total" -gt 0 ] || { echo "test-enrolment: ABORTED: candidate population is empty"; exit 2; }
 [ "$rc" -eq 0 ] && echo "PASS: test-enrolment: examined=$total enrolled=$ok exempt=$ex"
 exit "$rc"
