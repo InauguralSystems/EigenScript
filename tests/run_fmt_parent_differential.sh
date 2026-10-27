@@ -24,7 +24,15 @@ if [ -z "$PARENT" ]; then
     # This binary is a formatter oracle, not a performance result.  Avoid the
     # release build's expensive optimisation so the <=60s source-gate row
     # spends its budget comparing output rather than optimizing the VM/JIT.
-    make -C "$TEMP" -j8 CFLAGS='-Wall -Wextra -O0 -fPIE' >/dev/null || {
+    # Overriding CFLAGS replaces the Makefile's own, so carry the -Werror trio
+    # from the incumbent's tools/werror_flags.txt (CI's cc-guard rejects a
+    # compile without it) and size -j to the machine, not to a CI runner.
+    werror=$(cat "$TEMP/tools/werror_flags.txt") && [ -n "$werror" ] || {
+        echo "formatter differential: incumbent $PARENT_REF has no tools/werror_flags.txt" >&2
+        exit 1
+    }
+    make -C "$TEMP" -j"$(nproc 2>/dev/null || echo 2)" \
+        CFLAGS="-Wall -Wextra -Werror=implicit-function-declaration $werror -O0 -fPIE" >/dev/null || {
         echo "formatter differential: could not build incumbent $PARENT_REF" >&2
         exit 1
     }
