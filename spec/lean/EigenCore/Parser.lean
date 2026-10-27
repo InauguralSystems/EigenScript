@@ -19,6 +19,14 @@ private def validIdent (s : String) : Bool :=
   | [] => false
   | c :: cs => (c.isAlpha || c == '_') && cs.all (fun x => x.isAlphanum || x == '_')
 
+private def decodeString (s : String) : String :=
+  let rec decode : List Char → List Char
+    | [] => []
+    | '\\' :: c :: rest =>
+        (match c with | 'n' => '\n' | 't' => '\t' | 'r' => '\r' | other => other) :: decode rest
+    | c :: rest => c :: decode rest
+  String.ofList (decode s.toList)
+
 private def atom (s : String) : Except String Expr :=
   let t := trim s
   if ["break", "continue", "return", "try", "catch", "for", "import"].contains t then
@@ -27,7 +35,7 @@ private def atom (s : String) : Except String Expr :=
   else if t == "false" then pure (.literal (.bool false))
   else if t == "null" then pure (.literal .null)
   else if t.startsWith "\"" && t.endsWith "\"" && t.length >= 2 then
-    pure (.literal (.string ((t.drop 1).dropEnd 1).toString))
+    pure (.literal (.string (decodeString ((t.drop 1).dropEnd 1).toString)))
   else
     match t.toInt? with
     | some n => if n.natAbs < 9007199254740992 then pure (.literal (.int n)) else throw "integer literal outside |n| < 2^53"

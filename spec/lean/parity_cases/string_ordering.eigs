@@ -1,0 +1,5 @@
+print of ("a" < "b")
+print of ("a" <= "a")
+print of ("b" > "a")
+print of ("b" >= "b")
+print of ("a" < 1)

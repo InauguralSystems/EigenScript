@@ -41,15 +41,17 @@ private def execute (o : Options) : IO UInt32 := do
       | .error e => IO.eprintln s!"runtime error: {e}"; return 1
   match parse source with
   | .error e => IO.eprintln s!"parse error at line {e.line}: {e.construct}"; pure 2
-  | .ok program => match run 100000 program mode with
-    | .error .fuel => IO.eprintln "runtime error: fuel exhausted"; pure 1
-    | .error (.unsupported construct) =>
-        IO.eprintln s!"unsupported in EigenCore-0 step 2a: {construct}"; pure 1
-    | .error (.runtime e) => IO.eprintln s!"runtime error: {e}"; pure 1
-    | .ok result =>
+  | .ok program =>
+      let result := run 100000 program mode
       IO.print result.stdout
       match o.trace with | some path => IO.FS.writeFile path (tapeSerialize result.tape) | none => pure ()
-      pure 0
+      match result.error with
+      | none => pure 0
+      | some .fuel => IO.eprintln "runtime error: fuel exhausted"; pure 1
+      | some (.unsupported construct) =>
+          IO.eprintln s!"unsupported in EigenCore-0 step 2a: {construct}"; pure 1
+      | some (.refusal reason) => IO.eprintln s!"refused at runtime: {reason}"; pure 1
+      | some (.runtime e) => IO.eprintln s!"runtime error: {e}"; pure 1
 
 def main (args : List String) : IO UInt32 :=
   match args with
