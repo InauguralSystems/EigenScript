@@ -1,0 +1,5 @@
+echo "[0ft] Stable sort across platforms (#1982)"
+EIGS_JIT_OFF=1 check_eigs_suite "interpreter: stable sort and sort_by ties" test_sort_stable.eigs "All tests passed."
+check_eigs_suite "default JIT: stable sort and sort_by ties" test_sort_stable.eigs "All tests passed."
+EIGS_JIT_OSR_THRESHOLD=1 check_eigs_suite "OSR: stable sort and sort_by ties" test_sort_stable.eigs "All tests passed."
+echo ""
