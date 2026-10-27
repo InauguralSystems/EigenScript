@@ -38,6 +38,42 @@
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
+# A boolean-valued capability probe has three states, not two: true, false,
+# and a broken/unexpected observation.  Keep the third state distinct so a
+# crashed or noisy probe cannot silently disable the pixel gate.
+renderer_probe_state() {
+    case "$1" in
+        true)  return 0 ;;
+        false) return 1 ;;
+        *)
+            printf 'FAIL: gfx renderer probe returned %q (expected true or false)\n' "$1" >&2
+            return 2
+            ;;
+    esac
+}
+
+if [ "${1:-}" = --renderer-probe-selftest ]; then
+    n=0; bad=0
+    probe_case() { # label, expected rc, observation
+        local got
+        n=$((n + 1))
+        renderer_probe_state "$3" >/dev/null 2>&1; got=$?
+        if [ "$got" -eq "$2" ]; then
+            echo "  PASS: $1"
+        else
+            echo "  FAIL: $1 (rc=$got, want $2)"
+            bad=$((bad + 1))
+        fi
+    }
+    probe_case 'true enables the pixel differential' 0 true
+    probe_case 'false alone reports no renderer' 1 false
+    for observation in 1 '' 'probe failed noisily'; do
+        probe_case "unexpected output '$observation' fails closed" 2 "$observation"
+    done
+    echo "RENDERER PROBE SELFTEST: $((n - bad)) passed, $bad failed, $n declared"
+    exit "$bad"
+fi
+
 SHAPES_ONLY=0
 if [ "${1:-}" = --shapes-only ]; then SHAPES_ONLY=1; shift; fi
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
@@ -1593,10 +1629,17 @@ fi
 # ------------------------------------------------ pixel differential
 printf 'print of (gfx_open of [8, 8, "pixdiff-probe"])\n' > "$TMP/open.eigs"
 NO_RENDERER=0
-if [ "$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)" != "1" ]; then
-    NO_RENDERER=1
-    echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
-fi
+renderer_probe_output=$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)
+renderer_probe_state "$renderer_probe_output"
+renderer_probe_rc=$?
+case "$renderer_probe_rc" in
+    0) ;;
+    1)
+        NO_RENDERER=1
+        echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
+        ;;
+    *) exit 1 ;;
+esac
 HEAD='ignore is gfx_open of [32, 32, "pixdiff"]
 ignore is gfx_clear of [0, 0, 0]'
 TAIL='total is 0
