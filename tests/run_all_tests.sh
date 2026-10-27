@@ -232,7 +232,7 @@ ensure_binary_current() {
     # Rebuild through the variant's GOAL, not the file: only the goal
     # re-points the src/eigenscript hard link (RELINK); rebuilding the file
     # alone left the alias on the old inode (found by the plant).
-    local goal="$variant"; [ "$variant" = "release" ] && goal="build"
+    local goal; goal=$("$TESTS_DIR/../tools/active_variant.sh" --goal "$TESTS_DIR/..") || goal="$variant"
     echo "  NOTE: src/eigenscript ($variant) is older than its sources -- rebuilding (make $goal) (#1089)"
     if ! make --no-print-directory -C .. "$goal" >/dev/null 2>&1; then
         echo "ERROR: rebuild of src/eigenscript ($goal) FAILED -- the linked binary is stale and the suite will not run it (#1089)"
