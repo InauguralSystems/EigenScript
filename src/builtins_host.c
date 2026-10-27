@@ -998,7 +998,7 @@ Value* builtin_load_file(Value *arg) {
         ? recorded_file_directory(abs_key) : eigs_file_directory(abs_key);
     snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", loaded_dir);
     free(loaded_dir);
-    EigsChunk *lf_chunk = compile_ast(ast, target, source);
+    EigsChunk *lf_chunk = compile_ast(ast, target, source, path);
     snprintf(g_import_resolve_dir, sizeof(g_import_resolve_dir), "%s", saved_resolve_dir);
     free(saved_resolve_dir);
     g_compile_module_boundary = saved_boundary;

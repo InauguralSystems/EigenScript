@@ -1,0 +1,20 @@
+name = "eigen-core"
+version = "0.1.0"
+defaultTargets = ["EigenCore", "eigs-ref"]
+
+[[require]]
+name = "batteries"
+git = "https://github.com/leanprover-community/batteries.git"
+rev = "66e469188fe07963e5cf666c7d4433f45b8131c5"
+
+[[require]]
+name = "plausible"
+git = "https://github.com/leanprover-community/plausible.git"
+rev = "dfa4f38190d07c37e315953e08b90fe2d95b3c24"
+
+[[lean_lib]]
+name = "EigenCore"
+
+[[lean_exe]]
+name = "eigs-ref"
+root = "Main"

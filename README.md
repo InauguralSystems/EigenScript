@@ -134,7 +134,7 @@ print of (add5 of 10)    # 15
 try:
     result is risky_operation of data
 catch e:
-    print of f"Error: {e}"
+    print of {"kind": e.kind, "message": e.message, "line": e.line}
 ```
 ```output
 7
@@ -153,7 +153,7 @@ Hello hello, x is 42
 positive
 Alice
 15
-Error: {"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
+{"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
 ```
 
 Comparisons, `not` and predicates return `true`/`false`, a `bool`. A bool is
@@ -288,7 +288,7 @@ answer `false` forever, **an observer predicate raises inside an
 `unobserved:` block** (#871):
 
 ```
-Error line 4: converged: the observer is off inside an 'unobserved:'
+Error observer.eigs:4: converged: the observer is off inside an 'unobserved:'
 block, so this predicate has no trajectory to classify — the block's
 depth is dynamic, so it also covers functions called from inside it
 ```
@@ -354,6 +354,8 @@ model's `max_seq_len`. Training applies the same limit to the combined input
 and output lengths; callers must choose their context window explicitly.
 
 ## Standard Library
+
+The machine-checkable EigenCore-0 reference frontend lives in [`spec/lean/`](spec/lean/).
 
 Pure EigenScript libraries under `lib/`:
 
@@ -441,6 +443,8 @@ File loading is relative to the containing file, then the `eigs_modules` walk,
 then the nearest `eigs.json` project root, then stdlib locations; absolute paths
 are used as-is. There is no process cwd search. The REPL (including piped input)
 and the embed API without a file path use their working directory as the base.
+Source-tree binaries under `build/<variant>/` also find the repository `lib/`
+through their executable path, so they can be invoked directly from any directory.
 Add `eigs.json` at the root
 when subdirectory files use root-relative paths. See the exact
 [shared import/load_file resolution chain](docs/SPEC.md#modules).
@@ -595,6 +599,8 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/BUILTINS.md](docs/BUILTINS.md) — builtin functions; `eigenscript --api` prints the live index
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
+  (runtime headers, caught errors, and every traceback frame identify the
+  compiled source as `file:line`)
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives
 - [docs/DEBUGGING.md](docs/DEBUGGING.md) — the debugging loop and the `--step` tape-stepper (time travel + trajectories)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — lexer → parser → bytecode VM → JIT internals
@@ -609,6 +615,9 @@ sessions between evaluations; unread sibling outcomes prevent advance. See [docs
 and [docs/EMBEDDING.md](docs/EMBEDDING.md) for the binding and version contract.
 Replay also refuses side-effecting boundaries the tape cannot reconstruct:
 in particular, `mktemp` raises before creating a temporary file.
+Recorded builtins validate arguments before their tape boundary, so a call
+that raises during recording raises identically during strict replay instead
+of returning a recorded stand-in.
 
 ## Stability
 

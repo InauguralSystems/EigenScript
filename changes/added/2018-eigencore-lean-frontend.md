@@ -1,0 +1,1 @@
+- Add the first EigenCore-0 specification step: a pinned Lean project with the surface-syntax classifier, value printer, proof-hygiene gates, corpus census, and path-filtered CI.

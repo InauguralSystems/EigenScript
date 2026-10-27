@@ -67,3 +67,6 @@ __pycache__/
 # clangd (clangd-lsp plugin): index cache and the bear-generated compile database
 .cache/
 compile_commands.json
+
+# Lean/Lake build products (issue #2018)
+spec/lean/.lake/

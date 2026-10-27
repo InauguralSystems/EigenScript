@@ -460,7 +460,8 @@ struct Value {
         struct { EigsSlot *items; int count; int capacity; } list;   /* #1665 arm D: slot storage, src/container.h */
         struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; EnvInternTable *param_intern_tbl; } fn;
         BuiltinFn builtin;
-        struct { char **keys; EigsSlot *vals; int count; int capacity; EnvHash hash; EnvInternRef *intern_refs; } dict;
+        /* count is live entries; used includes order-array tombstones. */
+        struct { char **keys; EigsSlot *vals; int count; int used; int capacity; EnvHash hash; EnvInternRef *intern_refs; } dict;
         struct { double *data; int count; int rows, cols; } buffer;  /* rows==0 => unshaped 1-D (count is length); rows>0 => 2-D, rows*cols==count */
         struct { char *data; size_t len; size_t cap; int parts; } text_builder;
     } data;
@@ -1059,11 +1060,12 @@ struct EigsThread {
     char         first_error_msg[256];
     struct Value *error_value;      /* thrown payload for structured catch */
     /* #406: structured runtime errors. Kind (ErrKind), 1-based line, and
-     * the bare message (no "Error line N:" frame) of the live error —
+     * the bare message (no "Error path:N:" frame) of the live error —
      * catch binds {kind, message, line} from these when error_value is
      * NULL (i.e. for built-in errors; thrown values bind untouched). */
     int          error_kind;
     int          error_line;
+    char         error_file[1024];
     char         error_raw[3900];
     /* Observer execution state — current observer and "unobserved {}"
      * scope depth (incremented on entry, decremented on exit; non-zero
@@ -1289,6 +1291,7 @@ struct EigsThread {
     int                  sandbox_refusal;
     int                  sandbox_refusal_kind;
     int                  sandbox_refusal_line;
+    char                 sandbox_refusal_file[1024];
     char                 sandbox_refusal_msg[3900];
     /* #739: stream_open/stream_write/stream_close target. Per-OS-thread: it
      * was one FILE* per process and stream_open unconditionally closes
@@ -1333,6 +1336,7 @@ extern __thread EigsThread *eigs_current;
 #define g_exit_requested    (eigs_current->exit_requested)
 #define g_exit_code         (eigs_current->exit_code)
 #define g_error_line        (eigs_current->error_line)
+#define g_error_file        (eigs_current->error_file)
 #define g_error_raw         (eigs_current->error_raw)
 #define g_last_obs_slot_env (eigs_current->last_obs_slot_env)
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
@@ -1681,6 +1685,7 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_sandbox_refusal      (eigs_current->sandbox_refusal)
 #define g_sandbox_refusal_kind (eigs_current->sandbox_refusal_kind)
 #define g_sandbox_refusal_line (eigs_current->sandbox_refusal_line)
+#define g_sandbox_refusal_file (eigs_current->sandbox_refusal_file)
 #define g_sandbox_refusal_msg  (eigs_current->sandbox_refusal_msg)
 #define g_stream_file         (*(FILE **)&eigs_current->stream_file)
 #define g_entry_threshold     (eigs_current->state->jit_entry_threshold)
@@ -2316,6 +2321,7 @@ char* eigs_json_encode(Value *v);
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
+const char *vm_current_file(void);      /* stable source identity or <native> */
 void eigs_record_first_error(int line, const char *msg);
 void eigs_record_first_error_at(int line, int col, int len, const char *msg);
 void eigs_record_lexer_error_at(int line, int col, int len, const char *msg);

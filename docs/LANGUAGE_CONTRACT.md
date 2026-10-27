@@ -60,9 +60,10 @@ unrecovered error or report success on failure. Warnings (e.g.
 division by zero, which yields 0) are not errors and do not stop execution.
 
 **What `catch` binds (#406):** a **built-in** runtime error binds a small
-dict `{kind, message, line}` — `kind` is drawn from a closed vocabulary
+dict `{kind, message, file, line}` — `kind` is drawn from a closed vocabulary
 (see `docs/DIAGNOSTICS.md`), `message` is the error text without the
-`Error line N:` frame, and `line` is the 1-based source line. A `throw`n
+`Error path:N:` frame, `file` is the source identity, and `line` is the
+1-based source line. A `throw`n
 value binds **unchanged** — `throw of {"kind": ...}` gives the handler that
 dict, and a thrown string stays a string. Re-throwing a structured value
 preserves it; a built-in error raised while a structured value is in flight

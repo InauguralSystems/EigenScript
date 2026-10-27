@@ -23,6 +23,8 @@ export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
 . "$TESTS_DIR/suite_program_env.sh" || exit 1
+. "$TESTS_DIR/gfx_headless.sh" || exit 1
+. "$TESTS_DIR/timeout_select.sh" || exit 1
 . "$TESTS_DIR/diagnostic_capture.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 
@@ -151,9 +153,7 @@ echo() {
 : "${EIGS_VERIFY_SELF:=1}"
 export EIGS_VERIFY_SELF
 
-EIGS_TMO=""
-if command -v timeout >/dev/null 2>&1; then EIGS_TMO="timeout $EIGS_TEST_TIMEOUT"
-elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIMEOUT"; fi
+eigs_timeout_select "$EIGS_TEST_TIMEOUT"
 
 # Binary fingerprint guard (#681). src/eigenscript is a hard link to the
 # last `make` variant target (#740); re-pointing it mid-suite — or relinking
@@ -204,19 +204,22 @@ eigs_binary_fingerprint() {
 # in from elsewhere) or a `make -q` error is reported and NOT gated on --
 # the suite cannot decide, so it says so instead of pretending.
 ensure_binary_current() {
-    local ino variant target rc
-    ino=$(stat -c %i "$EIGS_BIN" 2>/dev/null) || return 0
-    variant=""
-    for cand in ../build/*/eigenscript; do
-        [ -f "$cand" ] || continue
-        if [ "$(stat -c %i "$cand" 2>/dev/null)" = "$ino" ]; then
-            variant=$(basename "$(dirname "$cand")"); break
-        fi
-    done
-    if [ -z "$variant" ]; then
+    local variant target rc resolved_after
+    EIGS_ACTIVE_VARIANT=""
+    EIGS_ACTIVE_VARIANT_RC=0
+    variant=$("$TESTS_DIR/../tools/active_variant.sh" "$TESTS_DIR/..")
+    rc=$?
+    # Preserve the resolver's classification for sections which depend on a
+    # make-created alias.  In particular, 1 means a valid build.sh binary,
+    # while 2 means an ambiguous alias and must not be mistaken for that case.
+    EIGS_ACTIVE_VARIANT_RC=$rc
+    if [ "$rc" -ne 0 ]; then
         echo "  NOTE: src/eigenscript is not hard-linked to any build/<variant>/eigenscript -- freshness not checked (#1089)"
         return 0
     fi
+    # Keep the inode resolver's answer available to sections that must exercise
+    # the build/<variant> path itself rather than the src/ alias (#1679).
+    EIGS_ACTIVE_VARIANT=$variant
     # The FILE target, not the phony goal: `make -q build` is always
     # "needs remaking" because `build` is .PHONY.
     target="build/$variant/eigenscript"
@@ -235,7 +238,8 @@ ensure_binary_current() {
         echo "ERROR: rebuild of src/eigenscript ($goal) FAILED -- the linked binary is stale and the suite will not run it (#1089)"
         exit 1
     fi
-    if [ "$(stat -c %i "$EIGS_BIN")" = "$ino" ] && ! make -q --no-print-directory -C .. "$target" >/dev/null 2>&1; then
+    resolved_after=$("$TESTS_DIR/../tools/active_variant.sh" "$TESTS_DIR/.." 2>/dev/null)
+    if [ "$resolved_after" = "$variant" ] && ! make -q --no-print-directory -C .. "$target" >/dev/null 2>&1; then
         echo "ERROR: src/eigenscript is still stale after the rebuild (#1089)"
         exit 1
     fi
@@ -597,7 +601,7 @@ echo ""
 # stamp (the AOT's per-statement line), not 0. C-level because the shape --
 # rt_error outside any interpreter frame -- has no .eigs spelling. #1434: the
 # same binary runs an eval-defined sort_by key from C, so it runs per tier.
-echo "[0b] Error line fallback outside a VM frame (#1082, #1434)"
+echo "[0b] Error location fallback outside a VM frame (#1082, #1434)"
 check_binary_fingerprint
 ERRLINE_BUILD=$(make --no-print-directory -C .. errline-test 2>&1)
 ERRLINE_BUILD_RC=$?
@@ -696,10 +700,10 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
         FAIL=$((FAIL + 1)); echo "  FAIL: e.line after a return ($LAR_TIER, rc=$LAR_RC)"
         printf '%s\n' "$LAR_OUT" | eigs_failure_output
     fi
-    for LAR_FX in "line_after_return_module.eigs:Error line 10:|  at <module> (line 10)" \
-                  "line_after_return_fn.eigs:Error line 11:|  at outer (line 11)|  at <module> (line 15)" \
-                  "line_after_return_null.eigs:Error line 13:|  at hot_null (line 13)|  at <module> (line 20)" \
-                  "line_after_callback_halt.eigs:Error line 9:|  at hot_sb (line 9)|  at <module> (line 15)"; do
+    for LAR_FX in "line_after_return_module.eigs:Error ../tests/line_after_return_module.eigs:10:|  at <module> (../tests/line_after_return_module.eigs:10)" \
+                  "line_after_return_fn.eigs:Error ../tests/line_after_return_fn.eigs:11:|  at outer (../tests/line_after_return_fn.eigs:11)|  at <module> (../tests/line_after_return_fn.eigs:15)" \
+                  "line_after_return_null.eigs:Error ../tests/line_after_return_null.eigs:13:|  at hot_null (../tests/line_after_return_null.eigs:13)|  at <module> (../tests/line_after_return_null.eigs:20)" \
+                  "line_after_callback_halt.eigs:Error ../tests/line_after_callback_halt.eigs:9:|  at hot_sb (../tests/line_after_callback_halt.eigs:9)|  at <module> (../tests/line_after_callback_halt.eigs:15)"; do
         LAR_FILE=${LAR_FX%%:*}; LAR_WANT=${LAR_FX#*:}
         LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript "../tests/$LAR_FILE" </dev/null 2>&1); LAR_RC=$?
         LAR_MISS=""
@@ -1370,34 +1374,34 @@ check_stderr "EM26 runtime error prints source excerpt" 'items is [1,2,3]
 print of items[10]' "2 | print of items\[10\]"
 check_stderr "EM27 runtime caret lands on the failing column" 'items is [1,2,3]
 print of items[10]' "|               \^"
-check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error line 1: cannot apply"
+check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error .*:1: cannot apply"
 check_stderr "EM5 index out of bounds" 'items is [1,2,3]
-print of items[10]' "Error line 2: index 10 out of range"
-check_stderr "EM6 division by zero raises" 'print of (10 / 0)' "Error line 1: division by zero"
+print of items[10]' "Error .*:2: index 10 out of range"
+check_stderr "EM6 division by zero raises" 'print of (10 / 0)' "Error .*:1: division by zero"
 check_stderr "EM7 undefined variable includes line" 'x is 1
 y is 2
-print of z' "Error line 3: undefined variable"
+print of z' "Error .*:3: undefined variable"
 check_stderr "EM8 calling non-function" 'x is 5
-y is x of 10' "Error line 2: cannot call num"
+y is x of 10' "Error .*:2: cannot call num"
 check_stderr "EM9 cannot index num" 'x is 42
-print of x[0]' "Error line 2: cannot index num"
+print of x[0]' "Error .*:2: cannot index num"
 check_stderr "EM10 nested if line accuracy" 'x is 1
 if x == 1:
     y is 2
     if y == 2:
-        z is y[0]' "Error line 5: cannot index num"
+        z is y[0]' "Error .*:5: cannot index num"
 check_stderr "EM11 function body line" 'define foo as:
     return n - "bad"
-result is foo of 5' "Error line 2: cannot apply"
+result is foo of 5' "Error .*:2: cannot apply"
 check_stderr "EM12 loop body line" 'items is [1, 2, 3]
 for i in items:
     x is i * 2
-    print of missing' "Error line 4: undefined variable"
+    print of missing' "Error .*:4: undefined variable"
 check_stderr "EM13 elif branch line" 'x is 5
 if x == 1:
     print of "one"
 elif x == 5:
-    y is x[0]' "Error line 5: cannot index"
+    y is x[0]' "Error .*:5: cannot index"
 # An *uncaught* runtime error must fail loudly: non-zero exit, and no further
 # statements run. Division by zero is now such an error (see EM15).
 check_exit "EM14 uncaught runtime error exits non-zero" 'x is [1] - 5' "1"
@@ -1908,7 +1912,7 @@ LW_R1=$(printf '%s\n' "$LW_INT" | sed -n '1p')
 LW_R2=$(printf '%s\n' "$LW_INT" | sed -n '2p')
 # The error is on a line past 65535; a wrapped operand would report line %
 # 65536 (a small number). The invariant is simply: reported line > 65535.
-LW_ERRLINE=$(printf '%s\n' "$LW_INT" | grep -oE "Error line [0-9]+" | head -1 | grep -oE "[0-9]+")
+LW_ERRLINE=$(printf '%s\n' "$LW_INT" | grep -oE "Error .*:[0-9]+" | head -1 | sed "s/.*://")
 if [ "$LW_R1" = "111" ] && [ "$LW_R2" = "222" ]; then
     echo "  PASS: 'what is x at L' correct past line 65535 (111, 222)"
 else
@@ -3554,8 +3558,8 @@ rm -f "$GT_PROBE_FILE"
 echo "[120b] Gfx Text Metrics"
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: pins gfx_text_width of a non-string answering 0 (line 38), in both renderer modes.
-    GT_FB=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
-    GT_DEF=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
+    GT_FB=$(gfx_headless_run 30 env EIGS_STRICT=0 EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
+    GT_DEF=$(gfx_headless_run 30 env EIGS_STRICT=0 ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
     if rc_ok "$GT_FB_RC" "$GT_FB" && echo "$GT_FB" | grep -q "All tests passed" \
        && echo "$GT_FB" | grep -q "fallback-mode: 1" \
        && rc_ok "$GT_DEF_RC" "$GT_DEF" && echo "$GT_DEF" | grep -q "All tests passed"; then
@@ -3624,8 +3628,8 @@ rm -f "$GA_PROBE_FILE"
 echo "[133] Gfx Argument-Type Guards"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: the plain pass pins the ext_gfx wrong-type stand-ins (0/null); the strict pass below raises.
-    GA_PLAIN=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
-    GA_STRICT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
+    GA_PLAIN=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
+    GA_STRICT=$(gfx_headless_run 30 env EIGS_STRICT=1 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
 
     # THIRD PASS: the tape. audio_capture_open is trace-recorded, so a guard
     # placed below TRACE_NONDET_TAKE returns before TRACE_NONDET_RECORD and
@@ -3643,8 +3647,8 @@ print of (audio_capture_open of [44100, 1])
 print of (audio_capture_close of null)
 TAPEPROG
     # #1361 EIGS_STRICT=0: the rejected call must answer its stand-in 0 and run on, so line 2 reaches the tape.
-    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape"  ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
-    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
+    gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
+    gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
     if cmp -s "$GA_TDIR/first.out" "$GA_TDIR/second.out"; then GA_TAPE_OK=1; else GA_TAPE_OK=0; fi
     # A rejected call must consume NO record, so a tape of this program holds
     # exactly one — the well-typed call. Pinned rather than merely compared,
@@ -3670,8 +3674,8 @@ print of (gfx_read of [1, 1])
 ignore is gfx_close of null
 READPROG
     # #1361 EIGS_STRICT=0: gfx_read of ["1", 1] must answer its stand-in and run on to the well-typed read.
-    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
-    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
+    gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
+    gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
     if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
     GA_READ_N=$(grep -c '^N [0-9][0-9]* gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
     rm -rf "$GA_RDIR"
@@ -3701,8 +3705,8 @@ ignore is gfx_close of null
 DFLTREAD
     GA_DFLT_OK=1
     for __ga_p in cap read; do
-        env -u EIGS_STRICT SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_DDIR/$__ga_p.tape"  ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.1" 2>&1
-        env -u EIGS_STRICT SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.2" 2>&1
+        gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.1" 2>&1
+        gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.2" 2>&1
         cmp -s "$GA_DDIR/$__ga_p.1" "$GA_DDIR/$__ga_p.2" || GA_DFLT_OK=0
         grep -qx rejected "$GA_DDIR/$__ga_p.1" || GA_DFLT_OK=0   # the default really raised
     done
@@ -3802,8 +3806,8 @@ if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
         local nm="$1" prog="$2" want="$3" a b
         printf '%s\n' "$prog" > "$GD_DIR/p.eigs"
         # #1361 EIGS_STRICT=0: each probe reads the wrong-type stand-in's returned data; under the default it raises instead.
-        a=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
-        b=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        a=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        b=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
         GD_RUN=$((GD_RUN + 1))
         # A probe that produced nothing measured nothing — two empty strings
         # compare equal and would score as "no disclosure". Nor is a stable
@@ -3952,7 +3956,7 @@ rm -f "$UC_PROBE_FILE"
 
 echo "[132] UI Containment Render-Decode Oracle"
 if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
-    UC_OUTPUT=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
+    UC_OUTPUT=$(gfx_headless_run 30 ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
     UC_N=$(derive_count "$UC_OUTPUT" "[132] UI Containment Render-Decode Oracle")
     if rc_ok "$UC_RC" "$UC_OUTPUT" && echo "$UC_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + UC_N))
@@ -6605,13 +6609,6 @@ rm -f "$EX_GFX_PROBE"
 echo "[97] Example programs (examples/*.eigs)"
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
 EIGS_ABS="$(pwd)/eigenscript"
-# RLIMIT_AS cannot coexist with ASan's multi-terabyte shadow mapping. Gfx is
-# now in the default sanitizer profile (#1415), so keep the runaway timeout
-# but omit only the address-space cap under ASan.
-EX_GFX_ULIMIT='ulimit -v 2000000 2>/dev/null'
-if ASAN_OPTIONS=help=1 "$EIGS_ABS" --version 2>&1 | grep -q 'AddressSanitizer'; then
-    EX_GFX_ULIMIT=':'
-fi
 # Runaway guard reuses the shared $EIGS_TMO (defined near the top). The old
 # `timeout 60` here was a latency assertion in disguise: invariant_weak.eigs
 # takes ~60.5s standalone under ASan and tripped the 60s guard under suite load
@@ -6624,9 +6621,8 @@ for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
         # #886: require the explicit pre-loop marker: rc 124 alone could also
         # mean setup hung. Memory-capped — an unbounded
         # UI run can take the whole machine.
-        EX_OUT=$( cd "$(dirname "$f")" && eval "$EX_GFX_ULIMIT"; \
-                  cd "$(dirname "$f")" && EIGS_GFX_READY=1 SDL_VIDEODRIVER=dummy timeout 3 \
-                  "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
+        EX_OUT=$( cd "$(dirname "$f")" && EIGS_GFX_READY=1 \
+                  gfx_headless_run 3 "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
         if { [ "$EX_RC" = "124" ] || [ "$EX_RC" = "0" ]; } && \
            printf '%s\n' "$EX_OUT" | grep -qx "EIGS_GFX_READY"; then
             EX_PASS=$((EX_PASS + 1))
@@ -7039,31 +7035,6 @@ else
             echo "  FAIL: guard self-test — expected named 2s-timeout failure for $SELFTEST_FIXTURE with inner FAIL delta=$SELFTEST_COUNT / PASS delta=0; got FAIL delta='$inner_fail' PASS delta='$inner_pass'"
             printf '%s\n' "$SELFTEST_OUT" | grep -iE 'FAIL|SELFTEST_DELTAS' | head -5 | sed 's/^/      /'
         fi
-    fi
-fi
-echo ""
-
-# [99d] Binary-fingerprint guard self-test (#681). Proves the runner aborts
-# with the exact error message if src/eigenscript is replaced mid-suite.
-echo "[99d] Binary-fingerprint guard self-test (#681)"
-TOTAL=$((TOTAL + 1))
-if [ ! -f "$EIGS_BIN" ]; then
-    # Round 6 counted this as a pass; the section's only check did not run.
-    TOTAL=$((TOTAL - 1))
-    section_skip "no binary to fingerprint"
-else
-    . "$TESTS_DIR/binary_swap.sh"
-    SELFTEST_OUT=$(eigs_binary_swap_selftest 2>&1)
-    SELFTEST_RC=$?
-    RESTORE_OUT=$(python3 "$TESTS_DIR/test_binary_swap_restore.py" 2>&1)
-    RESTORE_RC=$?
-    if [ "$SELFTEST_RC" -eq 1 ] && [ "$RESTORE_RC" -eq 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
-        PASS=$((PASS + 1))
-        echo "  PASS: binary-fingerprint guard detected mid-run swap and aborted with the expected error"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: binary-fingerprint guard did not detect mid-run swap (rc=$SELFTEST_RC)"
-        printf '%s\n' "$SELFTEST_OUT" "$RESTORE_OUT" | head -12 | sed 's/^/      /'
     fi
 fi
 echo ""

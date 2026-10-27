@@ -1131,7 +1131,9 @@ size_t trace_out_capacity(void) {
 
 /* Caller holds g_tape_mu. */
 static void out_flush_locked(void) {
+#if !EIGENSCRIPT_FREESTANDING
     if (g_out_len && g_trace_fp) fwrite(g_out, 1, g_out_len, g_trace_fp);
+#endif
     g_out_len = 0;
 }
 
@@ -3098,9 +3100,11 @@ static void write_value_ptr_full(Value *v, int *budget) {
         }
         case VAL_DICT: {
             wf_putc('{', budget);
-            int n = v->data.dict.count;
-            for (int i = 0; i < n && *budget > 0; i++) {
-                if (i) wf_puts(", ", budget);
+            int first = 1;
+            DICT_FOR_EACH(v, i) {
+                if (*budget <= 0) break;
+                if (!first) wf_puts(", ", budget);
+                first = 0;
                 write_string_full(v->data.dict.keys[i], budget);
                 wf_puts(": ", budget);
                 EIGS_VIEW(item_view);

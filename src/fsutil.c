@@ -188,6 +188,19 @@ static int try_resolve_path(const char *candidate, char *resolved, size_t resolv
     return 1;
 }
 
+/* Source-tree variant executables live one directory deeper than the normal
+ * src/eigenscript entry point: <repo>/build/<variant>/eigenscript.  Keep this
+ * fallback specific to that conventional build layout; an installed
+ * <prefix>/bin/eigenscript must not unexpectedly search above <prefix>. */
+static int executable_is_build_variant(void) {
+    const char *variant = strrchr(g_exe_dir, '/');
+    if (!variant) return 0;
+    size_t parent_len = (size_t)(variant - g_exe_dir);
+    return parent_len >= sizeof("/build") - 1 &&
+           memcmp(g_exe_dir + parent_len - (sizeof("/build") - 1),
+                  "/build", sizeof("/build") - 1) == 0;
+}
+
 /* Canonical file provenance: symlink entry points and nested loads agree with
  * import. Heap-owned because this helper also runs on compiler paths. */
 char *eigs_file_directory(const char *path) {
@@ -231,20 +244,22 @@ char *eigs_file_resolve_message(const char *operation, const char *base,
     const char *home = getenv("HOME");
     int n = snprintf(NULL, 0,
         "%s: cannot read '%s' (not found or unreadable); tried containing directory '%s', "
-        "eigs_modules walk, %s%s; stdlib roots '%s/../<path>', "
+        "eigs_modules walk, %s%s; stdlib roots '%s/../<path>'%s, "
         "'%s/../lib/eigenscript', '%s/.local/lib/eigenscript' "
         "(also stripping lib/; absolute paths are used as-is)",
         operation, path, base, project ? "project root " : "no eigs.json above ",
-        project ? project : base, g_exe_dir, g_exe_dir,
+        project ? project : base, g_exe_dir,
+        executable_is_build_variant() ? ", build variant '<exe>/../../<path>'" : "", g_exe_dir,
         home ? home : "<HOME unset>");
     char *message = xmalloc((size_t)n + 1);
     snprintf(message, (size_t)n + 1,
         "%s: cannot read '%s' (not found or unreadable); tried containing directory '%s', "
-        "eigs_modules walk, %s%s; stdlib roots '%s/../<path>', "
+        "eigs_modules walk, %s%s; stdlib roots '%s/../<path>'%s, "
         "'%s/../lib/eigenscript', '%s/.local/lib/eigenscript' "
         "(also stripping lib/; absolute paths are used as-is)",
         operation, path, base, project ? "project root " : "no eigs.json above ",
-        project ? project : base, g_exe_dir, g_exe_dir,
+        project ? project : base, g_exe_dir,
+        executable_is_build_variant() ? ", build variant '<exe>/../../<path>'" : "", g_exe_dir,
         home ? home : "<HOME unset>");
     free(project);
     return message;
@@ -324,6 +339,11 @@ int resolve_eigenscript_file_from_ex(const char *base, const char *path,
 
     snprintf(candidate, sizeof(candidate), "%.4000s/../%.4000s", g_exe_dir, path);
     if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+
+    if (executable_is_build_variant()) {
+        snprintf(candidate, sizeof(candidate), "%.4000s/../../%.4000s", g_exe_dir, path);
+        if (try_resolve_path(candidate, resolved, resolved_cap)) return 1;
+    }
 
     snprintf(candidate, sizeof(candidate), "%.4000s/../lib/eigenscript/%.4000s", g_exe_dir, path);
     if (try_resolve_path(candidate, resolved, resolved_cap)) RESOLVED(EIGS_RESOLVE_STDLIB_ROOT);

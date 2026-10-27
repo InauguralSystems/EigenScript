@@ -800,7 +800,7 @@ print of (a + b + c)
 ```
 
 Out-of-range indexing is a runtime error (catchable with `try`; the
-caught value is a `{kind, message, line}` dict — see
+caught value is a `{kind, message, file, line}` dict — see
 [Error handling](#error-handling)):
 
 ```eigenscript
@@ -1193,14 +1193,14 @@ expressions match too
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
 `try:` / `catch name:` captures runtime errors. A **built-in** runtime
-error binds a small dict `{kind, message, line}`: `kind` is drawn from
-a closed vocabulary (below), `message` is the error text without the
-`Error line N:` frame, `line` is the 1-based source line. `throw of
+error binds a small dict `{kind, message, file, line}`: `kind` is drawn from
+a closed vocabulary (below), `message` remains the location-free error text,
+`file` is the compiled source identity, and `line` is the 1-based source line. `throw of
 value` raises a user error and the catch variable binds the thrown
 value itself, unchanged — a thrown string stays a string. An *uncaught*
 runtime error stops the program with a nonzero exit.
 
-`line` (and the `Error line N:` header) is the 1-based **physical** line of
+`line` (and the `Error file:line:` header) is the 1-based **physical** line of
 the sub-expression that faulted, even when its statement spans several lines
 (#1381). The division below sits on the statement's second line:
 
@@ -1336,12 +1336,12 @@ with code 1:
 
 ```eigenscript nocheck the program deliberately raises UNCAUGHT; the block quotes the resulting stderr trace, which is not stdout
 # uncaught: stderr shows
-#   Error line 6: index 99 out of range (list length 2)
+#   Error app.eigs:6: index 99 out of range (list length 2)
 #        6 | v is items[99]
 #          |           ^
-#     at inner (line 6)
-#     at middle (line 8)
-#     at <module> (line 9)
+#     at inner (app.eigs:6)
+#     at middle (app.eigs:8)
+#     at <module> (app.eigs:9)
 ```
 
 ## Modules
@@ -1412,7 +1412,8 @@ and uses the project file. For each request, the order is:
 4. Relative to the **project root**: the nearest ancestor of that containing
    directory with an `eigs.json`, including the containing directory itself.
    If none exists, this step is skipped.
-5. The existing stdlib locations, in order: `<exe>/../<path>`,
+5. The existing stdlib locations, in order: `<exe>/../<path>`; for a source-tree
+   `<repo>/build/<variant>/eigenscript`, `<exe>/../../<path>`; then
    `<exe>/../lib/eigenscript/<path>`, the latter again with a leading `lib/`
    stripped, then `$HOME/.local/lib/eigenscript/<path>` and its `lib/`-stripped
    form. Here `<exe>` is the executable's directory.
@@ -2070,6 +2071,10 @@ advance. Replacing memory replay preserves a suspended file's complete context.
 Host effects that the tape cannot reconstruct are replay boundaries. In
 particular, `mktemp` raises a catchable filesystem-boundary error before it
 creates a file; outside replay it creates a file and returns its fresh path.
+Recorded builtins validate deterministic argument refusals before consulting
+the tape. A call that raises during recording therefore raises with the same
+kind and message during strict replay; it is never replaced by a recorded
+return value.
 
 Values crossing a channel, `thread_join`, or cooperative-task boundary are
 copied recursively. This includes buffers (payload and shape) and text builders

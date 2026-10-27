@@ -678,6 +678,7 @@ Value* builtin_throw(Value *arg) {
     snprintf(g_error_raw, sizeof(g_error_raw), "%s", msg);
     g_error_kind = (int)EK_USER;
     g_error_line = vm_current_line();
+    snprintf(g_error_file, sizeof(g_error_file), "%s", vm_current_file());
     if (g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();
@@ -705,7 +706,7 @@ Value* builtin_keys(Value *arg) {
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
-        for (int i = 0; i < arg->data.dict.count; i++)
+        DICT_FOR_EACH(arg, i)
             list_append_owned(list, make_str(arg->data.dict.keys[i]));
         return list;
     }
@@ -716,7 +717,7 @@ Value* builtin_values(Value *arg) {
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
-        for (int i = 0; i < arg->data.dict.count; i++)
+        DICT_FOR_EACH(arg, i)
             list_append_slot(list, dict_value_slot(arg, i));
         return list;
     }
@@ -949,8 +950,10 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
         case VAL_DICT: {
             eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             strbuf_append_char(out, '{');
-            for (int i = 0; i < v->data.dict.count; i++) {
-                if (i > 0) strbuf_append_char(out, ',');
+            int first = 1;
+            DICT_FOR_EACH(v, i) {
+                if (!first) strbuf_append_char(out, ',');
+                first = 0;
                 strbuf_append_char(out, '"');
                 for (const char *c = v->data.dict.keys[i]; *c; c++) {
                     switch (*c) {
@@ -2742,7 +2745,7 @@ Value* builtin_eval(Value *arg) {
      * diagnostics ('break' outside a loop #337, un-encodable jumps) must
      * fail the eval instead of executing a placeholder chunk. */
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
-    EigsChunk *ev_chunk = compile_ast(ast, target, src);
+    EigsChunk *ev_chunk = compile_ast(ast, target, src, "<eval>");
     if (g_parse_errors > 0) {
         g_parse_errors = saved_errors;
         chunk_free(ev_chunk);
@@ -2930,7 +2933,7 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
     case VAL_DICT: {
         if (!desc_enter(ctx, v)) return NULL;
         Value *c = make_dict(v->data.dict.count);
-        for (int i = 0; i < v->data.dict.count; i++) {
+        DICT_FOR_EACH(v, i) {
             Value *input = dict_value_get_owned(v, i);
             Value *e = desc_isolate_const(ctx, input);
             val_decref(input);
@@ -3344,7 +3347,7 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
                                            budget, unverified))
                 return 1;
     } else if (v->type == VAL_DICT) {
-        for (int i = 0; i < v->data.dict.count; i++) {
+        DICT_FOR_EACH(v, i) {
             /* #1014: this walk once re-homed escaping dict keys as well
              * (a promote_keys arm, run as a second pass at the result
              * boundary). Measured: dict_set_hashed promotes at INSERTION
@@ -3440,11 +3443,12 @@ Value* builtin_sandbox_run(Value *arg) {
         /* #406: surface the build failure structurally — a descriptor
          * that doesn't verify is a bad argument value, same shape as a
          * runtime failure's error field. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_VALUE)));
         dict_set_owned(ev, "message",
                        make_str(abi_err ? abi_err : "invalid chunk descriptor"));
         dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
         return sandbox_finish_run(out);
     }
@@ -3534,6 +3538,9 @@ Value* builtin_sandbox_run(Value *arg) {
     int    saved_sb_refusal = g_sandbox_refusal;
     int    saved_sb_refusal_kind = g_sandbox_refusal_kind;
     int    saved_sb_refusal_line = g_sandbox_refusal_line;
+    char   saved_sb_refusal_file[sizeof g_sandbox_refusal_file];
+    memcpy(saved_sb_refusal_file, g_sandbox_refusal_file,
+           sizeof saved_sb_refusal_file);
     char   saved_sb_refusal_msg[sizeof g_sandbox_refusal_msg];
     memcpy(saved_sb_refusal_msg, g_sandbox_refusal_msg,
            sizeof saved_sb_refusal_msg);
@@ -3621,7 +3628,7 @@ Value* builtin_sandbox_run(Value *arg) {
      * 2026-08-17). Surface it as a structured sandbox error instead. */
     if (ok && cap_hit) {
         ok = 0;
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str("sandbox"));
         char capmsg[96];
         snprintf(capmsg, sizeof(capmsg),
@@ -3629,6 +3636,7 @@ Value* builtin_sandbox_run(Value *arg) {
                  loop_max);
         dict_set_owned(ev, "message", make_str(capmsg));
         dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
     }
     if (!ok && g_sandbox_refusal) {
@@ -3636,11 +3644,12 @@ Value* builtin_sandbox_run(Value *arg) {
          * report the FIRST refusal's own triple. Not the latched g_error_*,
          * which an earlier caught ordinary error (e.g. throw("sentinel")) may
          * occupy without being a refusal; and not a later error. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind",
                        make_str(err_kind_name((ErrKind)g_sandbox_refusal_kind)));
         dict_set_owned(ev, "message", make_str(g_sandbox_refusal_msg));
         dict_set_owned(ev, "line", make_num((double)g_sandbox_refusal_line));
+        dict_set_owned(ev, "file", make_str(g_sandbox_refusal_file));
         dict_set_owned(out, "error", ev);
         if (g_has_error) {
             g_has_error = 0;
@@ -3651,10 +3660,11 @@ Value* builtin_sandbox_run(Value *arg) {
          * graded ladder can discriminate (sandbox denial vs type error vs
          * parse) without re-running outside the sandbox. Same shape as a
          * catch binding: {kind, message, line}. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
         dict_set_owned(ev, "message", make_str(g_error_raw));
         dict_set_owned(ev, "line", make_num((double)g_error_line));
+        dict_set_owned(ev, "file", make_str(g_error_file));
         dict_set_owned(out, "error", ev);
         g_has_error = 0;
         eigs_clear_error_value();
@@ -3679,7 +3689,7 @@ Value* builtin_sandbox_run(Value *arg) {
     }
     if (scan_hit && ok) {
         ok = 0;
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_SANDBOX)));
         dict_set_owned(ev, "message",
                        make_str(scan_unverified
@@ -3689,6 +3699,7 @@ Value* builtin_sandbox_run(Value *arg) {
                                 : "sandbox result contains a callable; "
                                   "functions cannot cross the sandbox boundary"));
         dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
     }
 
@@ -3701,6 +3712,8 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_refusal      = saved_sb_refusal;
     g_sandbox_refusal_kind = saved_sb_refusal_kind;
     g_sandbox_refusal_line = saved_sb_refusal_line;
+    memcpy(g_sandbox_refusal_file, saved_sb_refusal_file,
+           sizeof saved_sb_refusal_file);
     memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
            sizeof saved_sb_refusal_msg);
     return sandbox_finish_run(out);
@@ -5454,7 +5467,7 @@ Value* builtin_nearest_in_range(Value *arg) {
         Value *e = BUILTIN_LIST_VIEW(entities, i);
         if (!e || e->type != VAL_DICT) continue;
         char **keys = e->data.dict.keys;
-        int kcount = e->data.dict.count;
+        int kcount = e->data.dict.used;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
@@ -5583,7 +5596,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             continue;
         }
         char **keys = e->data.dict.keys;
-        int kcount = e->data.dict.count;
+        int kcount = e->data.dict.used;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
@@ -5903,7 +5916,7 @@ Value* builtin_sort_by(Value *arg) {
     return result;
 }
 
-/* sort of list — in-place qsort of an all-number or all-string list.
+/* sort of list — stable in-place sort of an all-number or all-string list.
  * Anything else raises (#368): the old comparator returned 0 for any
  * non-numeric pair, so sorting a list of records silently no-oped —
  * with libc-dependent element order on top (qsort gives no stability

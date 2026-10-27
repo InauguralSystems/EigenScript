@@ -94,6 +94,8 @@ import os
 import re
 import sys
 
+from _python_execution import EXECUTION_CALL_NAMES, name_of
+
 NAME_RE = re.compile(r"eigenscript(?:-[a-z0-9]+)*")
 FULL_NAME_RE = re.compile(r"^eigenscript(?:-[a-z0-9]+)*$")
 
@@ -709,19 +711,6 @@ def scan_python(text, hits, path):
         tree = ast.parse(text)
     except SyntaxError:
         return
-    calls = (
-        "system", "popen", "run", "call", "check_call", "check_output",
-        "Popen", "which", "execv", "execve", "execvp", "execvpe", "execl",
-        "execlp", "execle", "spawnv", "spawnvp", "spawnl", "spawnlp",
-    )
-
-    def name_of(func):
-        if isinstance(func, ast.Attribute):
-            return func.attr
-        if isinstance(func, ast.Name):
-            return func.id
-        return ""
-
     def literal(node):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value
@@ -748,7 +737,7 @@ def scan_python(text, hits, path):
                 if val is not None and FULL_NAME_RE.match(val.strip()):
                     hits.append((val.strip(), path, node.lineno))
             continue
-        if fname not in calls:
+        if fname not in EXECUTION_CALL_NAMES:
             continue
         if not node.args:
             continue

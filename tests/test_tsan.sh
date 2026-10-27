@@ -118,6 +118,18 @@ scope_boundary_row() {
     fi
 }
 
+dict_readers_row() {
+    echo "=== #1697 shared dict readers must not mutate order storage ==="
+    local fixture="$TESTS_DIR/tsan_dict_readers.eigs"
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && \
+       grep -q 'dict readers: PASS' <<< "$RUN_OUTPUT"; then
+        echo "  PASS: shared dict traversal is TSan-clean"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: shared dict readers warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
+    fi
+}
+
 # --seeded-only (#1139): just the self-validation row, for a lane whose binary
 # is not the stock tsan build (tsan-http). The rest of this script links
 # build/tsan/*.o and is the stock lane's.
@@ -135,7 +147,8 @@ if [ "${1:-}" = "--row" ]; then
         seeded)         seeded_race_row ;;
         rebind-call)    rebind_call_row ;;
         scope-boundary) scope_boundary_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary"; exit 2 ;;
+        dict-readers)   dict_readers_row ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
@@ -147,7 +160,7 @@ SLICE="test_concurrent test_spawn_parallel test_chan_dict_xthread test_spawn_gc 
        test_channel_nb test_spawn_channel_exit test_spawn_args \
        test_spawn_jit test_spawn_jit_warm test_obs_mt_race \
        tsan_no_yield_race tsan_sandbox_snapshot_race tsan_mt_clear_respawn \
-       tsan_transfer_buffer_race tsan_message_buffer_copy"
+       tsan_transfer_buffer_race tsan_message_buffer_copy tsan_dict_readers"
 for t in $SLICE; do
     f="$TESTS_DIR/$t.eigs"
     [ -f "$f" ] || continue

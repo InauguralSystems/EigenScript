@@ -1,0 +1,56 @@
+# #1697: removal preserves the specified insertion order.
+load_file of "lib/test.eigs"
+
+d is {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}
+dict_remove of [d, "a"]
+assert_eq of [keys of d, ["b", "c", "d", "e"], "remove first preserves order"]
+dict_remove of [d, "c"]
+assert_eq of [keys of d, ["b", "d", "e"], "remove middle preserves order"]
+dict_remove of [d, "e"]
+assert_eq of [keys of d, ["b", "d"], "remove last preserves order"]
+dict_remove of [d, "b"]
+d["b"] is 20
+assert_eq of [keys of d, ["d", "b"], "reinserted key moves to end"]
+assert_eq of [str of d, "{\"d\": 4, \"b\": 20}", "dict printing uses insertion order"]
+
+# The SPEC says comparison walks the left dict's key order.  The unequal
+# numeric pair must stop the walk before the bool/number pair can raise.
+left is {"gone": 0, "unequal": 1, "boom": true}
+dict_remove of [left, "gone"]
+right is {"unequal": 2, "boom": 1}
+comparison_raised is false
+comparison_result is true
+try:
+    comparison_result is left == right
+catch err:
+    comparison_raised is true
+assert_eq of [comparison_raised, false, "deep comparison keeps left key order"]
+assert_eq of [comparison_result, false, "earlier unequal pair short-circuits"]
+
+# Cross the compaction threshold several times and verify survivor iteration.
+many is {}
+i is 0
+loop while i < 200:
+    many["k" + (str of i)] is i
+    i is i + 1
+i is 0
+loop while i < 150:
+    dict_remove of [many, "k" + (str of i)]
+    i is i + 1
+expected is []
+i is 150
+loop while i < 200:
+    append of [expected, "k" + (str of i)]
+    i is i + 1
+assert_eq of [keys of many, expected, "iteration survives repeated compaction"]
+
+# Emptying leaves a reusable dictionary, including after a final tombstone.
+i is 150
+loop while i < 200:
+    dict_remove of [many, "k" + (str of i)]
+    i is i + 1
+assert_eq of [keys of many, [], "remove every key"]
+many.fresh is 7
+assert_eq of [keys of many, ["fresh"], "reuse emptied dict"]
+assert_eq of [many.fresh, 7, "reused dict lookup"]
+test_summary of null
