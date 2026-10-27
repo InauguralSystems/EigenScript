@@ -80,3 +80,4 @@ fi
 
 if check; then echo "codspeed targets: $TARGET_COUNT declared == found; consumer rows present; DMG pinned by SHA"; exit 0; fi
 echo "codspeed_targets_check: FAIL (the lane would measure less than it claims)"; exit 1
+# control for the #2002 measurement: this line changes nothing that is measured
