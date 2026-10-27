@@ -100,4 +100,73 @@ define function_scope1737() as:
 assert of [function_scope1737 of null == [90, [4, 5]],
            "function outer binding is untouched"]
 
+# Review round 1: active lexical binders take precedence over parameter and
+# slot resolution on both reads and writes.
+define parameter_comp1737(x) as:
+    return [x for x in [1, 2]]
+assert of [parameter_comp1737 of 90 == [1, 2],
+           "comprehension binder shadows a parameter read"]
+
+define parameter_catch_read1737(err) as:
+    local seen1737 is "missing"
+    try:
+        fault1737 is 1 / 0
+    catch err:
+        seen1737 is err.kind
+    return [seen1737, err]
+assert of [parameter_catch_read1737 of "parameter" == ["value", "parameter"],
+           "catch binder shadows a parameter read"]
+
+define parameter_catch_write1737(err) as:
+    local seen1737 is "missing"
+    try:
+        fault1737 is 1 / 0
+    catch err:
+        err is "updated"
+        seen1737 is err
+    return [seen1737, err]
+assert of [parameter_catch_write1737 of "outer" == ["updated", "outer"],
+           "catch binder assignment does not overwrite a parameter"]
+
+# The enclosing name is slot-promoted, not only a parameter.  The lexical
+# assignment must retain its own observer identity and source lines (141/142),
+# while the enclosing slot keeps its independent one-event history.
+define slot_catch_write1737() as:
+    local err is "outer"
+    local observed1737 is null
+    unobserved:
+        local promoted1737 is 1
+    try:
+        fault1737 is 1 / 0
+    catch err:
+        err is "updated"
+        observed1737 is [err, who is err, when is err,
+                        (what is err at 141).kind, what is err at 142]
+    return [observed1737, err, when is err]
+assert of [slot_catch_write1737 of null == [["updated", "err", 2, "value", "updated"], "outer", 1],
+           "catch write keeps lexical observer identity and source line"]
+
+# A handler can leave an enclosing loop by either jump.  Each jump must end
+# the catch child environment before reaching its target.
+jump_err1737 is "outer"
+jump_count1737 is 0
+loop while jump_count1737 < 2:
+    jump_count1737 is jump_count1737 + 1
+    try:
+        fault1737 is 1 / 0
+    catch jump_err1737:
+        if jump_count1737 == 1:
+            continue
+        break
+assert of [jump_err1737 == "outer" and jump_count1737 == 2,
+           "break and continue unwind catch environments"]
+
+define return_catch1737(err) as:
+    try:
+        fault1737 is 1 / 0
+    catch err:
+        return err.kind
+assert of [return_catch1737 of "parameter" == "value",
+           "return reads and unwinds the catch binder"]
+
 print of "All tests passed"
