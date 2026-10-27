@@ -302,10 +302,15 @@ static inline int dict_value_get_num(const Value *dict, int i, double *out) {
 __attribute__((unused))
 static inline int list_iter_count(const Value *list) { return list->data.list.count; }
 __attribute__((unused))
-/* Positional traversal must start here.  It removes order-array tombstones and
- * returns the resulting dense length; lookup-derived indices use the raw slot
- * accessors above and therefore do not unexpectedly invalidate themselves. */
-int dict_value_iter_count(Value *dict);
+/* Ordered readers walk the insertion-order array without changing it.  A
+ * removed key is a tombstone; only writers compact the array. */
+static inline int dict_iter_next(const Value *dict, int index) {
+    while (index < dict->data.dict.used && !dict->data.dict.keys[index]) index++;
+    return index < dict->data.dict.used ? index : -1;
+}
+#define DICT_FOR_EACH(dict, index) \
+    for (int index = dict_iter_next((dict), 0); index >= 0; \
+         index = dict_iter_next((dict), index + 1))
 
 /* Raw storage is confined to bulk allocation/movement/destruction code. */
 __attribute__((unused))

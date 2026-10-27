@@ -3098,9 +3098,11 @@ static void write_value_ptr_full(Value *v, int *budget) {
         }
         case VAL_DICT: {
             wf_putc('{', budget);
-            int n = dict_value_iter_count(v);
-            for (int i = 0; i < n && *budget > 0; i++) {
-                if (i) wf_puts(", ", budget);
+            int first = 1;
+            DICT_FOR_EACH(v, i) {
+                if (*budget <= 0) break;
+                if (!first) wf_puts(", ", budget);
+                first = 0;
                 write_string_full(v->data.dict.keys[i], budget);
                 wf_puts(": ", budget);
                 EIGS_VIEW(item_view);

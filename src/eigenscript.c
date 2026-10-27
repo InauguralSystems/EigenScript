@@ -446,8 +446,7 @@ static double compute_entropy_impl(Value *v) {
             eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             if (v->data.dict.count == 0) return 0.0;
             double sum = 0.0;
-            int n = dict_value_iter_count(v);
-            for (int i = 0; i < n; i++)
+            DICT_FOR_EACH(v, i)
                 sum += ent_child_slot(dict_value_slot(v, i));
             return sum / v->data.dict.count + log2((double)v->data.dict.count + 1.0);
         }
@@ -2674,9 +2673,8 @@ static Value *chan_clone_rec(Value *v, int depth) {
              * module env is not shared across the transfer) — refresh it
              * first so the snapshot is the module's CURRENT state. */
             eigs_module_ns_sync(v);
-            int n = dict_value_iter_count(v);
-            Value *out = make_dict(n > 0 ? n : 8);
-            for (int i = 0; i < n; i++) {
+            Value *out = make_dict(v->data.dict.count > 0 ? v->data.dict.count : 8);
+            DICT_FOR_EACH(v, i) {
                 EIGS_VIEW(child_view);
                 Value *cv = chan_clone_rec(dict_value_get_view(v, i, &child_view), depth + 1);
                 dict_set_owned(out, v->data.dict.keys[i], cv);  /* consumes cv */
@@ -2687,8 +2685,7 @@ static Value *chan_clone_rec(Value *v, int depth) {
              * above has usually already done this (a send happens while
              * multithreaded), but a clone can also run on the last thread after
              * handle_table_drain has cleared the flag — so this stays. */
-            int out_n = dict_value_iter_count(out);
-            for (int i = 0; i < out_n; i++)
+            DICT_FOR_EACH(out, i)
                 out->data.dict.keys[i] = (char *)shared_intern_key(out->data.dict.keys[i]);
             intern_refs_release(&out->data.dict.intern_refs);
             env_intern_release_value(out);
@@ -2817,11 +2814,6 @@ static void dict_compact(Value *dict) {
     env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dst);
 }
 
-int dict_value_iter_count(Value *dict) {
-    dict_compact(dict);
-    return dict->data.dict.count;
-}
-
 int list_reserve_one(Value *list) {
     if (!list || list->type != VAL_LIST) return 0;
     if (list->data.list.count >= list->data.list.capacity) {
@@ -2932,8 +2924,7 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
             eigs_module_ns_sync(a);      /* #1057 whole-dict reader */
             eigs_module_ns_sync(b);
             if (a->data.dict.count != b->data.dict.count) return 0;
-            int n = dict_value_iter_count(a);
-            for (int i = 0; i < n; i++) {
+            DICT_FOR_EACH(a, i) {
                 EIGS_VIEW(av); EIGS_VIEW(bview);
                 Value *bv = dict_get_view(b, a->data.dict.keys[i], &bview);
                 if (!bv) return 0;
@@ -3039,9 +3030,10 @@ char* value_to_string(Value *v) {
             strbuf_init(&out);
             strbuf_append_char(&out, '{');
             g_vts_depth++;
-            int n = dict_value_iter_count(v);
-            for (int i = 0; i < n; i++) {
-                if (i > 0) strbuf_append_n(&out, ", ", 2);
+            int first = 1;
+            DICT_FOR_EACH(v, i) {
+                if (!first) strbuf_append_n(&out, ", ", 2);
+                first = 0;
                 eigs_json_escape_string(&out, v->data.dict.keys[i]);
                 strbuf_append_n(&out, ": ", 2);
                 EIGS_VIEW(item_view);
