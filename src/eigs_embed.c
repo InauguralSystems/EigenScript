@@ -364,9 +364,7 @@ void eigs_set_global(const char *name, EigsValue *val) {
 EigsValue *eigs_get_global(const char *name) {
     if (!name || !eigs_current || !g_global_env) return NULL;
     if (embed_refuse_reserved("eigs_get_global", name)) return NULL;
-    Value *v = env_get(g_global_env, name);
-    if (v) val_incref(v);
-    return v;
+    return env_get_counted(g_global_env, name);
 }
 
 /* ---- Values ------------------------------------------------------- */
