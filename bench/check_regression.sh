@@ -12,24 +12,45 @@ set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGENSCRIPT:-$DIR/../src/eigenscript}"
 BASELINE="${BASELINE_OVERRIDE:-$DIR/baseline.txt}"
+VALGRIND="${VALGRIND:-valgrind}"
 THRESHOLD_PCT=5
 
 ir_of() {  # ir_of <binary> <file> -> instruction count
-    valgrind --tool=cachegrind --cachegrind-out-file=/dev/null "$1" "$2" 2>&1 \
-        | grep -oE "I *refs:[ ]*[0-9,]+" | grep -oE "[0-9,]+" | tr -d ','
+    # Capture the producer before parsing it.  This is the standard portable
+    # shell pattern when a pipeline must preserve an earlier command's status
+    # (rather than relying on the pipeline's final command or bash pipefail).
+    out=$(mktemp) || return
+    "$VALGRIND" --tool=cachegrind --cachegrind-out-file=/dev/null "$1" "$2" >"$out" 2>&1
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        cat "$out" >&2
+        rm -f "$out"
+        return "$status"
+    fi
+    count=$(grep -oE "I *refs:[ ]*[0-9,]+" "$out" | grep -oE "[0-9,]+" | tr -d ',')
+    parse_status=$?
+    rm -f "$out"
+    if [ "$parse_status" -ne 0 ] || ! [[ "$count" =~ ^[0-9]+$ ]] || [ "$count" -le 0 ]; then
+        echo "invalid cachegrind I refs summary" >&2
+        return 1
+    fi
+    printf '%s\n' "$count"
 }
 
 case "${1:-}" in
 --update)
     : > "$BASELINE"
-    for f in "$DIR"/*.eigs; do echo "$(basename "$f" .eigs) $(ir_of "$EIGS" "$f")" >> "$BASELINE"; done
+    for f in "$DIR"/*.eigs; do
+        count=$(ir_of "$EIGS" "$f") || exit $?
+        echo "$(basename "$f" .eigs) $count" >> "$BASELINE"
+    done
     echo "baseline updated:"; cat "$BASELINE"; exit 0 ;;
 --selftest)
-    base=$(ir_of "$EIGS" "$DIR/scalar_loop.eigs")
+    base=$(ir_of "$EIGS" "$DIR/scalar_loop.eigs") || exit $?
     tmp=$(mktemp --suffix=.eigs)
     # ~2x the iterations of scalar_loop => ~2x instructions, well over threshold.
     printf 'total is 0\nfor i in range of 80000:\n    total is total + (i * 2) - 1\nprint of total\n' > "$tmp"
-    doubled=$(ir_of "$EIGS" "$tmp"); rm -f "$tmp"
+    doubled=$(ir_of "$EIGS" "$tmp") || { status=$?; rm -f "$tmp"; exit "$status"; }; rm -f "$tmp"
     inc=$(( (doubled - base) * 100 / base ))
     if [ "$inc" -gt "$THRESHOLD_PCT" ]; then
         echo "SELFTEST OK: a 2x-work pessimization is flagged (+${inc}% Ir > ${THRESHOLD_PCT}%)"
@@ -43,7 +64,59 @@ case "${1:-}" in
     if BASELINE_OVERRIDE="$fake" "$0" >/dev/null 2>&1; then
         rm -f "$fake"; echo "SELFTEST FAILED: a 2x-stale baseline passed the gate — decay is invisible"; exit 1
     fi
-    rm -f "$fake"; echo "SELFTEST OK: a 2x-stale baseline is flagged"; exit 0 ;;
+    rm -f "$fake"; echo "SELFTEST OK: a 2x-stale baseline is flagged"
+
+    # A real runtime error still leaves cachegrind's positive summary behind.
+    # The profiler's nonzero status, not that superficially valid count, must
+    # decide the gate result.
+    bad=$(mktemp --suffix=.eigs)
+    plant=$(mktemp)
+    printf 'print of (1 / 0)\n' > "$bad"
+    printf '#!/bin/sh\n"%s" "%s"\nstatus=$?\necho "I refs: 1,000" >&2\nexit "$status"\n' "$EIGS" "$bad" > "$plant"
+    chmod +x "$plant"
+    diagnostic=$(mktemp)
+    if ir_of "$plant" "$DIR/scalar_loop.eigs" >/dev/null 2>"$diagnostic"; then
+        rm -f "$bad" "$plant" "$diagnostic"
+        echo "SELFTEST FAILED: nonzero runtime with a positive Ir summary passed"; exit 1
+    fi
+    if ! grep -qE 'I *refs:[ ]*[1-9][0-9,]*' "$diagnostic"; then
+        rm -f "$bad" "$plant" "$diagnostic"
+        echo "SELFTEST FAILED: runtime failure plant emitted no positive Ir summary"; exit 1
+    fi
+    rm -f "$bad" "$plant" "$diagnostic"
+    echo "SELFTEST OK: nonzero runtime with a positive Ir summary is rejected"
+
+    # Derive the workload population from the same source glob as the gate and
+    # prove each of the current/reference tiers is measured exactly once.
+    scratch=$(mktemp -d)
+    measure_log="$scratch/measure.log"
+    profiler="$scratch/valgrind"
+    current="$scratch/current"
+    reference="$scratch/reference"
+    printf '#!/bin/sh\nexit 0\n' > "$current"
+    cp "$current" "$reference"
+    cat > "$profiler" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 2 ]; do shift; done
+printf '%s %s\n' "$(basename "$1")" "$(basename "$2")" >> "$MEASURE_LOG"
+echo 'I refs: 1,000'
+EOF
+    chmod +x "$profiler" "$current" "$reference"
+    if ! MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" "$0" --vs "$reference" >/dev/null; then
+        rm -rf "$scratch"
+        echo "SELFTEST FAILED: valid derived benchmark population was rejected"; exit 1
+    fi
+    expected="$scratch/expected"
+    for f in "$DIR"/*.eigs; do
+        printf 'current %s\nreference %s\n' "$(basename "$f")" "$(basename "$f")"
+    done | sort > "$expected"
+    if ! sort "$measure_log" | cmp -s - "$expected"; then
+        rm -rf "$scratch"
+        echo "SELFTEST FAILED: a workload/tier was skipped or measured more than once"; exit 1
+    fi
+    rm -rf "$scratch"
+    echo "SELFTEST OK: every derived workload/tier is measured once"
+    exit 0 ;;
 --vs)
     # Compare THIS binary ($EIGENSCRIPT) against a reference binary ($2) on the
     # same workloads. Both built in the same environment => the Ir difference is
@@ -52,8 +125,8 @@ case "${1:-}" in
     ref="$2"; fail=0
     for f in "$DIR"/*.eigs; do
         name=$(basename "$f" .eigs)
-        a=$(ir_of "$EIGS" "$f")
-        b=$(ir_of "$ref" "$f")
+        a=$(ir_of "$EIGS" "$f") || exit $?
+        b=$(ir_of "$ref" "$f") || exit $?
         inc=$(( (a - b) * 100 / b ))
         if [ $(( (a - b) * 100 )) -gt $(( THRESHOLD_PCT * b )) ]; then
             echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
@@ -81,7 +154,7 @@ esac
 fail=0; stale=0
 while read -r name base; do
     f="$DIR/$name.eigs"; [ -f "$f" ] || continue
-    cur=$(ir_of "$EIGS" "$f")
+    cur=$(ir_of "$EIGS" "$f") || exit $?
     inc=$(( (cur - base) * 100 / base ))
     if [ $(( (cur - base) * 100 )) -gt $(( THRESHOLD_PCT * base )) ]; then
         echo "  REGRESSION: $name  Ir ${base} -> ${cur}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
