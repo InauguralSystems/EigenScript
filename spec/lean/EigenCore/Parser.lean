@@ -27,6 +27,35 @@ private def decodeString (s : String) : String :=
     | c :: rest => c :: decode rest
   String.ofList (decode s.toList)
 
+private def splitTopLevel (source marker : String) : List String :=
+  let needle := marker.toList
+  let rec scan : Nat → List Char → List Char → List String → Nat → Nat → Bool → Bool → List String
+    | 0, _, current, parts, _, _, _, _ =>
+      (String.ofList current.reverse :: parts).reverse
+    | _ + 1, [], current, parts, _, _, _, _ =>
+      (String.ofList current.reverse :: parts).reverse
+    | fuel + 1, remaining@(c :: rest), current, parts, parenDepth, bracketDepth,
+        inString, escaped =>
+      if !needle.isEmpty && !inString && parenDepth == 0 && bracketDepth == 0 &&
+          needle.isPrefixOf remaining then
+        scan fuel (remaining.drop needle.length) [] (String.ofList current.reverse :: parts)
+          parenDepth bracketDepth inString false
+      else
+        let nextString := if c == '"' && !escaped then !inString else inString
+        let nextEscaped := inString && !escaped && c == '\\'
+        let nextParen :=
+          if inString then parenDepth
+          else if c == '(' then parenDepth + 1
+          else if c == ')' then parenDepth - 1
+          else parenDepth
+        let nextBracket :=
+          if inString then bracketDepth
+          else if c == '[' then bracketDepth + 1
+          else if c == ']' then bracketDepth - 1
+          else bracketDepth
+        scan fuel rest (c :: current) parts nextParen nextBracket nextString nextEscaped
+  scan (source.length + 1) source.toList [] [] 0 0 false false
+
 private def atom (s : String) : Except String Expr :=
   let t := trim s
   if ["break", "continue", "return", "try", "catch", "for", "import"].contains t then
@@ -47,27 +76,45 @@ private def expressionFuel : Nat → String → Except String Expr
     let t := trim source
     if t.startsWith "what is " then throw "discarded interrogative"
     else if t.startsWith "(" && t.endsWith ")" then expressionFuel fuel ((t.drop 1).dropEnd 1).toString
-    else if t.startsWith "not " then do pure (.not (← expressionFuel fuel (t.drop 4).toString))
-    else if t.startsWith "when is " then
-      let name := trim (t.drop 8).toString
-      if validIdent name then pure (.when name) else throw "not yet modeled"
     else
-      let operations : List (String × BinOp) :=
-        [(" and ", .and), (" or ", .or), (" == ", .eq), (" != ", .ne), (" <= ", .le),
-         (" >= ", .ge), (" < ", .lt), (" > ", .gt), (" + ", .add), (" - ", .sub), (" * ", .mul)]
-      match operations.find? (fun p => t.contains p.1) with
+      -- `or`, then `and`, then `not`, then comparisons (#1648).  Looking
+      -- for the lower-precedence binary words before the prefix is what makes
+      -- `not true and false` split as `(not true) and false`, while delaying
+      -- every comparison until after the prefix makes `not 1 < 2` negate it.
+      let logic : List (String × BinOp) := [(" or ", .or), (" and ", .and)]
+      match logic.find? (fun p => (splitTopLevel t p.1).length > 1) with
       | some (marker, op) =>
-        match t.splitOn marker with
+        match splitTopLevel t marker with
         | [a, b] => do pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
         | _ => throw "not yet modeled"
       | none =>
-        match t.splitOn " of [" with
-        | [fn, args] => do
-          if !args.endsWith "]" then throw "not yet modeled"
-          let inside := trim (args.dropEnd 1).toString
-          let values ← if inside.isEmpty then pure [] else (inside.splitOn ",").mapM (expressionFuel fuel)
-          pure (.call (← atom fn) values)
-        | _ => atom t
+        if t.startsWith "not " then do pure (.not (← expressionFuel fuel (t.drop 4).toString))
+        else if t.startsWith "when is " then
+          let name := trim (t.drop 8).toString
+          if validIdent name then pure (.when name) else throw "not yet modeled"
+        else
+          -- Everything below `not` is an operand position in which the C
+          -- grammar starts at comparison-or-tighter, so an unparenthesized
+          -- `not` is a parse error rather than another recursive expression.
+          let operand (s : String) : Except String Expr :=
+            if (trim s).startsWith "not " then
+              throw "unexpected 'not' in expression (not binds below comparisons and of; parenthesize it)"
+            else expressionFuel fuel s
+          let operations : List (String × BinOp) :=
+            [(" == ", .eq), (" != ", .ne), (" <= ", .le), (" >= ", .ge),
+             (" < ", .lt), (" > ", .gt), (" + ", .add), (" - ", .sub), (" * ", .mul)]
+          match operations.find? (fun p => (splitTopLevel t p.1).length > 1) with
+          | some (marker, op) =>
+            match splitTopLevel t marker with
+            | [a, b] => do pure (.binary op (← operand a) (← operand b))
+            | _ => throw "not yet modeled"
+          | none =>
+            -- `of` is relation precedence in C: its RHS is unary-or-tighter.
+            -- Since lower-precedence operators were split above, they apply
+            -- to the result of this call rather than being swallowed by it.
+            match splitTopLevel t " of " with
+            | [fn, arg] => do pure (.call (← operand fn) [← operand arg])
+            | _ => atom t
 
 private def expression (s : String) : Except String Expr := expressionFuel (s.length + 1) s
 
@@ -91,7 +138,14 @@ private def requireLine (line : Option SourceLine) (error : Outside) : Except Ou
 private def simple (line : SourceLine) : Except Outside Stmt :=
   let parsed : Except String Stmt :=
     if line.contents.startsWith "what is " then throw "discarded interrogative"
-    else if line.contents.startsWith "print of " then do pure (.print (← expression (line.contents.drop 9).toString))
+    else if line.contents.startsWith "print of " then do
+      -- Parse the complete expression so a lower-precedence suffix is not
+      -- captured as print's argument.  This branch merely prevents `is`
+      -- inside that expression from being mistaken for statement assignment.
+      let value ← expression line.contents
+      match value with
+      | .call (.variable "print") [argument] => pure (.print argument)
+      | _ => pure (.expression value)
     else if line.contents.startsWith "return " then do pure (.return_ (← expression (line.contents.drop 7).toString))
     else if line.contents.startsWith "local " then
       match splitBinding (line.contents.drop 6).toString with
@@ -100,7 +154,14 @@ private def simple (line : SourceLine) : Except Outside Stmt :=
     else
       match splitBinding line.contents with
       | some (name, value) => if validIdent name then do pure (.assign name (← expression value) false) else throw "assignment target"
-      | none => do pure (.expression (← expression line.contents))
+      | none => do
+        let value ← expression line.contents
+        -- `print of x` is ordinary expression-level `of` syntax.  Only a
+        -- whole-line print call is represented by the statement node; a call
+        -- nested in `print of x and y` remains an expression and returns x.
+        match value with
+        | .call (.variable "print") [argument] => pure (.print argument)
+        | _ => pure (.expression value)
   parsed.mapError fun why => ⟨why, line.number⟩
 
 private def isLoop : Stmt → Bool
@@ -197,6 +258,7 @@ private def unsupportedExpr : Expr → Option String
       else none
   | .binary _ left right => unsupportedExpr left |>.orElse (fun _ => unsupportedExpr right)
   | .not value => unsupportedExpr value
+  | .call (.variable "print") [value] => unsupportedExpr value
   | .call (.variable name) _ =>
       if ["converged", "loop_iterations", "loop_exit"].contains name then
         some s!"builtin {name}"
@@ -229,7 +291,10 @@ def unsupportedConstruct (program : Program) : Option String := unsupportedStmts
 
 def classifyModeled (source : String) : Classification :=
   match parse source with
-  | .error why => .out why
+  | .error why =>
+      -- This is a modeled parse rejection, not an unsupported source shape:
+      -- parity must execute it and compare the C/Lean error exit classes.
+      if why.construct.startsWith "unexpected 'not' in expression" then .inSubset else .out why
   | .ok program => match unsupportedConstruct program with
     | some construct => .out ⟨s!"unsupported in EigenCore-0 step 2a: {construct}", 1⟩
     | none => .inSubset
@@ -237,6 +302,7 @@ def classifyModeled (source : String) : Classification :=
 def classify (source : String) : Classification :=
   match parse source with
   | .ok _ => .inSubset
-  | .error why => .out why
+  | .error why =>
+      if why.construct.startsWith "unexpected 'not' in expression" then .inSubset else .out why
 
 end EigenCore

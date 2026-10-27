@@ -1097,11 +1097,17 @@ static ASTNode* parse_primary(Parser *p) {
         fprintf(stderr, "Parse error line %d: unexpected %s in expression",
                 t->line, tok_type_name(t->type));
         if (t->str_val) fprintf(stderr, " ('%s')", t->str_val);
+        if (t->type == TOK_NOT)
+            fprintf(stderr, "; `not` binds below comparisons and `of`; parenthesize it: (not x)");
         fprintf(stderr, "\n");
         {
             char m[160];
-            snprintf(m, sizeof(m), "unexpected %s in expression",
-                     tok_type_name(t->type));
+            if (t->type == TOK_NOT)
+                snprintf(m, sizeof(m),
+                         "unexpected not in expression; not binds below comparisons and of; parenthesize it: (not x)");
+            else
+                snprintf(m, sizeof(m), "unexpected %s in expression",
+                         tok_type_name(t->type));
             p_record_tok_error(t, "E002", m);
         }
         g_parse_errors++;
@@ -1155,7 +1161,7 @@ static ASTNode* parse_relation(Parser *p) {
     return left;
 }
 
-/* Depth-guard wrapper. parse_unary self-recurses on prefix `not`/`-`/`~`
+/* Depth-guard wrapper. parse_unary self-recurses on prefix `-`/`~`
  * and, via parse_relation's `of` RHS, on `f of g of ...` — neither path
  * touched the parse-depth guard before, so either could overflow the C
  * stack on a single malformed line (SIGSEGV). Bounding parse_unary bounds
@@ -1180,14 +1186,6 @@ static ASTNode* parse_unary_body(Parser *p) {
         ASTNode *operand = parse_unary(p);
         ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
         snprintf(n->data.unary.op, sizeof(n->data.unary.op), "-");
-        n->data.unary.operand = operand;
-        return n;
-    }
-    if (p_cur(p)->type == TOK_NOT) {
-        Token *op_tok = p_advance(p);
-        ASTNode *operand = parse_unary(p);
-        ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
-        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
         n->data.unary.operand = operand;
         return n;
     }
@@ -1328,16 +1326,45 @@ static ASTNode* parse_comparison(Parser *p) {
 }
 
 static ASTNode* parse_and(Parser *p) {
-    ASTNode *left = parse_comparison(p);
-    while (p_cur(p)->type == TOK_AND) {
-        if (chain_too_deep(p)) break;
-        Token *op_tok = p_advance(p);
+    ASTNode *left = NULL;
+    Token *and_tok = NULL;
+
+    for (;;) {
+        /* Word-form `not` sits between comparisons and `and`/`or` (#1648).
+         * Build its right-associated prefix chain from the outside in, then
+         * fill the final operand slot with the comparison. Keeping this in
+         * the iterative and-operand path is important: a separate parse_not
+         * call adds a C frame at EVERY parenthesized nesting level, and its
+         * former PARSE_MAX_DEPTH-sized token array made that frame large
+         * enough to overflow a 256 KiB freestanding stack before the shared
+         * depth guard fired. Each node is still charged through
+         * chain_too_deep, so huge flat `not` chains remain bounded too. */
+        ASTNode *not_head = NULL;
+        ASTNode **not_operand = &not_head;
+        while (p_cur(p)->type == TOK_NOT) {
+            if (chain_too_deep(p)) break;
+            Token *op_tok = p_advance(p);
+            ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
+            snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
+            *not_operand = n;
+            not_operand = &n->data.unary.operand;
+        }
         ASTNode *right = parse_comparison(p);
-        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
-        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
-        n->data.binop.left = left;
-        n->data.binop.right = right;
-        left = n;
+        *not_operand = right;
+        if (not_head) right = not_head;
+
+        if (!left) {
+            left = right;
+        } else {
+            ASTNode *n = make_node_col(AST_BINOP, and_tok->line, and_tok->col);
+            snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
+            n->data.binop.left = left;
+            n->data.binop.right = right;
+            left = n;
+        }
+
+        if (p_cur(p)->type != TOK_AND || chain_too_deep(p)) break;
+        and_tok = p_advance(p);
     }
     return left;
 }

@@ -518,6 +518,13 @@ and `not` always returns a bool.
 Truthiness is unchanged: `0`, `0.0`, `null`, `""`, `[]`, `{}` and `false` are
 falsy; every other value, including `true`, is truthy.
 
+Operator precedence from tighter to looser is: calls/postfix operations;
+arithmetic unary `-` and bitwise unary `~`; multiplicative, additive, shift
+and bitwise operators; comparisons (`< <= > >= == !=`); `not`; `and`; `or`;
+and the pipe operator. Thus `not 1 < 2` means `not (1 < 2)`, while
+`(not 1) < 2` explicitly compares a bool and raises. Repeated `not` associates
+to the right.
+
 ```eigenscript
 print of (3 > 2)
 print of (3 < 2)

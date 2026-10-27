@@ -1,0 +1,1 @@
+- `not` now binds below comparisons and above `and` and `or`, so `not 1 < 2` negates the comparison; `f of not x`, `a == not b`, and similar tighter operand positions are parse errors and must be written `f of (not x)` (#1648).

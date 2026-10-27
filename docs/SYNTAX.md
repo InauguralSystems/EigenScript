@@ -314,6 +314,11 @@ This works for factory patterns, callbacks, and higher-order programming.
 **Logical:** `and`, `or`, `not`
 **String:** `+` (concatenation when *both* sides are strings)
 
+From tighter to looser, comparisons bind before `not`, which binds before
+`and`, then `or`. Arithmetic unary `-` and bitwise unary `~` retain their
+tighter unary precedence. Therefore `not 1 < 2` is `not (1 < 2)`; write
+`(not 1) < 2` only when the bool/number ordering error is intentional.
+
 ### Type rules
 
 - **`+`** adds two numbers or concatenates two strings. It does **not**
