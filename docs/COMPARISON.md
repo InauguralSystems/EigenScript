@@ -15,6 +15,11 @@ fundamental way: **every assignment is observed**, and the language has
 first-class constructs (`converged`, `what is x`, `prev of x`) for
 asking the running program about its own state and history.
 
+Like indexed nearest-neighbour APIs in Python's scientific ecosystem,
+EigenScript's batched `nearest_in_range_all` does not count each query entity
+as its own neighbour. Its scalar `nearest_in_range` takes an explicit position,
+so it has no query-entity identity to exclude.
+
 ## At a glance
 
 | | Python | JavaScript | Rust | Lisp | EigenScript |
@@ -323,7 +328,9 @@ except Exception as e:
 
 EigenScript — `throw of` raises, `catch name:` binds. A thrown value
 binds unchanged; a built-in runtime error binds a `{kind, message,
-line}` dict with `kind` from a closed vocabulary (no exception
+file, line}` dict with `kind` from a closed vocabulary. Like Python's
+`co_filename`, each compiled unit retains its source identity, so the header
+and every traceback frame identify `file:line` (no exception
 hierarchy — discriminate on the kind string):
 
 ```eigenscript
@@ -380,6 +387,10 @@ file source's cursor, pending outcomes, correspondence and strictness together.
 Replay refuses host effects it cannot reconstruct: `mktemp`, for example,
 raises at the filesystem boundary before creating a file, while ordinary calls
 retain their create-and-return-path behavior.
+Like fail-fast validation in Go and Rust APIs, recorded EigenScript builtins
+reject deterministic argument errors before entering the effect boundary.
+Strict replay consequently preserves the original error kind and message
+rather than turning a raising call into a recorded value.
 
 Python (threads + queue):
 

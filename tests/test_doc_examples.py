@@ -342,7 +342,7 @@ POPULATION = {
     "docs/PREDICATES.md":        ( 13,    2,    10,      1,      4),
     "docs/DIAGNOSTICS.md":       (  4,    1,     3,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
-    "docs/BUILTINS.md":          (  1,    1,     0,      0,      0),
+    "docs/BUILTINS.md":          (  2,    2,     0,      0,      0),   # #1888: nearest-other contract
     "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),
 }
 
@@ -576,7 +576,7 @@ def clean_run(rc, stderr, asan_build):
     """A fragment must run CLEAN — and clean means stderr too.
 
     The runtime is fail-soft in places: an undefined variable prints
-    "Error line N: undefined variable 'x'" to STDERR and still exits 0
+    "Error path:N: undefined variable 'x'" to STDERR and still exits 0
     (measured 2026-09-16). Gating a fragment on the exit code alone would
     therefore accept exactly the fault the fragment tag exists to catch — a
     free name the tag forgot to declare.

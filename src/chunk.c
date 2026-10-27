@@ -13,10 +13,11 @@
 /* ---- Chunk lifecycle ---- */
 
 /* #407: caret-excerpt source blob — see EigsSrcBuf in vm.h. */
-EigsSrcBuf *srcbuf_new(const char *text) {
+EigsSrcBuf *srcbuf_new(const char *text, const char *file) {
     if (!text) return NULL;
     EigsSrcBuf *sb = xcalloc(1, sizeof(EigsSrcBuf));
     sb->text = strdup(text);
+    sb->file = strdup(file ? file : "<embed>");
     sb->refcount = 1;
     return sb;
 }
@@ -38,6 +39,7 @@ void srcbuf_decref(EigsSrcBuf *sb) {
         rc = --sb->refcount;
     if (rc > 0) return;
     free(sb->text);
+    free(sb->file);
     free(sb->resolve_dir);
     free(sb);
 }

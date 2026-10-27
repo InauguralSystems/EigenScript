@@ -89,13 +89,13 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `list_slice` | `list_slice of [list, start, end]` | New list with the elements of [start, end) — dual of `copy_into`. Negative indices count from the end, like `[]`; bounds then clamp to [0, len]. `start >= end` gives `[]`. Never raises on bounds |
 | `num_copy` | `num_copy of value` | Create independent copy of numeric value |
 | `hex` | `hex of n` or `hex of [n, nibbles]` | Uppercase hex string of a non-negative integer, zero-padded to `nibbles` (never truncated). Raises on negatives, fractions, non-numbers |
-| `sort` | `sort of list` | Sort an all-number or all-string list in-place (numeric / lexicographic). Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list. A non-list argument raises by default; under `EIGS_STRICT=0` it is handed back unchanged (#971). |
+| `sort` | `sort of list` | Stably sort an all-number or all-string list in-place (numeric / lexicographic); equal elements keep their input order on every platform. Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list. A non-list argument raises by default; under `EIGS_STRICT=0` it is handed back unchanged (#971). |
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list |
 | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list |
 | `list_insert_at` | `list_insert_at of [list, index, value]` | Insert value at index, shift tail up (mutates) — dual of `list_remove_at`. `index == len` appends; any other out-of-bounds index is a no-op. Returns the list |
 | `list_index_of` | `list_index_of of [list, value]` | Index of the first element structurally equal to `value` (the same comparison `==` uses — nested lists and dicts match by structure), -1 if none |
 | `list_contains` | `list_contains of [list, value]` | `true` if any element structurally equals `value`, else `false` — the list counterpart of the string-only `contains` |
-| `sort_by` | `sort_by of [list, key_fn]` | Sort list by numeric keys from key_fn (qsort, O(n log n), stable). Returns a new sorted list |
+| `sort_by` | `sort_by of [list, key_fn]` | Stably sort list by numeric keys from key_fn, evaluated once per element; equal keys keep their input order on every platform. Returns a new sorted list |
 | `dispatch` | `dispatch of [table, key, arg]` | Index list `table` by numeric `key` and call the resulting function with `arg` — a jump table (mirrors the `OP_DISPATCH` fast path). `key` must be a number. An ordinary builtin, not a special form: a user binding of the name wins (#459 — the fast path steps aside for any unit that rebinds `dispatch`, references `eval`, or compiles against an env where it is already rebound), and the parenthesized `dispatch of ([t, k, a])` form is one argument per #355/#405 |
 
 ### Strings
@@ -868,7 +868,7 @@ number when approximate is fine. Note `avg()` and `sum(numeric)` return
 column and the fix:
 
 ```
-Error line 3: db: column 'id' value 9007199254740993 exceeds the exact-integer
+Error query.eigs:3: db: column 'id' value 9007199254740993 exceeds the exact-integer
 range of a number (2^53); select it as text (id::text) to keep the digits
 ```
 
@@ -930,8 +930,19 @@ receiver.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `nearest_in_range` | `nearest_in_range of [entities, x, y, range, world_w, world_h]` | Find the nearest active entity within `range` using torus (wrapping) distance. `entities` is a list of dicts with `"px"`, `"py"`, `"active"` keys. Returns `{"index", "dist", "dx", "dy"}` or `null`. Optional extra args: custom key names `[..., px_key, py_key, active_key]`. |
-| `nearest_in_range_all` | `nearest_in_range_all of [entities, range, world_w, world_h]` | Like `nearest_in_range`, but returns ALL active entities within `range` (torus distance) as a list, not just the closest. Optional trailing custom key names `[..., px_key, py_key, active_key]`. |
+| `nearest_in_range` | `nearest_in_range of [entities, x, y, range, world_w, world_h]` | Position query: find the nearest active entity to `(x, y)` within `range` using torus (wrapping) distance. Because the query has no entity identity, no candidate is implicitly excluded. Returns `{"index", "dist", "dx", "dy"}` or `null`. Optional extra args: custom key names `[..., px_key, py_key, active_key]`. |
+| `nearest_in_range_all` | `nearest_in_range_all of [entities, range, world_w, world_h]` | For every entity `i`, return its nearest **other** active entity within `range` using torus distance, or `null`; entity `i` is never its own candidate. The result list has one entry per input entity. Optional trailing custom key names `[..., px_key, py_key, active_key]`. |
+
+The per-entity result and self-exclusion are executable here:
+
+```eigenscript
+entities is [{"px": 1, "py": 1, "active": true}, {"px": 5, "py": 5, "active": true}, {"px": 90, "py": 90, "active": true}]
+neighbors is nearest_in_range_all of [entities, 10, 100, 100]
+print of [neighbors[0].index, neighbors[1].index, neighbors[2]]
+```
+```output
+[1, 0, null]
+```
 
 ## Audio (additional)
 

@@ -52,19 +52,19 @@ ff1736_check() {
 # Row 1 — a DETACHED task dies of an uncaught error: fail fast.
 ff1736_check "row 1: a detached task's death stops main at its task_yield" \
     task_exit_detached_death.eigs 1 \
-    "+main continues" "+undefined variable 'missing'" "+at die (line" "-MARK_END"
+    "+main continues" "+undefined variable 'missing'" "+at die (" "-MARK_END"
 ff1736_check "row 1: main never yields — the stop lands in the exit drain" \
     task_exit_detached_drain.eigs 1 \
-    "+MAIN_DONE 200000" "+at die (line" "-AFTER_DRAIN_TASK"
+    "+MAIN_DONE 200000" "+at die (" "-AFTER_DRAIN_TASK"
 ff1736_check "row 1: main parked inside a try — not catchable, still reported" \
     task_exit_detached_try.eigs 1 \
     "+undefined variable 'missing'" "-AFTER_YIELD" "-CAUGHT" "-MARK_END"
 ff1736_check "row 1: main blocked in task_join on a healthy task — nothing else runs" \
     task_exit_detached_join.eigs 1 \
-    "+MAIN_JOINING" "+at die (line" "-SLOW_FINISHED" "-JOINED" "-MARK_END"
+    "+MAIN_JOINING" "+at die (" "-SLOW_FINISHED" "-JOINED" "-MARK_END"
 ff1736_check "row 1: a task that detached itself, then died" \
     task_exit_detached_self.eigs 1 \
-    "+MAIN_AFTER_FIRST_YIELD" "+at selfdie (line" "-MARK_END"
+    "+MAIN_AFTER_FIRST_YIELD" "+at selfdie (" "-MARK_END"
 
 # Row 2 — a task dies, THEN is detached: stop at that task_detach call.
 ff1736_check "row 2: task_detach of a dead task stops at the call" \
@@ -73,11 +73,11 @@ ff1736_check "row 2: task_detach of a dead task stops at the call" \
     "-AFTER_DETACH" "-MARK_END"
 ff1736_check "row 2: the stop is uncatchable from a nested evaluation under two trys" \
     task_exit_detach_dead_nested.eigs 1 \
-    "+task_detach: task" "+at keyfn (line" \
+    "+task_detach: task" "+at keyfn (" \
     "-NESTED_CAUGHT" "-NESTED_AFTER_DETACH" "-SORTED" "-OUTER_CAUGHT" "-MARK_END"
 ff1736_check "row 2: a worker's task_detach stops the program, not just the worker" \
     task_exit_detach_dead_worker.eigs 1 \
-    "+WORKER_BEFORE_DETACH" "+task_detach: task" "+at detacher (line" \
+    "+WORKER_BEFORE_DETACH" "+task_detach: task" "+at detacher (" \
     "-WORKER_CAUGHT" "-WORKER_AFTER_DETACH" "-OTHER_TASK_RAN" "-MAIN_AFTER_YIELD" "-MARK_END"
 ff1736_check "row 2 boundary: a killed task and a join-observed death detach normally" \
     task_exit_detach_observed.eigs 0 \
@@ -87,7 +87,7 @@ ff1736_check "row 2 boundary: a killed task and a join-observed death detach nor
 # Row 3 — a JOINABLE task dies: unchanged (#493).
 ff1736_check "row 3: main continues past a joinable death; a later try: task_join recovers" \
     task_exit_join_later.eigs 0 \
-    "+at die (line" "+MAIN_CONTINUES" "+RECOVERED undefined_name" "+MARK_END"
+    "+at die (" "+MAIN_CONTINUES" "+RECOVERED undefined_name" "+MARK_END"
 
 # Rows 4 and 5 — an OS thread dies. Thread timing is not on the tape (#148),
 # so a fail-fast stop here would land somewhere different on every run: the
@@ -99,10 +99,10 @@ ff1736_check "row 3: main continues past a joinable death; a later try: task_joi
 # and MAIN_AFTER_DEATH / MARK_END prove main went on past the death.
 ff1736_check "row 5: a joined OS thread's death raises at the join; main continues" \
     task_exit_thread_death.eigs 0 \
-    "+at w (line" "+JOIN_RAISED undefined_name" "+MAIN_AFTER_DEATH" "+MARK_END"
+    "+at w (" "+JOIN_RAISED undefined_name" "+MAIN_AFTER_DEATH" "+MARK_END"
 ff1736_check "rows 1+5: a detached task's death stops only its own thread; the join raises it" \
     task_exit_thread_detached.eigs 0 \
-    "+at inner_die (line" "+MAIN_JOINED raised undefined_name" "+MARK_END" "-WORKER_AFTER_YIELD"
+    "+at inner_die (" "+MAIN_JOINED raised undefined_name" "+MARK_END" "-WORKER_AFTER_YIELD"
 
 # Rows 1 and 2 on the trace tape. WHEN the worker dies is decided by a taped
 # random_int, so only the tape can put the stop in the same place twice.

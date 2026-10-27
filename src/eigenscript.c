@@ -114,6 +114,7 @@ void eigs_clear_error_value(void) {
 /* Defined in vm.c; prints the live call stack for uncaught errors.
  * Safe to call when no VM is active (it no-ops). */
 void vm_print_stack_trace(FILE *out);
+const char *vm_current_file(void);
 
 /* #406: kind → the string `catch` sees in the bound dict's "kind" field.
  * Table order tracks the ErrKind enum. */
@@ -143,7 +144,7 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     vsnprintf(tmp, sizeof(tmp), fmt, args);
     va_end(args);
     /* Tolerate a trailing newline in the format (some call sites carried one
-     * over from fprintf): the "Error line N:" frame and the stderr write add
+     * over from fprintf): the "Error path:N:" frame and the stderr write add
      * their own, and a trailing \n would also leak into a caught error's text. */
     size_t _tl = strlen(tmp);
     if (_tl > 0 && tmp[_tl - 1] == '\n') tmp[_tl - 1] = '\0';
@@ -165,6 +166,8 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
         g_sandbox_refusal = 1;
         g_sandbox_refusal_kind = (int)kind;
         g_sandbox_refusal_line = line;
+        snprintf(g_sandbox_refusal_file, sizeof(g_sandbox_refusal_file),
+                 "%s", vm_current_file());
         snprintf(g_sandbox_refusal_msg, sizeof(g_sandbox_refusal_msg),
                  "%s", tmp);
     }
@@ -176,8 +179,13 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
         g_has_error = 1;
         return;
     }
+    const char *file = vm_current_file();
+    snprintf(g_error_file, sizeof(g_error_file), "%s", file);
+    /* The structured message is deliberately location-free.  Source identity
+     * has its own file/line fields; only the uncaught stderr header combines
+     * them for people reading a traceback. */
     snprintf(g_error_raw, sizeof(g_error_raw), "%s", tmp);
-    snprintf(g_error_msg, sizeof(g_error_msg), "Error line %d: %s", line, tmp);
+    snprintf(g_error_msg, sizeof(g_error_msg), "Error %s:%d: %s", file, line, tmp);
     g_error_kind = (int)kind;
     g_error_line = line;
     if (eigs_current && g_sandbox_active) g_sandbox_error_latched = 1;

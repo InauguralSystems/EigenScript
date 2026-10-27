@@ -82,6 +82,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       code: ${{ steps.detect.outputs.code }}
+      spec: ${{ steps.detect.outputs.spec }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -92,15 +93,52 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "not a PR — treating as code"
-            echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+            verdict=$(bash tools/ci_scope.sh --all)
+          else
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            # tools/ci_scope.sh: both sides of a rename count (#1311); its
+            # --selftest is a tools/selftests.txt row.
+            verdict=$(bash tools/ci_scope.sh "$base" "$head")
           fi
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
-          # tools/ci_scope.sh: both sides of a rename count (#1311); its
-          # --selftest is a tools/selftests.txt row.
-          verdict=$(bash tools/ci_scope.sh "$base" "$head")
-          echo "-> $verdict (code=false: runtime legs report green without building)"
+          echo "-> scope verdicts (code=false: runtime legs report green without building)"
+          echo "$verdict"
           echo "$verdict" >> "$GITHUB_OUTPUT"
+
+  # EigenCore is deliberately independent of the all-platform C suite.
+  spec-lean:
+    name: spec Lean
+    needs: scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: needs.scope.outputs.spec == 'true'
+      - name: Install pinned Lean toolchain and restore Lake cache
+        if: needs.scope.outputs.spec == 'true'
+        uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6  # v1.6.2
+        with:
+          lake-package-directory: spec/lean
+          auto-config: false
+          build: false
+          test: false
+          lint: false
+      - name: Build EigenCore-0 reference frontend
+        if: needs.scope.outputs.spec == 'true'
+        working-directory: spec/lean
+        run: lake build
+      - name: Run proof hygiene gates
+        if: needs.scope.outputs.spec == 'true'
+        run: |
+          python3 tools/spec_lean_no_sorry.py
+          python3 tools/spec_lean_axioms.py
+      - name: Classify the pre-registered corpus
+        if: needs.scope.outputs.spec == 'true'
+        run: |
+          python3 tools/spec_lean_classify.py
+          python3 tools/spec_lean_corpus.py
 
   # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
   # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
@@ -214,7 +252,8 @@ jobs:
     # Full history below is required by the formatter incumbent self-test,
     # which resolves `git merge-base HEAD origin/main`.
     name: gate self-tests (changed rows)
-    needs: [dev-image, scope]
+    needs: [dev-image, scope, spec-lean]
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -226,6 +265,10 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Require spec Lean worker success
+        env:
+          SPEC_LEAN_RESULT: ${{ needs.spec-lean.result }}
+        run: test "$SPEC_LEAN_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0

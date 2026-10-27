@@ -1,6 +1,6 @@
 # ERROR DEMO — applying `of` to a non-function.
 # Only fn and builtin values are callable.
-# expect-error: Error line 6: cannot call num
+# expect-error: examples/errors/calling_a_number.eigs:6: cannot call num
 # expect-caret: |        ^
 x is 5
 y is x of 10

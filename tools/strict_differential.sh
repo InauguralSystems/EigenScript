@@ -38,6 +38,42 @@
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
+# A boolean-valued capability probe has three states, not two: true, false,
+# and a broken/unexpected observation.  Keep the third state distinct so a
+# crashed or noisy probe cannot silently disable the pixel gate.
+renderer_probe_state() {
+    case "$1" in
+        true)  return 0 ;;
+        false) return 1 ;;
+        *)
+            printf 'FAIL: gfx renderer probe returned %q (expected true or false)\n' "$1" >&2
+            return 2
+            ;;
+    esac
+}
+
+if [ "${1:-}" = --renderer-probe-selftest ]; then
+    n=0; bad=0
+    probe_case() { # label, expected rc, observation
+        local got
+        n=$((n + 1))
+        renderer_probe_state "$3" >/dev/null 2>&1; got=$?
+        if [ "$got" -eq "$2" ]; then
+            echo "  PASS: $1"
+        else
+            echo "  FAIL: $1 (rc=$got, want $2)"
+            bad=$((bad + 1))
+        fi
+    }
+    probe_case 'true enables the pixel differential' 0 true
+    probe_case 'false alone reports no renderer' 1 false
+    for observation in 1 '' 'probe failed noisily'; do
+        probe_case "unexpected output '$observation' fails closed" 2 "$observation"
+    done
+    echo "RENDERER PROBE SELFTEST: $((n - bad)) passed, $bad failed, $n declared"
+    exit "$bad"
+fi
+
 SHAPES_ONLY=0
 if [ "${1:-}" = --shapes-only ]; then SHAPES_ONLY=1; shift; fi
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
@@ -59,6 +95,17 @@ SHAPE_BACKEND_PLATFORM=$(uname -s) || exit 1
 str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
 str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
+sweep_classify_output() { # builtin name, captured stderr
+    case "$2" in
+        "Error "*":1: $1:"*|*"
+Error "*":1: $1:"*) echo RAISED-OWN; return ;;
+    esac
+    case "$2" in
+        "Error "*":"[0-9]*":"*|*"
+Error "*":"[0-9]*":"*) echo RAISED-OTHER; return ;;
+    esac
+    return 1
+}
 
 . tests/lsan_classify.sh
 shape_canonical() { # exact owned prefix only; call AFTER raw classification
@@ -558,6 +605,16 @@ _sd_exit() {
     fi
 }
 trap _sd_exit EXIT
+
+if [ "${EIGS_DIFF_SWEEP_SELFTEST:-0}" = 1 ]; then
+    printf 'ignore is str_lower of 42\n' > "$TMP/p.eigs"
+    out="$(EIGS_STRICT=1 "$NEW" "$TMP/p.eigs" 2>&1)"
+    verdict=$(sweep_classify_output str_lower "$out") || verdict=UNRUN
+    printf 'sweep-verdict-selftest: %s\n' "$verdict"
+    verdict_printed=1
+    [ "$verdict" = RAISED-OWN ]
+    exit $?
+fi
 
 # Cheap contract/enrollment check precedes every runtime probe.
 if ! python3 tools/strict_shape_contract.py --render "$TMP/shapes"; then
@@ -1496,14 +1553,7 @@ sweep_verdict() {   # $1 name, $2 argument text
         out="$(EIGS_STRICT=1 "$NEW" "$TMP/p.eigs" 2>&1)"; src=$?
         printf '%s\n' "$out" > "$TMP/last.out"
         if [ "$src" -eq 0 ]; then echo SILENT; return; fi
-        case "$out" in
-            "Error line 1: $1:"*|*"
-Error line 1: $1:"*) echo RAISED-OWN; return ;;
-        esac
-        case "$out" in
-            "Error line "*|*"
-Error line "*) echo RAISED-OTHER; return ;;
-        esac
+        verdict=$(sweep_classify_output "$1" "$out") && { echo "$verdict"; return; }
         echo "retry: $1 of $2 (exit $src, no runtime error printed)" >> "$TMP/retries"
     done
     echo UNRUN
@@ -1529,6 +1579,9 @@ for name in $NAMES; do
         PROBED_PAIRS="$PROBED_PAIRS
 $name|$sh"
         v="$(sweep_verdict "$name" "$txt")"
+        if [ -n "${EIGS_DIFF_SWEEP_TABLE:-}" ]; then
+            printf '%s|%s|%s\n' "$name" "$sh" "$v" >> "$EIGS_DIFF_SWEEP_TABLE"
+        fi
         allowed=""
         case "$ALLOW_NL" in
             *"
@@ -1593,10 +1646,17 @@ fi
 # ------------------------------------------------ pixel differential
 printf 'print of (gfx_open of [8, 8, "pixdiff-probe"])\n' > "$TMP/open.eigs"
 NO_RENDERER=0
-if [ "$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)" != "1" ]; then
-    NO_RENDERER=1
-    echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
-fi
+renderer_probe_output=$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)
+renderer_probe_state "$renderer_probe_output"
+renderer_probe_rc=$?
+case "$renderer_probe_rc" in
+    0) ;;
+    1)
+        NO_RENDERER=1
+        echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
+        ;;
+    *) exit 1 ;;
+esac
 HEAD='ignore is gfx_open of [32, 32, "pixdiff"]
 ignore is gfx_clear of [0, 0, 0]'
 TAIL='total is 0

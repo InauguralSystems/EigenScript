@@ -47,6 +47,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   gdb              -> the JIT debugging workflow (see CLAUDE.md)
 #   curl             -> exercising the http extension by hand
 #   procps           -> sysctl in CI setup steps
+#   musl-tools       -> musl-gcc, the second conforming libc header set the
+#                       freestanding gate compiles the profile against
+#                       (tools/freestanding_check.sh, #1985)
 # SDL headers anchor the input fixture to the real SDL ABI; Xvfb and
 # xdotool drive an isolated real-input window without touching a user display.
 # x11-utils supplies the readiness and window-property probes for X11 gfx tests.
@@ -65,6 +68,7 @@ RUN apt-get update \
         gdb \
         curl \
         procps \
+        musl-tools \
         libsdl2-dev \
         libsdl2-mixer-2.0-0 \
         xvfb \

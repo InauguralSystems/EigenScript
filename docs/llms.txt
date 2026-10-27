@@ -189,8 +189,10 @@ sqrt(2) = 1.414213562373095
 - Temporal reads: `prev of x` (value before the last assignment),
   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
   parse error. A statement spanning several lines is filed under its FIRST
-  line, while a runtime error inside it (`e.line`, the error header) reports
-  the physical line of the faulting sub-expression. Wrap hot loops in `unobserved:` to skip the observer's entropy
+  line, while a runtime error inside it (`e.file`, `e.line`, the error header)
+  reports the source file and physical line of the faulting sub-expression.
+  File, eval, stdin, and unnamed embed units use their loader path, `<eval>`,
+  `<stdin>`, and `<embed>` respectively; sandbox-synthesized errors use `<sandbox>`; the browser playground uses `<playground>`. Wrap hot loops in `unobserved:` to skip the observer's entropy
   walk (a scalar's value-window sample still lands, so numeric verdicts do not
   change; `why`/`how` and non-numeric bindings' verdicts can).
 
@@ -395,6 +397,10 @@ See docs/BUILTINS.md and docs/STDLIB.md before writing your own — or resolve
 a name mechanically: `eigenscript --api --json` dumps every builtin,
 extension (by group), and lib function with its parameter list in one call.
 
+Spatial-query trap: nearest_in_range_all returns the nearest OTHER active
+entity for every input entity (or null), excluding the same input index.
+nearest_in_range is a position query and excludes no candidate implicitly.
+
 The optional model builtins `eigen_generate` and `eigen_eval_loss` raise a
 catchable `value` error for prompts longer than the loaded model's
 `max_seq_len`, including with `EIGS_STRICT=0`. Choose any context truncation
@@ -441,3 +447,6 @@ See docs/TRACE.md and docs/EMBEDDING.md for binding and format compatibility.
 Replay refuses unreconstructable host effects: `mktemp` raises a catchable
 filesystem-boundary error before creating a file; ordinary `mktemp` still
 creates the file and returns its path for later `remove_file`.
+Recorded builtins validate deterministic argument refusals before their tape
+boundary. A builtin call that raises during recording must raise with the same
+kind and message during strict replay, never return a recorded stand-in.

@@ -7,8 +7,8 @@ rm -f "$CW_PROBE_PATH"
 CW_PROBE_ERROR=${CW_PROBE_OUT%%$'\n'*}
 if [ "$CW_PROBE_RC" -eq 1 ] &&
     [ "$(lsan_classify_name "$CW_PROBE_OUT")" = none ] &&
-    { [ "$CW_PROBE_ERROR" = "Error line 1: undefined variable 'eigen_model_loaded'" ] ||
-      [ "$CW_PROBE_ERROR" = "Error line 1: model capability unavailable; use the server profile" ]; }; then
+    { [[ "$CW_PROBE_ERROR" == "Error $CW_PROBE_PATH:1: undefined variable 'eigen_model_loaded'" ]] ||
+      [[ "$CW_PROBE_ERROR" == "Error $CW_PROBE_PATH:1: model capability unavailable; use the server profile" ]]; }; then
     section_skip "binary built without EIGENSCRIPT_EXT_MODEL"
 else
     TOTAL=$((TOTAL + 1))

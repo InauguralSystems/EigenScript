@@ -1050,7 +1050,7 @@ int main(void) {
                 char nf_diag[1024];
                 size_t nf_size = fread(nf_diag, 1, sizeof nf_diag - 1, nf_capture);
                 nf_diag[nf_size] = '\0';
-                CHECK(strstr(nf_diag, "  at nf_first (line 2)") != NULL,
+                CHECK(strstr(nf_diag, "  at nf_first (<embed>:2)") != NULL,
                       "#1417 leaf error retains callee frame");
                 eigs_clear_error();
             }

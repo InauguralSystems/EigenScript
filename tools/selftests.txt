@@ -10,7 +10,7 @@
 # row's timeout bound is <= 60s.
 # The runner-guard calibrations [99c]/[99d] stay in the suite: they exercise
 # the suite runner's own timeout and binary-fingerprint guards in their real calling context.
-bench/check_regression.sh bench/scalar_loop.eigs | timeout 30 bash bench/check_regression.sh --selftest
+bench/check_regression.sh bench/*.eigs | timeout 60 bash bench/check_regression.sh --selftest | [{"pattern":"^SELFTEST OK:","count":4},{"pattern":"^SELFTEST FAILED:","count":0}]
 tests/http_readiness.py tests/test_http_readiness.sh | timeout 60 python3 tests/http_readiness.py --selftest | [{"pattern":"PASS:","count":510},{"pattern":"^HTTP_READINESS_SELFTEST: 510 passed, 0 failed$","count":1},{"pattern":"FAIL:","count":0}]
 tests/test_arming_mt.sh tests/arming_mt_fixtures/* | timeout 30 bash tests/test_arming_mt.sh --selftest | [{"pattern":"  PASS:","count":5},{"pattern":"  FAIL:","count":0}]
 tests/test_child_exit.sh tests/run_all_tests.sh | timeout 30 bash tests/test_child_exit.sh --selftest
@@ -49,7 +49,7 @@ tools/ui_surface_check.py tests/test_ui.eigs | timeout 30 python3 tools/ui_surfa
 tools/vm_operand_width_check.sh | timeout 30 bash tools/vm_operand_width_check.sh --selftest
 tools/werror_switch_check.sh tools/cc_guard.sh tools/cc-guard-bin/cc tools/cc-guard-bin/gcc tools/cc-guard-bin/clang tools/cc-guard-bin/emcc tools/werror_flags.txt | timeout 60 bash tools/werror_switch_check.sh --selftest
 tests/test_lsan_classify.sh tests/lsan_classify.sh tests/fixtures/lsan_classify/* tests/test_doc_examples.py tests/run_all_tests.sh | timeout 60 bash tests/test_lsan_classify.sh --selftest | [{"pattern":"^  PASS:","count":22},{"pattern":"^  FAIL:","count":0},{"pattern":"^  SKIP:","count":0}]
-tools/ci_scope.sh | timeout 30 bash tools/ci_scope.sh --selftest | [{"pattern":"^ci_scope selftest: 14/14 passed$","count":1}]
+tools/ci_scope.sh | timeout 30 bash tools/ci_scope.sh --selftest | [{"pattern":"^ci_scope selftest: 20/20 passed$","count":1}]
 tools/asan_receipts_check.sh .github/workflows/ci.yml | timeout 30 bash tools/asan_receipts_check.sh --selftest | [{"pattern":"^asan_receipts selftest: 6/6 passed$","count":1}]
 # precheck's row classifier is its own fast witness (#1355).
 tools/precheck.sh tools/portability_verdict.sh | timeout 10 bash tools/precheck.sh --selftest

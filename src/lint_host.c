@@ -1380,7 +1380,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
          * not let an untrusted lint input change the embedding process's
          * later history (or the values visible to sandbox state_at calls). */
         trace_arm_suppress_begin();
-        EigsChunk *chunk = compile_ast(ast, cenv, source);
+        EigsChunk *chunk = compile_ast(ast, cenv, source, path);
         trace_arm_suppress_end();
         g_obs_gate_scan_enabled = obs_saved;
         g_compile_module_slots = 0;

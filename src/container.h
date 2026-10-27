@@ -280,9 +280,32 @@ static inline void list_move(Value *list, int dst, int src, int n) {
 static inline void dict_value_move(Value *dict, int dst, int src, int n) {
     memmove(&dict->data.dict.vals[dst], &dict->data.dict.vals[src], (size_t)n * sizeof(EigsSlot));
 }
-/* The comparator receives `const EigsSlot *` element pointers. */
+/* Stable bottom-up mergesort: libc qsort has no tie-order guarantee.
+ * The comparator receives `const EigsSlot *` element pointers. Scratch
+ * slots borrow the list's references; only their order changes. #1982. */
 static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)) {
-    qsort(list->data.list.items, (size_t)list->data.list.count, sizeof(EigsSlot), cmp);
+    size_t n = (size_t)list->data.list.count;
+    if (n < 2) return;
+    EigsSlot *scratch = xmalloc(n * sizeof(EigsSlot));
+    EigsSlot *src = list->data.list.items, *dst = scratch;
+    for (size_t width = 1; width < n; width *= 2) {
+        for (size_t lo = 0; lo < n; lo += 2 * width) {
+            size_t mid = lo + width < n ? lo + width : n;
+            size_t hi = lo + 2 * width < n ? lo + 2 * width : n;
+            size_t i = lo, j = mid, k = lo;
+            while (i < mid && j < hi) {
+                /* Left wins equality, preserving the original tie order. */
+                if (cmp(&src[j], &src[i]) < 0) dst[k++] = src[j++];
+                else dst[k++] = src[i++];
+            }
+            while (i < mid) dst[k++] = src[i++];
+            while (j < hi) dst[k++] = src[j++];
+        }
+        EigsSlot *tmp = src; src = dst; dst = tmp;
+    }
+    if (src != list->data.list.items)
+        memcpy(list->data.list.items, src, n * sizeof(EigsSlot));
+    free(scratch);
 }
 
 __attribute__((unused))
