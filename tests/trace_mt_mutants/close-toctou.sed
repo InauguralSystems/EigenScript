@@ -12,4 +12,4 @@
 # check kills it deterministically: tests/test_trace_mt.sh's
 # `close-count-toctou` rows fail on the count read inside eigs_close and on
 # the count reader gaining a second caller.
-s|    int last_state = eigs_process_state_release();|    int last_state = (eigs_process_state_count() == 1);\n    eigs_process_state_release();|
+s|    int last_state = eigs_process_state_release(st);|    int last_state = (eigs_process_state_count() == 1);\n    eigs_process_state_release(st);|

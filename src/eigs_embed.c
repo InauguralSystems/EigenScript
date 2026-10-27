@@ -125,7 +125,7 @@ void eigs_close(EigsState *st) {
     /* Decide-and-decrement is one step under g_attached_lock: the closer
      * that takes the count to zero shuts the tape. Two concurrent closes
      * both reading count==2 used to leave the tape open with zero states. */
-    int last_state = eigs_process_state_release();
+    int last_state = eigs_process_state_release(st);
     if (eigs_current && eigs_current->state == st) {
         handle_table_drain(st);
         if (g_global_env) {
@@ -537,22 +537,7 @@ int eigs_trace_bind_stream(const char *key) {
 static unsigned replay_live_handles(EigsState *st) {
     unsigned live = 0;
     if (!st) return 0;
-
-    pthread_mutex_lock(&st->handle_mutex);
-    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
-        if (!st->handle_table[i].ptr) continue;
-        switch (st->handle_table[i].type) {
-        case HANDLE_STORE:   live |= EIGS_LIVE_STORE; break;
-        case HANDLE_THREAD:  live |= EIGS_LIVE_THREAD; break;
-        case HANDLE_CHANNEL: live |= EIGS_LIVE_CHANNEL; break;
-        case HANDLE_TASK:    live |= EIGS_LIVE_TASK; break;
-        case HANDLE_NET:     live |= EIGS_LIVE_SOCKET; break;
-        }
-    }
-    if (st->deferred_threads ||
-        __atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0)
-        live |= EIGS_LIVE_THREAD;
-    pthread_mutex_unlock(&st->handle_mutex);
+    live |= handle_table_live_kinds(st);
 
     pthread_mutex_lock(&st->threads_lock);
     for (EigsThread *th = st->threads; th; th = th->next)
@@ -568,6 +553,19 @@ static unsigned replay_live_handles(EigsState *st) {
     live |= ext_http_live_handles(st);
 #endif
     return live;
+}
+
+typedef struct {
+    EigsState *caller;
+    unsigned live;
+    unsigned foreign;
+} ReplayLiveInventory;
+
+static void replay_inventory_state(EigsState *st, void *opaque) {
+    ReplayLiveInventory *inventory = (ReplayLiveInventory *)opaque;
+    unsigned live = replay_live_handles(st);
+    inventory->live |= live;
+    if (st != inventory->caller) inventory->foreign |= live;
 }
 
 static void replay_live_handles_text(unsigned live, char *buf, size_t cap) {
@@ -596,15 +594,18 @@ int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
      * sole memory-install seam so malformed tapes and valid tapes cannot take
      * different routes around the policy. */
     if (bytes) {
-        unsigned live = replay_live_handles(eigs_current_state());
-        if (live) {
+        ReplayLiveInventory inventory = { .caller = eigs_current_state() };
+        eigs_process_states_visit(replay_inventory_state, &inventory);
+        if (inventory.live) {
             char kinds[128];
-            replay_live_handles_text(live, kinds, sizeof kinds);
-            fprintf(stderr, "trace: refusing replay tape install: state has open handle kinds: %s\n",
-                    kinds);
+            replay_live_handles_text(inventory.live, kinds, sizeof kinds);
+            const char *where = inventory.foreign
+                ? "another state holds open handle kinds"
+                : "state has open handle kinds";
+            fprintf(stderr, "trace: refusing replay tape install: %s: %s\n",
+                    where, kinds);
             embed_value_error(EK_IO,
-                "eigs_set_replay_tape: refused while state has open handle kinds: %s",
-                kinds);
+                "eigs_set_replay_tape: refused while %s: %s", where, kinds);
             embed_fenv_leave(&fenv);
             return 0;
         }

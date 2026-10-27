@@ -829,6 +829,9 @@ void            env_intern_table_unref(EnvInternTable *t);
 /* Per-interpreter-instance config + shared registry. Transparent for
  * internal TUs (Phase 10's embed.h wraps it behind accessors). */
 struct EigsState {
+    /* Intrusive process registry, guarded by state.c's attached lock. */
+    EigsState      *process_next;
+    int             process_registered;
     uint64_t trace_state_token;   /* association metadata; never an address */
     pthread_mutex_t threads_lock;
     EigsThread     *threads;
@@ -1672,7 +1675,8 @@ int  eigs_process_state_count(void);
  * closed by construction and gated structurally —
  * tests/test_trace_mt.sh's `close-count-toctou` check fails any close path
  * that reads a count separately, and pins the count reader's one caller. */
-int  eigs_process_state_release(void);
+int  eigs_process_state_release(EigsState *st);
+void eigs_process_states_visit(void (*visit)(EigsState *, void *), void *ctx);
 /* Tear down a state whose live-count was already released by
  * eigs_process_state_release (eigs_close). Other callers use
  * eigs_state_destroy, which releases. */
@@ -2475,6 +2479,7 @@ Value *builtin_thread_join(Value *arg);
  * Call once execution is done and the value world is still alive (before
  * env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
+unsigned handle_table_live_kinds(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
 
 /* `exit`: first request wins within the caller's evaluation scope. Workers

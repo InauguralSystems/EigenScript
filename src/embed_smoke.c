@@ -1306,6 +1306,40 @@ int main(void) {
         snprintf(program, sizeof program, "/tmp/eigs-1913-%ld.store",
                  (long)getpid());
         unlink(program);
+
+        r = eigs_eval_string("issue1913_channel is channel of null\n"
+                             "close_channel of issue1913_channel");
+        CHECK(r != NULL, "replay setup creates and closes a channel");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1,
+              "replay installs after a retained channel handle is closed");
+        CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1,
+              "replay cleared after closed-channel test");
+
+        r = eigs_eval_string("issue1913_open_channel is channel of null");
+        CHECK(r != NULL, "replay setup creates an open channel");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 0,
+              "replay install refuses an open channel");
+        CHECK(eigs_has_error() && eigs_last_error_message() &&
+                  strstr(eigs_last_error_message(), "channels"),
+              "open-channel refusal names channels");
+        eigs_clear_error();
+        r = eigs_eval_string("close_channel of issue1913_open_channel");
+        if (r) eigs_value_release(r);
+
+        r = eigs_eval_string(
+            "define issue1913_worker() as:\n"
+            "    return 7\n"
+            "issue1913_thread is spawn of issue1913_worker\n"
+            "thread_join of issue1913_thread");
+        CHECK(r != NULL && eigs_value_as_num(r) == 7,
+              "replay setup joins a thread");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1,
+              "replay installs after a thread is joined");
+        CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1,
+              "replay cleared after joined-thread test");
     }
 
     /* --- Source provider: import resolves from the embedder. --------- */
@@ -1326,10 +1360,41 @@ int main(void) {
     eigs_set_source_provider(NULL, NULL);
 
     /* --- Multi-state switching on one thread (the M9 scheduler seam). */
+    {
+        char program[256];
+        snprintf(program, sizeof program,
+                 "issue1913_foreign_store is store_open of \"/tmp/eigs-1913-foreign-%ld.store\"",
+                 (long)getpid());
+        r = eigs_eval_string(program);
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_DICT,
+              "foreign-state replay setup opens a store in state A");
+        if (r) eigs_value_release(r);
+    }
     EigsState *st2 = eigs_state_new();
     CHECK(st2 != NULL, "second state created");
     CHECK(eigs_thread_switch(st2) != NULL, "switch to st2");
     eigs_state_init_runtime(st2);
+    CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 0,
+          "state B refuses replay while state A owns a store");
+    CHECK(eigs_has_error() && eigs_last_error_message() &&
+              strstr(eigs_last_error_message(), "stores") &&
+              strstr(eigs_last_error_message(), "another state"),
+          "cross-state refusal names stores and another state");
+    eigs_clear_error();
+    CHECK(eigs_thread_switch(st) != NULL, "switch to state A to close foreign store");
+    r = eigs_eval_string("store_close of issue1913_foreign_store");
+    CHECK(r != NULL, "state A closes its store");
+    if (r) eigs_value_release(r);
+    CHECK(eigs_thread_switch(st2) != NULL, "switch back to state B after store close");
+    CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1,
+          "state B installs replay after state A closes its store");
+    CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1,
+          "replay cleared after cross-state test");
+    {
+        char path[256];
+        snprintf(path, sizeof path, "/tmp/eigs-1913-foreign-%ld.store", (long)getpid());
+        unlink(path);
+    }
     r = eigs_eval_string("mstate is 11\nmstate");
     CHECK(r != NULL && eigs_value_as_num(r) == 11.0, "eval on st2");
     if (r) eigs_value_release(r);

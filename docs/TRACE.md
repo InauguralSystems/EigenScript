@@ -829,12 +829,17 @@ everywhere else in the runtime (version-and-reject, never migrate).
   returns 0 without installing the tape. Replay never falls back to a
   live run: the user asked for a replay, and a plausible-looking live run
   is exactly the silent divergence the header exists to prevent.
-- The embedding API refuses to install a replay tape on a state that already
-  owns live handles. The diagnostic names every populated kind (sockets,
+- The embedding API refuses to install a replay tape while any live
+  `EigsState` in the process owns live handles. The diagnostic names every
+  live kind (sockets,
   files, stores, threads, channels, tasks, gfx, audio, database, and HTTP);
   close those handles
-  before calling `eigs_set_replay_tape`. A state with no live handles may
-  install a tape between evaluations. This is an install-time rule because a
+  before calling `eigs_set_replay_tape`; it also says when another state owns
+  one. Liveness comes from resource state, not retained handle-table entries:
+  closed channels, joined threads, completed or detached tasks, and closed
+  stores, sockets, streams, windows, or audio devices do not block an install.
+  A process whose states have no live handles may install a tape between
+  evaluations. This is an install-time rule because a
   handle acquired outside the tape cannot be replayed deterministically, and
   merely suppressing its closer would leak the live resource. `EIGS_REPLAY`
   is installed during CLI startup, before a state can acquire handles, and

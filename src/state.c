@@ -30,6 +30,7 @@ static pthread_cond_t g_attached_cond = PTHREAD_COND_INITIALIZER;
 static int g_attached_threads_storage = 0;
 static int g_single_thread_reserved = 0;
 static int g_live_states = 0;
+static EigsState *g_state_registry = NULL;
 #define g_attached_threads_load() __atomic_load_n(&g_attached_threads_storage, __ATOMIC_ACQUIRE)
 #define g_attached_threads_add(d) __atomic_fetch_add(&g_attached_threads_storage, (d), __ATOMIC_RELEASE)
 
@@ -69,6 +70,9 @@ EigsState *eigs_state_new(void) {
     /* Phase 9: JIT tuning per state, read once from env at creation. */
     jit_state_init_thresholds(st);
     pthread_mutex_lock(&g_attached_lock);
+    st->process_next = g_state_registry;
+    st->process_registered = 1;
+    g_state_registry = st;
     g_live_states++;
     pthread_mutex_unlock(&g_attached_lock);
     return st;
@@ -76,6 +80,7 @@ EigsState *eigs_state_new(void) {
 
 static void state_destroy_body(EigsState *st, int already_released) {
     if (!st) return;
+    if (!already_released) (void)eigs_process_state_release(st);
     if (st->threads) {
         fprintf(stderr,
                 "eigs_state_destroy: %s\n",
@@ -107,11 +112,6 @@ static void state_destroy_body(EigsState *st, int already_released) {
     pthread_cond_destroy(&st->exit_cond);
     pthread_mutex_destroy(&st->exit_mutex);
     pthread_mutex_destroy(&st->gc_lock);
-    if (!already_released) {
-        pthread_mutex_lock(&g_attached_lock);
-        if (g_live_states > 0) g_live_states--;
-        pthread_mutex_unlock(&g_attached_lock);
-    }
     free(st);
 }
 
@@ -258,15 +258,28 @@ int eigs_process_state_count(void) {
  * could observe it (0 kills in 2000 barrier'd double-closes on BOTH the
  * fixed tree and the planted bug), so the class is closed STRUCTURALLY and
  * gated structurally — see the `close-count-toctou` check. */
-int eigs_process_state_release(void) {
+int eigs_process_state_release(EigsState *st) {
     pthread_mutex_lock(&g_attached_lock);
     int last = 0;
-    if (g_live_states > 0) {
+    if (st && st->process_registered) {
+        EigsState **link = &g_state_registry;
+        while (*link && *link != st) link = &(*link)->process_next;
+        if (*link == st) *link = st->process_next;
+        st->process_next = NULL;
+        st->process_registered = 0;
         g_live_states--;
         last = (g_live_states == 0);
     }
     pthread_mutex_unlock(&g_attached_lock);
     return last;
+}
+
+void eigs_process_states_visit(void (*visit)(EigsState *, void *), void *ctx) {
+    if (!visit) return;
+    pthread_mutex_lock(&g_attached_lock);
+    for (EigsState *st = g_state_registry; st; st = st->process_next)
+        visit(st, ctx);
+    pthread_mutex_unlock(&g_attached_lock);
 }
 
 EigsThread *eigs_thread_attach(EigsState *st) {
