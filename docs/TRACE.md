@@ -11,7 +11,7 @@ Replay is an **rr-style, side-effect-free execution**. Every filesystem read
 reachable from a running program is either served by the tape or refused
 before the read. Source read by `import` and `load_file`, ordinary file
 readers, hashes, directory queries, and process/network input are taped.
-Reads whose payload is not represented in format v7—tensor checkpoints,
+Reads whose payload is not represented in the current tape format—tensor checkpoints,
 font and music assets, HTTP static serving, stores, and databases—are refused;
 replay never falls back to a live file. Model checkpoints are the exception:
 the verdict of `eigen_model_load` or `eigen_checkpoint_info` is taped, their

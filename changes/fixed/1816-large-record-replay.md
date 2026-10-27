@@ -1,0 +1,1 @@
+- A traced answer larger than 64 KiB (random_normal, read_bytes, read_bytes_buf, read_text, read_line, env_get and the other unbounded readers) now replays byte-identically: it is recorded as a length-framed record with continuation (`C`) records, and a missing continuation is a loud refusal (exit 3). Tape format v8; v7 tapes are refused (#1816).
