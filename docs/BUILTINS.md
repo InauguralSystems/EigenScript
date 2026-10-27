@@ -528,7 +528,7 @@ either way, so the numbers are byte-identical.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor of at most 10,000,000 elements to a binary file (preserves observer state). An over-cap tensor raises a catchable `limit` error before opening the file, including under `EIGS_STRICT=0` |
-| `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file (restores observer state). An over-cap header raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file raise a `value` error naming `tensor_load` by default; under `EIGS_STRICT=0` they collapse to `0` and set `math_flags.invalid` (#971). |
+| `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file (restores observer state). An over-cap header never returns `null`: it raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file raise a `value` error naming `tensor_load` by default; under `EIGS_STRICT=0` they collapse to `0` and set `math_flags.invalid` (#971). |
 
 ### Gradients & SGD
 

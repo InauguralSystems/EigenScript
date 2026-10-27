@@ -472,7 +472,7 @@ void eigs_value_dict_set(EigsValue *v, const char *k, EigsValue *val) {
 
 EigsValue *eigs_value_new_buffer(int count) {
     if (count < 0) count = 0;
-    if (count > 10000000) count = 10000000;  /* same cap as `buffer of n` */
+    if (count > EIGS_TENSOR_MAX_ELEMENTS) count = EIGS_TENSOR_MAX_ELEMENTS;  /* same cap as `buffer of n` */
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;
     v->data.buffer.count = count;            /* rows/cols stay 0: unshaped 1-D */

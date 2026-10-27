@@ -171,7 +171,7 @@ static Value* make_shaped_buffer(int rows, int cols) {
      * the matmul kernel wrote rows*cols (int64) elements past it. Callers cap
      * the product (see builtin_tensor_matmul); clamp here too as defense. */
     int64_t count64 = (rows > 0) ? (int64_t)rows * cols : cols;
-    int count = (count64 >= 0 && count64 <= 10000000) ? (int)count64 : 0;
+    int count = (count64 >= 0 && count64 <= EIGS_TENSOR_MAX_ELEMENTS) ? (int)count64 : 0;
     /* Sandbox chokepoint for the BUFFER class: the old "matmul output is
      * bounded by charged inputs" waiver was false — an OUTER product
      * amplifies two 3000-element inputs into a 9M-element (72 MB) output,
@@ -278,7 +278,7 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
     }
     if (ndim == 0 || *rows <= 0 || *cols <= 0) return NULL;
     size_t total = safe_size_mul((size_t)*rows, (size_t)*cols);
-    if (total > 10000000) {
+    if (total > EIGS_TENSOR_MAX_ELEMENTS) {
         fprintf(stderr, "Error: tensor too large (%d x %d)\n", *rows, *cols);
         return NULL;
     }
@@ -431,7 +431,7 @@ static Value* buf_elementwise(Value *a, Value *b, BinOpFn fn) {
 
     if (a_mat && !b_mat) {
         int rows = a->data.buffer.rows, cols = a->data.buffer.cols;
-        if ((int64_t)rows * cols > 10000000) return make_null();
+        if ((int64_t)rows * cols > EIGS_TENSOR_MAX_ELEMENTS) return make_null();
         if (bn == cols || bn == rows) {
             Value *out = make_shaped_buffer(rows, cols);
             if (!out) return make_null();
@@ -444,7 +444,7 @@ static Value* buf_elementwise(Value *a, Value *b, BinOpFn fn) {
     }
     if (!a_mat && b_mat) {
         int rows = b->data.buffer.rows, cols = b->data.buffer.cols;
-        if ((int64_t)rows * cols > 10000000) return make_null();
+        if ((int64_t)rows * cols > EIGS_TENSOR_MAX_ELEMENTS) return make_null();
         if (an == cols || an == rows) {
             Value *out = make_shaped_buffer(rows, cols);
             if (!out) return make_null();
@@ -773,7 +773,7 @@ Value* builtin_tensor_matmul(Value *arg) {
         }
         /* Reject an oversized result before the kernel writes ar*bc doubles —
          * ar*bc overflowed int into a tiny allocation, then OOB heap writes. */
-        if ((int64_t)ar * bc > 10000000) {
+        if ((int64_t)ar * bc > EIGS_TENSOR_MAX_ELEMENTS) {
             rt_error(EK_LIMIT, 0, "matmul: result too large (%dx%d)", ar, bc);
             return make_null();
         }
@@ -815,7 +815,7 @@ Value* builtin_tensor_matmul(Value *arg) {
                  "(%dx%d · %dx%d)", ar, ac, br, bc);
         return make_null();
     }
-    if ((int64_t)ar * bc > 10000000) {
+    if ((int64_t)ar * bc > EIGS_TENSOR_MAX_ELEMENTS) {
         free(af); free(bf);
         rt_error(EK_LIMIT, 0, "matmul: result too large (%dx%d)", ar, bc);
         return make_null();
@@ -864,7 +864,7 @@ Value* builtin_tensor_matmul_at(Value *arg) {
                      "(%dx%d transposed · %dx%d)", ar, ac, br, bc);
             return make_null();
         }
-        if ((int64_t)ac * bc > 10000000) {
+        if ((int64_t)ac * bc > EIGS_TENSOR_MAX_ELEMENTS) {
             rt_error(EK_LIMIT, 0, "matmul_at: result too large (%dx%d)", ac, bc);
             return make_null();
         }
@@ -891,7 +891,7 @@ Value* builtin_tensor_matmul_at(Value *arg) {
                  "(%dx%d transposed · %dx%d)", ar, ac, br, bc);
         return make_null();
     }
-    if ((int64_t)ac * bc > 10000000) {
+    if ((int64_t)ac * bc > EIGS_TENSOR_MAX_ELEMENTS) {
         free(af); free(bf);
         rt_error(EK_LIMIT, 0, "matmul_at: result too large (%dx%d)", ac, bc);
         return make_null();
@@ -924,7 +924,7 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
                      "(%dx%d · %dx%d transposed)", ar, ac, br, bc);
             return make_null();
         }
-        if ((int64_t)ar * br > 10000000) {
+        if ((int64_t)ar * br > EIGS_TENSOR_MAX_ELEMENTS) {
             rt_error(EK_LIMIT, 0, "matmul_bt: result too large (%dx%d)", ar, br);
             return make_null();
         }
@@ -950,7 +950,7 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
                  "(%dx%d · %dx%d transposed)", ar, ac, br, bc);
         return make_null();
     }
-    if ((int64_t)ar * br > 10000000) {
+    if ((int64_t)ar * br > EIGS_TENSOR_MAX_ELEMENTS) {
         free(af); free(bf);
         rt_error(EK_LIMIT, 0, "matmul_bt: result too large (%dx%d)", ar, br);
         return make_null();
@@ -1356,7 +1356,7 @@ Value* builtin_tensor_zeros(Value *arg) {
     if (arg->type == VAL_NUM) {
         int64_t n64 = (int64_t)eigs_num_arg(arg, __func__);
         if (n64 < 0) n64 = 0;
-        if (n64 > 10000000) n64 = 10000000;  /* #292: cap like fill/buffer (was uncapped → x_oom/abort) */
+        if (n64 > EIGS_TENSOR_MAX_ELEMENTS) n64 = EIGS_TENSOR_MAX_ELEMENTS;  /* #292: cap like fill/buffer (was uncapped → x_oom/abort) */
         Value *out = make_shaped_buffer(0, (int)n64);
         return out ? out : make_null();
     }
@@ -1370,9 +1370,9 @@ Value* builtin_tensor_zeros(Value *arg) {
         if (cols64 < 0) cols64 = 0;
         /* #292: bound each dim before multiplying (no int64 overflow), then the
          * product — a clean make_null (sandbox: {ok:0}) instead of x_oom/abort. */
-        if (rows64 > 10000000 || cols64 > 10000000) return make_null();
+        if (rows64 > EIGS_TENSOR_MAX_ELEMENTS || cols64 > EIGS_TENSOR_MAX_ELEMENTS) return make_null();
         int64_t total = rows64 * cols64;
-        if (total > 10000000) return make_null();
+        if (total > EIGS_TENSOR_MAX_ELEMENTS) return make_null();
         if (!sandbox_charge((size_t)total * TENSOR_LIST_ELEM_BYTES)) return make_null();
         int rows = (int)rows64, cols = (int)cols64;
         Value *outer = make_list(rows);
