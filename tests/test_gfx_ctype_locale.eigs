@@ -1,5 +1,5 @@
 if env_get of "EIGS_OPEN_GFX" == "1":
-    gfx_open of [80, 60, "ctype-locale-1681"]
+    gfx_open of [80, 60, "ctype-locale-1681-雪"]
 
 input is str_from_bytes of [201, 160, 49, 32, 50]
 lowered is str_lower of input

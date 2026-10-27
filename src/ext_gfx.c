@@ -146,20 +146,6 @@ static int g_stream_channels = 1;
 static int load_sdl2(void) {
     if (g_sdl_lib) return 1;
 
-#if defined(__linux__)
-    /* SDL's X11 backend needs a UTF-8 LC_CTYPE to publish UTF-8 title
-     * properties.  Use a fixed locale, never the environment (""), because
-     * the runtime's byte-oriented ctype calls must remain replay-deterministic
-     * in every user's locale (#1681).  C.UTF-8 classifies non-ASCII bytes like
-     * the initial C locale while still telling Xlib that titles are UTF-8.
-     * Linux only: macOS's Cocoa backend takes UTF-8 titles directly, and an
-     * unconditional call there would print the note below on every gfx run. */
-    if (!setlocale(LC_CTYPE, "C.UTF-8") && !g_ctype_locale_warned) {
-        fprintf(stderr, "note: C.UTF-8 locale unavailable; non-ASCII window titles may be mis-encoded on this system\n");
-        g_ctype_locale_warned = 1;
-    }
-#endif
-
     g_sdl_lib = dlopen("libSDL2-2.0.so.0", RTLD_LAZY);
     if (!g_sdl_lib) g_sdl_lib = dlopen("libSDL2.so", RTLD_LAZY);
     if (!g_sdl_lib) return 0;
@@ -205,6 +191,32 @@ static int load_sdl2(void) {
         return 0;
     }
     return 1;
+}
+
+/* SDL's X11 backend records whether Xlib supports UTF-8 when video is
+ * initialized. In that mode it publishes even an ASCII WM_NAME as
+ * UTF8_STRING, which older C-locale clients such as xdotool cannot read.
+ * Select C for an ASCII initial title and C.UTF-8 for a non-ASCII one before
+ * SDL_Init. Both locales retain the runtime's byte-oriented ctype answers. */
+static int gfx_title_is_ascii(const char *title) {
+    const unsigned char *p = (const unsigned char *)title;
+    while (*p && *p < 0x80) p++;
+    return *p == '\0';
+}
+
+static void gfx_select_title_locale(const char *title) {
+#if defined(__linux__)
+    if (gfx_title_is_ascii(title)) {
+        (void)setlocale(LC_CTYPE, "C");
+        return;
+    }
+    if (!setlocale(LC_CTYPE, "C.UTF-8") && !g_ctype_locale_warned) {
+        fprintf(stderr, "note: C.UTF-8 locale unavailable; non-ASCII window titles may be mis-encoded on this system\n");
+        g_ctype_locale_warned = 1;
+    }
+#else
+    (void)title;
+#endif
 }
 
 /* ---- SDL_mixer (streaming background music) ----
@@ -478,6 +490,7 @@ Value* builtin_gfx_open(Value *arg) {
     int h = (int)eigs_list_num(arg, 1, __func__);
     const char *title = list_elem_type(arg, 2) == VAL_STR ? list_get_ref(arg, 2)->data.str : "EigenScript";
 
+    gfx_select_title_locale(title);
     if (!load_sdl2()) {
         fprintf(stderr, "gfx_open: cannot load libSDL2\n");
         return make_bool(0);  /* fs:ANSWER 0 is gfx_open's open-failed result -- line 422 returns 1 only after a renderer exists; libSDL2 absent is environment state, not a bad argument */
