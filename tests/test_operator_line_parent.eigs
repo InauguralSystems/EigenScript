@@ -212,15 +212,27 @@ catch e:
 assert_eq of [got, 184, "OSR taken short-circuit operand restores its runtime line"]
 
 # New opcode numbers are appended and pinned in test_opcode_abi.c.
-# A descriptor must use an adjacent stamp / binary / restore scope: no
-# call or suspension can overwrite the scalar scratch, nor may a jump enter it.
+# The line-scope opcodes are compiler-only: assembled descriptors must reject
+# them, whether the scope is well-shaped or malformed. Compiled source below
+# exercises a successful scope followed by an error on the next statement.
 SCOPE is 102
 END_SCOPE is 103
 scoped is sandbox_run of [[1, [0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,END_SCOPE,40], [2,3]], 1000]
-assert_eq of [scoped["ok"], true, "adjacent binary line scope verifies"]
-assert_eq of [scoped["result"], 5, "adjacent scope computes normally"]
+assert_eq of [scoped["ok"], false, "compiler-only binary line scope is refused"]
+assert_eq of [scoped["error"]["message"], "invalid chunk descriptor", "compiler-only scope is refused cleanly"]
 restored is sandbox_run of [[1, [68,9,0,0,0, 0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,END_SCOPE,14,40], ["a","b"]], 1000]
-assert_eq of [restored["error"]["line"], 9, "assembled successful binary restores the parent's line"]
+assert_eq of [restored["ok"], false, "compiler-only restoration scope is refused"]
+assert_eq of [restored["error"]["message"], "invalid chunk descriptor", "compiler-only restoration is refused cleanly"]
+define compiled_restoration() as:
+    local result is (1 +
+        2)
+    return "a" - 1
+
+try:
+    r is compiled_restoration of null
+catch e:
+    got is e.line
+assert_eq of [got, 229, "compiled successful binary restores the next statement's line"]
 for code in [
     [0,0,0, 0,1,0, END_SCOPE,4,40],
     [0,0,0, 0,1,0, SCOPE,7,0,0,0, 4,40],
