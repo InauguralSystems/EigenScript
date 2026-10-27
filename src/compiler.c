@@ -1854,8 +1854,18 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
     if (c->enclosing) {
         int slot = resolve_local(c, name, h);
         if (slot >= 0) {
-            set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
-            obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
+            /* #2016: an interrogated parameter/local must use the env store,
+             * whose assignment-count update is shared by interpreter and
+             * inline JIT. resolve_local used to win first for parameters,
+             * leaving native SET_LOCAL writes on a value-only fast path. */
+            if (name_set_has(&c->interrogated, name)) {
+                int idx = add_string_constant(c, name);
+                set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
+                obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
+            } else {
+                set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
+                obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
+            }
         } else if (lev_has(c, name)) {
             /* #1074: the name is this function's active `for` binder in a
              * loop env -- write where the body reads. */
