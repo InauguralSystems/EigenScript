@@ -42,7 +42,7 @@ tools/replay_diff.sh | timeout 30 bash tools/replay_diff.sh --selftest | [{"patt
 tools/release_skill_check.sh .claude/skills/release/SKILL.md | timeout 30 bash tools/release_skill_check.sh --selftest | [{"pattern":"^release_skill_check selftest: PASS:","count":1}]
 tools/section_plan.sh tests/suite_plan.sh .github/workflows/ci.yml | timeout 1860 bash tools/section_plan.sh --selftest
 tools/section_fragments_check.sh tools/runner_text.sh tools/section_plan.sh tools/suite_label_check.sh tools/enrolment_check.sh tools/child_exit_check.sh tests/run_all_tests.sh tests/sections/* | timeout 60 bash tools/section_fragments_check.sh --selftest
-tools/stop_gate.sh | timeout 30 bash tools/stop_gate.sh --selftest | [{"pattern":"^stop_gate selftest: committed-fragment PASS; no-fragment BLOCK$","count":1}]
+tools/stop_gate.sh | timeout 30 bash tools/stop_gate.sh --selftest | [{"pattern":"^stop_gate selftest: selected-variant PASS; committed-fragment PASS; no-fragment BLOCK$","count":1}]
 tools/stdlib_index_check.sh | timeout 30 bash tools/stdlib_index_check.sh --selftest
 tools/ui_surface_check.sh tools/ui_surface_check.py tests/test_ui.eigs | timeout 30 bash tools/ui_surface_check.sh --selftest | [{"pattern":"^SELFTEST PASS:","count":16},{"pattern":"^UI source controls: 16 passed, 0 failed$","count":1}]
 tools/ui_surface_check.py tests/test_ui.eigs | timeout 30 python3 tools/ui_surface_check.py --selftest | [{"pattern":"^SELFTEST PASS:","count":16},{"pattern":"^UI source controls: 16 passed, 0 failed$","count":1}]
