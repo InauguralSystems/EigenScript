@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-EIGS=${EIGS:-../build/release/eigenscript}
+EIGS=${EIGS:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}
 T=$(mktemp -d -t eigs-1750.XXXXXX) || exit 2
 trap 'rm -rf "$T"' EXIT
 
