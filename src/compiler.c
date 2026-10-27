@@ -2266,10 +2266,25 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         int counter_depth = c->stack_depth;
         emit_op_u16(c, OP_LOOP_ENTER_NAMED, (uint16_t)counter_depth, node->line);
 
-        int loop_start = capture_loop_start(c);
-        lp->continue_target = loop_start;
-
         int depth_at_loop = c->stack_depth;
+
+        /* Every path which completes an iteration meets at this one guard:
+         * body fallthrough reaches the back edge below, `continue` emits the
+         * same back edge, and JIT/OSR execute that bytecode edge rather than
+         * manufacturing a second counter update.  Jump over the guard on
+         * entry: no iteration has completed before the first condition. */
+        int first_condition = emit_jump(c, OP_JUMP, node->line);
+        int iteration_end = capture_loop_start(c);
+        lp->continue_target = iteration_end;
+
+        /* Observer stall+cap for observer-based conditions, cap-only for
+         * plain loops (opt-in halting; see cond_is_observer_based). */
+        int stall_op = cond_is_observer_based(node->data.loop.cond)
+                           ? OP_LOOP_STALL_NAMED : OP_LOOP_CAP_NAMED;
+        int stall_jump = emit_jump(c, stall_op, node->line);
+        chunk_emit_u16(c->chunk, (uint16_t)counter_depth, node->line);
+
+        patch_jump(c, first_condition);
         compile_node(c, node->data.loop.cond);
         int exit_jump = emit_jump(c, OP_JUMP_IF_FALSE, node->line);
         /* condition popped by JUMP_IF_FALSE */
@@ -2277,16 +2292,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         compile_block(c, node->data.loop.body, node->data.loop.body_count);
         emit(c, OP_POP, node->line); /* discard body result before next iteration */
 
-        /* Loop check — observer stall+cap for observer-based conditions,
-         * cap-only for plain loops (opt-in halting; see cond_is_observer_based). */
-        int stall_op = cond_is_observer_based(node->data.loop.cond)
-                           ? OP_LOOP_STALL_NAMED : OP_LOOP_CAP_NAMED;
-        int stall_jump = emit_jump(c, stall_op, node->line);
-        chunk_emit_u16(c->chunk, (uint16_t)counter_depth, node->line);
-
-        /* Reset depth to loop start for back-edge */
+        /* Reset depth for the shared iteration-end back edge. */
         c->stack_depth = depth_at_loop;
-        emit_loop(c, loop_start, node->line);
+        emit_loop(c, iteration_end, node->line);
 
         /* Exit path: condition was false or stall detected.
          * Set __loop_exit__ and __loop_iterations__ env vars.
