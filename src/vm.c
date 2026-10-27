@@ -1799,12 +1799,21 @@ int jit_helper_iter_next(void) {
  * (2.9999998) — returns 0 so the caller can raise "index must be an integer"
  * instead of silently truncating. Pure predicate, no side effects: the raise
  * lives at the handling site so a target the fast path doesn't own (string,
- * dict) falls through to the slow path and is diagnosed exactly once. The
- * (double)(int) round-trip is the test — it reuses the cast every index site
- * already performs and is pure SSE2, deliberately avoiding floor()/roundsd
- * (SSE4.1, absent on the Merom target). Negatives pass here and fail the usual
- * >= 0 range check downstream, unchanged. */
+ * dict) falls through to the slow path and is diagnosed exactly once. An
+ * integral double outside the C int range is clamped to the nearest endpoint.
+ * That preserves the predicate's compact
+ * interface while sending it through the caller's ordinary out-of-range path;
+ * critically, the range test happens before the cast. Values outside the int
+ * range but below 2^52 are tested with trunc(); at and above 2^52 every finite
+ * binary64 value is already integral. Negatives pass here and fail the usual
+ * range check downstream, unchanged. */
 static inline int vm_index_is_int(double d, int *out) {
+    if (d < (double)INT_MIN || d > (double)INT_MAX) {
+        if (!isfinite(d) || (fabs(d) < 4503599627370496.0 && trunc(d) != d))
+            return 0;
+        *out = d < 0.0 ? INT_MIN : INT_MAX;
+        return 1;
+    }
     int i = (int)d;
     if ((double)i != d) return 0;
     *out = i;
@@ -6544,6 +6553,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
         Value *table = slot_as_ptr(table_s);
         int key;
+        if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
+            slot_decref(arg_s); slot_decref(table_s);
+            rt_error(EK_INDEX, current_line,
+                "dispatch key %g out of range", key_d);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
         if (!vm_index_is_int(key_d, &key)) {
             slot_decref(arg_s); slot_decref(table_s);
             rt_error(EK_VALUE, current_line,
