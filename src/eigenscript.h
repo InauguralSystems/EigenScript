@@ -250,7 +250,7 @@ struct ASTNode {
         struct { ASTNode *left; ASTNode *right; } relation;
         struct { ASTNode *cond; ASTNode **if_body; int if_count; ASTNode **else_body; int else_count; } cond;
         struct { ASTNode *cond; ASTNode **body; int body_count; } loop;
-        struct { char *name; char **params; ASTNode **param_defaults; int param_count; int first_default; ASTNode **body; int body_count; } func;
+        struct { char *name; char **params; int *param_lines; int *param_cols; ASTNode **param_defaults; int param_count; int first_default; ASTNode **body; int body_count; } func;
         struct { ASTNode *expr; } ret;
         struct { ASTNode **stmts; int count; } block;
         struct { ASTNode **elems; int count; } list;
