@@ -317,6 +317,32 @@ define control_list_pattern() as:
     return pattern_name
 assert_eq of [control_list_pattern of [], 7, "control: list-pattern store follows ordinary assignment path"]
 
+# #1995: local declarations in a slot-eligible for body are ordinary slots.
+# Routing them through the function environment made repeated, branch-varying
+# calls mutate an argument slot in EigenMiniSat's conflict analyzer.
+define for_local_parameter_integrity(parameter_value, signed_value) as:
+    local result is 0
+    for position in range of 2:
+        local value is signed_value
+        if value < 0:
+            local negative_path is 1
+            value is 0 - value
+            result += negative_path - 1
+        else:
+            local nonnegative_path is 1
+            result += nonnegative_path - 1
+        if value > 0:
+            local level_value is position + 1
+            result += parameter_value[value] + level_value
+    return [parameter_value, result]
+local integrity_vector is [0, 20]
+# The zero/negative/positive sequence repeatedly reuses the function while
+# taking branches that install different by-name locals on the broken build.
+assert_eq of [for_local_parameter_integrity of [integrity_vector, 0], [integrity_vector, 0], "for-body locals preserve parameters: zero branch"]
+assert_eq of [for_local_parameter_integrity of [integrity_vector, -1], [integrity_vector, 43], "for-body locals preserve parameters: negative branch"]
+assert_eq of [for_local_parameter_integrity of [integrity_vector, 0], [integrity_vector, 0], "for-body locals preserve parameters: zero branch again"]
+assert_eq of [for_local_parameter_integrity of [integrity_vector, 1], [integrity_vector, 43], "for-body locals preserve parameters: positive branch"]
+
 define control_parameter(parameter_name) as:
     return parameter_name
 assert_eq of [control_parameter of 9, 9, "control: parameter"]

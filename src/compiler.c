@@ -1597,10 +1597,10 @@ static int by_name_binder(ASTNode *node, int in_loop_env, const char **name) {
          * them directly after using this return value as their classification. */
         return BINDER_NO_SLOT;
     case AST_ASSIGN:
-        if (node->data.assign.local_only && in_loop_env) {
-            *name = node->data.assign.name;
-            return BINDER_NO_SLOT;
-        }
+        /* A local declaration in a for body is not itself a by-name binder.
+         * The emitter routes it through an active loop environment when one
+         * exists; otherwise it remains an ordinary function slot. */
+        (void)in_loop_env;
         return 0;
     default: return 0;
     }
