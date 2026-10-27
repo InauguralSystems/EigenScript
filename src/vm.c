@@ -1794,33 +1794,6 @@ int jit_helper_iter_next(void) {
     return g_has_error ? 2 : 0;
 }
 
-/* Integer-valued test for a subscript index: an exact integer (2.0) returns 1
- * and is written to *out; a fractional value (2.5) — or one from float drift
- * (2.9999998) — returns 0 so the caller can raise "index must be an integer"
- * instead of silently truncating. Pure predicate, no side effects: the raise
- * lives at the handling site so a target the fast path doesn't own (string,
- * dict) falls through to the slow path and is diagnosed exactly once. An
- * integral double outside the C int range is clamped to the nearest endpoint.
- * That preserves the predicate's compact
- * interface while sending it through the caller's ordinary out-of-range path;
- * critically, the range test happens before the cast. Values outside the int
- * range but below 2^52 are tested with a (long long) round-trip (exact there, and
- * no libm: the freestanding profile has no trunc()); at and above 2^52 every finite
- * binary64 value is already integral. Negatives pass here and fail the usual
- * range check downstream, unchanged. */
-static inline int vm_index_is_int(double d, int *out) {
-    if (d < (double)INT_MIN || d > (double)INT_MAX) {
-        if (!isfinite(d) || (fabs(d) < 4503599627370496.0 && (double)(long long)d != d))
-            return 0;
-        *out = d < 0.0 ? INT_MIN : INT_MAX;
-        return 1;
-    }
-    int i = (int)d;
-    if ((double)i != d) return 0;
-    *out = i;
-    return 1;
-}
-
 /* 0.13.0: resolve negative index against len, then bounds-check.
  * On success, *i is rewritten to the absolute position; on failure
  * *i is left at the original value so error messages report what
@@ -6554,17 +6527,20 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
         Value *table = slot_as_ptr(table_s);
         int key;
-        if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
-            slot_decref(arg_s); slot_decref(table_s);
-            rt_error(EK_INDEX, current_line,
-                "dispatch key %g out of range", key_d);
-            vm_push_slot(slot_null());
-            DISPATCH();
-        }
+        /* Integrality first, then range: a fractional key is a value error
+         * wherever it lies (2147483647.5 included), as ordinary indexing
+         * reports it; only an integral key outside int range is index_range. */
         if (!vm_index_is_int(key_d, &key)) {
             slot_decref(arg_s); slot_decref(table_s);
             rt_error(EK_VALUE, current_line,
                 "dispatch key must be an integer, got %g", key_d);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
+            slot_decref(arg_s); slot_decref(table_s);
+            rt_error(EK_INDEX, current_line,
+                "dispatch key %g out of range", key_d);
             vm_push_slot(slot_null());
             DISPATCH();
         }

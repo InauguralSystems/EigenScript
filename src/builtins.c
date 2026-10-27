@@ -5974,14 +5974,17 @@ Value* builtin_dispatch(Value *arg) {
         return make_null();
     }
     double key_d = eigs_num_arg(key_v, __func__);
-    if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
-        rt_error(EK_INDEX, 0, "dispatch key %g out of range", key_d);
-        return make_null();
-    }
-    int key = (int)key_d;
-    if ((double)key != key_d) {
+    int key;
+    /* Same order as native OP_DISPATCH, through the same predicate (vm.h):
+     * a fractional key is a value error; an integral one outside int range
+     * is index_range. */
+    if (!vm_index_is_int(key_d, &key)) {
         rt_error(EK_VALUE, 0, "dispatch key must be an integer, got %g",
                       key_d);
+        return make_null();
+    }
+    if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
+        rt_error(EK_INDEX, 0, "dispatch key %g out of range", key_d);
         return make_null();
     }
 

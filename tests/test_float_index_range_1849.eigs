@@ -36,6 +36,12 @@ expect_error of ["negative builtin dispatch key", "index_range", (_) => dispatch
 
 expect_error of ["fractional list index", "value", (_) => xs[1.5]]
 expect_error of ["fractional dispatch key", "value", (_) => dispatch of [table, 1.5, null]]
+# #1849 review: a fractional key outside int range is still a VALUE error, as
+# ordinary indexing reports it, through native OP_DISPATCH and the builtin.
+expect_error of ["fractional dispatch key above int range", "value", (_) => dispatch of [table, 2147483647.5, null]]
+expect_error of ["fractional dispatch key below int range", "value", (_) => dispatch of [table, -2147483648.5, null]]
+frac_args is [table, 2147483647.5, null]
+expect_error of ["fractional builtin dispatch key above int range", "value", (_) => dispatch of frac_args]
 expect_error of ["fractional slice bound", "value", (_) => xs[1.5:]]
 
 test_summary of null
