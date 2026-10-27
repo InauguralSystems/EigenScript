@@ -1,0 +1,1 @@
+- The `numerical_grad*` builtins now raise `param mutated during gradient` when a loss callback shrinks the parameter being perturbed, rather than writing beyond the list. (#1719).

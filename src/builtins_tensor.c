@@ -1845,6 +1845,23 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
     return 0.0;
 }
 
+/* A loss callback is arbitrary user code and may shrink the list currently
+ * being perturbed.  Never use a slot validated before that callback. */
+static int gradient_index_still_valid(const Value *list, int index) {
+    if (list && list->type == VAL_LIST && index >= 0 &&
+        index < list->data.list.count)
+        return 1;
+    rt_error(EK_VALUE, 0, "param mutated during gradient");
+    return 0;
+}
+
+static Value *gradient_row_still_valid(const Value *matrix, int row, int col) {
+    if (!gradient_index_still_valid(matrix, row)) return NULL;
+    Value *current_row = list_get_ref(matrix, row);
+    if (!gradient_index_still_valid(current_row, col)) return NULL;
+    return current_row;
+}
+
 /* numerical_grad of [loss_fn, param, eps]
  * Computes central finite-difference gradient for every element of param.
  * loss_fn is a VAL_FN that takes null and returns a scalar loss.
@@ -1928,8 +1945,10 @@ Value* builtin_numerical_grad(Value *arg) {
             double old_val = eigs_slot_num(list_slot(param, i), __func__);
             list_set_num(param, i, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
+            if (!gradient_index_still_valid(param, i)) goto list_grad_failed;
             list_set_num(param, i, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
+            if (!gradient_index_still_valid(param, i)) goto list_grad_failed;
             list_set_num(param, i, old_val);
             /* Central difference */
             list_append_owned(grad, make_num((lp - lm) / (2.0 * eps)));
@@ -1937,6 +1956,10 @@ Value* builtin_numerical_grad(Value *arg) {
         val_decref(nul);
         if (!loss_valid) { val_decref(grad); return make_null(); }
         return grad;
+list_grad_failed:
+        val_decref(nul);
+        val_decref(grad);
+        return make_null();
     }
 
     /* 2D param */
@@ -1951,8 +1974,12 @@ Value* builtin_numerical_grad(Value *arg) {
             double old_val = eigs_slot_num(list_slot(row, c), __func__);
             list_set_num(row, c, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
+            row = gradient_row_still_valid(param, r, c);
+            if (!row) goto matrix_grad_failed;
             list_set_num(row, c, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
+            row = gradient_row_still_valid(param, r, c);
+            if (!row) goto matrix_grad_failed;
             list_set_num(row, c, old_val);
             list_append_owned(grad_row, make_num((lp - lm) / (2.0 * eps)));
         }
@@ -1961,6 +1988,10 @@ Value* builtin_numerical_grad(Value *arg) {
     val_decref(nul);
     if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
+matrix_grad_failed:
+    val_decref(nul);
+    val_decref(grad);
+    return make_null();
 }
 
 /* ==== BUILTIN: sgd_update ==== */
@@ -2106,8 +2137,12 @@ Value* builtin_numerical_grad_rows(Value *arg) {
             double old_val = eigs_slot_num(list_slot(row, c), __func__);
             list_set_num(row, c, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
+            row = gradient_row_still_valid(matrix, r, c);
+            if (!row) goto rows_grad_failed;
             list_set_num(row, c, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
+            row = gradient_row_still_valid(matrix, r, c);
+            if (!row) goto rows_grad_failed;
             list_set_num(row, c, old_val);
             /* gradient — release the zero placeholder this slot held */
             list_set_num(grad_row, c, (loss_plus - loss_minus) / (2.0 * eps));
@@ -2117,6 +2152,11 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     val_decref(nul);
     if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
+rows_grad_failed:
+    free(row_snapshot);
+    val_decref(nul);
+    val_decref(grad);
+    return make_null();
 }
 
 /* ==== BUILTIN: sgd_update_rows ==== */
@@ -2276,9 +2316,13 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             /* +eps */
             list_set_num(row, col, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
+            row = gradient_row_still_valid(matrix, r, col);
+            if (!row) goto cols_grad_failed;
             /* -eps */
             list_set_num(row, col, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
+            row = gradient_row_still_valid(matrix, r, col);
+            if (!row) goto cols_grad_failed;
             /* restore */
             list_set_num(row, col, old_val);
             /* gradient — release the zero placeholder this slot held */
@@ -2290,6 +2334,11 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     val_decref(nul);
     if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
+cols_grad_failed:
+    free(col_snapshot);
+    val_decref(nul);
+    val_decref(grad);
+    return make_null();
 }
 
 /* ==== BUILTIN: sgd_update_cols ==== */

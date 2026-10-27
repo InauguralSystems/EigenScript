@@ -1,0 +1,56 @@
+p1 is [1]
+loss1_calls is 0
+define loss1(_) as:
+    loss1_calls is loss1_calls + 1
+    if loss1_calls == 2:
+        list_remove_at of [p1, 0]
+    return 0
+try:
+    numerical_grad of [loss1, p1, 0.01]
+    assert of [false, "numerical_grad 1-D accepted a shrunken parameter"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad 1-D error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad 1-D error message"]
+    assert of [p1 == [], "numerical_grad 1-D touched the list after callback"]
+    print of "PASS numerical_grad 1-D"
+
+p2 is [[1]]
+define loss2(_) as:
+    list_remove_at of [p2, 0]
+    return 0
+try:
+    numerical_grad of [loss2, p2, 0.01]
+    assert of [false, "numerical_grad 2-D accepted a shrunken parameter"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad 2-D error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad 2-D error message"]
+    assert of [p2 == [], "numerical_grad 2-D touched the list after callback"]
+    print of "PASS numerical_grad 2-D"
+
+pr is [[1]]
+define loss_rows(_) as:
+    list_remove_at of [pr, 0]
+    return 0
+try:
+    numerical_grad_rows of [loss_rows, pr, [0], 0.01]
+    assert of [false, "numerical_grad_rows accepted a shrunken parameter"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad_rows error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad_rows error message"]
+    assert of [pr == [], "numerical_grad_rows touched the list after callback"]
+    print of "PASS numerical_grad_rows"
+
+pc is [[1]]
+define loss_cols(_) as:
+    list_remove_at of [pc[0], 0]
+    return 0
+try:
+    numerical_grad_cols of [loss_cols, pc, [0], 0.01]
+    assert of [false, "numerical_grad_cols accepted a shrunken parameter"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad_cols error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad_cols error message"]
+    assert of [pc == [[]], "numerical_grad_cols touched the list after callback"]
+    print of "PASS numerical_grad_cols"
+
+print of "NUMERICAL GRAD MUTATION ALL PASS"
