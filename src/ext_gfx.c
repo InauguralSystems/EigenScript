@@ -16,6 +16,7 @@
 #if EIGENSCRIPT_EXT_GFX
 
 #include <dlfcn.h>
+#include <locale.h>
 
 /* ---- SDL2 types (minimal, no headers needed) ---- */
 
@@ -43,6 +44,33 @@ typedef union {
 
 typedef void SDL_Window;
 typedef void SDL_Renderer;
+
+#if defined(__linux__)
+/* Minimal copies of the stable SDL/Xlib ABI used below.  The extension keeps
+ * loading both libraries dynamically, so building EigenScript does not gain
+ * an SDL or X11 development-header dependency. */
+typedef struct { Uint8 major, minor, patch; } SDL_version;
+typedef struct _XDisplay Display;
+typedef unsigned long XID;
+typedef XID Window;
+typedef unsigned long Atom;
+typedef struct {
+    unsigned char *value;
+    Atom encoding;
+    int format;
+    unsigned long nitems;
+} XTextProperty;
+typedef struct {
+    SDL_version version;
+    int subsystem;
+    union {
+        struct { Display *display; Window window; } x11;
+        void *alignment_and_space[16];
+    } info;
+} SDL_SysWMinfo;
+#define MY_SDL_SYSWM_X11 2
+#define MY_X_STD_ICC_TEXT_STYLE 3
+#endif
 
 typedef struct {
     int freq;
@@ -77,6 +105,9 @@ typedef struct {
 /* ---- Function pointers ---- */
 
 static void *g_sdl_lib = NULL;
+#if defined(__linux__)
+static int g_ctype_locale_warned = 0;
+#endif
 static SDL_Window *g_window = NULL;
 static SDL_Renderer *g_renderer = NULL;
 
@@ -86,6 +117,10 @@ static const char* (*p_SDL_GetError)(void);
 static SDL_Window* (*p_SDL_CreateWindow)(const char*, int, int, int, int, Uint32);
 static void (*p_SDL_DestroyWindow)(SDL_Window*);
 static void (*p_SDL_SetWindowTitle)(SDL_Window*, const char*);
+#if defined(__linux__)
+static void (*p_SDL_GetVersion)(SDL_version*);
+static int (*p_SDL_GetWindowWMInfo)(SDL_Window*, SDL_SysWMinfo*);
+#endif
 static SDL_Renderer* (*p_SDL_CreateRenderer)(SDL_Window*, int, Uint32);
 static void (*p_SDL_DestroyRenderer)(SDL_Renderer*);
 static int (*p_SDL_SetRenderDrawColor)(SDL_Renderer*, Uint8, Uint8, Uint8, Uint8);
@@ -143,6 +178,7 @@ static int g_stream_channels = 1;
 
 static int load_sdl2(void) {
     if (g_sdl_lib) return 1;
+
     g_sdl_lib = dlopen("libSDL2-2.0.so.0", RTLD_LAZY);
     if (!g_sdl_lib) g_sdl_lib = dlopen("libSDL2.so", RTLD_LAZY);
     if (!g_sdl_lib) return 0;
@@ -182,12 +218,65 @@ static int load_sdl2(void) {
     p_SDL_GetQueuedAudioSize = dlsym(g_sdl_lib, "SDL_GetQueuedAudioSize");
     p_SDL_ClearQueuedAudio = dlsym(g_sdl_lib, "SDL_ClearQueuedAudio");
     p_SDL_DequeueAudio = dlsym(g_sdl_lib, "SDL_DequeueAudio");
+#if defined(__linux__)
+    p_SDL_GetVersion = dlsym(g_sdl_lib, "SDL_GetVersion");
+    p_SDL_GetWindowWMInfo = dlsym(g_sdl_lib, "SDL_GetWindowWMInfo");
+#endif
     if (!ok) {
         dlclose(g_sdl_lib);
         g_sdl_lib = NULL;
         return 0;
     }
     return 1;
+}
+
+/* SDL selects its X11 text mode when video starts.  Always select UTF-8 so it
+ * publishes a correct EWMH _NET_WM_NAME, regardless of later retitles. */
+static void gfx_select_title_locale(void) {
+#if defined(__linux__)
+    if (!setlocale(LC_CTYPE, "C.UTF-8") && !g_ctype_locale_warned) {
+        fprintf(stderr, "note: C.UTF-8 locale unavailable; non-ASCII window titles may be mis-encoded on this system\n");
+        g_ctype_locale_warned = 1;
+    }
+#endif
+}
+
+/* Set both title forms: SDL owns the UTF-8 EWMH property; Xlib converts the
+ * legacy ICCCM property to STRING when possible and COMPOUND_TEXT otherwise.
+ * On Wayland/non-X11, or if SDL/Xlib lacks any optional entry point, SDL's own
+ * behavior is retained.  Title changes must never fail for this compatibility
+ * enhancement. */
+static void gfx_set_window_title(const char *title) {
+    p_SDL_SetWindowTitle(g_window, title);
+#if defined(__linux__)
+    if (!p_SDL_GetVersion || !p_SDL_GetWindowWMInfo) return;
+
+    SDL_SysWMinfo info;
+    memset(&info, 0, sizeof(info));
+    p_SDL_GetVersion(&info.version);
+    if (!p_SDL_GetWindowWMInfo(g_window, &info) ||
+        info.subsystem != MY_SDL_SYSWM_X11 || !info.info.x11.display) return;
+
+    void *x11 = dlopen("libX11.so.6", RTLD_NOW | RTLD_NOLOAD);
+    if (!x11) return;
+    int (*to_property)(Display *, char **, int, int, XTextProperty *) =
+        dlsym(x11, "Xutf8TextListToTextProperty");
+    void (*set_name)(Display *, Window, XTextProperty *) = dlsym(x11, "XSetWMName");
+    int (*free_property)(void *) = dlsym(x11, "XFree");
+    int (*flush)(Display *) = dlsym(x11, "XFlush");
+    if (to_property && set_name && free_property && flush) {
+        char *titles[1] = {(char *)title};
+        XTextProperty property;
+        memset(&property, 0, sizeof(property));
+        if (to_property(info.info.x11.display, titles, 1,
+                        MY_X_STD_ICC_TEXT_STYLE, &property) == 0) {
+            set_name(info.info.x11.display, info.info.x11.window, &property);
+            flush(info.info.x11.display);
+            if (property.value) free_property(property.value);
+        }
+    }
+    dlclose(x11);
+#endif
 }
 
 /* ---- SDL_mixer (streaming background music) ----
@@ -461,6 +550,7 @@ Value* builtin_gfx_open(Value *arg) {
     int h = (int)eigs_list_num(arg, 1, __func__);
     const char *title = list_elem_type(arg, 2) == VAL_STR ? list_get_ref(arg, 2)->data.str : "EigenScript";
 
+    gfx_select_title_locale();
     if (!load_sdl2()) {
         fprintf(stderr, "gfx_open: cannot load libSDL2\n");
         return make_bool(0);  /* fs:ANSWER 0 is gfx_open's open-failed result -- line 422 returns 1 only after a renderer exists; libSDL2 absent is environment state, not a bad argument */
@@ -485,6 +575,7 @@ Value* builtin_gfx_open(Value *arg) {
         return make_bool(0);  /* fs:ANSWER SDL_CreateRenderer failed on both attempts -- 0 open result; the window is destroyed and g_window NULLed first */
     }
     p_SDL_SetRenderDrawBlendMode(g_renderer, MY_SDL_BLENDMODE_BLEND);
+    gfx_set_window_title(title);
     return make_bool(1);
 }
 
@@ -868,7 +959,7 @@ Value* builtin_gfx_title(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_STR, "gfx_title", "string title",
               make_null());
     if (!g_window) return make_null();  /* fs:VOID no window open: gfx_title answers null on every path -- the return value, not a rejected-argument stand-in */
-    p_SDL_SetWindowTitle(g_window, arg->data.str);
+    gfx_set_window_title(arg->data.str);
     return make_null(); /* fs:VOID gfx_title answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
