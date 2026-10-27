@@ -1800,23 +1800,6 @@ int jit_helper_iter_next(void) {
     return g_has_error ? 2 : 0;
 }
 
-/* Integer-valued test for a subscript index: an exact integer (2.0) returns 1
- * and is written to *out; a fractional value (2.5) — or one from float drift
- * (2.9999998) — returns 0 so the caller can raise "index must be an integer"
- * instead of silently truncating. Pure predicate, no side effects: the raise
- * lives at the handling site so a target the fast path doesn't own (string,
- * dict) falls through to the slow path and is diagnosed exactly once. The
- * (double)(int) round-trip is the test — it reuses the cast every index site
- * already performs and is pure SSE2, deliberately avoiding floor()/roundsd
- * (SSE4.1, absent on the Merom target). Negatives pass here and fail the usual
- * >= 0 range check downstream, unchanged. */
-static inline int vm_index_is_int(double d, int *out) {
-    int i = (int)d;
-    if ((double)i != d) return 0;
-    *out = i;
-    return 1;
-}
-
 /* 0.13.0: resolve negative index against len, then bounds-check.
  * On success, *i is rewritten to the absolute position; on failure
  * *i is left at the original value so error messages report what
@@ -6550,10 +6533,20 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
         Value *table = slot_as_ptr(table_s);
         int key;
+        /* Integrality first, then range: a fractional key is a value error
+         * wherever it lies (2147483647.5 included), as ordinary indexing
+         * reports it; only an integral key outside int range is index_range. */
         if (!vm_index_is_int(key_d, &key)) {
             slot_decref(arg_s); slot_decref(table_s);
             rt_error(EK_VALUE, current_line,
                 "dispatch key must be an integer, got %g", key_d);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
+            slot_decref(arg_s); slot_decref(table_s);
+            rt_error(EK_INDEX, current_line,
+                "dispatch key %g out of range", key_d);
             vm_push_slot(slot_null());
             DISPATCH();
         }
