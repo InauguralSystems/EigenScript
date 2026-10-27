@@ -208,7 +208,7 @@ def in_program(row):
     floats must stay there exactly."""
     g = row["gen"]
     xs = gen.generate(g, row["n"])
-    nan_at = next((i for i, v in enumerate(xs) if v != v), None)
+    nan_at = next((i for i, v in enumerate(xs) if math.isnan(v)), None)
     ps = gen.pieces(g)
     s = sum((1 if "x0" in p else 0) + p["steps"] for p in ps[:-1])
     last = ps[-1]
@@ -297,6 +297,10 @@ def refute(row, v, kind):
     n = row["n"]
     xs = gen.generate(row["gen"], n)
     q = max(1, (n + 1) // 4)
+    nan_recovery = row["gen"]["kind"] == "pieces" and any(math.isnan(x) for x in xs) \
+        and not math.isnan(xs[-1])
+    if not nan_recovery and any(math.isnan(x) for x in xs):
+        raise Refused(f"float-degenerate: a value fed to the runtime is NaN, but the verdict is {v}")
     if v["tends_to"]:
         s = 1 if v["tends_to"] == "+inf" else -1
         head, tail = max(s * x for x in xs[:q]), max(s * x for x in xs[-q:])
@@ -308,7 +312,7 @@ def refute(row, v, kind):
         far, lim = gen.generate(row["gen"], H), float(v["limit"])
         # A finite NaN prefix is irrelevant to a limit; only an undefined tail
         # refutes it.  `in_program` proved that the last piece restarts finite.
-        last_nan = max((i for i, x in enumerate(far) if x != x), default=-1)
+        last_nan = max((i for i, x in enumerate(far) if math.isnan(x)), default=-1)
         if last_nan >= H // 10:
             raise Refused("float-degenerate: a value the generator computes late is NaN, but the verdict is a limit")
         if not all(math.isfinite(x) for x in far[H // 10:]):

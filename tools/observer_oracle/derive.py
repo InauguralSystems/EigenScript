@@ -56,8 +56,8 @@ CAPABILITIES = ("ieee", "int64")
 GEN_KEYS = {"affine": ("x0", "a", "b"), "pieces": ("pieces",), "closed": ("expr",), "recur": ("x0", "expr"),
             "cycle": ("values",), "noise": ("center", "amp", "seed"), "walk": ("x0", "step", "seed")}
 STEP = re.compile(r"\bstep\(\s*n\s*,\s*(\d+)\s*\)")      # the one spelling of a law change
-NAN_WHY = ("x_n is NaN: the #1758 O2 convention (#1746: NaN is undefined), so this"
-           " checkpoint-level predicate is false; MATH predicates still follow the tail")
+NAN_WHY = ("x_n is NaN: the #1758 O2 convention (#1746: NaN is undefined), not a MATH answer:"
+           " every predicate is false while the current value is NaN")
 
 
 def eps(v):
@@ -265,7 +265,7 @@ def _tail_within(row, far, n, radius, name):
         return False, "tends to " + p["tends_to"] if p["tends_to"] else "unbounded"
     h, tail = len(far) - 1, far[n:]
     window = far[max(0, n - PATIENCE + 1):n + 1]
-    if any(v != v for v in window):
+    if any(math.isnan(v) for v in window):
         return False, f"NaN lies in the observer window [{max(0, n - PATIENCE + 1)}, {n}]"
     if not all(math.isfinite(v) for v in tail):
         return False, f"x_m is inf or NaN for some m in [{n}, {h}]"
@@ -337,6 +337,7 @@ def derive_row(row, cert, defs, scored, reported):
         base = defs[(pred, cls)]
         return base + [s for s in row["cite"] if s not in base] if cls == "MATH" else base
     xs = generate(row["gen"], row["n"])
+    nan_recovery = any(math.isnan(x) for x in xs) and not math.isnan(xs[-1])
     far = None                                  # horizon H = max(20000, 10n)
     if p["tends_to"] is None and (p["bounded"] or p["limit"] is not None):
         far = generate(row["gen"], max(20000, 10 * row["n"]))
@@ -345,9 +346,13 @@ def derive_row(row, cert, defs, scored, reported):
         rule = _rules(row, cert, xs, far, n)
         entry = lambda q, cls: [cls, rule[(q, cls)][0], cite(q, cls), rule[(q, cls)][1]]
         v = {q: entry(q, scored[q]) for q in PREDS}
-        if xs[n] != xs[n] and nan_cls is None:
+        if math.isnan(xs[n]) and nan_cls is None:
             raise HarnessError(f"{row['id']}@{n}: x_n is NaN and the definitions table has no NaN convention")
-        elif xs[n] != xs[n]:                    # exception applies only to checkpoint questions
+        elif math.isnan(xs[n]) and not nan_recovery:
+            # An eventually-NaN row keeps the definitions-table `*` rule:
+            # every predicate is false while the current value is NaN.
+            v = {q: [nan_cls, False, list(nan_cite), NAN_WHY] for q in PREDS}
+        elif math.isnan(xs[n]):                  # recovery: only checkpoint questions use the convention
             for q in PREDS:
                 if scored[q] == "CONVENTION":
                     v[q] = [nan_cls, False, list(nan_cite), NAN_WHY]
@@ -355,9 +360,8 @@ def derive_row(row, cert, defs, scored, reported):
         if n < row["regime"]:                   # the tail's law starts after this read
             for q in PREDS:
                 if v[q][0] == "MATH":
-                    if xs[n] == xs[n]:
-                        v[q][0], v[q][3] = "REPORTED", v[q][3] + (f"; REPORTED, not scored: the law"
-                                                                 f" changes at x_{row['regime']}, after this read")
+                    v[q][0], v[q][3] = "REPORTED", v[q][3] + (f"; REPORTED, not scored: the law"
+                                                             f" changes at x_{row['regime']}, after this read")
                 elif not prefix_decided(q, v[q][1], xs, n):
                     raise HarnessError(f"{row['id']}@{n}.{q}: a CONVENTION verdict before the law"
                                        f" changes at x_{row['regime']} depends on later values")
@@ -369,7 +373,7 @@ def prefix_decided(q, value, xs, n):
     """Whether x_0..x_n alone decide a CONVENTION verdict: a NaN x_n decides
     every predicate (the NaN convention), settling is refuted by a non-finite
     x_n, and improving by no new best in the window."""
-    if xs[n] != xs[n]:
+    if math.isnan(xs[n]):
         return value is False
     if q == "improving":
         return not _improving(xs, n, True)[2]
@@ -390,8 +394,10 @@ def postconditions(labels, scored, reported, rows, nans, nan_cls):
             raise HarnessError(f"{key}: label columns {sorted(preds)}, expected {sorted(keys)}")
         for q in PREDS:
             e = preds[q]
-            is_nan_convention = key in nans and scored[q] == "CONVENTION"
-            early = scored[q] == "MATH" and int(n) < rows[rid]["regime"] and key not in nans
+            recovers = any(math.isnan(x) for x in generate(rows[rid]["gen"], rows[rid]["n"])) \
+                and not math.isnan(generate(rows[rid]["gen"], rows[rid]["n"])[-1])
+            is_nan_convention = key in nans and (not recovers or scored[q] == "CONVENTION")
+            early = scored[q] == "MATH" and int(n) < rows[rid]["regime"] and not is_nan_convention
             want = nan_cls if is_nan_convention else ("REPORTED" if early else scored[q])
             if len(e) != 4 or e[0] != want or not isinstance(e[1], bool) or (is_nan_convention and e[1]):
                 raise HarnessError(f"{key}.{q}: {e[:2]} is not one {want} verdict")
@@ -412,7 +418,7 @@ def derive(corpus, certs):
     for row in corpus["rows"]:
         labels.update(derive_row(row, certs[row["id"]], defs, scored, reported))
         xs = generate(row["gen"], row["n"])
-        nans |= {f"{row['id']}@{n}" for n in row["checkpoints"] if xs[n] != xs[n]}
+        nans |= {f"{row['id']}@{n}" for n in row["checkpoints"] if math.isnan(xs[n])}
     nan_cls = next(k[1] for k in defs if k[0] == "*")
     postconditions(labels, scored, reported, {r["id"]: r for r in corpus["rows"]}, nans, nan_cls)
     return labels
