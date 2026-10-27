@@ -108,6 +108,7 @@ Error "*":"[0-9]*":"*) echo RAISED-OTHER; return ;;
 }
 
 . tests/lsan_classify.sh
+. tools/gfx_address_space.sh
 shape_canonical() { # exact owned prefix only; call AFTER raw classification
     local prefix="$2/" marker='@OWNED@/'
     printf '%s' "${1//"$prefix"/$marker}"
@@ -116,42 +117,14 @@ shape_canonical() { # exact owned prefix only; call AFTER raw classification
 # ASan reserves a large virtual shadow mapping. The local ordinary GFX cap
 # must not become a portable sanitizer limit. Inspect the actual executable;
 # neither ASAN_OPTIONS nor a filename is evidence of instrumentation.
-shape_asan_symbols() {
-    printf '%s\n' "$1" | awk '$NF ~ /^_?__asan_init(@.*)?$/ { found=1 } END { exit !found }'
-}
-shape_binary_instrumentation() {
-    local symbols
-    if symbols=$(readelf --wide --syms "$1" 2>/dev/null) ||
-       symbols=$(nm "$1" 2>/dev/null); then
-        if shape_asan_symbols "$symbols"; then echo asan; else echo ordinary; fi
-    else
-        echo "FAIL: cannot inspect GFX executable instrumentation: $1" >&2
-        return 1
-    fi
-}
+shape_asan_symbols() { gfx_asan_symbols "$@"; }
+shape_binary_instrumentation() { gfx_binary_instrumentation "$@"; }
 shape_gfx_limit() { # called only in the individual GFX child subshell
     local instrumentation
     if [ "$1" = "$NEW" ]; then instrumentation=$NEW_SHAPE_INSTRUMENTATION
     elif [ -n "$BASE" ] && [ "$1" = "$BASE" ]; then instrumentation=$BASE_SHAPE_INSTRUMENTATION
     else echo 'FAIL: unrecognized GFX executable' >&2; return 125; fi
-    case "$SHAPE_BACKEND_PLATFORM" in
-        Linux|Darwin) ;;
-        *) echo 'FAIL: unsupported GFX address-space platform' >&2; return 125 ;;
-    esac
-    case "$instrumentation" in
-        ordinary)
-            # This machine's required Linux ceiling is not a Darwin limit:
-            # XNU rejects a ceiling below mappings already owned by the shell.
-            if [ "$SHAPE_BACKEND_PLATFORM" = Linux ]; then
-                ulimit -v 1500000 || return 125
-            fi ;;
-        asan)
-            [ "$(ulimit -v)" = unlimited ] || {
-                echo 'FAIL: instrumented GFX requires an uncapped parent virtual address space' >&2
-                return 125
-            } ;;
-        *) echo 'FAIL: unknown GFX executable instrumentation' >&2; return 125 ;;
-    esac
+    gfx_address_space_apply "$1" "$instrumentation" "$SHAPE_BACKEND_PLATFORM" 1500000
 }
 
 cap_observation_ok() { # diagnostic prefix, capability, exact observed state

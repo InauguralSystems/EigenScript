@@ -755,6 +755,7 @@ build_changed_plan() {
     { git -C "$SP_ROOT" diff --no-renames --name-only "$mb" --; git -C "$SP_ROOT" ls-files --others --exclude-standard; } \
         | sort -u > "$SP_WORK/paths"
     : > "$SP_WORK/lines"; : > "$SP_WORK/unmatched"; : > "$SP_WORK/sourced"; : > "$SP_WORK/runtime"; SP_CHANGED_FULL=''
+    runner_source_closure "$RUNNER_SOURCE" "$SP_WORK/source-closure"
     # Runner hunks select the chunk each changed line lands in (new-side
     # numbering; a pure deletion selects the chunk holding the line before it).
     seam_start=$(grep -nFx '# EIGS_SECTION_FRAGMENTS' "$RUNNER_SOURCE" | cut -d: -f1)
@@ -841,9 +842,9 @@ $(sp_select "$(basename "$d")")" ;;
         # A reference outside every chunk (a preamble list) selects nothing,
         # so it does not count as a match.
         lines=$(printf '%s\n' "$lines" | awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" '$1 > pre && $1 < epi')
-        # A file the preamble SOURCES runs inside every section.
-        if sed -n "1,${SP_PREAMBLE_END}p" "$RUNNER" | grep -E '^[[:space:]]*(\.|source)[[:space:]]' \
-            | grep -qE "$(sp_token_re "$(basename "$p")")"; then echo "$p" >> "$SP_WORK/sourced"
+        # A file in the preamble's transitive source closure runs inside every
+        # section. The stub copier below consumes this exact same derivation.
+        if grep -qxF "$p" "$SP_WORK/source-closure"; then echo "$p" >> "$SP_WORK/sourced"
         elif [ -n "$lines" ]; then printf '%s\n' "$lines" >> "$SP_WORK/lines"
         else echo "$p" >> "$SP_WORK/unmatched"; fi
         # The C runtime (and the build files that make it) is exercised by
@@ -954,33 +955,55 @@ emit_plan() {   # emit_plan <out> <plan builder> <args...>
     echo "$planline"
 }
 
-# Copy every literal test support file sourced by the runner into a scratch
-# tree.  Keep the runner as the one source of truth: a hand-maintained list
-# here is liable to miss the next helper added to its preamble (#1819).
+# Emit the repository-relative transitive closure of quoted source directives.
+# Support files anchor these paths in a directory variable; the suffix after
+# that variable is relative to the file containing the source. Dynamic sources
+# without a slash cannot name a static member of this closure.
+runner_source_closure() { # <runner source> <output>
+    local runner_source="$1" output="$2" queue="$SP_TMPROOT/source-queue.$$" seen="$SP_TMPROOT/source-seen.$$"
+    local n=1 current expression suffix absolute relative root
+    : > "$output"; : > "$seen"; printf '%s\n' "$runner_source" > "$queue"
+    while current=$(sed -n "${n}p" "$queue") && [ -n "$current" ]; do
+        n=$((n + 1))
+        [ "$current" = "$runner_source" ] && root=1 || root=0
+        awk -v root="$root" '
+            root && /^PASS=0$/ { exit }
+            /^[[:space:]]*(\.|source)[[:space:]]/ {
+                if (match($0, /"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?\/[^"]+"/))
+                    print substr($0, RSTART + 1, RLENGTH - 2)
+            }
+        ' "$current" | while IFS= read -r expression; do
+            suffix=${expression#*/}
+            absolute=$(cd "$(dirname "$current")/$(dirname "$suffix")" 2>/dev/null && pwd)/$(basename "$suffix")
+            [ -f "$absolute" ] || die "statically sourced support file is missing: $expression in $current"
+            case "$absolute" in "$SP_ROOT"/*) relative=${absolute#"$SP_ROOT"/} ;; *) continue ;; esac
+            if ! grep -qxF "$relative" "$seen"; then
+                printf '%s\n' "$relative" >> "$seen"
+                printf '%s\n' "$absolute" >> "$queue"
+                printf '%s\n' "$relative" >> "$output"
+            fi
+        done
+    done
+    rm -f "$queue" "$seen"
+    sort -u "$output" -o "$output"
+}
+
+# Copy the same derived closure used by changed-plan whole-suite selection.
 copy_runner_support_files() { # <runner source> <scratch tests dir>
-    local runner_source="$1" scratch_tests="$2" rel src dst files unsupported
-    unsupported=$(awk '
-        /^[[:space:]]*(\.|source)[[:space:]]/ &&
-        $0 !~ /^[[:space:]]*\.[[:space:]][[:space:]]*"\$TESTS_DIR\/[^"]*".*$/ {
-            print NR ":" $0
-        }
-    ' "$runner_source")
-    [ -z "$unsupported" ] ||
-        die "runner source line is not the required literal . \"\$TESTS_DIR/<file>\" form: $unsupported"
-    files=$(sed -n 's|^[[:space:]]*\.[[:space:]][[:space:]]*"\$TESTS_DIR/\([^"]*\)".*$|\1|p' \
-        "$runner_source" | sort -u)
-    [ -n "$files" ] || die "no literal \$TESTS_DIR support files found in $runner_source"
+    local runner_source="$1" scratch_tests="$2" scratch_root rel src dst files="$SP_TMPROOT/copy-closure.$$"
+    scratch_root=$(dirname "$scratch_tests")
+    runner_source_closure "$runner_source" "$files"
+    [ -s "$files" ] || die "no statically sourced support files found in $runner_source"
     while IFS= read -r rel; do
         [ -n "$rel" ] || continue
-        src="$SP_ROOT/tests/$rel"
-        dst="$scratch_tests/$rel"
+        src="$SP_ROOT/$rel"
+        dst="$scratch_root/$rel"
         [ -f "$src" ] || die "runner-sourced support file was not copied because its source is missing: $rel"
         mkdir -p "$(dirname "$dst")" || die "cannot create scratch directory for runner-sourced file: $rel"
         cp "$src" "$dst" || die "could not copy runner-sourced support file: $rel"
         [ -f "$dst" ] || die "runner-sourced support file was not copied: $rel"
-    done <<EOF
-$files
-EOF
+    done < "$files"
+    rm -f "$files"
 }
 
 # Calibration: every planted fault invokes the public arm it must turn red.
@@ -1112,6 +1135,8 @@ selftest() {
     expect_plan 'changed: a src/ file is always reported as runtime' 'runtime: src/lint.c'
     printf '\n' >> "$dir/cl/tests/failure_output.sh"
     expect_plan 'changed: a file the preamble sources selects the whole suite' 'full=yes'
+    printf '\n' >> "$dir/cl/tools/gfx_address_space.sh"
+    expect_plan 'changed: a transitively sourced file selects the whole suite' 'full=yes'
     printf '\n' >> "$dir/cl/tests/test_spawn_channel_exit.eigs"
     expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[103a]'
     printf '\n' >> "$dir/cl/examples/functional.eigs"
@@ -1123,7 +1148,7 @@ selftest() {
     cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/runner_text.sh" \
        "$SP_ROOT/tools/tree_lock.sh" "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
     cp "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
-    copy_runner_support_files "$RUNNER" "$stub/tests"
+    copy_runner_support_files "$RUNNER_SOURCE" "$stub/tests"
     cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
     printf '#!/bin/sh\nexit 0\n' > "$stub/src/eigenscript"
     chmod +x "$stub/src/eigenscript"
