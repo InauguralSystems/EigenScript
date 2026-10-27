@@ -1,0 +1,29 @@
+load_file of "lib/test.eigs"
+
+ABI is 1
+CONST is 0
+GET_NAME is 25
+CALL is 39
+RETURN is 40
+
+# A literal list starts at its eight-slot capacity.  Pass that same list through
+# the sandbox descriptor so the refused ninth slot is observable afterwards.
+target is [10, 20, 30, 40, 50, 60, 70, 80]
+args is [target, 3, 99]
+insert_desc is [ABI,
+    [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+    ["list_insert_at", args]]
+
+# One byte cannot pay for the 8 -> 16 slot growth.  sandbox_run must preserve
+# the already-raised sandbox error rather than letting list_insert_at continue.
+result is sandbox_run of [insert_desc, 100000, 1]
+assert_eq of [result["ok"], false,
+              "#1710 refused list_insert_at growth raises a sandbox error"]
+assert_eq of [result["error"]["kind"], "sandbox",
+              "#1710 refused list_insert_at growth keeps the sandbox kind"]
+assert_eq of [len of target, 8,
+              "#1710 refused list_insert_at growth preserves list length"]
+assert_eq of [target, [10, 20, 30, 40, 50, 60, 70, 80],
+              "#1710 refused list_insert_at growth preserves list contents"]
+
+test_summary of null
