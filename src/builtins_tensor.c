@@ -1850,6 +1850,16 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
  * was just perturbed.  For matrix rows, also validate the parent shape and
  * identity.  The caller retains container so restoration never targets a
  * callback's replacement row. */
+/* Perturb one cell and return the value actually STORED there.  list_set_num
+ * normalizes through num_guard (it clamps beyond +-EIGS_NUM_MAX), so the failure
+ * path must compare the cell with what was stored, not with old_val +- eps. */
+static double gradient_perturb(Value *container, int index, double value) {
+    list_set_num(container, index, value);
+    double stored = value;
+    list_get_num(container, index, &stored);
+    return stored;
+}
+
 static int gradient_container_unchanged(Value *container, int expected_len,
                                         const Value *parent, int expected_parent_len,
                                         int row, int index, double old_val,
@@ -1957,13 +1967,13 @@ Value* builtin_numerical_grad(Value *arg) {
         Value *grad = make_list(len);
         for (int i = 0; i < len; i++) {
             double old_val = eigs_slot_num(list_slot(param, i), __func__);
-            list_set_num(param, i, old_val + eps);
+            double written = gradient_perturb(param, i, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val, old_val + eps))
+            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val, written))
                 goto list_grad_failed;
-            list_set_num(param, i, old_val - eps);
+            written = gradient_perturb(param, i, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val, old_val - eps))
+            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val, written))
                 goto list_grad_failed;
             list_set_num(param, i, old_val);
             /* Central difference */
@@ -1991,14 +2001,14 @@ list_grad_failed:
         for (int c = 0; c < cols; c++) {
             double old_val = eigs_slot_num(list_slot(row, c), __func__);
             val_incref(row);
-            list_set_num(row, c, old_val + eps);
+            double written = gradient_perturb(row, c, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val, old_val + eps)) {
+            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val, written)) {
                 val_decref(row); goto matrix_grad_failed;
             }
-            list_set_num(row, c, old_val - eps);
+            written = gradient_perturb(row, c, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val, old_val - eps)) {
+            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val, written)) {
                 val_decref(row); goto matrix_grad_failed;
             }
             list_set_num(row, c, old_val);
@@ -2161,14 +2171,14 @@ Value* builtin_numerical_grad_rows(Value *arg) {
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
             double old_val = eigs_slot_num(list_slot(row, c), __func__);
             val_incref(row);
-            list_set_num(row, c, old_val + eps);
+            double written = gradient_perturb(row, c, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val, old_val + eps)) {
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val, written)) {
                 val_decref(row); goto rows_grad_failed;
             }
-            list_set_num(row, c, old_val - eps);
+            written = gradient_perturb(row, c, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val, old_val - eps)) {
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val, written)) {
                 val_decref(row); goto rows_grad_failed;
             }
             list_set_num(row, c, old_val);
@@ -2345,15 +2355,15 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             double old_val = eigs_slot_num(list_slot(row, col), __func__);
             val_incref(row);
             /* +eps */
-            list_set_num(row, col, old_val + eps);
+            double written = gradient_perturb(row, col, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
-            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val, old_val + eps)) {
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val, written)) {
                 val_decref(row); goto cols_grad_failed;
             }
             /* -eps */
-            list_set_num(row, col, old_val - eps);
+            written = gradient_perturb(row, col, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
-            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val, old_val - eps)) {
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val, written)) {
                 val_decref(row); goto cols_grad_failed;
             }
             /* restore */
