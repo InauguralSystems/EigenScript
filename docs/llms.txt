@@ -379,6 +379,10 @@ import list                              # namespaced: list.filter of [xs, fn]
 load_file of "lib/list.eigs"             # bare names: filter of [xs, fn]
 ```
 
+Source-tree binaries resolve the repository standard library relative to the
+executable. This includes both `src/eigenscript` and a directly invoked
+`build/<variant>/eigenscript`; the process working directory is irrelevant.
+
 A module namespace is a **live view** of that module's bindings, not a
 snapshot (#1057): `m.x` reads the module's current `x` and `m.x is v`
 writes it, for a number or string exactly as for a dict or list. There is
