@@ -15,7 +15,6 @@ tools/phase2_cost.sh | each Phase 2 round's builder runs its BASE CAND gate (des
 tools/phase2_float_amend.py | local-only, one-time proof of R1.7-D2 (the frozen float-text re-render); afterwards the frozen bar SHA-pins the accepted amendments, and any future amendment needs a new ruling
 tools/phase2_plants.sh | self-test only, Phase 2's planted faults: its tools/selftests.txt row runs when the checks it names change, and nightly
 tools/release_skill_check.sh | checks the release runbook (.claude/skills/release/SKILL.md) by hand; only its --selftest runs, as a tools/selftests.txt row
-tools/section_fragments_check.sh | self-test only (--selftest is its one mode); its tools/selftests.txt row runs when the runner-text gates change, and nightly
 tools/selftests_selection_selftest.sh | self-test only (--selftest is its one mode) of tools/selftests.sh's row selection; its tools/selftests.txt row runs when the driver changes, and nightly
 tools/stop_gate.sh | a Claude Code Stop hook (.claude/settings.json), not a CI gate; its --selftest is a tools/selftests.txt row
 tools/ai_benchmark.py | a module tests/test_ai_benchmark.py imports (suite [99acb]); this scan sees no imports

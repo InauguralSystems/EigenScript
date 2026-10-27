@@ -739,7 +739,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         long long count = 0;
         for (int i = 0; i < e->lc_count && e->lc[i].line <= line; i++)
             count += e->lc[i].count;
-        *out = slot_from_f64((double)count);
+        *out = slot_from_int(count);
         return 1;
     }
 
@@ -803,7 +803,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
      * answerable without the entry, so it too only needs the range check. */
     if (kind == 2) {
         if (ordinal < 1 || ordinal > e->occ_total) return TRACE_WHEN_MISS;
-        *out = slot_from_f64((double)ordinal);
+        *out = slot_from_int(ordinal);
         return TRACE_WHEN_HIT;
     }
 

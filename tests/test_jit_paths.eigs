@@ -414,7 +414,8 @@ unobserved:
     loop while q908 < 20000.0:
         hot908 is q908
         q908 is q908 + 1.0
-check of ["unobserved assigns counted in JIT thunk", (when is hot908) == 20001.0]
+# S9-K1 (#1758): assignment counts are ints.
+check of ["unobserved assigns counted in JIT thunk", (when is hot908) == 20001]
 
 # ----------------------------------------------------------------
 # 10) A raising fused local-read helper must leave its native thunk

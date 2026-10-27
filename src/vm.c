@@ -925,8 +925,8 @@ static int vm_number_compare(EigsSlot a, EigsSlot b, int *out) {
     return 0;
 }
 
-/* Iterator state is normally float metadata made by make_iter_state. Raw
- * bytecode may supply ints too. Check the C index range BEFORE conversion. */
+/* Iterator state is exact int metadata made by make_iter_state (S9-K1).
+ * Raw bytecode may supply floats too. Check the C range BEFORE conversion. */
 static int vm_iter_index(EigsSlot s, int *out) {
     double f;
     if (slot_f64_value(s, &f)) {
@@ -991,7 +991,7 @@ static int import_collision_first_report(const char *name) {
 static Value *make_iter_state(Value *iterable) {
     Value *state = make_list(3);
     list_append(state, iterable);
-    Value *idx = make_float(0);
+    Value *idx = make_int(0);
     list_append(state, idx);
     val_decref(idx);
     /* #491: snapshot the length at loop entry (items[2]). ITER_NEXT bounds
@@ -1004,7 +1004,7 @@ static Value *make_iter_state(Value *iterable) {
     int snap = 0;
     if (iterable && iterable->type == VAL_LIST)        snap = iterable->data.list.count;
     else if (iterable && iterable->type == VAL_BUFFER) snap = iterable->data.buffer.count;
-    Value *slen = make_float((double)snap);
+    Value *slen = make_int(snap);
     list_append(state, slen);
     val_decref(slen);
     return state;
@@ -1875,9 +1875,8 @@ int jit_helper_iter_next(void) {
     } else {
         elem = slot_read_owned(list_slot(iterable, idx));
     }
-    /* In-place idx bump when the slot is an exclusive plain VAL_FLOAT
-     * (matches the interpreter's NUM_REUSE fast path). */
-    list_set_f64(state, 1, (double)(idx + 1));
+    /* S9-K1: hidden iterator positions are exact counts too. */
+    list_set_slot_owned(state, 1, slot_from_int((int64_t)idx + 1));
     vm_push_slot(elem);
     return g_has_error ? 2 : 0;
 }
@@ -2069,16 +2068,14 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
  * mutates sp net -1). */
 /* Stage 5c: cached writer for the per-iteration __loop_iterations__
  * update. env_set_local resolves the 19-char name (hash + table walk)
- * and round-trips through make_float/val_decref on EVERY iteration of
- * EVERY `loop while` — measured as the dominant cost of observed loops
- * once the loop body itself compiles to native code. Cache the resolved
- * slot per (env, binding_version); on a hit with an immediate-num slot
- * (always, after the first write) the store is a bare double overwrite
- * plus the same assign_counts bump env_set_local_hashed performs.
+ * and round-trips through make_int/val_decref on every uncached iteration.
+ * Cache the resolved slot per (env, binding_version); an SMI count stays
+ * an immediate overwrite plus the same assign_counts bump
+ * env_set_local_hashed performs. S9-K1 (#1758) makes the published count
+ * an exact int; counts beyond the SMI range use the owned-box setter.
  * binding_version moves on new-binding adds (which can realloc values[])
  * and env recycles — exactly the events that could invalidate the index.
- * Semantics are unchanged: mid-loop reads of __loop_iterations__ see the
- * same value as before. */
+ * Mid-loop reads see the current cumulative count, now as an exact int. */
 typedef struct {
     Env     *env;
     uint64_t version;   /* #1674 round 2: 64-bit, matches Env.binding_version */
@@ -2114,27 +2111,28 @@ void vm_thread_reset_caches(void) {
     memset(&g_loop_iter_cache, 0, sizeof(g_loop_iter_cache));
 }
 
-static void loop_iter_store(Env *env, double n) {
+static void loop_iter_store(Env *env, int64_t n) {
     /* #1171: runtime-owned publication can target a shared root or module
      * env even when user code shares no writable binding. Keep the slot
      * replacement and assignment count under the existing env lock. The
      * cache lookup and refill below also read shared arrays/version, so
      * return before either path; a thread-local cache is not a slot lock. */
     if (__builtin_expect(g_vm_multithreaded, 0) && env->mt_shared) {
-        Value *iter_val = make_float(n);
+        Value *iter_val = make_int(n);
         env_set_local(env, "__loop_iterations__", iter_val);
         val_decref(iter_val);
         return;
     }
     LoopIterCache *c = &g_loop_iter_cache;
     if (c->env == env && c->version == env->binding_version &&
-        slot_is_f64(env->values[c->slot])) {
-        SLOT_F64_RAW(env->values[c->slot]) = n;
+        slot_is_smi(env->values[c->slot]) &&
+        n >= SLOT_SMI_MIN && n <= SLOT_SMI_MAX) {
+        env->values[c->slot] = slot_from_int(n);
         if (env->assign_counts)
             env->assign_counts[c->slot]++;
         return;
     }
-    Value *iter_val = make_float(n);
+    Value *iter_val = make_int(n);
     env_set_local(env, "__loop_iterations__", iter_val);
     val_decref(iter_val);
     int slot_idx, depth;
@@ -2201,7 +2199,7 @@ int eigs_loop_stall_step(Env *e) {
         g_sandbox_cap_hit = 1;   /* a capped run must not report ok (#960-adjacent) */
         should_exit = 1;
     }
-    loop_iter_store(e, (double)g_loop_iterations);
+    loop_iter_store(e, g_loop_iterations);
     if (should_exit) {
         Value *exit_val = make_str(g_loop_exit_reason);
         env_set_local(e, "__loop_exit__", exit_val);
@@ -2223,7 +2221,7 @@ int eigs_loop_cap_step(Env *e) {
         g_sandbox_cap_hit = 1;
         should_exit = 1;
     }
-    loop_iter_store(e, (double)g_loop_iterations);
+    loop_iter_store(e, g_loop_iterations);
     if (should_exit) {
         Value *exit_val = make_str(g_loop_exit_reason);
         env_set_local(e, "__loop_exit__", exit_val);
@@ -3007,7 +3005,7 @@ static Value *vm_take_error_value(void) {
     Value *d = make_dict(3);
     dict_set_owned(d, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
     dict_set_owned(d, "message", make_str(g_error_raw));
-    dict_set_owned(d, "line", make_float((double)g_error_line));
+    dict_set_owned(d, "line", make_int(g_error_line));
     return d;
 }
 
@@ -5187,9 +5185,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if ((unsigned)idx >= (unsigned)len) {
             ip += exit_offset;
         } else {
-            /* Update index — mutate in place when the existing slot is
-             * an exclusive plain VAL_FLOAT (avoids per-iter make_float/free). */
-            list_set_f64(state, 1, (double)(idx + 1));
+            /* S9-K1: mirror the helper's exact iterator index update. */
+            list_set_slot_owned(state, 1, slot_from_int((int64_t)idx + 1));
             if (iterable->type == VAL_BUFFER) {
                 /* Push number immediate directly — skip make_float + immediate-
                  * promote round-trip through vm_push. */
@@ -5639,9 +5636,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             /* #1637: a bool is its own value -- it fell to the else arm and
              * answered 0, so `what is (5 > 3)` read as false. */
             else if (v && v->type == VAL_BOOL) { result = make_bool(v->data.boolean); }
-            else if (v && v->type == VAL_STR) { result = make_float(val_str_len(v)); }
-            else if (v && v->type == VAL_LIST) { result = make_float(v->data.list.count); }
-            else if (v && v->type == VAL_BUFFER) { result = make_float(v->data.buffer.count); }
+            else if (v && v->type == VAL_STR) { result = make_int(val_str_len(v)); }
+            else if (v && v->type == VAL_LIST) { result = make_int(v->data.list.count); }
+            else if (v && v->type == VAL_BUFFER) { result = make_int(v->data.buffer.count); }
             else { result = make_float(0); }
             break;
         case 1: /* who — returns descriptive type name */
@@ -5660,7 +5657,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * slot trajectory (observer state is binding-keyed). where/why/how on a
          * bound ident go through INTERROGATE_NAMED; the bare value form reports
          * the no-observation defaults. */
-        case 2: /* when */  result = make_float(0); break;
+        case 2: /* when */  result = make_int(0); break;
         case 3: /* where */ result = make_float(0); break;
         case 4: /* why */   result = make_float(0); break;
         case 5: /* how */   result = make_float(1.0); break;
@@ -5683,7 +5680,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             result = make_str(name);
             break;
         case 2: /* when — return assignment count */
-            result = make_float(env_get_assign_count(frame->env, name, h));
+            result = make_int(env_get_assign_count(frame->env, name, h));
             break;
         case 6: { /* prev — value just before the most recent assignment */
             EigsSlot prev_slot;
@@ -6150,7 +6147,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             should_exit = 1;
         }
         /* Always expose iteration count */
-        loop_iter_store(frame->env, (double)g_loop_iterations);
+        loop_iter_store(frame->env, g_loop_iterations);
         if (should_exit) {
             Value *exit_val = make_str(g_loop_exit_reason);
             env_set_local(frame->env, "__loop_exit__", exit_val);
@@ -6180,7 +6177,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             g_sandbox_cap_hit = 1;
             should_exit = 1;
         }
-        loop_iter_store(frame->env, (double)g_loop_iterations);
+        loop_iter_store(frame->env, g_loop_iterations);
         if (should_exit) {
             Value *exit_val = make_str(g_loop_exit_reason);
             env_set_local(frame->env, "__loop_exit__", exit_val);

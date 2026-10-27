@@ -771,9 +771,9 @@ static int part_d(void) {
 }
 
 /* ---- Part E: the four ITER_NEXT metadata sites (#1827) ------------------ */
-/* Construct a raw state because ordinary for loops deliberately keep float
- * metadata until the builtin/iterator bridge round. Exercise the interpreter
- * through an assembled chunk, and the actual JIT helper directly. */
+/* Raw states retain float input controls alongside SMI/boxed inputs.
+ * S9-K1 (#1758) publishes every yielded successor index as an exact int.
+ * Exercise the interpreter through an assembled chunk and the real helper. */
 typedef struct { const char *name; int field, kind; int64_t value; int yields; } IterCase;
 static const IterCase ITER_CASES[] = {
     {"float_control", 1, 0, 0, 1},
@@ -847,9 +847,9 @@ static void c_iter(EigsSlot unused, char *b, size_t n) {
         chunk_free(chunk);
     }
     if (result && result->type == VAL_FLOAT && VAL_F64_RAW(result) == 42.0) {
-        double next = -1;
-        int float_next = slot_f64_value(list_slot(state, 1), &next);
-        snprintf(b, n, "yield:42 float_next:%d", float_next && next == 1.0);
+        int64_t next = -1;
+        int int_next = slot_int_value(list_slot(state, 1), &next);
+        snprintf(b, n, "yield:42 int_next:%d", int_next && next == 1);
     } else if (result && result->type == VAL_NULL) snprintf(b, n, "exhausted");
     else snprintf(b, n, "unexpected");
     val_decref(result);
@@ -862,7 +862,7 @@ static int part_e(void) {
         for (g_iter_helper = 0; g_iter_helper < 2; g_iter_helper++) {
             char got[512];
             run_cell(c_iter, slot_null(), got, sizeof got, NULL, 0);
-            const char *want = g_iter_case->yields ? "yield:42 float_next:1" : "exhausted";
+            const char *want = g_iter_case->yields ? "yield:42 int_next:1" : "exhausted";
             int bad = strcmp(got, want) != 0;
             if (bad) FAILF("ITER_NEXT %s %s: got %s, want %s",
                            g_iter_helper ? "jit_helper" : "interpreter", g_iter_case->name, got, want);

@@ -77,6 +77,24 @@ state, multiple OS threads can attach (one `EigsThread` each) and share
 the state's global env, but only one of them executes script code at a
 time per state (the VM is not internally re-entrant per state).
 
+### Floating-point environment
+
+EigenScript code always runs in the IEEE 754 default environment: round to
+nearest (ties to even), gradual underflow (no FTZ/DAZ), and masked exceptions.
+Embedding calls that execute code or convert number text save the host
+environment, install the default, and restore every control and sticky
+exception flag on return, including error returns. Each call saves its own
+caller environment. Thus, an API call made re-entrantly by a host callback
+runs in the default environment even if that callback temporarily changed its
+rounding mode, and the callback's mode is back when the inner call returns.
+
+Host callbacks execute in EigenScript's default environment; the runtime does
+not swap around them. A callback that needs a different mode must save, set,
+and restore it itself before returning to EigenScript. Re-entrant API calls do
+not inherit that temporary mode. Runtime-created worker threads are created
+while the default environment is installed and therefore inherit that
+environment.
+
 ## Lifecycle
 
 The one-shot form covers the common case — single state, single thread:

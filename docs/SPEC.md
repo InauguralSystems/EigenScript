@@ -309,6 +309,8 @@ The float kind is IEEE-754 f64; at this stage there is no
 bigint or decimal type. This is a chosen position, not an oversight; the
 consequences are contracts you can rely on:
 
+The IEEE 754 default floating-point environment is part of number semantics.
+
 - **Float integer exactness ends at 2^53.** Whole floats up to `9007199254740992`
   are exact; past that the gaps between representable values exceed 1, so
   `+ 1` can be invisible. For exact identifiers, counters, and money-in-cents, keep values in
@@ -1394,6 +1396,8 @@ value
 value
 ```
 
+Runtime-published counts and indices are exact ints (S9-K1): `__loop_iterations__`, live and historical `when` assignment counts, aggregate `what` lengths, trajectory `window`, error `line`, and scheduler trace `seq` and task ids. Scheduler `tick` remains a continuous virtual time.
+
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
 `try:` / `catch name:` captures runtime errors. A **built-in** runtime
@@ -1417,7 +1421,7 @@ catch e:
     print of e.line
 ```
 ```output
-4.0
+4
 ```
 
 This deliberately differs from temporal filing. There, the same statement's
@@ -1438,7 +1442,7 @@ catch e:
     print of e.line
 ```
 ```output
-5.0
+5
 ```
 
 ```eigenscript
@@ -1460,7 +1464,7 @@ print of "execution continues"
 caught: custom failure
 undefined_name
 undefined variable 'undefined_name'
-7.0
+7
 execution continues
 ```
 
@@ -1823,7 +1827,7 @@ print of (when is x)
 ```output
 30
 x
-3.0
+3
 ```
 
 ```eigenscript fragment x=1
@@ -2119,7 +2123,7 @@ print of (when is c)
 print of (what is c when 3)
 ```
 ```output
-4.0
+4
 2
 ```
 
@@ -2141,7 +2145,7 @@ print of (why is x)
 print of (report of x)
 ```
 ```output
-4.0
+4
 0.21866976011171657
 0.21866976011171657
 moving
@@ -2161,7 +2165,7 @@ print of (why is x)
 print of (report of x)
 ```
 ```output
-4.0
+4
 0.08170416594551044
 moving
 ```
@@ -2242,7 +2246,7 @@ print of (when is x)
 0
 20
 10
-4.0
+4
 ```
 
 Every interrogative takes the qualifier: `who is x when 2`, `where is x when

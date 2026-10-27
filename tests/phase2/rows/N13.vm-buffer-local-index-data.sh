@@ -1,3 +1,4 @@
+# S9-K1 (#1758): e.line is an exact int; k1-output-ablation/proof.json.
 # ROW: N13.vm-buffer-local-index-data
 # ITEMS: N13
 # EXPECT-RC: 0

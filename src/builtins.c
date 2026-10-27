@@ -1966,14 +1966,14 @@ Value* builtin_substr(Value *arg) {
 Value* builtin_index_of(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "index_of");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "index_of", "[haystack, needle]", make_float(-1));
+              "index_of", "[haystack, needle]", make_int(-1));
     Value *h = BUILTIN_LIST_VIEW(arg, 0), *n = BUILTIN_LIST_VIEW(arg, 1);
     /* #1008: the -1 for non-string operands is a deliberate choice (#316 —
      * folding to "" gave a false positive at index 0), so ARG_GUARD is
      * exactly the right shape: the answer is preserved with the flag off and
      * the mistake becomes loud with it on. */
     ARG_GUARD(!h || h->type != VAL_STR || !n || n->type != VAL_STR,
-              "index_of", "two strings", make_float(-1));
+              "index_of", "two strings", make_int(-1));
     const char *p = strstr(h->data.str, n->data.str);
     /* fs:ANSWER the needle is genuinely not in the haystack — -1 is
      * index_of's documented miss, and the one -1 here that is a RESULT
@@ -5982,11 +5982,11 @@ Value* builtin_list_insert_at(Value *arg) {
 Value* builtin_list_index_of(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "list_index_of");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "list_index_of", "[list, value]", make_float(-1));
+              "list_index_of", "[list, value]", make_int(-1));
     Value *list = list_get_ref(arg, 0);
     Value *needle = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!list || list->type != VAL_LIST,
-              "list_index_of", "a list as its first argument", make_float(-1));
+              "list_index_of", "a list as its first argument", make_int(-1));
     for (int i = 0; i < list->data.list.count; i++) {
         /* #1637: the `==` comparison, raising on bool vs num like `==`. */
         int equal = values_equal_op(BUILTIN_LIST_VIEW(list, i), needle, "list_index_of");

@@ -2357,8 +2357,9 @@ define f as:
 f of []
 EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
-check_contains "#1048 module-level for-body local is fresh per iteration (when=1.0)" "$RUN" "^module when=1[.]0$"
-check_contains "#1048 function for-body local persists across iterations (when=30.0)" "$RUN" "^function when=30[.]0$"
+# S9-K1 (#1758): assignment counts retain their values as exact ints.
+check_contains "#1048 module-level for-body local is fresh per iteration (when=1)" "$RUN" "^module when=1$"
+check_contains "#1048 function for-body local persists across iterations (when=30)" "$RUN" "^function when=30$"
 rm -f "$TMPFILE"
 
 # --- #1048 round 2: a long identifier may not break the message ----------

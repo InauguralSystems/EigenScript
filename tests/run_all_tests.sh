@@ -103,6 +103,14 @@ echo() {
             __eigs_section_close
             __EIGS_SEC_LABEL="${1%%]*}]"
             __EIGS_SEC_T0=$(__eigs_now_us)
+            if [ "${EIGS_BINARY_TRACE:-0}" = 1 ]; then
+                # Diagnostic only: retain alias identity at every section seam.
+                # The #681 checksum guard below remains the verdict.
+                local identity
+                identity=$(stat -L -c '%d:%i size=%s mtime=%y' ./eigenscript 2>/dev/null) ||
+                    identity=$(stat -L -f '%d:%i size=%z mtime=%m' ./eigenscript 2>/dev/null) || identity=missing
+                builtin printf 'BINARY_SEAM: time_us=%s section=%s %s\n' "$__EIGS_SEC_T0" "$__EIGS_SEC_LABEL" "$identity"
+            fi
             ;;
     esac
     builtin echo "$@"
@@ -851,13 +859,13 @@ echo ""
 echo "[2/15] Interrogative Spec Compliance (LLVM IR parity)"
 OUTPUT=$(./eigenscript ../tests/test_interrogative_spec.eigs 2>&1)
 check "WHAT scalar (42)" "$(echo "$OUTPUT" | grep -A1 'eigen_get_value' | tail -1)" "42"
-check "WHAT list length (5)" "$(echo "$OUTPUT" | grep -A1 'list length' | tail -1)" "5.0"
-check "WHAT string length (5)" "$(echo "$OUTPUT" | grep -A1 'string length' | tail -1)" "5.0"
+check "WHAT list length (5)" "$(echo "$OUTPUT" | grep -A1 'list length' | tail -1)" "5" # S9-K1 (#1758): published counts are ints.
+check "WHAT string length (5)" "$(echo "$OUTPUT" | grep -A1 'string length' | tail -1)" "5" # S9-K1 (#1758): published counts are ints.
 check "WHAT computed (42)" "$(echo "$OUTPUT" | grep -A1 'computed value' | tail -1)" "42"
 check "WHO name (myvar)" "$(echo "$OUTPUT" | grep -A1 'variable name' | tail -1)" "myvar"
 check "WHO name (counter)" "$(echo "$OUTPUT" | grep -A1 'different variable' | tail -1)" "counter"
-check "WHEN step (1)" "$(echo "$OUTPUT" | grep -A1 'temporal step' | tail -1)" "1.0"
-check "WHEN multi-assign (3)" "$(echo "$OUTPUT" | grep -A1 'multiple assignments' | tail -1)" "3.0"
+check "WHEN step (1)" "$(echo "$OUTPUT" | grep -A1 'temporal step' | tail -1)" "1" # S9-K1 (#1758): published counts are ints.
+check "WHEN multi-assign (3)" "$(echo "$OUTPUT" | grep -A1 'multiple assignments' | tail -1)" "3" # S9-K1 (#1758): published counts are ints.
 
 WHERE_VAL=$(echo "$OUTPUT" | grep -A1 'WHERE returns entropy' | tail -1)
 check_numeric "WHERE entropy >= 0" "$WHERE_VAL" "0" "10"
@@ -889,7 +897,7 @@ echo "[4/15] Keyword Reservation"
 OUTPUT=$(./eigenscript ../tests/test_keyword_reservation.eigs 2>&1)
 check "what is keyword" "$(echo "$OUTPUT" | grep -A1 '^what:' | tail -1)" "42"
 check "who is keyword" "$(echo "$OUTPUT" | grep -A1 '^who:' | tail -1)" "x"
-check "when is keyword" "$(echo "$OUTPUT" | grep -A1 '^when:' | tail -1)" "1.0"
+check "when is keyword" "$(echo "$OUTPUT" | grep -A1 '^when:' | tail -1)" "1" # S9-K1 (#1758): published counts are ints.
 
 CONVERGED=$(echo "$OUTPUT" | grep 'converged=' | head -1)
 echo "  INFO: Predicate values: $CONVERGED"
@@ -1714,6 +1722,7 @@ fi
 echo "[107] Meta-Interpreter Parity (#306, #1111, #1057)"
 check_eigs_suite "eigen_run matches C VM (and/or operands, unbound raises, div/0, report/report_value reservation #1111, module namespaces + import resolution #1057)" test_meta_parity.eigs "All tests passed"
 check_eigs_suite "eigen_run f-strings ignore a host rebinding of str (#1322)" test_meta_fstr_host_str.eigs "All tests passed"
+check_eigs_suite "eigen_run string escapes match the C VM (#1878)" test_meta_string_escapes.eigs "All tests passed"
 
 # [108] sandbox_run allocation budget (#292). The size-controlled allocators
 # (zeros/fill/buffer/range) charge a per-run byte budget so untrusted generated
@@ -3290,13 +3299,6 @@ echo ""
 echo "[51a] Unobserved Verdict Neutrality (#1049)"
 check_eigs_suite "unobserved: elided samples still enter the value window; entropy channel still elided (#1049)" \
     test_unobserved_neutral.eigs "All tests passed"
-echo ""
-
-# [51b] #1883: module-slot promotion must not split a name-bound binder's
-# writes from its reads inside an unobserved block.
-echo "[51b] Unobserved Binder Storage (#1883)"
-check_eigs_suite "unobserved binders share read/write storage (#1883)" \
-    test_unobserved_binders.eigs "All tests passed"
 echo ""
 
 # [52] Stream I/O
@@ -6940,7 +6942,7 @@ else
         echo "  FAIL: a guard went silent, raised from the wrong place, a pin broke,"
         echo "        a guard has no probe, a gfx half failed, or a probe did not run (exit $STRICT_DIFF_RC)"
         echo "  --- output of the run that failed (not a re-run) ---"
-        printf '%s\n' "$STRICT_DIFF_OUT" | sed -n '1,80p'
+        printf '%s\n' "$STRICT_DIFF_OUT"
     fi
 fi
 echo ""

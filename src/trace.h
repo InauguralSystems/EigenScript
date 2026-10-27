@@ -351,7 +351,7 @@ int trace_query_prev(const char *interned_name, EigsSlot *out);
  *
  * `kind` mirrors the interrogative encoding:
  *   0 (what), 6 (prev)  → return historical slot
- *   2 (when)             → return assignment count up to that line (as immediate num)
+ *   2 (when)             → return exact int assignment count (SMI or owned box)
  *   1 (who)              → return binding name (string)
  *   3/4/5 (where/why/how)→ observer snapshot captured at that assign
  *                          (requires g_trace_obs_hist; miss returns 0)

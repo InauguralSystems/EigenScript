@@ -86,8 +86,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1418,
-      "function": "builtin_audio_capture_open",
-      "body_sha256": "ac82196bf8ae33c9dfa0e181ce1050bafeb8d68382351332617078272cfc0c3d"
+      "function": "builtin_audio_capture_open"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -124,8 +123,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 2156,
-      "function": "builtin_audio_envelope",
-      "body_sha256": "a5c2bca588e02e6650460271ffc49c5d7bcfe475d4992ba7da484eee027db832"
+      "function": "builtin_audio_envelope"
     },
     "maximum": 5,
     "execution": "UNRUN",
@@ -147,8 +145,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 2119,
-      "function": "builtin_audio_gain",
-      "body_sha256": "7acf6c1ae28148a617d5e76655a41204d6b3d51a6bd3b7318845cca7bcd3f9e1"
+      "function": "builtin_audio_gain"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -170,8 +167,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 2088,
-      "function": "builtin_audio_mix",
-      "body_sha256": "96305c3c54b5be2d6d136719245e634f56a444e6e5aad57cec9a08ad89e6b19f"
+      "function": "builtin_audio_mix"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -204,8 +200,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1693,
-      "function": "builtin_audio_music_play",
-      "body_sha256": "dffb159c46466f29dbb0a4684ea9e187d47c2d26e78effaef8165dc83f84e2a2"
+      "function": "builtin_audio_music_play"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -249,8 +244,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1737,
-      "function": "builtin_audio_music_volume",
-      "body_sha256": "7f488dc4f89f2060622f0295601cda3920205a0c67c3037a57fe6f29145f10f1"
+      "function": "builtin_audio_music_volume"
     },
     "maximum": 1,
     "execution": "UNRUN",
@@ -286,8 +280,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 2056,
-      "function": "builtin_audio_noise",
-      "body_sha256": "c39854326b92289b241cb137b0b8d3f7be2de0addf8770532969fd7a7b551852"
+      "function": "builtin_audio_noise"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -317,8 +310,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1283,
-      "function": "builtin_audio_open",
-      "body_sha256": "b70ff75bb2f477266a52692977f30a16ea2e832bd31f28d060ee423136824300"
+      "function": "builtin_audio_open"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -357,8 +349,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1789,
-      "function": "builtin_audio_play_loop",
-      "body_sha256": "94a1884bd8dc3b1a0e15fa7af407b299a907dadfdc4ff9b3e8b42f0171ff8ec7"
+      "function": "builtin_audio_play_loop"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -393,8 +384,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1938,
-      "function": "builtin_audio_saw",
-      "body_sha256": "201b24c1c5a728b786a2ed45a65cab2d4474221864a5b0c43bfdd7c07fa8ea5b"
+      "function": "builtin_audio_saw"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -417,8 +407,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1895,
-      "function": "builtin_audio_sine",
-      "body_sha256": "3e2ff22aa6f4385de2b4964690132a49b58b8676bad1625821af644e33e76ef0"
+      "function": "builtin_audio_sine"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -441,8 +430,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1973,
-      "function": "builtin_audio_square",
-      "body_sha256": "6c282b564c084c4cf815c71afd7cf42fc44ffc014b6f91c7ba60e04e42797128"
+      "function": "builtin_audio_square"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -472,8 +460,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1550,
-      "function": "builtin_audio_stream_open",
-      "body_sha256": "4df943571c21ee5dfe2cfb12b647e1f202ed680ebdc268f45a71d27429bc2784"
+      "function": "builtin_audio_stream_open"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -510,8 +497,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 2009,
-      "function": "builtin_audio_sweep",
-      "body_sha256": "fbfa02a3d890f7c1a8ff2ed8a594c58a607ef9686b1df20e705ee9833c11afd5"
+      "function": "builtin_audio_sweep"
     },
     "maximum": 5,
     "execution": "UNRUN",
@@ -538,8 +524,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1829,
-      "function": "builtin_audio_volume",
-      "body_sha256": "59e78165e1634c51e0b6652e2955656068d9d08c9482c76d72cba997d1297678"
+      "function": "builtin_audio_volume"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -853,8 +838,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 439,
-      "function": "builtin_build_corpus",
-      "body_sha256": "e6bb8893de8e49fc816af413e4fad41be4f4b8bd4f80ee2c6512daf5cae9ae72"
+      "function": "builtin_build_corpus"
     },
     "maximum": 7,
     "execution": "UNRUN",
@@ -1045,8 +1029,7 @@
     "source": {
       "file": "src/model_infer.c",
       "line": 618,
-      "function": "builtin_eigen_eval_loss",
-      "body_sha256": "f53b17e438ef9f1acb06ee13258e639b4e262bb38f314ac38d58dac57a02c985"
+      "function": "builtin_eigen_eval_loss"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -1080,8 +1063,7 @@
     "source": {
       "file": "src/model_infer.c",
       "line": 525,
-      "function": "builtin_eigen_generate",
-      "body_sha256": "91c0cb1384bd9f884923f7c82a9d915a5a236a8110714f65261a978e99c8e408"
+      "function": "builtin_eigen_generate"
     },
     "maximum": 4,
     "execution": "UNRUN",
@@ -1181,8 +1163,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 603,
-      "function": "builtin_gfx_circle",
-      "body_sha256": "facc85037ae8017793f484e0c2d87c0ea6e64f9650849857be789697fc569e56"
+      "function": "builtin_gfx_circle"
     },
     "maximum": 7,
     "execution": "UNRUN",
@@ -1225,8 +1206,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 509,
-      "function": "builtin_gfx_clear",
-      "body_sha256": "be71a2ab45c720e01a01580a59fe9157288a3f4509255acb08aae5894feb21c8"
+      "function": "builtin_gfx_clear"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -1270,8 +1250,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 676,
-      "function": "builtin_gfx_clip",
-      "body_sha256": "ea1998b4576ed0dbbf0d85a665764b281547ecfeb0bdcd6787d687d84cbbebbf"
+      "function": "builtin_gfx_clip"
     },
     "maximum": 4,
     "execution": "UNRUN",
@@ -1314,8 +1293,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 2227,
-      "function": "builtin_gfx_fb",
-      "body_sha256": "e9e020ca3ff7076b5a0b4e7a77262aeb85efb917fc07b8b88b46dc20062a5e29"
+      "function": "builtin_gfx_fb"
     },
     "maximum": 6,
     "execution": "UNRUN",
@@ -1359,8 +1337,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 564,
-      "function": "builtin_gfx_line",
-      "body_sha256": "29805ff2d8b1fc998e5476b3a5b8e177cf239f4d81a38a1d834dfb60c7c5a273"
+      "function": "builtin_gfx_line"
     },
     "maximum": 7,
     "execution": "UNRUN",
@@ -1400,8 +1377,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 444,
-      "function": "builtin_gfx_open",
-      "body_sha256": "f204470677536e8461c1475a8ae1c4f4597681a46cd7ba9089561908d660a9b7"
+      "function": "builtin_gfx_open"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -1443,8 +1419,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 585,
-      "function": "builtin_gfx_point",
-      "body_sha256": "533a1155906cf2498e4bf1381eef921328dad34de180092e66ec1c22cf60959e"
+      "function": "builtin_gfx_point"
     },
     "maximum": 5,
     "execution": "UNRUN",
@@ -1483,8 +1458,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 709,
-      "function": "builtin_gfx_read",
-      "body_sha256": "13fe539204dfd0c34542168b75f49e8f01fda67e9462c1280469e3c40552412e"
+      "function": "builtin_gfx_read"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -1539,8 +1513,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 541,
-      "function": "builtin_gfx_rect",
-      "body_sha256": "7a401ca7de0f69246cc3c3155b3a020d57a193d092e3f4e47176a7190d9307a6"
+      "function": "builtin_gfx_rect"
     },
     "maximum": 8,
     "execution": "UNRUN",
@@ -1597,8 +1570,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 630,
-      "function": "builtin_gfx_rrect",
-      "body_sha256": "bb938df2c0cecc6bbae19b02cf1f188af1bb19c03f854bd6b89b7004d1107c8a"
+      "function": "builtin_gfx_rrect"
     },
     "maximum": 9,
     "execution": "UNRUN",
@@ -1651,8 +1623,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 975,
-      "function": "builtin_gfx_text",
-      "body_sha256": "e20e8d5550eaeae78ae996b9dcb325a5e92182d4d7ef325ba6e48a55903cd63a"
+      "function": "builtin_gfx_text"
     },
     "maximum": 7,
     "execution": "UNRUN",
@@ -1689,8 +1660,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1104,
-      "function": "builtin_gfx_text_height",
-      "body_sha256": "965d51421b5f3237e154fde13900675cf595b887d3ba89c16aae9d9aacd9908d"
+      "function": "builtin_gfx_text_height"
     },
     "maximum": 1,
     "execution": "UNRUN",
@@ -1719,8 +1689,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 1066,
-      "function": "builtin_gfx_text_width",
-      "body_sha256": "b2cef885d1b8cc57032c8e6ce4273ffda98d2ae6860499bb3a145962b088239e"
+      "function": "builtin_gfx_text_width"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -1781,8 +1750,7 @@
     "source": {
       "file": "src/ext_http.c",
       "line": 699,
-      "function": "builtin_http_post",
-      "body_sha256": "51b58e2c5fb750f39f36f785b68842375526ef769ca5141f0f58b87136049c05"
+      "function": "builtin_http_post"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -1816,8 +1784,7 @@
     "source": {
       "file": "src/ext_http.c",
       "line": 465,
-      "function": "builtin_http_route",
-      "body_sha256": "9bc321c504aca8ea7d64f287d8178e816c9b389f3e08c620fd1f9fb5c39baace"
+      "function": "builtin_http_route"
     },
     "maximum": 4,
     "execution": "UNRUN",
@@ -1850,8 +1817,7 @@
     "source": {
       "file": "src/ext_http.c",
       "line": 470,
-      "function": "builtin_http_route_authed",
-      "body_sha256": "a220e711107d4c5f3db2a5cdcdabef0991419aebc3791e3b0f4aeb3c0d034060"
+      "function": "builtin_http_route_authed"
     },
     "maximum": 4,
     "execution": "UNRUN",
@@ -1876,8 +1842,7 @@
     "source": {
       "file": "src/ext_http.c",
       "line": 475,
-      "function": "builtin_http_static",
-      "body_sha256": "d1f857f68ea7f10ed11d752f58cad71ef765cdbb0d5febb0eb9f3bd7008290bb"
+      "function": "builtin_http_static"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2088,8 +2053,7 @@
     "source": {
       "file": "src/model_train.c",
       "line": 1432,
-      "function": "builtin_native_train_step",
-      "body_sha256": "4a656ba54a20ddcb6adbcf58348779e8cc8181602b516ff62990f8104e43eec8"
+      "function": "builtin_native_train_step"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -2248,8 +2212,7 @@
     "source": {
       "file": "src/ext_gfx.c",
       "line": 2300,
-      "function": "builtin_ppu_render_frame",
-      "body_sha256": "b47a90924e043554ce67b53a33ed4432ca4b7b112b8dcacbc311af1fa8ad0e65"
+      "function": "builtin_ppu_render_frame"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2351,8 +2314,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 1113,
-      "function": "builtin_read_bytes_buf",
-      "body_sha256": "1fdb94abf37b60c94acf57a4514160bebb2d23d8e0fabe74bb09bf98fd14cdc5"
+      "function": "builtin_read_bytes_buf"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2388,8 +2350,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 145,
-      "function": "builtin_match_all",
-      "body_sha256": "205e2dc4d39dcc40c47305ed236bc282d55a08516d6eeeaba925a170f677ebbd"
+      "function": "builtin_match_all"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2411,8 +2372,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 88,
-      "function": "builtin_match",
-      "body_sha256": "7cd0deb28e9cd3334f3d59cd4ee5c9fd24e7e37826adc2bc4917610f4b511e5c"
+      "function": "builtin_match"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2435,8 +2395,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 183,
-      "function": "builtin_regex_replace",
-      "body_sha256": "c72c493a69ef1061d57c4aed98adaa553f70ce1906c5659dd9bcd62e7486421c"
+      "function": "builtin_regex_replace"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -2460,8 +2419,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 1040,
-      "function": "builtin_rename",
-      "body_sha256": "db2a5901dd07e83993494dbddb86f9243d532732c6277eeceadf4eb472ff4d62"
+      "function": "builtin_rename"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2669,8 +2627,7 @@
     "source": {
       "file": "src/ext_http.c",
       "line": 933,
-      "function": "builtin_shared_incr",
-      "body_sha256": "406fea8f09c1afa210b43baa7001bdb07b45b894a30aa1bc4d3838515a5b8ae5"
+      "function": "builtin_shared_incr"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2696,8 +2653,7 @@
     "source": {
       "file": "src/ext_http.c",
       "line": 882,
-      "function": "builtin_shared_set",
-      "body_sha256": "04322cca44d76c1fe80b436d6f9bcbc61ae3c39368c86b7ae8ba856c45ff804e"
+      "function": "builtin_shared_set"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2785,8 +2741,7 @@
     "source": {
       "file": "src/ext_store.c",
       "line": 1386,
-      "function": "builtin_store_count",
-      "body_sha256": "cb4beac5e3778aa4c29a4b05550faade130b3e289a3c74c93b1b7d7c8fd4591e"
+      "function": "builtin_store_count"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2812,8 +2767,7 @@
     "source": {
       "file": "src/ext_store.c",
       "line": 1286,
-      "function": "builtin_store_delete",
-      "body_sha256": "f1ef15b7482b0175a222842711fe6e22068446fd09c823eb75a2a49be42160ae"
+      "function": "builtin_store_delete"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -2838,8 +2792,7 @@
     "source": {
       "file": "src/ext_store.c",
       "line": 1577,
-      "function": "builtin_store_drop",
-      "body_sha256": "d7cf81f5ed270ddec2e30131f46e680ae8fa2186444dbc5b02f5547214dfc30b"
+      "function": "builtin_store_drop"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2865,8 +2818,7 @@
     "source": {
       "file": "src/ext_store.c",
       "line": 1132,
-      "function": "builtin_store_get",
-      "body_sha256": "fe17851a5a2d3386f56f514038c8c2067b5ab41db65b5581d68956919d4f6c61"
+      "function": "builtin_store_get"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -2892,8 +2844,7 @@
     "source": {
       "file": "src/ext_store.c",
       "line": 968,
-      "function": "builtin_store_put",
-      "body_sha256": "61be0df6c04ca8f7bec7f1325ccce81f68f2f285ef000cf0f994ac7939509bc4"
+      "function": "builtin_store_put"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -2918,8 +2869,7 @@
     "source": {
       "file": "src/ext_store.c",
       "line": 1342,
-      "function": "builtin_store_query",
-      "body_sha256": "174c0b5006db76b51d9887ce6a4f22e68f395ecffbac387e54390a307d574a3e"
+      "function": "builtin_store_query"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -2946,8 +2896,7 @@
     "source": {
       "file": "src/ext_store.c",
       "line": 1436,
-      "function": "builtin_store_update",
-      "body_sha256": "f114d68ee7dcda12c7543151c6de57229a33d1861daed61d3329f7bbd8ba652d"
+      "function": "builtin_store_update"
     },
     "maximum": 4,
     "execution": "UNRUN",
@@ -2986,8 +2935,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 256,
-      "function": "builtin_stream_open",
-      "body_sha256": "c7c970e8911fd271a624aee4d7edc5b4f16bb017c4fea00c72b626448d826d5a"
+      "function": "builtin_stream_open"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -3104,8 +3052,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 1751,
-      "function": "builtin_write_bytes",
-      "body_sha256": "8ddec6ba90c89cb73074f97bb008b7bd67e3c83b6a241ab566668d76c7e78d59"
+      "function": "builtin_write_bytes"
     },
     "maximum": 3,
     "execution": "UNRUN",
@@ -3129,8 +3076,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 1248,
-      "function": "builtin_write_text",
-      "body_sha256": "8c9648deb0fe6a175cb48712206f6de270af09492e1d044fc44e80fcd2d61aca"
+      "function": "builtin_write_text"
     },
     "maximum": 2,
     "execution": "UNRUN",
@@ -3176,8 +3122,7 @@
     "source": {
       "file": "src/builtins_host.c",
       "line": 1653,
-      "function": "builtin_proc_read_buf",
-      "body_sha256": "5f68a8c97f24e4dfdc644839c9d0d49eee5363ea0e0cce1e5eceb1f8270a54fd"
+      "function": "builtin_proc_read_buf"
     },
     "maximum": 2,
     "execution": "UNRUN",

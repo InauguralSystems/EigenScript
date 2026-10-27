@@ -95,6 +95,8 @@ value
 value
 ```
 
+Runtime-published counts and indices are exact ints (S9-K1): `__loop_iterations__`, live and historical `when` assignment counts, aggregate `what` lengths, trajectory `window`, error `line`, and scheduler trace `seq` and task ids. Scheduler `tick` remains a continuous virtual time.
+
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
 ## Try it in your browser
@@ -215,7 +217,7 @@ Hello hello, x is 42
 positive
 Alice
 15
-Error: {"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41.0}
+Error: {"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
 ```
 
 Comparisons, `not` and predicates return `true`/`false`, a `bool`. A bool is
@@ -296,7 +298,7 @@ print of (when is signal)
 ```
 ```output
 15
-3.0
+3
 ```
 
 (`how` is the sixth interrogative; see the observer guide for its current

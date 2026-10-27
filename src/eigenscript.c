@@ -1468,7 +1468,7 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
     /* #1044: the depth this slot classifies over travels with the snapshot,
      * so `classify of (trajectory of x)` agrees with `report of x` for a
      * binding carrying a per-binding override. */
-    dict_set_owned(out, "window",       make_float((double)observer_slot_window(s)));
+    dict_set_owned(out, "window",       make_int(observer_slot_window(s)));
     return out;
 }
 

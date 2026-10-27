@@ -247,7 +247,7 @@ catch err:
     print of f"Caught: {err}"
 ```
 ```output
-Caught: {"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2.0}
+Caught: {"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2}
 ```
 
 Errors inside a `try` block are caught and bound to the variable after
@@ -508,7 +508,7 @@ print of (when is loss)    # 3 — three assignments
 0.2
 -0.26827341240613545
 0.0
-3.0
+3
 ```
 
 Note that `why` tracks the *entropy* trajectory, not the raw value: a
@@ -561,7 +561,7 @@ print of (why is x at 2)     # dH as of the line-2 assign
 ```output
 2
 2
-2.0
+2
 x
 0.9182958340544896
 -0.08170416594551044
@@ -581,7 +581,7 @@ print of (when is total at 3)   # 5 — all five assignments, seed included
 ```
 ```output
 6
-5.0
+5
 ```
 
 To pin a single iteration, record it yourself (`snapshots[i] is total`);
@@ -598,10 +598,11 @@ assignment to the name return `null`.
 mapping every tracked binding to the value it held at or before `line`
 (names not yet assigned by then are omitted). See
 [BUILTINS.md](BUILTINS.md). Names of the form `__name__` are reserved for
-the runtime — the observed-loop machinery binds `__loop_exit__` and
-`__loop_iterations__` there — and are filtered out of `state_at` and of
-`--step`'s bindings listing (#736). Don't use that form for your own
-variables; they would be hidden from both.
+the runtime and are refused in every binding position with parse error
+`E006`. The observed-loop machinery itself binds `__loop_exit__` and
+`__loop_iterations__`; reads of those runtime names remain legal. The whole
+form is filtered out of `state_at` and of `--step`'s bindings listing (#736,
+#1908).
 
 `prev`, and `at` inside an interrogative, are soft keywords — outside
 these positions they parse as ordinary identifiers, so existing code

@@ -744,6 +744,22 @@ and reports failures through its tracking issue.
 `tools/selftests.txt` owns the trigger globs, bounded commands and existing
 result pins; changing it or the driver selects every row.
 
+## Re-pinning a reviewed exempt builtin (#1877)
+
+`tools/strict_shape_contract.py` pins each exempt builtin, and every helper in
+its whole-argument closure, by a SHA-256 of the body with comments treated as
+whitespace and only token-separating whitespace retained (#1962). Literals and
+preprocessor line endings remain significant. A comment-only edit therefore
+keeps its pin. After reviewing a code change to an exempt
+function or a helper of its closure, run
+`python3 tools/strict_shape_contract.py --repin NAME` to print each closure
+member's pinned and current hash, then `--repin NAME --write` to update only
+that row's pin fields. Existing members are matched by name, not object
+position. If the closure shape changed, the command regenerates the
+`source_sha256` object with sorted keys. A row that is not exempt is refused.
+Rows that share the changed helper stay red until each is reviewed and
+re-pinned.
+
 ## Before you push: `make precheck` (#1264)
 
 `make precheck` (`tools/precheck.sh`) runs the static gates — the ones that

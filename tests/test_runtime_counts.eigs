@@ -1,0 +1,57 @@
+# S9-K1 (#1758): counts, indices and metadata stay exact ints on publication.
+load_file of "lib/test.eigs"
+
+define count_is(value, wanted, label) as:
+    assert_eq of [num_type of value, "int", label + " type"]
+    assert_eq of [value, wanted, label + " value"]
+
+counter_probe is 0
+loop while counter_probe < 2:
+    counter_probe is counter_probe + 1
+count_is of [__loop_iterations__, 2, "loop iteration count"]
+count_is of [when is counter_probe, 3, "live assignment count"]
+count_is of [when is counter_probe at 1000000, 3, "line assignment count"]
+count_is of [when is counter_probe when 2, 2, "ordinal assignment count"]
+count_is of [when is (4 + 5), 0, "value assignment count"]
+count_is of [what is "abc", 3, "string byte length"]
+count_is of [what is ([4, 5]), 2, "list length"]
+count_is of [what is (buffer of 4), 4, "buffer length"]
+count_is of [(trajectory of counter_probe).window, 10, "trajectory sample window"]
+
+error_line_probe is null
+try:
+    get_at of [[1], 2]
+catch error_probe:
+    error_line_probe is error_probe.line
+assert_eq of [num_type of error_line_probe, "int", "runtime error source line type"]
+assert_true of [error_line_probe > 0, "runtime error source line value"]
+
+# Integer indices returned from a range retain their kind through for and
+# comprehension binders; the iterator's own hidden index/length are ints too.
+index_kinds is [num_type of index_probe for index_probe in (range of 3)]
+assert_eq of [index_kinds, ["int", "int", "int"], "comprehension index kinds"]
+for index_probe in (range of 3):
+    assert_eq of [num_type of index_probe, "int", "for index kind"]
+
+# The non-strict form keeps the documented miss sentinel as an int too.
+if (env_get of "EIGS_STRICT") == "0":
+    count_is of [index_of of null, -1, "index_of malformed argument miss"]
+    count_is of [index_of of [3, "x"], -1, "index_of wrong operand miss"]
+    count_is of [list_index_of of null, -1, "list_index_of malformed argument miss"]
+    count_is of [list_index_of of [3, 1], -1, "list_index_of wrong operand miss"]
+
+define count_victim() as:
+    task_recv of null
+    return 1
+victim_probe is task_spawn of count_victim
+task_yield of null
+task_kill of victim_probe
+kill_line_seen is false
+try:
+    task_join of victim_probe
+catch killed_probe:
+    count_is of [killed_probe.line, 0, "killed-task source-line sentinel"]
+    kill_line_seen is true
+assert_true of [kill_line_seen, "killed-task error was observed"]
+
+test_summary of null
