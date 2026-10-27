@@ -1,0 +1,1 @@
+- Hardened the Lean parity and axiom measurement controls with planted-fault, determinism, and derived-population checks (#2018).
