@@ -216,12 +216,16 @@ unobserved:
     json is 0
 assert_eq of [import_outside_seen, "dict", "1883 a module imported before the block reads the module"]
 
-# A comprehension before the block whose expression never reads its binder:
+# A module name also used as a comprehension binder before the block.  Since
+# #1737 the comprehension does not touch the module binding (no leak), and
+# the block still reads and writes that one module storage (#1883).
+comp_outside_var is 7
 comp_outside_list is [0 for comp_outside_var in [1, 2, 3]]
 unobserved:
     comp_outside_seen is comp_outside_var
     comp_outside_var is 9
-assert_eq of [comp_outside_seen, 3, "1883 a comprehension binder bound before the block reads its last element"]
+assert_eq of [comp_outside_seen, 7, "1737 a comprehension leaves the module binding untouched; 1883 the block reads it"]
+assert_eq of [comp_outside_var, 9, "1883 the block's write reaches the same module binding"]
 
 # A slot-eligible `local` in a `for` body binds in the enclosing unobserved
 # block's slot. It is not a by-name loop binder (#1995):
