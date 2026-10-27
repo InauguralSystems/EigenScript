@@ -1,0 +1,34 @@
+load_file of "lib/test.eigs"
+
+# #1821: every rate accepted by audio_open keeps a 30-second generator's
+# sample count in int range.  This guard runs before SDL, so the refusal is
+# pinned even on hosts without an audio device.
+refused_kind is "none"
+refused_message is ""
+try:
+    audio_open of [71582789, 1]
+catch e:
+    refused_kind is e.kind
+    refused_message is e.message
+
+assert_eq of [refused_kind, "value", "audio_open refuses the first rate above the generator-safe limit"]
+assert_true of [contains of [refused_message, "71582788 Hz"], "audio_open's rate error names the limit"]
+
+# The boundary itself is accepted by the argument guard.  SDL may still
+# answer 0 when the host cannot open that device format; generation remains
+# available in either case (at the negotiated rate, or the default if no
+# device opened).
+accepted_kind is "none"
+device is 0
+try:
+    device is audio_open of [71582788, 1]
+catch e:
+    accepted_kind is e.kind
+
+assert_eq of [accepted_kind, "none", "the largest generator-safe rate is accepted"]
+samples is audio_sine of [440, 0.001, 0.5]
+assert_true of [len of samples > 0, "a generator runs after the largest accepted rate"]
+if device != 0:
+    audio_close of null
+
+test_summary of null

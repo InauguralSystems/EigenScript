@@ -401,11 +401,10 @@ perspective lands on the tape as an `N` record:
   refused duration (#1767: more than 30 seconds, or a sample count that
   does not fit an `int`, raises `value`). Both are refused before the
   tape is read or written, so a replay refuses the call again instead of
-  taking the next call's records. The rate reaches that verdict only
-  through the `int` range of the sample count, which a duration within
-  the limit breaks only above about 71.6 MHz; above that rate (no audio
-  hardware has one) a replay on a device with another rate could refuse
-  differently from its recording. Before #1803 the samples came from
+  taking the next call's records. `audio_open` refuses rates above
+  71,582,788 Hz (#1821), so the sample-count branch cannot reject at any
+  accepted device rate and the verdict does not depend on untaped device
+  state. Before #1803 the samples came from
   libc `rand()`, seeded from the clock and recorded nowhere, so a replay
   drew new ones at exit 0.
 
