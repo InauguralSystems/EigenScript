@@ -14,6 +14,11 @@ import shlex
 import sys
 from pathlib import Path
 
+import yaml
+
+from _python_execution import EXECUTION_CALL_NAMES, name_of
+from _derive_variants import shell_lines
+
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 
@@ -52,17 +57,12 @@ def executable_path(word: str, source: Path) -> str | None:
     return None
 
 
-def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
-    src = src_name or source.as_posix()
-    # Newlines and shell control operators delimit commands.  This is a
-    # conservative command-word parser, not a claim that comments mentioning a
-    # script execute it.
+def shell_commands(text: str):
+    """Yield shell simple commands with wrappers removed."""
     logical = re.sub(r"\\\n\s*", " ", text)
-    for raw in logical.splitlines():
-        raw = re.sub(r"^\s*(?:-\s*)?run:\s*", "", raw)
+    for _, raw in shell_lines(logical):
         try:
-            parts = re.split(r"(?:&&|\|\||[;|`])", raw)
-            for part in parts:
+            for part in re.split(r"(?:&&|\|\||[;|`])", raw):
                 words = shlex.split(part, comments=True)
                 while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "env", "command", "exec", "nohup", "sudo", "xvfb-run"}):
                     words.pop(0)
@@ -70,18 +70,26 @@ def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
                     words.pop(0)
                     while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
                         words.pop(0)
-                if not words:
-                    continue
-                if words[0] in {"bash", "sh", "dash", "python", "python3", "source", "."}:
-                    words.pop(0)
-                    while words and words[0].startswith("-"):
-                        words.pop(0)
                 if words:
-                    dst = executable_path(words[0], source)
-                    if dst:
-                        emit(src, dst)
+                    yield words
         except ValueError:
             continue
+
+
+def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
+    src = src_name or source.as_posix()
+    # Newlines and shell control operators delimit commands.  This is a
+    # conservative command-word parser, not a claim that comments mentioning a
+    # script execute it.
+    for words in shell_commands(text):
+        if words[0] in {"bash", "sh", "dash", "python", "python3", "source", "."}:
+            words = words[1:]
+            while words and words[0].startswith("-"):
+                words.pop(0)
+        if words:
+            dst = executable_path(words[0], source)
+            if dst:
+                emit(src, dst)
 
 
 def python_edges(source: Path, text: str) -> None:
@@ -107,16 +115,46 @@ def python_edges(source: Path, text: str) -> None:
                 matches = list((ROOT / "tools").glob(name.rsplit(".", 1)[-1] + ".py"))
                 if len(matches) == 1:
                     emit(src, rel(matches[0]))
-        # subprocess argv is conventionally a literal sequence.  Following
-        # only calls (not arbitrary strings) avoids enrolling documentation.
         if isinstance(node, ast.Call):
-            # Includes importlib.spec_from_file_location(ROOT / "tools/x.py")
-            # as well as subprocess argv literals.
-            for item in ast.walk(node):
-                if isinstance(item, ast.Constant) and isinstance(item.value, str):
-                    dst = executable_path(item.value, source)
-                    if dst:
-                        emit(src, dst)
+            fname = name_of(node.func)
+            args = []
+            if fname in EXECUTION_CALL_NAMES and node.args:
+                first = node.args[0]
+                if isinstance(first, (ast.List, ast.Tuple)):
+                    # Every element is an argv position.  This includes the
+                    # script after sys.executable/a Python name or bash, and
+                    # operands consumed by `bash -c` snippets.
+                    args = list(first.elts)
+                elif isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    shell_edges(source, first.value, src)
+            elif fname == "spec_from_file_location" and len(node.args) >= 2:
+                args = [node.args[1]]
+            elif fname == "run_path" and node.args:
+                args = [node.args[0]]
+            for arg in args:
+                for item in ast.walk(arg):
+                    if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                        dst = executable_path(item.value, source)
+                        if dst:
+                            emit(src, dst)
+
+
+def yaml_run_commands(source: Path):
+    """Yield only YAML values of `run` keys, as parsed by YAML."""
+    data = yaml.safe_load((ROOT / source).read_text(errors="replace"))
+
+    def walk(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key == "run" and isinstance(child, str):
+                    yield child
+                else:
+                    yield from walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from walk(child)
+
+    yield from walk(data)
 
 
 def expand(value: str, variables: dict[str, str]) -> str:
@@ -179,7 +217,11 @@ if github.exists():
 
 for source in sorted(sources):
     text = (ROOT / source).read_text(errors="replace")
-    shell_edges(source, text)
+    if source.parts and source.parts[0] == ".github":
+        for command in yaml_run_commands(source):
+            shell_edges(source, command)
+    else:
+        shell_edges(source, text)
     if source.suffix == ".py":
         python_edges(source, text)
     if source.parts[:1] == ("tools",) and len(source.parts) > 2:
@@ -200,10 +242,10 @@ if makefile.is_file():
 
 # A workflow make command enters the corresponding Make dependency graph.
 for workflow in sorted(p for p in sources if p.parts[:2] == (".github", "workflows")):
-    for line in (ROOT / workflow).read_text(errors="replace").splitlines():
-        match = re.search(r"(?:^|[;&|]\s*|run:\s*)make(?:\s+-[A-Za-z]+)*\s+([^#;&|]+)", line)
-        if not match:
-            continue
-        for word in shlex.split(match.group(1)):
-            if "=" not in word and not word.startswith("-"):
-                emit(workflow.as_posix(), f"@make:{word}")
+    for command in yaml_run_commands(workflow):
+        for words in shell_commands(command):
+            if not words or words[0] != "make":
+                continue
+            for word in words[1:]:
+                if "=" not in word and not word.startswith("-"):
+                    emit(workflow.as_posix(), f"@make:{word}")
