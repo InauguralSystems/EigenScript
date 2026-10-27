@@ -32,6 +32,9 @@ EOF
 cat >"$WORK/tests/sections/fixture.sh" <<'EOF'
 python3 tests/test_importer.py
 bash tests/phase2/slot_layer.sh
+variant=$("$TESTS_DIR/../tools/subst_tool.sh" "$TESTS_DIR/..")
+inline=$(tools/bare_subst.sh)
+echo "$(tools/quoted_subst.sh)"
 EOF
 cat >"$WORK/tests/test_importer.py" <<'EOF'
 import tools.ai_benchmark
@@ -45,7 +48,7 @@ EOF
 cat >"$WORK/bench/check_regression.sh" <<'EOF'
 bash tools/phase2_cost.sh
 EOF
-for f in freestanding_check.sh gen_lsp_stdlib_index.sh gen_lsp_builtin_index.sh phase2_cost.sh indented_check.sh; do
+for f in freestanding_check.sh gen_lsp_stdlib_index.sh gen_lsp_builtin_index.sh phase2_cost.sh indented_check.sh subst_tool.sh bare_subst.sh quoted_subst.sh; do
     printf '#!/bin/sh\n' >"$WORK/tools/$f"
 done
 for f in ai_benchmark.py phase2_inventory.py orphan.py; do printf '# fixture\n' >"$WORK/tools/$f"; done
@@ -64,6 +67,9 @@ row "Python argv literal from nested tests" $'tests/test_importer.py\ttools/phas
 row "bench script" $'bench/check_regression.sh\ttools/phase2_cost.sh'
 row "indented workflow make" $'.github/workflows/ci.yml\t@make:indented-check'
 row "indented make recipe reaches tool" $'@make:indented-check\ttools/indented_check.sh'
+row "command substitution in an assignment" $'tests/sections/fixture.sh\ttools/subst_tool.sh'
+row "bare command substitution" $'tests/sections/fixture.sh\ttools/bare_subst.sh'
+row "quoted command substitution" $'tests/sections/fixture.sh\ttools/quoted_subst.sh'
 if grep -Fq $'tests/test_importer.py\ttools/orphan.py' "$WORK/edges"; then
     echo "  FAIL: print string falsely enrolled tools/orphan.py"; bad=1
 else

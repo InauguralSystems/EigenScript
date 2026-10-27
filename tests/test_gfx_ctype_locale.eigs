@@ -1,0 +1,15 @@
+if env_get of "EIGS_OPEN_GFX" == "1":
+    gfx_open of [80, 60, "ctype-locale-1681-雪"]
+
+input is str_from_bytes of [201, 160, 49, 32, 50]
+lowered is str_lower of input
+lower_bytes is []
+for i in range of (len of lowered):
+    append of [lower_bytes, ord of lowered[i]]
+print of lower_bytes
+print of (scan_ints of input)
+print of (scan_int_tokens of input)
+print of (len of (trim of (str_from_bytes of [160, 65, 160])))
+
+if env_get of "EIGS_OPEN_GFX" == "1":
+    gfx_close of null

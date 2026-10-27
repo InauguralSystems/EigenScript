@@ -198,6 +198,11 @@ print of (map of [xs, (v) => v * 10])
 [10, 20, 30, 40, 50]
 ```
 
+Like Python's executable-relative prefix lookup, EigenScript's source-tree
+runtime finds its standard library from the executable: both `src/eigenscript`
+and a directly invoked `build/<variant>/eigenscript` resolve the repository's
+`lib/`, independent of the process working directory.
+
 ## Numeric arrays: the list is not the fast container
 
 Python separates a `list` of boxed objects from a NumPy array of raw doubles,

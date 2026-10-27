@@ -1,0 +1,33 @@
+# #2016 fix round 1: every user-binding form must count identically in the
+# interpreter, default JIT tier, and forced-OSR tier.
+define parameter_site(p_parameter) as:
+    return when is p_parameter
+
+define plain_site(p_plain) as:
+    p_plain is p_plain + 1
+    return when is p_plain
+
+define local_site() as:
+    local p_local is 1
+    p_local is p_local + 1
+    return when is p_local
+
+define compound_site(p_compound) as:
+    p_compound += 1
+    return when is p_compound
+
+define default_site(p_default is 7) as:
+    return when is p_default
+
+define destructure_site(p_destructure, p_other) as:
+    [p_destructure, p_other] is [3, 4]
+    return when is p_destructure
+
+define for_site(p_for) as:
+    for p_for in range of 1000:
+        x_2016 is p_for
+    return [p_for, when is p_for]
+
+print of [parameter_site of 0, plain_site of 0, local_site of null,
+          compound_site of 0, default_site of null,
+          destructure_site of [0, 0], for_site of 10]

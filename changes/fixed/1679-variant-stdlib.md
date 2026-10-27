@@ -1,0 +1,1 @@
+- Fixed #1679 so binaries invoked directly from `build/<variant>/` find the repository standard library.

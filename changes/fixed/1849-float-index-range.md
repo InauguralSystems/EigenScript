@@ -1,0 +1,1 @@
+- Fixed integral floating-point indexes, dispatch keys, and slice bounds outside the C `int` range being misreported as fractional values, and removed their undefined casts.

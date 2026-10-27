@@ -23,6 +23,8 @@ export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/failure_output.sh" || exit 1
 . "$TESTS_DIR/suite_program_env.sh" || exit 1
+. "$TESTS_DIR/gfx_headless.sh" || exit 1
+. "$TESTS_DIR/timeout_select.sh" || exit 1
 . "$TESTS_DIR/diagnostic_capture.sh" || exit 1
 cd "$TESTS_DIR/../src" || { echo "cannot cd to src"; exit 1; }
 
@@ -151,9 +153,7 @@ echo() {
 : "${EIGS_VERIFY_SELF:=1}"
 export EIGS_VERIFY_SELF
 
-EIGS_TMO=""
-if command -v timeout >/dev/null 2>&1; then EIGS_TMO="timeout $EIGS_TEST_TIMEOUT"
-elif command -v gtimeout >/dev/null 2>&1; then EIGS_TMO="gtimeout $EIGS_TEST_TIMEOUT"; fi
+eigs_timeout_select "$EIGS_TEST_TIMEOUT"
 
 # Binary fingerprint guard (#681). src/eigenscript is a hard link to the
 # last `make` variant target (#740); re-pointing it mid-suite — or relinking
@@ -204,19 +204,22 @@ eigs_binary_fingerprint() {
 # in from elsewhere) or a `make -q` error is reported and NOT gated on --
 # the suite cannot decide, so it says so instead of pretending.
 ensure_binary_current() {
-    local ino variant target rc
-    ino=$(stat -c %i "$EIGS_BIN" 2>/dev/null) || return 0
-    variant=""
-    for cand in ../build/*/eigenscript; do
-        [ -f "$cand" ] || continue
-        if [ "$(stat -c %i "$cand" 2>/dev/null)" = "$ino" ]; then
-            variant=$(basename "$(dirname "$cand")"); break
-        fi
-    done
-    if [ -z "$variant" ]; then
+    local variant target rc resolved_after
+    EIGS_ACTIVE_VARIANT=""
+    EIGS_ACTIVE_VARIANT_RC=0
+    variant=$("$TESTS_DIR/../tools/active_variant.sh" "$TESTS_DIR/..")
+    rc=$?
+    # Preserve the resolver's classification for sections which depend on a
+    # make-created alias.  In particular, 1 means a valid build.sh binary,
+    # while 2 means an ambiguous alias and must not be mistaken for that case.
+    EIGS_ACTIVE_VARIANT_RC=$rc
+    if [ "$rc" -ne 0 ]; then
         echo "  NOTE: src/eigenscript is not hard-linked to any build/<variant>/eigenscript -- freshness not checked (#1089)"
         return 0
     fi
+    # Keep the inode resolver's answer available to sections that must exercise
+    # the build/<variant> path itself rather than the src/ alias (#1679).
+    EIGS_ACTIVE_VARIANT=$variant
     # The FILE target, not the phony goal: `make -q build` is always
     # "needs remaking" because `build` is .PHONY.
     target="build/$variant/eigenscript"
@@ -229,13 +232,14 @@ ensure_binary_current() {
     # Rebuild through the variant's GOAL, not the file: only the goal
     # re-points the src/eigenscript hard link (RELINK); rebuilding the file
     # alone left the alias on the old inode (found by the plant).
-    local goal="$variant"; [ "$variant" = "release" ] && goal="build"
+    local goal; goal=$("$TESTS_DIR/../tools/active_variant.sh" --goal "$TESTS_DIR/..") || goal="$variant"
     echo "  NOTE: src/eigenscript ($variant) is older than its sources -- rebuilding (make $goal) (#1089)"
     if ! make --no-print-directory -C .. "$goal" >/dev/null 2>&1; then
         echo "ERROR: rebuild of src/eigenscript ($goal) FAILED -- the linked binary is stale and the suite will not run it (#1089)"
         exit 1
     fi
-    if [ "$(stat -c %i "$EIGS_BIN")" = "$ino" ] && ! make -q --no-print-directory -C .. "$target" >/dev/null 2>&1; then
+    resolved_after=$("$TESTS_DIR/../tools/active_variant.sh" "$TESTS_DIR/.." 2>/dev/null)
+    if [ "$resolved_after" = "$variant" ] && ! make -q --no-print-directory -C .. "$target" >/dev/null 2>&1; then
         echo "ERROR: src/eigenscript is still stale after the rebuild (#1089)"
         exit 1
     fi
@@ -3554,8 +3558,8 @@ rm -f "$GT_PROBE_FILE"
 echo "[120b] Gfx Text Metrics"
 if ! echo "$GT_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: pins gfx_text_width of a non-string answering 0 (line 38), in both renderer modes.
-    GT_FB=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
-    GT_DEF=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
+    GT_FB=$(gfx_headless_run 30 env EIGS_STRICT=0 EIGS_GFX_FONT=/nonexistent/eigs-no-font.ttf ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_FB_RC=$?
+    GT_DEF=$(gfx_headless_run 30 env EIGS_STRICT=0 ./eigenscript ../tests/test_gfx_text.eigs 2>&1); GT_DEF_RC=$?
     if rc_ok "$GT_FB_RC" "$GT_FB" && echo "$GT_FB" | grep -q "All tests passed" \
        && echo "$GT_FB" | grep -q "fallback-mode: 1" \
        && rc_ok "$GT_DEF_RC" "$GT_DEF" && echo "$GT_DEF" | grep -q "All tests passed"; then
@@ -3624,8 +3628,8 @@ rm -f "$GA_PROBE_FILE"
 echo "[133] Gfx Argument-Type Guards"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: the plain pass pins the ext_gfx wrong-type stand-ins (0/null); the strict pass below raises.
-    GA_PLAIN=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
-    GA_STRICT=$(EIGS_STRICT=1 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
+    GA_PLAIN=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
+    GA_STRICT=$(gfx_headless_run 30 env EIGS_STRICT=1 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
 
     # THIRD PASS: the tape. audio_capture_open is trace-recorded, so a guard
     # placed below TRACE_NONDET_TAKE returns before TRACE_NONDET_RECORD and
@@ -3643,8 +3647,8 @@ print of (audio_capture_open of [44100, 1])
 print of (audio_capture_close of null)
 TAPEPROG
     # #1361 EIGS_STRICT=0: the rejected call must answer its stand-in 0 and run on, so line 2 reaches the tape.
-    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape"  ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
-    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
+    gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
+    gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
     if cmp -s "$GA_TDIR/first.out" "$GA_TDIR/second.out"; then GA_TAPE_OK=1; else GA_TAPE_OK=0; fi
     # A rejected call must consume NO record, so a tape of this program holds
     # exactly one — the well-typed call. Pinned rather than merely compared,
@@ -3670,8 +3674,8 @@ print of (gfx_read of [1, 1])
 ignore is gfx_close of null
 READPROG
     # #1361 EIGS_STRICT=0: gfx_read of ["1", 1] must answer its stand-in and run on to the well-typed read.
-    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
-    EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
+    gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
+    gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
     if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
     GA_READ_N=$(grep -c '^N [0-9][0-9]* gfx_read=' "$GA_RDIR/r.tape" 2>/dev/null); GA_READ_N=${GA_READ_N:-0}
     rm -rf "$GA_RDIR"
@@ -3701,8 +3705,8 @@ ignore is gfx_close of null
 DFLTREAD
     GA_DFLT_OK=1
     for __ga_p in cap read; do
-        env -u EIGS_STRICT SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_DDIR/$__ga_p.tape"  ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.1" 2>&1
-        env -u EIGS_STRICT SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.2" 2>&1
+        gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.1" 2>&1
+        gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.2" 2>&1
         cmp -s "$GA_DDIR/$__ga_p.1" "$GA_DDIR/$__ga_p.2" || GA_DFLT_OK=0
         grep -qx rejected "$GA_DDIR/$__ga_p.1" || GA_DFLT_OK=0   # the default really raised
     done
@@ -3802,8 +3806,8 @@ if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
         local nm="$1" prog="$2" want="$3" a b
         printf '%s\n' "$prog" > "$GD_DIR/p.eigs"
         # #1361 EIGS_STRICT=0: each probe reads the wrong-type stand-in's returned data; under the default it raises instead.
-        a=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
-        b=$(EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        a=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        b=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
         GD_RUN=$((GD_RUN + 1))
         # A probe that produced nothing measured nothing — two empty strings
         # compare equal and would score as "no disclosure". Nor is a stable
@@ -3952,7 +3956,7 @@ rm -f "$UC_PROBE_FILE"
 
 echo "[132] UI Containment Render-Decode Oracle"
 if ! echo "$UC_PROBE_OUT" | grep -q "undefined variable"; then
-    UC_OUTPUT=$(SDL_VIDEODRIVER=dummy ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
+    UC_OUTPUT=$(gfx_headless_run 30 ./eigenscript ../tests/test_ui_containment_gfx.eigs 2>&1); UC_RC=$?
     UC_N=$(derive_count "$UC_OUTPUT" "[132] UI Containment Render-Decode Oracle")
     if rc_ok "$UC_RC" "$UC_OUTPUT" && echo "$UC_OUTPUT" | grep -q "All tests passed"; then
         TOTAL=$((TOTAL + UC_N))
@@ -6605,13 +6609,6 @@ rm -f "$EX_GFX_PROBE"
 echo "[97] Example programs (examples/*.eigs)"
 EX_PASS=0; EX_FAIL=0; EX_SKIP=0
 EIGS_ABS="$(pwd)/eigenscript"
-# RLIMIT_AS cannot coexist with ASan's multi-terabyte shadow mapping. Gfx is
-# now in the default sanitizer profile (#1415), so keep the runaway timeout
-# but omit only the address-space cap under ASan.
-EX_GFX_ULIMIT='ulimit -v 2000000 2>/dev/null'
-if ASAN_OPTIONS=help=1 "$EIGS_ABS" --version 2>&1 | grep -q 'AddressSanitizer'; then
-    EX_GFX_ULIMIT=':'
-fi
 # Runaway guard reuses the shared $EIGS_TMO (defined near the top). The old
 # `timeout 60` here was a latency assertion in disguise: invariant_weak.eigs
 # takes ~60.5s standalone under ASan and tripped the 60s guard under suite load
@@ -6624,9 +6621,8 @@ for f in $(find ../examples -name '*.eigs' -not -path '*/errors/*' | sort); do
         # #886: require the explicit pre-loop marker: rc 124 alone could also
         # mean setup hung. Memory-capped — an unbounded
         # UI run can take the whole machine.
-        EX_OUT=$( cd "$(dirname "$f")" && eval "$EX_GFX_ULIMIT"; \
-                  cd "$(dirname "$f")" && EIGS_GFX_READY=1 SDL_VIDEODRIVER=dummy timeout 3 \
-                  "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
+        EX_OUT=$( cd "$(dirname "$f")" && EIGS_GFX_READY=1 \
+                  gfx_headless_run 3 "$EIGS_ABS" "$(basename "$f")" </dev/null 2>&1 ); EX_RC=$?
         if { [ "$EX_RC" = "124" ] || [ "$EX_RC" = "0" ]; } && \
            printf '%s\n' "$EX_OUT" | grep -qx "EIGS_GFX_READY"; then
             EX_PASS=$((EX_PASS + 1))

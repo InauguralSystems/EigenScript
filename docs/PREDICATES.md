@@ -876,6 +876,13 @@ state. So every predicate, `report`, `report_value`, `observe` and
 across the observations has a history to classify (#1048). Every case
 follows from that one rule:
 
+**A binding's creation is its first observation: the `local`/first assignment
+for a local, and the call-time binding for a parameter. Every later assignment
+in the same activation adds one.** Thus, for every binding in an activation,
+`when` = (1 if it is a parameter) + the number of tape `A` records for it in
+that activation. The parameter creation event is #1048's “one observation per
+call”; it is not an `A` assignment record.
+
 | form | persistent env slot? | trajectory |
 |---|---|---|
 | a named local (`q is v`, `local q is v`) | yes | **carries** |
@@ -883,7 +890,7 @@ follows from that one rule:
 | an `eval`-generated name | yes | carries, N chosen at runtime (loses lint and the AOT — prefer the closure) |
 | a dict field `ch.a` | no — a Value in a container | none: `equilibrium`, no history |
 | a list element `xs[0]` | no — a Value in a container | none |
-| a function parameter | the frame dies each call | none: one observation per call |
+| a function parameter | the frame dies each call | carries within that call; creation is observation one (#1048) |
 | a `for` binder `for x in xs:` | fresh each iteration (#1062) | none |
 | a `for`-body `local` **at module level** | the loop env is cleared each iteration | none: one observation, every read answers `equilibrium` |
 | a `for`-body `local` **inside a function** | a frame slot that persists for the loop | carries — and **interleaves** if fed several entities |
