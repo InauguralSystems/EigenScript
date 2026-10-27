@@ -7,13 +7,19 @@ DONE artifact: it names the candidate (`candidate_path=`, `candidate_tree=`,
 `candidate_tree_override=`, `candidate_git_sha=`, `candidate_version=`,
 `candidate_full=`, `candidate_gfx=`, `candidate_sha256=`, `full_sha256=`,
 `gfx_sha256=`), the prior completed-record floor (`record_floor=`), the inventory and how many
-were examined, one `row|` per consumer with verdict / rc / duration / candidate
+were examined, one `source|` per consumer with its runtime pin, full source commit,
+dirty state, resolved intended commit and explicit selector, and one `row|` per
+consumer repeating that provenance with verdict / rc / duration / candidate
 call accounting, and a final `VERDICT:` line. A record is never edited by hand;
 a re-run on the same UTC day replaces that day's record atomically. The
 previous completed record's floor is read before replacement, and the target
 is marked `INCOMPLETE` before the first candidate hash, git metadata or setup.
 Set `CA_RECORD` to retain
-separate runs.
+separate runs. Real checkouts require `CA_SOURCE_REFS` to name a local manifest of
+`consumer=commit-ish` selections. Selections are resolved before candidate probes
+or consumer commands, and mismatched checkouts are refused without fetching or
+changing them. Self-test-only non-git consumers use the documented
+`fixture:<consumer>` identity.
 
 The current runner keeps `inventory=`, `examined=`, `row|` verdict/rc/duration/
 candidate-call counts, and the final `VERDICT:` line. Older records also have

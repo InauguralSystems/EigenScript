@@ -334,6 +334,16 @@ The scanned inventory must cover the recorded inventory floor, and every
 consumer needs a command. The commands returned by `plan` are compared
 byte for byte with the pre-change oracle when this gate changes.
 
+Before `plan` or `run`, real consumer checkouts require an explicit local
+source-selection manifest. Set `CA_SOURCE_REFS` to a file containing one
+`consumer=commit-ish` line per consumer (for example,
+`DMG=refs/remotes/origin/main` or `DMG=topic-name`). The helper resolves each
+selection to a full commit, requires the checkout's `HEAD` to match, and records
+that commit plus the checkout dirty state next to its runtime pin. It only reads
+already-present refs: it never fetches, checks out, resets, or otherwise changes
+a consumer tree. Consequently a local remote-tracking ref is an explicitly
+selected local snapshot, not a claim about the current remote default branch.
+
 The helper's `run` command accepts a release binary and optional server profiles:
 
 ```bash
