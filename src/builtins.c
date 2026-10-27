@@ -5903,7 +5903,7 @@ Value* builtin_sort_by(Value *arg) {
     return result;
 }
 
-/* sort of list — in-place qsort of an all-number or all-string list.
+/* sort of list — stable in-place sort of an all-number or all-string list.
  * Anything else raises (#368): the old comparator returned 0 for any
  * non-numeric pair, so sorting a list of records silently no-oped —
  * with libc-dependent element order on top (qsort gives no stability
