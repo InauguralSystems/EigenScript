@@ -3483,8 +3483,11 @@ Value* builtin_sandbox_run(Value *arg) {
     Env *sbox = env_new(NULL);
     Value *stub = make_builtin(builtin_sandbox_blocked);
     for (int i = 0; SANDBOX_ALLOW[i]; i++) {
-        Value *v = env_get(g_global_env, SANDBOX_ALLOW[i]);
-        if (!v) continue;               /* extension absent from this build */
+        EigsSlot held;
+        Env *owner = env_resolve_chain_ref(g_global_env, SANDBOX_ALLOW[i], 0,
+                                           NULL, NULL, &held);
+        if (!owner) continue;           /* extension absent from this build */
+        Value *v = slot_to_value(held);
         /* Only the pure C BUILTIN the allowlist names may cross. A host that
          * rebound the name holds an arbitrary value there — often a mutable
          * container, possibly a function — and copying it aliases host state
@@ -3496,6 +3499,7 @@ Value* builtin_sandbox_run(Value *arg) {
          * better diagnostic. */
         env_set_local(sbox, SANDBOX_ALLOW[i],
                       v->type == VAL_BUILTIN ? v : stub);
+        val_decref(v);
     }
     /* #1035: the walk reads g_global_env's count/names while pthread
      * workers may be binding new module names under g_module_env_lock
@@ -6341,8 +6345,12 @@ int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg) {
         pthread_mutex_lock(&g_bool_gate_mu);
         if (!g_bool_policy_ready) {
             for (size_t k = 0; k < BOOL_POLICY_N; k++) {
-                Value *v = env_get(env, k_bool_policy[k].name);
+                EigsSlot held;
+                Env *owner = env_resolve_chain_ref(env, k_bool_policy[k].name, 0,
+                                                   NULL, NULL, &held);
+                Value *v = owner ? slot_to_value(held) : NULL;
                 g_bool_policy_fn[k] = (v && v->type == VAL_BUILTIN) ? v->data.builtin : NULL;
+                if (v) val_decref(v);
             }
             __atomic_store_n(&g_bool_policy_ready, 1, __ATOMIC_RELEASE);
         }

@@ -1658,12 +1658,17 @@ static void handle_request(int fd) {
                         pthread_mutex_unlock(&srv->shared_mu);
                     }
                     if (!auth_src) {
-                        Value *auth_fn = env_get(g_global_env, "require_auth");
+                        EigsSlot held;
+                        Env *owner = env_resolve_chain_ref(g_global_env, "require_auth", 0,
+                                                           NULL, NULL, &held);
+                        Value *auth_fn = owner ? slot_to_value(held) : NULL;
                         if (!auth_fn || (auth_fn->type != VAL_FN && auth_fn->type != VAL_BUILTIN)) {
+                            if (auth_fn) val_decref(auth_fn);
                             send_response(fd, 500, "Internal Server Error", "application/json",
                                 "{\"error\": \"require_auth not defined or not callable\"}", 53);
                             goto done;
                         }
+                        val_decref(auth_fn);
                         auth_src = xstrdup("require_auth of null");
                     }
                     TokenList auth_tl = tokenize(auth_src);

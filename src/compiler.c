@@ -4244,9 +4244,12 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src,
      * it — visible at compile time as a non-builtin_dispatch binding. */
     compiler.dispatch_rebound = ast ? scan_dispatch_rebind(ast) : 0;
     if (!compiler.dispatch_rebound && env) {
-        Value *dv = env_get(env, "dispatch");
+        EigsSlot held;
+        Env *owner = env_resolve_chain_ref(env, "dispatch", 0, NULL, NULL, &held);
+        Value *dv = owner ? slot_to_value(held) : NULL;
         if (dv && !(dv->type == VAL_BUILTIN && dv->data.builtin == builtin_dispatch))
             compiler.dispatch_rebound = 1;
+        if (dv) val_decref(dv);
     }
 
     g_parse_depth = 0;  /* reuse the parse-depth counter as the compile-depth guard */
