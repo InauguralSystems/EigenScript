@@ -1,0 +1,7 @@
+define maker as:
+    local value is 41
+    define read as:
+        return value + 1
+    return read
+saved is maker of null
+print of (saved of null)

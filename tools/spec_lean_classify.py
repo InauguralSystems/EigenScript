@@ -43,11 +43,10 @@ if failures:
     raise SystemExit('classification table failed:\n  ' + '\n  '.join(failures))
 print(f'classification table: {len(CASES)} cases passed')
 
-# Nested definitions remain closures and must be refused explicitly.
+# Nested definitions are closures in step 2b-iii.
 with tempfile.NamedTemporaryFile('w', suffix='.eigs') as source:
     source.write('define f as:\n    define inner as:\n        return 1\n    return inner of 1\n'); source.flush()
     result = subprocess.run([EXE, source.name], text=True, capture_output=True)
-    expected = 'unsupported in EigenCore-0 step 2b-ii: nested function definition (closure)'
-    if result.returncode == 0 or expected not in result.stderr:
-        raise SystemExit(f'evaluator did not refuse function definition: {result.stderr}')
-print('unsupported evaluator refusal: nested function definition passed')
+    if result.returncode != 0:
+        raise SystemExit(f'evaluator refused nested function definition: {result.stderr}')
+print('modeled evaluator closure: nested function definition passed')

@@ -284,22 +284,34 @@ private def unsupportedStmts (functions : List String) (insideFunction : Bool) :
         | .loop condition body =>
             unsupportedExpr functions fuel condition |>.orElse (fun _ => unsupportedStmts functions insideFunction fuel body)
         | .define _ parameters body =>
-            if insideFunction then some "nested function definition (closure)"
-            else if parameters.length > 16 then some "function exceeds 16 parameters"
+            if parameters.length > 16 then some "function exceeds 16 parameters"
             else unsupportedStmts functions true fuel body
       here.orElse (fun _ => unsupportedStmts functions insideFunction fuel rest)
 
 /-- The single support predicate used by both classification and evaluation. -/
 def unsupportedConstruct (program : Program) : Option String :=
-  let functions := program.filterMap fun statement => match statement with
-    | .define name _ _ => some name | _ => none
+  let rec callableNames : Nat → List Stmt → List String
+    | 0, _ => []
+    | _, [] => []
+    | fuel + 1, statement :: rest =>
+      let here := match statement with
+        | .define name _ body => name :: callableNames fuel body
+        -- A stored return value is the surface form used for returned closures.
+        | .assign name (.call _ _) _ => [name]
+        | .branch _ yes elifs otherwise =>
+            callableNames fuel yes ++ elifs.flatMap (callableNames fuel ∘ Prod.snd) ++
+              otherwise.toList.flatMap (callableNames fuel)
+        | .loop _ body => callableNames fuel body
+        | _ => []
+      here ++ callableNames fuel rest
+  let functions := callableNames 100000 program
   unsupportedStmts functions false 100000 program
 
 def classifyModeled (source : String) : Classification :=
   match parse source with
   | .error why => .out why
   | .ok program => match unsupportedConstruct program with
-    | some construct => .out ⟨s!"unsupported in EigenCore-0 step 2b-ii: {construct}", 1⟩
+    | some construct => .out ⟨s!"unsupported in EigenCore-0 step 2b-iii: {construct}", 1⟩
     | none => .inSubset
 
 def classify (source : String) : Classification :=

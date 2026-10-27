@@ -73,7 +73,7 @@ private def tapeValue : Value → String
   | .int n => toString n | .string s => tapeString s
   | .bool true => "true" | .bool false => "false" | .null => "null"
   | .array values => "[" ++ String.intercalate ", " (values.map tapeValue) ++ "]"
-  | .closure _ => "<fn>"
+  | .closure _ _ => "<fn>"
 private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
   let w ← get
   let current := currentEnvironment w
@@ -132,16 +132,16 @@ mutual
       let callable ← evalExpr f function
       let values ← arguments.mapM (evalExpr f)
       match callable with
-      | .closure name => callFunction f name values
+      | .closure functionId _ => callFunction f functionId values
       | _ => throw (.runtime "value is not callable")
  termination_by fuel
 
- def callFunction (fuel : Nat) (name : String) (arguments : List Value) : EvalM Value := match fuel with
+ def callFunction (fuel : Nat) (functionId : Nat) (arguments : List Value) : EvalM Value := match fuel with
   | 0 => throw .fuel
   | f + 1 => do
     let before ← get
-    let definition := before.functions.find? (fun d => d.name == name)
-    let some definition := definition | throw (.runtime s!"undefined function: {name}")
+    let some definition := before.functions[functionId]?
+      | throw (.runtime s!"undefined function id: {functionId}")
     let count := definition.parameters.length
     if count > 1 && arguments.length > count then
       throw (.runtime s!"call passes {arguments.length} arguments but the callee takes {count}")
@@ -195,7 +195,15 @@ mutual
         let result ← if truthy (← evalExpr f condition) then exec f yes else chooseBranch f elifs no
         match result with | some v => pure (some v) | none => exec f rest
       | .loop condition body => execLoop f condition body rest
-      | .define name _ _ => do store name (.closure name) true; exec f rest
+      | .define name parameters body => do
+        let w ← get
+        let functionId := w.functions.size
+        let definition : FunctionDef := {
+          name:=name, parameters:=parameters, body:=body,
+          definingEnvironment:=currentEnvironment w}
+        modify fun state => {state with functions:=state.functions.push definition}
+        store name (.closure functionId name) true
+        exec f rest
  termination_by fuel
 end
 
@@ -208,11 +216,8 @@ def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
   if let some construct := unsupportedConstruct p then
     {stdout:="", tape:=[], error:=some (.unsupported construct)}
   else
-    let definitions := p.filterMap fun statement => match statement with
-      | .define name parameters body => some {name:=name, parameters:=parameters, body:=body, definingEnvironment:=0}
-      | _ => none
     let root : Environment := {id:=0, parent:=none}
-    let initial : World := {mode:=mode, functions:=definitions.toArray, environments:=#[root]}
+    let initial : World := {mode:=mode, environments:=#[root]}
     let action : EvalM (Option Value) := exec fuel p
     let (result, w) := (action.run).run initial
     let error := match result with | .ok _ => none | .error e => some e
