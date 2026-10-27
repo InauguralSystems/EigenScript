@@ -1,0 +1,1 @@
+- Observer equality windows now snapshot bounded container contents, detecting in-place mutations without unbounded comparison cost (#1992).

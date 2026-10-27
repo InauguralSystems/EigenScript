@@ -70,6 +70,17 @@ def rows():
             out.append({"id": f"{kind}-{behaviour}-{variant}", "kind": kind,
                         "behaviour": behaviour, "variant": variant,
                         "seed": row_seed, "values": values})
+    # Aliasing controls: the observed name is deliberately rebound to the
+    # same object after an in-place mutation.  A reference-retaining observer
+    # mistakes every comparison for equality; a snapshotting observer sees
+    # every step change.  These are generated here (rather than as a hand
+    # written regression) so they remain part of the scored corpus.
+    out.append({"id": "list-in-place-append", "kind": "list",
+                "behaviour": "in_place_append", "variant": 0,
+                "seed": SEED + len(out), "values": None})
+    out.append({"id": "list-in-place-set-at", "kind": "list",
+                "behaviour": "in_place_set_at", "variant": 0,
+                "seed": SEED + len(out), "values": None})
     return out
 
 
@@ -91,6 +102,20 @@ def program(corpus):
     out = []
     for number, row in enumerate(corpus):
         name = f"row_{number}"
+        if row["behaviour"].startswith("in_place_"):
+            out += [f"define {name} as:", "    xs is [0]", "    k is 0"]
+            for i in range(51):
+                if row["behaviour"] == "in_place_append":
+                    out.append("    append of [xs, k]")
+                else:
+                    out.append("    set_at of [xs, 0, k]")
+                out += ["    xs is xs", "    k is k + 1"]
+                if i in CHECKPOINTS:
+                    out.append(
+                        f'    print of f"R {row["id"]} {row["seed"]} {i} false '
+                        f'{{converged of xs}} {{stable of xs}} false"')
+            out += ["    return 0", f"done_{number} is {name} of 0"]
+            continue
         out += [f"define {name} as:", f"    x is {eigs(row['values'][0])}",
                 "    prev is x", "    same is 0"]
         for i, v in enumerate(row["values"]):

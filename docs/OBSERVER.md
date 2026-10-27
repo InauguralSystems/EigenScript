@@ -176,6 +176,16 @@ into this document. The
 paragraphs below describe the two signals themselves; `report` reads entropy
 only for non-numeric bindings, and does not adopt their equality route.
 
+The equality route snapshots each bounded value at assignment, so mutating a
+container in place and then assigning that same object is still observed as a
+change; the window never retains aliases to the program's mutable object.  To
+bound observer overhead, the snapshot walk stops after **4,096 content units**
+(value nodes plus string/key bytes, buffer elements, and text-builder bytes).
+An assignment above that bound is a refusal to judge: it clears the equality
+run, and `converged` and `stable` remain false until a complete window of
+bounded assignments has subsequently been observed.  Entropy diagnostics are
+still recorded normally.
+
 `report`/the bare predicates historically classified the trajectory of
 **`entropy(value)`** — the information content, not the number. That is the right signal for "how
 *determined* is this value," but it is a *lossy proxy* for "has this value

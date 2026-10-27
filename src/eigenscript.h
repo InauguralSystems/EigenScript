@@ -369,6 +369,7 @@ typedef struct ObserverSlot {
     Value   *eq_last;
     uint8_t *eq_window;
     uint8_t  eq_window_head, eq_window_count, eq_cap;
+    uint8_t  eq_seen;             /* non-numeric route active, even if refused */
 } ObserverSlot;
 
 struct Env {

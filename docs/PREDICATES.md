@@ -94,6 +94,15 @@ numeric binding — the two surfaces cannot disagree); `classify of
 MEASUREMENT — `where`, `why`, `how`, trajectory snapshots, container
 folds, the tape — is unchanged everywhere.
 
+Each equality entry compares against a private content snapshot, not a
+reference that can be changed through an alias.  Snapshotting is bounded to
+4,096 content units per assignment (value nodes plus string/key bytes, buffer
+elements, and text-builder bytes).  A larger value is **not sampled**: both
+predicates refuse to judge (return false), reset the equality run, and require
+a new full window of bounded samples before either can become true.  Thus the
+observer's additional comparison work is bounded independently of container
+size; the pre-existing entropy calculation remains size-dependent.
+
 Why: entropy is a function of `|x|` alone, so any clause on it is a
 clause on magnitude. The current CI corpus compares every predicate, not
 just `converged`, against its labelled question. Run

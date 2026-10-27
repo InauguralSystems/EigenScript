@@ -540,17 +540,71 @@ static void observer_slot_eq_ensure(ObserverSlot *s, int n) {
     s->eq_window_head = (uint8_t)(cnt % n);
 }
 
+#define OBSERVER_EQ_SNAPSHOT_MAX_UNITS 4096
+
+static int observer_eq_charge(size_t *units, size_t add) {
+    if (add > OBSERVER_EQ_SNAPSHOT_MAX_UNITS - *units) return 0;
+    *units += add;
+    return 1;
+}
+
+/* Bound the extra work equality observation adds to an assignment.  This is
+ * deliberately a read-only, short-circuiting walk: assignment is already a
+ * writer, but shared values may concurrently be read, and observer probing
+ * must not hide normalization or caching writes in this traversal. */
+static int observer_eq_within_budget(Value *v, size_t *units, int depth) {
+    if (!v) return 1;
+    if (!observer_eq_charge(units, 1)) return 0;
+    if (depth > 64) return 1; /* the existing clone/equality depth bound */
+    if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++) {
+            EIGS_VIEW(child);
+            if (!observer_eq_within_budget(list_get_view(v, i, &child), units, depth + 1))
+                return 0;
+        }
+    } else if (v->type == VAL_DICT) {
+        DICT_FOR_EACH(v, i) {
+            if (!observer_eq_charge(units, strlen(v->data.dict.keys[i]))) return 0;
+            EIGS_VIEW(child);
+            if (!observer_eq_within_budget(dict_value_get_view(v, i, &child), units, depth + 1))
+                return 0;
+        }
+    } else if (v->type == VAL_STR) {
+        if (!observer_eq_charge(units, strlen(v->data.str))) return 0;
+    } else if (v->type == VAL_BUFFER) {
+        if (!observer_eq_charge(units, (size_t)v->data.buffer.count)) return 0;
+    } else if (v->type == VAL_TEXT_BUILDER) {
+        if (!observer_eq_charge(units, v->data.text_builder.len)) return 0;
+    }
+    return 1;
+}
+
 static void observer_slot_record_equality(ObserverSlot *s, Value *v) {
     int n = obs_win(s);
+    s->eq_seen = 1;
+    size_t units = 0;
+    if (!observer_eq_within_budget(v, &units, 0)) {
+        /* Refusal to judge: keep the predicate false until a later run of a
+         * full window of bounded values, rather than silently falling back to
+         * entropy or doing value-size-proportional observer work. */
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_window_count = s->eq_window_head = 0;
+        return;
+    }
     if (s->eq_last) {
         if (!s->eq_window || s->eq_cap < n) observer_slot_eq_ensure(s, n);
         s->eq_window[s->eq_window_head] = (uint8_t)values_equal(s->eq_last, v);
         if (++s->eq_window_head >= s->eq_cap) s->eq_window_head = 0;
         if (s->eq_window_count < s->eq_cap) s->eq_window_count++;
     }
-    val_incref(v);                 /* retain before dropping: v may equal eq_last */
+    /* Keep a private content snapshot, not a reference to the binding's
+     * mutable container.  In particular, `append of [xs, k]; xs is xs` must
+     * compare the post-append value with the pre-append contents.  Reuse the
+     * existing bounded-depth copier rather than growing a second clone. */
+    Value *snapshot = val_clone_for_send(v);
     val_decref(s->eq_last);
-    s->eq_last = v;
+    s->eq_last = snapshot;
 }
 
 static int observer_slot_eq_settled(const ObserverSlot *s) {
@@ -858,6 +912,7 @@ void observer_slot_update_num(Env *e, int idx, double num) {
         val_decref(vs->eq_last);
         vs->eq_last = NULL;
         vs->eq_window_count = vs->eq_window_head = 0;
+        vs->eq_seen = 0;
     }
 }
 
@@ -1284,7 +1339,7 @@ static int obs_entropy_converged(const ObserverSlot *s) {
 
 int observer_slot_converged(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_converged(s);
-    if (s && s->eq_last) return observer_slot_eq_settled(s);
+    if (s && s->eq_seen) return observer_slot_eq_settled(s);
     return obs_entropy_converged(s);
 }
 
@@ -1363,7 +1418,7 @@ static int obs_entropy_stable(const ObserverSlot *s) {
 
 int observer_slot_stable(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_stable(s);
-    if (s && s->eq_last) return observer_slot_eq_settled(s);
+    if (s && s->eq_seen) return observer_slot_eq_settled(s);
     return obs_entropy_stable(s);
 }
 
